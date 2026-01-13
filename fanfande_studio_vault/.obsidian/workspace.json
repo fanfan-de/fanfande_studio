@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "项目文档.md",
+                "file": "参考的文件夹结构.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "项目文档"
+              "title": "参考的文件夹结构"
             }
           }
         ],
@@ -93,7 +93,8 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 300,
+    "collapsed": true
   },
   "right": {
     "id": "14ad8d7e08bf77ac",
@@ -200,8 +201,11 @@
   },
   "active": "df2f292c43412dde",
   "lastOpenFiles": [
+    "archetecture.md",
+    "参考的文件夹结构.md",
+    "history.md",
+    "项目文档.md",
     "Skills",
-    "欢迎.md",
-    "项目文档.md"
+    "欢迎.md"
   ]
 }

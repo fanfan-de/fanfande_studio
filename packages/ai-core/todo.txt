@@ -1,0 +1,38 @@
+2. AI Core 模块 (packages/aiCore/)
+功能概述： 基于 Vercel AI SDK 的统一 AI 提供商接口层，为 Cherry Studio 提供标准化、可扩展的 AI 模型访问能力。支持 19+ 种 AI 提供商，包括 OpenAI、Anthropic、Google、AWS Bedrock 等。
+
+核心架构：
+
+两层架构：
+1. Models Layer (模型层) - 专注模型创建和配置管理
+   - createModel() / createModels() 工厂函数
+   - ProviderCreator 提供商创建器
+   
+2. Runtime Layer (运行时层) - 专注执行和用户API
+   - RuntimeExecutor 运行时执行器
+   - PluginEngine 插件引擎
+   - 便捷的 streamText/generateText API
+关键技术实现：
+
+动态导入：按需加载 AI SDK 提供商，减少打包体积
+插件系统：借鉴 Rollup 的钩子设计，支持请求全生命周期扩展
+类型安全：完整复用 AI SDK 类型系统，避免重复定义
+中间件系统：直接使用 AI SDK 的 wrapLanguageModel 原生支持
+内置插件：
+
+日志插件：记录 AI 请求的详细日志
+网络搜索插件：集成搜索功能到 AI 对话
+工具使用插件：支持函数调用和工具执行
+流转换插件：实时处理 AI 响应流
+关键文件：
+
+packages/aiCore/src/core/models/factory.ts - 模型工厂
+packages/aiCore/src/core/runtime/executor.ts - 运行时执行器
+packages/aiCore/src/core/plugins/manager.ts - 插件管理器
+packages/aiCore/AI_SDK_ARCHITECTURE.md - 完整架构文档
+设计优势：
+
+统一接口：一套 API 支持多种 AI 提供商
+灵活扩展：插件和中间件双重扩展机制
+面向未来：为 OpenAI Agents SDK 集成预留架构
+性能优化：最小化包装，直接使用 AI SDK 最佳实践
