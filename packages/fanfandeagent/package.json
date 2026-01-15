@@ -1,0 +1,14 @@
+{
+  "name": "fanfandeagent",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "ai": "^6.0.35",
+    "zod": "^4.3.5"
+  }
+}
