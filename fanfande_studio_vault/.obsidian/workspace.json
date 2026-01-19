@@ -6,6 +6,7 @@
       {
         "id": "23e323f5b337ad28",
         "type": "tabs",
+        "dimension": 40.609137055837564,
         "children": [
           {
             "id": "bfaf8e4ba63c39c1",
@@ -26,6 +27,7 @@
       {
         "id": "0abfb30ad401037b",
         "type": "tabs",
+        "dimension": 59.390862944162436,
         "children": [
           {
             "id": "60be372f8928f76a",
@@ -33,12 +35,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "AGENT_MODULE_PLAN.md",
+                "file": "AI-SDK.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "AGENT_MODULE_PLAN"
+              "title": "AI-SDK"
             }
           }
         ]
@@ -205,17 +207,20 @@
   },
   "active": "60be372f8928f76a",
   "lastOpenFiles": [
-    "参考的opencode的项目架构.md",
+    "typescript 对象类型.md",
+    "AI-SDK.md",
+    "Bun的基础使用方法.md",
+    "项目文档.md",
+    "未命名.md",
+    "路劲引用.md",
     "AGENT_MODULE_PLAN.md",
     "数据结构.md",
+    "欢迎.md",
+    "参考的opencode的项目架构.md",
+    "参考的文件夹结构.md",
+    "archetecture.md",
     "opencode  product synilize.md",
     "history.md",
-    "archetecture.md",
-    "参考的文件夹结构.md",
-    "欢迎.md",
-    "未命名.md",
-    "项目文档.md",
-    "Bun的基础使用方法.md",
     "Zod 是一个极其重要的库.md",
     "opencode/src/agent/agent.md",
     "opencode/src/agent/prompt/compaction.md",
@@ -228,9 +233,6 @@
     "opencode/src/bus/global.md",
     "opencode/src/bus/index.md",
     "opencode/AGENTS.md",
-    "opencode/src/cli/cmd/tui/routes/session/index.md",
-    "opencode/src/cli/cmd/tui/routes/session/header.md",
-    "opencode/src/cli/cmd/tui/routes/session/footer.md",
     "opencode/sync2.sh",
     "opencode/test/util",
     "opencode/test/tool/__snapshots__",

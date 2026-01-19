@@ -1,0 +1,1 @@
+AI SDK 实现了跨受[支持提供商](https://ai-sdk.dev/docs/foundations/providers-and-models)集成人工智能 (AI) 模型的标准化。这使开发人员能够专注于构建出色的 AI 应用程序，而无需浪费时间在技术细节上。

@@ -2,13 +2,16 @@
   "name": "fanfandeagent",
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/xdg-basedir": "^4.0.2"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
+    "@ai-sdk/deepseek": "^2.0.8",
     "ai": "^6.0.35",
+    "xdg-basedir": "^5.1.0",
     "zod": "^4.3.5"
   }
 }

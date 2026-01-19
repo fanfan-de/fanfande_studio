@@ -9,21 +9,21 @@
     "allowJs": true,
 
     // Bundler mode
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true,
+    "moduleResolution": "bundler",//使用模拟现代打包工具（如 Vite, Bun）的路径解析策略。
+    "allowImportingTsExtensions": true,//允许你在 import 语句中显式写 `.ts` 后缀（例如 `import { x } from './file.ts'`）。
+    "verbatimModuleSyntax": true,//强制通过语法区分“类型导入”和“值导入”。
+    "noEmit": true,//TypeScript 编译器**不生成** `.js` 输出文件，明确了分工——TS **只做类型检查**（Type Checker），代码生成和运行由 Bun 或 Vite 负责。
 
     // Best practices
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
+    "strict": true,//开启一系列基础的严格检查（包括 `noImplicitAny`, `strictNullChecks` 等）。
+    "skipLibCheck": true,//跳过对 `node_modules` 里面 `.d.ts` 文件的类型检查。别人的库可能有类型定义错误，你管不了，检查也没用，不如跳过，只检查自己的代码。
+    "noFallthroughCasesInSwitch": true,//在 `switch` 语句中，如果一个 case 忘了写 `break` 或 `return` 直接掉到下一个 case，会报错。
+    "noUncheckedIndexedAccess": true,//**数组越界检查（地狱难度）**。
+    "noImplicitOverride": true,//子类重写父类方法时，必须加 `override` 关键字。
 
     // Some stricter flags (disabled by default)
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false
+    "noUnusedLocals": false,//定义了局部变量没使用，**不报错**。方便调试。你可能写了一半代码，声明了变量还没来得及用，如果报错会很烦。
+    "noUnusedParameters": false,//函数参数没使用，**不报错**。
+    "noPropertyAccessFromIndexSignature": false//允许通过点号 `obj.key` 访问那些只定义了索引签名 `[key: string]: any` 的对象。
   }
 }
