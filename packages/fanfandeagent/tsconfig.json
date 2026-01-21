@@ -24,6 +24,9 @@
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,//定义了局部变量没使用，**不报错**。方便调试。你可能写了一半代码，声明了变量还没来得及用，如果报错会很烦。
     "noUnusedParameters": false,//函数参数没使用，**不报错**。
-    "noPropertyAccessFromIndexSignature": false//允许通过点号 `obj.key` 访问那些只定义了索引签名 `[key: string]: any` 的对象。
+    "noPropertyAccessFromIndexSignature": false,//允许通过点号 `obj.key` 访问那些只定义了索引签名 `[key: string]: any` 的对象。
+    "paths":{
+      "@/*":["./src/*"]
+    }
   }
 }

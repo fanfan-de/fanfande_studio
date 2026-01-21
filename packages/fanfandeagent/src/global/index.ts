@@ -5,7 +5,7 @@ import os from "os"
 
 
 // 应用名称
-const app = "opencode"
+const app : string = "opencode"
 
 // 拼接出应用专属的系统路径
 // Global paths: {

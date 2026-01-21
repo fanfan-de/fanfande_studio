@@ -29,6 +29,7 @@ interface Context {
 // 通过 Context.create("instance") 创建一个“上下文容器”
 // 用法：context.provide(ctx, fn) 将 ctx 注入到后续的异步执行链中，使得在这段执行期间，
 // Instance.directory / Instance.worktree / Instance.project 能够正确读到当前 ctx。
+//返回了两个方法
 const context = Context.create<Context>("instance")
 
 // cache：用于保证“同一目录”只创建和缓存一个上下文（Promise<Context>），避免重复初始化。

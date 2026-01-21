@@ -160,3 +160,147 @@ function doSomething() {
 - **数据库事务**：在多个数据库操作之间共享同一个连接。
 
 对于新手来说，你只需要记住：**它是为了让你少写几个函数参数，且能保证在异步环境下数据不串味。**
+
+
+-----------------------------------------
+
+
+
+
+
+
+这段代码实现了一个**类型安全的异步上下文管理工具**。
+
+为了让你更容易理解，我们可以用一个非常流行的概念来类比：**React 的 Context API**，或者是后端开发中的 **Thread-Local Storage (线程本地存储)**。
+
+### 核心是为了解决什么问题？
+
+想象一下，你正在写一个后端服务（比如基于 Node.js）。当一个 HTTP 请求进来时，你可能会生成一个 `requestId` 或者获取当前登录的 `User` 对象。
+
+如果你想在代码的深层（比如数据库层、日志层）使用这个 `User` 对象，通常你必须把它作为参数一层一层地传下去：
+
+```typescript
+// 痛苦的“参数透传” (Prop Drilling)
+function controller(user) {
+  service(user);
+}
+function service(user) {
+  dbQuery(user);
+}
+function dbQuery(user) {
+  console.log(user.id);
+}
+```
+
+这段代码的目的，就是为了**消灭**这种参数传递，让你可以在任何地方直接“拿到”当前的上下文数据，而不用显式传递。
+
+---
+
+### 代码逐行拆解
+
+这段代码是对 Node.js 原生模块 `async_hooks` 中的 `AsyncLocalStorage` 的一层封装。
+
+#### 1. `import { AsyncLocalStorage } from "async_hooks"`
+这是 Node.js 的原生能力。它允许你在异步操作链（比如 Promise, async/await）中存储数据。这就好比是给当前的“执行线程”挂在一个专属的口袋，无论代码异步跑到哪里，口袋都在。
+
+#### 2. `export namespace Context`
+只是一个命名空间，用来把相关的类和函数包在一起，防止命名冲突。
+
+#### 3. `export class NotFound extends Error`
+这是一个自定义错误。
+*   **作用**：当你试图在一个没有“口袋”的地方伸手掏东西时，程序会抛出这个错误，告诉你：“嘿，你还没初始化上下文呢！”
+
+#### 4. `export function create<T>(name: string)`
+这是一个工厂函数，用来创建一个具体的上下文。
+*   泛型 `<T>`：定义了这个上下文里存的是什么类型的数据（比如 `User` 对象）。
+*   `name`: 给这个上下文起个名，报错的时候好找原因。
+
+内部逻辑：
+*   `const storage = new AsyncLocalStorage<T>()`: 创建了那个“神奇的口袋”。
+
+它返回了两个核心方法：
+
+#### A. `provide<R>(value: T, fn: () => R)` (提供者)
+*   **作用**：开启一个上下文作用域。
+*   **参数**：
+    *   `value`: 你要存进去的数据（比如当前的 `user`）。
+    *   `fn`: 一个函数。
+*   **逻辑**：`storage.run(value, fn)`。意思是：**“在执行 `fn` 这个函数（以及它内部引发的所有异步操作）期间，`value` 全局可见。”**
+
+#### B. `use()` (消费者)
+*   **作用**：在深层代码里获取数据。
+*   **逻辑**：
+    *   `storage.getStore()`: 尝试从当前异步链条中拿数据。
+    *   `if (!result) throw ...`: 如果当前不在 `provide` 的包裹范围内，或者没存数据，就报错。这保证了代码的安全性。
+
+---
+
+### 举个生动的例子
+
+假设我们要记录当前请求的用户信息。
+
+#### 第一步：创建上下文 (在全局文件中)
+```typescript
+// definition.ts
+interface User {
+  id: number;
+  name: string;
+}
+
+// 创建一个专门存 User 的上下文
+export const UserContext = Context.create<User>("CurrentSessionUser");
+```
+
+#### 第二步：在入口处“提供”数据 (provide)
+假设这是你的 API 处理入口：
+
+```typescript
+// server.ts
+import { UserContext } from './definition';
+
+function handleRequest(req, res) {
+  const user = { id: 1, name: "Alice" }; // 假设从 token 解析出来的
+
+  // 【关键】使用 provide 包裹后续逻辑
+  // 在 processBusinessLogic 以及它调用的任何函数里，UserContext 都是有值的
+  UserContext.provide(user, () => {
+    processBusinessLogic();
+  });
+}
+```
+
+#### 第三步：在深层代码“使用”数据 (use)
+你不需要把 user 传给 `processBusinessLogic`，也不用传给 `logUserOperation`。
+
+```typescript
+// service.ts
+import { UserContext } from './definition';
+
+function processBusinessLogic() {
+  // 做一些异步操作
+  setTimeout(() => {
+    logUserOperation();
+  }, 100);
+}
+
+function logUserOperation() {
+  // 【关键】直接 use() 拿到数据！
+  // 就像变魔术一样，不需要参数传递
+  try {
+    const user = UserContext.use(); 
+    console.log(`User ${user.name} did something.`); // 输出: User Alice did something.
+  } catch (e) {
+    console.error("当前没有用户上下文");
+  }
+}
+```
+
+### 总结
+
+这段代码封装了一个**“异步作用域内的全局变量”**。
+
+1.  **`create`**: 造一个特定类型的存储器。
+2.  **`provide`**: 圈定一个范围（函数执行期间），在这个范围内数据有效。
+3.  **`use`**: 在范围内的任何角落，随时取出数据。
+
+这种模式在 NestJS、Midway 等 Node.js 框架中非常常见，用于实现**请求链路追踪 (Request ID Tracing)** 或 **请求上下文隔离**。
