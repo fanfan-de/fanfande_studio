@@ -1,122 +1,182 @@
-我已经分析了 `src/bus` 文件夹的内容。以下是详细分析：
+这段代码实现了一个**基于 TypeScript 和 Zod 的事件总线（Event Bus）系统**。它通常用于在一个特定的上下文（这里看来是 `Instance`，可能代表一个项目实例或服务器实例）内部进行组件间的解耦通信。
 
-## 文件结构
+以下是这段代码的核心功能和逻辑结构的详细解释：
 
-- `src/bus/index.ts`：核心总线实现，提供发布-订阅模式
-- `src/bus/bus-event.ts`：事件定义和注册表，使用 Zod 进行模式验证
-- `src/bus/global.ts`：全局事件发射器，用于跨实例通信
+### 1. 核心概念与依赖
 
-## 功能概述
+*   **`z` (Zod)**: 用于定义事件数据的 Schema（模式），确保发布和订阅的数据类型在运行时和编译时都是安全的。
+*   **`Instance`**: 这是一个自定义模块，用于管理状态。代码中的 `Instance.state` 表明这个 Bus 是**实例级**的（每个项目/实例有自己独立的订阅列表），而不是全局单例。
+*   **`GlobalBus`**: 代码将本地事件转发给了一个全局总线，建立了“本地 -> 全局”的桥梁。
 
-### 1. 事件定义系统 (`bus-event.ts`)
+### 2. 状态管理与生命周期 (`state`)
 
-- 提供 `BusEvent.define(type, properties)` 方法，用于创建类型安全的事件定义
-- 使用 Zod schema 验证事件属性
-- 维护全局注册表 (`registry`) 跟踪所有已定义事件
-- 提供 `payloads()` 方法生成所有事件的 Zod 鉴别联合类型
+代码中最独特的部分是 `Instance.state` 的使用：
 
-### 2. 发布-订阅总线 (`index.ts`)
-
-- __核心功能__：`Bus.publish()` 和 `Bus.subscribe()` 方法
-
-- __类型安全__：基于 Zod schema 的强类型事件发布和订阅
-
-- __订阅选项__：
-
-  - `subscribe(def, callback)`：订阅特定事件类型
-  - `subscribeAll(callback)`：订阅所有事件（通配符 "*"）
-  - `once(def, callback)`：一次性订阅
-
-- __实例级隔离__：使用 `Instance.state()` 确保每个项目实例有独立的事件状态
-
-- __生命周期管理__：自动处理实例销毁时的事件通知
-
-### 3. 全局总线 (`global.ts`)
-
-- 基于 Node.js `EventEmitter` 的简单全局事件发射器
-- 允许跨不同项目实例的事件传播
-- 主要事件：`"event"`，携带目录和负载信息
-
-## 设计模式
-
-1. __观察者模式__：经典的发布-订阅实现
-2. __类型安全__：利用 TypeScript 和 Zod 确保运行时和编译时类型安全
-3. __依赖注入__：通过 `Instance.state()` 实现状态管理
-4. __单例模式__：每个实例有独立的总线状态
-
-## 在 OpenCode 架构中的作用
-
-- __内部通信__：组件间松耦合通信
-- __状态通知__：实例生命周期事件（如实例销毁）
-- __插件系统__：可能用于插件与核心系统之间的通信
-- __调试和日志__：所有事件都通过 `Log.create({ service: "bus" })` 记录
-
-## 关键代码特点
-
-- 使用 `Map` 存储订阅关系，键为事件类型或 "*"
-- 异步事件处理：`publish()` 返回 `Promise.all(pending)`
-- 内存管理：提供取消订阅函数，防止内存泄漏
-- 通配符支持：`"*"` 订阅所有事件
-
-`src/bus` 模块是 OpenCode 内部的事件总线系统，提供类型安全、实例隔离的事件通信机制，是系统组件解耦的关键基础设施。
-
-
-
-根据代码分析，bus 在 OpenCode 的 AI agent 系统中扮演&#x7740;__&#x6838;心事件通信总&#x7EBF;__&#x7684;角色。以下是具体的使用场景：
-
-## 1. __会话生命周期管理__
-
-- __会话状态变更__：当 AI agent 会话创建、更新、删除时，通过 `Bus.publish(Session.Event.Created/Updated/Deleted)` 通知整个系统
-- __错误处理__：AI agent 执行过程中出现错误时，通过 `Bus.publish(Session.Event.Error)` 广播错误信息
-- __状态跟踪__：会话空闲、活跃状态通过 `Bus.publish(Session.Event.Idle/Status)` 通知
-
-## 2. __工具执行与文件操作__
-
-- __文件编辑__：当 AI agent 使用编辑工具修改文件时，`Bus.publish(File.Event.Edited)` 触发文件系统监听和自动格式化
-- __补丁应用__：`Bus.publish(FileWatcher.Event.Updated)` 通知文件变更，用于版本控制系统同步
-- __工具执行结果__：命令执行后通过 `Bus.publish(Command.Event.Executed)` 广播执行结果
-
-## 3. __消息流处理__
-
-- __消息更新__：AI agent 生成的消息部分更新时，`Bus.publish(MessageV2.Event.PartUpdated)` 实现实时流式传输
-- __消息完成__：完整消息通过 `Bus.publish(MessageV2.Event.Updated)` 通知存储和同步服务
-- __消息删除__：回滚操作时通过 `Bus.publish(MessageV2.Event.Removed)` 清理消息
-
-## 4. __插件系统集成__
-
-- __插件钩子__：插件通过 `Bus.subscribeAll` 监听所有事件，实现自定义处理逻辑
-- __工具变更__：MCP 服务器工具列表变化时，`Bus.publish(ToolsChanged)` 通知系统更新可用工具集
-
-## 5. __实时协作与共享__
-
-- __会话同步__：`Bus.subscribe(Session.Event.Updated)` 用于实时同步会话状态到共享存储
-- __消息同步__：`Bus.subscribe(MessageV2.Event.Updated)` 确保多客户端消息一致性
-
-## 6. __用户界面交互__
-
-- __TUI 事件__：AI agent 通过 `Bus.publish(TuiEvent.PromptAppend/CommandExecute)` 与终端用户界面通信
-- __权限询问__：当需要用户授权时，`Bus.publish(Permission.Event.Asked)` 触发权限询问对话框
-
-## 7. __系统级集成__
-
-- __文件监视__：`Bus.subscribe(FileWatcher.Event.Updated)` 实现文件变更时的自动响应
-- __版本控制__：Git 分支更新通过 `Bus.publish(Project.Event.BranchUpdated)` 通知
-- __安装更新__：软件更新可用时 `Bus.publish(Installation.Event.UpdateAvailable)` 通知用户
-
-## 设计优势
-
-1. __解耦__：AI agent 核心逻辑与副作用（存储、UI、插件）分离
-2. __可扩展__：新功能只需订阅相关事件，无需修改 agent 核心代码
-3. __实时性__：事件驱动架构确保状态变更立即传播到所有相关组件
-4. __类型安全__：基于 Zod 的事件定义确保运行时类型正确性
-
-## 典型工作流示例
-
-```javascript
-AI Agent 执行编辑工具
-    → Bus.publish(File.Event.Edited)
-    → 文件系统监听器触发自动格式化
-    → 版本控制系统检测变更
-    → UI 更新文件状态显示
-    → 插件执行自定义处理
+```typescript
+const state = Instance.state(
+  // 初始化函数
+  () => {
+    const subscriptions = new Map<any, Subscription[]>()
+    return { subscriptions }
+  },
+  // 销毁/清理函数 (Disposal)
+  async (entry) => {
+    // ... 当实例被销毁时执行 ...
+  },
+)
 ```
+
+*   **隔离性**: 这是一个闭包或状态容器。它确保存储订阅者（`subscriptions` Map）是绑定在特定 `Instance` 上的。
+*   **自动清理与通知**:
+    *   当 Instance 被销毁时，清理函数会被调用。
+    *   它会检查是否有 `*` (通配符) 订阅者。
+    *   如果有，它会手动触发一个 `InstanceDisposed` 事件，通知监听者该实例正在关闭。这是一个非常优雅的“临终遗言”机制。
+
+### 3. 主要功能详解
+
+#### A. 定义事件 (`InstanceDisposed`)
+```typescript
+export const InstanceDisposed = BusEvent.define(
+  "server.instance.disposed",
+  z.object({ directory: z.string() }),
+)
+```
+定义了一个标准事件，包含事件名（Type）和数据结构（Schema）。
+
+#### B. 发布事件 (`publish`)
+```typescript
+export async function publish<...>(def, properties) { ... }
+```
+这是发送消息的核心方法：
+1.  **日志**: 记录正在发布的事件类型。
+2.  **本地分发**:
+    *   查找监听该特定事件类型 (`def.type`) 的订阅者。
+    *   查找监听所有事件 (`*`) 的订阅者。
+    *   执行这些订阅者的回调函数。
+3.  **全局桥接**: 通过 `GlobalBus.emit` 将事件发送到全局范围，并附带当前实例的目录信息 (`Instance.directory`)。这允许上层系统监控所有实例的事件。
+4.  **异步处理**: 使用 `Promise.all(pending)` 等待所有订阅者的回调执行完毕（如果回调是异步的）。
+
+#### C. 订阅事件 (`subscribe` & `subscribeAll`)
+```typescript
+export function subscribe<...>(def, callback) { ... }
+```
+*   **类型安全**: 利用 TypeScript 泛型，根据传入的 `def` 自动推断 `callback` 中 `properties` 的类型。开发者在使用时会有代码补全提示。
+*   **subscribeAll**: 监听所有事件（即订阅 `*`）。
+
+#### D. 一次性订阅 (`once`)
+```typescript
+export function once<...>(def, callback) { ... }
+```
+这是一个语法糖。
+*   订阅事件。
+*   在回调执行后，检查返回值。如果返回 `"done"`，则自动取消订阅（调用 `unsub()`）。
+*   *注意：* 这里的逻辑比较特殊，通常 `once` 是执行一次就自动销毁，但这里似乎允许回调通过返回 `"done"` 来决定何时销毁，或者代码意图是只要执行了就销毁（取决于 `if (callback(event))` 的判断逻辑，如果 `callback` 没有返回值，`undefined` 为假，则不会销毁，这看起来像是一个特殊的“条件性一次订阅”或者代码有些非典型）。*修正理解：如果 `callback` 返回真值（如 "done"），则取消订阅。*
+
+#### E. 内部实现 (`raw`)
+这是底层的订阅逻辑：
+*   获取当前状态中的 `subscriptions` Map。
+*   将回调推入数组。
+*   **返回清理函数**: `raw` 返回一个函数，调用该函数会从数组中移除该回调（即取消订阅）。
+
+### 总结
+
+这是一个**类型安全、支持生命周期管理、具备本地与全局分发能力**的事件总线实现。
+
+**它的优点：**
+1.  **强类型**: 结合 Zod 和 TS，彻底杜绝了事件名拼写错误或载荷结构错误。
+2.  **实例隔离**: 多个项目实例之间的事件不会混淆。
+3.  **优雅关闭**: 实例销毁时会自动通知通配符订阅者。
+4.  **可观测性**: 所有本地事件都会冒泡到 `GlobalBus`，方便统一监控或日志记录。
+----
+没问题，我们可以用一个非常通俗的生活例子来理解**事件总线（Event Bus）**。
+
+### 1. 通俗类比：餐厅的点餐系统
+
+想象一家繁忙的餐厅：
+
+*   **没有事件总线时（紧耦合）**：
+    服务员（组件 A）接到顾客点单后，必须亲自跑到后厨，找到专门负责切菜的厨师（组件 B），告诉他“切土豆”；然后找到负责炒菜的厨师（组件 C），告诉他“炒土豆”；最后还得找到收银台（组件 D），告诉他“记账”。
+    *   *坏处*：服务员太累了，他必须认识所有人，如果新来了一个负责摆盘的厨师，还得通知服务员以后也要找他。
+
+*   **有了事件总线后（解耦）**：
+    服务员（**发布者**）接到点单，只做一件事：**把订单贴在墙上的“订单栏”（事件总线）上**，然后大喊一声：“新订单来了！”（**发布事件**）。
+    *   切菜师（**订阅者 1**）一直盯着订单栏，看到有单子，就去切菜。
+    *   收银员（**订阅者 2**）也盯着订单栏，看到有单子，就去记账。
+    *   如果有新来的摆盘师（**订阅者 3**），他只要也去盯着订单栏就行了，**服务员根本不需要知道他的存在**。
+
+在这个例子中，那个“订单栏”就是**事件总线**。
+
+---
+
+### 2. 技术定义
+
+**事件总线（Event Bus）** 是一种软件架构模式，它充当了应用程序中不同组件之间的**中介**。
+
+它基于 **发布/订阅（Publish/Subscribe）** 模式：
+1.  **Publisher（发布者）**：发出消息的人。它只管把消息发出去，不关心谁会收到。
+2.  **Event（事件/消息）**：传输的数据（比如你的代码里的 `payload`，包含了具体发生了什么）。
+3.  **Subscriber（订阅者/监听者）**：接收消息的人。它告诉总线：“我对某某类型的消息感兴趣，如果有，请通知我”。
+4.  **The Bus（总线）**：负责维护订阅列表，并在收到消息时，把它分发给所有感兴趣的订阅者。
+
+### 3. 为什么要用它？（核心价值：解耦）
+
+在编写复杂的软件（比如你给出的代码所处的项目）时，我们不希望代码“打结”。
+
+*   **如果不解耦**：当用户删除一个文件时，你可能需要写这样的代码：
+    ```typescript
+    function deleteFile() {
+      // 1. 真的删除文件
+      fileSystem.delete();
+      // 2. 告诉日志系统记录一下
+      logger.log("文件删了");
+      // 3. 告诉搜索系统更新索引
+      searchIndex.remove();
+      // 4. 告诉UI刷新界面
+      ui.refresh();
+      // ...随着功能增加，这个函数会越来越臃肿，而且互相依赖。
+    }
+    ```
+
+*   **使用了事件总线**：
+    ```typescript
+    function deleteFile() {
+      // 1. 真的删除文件
+      fileSystem.delete();
+      // 2. 只发一个广播：Bus.publish("文件被删除了", { 文件名: "abc" })
+      // 结束。
+    }
+    ```
+    日志系统、搜索系统、UI 系统只需要在程序启动时**订阅**“文件被删除了”这个事件，它们就会自动响应。写 `deleteFile` 的人不需要知道它们的存在。
+
+### 4. 结合你刚才的代码看
+
+现在回过头看你提供的代码，每个部分的角色就清晰了：
+
+1.  **公共广播站 (`Bus` namespace)**:
+    这就是那个“订单栏”或者是广播中心。
+
+2.  **定义“暗号” (`InstanceDisposed`)**:
+    ```typescript
+    export const InstanceDisposed = BusEvent.define(...)
+    ```
+    这规定了大家交流的格式。比如规定：“要说‘实例销毁’这件事，必须带上 `directory`（目录）这个信息”。
+
+3.  **我要发广播 (`publish`)**:
+    ```typescript
+    Bus.publish(InstanceDisposed, { directory: "/app/xxx" })
+    ```
+    这相当于服务员喊：“号外号外！有个实例被销毁了，目录是 /app/xxx！”。
+
+4.  **我要听广播 (`subscribe`)**:
+    ```typescript
+    Bus.subscribe(InstanceDisposed, (event) => {
+      console.log("收到消息！哪个目录被删了？", event.properties.directory);
+    })
+    ```
+    这相当于厨师说：“我对‘实例销毁’这件事感兴趣，一旦发生，就叫醒我执行后面那个函数。”
+
+### 总结
+
+**事件总线就是一个“消息中转站”。**
+
+它让你的代码不再是 **A 直接调用 B**，而是 **A 发送消息给总线，总线转发给 B、C、D...**。这使得代码各部分更加独立，维护和扩展起来更方便。
