@@ -1,194 +1,119 @@
-我分析了 `src/project/instance.ts` 文件。这是 OpenCode 项目中**项目实例管理**的核心模块，负责管理当前工作目录的上下文、状态和生命周期。以下是详细分析：
+这段代码是整个系统的 **项目实例管理器 (Instance Manager)**。
 
-## 1. 核心功能：项目实例上下文管理器
+它的核心作用是为当前的执行环境提供上下文（Context），确保在某个特定项目目录下运行的代码能够方便地获取该项目的元数据（路径、Git 根目录等），并管理与该项目绑定的状态（State）和生命周期。
 
-该模块通过**依赖注入（DI）和上下文管理**模式，为当前工作目录提供一致的运行时环境。主要职责包括：
+### 核心概念：上下文依赖注入 (Context Dependency Injection)
 
-- **目录上下文管理**：维护当前工作目录、工作树和项目信息
-- **状态管理**：为每个目录创建隔离的状态存储
-- **权限边界检查**：判断路径是否在项目边界内
-- **生命周期管理**：实例的创建、提供和销毁
+这段代码最关键的设计模式是使用了 `Context.create`（通常基于 Node.js 的 `AsyncLocalStorage`）。这使得你可以在 `Instance.provide` 的回调函数中，在任何深度的函数调用栈里直接访问 `Instance.directory`，而不需要像传递接力棒一样一层层传递参数。
 
-## 2. 代码结构分析
+---
 
-### 2.1 类型定义和存储
+### 详细功能拆解
+
+#### 1. 类型定义与缓存
 ```typescript
 interface Context {
-  directory: string      // 当前工作目录
-  worktree: string      // Git 工作树根目录（非 Git 项目为 "/"）
-  project: Project.Info // 项目信息
+  directory: string
+  worktree: string    // Git 根目录或项目根目录
+  project: Project.Info
 }
-
-const context = Context.create<Context>("instance") // 上下文容器
-const cache = new Map<string, Promise<Context>>()   // 目录→上下文缓存
+// 创建上下文存储容器
+const context = Context.create<Context>("instance")
+// 缓存：Map<目录路径, Context的Promise>
+const cache = new Map<string, Promise<Context>>()
 ```
+*   **缓存设计**: `cache` 存储的是 `Promise<Context>` 而不是直接的 `Context` 对象。这是为了防止**缓存穿透**或**并发初始化**。如果两个请求同时到达同一个目录，它们会等待同一个 Promise，确保 `Project.fromDirectory` 只被执行一次。
 
-### 2.2 核心方法：`Instance.provide()`
-这是模块中最重要的方法，实现了**目录感知的依赖注入**：
-
+#### 2. 核心入口 `provide`
 ```typescript
-async provide<R>(input: {
-  directory: string;      // 目标目录
-  init?: () => Promise<any>; // 初始化钩子
-  fn: () => R;           // 要执行的函数
-}): Promise<R>
-```
-
-**工作流程**：
-1. 检查缓存中是否已有该目录的上下文
-2. 若无，创建新上下文（调用 `Project.fromDirectory()` 获取项目信息）
-3. 将上下文注入到执行环境中
-4. 执行用户函数 `fn()`
-
-### 2.3 属性访问器
-提供当前上下文的同步访问：
-- `Instance.directory`：当前工作目录
-- `Instance.worktree`：Git 工作树根目录
-- `Instance.project`：项目信息
-
-### 2.4 路径边界检查：`containsPath()`
-```typescript
-containsPath(filepath: string): boolean
-```
-**逻辑**：
-1. 检查路径是否在 `Instance.directory` 内
-2. 检查路径是否在 `Instance.worktree` 内（非 Git 项目跳过）
-3. 用于权限系统，判断是否需要请求 `external_directory` 权限
-
-### 2.5 状态管理：`state()`
-```typescript
-state<S>(init: () => S, dispose?: (state: Awaited<S>) => Promise<void>): () => S
-```
-基于目录创建隔离的状态存储，通过 `State.create()` 实现。
-
-### 2.6 生命周期管理
-- `dispose()`：销毁当前实例，清理状态，发出事件
-- `disposeAll()`：销毁所有缓存实例
-
-## 3. 设计模式分析
-
-### 3.1 单例模式（按目录）
-- 每个目录有唯一的 `Instance` 上下文
-- 通过 `cache` Map 实现目录到上下文的映射
-- 确保同一目录的多次访问共享相同上下文
-
-### 3.2 依赖注入模式
-- 通过 `context.provide()` 注入上下文
-- 用户代码在特定目录上下文中执行
-- 支持初始化钩子（`init` 参数）
-
-### 3.3 装饰器模式
-`Instance.provide()` 类似装饰器，包装用户函数并提供上下文环境。
-
-### 3.4 发布-订阅模式
-通过 `GlobalBus.emit()` 发布实例销毁事件。
-
-## 4. 在 OpenCode 架构中的角色
-
-### 4.1 与 Bash 工具的关系
-在 `bash.ts` 中使用的关键引用：
-```typescript
-// 获取当前目录
-const cwd = params.workdir || Instance.directory
-
-// 检查路径是否在项目内
-if (!Instance.containsPath(normalized)) directories.add(normalized)
-```
-
-### 4.2 与权限系统的集成
-`containsPath()` 方法决定何时需要请求 `external_directory` 权限：
-- 路径在项目目录或工作树内 → 不需要额外权限
-- 路径在外部 → 需要请求权限
-
-### 4.3 与项目系统的关系
-依赖 `Project.fromDirectory()` 获取项目信息，包括：
-- 项目类型（Git、普通目录等）
-- 工作树根目录
-- 项目配置
-
-### 4.4 与状态管理的关系
-通过 `State.create()` 创建目录隔离的状态，用于：
-- 会话状态存储
-- 缓存数据
-- 临时配置
-
-## 5. 关键技术细节
-
-### 5.1 工作树处理
-- **Git 项目**：工作树为 Git 仓库根目录
-- **非 Git 项目**：工作树设置为 `"/"`（Unix 根目录）
-- **特殊处理**：当 `worktree === "/"` 时，`containsPath()` 跳过工作树检查，避免错误匹配
-
-### 5.2 缓存策略
-- 使用 `Map<string, Promise<Context>>` 缓存异步上下文
-- 避免同一目录重复初始化
-- 支持并发访问（Promise 确保单次初始化）
-
-### 5.3 错误处理
-- 使用 `iife()`（立即调用函数表达式）包装异步初始化
-- 缓存 Promise 而不是结果，避免竞态条件
-- `disposeAll()` 中使用 `.catch(() => {})` 忽略错误
-
-## 6. 潜在问题和改进建议
-
-### 6.1 内存管理
-- **当前**：缓存无限增长，直到显式调用 `dispose()`
-- **建议**：考虑 LRU 缓存或超时机制
-
-### 6.2 错误恢复
-- **当前**：初始化失败后，缓存中保留 rejected Promise
-- **建议**：实现重试机制或从缓存中移除失败的 Promise
-
-### 6.3 并发控制
-- **当前**：同一目录的并发 `provide()` 调用共享同一 Promise
-- **建议**：已良好处理，无需改进
-
-### 6.4 路径规范化
-- **当前**：依赖 `Filesystem.contains()` 进行路径比较
-- **建议**：确保路径已规范化（无 `.`、`..`、重复分隔符）
-
-## 7. 使用示例
-
-### 7.1 基本使用
-```typescript
-// 在特定目录上下文中执行操作
-await Instance.provide({
-  directory: "/path/to/project",
-  fn: () => {
-    // 这里可以安全访问 Instance.directory 等
-    console.log(Instance.directory)
-    return someResult
+async provide<R>(input: { directory: string; init?: () => Promise<any>; fn: () => R }): Promise<R> {
+  // 1. 检查缓存
+  let existing = cache.get(input.directory)
+  if (!existing) {
+    // 2. 如果不存在，初始化新实例
+    existing = iife(async () => {
+      const { project, sandbox } = await Project.fromDirectory(input.directory)
+      const ctx = {
+        directory: input.directory,
+        worktree: sandbox,
+        project,
+      }
+      // 初始化钩子
+      await context.provide(ctx, async () => {
+        await input.init?.()
+      })
+      return ctx
+    })
+    cache.set(input.directory, existing)
   }
-})
+  const ctx = await existing
+  // 3. 在上下文中运行目标函数 fn
+  return context.provide(ctx, async () => {
+    return input.fn()
+  })
+}
 ```
+这是整个模块的**发动机**。
+*   当你调用 `Instance.provide({ directory: "/app", fn: () => ... })` 时，它确保 `fn` 内部可以通过 `Instance.directory` 访问到 `"/app"`。
+*   它实现了**懒加载 (Lazy Loading)**：只有当某个目录被请求时，才会去解析它的项目结构。
 
-### 7.2 带初始化的使用
+#### 3. 便捷访问器 (Getters)
 ```typescript
-await Instance.provide({
-  directory: "/path/to/project",
-  init: async () => {
-    // 初始化数据库连接、加载配置等
-  },
-  fn: () => {
-    // 执行主要逻辑
-  }
-})
+get directory() { return context.use().directory },
+get worktree() { return context.use().worktree },
+get project() { return context.use().project },
 ```
+*   这些 Getters 是**上下文感知**的。
+*   如果在 `Instance.provide` 外部调用它们，`context.use()` 可能会抛出错误，提示当前没有活跃的实例上下文。
+*   在之前的 `session.prompt.ts` 代码中，`Instance.directory` 被频繁使用，正是因为 `prompt` 函数是运行在 `Instance.provide` 包裹的环境下的。
 
-## 8. 总结
+#### 4. 安全检查 `containsPath`
+```typescript
+containsPath(filepath: string) {
+  if (Filesystem.contains(Instance.directory, filepath)) return true
+  // 特殊处理：如果是非 Git 项目，Worktree 默认为 "/"，这会包含所有文件
+  // 因此如果是 "/"，则忽略 Worktree 检查，防止权限逃逸
+  if (Instance.worktree === "/") return false
+  return Filesystem.contains(Instance.worktree, filepath)
+}
+```
+*   用于权限控制（Security Guard）。
+*   判断一个文件是否属于当前项目。逻辑是：文件在 **当前工作目录 (CWD)** 下，或者在 **Git 根目录 (Worktree)** 下，都算作项目内文件。
 
-`Instance` 模块是 OpenCode 的**上下文基石**，它：
-1. **提供目录隔离的执行环境**：确保工具在正确的上下文中运行
-2. **管理项目边界**：支撑权限系统的路径检查
-3. **维护状态生命周期**：确保状态与目录实例同步销毁
-4. **支持依赖注入**：简化工具和组件的上下文访问
+#### 5. 状态管理 `state`
+```typescript
+state<S>(init: () => S, dispose?: (state: Awaited<S>) => Promise<void>): () => S {
+  return State.create(() => Instance.directory, init, dispose)
+}
+```
+*   **Scoped State**: 这里的 `State.create` 第一个参数传入了一个 Getter `() => Instance.directory`。
+*   这意味着创建的状态是**绑定到当前目录**的。
+*   **回看 `session.prompt.ts`**:
+    ```typescript
+    const state = Instance.state(() => { ... })
+    ```
+    当你在 `/project-a` 下运行 Session 时，你拿到的是 A 项目的状态；在 `/project-b` 下运行时，拿到的是 B 的状态。这实现了多租户/多项目的状态隔离。
 
-这个设计体现了**关注点分离**原则：
-- `Instance` 管理上下文和状态
-- `Project` 提供项目信息
-- `Tool` 在上下文中执行操作
-- `Permission` 基于上下文进行安全检查
+#### 6. 生命周期管理 `dispose`
+```typescript
+async dispose() {
+  // 清理绑定到当前目录的所有 State
+  await State.dispose(Instance.directory)
+  // 从缓存移除
+  cache.delete(Instance.directory)
+  // 发送全局事件通知其他模块
+  GlobalBus.emit(...)
+}
+```
+*   当一个项目实例不再需要（例如用户关闭窗口，或者长时间不活动）时，调用此方法清理内存和资源。
 
-正是通过这种设计，Bash 工具能够安全地执行命令，并在需要时请求适当的权限。
+---
 
-您需要我进一步分析其他相关模块（如 `Project`、`State` 或 `Context`）吗？
+### 总结
+
+`Instance` 对象是这个 AI 编码助手后端的**核心上下文容器**。它解决了以下问题：
+
+1.  **全局变量的替代品**: 避免了在每个函数签名里传递 `cwd` 和 `projectInfo`。
+2.  **多例管理**: 服务器可以同时处理多个项目（多个目录），通过 `Context` 自动区分当前代码是为哪个项目运行的。
+3.  **状态隔离**: 确保 A 项目的 Session 锁不会阻塞 B 项目。
+4.  **资源生命周期**: 统一管理项目资源的初始化和释放。

@@ -50,15 +50,14 @@ export const Instance = {
     let existing = cache.get(input.directory)
     if (!existing) {
       Log.Default.info("creating instance", { directory: input.directory })
-      // iife：立即执行的异步工厂，返回 Promise<Context>
       existing = iife(async () => {
         // Project.fromDirectory：
         // - 返回 { project, sandbox }，其中 sandbox 是解析后的“可操作目录”（通常等于 git 的工作区顶层），
         // - project 为持久化/事件发布的项目信息。
         const { project, sandbox } = await Project.fromDirectory(input.directory)
         const ctx = {
-          directory: input.directory,
-          worktree: sandbox,
+          directry: input.directory,
+          worktroee: sandbox,
           project,
         }
         // 首次创建时，将 ctx 注入并执行 init 钩子（若提供）。

@@ -44,7 +44,28 @@ export namespace Project {
   export const Event = {
     Updated: BusEvent.define("project.updated", Info),
   }
-
+/**
+ * 从指定目录初始化或获取项目信息。
+ * 
+ * @description
+ * 该函数通过以下步骤解析项目：
+ * 1. 向上查找 `.git` 目录以确定项目根目录。
+ * 2. 生成项目唯一 ID（优先读取 `.git/opencode` 缓存，否则基于 Git 初始提交记录生成）。
+ * 3. 解析 Git 工作区 (worktree) 和沙箱 (sandbox) 路径。
+ * 4. 从持久化存储中读取或创建项目配置，并同步沙箱列表。
+ * 5. 更新项目最后访问时间并广播 `Updated` 事件。
+ * 
+ * @param directory - 起始查找目录的绝对路径。
+ * @returns 返回一个对象，包含：
+ * - `project`: 解析后的 {@link Info} 项目信息对象。
+ * - `sandbox`: 当前确定的沙箱路径。
+ * 
+ * @example
+ * ```ts
+ * const { project, sandbox } = await fromDirectory("/Users/dev/my-project/src");
+ * console.log(project.id); // 输出项目唯一哈希或 "global"
+ * ```
+ */
   export async function fromDirectory(directory: string) {
     log.info("fromDirectory", { directory })
 

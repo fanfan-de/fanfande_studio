@@ -19,5 +19,17 @@ export namespace SessionProcessor {
         let blocked = false
         let attempt = 0
         let needsCompaction = false
+
+
+        const result = {
+            get message(){
+                return input.LLMMessageMeta
+            },
+            partFromToolCall(toolCallID: string) {
+                return toolcalls[toolCallID]
+            },
+            
+
+        }
     }
 }
