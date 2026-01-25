@@ -1,15 +1,18 @@
 
 import z from "zod"
-
-
-
+import { Snapshot } from "../snapshot"
 
 export namespace Message{
-
+    //`PartBase`：用于定义“消息的内容片段” (The Content Part)
     const PartBase = z.object({
         id: z.string(),
         sessionid: z.number(),
         messageid: z.number()
+    })
+    //`Part`：消息主体 (Message Info) - 消息的元数据容器(关于这个消息的消息)
+    const Base = z.object({
+    id: z.string(),
+    sessionID: z.string(),
     })
     /**
    * SnapshotPart: 文件系统快照
@@ -90,24 +93,24 @@ export namespace Message{
             ref: "FilePartSourceText",
         }),
     })
-
+    //本地文件
     export const FileSource = FilePartSourceBase.extend({
         type: z.literal("file"),
         path: z.string(),
     }).meta({
         ref: "FileSource",
     })
-
+    //LSP服务器
     export const SymbolSource = FilePartSourceBase.extend({
         type: z.literal("symbol"), // 来自 LSP (Language Server Protocol) 的符号定义
         path: z.string(),
-        range: LSP.Range,
+        //range: LSP.Range,
         name: z.string(),
         kind: z.number().int(),
     }).meta({
         ref: "SymbolSource",
     })
-
+    //外部资源
     export const ResourceSource = FilePartSourceBase.extend({
         type: z.literal("resource"), // 外部资源（如文档链接内容）
         clientName: z.string(),
@@ -255,14 +258,30 @@ export namespace Message{
     })
     export type ToolPart = z.infer<typeof ToolPart>
 
+    //---------------Message Meta Data----------------------------------------------------------------------------
 
-    // ==========================================================================================
-    // 3. 消息主体 (Message Info) - 消息的元数据容器(关于这个消息的消息)
-    // ==========================================================================================
-    const Base = z.object({
-        id: z.string(),
-        sessionID: z.string(),
+    export const Meta_UserMessage = Base.extend({
+        role: z.literal("user"),
+        time: z.object({
+            created: z.number(),
+        }),
+        summary: z.object({
+            title: z.string().optional(),
+            body: z.string().optional(),                                       
+            diffs: Snapshot.FileDiff.array(),
+            }).optional(),
+            agent: z.string(),
+            model: z.object({
+            providerID: z.string(),
+            modelID: z.string(),
+            }),
+        system: z.string().optional(),
+        tools: z.record(z.string(), z.boolean()).optional(),
+        variant: z.string().optional(),
+    }).meta({
+        ref: "UserMessage",
     })
+    export type Meta_UserMessage = z.infer<typeof Meta_UserMessage>
 
     /**
      * Assistant: AI 消息

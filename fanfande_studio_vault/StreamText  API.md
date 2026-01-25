@@ -8,11 +8,16 @@
 
 ## 1. 核心输入参数 (Request Options)
 
-### 1.1 模型与提示词
+### 1.1 模型
 *   **`model`**: `LanguageModel` (必选)。要使用的语言模型实例。
-*   **`prompt`**: `string` | `Array<Message>`。生成文本的输入提示。
-*   **`system`**: `string`。系统提示词，定义模型的行为边界。
+
+1.2 提示词
+*  **`system`**: `string`。系统提示词，定义模型的行为边界。
+*  **`prompt`**: `string` | `Array<Message>`。生成文本的输入提示。
 *   **`messages`**: `Array<Message>`。对话历史列表，支持系统、用户、助手和工具角色。
+	* 不可以同时使用的prompt和messages，prompt比messages多一个纯text的选项
+	* https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#messages
+	
 
 ### 1.2 生成控制参数
 *   **`maxOutputTokens`**: `number`。限制生成的最大 Token 数。
@@ -24,6 +29,7 @@
 
 ### 1.3 工具与调用
 *   **`tools`**: `ToolSet`。模型可以调用的工具集合。
+	* https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#tools.tool.execute
 *   **`toolChoice`**: `"auto" | "none" | "required" | { type: "tool", toolName: string }`。强制或禁用工具调用。
 
 ### 1.4 高级配置
@@ -31,6 +37,14 @@
 *   **`headers`**: `Record<string, string>`。额外的 HTTP 请求头。
 *   **`maxRetries`**: `number`。最大重试次数（默认 2 次）。
 *   **`timeout`**: `number | object`。超时设置。
+	* Timeout in milliseconds. Can be specified as a number or as an object with totalMs, stepMs, and/or chunkMs properties. totalMs sets the total timeout for the entire call. stepMs sets the timeout for each individual step (LLM call), useful for multi-step generations. chunkMs sets the timeout between stream chunks - the call will abort if no new chunk is received within this duration, useful for detecting stalled streams. Can be used alongside abortSignal.
+* ### experimental_generateMessageId?:() => string
+	* Function used to generate a unique ID for each message. This is an experimental feature.
+* ### experimental_telemetry?:TelemetrySettings
+	* Telemetry configuration. Experimental feature.
+	* https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#timeout
+* ### experimental_transform### ?:StreamTextTransform Array<StreamTextTransform>
+	* Whether to include raw chunks from the provider in the stream. When enabled, you will receive raw chunks with type "raw" that contain the unprocessed data from the provider. This allows access to cutting-edge provider features not yet wrapped by the AI SDK. Defaults to false.
 
 ---
 

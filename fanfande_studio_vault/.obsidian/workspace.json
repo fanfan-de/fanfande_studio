@@ -34,9 +34,21 @@
               "icon": "lucide-file",
               "title": "context"
             }
+          },
+          {
+            "id": "0485ef2ac95d18fd",
+            "type": "leaf",
+            "state": {
+              "type": "pdf",
+              "state": {
+                "file": "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf"
+              },
+              "icon": "lucide-file-text",
+              "title": "streamText() 参数与返回项精要（完整覆盖，中文精简版）"
+            }
           }
         ],
-        "currentTab": 1
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -198,17 +210,22 @@
       "command-palette:打开命令面板": true
     }
   },
-  "active": "60be4a59312a3a55",
+  "active": "0485ef2ac95d18fd",
   "lastOpenFiles": [
-    "instance.ts.md",
+    "StreamText  API.md",
+    "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf",
     "context.md",
-    "上下文容器.md",
-    "Session/prompt.md",
-    "Session/session-messagev2.md",
-    "Session/LLM.md",
-    "Session/message设计.md",
-    "使用TS开发AI  Agent，有哪些TS编程技巧语法是能够用到的，事无巨细的讲一下，我是新手.md",
     "参考的cherry文件夹结构.md",
+    "参考的opencode的项目架构.md",
+    "路径引用.md",
+    "欢迎.md",
+    "Session/message设计.md",
+    "Session/prompt.md",
+    "Session/LLM.md",
+    "instance.ts.md",
+    "上下文容器.md",
+    "Session/session-messagev2.md",
+    "使用TS开发AI  Agent，有哪些TS编程技巧语法是能够用到的，事无巨细的讲一下，我是新手.md",
     "Session/未命名",
     "Session/session-processor.md",
     "未命名 8.md",
@@ -221,20 +238,14 @@
     "未命名 4.md",
     "字面量.md",
     "Bus.md",
-    "路径引用.md",
     "未命名 3.md",
     "TS的函数天然就可以作为变量吗.md",
     "我有C#的基础，请详细告诉我Typescript的语法和C#的区别，使用TS的注意点.md",
-    "typescript 对象类型.md",
-    "ToolRegistry.md",
-    "tool.md",
-    "StreamText  API.md",
     "aI SDK/core",
     "aI SDK",
     "opencode/sync2.sh",
     "opencode/test/util",
     "opencode/test/tool/__snapshots__",
-    "opencode/test/tool/fixtures",
-    "opencode/test/tool"
+    "opencode/test/tool/fixtures"
   ]
 }

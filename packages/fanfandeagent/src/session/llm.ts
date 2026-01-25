@@ -4,6 +4,7 @@ import { Provider } from "@/provider/provider"
 import { Log } from "@/util/log"
 import {
   streamText,
+  Output,
   wrapLanguageModel,
   type ModelMessage,
   type StreamTextResult,
@@ -12,26 +13,31 @@ import {
   extractReasoningMiddleware,
   tool,
   jsonSchema,
+  type StopCondition,
+  stepCountIs,
+  type PrepareStepResult,
+  type Experimental_DownloadFunction,
 } from "ai"
 import { clone, mergeDeep, pipe } from "remeda"
 import { ProviderTransform } from "@/provider/transform"
 import { Config } from "@/config/config"
 import { Instance } from "@/project/instance"
 import type { Agent } from "@/agent/agent"
-import type { MessageV2 } from "./message-v2"
+import type { Message } from "./message"
 import { Plugin } from "@/plugin"
 import { SystemPrompt } from "./system"
 import { Flag } from "@/flag/flag"
 import { PermissionNext } from "@/permission/next"
 import { Auth } from "@/auth"
+import { text } from "stream/consumers"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
 
   export const OUTPUT_TOKEN_MAX = Flag.OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
-
+  //`StreamInput`：用于流式处理 LLM 消息的输入参数类型定义（使用vercal sdk  需要的参数）
   export type StreamInput = {
-    user: MessageV2.User
+    user: Message.Meta_UserMessage
     sessionID: string
     model: Provider.Model
     agent: Agent.Info
@@ -145,6 +151,9 @@ export namespace LLM {
         headers: {},
       },
     )
+    //创建一个AbortController,将之signal注入streamtext参数
+    const controller = new AbortController();
+    
 
     const maxOutputTokens = isCodex
       ? undefined
@@ -154,7 +163,7 @@ export namespace LLM {
           input.model.limit.output,
           OUTPUT_TOKEN_MAX,
         )
-
+    //**解析和过滤工具**：根据用户权限和代理设置，解析并过滤可用的工具集，获得参数tools
     const tools = await resolveTools(input)
 
     // LiteLLM and some Anthropic proxies require the tools parameter to be present
@@ -178,11 +187,42 @@ export namespace LLM {
     }
     //**执行流式生成**：调用 Vercel AI SDK，并挂载中间件（Middleware）处理推理内容和参数转换。
     return streamText({
+      //------事件回调与网络 (Callbacks & Network)------
       onError(error) {
         l.error("stream error", {
           error,
         })
       },
+      onFinish:()=>{},
+      onStepFinish(){},
+      onAbort(){},
+      onChunk(){},
+      //-------网络-----------------
+      timeout:{totalMs: 60000, stepMs: 10000 },//超时配置
+      abortSignal:controller.signal,//打断配置
+      maxRetries: input.retries ?? 0,//重试次数
+      //headers:       //Additional HTTP headers to be sent with the request. Only applicable for HTTP-based providers.
+      //-----------输出配置--------------------
+      output:Output.text(),//配置输出格式，默认就是text
+      temperature: params.temperature,
+      topP: params.topP,
+      topK: params.topK,
+      maxOutputTokens : maxOutputTokens ,
+      presencePenalty:0,//控制模型“谈论新话题”的积极,只要出现过，惩罚就是固定的。
+      frequencyPenalty:0,//频率惩罚,抑制模型在生成内容时反复使用相同的词汇或短语,出现次数越多，惩罚就越重（累积制）。
+      providerOptions: ProviderTransform.providerOptions(input.model, params.options),//虽然 SDK（如 Vercel AI SDK）试图把所有模型
+                                                                                      //  （OpenAI, Claude, Gemini 等）的参数都统一化（比如 temperature, maxTokens），
+                                                                                      // 但每个供应商总有一些独家、非标准的功能。
+                                                                                      //providerOptions 就是让你传递这些供应商专属参数的“口袋”。
+      activeTools: Object.keys(tools).filter((x) => x !== "invalid"),//可用工具
+
+      ///stopSequences:, //string[],结束字符串
+      ///seed:123124,//seed（随机种子）是一个用于控制随机性、实现结果可复现性的关键参数。
+      includeRawChunks:false,//在流式传输（Streaming）过程中，能够直接获取来自大模型供应商（如 OpenAI、Anthropic 等）的“原始数据包”。
+      //------------多步任务设置-----------------
+      //stopWhen:()=>{return true}, //写入多步任务的打断逻辑
+      //prepareStep:()=>{return {}},              //根据前一步的结果，临时改变下一步的操作方式。
+      //------------实验-----------------------
       async experimental_repairToolCall(failed) {
         const lower = failed.toolCall.toolName.toLowerCase()
         if (lower !== failed.toolCall.toolName && tools[lower]) {
@@ -204,14 +244,40 @@ export namespace LLM {
           toolName: "invalid",
         }
       },
-      temperature: params.temperature,
-      topP: params.topP,
-      topK: params.topK,
-      providerOptions: ProviderTransform.providerOptions(input.model, params.options),
-      activeTools: Object.keys(tools).filter((x) => x !== "invalid"),
+      //async experimental_generateMessageId:()=>{return {}},//自定义生成每条消息唯一标识符（ID）的逻辑,streamtext似乎没有？
+      //async experimental_transform(failed){}
+      //experimental_telemetry
+      //experimental_context(){},  //把开发者代码中的“系统变量”直接传递给工具（Tools）的执行函数，而不让 AI 模型看到这些信息。
+      //   async experimental_download(downloads){// Vercel AI SDK 提供的一个实验性高级功能，它允许你完全接管和自定义 Prompt 中 URL 资源的下载行为。
+      //       return Promise.all(
+      //           downloads.map(async ({ url }) => 
+      //             {
+      //               // 1. 检查是否是我们的私有域名
+      //               if (url.hostname === 'my-private-s3.com') {
+      //                 // 2. 手动下载，并带上私有的 Token
+      //                 const response = await fetch(url, {
+      //                   headers: { 'Authorization': 'Bearer MY_S3_TOKEN' }
+      //                 });
+      //                 const buffer = await response.arrayBuffer();
+                      
+      //                 // 3. 返回给 SDK 数据，SDK 会将其转化为数据流发给 AI
+      //                 return {
+      //                   data: new Uint8Array(buffer),
+      //                   mediaType: response.headers.get('content-type') || 'image/jpeg'
+      //                 };
+      //               }
+            
+      //               // 4. 其他公网链接，返回 null 让模型自己处理
+      //               return null;
+      //             }
+      //           )
+
+      //       );
+      // },
+      
+
+
       tools,
-      maxOutputTokens,
-      abortSignal: input.abort,
       headers: {
         ...(input.model.providerID.startsWith("opencode")
           ? {
@@ -228,8 +294,8 @@ export namespace LLM {
         ...input.model.headers,
         ...headers,
       },
-      maxRetries: input.retries ?? 0,
-      messages: [
+      
+      prompt: [
         ...(isCodex
           ? [
               {
