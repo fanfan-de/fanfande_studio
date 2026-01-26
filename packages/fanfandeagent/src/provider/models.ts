@@ -11,6 +11,7 @@ import path from "path"
 import z from "zod"
 import { Flag } from "../flag/flag"
 import { lazy } from "@/util/lazy"
+import { Installation } from "../installation"
 
 export namespace ModelsDev {
     const log = Log.create({ service: "models.dev" })
@@ -88,7 +89,7 @@ export namespace ModelsDev {
 
     //封装在一个 `lazy` 函数中，意味着这段逻辑只有在 `Data` 第一次被访问时才会异步执行，并缓存结果。
     //这里的闭包函数是指 既不是lazy(),async()=>{},而是lazy里面定义的一个result(),在里面执行判断的逻辑，使用了相对于result外部，lazy内部的参数
-    export const Data = lazy(async () => {
+    export const Data  = lazy(async () => {
         //尝试读取本地文件
         const file: Bun.BunFile = Bun.file(filepath)
         const result = await file.json().catch(() => { })
