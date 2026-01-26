@@ -10,6 +10,7 @@ export function lazy<T>(fn: () => T) {
     return value as T
   }
 
+
   result.reset = () => {
     loaded = false
     value = undefined

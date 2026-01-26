@@ -1,6 +1,6 @@
 import os from "os"
-import { Installation } from "@/installation"
-import { Provider } from "@/provider/provider"
+//import { Installation } from "@/installation"
+import { Provider } from "../provider/provider"
 import { Log } from "@/util/log"
 import {
   streamText,
@@ -24,11 +24,11 @@ import { Config } from "@/config/config"
 import { Instance } from "@/project/instance"
 import type { Agent } from "@/agent/agent"
 import type { Message } from "./message"
-import { Plugin } from "@/plugin"
+//import { Plugin } from "@/plugin"
 import { SystemPrompt } from "./system"
 import { Flag } from "@/flag/flag"
 import { PermissionNext } from "@/permission/next"
-import { Auth } from "@/auth"
+import { Auth } from "../auth"
 import { text } from "stream/consumers"
 
 export namespace LLM {
@@ -64,15 +64,18 @@ export namespace LLM {
       modelID: input.model.id,
       providerID: input.model.providerID,
     })
+
     const [language, cfg, provider, auth] = await Promise.all([
       Provider.getLanguage(input.model),
       Config.get(),
       Provider.getProvider(input.model.providerID),
       Auth.get(input.model.providerID),
     ])
+
     const isCodex = provider.id === "openai" && auth?.type === "oauth"
 
-    const system = SystemPrompt.header(input.model.providerID)
+    //系统提示词
+    const system = []
     system.push(
       [
         // use agent prompt otherwise provider prompt
@@ -89,7 +92,7 @@ export namespace LLM {
 
     const header = system[0]
     const original = clone(system)
-    await Plugin.trigger("experimental.chat.system.transform", { sessionID: input.sessionID }, { system })
+    //await Plugin.trigger("experimental.chat.system.transform", { sessionID: input.sessionID }, { system })
     if (system.length === 0) {
       system.push(...original)
     }
@@ -119,38 +122,38 @@ export namespace LLM {
       options.instructions = SystemPrompt.instructions()
     }
 
-    const params = await Plugin.trigger(
-      "chat.params",
-      {
-        sessionID: input.sessionID,
-        agent: input.agent,
-        model: input.model,
-        provider,
-        message: input.user,
-      },
-      {
-        temperature: input.model.capabilities.temperature
-          ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
-          : undefined,
-        topP: input.agent.topP ?? ProviderTransform.topP(input.model),
-        topK: ProviderTransform.topK(input.model),
-        options,
-      },
-    )
+    // const params = await Plugin.trigger(
+    //   "chat.params",
+    //   {
+    //     sessionID: input.sessionID,
+    //     agent: input.agent,
+    //     model: input.model,
+    //     provider,
+    //     message: input.user,
+    //   },
+    //   {
+    //     temperature: input.model.capabilities.temperature
+    //       ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
+    //       : undefined,
+    //     topP: input.agent.topP ?? ProviderTransform.topP(input.model),
+    //     topK: ProviderTransform.topK(input.model),
+    //     options,
+    //   },
+    // )
 
-    const { headers } = await Plugin.trigger(
-      "chat.headers",
-      {
-        sessionID: input.sessionID,
-        agent: input.agent,
-        model: input.model,
-        provider,
-        message: input.user,
-      },
-      {
-        headers: {},
-      },
-    )
+    // const { headers } = await Plugin.trigger(
+    //   "chat.headers",
+    //   {
+    //     sessionID: input.sessionID,
+    //     agent: input.agent,
+    //     model: input.model,
+    //     provider,
+    //     message: input.user,
+    //   },
+    //   {
+    //     headers: {},
+    //   },
+    // )
     //创建一个AbortController,将之signal注入streamtext参数
     const controller = new AbortController();
     
@@ -223,27 +226,27 @@ export namespace LLM {
       //stopWhen:()=>{return true}, //写入多步任务的打断逻辑
       //prepareStep:()=>{return {}},              //根据前一步的结果，临时改变下一步的操作方式。
       //------------实验-----------------------
-      async experimental_repairToolCall(failed) {
-        const lower = failed.toolCall.toolName.toLowerCase()
-        if (lower !== failed.toolCall.toolName && tools[lower]) {
-          l.info("repairing tool call", {
-            tool: failed.toolCall.toolName,
-            repaired: lower,
-          })
-          return {
-            ...failed.toolCall,
-            toolName: lower,
-          }
-        }
-        return {
-          ...failed.toolCall,
-          input: JSON.stringify({
-            tool: failed.toolCall.toolName,
-            error: failed.error.message,
-          }),
-          toolName: "invalid",
-        }
-      },
+      // async experimental_repairToolCall(failed) {
+      //   const lower = failed.toolCall.toolName.toLowerCase()
+      //   if (lower !== failed.toolCall.toolName && tools[lower]) {
+      //     l.info("repairing tool call", {
+      //       tool: failed.toolCall.toolName,
+      //       repaired: lower,
+      //     })
+      //     return {
+      //       ...failed.toolCall,
+      //       toolName: lower,
+      //     }
+      //   }
+      //   return {
+      //     ...failed.toolCall,
+      //     input: JSON.stringify({
+      //       tool: failed.toolCall.toolName,
+      //       error: failed.error.message,
+      //     }),
+      //     toolName: "invalid",
+      //   }
+      // },
       //async experimental_generateMessageId:()=>{return {}},//自定义生成每条消息唯一标识符（ID）的逻辑,streamtext似乎没有？
       //async experimental_transform(failed){}
       //experimental_telemetry
@@ -278,23 +281,22 @@ export namespace LLM {
 
 
       tools,
-      headers: {
-        ...(input.model.providerID.startsWith("opencode")
-          ? {
-              "x-opencode-project": Instance.project.id,
-              "x-opencode-session": input.sessionID,
-              "x-opencode-request": input.user.id,
-              "x-opencode-client": Flag.OPENCODE_CLIENT,
-            }
-          : input.model.providerID !== "anthropic"
-            ? {
-                "User-Agent": `opencode/${Installation.VERSION}`,
-              }
-            : undefined),
-        ...input.model.headers,
-        ...headers,
-      },
-      
+      // headers: {
+      //   ...(input.model.providerID.startsWith("opencode")
+      //     ? {
+      //         "x-opencode-project": Instance.project.id,
+      //         "x-opencode-session": input.sessionID,
+      //         "x-opencode-request": input.user.id,
+      //         "x-opencode-client": Flag.OPENCODE_CLIENT,
+      //       }
+      //     : input.model.providerID !== "anthropic"
+      //       ? {
+      //           "User-Agent": `opencode/${Installation.VERSION}`,
+      //         }
+      //       : undefined),
+      //   ...input.model.headers,
+      //   ...headers,
+      // },
       prompt: [
         ...(isCodex
           ? [
@@ -304,7 +306,7 @@ export namespace LLM {
               } as ModelMessage,
             ]
           : system.map(
-              (x): ModelMessage => ({
+              (x:string): ModelMessage => ({
                 role: "system",
                 content: x,
               }),
@@ -314,10 +316,10 @@ export namespace LLM {
       model: wrapLanguageModel({
         model: language,
         middleware: [
-          {
+          { 
+            specificationVersion: 'v3', 
             async transformParams(args) {
               if (args.type === "stream") {
-                // @ts-expect-error
                 args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
               }
               return args.params
