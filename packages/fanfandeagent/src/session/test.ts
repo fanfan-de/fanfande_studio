@@ -38,4 +38,4 @@ import { Global } from "@/global";
 
 // function m(){};
 
-console.log(process.env)
+console.log(process.argv)

@@ -3,16 +3,18 @@
   "private": true,
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/xdg-basedir": "^4.0.2"
+    "@types/xdg-basedir": "^4.0.2",
+    "@types/yargs": "^17.0.35"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@ai-sdk/deepseek": "^2.0.8",
-    "ai": "^6.0.35",
+    "@ai-sdk/deepseek": "^2.0.11",
+    "ai": "^6.0.50",
     "remeda": "^2.33.4",
     "xdg-basedir": "^5.1.0",
-    "zod": "^4.3.5"
+    "yargs": "^18.0.0",
+    "zod": "^4.3.6"
   }
 }

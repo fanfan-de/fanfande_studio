@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Session/prompt.md",
+                "file": "node概览.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "prompt"
+              "title": "node概览"
             }
           },
           {
@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "context.md",
+                "file": "CLI/cli 操作汇总.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "context"
+              "title": "cli 操作汇总"
             }
           },
           {
@@ -41,16 +41,16 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "provider/auth.md",
+                "file": "CLI/详解yargs，告诉我怎么使用它来开发，多举例子.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "auth"
+              "title": "详解yargs，告诉我怎么使用它来开发，多举例子"
             }
           }
         ],
-        "currentTab": 2
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -212,43 +212,43 @@
       "command-palette:打开命令面板": true
     }
   },
-  "active": "0485ef2ac95d18fd",
+  "active": "60be4a59312a3a55",
   "lastOpenFiles": [
+    "context.md",
+    "Generate text.md",
+    "CLI/详解yargs，告诉我怎么使用它来开发，多举例子.md",
+    "node概览.md",
+    "Node.js process 初学者教学指南.pdf",
+    "CLI/cli 操作汇总.md",
+    "Pasted image 20260127155202.png",
+    "process  输出样例.md",
+    "Bus.md",
+    "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf",
+    "StreamText  API.md",
+    "opencode  product synilize.md",
+    "未命名 2.base",
+    "未命名 1.base",
+    "Session/prompt.md",
+    "CLI/CMD.md",
+    "CLI/Config.md",
+    "CLI/AcpCommand.md",
+    "CLI/Agent.md",
+    "Cli logo.md",
+    "CLI",
+    "dev 思路/我想让我的AI  Agent可以像这样命令行打开模块，该怎么实现，我是新手，目前在在仿照opencode制作一个TS 编写的AI Agent通用工具.md",
+    "provider/auth.md",
+    "dev 思路",
     "provider/transform.md",
     "provider/provider.md",
     "provider/-provider.md",
     "provider/models.md",
-    "provider/auth.md",
     "provider/provider.ts",
     "provider/models.ts",
     "provider/auth.ts",
     "provider/transform.ts",
     "instance.ts.md",
-    "specs/bootstrap.ts",
-    "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf",
-    "provider",
-    "StreamText  API.md",
-    "context.md",
     "参考的cherry文件夹结构.md",
     "参考的opencode的项目架构.md",
-    "路径引用.md",
-    "欢迎.md",
-    "Session/message设计.md",
-    "Session/prompt.md",
-    "Session/LLM.md",
-    "上下文容器.md",
-    "Session/session-messagev2.md",
-    "使用TS开发AI  Agent，有哪些TS编程技巧语法是能够用到的，事无巨细的讲一下，我是新手.md",
-    "Session/未命名",
-    "Session/session-processor.md",
-    "未命名 8.md",
-    "Session",
-    "未命名 5.md",
-    "未命名.base",
-    "未命名 7.md",
-    "未命名 6.md",
-    "未命名 1.md",
-    "未命名 4.md",
-    "字面量.md"
+    "路径引用.md"
   ]
 }
