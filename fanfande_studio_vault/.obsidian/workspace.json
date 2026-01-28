@@ -13,12 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Node 项目/node概览.md",
+                "file": "server.md",
                 "mode": "source",
-                "source": false
+                "source": false,
+                "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "node概览"
+              "title": "server"
             }
           },
           {
@@ -27,16 +28,46 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Node 项目/一个独立的node模块意味着什么，边界在哪里.md",
+                "file": "开源cli/gemini cli.md",
                 "mode": "source",
-                "source": false
+                "source": false,
+                "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "一个独立的node模块意味着什么，边界在哪里"
+              "title": "gemini cli"
+            }
+          },
+          {
+            "id": "a8f0cd20b12c2b86",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "开源cli/Crush Cli.md",
+                "mode": "source",
+                "source": false,
+                "backlinks": false
+              },
+              "icon": "lucide-file",
+              "title": "Crush Cli"
+            }
+          },
+          {
+            "id": "ad6c8d9b47e7d5c1",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "开源cli/kimi cli.md",
+                "mode": "source",
+                "source": false,
+                "backlinks": false
+              },
+              "icon": "lucide-file",
+              "title": "kimi cli"
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "vertical"
@@ -93,7 +124,8 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 300,
+    "collapsed": true
   },
   "right": {
     "id": "14ad8d7e08bf77ac",
@@ -198,43 +230,52 @@
       "command-palette:打开命令面板": true
     }
   },
-  "active": "0485ef2ac95d18fd",
+  "active": "f7f570f45d1782df",
   "lastOpenFiles": [
-    "Node 项目/Node.js process 初学者教学指南.pdf",
+    "Contribution.md",
+    "server.md",
+    "未命名 8.md",
+    "未命名 7.md",
+    "未命名 5.md",
+    "未命名 4.md",
+    "specs/project.md",
+    "specs/perf-roadmap.md",
+    "specs/08-app-e2e-smoke-suite.md",
+    "specs/07-ui-i18n-audit.md",
+    "specs/03-request-throttling.md",
+    "specs/02-cache-eviction.md",
+    "specs/01-persist-payload-limits.md",
+    "specs/04-scroll-spy-optimization.md",
+    "specs/05-modularize-and-dedupe.md",
+    "specs/06-app-i18n-audit.md",
+    "未命名 12.md",
+    "Pasted image 20260128121558.png",
+    "LLM  API价格.md",
+    "Pasted image 20260128114311.png",
+    "Pasted image 20260128112858.png",
+    "Pasted image 20260128112434.png",
+    "Pasted image 20260128112406.png",
+    "Pasted image 20260128112246.png",
     "Node 项目/node概览.md",
-    "未命名 1.md",
-    "未命名.md",
-    "未命名.base",
-    "CLI/详解yargs，告诉我怎么使用它来开发，多举例子.md",
-    "未命名 9.md",
-    "Node 项目/一个独立的node模块意味着什么，边界在哪里.md",
-    "CLI/cli 操作汇总.md",
-    "Node 项目",
-    "context.md",
-    "Generate text.md",
-    "Pasted image 20260127155202.png",
-    "process  输出样例.md",
+    "开源cli/gemini cli.md",
+    "开源cli/Crush Cli.md",
+    "开源cli/kimi cli.md",
+    "Pasted image 20260128111119.png",
+    "Pasted image 20260128111103.png",
+    "Bun的基础使用方法.md",
     "Bus.md",
+    "未命名 11.md",
+    "Project Spec.md",
+    "开源cli",
+    "Node 项目/Node.js process 初学者教学指南.pdf",
+    "未命名.base",
+    "Node 项目",
+    "Pasted image 20260127155202.png",
     "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf",
-    "StreamText  API.md",
-    "opencode  product synilize.md",
     "未命名 2.base",
     "未命名 1.base",
-    "Session/prompt.md",
-    "CLI/CMD.md",
-    "CLI/Config.md",
-    "CLI/AcpCommand.md",
-    "CLI/Agent.md",
-    "Cli logo.md",
     "CLI",
-    "dev 思路/我想让我的AI  Agent可以像这样命令行打开模块，该怎么实现，我是新手，目前在在仿照opencode制作一个TS 编写的AI Agent通用工具.md",
-    "provider/auth.md",
     "dev 思路",
-    "provider/transform.md",
-    "provider/provider.md",
-    "provider/-provider.md",
-    "provider/models.md",
-    "provider/provider.ts",
-    "provider/models.ts"
+    "provider/provider.ts"
   ]
 }
