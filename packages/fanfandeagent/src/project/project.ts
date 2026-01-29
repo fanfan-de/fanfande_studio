@@ -46,7 +46,6 @@ export namespace Project {
   }
 /**
  * 从指定目录初始化或获取项目信息。
- * 
  * @description
  * 该函数通过以下步骤解析项目：
  * 1. 向上查找 `.git` 目录以确定项目根目录。
@@ -54,7 +53,6 @@ export namespace Project {
  * 3. 解析 Git 工作区 (worktree) 和沙箱 (sandbox) 路径。
  * 4. 从持久化存储中读取或创建项目配置，并同步沙箱列表。
  * 5. 更新项目最后访问时间并广播 `Updated` 事件。
- * 
  * @param directory - 起始查找目录的绝对路径。
  * @returns 返回一个对象，包含：
  * - `project`: 解析后的 {@link Info} 项目信息对象。
@@ -68,7 +66,7 @@ export namespace Project {
  */
   export async function fromDirectory(directory: string) {
     log.info("fromDirectory", { directory })
-
+    
     const { id, sandbox, worktree, vcs } = await iife(async () => {
       const matches = Filesystem.up({ targets: [".git"], start: directory })
       const git = await matches.next().then((x) => x.value)

@@ -1,9 +1,7 @@
 /*
- * instance.annotated.ts — 详细中文注释版
- * 作用：为 AI Agent 项目中的 Instance 模块提供逐行/逐块解释，帮助理解“实例上下文容器”的设计与用法。
- *
  * 核心理念：
- * - Instance 是“管家”：同一目录（project workspace）只维护一个运行时上下文，避免重复初始化与资源浪费。
+ *   Instance 是所有的文件夹目录都有一个各自的对应，和project没关系
+ * - 同一目录（project workspace）只维护一个运行时上下文，避免重复初始化与资源浪费。
  * - 与 Project、State、GlobalBus 的协作：解析项目元数据、挂载/清理状态、广播实例销毁事件。
  * - 安全边界：containsPath 用于判断操作路径是否属于当前项目范围（特别处理非 Git 项目）。
  */
@@ -16,52 +14,38 @@ import { iife } from "@/util/iife"
 import { GlobalBus } from "@/bus/global"
 import { Filesystem } from "@/util/filesystem"
 
-// 约束：此 Context 接口用于在 Instance 内部保存一次解析出的“项目上下文”
-// - directory: 当前操作的项目工作目录（用户进入的目录）
-// - worktree: Git 工作树根目录（或非 Git 情况下为 "/"）
-// - project: Project.fromDirectory 返回的项目信息（包含 id、sandboxes、时间戳等）
 interface Context {
   directory: string
   worktree: string
   project: Project.Info
 }
 
-// 通过 Context.create("instance") 创建一个“上下文容器”
-// 用法：context.provide(ctx, fn) 将 ctx 注入到后续的异步执行链中，使得在这段执行期间，
-// Instance.directory / Instance.worktree / Instance.project 能够正确读到当前 ctx。
-//返回了两个方法
-const context = Context.create<Context>("instance")
-
-// cache：用于保证“同一目录”只创建和缓存一个上下文（Promise<Context>），避免重复初始化。
-// 键：项目目录路径；值：解析上下文的 Promise。这样并发进入同一目录时也能复用同一个创建中的 Promise。
+//内部维护的一个  上下文存储容器，限定存 Context，directory信息就在其中，
+//context.use()  当前的instance
+//context.provide()  设置当前的实例，执行方法，返回方法的返回
+const context  = Context.create<Context>("instance")
+//内部维护的一个  目录：Context  的缓存
 const cache = new Map<string, Promise<Context>>()
 
+//外部接口
 export const Instance = {
   /**
-   * 提供（进入）一个实例上下文并执行 fn：
-   * - 如果该目录没有已缓存的上下文，则：
-   *   1) 通过 Project.fromDirectory(directory) 解析项目（可能扫描 .git、计算 id 等）
-   *   2) 构造 { directory, worktree: sandbox, project } 的上下文对象
-   *   3) 用 context.provide(ctx, init) 在首次创建时执行 init 钩子（例如启动插件、开灯等）
-   *   4) 将创建过程的 Promise 缓存到 cache
-   * - 若已有缓存，直接复用并进入上下文，执行 fn。
+   * 在上下文中
+   * 执行传入的fn方法，返回fn的返回
+   * @param input 
+   * @returns 
    */
   async provide<R>(input: { directory: string; init?: () => Promise<any>; fn: () => R }): Promise<R> {
     let existing = cache.get(input.directory)
     if (!existing) {
       Log.Default.info("creating instance", { directory: input.directory })
-      // iife：立即执行的异步工厂，返回 Promise<Context>
       existing = iife(async () => {
-        // Project.fromDirectory：
-        // - 返回 { project, sandbox }，其中 sandbox 是解析后的“可操作目录”（通常等于 git 的工作区顶层），
-        // - project 为持久化/事件发布的项目信息。
         const { project, sandbox } = await Project.fromDirectory(input.directory)
         const ctx = {
-          directry: input.directory,
-          worktroee: sandbox,
+          directory: input.directory,
+          worktree: sandbox,
           project,
         }
-        // 首次创建时，将 ctx 注入并执行 init 钩子（若提供）。
         await context.provide(ctx, async () => {
           await input.init?.()
         })
@@ -69,8 +53,8 @@ export const Instance = {
       })
       cache.set(input.directory, existing)
     }
-    // 上下文已存在：等待其就绪后，注入上下文并执行 fn。
     const ctx = await existing
+
     return context.provide(ctx, async () => {
       return input.fn()
     })

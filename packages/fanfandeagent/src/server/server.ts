@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { lazy } from "../util/lazy"
 
 export namespace Server {
     let _url: URL | undefined
@@ -9,4 +10,19 @@ export namespace Server {
     }
     //创建服务器的实例
     const app = new Hono()
+
+    const App :()=> Hono=lazy(
+        ()=>{
+            app
+            .onError()
+            .use()
+            .use()
+            .get()
+            .route()
+            .post()
+            .put()
+            .delete()
+            .all()
+        }
+    )
 }

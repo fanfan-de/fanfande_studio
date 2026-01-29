@@ -13,13 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "server.md",
+                "file": "Project/未命名.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "server"
+              "title": "未命名"
             }
           },
           {
@@ -124,8 +124,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "right": {
     "id": "14ad8d7e08bf77ac",
@@ -232,8 +231,23 @@
   },
   "active": "f7f570f45d1782df",
   "lastOpenFiles": [
-    "Contribution.md",
+    "Project Spec.md",
+    "Project/未命名.md",
+    "Project",
+    "dev 思路/架构.md",
+    "Node 项目/Node.js process 初学者教学指南.pdf",
+    "Node 项目/一个独立的node模块意味着什么，边界在哪里.md",
+    "provider/-provider.md",
+    "provider/auth.md",
+    "provider/models.md",
+    "provider/provider.md",
+    "模块开发.md",
+    "dev 思路/我想让我的AI  Agent可以像这样命令行打开模块，该怎么实现，我是新手，目前在在仿照opencode制作一个TS 编写的AI Agent通用工具.md",
+    "web开发.md",
+    "查漏补缺.md",
+    "opencode web API.md",
     "server.md",
+    "Contribution.md",
     "未命名 8.md",
     "未命名 7.md",
     "未命名 5.md",
@@ -245,29 +259,15 @@
     "specs/03-request-throttling.md",
     "specs/02-cache-eviction.md",
     "specs/01-persist-payload-limits.md",
-    "specs/04-scroll-spy-optimization.md",
-    "specs/05-modularize-and-dedupe.md",
-    "specs/06-app-i18n-audit.md",
-    "未命名 12.md",
     "Pasted image 20260128121558.png",
-    "LLM  API价格.md",
     "Pasted image 20260128114311.png",
     "Pasted image 20260128112858.png",
     "Pasted image 20260128112434.png",
     "Pasted image 20260128112406.png",
     "Pasted image 20260128112246.png",
-    "Node 项目/node概览.md",
-    "开源cli/gemini cli.md",
-    "开源cli/Crush Cli.md",
-    "开源cli/kimi cli.md",
     "Pasted image 20260128111119.png",
     "Pasted image 20260128111103.png",
-    "Bun的基础使用方法.md",
-    "Bus.md",
-    "未命名 11.md",
-    "Project Spec.md",
     "开源cli",
-    "Node 项目/Node.js process 初学者教学指南.pdf",
     "未命名.base",
     "Node 项目",
     "Pasted image 20260127155202.png",
@@ -275,7 +275,6 @@
     "未命名 2.base",
     "未命名 1.base",
     "CLI",
-    "dev 思路",
-    "provider/provider.ts"
+    "dev 思路"
   ]
 }
