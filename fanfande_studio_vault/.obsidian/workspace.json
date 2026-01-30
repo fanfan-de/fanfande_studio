@@ -13,13 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Project/未命名.md",
+                "file": "VS Code  Symbol.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "未命名"
+              "title": "VS Code  Symbol"
             }
           },
           {
@@ -226,13 +226,20 @@
       "canvas:新建白板": true,
       "daily-notes:打开/创建今天的日记": true,
       "templates:插入模板": true,
-      "command-palette:打开命令面板": true
+      "command-palette:打开命令面板": true,
+      "zhihu:Open Zhihu side view": false
     }
   },
   "active": "f7f570f45d1782df",
   "lastOpenFiles": [
-    "Project Spec.md",
+    "vibe coding.md",
+    "VS Code  Symbol.md",
+    "project-state.md",
+    "config.md",
+    "snapshot.md",
+    "Session/数据结构设计.md",
     "Project/未命名.md",
+    "Project Spec.md",
     "Project",
     "dev 思路/架构.md",
     "Node 项目/Node.js process 初学者教学指南.pdf",
@@ -253,12 +260,6 @@
     "未命名 5.md",
     "未命名 4.md",
     "specs/project.md",
-    "specs/perf-roadmap.md",
-    "specs/08-app-e2e-smoke-suite.md",
-    "specs/07-ui-i18n-audit.md",
-    "specs/03-request-throttling.md",
-    "specs/02-cache-eviction.md",
-    "specs/01-persist-payload-limits.md",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",
     "Pasted image 20260128112858.png",

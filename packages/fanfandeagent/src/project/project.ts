@@ -44,37 +44,36 @@ export namespace Project {
   export const Event = {
     Updated: BusEvent.define("project.updated", Info),
   }
-/**
- * 从指定目录初始化或获取项目信息。
- * @description
- * 该函数通过以下步骤解析项目：
- * 1. 向上查找 `.git` 目录以确定项目根目录。
- * 2. 生成项目唯一 ID（优先读取 `.git/opencode` 缓存，否则基于 Git 初始提交记录生成）。
- * 3. 解析 Git 工作区 (worktree) 和沙箱 (sandbox) 路径。
- * 4. 从持久化存储中读取或创建项目配置，并同步沙箱列表。
- * 5. 更新项目最后访问时间并广播 `Updated` 事件。
- * @param directory - 起始查找目录的绝对路径。
- * @returns 返回一个对象，包含：
- * - `project`: 解析后的 {@link Info} 项目信息对象。
- * - `sandbox`: 当前确定的沙箱路径。
- * 
- * @example
- * ```ts
- * const { project, sandbox } = await fromDirectory("/Users/dev/my-project/src");
- * console.log(project.id); // 输出项目唯一哈希或 "global"
- * ```
- */
+  /**
+   * 从指定目录初始化或获取项目信息。
+   * @description
+   * @returns 返回一个对象，包含：
+   * - `project`: 解析后的 {@link Info} 项目信息对象。
+   * - `sandbox`: 当前确定的沙箱路径。
+   * @example
+   * ```ts
+   * const { project, sandbox } = await fromDirectory("/Users/dev/my-project/src");
+   * console.log(project.id); // 输出项目唯一哈希或 "global"
+   * ```
+   */
   export async function fromDirectory(directory: string) {
     log.info("fromDirectory", { directory })
-    
+    /**
+     * id：git 第一个commithash
+     * sandbox：向上索引第一个.git所在文件夹路径
+     * 
+     */
     const { id, sandbox, worktree, vcs } = await iife(async () => {
+      //向上查找到.git
       const matches = Filesystem.up({ targets: [".git"], start: directory })
+      //只取第一个匹配项
       const git = await matches.next().then((x) => x.value)
       await matches.return()
+      //存在git文件的情况
       if (git) {
-        let sandbox = path.dirname(git)
+        let sandbox = path.dirname(git)//git所在的目录
 
-        const gitBinary = Bun.which("git")
+        const gitBinary = Bun.which("git")//环境变量查找git可执行文件，返回绝对路径|undefine
 
         // cached id calculation
         let id = await Bun.file(path.join(git, "opencode"))
@@ -87,11 +86,11 @@ export namespace Project {
             id: id ?? "global",
             worktree: sandbox,
             sandbox: sandbox,
-            vcs: Info.shape.vcs.parse(Flag.OPENCODE_FAKE_VCS),
+            vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
           }
         }
 
-        // generate id from root commit
+        // 没id：generate id from root commit，健壮性考虑获得第一次提交的所有commit hash
         if (!id) {
           const roots = await $`git rev-list --max-parents=0 --all`
             .quiet()
@@ -112,7 +111,7 @@ export namespace Project {
               id: "global",
               worktree: sandbox,
               sandbox: sandbox,
-              vcs: Info.shape.vcs.parse(Flag.OPENCODE_FAKE_VCS),
+              vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
             }
           }
 
@@ -146,7 +145,7 @@ export namespace Project {
             id,
             sandbox,
             worktree: sandbox,
-            vcs: Info.shape.vcs.parse(Flag.OPENCODE_FAKE_VCS),
+            vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
           }
         }
 
@@ -169,7 +168,7 @@ export namespace Project {
             id,
             sandbox,
             worktree: sandbox,
-            vcs: Info.shape.vcs.parse(Flag.OPENCODE_FAKE_VCS),
+            vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
           }
         }
 
@@ -185,7 +184,7 @@ export namespace Project {
         id: "global",
         worktree: "/",
         sandbox: "/",
-        vcs: Info.shape.vcs.parse(Flag.OPENCODE_FAKE_VCS),
+        vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
       }
     })
 
@@ -209,7 +208,7 @@ export namespace Project {
     // migrate old projects before sandboxes
     if (!existing.sandboxes) existing.sandboxes = []
 
-    if (Flag.OPENCODE_EXPERIMENTAL_ICON_DISCOVERY) discover(existing)
+    if (Flag.FanFande_EXPERIMENTAL_ICON_DISCOVERY) discover(existing)
 
     const result: Info = {
       ...existing,
@@ -261,7 +260,7 @@ export namespace Project {
     })
     return
   }
-
+  //将之前存储在 "global" 项目下的会话迁移到新检测到的具体项目下。
   async function migrateFromGlobal(newProjectID: string, worktree: string) {
     const globalProject = await Storage.read<Info>(["project", "global"]).catch(() => undefined)
     if (!globalProject) return
