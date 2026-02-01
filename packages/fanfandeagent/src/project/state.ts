@@ -1,21 +1,29 @@
 import { Log } from "@/util/log"
 
 export namespace State {
+  const log = Log.create({ service: "state" })
+
   interface Entry {
     state: any
     dispose?: (state: any) => Promise<void>
   }
 
-  const log = Log.create({ service: "state" })
+  // 两层Map结构：
+  // 第一层：key (项目目录) → 第二层Map
+  // 第二层：init函数 → Entry对象
   const recordsByKey = new Map<string, Map<any, Entry>>()
+
   /**
-   * 
+   * 创建一个state
    * @param root 
    * @param init 
    * @param dispose 
    * @returns 返回一个方法
    */
-  export function create<S>(root: () => string, init: () => S, dispose?: (state: Awaited<S>) => Promise<void>) {
+  export function create<S>(
+    root: () => string,
+    init: () => S,
+    dispose?: (state: Awaited<S>) => Promise<void>) {
     return () => {
       const key = root()
       let entries = recordsByKey.get(key)

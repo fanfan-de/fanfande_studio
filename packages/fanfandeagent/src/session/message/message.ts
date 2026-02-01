@@ -1,0 +1,581 @@
+
+import z from "zod"
+import { Snapshot } from "../../snapshot"
+import { APICallError, convertToModelMessages, LoadAPIKeyError, type ModelMessage, type UIMessage } from "ai"
+import { iife } from "@/util/iife"
+
+export namespace Message {
+    const PartBase = z.object({
+        id: z.string(),
+        sessionid: z.number(),
+        messageid: z.number()
+    })
+
+    export const SnapshotPart = PartBase.extend({
+        type: z.literal("snapshot"),
+        snapshot: z.string(),
+    }).meta({
+        ref: "SnapshotPart",
+    })
+    export type SnapshotPart = z.infer<typeof SnapshotPart>
+
+    export const PatchPart = PartBase.extend({
+        type: z.literal("patch"),
+        hash: z.string(),
+        files: z.string().array(),
+    }).meta({
+        ref: "PatchPart",
+    })
+    export type PatchPart = z.infer<typeof PatchPart>
+
+    export const TextPart = PartBase.extend({
+        type: z.literal("text"),
+        text: z.string(),
+        synthetic: z.boolean().optional(), // 标记是否为系统合成的文本（而非模型生成的）
+        ignored: z.boolean().optional(),   // 标记该文本是否应该被发送给 LLM（例如仅用于 UI 展示的提示）
+        time: z
+            .object({
+                start: z.number(),
+                end: z.number().optional(),
+            })
+            .optional(),
+        metadata: z.record(z.string(), z.any()).optional(),
+    }).meta({
+        ref: "TextPart",
+    })
+    export type TextPart = z.infer<typeof TextPart>
+
+    export const ReasoningPart = PartBase.extend({
+        type: z.literal("reasoning"),
+        text: z.string(),
+        metadata: z.record(z.string(), z.any()).optional(),
+        time: z.object({
+            start: z.number(),
+            end: z.number().optional(),
+        }),
+    }).meta({
+        ref: "ReasoningPart",
+    })
+    export type ReasoningPart = z.infer<typeof ReasoningPart>
+
+    const FilePartSourceBase = z.object({
+        text: z
+            .object({
+                value: z.string(),
+                start: z.number().int(),
+                end: z.number().int(),
+            })
+            .meta({
+                ref: "FilePartSourceText",
+            }),
+    })
+
+    export const FileSource = FilePartSourceBase.extend({
+        type: z.literal("file"),
+        path: z.string(),
+    }).meta({
+        ref: "FileSource",
+    })
+
+    export const SymbolSource = FilePartSourceBase.extend({
+        type: z.literal("symbol"), // 来自 LSP (Language Server Protocol) 的符号定义
+        path: z.string(),
+        range: LSP.Range,
+        name: z.string(),
+        kind: z.number().int(),
+    }).meta({
+        ref: "SymbolSource",
+    })
+
+    export const ResourceSource = FilePartSourceBase.extend({
+        type: z.literal("resource"), // 外部资源（如文档链接内容）
+        clientName: z.string(),
+        uri: z.string(),
+    }).meta({
+        ref: "ResourceSource",
+    })
+
+    export const FilePartSource = z.discriminatedUnion("type", [FileSource, SymbolSource, ResourceSource]).meta({
+        ref: "FilePartSource",
+    })
+
+    export const FilePart = PartBase.extend({
+        type: z.literal("file"),
+        mime: z.string(),
+        filename: z.string().optional(),
+        url: z.string(), // 通常是 Data URL 或内部存储链接
+        source: FilePartSource.optional(),
+    }).meta({
+        ref: "FilePart",
+    })
+    export type FilePart = z.infer<typeof FilePart>
+
+    export const AgentPart = PartBase.extend({
+        type: z.literal("agent"),
+        name: z.string(),
+        source: z
+            .object({
+                value: z.string(),
+                start: z.number().int(),
+                end: z.number().int(),
+            })
+            .optional(),
+    }).meta({
+        ref: "AgentPart",
+    })
+    export type AgentPart = z.infer<typeof AgentPart>
+
+    export const CompactionPart = PartBase.extend({
+        type: z.literal("compaction"),
+        auto: z.boolean(),
+    }).meta({
+        ref: "CompactionPart",
+    })
+    export type CompactionPart = z.infer<typeof CompactionPart>
+
+    export const ToolStatePending = z
+        .object({
+            status: z.literal("pending"),
+            input: z.record(z.string(), z.any()),
+            raw: z.string(), // 原始的 JSON 字符串，用于调试解析错误
+        })
+        .meta({
+            ref: "ToolStatePending",
+        })
+    export type ToolStatePending = z.infer<typeof ToolStatePending>
+
+    export const ToolStateRunning = z
+        .object({
+            status: z.literal("running"),
+            input: z.record(z.string(), z.any()),
+            title: z.string().optional(),
+            metadata: z.record(z.string(), z.any()).optional(),
+            time: z.object({
+                start: z.number(),
+            }),
+        })
+        .meta({
+            ref: "ToolStateRunning",
+        })
+    export type ToolStateRunning = z.infer<typeof ToolStateRunning>
+
+    export const ToolStateCompleted = z
+        .object({
+            status: z.literal("completed"),
+            input: z.record(z.string(), z.any()),
+            output: z.string(),
+            title: z.string(),
+            metadata: z.record(z.string(), z.any()),
+            time: z.object({
+                start: z.number(),
+                end: z.number(),
+                compacted: z.number().optional(), // 如果工具输出过长被压缩，记录压缩时间
+            }),
+            attachments: FilePart.array().optional(), // 工具可以返回文件（如生成的图片）
+        })
+        .meta({
+            ref: "ToolStateCompleted",
+        })
+    export type ToolStateCompleted = z.infer<typeof ToolStateCompleted>
+
+    export const ToolStateError = z
+        .object({
+            status: z.literal("error"),
+            input: z.record(z.string(), z.any()),
+            error: z.string(),
+            metadata: z.record(z.string(), z.any()).optional(),
+            time: z.object({
+                start: z.number(),
+                end: z.number(),
+            }),
+        })
+        .meta({
+            ref: "ToolStateError",
+        })
+    export type ToolStateError = z.infer<typeof ToolStateError>
+
+    export const ToolState = z
+        .discriminatedUnion("status", [ToolStatePending, ToolStateRunning, ToolStateCompleted, ToolStateError])
+        .meta({
+            ref: "ToolState",
+        })
+
+    export const ToolPart = PartBase.extend({
+        type: z.literal("tool"),
+        callID: z.string(),
+        tool: z.string(),
+        state: ToolState,
+        metadata: z.record(z.string(), z.any()).optional(),
+    }).meta({
+        ref: "ToolPart",
+    })
+    export type ToolPart = z.infer<typeof ToolPart>
+
+    export const SubtaskPart = PartBase.extend({
+        type: z.literal("subtask"),
+        prompt: z.string(),
+        description: z.string(),
+        agent: z.string(),
+        model: z
+            .object({
+                providerID: z.string(),
+                modelID: z.string(),
+            })
+            .optional(),
+        command: z.string().optional(),
+    }).meta({
+        ref: "SubtaskPart",
+    })
+    export type SubtaskPart = z.infer<typeof SubtaskPart>
+
+    export const StepStartPart = PartBase.extend({
+        type: z.literal("step-start"),
+        snapshot: z.string().optional(),
+    }).meta({
+        ref: "StepStartPart",
+    })
+    export type StepStartPart = z.infer<typeof StepStartPart>
+
+    export const StepFinishPart = PartBase.extend({
+        type: z.literal("step-finish"),
+        reason: z.string(),
+        snapshot: z.string().optional(),
+        cost: z.number(),
+        tokens: z.object({
+            input: z.number(),
+            output: z.number(),
+            reasoning: z.number(),
+            cache: z.object({
+                read: z.number(),
+                write: z.number(),
+            }),
+        }),
+    }).meta({
+        ref: "StepFinishPart",
+    })
+    export type StepFinishPart = z.infer<typeof StepFinishPart>
+
+    export const RetryPart = PartBase.extend({
+        type: z.literal("retry"),
+        attempt: z.number(),
+        error: APIError.Schema,
+        time: z.object({
+            created: z.number(),
+        }),
+    }).meta({
+        ref: "RetryPart",
+    })
+    export type RetryPart = z.infer<typeof RetryPart>
+
+    export const Part = z
+        .discriminatedUnion("type", [
+            TextPart,
+            SubtaskPart,
+            ReasoningPart,
+            FilePart,
+            ToolPart,
+            StepStartPart,
+            StepFinishPart,
+            SnapshotPart,
+            PatchPart,
+            AgentPart,
+            RetryPart,
+            CompactionPart,
+        ])
+        .meta({
+            ref: "Part",
+        })
+    export type Part = z.infer<typeof Part>
+
+
+    //---------------Message Meta Data----------------------------------------------------------------------------
+
+    const Base = z.object({
+        id: z.string(),
+        sessionID: z.string(),
+    })
+    export const User = Base.extend({
+        role: z.literal("user"),
+        time: z.object({
+            created: z.number(),
+        }),
+        summary: z
+            .object({
+                title: z.string().optional(),
+                body: z.string().optional(),
+                diffs: Snapshot.FileDiff.array(),
+            })
+            .optional(),
+        agent: z.string(),
+        model: z.object({
+            providerID: z.string(),
+            modelID: z.string(),
+        }),
+        system: z.string().optional(),
+        tools: z.record(z.string(), z.boolean()).optional(),
+        variant: z.string().optional(),
+    }).meta({
+        ref: "UserMessage",
+    })
+    export type User = z.infer<typeof User>
+
+    export const Assistant = Base.extend({
+        role: z.literal("assistant"),
+        time: z.object({
+            created: z.number(),
+            completed: z.number().optional(),
+        }),
+        error: z
+            .discriminatedUnion("name", [
+                AuthError.Schema,
+                NamedError.Unknown.Schema,
+                OutputLengthError.Schema,
+                AbortedError.Schema,
+                APIError.Schema,
+            ])
+            .optional(),
+        parentID: z.string(),
+        modelID: z.string(),
+        providerID: z.string(),
+        /**
+         * @deprecated
+         */
+        mode: z.string(),
+        agent: z.string(),
+        path: z.object({
+            cwd: z.string(),
+            root: z.string(),
+        }),
+        summary: z.boolean().optional(),
+        cost: z.number(),
+        tokens: z.object({
+            input: z.number(),
+            output: z.number(),
+            reasoning: z.number(),
+            cache: z.object({
+                read: z.number(),
+                write: z.number(),
+            }),
+        }),
+        finish: z.string().optional(),
+    }).meta({
+        ref: "AssistantMessage",
+    })
+    export type Assistant = z.infer<typeof Assistant>
+
+    export const Info = z.discriminatedUnion("role", [User, Assistant]).meta({
+        ref: "Message",
+    })
+    export type Info = z.infer<typeof Info>
+
+    export const WithParts = z.object({
+        info: Info,
+        parts: z.array(Part),
+    })
+    export type WithParts = z.infer<typeof WithParts>
+
+
+    export const Event = {
+        Updated: BusEvent.define(
+            "message.updated",
+            z.object({
+                info: Info,
+            }),
+        ),
+        Removed: BusEvent.define(
+            "message.removed",
+            z.object({
+                sessionID: z.string(),
+                messageID: z.string(),
+            }),
+        ),
+        PartUpdated: BusEvent.define(
+            "message.part.updated",
+            z.object({
+                part: Part,
+                delta: z.string().optional(),
+            }),
+        ),
+        PartRemoved: BusEvent.define(
+            "message.part.removed",
+            z.object({
+                sessionID: z.string(),
+                messageID: z.string(),
+                partID: z.string(),
+            }),
+        ),
+    }
+
+    export function toModelMessages(input: WithParts[], model: Provider.Model): ModelMessage[] {
+        const result: UIMessage[] = []
+        const toolNames = new Set<string>()
+
+        const toModelOutput = (output: unknown) => {
+            if (typeof output === "string") {
+                return { type: "text", value: output }
+            }
+
+            if (typeof output === "object") {
+                const outputObject = output as {
+                    text: string
+                    attachments?: Array<{ mime: string; url: string }>
+                }
+                const attachments = (outputObject.attachments ?? []).filter((attachment) => {
+                    return attachment.url.startsWith("data:") && attachment.url.includes(",")
+                })
+
+                return {
+                    type: "content",
+                    value: [
+                        { type: "text", text: outputObject.text },
+                        ...attachments.map((attachment) => ({
+                            type: "media",
+                            mediaType: attachment.mime,
+                            data: iife(() => {
+                                const commaIndex = attachment.url.indexOf(",")
+                                return commaIndex === -1 ? attachment.url : attachment.url.slice(commaIndex + 1)
+                            }),
+                        })),
+                    ],
+                }
+            }
+
+            return { type: "json", value: output as never }
+        }
+
+        for (const msg of input) {
+            if (msg.parts.length === 0) continue
+
+            if (msg.info.role === "user") {
+                const userMessage: UIMessage = {
+                    id: msg.info.id,
+                    role: "user",
+                    parts: [],
+                }
+                result.push(userMessage)
+                for (const part of msg.parts) {
+                    if (part.type === "text" && !part.ignored)
+                        userMessage.parts.push({
+                            type: "text",
+                            text: part.text,
+                        })
+                    // text/plain and directory files are converted into text parts, ignore them
+                    if (part.type === "file" && part.mime !== "text/plain" && part.mime !== "application/x-directory")
+                        userMessage.parts.push({
+                            type: "file",
+                            url: part.url,
+                            mediaType: part.mime,
+                            filename: part.filename,
+                        })
+
+                    if (part.type === "compaction") {
+                        userMessage.parts.push({
+                            type: "text",
+                            text: "What did we do so far?",
+                        })
+                    }
+                    if (part.type === "subtask") {
+                        userMessage.parts.push({
+                            type: "text",
+                            text: "The following tool was executed by the user",
+                        })
+                    }
+                }
+            }
+
+            if (msg.info.role === "assistant") {
+                const differentModel = `${model.providerID}/${model.id}` !== `${msg.info.providerID}/${msg.info.modelID}`
+                if (
+                    msg.info.error &&
+                    !(
+                        Message.AbortedError.isInstance(msg.info.error) &&
+                        msg.parts.some((part) => part.type !== "step-start" && part.type !== "reasoning")
+                    )
+                ) {
+                    continue
+                }
+                const assistantMessage: UIMessage = {
+                    id: msg.info.id,
+                    role: "assistant",
+                    parts: [],
+                }
+                for (const part of msg.parts) {
+                    if (part.type === "text")
+                        assistantMessage.parts.push({
+                            type: "text",
+                            text: part.text,
+                            ...(differentModel ? {} : { providerMetadata: part.metadata }),
+                        })
+                    if (part.type === "step-start")
+                        assistantMessage.parts.push({
+                            type: "step-start",
+                        })
+                    if (part.type === "tool") {
+                        toolNames.add(part.tool)
+                        if (part.state.status === "completed") {
+                            const outputText = part.state.time.compacted ? "[Old tool result content cleared]" : part.state.output
+                            const attachments = part.state.time.compacted ? [] : (part.state.attachments ?? [])
+                            const output =
+                                attachments.length > 0
+                                    ? {
+                                        text: outputText,
+                                        attachments,
+                                    }
+                                    : outputText
+
+                            assistantMessage.parts.push({
+                                type: ("tool-" + part.tool) as `tool-${string}`,
+                                state: "output-available",
+                                toolCallId: part.callID,
+                                input: part.state.input,
+                                output,
+                                ...(differentModel ? {} : { callProviderMetadata: part.metadata }),
+                            })
+                        }
+                        if (part.state.status === "error")
+                            assistantMessage.parts.push({
+                                type: ("tool-" + part.tool) as `tool-${string}`,
+                                state: "output-error",
+                                toolCallId: part.callID,
+                                input: part.state.input,
+                                errorText: part.state.error,
+                                ...(differentModel ? {} : { callProviderMetadata: part.metadata }),
+                            })
+                        // Handle pending/running tool calls to prevent dangling tool_use blocks
+                        // Anthropic/Claude APIs require every tool_use to have a corresponding tool_result
+                        if (part.state.status === "pending" || part.state.status === "running")
+                            assistantMessage.parts.push({
+                                type: ("tool-" + part.tool) as `tool-${string}`,
+                                state: "output-error",
+                                toolCallId: part.callID,
+                                input: part.state.input,
+                                errorText: "[Tool execution was interrupted]",
+                                ...(differentModel ? {} : { callProviderMetadata: part.metadata }),
+                            })
+                    }
+                    if (part.type === "reasoning") {
+                        assistantMessage.parts.push({
+                            type: "reasoning",
+                            text: part.text,
+                            ...(differentModel ? {} : { providerMetadata: part.metadata }),
+                        })
+                    }
+                }
+                if (assistantMessage.parts.length > 0) {
+                    result.push(assistantMessage)
+                }
+            }
+        }
+
+        const tools = Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }]))
+
+        return convertToModelMessages(
+            result.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
+            {
+                //@ts-expect-error (convertToModelMessages expects a ToolSet but only actually needs tools[name]?.toModelOutput)
+                tools,
+            },
+        )
+    }
+
+}

@@ -13,13 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "VS Code  Symbol.md",
+                "file": "Zod/定义schema.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "VS Code  Symbol"
+              "title": "定义schema"
             }
           },
           {
@@ -99,12 +99,12 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "message",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
                 "extraContext": false,
-                "sortOrder": "alphabetical"
+                "sortOrder": "alphabeticalReverse"
               },
               "icon": "lucide-search",
               "title": "搜索"
@@ -232,8 +232,14 @@
   },
   "active": "f7f570f45d1782df",
   "lastOpenFiles": [
-    "vibe coding.md",
+    "Zod/未命名.md",
+    "Zod/定义schema.md",
+    "Zod/Zod - TS.md",
+    "Zod",
+    "Session/session-messagev2.md",
     "VS Code  Symbol.md",
+    "Pasted image 20260131175958.png",
+    "vibe coding.md",
     "project-state.md",
     "config.md",
     "snapshot.md",
@@ -256,10 +262,6 @@
     "server.md",
     "Contribution.md",
     "未命名 8.md",
-    "未命名 7.md",
-    "未命名 5.md",
-    "未命名 4.md",
-    "specs/project.md",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",
     "Pasted image 20260128112858.png",
@@ -275,7 +277,6 @@
     "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf",
     "未命名 2.base",
     "未命名 1.base",
-    "CLI",
-    "dev 思路"
+    "CLI"
   ]
 }

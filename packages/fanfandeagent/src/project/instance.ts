@@ -103,9 +103,8 @@ export const Instance = {
 
   /**
    * state：为当前实例注册一个“惰性状态单例”。
-   * - 使用 State.create((root) => Instance.directory, init, dispose) 绑定到当前目录的 root key。
-   * - 同一个 init 函数引用在同一实例下只会创建一次（单例），避免重复资源（连接/监听器）创建。
-   * - 可选的 dispose 回调用于清理创建的状态（关闭文件监听器、断开网络连接、清理定时器等）。
+   *@param init () => S
+   *@param dispose (state: Awaited<S>) => Promise<void>
    */
   state<S>(init: () => S, dispose?: (state: Awaited<S>) => Promise<void>): () => S {
     return State.create(() => Instance.directory, init, dispose)
