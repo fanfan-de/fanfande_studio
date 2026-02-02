@@ -1,6 +1,6 @@
 import { Instance } from "@/project/instance";
 import { Log } from "@/util/log";
-import { Message } from "./message/message"
+import { Message } from "./message"
 
 
 

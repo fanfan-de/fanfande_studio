@@ -1,5 +1,5 @@
 import { Log } from "@/util/log"
-import type { Message } from "./message/message"
+import type { Message } from "./message"
 
 //接收 LLM 的流式输出（Stream），
 // 将其解析为结构化的消息组件（Parts），
