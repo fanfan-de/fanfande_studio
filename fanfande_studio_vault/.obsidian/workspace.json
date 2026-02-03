@@ -13,58 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Zod/定义schema.md",
+                "file": "依赖注入和基于文件目录的上下文管理.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "定义schema"
-            }
-          },
-          {
-            "id": "0485ef2ac95d18fd",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "开源cli/gemini cli.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "gemini cli"
-            }
-          },
-          {
-            "id": "a8f0cd20b12c2b86",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "开源cli/Crush Cli.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "Crush Cli"
-            }
-          },
-          {
-            "id": "ad6c8d9b47e7d5c1",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "开源cli/kimi cli.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "kimi cli"
+              "title": "依赖注入和基于文件目录的上下文管理"
             }
           }
         ]
@@ -232,8 +187,19 @@
   },
   "active": "f7f570f45d1782df",
   "lastOpenFiles": [
-    "Zod/未命名.md",
+    "未命名 13.md",
+    "依赖注入和基于文件目录的上下文管理.md",
+    "zod.md",
+    "未命名 9.md",
+    "开源cli/kimi cli.md",
+    "开源cli/Crush Cli.md",
+    "开源cli/gemini cli.md",
+    "AISDKDocument.md",
+    "栈.md",
+    "结构.md",
+    "未命名 3.base",
     "Zod/定义schema.md",
+    "Zod/未命名.md",
     "Zod/Zod - TS.md",
     "Zod",
     "Session/session-messagev2.md",
@@ -252,16 +218,6 @@
     "Node 项目/一个独立的node模块意味着什么，边界在哪里.md",
     "provider/-provider.md",
     "provider/auth.md",
-    "provider/models.md",
-    "provider/provider.md",
-    "模块开发.md",
-    "dev 思路/我想让我的AI  Agent可以像这样命令行打开模块，该怎么实现，我是新手，目前在在仿照opencode制作一个TS 编写的AI Agent通用工具.md",
-    "web开发.md",
-    "查漏补缺.md",
-    "opencode web API.md",
-    "server.md",
-    "Contribution.md",
-    "未命名 8.md",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",
     "Pasted image 20260128112858.png",
@@ -276,7 +232,6 @@
     "Pasted image 20260127155202.png",
     "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf",
     "未命名 2.base",
-    "未命名 1.base",
-    "CLI"
+    "未命名 1.base"
   ]
 }

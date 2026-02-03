@@ -1,6 +1,10 @@
 import { Log } from "../util/log"
 import z from "zod"
 import { Identifier } from "../id/id"
+import { Snapshot } from "../snapshot"
+import { Bus } from "@/bus"
+import { BusEvent } from "@/bus/bus-event"
+import { Message } from "./message"
 
 export namespace Session {
     const log = Log.create({ service: "session" })
@@ -17,7 +21,7 @@ export namespace Session {
                     additions: z.number(),//新增行数
                     deletions: z.number(),//删除行数
                     files: z.number(),//涉及文件数
-                    diffs: Snapshot.FileDiff.array().optional(),//详细文件差异（可选）
+                    ///diffs: Snapshot.FileDiff.array().optional(),//详细文件差异（可选）
                 })
                 .optional(),//代码变更摘要（可选）？
             share: z
@@ -33,7 +37,7 @@ export namespace Session {
                 compacting: z.number().optional(),//压缩时间（可选）
                 archived: z.number().optional(),//归档时间（可选）
             }),//时间戳记录
-            permission: PermissionNext.Ruleset.optional(),//访问权限规则集（可选）
+            ///permission: PermissionNext.Ruleset.optional(),//访问权限规则集（可选）
             revert: z
                 .object({
                     messageID: z.string(),//关联消息ID
@@ -47,5 +51,50 @@ export namespace Session {
             ref: "Session",
         })
     export type Info = z.output<typeof Info>
+
+    export const ShareInfo = z
+        .object({
+            secret: z.string(),
+            url: z.string(),
+        })
+        .meta({
+            ref: "SessionShare",
+        })
+    export type ShareInfo = z.output<typeof ShareInfo>
+
+    export const Event = {
+        Created: BusEvent.define(
+            "session.created",
+            z.object({
+                info: Info,
+            }),
+        ),
+        Updated: BusEvent.define(
+            "session.updated",
+            z.object({
+                info: Info,
+            }),
+        ),
+        Deleted: BusEvent.define(
+            "session.deleted",
+            z.object({
+                info: Info,
+            }),
+        ),
+        Diff: BusEvent.define(
+            "session.diff",
+            z.object({
+                sessionID: z.string(),
+                diff: Snapshot.FileDiff.array(),
+            }),
+        ),
+        Error: BusEvent.define(
+            "session.error",
+            z.object({
+                sessionID: z.string().optional(),
+                error: Message.Assistant.shape.error,
+            }),
+        ),
+    }
 
 }

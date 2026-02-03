@@ -11,16 +11,20 @@ export namespace State {
   // 两层Map结构：
   // 第一层：key (项目目录) → 第二层Map
   // 第二层：init函数 → Entry对象
+  //以路径 和 状态构造函数为key的map，存储的是Entry,Entry.state 是具体的state，Entity.dispose则是销毁状态的引用
+  //使用这个map是为了保证一个文件夹只有一个state容器，
   const recordsByKey = new Map<string, Map<any, Entry>>()
 
+
   /**
-   * 创建一个state
-   * @param root 
+   * 
+   * @param root  
    * @param init 
    * @param dispose 
-   * @returns 返回一个方法
+   * @returns 返回一个 ()=>S
+   * 
    */
-  export function create<S>(
+  export function GetOrCreate<S>(
     root: () => string,
     init: () => S,
     dispose?: (state: Awaited<S>) => Promise<void>) {
@@ -32,7 +36,8 @@ export namespace State {
         recordsByKey.set(key, entries)
       }
       const exists = entries.get(init)
-      if (exists) return exists.state as S
+      if (exists)
+        return exists.state as S
       const state = init()
       entries.set(init, {
         state,

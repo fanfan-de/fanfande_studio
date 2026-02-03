@@ -17,39 +17,43 @@ import {
   stepCountIs,
   type PrepareStepResult,
   type Experimental_DownloadFunction,
+  zodSchema
 } from "ai"
 import { clone, mergeDeep, pipe } from "remeda"
-import { ProviderTransform } from "@/provider/transform"
+//import { ProviderTransform } from "@/provider/transform"
 import { Config } from "@/config/config"
 import { Instance } from "@/project/instance"
-import type { Agent } from "@/agent/agent"
-import type { Message } from "./message"
+import { Agent } from "@/agent/agent"
+import { Message  } from './message'
 //import { Plugin } from "@/plugin"
 import { SystemPrompt } from "./system"
 import { Flag } from "@/flag/flag"
 import { PermissionNext } from "@/permission/next"
 import { Auth } from "../auth"
 import { text } from "stream/consumers"
+import {z} from "zod"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
 
-  export const OUTPUT_TOKEN_MAX = Flag.OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
+  export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
+
+
   //`StreamInput`：用于流式处理 LLM 消息的输入参数类型定义（使用vercal sdk  需要的参数）
   export type StreamInput = {
-    user: Message.Meta_UserMessage
-    sessionID: string
-    model: Provider.Model
-    agent: Agent.Info
-    system: string[]
-    abort: AbortSignal
-    messages: ModelMessage[]
-    small?: boolean
-    tools: Record<string, Tool>
-    retries?: number
+    user: Message.User,
+    sessionID: string,
+    model: Provider.Model,
+    agent: Agent.Info,
+    system: string[],
+    abort: AbortSignal,
+    messages: ModelMessage[],
+    small?: boolean,
+    tools: Record<string, Tool>,
+    retries?: number,
   }
 
-  export type StreamOutput = StreamTextResult<ToolSet, unknown>
+  //export type StreamOutput = StreamTextResult<ToolSet, unknown>
 
   export async function stream(input: StreamInput) {
     const l = log
@@ -197,9 +201,8 @@ export namespace LLM {
         })
       },
       onFinish:()=>{},
-      onStepFinish(){},
-      onAbort(){},
-      onChunk(){},
+      onStepFinish:()=>{},
+      onAbort:()=>{},
       //-------网络-----------------
       timeout:{totalMs: 60000, stepMs: 10000 },//超时配置
       abortSignal:controller.signal,//打断配置
@@ -207,13 +210,14 @@ export namespace LLM {
       //headers:       //Additional HTTP headers to be sent with the request. Only applicable for HTTP-based providers.
       //-----------输出配置--------------------
       output:Output.text(),//配置输出格式，默认就是text
-      temperature: params.temperature,
-      topP: params.topP,
-      topK: params.topK,
+      ///temperature: params.temperature,
+      temperature:1,
+      ///topP: params.topP,
+      ///topK: params.topK,
       maxOutputTokens : maxOutputTokens ,
       presencePenalty:0,//控制模型“谈论新话题”的积极,只要出现过，惩罚就是固定的。
       frequencyPenalty:0,//频率惩罚,抑制模型在生成内容时反复使用相同的词汇或短语,出现次数越多，惩罚就越重（累积制）。
-      providerOptions: ProviderTransform.providerOptions(input.model, params.options),//虽然 SDK（如 Vercel AI SDK）试图把所有模型
+      ///providerOptions: ProviderTransform.providerOptions(input.model, params.options),//虽然 SDK（如 Vercel AI SDK）试图把所有模型
                                                                                       //  （OpenAI, Claude, Gemini 等）的参数都统一化（比如 temperature, maxTokens），
                                                                                       // 但每个供应商总有一些独家、非标准的功能。
                                                                                       //providerOptions 就是让你传递这些供应商专属参数的“口袋”。

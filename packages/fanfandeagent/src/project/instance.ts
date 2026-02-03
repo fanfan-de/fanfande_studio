@@ -7,7 +7,7 @@
  */
 
 import { Log } from "@/util/log"
-import { Context } from "../util/context"
+import { Context as utilContext } from "../util/context"
 import { Project } from "./project"
 import { State } from "./state"
 import { iife } from "@/util/iife"
@@ -20,28 +20,42 @@ interface Context {
   project: Project.Info
 }
 
-//内部维护的一个  上下文存储容器，限定存 Context，directory信息就在其中，
-//context.use()  当前的instance
-//context.provide()  设置当前的实例，执行方法，返回方法的返回
-const context  = Context.create<Context>("instance")
+//内部维护的一个  上下文存储容器， Context，directory信息就在其中，
+//context是全局唯一的，本质上就是两个方法
+const context = utilContext.create<Context>(/*"instance"*/)
 //内部维护的一个  目录：Context  的缓存
-const cache = new Map<string, Promise<Context>>()
+//和state的区别是，这里存的是项目的Context信息，即上面的接口的实现
+//state里的recordsByKey 存的是 需要保持为状态的数据？
+const cache= new Map<string, Promise<Context>>()
 
 //外部接口
 export const Instance = {
   /**
-   * 在上下文中
-   * 执行传入的fn方法，返回fn的返回
+ * state：为当前实例注册一个“惰性状态单例”。
+ *@param init () => S
+ *@param dispose (state: Awaited<S>) => Promise<void>
+ *@returns ()=>S
+ */
+  state<S>(init: () => S, dispose?: (state: Awaited<S>) => Promise<void>): () => S {
+    return State.GetOrCreate(() => Instance.directory, init, dispose)
+  },
+  /**
+   * 保证在一个文件夹目录，只有第一次用到时才执行这个方法，保证文件夹位置 和 一个 Context
+   * 执行传入的fn方法，返回fn的返回R
+   * 方法的动机是
+   * 1.执行fn，获得R
+   * 2.检查判断是否第一次
    * @param input 
    * @returns 
    */
   async provide<R>(input: { directory: string; init?: () => Promise<any>; fn: () => R }): Promise<R> {
     let existing = cache.get(input.directory)
     if (!existing) {
+      //说明第一次通过instance.provide 访问这个目录
       Log.Default.info("creating instance", { directory: input.directory })
       existing = iife(async () => {
         const { project, sandbox } = await Project.fromDirectory(input.directory)
-        const ctx = {
+        const ctx:Context = {
           directory: input.directory,
           worktree: sandbox,
           project,
@@ -53,7 +67,7 @@ export const Instance = {
       })
       cache.set(input.directory, existing)
     }
-    const ctx = await existing
+    const ctx:Context = await existing
 
     return context.provide(ctx, async () => {
       return input.fn()
@@ -101,14 +115,6 @@ export const Instance = {
     return Filesystem.contains(Instance.worktree, filepath)
   },
 
-  /**
-   * state：为当前实例注册一个“惰性状态单例”。
-   *@param init () => S
-   *@param dispose (state: Awaited<S>) => Promise<void>
-   */
-  state<S>(init: () => S, dispose?: (state: Awaited<S>) => Promise<void>): () => S {
-    return State.create(() => Instance.directory, init, dispose)
-  },
 
   /**
    * dispose：销毁当前实例（当前目录上下文）。
@@ -142,7 +148,7 @@ export const Instance = {
     Log.Default.info("disposing all instances")
     for (const [_key, value] of cache) {
       // 防御：若某个 Promise 失败，catch 后继续处理其他实例
-      const awaited = await value.catch(() => {})
+      const awaited = await value.catch(() => { })
       if (awaited) {
         // 确保在该上下文环境中执行 dispose，避免跨上下文调用导致的状态错乱
         await context.provide(await value, async () => {

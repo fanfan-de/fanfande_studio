@@ -14,18 +14,38 @@ import {
     type UserContent,
     type TextPart, //as aiTextPart,
     type FilePart, //as aiFilePart,
-    type ImagePart ,//as aiImagePart
+    type ImagePart,//as aiImagePart
     type ReasoningUIPart,
     type ToolContent,
 } from "ai"
-
-
-type AssistantContent = (AI.TextPart | AI.FilePart | AI.ReasoningUIPart | AI.ToolCallPart | AI.ToolResultPart | AI.ToolApprovalRequest)[];
-
-
+import { NamedError } from "../util/error"
+import { BusEvent } from "@/bus/bus-event"
 import { iife } from "@/util/iife"
 
 export namespace Message {
+
+export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
+  export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
+  export const AuthError = NamedError.create(
+    "ProviderAuthError",
+    z.object({
+      providerID: z.string(),
+      message: z.string(),
+    }),
+  )
+  export const APIError = NamedError.create(
+    "APIError",
+    z.object({
+      message: z.string(),
+      statusCode: z.number().optional(),
+      isRetryable: z.boolean(),
+      responseHeaders: z.record(z.string(), z.string()).optional(),
+      responseBody: z.string().optional(),
+      metadata: z.record(z.string(), z.string()).optional(),
+    }),
+  )
+  export type APIError = z.infer<typeof APIError.Schema>
+
     const PartBase = z.object({
         id: z.string(),
         sessionid: z.number(),
@@ -447,6 +467,8 @@ export namespace Message {
         ),
     }
 
+
+
     export function toModelMessages(input: WithParts[]/*, model: Provider.Model*/): ModelMessage[] {
         const result: ModelMessage[] = []
         //const toolNames = new Set<string>()
@@ -496,7 +518,7 @@ export namespace Message {
                 for (const part of msg.parts) {
                     //文本
                     if (part.type === "text" && !part.ignored)
-                        (userMessage.content as(AI.TextPart | AI.ImagePart | AI.FilePart)[]).push({
+                        (userMessage.content as (AI.TextPart | AI.ImagePart | AI.FilePart)[]).push({
                             type: "text",
                             text: part.text,
                         })
@@ -571,18 +593,17 @@ export namespace Message {
                             //providerOptions:
                         })
                     //
-                    if(part.type ==="reasoning" )
-                    {
+                    if (part.type === "reasoning") {
                         (assistantMessage.content as AI.ReasoningUIPart[]).push(
                             {
-                                type:"reasoning",
-                                text:part.text,
+                                type: "reasoning",
+                                text: part.text,
                                 //state:part.
                                 //providerMetadata
                             }
                         )
                     }
-                    
+
                     // if (part.type === "step-start")
                     //     assistantMessage.parts.push({
                     //         type: "step-start",
@@ -645,27 +666,51 @@ export namespace Message {
 
             if (msg.info.role === "Envirnment") {
 
-                const environmentMessage:ToolModelMessage = {
-                    role:"tool",
-                    content:[] as AI.ToolContent as (AI.ToolResultPart | AI.ToolApprovalResponse)[],
+                const environmentMessage: ToolModelMessage = {
+                    role: "tool",
+                    content: [] as AI.ToolContent as (AI.ToolResultPart | AI.ToolApprovalResponse)[],
                     //providerOptions
                 }
 
-                for(const part of msg.parts)
-                {
-                    if(part.type === "tool")
-                    {
+                for (const part of msg.parts) {
+                    if (part.type === "tool") {
                         environmentMessage.content.push({
-                            type : "tool-result",
-                            toolCallId:part.callID,
-                            toolName:part.tool,
-                            output:(()=>{
-                                if(part.state.status=== "pending")
-                                    return f
-                                }
+                            type: "tool-result",
+                            toolCallId: part.callID,
+                            toolName: part.tool,
+                            output: (() => {
+                                if (part.state.status === "pending")
+                                    return {
+                                        type: "text",
+                                        value: ""
+                                        //providerOptions?: SharedV3ProviderOptions | undefined;
+                                    }
+                                if (part.state.status === "running")
+                                    return {
+                                        type: "text",
+                                        value: ""
+                                        //providerOptions?: SharedV3ProviderOptions | undefined;
+                                    }
+                                if (part.state.status === "completed")
+                                    return {
+                                        type: "text",
+                                        value: "",
+                                        //providerOptions?: SharedV3ProviderOptions | undefined;
+                                    }
+                                if (part.state.status === "error")
+                                    return {
+                                        type: "text",
+                                        value: "",
+                                    }
+                                else {
+                                    return {
+                                        type: "text",
+                                        value: "",
+                                    }
 
+                                }
                             })(),
-     
+
 
                         })
                     }
@@ -673,15 +718,16 @@ export namespace Message {
             }
         }
 
-        const tools = Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }]))
+        // const tools = Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }]))
 
-        return convertToModelMessages(
-            result.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
-            {
-                //@ts-expect-error (convertToModelMessages expects a ToolSet but only actually needs tools[name]?.toModelOutput)
-                tools,
-            },
-        )
+        // return convertToModelMessages(
+        //     result.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
+        //     {
+        //         //@ts-expect-error (convertToModelMessages expects a ToolSet but only actually needs tools[name]?.toModelOutput)
+        //         tools,
+        //     },
+        //)
+        return result
     }
 
 }
