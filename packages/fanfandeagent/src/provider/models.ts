@@ -106,7 +106,7 @@ export namespace ModelsDev {
     })
 
 
-    export async function get() {
+    export async function get() :Promise<Record<string, Provider>>{
         const result = await Data()
         return result as Record<string, Provider>
     }

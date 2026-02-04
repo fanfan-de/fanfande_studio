@@ -26,7 +26,16 @@ export namespace Identifier {
   export function ascending(prefix: keyof typeof prefixes, given?: string) {
     return generateID(prefix, false, given)
   }
-
+  /**
+   * 用于生成一&#x4E2A;__&#x5355;调递减的唯一标识符__。
+   * 它接收一个前缀（如 "session"、"message" 等）和一个可选的给定字符串，
+   * 返回一个以该前缀开头、后面跟着时间戳（取反）和随机字符的 ID。
+   * 这种递减设计使得按字符串排序时，较新的 ID 会排在前面，适用于需要按时间倒序排列的场景（例如日志、消息记录）。
+   * @param prefix 
+   * @param descending 
+   * @param given 
+   * @returns 
+   */
   export function descending(prefix: keyof typeof prefixes, given?: string) {
     return generateID(prefix, true, given)
   }

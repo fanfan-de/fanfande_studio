@@ -24,21 +24,23 @@ import { clone, mergeDeep, pipe } from "remeda"
 import { Config } from "@/config/config"
 import { Instance } from "@/project/instance"
 import { Agent } from "@/agent/agent"
-import { Message  } from './message'
+import { Message } from './message'
 //import { Plugin } from "@/plugin"
-import { SystemPrompt } from "./system"
+///import { SystemPrompt } from "./system"
 import { Flag } from "@/flag/flag"
-import { PermissionNext } from "@/permission/next"
+///import { PermissionNext } from "@/permission/next"
 import { Auth } from "../auth"
 import { text } from "stream/consumers"
-import {z} from "zod"
+import { z } from "zod"
 
 export namespace LLM {
   const log = Log.create({ service: "llm" })
 
   export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
 
+  export type asda={as:string}
 
+  export const VERSION = "1.0.0"; // 随便加个值
   //`StreamInput`：用于流式处理 LLM 消息的输入参数类型定义（使用vercal sdk  需要的参数）
   export type StreamInput = {
     user: Message.User,
@@ -53,9 +55,9 @@ export namespace LLM {
     retries?: number,
   }
 
-  //export type StreamOutput = StreamTextResult<ToolSet, unknown>
+  export type StreamOutput = StreamTextResult<ToolSet, never>
 
-  export async function stream(input: StreamInput) {
+  export async function stream(input: StreamInput): Promise<StreamOutput> {
     const l = log
       .clone()
       .tag("providerID", input.model.providerID)
@@ -83,11 +85,16 @@ export namespace LLM {
     system.push(
       [
         // use agent prompt otherwise provider prompt
+        // 1. 基础指令选择：如果 agent（智能体）有提示词则用它，否则根据模型获取提供商提示词
         // For Codex sessions, skip SystemPrompt.provider() since it's sent via options.instructions
-        ...(input.agent.prompt ? [input.agent.prompt] : isCodex ? [] : SystemPrompt.provider(input.model)),
+        // 注意：如果是 Codex 模型会话，则跳过提供商提示词，因为它会通过 options.instructions 发送
+        ///...(input.agent.prompt ? [input.agent.prompt] : isCodex ? [] : SystemPrompt.provider(input.model)),
         // any custom prompt passed into this call
+
         ...input.system,
         // any custom prompt from last user message
+        // 3. 最后一项用户消息中可能携带的自定义系统指令（如果有的话）
+
         ...(input.user.system ? [input.user.system] : []),
       ]
         .filter((x) => x)
@@ -107,24 +114,24 @@ export namespace LLM {
       system.push(header, rest.join("\n"))
     }
 
-    const variant =
-      !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
-    const base = input.small
-      ? ProviderTransform.smallOptions(input.model)
-      : ProviderTransform.options({
-          model: input.model,
-          sessionID: input.sessionID,
-          providerOptions: provider.options,
-        })
-    const options: Record<string, any> = pipe(
-      base,
-      mergeDeep(input.model.options),
-      mergeDeep(input.agent.options),
-      mergeDeep(variant),
-    )
-    if (isCodex) {
-      options.instructions = SystemPrompt.instructions()
-    }
+    // const variant =
+    //   !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
+    // const base = input.small
+    //   ? ProviderTransform.smallOptions(input.model)
+    //   : ProviderTransform.options({
+    //       model: input.model,
+    //       sessionID: input.sessionID,
+    //       providerOptions: provider.options,
+    //     })
+    // const options: Record<string, any> = pipe(
+    //   base,
+    //   mergeDeep(input.model.options),
+    //   mergeDeep(input.agent.options),
+    //   mergeDeep(variant),
+    // )
+    // if (isCodex) {
+    //   options.instructions = SystemPrompt.instructions()
+    // }
 
     // const params = await Plugin.trigger(
     //   "chat.params",
@@ -160,16 +167,16 @@ export namespace LLM {
     // )
     //创建一个AbortController,将之signal注入streamtext参数
     const controller = new AbortController();
-    
 
-    const maxOutputTokens = isCodex
-      ? undefined
-      : ProviderTransform.maxOutputTokens(
-          input.model.api.npm,
-          params.options,
-          input.model.limit.output,
-          OUTPUT_TOKEN_MAX,
-        )
+
+    // const maxOutputTokens = isCodex
+    //   ? undefined
+    //   : ProviderTransform.maxOutputTokens(
+    //       input.model.api.npm,
+    //       params.options,
+    //       input.model.limit.output,
+    //       OUTPUT_TOKEN_MAX,
+    //     )
     //**解析和过滤工具**：根据用户权限和代理设置，解析并过滤可用的工具集，获得参数tools
     const tools = await resolveTools(input)
 
@@ -200,32 +207,32 @@ export namespace LLM {
           error,
         })
       },
-      onFinish:()=>{},
-      onStepFinish:()=>{},
-      onAbort:()=>{},
+      onFinish: () => { },
+      onStepFinish: () => { },
+      onAbort: () => { },
       //-------网络-----------------
-      timeout:{totalMs: 60000, stepMs: 10000 },//超时配置
-      abortSignal:controller.signal,//打断配置
+      timeout: { totalMs: 60000, stepMs: 10000 },//超时配置
+      abortSignal: controller.signal,//打断配置
       maxRetries: input.retries ?? 0,//重试次数
       //headers:       //Additional HTTP headers to be sent with the request. Only applicable for HTTP-based providers.
       //-----------输出配置--------------------
-      output:Output.text(),//配置输出格式，默认就是text
+      output: Output.text(),//配置输出格式，默认就是text
       ///temperature: params.temperature,
-      temperature:1,
+      temperature: 1,
       ///topP: params.topP,
       ///topK: params.topK,
-      maxOutputTokens : maxOutputTokens ,
-      presencePenalty:0,//控制模型“谈论新话题”的积极,只要出现过，惩罚就是固定的。
-      frequencyPenalty:0,//频率惩罚,抑制模型在生成内容时反复使用相同的词汇或短语,出现次数越多，惩罚就越重（累积制）。
+      //maxOutputTokens : maxOutputTokens ,
+      presencePenalty: 0,//控制模型“谈论新话题”的积极,只要出现过，惩罚就是固定的。
+      frequencyPenalty: 0,//频率惩罚,抑制模型在生成内容时反复使用相同的词汇或短语,出现次数越多，惩罚就越重（累积制）。
       ///providerOptions: ProviderTransform.providerOptions(input.model, params.options),//虽然 SDK（如 Vercel AI SDK）试图把所有模型
-                                                                                      //  （OpenAI, Claude, Gemini 等）的参数都统一化（比如 temperature, maxTokens），
-                                                                                      // 但每个供应商总有一些独家、非标准的功能。
-                                                                                      //providerOptions 就是让你传递这些供应商专属参数的“口袋”。
+      //  （OpenAI, Claude, Gemini 等）的参数都统一化（比如 temperature, maxTokens），
+      // 但每个供应商总有一些独家、非标准的功能。
+      //providerOptions 就是让你传递这些供应商专属参数的“口袋”。
       activeTools: Object.keys(tools).filter((x) => x !== "invalid"),//可用工具
 
       ///stopSequences:, //string[],结束字符串
       ///seed:123124,//seed（随机种子）是一个用于控制随机性、实现结果可复现性的关键参数。
-      includeRawChunks:false,//在流式传输（Streaming）过程中，能够直接获取来自大模型供应商（如 OpenAI、Anthropic 等）的“原始数据包”。
+      includeRawChunks: false,//在流式传输（Streaming）过程中，能够直接获取来自大模型供应商（如 OpenAI、Anthropic 等）的“原始数据包”。
       //------------多步任务设置-----------------
       //stopWhen:()=>{return true}, //写入多步任务的打断逻辑
       //prepareStep:()=>{return {}},              //根据前一步的结果，临时改变下一步的操作方式。
@@ -266,14 +273,14 @@ export namespace LLM {
       //                   headers: { 'Authorization': 'Bearer MY_S3_TOKEN' }
       //                 });
       //                 const buffer = await response.arrayBuffer();
-                      
+
       //                 // 3. 返回给 SDK 数据，SDK 会将其转化为数据流发给 AI
       //                 return {
       //                   data: new Uint8Array(buffer),
       //                   mediaType: response.headers.get('content-type') || 'image/jpeg'
       //                 };
       //               }
-            
+
       //               // 4. 其他公网链接，返回 null 让模型自己处理
       //               return null;
       //             }
@@ -281,7 +288,7 @@ export namespace LLM {
 
       //       );
       // },
-      
+
 
 
       tools,
@@ -302,44 +309,37 @@ export namespace LLM {
       //   ...headers,
       // },
       prompt: [
-        ...(isCodex
-          ? [
-              {
-                role: "user",
-                content: system.join("\n\n"),
-              } as ModelMessage,
-            ]
-          : system.map(
-              (x:string): ModelMessage => ({
-                role: "system",
-                content: x,
-              }),
-            )),
+        {
+          role: "system",
+          content: "you are a helpful assistant",
+        },
+
         ...input.messages,
       ],
-      model: wrapLanguageModel({
-        model: language,
-        middleware: [
-          { 
-            specificationVersion: 'v3', 
-            async transformParams(args) {
-              if (args.type === "stream") {
-                args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
-              }
-              return args.params
-            },
-          },
-          extractReasoningMiddleware({ tagName: "think", startWithReasoning: false }),
-        ],
-      }),
+      // model: wrapLanguageModel({
+      //   model: language,
+      //   middleware: [
+      //     { 
+      //       specificationVersion: 'v3', 
+      //       async transformParams(args) {
+      //         if (args.type === "stream") {
+      //           args.params.prompt = ProviderTransform.message(args.params.prompt, input.model, options)
+      //         }
+      //         return args.params
+      //       },
+      //     },
+      //     extractReasoningMiddleware({ tagName: "think", startWithReasoning: false }),
+      //   ],
+      // }),
+      model: language,
       experimental_telemetry: { isEnabled: cfg.experimental?.openTelemetry },
     })
   }
 
   async function resolveTools(input: Pick<StreamInput, "tools" | "agent" | "user">) {
-    const disabled = PermissionNext.disabled(Object.keys(input.tools), input.agent.permission)
+    //const disabled = PermissionNext.disabled(Object.keys(input.tools), input.agent.permission)
     for (const tool of Object.keys(input.tools)) {
-      if (input.user.tools?.[tool] === false || disabled.has(tool)) {
+      if (input.user.tools?.[tool] === false/* || disabled.has(tool)*/) {
         delete input.tools[tool]
       }
     }

@@ -13,13 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "依赖注入和基于文件目录的上下文管理.md",
+                "file": "栈.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "依赖注入和基于文件目录的上下文管理"
+              "title": "栈"
             }
           }
         ]
@@ -41,7 +41,7 @@
             "state": {
               "type": "file-explorer",
               "state": {
-                "sortOrder": "alphabetical",
+                "sortOrder": "byModifiedTime",
                 "autoReveal": false
               },
               "icon": "lucide-folder-closed",
@@ -187,14 +187,16 @@
   },
   "active": "f7f570f45d1782df",
   "lastOpenFiles": [
+    "AISDKDocument.md",
+    "未命名 9.md",
     "未命名 13.md",
     "依赖注入和基于文件目录的上下文管理.md",
+    "VS Code  Symbol.md",
+    "web开发.md",
     "zod.md",
-    "未命名 9.md",
     "开源cli/kimi cli.md",
     "开源cli/Crush Cli.md",
     "开源cli/gemini cli.md",
-    "AISDKDocument.md",
     "栈.md",
     "结构.md",
     "未命名 3.base",
@@ -203,7 +205,6 @@
     "Zod/Zod - TS.md",
     "Zod",
     "Session/session-messagev2.md",
-    "VS Code  Symbol.md",
     "Pasted image 20260131175958.png",
     "vibe coding.md",
     "project-state.md",
@@ -217,7 +218,6 @@
     "Node 项目/Node.js process 初学者教学指南.pdf",
     "Node 项目/一个独立的node模块意味着什么，边界在哪里.md",
     "provider/-provider.md",
-    "provider/auth.md",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",
     "Pasted image 20260128112858.png",

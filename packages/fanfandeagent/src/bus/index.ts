@@ -7,7 +7,7 @@ import { GlobalBus } from "./global"
 export namespace Bus {
   const log = Log.create({ service: "bus" })
   type Subscription = (event: any) => void
-
+  //
   export const InstanceDisposed = BusEvent.define(
     "server.instance.disposed",
     z.object({
@@ -35,9 +35,9 @@ export namespace Bus {
       for (const sub of [...wildcard]) {
         sub(event)
       }
-    },
+    }
   )
-
+  //某个动作触发时，调用 Bus.publish。
   export async function publish<Definition extends BusEvent.Definition>(
     def: Definition,
     properties: z.output<Definition["properties"]>,
@@ -62,7 +62,7 @@ export namespace Bus {
     })
     return Promise.all(pending)
   }
-
+  // 业务代码调用
   export function subscribe<Definition extends BusEvent.Definition>(
     def: Definition,
     callback: (event: { type: Definition["type"]; properties: z.infer<Definition["properties"]> }) => void,

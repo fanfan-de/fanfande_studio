@@ -1,11 +1,16 @@
 import { Log } from "@/util/log";
 import z from "zod"
 import {
-    type LanguageModel
+    type LanguageModel,
+    type Provider as SDKProvider,
 } from "ai"
+import { ModelsDev } from "./models"
 import { deepseek } from "@ai-sdk/deepseek";
 import { openai } from "@ai-sdk/openai"
 import { Instance } from "@/project/instance";
+import { mapValues } from "remeda";
+import { NamedError } from "@/util/error";
+import fuzzysort from "fuzzysort"
 
 /**
  * 存储所有支持的provider
@@ -84,7 +89,7 @@ export namespace Provider {
         })
     export type Model = z.infer<typeof Model>
 
-    //提供商的配置
+    //provider info
     export const Info = z
         .object({
             id: z.string(),
@@ -116,11 +121,11 @@ export namespace Provider {
         }
 
         const providers: { [providerID: string]: Info } = {}
-        const languages = new Map<string, LanguageModelV2>()
+        const languages = new Map<string, LanguageModel>()
         const modelLoaders: {
             [providerID: string]: CustomModelLoader
         } = {}
-        const sdk = new Map<number, SDK>()
+        const sdk = new Map<number, SDKProvider>()
 
         log.info("init")
 
@@ -380,10 +385,136 @@ export namespace Provider {
         }
     })
 
+    export async function list() {
+        return state().then((state) => state.providers)
+    }
+
+    export async function getProvider(providerID: string) {
+        return state().then((s) => s.providers[providerID])
+    }
+
+    export async function getModel(providerID: string, modelID: string) {
+        const s = await state()
+        const provider = s.providers[providerID]
+        if (!provider) {
+            const availableProviders = Object.keys(s.providers)
+            const matches = fuzzysort.go(providerID, availableProviders, { limit: 3, threshold: -10000 })
+            const suggestions = matches.map((m) => m.target)
+            throw new ModelNotFoundError({ providerID, modelID, suggestions })
+        }
+
+        const info = provider.models[modelID]
+        if (!info) {
+            const availableModels = Object.keys(provider.models)
+            const matches = fuzzysort.go(modelID, availableModels, { limit: 3, threshold: -10000 })
+            const suggestions = matches.map((m) => m.target)//模糊匹配
+            throw new ModelNotFoundError({ providerID, modelID, suggestions })
+        }
+        return info
+    }
+
+
+    function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
+        const m: Model = {
+            id: model.id,
+            providerID: provider.id,
+            api: {
+                id: model.id,
+                url: provider.api!,
+                npm: model.provider?.npm ?? provider.npm ?? "@ai-sdk/openai-compatible",
+            },
+            name: model.name,
+            capabilities: {
+                temperature: model.temperature,
+                reasoning: model.reasoning,
+                attachment: model.attachment,
+                toolcall: model.tool_call,
+                input: {
+                    text: model.modalities?.input?.includes("text") ?? false,
+                    audio: model.modalities?.input?.includes("audio") ?? false,
+                    image: model.modalities?.input?.includes("image") ?? false,
+                    video: model.modalities?.input?.includes("video") ?? false,
+                    pdf: model.modalities?.input?.includes("pdf") ?? false,
+                },
+                output: {
+                    text: model.modalities?.output?.includes("text") ?? false,
+                    audio: model.modalities?.output?.includes("audio") ?? false,
+                    image: model.modalities?.output?.includes("image") ?? false,
+                    video: model.modalities?.output?.includes("video") ?? false,
+                    pdf: model.modalities?.output?.includes("pdf") ?? false,
+                },
+                interleaved: model.interleaved ?? false,
+            },
+            cost: {
+                input: model.cost?.input ?? 0,
+                output: model.cost?.output ?? 0,
+                cache: {
+                    read: model.cost?.cache_read ?? 0,
+                    write: model.cost?.cache_write ?? 0,
+                },
+                experimentalOver200K: model.cost?.context_over_200k
+                    ? {
+                        cache: {
+                            read: model.cost.context_over_200k.cache_read ?? 0,
+                            write: model.cost.context_over_200k.cache_write ?? 0,
+                        },
+                        input: model.cost.context_over_200k.input,
+                        output: model.cost.context_over_200k.output,
+                    }
+                    : undefined,
+            },
+            limit: {
+                context: model.limit.context,
+                input: model.limit.input,
+                output: model.limit.output,
+            },
+            status: model.status ?? "active",
+            options: model.options ?? {},
+            headers: model.headers ?? {},
+            release_date: model.release_date,
+            variants: {},
+            family: model.family,
+        }
+
+        /// m.variants = mapValues(ProviderTransform.variants(m), (v) => v)
+
+        return m
+    }
+
+    export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
+        return {
+            id: provider.id,
+            source: "custom",
+            name: provider.name,
+            env: provider.env ?? [],
+            options: {},
+            models: mapValues(provider.models, (model) => fromModelsDevModel(provider, model)),
+        }
+    }
+
 
     export async function getLanguage(model: Model): Promise<LanguageModel> {
 
     }
+
+
+
+
+    export const ModelNotFoundError = NamedError.create(
+        "ProviderModelNotFoundError",
+        z.object({
+            providerID: z.string(),
+            modelID: z.string(),
+            suggestions: z.array(z.string()).optional(),
+        }),
+    )
+
+    export const InitError = NamedError.create(
+        "ProviderInitError",
+        z.object({
+            providerID: z.string(),
+        }),
+    )
 
 
 

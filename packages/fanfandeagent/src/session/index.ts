@@ -5,17 +5,23 @@ import { Snapshot } from "../snapshot"
 import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
 import { Message } from "./message"
+import { Instance } from "@/project/instance"
+import { Slug } from "@/util/slug"
+import { Installation } from "@/installation"
+import { Storage } from "../storage/storage"
 
 export namespace Session {
     const log = Log.create({ service: "session" })
 
+    //todo createDefaultTitle()
+
     export const Info = z
         .object({
             id: Identifier.schema("session"),//会话唯一标识符 ("session" 类型)
-            slug: z.string(),//简短标识符（用于 URL/显示）
+            slug: z.string().optional,//简短标识符（用于 URL/显示）
             projectID: z.string(),//关联的项目ID
             directory: z.string(),//工作目录路径
-            parentID: Identifier.schema("session").optional(),//父会话ID（可选，用于会话树）
+            // parentID: Identifier.schema("session").optional(),//父会话ID（可选，用于会话树）
             summary: z
                 .object({
                     additions: z.number(),//新增行数
@@ -61,7 +67,7 @@ export namespace Session {
             ref: "SessionShare",
         })
     export type ShareInfo = z.output<typeof ShareInfo>
-
+    //
     export const Event = {
         Created: BusEvent.define(
             "session.created",
@@ -96,5 +102,38 @@ export namespace Session {
             }),
         ),
     }
+    //创建新的Session
+    export async function createSession(
+        input: {
+            id?: string
+            title?: string
+            //parentID?: string
+            directory: string
+            //permission?: PermissionNext.Ruleset
+        }
+    ) {
+        const result: Info = {
+            id: Identifier.descending("session", input.id),
+            slug: Slug.create(),//随机组合一个“形容词”和一个“名词”来创建一个可读性很强的字符串。
+            projectID: "",
+            directory: "",
+            title: "",
+            version: Installation.VERSION,
+            time: {
+                created: Date.now(),
+                updated: Date.now(),
+            },
+        }
+
+        log.info("create", result)
+
+        await Storage.write(["session", Instance.project.id, result.id], result)
+
+        Bus.publish(Event.Created, {
+            info: result,
+        })
+    }
+
+
 
 }
