@@ -1,12 +1,82 @@
 import { Instance } from "@/project/instance";
 import { Log } from "@/util/log";
 import { Message } from "./message"
+import z from "zod";
+import { Identifier } from "@/id/id";
+import { fn } from "@/util/fn";
+import { loop } from "./Loop";
 
 
 
-
+//user的 prompt
 export namespace SessionPrompt {
     const log = Log.create({ service: "session.prompt" })
+
+    export const PromptInput = z.object({
+        sessionID: Identifier.schema("session"),
+        messageID: Identifier.schema("message").optional(),
+        model: z
+            .object({
+                providerID: z.string(),
+                modelID: z.string(),
+            })
+            .optional(),
+        agent: z.string().optional(),
+        noReply: z.boolean().optional(),
+        tools: z
+            .record(z.string(), z.boolean())
+            .optional()
+            .describe(
+                "@deprecated tools and permissions have been merged, you can set permissions on the session itself now",
+            ),
+        system: z.string().optional(),
+        variant: z.string().optional(),
+        parts: z.array(
+            z.discriminatedUnion("type", [
+                Message.TextPart.omit({
+                    messageID: true,
+                    sessionID: true,
+                })
+                    .partial({
+                        id: true,
+                    })
+                    .meta({
+                        ref: "TextPartInput",
+                    }),
+                Message.FilePart.omit({
+                    messageID: true,
+                    sessionID: true,
+                })
+                    .partial({
+                        id: true,
+                    })
+                    .meta({
+                        ref: "FilePartInput",
+                    }),
+                Message.AgentPart.omit({
+                    messageID: true,
+                    sessionID: true,
+                })
+                    .partial({
+                        id: true,
+                    })
+                    .meta({
+                        ref: "AgentPartInput",
+                    }),
+                Message.SubtaskPart.omit({
+                    messageID: true,
+                    sessionID: true,
+                })
+                    .partial({
+                        id: true,
+                    })
+                    .meta({
+                        ref: "SubtaskPartInput",
+                    }),
+            ]),
+        ),
+    })
+    export type PromptInput = z.infer<typeof PromptInput>
 
     const state = Instance.state(
         () => {
@@ -23,4 +93,11 @@ export namespace SessionPrompt {
             return data
         },
     )
+    //
+    export const prompt = fn(PromptInput, async (input) => {
+        return loop(input.sessionID)
+    })
+
+
+
 }

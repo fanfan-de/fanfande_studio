@@ -13,13 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "栈.md",
+                "file": "Server/routes.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "栈"
+              "title": "routes"
             }
           }
         ]
@@ -54,7 +54,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "message",
+                "query": "",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -187,17 +187,19 @@
   },
   "active": "f7f570f45d1782df",
   "lastOpenFiles": [
+    "web开发.md",
+    "Server/routes.md",
+    "Server",
+    "栈.md",
     "AISDKDocument.md",
     "未命名 9.md",
     "未命名 13.md",
     "依赖注入和基于文件目录的上下文管理.md",
     "VS Code  Symbol.md",
-    "web开发.md",
     "zod.md",
     "开源cli/kimi cli.md",
     "开源cli/Crush Cli.md",
     "开源cli/gemini cli.md",
-    "栈.md",
     "结构.md",
     "未命名 3.base",
     "Zod/定义schema.md",
@@ -217,7 +219,6 @@
     "dev 思路/架构.md",
     "Node 项目/Node.js process 初学者教学指南.pdf",
     "Node 项目/一个独立的node模块意味着什么，边界在哪里.md",
-    "provider/-provider.md",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",
     "Pasted image 20260128112858.png",
@@ -231,7 +232,6 @@
     "Node 项目",
     "Pasted image 20260127155202.png",
     "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf",
-    "未命名 2.base",
-    "未命名 1.base"
+    "未命名 2.base"
   ]
 }

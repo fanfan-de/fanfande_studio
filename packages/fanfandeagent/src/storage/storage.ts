@@ -221,6 +221,9 @@ export namespace Storage {
   }
 
   const glob = new Bun.Glob("**/*")
+  /**
+   * 这个函数递归扫描一个目录下的所有文件，并返回它们的路径（去掉文件扩展名后以数组形式表示）
+   * */
   export async function list(prefix: string[]) {
     const dir = await state().then((x) => x.dir)
     try {

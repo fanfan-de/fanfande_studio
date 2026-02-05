@@ -21,30 +21,33 @@ import {
 import { NamedError } from "../util/error"
 import { BusEvent } from "@/bus/bus-event"
 import { iife } from "@/util/iife"
+import { Identifier } from "@/id/id";
+import { fn } from "@/util/fn";
+import { Storage } from "../storage/storage"
 
 export namespace Message {
 
-export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
-  export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
-  export const AuthError = NamedError.create(
-    "ProviderAuthError",
-    z.object({
-      providerID: z.string(),
-      message: z.string(),
-    }),
-  )
-  export const APIError = NamedError.create(
-    "APIError",
-    z.object({
-      message: z.string(),
-      statusCode: z.number().optional(),
-      isRetryable: z.boolean(),
-      responseHeaders: z.record(z.string(), z.string()).optional(),
-      responseBody: z.string().optional(),
-      metadata: z.record(z.string(), z.string()).optional(),
-    }),
-  )
-  export type APIError = z.infer<typeof APIError.Schema>
+    export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
+    export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
+    export const AuthError = NamedError.create(
+        "ProviderAuthError",
+        z.object({
+            providerID: z.string(),
+            message: z.string(),
+        }),
+    )
+    export const APIError = NamedError.create(
+        "APIError",
+        z.object({
+            message: z.string(),
+            statusCode: z.number().optional(),
+            isRetryable: z.boolean(),
+            responseHeaders: z.record(z.string(), z.string()).optional(),
+            responseBody: z.string().optional(),
+            metadata: z.record(z.string(), z.string()).optional(),
+        }),
+    )
+    export type APIError = z.infer<typeof APIError.Schema>
 
     const PartBase = z.object({
         id: z.string(),
@@ -429,6 +432,7 @@ export const OutputLengthError = NamedError.create("MessageOutputLengthError", z
     })
     export type Info = z.infer<typeof Info>
 
+    //messge的content + Meta，就可以理解为一个 message
     export const WithParts = z.object({
         info: Info,
         parts: z.array(Part),
@@ -729,5 +733,65 @@ export const OutputLengthError = NamedError.create("MessageOutputLengthError", z
         //)
         return result
     }
+    //异步生成器，返回 messageid,本地读取？
+    export const stream = fn(Identifier.schema("session"), async function* (sessionID) {
+        //获得session下所有的message
+        const list = await Array.fromAsync(await Storage.list(["message", sessionID]))
+        for (let i = list.length - 1; i >= 0; i--) {
+            yield await get({
+                sessionID,
+                messageID: list[i]![2]!,
+            })
+        }
+    })
+
+
+    export const parts = fn(Identifier.schema("message"), async (messageID) => {
+        const result = [] as Message.Part[]
+        for (const item of await Storage.list(["part", messageID])) {
+            const read = await Storage.read<Message.Part>(item)
+            result.push(read)
+        }
+        result.sort((a, b) => (a.id > b.id ? 1 : -1))
+        return result
+    })
+    /**
+     * 输入：sessionid+messageid
+     * 输出：对应的withpart
+     */
+    export const get = fn(
+        z.object({
+            sessionID: Identifier.schema("session"),
+            messageID: Identifier.schema("message"),
+        }),
+        async (input): Promise<WithParts> => {
+            return {
+                info: await Storage.read<Message.Info>(["message", input.sessionID, input.messageID]),
+                parts: await parts(input.messageID),
+            }
+        },
+    )
+
+    export async function filterCompacted(stream: AsyncIterable<Message.WithParts>) {
+        const result = [] as Message.WithParts[]
+        const completed = new Set<string>()
+        for await (const msg of stream) {
+            result.push(msg)
+            if (
+                msg.info.role === "user" &&
+                completed.has(msg.info.id) &&
+                msg.parts.some((part) => part.type === "compaction")
+            )
+                break
+            if (msg.info.role === "assistant" && msg.info.summary && msg.info.finish) completed.add(msg.info.parentID)
+        }
+        result.reverse()
+        return result
+    }
+
+
+
+
+
 
 }

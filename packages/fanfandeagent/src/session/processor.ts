@@ -35,7 +35,7 @@ export namespace SessionProcessor {
     //     }
     // }
     //一次执行
-    const process = async (streamInput: LLM.StreamInput): Promise<LLM.StreamInput>=>
+    export const process = async (streamInput: LLM.StreamInput): Promise<LLM.StreamInput>=>
     {
         log.info("process")
         while(true)

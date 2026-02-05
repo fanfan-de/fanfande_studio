@@ -9,6 +9,7 @@ import { Instance } from "@/project/instance"
 import { Slug } from "@/util/slug"
 import { Installation } from "@/installation"
 import { Storage } from "../storage/storage"
+import { fn } from "@/util/fn"
 
 export namespace Session {
     const log = Log.create({ service: "session" })
@@ -132,8 +133,23 @@ export namespace Session {
         Bus.publish(Event.Created, {
             info: result,
         })
+
+        Bus.publish(Event.Updated, {
+            info: result,
+        })
+
+        return result;
     }
 
+    /**
+     * 通过id获得Session Info
+     */
+    export const get = fn(Identifier.schema("session"), async (id) => {
+        const read = await Storage.read<Info>(["session", Instance.project.id, id])
+        return read as Info
+    })
+
+    
 
 
 }

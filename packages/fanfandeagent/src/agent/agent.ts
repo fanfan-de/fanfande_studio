@@ -1,6 +1,9 @@
+import { Instance } from "@/project/instance"
 import z from "zod"
 
-
+/**
+ * Agent是对编排的抽象，plan，build，research
+ */
 export namespace Agent {
   export const Info = z
     .object({
@@ -25,5 +28,29 @@ export namespace Agent {
     })
     .meta({ ref: "AgentInfo", description: "Information about the agent" })
 
-    export type Info = z.infer<typeof Info>
+  export type Info = z.infer<typeof Info>
+
+
+  const state = Instance.state(async () => {
+
+    const result: Record<string, Info> = {
+      plan: {
+        name: "plan",
+        description: "Plan mode. Disallows all edit tools.",
+        mode: "primary",
+        native: true,
+        options: {},
+        steps:Infinity
+      },
+    }
+
+    return result
+  })
+
+
+  export async function get(agent: string) {
+    return state().then((x) => x[agent])
+  }
+
+
 }
