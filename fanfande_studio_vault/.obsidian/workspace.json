@@ -21,8 +21,39 @@
               "icon": "lucide-file",
               "title": "routes"
             }
+          },
+          {
+            "id": "f014c76d1264966b",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "学习  claude code.md",
+                "mode": "source",
+                "source": false,
+                "backlinks": false
+              },
+              "icon": "lucide-file",
+              "title": "学习  claude code"
+            }
+          },
+          {
+            "id": "8f438a968266e9c8",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Todo.md",
+                "mode": "source",
+                "source": false,
+                "backlinks": false
+              },
+              "icon": "lucide-file",
+              "title": "Todo"
+            }
           }
-        ]
+        ],
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -185,10 +216,18 @@
       "zhihu:Open Zhihu side view": false
     }
   },
-  "active": "f7f570f45d1782df",
+  "active": "8f438a968266e9c8",
   "lastOpenFiles": [
-    "web开发.md",
+    "学习  claude code.md",
+    "Todo.md",
+    "未命名",
     "Server/routes.md",
+    "Server/服务器命令.md",
+    "未命名 3.md",
+    "未命名 4.md",
+    "未命名 5.md",
+    "未命名.md",
+    "web开发.md",
     "Server",
     "栈.md",
     "AISDKDocument.md",
@@ -210,15 +249,8 @@
     "Pasted image 20260131175958.png",
     "vibe coding.md",
     "project-state.md",
-    "config.md",
-    "snapshot.md",
-    "Session/数据结构设计.md",
-    "Project/未命名.md",
-    "Project Spec.md",
     "Project",
-    "dev 思路/架构.md",
     "Node 项目/Node.js process 初学者教学指南.pdf",
-    "Node 项目/一个独立的node模块意味着什么，边界在哪里.md",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",
     "Pasted image 20260128112858.png",
@@ -231,7 +263,6 @@
     "未命名.base",
     "Node 项目",
     "Pasted image 20260127155202.png",
-    "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf",
-    "未命名 2.base"
+    "streamText() 参数与返回项精要（完整覆盖，中文精简版）.pdf"
   ]
 }
