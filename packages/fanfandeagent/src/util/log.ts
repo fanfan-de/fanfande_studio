@@ -68,7 +68,7 @@ export namespace Log {
     process.stderr.write(msg)
     return msg.length
   }
-
+//初始化log系统
   export async function init(options: Options) {
     // 设置全局级别
     if (options.level) level = options.level
