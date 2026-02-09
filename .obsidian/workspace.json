@@ -78,13 +78,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/fanfandeagent/Feature Spec.md",
+                "file": "packages/fanfandeagent/Feature Spec：基础设施.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "Feature Spec"
+              "title": "Feature Spec：基础设施"
             }
           }
         ],
@@ -145,7 +145,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 341.5
   },
   "right": {
     "id": "14ad8d7e08bf77ac",
@@ -251,16 +251,27 @@
       "zhihu:Open Zhihu side view": false
     }
   },
-  "active": "a56d83aa83b9d9d9",
+  "active": "84bd5ef1d89d2497",
   "lastOpenFiles": [
-    "packages/fanfandeagent/src/cli/cmd/tui/thread.ts",
-    "packages/fanfandeagent/src/cli/cmd/tui",
-    "packages/fanfandeagent/Project.md",
-    "fanfande_studio_vault/使用yargs注册命令行工具.md",
-    "packages/fanfandeagent/Product Requirement Document.md",
-    "packages/fanfandeagent/Feature Spec.md",
     "packages/fanfandeagent/Feature Spec：核心数据结构.md",
+    "packages/fanfandeagent/Feature Spec：基础设施.md",
+    "packages/fanfandeagent/src/prompts/prompts.md",
+    "packages/fanfandeagent/src/prompts/summary.txt",
+    "packages/fanfandeagent/src/prompts/title.txt",
+    "packages/fanfandeagent/src/prompts/summary copy.txt",
+    "packages/fanfandeagent/src/prompts/explore.txt",
+    "packages/fanfandeagent/src/prompts/compaction.txt",
+    "packages/fanfandeagent/src/prompts/未命名.md",
+    "packages/fanfandeagent/src/prompts/未命名.txt",
+    "packages/fanfandeagent/Feature Spec.md",
+    "packages/fanfandeagent/Product Requirement Document.md",
     "packages/fanfandeagent/README.md",
+    "packages/fanfandeagent/Project.md",
+    "packages/fanfandeagent/src/prompts/prompts.txt",
+    "packages/fanfandeagent/src/prompts",
+    "packages/fanfandeagent/src/prompts.txt",
+    "packages/fanfandeagent/src/cli/cmd/tui/thread.ts",
+    "fanfande_studio_vault/使用yargs注册命令行工具.md",
     "packages/fanfandeagent/src/session/Spec： Session.md",
     "fanfande_studio_vault/Spec 规范驱动.md",
     "fanfande_studio_vault/specs/project.md",
@@ -275,18 +286,10 @@
     "packages/fanfandeagent/src/snapshot/explain.md",
     "学习  claude code.md",
     "Todo.md",
-    "未命名",
     "Server/routes.md",
     "Server/服务器命令.md",
     "未命名 3.md",
-    "未命名 4.md",
-    "未命名 5.md",
-    "Server",
-    "未命名 3.base",
-    "Zod",
     "Pasted image 20260131175958.png",
-    "Project",
-    "Node 项目/Node.js process 初学者教学指南.pdf",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",
     "Pasted image 20260128112858.png",
@@ -295,9 +298,6 @@
     "Pasted image 20260128112246.png",
     "Pasted image 20260128111119.png",
     "Pasted image 20260128111103.png",
-    "开源cli",
-    "未命名.base",
-    "Node 项目",
     "Pasted image 20260127155202.png"
   ]
 }

@@ -23,8 +23,8 @@ Session会话集：数据结构待定
 config项目配置：
 State & Snapshots项目的状态与快照：
 
-# Session(会话)
-会话是 Message Tree 的容器。
+# Session
+Session是 Message Tree 的容器。
 ```Typescript
 interface Session {
   id: string;
@@ -35,7 +35,7 @@ interface Session {
   updatedAt: number;
 }
 ```
-# Message(消息节点)
+# Message
 采用**父节点引用**模式构建树状结构。
 ```Typescript
 interface Message {
@@ -49,3 +49,20 @@ interface Message {
 }
 ```
 # MessagePart(消息片段)
+
+
+
+
+
+# AgentMode（搁置）
+AgentMode是一系列的Agent执行策略，可以看作一套配置的预设
+
+- `build`：默认执行策略
+- `plan`：规划优先策略
+- `explore`：探索发现策略
+- `general`：通用多任务策略
+
+
+# Auth（搁置）
+
+# 
