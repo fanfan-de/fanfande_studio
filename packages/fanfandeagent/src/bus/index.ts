@@ -7,7 +7,7 @@ import { GlobalBus } from "./global"
 export namespace Bus {
   const log = Log.create({ service: "bus" })
   type Subscription = (event: any) => void
-  //
+  
   export const InstanceDisposed = BusEvent.define(
     "server.instance.disposed",
     z.object({
@@ -62,7 +62,8 @@ export namespace Bus {
     })
     return Promise.all(pending)
   }
-  // 业务代码调用
+
+  // 订阅事件
   export function subscribe<Definition extends BusEvent.Definition>(
     def: Definition,
     callback: (event: { type: Definition["type"]; properties: z.infer<Definition["properties"]> }) => void,

@@ -78,13 +78,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/fanfandeagent/Feature Spec：基础设施.md",
+                "file": "packages/fanfandeagent/src/bus/spec.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "Feature Spec：基础设施"
+              "title": "spec"
             }
           }
         ],
@@ -253,8 +253,10 @@
   },
   "active": "84bd5ef1d89d2497",
   "lastOpenFiles": [
-    "packages/fanfandeagent/Feature Spec：核心数据结构.md",
+    "packages/fanfandeagent/src/bun/spec.md",
+    "packages/fanfandeagent/src/bus/spec.md",
     "packages/fanfandeagent/Feature Spec：基础设施.md",
+    "packages/fanfandeagent/Feature Spec：核心数据结构.md",
     "packages/fanfandeagent/src/prompts/prompts.md",
     "packages/fanfandeagent/src/prompts/summary.txt",
     "packages/fanfandeagent/src/prompts/title.txt",
@@ -287,8 +289,6 @@
     "学习  claude code.md",
     "Todo.md",
     "Server/routes.md",
-    "Server/服务器命令.md",
-    "未命名 3.md",
     "Pasted image 20260131175958.png",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",

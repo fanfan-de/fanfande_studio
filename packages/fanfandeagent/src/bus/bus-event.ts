@@ -9,6 +9,8 @@ export namespace BusEvent {
   // 注册表 
   const registry = new Map<string, Definition>()
   //定义事件，使用字面量来定义，效果更加好
+  //Type extends string：泛型约束，意味着 Type 可以是 string 类型本身，
+  // 也可以是 string 的子类型，比如字符串字面量类型（例如 "hello"）或者由字符串字面量组成的联合类型（例如 "a" | "b"）。
   export function define<Type extends string, Properties extends ZodType>(type: Type, properties: Properties) {
     const result = {
       type,
