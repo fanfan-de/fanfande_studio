@@ -15,6 +15,7 @@ export namespace Bus {
     }),
   )
 
+  //state() 是 Map<any, Subscription[]> ，订阅状态 存储了不同的event有哪些订阅者，使用event作为键值查找
   const state = Instance.state(
     () => {
       const subscriptions = new Map<any, Subscription[]>()
@@ -37,7 +38,7 @@ export namespace Bus {
       }
     }
   )
-  //某个动作触发时，调用 Bus.publish。
+  //某个动作触发时，遍历 订阅状态，执行所有匹配的回调，返回
   export async function publish<Definition extends BusEvent.Definition>(
     def: Definition,
     properties: z.output<Definition["properties"]>,
@@ -85,14 +86,14 @@ export namespace Bus {
   export function subscribeAll(callback: (event: any) => void) {
     return raw("*", callback)
   }
-
+  //把订阅的回调函数写入订阅state
   function raw(type: string, callback: (event: any) => void) {
     log.info("subscribing", { type })
     const subscriptions = state().subscriptions
     let match = subscriptions.get(type) ?? []
     match.push(callback)
     subscriptions.set(type, match)
-
+    //返回取消订阅函数 (The Unsubscribe Closure)
     return () => {
       log.info("unsubscribing", { type })
       const match = subscriptions.get(type)

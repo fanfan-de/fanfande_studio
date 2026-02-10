@@ -22,7 +22,7 @@ interface Context {
 
 //内部维护的一个  上下文存储容器， Context，directory信息就在其中，
 //context是全局唯一的，本质上就是两个方法
-const context = utilContext.create<Context>(/*"instance"*/)
+const contextContainer = utilContext.createContextContainer<Context>(/*"instance"*/)
 //内部维护的一个  目录：Context  的缓存
 //和state的区别是，这里存的是项目的Context信息，即上面的接口的实现
 //state里的recordsByKey 存的是 需要保持为状态的数据？

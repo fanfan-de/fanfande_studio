@@ -1,6 +1,5 @@
 import { AsyncLocalStorage } from "async_hooks"
 
-
 export namespace Context {
   export class NotFound extends Error {
     constructor(public override readonly name: string) {
@@ -8,11 +7,14 @@ export namespace Context {
     }
   }
   /**
-   * 创建一个上下文容器，返回一个对象，包含 获得内容和
+   * 创建一个上下文容器context,
+   * 使用方法是通过
+   * context.provider(value,()=>{})来运行想要运行的方法
+   * 在()=>{}中通过 context.use()来获得这个value
    * @param name 
    * @returns 
    */
-  export function create<T>(/*name: string*/) {
+  export function createContextContainer<T>(/*name: string*/) {
     // 实例化 Node.js 原生的存储容器
     const storage = new AsyncLocalStorage<T>()
     return {
