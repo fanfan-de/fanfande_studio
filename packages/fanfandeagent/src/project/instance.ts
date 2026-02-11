@@ -60,7 +60,7 @@ export const Instance = {
           worktree: sandbox,
           project,
         }
-        await context.provide(ctx, async () => {
+        await contextContainer.provide(ctx, async () => {
           await input.init?.()
         })
         return ctx
@@ -69,7 +69,7 @@ export const Instance = {
     }
     const ctx:Context = await existing
 
-    return context.provide(ctx, async () => {
+    return contextContainer.provide(ctx, async () => {
       return input.fn()
     })
   },
@@ -79,7 +79,7 @@ export const Instance = {
    * 若在没有上下文的异步链里调用，会抛错（由 Context.use 控制）。
    */
   get directory() {
-    return context.use().directory
+    return contextContainer.use().directory
   },
 
   /**
@@ -88,14 +88,14 @@ export const Instance = {
    * - 非 Git 项目：为 "/"（特殊值，用于后续边界判断的安全处理）
    */
   get worktree() {
-    return context.use().worktree
+    return contextContainer.use().worktree
   },
 
   /**
    * 读取当前上下文的项目元数据（Project.Info）：包含 id、sandboxes、时间戳等。
    */
   get project() {
-    return context.use().project
+    return contextContainer.use().project
   },
 
   /**
@@ -151,7 +151,7 @@ export const Instance = {
       const awaited = await value.catch(() => { })
       if (awaited) {
         // 确保在该上下文环境中执行 dispose，避免跨上下文调用导致的状态错乱
-        await context.provide(await value, async () => {
+        await contextContainer.provide(await value, async () => {
           await Instance.dispose()
         })
       }

@@ -78,13 +78,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/fanfandeagent/src/bus/bus.md",
+                "file": "packages/fanfandeagent/src/project/spec.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "bus"
+              "title": "spec"
             }
           }
         ],
@@ -145,7 +145,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 341.5
+    "width": 243.5
   },
   "right": {
     "id": "14ad8d7e08bf77ac",
@@ -253,6 +253,7 @@
   },
   "active": "84bd5ef1d89d2497",
   "lastOpenFiles": [
+    "packages/fanfandeagent/src/bus/bus.md",
     "packages/fanfandeagent/Feature Spec：基础设施.md",
     "packages/fanfandeagent/Feature Spec：核心数据结构.md",
     "packages/fanfandeagent/src/prompts/prompts.md",

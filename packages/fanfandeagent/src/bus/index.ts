@@ -3,7 +3,10 @@ import { Log } from "../util/log"
 import { Instance } from "../project/instance"
 import { BusEvent } from "./bus-event"
 import { GlobalBus } from "./global"
-
+/**
+ * 事件管理
+ * 这里主要是project事件而非全局事件
+ */
 export namespace Bus {
   const log = Log.create({ service: "bus" })
   type Subscription = (event: any) => void
@@ -16,6 +19,8 @@ export namespace Bus {
   )
 
   //state() 是 Map<any, Subscription[]> ，订阅状态 存储了不同的event有哪些订阅者，使用event作为键值查找
+  //Subscription类型是 订阅回调函数的类型，以event为参数
+  //这里的state状态是绑定到project的
   const state = Instance.state(
     () => {
       const subscriptions = new Map<any, Subscription[]>()

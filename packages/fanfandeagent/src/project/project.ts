@@ -41,11 +41,16 @@ export namespace Project {
     })
   export type Info = z.infer<typeof Info>
 
+  /**
+   * project update event
+   */
   export const Event = {
     Updated: BusEvent.define("project.updated", Info),
   }
   /**
    * 从指定目录初始化或获取项目信息。
+   * 这个根目录存在以下可能
+   * 是git项目根目录/git项目worktree根目录/git项目子目录，/非git项目目录
    * @description
    * @returns 返回一个对象，包含：
    * - `project`: 解析后的 {@link Info} 项目信息对象。

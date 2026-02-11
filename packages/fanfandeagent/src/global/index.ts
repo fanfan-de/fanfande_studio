@@ -32,6 +32,9 @@ Global paths: {
 */ 
 
 export namespace Global {
+  /**
+   * 获得本地文件的存储地址
+   */
   export const Path = {
     // Allow override via OPENCODE_TEST_HOME for test isolation
     get home() {

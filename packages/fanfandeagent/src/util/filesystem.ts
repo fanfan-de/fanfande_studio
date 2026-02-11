@@ -2,13 +2,13 @@ import { realpathSync } from "fs"
 import { dirname, join, relative } from "path"
 
 export namespace Filesystem {
-    //检查路径 `p` 是否存在。
+  //检查路径 `p` 是否存在。
   export const exists = (p: string) =>
     Bun.file(p)
       .stat()
       .then(() => true)
       .catch(() => false)
-    //检查路径 `p` 是否是一个目录。
+  //检查路径 `p` 是否是一个目录。
   export const isDir = (p: string) =>
     Bun.file(p)
       .stat()
@@ -52,7 +52,13 @@ export namespace Filesystem {
     }
     return result
   }
-  //
+  /**
+  * 这个异步生成器函数从 start 目录开始，逐级向父目录查找，
+  * 在每一层检查 targets 中的文件/目录是否存在，并依次产出所有存在的完整路径，
+  * 直到抵达 stop 目录或文件系统根目录时停止。
+  * async function* 组合就是异步生成器函数的标志。
+  * 这种函数不会直接返回一个普通值，而是返回一个异步生成器对象，该对象实现了异步迭代器协议。
+  */
   export async function* up(options: { targets: string[]; start: string; stop?: string }) {
     const { targets, start, stop } = options
     let current = start
@@ -62,6 +68,7 @@ export namespace Filesystem {
         if (await exists(search)) yield search
       }
       if (stop === current) break
+      //获得所在目录的路径，即父路径
       const parent = dirname(current)
       if (parent === current) break
       current = parent
