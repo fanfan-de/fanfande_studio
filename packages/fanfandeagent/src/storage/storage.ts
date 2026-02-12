@@ -9,7 +9,9 @@ import { $ } from "bun"
 import { NamedError } from "@/util/error"
 import z from "zod"
 
-// 这段代码实现了一个 基于文件系统的本地 JSON 存储模块，专门用于在 Bun 运行时环境中持久化数据。
+/**
+ * 这段代码实现了一个 基于文件系统的本地 JSON 存储模块，专门用于在 Bun 运行时环境中持久化数据。
+ */
 export namespace Storage {
   const log = Log.create({ service: "storage" })
   //方法类型：含有异步操作，以文件目录为参数 无返回值
@@ -169,15 +171,22 @@ export namespace Storage {
     const dir = await state().then((x) => x.dir)
     const target = path.join(dir, ...key) + ".json"
     return withErrorHandling(async () => {
-      await fs.unlink(target).catch(() => {})
+      await fs.unlink(target).catch(() => { })
     })
   }
-
+  /**
+   * 从文件系统中安全地读取并解析一个 JSON 文件
+   * @param key 路径数组，譬如[a,b]会被解析为文件地址   dir/a/b.json
+   * @returns 
+   */
   export async function read<T>(key: string[]) {
     const dir = await state().then((x) => x.dir)
     const target = path.join(dir, ...key) + ".json"
     return withErrorHandling(async () => {
       using _ = await Lock.read(target)
+      //Bun.file(target): 使用 Bun 内置的高性能文件 API 引用文件。
+      //.json(): 异步读取文件内容并将其解析为 JavaScript 对象。
+      // as T: 将结果断言为泛型 T，确保类型安全。
       const result = await Bun.file(target).json()
       return result as T
     })

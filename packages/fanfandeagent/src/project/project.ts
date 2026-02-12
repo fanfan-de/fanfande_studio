@@ -235,7 +235,13 @@ export namespace Project {
     })
     return { project: result, sandbox }
   }
-
+  /**
+   * 这段代码是一个使用 Bun 运行时的异步函数 discover。
+   * 它的主要功能是：在 Git 项目的源码目录中自动查找名为 favicon 的图标文件，
+   * 并将其转换为 Base64 编码的 Data URL，最后更新到项目的配置中。
+   * @param input 
+   * @returns 
+   */
   export async function discover(input: Info) {
     if (input.vcs !== "git") return
     if (input.icon?.override) return
@@ -270,6 +276,7 @@ export namespace Project {
     const globalProject = await Storage.read<Info>(["project", "global"]).catch(() => undefined)
     if (!globalProject) return
 
+    //session路径的list
     const globalSessions = await Storage.list(["session", "global"]).catch(() => [])
     if (globalSessions.length === 0) return
 
@@ -289,13 +296,20 @@ export namespace Project {
       log.error("failed to migrate sessions from global to project", { error, projectId: newProjectID })
     })
   }
-
+  /**
+   * 这段代码是一个异步函数 setInitialized，它的作用是记录并更新某个项目的“初始化时间”。
+   * @param projectID 
+   */
   export async function setInitialized(projectID: string) {
     await Storage.update<Info>(["project", projectID], (draft) => {
       draft.time.initialized = Date.now()
     })
   }
-
+  /**
+   * 这段代码是一个异步函数 list，其核心功能是：
+   * 从存储中获取所有项目的数据，并过滤掉其中已经不存在于磁盘上的“沙盒（sandboxes）”路径。
+   * @returns 
+   */
   export async function list() {
     const keys = await Storage.list(["project"])
     const projects = await Promise.all(keys.map((x) => Storage.read<Info>(x)))
@@ -304,7 +318,29 @@ export namespace Project {
       sandboxes: project.sandboxes?.filter((x) => existsSync(x)),
     }))
   }
-
+  /**
+   * 更新项目信息
+   * 
+   * @description 
+   * 该函数采用原子化更新模式，仅修改传入的字段。
+   * 更新成功后会自动记录最后修改时间，并通过全局事件总线通知系统其他模块。
+   * 
+   * @param input - 更新参数
+   * @param input.projectID - 必填。需要更新的项目唯一标识符
+   * @param input.name - 选填。项目的新名称
+   * @param input.icon - 选填。图标配置对象，包含 url, override 和 color 属性
+   * 
+   * @returns 返回更新后的完整项目信息对象 (Info)
+   * 
+   * @example
+   * // 仅更新图标颜色
+   * await update({ 
+   *   projectID: "my-pid", 
+   *   icon: { color: "#ff0000" } 
+   * });
+   * 
+   * @throws {ZodError} 如果输入参数不符合 Schema 定义（如 projectID 缺失）将抛出校验错误
+   */
   export const update = fn(
     z.object({
       projectID: z.string(),
@@ -333,7 +369,12 @@ export namespace Project {
       return result
     },
   )
-
+/**
+ * 根据给定的项目 ID (projectID)，从存储中获取该项目的沙盒目录列表，
+ * 并验证这些目录在文件系统中是否真实存在且为目录。
+ * @param projectID 
+ * @returns 
+ */
   export async function sandboxes(projectID: string) {
     const project = await Storage.read<Info>(["project", projectID]).catch(() => undefined)
     if (!project?.sandboxes) return []
@@ -344,7 +385,12 @@ export namespace Project {
     }
     return valid
   }
-
+/**
+ * 从指定项目的沙盒列表中移除一个特定的目录，更新项目的最后修改时间，并向系统发送一个更新事件。
+ * @param projectID 
+ * @param directory 
+ * @returns 
+ */
   export async function removeSandbox(projectID: string, directory: string) {
     const result = await Storage.update<Info>(["project", projectID], (draft) => {
       const sandboxes = draft.sandboxes ?? []
