@@ -273,10 +273,11 @@ export namespace Project {
   }
   //将之前存储在 "global" 项目下的会话迁移到新检测到的具体项目下。
   async function migrateFromGlobal(newProjectID: string, worktree: string) {
+    //如果global project不存在，直接返回
     const globalProject = await Storage.read<Info>(["project", "global"]).catch(() => undefined)
     if (!globalProject) return
 
-    //session路径的list
+    //session-global下所有session文件的路径的list
     const globalSessions = await Storage.list(["session", "global"]).catch(() => [])
     if (globalSessions.length === 0) return
 
@@ -290,7 +291,7 @@ export namespace Project {
 
       session.projectID = newProjectID
       log.info("migrating session", { sessionID, from: "global", to: newProjectID })
-      await Storage.write(["session", newProjectID, sessionID], session)
+      await Storage.write(["session", newProjectID, sessionID as string], session)
       await Storage.remove(key)
     }).catch((error) => {
       log.error("failed to migrate sessions from global to project", { error, projectId: newProjectID })

@@ -31,8 +31,10 @@ export namespace Agent {
   export type Info = z.infer<typeof Info>
 
 
+  /**
+ * state里面，维护一个Record<string, Info>对象
+ */
   const state = Instance.state(async () => {
-
     const result: Record<string, Info> = {
       plan: {
         name: "plan",
@@ -40,17 +42,52 @@ export namespace Agent {
         mode: "primary",
         native: true,
         options: {},
-        steps:Infinity
-      },
+        steps: Infinity
+      }
     }
 
     return result
   })
 
-
+  /**
+   * 根据agent的名称（build，plan），返回state中维护的agent.info的实例
+   * @param agent 
+   * @returns 
+   */
   export async function get(agent: string) {
     return state().then((x) => x[agent])
   }
+
+  //默认agent
+  export async function defaultAgent() {
+    const cfg = await Config.get()
+    const agents = await state()
+
+    if (cfg.default_agent) {
+      const agent = agents[cfg.default_agent]
+      if (!agent) throw new Error(`default agent "${cfg.default_agent}" not found`)
+      if (agent.mode === "subagent") throw new Error(`default agent "${cfg.default_agent}" is a subagent`)
+      if (agent.hidden === true) throw new Error(`default agent "${cfg.default_agent}" is hidden`)
+      return agent.name
+    }
+
+    const primaryVisible = Object.values(agents).find((a) => a.mode !== "subagent" && a.hidden !== true)
+    if (!primaryVisible) throw new Error("no primary visible agent found")
+    return primaryVisible.name
+  }
+
+
+  export async function list() {
+    const cfg = await Config.get()
+    return pipe(
+      await state(),
+      values(),
+      sortBy([(x) => (cfg.default_agent ? x.name === cfg.default_agent : x.name === "build"), "desc"]),
+    )
+  }
+
+
+
 
 
 }
