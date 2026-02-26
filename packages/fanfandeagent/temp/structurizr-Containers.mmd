@@ -1,0 +1,31 @@
+graph LR
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["Container View: 在线图书馆系统"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    1["<div style='font-weight: bold'>读者</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>图书馆的普通用户，可以搜索书籍和借书。</div>"]
+    style 1 fill:#08427b,stroke:#052e56,color:#ffffff
+    2["<div style='font-weight: bold'>管理员</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>负责图书入库和用户管理。</div>"]
+    style 2 fill:#08427b,stroke:#052e56,color:#ffffff
+    9["<div style='font-weight: bold'>邮件系统</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>外部邮件推送系统。</div>"]
+    style 9 fill:#999999,stroke:#6b6b6b,color:#ffffff
+
+    subgraph 3 ["在线图书馆系统"]
+      style 3 fill:#ffffff,stroke:#0b4884,color:#0b4884
+
+      4["<div style='font-weight: bold'>单页应用</div><div style='font-size: 70%; margin-top: 0px'>[Container: React]</div><div style='font-size: 80%; margin-top:10px'>提供所有图书馆功能的界面。</div>"]
+      style 4 fill:#438dd5,stroke:#2e6295,color:#ffffff
+      5["<div style='font-weight: bold'>API 应用</div><div style='font-size: 70%; margin-top: 0px'>[Container: Spring Boot]</div><div style='font-size: 80%; margin-top:10px'>通过 JSON/HTTPS 提供业务逻辑。</div>"]
+      style 5 fill:#438dd5,stroke:#2e6295,color:#ffffff
+      8[("<div style='font-weight: bold'>数据库</div><div style='font-size: 70%; margin-top: 0px'>[Container: PostgreSQL]</div><div style='font-size: 80%; margin-top:10px'>存储用户信息、图书和借阅记录。</div>")]
+      style 8 fill:#438dd5,stroke:#2e6295,color:#ffffff
+    end
+
+    1-. "<div>访问网站</div><div style='font-size: 70%'>[HTTPS]</div>" .->4
+    2-. "<div>管理系统</div><div style='font-size: 70%'>[HTTPS]</div>" .->4
+    4-. "<div>调用接口</div><div style='font-size: 70%'>[JSON/HTTPS]</div>" .->5
+    5-. "<div>读写数据</div><div style='font-size: 70%'>[JDBC]</div>" .->8
+    5-. "<div>发送通知邮件</div><div style='font-size: 70%'>[SMTP]</div>" .->9
+
+  end

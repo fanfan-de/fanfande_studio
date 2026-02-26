@@ -1,0 +1,20 @@
+graph LR
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["System Context View: 在线图书馆系统"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    1["<div style='font-weight: bold'>读者</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>图书馆的普通用户，可以搜索书籍和借书。</div>"]
+    style 1 fill:#08427b,stroke:#052e56,color:#ffffff
+    2["<div style='font-weight: bold'>管理员</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>负责图书入库和用户管理。</div>"]
+    style 2 fill:#08427b,stroke:#052e56,color:#ffffff
+    3["<div style='font-weight: bold'>在线图书馆系统</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>允许用户在线查阅图书。</div>"]
+    style 3 fill:#1168bd,stroke:#0b4884,color:#ffffff
+    9["<div style='font-weight: bold'>邮件系统</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>外部邮件推送系统。</div>"]
+    style 9 fill:#999999,stroke:#6b6b6b,color:#ffffff
+
+    1-. "<div>访问网站</div><div style='font-size: 70%'>[HTTPS]</div>" .->3
+    2-. "<div>管理系统</div><div style='font-size: 70%'>[HTTPS]</div>" .->3
+    3-. "<div>发送通知邮件</div><div style='font-size: 70%'>[SMTP]</div>" .->9
+
+  end

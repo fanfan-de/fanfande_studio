@@ -1,0 +1,121 @@
+graph TB
+    %% 颜色定义
+    classDef userInterface fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef coreBusiness fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef serviceLayer fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+    classDef dataLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef extensionLayer fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef external fill:#f5f5f5,stroke:#616161,stroke-width:2px
+    
+    %% 标题
+    subgraph "OpenCode 架构图 - 高层次组件视图"
+        
+        %% 用户接口层
+        subgraph UI_Layer["用户接口层 (User Interface Layer)"]
+            CLI["CLI 命令行界面<br/>src/cli/<br/>20+ 命令"]
+            TUI["TUI 终端界面<br/>src/cli/cmd/tui/<br/>交互式组件"]
+            WebUI["Web 界面<br/>src/server/<br/>REST API + WebSocket"]
+        end
+        
+        %% 核心业务层
+        subgraph Core_Layer["核心业务层 (Core Business Layer)"]
+            SessionProcessor["SessionProcessor<br/>src/session/processor.ts<br/>AI会话处理引擎"]
+            ToolSystem["工具系统<br/>src/tool/<br/>15+ 内置工具"]
+            PermissionSystem["权限系统<br/>src/permission/<br/>细粒度权限控制"]
+            AgentSystem["Agent 系统<br/>src/agent/<br/>AI代理管理"]
+        end
+        
+        %% 服务层
+        subgraph Service_Layer["服务层 (Service Layer)"]
+            HTTPServer["HTTP 服务器<br/>src/server/server.ts<br/>Hono框架"]
+            EventBus["事件总线<br/>src/bus/<br/>发布-订阅系统"]
+            MCPIntegration["MCP 集成<br/>src/mcp/<br/>Model Context Protocol"]
+            LSPIntegration["LSP 集成<br/>src/lsp/<br/>代码智能提示"]
+        end
+        
+        %% 数据层
+        subgraph Data_Layer["数据层 (Data Layer)"]
+            InstanceMgmt["Instance 管理<br/>src/project/<br/>项目生命周期"]
+            StorageSystem["存储系统<br/>src/storage/<br/>Drizzle ORM + SQLite"]
+            ConfigMgmt["配置管理<br/>src/config/<br/>多环境配置"]
+        end
+        
+        %% 扩展层
+        subgraph Extension_Layer["扩展层 (Extension Layer)"]
+            PluginSystem["插件系统<br/>src/plugin/<br/>可插拔扩展"]
+            SkillSystem["技能系统<br/>src/skill/<br/>可复用技能"]
+            ProviderSystem["Provider 系统<br/>src/provider/<br/>20+ AI模型集成"]
+        end
+        
+        %% 外部系统
+        subgraph External["外部系统与集成"]
+            AISDK["AI SDK<br/>Vercel AI SDK"]
+            AIProviders["AI 提供商<br/>OpenAI, Anthropic, Google等"]
+            ExternalTools["外部工具<br/>MCP 服务器"]
+            FileSystem["文件系统<br/>本地/远程"]
+        end
+    end
+    
+    %% 组件样式应用
+    class CLI,TUI,WebUI userInterface
+    class SessionProcessor,ToolSystem,PermissionSystem,AgentSystem coreBusiness
+    class HTTPServer,EventBus,MCPIntegration,LSPIntegration serviceLayer
+    class InstanceMgmt,StorageSystem,ConfigMgmt dataLayer
+    class PluginSystem,SkillSystem,ProviderSystem extensionLayer
+    class AISDK,AIProviders,ExternalTools,FileSystem external
+    
+    %% 数据流和依赖关系
+    
+    %% 用户输入流
+    CLI --> HTTPServer
+    TUI --> HTTPServer
+    WebUI --> HTTPServer
+    
+    %% 核心处理流
+    HTTPServer --> InstanceMgmt
+    InstanceMgmt --> SessionProcessor
+    SessionProcessor --> ToolSystem
+    SessionProcessor --> PermissionSystem
+    SessionProcessor --> AgentSystem
+    
+    %% 工具执行流
+    ToolSystem --> FileSystem
+    ToolSystem --> ExternalTools
+    
+    %% AI 模型调用流
+    AgentSystem --> ProviderSystem
+    ProviderSystem --> AISDK
+    AISDK --> AIProviders
+    
+    %% 事件通信流
+    SessionProcessor --> EventBus
+    ToolSystem --> EventBus
+    PermissionSystem --> EventBus
+    EventBus --> CLI
+    EventBus --> TUI
+    EventBus --> WebUI
+    
+    %% 数据访问流
+    SessionProcessor --> StorageSystem
+    AgentSystem --> ConfigMgmt
+    PermissionSystem --> ConfigMgmt
+    
+    %% 扩展集成流
+    PluginSystem --> EventBus
+    SkillSystem --> ToolSystem
+    MCPIntegration --> ExternalTools
+    LSPIntegration --> FileSystem
+    
+    %% 配置管理
+    ConfigMgmt --> InstanceMgmt
+    ConfigMgmt --> ProviderSystem
+    ConfigMgmt --> PermissionSystem
+    
+    %% 样式增强
+    linkStyle 0,1,2 stroke:#01579b,stroke-width:2px
+    linkStyle 3,4,5 stroke:#4a148c,stroke-width:2px
+    linkStyle 6,7 stroke:#1b5e20,stroke-width:2px
+    linkStyle 8,9,10 stroke:#880e4f,stroke-width:2px
+    linkStyle 11,12,13,14 stroke:#e65100,stroke-width:2px
+    linkStyle 15,16,17 stroke:#616161,stroke-width:2px
+    linkStyle 18,19,20 stroke:#4a148c,stroke-width:2px

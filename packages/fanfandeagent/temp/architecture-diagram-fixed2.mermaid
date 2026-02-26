@@ -1,0 +1,26 @@
+flowchart TD
+    %% 典型工作流程示例
+    subgraph "典型用户工作流示例"
+        A[用户通过 CLI 输入命令] --> B[CLI 解析参数并调用 Server API]
+        B --> C[Server 创建/获取 Instance]
+        C --> D[Instance 管理会话状态]
+        D --> E[SessionProcessor 处理用户消息]
+        E --> F{需要工具调用?}
+        F -->|是| G[调用对应工具]
+        G --> H[工具执行操作]
+        H --> I[结果通过 EventBus 广播]
+        F -->|否| J[直接返回 AI 响应]
+        J --> K[响应通过 EventBus 广播]
+        I --> L[客户端接收更新并显示]
+        K --> L
+    end
+    
+    classDef startEnd fill:#e1f5fe,stroke:#01579b
+    classDef process fill:#f3e5f5,stroke:#4a148c
+    classDef decision fill:#e8f5e8,stroke:#1b5e20
+    classDef io fill:#fff3e0,stroke:#e65100
+    
+    class A,L startEnd
+    class B,C,D,E,G,H,J process
+    class F decision
+    class I,K io
