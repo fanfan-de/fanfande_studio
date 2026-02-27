@@ -76,13 +76,15 @@
             "id": "84bd5ef1d89d2497",
             "type": "leaf",
             "state": {
-              "type": "bases",
+              "type": "markdown",
               "state": {
-                "file": "未命名.base",
-                "viewName": "表格"
+                "file": "通俗的解释provider，provider.ts 中，代码执行到const state = Instance.state 这里是，到底发生了什么，我尤其关注Instance.state()这个方法的设计目的，以及  const  state  这个state的作用.md",
+                "mode": "source",
+                "source": false,
+                "backlinks": false
               },
-              "icon": "lucide-table",
-              "title": "未命名"
+              "icon": "lucide-file",
+              "title": "通俗的解释provider，provider.ts 中，代码执行到const state = Instance.state 这里是，到底发生了什么，我尤其关注Instance.state()这个方法的设计目的，以及  const  state  这个state的作用"
             }
           },
           {
@@ -91,13 +93,28 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "temp.md",
+                "file": "Provider.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "temp"
+              "title": "Provider"
+            }
+          },
+          {
+            "id": "62d0ff3b2cc132ef",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "sda.md",
+                "mode": "source",
+                "source": false,
+                "backlinks": false
+              },
+              "icon": "lucide-file",
+              "title": "sda"
             }
           },
           {
@@ -116,7 +133,7 @@
             }
           }
         ],
-        "currentTab": 6
+        "currentTab": 5
       }
     ],
     "direction": "vertical"
@@ -153,7 +170,7 @@
                 "explainSearch": false,
                 "collapseAll": false,
                 "extraContext": false,
-                "sortOrder": "alphabeticalReverse"
+                "sortOrder": "byModifiedTime"
               },
               "icon": "lucide-search",
               "title": "搜索"
@@ -279,12 +296,29 @@
       "zhihu:Open Zhihu side view": false
     }
   },
-  "active": "c4465fec0eaa9f85",
+  "active": "84bd5ef1d89d2497",
   "lastOpenFiles": [
-    "未命名.base",
-    "temp.md",
+    "这个agent是如何确定工作在哪一个project的？.md",
+    "通俗的解释provider，provider.ts 中，代码执行到const state = Instance.state 这里是，到底发生了什么，我尤其关注Instance.state()这个方法的设计目的，以及  const  state  这个state的作用.md",
     "尝试用C4的方法分析一下claudecode这个产品.md",
+    "未命名.base",
     "未命名 1.base",
+    "sda.md",
+    "Provider.md",
+    "fanfande_studio_vault/provider/models.md",
+    "fanfande_studio_vault/provider/-provider.md",
+    "fanfande_studio_vault/provider/transform.md",
+    "fanfande_studio_vault/provider/provider.md",
+    "fanfande_studio_vault/provider/auth.md",
+    "fanfande_studio_vault/参考的opencode的项目架构.md",
+    "fanfande_studio_vault/未命名.md",
+    "fanfande_studio_vault/opencode  product synilize.md",
+    "fanfande_studio_vault/数据结构.md",
+    "fanfande_studio_vault/AGENT_MODULE_PLAN.md",
+    "fanfande_studio_vault/项目文档.md",
+    "fanfande_studio_vault/路径引用.md",
+    "fanfande_studio_vault/dev 思路/架构.md",
+    "temp.md",
     "未命名",
     "fanfande_studio_vault/如何清晰地表达架构.md",
     "packages/fanfandeagent/architecture.json",
@@ -300,22 +334,6 @@
     "fanfande_studio_vault/Server/服务器命令.md",
     "fanfande_studio_vault/Server/routes.md",
     "packages/fanfandeagent/Feature Spec.md",
-    "packages/fanfandeagent/Project.md",
-    "packages/fanfandeagent/Feature Spec：核心数据结构.md",
-    "packages/fanfandeagent/Feature Spec：基础设施.md",
-    "packages/fanfandeagent/src/agent/spec.md",
-    "packages/fanfandeagent/src/acp/spec.md",
-    "packages/fanfandeagent/src/bus/bus.md",
-    "packages/fanfandeagent/src/prompts/prompts.md",
-    "packages/fanfandeagent/src/prompts/未命名.md",
-    "packages/fanfandeagent/Product Requirement Document.md",
-    "packages/fanfandeagent/README.md",
-    "fanfande_studio_vault/使用yargs注册命令行工具.md",
-    "packages/fanfandeagent/src/session/Spec： Session.md",
-    "fanfande_studio_vault/Spec 规范驱动.md",
-    "fanfande_studio_vault/specs/project.md",
-    "fanfande_studio_vault/specs/01-persist-payload-limits.md",
-    "fanfande_studio_vault/specs/perf-roadmap.md",
     "Pasted image 20260131175958.png",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",

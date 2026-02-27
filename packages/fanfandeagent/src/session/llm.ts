@@ -37,9 +37,7 @@ export namespace LLM {
   const log = Log.create({ service: "llm" })
 
   export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
-
-  export type asda={as:string}
-
+  
   export const VERSION = "1.0.0"; // 随便加个值
   //`StreamInput`：用于流式处理 LLM 消息的输入参数类型定义（使用vercal sdk  需要的参数）
   export type StreamInput = {
