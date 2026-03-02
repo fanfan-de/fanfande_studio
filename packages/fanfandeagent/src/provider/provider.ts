@@ -376,7 +376,8 @@ export namespace Provider {
 
             log.info("found", { providerID })
         }
-
+        //每一個項目，對應一個模型配置
+        //
         return {
             models: languages,
             providers,

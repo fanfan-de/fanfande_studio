@@ -6,18 +6,26 @@ workspace "agent"{
             cli = container "cli"{
                 coreEngine = group "coreEngine"{
                     agentCore = component "agentCore" "作为 Agent 的控制中心，负责协调其他所有组件。它接收用户请求，驱动推理循环（如 ReAct 模式），并决定何时停止或输出。"
-                    session =  component "session"
+                    session = component "session"
                     memory = component "memory"
                 }
 
-                eventBus = component "eventBus" 
+                eventBus = component "eventBus"
                 auth = component "auth" ""
                 tui = component "tui"
                 httpApiServer = component "httpApiServer"
                 webUI = component "webUI"
 
-                #Provider 对接
+                provider = component "provider" {
+                    description "负责管理所有可以接入的AI provider和LLM"
+                }
 
+                modeldevs = component "modeldevs"{
+                    description "处理与第三方支付渠道的交互"
+                    technology "Go/gRPC"
+
+
+                }
             }
             desktopApp = container "desktopApp"
         }
@@ -30,6 +38,7 @@ workspace "agent"{
         user -> tui
         user -> session
         user -> coreEngine
+        user -> modeldevs
 
     }
 
