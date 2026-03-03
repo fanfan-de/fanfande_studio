@@ -20,7 +20,7 @@ import { Env } from "@/env";
  */
 export namespace Provider {
     const log = Log.create({ service: "provider" })
-    //
+    
     export const Model = z
         .object({
             id: z.string(),
@@ -112,10 +112,10 @@ export namespace Provider {
 
     const state = Instance.state(async () => {
         using _ = log.time("state")
-        const config = await Config.get()
+
+        const config = await Config.get() //用户的配置设置
         const modelsDev = await ModelsDev.get()
         const database = mapValues(modelsDev, fromModelsDevProvider)
-
         const disabled = new Set(config.disabled_providers ?? [])
         const enabled = config.enabled_providers ? new Set(config.enabled_providers) : null
 
@@ -199,7 +199,7 @@ export namespace Provider {
                             existingModel?.api.npm ??
                             modelsDev[providerID]?.npm ??
                             "@ai-sdk/openai-compatible",
-                        url:model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api,
+                        url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api!,
                     },
                     status: model.status ?? existingModel?.status ?? "active",
                     name,
@@ -243,12 +243,12 @@ export namespace Provider {
                     release_date: model.release_date ?? existingModel?.release_date ?? "",
                     variants: {},
                 }
-                const merged = mergeDeep(ProviderTransform.variants(parsedModel), model.variants ?? {})
-                parsedModel.variants = mapValues(
-                    pickBy(merged, (v) => !v.disabled),
-                    (v) => omit(v, ["disabled"]),
-                )
-                parsed.models[modelID] = parsedModel
+                // const merged = mergeDeep(ProviderTransform.variants(parsedModel), model.variants ?? {})
+                // parsedModel.variants = mapValues(
+                //     pickBy(merged, (v) => !v.disabled),
+                //     (v) => omit(v, ["disabled"]),
+                // )
+                // parsed.models[modelID] = parsedModel
             }
             database[providerID] = parsed
         }

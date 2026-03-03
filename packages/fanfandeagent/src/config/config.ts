@@ -39,7 +39,10 @@ export namespace Config {
             //directories,
         }
     })
-
+    /**
+     * 
+     * @returns 获取project 配置
+     */
     export async function get() {
         return state().then((x) => x.config)
     }
