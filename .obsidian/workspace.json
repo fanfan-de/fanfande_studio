@@ -73,13 +73,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "fanfande_studio_vault/process  输出样例.md",
+                "file": "sda.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "process  输出样例"
+              "title": "sda"
             }
           }
         ],
@@ -115,7 +115,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "deepseek",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -136,13 +136,11 @@
               "title": "书签"
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "horizontal",
-    "width": 907.5,
-    "collapsed": true
+    "width": 483.5026054382324
   },
   "right": {
     "id": "14ad8d7e08bf77ac",
@@ -158,7 +156,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "项目文档.md",
+                "file": "sda.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -168,7 +166,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "项目文档 的反向链接列表"
+              "title": "sda 的反向链接列表"
             }
           },
           {
@@ -250,15 +248,16 @@
   },
   "active": "159d6acc4b74e806",
   "lastOpenFiles": [
+    "Provider.md",
+    "temp.md",
+    "未命名 1.base",
+    "未命名.base",
+    "尝试用C4的方法分析一下claudecode这个产品.md",
+    "fanfande_studio_vault/process  输出样例.md",
     "未命名.md",
     "spec指南.md",
     "packages/fanfandeagent/Feature Spec.md",
-    "Provider.md",
     "sda.md",
-    "尝试用C4的方法分析一下claudecode这个产品.md",
-    "未命名.base",
-    "未命名 1.base",
-    "temp.md",
     "这个agent是如何确定工作在哪一个project的？.md",
     "通俗的解释provider，provider.ts 中，代码执行到const state = Instance.state 这里是，到底发生了什么，我尤其关注Instance.state()这个方法的设计目的，以及  const  state  这个state的作用.md",
     "fanfande_studio_vault/provider/models.md",
@@ -284,8 +283,6 @@
     "packages/fanfandeagent/temp/structurizr-ProductionDeployment.mmd",
     "packages/fanfandeagent/temp/structurizr-Containers.mmd",
     "packages/fanfandeagent/temp/C4-ANALYSIS.md",
-    "packages/fanfandeagent/temp/ARCHITECTURE.md",
-    "packages/fanfandeagent/temp/ARCHITECTURE-README.md",
     "Pasted image 20260131175958.png",
     "Pasted image 20260128121558.png",
     "Pasted image 20260128114311.png",

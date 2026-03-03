@@ -17,14 +17,17 @@ workspace "agent"{
                 webUI = component "webUI"
 
                 provider = component "provider" {
-                    description "负责管理所有可以接入的AI provider和LLM"
+                    description "负责管理所有可以接入的AI provider和LLM
+                        内部数据容器state{models，providers，sdk，modelloaders}
+                    "
                 }
 
                 modeldevs = component "modeldevs"{
-                    description "处理与第三方支付渠道的交互"
-                    technology "Go/gRPC"
+                    description ""
+                }
 
-
+                config = component "config" {
+                    description ""
                 }
             }
             desktopApp = container "desktopApp"

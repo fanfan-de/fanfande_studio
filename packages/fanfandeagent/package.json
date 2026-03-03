@@ -16,6 +16,7 @@
     "ai": "^6.0.50",
     "fuzzysort": "^3.1.0",
     "hono": "^4.11.7",
+    "jsonc-parser": "^3.3.1",
     "remeda": "^2.33.4",
     "xdg-basedir": "^5.1.0",
     "yargs": "^18.0.0",

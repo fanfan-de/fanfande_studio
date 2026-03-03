@@ -1,4 +1,5 @@
 import { realpathSync } from "fs"
+import { chmod, mkdir, readFile, writeFile } from "fs/promises"
 import { dirname, join, relative } from "path"
 
 export namespace Filesystem {
@@ -100,4 +101,10 @@ export namespace Filesystem {
     }
     return result
   }
+
+  export async function readText(p: string): Promise<string> {
+    return readFile(p, "utf-8")
+  }
+
+
 }

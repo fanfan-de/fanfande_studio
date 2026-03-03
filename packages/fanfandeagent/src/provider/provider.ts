@@ -8,16 +8,19 @@ import { ModelsDev } from "./models"
 import { deepseek } from "@ai-sdk/deepseek";
 import { openai } from "@ai-sdk/openai"
 import { Instance } from "@/project/instance";
-import { mapValues } from "remeda";
+import { mapValues, mergeDeep } from "remeda";
 import { NamedError } from "@/util/error";
 import fuzzysort from "fuzzysort"
+import { Config } from "@/config/config";
+import { iife } from "@/util/iife";
+import { Env } from "@/env";
 
 /**
  * 存储所有支持的provider
  */
 export namespace Provider {
     const log = Log.create({ service: "provider" })
-
+    //
     export const Model = z
         .object({
             id: z.string(),
@@ -105,6 +108,8 @@ export namespace Provider {
         })
     export type Info = z.infer<typeof Info>
 
+    type CustomModelLoader = (sdk: any, modelID: string, options?: Record<string, any>) => Promise<any>
+
     const state = Instance.state(async () => {
         using _ = log.time("state")
         const config = await Config.get()
@@ -120,31 +125,35 @@ export namespace Provider {
             return true
         }
 
+        /**
+         * 项目级的配置，存储已经经过配置，可用的provider和model
+         * 未配置，不可用的不会存在这里
+         */
+        //存储所有已配置的提供者（provider）
         const providers: { [providerID: string]: Info } = {}
+        //字典，所有的可用的model实例，键值是 providerid+languageid
         const languages = new Map<string, LanguageModel>()
+        //用于抽象不同 AI 服务（OpenAI、Anthropic 等）的模型加载逻辑。
         const modelLoaders: {
             [providerID: string]: CustomModelLoader
         } = {}
+        //缓存AI SDK Provider实例，键为配置哈希，避免重复初始化
         const sdk = new Map<number, SDKProvider>()
 
         log.info("init")
 
         const configProviders = Object.entries(config.provider ?? {})
 
-        // Add GitHub Copilot Enterprise provider that inherits from GitHub Copilot
-        if (database["github-copilot"]) {
-            const githubCopilot = database["github-copilot"]
-            database["github-copilot-enterprise"] = {
-                ...githubCopilot,
-                id: "github-copilot-enterprise",
-                name: "GitHub Copilot Enterprise",
-                models: mapValues(githubCopilot.models, (model) => ({
-                    ...model,
-                    providerID: "github-copilot-enterprise",
-                })),
-            }
-        }
 
+        /**
+        * 合并提供者配置信息。
+        * 
+        * 如果提供者已存在于 providers 中，则将新配置深度合并到现有配置上；
+        * 否则从 database 中获取基础配置，再与新配置深度合并后存入 providers。
+        * 
+        * @param providerID - 提供者标识符（如 "openai", "anthropic"）
+        * @param provider - 要合并的部分提供者配置信息
+        */
         function mergeProvider(providerID: string, provider: Partial<Info>) {
             const existing = providers[providerID]
             if (existing) {
@@ -159,8 +168,11 @@ export namespace Provider {
         }
 
         // extend database from config
+        //从用户配置文件中扩展和合并AI模型提供商的配置。具体来说，它处理用户通过opencode.json
+        //配置文件自定义的提供商和模型设置。
         for (const [providerID, provider] of configProviders) {
             const existing = database[providerID]
+            //优先用户配置，其次是数据库预定义的，
             const parsed: Info = {
                 id: providerID,
                 name: provider.name ?? existing?.name ?? providerID,
@@ -187,7 +199,7 @@ export namespace Provider {
                             existingModel?.api.npm ??
                             modelsDev[providerID]?.npm ??
                             "@ai-sdk/openai-compatible",
-                        url: provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api,
+                        url:model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api,
                     },
                     status: model.status ?? existingModel?.status ?? "active",
                     name,
@@ -385,15 +397,18 @@ export namespace Provider {
             modelLoaders,
         }
     })
-
+    /**
+     * 列出project的已有的providers
+     * @returns 
+     */
     export async function list() {
         return state().then((state) => state.providers)
     }
-
+    //获得project特定的provider
     export async function getProvider(providerID: string) {
         return state().then((s) => s.providers[providerID])
     }
-
+    //获得模型
     export async function getModel(providerID: string, modelID: string) {
         const s = await state()
         const provider = s.providers[providerID]
@@ -493,9 +508,37 @@ export namespace Provider {
         }
     }
 
-
+    //model，provider都是本项目自己定义的type（准确说是匹配 modeldev上面的定义的结构），
+    // 需要找到转成AI SDK中对应的SDK
     export async function getLanguage(model: Model): Promise<LanguageModel> {
+        const s = await state()
+        //模板字符串语法，
+        // 使用反引号（`）而不是单引号或双引号
+        //允许在字符串中嵌入表达式
+        //表达式用 ${} 包裹
+        const key = `${model.providerID}/${model.id}`
+        if (s.models.has(key)) return s.models.get(key)!
 
+        const provider = s.providers[model.providerID]
+        const sdk = await getSDK(model)
+
+        try {
+            const language = s.modelLoaders[model.providerID]
+                ? await s.modelLoaders[model.providerID](sdk, model.api.id, provider.options)
+                : sdk.languageModel(model.api.id)
+            s.models.set(key, language)
+            return language
+        } catch (e) {
+            if (e instanceof NoSuchModelError)
+                throw new ModelNotFoundError(
+                    {
+                        modelID: model.id,
+                        providerID: model.providerID,
+                    },
+                    { cause: e },
+                )
+            throw e
+        }
     }
 
 
