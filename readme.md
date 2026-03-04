@@ -3,7 +3,7 @@
 <p align="center">
   <img src="docs/logo.png" alt="Logo" width="120">
   <br>
-  <b>[开源AI Agent框架，使用推理Engine和前端UI分离的框架，支持TUI，desktop的不同交互方式]</b>
+  <b>[一句话描述：例如：基于 LangGraph 构建的自主多任务研究助手，能够自动搜索、整理并撰写深度报告]</b>
   <br>
   <a href="https://github.com/你的用户名/项目名/stargazers"><img src="https://img.shields.io/github/stars/你的用户名/项目名" alt="Stars"></a>
   <a href="https://github.com/你的用户名/项目名/blob/main/LICENSE"><img src="https://img.shields.io/github/license/你的用户名/项目名" alt="License"></a>
@@ -14,7 +14,7 @@
 
 ## 📖 项目简介
 
-[项目名称] 是一个基于 AI Agent (智能体) 架构开发的自动化工具。它不仅能理解你的指令，还能通过**自主规划、工具调用（Tool Use）和自我反思（Self-Reflection）**来完成复杂的端到端任务。
+[Anybox] 是一个AI Agent产品。功能涵盖 AI对话，Agent任务执行，vibe coding，能理解你的指令，还能通过**自主规划、工具调用（Tool Use）和自我反思（Self-Reflection）**来完成复杂的端到端任务。项目使用 Vercel AI SDK作为AI Engine的底层，支持不同的AI供应商和model，您只需要提供对应的API key配置即可
 
 **解决了什么问题？**
 *   [痛点1：例如，手动收集 50 个网页信息并汇总极其耗时]
@@ -44,7 +44,7 @@
 
 ### 1. 环境准备
 
-确保你已安装 Python 3.9+ 以及相关 API Key。
+确保你已安装 node.js 以及相关 API Key。
 
 ```bash
 git clone https://github.com/你的用户名/项目名.git
