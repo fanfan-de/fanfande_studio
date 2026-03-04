@@ -107,4 +107,11 @@ export namespace Filesystem {
   }
 
 
+  export async function readJson<T = any>(p: string): Promise<T> {
+    return JSON.parse(await readFile(p, "utf-8"))
+  }
+
+  
+
+
 }

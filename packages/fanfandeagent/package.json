@@ -13,6 +13,8 @@
     "@ai-sdk/deepseek": "^2.0.11",
     "@ai-sdk/openai": "^3.0.25",
     "@ai-sdk/provider": "^3.0.7",
+    "@opentui/core": "^0.1.86",
+    "@opentui/solid": "^0.1.86",
     "ai": "^6.0.50",
     "fuzzysort": "^3.1.0",
     "hono": "^4.11.7",

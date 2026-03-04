@@ -5,11 +5,14 @@ import path from "path"
 import { Server } from "@/server/server"
 import { Agent } from "@/agent/agent"
 import { ModelsDev } from "@/provider/models"
+import { Auth } from "@/auth"
 
 
 export namespace Config {
     const ModelId = z.string().meta({ $ref: "https://models.dev/model-schema.json#/$defs/Model" })
+    let sad = ModelId.parse("asfafga")
     const log = Log.create({ service: "config" })
+
 
     //根据不同的操作系统返回系统管理的配置目录路径。
     function systemManagedConfigDir(): string {
@@ -31,7 +34,8 @@ export namespace Config {
 
     //获取project级别的配置
     export const state = Instance.state(async () => {
-
+        const auth = await Auth.all()
+        
         let result: Info = {}
 
         return {

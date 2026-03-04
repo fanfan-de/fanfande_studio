@@ -1,9 +1,9 @@
-# [项目名称：例如 GPT-Researcher-Agent]
+# [AnyBox]
 
 <p align="center">
   <img src="docs/logo.png" alt="Logo" width="120">
   <br>
-  <b>[一句话描述：例如：基于 LangGraph 构建的自主多任务研究助手，能够自动搜索、整理并撰写深度报告]</b>
+  <b>[开源AI Agent框架，使用推理Engine和前端UI分离的框架，支持TUI，desktop的不同交互方式]</b>
   <br>
   <a href="https://github.com/你的用户名/项目名/stargazers"><img src="https://img.shields.io/github/stars/你的用户名/项目名" alt="Stars"></a>
   <a href="https://github.com/你的用户名/项目名/blob/main/LICENSE"><img src="https://img.shields.io/github/license/你的用户名/项目名" alt="License"></a>
