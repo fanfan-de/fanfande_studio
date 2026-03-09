@@ -256,3 +256,9 @@ const normalized = process.platform === "win32" && resolved.match(/^\/[a-z]\//)
 
 您希望我深入分析某个特定部分，还是切换到 ACT 模式进行修改/优化？
 
+
+定义一个工具，需要什么
+
+工具名，
+工具的初始化方法？
+
