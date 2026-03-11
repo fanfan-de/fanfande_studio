@@ -149,6 +149,11 @@ export namespace Session {
         return read as Info
     })
 
+
+    export const updateMessage = fn(Message.Info,async (msg)=>{
+        
+    })
+
     
 
 

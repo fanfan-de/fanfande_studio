@@ -103,13 +103,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "fanfande_studio_vault/tools/TS的类型匹配.md",
+                "file": "Message.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "TS的类型匹配"
+              "title": "Message"
             }
           }
         ],
@@ -278,8 +278,14 @@
   },
   "active": "b096d4e39fd237e6",
   "lastOpenFiles": [
-    "fanfande_studio_vault/tools/如何理解TS项目.md",
+    "Tools/Bash.md",
+    "Message.md",
+    "Tools/list.md",
+    "Tools/文.md",
+    "packages/fanfandeagent/src/tool/registory.ts",
     "fanfande_studio_vault/tools/TS的类型匹配.md",
+    "Tools",
+    "fanfande_studio_vault/tools/如何理解TS项目.md",
     "fanfande_studio_vault/tools/tool.md",
     "packages/fanfandeagent/src/tool/tool.ts",
     "Tool.md",
@@ -291,8 +297,6 @@
     "packages/fanfandeagent/node_modules/events/tests/set-max-listeners-side-effects.js",
     "packages/fanfandeagent/node_modules/events/tests/remove-listeners.js",
     "packages/fanfandeagent/node_modules/events/tests/remove-all-listeners.js",
-    "packages/fanfandeagent/node_modules/events/tests/prepend.js",
-    "packages/fanfandeagent/node_modules/events/tests/once.js",
     "packages/fanfandeagent/node_modules/events/security.md",
     "packages/fanfandeagent/node_modules/events/Readme.md",
     "packages/fanfandeagent/node_modules/events/History.md",
@@ -310,10 +314,6 @@
     "packages/fanfandeagent/node_modules/@jridgewell/trace-mapping/README.md",
     "packages/fanfandeagent/node_modules/@jridgewell/sourcemap-codec/README.md",
     "packages/fanfandeagent/node_modules/@jridgewell/resolve-uri/README.md",
-    "packages/fanfandeagent/node_modules/@jridgewell/gen-mapping/README.md",
-    "packages/fanfandeagent/node_modules/@babel/plugin-syntax-typescript/README.md",
-    "packages/fanfandeagent/node_modules/@babel/helper-string-parser/README.md",
-    "packages/fanfandeagent/node_modules/@babel/helper-skip-transparent-expression-wrappers/README.md",
     "packages/fanfandeagent/node_modules/exif-parser/test/test.jpg",
     "packages/fanfandeagent/node_modules/exif-parser/test/starfish.jpg",
     "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/widgets@2x.png",

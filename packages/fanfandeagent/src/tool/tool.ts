@@ -15,16 +15,11 @@ export namespace Tool {
         agent?: Agent.Info
     }
 
-
-
     export type Context<M extends Metadata = Metadata> = {
         sessionID: string
         messageID: string
     }
 
-    /**
-     * 
-     */
     export interface Info<Parameters extends z.ZodType = z.ZodType, M extends Metadata = Metadata> {
         id: string
         init: (ctx?: InitContext) => Promise<{
@@ -34,34 +29,46 @@ export namespace Tool {
                 args: z.infer<Parameters>,
                 ctx: Context,
             ): Promise<{
-                title: string
-                metadata: M
+                //title: string
+                //metadata: M
                 output: string
-                attachments?: Omit<Message.FilePart, "id" | "sessionID" | "messageID">[]
+                //attachments?: Omit<Message.FilePart, "id" | "sessionID" | "messageID">[]
             }>//工具的执行方法
             formatValidationError?(error: z.ZodError): string
         }>
     }
 
-
-
     export function define<Parameters extends z.ZodType, Result extends Metadata>(
         id: string,
-        init : Info<Parameters,Result>["init"]//|Awaited<ReturnType<Info<Parameters,Result>["init"]>>
-    ) :Info<Parameters,Result>{
+        init: Info<Parameters, Result>["init"]//|Awaited<ReturnType<Info<Parameters,Result>["init"]>>
+    ): Info<Parameters, Result> {
         return {
-            id ,
-            init :async (initctx)=>{
-                const toolinfo =  init(initctx)
+            id,
+            init: async (initctx) => {
+                const toolinfo = await init(initctx)
+                const execute = toolinfo.execute
+
+                toolinfo.execute = async (args, ctx) => {
+                    try {
+                        toolinfo.parameters.parse(args)
+                    } catch (error) {
+                        if (error instanceof z.ZodError && toolinfo.formatValidationError) {
+                            throw new Error(toolinfo.formatValidationError(error), { cause: error })
+                        }
+                        throw new Error(
+                            `The ${id} tool was called with invalid arguments: ${error}.\nPlease rewrite the input so it satisfies the expected schema.`,
+                            { cause: error },
+                        )
+                    }
+
+                    const result = execute(args, ctx)
+
+                    return{
+                        ...result
+                    }
+                }
                 return toolinfo
             }
         }
     }
-
-
-    export type tool = {
-
-    }
-
-
 }
