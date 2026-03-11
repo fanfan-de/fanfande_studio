@@ -1,0 +1,4 @@
+WithParts{
+	info
+	parts:[]
+}

@@ -1,3 +1,4 @@
+import type { Provider } from "@/provider/provider";
 import { Log } from "../util/log"
 import { LLM } from './llm';
 //import type { StreamInput } from "./llm"
@@ -9,31 +10,39 @@ import type { Message } from "./message"
 export namespace SessionProcessor {
     const log = Log.create({ service: "session.processor" })
 
-    // export function create(input:{
-    //     LLMMessageMeta: Message.Meta_LLMMessage,
-    //     sessionID: string,
-    //     model: Provider.Model,
-    //     abort:AbortSignal
-    // })
-    // {
-    //     const toolcalls: Record<string, Message.ToolPart> = {}
-    //     let snapshot: string | undefined
-    //     let blocked = false
-    //     let attempt = 0
-    //     let needsCompaction = false
+    export function create(input:{
+        Assistant: Message.Assistant,
+        sessionID: string,
+        model: Provider.Model,
+        abort:AbortSignal
+    })
+    {
+        const toolcalls: Record<string, Message.ToolPart> = {}
+        let snapshot: string | undefined
+        let blocked = false
+        let attempt = 0
+        let needsCompaction = false
 
 
-    //     const result = {
-    //         get message(){
-    //             return input.LLMMessageMeta
-    //         },
-    //         partFromToolCall(toolCallID: string) {
-    //             return toolcalls[toolCallID]
-    //         },
+        const result = {
+            get message(){
+                return input.Assistant
+            },
+            partFromToolCall(toolCallID: string) {
+                return toolcalls[toolCallID]
+            },
+            async process(streamInput:LLM.StreamInput){
+                while(true)
+                {
+
+                    await Session.updateMessage(input.Assistant)
+                }
+            }
 
 
-    //     }
-    // }
+        }
+        return result
+    }
     //一次执行
     export const process = async (streamInput: LLM.StreamInput): Promise<LLM.StreamInput>=>
     {

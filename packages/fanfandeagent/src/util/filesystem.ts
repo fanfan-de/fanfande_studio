@@ -1,4 +1,4 @@
-import { realpathSync } from "fs"
+import { realpathSync, statSync } from "fs"
 import { chmod, mkdir, readFile, writeFile } from "fs/promises"
 import { dirname, join, relative } from "path"
 
@@ -111,7 +111,11 @@ export namespace Filesystem {
     return JSON.parse(await readFile(p, "utf-8"))
   }
 
-  
+  export function stat(p: string): ReturnType<typeof statSync> | undefined {
+    return statSync(p, { throwIfNoEntry: false }) ?? undefined
+  }
+
+
 
 
 }
