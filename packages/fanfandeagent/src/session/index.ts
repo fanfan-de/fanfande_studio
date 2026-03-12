@@ -14,7 +14,10 @@ import { fn } from "@/util/fn"
 export namespace Session {
     const log = Log.create({ service: "session" })
 
-    //todo createDefaultTitle()
+    const parentTiTlePrefix = "新对话"
+    const childTiltePrefic = "子对话"
+
+    //todo 创建默认title
 
     export const Info = z
         .object({
@@ -68,7 +71,9 @@ export namespace Session {
             ref: "SessionShare",
         })
     export type ShareInfo = z.output<typeof ShareInfo>
-    //
+
+
+    //Session 事件
     export const Event = {
         Created: BusEvent.define(
             "session.created",
@@ -103,30 +108,40 @@ export namespace Session {
             }),
         ),
     }
+
+    //公共API，用户调用,默认当前的工作目录
+    // export const  create  = fn(
+    //     z.object({
+    //         parentID:
+    //     })
+    // )
+
     //创建新的Session
     export async function createSession(
         input: {
-            id?: string
-            title?: string
+            //id?: string
+            //title?: string
             //parentID?: string
             directory: string
+            projectID:string
             //permission?: PermissionNext.Ruleset
         }
-    ) {
+    ):Promise<Info> {
         const result: Info = {
-            id: Identifier.descending("session", input.id),
+            id: Identifier.descending("session"),
             slug: Slug.create(),//随机组合一个“形容词”和一个“名词”来创建一个可读性很强的字符串。
-            projectID: "",
-            directory: "",
-            title: "",
+            projectID: input.projectID,
+            directory: input.directory,
+            title: "测试名称",
             version: Installation.VERSION,
             time: {
                 created: Date.now(),
                 updated: Date.now(),
             },
         }
+        //log.info("create", result)
 
-        log.info("create", result)
+        
 
         await Storage.write(["session", Instance.project.id, result.id], result)
 
@@ -141,9 +156,11 @@ export namespace Session {
         return result;
     }
 
-    /**
-     * 通过id获得Session Info
-     */
+    //删除Session
+
+    //获取Session下所有的Messages
+
+    //通过ID获得Session（读盘获取记录）
     export const get = fn(Identifier.schema("session"), async (id) => {
         const read = await Storage.read<Info>(["session", Instance.project.id, id])
         return read as Info
