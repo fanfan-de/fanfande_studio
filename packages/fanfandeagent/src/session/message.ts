@@ -51,8 +51,8 @@ export namespace Message {
 
     const PartBase = z.object({
         id: z.string(),
-        sessionid: z.number(),
-        messageid: z.number()
+        sessionid: z.string(),
+        messageid: z.string()
     })
 
     export const SnapshotPart = PartBase.extend({

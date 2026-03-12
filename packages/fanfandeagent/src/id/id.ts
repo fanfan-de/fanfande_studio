@@ -22,7 +22,12 @@ export namespace Identifier {
   // State for monotonic ID generation
   let lastTimestamp = 0
   let counter = 0
-
+  /**
+   * 升序 全局ID编码 生成
+   * @param prefix ID固定前缀
+   * @param given 
+   * @returns 
+   */
   export function ascending(prefix: keyof typeof prefixes, given?: string) {
     return generateID(prefix, false, given)
   }

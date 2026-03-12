@@ -54,7 +54,11 @@ export namespace LLM {
   }
 
   export type StreamOutput = StreamTextResult<ToolSet, never>
-
+  /**
+   * LLM 无状态输入的入口
+   * @param input 
+   * @returns 
+   */
   export async function stream(input: StreamInput): Promise<StreamOutput> {
     const l = log
       .clone()
@@ -76,7 +80,7 @@ export namespace LLM {
       Auth.get(input.model.providerID),
     ])
 
-    const isCodex = provider.id === "openai" && auth?.type === "oauth"
+    //const isCodex = provider.id === "openai" && auth?.type === "oauth"
 
     //系统提示词
     const system = []
@@ -184,19 +188,19 @@ export namespace LLM {
     // This is enabled for:
     // 1. Providers with "litellm" in their ID or API ID (auto-detected)
     // 2. Providers with explicit "litellmProxy: true" option (opt-in for custom gateways)
-    const isLiteLLMProxy =
-      provider.options?.["litellmProxy"] === true ||
-      input.model.providerID.toLowerCase().includes("litellm") ||
-      input.model.api.id.toLowerCase().includes("litellm")
+    // const isLiteLLMProxy =
+    //   provider.options?.["litellmProxy"] === true ||
+    //   input.model.providerID.toLowerCase().includes("litellm") ||
+    //   input.model.api.id.toLowerCase().includes("litellm")
 
-    if (isLiteLLMProxy && Object.keys(tools).length === 0 && hasToolCalls(input.messages)) {
-      tools["_noop"] = tool({
-        description:
-          "Placeholder for LiteLLM/Anthropic proxy compatibility - required when message history contains tool calls but no active tools are needed",
-        inputSchema: jsonSchema({ type: "object", properties: {} }),
-        execute: async () => ({ output: "", title: "", metadata: {} }),
-      })
-    }
+    // if (isLiteLLMProxy && Object.keys(tools).length === 0 && hasToolCalls(input.messages)) {
+    //   tools["_noop"] = tool({
+    //     description:
+    //       "Placeholder for LiteLLM/Anthropic proxy compatibility - required when message history contains tool calls but no active tools are needed",
+    //     inputSchema: jsonSchema({ type: "object", properties: {} }),
+    //     execute: async () => ({ output: "", title: "", metadata: {} }),
+    //   })
+    // }
     //**执行流式生成**：调用 Vercel AI SDK，并挂载中间件（Middleware）处理推理内容和参数转换。
     return streamText({
       //------事件回调与网络 (Callbacks & Network)------

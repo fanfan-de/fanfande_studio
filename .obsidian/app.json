@@ -2,5 +2,6 @@
   "promptDelete": false,
   "strictLineBreaks": true,
   "showLineNumber": false,
-  "useMarkdownLinks": false
+  "useMarkdownLinks": false,
+  "readableLineLength": false
 }
