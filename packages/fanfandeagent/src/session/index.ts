@@ -34,13 +34,8 @@ export namespace Session {
                     ///diffs: Snapshot.FileDiff.array().optional(),//详细文件差异（可选）
                 })
                 .optional(),//代码变更摘要（可选）？
-            share: z
-                .object({
-                    url: z.string(),
-                })
-                .optional(),//分享信息（可选）
-            title: z.string(),//会话标题
-            version: z.string(),//数据结构版本号
+            //title: z.string(),//会话标题
+            //version: z.string(),//数据结构版本号
             time: z.object({
                 created: z.number(),
                 updated: z.number(),
@@ -129,11 +124,11 @@ export namespace Session {
     ):Promise<Info> {
         const result: Info = {
             id: Identifier.descending("session"),
-            slug: Slug.create(),//随机组合一个“形容词”和一个“名词”来创建一个可读性很强的字符串。
+            //slug: Slug.create(),//随机组合一个“形容词”和一个“名词”来创建一个可读性很强的字符串。
             projectID: input.projectID,
             directory: input.directory,
-            title: "测试名称",
-            version: Installation.VERSION,
+            //title: "测试名称",
+            //version: Installation.VERSION,
             time: {
                 created: Date.now(),
                 updated: Date.now(),
