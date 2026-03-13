@@ -15,3 +15,18 @@ export function fn<T extends z.ZodType, Result>(schema: T, cb: (input: z.infer<T
   result.schema = schema
   return result
 }
+
+
+function withSchema<T extends z.ZodType, R>(
+  schema: T,
+  func: (input: z.infer<T>) => R
+) {
+  const wrapped = (input: z.infer<T>) => {
+    const parsed = schema.parse(input);
+    return func(parsed);
+  };
+  wrapped.force = func;
+  wrapped.schema = schema;
+  wrapped.raw = func; // 保留原函数引用
+  return wrapped;
+}

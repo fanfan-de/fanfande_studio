@@ -3,20 +3,17 @@ import { Log } from "../util/log"
 import { LLM } from './llm';
 //import type { StreamInput } from "./llm"
 import type { Message } from "./message"
-//MainLoop
-//接收 LLM 的流式输出（Stream），
-// 将其解析为结构化的消息组件（Parts），
-// 并实时更新数据库和状态，同时处理工具调用、错误重试、文件系统快照和计费统计
+import { Identifier } from "@/id/id";
+import { ZodDate } from "zod";
+//一次LLM调用的循环处理器
 export namespace SessionProcessor {
     const log = Log.create({ service: "session.processor" })
 
-    export function create(input:{
+    //创建一个处理器
+    export function create(input: {
         Assistant: Message.Assistant,
-        sessionID: string,
-        model: Provider.Model,
-        abort:AbortSignal
-    })
-    {
+        abort: AbortSignal
+    }) {
         const toolcalls: Record<string, Message.ToolPart> = {}
         let snapshot: string | undefined
         let blocked = false
@@ -25,20 +22,46 @@ export namespace SessionProcessor {
 
 
         const result = {
-            get message(){
+            get message() {
                 return input.Assistant
             },
             partFromToolCall(toolCallID: string) {
                 return toolcalls[toolCallID]
             },
-            async process(streamInput:LLM.StreamInput){
-                while(true)
-                {
+            async process(streamInput: LLM.StreamInput) {
+                while (true) {
+
                     const stream = await LLM.stream(streamInput)
 
-                    for await (const value of stream.fullStream){
-                        switch(value.type)
-                        {
+                    let currentText: Message.TextPart | undefined = undefined
+                    //某些模型（如 Claude、Gemini）支持多个并行推理链或嵌套推理
+                    let reasoningMap: Record<string, Message.ReasoningPart> = {}
+
+                    for await (const value of stream.fullStream) {
+                        switch (value.type) {
+                            case "text-start":
+                                currentText = {
+                                    id: Identifier.ascending("part"),
+                                    sessionid: input.Assistant.sessionID,
+                                    messageid: input.Assistant.id,
+                                    type: "text",
+                                    text: "",
+                                    time: {
+                                        start: Date.now(),
+                                    },
+                                    metadata:value.providerMetadata,
+                                }
+                                break;
+                            case "text-end":
+                                if (currentText){
+                                    currentText.text = currentText.text.trimEnd()
+                                    if(currentText.time)
+                                        currentText.time.end = Date.now()
+                                    if(value.providerMetadata)
+                                        currentText.metadata = value.providerMetadata
+                                    //将part写入存储
+                                }
+                                break;
                             case 'text-delta':
                                 // 处理文本增量
                                 // value.text 包含增量文本
@@ -46,6 +69,25 @@ export namespace SessionProcessor {
                                 // TODO: 更新消息的文本部分，记录增量
                                 // TODO: 更新数据库中的消息状态
                                 // TODO: 发送事件通知 UI 更新
+                                break;
+                            case "reasoning-start":
+                                if (value.id in reasoningMap)
+                                    continue
+
+                                break;
+                            case "reasoning-end":
+                                break;
+                            case "reasoning-delta":
+                                break;
+                            case "tool-input-start":
+                                break;
+                            case "tool-input-end":
+                                break;
+                            case "tool-input-delta":
+                                break;
+                            case "source":
+                                break;
+                            case "file":
                                 break;
                             case 'tool-call':
                                 // 处理工具调用
@@ -67,12 +109,14 @@ export namespace SessionProcessor {
                                 // TODO: 发送事件通知 UI 更新工具状态
                                 // TODO: 如果工具执行失败，可能需要重试或处理错误
                                 break;
-                            case 'reasoning':
-                                // 处理推理内容
-                                // value.text 推理文本
-                                // TODO: 创建 ReasoningPart 并添加到消息中
-                                // TODO: 更新数据库中的推理部分
-                                // TODO: 发送事件通知 UI 显示推理内容
+                            case "tool-error":
+                                break;
+                            case "tool-output-denied":
+                                break;
+                            case "start-step":
+                                break;
+                            case "start":
+                                //
                                 break;
                             case 'finish':
                                 // 处理完成事件
@@ -83,6 +127,10 @@ export namespace SessionProcessor {
                                 // TODO: 发送完成事件通知 UI
                                 // TODO: 可能需要触发消息压缩（compaction）
                                 break;
+                            case "abort":
+                                break;
+                            case "raw":
+                                break;
                             case 'error':
                                 // 处理错误事件
                                 // value.error 错误信息
@@ -90,6 +138,10 @@ export namespace SessionProcessor {
                                 // TODO: 更新数据库中的错误状态
                                 // TODO: 根据错误类型决定是否重试（增加 attempt）
                                 // TODO: 发送错误事件通知 UI
+                                break;
+                            case "finish-step":
+                                break;
+                            case "tool-approval-request":
                                 break;
                             default:
                                 // 处理未知事件类型
@@ -104,22 +156,6 @@ export namespace SessionProcessor {
         }
         return result
     }
-    //一次执行
-    export const process = async (streamInput: LLM.StreamInput): Promise<LLM.StreamInput>=>
-    {
-        log.info("process")
-        while(true)
-        {
 
-        }
-
-
-
-        return streamInput
-    }
-
-}
-        return streamInput
-    }
 
 }

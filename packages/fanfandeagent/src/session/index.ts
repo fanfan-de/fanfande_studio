@@ -10,6 +10,9 @@ import { Slug } from "@/util/slug"
 import { Installation } from "@/installation"
 import { Storage } from "../storage/storage"
 import { fn } from "@/util/fn"
+import { zodObjectToColumnDefs, toCreateTableSQL, db, tableExists, insertOne, toSQLiteValue, findOne, findById, fromSQLiteRecord} from "@/storage"
+import { insert } from "@opentui/solid"
+
 
 export namespace Session {
     const log = Log.create({ service: "session" })
@@ -17,12 +20,11 @@ export namespace Session {
     const parentTiTlePrefix = "新对话"
     const childTiltePrefic = "子对话"
 
-    //todo 创建默认title
 
     export const Info = z
         .object({
             id: Identifier.schema("session"),//会话唯一标识符 ("session" 类型)
-            slug: z.string().optional,//简短标识符（用于 URL/显示）
+            slug: z.string().optional(),//简短标识符（用于 URL/显示）
             projectID: z.string(),//关联的项目ID
             directory: z.string(),//工作目录路径
             // parentID: Identifier.schema("session").optional(),//父会话ID（可选，用于会话树）
@@ -41,12 +43,12 @@ export namespace Session {
                 .optional(),//分享信息（可选）
             title: z.string(),//会话标题
             version: z.string(),//数据结构版本号
-            time: z.object({
-                created: z.number(),
-                updated: z.number(),
-                compacting: z.number().optional(),//压缩时间（可选）
-                archived: z.number().optional(),//归档时间（可选）
-            }),//时间戳记录
+
+            created: z.number(),
+            updated: z.number(),
+            compacting: z.number().optional(),//压缩时间（可选）
+            archived: z.number().optional(),//归档时间（可选）
+
             ///permission: PermissionNext.Ruleset.optional(),//访问权限规则集（可选）
             revert: z
                 .object({
@@ -61,6 +63,24 @@ export namespace Session {
             ref: "Session",
         })
     export type Info = z.output<typeof Info>
+
+    //建表操作
+    if (!tableExists("sessions")) {
+        toCreateTableSQL("sessions", zodObjectToColumnDefs(Info))
+    }
+
+    //CRUD
+    export const create =  fn(Info,(s)=>{
+        insertOne("sessions",toSQLiteValue(s))
+    })
+    export const read = fn(Identifier.schema("session"),(key)=>{
+        const record = findById("session",key)
+        if(record!=null)
+            return fromSQLiteRecord(Info,record)
+        else
+            return null
+    })
+
 
     export const ShareInfo = z
         .object({
@@ -109,12 +129,7 @@ export namespace Session {
         ),
     }
 
-    //公共API，用户调用,默认当前的工作目录
-    // export const  create  = fn(
-    //     z.object({
-    //         parentID:
-    //     })
-    // )
+
 
     //创建新的Session
     export async function createSession(
@@ -123,10 +138,10 @@ export namespace Session {
             //title?: string
             //parentID?: string
             directory: string
-            projectID:string
+            projectID: string
             //permission?: PermissionNext.Ruleset
         }
-    ):Promise<Info> {
+    ): Promise<Info> {
         const result: Info = {
             id: Identifier.descending("session"),
             slug: Slug.create(),//随机组合一个“形容词”和一个“名词”来创建一个可读性很强的字符串。
@@ -134,16 +149,13 @@ export namespace Session {
             directory: input.directory,
             title: "测试名称",
             version: Installation.VERSION,
-            time: {
-                created: Date.now(),
-                updated: Date.now(),
-            },
+            created: Date.now(),
+            updated: Date.now(),
+
         }
         //log.info("create", result)
-
-        
-
-        await Storage.write(["session", Instance.project.id, result.id], result)
+        //db insert
+        create(result)
 
         Bus.publish(Event.Created, {
             info: result,
@@ -160,18 +172,13 @@ export namespace Session {
 
     //获取Session下所有的Messages
 
-    //通过ID获得Session（读盘获取记录）
-    export const get = fn(Identifier.schema("session"), async (id) => {
-        const read = await Storage.read<Info>(["session", Instance.project.id, id])
-        return read as Info
+
+
+    export const updateMessage = fn(Message.Info, async (msg) => {
+
     })
 
 
-    export const updateMessage = fn(Message.Info,async (msg)=>{
-        
-    })
-
-    
 
 
 }
