@@ -29,7 +29,7 @@ export namespace SessionProcessor {
                 return toolcalls[toolCallID]
             },
             async process(streamInput: LLM.StreamInput) {
-                while (true) {
+                while (true) {//重试循环
 
                     const stream = await LLM.stream(streamInput)
 
@@ -49,15 +49,15 @@ export namespace SessionProcessor {
                                     time: {
                                         start: Date.now(),
                                     },
-                                    metadata:value.providerMetadata,
+                                    metadata: value.providerMetadata,
                                 }
                                 break;
                             case "text-end":
-                                if (currentText){
+                                if (currentText) {
                                     currentText.text = currentText.text.trimEnd()
-                                    if(currentText.time)
+                                    if (currentText.time)
                                         currentText.time.end = Date.now()
-                                    if(value.providerMetadata)
+                                    if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
                                     //将part写入存储
                                 }
@@ -69,17 +69,77 @@ export namespace SessionProcessor {
                                 // TODO: 更新消息的文本部分，记录增量
                                 // TODO: 更新数据库中的消息状态
                                 // TODO: 发送事件通知 UI 更新
+                                if (currentText) {
+                                    currentText.text += value.text
+                                    if (value.providerMetadata)
+                                        currentText.metadata = value.providerMetadata
+
+
+                                }
                                 break;
                             case "reasoning-start":
                                 if (value.id in reasoningMap)
                                     continue
 
+                                const reasoningPart: Message.ReasoningPart = {
+                                    id: Identifier.ascending("part"),
+                                    sessionid: input.Assistant.sessionID,
+                                    messageid: input.Assistant.id,
+                                    type: "reasoning",
+                                    text: "",
+                                    time: { start: Date.now() },
+                                    metadata: value.providerMetadata,
+                                }
+                                reasoningMap[value.id] = reasoningPart
+
                                 break;
                             case "reasoning-end":
+                                if (value.id in reasoningMap) {
+                                    const part = reasoningMap[value.id]
+                                    part!.text = part!.text.trimEnd()
+
+                                    part!.time = {
+                                        ...part!.time,
+                                        end: Date.now(),
+                                    }
+                                    if (value.providerMetadata) part!.metadata = value.providerMetadata
+
+                                    await Session.updatePart(part)
+                                    delete reasoningMap[value.id]//已经存盘，内存可以删除了
+                                }
                                 break;
                             case "reasoning-delta":
-                                break;
+                                if (value.id in reasoningMap) {
+                                    const part = reasoningMap[value.id]
+                                    part!.text += value.text
+                                    if (value.providerMetadata) part!.metadata = value.providerMetadata
+                                    await Session.updatePartDelta({
+                                        sessionID: part.sessionID,
+                                        messageID: part.messageID,
+                                        partID: part.id,
+                                        field: "text",
+                                        delta: value.text,
+                                    })
+                                }
+                                break
+
                             case "tool-input-start":
+                                const part: Message.ToolPart = {
+                                    id: Identifier.ascending("part"),
+                                    sessionid: input.Assistant.sessionID,
+                                    messageid: input.Assistant.id,
+                                    type:"tool",
+                                    callID:value.id,
+                                    tool:value.toolName,
+                                    state:{
+                                        status:"pending",
+                                        input:{},
+                                        raw:"",
+                                    },
+                                    metadata:value.providerMetadata,
+                                }
+                                await Session.updatePart(part)
+
                                 break;
                             case "tool-input-end":
                                 break;
