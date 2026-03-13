@@ -43,12 +43,12 @@ export namespace Session {
                 .optional(),//分享信息（可选）
             title: z.string(),//会话标题
             version: z.string(),//数据结构版本号
-
-            created: z.number(),
-            updated: z.number(),
-            compacting: z.number().optional(),//压缩时间（可选）
-            archived: z.number().optional(),//归档时间（可选）
-
+            time: z.object({
+                created: z.number(),
+                updated: z.number(),
+                compacting: z.number().optional(),//压缩时间（可选）
+                archived: z.number().optional(),//归档时间（可选）
+            }),//时间戳记录
             ///permission: PermissionNext.Ruleset.optional(),//访问权限规则集（可选）
             revert: z
                 .object({
@@ -144,14 +144,15 @@ export namespace Session {
     ): Promise<Info> {
         const result: Info = {
             id: Identifier.descending("session"),
-            slug: Slug.create(),//随机组合一个“形容词”和一个“名词”来创建一个可读性很强的字符串。
+            //slug: Slug.create(),//随机组合一个“形容词”和一个“名词”来创建一个可读性很强的字符串。
             projectID: input.projectID,
             directory: input.directory,
             title: "测试名称",
             version: Installation.VERSION,
-            created: Date.now(),
-            updated: Date.now(),
-
+            time: {
+                created: Date.now(),
+                updated: Date.now(),
+            },
         }
         //log.info("create", result)
         //db insert
