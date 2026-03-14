@@ -10,9 +10,9 @@ import { Slug } from "@/util/slug"
 import { Installation } from "@/installation"
 import { Storage } from "../storage/storage"
 import { fn } from "@/util/fn"
-import { zodObjectToColumnDefs, toCreateTableSQL, db, tableExists, insertOne, toSQLiteValue, findOne, findById, fromSQLiteRecord} from "@/storage"
+import { zodObjectToColumnDefs, toCreateTableSQL, db, createTableByZodDiscriminatedUnion, tableExists, insertOne, createTableByZodObject, toSQLiteValue, findOne, findById, fromSQLiteRecord } from "@/storage"
 import { insert } from "@opentui/solid"
-
+import type { Project } from "@/project/project"
 
 export namespace Session {
     const log = Log.create({ service: "session" })
@@ -20,6 +20,18 @@ export namespace Session {
     const parentTiTlePrefix = "新对话"
     const childTiltePrefic = "子对话"
 
+    // 定义映射关系
+    interface TableRecordMap {
+        projects: Project.Info;
+        sessions: Info;
+        messages: Message.Info;
+        parts: Message.Part;
+    }
+    // 从映射中派生出联合类型
+    type TableName = keyof TableRecordMap;
+    // 等价于 "projects" | "sessions" | "messages" | "parts"
+    type TableRecord = TableRecordMap[TableName];
+    // 等价于 Project.Info | Info | Message.Info | Message.Part
 
     export const Info = z
         .object({
@@ -66,34 +78,69 @@ export namespace Session {
 
     //建表操作
     if (!tableExists("sessions")) {
-        toCreateTableSQL("sessions", zodObjectToColumnDefs(Info))
+        createTableByZodObject("sessions", Info)
+    }
+    if (!tableExists("messages")) {
+        createTableByZodDiscriminatedUnion("messages", Message.Info)
+    }
+    if (!tableExists("parts")) {
+        createTableByZodDiscriminatedUnion("parts", Message.Part)
     }
 
-    //CRUD
-    export const create =  fn(Info,(s)=>{
-        insertOne("sessions",toSQLiteValue(s))
-    })
-    export const read = fn(Identifier.schema("session"),(key)=>{
-        const record = findById("session",key)
-        if(record!=null)
-            return fromSQLiteRecord(Info,record)
+    //  CRUD
+    /**
+     * @param tableName 
+     * @param tableRecord 对应表的record
+     */
+    export function Create<T extends TableName>(tableName: T, tableRecord:TableRecordMap[T] ): void {
+        // switch (tableName) {
+        //     case "projects":
+
+        //         break;
+        //     case "sessions":
+        //         fn(Info, (tableRecord) => {
+        //             insertOne(tableName, toSQLiteValue(tableRecord))
+        //         })
+        //         break;
+        //     case "messages":
+        //         fn(Info, (tableRecord) => {
+        //             insertOne(tableName, toSQLiteValue(tableRecord))
+        //         })
+        //         break;
+        //     case "parts":
+
+        //         break;
+        // }
+        insertOne(tableName, toSQLiteValue(tableRecord))
+    }
+
+
+    export const read = fn(Identifier.schema("session"), (key) => {
+        const record = findById("session", key)
+        if (record != null)
+            return fromSQLiteRecord(Info, record)
         else
             return null
     })
 
+    //part crud
 
-    export const ShareInfo = z
-        .object({
-            secret: z.string(),
-            url: z.string(),
-        })
-        .meta({
-            ref: "SessionShare",
-        })
-    export type ShareInfo = z.output<typeof ShareInfo>
+    //message crud
+
+
+    // export const ShareInfo = z
+    //     .object({
+    //         secret: z.string(),
+    //         url: z.string(),
+    //     })
+    //     .meta({
+    //         ref: "SessionShare",
+    //     })
+    // export type ShareInfo = z.output<typeof ShareInfo>
 
 
     //Session 事件
+
     export const Event = {
         Created: BusEvent.define(
             "session.created",
@@ -176,7 +223,11 @@ export namespace Session {
 
 
     export const updateMessage = fn(Message.Info, async (msg) => {
+        Create("messages",msg)
+    })
 
+    export const updatePart = fn(Message.Part, async (part) => {
+        Create("parts",part)
     })
 
 

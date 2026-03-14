@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { z } from "zod";
+import { toCreateTableSQL, zodObjectToColumnDefs, SQLiteColumnDef } from "./parser"
 
 // ============================================================================
 //  SQLite 本地数据库工具库（基于 Bun 原生 SQLite + Zod 校验）
@@ -62,27 +63,79 @@ interface QueryOptions {
 
 /**
  * 通用建表函数
- *
- * @param tableName      表名
- * @param columnsRecord  字段定义映射
- *
- * @example
- * createTable("users", {
- *   id:   "TEXT PRIMARY KEY",
- *   name: "TEXT NOT NULL",
- *   age:  "INTEGER DEFAULT 0",
- * });
+ * @param tableName  表名
+ * @param schema  zod 对象
  */
-export function createTable(
+export function createTableByZodObject<T extends z.ZodRawShape>(
   tableName: string,
-  columnsRecord: Record<string, string>,
+  schema: z.ZodObject<T>
 ): void {
-  const columns = Object.entries(columnsRecord)
-    .map(([name, type]) => `${name} ${type}`)
-    .join(", ");
-
-  db.run(`CREATE TABLE IF NOT EXISTS ${tableName} (${columns});`);
+  const columedefs = zodObjectToColumnDefs(schema)
+  db.run(toCreateTableSQL(tableName, columedefs))
 }
+
+/**
+ * 联合类型建表函数
+ * @param tableName  表名
+ * @param schema  ZodDiscriminatedUnion 联合对象
+ */
+export function createTableByZodDiscriminatedUnion<
+  Options extends z.ZodObject<any, any>[],
+  Discriminator extends string
+>(
+  tableName: string,
+  schema: z.ZodDiscriminatedUnion<Options, Discriminator>
+): void {
+  const options = schema.options as z.ZodObject<any, any>[]
+  if (!options)
+    return
+
+
+  // 1. 收集每个 variant 的 key 集合
+  const allKeySets = options.map((opt) => new Set(Object.keys(opt.shape)))
+
+  // 2. 求所有 variant 的 key 交集 → 共有 key
+  const commonKeys = allKeySets.reduce(
+    (acc, set) => new Set([...acc].filter((key) => set.has(key)))
+  )
+
+  // 3. 用 Object.fromEntries 构建共有 shape（避免写入 Readonly 对象）
+  const commonShape = Object.fromEntries(
+    [...commonKeys].map((key) => [key, options[0]!.shape[key]])
+  ) as z.ZodRawShape
+
+
+  const commonSchema = z.object(commonShape)
+  const columnDefs: Record<string, SQLiteColumnDef> = {
+    ...zodObjectToColumnDefs(commonSchema),
+    data: {
+      name: "data",
+      type: "TEXT" ,
+      nullable:true,
+      primaryKey:false,
+      defaultValue:undefined,
+      unique: false,
+    }
+  }
+
+  // 6. 建表
+  db.run(toCreateTableSQL(tableName, columnDefs))
+}
+
+
+
+// 用 typeof 让 TS 自己推断
+const mySchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("a"), name: z.string() }),
+  z.object({ type: z.literal("b"), age: z.number() }),
+])
+
+type MySchemaType = typeof mySchema
+//   ^? 悬浮这里，编辑器会告诉你完整的类型签名
+
+
+
+
 
 /**
  * 检测某张表是否已存在
