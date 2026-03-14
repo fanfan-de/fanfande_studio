@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { z } from "zod";
-import { toCreateTableSQL, zodObjectToColumnDefs, SQLiteColumnDef } from "./parser"
-
+import { toCreateTableSQL, zodObjectToColumnDefs, } from "./parser"
+import type {SQLiteColumnDef} from "./parser"
 // ============================================================================
 //  SQLite 本地数据库工具库（基于 Bun 原生 SQLite + Zod 校验）
 //
