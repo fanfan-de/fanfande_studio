@@ -352,9 +352,7 @@ export namespace Message {
     })
     export const User = Base.extend({
         role: z.literal("user"),
-        time: z.object({
-            created: z.number(),
-        }),
+        created: z.number(),
         summary: z
             .object({
                 title: z.string().optional(),
@@ -377,10 +375,8 @@ export namespace Message {
 
     export const Assistant = Base.extend({
         role: z.literal("assistant"),
-        time: z.object({
-            created: z.number(),
-            completed: z.number().optional(),
-        }),
+        created: z.number(),
+        completed: z.number().optional(),
         error: z
             .discriminatedUnion("name", [
                 AuthError.Schema,
@@ -434,8 +430,8 @@ export namespace Message {
 
     //messge的content + Meta，就可以理解为一个 message
     export const WithParts = z.object({
-        info: Info,
-        parts: z.array(Part),
+        info: Info,//meta数据
+        parts: z.array(Part),//消息的具体内容
     })
     export type WithParts = z.infer<typeof WithParts>
 

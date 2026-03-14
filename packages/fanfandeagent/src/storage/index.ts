@@ -5,7 +5,7 @@ export {
 export {
     db,
     tableExists,
-    createTable,
+    createTableByZodObject,
     insertOne,
     insertOneWithSchema,
     insertMany,
@@ -24,4 +24,9 @@ export {
     deleteAll,
     toSQLiteValue,
     fromSQLiteRecord,
+    createTableByZodDiscriminatedUnion,
 } from "./Sqlite"
+
+export type {
+    SQLiteColumnDef
+} from "./parser"

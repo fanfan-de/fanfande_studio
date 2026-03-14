@@ -2,19 +2,22 @@ import type { Provider } from "@/provider/provider";
 import { Log } from "../util/log"
 import { LLM } from './llm';
 //import type { StreamInput } from "./llm"
-import type { Message } from "./message"
+import { Message } from "./message"
+//import { Message } from "./message";
 import { Identifier } from "@/id/id";
 import { ZodDate } from "zod";
+import { matchedRoutes } from "hono/route";
+import { Session } from "./index"
 //一次LLM调用的循环处理器
 export namespace SessionProcessor {
     const log = Log.create({ service: "session.processor" })
 
-    //创建一个处理器
+    //创建一个处理器:涵盖 发送LLM Input-> 接受处理steam
     export function create(input: {
         Assistant: Message.Assistant,
         abort: AbortSignal
     }) {
-        const toolcalls: Record<string, Message.ToolPart> = {}
+        //const toolcalls: Record<string, Message.ToolPart> = {}
         let snapshot: string | undefined
         let blocked = false
         let attempt = 0
@@ -29,16 +32,19 @@ export namespace SessionProcessor {
                 return toolcalls[toolCallID]
             },
             async process(streamInput: LLM.StreamInput) {
-                while (true) {//重试循环
+                //重试循环
+                while (true) {
 
                     const stream = await LLM.stream(streamInput)
 
                     let currentText: Message.TextPart | undefined = undefined
                     //某些模型（如 Claude、Gemini）支持多个并行推理链或嵌套推理
                     let reasoningMap: Record<string, Message.ReasoningPart> = {}
+                    let toolcalls: Record<string, Message.ToolPart> = {}
 
                     for await (const value of stream.fullStream) {
                         switch (value.type) {
+
                             case "text-start":
                                 currentText = {
                                     id: Identifier.ascending("part"),
@@ -60,21 +66,15 @@ export namespace SessionProcessor {
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
                                     //将part写入存储
+                                    await Session.Create("parts", currentText)
+
                                 }
                                 break;
                             case 'text-delta':
-                                // 处理文本增量
-                                // value.text 包含增量文本
-                                // value.snapshot 包含完整文本的快照（如果可用）
-                                // TODO: 更新消息的文本部分，记录增量
-                                // TODO: 更新数据库中的消息状态
-                                // TODO: 发送事件通知 UI 更新
                                 if (currentText) {
                                     currentText.text += value.text
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
-
-
                                 }
                                 break;
                             case "reasoning-start":
@@ -96,16 +96,18 @@ export namespace SessionProcessor {
                             case "reasoning-end":
                                 if (value.id in reasoningMap) {
                                     const part = reasoningMap[value.id]
-                                    part!.text = part!.text.trimEnd()
+                                    if (part) {
+                                        part!.text = part!.text.trimEnd()
 
-                                    part!.time = {
-                                        ...part!.time,
-                                        end: Date.now(),
+                                        part!.time = {
+                                            ...part!.time,
+                                            end: Date.now(),
+                                        }
+                                        if (value.providerMetadata) part!.metadata = value.providerMetadata
+
+                                        await Session.updatePart(part)
+                                        delete reasoningMap[value.id]//已经存盘，内存可以删除了
                                     }
-                                    if (value.providerMetadata) part!.metadata = value.providerMetadata
-
-                                    await Session.updatePart(part)
-                                    delete reasoningMap[value.id]//已经存盘，内存可以删除了
                                 }
                                 break;
                             case "reasoning-delta":
@@ -113,13 +115,7 @@ export namespace SessionProcessor {
                                     const part = reasoningMap[value.id]
                                     part!.text += value.text
                                     if (value.providerMetadata) part!.metadata = value.providerMetadata
-                                    await Session.updatePartDelta({
-                                        sessionID: part.sessionID,
-                                        messageID: part.messageID,
-                                        partID: part.id,
-                                        field: "text",
-                                        delta: value.text,
-                                    })
+
                                 }
                                 break
 
@@ -128,47 +124,76 @@ export namespace SessionProcessor {
                                     id: Identifier.ascending("part"),
                                     sessionid: input.Assistant.sessionID,
                                     messageid: input.Assistant.id,
-                                    type:"tool",
-                                    callID:value.id,
-                                    tool:value.toolName,
-                                    state:{
-                                        status:"pending",
-                                        input:{},
-                                        raw:"",
+                                    type: "tool",
+                                    callID: value.id,
+                                    tool: value.toolName,
+                                    state: {
+                                        status: "pending",
+                                        input: {},
+                                        raw: "",
                                     },
-                                    metadata:value.providerMetadata,
+                                    metadata: value.providerMetadata,
                                 }
+                                toolcalls[value.id] = part
+
                                 await Session.updatePart(part)
 
                                 break;
                             case "tool-input-end":
                                 break;
                             case "tool-input-delta":
+                                if (value.id in toolcalls) {
+                                    if (Message.ToolStatePending.safeParse(toolcalls[value.id]?.state))
+                                        (toolcalls[value.id]?.state as Message.ToolStatePending).raw += value.delta
+                                }
                                 break;
                             case "source":
                                 break;
                             case "file":
                                 break;
                             case 'tool-call':
-                                // 处理工具调用
                                 // value.toolCallId 工具调用ID
                                 // value.toolName 工具名称
                                 // value.args 工具参数
-                                // TODO: 创建 ToolPart 并设置为 pending 状态
-                                // TODO: 存储到 toolcalls 映射中
-                                // TODO: 更新数据库中的工具调用状态
-                                // TODO: 发送事件通知 UI 显示工具调用
+                                const match = toolcalls[value.toolCallId]
+                                if (match) {
+                                    //更新工具调用状态到“运行中”
+                                    const part: Message.ToolPart = {
+                                        ...match,
+                                        tool: value.toolName,
+                                        state: {
+                                            status: "running",
+                                            input: value.input,
+                                            time: { start: Date.now() }
+                                        },
+                                        metadata: value.providerMetadata,
+                                    }
+
+                                    toolcalls[value.toolCallId] = part as Message.ToolPart
+                                }
                                 break;
                             case 'tool-result':
-                                // 处理工具结果
-                                // value.toolCallId 工具调用ID
-                                // value.toolName 工具名称
-                                // value.result 工具执行结果
-                                // TODO: 更新对应的 ToolPart 状态为 completed 或 error
-                                // TODO: 更新数据库中的工具结果
-                                // TODO: 发送事件通知 UI 更新工具状态
-                                // TODO: 如果工具执行失败，可能需要重试或处理错误
+                                if (toolcalls[value.toolCallId] && toolcalls[value.toolCallId]?.state.status === "running") {
+                                    const match: Message.ToolPart = {
+                                        ...toolcalls[value.toolCallId]!,
+                                        state: {
+                                            status: "completed",
+                                            input: value.input,
+                                            output: value.output,
+                                            metadata: value.output.metadata,
+                                            title: value.output.title,
+                                            time: {
+                                                start: (toolcalls[value.toolCallId]!.state as Message.ToolStateRunning).time.start,
+                                                end: Date.now(),
+                                            },
+                                            attachments: value.output.attachments,
+                                        },
+                                    }
+
+                                    toolcalls[value.toolCallId] = match
+                                }
                                 break;
+
                             case "tool-error":
                                 break;
                             case "tool-output-denied":
@@ -176,7 +201,7 @@ export namespace SessionProcessor {
                             case "start-step":
                                 break;
                             case "start":
-                                //
+                                //SessionStatus.set(input.sessionID, { type: "busy" })
                                 break;
                             case 'finish':
                                 // 处理完成事件
