@@ -9,9 +9,26 @@ import { loop } from "./Loop";
 
 
 //user的 prompt
-export namespace SessionPrompt {
-    const log = Log.create({ service: "session.prompt" })
+export namespace Engine {
+    const log = Log.create({ service: "session.engine" })
+    
+    const state = Instance.state(
+        () => {
+            const data: Record<
+                string,
+                {
+                    abort: AbortController
+                    callbacks: {
+                        resolve(input: Message.WithParts): void
+                        reject(): void
+                    }[]
+                }
+            > = {}
+            return data
+        },
+    )
 
+    //
     export const PromptInput = z.object({
         sessionID: Identifier.schema("session"),
         messageID: Identifier.schema("message").optional(),
@@ -78,23 +95,12 @@ export namespace SessionPrompt {
     })
     export type PromptInput = z.infer<typeof PromptInput>
 
-    const state = Instance.state(
-        () => {
-            const data: Record<
-                string,
-                {
-                    abort: AbortController
-                    callbacks: {
-                        resolve(input: Message.WithParts): void
-                        reject(): void
-                    }[]
-                }
-            > = {}
-            return data
-        },
-    )
-    //
+
+    //推入Engine一次prompt,
     export const prompt = fn(PromptInput, async (input) => {
+
+
+
         return loop(input.sessionID)
     })
 

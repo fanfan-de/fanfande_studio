@@ -93,24 +93,6 @@ export namespace Session {
      * @param tableRecord 对应表的record
      */
     export function Create<T extends TableName>(tableName: T, tableRecord:TableRecordMap[T] ): void {
-        // switch (tableName) {
-        //     case "projects":
-
-        //         break;
-        //     case "sessions":
-        //         fn(Info, (tableRecord) => {
-        //             insertOne(tableName, toSQLiteValue(tableRecord))
-        //         })
-        //         break;
-        //     case "messages":
-        //         fn(Info, (tableRecord) => {
-        //             insertOne(tableName, toSQLiteValue(tableRecord))
-        //         })
-        //         break;
-        //     case "parts":
-
-        //         break;
-        // }
         insertOne(tableName, toSQLiteValue(tableRecord))
     }
 
