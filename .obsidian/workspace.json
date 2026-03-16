@@ -308,8 +308,7 @@
   },
   "active": "aa7ae7b66b127440",
   "lastOpenFiles": [
-    "Hono Context (c) 完整参考.md",
-    "packages/fanfandeagent/src/session/engine.ts",
+    "数据流.md",
     "processor.md",
     "数据流.md",
     "packages/fanfandeagent/src/storage/Sqlite.ts",
@@ -343,6 +342,8 @@
     "fanfande_studio_vault/Config思路.md",
     "fanfande_studio_vault/TUI.md",
     "packages/fanfandeagent/node_modules/brace-expansion/README.md",
+    "packages/fanfandeagent/node_modules/balanced-match/README.md",
+    "packages/fanfandeagent/node_modules/balanced-match/LICENSE.md",
     "packages/fanfandeagent/node_modules/exif-parser/test/test.jpg",
     "packages/fanfandeagent/node_modules/exif-parser/test/starfish.jpg",
     "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/widgets@2x.png",

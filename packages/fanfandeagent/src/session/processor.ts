@@ -12,11 +12,7 @@ import { Session } from "./index"
 export namespace SessionProcessor {
     const log = Log.create({ service: "session.processor" })
 
-<<<<<<< Updated upstream
-    //创建一个处理器:涵盖 发送LLM Input-> 接受处理steam->工具调用
-=======
-    //创建一个处理器:涵盖 发送LLM Input-> 接受处理steam流 -> 工具调用流->
->>>>>>> Stashed changes
+    //创建一个处理器:涵盖 发送LLM Input-> 接受处理steam
     export function create(input: {
         Assistant: Message.Assistant,
         abort: AbortSignal
