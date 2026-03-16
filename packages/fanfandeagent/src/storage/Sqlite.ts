@@ -1,34 +1,14 @@
+// #region Imports ─────────────────────────────────────────
 import { Database } from "bun:sqlite";
 import { z } from "zod";
 import { toCreateTableSQL, zodObjectToColumnDefs, } from "./parser"
 import type {SQLiteColumnDef} from "./parser"
-// ============================================================================
-//  SQLite 本地数据库工具库（基于 Bun 原生 SQLite + Zod 校验）
-//
-//  功能概览：
-//    1. 数据库初始化与性能优化
-//    2. 类型定义（SQLite 值类型、查询条件、排序、分页等）
-//    3. 值转换工具（业务对象 ↔ SQLite 存储格式）
-//    4. SQL 子句构建器（WHERE / ORDER BY / LIMIT）
-//    5. CRUD 操作（增删改查 + 批量 + Upsert + Zod 校验）
-// ============================================================================
+// #endregion
+// #region Constants ──────────────────────────────────────
+const DATABASE_FILE = "agent_local_data.db";
+// #endregion
 
-// ============================================================================
-//  第一部分：数据库初始化与优化
-// ============================================================================
-
-/** 创建或连接到本地单文件数据库 */
-export const db = new Database("agent_local_data.db", { create: true });
-
-// 性能优化 PRAGMA
-db.run("PRAGMA journal_mode = WAL;"); // WAL 模式：并发读写性能大幅提升
-db.run("PRAGMA synchronous = NORMAL;"); // 降低同步级别，在 WAL 模式下依然安全
-db.run("PRAGMA foreign_keys = ON;"); // 启用外键约束，防止脏数据
-
-// ============================================================================
-//  第二部分：类型定义
-// ============================================================================
-
+// #region Types & Interfaces ─────────────────────────────
 /** SQLite 支持的原子值类型 */
 type SQLiteValue = string | number | bigint | boolean | null | Uint8Array;
 
@@ -56,6 +36,17 @@ interface QueryOptions {
   offset?: number;
   columns?: string[]; // SELECT 指定列，默认 "*"
 }
+// #endregion
+
+// #region Core Logic ─────────────────────────────────────
+
+/** 创建或连接到本地单文件数据库 */
+export const db = new Database(DATABASE_FILE, { create: true });
+
+// 性能优化 PRAGMA
+db.run("PRAGMA journal_mode = WAL;"); // WAL 模式：并发读写性能大幅提升
+db.run("PRAGMA synchronous = NORMAL;"); // 降低同步级别，在 WAL 模式下依然安全
+db.run("PRAGMA foreign_keys = ON;"); // 启用外键约束，防止脏数据
 
 // ============================================================================
 //  第三部分：DDL — 建表与表检测
@@ -227,9 +218,7 @@ export function fromSQLiteRecord<T extends z.ZodRawShape>(
   return schema.parse(obj); // 最终交给 Zod 做校验 + 类型推断
 }
 
-// ============================================================================
-//  第五部分：Zod Schema 内省工具（用于值还原）
-// ============================================================================
+// #region Internal Helpers (private) ─────────────────────
 
 /** 根据字段的 Zod Schema 将单个 SQLiteValue 还原为业务层值 */
 function restoreValue(fieldSchema: z.ZodTypeAny, value: SQLiteValue): unknown {

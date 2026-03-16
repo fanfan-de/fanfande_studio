@@ -26,5 +26,8 @@
     "xdg-basedir": "^5.1.0",
     "yargs": "^18.0.0",
     "zod": "^4.3.6"
+  },
+  "imports": {
+    "#db/*":"./src/storage/*"
   }
 }
