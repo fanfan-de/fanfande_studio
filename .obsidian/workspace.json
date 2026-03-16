@@ -308,8 +308,8 @@
   },
   "active": "aa7ae7b66b127440",
   "lastOpenFiles": [
-    "packages/fanfandeagent/src/session/engine.ts",
     "Hono Context (c) 完整参考.md",
+    "packages/fanfandeagent/src/session/engine.ts",
     "processor.md",
     "数据流.md",
     "packages/fanfandeagent/src/storage/Sqlite.ts",
@@ -331,7 +331,6 @@
     "packages/fanfandeagent/node_modules/events/tests/subclass.js",
     "packages/fanfandeagent/node_modules/events/tests/special-event-names.js",
     "packages/fanfandeagent/node_modules/events/tests/set-max-listeners-side-effects.js",
-    "packages/fanfandeagent/node_modules/events/tests/remove-listeners.js",
     "packages/fanfandeagent/node_modules/events/security.md",
     "packages/fanfandeagent/node_modules/events/Readme.md",
     "packages/fanfandeagent/node_modules/events/History.md",
