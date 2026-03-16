@@ -340,6 +340,7 @@
   },
   "active": "352e63b27a5a86d9",
   "lastOpenFiles": [
+    "packages/fanfandeagent/src/storage/sqlite.ts",
     "convert-namespaces-simple.mjs",
     "convert-namespaces-regex.mjs",
     "test-parse.mjs",
@@ -350,7 +351,6 @@
     "packages/fanfandeagent/src/util/context.ts.backup",
     "packages/fanfandeagent/src/tool/tool.ts.backup",
     "packages/fanfandeagent/src/tool/registory.ts.backup",
-    "packages/fanfandeagent/src/storage/storage.ts.backup",
     "流程图.md",
     "TypeScript AI-Friendly 代码规范文档.md",
     "AI 代码撰写规范.md",
