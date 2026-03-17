@@ -5,7 +5,7 @@ import os from "os"
 
 
 // 应用名称
-const app : string = "opencode"
+const app: string = "opencode"
 
 // 拼接出应用专属的系统路径
 // Global paths: {
@@ -29,57 +29,57 @@ Global paths: {
   config: "C:\\Users\\wb.xuedengwen\\.config\\opencode",
   state: "C:\\Users\\wb.xuedengwen\\.local\\state\\opencode",
 }
-*/ 
+*/
 
-export namespace Global {
-  /**
-   * 获得本地文件的存储地址
-   */
-  export const Path = {
-    // Allow override via OPENCODE_TEST_HOME for test isolation
-    get home() {
-      return process.env.OPENCODE_TEST_HOME || os.homedir()
-    },
-    data,
-    bin: path.join(data, "bin"),
-    log: path.join(data, "log"),
-    cache,
-    config,
-    state,
-  }
+
+/**
+ * 获得本地文件的存储地址
+ */
+export const Path = {
+  // Allow override via OPENCODE_TEST_HOME for test isolation
+  get home() {
+    return process.env.OPENCODE_TEST_HOME || os.homedir()
+  },
+  data,
+  bin: path.join(data, "bin"),
+  log: path.join(data, "log"),
+  cache,
+  config,
+  state,
 }
+
 
 
 
 //自动初始化目录 (Top-level Await)
 await Promise.all([
-  fs.mkdir(Global.Path.data, { recursive: true }),
-  fs.mkdir(Global.Path.config, { recursive: true }),
-  fs.mkdir(Global.Path.state, { recursive: true }),
-  fs.mkdir(Global.Path.log, { recursive: true }),
-  fs.mkdir(Global.Path.bin, { recursive: true }),
+  fs.mkdir(Path.data, { recursive: true }),
+  fs.mkdir(Path.config, { recursive: true }),
+  fs.mkdir(Path.state, { recursive: true }),
+  fs.mkdir(Path.log, { recursive: true }),
+  fs.mkdir(Path.bin, { recursive: true }),
 ])
 
 const CACHE_VERSION = "18"
 
 // 1. 读取磁盘上的旧版本号，如果文件不存在，默认当作版本 "0"
-const version = await Bun.file(path.join(Global.Path.cache, "version"))
+const version = await Bun.file(path.join(Path.cache, "version"))
   .text()
   .catch(() => "0")
 
 // 2. 检查版本是否匹配，版本不匹配（说明代码更新了），清空整个缓存目录
 if (version !== CACHE_VERSION) {
   try {
-    const contents = await fs.readdir(Global.Path.cache)
+    const contents = await fs.readdir(Path.cache)
     await Promise.all(
       contents.map((item) =>
-        fs.rm(path.join(Global.Path.cache, item), {
+        fs.rm(path.join(Path.cache, item), {
           recursive: true,
           force: true,
         }),
       ),
     )
-  } catch (e) {}
+  } catch (e) { }
   // 3. 将当前版本号写入磁盘
-  await Bun.file(path.join(Global.Path.cache, "version")).write(CACHE_VERSION)
+  await Bun.file(path.join(Path.cache, "version")).write(CACHE_VERSION)
 }

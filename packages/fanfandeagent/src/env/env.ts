@@ -1,6 +1,6 @@
-import { Instance } from "../project/instance"
+import { Instance } from "#project/instance.ts"
 
-export namespace Env {
+
   const state = Instance.state(() => {
     // Create a shallow copy to isolate environment per instance
     // Prevents parallel tests from interfering with each other's env vars
@@ -25,4 +25,4 @@ export namespace Env {
     const env = state()
     delete env[key]
   }
-}
+

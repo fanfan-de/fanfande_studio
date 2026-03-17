@@ -6,12 +6,12 @@
 // 社区驱动：开源项目，依赖社区贡献保持数据准确性和时效性
 // 多场景应用：已被集成到 OpenCode 等工具中，作为底层模型支持的核心数据来源
 import { Log } from "../util/log"
-import { Global } from "../global"
+import { Global } from "../global/global"
 import path from "path"
 import z from "zod"
 import { Flag } from "../flag/flag"
 import { lazy } from "@/util/lazy"
-import { Installation } from "../installation"
+import { Installation } from "../installation/installation"
 
 export namespace ModelsDev {
     const log = Log.create({ service: "models.dev" })

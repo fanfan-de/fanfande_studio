@@ -1,14 +1,16 @@
-import { Log } from "#util/log.ts"
-import { Context as utilContext } from "#util/context.ts"
-//import { Project } from "#project/project.ts"
+import * as Log  from "#util/log.ts"
+import * as  utilContext  from "#util/context.ts"
+import * as Project  from "#project/project.ts"
+
 import { iife } from "#util/iife.ts"
-import { GlobalBus } from "@/bus/global"
-import { Filesystem } from "#util/filesystem.ts"
+import { GlobalBus } from "#bus/global.ts"
+import * as  Filesystem  from "#util/filesystem.ts"
+import * as State from "#project/state.ts"
 
 interface Context {
   directory: string
   worktree: string
-  project: Project.Info
+  project: Project.ProjectInfo
 }
 
 //内部维护的一个  上下文存储容器， Context，directory信息就在其中，

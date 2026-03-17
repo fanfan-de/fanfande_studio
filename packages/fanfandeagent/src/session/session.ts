@@ -2,12 +2,13 @@ import { Log } from "#util/log.ts"
 import z from "zod"
 import { Identifier } from "#id/id.ts"
 import { Snapshot } from "#snapshot/index.ts"
-import { Bus } from "#bus/index.ts"
+import { Bus } from "#bus/project-bus.ts"
 import { BusEvent } from "#bus/bus-event.ts"
 import { Message } from "#session/message.ts"
 import { Instance } from "#project/instance.ts"
-import { Slug } from "@/util/slug"
-import { Installation } from "#installation/index.ts"
+import {ProjectInfo} from "#project/project.ts"
+import { Slug } from "#util/slug.ts"
+import { Installation } from "#installation/installation.ts"
 import { fn } from "#util/fn.ts"
 import {
     db,
@@ -16,7 +17,7 @@ import {
     findOne, findById, fromSQLiteRecord
 } from "#database/Sqlite.ts"
 import { zodObjectToColumnDefs, toCreateTableSQL, } from "#database/parser.ts"
-import type { Project } from "#project/project.ts"
+import type {  } from "#project/project.ts"
 
 
 
@@ -27,9 +28,9 @@ const childTiltePrefic = "子对话"
 //#region Type & Interface
 // 定义映射关系
 interface TableRecordMap {
-    projects: Project.Info;
-    sessions: Info;
-    messages: Message.Info;
+    projects: ProjectInfo;
+    sessions: SessionInfo;
+    messages: MessageInfo;
     parts: Message.Part;
 }
 // 从映射中派生出联合类型
@@ -38,7 +39,7 @@ type TableName = keyof TableRecordMap;
 type TableRecord = TableRecordMap[TableName];
 // 等价于 Project.Info | Info | Message.Info | Message.Part
 
-export const Info = z
+export const SessionInfo = z
     .object({
         id: Identifier.schema("session"),//会话唯一标识符 ("session" 类型)
         slug: z.string().optional(),//简短标识符（用于 URL/显示）
@@ -79,7 +80,7 @@ export const Info = z
     .meta({
         ref: "Session",
     })
-export type Info = z.output<typeof Info>
+export type SessionInfo = z.output<typeof SessionInfo>
 //#endregion
 
 
