@@ -1,25 +1,29 @@
-import { Log } from "../util/log"
+import { Log } from "#util/log.ts"
 import z from "zod"
-import { Identifier } from "../id/id"
-import { Snapshot } from "../snapshot"
-import { Bus } from "@/bus"
-import { BusEvent } from "@/bus/bus-event"
-import { Message } from "#/message"
-import { Instance } from "@/project/instance"
+import { Identifier } from "#id/id.ts"
+import { Snapshot } from "#snapshot/index.ts"
+import { Bus } from "#bus/index.ts"
+import { BusEvent } from "#bus/bus-event.ts"
+import { Message } from "#session/message.ts"
+import { Instance } from "#project/instance.ts"
 import { Slug } from "@/util/slug"
-import { Installation } from "@/installation"
-import { fn } from "@/util/fn"
-import { zodObjectToColumnDefs, toCreateTableSQL, db, createTableByZodDiscriminatedUnion, tableExists, insertOne, createTableByZodObject, toSQLiteValue, findOne, findById, fromSQLiteRecord } from "@/storage"
-import { insert } from "@opentui/solid"
-import type { Project } from "@/project/project"
-import {} from "#database/Sqlite.ts"
-import {} from "#database/parser.ts"
+import { Installation } from "#installation/index.ts"
+import { fn } from "#util/fn.ts"
+import {
+    db,
+    createTableByZodDiscriminatedUnion, tableExists,
+    insertOne, createTableByZodObject, toSQLiteValue,
+    findOne, findById, fromSQLiteRecord
+} from "#database/Sqlite.ts"
+import { zodObjectToColumnDefs, toCreateTableSQL, } from "#database/parser.ts"
+import type { Project } from "#project/project.ts"
 
 
 
 const log = Log.create({ service: "session" })
 const parentTiTlePrefix = "新对话"
 const childTiltePrefic = "子对话"
+
 //#region Type & Interface
 // 定义映射关系
 interface TableRecordMap {
@@ -76,11 +80,10 @@ export const Info = z
         ref: "Session",
     })
 export type Info = z.output<typeof Info>
-
 //#endregion
 
 
-
+//#region Modula Initialize----------------------------------------
 //建表操作
 if (!tableExists("sessions")) {
     createTableByZodObject("sessions", Info)
@@ -91,13 +94,15 @@ if (!tableExists("messages")) {
 if (!tableExists("parts")) {
     createTableByZodDiscriminatedUnion("parts", Message.Part)
 }
+//#endregion
 
 // database CRUD
 /**
+ * 四种数据(project,session,message,part)的数据库crud操作
  * @param tableName 
  * @param tableRecord 对应表的record
  */
-export function Create<T extends TableName>(tableName: T, tableRecord: TableRecordMap[T]): void {
+function Create<T extends TableName>(tableName: T, tableRecord: TableRecordMap[T]): void {
     insertOne(tableName, toSQLiteValue(tableRecord))
 }
 
@@ -174,7 +179,7 @@ export async function createSession(
     }
     //log.info("create", result)
     //db insert
-    Create("sessions",result)
+    Create("sessions", result)
 
     Bus.publish(Event.Created, {
         info: result,
