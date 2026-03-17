@@ -121,57 +121,66 @@ async function updateData(id: string) {
 ### 总结
 这段代码是一个**高质量、现代、线程安全（并发安全）**的读写锁实现。它正确处理了异步流，防止了写者饥饿，并利用了最新的语言特性。**唯一需要特别注意的是避免在持有读锁时再次请求读锁（重入死锁）**。
 */
-export namespace Lock {
-  const locks = new Map<
-    string,
-    {
-      readers: number
-      writer: boolean
-      waitingReaders: (() => void)[]
-      waitingWriters: (() => void)[]
-    }
-  >()
 
-  function get(key: string) {
-    if (!locks.has(key)) {
-      locks.set(key, {
-        readers: 0,
-        writer: false,
-        waitingReaders: [],
-        waitingWriters: [],
+const locks = new Map<
+  string,
+  {
+    readers: number
+    writer: boolean
+    waitingReaders: (() => void)[]
+    waitingWriters: (() => void)[]
+  }
+>()
+
+function get(key: string) {
+  if (!locks.has(key)) {
+    locks.set(key, {
+      readers: 0,
+      writer: false,
+      waitingReaders: [],
+      waitingWriters: [],
+    })
+  }
+  return locks.get(key)!
+}
+
+function process(key: string) {
+  const lock = locks.get(key)
+  if (!lock || lock.writer || lock.readers > 0) return
+
+  // Prioritize writers to prevent starvation
+  if (lock.waitingWriters.length > 0) {
+    const nextWriter = lock.waitingWriters.shift()!
+    nextWriter()
+    return
+  }
+
+  // Wake up all waiting readers
+  while (lock.waitingReaders.length > 0) {
+    const nextReader = lock.waitingReaders.shift()!
+    nextReader()
+  }
+
+  // Clean up empty locks
+  if (lock.readers === 0 && !lock.writer && lock.waitingReaders.length === 0 && lock.waitingWriters.length === 0) {
+    locks.delete(key)
+  }
+}
+
+export async function read(key: string): Promise<Disposable> {
+  const lock = get(key)
+
+  return new Promise((resolve) => {
+    if (!lock.writer && lock.waitingWriters.length === 0) {
+      lock.readers++
+      resolve({
+        [Symbol.dispose]: () => {
+          lock.readers--
+          process(key)
+        },
       })
-    }
-    return locks.get(key)!
-  }
-
-  function process(key: string) {
-    const lock = locks.get(key)
-    if (!lock || lock.writer || lock.readers > 0) return
-
-    // Prioritize writers to prevent starvation
-    if (lock.waitingWriters.length > 0) {
-      const nextWriter = lock.waitingWriters.shift()!
-      nextWriter()
-      return
-    }
-
-    // Wake up all waiting readers
-    while (lock.waitingReaders.length > 0) {
-      const nextReader = lock.waitingReaders.shift()!
-      nextReader()
-    }
-
-    // Clean up empty locks
-    if (lock.readers === 0 && !lock.writer && lock.waitingReaders.length === 0 && lock.waitingWriters.length === 0) {
-      locks.delete(key)
-    }
-  }
-
-  export async function read(key: string): Promise<Disposable> {
-    const lock = get(key)
-
-    return new Promise((resolve) => {
-      if (!lock.writer && lock.waitingWriters.length === 0) {
+    } else {
+      lock.waitingReaders.push(() => {
         lock.readers++
         resolve({
           [Symbol.dispose]: () => {
@@ -179,25 +188,25 @@ export namespace Lock {
             process(key)
           },
         })
-      } else {
-        lock.waitingReaders.push(() => {
-          lock.readers++
-          resolve({
-            [Symbol.dispose]: () => {
-              lock.readers--
-              process(key)
-            },
-          })
-        })
-      }
-    })
-  }
+      })
+    }
+  })
+}
 
-  export async function write(key: string): Promise<Disposable> {
-    const lock = get(key)
+export async function write(key: string): Promise<Disposable> {
+  const lock = get(key)
 
-    return new Promise((resolve) => {
-      if (!lock.writer && lock.readers === 0) {
+  return new Promise((resolve) => {
+    if (!lock.writer && lock.readers === 0) {
+      lock.writer = true
+      resolve({
+        [Symbol.dispose]: () => {
+          lock.writer = false
+          process(key)
+        },
+      })
+    } else {
+      lock.waitingWriters.push(() => {
         lock.writer = true
         resolve({
           [Symbol.dispose]: () => {
@@ -205,19 +214,10 @@ export namespace Lock {
             process(key)
           },
         })
-      } else {
-        lock.waitingWriters.push(() => {
-          lock.writer = true
-          resolve({
-            [Symbol.dispose]: () => {
-              lock.writer = false
-              process(key)
-            },
-          })
-        })
-      }
-    })
-  }
+      })
+    }
+  })
 }
+
 
 

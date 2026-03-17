@@ -1,5 +1,5 @@
 import z from "zod"
-import { Log } from "#util/log.ts"
+import * as  Log  from "#util/log.ts"
 import { Instance } from "#project/instance.ts"
 import * as BusEvent from "#bus/bus-event.ts"
 import { GlobalBus } from "#bus/global.ts"
