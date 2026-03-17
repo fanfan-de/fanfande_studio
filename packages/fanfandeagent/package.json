@@ -27,7 +27,31 @@
     "yargs": "^18.0.0",
     "zod": "^4.3.6"
   },
-  "imports": {
-    "#database/*":"./src/database/*"
+    "imports": {
+    "#acp/*": "./src/acp/*",
+    "#agent/*": "./src/agent/*",
+    "#auth/*": "./src/auth/*",
+    "#bun/*": "./src/bun/*",
+    "#bus/*": "./src/bus/*",
+    "#cli/*": "./src/cli/*",
+    "#command/*": "./src/command/*",
+    "#config/*": "./src/config/*",
+    "#database/*": "./src/database/*",
+    "#flag/*": "./src/flag/*",
+    "#global/*": "./src/global/*",
+    "#id/*": "./src/id/*",
+    "#installation/*": "./src/installation/*",
+    "#permission/*": "./src/permission/*",
+    "#project/*": "./src/project/*",
+    "#prompts/*": "./src/prompts/*",
+    "#provider/*": "./src/provider/*",
+    "#scheduler/*": "./src/scheduler/*",
+    "#server/*": "./src/server/*",
+    "#session/*": "./src/session/*",
+    "#shell/*": "./src/shell/*",
+    "#snapshot/*": "./src/snapshot/*",
+    "#tool/*": "./src/tool/*",
+    "#util/*": "./src/util/*",
+    "#*": "./src/*"
   }
 }

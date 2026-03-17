@@ -1,18 +1,9 @@
-/*
- * 核心理念：
- *   Instance 是所有的文件夹目录都有一个各自的对应，和project没关系
- * - 同一目录（project workspace）只维护一个运行时上下文，避免重复初始化与资源浪费。
- * - 与 Project、State、GlobalBus 的协作：解析项目元数据、挂载/清理状态、广播实例销毁事件。
- * - 安全边界：containsPath 用于判断操作路径是否属于当前项目范围（特别处理非 Git 项目）。
- */
-
-import { Log } from "@/util/log"
-import { Context as utilContext } from "../util/context"
-import { Project } from "./project"
-import { State } from "./state"
-import { iife } from "@/util/iife"
+import { Log } from "#util/log.ts"
+import { Context as utilContext } from "#util/context.ts"
+//import { Project } from "#project/project.ts"
+import { iife } from "#util/iife.ts"
 import { GlobalBus } from "@/bus/global"
-import { Filesystem } from "@/util/filesystem"
+import { Filesystem } from "#util/filesystem.ts"
 
 interface Context {
   directory: string
@@ -29,7 +20,7 @@ const contextContainer = utilContext.createContextContainer<Context>(/*"instance
 const cache= new Map<string, Promise<Context>>()
 
 //外部接口
-export const Instance = {
+const Instance = {
   /**
  * state：为当前实例注册一个“惰性状态单例”。
  *@param init () => S
@@ -159,3 +150,6 @@ export const Instance = {
     cache.clear()
   },
 }
+
+
+export {Instance}
