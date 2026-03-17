@@ -13,7 +13,7 @@ import { NamedError } from "@/util/error";
 import fuzzysort from "fuzzysort"
 import { Config } from "@/config/config";
 import { iife } from "@/util/iife";
-import { Env } from "@/env";
+import { Env } from "#env/env.ts";
 
 /**
  * 存储所有支持的provider

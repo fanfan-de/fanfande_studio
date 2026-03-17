@@ -1,5 +1,3 @@
-
-
 import z from "zod"
 
 export abstract class NamedError extends Error {
