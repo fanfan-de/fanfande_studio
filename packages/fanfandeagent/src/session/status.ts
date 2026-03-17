@@ -1,69 +1,70 @@
-import { BusEvent } from "@/bus/bus-event"
-import { Bus } from "@/bus"
-import { Instance } from "@/project/instance"
+import { BusEvent } from "#bus/bus-event.ts"
+import { Bus } from "#bus/index.ts"
+import { Instance } from "#project/instance.ts"
 import z from "zod"
 
-export namespace SessionStatus {
-  export const Info = z
-    .union([
-      z.object({
-        type: z.literal("idle"),
-      }),
-      z.object({
-        type: z.literal("retry"),
-        attempt: z.number(),
-        message: z.string(),
-        next: z.number(),
-      }),
-      z.object({
-        type: z.literal("busy"),
-      }),
-    ])
-    .meta({
-      ref: "SessionStatus",
-    })
-  export type Info = z.infer<typeof Info>
 
-  export const Event = {
-    Status: BusEvent.define(
-      "session.status",
-      z.object({
-        sessionID: z.string(),
-        status: Info,
-      }),
-    )
-  }
-
-  const state = Instance.state(() => {
-    const data: Record<string, Info> = {}
-    return data
+//#region Type & interface
+export const Info = z
+  .union([
+    z.object({
+      type: z.literal("idle"),
+    }),
+    z.object({
+      type: z.literal("retry"),
+      attempt: z.number(),
+      message: z.string(),
+      next: z.number(),
+    }),
+    z.object({
+      type: z.literal("busy"),
+    }),
+  ])
+  .meta({
+    ref: "SessionStatus",
   })
+export type Info = z.infer<typeof Info>
+//#endregion
 
-  export function get(sessionID: string) {
-    return (
-      state()[sessionID] ?? {
-        type: "idle",
-      }
-    )
-  }
+const Event = {
+  Status: BusEvent.define(
+    "session.status",
+    z.object({
+      sessionID: z.string(),
+      status: Info,
+    }),
+  )
+}
 
-  export function list() {
-    return state()
-  }
+const state = Instance.state(() => {
+  const data: Record<string, Info> = {}
+  return data
+})
 
-  export function set(sessionID: string, status: Info) {
-    Bus.publish(Event.Status, {
-      sessionID,
-      status,
-    })
-    // if (status.type === "idle") {
-    //   // deprecated
-    //   Bus.publish(Event.Idle, {
-    //     sessionID,
-    //   })
-    //   delete state()[sessionID]
-    //   return
-    // }
-    state()[sessionID] = status
-  }
+function get(sessionID: string) {
+  return (
+    state()[sessionID] ?? {
+      type: "idle",
+    }
+  )
+}
+
+function list(){
+  return state()
+}
+
+function set(sessionID: string, status: Info) :void {
+  Bus.publish(Event.Status, {
+    sessionID,
+    status,
+  })
+  state()[sessionID] = status
+}
+
+
+export {
+  Event,
+  get,
+  list,
+  set,
 }
