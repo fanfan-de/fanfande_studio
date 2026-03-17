@@ -29,7 +29,7 @@ import { Message } from './message'
 ///import { SystemPrompt } from "./system"
 import { Flag } from "@/flag/flag"
 ///import { PermissionNext } from "@/permission/next"
-import { Auth } from "../auth"
+import { Auth } from "../auth/auth"
 import { text } from "stream/consumers"
 import { z } from "zod"
 import {} from "#db/index.ts"

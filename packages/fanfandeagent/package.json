@@ -19,6 +19,7 @@
     "@opentui/solid": "^0.1.86",
     "ai": "^6.0.50",
     "fuzzysort": "^3.1.0",
+    "gray-matter": "^4.0.3",
     "hono": "^4.11.7",
     "jsonc-parser": "^3.3.1",
     "remeda": "^2.33.4",
@@ -27,7 +28,7 @@
     "yargs": "^18.0.0",
     "zod": "^4.3.6"
   },
-    "imports": {
+  "imports": {
     "#acp/*": "./src/acp/*",
     "#agent/*": "./src/agent/*",
     "#auth/*": "./src/auth/*",

@@ -1,23 +1,24 @@
 import z from "zod"
 import fs from "fs/promises"
-import { Filesystem } from "../util/filesystem"
+import * as Filesystem from "#util/filesystem.ts"
 import path from "path"
 import { $ } from "bun"
-import { Storage } from "../database/storage"
-import { Log } from "../util/log"
-import { Flag } from "@/flag/flag"
-import { Session } from "../session"
-import { work } from "../util/queue"
-import { fn } from "@/util/fn"
-import { BusEvent } from "@/bus/bus-event"
-import { iife } from "@/util/iife"
-import { GlobalBus } from "@/bus/global"
+import * as db from "#database/Sqlite.ts"
+import * as Log from "#util/log.ts"
+import { Flag } from "#flag/flag.ts"
+import * as Session from "#session/session.ts"
+import { work } from "#util/queue.ts"
+import { fn } from "#util/fn.ts"
+import * as BusEvent from "#bus/bus-event.ts"
+import { iife } from "#util/iife.ts"
+import { GlobalBus } from "#bus/global.ts"
 import { existsSync } from "fs"
+import type { string } from "yargs"
 
 const log = Log.create({ service: "project" })
 
 //#region  Type & Interface
-export const Info = z
+export const ProjectInfo = z
   .object({
     id: z.string(),
     worktree: z.string(),
@@ -40,14 +41,14 @@ export const Info = z
   .meta({
     ref: "Project",
   })
-export type Info = z.infer<typeof Info>
+export type ProjectInfo = z.infer<typeof ProjectInfo>
 //#endregion
 
 /**
  * project update event
  */
 export const Event = {
-  Updated: BusEvent.define("project.updated", Info),
+  Updated: BusEvent.define("project.updated", ProjectInfo),
 }
 /**
  * 从指定目录初始化或获取项目信息。
@@ -63,7 +64,7 @@ export const Event = {
  * console.log(project.id); // 输出项目唯一哈希或 "global"
  * ```
  */
-export async function fromDirectory(directory: string) {
+export async function fromDirectory(directory: string):Promise<{project:ProjectInfo,sandbox:string }>{
   log.info("fromDirectory", { directory })
   /**
    * id：git 第一个commithash
@@ -93,7 +94,7 @@ export async function fromDirectory(directory: string) {
           id: id ?? "global",
           worktree: sandbox,
           sandbox: sandbox,
-          vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
+          vcs: ProjectInfo.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
         }
       }
 
@@ -118,7 +119,7 @@ export async function fromDirectory(directory: string) {
             id: "global",
             worktree: sandbox,
             sandbox: sandbox,
-            vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
+            vcs: ProjectInfo.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
           }
         }
 
@@ -152,7 +153,7 @@ export async function fromDirectory(directory: string) {
           id,
           sandbox,
           worktree: sandbox,
-          vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
+          vcs: ProjectInfo.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
         }
       }
 
@@ -175,7 +176,7 @@ export async function fromDirectory(directory: string) {
           id,
           sandbox,
           worktree: sandbox,
-          vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
+          vcs: ProjectInfo.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
         }
       }
 
@@ -191,36 +192,37 @@ export async function fromDirectory(directory: string) {
       id: "global",
       worktree: "/",
       sandbox: "/",
-      vcs: Info.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
+      vcs: ProjectInfo.shape.vcs.parse(Flag.FanFande_FAKE_VCS),
     }
   })
 
-  let existing = await Storage.read<Info>(["project", id]).catch(() => undefined)
-  if (!existing) {
-    existing = {
-      id,
-      worktree,
-      vcs: vcs as Info["vcs"],
-      sandboxes: [],
+  //let existing = await Storage.read<ProjectInfo>(["project", id]).catch(() => undefined)
+  const row = db.findById("projects", id);
+  const existing: ProjectInfo = row
+    ? db.fromSQLiteRecord(ProjectInfo, row) : {
+      id: id,
+      worktree: worktree,
+      vcs: vcs as ProjectInfo["vcs"],
+      //name: z.ZodOptional<z.ZodString>;
+      //icon: z.ZodOptional<z.ZodObject<{
+      //  url: z.ZodOptional<z.ZodString>;
+      //  override: z.ZodOptional<z.ZodString>;
+      //  color: z.ZodOptional<z.ZodString>;
+      //}, z.core.$strip>>;
       time: {
         created: Date.now(),
         updated: Date.now(),
       },
+      sandboxes: [] as string[],
     }
-    if (id !== "global") {
-      await migrateFromGlobal(id, worktree)
-    }
-  }
 
-  // migrate old projects before sandboxes
-  if (!existing.sandboxes) existing.sandboxes = []
 
   if (Flag.FanFande_EXPERIMENTAL_ICON_DISCOVERY) discover(existing)
 
-  const result: Info = {
+  const result: ProjectInfo = {
     ...existing,
     worktree,
-    vcs: vcs as Info["vcs"],
+    vcs: vcs as ProjectInfo["vcs"],
     time: {
       ...existing.time,
       updated: Date.now(),
@@ -228,7 +230,8 @@ export async function fromDirectory(directory: string) {
   }
   if (sandbox !== result.worktree && !result.sandboxes.includes(sandbox)) result.sandboxes.push(sandbox)
   result.sandboxes = result.sandboxes.filter((x) => existsSync(x))
-  await Storage.write<Info>(["project", id], result)
+  //await Storage.write<ProjectInfo>(["project", id], result)
+  db.insertOne("projects",db.toSQLiteValue(result))
   GlobalBus.emit("event", {
     payload: {
       type: Event.Updated.type,
@@ -244,7 +247,7 @@ export async function fromDirectory(directory: string) {
  * @param input 
  * @returns 
  */
-export async function discover(input: Info) {
+export async function discover(input: ProjectInfo) {
   if (input.vcs !== "git") return
   if (input.icon?.override) return
   if (input.icon?.url) return
@@ -276,7 +279,7 @@ export async function discover(input: Info) {
 //将之前存储在 "global" 项目下的会话迁移到新检测到的具体项目下。
 async function migrateFromGlobal(newProjectID: string, worktree: string) {
   //如果global project不存在，直接返回
-  const globalProject = await Storage.read<Info>(["project", "global"]).catch(() => undefined)
+  const globalProject = await Storage.read<ProjectInfo>(["project", "global"]).catch(() => undefined)
   if (!globalProject) return
 
   //session-global下所有session文件的路径的list
@@ -287,7 +290,7 @@ async function migrateFromGlobal(newProjectID: string, worktree: string) {
 
   await work(10, globalSessions, async (key) => {
     const sessionID = key[key.length - 1]
-    const session = await Storage.read<Session.Info>(key).catch(() => undefined)
+    const session = await Storage.read<Session.ProjectInfo>(key).catch(() => undefined)
     if (!session) return
     if (session.directory && session.directory !== worktree) return
 
@@ -304,7 +307,7 @@ async function migrateFromGlobal(newProjectID: string, worktree: string) {
  * @param projectID 
  */
 export async function setInitialized(projectID: string) {
-  await Storage.update<Info>(["project", projectID], (draft) => {
+  await Storage.update<ProjectInfo>(["project", projectID], (draft) => {
     draft.time.initialized = Date.now()
   })
 }
@@ -315,7 +318,7 @@ export async function setInitialized(projectID: string) {
  */
 export async function list() {
   const keys = await Storage.list(["project"])
-  const projects = await Promise.all(keys.map((x) => Storage.read<Info>(x)))
+  const projects = await Promise.all(keys.map((x) => Storage.read<ProjectInfo>(x)))
   return projects.map((project) => ({
     ...project,
     sandboxes: project.sandboxes?.filter((x) => existsSync(x)),
@@ -348,10 +351,10 @@ export const update = fn(
   z.object({
     projectID: z.string(),
     name: z.string().optional(),
-    icon: Info.shape.icon.optional(),
+    icon: ProjectInfo.shape.icon.optional(),
   }),
   async (input) => {
-    const result = await Storage.update<Info>(["project", input.projectID], (draft) => {
+    const result = await Storage.update<ProjectInfo>(["project", input.projectID], (draft) => {
       if (input.name !== undefined) draft.name = input.name
       if (input.icon !== undefined) {
         draft.icon = {
@@ -395,7 +398,7 @@ export async function sandboxes(projectID: string) {
  * @returns 
  */
 export async function removeSandbox(projectID: string, directory: string) {
-  const result = await Storage.update<Info>(["project", projectID], (draft) => {
+  const result = await Storage.update<ProjectInfo>(["project", projectID], (draft) => {
     const sandboxes = draft.sandboxes ?? []
     draft.sandboxes = sandboxes.filter((sandbox) => sandbox !== directory)
     draft.time.updated = Date.now()
