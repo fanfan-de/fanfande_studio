@@ -1,4 +1,4 @@
-import z from "zod"
+import z, { record } from "zod"
 import fs from "fs/promises"
 import * as Filesystem from "#util/filesystem.ts"
 import path from "path"
@@ -13,7 +13,9 @@ import * as BusEvent from "#bus/bus-event.ts"
 import { iife } from "#util/iife.ts"
 import { GlobalBus } from "#bus/global.ts"
 import { existsSync } from "fs"
-import type { string } from "yargs"
+import { schema } from "#id/id.ts"
+import { time } from "console"
+
 
 const log = Log.create({ service: "project" })
 
@@ -31,11 +33,14 @@ export const ProjectInfo = z
         color: z.string().optional(),
       })
       .optional(),
-    time: z.object({
-      created: z.number(),
-      updated: z.number(),
-      initialized: z.number().optional(),
-    }),
+    commands: z
+      .object({
+        start: z.string().optional().describe("Startup script to run when creating a new workspace (worktree)"),
+      })
+      .optional(),
+    created: z.number(),
+    updated: z.number(),
+    initialized: z.number().optional(),
     sandboxes: z.array(z.string()),
   })
   .meta({
@@ -64,7 +69,7 @@ export const Event = {
  * console.log(project.id); // 输出项目唯一哈希或 "global"
  * ```
  */
-export async function fromDirectory(directory: string):Promise<{project:ProjectInfo,sandbox:string }>{
+export async function fromDirectory(directory: string): Promise<{ project: ProjectInfo, sandbox: string }> {
   log.info("fromDirectory", { directory })
   /**
    * id：git 第一个commithash
@@ -197,9 +202,9 @@ export async function fromDirectory(directory: string):Promise<{project:ProjectI
   })
 
   //let existing = await Storage.read<ProjectInfo>(["project", id]).catch(() => undefined)
-  const row = db.findById("projects", id);
+  const row = db.findById("projects", ProjectInfo, id);
   const existing: ProjectInfo = row
-    ? db.fromSQLiteRecord(ProjectInfo, row) : {
+    ? row : {
       id: id,
       worktree: worktree,
       vcs: vcs as ProjectInfo["vcs"],
@@ -209,29 +214,23 @@ export async function fromDirectory(directory: string):Promise<{project:ProjectI
       //  override: z.ZodOptional<z.ZodString>;
       //  color: z.ZodOptional<z.ZodString>;
       //}, z.core.$strip>>;
-      time: {
-        created: Date.now(),
-        updated: Date.now(),
-      },
+      created: Date.now(),
+      updated: Date.now(),
       sandboxes: [] as string[],
     }
-
-
-  if (Flag.FanFande_EXPERIMENTAL_ICON_DISCOVERY) discover(existing)
+  //if (Flag.FanFande_EXPERIMENTAL_ICON_DISCOVERY) discover(existing)
 
   const result: ProjectInfo = {
     ...existing,
     worktree,
     vcs: vcs as ProjectInfo["vcs"],
-    time: {
-      ...existing.time,
-      updated: Date.now(),
-    },
+    updated: Date.now(),
   }
+
   if (sandbox !== result.worktree && !result.sandboxes.includes(sandbox)) result.sandboxes.push(sandbox)
   result.sandboxes = result.sandboxes.filter((x) => existsSync(x))
   //await Storage.write<ProjectInfo>(["project", id], result)
-  db.insertOne("projects",db.toSQLiteValue(result))
+  db.insertOne("projects", result)
   GlobalBus.emit("event", {
     payload: {
       type: Event.Updated.type,
@@ -247,68 +246,72 @@ export async function fromDirectory(directory: string):Promise<{project:ProjectI
  * @param input 
  * @returns 
  */
-export async function discover(input: ProjectInfo) {
-  if (input.vcs !== "git") return
-  if (input.icon?.override) return
-  if (input.icon?.url) return
-  const glob = new Bun.Glob("**/{favicon}.{ico,png,svg,jpg,jpeg,webp}")
-  const matches = await Array.fromAsync(
-    glob.scan({
-      cwd: input.worktree,
-      absolute: true,
-      onlyFiles: true,
-      followSymlinks: false,
-      dot: false,
-    }),
-  )
-  const shortest = matches.sort((a, b) => a.length - b.length)[0]
-  if (!shortest) return
-  const file = Bun.file(shortest)
-  const buffer = await file.arrayBuffer()
-  const base64 = Buffer.from(buffer).toString("base64")
-  const mime = file.type || "image/png"
-  const url = `data:${mime};base64,${base64}`
-  await update({
-    projectID: input.id,
-    icon: {
-      url,
-    },
-  })
-  return
-}
+// export async function discover(input: ProjectInfo) {
+//   if (input.vcs !== "git") return
+//   if (input.icon?.override) return
+//   if (input.icon?.url) return
+//   const glob = new Bun.Glob("**/{favicon}.{ico,png,svg,jpg,jpeg,webp}")
+//   const matches = await Array.fromAsync(
+//     glob.scan({
+//       cwd: input.worktree,
+//       absolute: true,
+//       onlyFiles: true,
+//       followSymlinks: false,
+//       dot: false,
+//     }),
+//   )
+//   const shortest = matches.sort((a, b) => a.length - b.length)[0]
+//   if (!shortest) return
+//   const file = Bun.file(shortest)
+//   const buffer = await file.arrayBuffer()
+//   const base64 = Buffer.from(buffer).toString("base64")
+//   const mime = file.type || "image/png"
+//   const url = `data:${mime};base64,${base64}`
+//   await update({
+//     projectID: input.id,
+//     icon: {
+//       url,
+//     },
+//   })
+//   return
+// }
 //将之前存储在 "global" 项目下的会话迁移到新检测到的具体项目下。
-async function migrateFromGlobal(newProjectID: string, worktree: string) {
-  //如果global project不存在，直接返回
-  const globalProject = await Storage.read<ProjectInfo>(["project", "global"]).catch(() => undefined)
-  if (!globalProject) return
+// async function migrateFromGlobal(newProjectID: string, worktree: string) {
+//   //如果global project不存在，直接返回
+//   //const globalProject = await Storage.read<ProjectInfo>(["project", "global"]).catch(() => undefined)
+//   const records = db.findMany("projects", {
+//     where: [{ column: "worktree", operator: "=", value: "global" }]
+//   })
+//   const globalProject = db.fromSQLiteRecord(ProjectInfo, records)
+//   if (!globalProject) return
 
-  //session-global下所有session文件的路径的list
-  const globalSessions = await Storage.list(["session", "global"]).catch(() => [])
-  if (globalSessions.length === 0) return
+//   //session-global下所有session文件的路径的list
+//   const globalSessions = await Storage.list(["session", "global"]).catch(() => [])
+//   if (globalSessions.length === 0) return
 
-  log.info("migrating sessions from global", { newProjectID, worktree, count: globalSessions.length })
+//   log.info("migrating sessions from global", { newProjectID, worktree, count: globalSessions.length })
 
-  await work(10, globalSessions, async (key) => {
-    const sessionID = key[key.length - 1]
-    const session = await Storage.read<Session.ProjectInfo>(key).catch(() => undefined)
-    if (!session) return
-    if (session.directory && session.directory !== worktree) return
+//   await work(10, globalSessions, async (key) => {
+//     const sessionID = key[key.length - 1]
+//     const session = await Storage.read<Session.ProjectInfo>(key).catch(() => undefined)
+//     if (!session) return
+//     if (session.directory && session.directory !== worktree) return
 
-    session.projectID = newProjectID
-    log.info("migrating session", { sessionID, from: "global", to: newProjectID })
-    await Storage.write(["session", newProjectID, sessionID as string], session)
-    await Storage.remove(key)
-  }).catch((error) => {
-    log.error("failed to migrate sessions from global to project", { error, projectId: newProjectID })
-  })
-}
+//     session.projectID = newProjectID
+//     log.info("migrating session", { sessionID, from: "global", to: newProjectID })
+//     await Storage.write(["session", newProjectID, sessionID as string], session)
+//     await Storage.remove(key)
+//   }).catch((error) => {
+//     log.error("failed to migrate sessions from global to project", { error, projectId: newProjectID })
+//   })
+// }
 /**
  * 这段代码是一个异步函数 setInitialized，它的作用是记录并更新某个项目的“初始化时间”。
  * @param projectID 
  */
 export async function setInitialized(projectID: string) {
-  await Storage.update<ProjectInfo>(["project", projectID], (draft) => {
-    draft.time.initialized = Date.now()
+  db.updateById("projects", projectID, {
+    initialized: Date.now()
   })
 }
 /**
@@ -317,36 +320,22 @@ export async function setInitialized(projectID: string) {
  * @returns 
  */
 export async function list() {
-  const keys = await Storage.list(["project"])
-  const projects = await Promise.all(keys.map((x) => Storage.read<ProjectInfo>(x)))
+  const projects = db.findMany("projects", ProjectInfo)
+
   return projects.map((project) => ({
     ...project,
     sandboxes: project.sandboxes?.filter((x) => existsSync(x)),
   }))
 }
-/**
- * 更新项目信息
- * 
- * @description 
- * 该函数采用原子化更新模式，仅修改传入的字段。
- * 更新成功后会自动记录最后修改时间，并通过全局事件总线通知系统其他模块。
- * 
- * @param input - 更新参数
- * @param input.projectID - 必填。需要更新的项目唯一标识符
- * @param input.name - 选填。项目的新名称
- * @param input.icon - 选填。图标配置对象，包含 url, override 和 color 属性
- * 
- * @returns 返回更新后的完整项目信息对象 (Info)
- * 
- * @example
- * // 仅更新图标颜色
- * await update({ 
- *   projectID: "my-pid", 
- *   icon: { color: "#ff0000" } 
- * });
- * 
- * @throws {ZodError} 如果输入参数不符合 Schema 定义（如 projectID 缺失）将抛出校验错误
- */
+
+export function get(id: string): ProjectInfo | undefined {
+  const row = db.findById("projects", ProjectInfo, id)
+  return row ? row : undefined
+}
+
+//初始化项目为git项目
+//export async function initGit(input: { directory: string; project: Info }) {}
+
 export const update = fn(
   z.object({
     projectID: z.string(),
@@ -354,18 +343,19 @@ export const update = fn(
     icon: ProjectInfo.shape.icon.optional(),
   }),
   async (input) => {
-    const result = await Storage.update<ProjectInfo>(["project", input.projectID], (draft) => {
-      if (input.name !== undefined) draft.name = input.name
-      if (input.icon !== undefined) {
-        draft.icon = {
-          ...draft.icon,
-        }
-        if (input.icon.url !== undefined) draft.icon.url = input.icon.url
-        if (input.icon.override !== undefined) draft.icon.override = input.icon.override || undefined
-        if (input.icon.color !== undefined) draft.icon.color = input.icon.color
-      }
-      draft.time.updated = Date.now()
+
+    db.updateById("projects", input.projectID, {
+      name: input.name ? input.name : null,
+      icon: input.icon ? input.icon! : null,
+      updated: Date.now(),
     })
+
+
+
+    const record = db.findById("projects", ProjectInfo, input.projectID)
+    const result = record ? record : null
+
+
     GlobalBus.emit("event", {
       payload: {
         type: Event.Updated.type,
@@ -382,7 +372,10 @@ export const update = fn(
  * @returns 
  */
 export async function sandboxes(projectID: string) {
-  const project = await Storage.read<Info>(["project", projectID]).catch(() => undefined)
+  //const project = await Storage.read<Info>(["project", projectID]).catch(() => undefined)
+
+  const project = db.findById("projects", ProjectInfo, projectID)
+
   if (!project?.sandboxes) return []
   const valid: string[] = []
   for (const dir of project.sandboxes) {
@@ -391,24 +384,34 @@ export async function sandboxes(projectID: string) {
   }
   return valid
 }
-/**
- * 从指定项目的沙盒列表中移除一个特定的目录，更新项目的最后修改时间，并向系统发送一个更新事件。
- * @param projectID 
- * @param directory 
- * @returns 
- */
-export async function removeSandbox(projectID: string, directory: string) {
-  const result = await Storage.update<ProjectInfo>(["project", projectID], (draft) => {
-    const sandboxes = draft.sandboxes ?? []
-    draft.sandboxes = sandboxes.filter((sandbox) => sandbox !== directory)
-    draft.time.updated = Date.now()
-  })
-  GlobalBus.emit("event", {
-    payload: {
-      type: Event.Updated.type,
-      properties: result,
-    },
-  })
-  return result
-}
+// /**
+//  * 从指定项目的沙盒列表中移除一个特定的目录，更新项目的最后修改时间，并向系统发送一个更新事件。
+//  * @param projectID
+//  * @param directory
+//  * @returns
+//  */
+// export async function removeSandbox(projectID: string, directory: string) {
+//   const result = await Storage.update<ProjectInfo>(["project", projectID], (draft) => {
+//     const sandboxes = draft.sandboxes ?? []
+//     draft.sandboxes = sandboxes.filter((sandbox) => sandbox !== directory)
+//     draft.time.updated = Date.now()
+//   })
+
+//   const record = db.fromSQLiteRecord(ProjectInfo, db.findById("projects", projectID))
+
+
+//   db.updateById("projects", projectID, {
+//     sandboxes =
+//   })
+
+
+
+//   GlobalBus.emit("event", {
+//     payload: {
+//       type: Event.Updated.type,
+//       properties: result,
+//     },
+//   })
+//   return result
+// }
 
