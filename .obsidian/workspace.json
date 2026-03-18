@@ -163,13 +163,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "zod详细.md",
+                "file": "AI 社交.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "zod详细"
+              "title": "AI 社交"
             }
           }
         ],
@@ -339,10 +339,12 @@
   },
   "active": "352e63b27a5a86d9",
   "lastOpenFiles": [
+    "项目抽象.md",
+    "AI 社交.md",
+    "如何本质地理解一个 TypeScript 项目.md",
+    "zod详细.md",
     "packages/fanfandeagent/src/database/Sqlite.ts",
     "packages/fanfandeagent/src/database/db.ts",
-    "项目抽象.md",
-    "zod详细.md",
     "packages/fanfandeagent/src/bus/spec.md",
     "packages/fanfandeagent/src/bus/project-bus.ts",
     "packages/fanfandeagent/Skills/Auto-Sync Subpath Imports.md",
@@ -353,7 +355,6 @@
     "packages/fanfandeagent/src/session/message.ts",
     "packages/fanfandeagent/src/session/engine.ts",
     "packages/fanfandeagent/src/database/parser.ts",
-    "packages/fanfandeagent/src/database",
     "packages/fanfandeagent/src/session/SESSION_ARCHITECTURE.md",
     "Provider.md",
     "手柄配置.md",
@@ -374,7 +375,6 @@
     "fanfande_studio_vault/tools/TS的类型匹配.md",
     "fanfande_studio_vault/tools/如何理解TS项目.md",
     "fanfande_studio_vault/tools/tool.md",
-    "fanfande_studio_vault/栈.md",
     "packages/fanfandeagent/node_modules/exif-parser/test/test.jpg",
     "packages/fanfandeagent/node_modules/exif-parser/test/starfish.jpg",
     "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/widgets@2x.png",

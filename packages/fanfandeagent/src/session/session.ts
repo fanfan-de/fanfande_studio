@@ -1,23 +1,18 @@
-import { Log } from "#util/log.ts"
+import * as Log from "#util/log.ts"
 import z from "zod"
-import { Identifier } from "#id/id.ts"
+import *  as  Identifier from "#id/id.ts"
 import { Snapshot } from "#snapshot/index.ts"
 import { Bus } from "#bus/project-bus.ts"
-import { BusEvent } from "#bus/bus-event.ts"
-import { Message } from "#session/message.ts"
+import * as  BusEvent from "#bus/bus-event.ts"
+import * as Message from "#session/message.ts"
 import { Instance } from "#project/instance.ts"
-import {ProjectInfo} from "#project/project.ts"
+import * as  Project from "#project/project.ts"
 import { Slug } from "#util/slug.ts"
 import { Installation } from "#installation/installation.ts"
 import { fn } from "#util/fn.ts"
-import {
-    db,
-    createTableByZodDiscriminatedUnion, tableExists,
-    insertOne, createTableByZodObject, toSQLiteValue,
-    findOne, findById, fromSQLiteRecord
-} from "#database/Sqlite.ts"
+import * as db from "#database/Sqlite.ts"
 import { zodObjectToColumnDefs, toCreateTableSQL, } from "#database/parser.ts"
-import type {  } from "#project/project.ts"
+import type { } from "#project/project.ts"
 
 
 
@@ -28,9 +23,9 @@ const childTiltePrefic = "子对话"
 //#region Type & Interface
 // 定义映射关系
 interface TableRecordMap {
-    projects: ProjectInfo;
+    projects: Project.ProjectInfo;
     sessions: SessionInfo;
-    messages: MessageInfo;
+    messages: Message.MessageInfo;
     parts: Message.Part;
 }
 // 从映射中派生出联合类型
@@ -86,14 +81,14 @@ export type SessionInfo = z.output<typeof SessionInfo>
 
 //#region Modula Initialize----------------------------------------
 //建表操作
-if (!tableExists("sessions")) {
-    createTableByZodObject("sessions", Info)
+if (!db.tableExists("sessions")) {
+    db.createTableByZodObject("sessions", SessionInfo)
 }
-if (!tableExists("messages")) {
-    createTableByZodDiscriminatedUnion("messages", Message.Info)
+if (!db.tableExists("messages")) {
+    db.createTableByZodDiscriminatedUnion("messages", Message.MessageInfo)
 }
-if (!tableExists("parts")) {
-    createTableByZodDiscriminatedUnion("parts", Message.Part)
+if (!db.tableExists("parts")) {
+    db.createTableByZodDiscriminatedUnion("parts", Message.Part)
 }
 //#endregion
 
@@ -104,7 +99,7 @@ if (!tableExists("parts")) {
  * @param tableRecord 对应表的record
  */
 function Create<T extends TableName>(tableName: T, tableRecord: TableRecordMap[T]): void {
-    insertOne(tableName, toSQLiteValue(tableRecord))
+    db.insertOneWithSchema(tableName,  ,tableRecord)
 }
 
 
