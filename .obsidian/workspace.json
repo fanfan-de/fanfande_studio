@@ -8,172 +8,21 @@
         "type": "tabs",
         "children": [
           {
-            "id": "f7f570f45d1782df",
-            "type": "leaf",
-            "state": {
-              "type": "empty",
-              "state": {},
-              "icon": "lucide-file",
-              "title": "新标签页"
-            }
-          },
-          {
-            "id": "f014c76d1264966b",
-            "type": "leaf",
-            "state": {
-              "type": "empty",
-              "state": {},
-              "icon": "lucide-file",
-              "title": "新标签页"
-            }
-          },
-          {
-            "id": "8f438a968266e9c8",
-            "type": "leaf",
-            "state": {
-              "type": "empty",
-              "state": {},
-              "icon": "lucide-file",
-              "title": "新标签页"
-            }
-          },
-          {
-            "id": "2a1ec66a101fb9c0",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "packages/fanfandeagent/Feature Spec.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "Feature Spec"
-            }
-          },
-          {
-            "id": "beb0db3234d6c252",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "spec指南.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "spec指南"
-            }
-          },
-          {
-            "id": "159d6acc4b74e806",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "fanfande_studio_vault/Config思路.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "Config思路"
-            }
-          },
-          {
-            "id": "7f2b5b98a4de1bcb",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "fanfande_studio_vault/栈.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "栈"
-            }
-          },
-          {
-            "id": "b096d4e39fd237e6",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Provider.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "Provider"
-            }
-          },
-          {
-            "id": "a048f4c1b4e36938",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "processor.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "processor"
-            }
-          },
-          {
             "id": "aa7ae7b66b127440",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Hono Context (c) 完整参考.md",
+                "file": "如何本质地理解一个 TypeScript 项目.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "Hono Context (c) 完整参考"
-            }
-          },
-          {
-            "id": "c36d74ff3fd47b68",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "AI 代码撰写规范.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "AI 代码撰写规范"
-            }
-          },
-          {
-            "id": "352e63b27a5a86d9",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "AI 社交.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "AI 社交"
+              "title": "如何本质地理解一个 TypeScript 项目"
             }
           }
-        ],
-        "currentTab": 11
+        ]
       }
     ],
     "direction": "vertical"
@@ -230,7 +79,8 @@
       }
     ],
     "direction": "horizontal",
-    "width": 246.50260543823242
+    "width": 246.50260543823242,
+    "collapsed": true
   },
   "right": {
     "id": "14ad8d7e08bf77ac",
@@ -337,11 +187,18 @@
       "mermaid-tools:Open Mermaid Toolbar": false
     }
   },
-  "active": "352e63b27a5a86d9",
+  "active": "aa7ae7b66b127440",
   "lastOpenFiles": [
-    "项目抽象.md",
-    "AI 社交.md",
     "如何本质地理解一个 TypeScript 项目.md",
+    "packages/fanfandeagent/Feature Spec.md",
+    "fanfande_studio_vault/Config思路.md",
+    "fanfande_studio_vault/栈.md",
+    "Provider.md",
+    "AI 社交.md",
+    "readme.md",
+    "Hono Context (c) 完整参考.md",
+    "AI 代码撰写规范.md",
+    "项目抽象.md",
     "zod详细.md",
     "packages/fanfandeagent/src/database/Sqlite.ts",
     "packages/fanfandeagent/src/database/db.ts",
@@ -356,25 +213,18 @@
     "packages/fanfandeagent/src/session/engine.ts",
     "packages/fanfandeagent/src/database/parser.ts",
     "packages/fanfandeagent/src/session/SESSION_ARCHITECTURE.md",
-    "Provider.md",
     "手柄配置.md",
-    "readme.md",
     "Tool.md",
     "Message.md",
     "数据流.md",
     "processor.md",
-    "AI 代码撰写规范.md",
     "TypeScript AI-Friendly 代码规范文档.md",
     "流程图.md",
     "fanfande_studio_vault/StreamText  API.md",
     "packages/fanfandeagent/src/session/liucyhengtu.md",
-    "Hono Context (c) 完整参考.md",
     "Tools/Bash.md",
     "Tools/list.md",
     "Tools/文.md",
-    "fanfande_studio_vault/tools/TS的类型匹配.md",
-    "fanfande_studio_vault/tools/如何理解TS项目.md",
-    "fanfande_studio_vault/tools/tool.md",
     "packages/fanfandeagent/node_modules/exif-parser/test/test.jpg",
     "packages/fanfandeagent/node_modules/exif-parser/test/starfish.jpg",
     "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/widgets@2x.png",
