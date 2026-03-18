@@ -1,48 +1,24 @@
-// #region Imports ─────────────────────────────────────────
 import { Database } from "bun:sqlite";
-import { z } from "zod";
+import { record, z, ZodType } from "zod";
 import { toCreateTableSQL, zodObjectToColumnDefs, } from "./parser"
 import type { SQLiteColumnDef } from "./parser"
-// #endregion
-
-
-
-
-
-
-
-
 
 
 // #region Constants ──────────────────────────────────────
 const DATABASE_FILE = "agent_local_data.db";
 // #endregion
 
-
-
-
-
-
-
-
-
-
-
 // #region Types & Interfaces ─────────────────────────────
-/** SQLite 支持的原子值类型 */
 type SQLiteValue = string | number | bigint | boolean | null | Uint8Array;
 
-/** WHERE 条件中的比较操作符 */
 type Operator = "=" | "!=" | ">" | "<" | ">=" | "<=" | "LIKE" | "IS" | "IS NOT";
 
-/** 单个 WHERE 条件描述 */
 interface WhereClause {
   column: string;
   operator?: Operator; // 默认 "="
   value: SQLiteValue;
 }
 
-/** 排序描述 */
 interface OrderBy {
   column: string;
   direction?: "ASC" | "DESC"; // 默认 "ASC"
@@ -61,33 +37,18 @@ interface QueryOptions {
 
 
 
-
-
-
-
-
-
-
 // #region Core Logic ─────────────────────────────────────
-//自执行代码
-/** 创建或连接到本地单文件数据库 */
 export const db = new Database(DATABASE_FILE, { create: true });
-
 // 性能优化 PRAGMA
 db.run("PRAGMA journal_mode = WAL;"); // WAL 模式：并发读写性能大幅提升
 db.run("PRAGMA synchronous = NORMAL;"); // 降低同步级别，在 WAL 模式下依然安全
 db.run("PRAGMA foreign_keys = ON;"); // 启用外键约束，防止脏数据
 
-
-
-
-
-/**
- * 通用建表函数
+/**通用建表函数
  * @param tableName  表名
  * @param schema  zod 对象
  */
-export function createTableByZodObject<T extends z.ZodRawShape>(
+function createTableByZodObject<T extends z.ZodRawShape>(
   tableName: string,
   schema: z.ZodObject<T>
 ): void {
@@ -95,12 +56,11 @@ export function createTableByZodObject<T extends z.ZodRawShape>(
   db.run(toCreateTableSQL(tableName, columedefs))
 }
 
-/**
- * 联合类型建表函数
+/**联合类型建表函数
  * @param tableName  表名
  * @param schema  ZodDiscriminatedUnion 联合对象
  */
-export function createTableByZodDiscriminatedUnion<
+function createTableByZodDiscriminatedUnion<
   Options extends z.ZodObject<any, any>[],
   Discriminator extends string
 >(
@@ -110,21 +70,16 @@ export function createTableByZodDiscriminatedUnion<
   const options = schema.options as z.ZodObject<any, any>[]
   if (!options)
     return
-
-
   // 1. 收集每个 variant 的 key 集合
   const allKeySets = options.map((opt) => new Set(Object.keys(opt.shape)))
-
   // 2. 求所有 variant 的 key 交集 → 共有 key
   const commonKeys = allKeySets.reduce(
     (acc, set) => new Set([...acc].filter((key) => set.has(key)))
   )
-
   // 3. 用 Object.fromEntries 构建共有 shape（避免写入 Readonly 对象）
   const commonShape = Object.fromEntries(
     [...commonKeys].map((key) => [key, options[0]!.shape[key]])
   ) as z.ZodRawShape
-
 
   const commonSchema = z.object(commonShape)
   const columnDefs: Record<string, SQLiteColumnDef> = {
@@ -143,28 +98,12 @@ export function createTableByZodDiscriminatedUnion<
   db.run(toCreateTableSQL(tableName, columnDefs))
 }
 
-
-
-// 用 typeof 让 TS 自己推断
-const mySchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("a"), name: z.string() }),
-  z.object({ type: z.literal("b"), age: z.number() }),
-])
-
-type MySchemaType = typeof mySchema
-//   ^? 悬浮这里，编辑器会告诉你完整的类型签名
-
-
-
-
-
-/**
- * 检测某张表是否已存在
+/** 检测某张表是否已存在
  *
  * @example
  * if (!tableExists("users")) createTable("users", { ... });
  */
-export function tableExists(tableName: string): boolean {
+function tableExists(tableName: string): boolean {
   const result = db
     .query("SELECT COUNT(*) as count FROM sqlite_master WHERE type = 'table' AND name = ?")
     .get(tableName) as { count: number };
@@ -172,12 +111,8 @@ export function tableExists(tableName: string): boolean {
   return result.count > 0;
 }
 
-// ============================================================================
-//  第四部分：值转换工具（业务对象 ↔ SQLite 存储格式）
-// ============================================================================
 
-/**
- * 将业务层对象转换为 SQLite 可存储的扁平记录
+/**将业务层对象转换为 SQLite 可存储的扁平记录
  *
  * 转换规则：
  *   - null / undefined  → null
@@ -189,7 +124,7 @@ export function tableExists(tableName: string): boolean {
  * toSQLiteValue({ name: "Alice", tags: ["a", "b"], born: new Date() });
  * // → { name: "Alice", tags: '["a","b"]', born: 1718000000000 }
  */
-export function toSQLiteValue<T extends Record<string, unknown>>(
+function toSQLiteValue<T extends Record<string, unknown>>(
   obj: T,
 ): Record<string, SQLiteValue> {
   const result: Record<string, SQLiteValue> = {};
@@ -212,12 +147,10 @@ export function toSQLiteValue<T extends Record<string, unknown>>(
       result[key] = JSON.stringify(val);
     }
   }
-
   return result;
 }
 
-/**
- * 将 SQLite 记录还原为 Zod Schema 描述的业务对象
+/**将 SQLite 记录还原为 Zod Schema 描述的业务对象
  *
  * 还原规则（与 toSQLiteValue 对称）：
  *   - number + ZodDate  → new Date(value)
@@ -229,7 +162,7 @@ export function toSQLiteValue<T extends Record<string, unknown>>(
  * fromSQLiteRecord(UserSchema, { name: "Alice", born: 1718000000000 });
  * // → { name: "Alice", born: Date(...) }
  */
-export function fromSQLiteRecord<T extends z.ZodRawShape>(
+function fromSQLiteRecord<T extends z.ZodRawShape>(
   schema: z.ZodObject<T>,
   record: Record<string, SQLiteValue>,
 ): z.output<z.ZodObject<T>> {
@@ -251,7 +184,7 @@ export function fromSQLiteRecord<T extends z.ZodRawShape>(
 
 
 /** 根据字段的 Zod Schema 将单个 SQLiteValue 还原为业务层值 */
-function restoreValue(fieldSchema: z.ZodTypeAny, value: SQLiteValue): unknown {
+function restoreValue(fieldSchema: z.ZodType, value: SQLiteValue): z.output<z.ZodType> {
   if (value === null) {
     if (isNullable(fieldSchema)) return null;
     if (isOptional(fieldSchema)) return undefined;
@@ -274,11 +207,14 @@ function restoreValue(fieldSchema: z.ZodTypeAny, value: SQLiteValue): unknown {
     }
   }
 
+  if (base instanceof z.ZodBoolean && typeof value === "number") {
+    return value !== 0; // 0 → false, 非0 → true
+  }
+
   return value; // 原始标量直通
 }
 
-/**
- * 递归剥开 optional / nullable / default 等包装层，拿到最内层的实际类型
+/**递归剥开 optional / nullable / default 等包装层，拿到最内层的实际类型
  *
  * 例如 z.string().optional().nullable()
  *   → ZodNullable → ZodOptional → ZodString
@@ -309,18 +245,18 @@ function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
 // --- Schema 定义信息的底层读取 ---
 
 /** 读取 schema 的内部定义对象（兼容 zod v3 / v4） */
-function defOf(schema: z.ZodTypeAny): any {
+function defOf(schema: z.ZodType): any {
   return (schema as any)._zod?.def ?? (schema as any)._def;
 }
 
 /** 读取 schema 的类型名称 */
-function defType(schema: z.ZodTypeAny): string {
+function defType(schema: z.ZodType): string {
   const d = defOf(schema);
   return d?.type ?? d?.typeName ?? "";
 }
 
 /** 读取包装类型的内层 schema */
-function innerType(schema: z.ZodTypeAny): z.ZodTypeAny | undefined {
+function innerType(schema: z.ZodType): z.ZodType | undefined {
   const d = defOf(schema);
   return d?.innerType ?? d?.schema;
 }
@@ -374,13 +310,11 @@ function isJsonType(base: z.ZodTypeAny): boolean {
   );
 }
 
-// ============================================================================
-//  第六部分：SQL 子句构建器
-// ============================================================================
 
-/**
- * 构建 WHERE 子句及对应的参数数组
- *
+//#region 第六部分：SQL 子句构建器
+
+
+/**构建 WHERE 子句及对应的参数数组
  * @returns { sql: " WHERE col1 = ? AND col2 > ?", params: [val1, val2] }
  */
 function buildWhereClause(conditions?: WhereClause[]): {
@@ -434,9 +368,12 @@ function buildLimitClause(
   return { sql, params };
 }
 
-// ============================================================================
-//  第七部分：CRUD 操作
-// ============================================================================
+//#endregion
+
+
+
+//#region  第七部分：CRUD 操作
+
 
 // ---------- CREATE（新增） ----------
 
@@ -448,13 +385,17 @@ function buildLimitClause(
  * @example
  * insertOne("users", { name: "Alice", age: 30 });
  */
-export function insertOne(
+function insertOne(
   tableName: string,
-  data: Record<string, SQLiteValue>,
+  data: Record<string, unknown>,
 ): number | bigint {
-  const keys = Object.keys(data);
+
+  const record = toSQLiteValue(data)
+
+
+  const keys = Object.keys(record);
   const placeholders = keys.map(() => "?").join(", ");
-  const values = Object.values(data);
+  const values = Object.values(record);
 
   const sql = `INSERT INTO ${tableName} (${keys.join(", ")}) VALUES (${placeholders});`;
   return db.prepare(sql).run(...values).lastInsertRowid;
@@ -467,17 +408,17 @@ export function insertOne(
  * const UserSchema = z.object({ name: z.string(), age: z.number() });
  * insertOneWithSchema("users", { name: "Alice", age: 30 }, UserSchema);
  */
-export function insertOneWithSchema<T extends z.ZodTypeAny>(
+function insertOneWithSchema<T extends z.ZodType>(
   tableName: string,
   data: z.infer<T>,
   schema: T,
 ): number | bigint {
   const parsed = schema.parse(data); // 校验失败抛出 ZodError
-  return insertOne(tableName, parsed as Record<string, SQLiteValue>);
+  return insertOne(tableName, parsed as Record<string, unknown>);
 }
 
-/**
- * 批量插入（使用事务包裹，性能极高）
+/**批量插入（使用事务包裹，性能极高）
+ * 
  *
  * @returns 成功插入的条数
  *
@@ -487,13 +428,15 @@ export function insertOneWithSchema<T extends z.ZodTypeAny>(
  *   { name: "Bob",   age: 25 },
  * ]);
  */
-export function insertMany(
+function insertMany(
   tableName: string,
-  dataList: Record<string, SQLiteValue>[],
+  dataList: Record<string, unknown>[],
 ): number {
   if (dataList.length === 0) return 0;
 
-  const keys = Object.keys(dataList[0]!);
+  const convertedDataList = dataList.map((item: Record<string, unknown>) => { return toSQLiteValue(item) })
+
+  const keys = Object.keys(convertedDataList[0]!);
   const placeholders = keys.map(() => "?").join(", ");
   const sql = `INSERT INTO ${tableName} (${keys.join(", ")}) VALUES (${placeholders});`;
   const stmt = db.prepare(sql);
@@ -507,11 +450,11 @@ export function insertMany(
     return count;
   });
 
-  return runInTransaction(dataList);
+  return runInTransaction(convertedDataList);
 }
 
-/**
- * UPSERT：存在则更新，不存在则插入
+/**UPSERT：存在则更新，不存在则插入
+ * 
  *
  * @param conflictColumns 冲突判断列（通常是主键或唯一索引列）
  * @returns lastInsertRowid
@@ -519,14 +462,16 @@ export function insertMany(
  * @example
  * upsert("users", { id: "u1", name: "Alice", age: 31 }, ["id"]);
  */
-export function upsert(
+function upsert(
   tableName: string,
-  data: Record<string, SQLiteValue>,
+  data: Record<string, unknown>,
   conflictColumns: string[],
 ): number | bigint {
-  const keys = Object.keys(data);
+
+  const record = toSQLiteValue(data);
+  const keys = Object.keys(record);
   const placeholders = keys.map(() => "?").join(", ");
-  const values = Object.values(data);
+  const values = Object.values(record);
 
   // 冲突时只更新非冲突列
   const updateColumns = keys.filter((k) => !conflictColumns.includes(k));
@@ -547,8 +492,8 @@ export function upsert(
 
 // ---------- READ（查询） ----------
 
-/**
- * 查询多条记录
+/**查询多条记录
+ * 
  *
  * @example
  * // 查询全部
@@ -562,17 +507,23 @@ export function upsert(
  *   offset:  0,
  * });
  */
-export function findMany<T = Record<string, SQLiteValue>>(
+function findMany<T extends z.ZodRawShape>(
   tableName: string,
+  schema: z.ZodObject<T>,
   options: QueryOptions = {},
-): T[] {
+): z.output<z.ZodObject<T>>[] {
   const selectCols = options.columns?.join(", ") ?? "*";
   const { sql: whereSql, params: whereParams } = buildWhereClause(options.where);
   const orderSql = buildOrderByClause(options.orderBy);
   const { sql: limitSql, params: limitParams } = buildLimitClause(options.limit, options.offset);
 
   const sql = `SELECT ${selectCols} FROM ${tableName}${whereSql}${orderSql}${limitSql};`;
-  return db.prepare(sql).all(...whereParams, ...limitParams) as T[];
+  const records = db.prepare(sql).all(...whereParams, ...limitParams) as Record<string, SQLiteValue>[];
+
+  const results = records.map((item) => {
+    return fromSQLiteRecord(schema, item)
+  })
+  return results;
 }
 
 /**
@@ -581,11 +532,12 @@ export function findMany<T = Record<string, SQLiteValue>>(
  * @example
  * findOne("users", { where: [{ column: "id", value: "u1" }] });
  */
-export function findOne<T = Record<string, unknown>>(
+function findOne<T extends z.ZodRawShape>(
   tableName: string,
+  schema: z.ZodObject<T>,
   options: QueryOptions = {},
-): T | null {
-  const results = findMany<T>(tableName, { ...options, limit: 1 });
+): z.output<z.ZodObject<T>> | null {
+  const results = findMany<T>(tableName, schema, { ...options, limit: 1 });
   return results[0] ?? null;
 }
 
@@ -598,12 +550,13 @@ export function findOne<T = Record<string, unknown>>(
  * findById("users", "u1");
  * findById("users", 42, "user_id");
  */
-export function findById<T = Record<string, SQLiteValue>>(
+function findById<T extends z.ZodRawShape>(
   tableName: string,
+  schema: z.ZodObject<T>,
   id: SQLiteValue,
   idColumn: string = "id",
-): T | null {
-  return findOne<T>(tableName, {
+): z.output<z.ZodObject<T>> | null {
+  return findOne(tableName, schema, {
     where: [{ column: idColumn, value: id }],
   });
 }
@@ -615,7 +568,7 @@ export function findById<T = Record<string, SQLiteValue>>(
  * count("users");
  * count("users", [{ column: "age", operator: ">", value: 18 }]);
  */
-export function count(tableName: string, where?: WhereClause[]): number {
+function count(tableName: string, where?: WhereClause[]): number {
   const { sql: whereSql, params } = buildWhereClause(where);
   const sql = `SELECT COUNT(*) as count FROM ${tableName}${whereSql};`;
   const result = db.prepare(sql).get(...params) as { count: number };
@@ -628,7 +581,7 @@ export function count(tableName: string, where?: WhereClause[]): number {
  * @example
  * exists("users", [{ column: "email", value: "alice@example.com" }]);
  */
-export function exists(tableName: string, where: WhereClause[]): boolean {
+function exists(tableName: string, where: WhereClause[]): boolean {
   return count(tableName, where) > 0;
 }
 
@@ -639,12 +592,12 @@ export function exists(tableName: string, where: WhereClause[]): boolean {
  * const UserSchema = z.object({ name: z.string(), age: z.number() });
  * findManyWithSchema("users", UserSchema, { limit: 10 });
  */
-export function findManyWithSchema<T extends z.ZodTypeAny>(
+function findManyWithSchema<T extends z.ZodRawShape>(
   tableName: string,
-  schema: T,
+  schema: z.ZodObject<T>,
   options: QueryOptions = {},
-): z.infer<T>[] {
-  const rows = findMany(tableName, options);
+): z.output<z.ZodObject<T>>[] {
+  const rows = findMany(tableName, schema, options);
   return rows.map((row) => schema.parse(row));
 }
 
@@ -659,9 +612,9 @@ export function findManyWithSchema<T extends z.ZodTypeAny>(
  * @example
  * updateMany("users", { name: "Alice V2", age: 31 }, [{ column: "id", value: "u1" }]);
  */
-export function updateMany(
+function updateMany(
   tableName: string,
-  data: Record<string, SQLiteValue>,
+  data: Record<string, unknown>,
   where: WhereClause[],
 ): number {
   if (where.length === 0) {
@@ -670,9 +623,11 @@ export function updateMany(
     );
   }
 
-  const keys = Object.keys(data);
+  const _data = toSQLiteValue(data)
+
+  const keys = Object.keys(_data);
   const setClause = keys.map((k) => `${k} = ?`).join(", ");
-  const setValues = Object.values(data);
+  const setValues = Object.values(_data);
   const { sql: whereSql, params: whereParams } = buildWhereClause(where);
 
   const sql = `UPDATE ${tableName} SET ${setClause}${whereSql};`;
@@ -687,10 +642,10 @@ export function updateMany(
  * @example
  * updateById("users", "u1", { name: "New Name" });
  */
-export function updateById(
+function updateById(
   tableName: string,
-  id: SQLiteValue,
-  data: Record<string, SQLiteValue>,
+  id: string,
+  data: Record<string, unknown>,
   idColumn: string = "id",
 ): number {
   return updateMany(tableName, data, [{ column: idColumn, value: id }]);
@@ -701,13 +656,14 @@ export function updateById(
  *
  * @returns 受影响的行数
  */
-export function updateAll(
+function updateAll(
   tableName: string,
-  data: Record<string, SQLiteValue>,
+  data: Record<string, unknown>,
 ): number {
-  const keys = Object.keys(data);
+  const _data = toSQLiteValue(data)
+  const keys = Object.keys(_data);
   const setClause = keys.map((k) => `${k} = ?`).join(", ");
-  const values = Object.values(data);
+  const values = Object.values(_data);
 
   const sql = `UPDATE ${tableName} SET ${setClause};`;
   return db.prepare(sql).run(...values).changes;
@@ -724,7 +680,7 @@ export function updateAll(
  * @example
  * deleteMany("users", [{ column: "age", operator: "<", value: 18 }]);
  */
-export function deleteMany(tableName: string, where: WhereClause[]): number {
+function deleteMany(tableName: string, where: WhereClause[]): number {
   if (where.length === 0) {
     throw new Error(
       "DELETE 必须提供 WHERE 条件，防止误删全表。如需清空请使用 deleteAll。",
@@ -744,7 +700,7 @@ export function deleteMany(tableName: string, where: WhereClause[]): number {
  * @example
  * deleteById("users", "u1");
  */
-export function deleteById(
+function deleteById(
   tableName: string,
   id: SQLiteValue,
   idColumn: string = "id",
@@ -757,7 +713,7 @@ export function deleteById(
  *
  * @returns 被删除的行数
  */
-export function deleteAll(tableName: string): number {
+function deleteAll(tableName: string): number {
   return db.prepare(`DELETE FROM ${tableName};`).run().changes;
 }
 
@@ -769,13 +725,33 @@ export function deleteAll(tableName: string): number {
 
 
 
-
-
-
-
 // #region Exports
+export {
+  createTableByZodObject,
+  createTableByZodDiscriminatedUnion,
+  tableExists,
+
+  insertOne,
+  insertMany,
+  insertOneWithSchema,
+
+  findById,
+  findMany,
+  findManyWithSchema,
+
+
+  updateMany,
+  updateAll,
+  updateById,
+
+
+  deleteAll,
+  deleteById,
+  deleteMany,
+}
 
 // #endregion
+
 
 
 
