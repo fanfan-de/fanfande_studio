@@ -1,3 +1,23 @@
+/**
+ * @MODULE: [Session - 负责Session的模块]
+ * 
+ * 1. 【数据形状 / Shapes】
+ *    - 核心实体: [如 Order, User]
+ *    - 关键状态: [如 'pending' -> 'paid' | 'expired'] (状态机逻辑)
+ * 
+ * 2. 【变换规则 / Transforms】
+ *    - 核心路径: Input(Raw) -> Validate -> BusinessLogic -> Persistence -> Output(DTO)
+ *    - 核心公式: [如 total = price * qty + tax - discount]
+ * 
+ * 3. 【驱动时序 / Timing】
+ *    - 触发源: [如 用户点击 / MQ 消息 / 定时任务]
+ *    - 副作用: [如 修改外部 DB / 发送 Email / 更新缓存]
+ * 
+ * 4. 【契约约束 / Constraints】
+ *    - 禁止: [如 严禁绕过 Service 直接操作 Repo]
+ *    - 必须: [如 所有金额计算必须使用 Decimal.js 以防精度丢失]
+ */
+
 import * as Log from "#util/log.ts"
 import z from "zod"
 import *  as  Identifier from "#id/id.ts"
@@ -14,11 +34,6 @@ import * as db from "#database/Sqlite.ts"
 import { zodObjectToColumnDefs, toCreateTableSQL, } from "#database/parser.ts"
 import type { } from "#project/project.ts"
 
-
-
-const log = Log.create({ service: "session" })
-const parentTiTlePrefix = "新对话"
-const childTiltePrefic = "子对话"
 
 //#region Type & Interface
 // 定义映射关系
@@ -76,9 +91,25 @@ export const SessionInfo = z
         ref: "Session",
     })
 export type SessionInfo = z.output<typeof SessionInfo>
+
+
+const TableSchemaMap = {
+    projects: Project.ProjectInfo,
+    sessions: SessionInfo,
+    messages: Message.MessageInfo,
+    parts: Message.Part,
+} as const;
 //#endregion
 
 
+
+
+
+
+
+const log = Log.create({ service: "session" })
+const parentTiTlePrefix = "新对话"
+const childTiltePrefic = "子对话"
 //#region Modula Initialize----------------------------------------
 //建表操作
 if (!db.tableExists("sessions")) {
@@ -98,18 +129,18 @@ if (!db.tableExists("parts")) {
  * @param tableName 
  * @param tableRecord 对应表的record
  */
-function Create<T extends TableName>(tableName: T, tableRecord: TableRecordMap[T]): void {
-    db.insertOneWithSchema(tableName,  ,tableRecord)
+function DataBaseCreate<T extends TableName>(tableName: T, tableRecord: TableRecordMap[T]): void {
+    db.insertOneWithSchema(tableName, tableRecord, TableSchemaMap[tableName])
 }
 
 
-export const read = fn(Identifier.schema("session"), (key) => {
-    const record = findById("session", key)
-    if (record != null)
-        return fromSQLiteRecord(Info, record)
-    else
-        return null
-})
+// export const read = fn(Identifier.schema("session"), (key) => {
+//     const record = findById("session", key)
+//     if (record != null)
+//         return fromSQLiteRecord(Info, record)
+//     else
+//         return null
+// })
 
 
 
@@ -117,19 +148,19 @@ export const Event = {
     Created: BusEvent.define(
         "session.created",
         z.object({
-            info: Info,
+            info: SessionInfo,
         }),
     ),
     Updated: BusEvent.define(
         "session.updated",
         z.object({
-            info: Info,
+            info: SessionInfo,
         }),
     ),
     Deleted: BusEvent.define(
         "session.deleted",
         z.object({
-            info: Info,
+            info: SessionInfo,
         }),
     ),
     Diff: BusEvent.define(
@@ -148,8 +179,6 @@ export const Event = {
     ),
 }
 
-
-
 //创建新的Session,仅仅只是在存储中创建一个记录，而不是instance.state中的session
 export async function createSession(
     input: {
@@ -160,8 +189,8 @@ export async function createSession(
         projectID: string
         //permission?: PermissionNext.Ruleset
     }
-): Promise<Info> {
-    const result: Info = {
+): Promise<SessionInfo> {
+    const result: SessionInfo = {
         id: Identifier.descending("session"),
         //slug: Slug.create(),//随机组合一个“形容词”和一个“名词”来创建一个可读性很强的字符串。
         projectID: input.projectID,
@@ -173,9 +202,9 @@ export async function createSession(
             updated: Date.now(),
         },
     }
-    //log.info("create", result)
+    log.info("create", result)
     //db insert
-    Create("sessions", result)
+    DataBaseCreate("sessions", result)
 
     Bus.publish(Event.Created, {
         info: result,

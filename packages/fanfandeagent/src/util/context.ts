@@ -14,7 +14,7 @@ export class NotFound extends Error {
  * @returns 
  */
 export function createContextContainer<T>(/*name: string*/) {
-  // 实例化 Node.js 原生的存储容器
+  // 实例化 Node.js 原生的存储容器，内存存储
   const storage = new AsyncLocalStorage<T>()
   return {
     //逻辑上总是先provide，执行了这个fn，fn调用的异步方法总是能通过 context.use来获得这个T
