@@ -7,14 +7,13 @@
  * @depends AuthProvider, DatabaseClient, Logger
  * @exports createUser, loginUser, validateToken, UserVO, CreateUserDTO
  */
-import { Instance } from "@/project/instance";
-import { Log } from "@/util/log";
-import { Message } from "./message"
+import { Instance } from "#project/instance.ts";
+import * as Log from "#util/log.ts";
+import * as Message from "./message"
 import z from "zod";
-import { Identifier } from "@/id/id";
-import { fn } from "@/util/fn";
-import { loop } from "./Loop";
-
+import * as Identifier from "#id/id.ts";
+import { fn } from "#util/fn.ts";
+import { loop } from "#session/loop.ts";
 
 const log = Log.create({ service: "session.engine" })
 
