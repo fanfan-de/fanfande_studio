@@ -21,16 +21,16 @@ const log = Log.create({ service: "session.engine" })
 //仅仅是当前正在运行的session
 export const state = Instance.state(
     () => {
-        //每一个会话对应一个条目，表示正在执行loop循环
+        //每一个会话对应一个条目，表示正在执行session循环
         const data: Record<
-            string,
+            string,//sessionID
             {
-                abort: AbortController
+                abort: AbortController//AbortController 对象 - 用于发出取消信号
                 callbacks: {
                     resolve(input: Message.WithParts): void
                     reject(): void
                 }[]
-            }
+            }//
         > = {}
         return data
     },
@@ -141,7 +141,7 @@ const prompt = fn(PromptInput, async (input) => {
     //input.noreply
 
 
-    return loop({sessionID: input.sessionID})
+    return loop({ sessionID: input.sessionID })
 })
 
 
@@ -157,9 +157,8 @@ const loop = fn(LoopInput, async (input) => {
 
     let step = 0
 
-    while(true)
-    {
-        Status.set(sessionID,{type:"busy"})
+    while (true) {
+        Status.set(sessionID, { type: "busy" })
     }
 })
 
