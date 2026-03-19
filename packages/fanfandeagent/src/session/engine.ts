@@ -13,7 +13,7 @@ import * as Message from "./message"
 import z from "zod";
 import * as Identifier from "#id/id.ts";
 import { fn } from "#util/fn.ts";
-import { loop } from "#session/loop.ts";
+import * as Status from "#session/status.ts"
 
 const log = Log.create({ service: "session.engine" })
 
@@ -21,6 +21,7 @@ const log = Log.create({ service: "session.engine" })
 //仅仅是当前正在运行的session
 export const state = Instance.state(
     () => {
+        //每一个会话对应一个条目，表示正在执行loop循环
         const data: Record<
             string,
             {
@@ -58,8 +59,8 @@ export const PromptInput = z.object({
     parts: z.array(
         z.discriminatedUnion("type", [
             Message.TextPart.omit({
-                messageID: true,
-                sessionID: true,
+                messageid: true,
+                sessionid: true,
             })
                 .partial({
                     id: true,
@@ -68,8 +69,8 @@ export const PromptInput = z.object({
                     ref: "TextPartInput",
                 }),
             Message.FilePart.omit({
-                messageID: true,
-                sessionID: true,
+                messageid: true,
+                sessionid: true,
             })
                 .partial({
                     id: true,
@@ -78,8 +79,8 @@ export const PromptInput = z.object({
                     ref: "FilePartInput",
                 }),
             Message.AgentPart.omit({
-                messageID: true,
-                sessionID: true,
+                messageid: true,
+                sessionid: true,
             })
                 .partial({
                     id: true,
@@ -88,8 +89,8 @@ export const PromptInput = z.object({
                     ref: "AgentPartInput",
                 }),
             Message.SubtaskPart.omit({
-                messageID: true,
-                sessionID: true,
+                messageid: true,
+                sessionid: true,
             })
                 .partial({
                     id: true,
@@ -108,7 +109,7 @@ export type PromptInput = z.infer<typeof PromptInput>
 
 // #region Internal Helpers (private)
 function start(sessionID: string): AbortSignal | undefined {
-    const s = Engine.state()
+    const s = state()
     if (s[sessionID]) return
     const controller = new AbortController()
     s[sessionID] = {
@@ -125,11 +126,47 @@ function start(sessionID: string): AbortSignal | undefined {
 
 
 //推入Engine一次prompt,
-export const prompt = fn(PromptInput, async (input) => {
+const prompt = fn(PromptInput, async (input) => {
+
+    //获取session
+
+    //清理revert历史
+
+    //创建 usermessage
+
+    //session.touch
+
+    //input.tool 权限设置
+
+    //input.noreply
 
 
-
-    return loop(input.sessionID)
+    return loop({sessionID: input.sessionID})
 })
+
+
+
+export const LoopInput = z.object({
+    sessionID: Identifier.schema("session"),
+    resume_existing: z.boolean().optional(),
+})
+
+//一个sessionloop的状态机方法
+const loop = fn(LoopInput, async (input) => {
+    const { sessionID, resume_existing } = input
+
+    let step = 0
+
+    while(true)
+    {
+        Status.set(sessionID,{type:"busy"})
+    }
+})
+
+
+export {
+    prompt,
+
+}
 
 

@@ -13,13 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "如何本质地理解一个 TypeScript 项目.md",
+                "file": "promise详解.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "如何本质地理解一个 TypeScript 项目"
+              "title": "promise详解"
             }
           }
         ]
@@ -79,8 +79,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 246.50260543823242,
-    "collapsed": true
+    "width": 246.50260543823242
   },
   "right": {
     "id": "14ad8d7e08bf77ac",
@@ -189,6 +188,10 @@
   },
   "active": "aa7ae7b66b127440",
   "lastOpenFiles": [
+    "SessionPrompt流程图.md",
+    "promise详解.md",
+    "Hono.md",
+    "TS 接口驱动.md",
     "如何本质地理解一个 TypeScript 项目.md",
     "packages/fanfandeagent/Feature Spec.md",
     "fanfande_studio_vault/Config思路.md",
@@ -221,10 +224,6 @@
     "TypeScript AI-Friendly 代码规范文档.md",
     "流程图.md",
     "fanfande_studio_vault/StreamText  API.md",
-    "packages/fanfandeagent/src/session/liucyhengtu.md",
-    "Tools/Bash.md",
-    "Tools/list.md",
-    "Tools/文.md",
     "packages/fanfandeagent/node_modules/exif-parser/test/test.jpg",
     "packages/fanfandeagent/node_modules/exif-parser/test/starfish.jpg",
     "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/widgets@2x.png",
