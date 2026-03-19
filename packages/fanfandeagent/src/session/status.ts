@@ -1,5 +1,5 @@
-import { BusEvent } from "#bus/bus-event.ts"
-import { Bus } from "#bus/index.ts"
+import * as  BusEvent  from "#bus/bus-event.ts"
+import * as  Bus  from "#bus/project-bus.ts"
 import { Instance } from "#project/instance.ts"
 import z from "zod"
 

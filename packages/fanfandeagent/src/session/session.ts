@@ -3,10 +3,15 @@
  * 
  * 1. 【数据形状 / Shapes】
  *    - 核心实体: [如 Order, User]
- *    - 关键状态: [如 'pending' -> 'paid' | 'expired'] (状态机逻辑)
+ *    - 会话生命周期: created -> updated(活跃) -> archived(归档) | deleted(删除)
+ *      - 会话层级: 根会话(parentID=null) / 子会话(parentID!=null)
+ *      - 分享状态: 未分享(share=undefined) -> 已分享(share.url) -> 取消分享(share=undefined)
+ *      - 回退状态: 无回退点(revert=undefined) -> 设置回退点(revert={messageID, partID?, snapshot?, diff?}) -> 清除回退点
  * 
  * 2. 【变换规则 / Transforms】
- *    - 核心路径: Input(Raw) -> Validate -> BusinessLogic -> Persistence -> Output(DTO)
+ *    - 核心路径: 
+ *          - 创建: create/createNext -> 构建 Info 对象(生成降序ID + slug) -> INSERT SessionTable -> 发布 Event.Created + Event.Updated -> 自动分享(若配置)
+ *          - 删除: remove -> 递归删除子会话 -> unshare -> DELETE SessionTable(CASCADE 自动删除 Message/Part) -> 发布 Event.Deleted
  *    - 核心公式: [如 total = price * qty + tax - discount]
  * 
  * 3. 【驱动时序 / Timing】
@@ -22,13 +27,13 @@ import * as Log from "#util/log.ts"
 import z from "zod"
 import *  as  Identifier from "#id/id.ts"
 import { Snapshot } from "#snapshot/index.ts"
-import { Bus } from "#bus/project-bus.ts"
+import * as  Bus  from "#bus/project-bus.ts"
 import * as  BusEvent from "#bus/bus-event.ts"
 import * as Message from "#session/message.ts"
 import { Instance } from "#project/instance.ts"
 import * as  Project from "#project/project.ts"
-import { Slug } from "#util/slug.ts"
-import { Installation } from "#installation/installation.ts"
+//import { Slug } from "#util/slug.ts"
+import * as  Installation  from "#installation/installation.ts"
 import { fn } from "#util/fn.ts"
 import * as db from "#database/Sqlite.ts"
 import { zodObjectToColumnDefs, toCreateTableSQL, } from "#database/parser.ts"
@@ -99,6 +104,9 @@ const TableSchemaMap = {
     messages: Message.MessageInfo,
     parts: Message.Part,
 } as const;
+
+
+
 //#endregion
 
 
@@ -143,8 +151,8 @@ function DataBaseCreate<T extends TableName>(tableName: T, tableRecord: TableRec
 // })
 
 
-
-export const Event = {
+//session 的创建，更新，删除，diff，error事件
+const Event = {
     Created: BusEvent.define(
         "session.created",
         z.object({
@@ -180,7 +188,7 @@ export const Event = {
 }
 
 //创建新的Session,仅仅只是在存储中创建一个记录，而不是instance.state中的session
-export async function createSession(
+async function createSession(
     input: {
         //id?: string
         //title?: string
@@ -223,12 +231,41 @@ export async function createSession(
 
 
 
-export const updateMessage = fn(Message.Info, async (msg) => {
-    Create("messages", msg)
+const updateMessage = fn(Message.MessageInfo, async (msg) => {
+    DataBaseCreate("messages", msg)
 })
 
-export const updatePart = fn(Message.Part, async (part) => {
-    Create("parts", part)
+const updatePart = fn(Message.Part, async (part) => {
+    DataBaseCreate("parts", part)
 })
+
+
+
+export {
+    Event,//session的生命周期事件
+    //Session的CRUD操作
+    createSession,//在本地创建session记录
+    forkSession,//
+    touchSession,//会话保活？
+
+    get,
+    share,
+    unshare,
+
+
+    updateMessage,//本地创建message记录
+    updatePart,//本地创建part记录
+
+
+    remove,
+
+    initialize,//会话初始化功能，用于在AI对话会话开始时建立连接并准备环境
+
+    //session生命周期
+
+
+
+}
+
 
 
