@@ -13,13 +13,21 @@
             "state": {
               "type": "markdown",
               "state": {
+<<<<<<< HEAD
                 "file": "SessionPrompt 中 Callbacks 队列等待机制详解.md",
+=======
+                "file": "如何本质地理解一个 TypeScript 项目.md",
+>>>>>>> 32d7c500f5ca9b250450c73d82ace96c5a98ebf3
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
+<<<<<<< HEAD
               "title": "SessionPrompt 中 Callbacks 队列等待机制详解"
+=======
+              "title": "如何本质地理解一个 TypeScript 项目"
+>>>>>>> 32d7c500f5ca9b250450c73d82ace96c5a98ebf3
             }
           }
         ]
@@ -189,6 +197,7 @@
   },
   "active": "aa7ae7b66b127440",
   "lastOpenFiles": [
+<<<<<<< HEAD
     "单次session的循环.md",
     "SessionPrompt 中 Callbacks 队列等待机制详解.md",
     "词法作用域 vs 动态作用域.md",
@@ -200,15 +209,30 @@
     "SessionPrompt流程图.md",
     "Hono.md",
     "TS 接口驱动.md",
+=======
+    "AI 代码撰写规范.md",
+>>>>>>> 32d7c500f5ca9b250450c73d82ace96c5a98ebf3
     "如何本质地理解一个 TypeScript 项目.md",
+    "SessionPrompt流程图.md",
+    "zod详细.md",
+    "processor.md",
+    "TypeScript AI-Friendly 代码规范文档.md",
+    "Message.md",
+    "promise详解.md",
+    "手柄配置.md",
+    "数据流.md",
+    "Hono Context (c) 完整参考.md",
+    "AI 社交.md",
+    "未命名.md",
+    "TS 接口驱动.md",
+    "readme.md",
+    "流程图.md",
+    "Tool.md",
+    "Hono.md",
     "packages/fanfandeagent/Feature Spec.md",
     "fanfande_studio_vault/Config思路.md",
     "fanfande_studio_vault/栈.md",
     "Provider.md",
-    "AI 社交.md",
-    "readme.md",
-    "Hono Context (c) 完整参考.md",
-    "AI 代码撰写规范.md",
     "项目抽象.md",
     "packages/fanfandeagent/src/database/Sqlite.ts",
     "packages/fanfandeagent/src/database/db.ts",
@@ -223,9 +247,12 @@
     "packages/fanfandeagent/src/session/engine.ts",
     "packages/fanfandeagent/src/database/parser.ts",
     "packages/fanfandeagent/src/session/SESSION_ARCHITECTURE.md",
+<<<<<<< HEAD
     "手柄配置.md",
     "Tool.md",
     "Message.md",
+=======
+>>>>>>> 32d7c500f5ca9b250450c73d82ace96c5a98ebf3
     "packages/fanfandeagent/node_modules/exif-parser/test/test.jpg",
     "packages/fanfandeagent/node_modules/exif-parser/test/starfish.jpg",
     "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/widgets@2x.png",
