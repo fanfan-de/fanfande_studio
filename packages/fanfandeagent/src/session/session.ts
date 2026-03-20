@@ -27,13 +27,13 @@ import * as Log from "#util/log.ts"
 import z from "zod"
 import *  as  Identifier from "#id/id.ts"
 import { Snapshot } from "#snapshot/index.ts"
-import * as  Bus  from "#bus/project-bus.ts"
+import * as  Bus from "#bus/project-bus.ts"
 import * as  BusEvent from "#bus/bus-event.ts"
 import * as Message from "#session/message.ts"
 import { Instance } from "#project/instance.ts"
 import * as  Project from "#project/project.ts"
 //import { Slug } from "#util/slug.ts"
-import * as  Installation  from "#installation/installation.ts"
+import * as  Installation from "#installation/installation.ts"
 import { fn } from "#util/fn.ts"
 import * as db from "#database/Sqlite.ts"
 import { zodObjectToColumnDefs, toCreateTableSQL, } from "#database/parser.ts"
@@ -138,7 +138,16 @@ if (!db.tableExists("parts")) {
  * @param tableRecord 对应表的record
  */
 function DataBaseCreate<T extends TableName>(tableName: T, tableRecord: TableRecordMap[T]): void {
+
     db.insertOneWithSchema(tableName, tableRecord, TableSchemaMap[tableName])
+}
+
+function DataBaseRead<T extends TableName>(tableName: T, id: string) {
+    const result = db.findById(tableName, TableSchemaMap[tableName], id)
+    if (TableSchemaMap[tableName].parse(result))
+        return result
+    else
+        return null
 }
 
 
@@ -224,12 +233,22 @@ async function createSession(
 
     return result;
 }
+async function getSession(input: {
+    id: string
+}) {
+    const result = DataBaseRead("sessions", input.id)
+    if (!result)
+        throw new db.NotFoundError({ message: `Session not found: ${input.id}` })
+    return result 
+}
 
 //删除Session
 
 //获取Session下所有的Messages
 
 
+//创建新的message
+async function createMessage()
 
 const updateMessage = fn(Message.MessageInfo, async (msg) => {
     DataBaseCreate("messages", msg)
@@ -248,9 +267,13 @@ export {
     forkSession,//
     touchSession,//会话保活？
 
-    get,
+    getSession,
     share,
     unshare,
+
+    DataBaseCreate,
+    DataBaseRead,
+
 
 
     updateMessage,//本地创建message记录

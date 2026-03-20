@@ -433,6 +433,11 @@ export const WithParts = z.object({
 })
 export type WithParts = z.infer<typeof WithParts>
 
+function Create<T extends z.ZodObject>(rawshape: z.ZodRawShape):T{
+    const result = z.object(rawshape) 
+    return result
+}
+
 
 export const Event = {
     Updated: define(
@@ -463,14 +468,14 @@ export const Event = {
             partID: z.string(),
         }),
     ),
-    PartDelta:define(
+    PartDelta: define(
         "message.part.delta",
         z.object({
-            sessionID:z.string(),
-            messageID:z.string(),
-            partID:z.string(),
-            field:z.string(),
-            delta:z.string(),
+            sessionID: z.string(),
+            messageID: z.string(),
+            partID: z.string(),
+            field: z.string(),
+            delta: z.string(),
         })
     )
 }

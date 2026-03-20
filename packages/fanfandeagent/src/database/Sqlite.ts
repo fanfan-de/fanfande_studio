@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { record, z, ZodType } from "zod";
 import { toCreateTableSQL, zodObjectToColumnDefs, } from "./parser"
 import type { SQLiteColumnDef } from "./parser"
+import * as Error from "#util/error.ts"
 
 
 // #region Constants ──────────────────────────────────────
@@ -48,9 +49,9 @@ db.run("PRAGMA foreign_keys = ON;"); // 启用外键约束，防止脏数据
  * @param tableName  表名
  * @param schema  zod 对象
  */
-function createTableByZodObject<T extends z.ZodRawShape>(
+function createTableByZodObject<T extends z.ZodObject>(
   tableName: string,
-  schema: z.ZodObject<T>
+  schema: T
 ): void {
   const columedefs = zodObjectToColumnDefs(schema)
   db.run(toCreateTableSQL(tableName, columedefs))
@@ -162,10 +163,10 @@ function toSQLiteValue<T extends Record<string, unknown>>(
  * fromSQLiteRecord(UserSchema, { name: "Alice", born: 1718000000000 });
  * // → { name: "Alice", born: Date(...) }
  */
-function fromSQLiteRecord<T extends z.ZodRawShape>(
-  schema: z.ZodObject<T>,
+function fromSQLiteRecord<T extends z.ZodObject>(
+  schema: T,
   record: Record<string, SQLiteValue>,
-): z.output<z.ZodObject<T>> {
+): z.output<T> {
   const shape = schema.shape;
   const obj: Record<string, unknown> = {};
 
@@ -220,7 +221,7 @@ function restoreValue(fieldSchema: z.ZodType, value: SQLiteValue): z.output<z.Zo
  *   → ZodNullable → ZodOptional → ZodString
  *   → 返回 ZodString
  */
-function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {
+function unwrap(schema: z.ZodType): z.ZodType {
   const t = defType(schema);
   const wrapperTypes = [
     "optional",
@@ -264,17 +265,17 @@ function innerType(schema: z.ZodType): z.ZodType | undefined {
 // --- 特征判断 ---
 
 /** 判断 schema 链路中是否包含 optional 包装 */
-function isOptional(schema: z.ZodTypeAny): boolean {
+function isOptional(schema: z.ZodType): boolean {
   return hasWrapper(schema, "optional", "ZodOptional");
 }
 
 /** 判断 schema 链路中是否包含 nullable 包装 */
-function isNullable(schema: z.ZodTypeAny): boolean {
+function isNullable(schema: z.ZodType): boolean {
   return hasWrapper(schema, "nullable", "ZodNullable");
 }
 
 /** 递归检查 schema 链路中是否存在指定的包装类型 */
-function hasWrapper(schema: z.ZodTypeAny, ...targets: string[]): boolean {
+function hasWrapper(schema: z.ZodType, ...targets: string[]): boolean {
   const t = defType(schema);
 
   if (targets.includes(t)) return true;
@@ -299,7 +300,7 @@ function hasWrapper(schema: z.ZodTypeAny, ...targets: string[]): boolean {
 }
 
 /** 判断最内层类型是否是复合类型（存储时需要 JSON 序列化） */
-function isJsonType(base: z.ZodTypeAny): boolean {
+function isJsonType(base: z.ZodType): boolean {
   return (
     base instanceof z.ZodObject ||
     base instanceof z.ZodArray ||
@@ -507,11 +508,11 @@ function upsert(
  *   offset:  0,
  * });
  */
-function findMany<T extends z.ZodRawShape>(
+function findMany<T extends z.ZodType>(
   tableName: string,
-  schema: z.ZodObject<T>,
+  schema: T,
   options: QueryOptions = {},
-): z.output<z.ZodObject<T>>[] {
+): z.output<T>[] {
   const selectCols = options.columns?.join(", ") ?? "*";
   const { sql: whereSql, params: whereParams } = buildWhereClause(options.where);
   const orderSql = buildOrderByClause(options.orderBy);
@@ -532,11 +533,11 @@ function findMany<T extends z.ZodRawShape>(
  * @example
  * findOne("users", { where: [{ column: "id", value: "u1" }] });
  */
-function findOne<T extends z.ZodRawShape>(
+function findOne<T extends z.ZodType>(
   tableName: string,
-  schema: z.ZodObject<T>,
+  schema: T,
   options: QueryOptions = {},
-): z.output<z.ZodObject<T>> | null {
+): z.output<T> | null {
   const results = findMany<T>(tableName, schema, { ...options, limit: 1 });
   return results[0] ?? null;
 }
@@ -550,12 +551,12 @@ function findOne<T extends z.ZodRawShape>(
  * findById("users", "u1");
  * findById("users", 42, "user_id");
  */
-function findById<T extends z.ZodRawShape>(
+function findById<T extends z.ZodType>(
   tableName: string,
-  schema: z.ZodObject<T>,
-  id: SQLiteValue,
+  schema: T,
+  id: string,
   idColumn: string = "id",
-): z.output<z.ZodObject<T>> | null {
+): z.output<T> | null {
   return findOne(tableName, schema, {
     where: [{ column: idColumn, value: id }],
   });
@@ -592,11 +593,11 @@ function exists(tableName: string, where: WhereClause[]): boolean {
  * const UserSchema = z.object({ name: z.string(), age: z.number() });
  * findManyWithSchema("users", UserSchema, { limit: 10 });
  */
-function findManyWithSchema<T extends z.ZodRawShape>(
+function findManyWithSchema<T extends z.ZodObject>(
   tableName: string,
-  schema: z.ZodObject<T>,
+  schema: T,
   options: QueryOptions = {},
-): z.output<z.ZodObject<T>>[] {
+): z.output<T>[] {
   const rows = findMany(tableName, schema, options);
   return rows.map((row) => schema.parse(row));
 }
@@ -702,7 +703,7 @@ function deleteMany(tableName: string, where: WhereClause[]): number {
  */
 function deleteById(
   tableName: string,
-  id: SQLiteValue,
+  id: string,
   idColumn: string = "id",
 ): number {
   return deleteMany(tableName, [{ column: idColumn, value: id }]);
@@ -719,6 +720,16 @@ function deleteAll(tableName: string): number {
 
 
 //#endregion
+
+
+
+export const NotFoundError = Error.NamedError.create(
+  "NotFoundError",
+  z.object({
+    message: z.string(),
+  }),
+)
+
 
 
 
