@@ -4,7 +4,7 @@ import z from "zod"
 /**
  * Agent是对编排的抽象，plan，build，research
  */
-export namespace Agent {
+
   export const Info = z
     .object({
       name: z.string(),
@@ -89,5 +89,3 @@ export namespace Agent {
 
 
 
-
-}

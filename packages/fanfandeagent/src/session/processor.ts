@@ -1,10 +1,10 @@
-import type { Provider } from "@/provider/provider";
-import { Log } from "#util/log.ts"
+import * as Provider from "#provider/provider.ts";
+import * as  Log from "#util/log.ts"
 import * as LLM from '#session/llm.ts';
 //import type { StreamInput } from "./llm"
 import * as Message from "#session/message.ts"
 //import { Message } from "./message";
-import { Identifier } from "@/id/id";
+import *as  Identifier from "#id/id.ts";
 import { ZodDate } from "zod";
 import { matchedRoutes } from "hono/route";
 import * as Session from "#session/session.ts"
@@ -13,11 +13,16 @@ import * as Session from "#session/session.ts"
 const log = Log.create({ service: "session.processor" })
 
 //创建一个处理器:涵盖 发送LLM Input-> 接受处理steam
+/**
+ * 
+ * @param input 
+ * @returns 
+ */
 export function create(input: {
     Assistant: Message.Assistant,
     abort: AbortSignal
 }) {
-    //const toolcalls: Record<string, Message.ToolPart> = {}
+    const toolcalls: Record<string, Message.ToolPart> = {}
     let snapshot: string | undefined
     let blocked = false
     let attempt = 0
@@ -66,7 +71,7 @@ export function create(input: {
                                 if (value.providerMetadata)
                                     currentText.metadata = value.providerMetadata
                                 //将part写入存储
-                                await Session.Create("parts", currentText)
+                                await Session.DataBaseCreate("parts", currentText)
 
                             }
                             break;
@@ -234,6 +239,11 @@ export function create(input: {
                             break;
                     }
                 }
+
+                if (needsCompaction) return "compact"
+                if (blocked) return "stop"
+                if (input.Assistant.error) return "stop"
+                return "continue"
             }
         }
 

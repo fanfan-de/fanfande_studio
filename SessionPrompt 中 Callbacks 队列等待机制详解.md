@@ -277,11 +277,11 @@ export const loop = fn(LoopInput, async (input) => {
 
 假设有 3 个调用者几乎同时调用 `loop(sessionID: "abc")`：
 
-| 时序 | 调用者 | `start()` 返回 | 走哪条路径 |
-|------|--------|----------------|-----------|
-| T1 | 调用者 A | `AbortSignal` ✅ | **路径 A**：真正执行 LLM 循环 |
-| T2 | 调用者 B | `undefined` | **路径 B**：`return new Promise(...)` 挂起等待 |
-| T3 | 调用者 C | `undefined` | **路径 B**：`return new Promise(...)` 挂起等待 |
+| 时序  | 调用者   | `start()` 返回    | 走哪条路径                                   |
+| --- | ----- | --------------- | --------------------------------------- |
+| T1  | 调用者 A | `AbortSignal` ✅ | **路径 A**：真正执行 LLM 循环                    |
+| T2  | 调用者 B | `undefined`     | **路径 B**：`return new Promise(...)` 挂起等待 |
+| T3  | 调用者 C | `undefined`     | **路径 B**：`return new Promise(...)` 挂起等待 |
 
 - **调用者 B 和 C**：`return` 了一个永远不会自己 resolve 的 Promise。它们的 `resolve/reject` 回调被存入 `callbacks` 数组中，函数执行到此结束。
 - **调用者 A**：跳过 `if (!abort)` 块，继续往下执行真正的 LLM 循环逻辑。当循环完成后，遍历 `callbacks` 数组，调用每个等待者的 `resolve(result)`。

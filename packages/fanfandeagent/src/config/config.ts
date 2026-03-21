@@ -4,7 +4,7 @@ import z from "zod"
 import path from "path"
 import { Server } from "#server/server.ts"
 import { Agent } from "#agent/agent.ts"
-import { ModelsDev } from "#provider/models.ts"
+import { ModelsDev } from "#provider/modelsdev.ts"
 import * as  Auth  from "#auth/auth.ts"
 
 

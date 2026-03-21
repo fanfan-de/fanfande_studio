@@ -1,4 +1,4 @@
-import { Tool } from "./tool"
+import * as Tool from "#tool/tool.ts"
 import { Shell } from "../shell/shell"
 import z from "zod"
 import { Instance } from "@/project/instance"
@@ -16,8 +16,13 @@ export const BashTool = Tool.define(
                 command: z.string().describe("运行的指令"),
                 timeout: z.number().describe("Optional timeout in milliseconds").optional(),
                 workdir: z.string()
-                    .describe(`The working directory to run the command in. Defaults to ${Instance.directory}. Use this instead of 'cd' commands.`)
+                    .describe(`运行指令的目录. 默认 ${Instance.directory}. Use this instead of 'cd' commands.`)
                     .optional(),
+                description: z
+                    .string()
+                    .describe(
+                        "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
+                    ),
             }),
             execute: async (parameters, ctx) => {
                 const cwd = parameters.workdir || Instance.directory//优先参数目录，其次是工作目录
