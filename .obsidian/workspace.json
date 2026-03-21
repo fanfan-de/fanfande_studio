@@ -1,33 +1,25 @@
 {
   "main": {
-    "id": "b6e605ded7909212",
+    "id": "785731bc096a39be",
     "type": "split",
     "children": [
       {
-        "id": "05c5a69c436131e3",
+        "id": "fe4020b30de71638",
         "type": "tabs",
         "children": [
           {
-            "id": "aa7ae7b66b127440",
+            "id": "e8de20d6e430372b",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-<<<<<<< HEAD
-                "file": "SessionPrompt 中 Callbacks 队列等待机制详解.md",
-=======
-                "file": "如何本质地理解一个 TypeScript 项目.md",
->>>>>>> 32d7c500f5ca9b250450c73d82ace96c5a98ebf3
+                "file": "packages/fanfandeagent/src/provider/AISDK.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-<<<<<<< HEAD
-              "title": "SessionPrompt 中 Callbacks 队列等待机制详解"
-=======
-              "title": "如何本质地理解一个 TypeScript 项目"
->>>>>>> 32d7c500f5ca9b250450c73d82ace96c5a98ebf3
+              "title": "AISDK"
             }
           }
         ]
@@ -36,20 +28,20 @@
     "direction": "vertical"
   },
   "left": {
-    "id": "b6467d00ab6e1571",
+    "id": "d09e69b3506f1c87",
     "type": "split",
     "children": [
       {
-        "id": "39b6df7df2e70f9e",
+        "id": "45a7343284b52824",
         "type": "tabs",
         "children": [
           {
-            "id": "a56d83aa83b9d9d9",
+            "id": "94ee0976010eed33",
             "type": "leaf",
             "state": {
               "type": "file-explorer",
               "state": {
-                "sortOrder": "byModifiedTime",
+                "sortOrder": "byModifiedTimeReverse",
                 "autoReveal": false
               },
               "icon": "lucide-folder-closed",
@@ -57,24 +49,24 @@
             }
           },
           {
-            "id": "601f520dfe5fb26f",
+            "id": "4540b35b06f97c2e",
             "type": "leaf",
             "state": {
               "type": "search",
               "state": {
-                "query": "deepseek",
+                "query": "",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
                 "extraContext": false,
-                "sortOrder": "byModifiedTime"
+                "sortOrder": "alphabetical"
               },
               "icon": "lucide-search",
               "title": "搜索"
             }
           },
           {
-            "id": "1882d5bb98d7d814",
+            "id": "b5d5e501da7832b0",
             "type": "leaf",
             "state": {
               "type": "bookmarks",
@@ -87,24 +79,24 @@
       }
     ],
     "direction": "horizontal",
-    "width": 246.50260543823242,
+    "width": 300,
     "collapsed": true
   },
   "right": {
-    "id": "14ad8d7e08bf77ac",
+    "id": "0e26e5315e7c2117",
     "type": "split",
     "children": [
       {
-        "id": "faf8edda676bc824",
+        "id": "d74807fd35ad7b80",
         "type": "tabs",
         "children": [
           {
-            "id": "542414725b9c9059",
+            "id": "35a2b5d380a07183",
             "type": "leaf",
             "state": {
               "type": "backlink",
               "state": {
-                "file": "sda.md",
+                "file": "SessionPrompt 中 Callbacks 队列等待机制详解.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -114,25 +106,25 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "sda 的反向链接列表"
+              "title": "SessionPrompt 中 Callbacks 队列等待机制详解 的反向链接列表"
             }
           },
           {
-            "id": "b18e110bc67810f0",
+            "id": "c9cca93ea2c7f9f4",
             "type": "leaf",
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "项目文档.md",
+                "file": "SessionPrompt 中 Callbacks 队列等待机制详解.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "项目文档 的出链列表"
+              "title": "SessionPrompt 中 Callbacks 队列等待机制详解 的出链列表"
             }
           },
           {
-            "id": "bd8a161fece167a9",
+            "id": "bf3857def76cf665",
             "type": "leaf",
             "state": {
               "type": "tag",
@@ -147,7 +139,7 @@
             }
           },
           {
-            "id": "b9134c707d314090",
+            "id": "ca80185a16e20154",
             "type": "leaf",
             "state": {
               "type": "all-properties",
@@ -161,18 +153,18 @@
             }
           },
           {
-            "id": "fc62b5336605ab5a",
+            "id": "21734e6a7186cefc",
             "type": "leaf",
             "state": {
               "type": "outline",
               "state": {
-                "file": "项目文档.md",
+                "file": "SessionPrompt 中 Callbacks 队列等待机制详解.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "项目文档 的大纲"
+              "title": "SessionPrompt 中 Callbacks 队列等待机制详解 的大纲"
             }
           }
         ]
@@ -184,83 +176,44 @@
   },
   "left-ribbon": {
     "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
       "bases:新建数据库": false,
-      "switcher:打开快速切换": true,
-      "graph:查看关系图谱": true,
-      "canvas:新建白板": true,
-      "daily-notes:打开/创建今天的日记": true,
-      "templates:插入模板": true,
-      "command-palette:打开命令面板": true,
       "zhihu:Open Zhihu side view": false,
       "mermaid-tools:Open Mermaid Toolbar": false
     }
   },
-  "active": "aa7ae7b66b127440",
+  "active": "e8de20d6e430372b",
   "lastOpenFiles": [
-<<<<<<< HEAD
+    "packages/fanfandeagent/src/provider/modelsdev.ts",
+    "未命名 1.md",
+    "packages/fanfandeagent/src/provider/AISDK.md",
     "单次session的循环.md",
-    "SessionPrompt 中 Callbacks 队列等待机制详解.md",
-    "词法作用域 vs 动态作用域.md",
-    "zod详细.md",
-    "TS  泛型约束.md",
-    "prompt，command，shell 区别.md",
-    "promise详解.md",
-    "Pasted image 20260320102646.png",
-    "SessionPrompt流程图.md",
-    "Hono.md",
-    "TS 接口驱动.md",
-=======
-    "AI 代码撰写规范.md",
->>>>>>> 32d7c500f5ca9b250450c73d82ace96c5a98ebf3
     "如何本质地理解一个 TypeScript 项目.md",
-    "SessionPrompt流程图.md",
-    "zod详细.md",
-    "processor.md",
-    "TypeScript AI-Friendly 代码规范文档.md",
-    "Message.md",
-    "promise详解.md",
-    "手柄配置.md",
-    "数据流.md",
-    "Hono Context (c) 完整参考.md",
-    "AI 社交.md",
     "未命名.md",
-    "TS 接口驱动.md",
-    "readme.md",
-    "流程图.md",
-    "Tool.md",
-    "Hono.md",
-    "packages/fanfandeagent/Feature Spec.md",
-    "fanfande_studio_vault/Config思路.md",
-    "fanfande_studio_vault/栈.md",
-    "Provider.md",
     "项目抽象.md",
-    "packages/fanfandeagent/src/database/Sqlite.ts",
-    "packages/fanfandeagent/src/database/db.ts",
-    "packages/fanfandeagent/src/bus/spec.md",
-    "packages/fanfandeagent/src/bus/project-bus.ts",
-    "packages/fanfandeagent/Skills/Auto-Sync Subpath Imports.md",
-    "packages/fanfandeagent/Skills",
-    "packages/fanfandeagent/src/session/processor.ts",
-    "packages/fanfandeagent/src/session/shell.ts",
-    "packages/fanfandeagent/src/session/session.ts",
-    "packages/fanfandeagent/src/session/message.ts",
-    "packages/fanfandeagent/src/session/engine.ts",
-    "packages/fanfandeagent/src/database/parser.ts",
-    "packages/fanfandeagent/src/session/SESSION_ARCHITECTURE.md",
-<<<<<<< HEAD
-    "手柄配置.md",
+    "词法作用域 vs 动态作用域.md",
+    "Hono.md",
+    "prompt，command，shell 区别.md",
+    "TS  泛型约束.md",
+    "SessionPrompt 中 Callbacks 队列等待机制详解.md",
     "Tool.md",
+    "数据流.md",
+    "readme.md",
+    "AI 代码撰写规范.md",
+    "AI 社交.md",
+    "TS 接口驱动.md",
+    "zod详细.md",
+    "Hono Context (c) 完整参考.md",
+    "Provider.md",
+    "promise详解.md",
+    "processor.md",
     "Message.md",
-=======
->>>>>>> 32d7c500f5ca9b250450c73d82ace96c5a98ebf3
-    "packages/fanfandeagent/node_modules/exif-parser/test/test.jpg",
-    "packages/fanfandeagent/node_modules/exif-parser/test/starfish.jpg",
-    "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/widgets@2x.png",
-    "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/widgets.png",
-    "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/icons@2x.png",
-    "packages/fanfandeagent/node_modules/await-to-js/dist/docs/assets/images/icons.png",
-    "packages/fanfandeagent/node_modules/@jimp/plugin-print/dist/fonts/open-sans/open-sans-8-white/open-sans-8-white.png",
-    "packages/fanfandeagent/node_modules/@jimp/plugin-print/dist/fonts/open-sans/open-sans-8-black/open-sans-8-black.png",
-    "packages/fanfandeagent/node_modules/@jimp/plugin-print/dist/fonts/open-sans/open-sans-64-white/open-sans-64-white.png"
+    "手柄配置.md",
+    "流程图.md"
   ]
 }

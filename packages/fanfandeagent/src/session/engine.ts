@@ -15,7 +15,10 @@ import * as Identifier from "#id/id.ts";
 import { fn } from "#util/fn.ts";
 import * as Status from "#session/status.ts"
 import * as Session from "#session/session.ts"
+import * as Processor from "#session/processor.ts"
 import { CONNREFUSED } from "node:dns";
+import { defaultErrorMap } from "zod/v3";
+import { Provider } from "#config/config.ts";
 
 
 const log = Log.create({ service: "session.engine" })
@@ -146,11 +149,8 @@ const prompt = fn(PromptInput, async (input) => {
 
     //input.noreply
 
-<<<<<<< HEAD
     //在这之前，相当于准备完毕本地的数据，接下来，只需要一个sessonid即可开始循环
-=======
 
->>>>>>> 32d7c500f5ca9b250450c73d82ace96c5a98ebf3
     return loop({ sessionID: input.sessionID })
 })
 
@@ -167,19 +167,122 @@ const loop = fn(LoopInput, async (input) => {
 
     //resume and start
     //尝试创建打断
-    const abort =start(sessionID)
-    if(!abort){
+    const abort = start(sessionID)
+    if (!abort) {
         //创建失败，说明当前
-        return new Promise<Message.WithParts>((resolve, reject)=>{
-            resolve(null)
-        })
+        //return new Promise<Message.WithParts>((resolve, reject)=>{
+        //    resolve(null)
+        //})
     }
+
+    using _ = defer(() => cancel(sessionID))
 
     let step = 0
-
+    const session = Session.getSession({ id: sessionID })    //执行一次prompt
     while (true) {
         Status.set(sessionID, { type: "busy" })
+        log.info("loop", { step, sessionID })
+        //if (abort.aborted) break
+        //历史消息
+        let msg = []
+
+        let lastUser: Message.User | undefined //最后一个用户消息
+        let lastAssistant: Message.Assistant | undefined//最后一个assistant消息
+        let lastFinished: Message.Assistant | undefined//最后一个已完成的assistant消息
+        let tasks: (Message.CompactionPart | Message.SubtaskPart)[] = []// 收集未完成状态下的压缩任务和子任务
+
+        for (let i = msgs.length - 1; i >= 0; i--) {
+            const msg = msgs[i]
+            if (!lastUser && msg.info.role === "user") lastUser = msg.info as Message.User
+            if (!lastAssistant && msg.info.role === "assistant") lastAssistant = msg.info as Message.Assistant
+            if (!lastFinished && msg.info.role === "assistant" && msg.info.finish)
+                lastFinished = msg.info as Message.Assistant
+            if (lastUser && lastFinished) break
+            const task = msg.parts.filter((part) => part.type === "compaction" || part.type === "subtask")
+            if (task && !lastFinished) {
+                tasks.push(...task)
+            }
+        }
+
+        if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+
+        //loop 结束点
+        if (
+            lastAssistant?.finish &&
+            !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
+            lastUser.id < lastAssistant.id
+        ) {
+            log.info("exiting loop", { sessionID })
+            break
+        }
+
+        step++
+        if (step === 1) {
+            //生成标题，先不做
+        }
+
+        //获取模型参数
+        const model = await Provider.getmodel()
+
+        //pending subtask
+
+        //pending compaction
+
+
+        const processor = Processor.create({
+
+        })
+
+
+
+        const result = await processor.process({
+            user: lastUser,
+            sessionID: sessionID,
+            model: Provider.Model,
+            agent: Agent.Info,
+            system: string[],
+            abort: AbortSignal,
+            messages: [
+                ...Message.toModelMessages(msgs, model)
+            ],
+            small?: boolean,
+            tools: tools,
+            retries?: number,
+        })
+
+        if (result === "stop") break
+
+        // if (result === "compact") {
+        //     await SessionCompaction.create({
+        //         sessionID,
+        //         agent: lastUser.agent,
+        //         model: lastUser.model,
+        //         auto: true,
+        //         overflow: !processor.message.finish,
+        //     })
+        // }
+        // continue
     }
+
+
+    for await (const item of Message.stream(sessionID)) {
+      if (item.info.role === "user") continue
+    //   const queued = state()[sessionID]?.callbacks ?? []
+    //   for (const q of queued) {
+    //     q.resolve(item)
+    //   }
+    //返回第一个"Assiatant"信息
+      return item
+    }
+
+    throw new Error("Impossible")
+
+
+
+
+
+
+
 })
 
 

@@ -1,7 +1,7 @@
 import os from "os"
 //import { Installation } from "@/installation"
-import { Provider } from "../provider/provider"
-import { Log } from "@/util/log"
+import * as  Provider  from "#provider/provider.ts"
+import * as  Log  from "#util/log.ts"
 import {
   streamText,
   Output,
@@ -21,34 +21,36 @@ import {
 } from "ai"
 import { clone, mergeDeep, pipe } from "remeda"
 //import { ProviderTransform } from "@/provider/transform"
-import { Config } from "@/config/config"
+import * as  Config  from "#config/config.ts"
 import { Instance } from "@/project/instance"
 import { Agent } from "@/agent/agent"
-import { Message } from './message'
+import * as  Message  from '#session/message.ts'
 //import { Plugin } from "@/plugin"
 ///import { SystemPrompt } from "./system"
 import { Flag } from "@/flag/flag"
 ///import { PermissionNext } from "@/permission/next"
-import { Auth } from "../auth/auth"
+//import { Auth } from "../auth/auth"
 import { text } from "stream/consumers"
 import { z } from "zod"
-import {} from "#db/index.ts"
+import * as db  from "#database/Sqlite.ts"
+import {deepseek} from "@ai-sdk/deepseek"
 
 
 
 const log = Log.create({ service: "llm" })
 
-export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
+//export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
 
-export const VERSION = "1.0.0"; // 随便加个值
+//export const VERSION = "1.0.0"; // 随便加个值
 //`StreamInput`：用于流式处理 LLM 消息的输入参数类型定义（使用vercal sdk  需要的参数）
+
 export type StreamInput = {
   user: Message.User,
   sessionID: string,
   model: Provider.Model,
   agent: Agent.Info,
   system: string[],
-  abort: AbortSignal,
+  abort: AbortSignal, 
   messages: ModelMessage[],
   small?: boolean,
   tools: Record<string, Tool>,
@@ -56,11 +58,7 @@ export type StreamInput = {
 }
 
 export type StreamOutput = StreamTextResult<ToolSet, never>
-/**
- * LLM 无状态输入的入口
- * @param input 
- * @returns 
- */
+
 export async function stream(input: StreamInput): Promise<StreamOutput> {
   const l = log
     .clone()
@@ -335,7 +333,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //     extractReasoningMiddleware({ tagName: "think", startWithReasoning: false }),
     //   ],
     // }),
-    model: language,
+    model: deepseek.languageModel("deepseek-reasoner"),
     experimental_telemetry: { isEnabled: cfg.experimental?.openTelemetry },
   })
 }
