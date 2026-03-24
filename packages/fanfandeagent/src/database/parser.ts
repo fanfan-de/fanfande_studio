@@ -81,7 +81,7 @@ function zodToSQLiteType(schema: $ZodType): SQLiteColumnDef["type"] {
   if (schema instanceof z.ZodBigInt) return "INTEGER";       // Zod v4 新增
   if (schema instanceof z.ZodBoolean) return "INTEGER";    // SQLite 无 BOOL
   if (schema instanceof z.ZodBigInt) return "INTEGER";
-  if (schema instanceof z.ZodDate) return "TEXT";          // ISO 字符串
+  if (schema instanceof z.ZodDate) return "INTEGER";          // 时间戳毫秒数
   if (schema instanceof z.ZodEnum) return "TEXT";
   if (schema instanceof z.ZodLiteral) {
     const val = schema.def.values[0];

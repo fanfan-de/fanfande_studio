@@ -3,9 +3,10 @@ import { Instance } from "#project/instance.ts"
 import z from "zod"
 import path from "path"
 import { Server } from "#server/server.ts"
-import { Agent } from "#agent/agent.ts"
-import { ModelsDev } from "#provider/modelsdev.ts"
+import * as  Agent  from "#agent/agent.ts"
+import {DevModel,DevProvider}  from "#provider/modelsdev.ts"
 import * as  Auth  from "#auth/auth.ts"
+
 
 
 
@@ -53,14 +54,14 @@ export async function get() {
 
 
 
-export const Provider = ModelsDev.Provider.partial()
+export const Provider = DevProvider.partial()
     .extend({
         whitelist: z.array(z.string()).optional(),
         blacklist: z.array(z.string()).optional(),
         models: z
             .record(
                 z.string(),
-                ModelsDev.Model.partial().extend({
+                DevModel.partial().extend({
                     variants: z
                         .record(
                             z.string(),

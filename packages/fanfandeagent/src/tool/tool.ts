@@ -11,7 +11,7 @@ interface Metadata {
 }
 
 export interface InitContext {
-    agent?: Agent.Info
+    agent?: Agent.AgentInfo
 }
 
 export type Context<M extends Metadata = Metadata> = {

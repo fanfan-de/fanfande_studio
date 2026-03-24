@@ -23,7 +23,7 @@ import { clone, mergeDeep, pipe } from "remeda"
 //import { ProviderTransform } from "@/provider/transform"
 import * as  Config  from "#config/config.ts"
 import { Instance } from "@/project/instance"
-import { Agent } from "@/agent/agent"
+import * as  Agent  from "#agent/agent.ts"
 import * as  Message  from '#session/message.ts'
 //import { Plugin } from "@/plugin"
 ///import { SystemPrompt } from "./system"
@@ -48,7 +48,7 @@ export type StreamInput = {
   user: Message.User,
   sessionID: string,
   model: Provider.Model,
-  agent: Agent.Info,
+  agent: Agent.AgentInfo,
   system: string[],
   abort: AbortSignal, 
   messages: ModelMessage[],
@@ -73,11 +73,11 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     providerID: input.model.providerID,
   })
 
-  const [language, cfg, provider, auth] = await Promise.all([
-    Provider.getLanguage(input.model),
-    Config.get(),
-    Provider.getProvider(input.model.providerID),
-    Auth.get(input.model.providerID),
+  const [language] = await Promise.all([
+    Provider.deepseekreasoningmodel
+     //Config.get(),
+    ///Provider.getProvider(input.model.providerID),
+    //Auth.get(input.model.providerID),
   ])
 
   //const isCodex = provider.id === "openai" && auth?.type === "oauth"
@@ -333,8 +333,8 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //     extractReasoningMiddleware({ tagName: "think", startWithReasoning: false }),
     //   ],
     // }),
-    model: deepseek.languageModel("deepseek-reasoner"),
-    experimental_telemetry: { isEnabled: cfg.experimental?.openTelemetry },
+    model: Provider.deepseekreasoningmodel
+    //experimental_telemetry: { isEnabled: cfg.experimental?.openTelemetry },
   })
 }
 

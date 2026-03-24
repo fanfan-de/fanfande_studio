@@ -21,7 +21,7 @@ import {
 import { NamedError } from "#util/error.ts"
 import { define } from "#bus/bus-event.ts"
 import { iife } from "#util/iife.ts"
-import { Identifier } from "#id/id.ts";
+import * as  Identifier  from "#id/id.ts";
 import { fn } from "#util/fn.ts";
 import * as db from "#database/Sqlite.ts"
 
@@ -433,10 +433,10 @@ export const WithParts = z.object({
 })
 export type WithParts = z.infer<typeof WithParts>
 
-function Create<T extends z.ZodObject>(rawshape: z.ZodRawShape):T{
-    const result = z.object(rawshape) 
-    return result
-}
+// function Create<T extends z.ZodObject>(rawshape: z.ZodRawShape): T {
+//     const result = z.object(rawshape)
+//     return result
+// }
 
 
 export const Event = {
@@ -742,65 +742,4 @@ export function toModelMessages(input: WithParts[]/*, model: Provider.Model*/): 
     //)
     return result
 }
-
-//异步生成器，返回 messageid,本地读取？
-// export const stream = fn(Identifier.schema("session"), async function* (sessionID) {
-//     //获得session下所有的message
-//     //const list = await Array.fromAsync(await Storage.list(["message", sessionID]))
-//     const list = await db.findMany("messages", {
-//         where: [{ column: "sessionID", operator: "=", value: "sessionID" }],
-//     })
-//     for (let i = list.length - 1; i >= 0; i--) {
-//         yield await get({
-//             sessionID,
-//             messageID: list[i]![2]!,
-//         })
-//     }
-// })
-
-
-// export const parts = fn(Identifier.schema("message"), async (messageID) => {
-//     const result = [] as Part[]
-//     for (const item of await Storage.list(["part", messageID])) {
-//         const read = await Storage.read<Part>(item)
-//         result.push(read)
-//     }
-//     result.sort((a, b) => (a.id > b.id ? 1 : -1))
-//     return result
-// })
-// /**
-//  * 输入：sessionid+messageid
-//  * 输出：对应的withpart
-//  */
-// export const get = fn(
-//     z.object({
-//         sessionID: Identifier.schema("session"),
-//         messageID: Identifier.schema("message"),
-//     }),
-//     async (input): Promise<WithParts> => {
-//         return {
-//             info: await Storage.read<MessageInfo>(["message", input.sessionID, input.messageID]),
-//             parts: await parts(input.messageID),
-//         }
-//     },
-// )
-
-// export async function filterCompacted(stream: AsyncIterable<WithParts>) {
-//     const result = [] as WithParts[]
-//     const completed = new Set<string>()
-//     for await (const msg of stream) {
-//         result.push(msg)
-//         if (
-//             msg.info.role === "user" &&
-//             completed.has(msg.info.id) &&
-//             msg.parts.some((part) => part.type === "compaction")
-//         )
-//             break
-//         if (msg.info.role === "assistant" && msg.info.summary && msg.info.finish) completed.add(msg.info.parentID)
-//     }
-//     result.reverse()
-//     return result
-// }
-
-
 

@@ -13,16 +13,29 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/fanfandeagent/src/provider/AISDK.md",
+                "file": "未命名 2.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "AISDK"
+              "title": "未命名 2"
+            }
+          },
+          {
+            "id": "f8cb4ca104435170",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.12.7"
+              },
+              "icon": "lucide-book-up",
+              "title": "版本说明 1.12.7"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -79,8 +92,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "right": {
     "id": "0e26e5315e7c2117",
@@ -187,11 +199,16 @@
       "mermaid-tools:Open Mermaid Toolbar": false
     }
   },
-  "active": "e8de20d6e430372b",
+  "active": "f8cb4ca104435170",
   "lastOpenFiles": [
+    "packages/fanfandeagent/src/session/prompt.ts",
+    "packages/fanfandeagent/TS_PROJECT_STRUCTURE.md",
+    "packages/fanfandeagent/project_structure.md",
+    "packages/fanfandeagent/generate_tree.py",
+    "packages/fanfandeagent/src/provider/AISDK.md",
+    "未命名 2.md",
     "packages/fanfandeagent/src/provider/modelsdev.ts",
     "未命名 1.md",
-    "packages/fanfandeagent/src/provider/AISDK.md",
     "单次session的循环.md",
     "如何本质地理解一个 TypeScript 项目.md",
     "未命名.md",
@@ -211,9 +228,6 @@
     "Hono Context (c) 完整参考.md",
     "Provider.md",
     "promise详解.md",
-    "processor.md",
-    "Message.md",
-    "手柄配置.md",
-    "流程图.md"
+    "processor.md"
   ]
 }

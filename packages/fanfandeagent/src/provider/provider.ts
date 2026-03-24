@@ -1,11 +1,11 @@
-import * as Log  from "#util/log.ts";
+import * as Log from "#util/log.ts";
 import z from "zod"
 import {
     type LanguageModel,
     type Provider,
     type Provider as SDKProvider,
 } from "ai"
-import * as ModelsDev  from "#provider/modelsdev.ts"
+import * as ModelsDev from "#provider/modelsdev.ts"
 import { createDeepSeek, deepseek } from "@ai-sdk/deepseek";
 import { openai } from "@ai-sdk/openai"
 import { Instance } from "@/project/instance";
@@ -14,9 +14,9 @@ import { NamedError } from "@/util/error";
 import fuzzysort from "fuzzysort"
 //import { Config } from "@/config/config";
 import { iife } from "@/util/iife";
-import * as  Env  from "#env/env.ts";
+import * as  Env from "#env/env.ts";
 
-import {} from "@ai-sdk/deepseek"
+import { } from "@ai-sdk/deepseek"
 
 /**
  * 存储所有支持的provider
@@ -24,76 +24,76 @@ import {} from "@ai-sdk/deepseek"
 
 const log = Log.create({ service: "provider" })
 
-  export const Model = z
+export const Model = z
     .object({
-      id: z.string(),
-      providerID: z.string(),
-      api: z.object({
         id: z.string(),
-        url: z.string(),
-        npm: z.string(),
-      }),
-      name: z.string(),
-      family: z.string().optional(),
-      capabilities: z.object({
-        temperature: z.boolean(),
-        reasoning: z.boolean(),
-        attachment: z.boolean(),
-        toolcall: z.boolean(),
-        input: z.object({
-          text: z.boolean(),
-          audio: z.boolean(),
-          image: z.boolean(),
-          video: z.boolean(),
-          pdf: z.boolean(),
+        providerID: z.string(),
+        api: z.object({
+            id: z.string(),
+            url: z.string(),
+            npm: z.string(),
         }),
-        output: z.object({
-          text: z.boolean(),
-          audio: z.boolean(),
-          image: z.boolean(),
-          video: z.boolean(),
-          pdf: z.boolean(),
+        name: z.string(),
+        family: z.string().optional(),
+        capabilities: z.object({
+            temperature: z.boolean(),
+            reasoning: z.boolean(),
+            attachment: z.boolean(),
+            toolcall: z.boolean(),
+            input: z.object({
+                text: z.boolean(),
+                audio: z.boolean(),
+                image: z.boolean(),
+                video: z.boolean(),
+                pdf: z.boolean(),
+            }),
+            output: z.object({
+                text: z.boolean(),
+                audio: z.boolean(),
+                image: z.boolean(),
+                video: z.boolean(),
+                pdf: z.boolean(),
+            }),
+            interleaved: z.union([
+                z.boolean(),
+                z.object({
+                    field: z.enum(["reasoning_content", "reasoning_details"]),
+                }),
+            ]),
         }),
-        interleaved: z.union([
-          z.boolean(),
-          z.object({
-            field: z.enum(["reasoning_content", "reasoning_details"]),
-          }),
-        ]),
-      }),
-      cost: z.object({
-        input: z.number(),
-        output: z.number(),
-        cache: z.object({
-          read: z.number(),
-          write: z.number(),
-        }),
-        experimentalOver200K: z
-          .object({
+        cost: z.object({
             input: z.number(),
             output: z.number(),
             cache: z.object({
-              read: z.number(),
-              write: z.number(),
+                read: z.number(),
+                write: z.number(),
             }),
-          })
-          .optional(),
-      }),
-      limit: z.object({
-        context: z.number(),
-        input: z.number().optional(),
-        output: z.number(),
-      }),
-      status: z.enum(["alpha", "beta", "deprecated", "active"]),
-      options: z.record(z.string(), z.any()),
-      headers: z.record(z.string(), z.string()),
-      release_date: z.string(),
-      variants: z.record(z.string(), z.record(z.string(), z.any())).optional(),
+            experimentalOver200K: z
+                .object({
+                    input: z.number(),
+                    output: z.number(),
+                    cache: z.object({
+                        read: z.number(),
+                        write: z.number(),
+                    }),
+                })
+                .optional(),
+        }),
+        limit: z.object({
+            context: z.number(),
+            input: z.number().optional(),
+            output: z.number(),
+        }),
+        status: z.enum(["alpha", "beta", "deprecated", "active"]),
+        options: z.record(z.string(), z.any()),
+        headers: z.record(z.string(), z.string()),
+        release_date: z.string(),
+        variants: z.record(z.string(), z.record(z.string(), z.any())).optional(),
     })
     .meta({
-      ref: "Model",
+        ref: "Model",
     })
-  export type Model = z.infer<typeof Model>
+export type Model = z.infer<typeof Model>
 
 
 export const ProviderInfo = z
@@ -113,14 +113,21 @@ export type ProviderInfo = z.infer<typeof ProviderInfo>
 
 
 
-//project instance级别的provider设置
+/**
+ * 
+ * return
+        models: Map<string, LanguageModel>() ，Instance可用的Model
+        providers：{ [providerID: string]: ProviderInfo }，Instance可用的的Provider
+        sdk：Map<number, SDKProvider>()    AI SDK提供的 provider
+        modelLoaders,
+ */
 const state = Instance.state(async () => {
     using _ = log.time("state")
 
     //const config = await Config.get() //用户的配置设置
-    const modelsDev:Record<string,ModelsDev.Provider> = await ModelsDev.get()
-    //存储所有的providers的容器
-    const database = mapValues(modelsDev, fromModelsDevProvider)
+    const DevProviders: Record<string, ModelsDev.DevProvider> = await ModelsDev.get()
+    //存储所有的潜在providers的容器（从modeldevs中构建）
+    const AllProviders = mapValues(DevProviders, fromModelsDevProvider)
     //const disabled = new Set(config.disabled_providers ?? [])
     //const enabled = config.enabled_providers ? new Set(config.enabled_providers) : null
 
@@ -139,13 +146,13 @@ const state = Instance.state(async () => {
     //字典，所有的可用的model实例，键值是 providerid+languageid
     const languages = new Map<string, LanguageModel>()
     //用于抽象不同 AI 服务（OpenAI、Anthropic 等）的模型加载逻辑。
-    const modelLoaders: {
-        [providerID: string]: CustomModelLoader
-    } = {}
+    // const modelLoaders: {
+    //     [providerID: string]: CustomModelLoader
+    // } = {}
     //缓存AI SDK Provider实例，键为配置哈希，避免重复初始化
     const sdk = new Map<number, SDKProvider>()
 
-    // log.info("init")
+    log.info("init")
 
     // const configProviders = Object.entries(config.provider ?? {})
 
@@ -166,7 +173,7 @@ const state = Instance.state(async () => {
             providers[providerID] = mergeDeep(existing, provider)
             return
         }
-        const match = database[providerID]
+        const match = AllProviders[providerID]
         if (!match) return
         // @ts-expect-error
         providers[providerID] = mergeDeep(match, provider)
@@ -260,7 +267,7 @@ const state = Instance.state(async () => {
 
     // load env
     const env = Env.all()
-    for (const [providerID, provider] of Object.entries(database)) {
+    for (const [providerID, provider] of Object.entries(AllProviders)) {
         const apiKey = provider.env.map((item) => env[item]).find(Boolean)
         if (!apiKey) continue
         mergeProvider(providerID, {
@@ -269,151 +276,37 @@ const state = Instance.state(async () => {
         })
     }
 
-    // load apikeys
-    // for (const [providerID, provider] of Object.entries(await Auth.all())) {
-    
-    //     if (provider.type === "api") {
-    //         mergeProvider(providerID, {
-    //             source: "api",
-    //             key: provider.key,
-    //         })
-    //     }
-    // }
+    for (const [id, provider] of Object.entries(providers)) {
+        for (const [modelID, model] of Object.entries(provider.models)) {
 
-    // for (const plugin of await Plugin.list()) {
-    //     if (!plugin.auth) continue
-    //     const providerID = plugin.auth.provider
-    //     if (disabled.has(providerID)) continue
 
-    //     // For github-copilot plugin, check if auth exists for either github-copilot or github-copilot-enterprise
-    //     let hasAuth = false
-    //     const auth = await Auth.get(providerID)
-    //     if (auth) hasAuth = true
+        }
+    }
 
-    //     // Special handling for github-copilot: also check for enterprise auth
-    //     if (providerID === "github-copilot" && !hasAuth) {
-    //         const enterpriseAuth = await Auth.get("github-copilot-enterprise")
-    //         if (enterpriseAuth) hasAuth = true
-    //     }
 
-    //     if (!hasAuth) continue
-    //     if (!plugin.auth.loader) continue
 
-    //     // Load for the main provider if auth exists
-    //     if (auth) {
-    //         const options = await plugin.auth.loader(() => Auth.get(providerID) as any, database[plugin.auth.provider])
-    //         const opts = options ?? {}
-    //         const patch: Partial<Info> = providers[providerID] ? { options: opts } : { source: "custom", options: opts }
-    //         mergeProvider(providerID, patch)
-    //     }
 
-    //     // If this is github-copilot plugin, also register for github-copilot-enterprise if auth exists
-    //     if (providerID === "github-copilot") {
-    //         const enterpriseProviderID = "github-copilot-enterprise"
-    //         if (!disabled.has(enterpriseProviderID)) {
-    //             const enterpriseAuth = await Auth.get(enterpriseProviderID)
-    //             if (enterpriseAuth) {
-    //                 const enterpriseOptions = await plugin.auth.loader(
-    //                     () => Auth.get(enterpriseProviderID) as any,
-    //                     database[enterpriseProviderID],
-    //                 )
-    //                 const opts = enterpriseOptions ?? {}
-    //                 const patch: Partial<Info> = providers[enterpriseProviderID]
-    //                     ? { options: opts }
-    //                     : { source: "custom", options: opts }
-    //                 mergeProvider(enterpriseProviderID, patch)
-    //             }
-    //         }
-    //     }
-    // }
 
-    // for (const [providerID, fn] of Object.entries(CUSTOM_LOADERS)) {
-    //     if (disabled.has(providerID)) continue
-    //     const data = database[providerID]
-    //     if (!data) {
-    //         log.error("Provider does not exist in model list " + providerID)
-    //         continue
-    //     }
-    //     const result = await fn(data)
-    //     if (result && (result.autoload || providers[providerID])) {
-    //         if (result.getModel) modelLoaders[providerID] = result.getModel
-    //         const opts = result.options ?? {}
-    //         const patch: Partial<Info> = providers[providerID] ? { options: opts } : { source: "custom", options: opts }
-    //         mergeProvider(providerID, patch)
-    //     }
-    // }
-
-    // // load config
-    // for (const [providerID, provider] of configProviders) {
-    //     const partial: Partial<Info> = { source: "config" }
-    //     if (provider.env) partial.env = provider.env
-    //     if (provider.name) partial.name = provider.name
-    //     if (provider.options) partial.options = provider.options
-    //     mergeProvider(providerID, partial)
-    // }
-
-    // for (const [providerID, provider] of Object.entries(providers)) {
-    //     if (!isProviderAllowed(providerID)) {
-    //         delete providers[providerID]
-    //         continue
-    //     }
-
-    //     const configProvider = config.provider?.[providerID]
-
-    //     for (const [modelID, model] of Object.entries(provider.models)) {
-    //         model.api.id = model.api.id ?? model.id ?? modelID
-    //         if (modelID === "gpt-5-chat-latest" || (providerID === "openrouter" && modelID === "openai/gpt-5-chat"))
-    //             delete provider.models[modelID]
-    //         if (model.status === "alpha" && !Flag.OPENCODE_ENABLE_EXPERIMENTAL_MODELS) delete provider.models[modelID]
-    //         if (model.status === "deprecated") delete provider.models[modelID]
-    //         if (
-    //             (configProvider?.blacklist && configProvider.blacklist.includes(modelID)) ||
-    //             (configProvider?.whitelist && !configProvider.whitelist.includes(modelID))
-    //         )
-    //             delete provider.models[modelID]
-
-    //         model.variants = mapValues(ProviderTransform.variants(model), (v) => v)
-
-    //         // Filter out disabled variants from config
-    //         const configVariants = configProvider?.models?.[modelID]?.variants
-    //         if (configVariants && model.variants) {
-    //             const merged = mergeDeep(model.variants, configVariants)
-    //             model.variants = mapValues(
-    //                 pickBy(merged, (v) => !v.disabled),
-    //                 (v) => omit(v, ["disabled"]),
-    //             )
-    //         }
-    //     }
-
-    //     if (Object.keys(provider.models).length === 0) {
-    //         delete providers[providerID]
-    //         continue
-    //     }
-
-    //     log.info("found", { providerID })
-    // }
-    //每一個項目，對應一個模型配置
-    //
     return {
         models: languages,
         providers,
         sdk,
-        modelLoaders,
+        // modelLoaders,
     }
 })
 /**
  * 列出project的已有的providers
  * @returns 
  */
-export async function list() {
+async function list() {
     return state().then((state) => state.providers)
 }
 //获得project特定的provider
-export async function getProvider(providerID: string) {
+async function getProvider(providerID: string) {
     return state().then((s) => s.providers[providerID])
 }
 //获得模型
-export async function getModel(providerID: string, modelID: string) {
+async function getModel(providerID: string, modelID: string) {
     const s = await state()
     const provider = s.providers[providerID]
     if (!provider) {
@@ -434,7 +327,7 @@ export async function getModel(providerID: string, modelID: string) {
 }
 
 
-function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model): Model {
+function fromModelsDevModel(provider: ModelsDev.DevProvider, model: ModelsDev.DevModel): Model {
     const m: Model = {
         id: model.id,
         providerID: provider.id,
@@ -501,7 +394,7 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
     return m
 }
 
-export function fromModelsDevProvider(provider: ModelsDev.Provider): ProviderInfo {
+export function fromModelsDevProvider(provider: ModelsDev.DevProvider): ProviderInfo {
     return {
         id: provider.id,
         source: "custom",
@@ -511,40 +404,51 @@ export function fromModelsDevProvider(provider: ModelsDev.Provider): ProviderInf
         models: mapValues(provider.models, (model) => fromModelsDevModel(provider, model)),
     }
 }
+/**
+ * model，provider都是本项目自己定义的type（准确说是匹配 modeldev上面的定义的结构）
+ * 需要找到转成AI SDK中对应的SDK
+ * @param model 
+ * @returns 
+ */
+// async function getLanguage(model: Model): Promise<LanguageModel> {
+//     const s = await state()
+//     //模板字符串语法，
+//     // 使用反引号（`）而不是单引号或双引号
+//     //允许在字符串中嵌入表达式
+//     //表达式用 ${} 包裹
+//     const key = `${model.providerID}/${model.id}`
+//     if (s.models.has(key))
+//         return s.models.get(key)!
 
-//model，provider都是本项目自己定义的type（准确说是匹配 modeldev上面的定义的结构），
-// 需要找到转成AI SDK中对应的SDK
-export async function getLanguage(model: Model): Promise<LanguageModel> {
-    const s = await state()
-    //模板字符串语法，
-    // 使用反引号（`）而不是单引号或双引号
-    //允许在字符串中嵌入表达式
-    //表达式用 ${} 包裹
-    const key = `${model.providerID}/${model.id}`
-    if (s.models.has(key)) return s.models.get(key)!
+//     const provider = s.providers[model.providerID]
+//     const sdk = await getSDK(model)
 
-    const provider = s.providers[model.providerID]
-    const sdk = await getSDK(model)
+//     try {
+//         const language = s.modelLoaders[model.providerID]
+//             ? await s.modelLoaders[model.providerID](sdk, model.api.id, provider.options)
+//             : sdk.languageModel(model.api.id)
+//         s.models.set(key, language)
+//         return language
+//     } catch (e) {
+//         if (e instanceof NoSuchModelError)
+//             throw new ModelNotFoundError(
+//                 {
+//                     modelID: model.id,
+//                     providerID: model.providerID,
+//                 },
+//                 { cause: e },
+//             )
+//         throw e
+//     }
+// }
 
-    try {
-        const language = s.modelLoaders[model.providerID]
-            ? await s.modelLoaders[model.providerID](sdk, model.api.id, provider.options)
-            : sdk.languageModel(model.api.id)
-        s.models.set(key, language)
-        return language
-    } catch (e) {
-        if (e instanceof NoSuchModelError)
-            throw new ModelNotFoundError(
-                {
-                    modelID: model.id,
-                    providerID: model.providerID,
-                },
-                { cause: e },
-            )
-        throw e
-    }
+/**
+ * 动态初始化并返回一个用于与特定大语言模型 (LLM) 供应商通信的 SDK 实例。
+ * @param model 
+ */
+async function getSDK(model: Model) {
+
 }
-
 
 
 
@@ -565,8 +469,22 @@ export const InitError = NamedError.create(
 )
 
 
-export {
+const deepseekprovider = deepseek
+const deepseekreasoningmodel = deepseek.languageModel("deepseek-reasoner")
 
+
+
+
+
+
+export {
+    list,
+    getProvider,
+    getModel,
+    //getLanguage,
+    //temp
+    deepseekprovider,
+    deepseekreasoningmodel,
 }
 
 
