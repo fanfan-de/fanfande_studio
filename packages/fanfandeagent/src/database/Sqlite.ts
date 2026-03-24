@@ -2,7 +2,8 @@ import { Database } from "bun:sqlite";
 import { record, z, ZodType } from "zod";
 import { toCreateTableSQL, zodObjectToColumnDefs, } from "./parser"
 import type { SQLiteColumnDef } from "./parser"
-import * as Error from "#util/error.ts"
+//import * as Error from "#util/error.ts"
+
 
 
 // #region Constants ──────────────────────────────────────
@@ -163,10 +164,15 @@ function toSQLiteValue<T extends Record<string, unknown>>(
  * fromSQLiteRecord(UserSchema, { name: "Alice", born: 1718000000000 });
  * // → { name: "Alice", born: Date(...) }
  */
-function fromSQLiteRecord<T extends z.ZodObject>(
+function fromSQLiteRecord<T extends z.ZodType>(
   schema: T,
   record: Record<string, SQLiteValue>,
 ): z.output<T> {
+  // 运行时检查：如果不是 ZodObject，抛出错误
+  if (!(schema instanceof z.ZodObject)) {
+    //抛出错误
+    throw new Error()
+  }
   const shape = schema.shape;
   const obj: Record<string, unknown> = {};
 
@@ -593,7 +599,7 @@ function exists(tableName: string, where: WhereClause[]): boolean {
  * const UserSchema = z.object({ name: z.string(), age: z.number() });
  * findManyWithSchema("users", UserSchema, { limit: 10 });
  */
-function findManyWithSchema<T extends z.ZodObject>(
+function findManyWithSchema<T extends z.ZodType>(
   tableName: string,
   schema: T,
   options: QueryOptions = {},
@@ -723,12 +729,6 @@ function deleteAll(tableName: string): number {
 
 
 
-export const NotFoundError = Error.NamedError.create(
-  "NotFoundError",
-  z.object({
-    message: z.string(),
-  }),
-)
 
 
 
@@ -749,16 +749,19 @@ export {
   findById,
   findMany,
   findManyWithSchema,
-
+  count,
+  exists,
 
   updateMany,
   updateAll,
   updateById,
 
-
   deleteAll,
   deleteById,
   deleteMany,
+
+  toSQLiteValue,
+  fromSQLiteRecord,
 }
 
 // #endregion

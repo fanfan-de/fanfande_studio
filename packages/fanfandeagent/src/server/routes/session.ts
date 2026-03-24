@@ -1,5 +1,5 @@
 import { lazy } from "@/util/lazy";
-import { Log } from "@/util/log";
+import * as  Log  from "@/util/log";
 import { Hono } from "hono";
 
 

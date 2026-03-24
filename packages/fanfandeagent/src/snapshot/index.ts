@@ -1,10 +1,10 @@
 import { $ } from "bun"
 import path from "path"
 import fs from "fs/promises"
-import { Log } from "../util/log"
-import { Global } from "../global/global"
+import * as  Log  from "../util/log"
+import * as  Global  from "../global/global"
 import z from "zod"
-import { Config } from "../config/config"
+import * as  Config  from "#config/config.ts"
 import { Instance } from "../project/instance"
 import { Scheduler } from "../scheduler"
 
@@ -216,13 +216,13 @@ export namespace Snapshot {
       .lines()) {
       if (!line) continue
       const [additions, deletions, rawFile] = line.split("\t")
-      const file = unquote(rawFile)
+      const file = unquote(rawFile!)
       const isBinaryFile = additions === "-" && deletions === "-"
 
       const before = isBinaryFile ? "" : await show(from, file)
       const after = isBinaryFile ? "" : await show(to, file)
-      const added = isBinaryFile ? 0 : parseInt(additions)
-      const deleted = isBinaryFile ? 0 : parseInt(deletions)
+      const added = isBinaryFile ? 0 : parseInt(additions!)
+      const deleted = isBinaryFile ? 0 : parseInt(deletions!)
       result.push({
         file,
         before,
@@ -285,7 +285,7 @@ export namespace Snapshot {
           if (charCode < 128) {
             buffer.push(charCode)
           } else {
-            const charBuffer = Buffer.from(quoted[i])
+            const charBuffer = Buffer.from(quoted[i]!)
             for (const byte of charBuffer) {
               buffer.push(byte)
             }

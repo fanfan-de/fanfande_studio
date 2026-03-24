@@ -4,16 +4,14 @@ import * as LLM from '#session/llm.ts';
 //import type { StreamInput } from "./llm"
 import * as Message from "#session/message.ts"
 //import { Message } from "./message";
-import *as  Identifier from "#id/id.ts";
+import * as  Identifier from "#id/id.ts";
 import { ZodDate } from "zod";
 import { matchedRoutes } from "hono/route";
 import * as Session from "#session/session.ts"
-//一次LLM调用的循环处理器
 
 const log = Log.create({ service: "session.processor" })
 
-//创建一个处理器:涵盖 发送LLM Input-> 接受处理steam
-/**
+/**创建一个处理器:涵盖 发送LLM Input-> 接受处理steam
  * 
  * @param input 
  * @returns 
@@ -28,7 +26,6 @@ export function create(input: {
     let attempt = 0
     let needsCompaction = false
 
-
     const result = {
         get message() {
             return input.Assistant
@@ -37,7 +34,7 @@ export function create(input: {
             return toolcalls[toolCallID]
         },
         async process(streamInput: LLM.StreamInput) {
-            //重试循环
+            //重试循环,直到end
             while (true) {
 
                 const stream = await LLM.stream(streamInput)
@@ -49,7 +46,6 @@ export function create(input: {
 
                 for await (const value of stream.fullStream) {
                     switch (value.type) {
-
                         case "text-start":
                             currentText = {
                                 id: Identifier.ascending("part"),
