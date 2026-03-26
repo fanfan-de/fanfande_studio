@@ -152,6 +152,72 @@ function toSQLiteValue<T extends Record<string, unknown>>(
   return result;
 }
 
+
+
+function isZodDiscriminatedUnion(schema: z.ZodType): schema is z.ZodDiscriminatedUnion<any, any> {
+  return schema instanceof z.ZodDiscriminatedUnion;
+}
+/** 提取联合类型数据的公共部分和变体特有部分
+ * @param schema ZodDiscriminatedUnion 联合类型 schema
+ * @param data 完整的联合类型数据
+ * @returns 分割后的公共部分和变体特有部分（JSON字符串）
+ */
+function splitUnionData(
+  schema: z.ZodDiscriminatedUnion<any, any>,
+  data: any
+): { common: Record<string, unknown>, variantData: string } {
+  const options = schema.options as z.ZodObject<any, any>[];
+  if (!options || options.length === 0) {
+    throw new Error('Invalid discriminated union schema');
+  }
+  
+  // 1. 收集所有变体的 key 集合
+  const allKeySets = options.map((opt) => new Set(Object.keys(opt.shape)));
+  
+  // 2. 求所有变体的 key 交集 → 共有 key
+  const commonKeys = allKeySets.reduce(
+    (acc, set) => new Set([...acc].filter((key) => set.has(key)))
+  );
+  
+  // 3. 分割数据
+  const common: Record<string, unknown> = {};
+  const variant: Record<string, unknown> = {};
+  
+  for (const [key, value] of Object.entries(data)) {
+    if (commonKeys.has(key)) {
+      common[key] = value;
+    } else {
+      variant[key] = value;
+    }
+  }
+  
+  return {
+    common,
+    variantData: JSON.stringify(variant)
+  };
+}
+
+/** 合并公共字段和变体数据重建完整对象
+ * @param schema ZodDiscriminatedUnion 联合类型 schema
+ * @param common 公共字段数据
+ * @param variantData 变体特有数据的 JSON 字符串
+ * @returns 完整的联合类型对象
+ */
+function mergeUnionData(
+  schema: z.ZodDiscriminatedUnion<any, any>,
+  common: Record<string, unknown>,
+  variantData: string
+): any {
+  let variant: Record<string, unknown> = {};
+  try {
+    variant = JSON.parse(variantData);
+  } catch {
+    // 如果解析失败，保持空对象
+  }
+  
+  return { ...common, ...variant };
+}
+
 /**将 SQLite 记录还原为 Zod Schema 描述的业务对象
  *
  * 还原规则（与 toSQLiteValue 对称）：
@@ -168,6 +234,19 @@ function fromSQLiteRecord<T extends z.ZodType>(
   schema: T,
   record: Record<string, SQLiteValue>,
 ): z.output<T> {
+  // 支持 ZodDiscriminatedUnion 类型
+  if (isZodDiscriminatedUnion(schema)) {
+    // 从记录中提取 data 字段
+    const { data, ...commonFields } = record;
+    const variantData = typeof data === 'string' ? data : '';
+    
+    // 合并数据
+    const merged = mergeUnionData(schema, commonFields as Record<string, unknown>, variantData);
+    
+    // 使用 Zod 校验并返回
+    return schema.parse(merged);
+  }
+  
   // 运行时检查：如果不是 ZodObject，抛出错误
   if (!(schema instanceof z.ZodObject)) {
     //抛出错误
@@ -421,7 +500,86 @@ function insertOneWithSchema<T extends z.ZodType>(
   schema: T,
 ): number | bigint {
   const parsed = schema.parse(data); // 校验失败抛出 ZodError
+  console.log("insert")
+  // 自动检测联合类型
+  if (isZodDiscriminatedUnion(schema)) {
+    // 调用联合类型专用插入函数
+    console.log("Union insert")
+    return insertOneUnion(tableName, parsed, schema as z.ZodDiscriminatedUnion<any, any>);
+  }
+  
   return insertOne(tableName, parsed as Record<string, unknown>);
+}
+
+/**
+ * 插入单条联合类型记录
+ * 
+ * @example
+ * const UnionSchema = z.discriminatedUnion("type", [
+ *   z.object({ type: z.literal("text"), content: z.string() }),
+ *   z.object({ type: z.literal("image"), url: z.string() }),
+ * ]);
+ * insertOneUnion("union_table", { type: "text", content: "Hello" }, UnionSchema);
+ */
+function insertOneUnion<T extends z.ZodDiscriminatedUnion<any, any>>(
+  tableName: string,
+  data: z.infer<T>,
+  schema: T,
+): number | bigint {
+  const parsed = schema.parse(data); // 校验失败抛出 ZodError
+  
+  // 分割数据为公共部分和变体特有部分
+  const { common, variantData } = splitUnionData(schema, parsed);
+  
+  // 准备插入数据：公共字段 + data 字段
+  const record = {
+    ...toSQLiteValue(common),
+    data: variantData
+  };
+  
+  return insertOne(tableName, record);
+}
+
+/**
+ * 批量插入联合类型记录
+ * 
+ * @example
+ * insertManyUnion("union_table", [
+ *   { type: "text", content: "Hello" },
+ *   { type: "image", url: "test.jpg" },
+ * ], UnionSchema);
+ */
+function insertManyUnion<T extends z.ZodDiscriminatedUnion<any, any>>(
+  tableName: string,
+  dataList: z.infer<T>[],
+  schema: T,
+): number {
+  if (dataList.length === 0) return 0;
+  
+  const convertedDataList = dataList.map((data) => {
+    const parsed = schema.parse(data);
+    const { common, variantData } = splitUnionData(schema, parsed);
+    return {
+      ...toSQLiteValue(common),
+      data: variantData
+    };
+  });
+  
+  const keys = Object.keys(convertedDataList[0]!);
+  const placeholders = keys.map(() => "?").join(", ");
+  const sql = `INSERT INTO ${tableName} (${keys.join(", ")}) VALUES (${placeholders});`;
+  const stmt = db.prepare(sql);
+  
+  const runInTransaction = db.transaction((items: Record<string, SQLiteValue>[]) => {
+    let count = 0;
+    for (const item of items) {
+      stmt.run(...keys.map((k) => item[k] as SQLiteValue));
+      count++;
+    }
+    return count;
+  });
+  
+  return runInTransaction(convertedDataList);
 }
 
 /**批量插入（使用事务包裹，性能极高）
@@ -642,6 +800,75 @@ function updateMany(
 }
 
 /**
+ * 按条件更新多条联合类型记录
+ *
+ * @returns 受影响的行数
+ * @throws  未提供 WHERE 条件时抛错（防止误更新全表）
+ *
+ * @example
+ * const UnionSchema = z.discriminatedUnion("type", [...]);
+ * updateManyUnion("union_table", { type: "text", content: "Updated" }, [{ column: "id", value: "u1" }], UnionSchema);
+ */
+function updateManyUnion<T extends z.ZodDiscriminatedUnion<any, any>>(
+  tableName: string,
+  data: z.infer<T>,
+  where: WhereClause[],
+  schema: T,
+): number {
+  if (where.length === 0) {
+    throw new Error(
+      "UPDATE 必须提供 WHERE 条件，防止误更新全表。如需更新全表请使用 updateAll。",
+    );
+  }
+
+  const parsed = schema.parse(data); // 校验失败抛出 ZodError
+  
+  // 分割数据为公共部分和变体特有部分
+  const { common, variantData } = splitUnionData(schema, parsed);
+  
+  // 准备更新数据：公共字段 + data 字段
+  const _data = {
+    ...toSQLiteValue(common),
+    data: variantData
+  };
+
+  const keys = Object.keys(_data);
+  const setClause = keys.map((k) => `${k} = ?`).join(", ");
+  const setValues = Object.values(_data);
+  const { sql: whereSql, params: whereParams } = buildWhereClause(where);
+
+  const sql = `UPDATE ${tableName} SET ${setClause}${whereSql};`;
+  return db.prepare(sql).run(...setValues, ...whereParams).changes;
+}
+
+/**
+ * 按条件更新多条记录（带 Zod 校验，自动检测联合类型）
+ *
+ * @returns 受影响的行数
+ * @throws  未提供 WHERE 条件时抛错（防止误更新全表）
+ *
+ * @example
+ * updateManyWithSchema("users", { name: "Alice V2", age: 31 }, [{ column: "id", value: "u1" }], UserSchema);
+ */
+function updateManyWithSchema<T extends z.ZodType>(
+  tableName: string,
+  data: z.infer<T>,
+  where: WhereClause[],
+  schema: T,
+): number {
+  const parsed = schema.parse(data); // 校验失败抛出 ZodError
+  
+  // 自动检测联合类型
+  if (isZodDiscriminatedUnion(schema)) {
+    // 调用联合类型专用更新函数
+    return updateManyUnion(tableName, parsed, where, schema as z.ZodDiscriminatedUnion<any, any>);
+  }
+  
+  // 普通对象更新
+  return updateMany(tableName, parsed as Record<string, unknown>, where);
+}
+
+/**
  * 根据主键 ID 更新（快捷方法）
  *
  * @returns 受影响的行数
@@ -745,6 +972,8 @@ export {
   insertOne,
   insertMany,
   insertOneWithSchema,
+  insertOneUnion,
+  insertManyUnion,
 
   findById,
   findMany,
@@ -753,6 +982,8 @@ export {
   exists,
 
   updateMany,
+  updateManyWithSchema,
+  updateManyUnion,
   updateAll,
   updateById,
 
@@ -762,6 +993,9 @@ export {
 
   toSQLiteValue,
   fromSQLiteRecord,
+  isZodDiscriminatedUnion,
+  splitUnionData,
+  mergeUnionData,
 }
 
 // #endregion

@@ -1,9 +1,7 @@
 import * as Provider from "#provider/provider.ts";
 import * as  Log from "#util/log.ts"
 import * as LLM from '#session/llm.ts';
-//import type { StreamInput } from "./llm"
 import * as Message from "#session/message.ts"
-//import { Message } from "./message";
 import * as  Identifier from "#id/id.ts";
 import { ZodDate } from "zod";
 import { matchedRoutes } from "hono/route";
@@ -11,14 +9,14 @@ import * as Session from "#session/session.ts"
 
 const log = Log.create({ service: "session.processor" })
 
-/**创建一个处理器:涵盖 发送LLM Input-> 接受处理steam
+/**创建一个
  * 
  * @param input 
  * @returns 
  */
 export function create(input: {
-    Assistant: Message.Assistant,
-    abort: AbortSignal
+    Assistant: Message.Assistant
+    //abort: AbortSignal
 }) {
     const toolcalls: Record<string, Message.ToolPart> = {}
     let snapshot: string | undefined
@@ -36,14 +34,11 @@ export function create(input: {
         async process(streamInput: LLM.StreamInput) {
             //重试循环,直到end
             while (true) {
-
                 const stream = await LLM.stream(streamInput)
-
                 let currentText: Message.TextPart | undefined = undefined
                 //某些模型（如 Claude、Gemini）支持多个并行推理链或嵌套推理
                 let reasoningMap: Record<string, Message.ReasoningPart> = {}
                 let toolcalls: Record<string, Message.ToolPart> = {}
-
                 for await (const value of stream.fullStream) {
                     switch (value.type) {
                         case "text-start":
@@ -58,6 +53,7 @@ export function create(input: {
                                 },
                                 metadata: value.providerMetadata,
                             }
+                            process.stdout.write("text-start:")
                             break;
                         case "text-end":
                             if (currentText) {
@@ -67,7 +63,8 @@ export function create(input: {
                                 if (value.providerMetadata)
                                     currentText.metadata = value.providerMetadata
                                 //将part写入存储
-                                await Session.DataBaseCreate("parts", currentText)
+                                Session.DataBaseCreate("parts", currentText)
+                                process.stdout.write("\n")
 
                             }
                             break;
@@ -76,6 +73,8 @@ export function create(input: {
                                 currentText.text += value.text
                                 if (value.providerMetadata)
                                     currentText.metadata = value.providerMetadata
+
+                                process.stdout.write(value.text)
                             }
                             break;
                         case "reasoning-start":
@@ -93,6 +92,8 @@ export function create(input: {
                             }
                             reasoningMap[value.id] = reasoningPart
 
+                            process.stdout.write("reasoning start")
+
                             break;
                         case "reasoning-end":
                             if (value.id in reasoningMap) {
@@ -106,17 +107,18 @@ export function create(input: {
                                     }
                                     if (value.providerMetadata) part!.metadata = value.providerMetadata
 
-                                    await Session.updatePart(part)
+                                    Session.DataBaseCreate("parts", part)
                                     delete reasoningMap[value.id]//已经存盘，内存可以删除了
                                 }
                             }
+                            process.stdout.write("\n")
                             break;
                         case "reasoning-delta":
                             if (value.id in reasoningMap) {
                                 const part = reasoningMap[value.id]
                                 part!.text += value.text
                                 if (value.providerMetadata) part!.metadata = value.providerMetadata
-
+                                process.stdout.write(value.text)
                             }
                             break
 

@@ -1,19 +1,8 @@
 import { test, expect } from "bun:test"
-// 导入模型定义，可能涉及底层 provider 的初始化环境
-
-// 被测模块：Processor 处理逻辑
 import * as Processor from "#session/processor.ts"
-// 消息模型：定义了 Assistant 消息的结构和类型
 import * as Message from "#session/message.ts"
 
-/**
- * 测试意图：验证 Processor 的初始化逻辑和基础 Getter。
- * 
- * 重点：
- * 1. 确保 Processor.create 工厂函数能正确接收并存储初始消息对象。
- * 2. 验证 Processor 对外暴露的消息对象与输入对象保持引用一致性。
- * 3. 验证在没有任何工具调用（Tool Call）的情况下，查询方法能正确处理边界情况（返回 undefined）。
- */
+
 test("create returns processor with correct message getter", () => {
   // 准备阶段：构造一个模拟的 AI 助手消息对象 (Assistant Message)
   // 该对象包含了消息的所有元数据，如：ID、模型 ID、消耗统计、路径信息等。
@@ -56,7 +45,6 @@ test("create returns processor with correct message getter", () => {
   // 当处理器刚刚创建且没有任何 tool_call 时，通过不存在的 ID 查询 tool part 应该返回 undefined
   expect(processor.partFromToolCall("nonexistent")).toBeUndefined()
 
-  processor.process()
 })
 
 /**

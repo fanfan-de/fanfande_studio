@@ -1,0 +1,13 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["./src"], 
+  "entryPointStrategy": "expand",
+  "out": "docs/data-dictionary",
+  "name": "项目数据定义字典",
+  "includeVersion": true,
+  "hideGenerator": true,
+  "searchInComments": true,
+  "cleanOutputDir": true,
+  "exclude": ["**/*.test.ts", "**/*.spec.ts", "node_modules/**"],
+  "externalPattern": ["node_modules/**"]
+}

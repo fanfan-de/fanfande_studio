@@ -1,28 +1,3 @@
-/**
- * @MODULE: [Session - 负责Session的模块]
- * 
- * 1. 【数据形状 / Shapes】
- *    - 核心实体: [如 Order, User]
- *    - 会话生命周期: created -> updated(活跃) -> archived(归档) | deleted(删除)
- *      - 会话层级: 根会话(parentID=null) / 子会话(parentID!=null)
- *      - 分享状态: 未分享(share=undefined) -> 已分享(share.url) -> 取消分享(share=undefined)
- *      - 回退状态: 无回退点(revert=undefined) -> 设置回退点(revert={messageID, partID?, snapshot?, diff?}) -> 清除回退点
- * 
- * 2. 【变换规则 / Transforms】
- *    - 核心路径: 
- *          - 创建: create/createNext -> 构建 Info 对象(生成降序ID + slug) -> INSERT SessionTable -> 发布 Event.Created + Event.Updated -> 自动分享(若配置)
- *          - 删除: remove -> 递归删除子会话 -> unshare -> DELETE SessionTable(CASCADE 自动删除 Message/Part) -> 发布 Event.Deleted
- *    - 核心公式: [如 total = price * qty + tax - discount]
- * 
- * 3. 【驱动时序 / Timing】
- *    - 触发源: [如 用户点击 / MQ 消息 / 定时任务]
- *    - 副作用: [如 修改外部 DB / 发送 Email / 更新缓存]
- * 
- * 4. 【契约约束 / Constraints】
- *    - 禁止: [如 严禁绕过 Service 直接操作 Repo]
- *    - 必须: [如 所有金额计算必须使用 Decimal.js 以防精度丢失]
- */
-
 import * as Log from "#util/log.ts"
 import z from "zod"
 import *  as  Identifier from "#id/id.ts"
@@ -32,7 +7,6 @@ import * as  BusEvent from "#bus/bus-event.ts"
 import * as Message from "#session/message.ts"
 import { Instance } from "#project/instance.ts"
 import * as  Project from "#project/project.ts"
-//import { Slug } from "#util/slug.ts"
 import * as  Installation from "#installation/installation.ts"
 import { fn } from "#util/fn.ts"
 import * as db from "#database/Sqlite.ts"
@@ -40,6 +14,7 @@ import { zodObjectToColumnDefs, toCreateTableSQL, } from "#database/parser.ts"
 import type { } from "#project/project.ts"
 
 
+console.log("session")
 //#region Type & Interface
 // 定义映射关系
 interface TableRecordMap {
@@ -122,12 +97,15 @@ const childTiltePrefic = "子对话"
 //建表操作
 if (!db.tableExists("sessions")) {
     db.createTableByZodObject("sessions", SessionInfo)
+    console.log("建表")
 }
 if (!db.tableExists("messages")) {
     db.createTableByZodDiscriminatedUnion("messages", Message.MessageInfo)
+    console.log("建表")
 }
 if (!db.tableExists("parts")) {
     db.createTableByZodDiscriminatedUnion("parts", Message.Part)
+    console.log("建表")
 }
 //#endregion
 
@@ -223,24 +201,24 @@ async function createSession(
     //db insert
     DataBaseCreate("sessions", result)
 
-    Bus.publish(Event.Created, {
-        info: result,
-    })
+    // Bus.publish(Event.Created, {
+    //     info: result,
+    // })
 
-    Bus.publish(Event.Updated, {
-        info: result,
-    })
+    // Bus.publish(Event.Updated, {
+    //     info: result,
+    // })
 
     return result;
 }
-async function getSession(input: {
-    id: string
-}) {
-    const result = DataBaseRead("sessions", input.id)
-    if (!result)
-        throw new db.NotFoundError({ message: `Session not found: ${input.id}` })
-    return result 
-}
+// async function getSession(input: {
+//     id: string
+// }) {
+//     const result = DataBaseRead("sessions", input.id)
+//     if (!result)
+//         throw new db.NotFoundError({ message: `Session not found: ${input.id}` })
+//     return result
+// }
 
 //删除Session
 
@@ -248,7 +226,7 @@ async function getSession(input: {
 
 
 //创建新的message
-async function createMessage()
+// async function createMessage()
 
 const updateMessage = fn(Message.MessageInfo, async (msg) => {
     DataBaseCreate("messages", msg)
@@ -258,18 +236,42 @@ const updatePart = fn(Message.Part, async (part) => {
     DataBaseCreate("parts", part)
 })
 
+//创建session
+const createsession = fn(z.object({
+    //parentID: z.string().optional(),
+    title: z.string().optional(),
+    workspaceID: z.string().optional(),
+
+}), async (input) => {
+    const result: SessionInfo = {
+        id: Identifier.descending("session"),
+        //slug: Slug.create(),
+        version: Installation.VERSION,
+        projectID: Instance.project.id,
+        directory: Instance.directory,
+        //workspaceID: input.workspaceID,
+        //parentID: input.parentID,
+        title: "default title",
+        //permission: input.permission,
+        time: {
+            created: Date.now(),
+            updated: Date.now(),
+        },
+    }
+})
+
 
 
 export {
     Event,//session的生命周期事件
     //Session的CRUD操作
     createSession,//在本地创建session记录
-    forkSession,//
-    touchSession,//会话保活？
+    // forkSession,//
+    // touchSession,//会话保活？
 
-    getSession,
-    share,
-    unshare,
+    // getSession,
+    // share,
+    // unshare,
 
     DataBaseCreate,
     DataBaseRead,
@@ -280,9 +282,9 @@ export {
     updatePart,//本地创建part记录
 
 
-    remove,
+    // remove,
 
-    initialize,//会话初始化功能，用于在AI对话会话开始时建立连接并准备环境
+    // initialize,//会话初始化功能，用于在AI对话会话开始时建立连接并准备环境
 
     //session生命周期
 

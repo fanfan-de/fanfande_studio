@@ -24,6 +24,7 @@ import { iife } from "#util/iife.ts"
 import * as  Identifier  from "#id/id.ts";
 import { fn } from "#util/fn.ts";
 import * as db from "#database/Sqlite.ts"
+import * as Provider from "#provider/provider.ts"
 
 export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
 export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
@@ -421,7 +422,7 @@ export const Environment = Base.extend({
 })
 export type Environment = z.infer<typeof Environment>
 
-export const MessageInfo = z.discriminatedUnion("role", [User, Assistant, Environment]).meta({
+export const MessageInfo = z.discriminatedUnion("role", [User, Assistant]).meta({
     ref: "Message",
 })
 export type MessageInfo = z.infer<typeof MessageInfo>
@@ -481,265 +482,15 @@ export const Event = {
 }
 
 
-
-export function toModelMessages(input: WithParts[]/*, model: Provider.Model*/): ModelMessage[] {
-    const result: ModelMessage[] = []
-    //const toolNames = new Set<string>()
-
-    // const toModelOutput = (output: unknown) => {
-    //     if (typeof output === "string") {
-    //         return { type: "text", value: output }
-    //     }
-
-    //     if (typeof output === "object") {
-    //         const outputObject = output as {
-    //             text: string
-    //             attachments?: Array<{ mime: string; url: string }>
-    //         }
-    //         const attachments = (outputObject.attachments ?? []).filter((attachment) => {
-    //             return attachment.url.startsWith("data:") && attachment.url.includes(",")
-    //         })
-
-    //         return {
-    //             type: "content",
-    //             value: [
-    //                 { type: "text", text: outputObject.text },
-    //                 ...attachments.map((attachment) => ({
-    //                     type: "media",
-    //                     mediaType: attachment.mime,
-    //                     data: iife(() => {
-    //                         const commaIndex = attachment.url.indexOf(",")
-    //                         return commaIndex === -1 ? attachment.url : attachment.url.slice(commaIndex + 1)
-    //                     }),
-    //                 })),
-    //             ],
-    //         }
-    //     }
-
-    //     return { type: "json", value: output as never }
-    // }
-
-    for (const msg of input) {
-        if (msg.parts.length === 0) continue
-
-        if (msg.info.role === "user") {
-            const userMessage: UserModelMessage = {
-                role: "user",
-                content: [] as (AI.TextPart | AI.ImagePart | AI.FilePart)[]
-            }
-            result.push(userMessage)
-            for (const part of msg.parts) {
-                //文本
-                if (part.type === "text" && !part.ignored)
-                    (userMessage.content as (AI.TextPart | AI.ImagePart | AI.FilePart)[]).push({
-                        type: "text",
-                        text: part.text,
-                    })
-                // 非文本、非目录的文件类型
-                if (part.type === "file" && part.mime !== "text/plain" && part.mime !== "application/x-directory")
-                    (userMessage.content as (AI.TextPart | AI.ImagePart | AI.FilePart)[]).push({
-                        type: "file",
-                        data: part.url,
-                        mediaType: part.mime,
-                        filename: part.filename,
-                        //providerOptions:
-                    })
-                //Image
-                if (part.type === "image" && part.mime && part.mime.startsWith("image/")) {
-                    (userMessage.content as (AI.TextPart | AI.ImagePart | AI.FilePart)[]).push({
-                        type: "image" as const,
-                        image: part.url,  // 可以是 URL 或 base64 字符串
-                        mediaType: part.mime, // 例如 "image/jpeg", "image/png"
-                        //providerOptions:
-                    });
-                }
-
-                // if (part.type === "compaction") {
-                //     userMessage.parts.push({
-                //         type: "text",
-                //         text: "What did we do so far?",
-                //     })
-                // }
-
-                // if (part.type === "subtask") {
-                //     userMessage.parts.push({
-                //         type: "text",
-                //         text: "The following tool was executed by the user",
-                //     })
-                // }
-            }
-        }
-
-        if (msg.info.role === "assistant") {
-            // const differentModel = `${model.providerID}/${model.id}` !== `${msg.info.providerID}/${msg.info.modelID}`
-            // if (
-            //     msg.info.error &&
-            //     !(
-            //         Message.AbortedError.isInstance(msg.info.error) &&
-            //         msg.parts.some((part) => part.type !== "step-start" && part.type !== "reasoning")
-            //     )
-            // ) {
-            //     continue
-            // }
-            const assistantMessage: AssistantModelMessage = {
-                //id: msg.info.id,
-                role: "assistant",
-                content: [] as (AI.TextPart | AI.FilePart |
-                    ReasoningPart | AI.ToolCallPart |
-                    AI.ToolResultPart | AI.ToolApprovalRequest)[],
-                //providerOptions
-            }
-            for (const part of msg.parts) {
-                //文本
-                if (part.type === "text" && !part.ignored)
-                    (assistantMessage.content as AI.TextPart[]).push({
-                        type: "text",
-                        text: part.text,
-                    })
-                //FilePart
-                if (part.type === "file" && part.mime !== "text/plain" && part.mime !== "application/x-directory")
-                    (assistantMessage.content as AI.FilePart[]).push({
-                        type: "file",
-                        data: part.url,
-                        mediaType: part.mime,
-                        filename: part.filename,
-                        //providerOptions:
-                    })
-                //
-                if (part.type === "reasoning") {
-                    (assistantMessage.content as AI.ReasoningUIPart[]).push(
-                        {
-                            type: "reasoning",
-                            text: part.text,
-                            //state:part.
-                            //providerMetadata
-                        }
-                    )
-                }
-
-                // if (part.type === "step-start")
-                //     assistantMessage.parts.push({
-                //         type: "step-start",
-                //     })
-                // if (part.type === "tool") {
-                //     toolNames.add(part.tool)
-                //     if (part.state.status === "completed") {
-                //         const outputText = part.state.time.compacted ? "[Old tool result content cleared]" : part.state.output
-                //         const attachments = part.state.time.compacted ? [] : (part.state.attachments ?? [])
-                //  .d       const output =
-                //             attachments.length > 0
-                //                 ? {
-                //                     text: outputText,
-                //                     attachments,
-                //                 }
-                //                 : outputText
-
-                //         assistantMessage.parts.push({
-                //             type: ("tool-" + part.tool) as `tool-${string}`,
-                //             state: "output-available",
-                //             toolCallId: part.callID,
-                //             input: part.state.input,
-                //             output,
-                //             ...(differentModel ? {} : { callProviderMetadata: part.metadata }),
-                //         })
-                //     }
-                //     if (part.state.status === "error")
-                //         assistantMessage.parts.push({
-                //             type: ("tool-" + part.tool) as `tool-${string}`,
-                //             state: "output-error",
-                //             toolCallId: part.callID,
-                //             input: part.state.input,
-                //             errorText: part.state.error,
-                //             ...(differentModel ? {} : { callProviderMetadata: part.metadata }),
-                //         })
-                //     // Handle pending/running tool calls to prevent dangling tool_use blocks
-                //     // Anthropic/Claude APIs require every tool_use to have a corresponding tool_result
-                //     if (part.state.status === "pending" || part.state.status === "running")
-                //         assistantMessage.parts.push({
-                //             type: ("tool-" + part.tool) as `tool-${string}`,
-                //             state: "output-error",
-                //             toolCallId: part.callID,
-                //             input: part.state.input,
-                //             errorText: "[Tool execution was interrupted]",
-                //             ...(differentModel ? {} : { callProviderMetadata: part.metadata }),
-                //         })
-                // }
-                // if (part.type === "reasoning") {
-                //     assistantMessage.parts.push({
-                //         type: "reasoning",
-                //         text: part.text,
-                //         ...(differentModel ? {} : { providerMetadata: part.metadata }),
-                //     })
-                // }
-            }
-            if (assistantMessage.content.length > 0) {
-                result.push(assistantMessage)
-            }
-        }
-
-        if (msg.info.role === "Envirnment") {
-
-            const environmentMessage: ToolModelMessage = {
-                role: "tool",
-                content: [] as AI.ToolContent as (AI.ToolResultPart | AI.ToolApprovalResponse)[],
-                //providerOptions
-            }
-
-            for (const part of msg.parts) {
-                if (part.type === "tool") {
-                    environmentMessage.content.push({
-                        type: "tool-result",
-                        toolCallId: part.callID,
-                        toolName: part.tool,
-                        output: (() => {
-                            if (part.state.status === "pending")
-                                return {
-                                    type: "text",
-                                    value: ""
-                                    //providerOptions?: SharedV3ProviderOptions | undefined;
-                                }
-                            if (part.state.status === "running")
-                                return {
-                                    type: "text",
-                                    value: ""
-                                    //providerOptions?: SharedV3ProviderOptions | undefined;
-                                }
-                            if (part.state.status === "completed")
-                                return {
-                                    type: "text",
-                                    value: "",
-                                    //providerOptions?: SharedV3ProviderOptions | undefined;
-                                }
-                            if (part.state.status === "error")
-                                return {
-                                    type: "text",
-                                    value: "",
-                                }
-                            else {
-                                return {
-                                    type: "text",
-                                    value: "",
-                                }
-
-                            }
-                        })(),
-
-
-                    })
-                }
-            }
-        }
-    }
-
-    // const tools = Object.fromEntries(Array.from(toolNames).map((toolName) => [toolName, { toModelOutput }]))
-
-    // return convertToModelMessages(
-    //     result.filter((msg) => msg.parts.some((part) => part.type !== "step-start")),
-    //     {
-    //         //@ts-expect-error (convertToModelMessages expects a ToolSet but only actually needs tools[name]?.toModelOutput)
-    //         tools,
-    //     },
-    //)
+/**
+ *  将项目内部的message格式  WithParts[]  转换成   AI SDK 的message格式  ModelMessage[]
+ * 
+ * @param input 
+ * @param model 
+ * @returns 
+ */
+export function toModelMessages(input: WithParts[], model: Provider.Model): ModelMessage[] {
+    
     return result
 }
 
