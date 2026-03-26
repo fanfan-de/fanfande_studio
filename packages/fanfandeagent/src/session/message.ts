@@ -483,14 +483,132 @@ export const Event = {
 
 
 /**
- *  将项目内部的message格式  WithParts[]  转换成   AI SDK 的message格式  ModelMessage[]
+ * 将项目内部的消息格式 WithParts[] 转换为 AI SDK 的消息格式 ModelMessage[]
  * 
- * @param input 
- * @param model 
- * @returns 
+ * 此函数遍历每个 WithParts 对象，根据消息角色（user/assistant/Envirnment）转换为对应的 AI SDK 消息角色，
+ * 并将每个消息的部分（parts）转换为 AI SDK 支持的内容类型（text、reasoning、file、image、tool-call、tool-result）。
+ * 转换过程中会检查模型的能力（capabilities），过滤掉模型不支持的内容类型。
+ * 
+ * @param input - 项目内部的消息数组，每个消息包含元数据（info）和内容部分（parts）
+ * @param model - 提供者模型，包含模型的能力配置，用于过滤不支持的内容类型
+ * @returns 符合 AI SDK 格式的消息数组，可直接用于 AI SDK 的 API 调用
  */
 export function toModelMessages(input: WithParts[], model: Provider.Model): ModelMessage[] {
-    
+    const result: ModelMessage[] = []
+    /** 
+     * 将单个 Part 转换为 AI SDK 支持的内容部分
+     * 根据 part.type 进行分发，检查模型能力，并构建对应的 AI SDK 内容对象
+     * 
+     * @param part - 项目内部的消息部分
+     * @param model - 提供者模型，用于检查能力支持
+     * @returns AI SDK 内容对象或数组，如果不支持则返回 null
+     */
+    function convertPartToAIPart(part: Part, model: Provider.Model): any | any[] | null {
+        switch (part.type) {
+            case "text":
+                if (part.ignored) return null
+                return {
+                    type: "text" as const,
+                    text: part.text
+                }
+            case "reasoning":
+                if (!model.capabilities.reasoning) return null
+                return {
+                    type: "reasoning" as const,
+                    text: part.text
+                }
+            case "file":
+                if (!model.capabilities.attachment) return null
+                return {
+                    type: "file" as const,
+                    mime: part.mime,
+                    url: part.url,
+                    filename: part.filename
+                }
+            case "image":
+                if (!model.capabilities.attachment) return null
+                return {
+                    type: "image" as const,
+                    mime: part.mime,
+                    url: part.url,
+                    filename: part.filename
+                }
+            case "tool":
+                if (!model.capabilities.toolcall) return null
+                const state = part.state
+                if (state.status === "pending" || state.status === "running") {
+                    return {
+                        type: "tool-call" as const,
+                        toolCallId: part.callID,
+                        toolName: part.tool,
+                        input: state.input,
+                        providerMetadata: part.metadata
+                    }
+                } else if (state.status === "completed") {
+                    return {
+                        type: "tool-result" as const,
+                        toolCallId: part.callID,
+                        toolName: part.tool,
+                        input: state.input,
+                        output: {
+                            result: state.output,
+                            metadata: state.metadata,
+                            title: state.title
+                        },
+                        attachments: state.attachments?.map(att => ({
+                            type: "file" as const,
+                            mime: att.mime,
+                            url: att.url,
+                            filename: att.filename
+                        }))
+                    }
+                } else if (state.status === "error") {
+                    return {
+                        type: "tool-result" as const,
+                        toolCallId: part.callID,
+                        toolName: part.tool,
+                        input: state.input,
+                        output: {
+                            result: state.error,
+                            isError: true
+                        }
+                    }
+                }
+                return null
+            default:
+                return null
+        }
+    }
+    for (const item of input) {
+        const role = item.info.role
+        let aiRole: "user" | "assistant" | "system" | "tool"
+        if (role === "user") {
+            aiRole = "user"
+        } else if (role === "assistant") {
+            aiRole = "assistant"
+        } else if (role === "Envirnment") {
+            aiRole = "system"
+        } else {
+            continue
+        }
+        const content: any[] = []
+        for (const part of item.parts) {
+            const aiPart = convertPartToAIPart(part, model)
+            if (aiPart) {
+                if (Array.isArray(aiPart)) {
+                    content.push(...aiPart)
+                } else {
+                    content.push(aiPart)
+                }
+            }
+        }
+        if (content.length > 0) {
+            result.push({
+                role: aiRole,
+                content
+            } as ModelMessage)
+        }
+    }
     return result
 }
 

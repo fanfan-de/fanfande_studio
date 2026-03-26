@@ -1,4 +1,4 @@
-import { Filesystem } from "@/util/filesystem";
+import * as  Filesystem  from "@/util/filesystem";
 import { lazy } from "@/util/lazy";
 import { which } from "@/util/which"
 import path from "path";

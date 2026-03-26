@@ -14,6 +14,7 @@ import { type Tool as AITool, tool, jsonSchema, asSchema } from "ai"
 import * as ToolRegistry from "#tool/registry.ts"
 import * as  db from "#database/Sqlite.ts";
 import * as Agent from "#agent/agent.ts"
+import * as  Tool from "#tool/registry.ts"
 
 
 
@@ -41,7 +42,7 @@ export const state = Instance.state(
 //#region Types & Interfaces
 export const PromptInput = z.object({
     sessionID: Identifier.schema("session"),
-    messageID: Identifier.schema("message").optional(),
+    //messageID: Identifier.schema("message").optional(),
     model: z
         .object({
             providerID: z.string(),
@@ -158,6 +159,7 @@ export const LoopInput = z.object({
 const loop = fn(LoopInput, async (input) => {
     const { sessionID, resume_existing } = input
 
+    console.log("sessionID" + sessionID)
     //resume and start
     //尝试创建打断
     const abort = start(sessionID)
@@ -172,9 +174,12 @@ const loop = fn(LoopInput, async (input) => {
 
     let step = 0
     const session = Session.DataBaseRead("sessions", input.sessionID)    //执行一次prompt
+
     while (true) {
+        console.log("tessssstttt")
         Status.set(sessionID, { type: "busy" })
-        log.info("loop", { step, sessionID })
+        console.log("tessssstttt")
+        //log.info("loop", { step, sessionID })
         //if (abort.aborted) break
         //历史消息
 
@@ -183,6 +188,7 @@ const loop = fn(LoopInput, async (input) => {
             where: [{ column: "sessionID", value: sessionID }],
             orderBy: [{ column: "created", direction: "ASC" }]
         })
+        console.log(msginfos)
 
         let msgs: Message.WithParts[]
 
@@ -212,7 +218,7 @@ const loop = fn(LoopInput, async (input) => {
         let lastAssistant: Message.Assistant | undefined//最后一个assistant消息
         let lastFinished: Message.Assistant | undefined//最后一个已完成的assistant消息
         let tasks: (Message.CompactionPart | Message.SubtaskPart)[] = []// 收集未完成状态下的压缩任务和子任务
-
+        console.log("tessssstttt")
         for (let i = msgs.length - 1; i >= 0; i--) {
             const msg = msgs[i]!
             if (!lastUser && msg.info.role === "user") lastUser = msg.info as Message.User
@@ -228,7 +234,6 @@ const loop = fn(LoopInput, async (input) => {
 
         if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
-        //loop 结束点
         if (
             lastAssistant?.finish &&
             !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
@@ -290,16 +295,21 @@ const loop = fn(LoopInput, async (input) => {
             model: Provider.testDeepSeekModel,
             agent: Agent.planAgent,
             system: [],
-            abort: AbortSignal,
+            abort: abort!,
             messages: [
-                ...Message.toModelMessages(msgs, model)
+                ...Message.toModelMessages(msgs, Provider.testDeepSeekModel)
             ],
-            small?: boolean,
-            tools: tools,
-            retries?: number,
+            //small?: boolean,
+            tools: {}
+            //retries?: number,
         })
 
-        // if (result === "stop") break
+        const modelFinished = processor.message.finish
+        if (modelFinished) {
+            console.log(modelFinished)
+        }
+
+        if (result === "stop") break
 
         // if (result === "compact") {
         //     await SessionCompaction.create({
@@ -310,7 +320,7 @@ const loop = fn(LoopInput, async (input) => {
         //         overflow: !processor.message.finish,
         //     })
         // }
-        // continue
+        continue
     }
 
 
@@ -325,12 +335,6 @@ const loop = fn(LoopInput, async (input) => {
     // }
 
     throw new Error("Impossible")
-
-
-
-
-
-
 
 })
 
@@ -349,7 +353,7 @@ async function createUserMessage(input: PromptInput) {
 
     //构建MessageInfo
     const messageinfo: Message.User = {
-        id: input.messageID ?? Identifier.ascending("message"),
+        id: Identifier.ascending("message"),
         sessionID: input.sessionID,
         role: "user",
         created: Date.now(),
@@ -369,35 +373,35 @@ async function createUserMessage(input: PromptInput) {
             if (part.type === "file")
                 return {
                     id: Identifier.ascending("part"),
-                    messageid: input.messageID,
+                    messageid: messageinfo.id,
                     sessionid: input.sessionID,
                     ...part
                 } as Message.FilePart
             if (part.type === "agent")
                 return {
                     id: Identifier.ascending("part"),
-                    messageid: input.messageID,
+                    messageid: messageinfo.id,
                     sessionid: input.sessionID,
                     ...part
                 } as Message.AgentPart
             if (part.type === "text")
                 return {
                     id: Identifier.ascending("part"),
-                    messageid: input.messageID,
+                    messageid: messageinfo.id,
                     sessionid: input.sessionID,
                     ...part
                 } as Message.TextPart
             if (part.type === "subtask")
                 return {
                     id: Identifier.ascending("part"),
-                    messageid: input.messageID,
+                    messageid: messageinfo.id,
                     sessionid: input.sessionID,
                     ...part
                 } as Message.SubtaskPart
 
             return {
                 id: Identifier.ascending("part"),
-                messageid: input.messageID,
+                messageid: messageinfo.id,
                 sessionid: input.sessionID,
             } as Message.Part
         }
@@ -415,17 +419,17 @@ async function createUserMessage(input: PromptInput) {
         // })
     }
     else
+
         //db 写入message
         Session.DataBaseCreate("messages", messageinfo)
 
 
-    console.log(parts)
+
 
     //检查
     parts.forEach(
         (part, index) => {
             const parsedPart = Message.Part.safeParse(part)
-
             if (parsedPart.success) return
             log.error("invalid user part before save", {
                 sessionID: input.sessionID,
