@@ -1,4 +1,4 @@
-import { Project } from "@/project/project";
+import * as  Project  from "@/project/project";
 import { lazy } from "@/util/lazy";
 import { Hono } from "hono";
 
