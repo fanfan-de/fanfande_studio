@@ -18,6 +18,7 @@ import { time } from "console"
 
 const log = Log.create({ service: "project" })
 
+
 //#region  Type & Interface
 export const ProjectInfo = z
   .object({
@@ -47,6 +48,10 @@ export const ProjectInfo = z
   })
 export type ProjectInfo = z.infer<typeof ProjectInfo>
 //#endregion
+
+
+
+
 
 /**
  * project update event
@@ -413,4 +418,12 @@ export async function sandboxes(projectID: string) {
 //   })
 //   return result
 // }
+
+
+
+//project 建表
+if (!db.tableExists("projects")) {
+    db.createTableByZodObject("Projects", ProjectInfo)
+    console.log("projects建表")
+}
 

@@ -80,5 +80,16 @@ export async function defaultAgent() {
 // }
 
 
+//在这里创建一个agent（该文件中定义的类型）的实例，并导出
+export const planAgent: AgentInfo = {
+    name: "plan",
+    description: "Plan mode. Disallows all edit tools.",
+    mode: "primary",
+    native: true,
+    options: {},
+    steps: Infinity
+}
+
+
 
 

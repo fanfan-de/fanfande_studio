@@ -472,6 +472,51 @@ export const InitError = NamedError.create(
 const deepseekprovider = deepseek
 const deepseekreasoningmodel = deepseek.languageModel("deepseek-reasoner")
 
+//for test
+//在以下位置撰写一个Model和provider的实例，使用的是deepseek reasoner模型（本文件定义的），以供我测试文件来调用测试
+
+// for test - create Model and Provider instances for deepseek reasoner
+const testDeepSeekDevProvider: ModelsDev.DevProvider = {
+    id: "deepseek",
+    name: "DeepSeek",
+    env: ["DEEPSEEK_API_KEY"],
+    api: "https://api.deepseek.com",
+    npm: "@ai-sdk/deepseek",
+    models: {
+        "deepseek-reasoner": {
+            id: "deepseek-reasoner",
+            name: "DeepSeek Reasoner",
+            family: "deepseek",
+            release_date: "2024-01-01",
+            attachment: false,
+            reasoning: true,
+            temperature: true,
+            tool_call: true,
+            interleaved: undefined,
+            cost: {
+                input: 0.0001,
+                output: 0.0002,
+                cache_read: 0,
+                cache_write: 0,
+            },
+            limit: {
+                context: 128000,
+                input: undefined,
+                output: 4096,
+            },
+            modalities: {
+                input: ["text"],
+                output: ["text"],
+            },
+            status: "beta",
+            options: {},
+            headers: {},
+        },
+    },
+};
+
+const testDeepSeekProvider:ProviderInfo = fromModelsDevProvider(testDeepSeekDevProvider);
+const testDeepSeekModel:Model = testDeepSeekProvider.models["deepseek-reasoner"]!;
 
 
 
@@ -485,6 +530,8 @@ export {
     //temp
     deepseekprovider,
     deepseekreasoningmodel,
+    testDeepSeekProvider,
+    testDeepSeekModel,
 }
 
 

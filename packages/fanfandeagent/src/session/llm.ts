@@ -205,9 +205,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   return streamText({
     //------事件回调与网络 (Callbacks & Network)------
     onError(error) {
-      l.error("stream error", {
-        error,
-      })
+      console.error("DEBUG - AI SDK 原始错误详情:", error);
     },
     onFinish: () => { },
     onStepFinish: () => { },

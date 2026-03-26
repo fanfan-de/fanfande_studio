@@ -1,10 +1,10 @@
-import * as Log  from "#util/log.ts"
-import * as  utilContext  from "#util/context.ts"
-import * as Project  from "#project/project.ts"
+import * as Log from "#util/log.ts"
+import * as  utilContext from "#util/context.ts"
+import * as Project from "#project/project.ts"
 
 import { iife } from "#util/iife.ts"
 import { GlobalBus } from "#bus/global.ts"
-import * as  Filesystem  from "#util/filesystem.ts"
+import * as  Filesystem from "#util/filesystem.ts"
 import * as State from "#project/state.ts"
 
 interface Context {
@@ -13,15 +13,12 @@ interface Context {
   project: Project.ProjectInfo
 }
 
-//内部维护的一个  上下文存储容器， Context，directory信息就在其中，
-//context是全局唯一的，本质上就是两个方法
-const contextContainer = utilContext.createContextContainer<Context>(/*"instance"*/)
-//内部维护的一个  目录：Context  的缓存
-//和state的区别是，这里存的是项目的Context信息，即上面的接口的实现
-//state里的recordsByKey 存的是 需要保持为状态的数据？
-const cache= new Map<string, Promise<Context>>()
 
-//外部接口
+const contextContainer = utilContext.createContextContainer<Context>(/*"instance"*/)
+//每个绝对目录对应一个 Context 
+const cache = new Map<string, Promise<Context>>()
+
+
 const Instance = {
   /**
  * state：为当前实例注册一个“惰性状态单例”。
@@ -42,13 +39,15 @@ const Instance = {
    * @returns 
    */
   async provide<R>(input: { directory: string; init?: () => Promise<any>; fn: () => R }): Promise<R> {
+    console.log("a")
     let existing = cache.get(input.directory)
+    console.log("a")
     if (!existing) {
       //说明第一次通过instance.provide 访问这个目录
       Log.Default.info("creating instance", { directory: input.directory })
       existing = iife(async () => {
         const { project, sandbox } = await Project.fromDirectory(input.directory)
-        const ctx:Context = {
+        const ctx: Context = {
           directory: input.directory,
           worktree: sandbox,
           project,
@@ -60,8 +59,8 @@ const Instance = {
       })
       cache.set(input.directory, existing)
     }
-    const ctx:Context = await existing
-
+    console.log("a")
+    const ctx: Context = await existing
     return contextContainer.provide(ctx, async () => {
       return input.fn()
     })
@@ -154,4 +153,4 @@ const Instance = {
 }
 
 
-export {Instance}
+export { Instance }
