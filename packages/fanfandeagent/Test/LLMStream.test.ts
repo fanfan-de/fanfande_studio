@@ -68,6 +68,7 @@ describe('LLM Stream Function Unit Tests', () => {
 
     it('应该正确拼接系统提示词并捕获异常', async () => {
         const input = createMockInput();
+        console.log(input)
 
         console.log('--- 测试开始 ---');
 

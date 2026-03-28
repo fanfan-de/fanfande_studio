@@ -32,16 +32,15 @@ export function create(input: {
             return toolcalls[toolCallID]
         },
         async process(streamInput: LLM.StreamInput) {
-
             while (true) {
                 try {
                     const stream = await LLM.stream(streamInput)
-                    let currentText: Message.TextPart | undefined = undefined
-                    //某些模型（如 Claude、Gemini）支持多个并行推理链或嵌套推理
-                    let reasoningMap: Record<string, Message.ReasoningPart> = {}
-                    let toolcalls: Record<string, Message.ToolPart> = {}
-                    for await (const value of stream.fullStream) {
-                        switch (value.type) {
+                     let currentText: Message.TextPart | undefined = undefined
+                     //某些模型（如 Claude、Gemini）支持多个并行推理链或嵌套推理
+                     let reasoningMap: Record<string, Message.ReasoningPart> = {}
+                     let toolcalls: Record<string, Message.ToolPart> = {}
+                      for await (const value of stream.fullStream) {
+                         switch (value.type) {
                             case "text-start":
                                 currentText = {
                                     id: Identifier.ascending("part"),
@@ -206,30 +205,37 @@ export function create(input: {
                                 break;
                             case "start":
                                 //SessionStatus.set(input.sessionID, { type: "busy" })
+                                //console.log(value)
                                 break;
-                            case 'finish':
-                                // 处理完成事件
-                                // value.finishReason 完成原因
-                                // value.usage 使用统计（token数量等）
-                                // TODO: 更新消息的完成状态和时间
-                                // TODO: 记录使用统计和计费信息
-                                // TODO: 发送完成事件通知 UI
-                                // TODO: 可能需要触发消息压缩（compaction）
-                                break;
+                             case 'finish':
+
+                                 // 处理完成事件
+                                 // value.finishReason 完成原因
+                                 // value.usage 使用统计（token数量等）
+                                 // TODO: 更新消息的完成状态和时间
+                                 // TODO: 记录使用统计和计费信息
+                                 // TODO: 发送完成事件通知 UI
+                                 // TODO: 可能需要触发消息压缩（compaction）
+                                 this.message.finish = value.finishReason
+                                 break;
                             case "abort":
+
                                 break;
                             case "raw":
                                 break;
-                            case 'error':
-                                // 处理错误事件
-                                // value.error 错误信息
-                                // TODO: 记录错误到消息的 error 字段
-                                // TODO: 更新数据库中的错误状态
-                                // TODO: 根据错误类型决定是否重试（增加 attempt）
-                                // TODO: 发送错误事件通知 UI
-                                break;
+                             case 'error':
+                                 // 处理错误事件
+                                 // value.error 错误信息
+                                 // TODO: 记录错误到消息的 error 字段
+                                 // TODO: 更新数据库中的错误状态
+                                 // TODO: 根据错误类型决定是否重试（增加 attempt）
+                                 // TODO: 发送错误事件通知 UI
+                                 console.log("processor: error event received:", value.error)
+                                 log.error("stream error", { error: value.error })
+                                 break;
                             case "finish-step":
                                 //接收到这个value，说明LLM判断结束React loop
+                                console.log(value.finishReason)
                                 this.message.finish = value.finishReason
 
 
@@ -240,13 +246,13 @@ export function create(input: {
                                 // 处理未知事件类型
                                 log.warn(`Unknown stream value type: ${(value as any).type}`);
                                 break;
-                        }
-                    }
-                }
-                catch{
-                    log.error("falure")
-                }
-
+                       }
+                      }
+                  }
+                  catch  (e: any){
+                      log.error("processor failure", { error: e.message, stack: e.stack })
+                      throw e  // 重新抛出错误
+                  }
                 if (needsCompaction) return "compact"
                 if (blocked) return "stop"
                 if (input.Assistant.error) return "stop"

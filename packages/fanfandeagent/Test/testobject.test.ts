@@ -109,10 +109,9 @@ export const CreatePromptInput = (sessionid: string, messageID: string): PromptI
 
     return {
         sessionID: sessionid,
-        messageID: messageID,
         parts: [{
             type: "text",
-            text: "介绍一下你自己",
+            text: "今天天气怎么样",
             time: {
                 start: Date.now()
             },
