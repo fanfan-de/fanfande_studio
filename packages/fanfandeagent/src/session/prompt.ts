@@ -63,8 +63,8 @@ export const PromptInput = z.object({
     parts: z.array(
         z.discriminatedUnion("type", [
             Message.TextPart.omit({
-                messageid: true,
-                sessionid: true,
+                messageID: true,
+                sessionID: true,
             })
                 .partial({
                     id: true,
@@ -73,8 +73,8 @@ export const PromptInput = z.object({
                     ref: "TextPartInput",
                 }),
             Message.FilePart.omit({
-                messageid: true,
-                sessionid: true,
+                messageID: true,
+                sessionID: true,
             })
                 .partial({
                     id: true,
@@ -83,8 +83,8 @@ export const PromptInput = z.object({
                     ref: "FilePartInput",
                 }),
             Message.AgentPart.omit({
-                messageid: true,
-                sessionid: true,
+                messageID: true,
+                sessionID: true,
             })
                 .partial({
                     id: true,
@@ -93,8 +93,8 @@ export const PromptInput = z.object({
                     ref: "AgentPartInput",
                 }),
             Message.SubtaskPart.omit({
-                messageid: true,
-                sessionid: true,
+                messageID: true,
+                sessionID: true,
             })
                 .partial({
                     id: true,
@@ -188,15 +188,15 @@ const loop = fn(LoopInput, async (input) => {
 
         // 查询当前session的所有parts
         const allParts = db.findManyWithSchema("parts", Message.Part, {
-            where: [{ column: "sessionid", value: sessionID }]
+            where: [{ column: "sessionID", value: sessionID }]
         });
 
-        // 按messageid分组
+        // 按messageID分组
         const partsByMessageId = new Map<string, Message.Part[]>();
         for (const part of allParts) {
-            const list = partsByMessageId.get(part.messageid) || [];
+            const list = partsByMessageId.get(part.messageID) || [];
             list.push(part);
-            partsByMessageId.set(part.messageid, list);
+            partsByMessageId.set(part.messageID, list);
         }
 
         // 构建withparts数组
@@ -215,7 +215,7 @@ const loop = fn(LoopInput, async (input) => {
             const msg = msgs[i]!
             if (!lastUser && msg.info.role === "user") lastUser = msg.info as Message.User
             if (!lastAssistant && msg.info.role === "assistant") lastAssistant = msg.info as Message.Assistant
-            if (!lastFinished && msg.info.role === "assistant" && msg.info.finish)
+            if (!lastFinished && msg.info.role === "assistant" && msg.info.finishReason)
                 lastFinished = msg.info as Message.Assistant
             if (lastUser && lastFinished) break
             const task = msg.parts.filter((part) => part.type === "compaction" || part.type === "subtask")
@@ -227,8 +227,8 @@ const loop = fn(LoopInput, async (input) => {
         if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
         if (
-            lastAssistant?.finish &&
-            !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
+            lastAssistant?.finishReason &&
+            !["tool-calls", "unknown"].includes(lastAssistant.finishReason) &&
             lastUser.id < lastAssistant.id
         ) {
             log.info("exiting loop", { sessionID })
@@ -256,7 +256,6 @@ const loop = fn(LoopInput, async (input) => {
             parentID: "",
             modelID: "deepseek-reasoner",
             providerID: "deepseek",
-            mode: "plan",
             agent: "plan",
             path: {
                 cwd: Instance.directory,
@@ -295,7 +294,7 @@ const loop = fn(LoopInput, async (input) => {
 
         Session.DataBaseCreate("messages", assistantMessage)
 
-        const modelFinished = processor.message.finish
+        const modelFinished = processor.message.finishReason
 
         
         if (modelFinished) {
@@ -311,7 +310,7 @@ const loop = fn(LoopInput, async (input) => {
         //         agent: lastUser.agent,
         //         model: lastUser.model,
         //         auto: true,
-        //         overflow: !processor.message.finish,
+        //         overflow: !processor.message.finishReason,
         //     })
         // }
         continue
@@ -367,36 +366,36 @@ async function createUserMessage(input: PromptInput) {
             if (part.type === "file")
                 return {
                     id: Identifier.ascending("part"),
-                    messageid: messageinfo.id,
-                    sessionid: input.sessionID,
+                    messageID: messageinfo.id,
+                    sessionID: input.sessionID,
                     ...part
                 } as Message.FilePart
             if (part.type === "agent")
                 return {
                     id: Identifier.ascending("part"),
-                    messageid: messageinfo.id,
-                    sessionid: input.sessionID,
+                    messageID: messageinfo.id,
+                    sessionID: input.sessionID,
                     ...part
                 } as Message.AgentPart
             if (part.type === "text")
                 return {
                     id: Identifier.ascending("part"),
-                    messageid: messageinfo.id,
-                    sessionid: input.sessionID,
+                    messageID: messageinfo.id,
+                    sessionID: input.sessionID,
                     ...part
                 } as Message.TextPart
             if (part.type === "subtask")
                 return {
                     id: Identifier.ascending("part"),
-                    messageid: messageinfo.id,
-                    sessionid: input.sessionID,
+                    messageID: messageinfo.id,
+                    sessionID: input.sessionID,
                     ...part
                 } as Message.SubtaskPart
 
             return {
                 id: Identifier.ascending("part"),
-                messageid: messageinfo.id,
-                sessionid: input.sessionID,
+                messageID: messageinfo.id,
+                sessionID: input.sessionID,
             } as Message.Part
         }
         ))

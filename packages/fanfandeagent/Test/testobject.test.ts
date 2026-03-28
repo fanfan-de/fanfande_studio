@@ -66,7 +66,6 @@ export const assistant: Message.Assistant = {
     },
     id: "message-qwew",
     sessionID: "session-101",
-    mode: ""
 }
 
 // 构造模拟输入StreamInput的工厂函数
@@ -95,8 +94,8 @@ export const createMockInput = (overrides: Partial<StreamInput> = {}): StreamInp
 //part
 export const reasoningPart: Message.ReasoningPart = {
     id: "123",
-    sessionid: "sessions-123",
-    messageid: "messages-123",
+    sessionID: "sessions-123",
+    messageID: "messages-123",
     type: "reasoning",
     text: "ceshiwenben1",
     time: {

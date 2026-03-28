@@ -44,8 +44,8 @@ export function create(input: {
                             case "text-start":
                                 currentText = {
                                     id: Identifier.ascending("part"),
-                                    sessionid: input.Assistant.sessionID,
-                                    messageid: input.Assistant.id,
+                                    sessionID: input.Assistant.sessionID,
+                                    messageID: input.Assistant.id,
                                     type: "text",
                                     text: "",
                                     time: {
@@ -83,8 +83,8 @@ export function create(input: {
 
                                 const reasoningPart: Message.ReasoningPart = {
                                     id: Identifier.ascending("part"),
-                                    sessionid: input.Assistant.sessionID,
-                                    messageid: input.Assistant.id,
+                                    sessionID: input.Assistant.sessionID,
+                                    messageID: input.Assistant.id,
                                     type: "reasoning",
                                     text: "",
                                     time: { start: Date.now() },
@@ -125,8 +125,8 @@ export function create(input: {
                             case "tool-input-start":
                                 const part: Message.ToolPart = {
                                     id: Identifier.ascending("part"),
-                                    sessionid: input.Assistant.sessionID,
-                                    messageid: input.Assistant.id,
+                                    sessionID: input.Assistant.sessionID,
+                                    messageID: input.Assistant.id,
                                     type: "tool",
                                     callID: value.id,
                                     tool: value.toolName,
@@ -177,19 +177,19 @@ export function create(input: {
                                 break;
                             case 'tool-result':
                                 if (toolcalls[value.toolCallId] && toolcalls[value.toolCallId]?.state.status === "running") {
+                                    const output = Message.normalizeToolOutputText(value.output)
                                     const match: Message.ToolPart = {
                                         ...toolcalls[value.toolCallId]!,
                                         state: {
                                             status: "completed",
                                             input: value.input,
-                                            output: value.output,
-                                            metadata: value.output.metadata,
-                                            title: value.output.title,
+                                            output,
+                                            metadata: value.providerMetadata ?? {},
+                                            title: value.title ?? "",
                                             time: {
                                                 start: (toolcalls[value.toolCallId]!.state as Message.ToolStateRunning).time.start,
                                                 end: Date.now(),
                                             },
-                                            attachments: value.output.attachments,
                                         },
                                     }
 
@@ -216,7 +216,7 @@ export function create(input: {
                                  // TODO: 记录使用统计和计费信息
                                  // TODO: 发送完成事件通知 UI
                                  // TODO: 可能需要触发消息压缩（compaction）
-                                 this.message.finish = value.finishReason
+                                 this.message.finishReason = value.finishReason
                                  break;
                             case "abort":
 
@@ -236,7 +236,7 @@ export function create(input: {
                             case "finish-step":
                                 //接收到这个value，说明LLM判断结束React loop
                                 console.log(value.finishReason)
-                                this.message.finish = value.finishReason
+                                this.message.finishReason = value.finishReason
 
 
                                 break;
