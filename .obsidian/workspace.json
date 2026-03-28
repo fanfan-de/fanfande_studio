@@ -28,13 +28,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "自然语言流程图.md",
+                "file": "产品面向的用户.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "自然语言流程图"
+              "title": "产品面向的用户"
             }
           }
         ],
@@ -70,7 +70,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "Instance",
+                "query": "tag:#mainloop",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -204,17 +204,24 @@
   },
   "active": "f8cb4ca104435170",
   "lastOpenFiles": [
-    "packages/fanfandeagent/agent_local_data.db-shm",
-    "packages/fanfandeagent/agent_local_data.db-wal",
-    "packages/fanfandeagent/agent_local_data.db-journal",
-    "packages/fanfandeagent/agent_local_data.db",
-    "packages/fanfandeagent/docs/data-dictionary/modules.html",
-    "packages/fanfandeagent/docs/data-dictionary/modules/util_which.html",
-    "packages/fanfandeagent/docs/data-dictionary/modules/util_slug.html",
-    "packages/fanfandeagent/docs/data-dictionary/modules/util_queue.html",
-    "packages/fanfandeagent/docs/data-dictionary/modules/util_log.html",
-    "packages/fanfandeagent/docs/data-dictionary/modules/util_lock.html",
-    "packages/fanfandeagent/docs/data-dictionary/modules/util_lazy.html",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.js",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.js.map",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.d.ts.map",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.d.ts",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/package.json",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/index.js.map",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/index.js",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/index.d.ts.map",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/escape.js.map",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/index.d.ts",
+    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/escape.d.ts.map",
+    "模块划分.md",
+    "产品面向的用户.md",
+    "未命名 2.md",
+    "packages/fanfandeagent/node_modules/markdown-it/node_modules/entities/readme.md",
+    "自然语言流程图.md",
+    "未命名 3.md",
+    "packages/fanfandeagent/docs/data-dictionary/assets/icons.svg",
     "packages/fanfandeagent/node_modules/@shikijs/themes/README.md",
     "packages/fanfandeagent/node_modules/@shikijs/types/README.md",
     "packages/fanfandeagent/node_modules/uc.micro/README.md",
@@ -235,12 +242,6 @@
     "packages/fanfandeagent/node_modules/glob/node_modules/minimatch/node_modules/brace-expansion/node_modules/balanced-match/LICENSE.md",
     "packages/fanfandeagent/node_modules/parse5/node_modules/entities/readme.md",
     "packages/fanfandeagent/node_modules/glob/node_modules/minimatch/node_modules/brace-expansion/README.md",
-    "packages/fanfandeagent/node_modules/glob/node_modules/minimatch/README.md",
-    "packages/fanfandeagent/node_modules/js-yaml/node_modules/argparse/README.md",
-    "packages/fanfandeagent/node_modules/js-yaml/node_modules/argparse/CHANGELOG.md",
-    "packages/fanfandeagent/node_modules/@types/unist/README.md",
-    "packages/fanfandeagent/node_modules/@types/hast/README.md",
-    "packages/fanfandeagent/node_modules/@shikijs/langs/README.md",
-    "packages/fanfandeagent/node_modules/@shikijs/engine-oniguruma/README.md"
+    "packages/fanfandeagent/node_modules/glob/node_modules/minimatch/README.md"
   ]
 }

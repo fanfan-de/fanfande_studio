@@ -32,8 +32,9 @@ test("test prompt", async () => {
 
             const promptinput = testobject.CreatePromptInput(session.id,ID.ascending("message"))
 
-            prompt(promptinput)
+            await prompt(promptinput)
+            console.log("ewrtwegt")
 
         }
     })
-})
+},100000)

@@ -695,7 +695,7 @@ function findMany<T extends z.ZodType>(
  * 查询单条记录（内部调用 findMany + LIMIT 1）
  *
  * @example
- * findOne("users", { where: [{ column: "id", value: "u1" }] });
+ * findOne("users", UserSchema, { where: [{ column: "id", value: "u1" }] });
  */
 function findOne<T extends z.ZodType>(
   tableName: string,
@@ -704,6 +704,24 @@ function findOne<T extends z.ZodType>(
 ): z.output<T> | null {
   const results = findMany<T>(tableName, schema, { ...options, limit: 1 });
   return results[0] ?? null;
+}
+
+/**
+ * 带 Zod Schema 校验的查询单条记录
+ *
+ * @example
+ * findOneWithSchema("users", UserSchema, { where: [{ column: "id", value: "u1" }] });
+ */
+function findOneWithSchema<T extends z.ZodType>(
+  tableName: string,
+  schema: T,
+  options: QueryOptions = {},
+): z.output<T> | null {
+  const result = findOne(tableName, schema, options);
+  if (result) {
+    return schema.parse(result);
+  }
+  return null;
 }
 
 /**
@@ -886,6 +904,24 @@ function updateById(
 }
 
 /**
+ * 带 Zod Schema 校验的根据主键 ID 更新（快捷方法）
+ *
+ * @returns 受影响的行数
+ *
+ * @example
+ * updateByIdWithSchema("users", "u1", { name: "New Name" }, UserSchema);
+ */
+function updateByIdWithSchema<T extends z.ZodType>(
+  tableName: string,
+  id: string,
+  data: z.infer<T>,
+  schema: T,
+  idColumn: string = "id",
+): number {
+  return updateManyWithSchema(tableName, data, [{ column: idColumn, value: id }], schema);
+}
+
+/**
  * 更新全表所有记录（⚠️ 危险操作，需显式调用）
  *
  * @returns 受影响的行数
@@ -927,6 +963,24 @@ function deleteMany(tableName: string, where: WhereClause[]): number {
 }
 
 /**
+ * 带 Zod Schema 校验的删除（虽然删除操作不需要 schema，但提供 API 一致性）
+ *
+ * @returns 受影响的行数
+ * @throws  未提供 WHERE 条件时抛错（防止误删全表）
+ *
+ * @example
+ * deleteManyWithSchema("users", [{ column: "age", operator: "<", value: 18 }], UserSchema);
+ */
+function deleteManyWithSchema<T extends z.ZodType>(
+  tableName: string,
+  where: WhereClause[],
+  schema: T,
+): number {
+  // Schema 参数仅用于类型检查和 API 一致性，实际删除操作不需要
+  return deleteMany(tableName, where);
+}
+
+/**
  * 根据主键 ID 删除（快捷方法）
  *
  * @returns 受影响的行数
@@ -940,6 +994,24 @@ function deleteById(
   idColumn: string = "id",
 ): number {
   return deleteMany(tableName, [{ column: idColumn, value: id }]);
+}
+
+/**
+ * 带 Zod Schema 校验的根据主键 ID 删除（快捷方法）
+ *
+ * @returns 受影响的行数
+ *
+ * @example
+ * deleteByIdWithSchema("users", "u1", UserSchema);
+ */
+function deleteByIdWithSchema<T extends z.ZodType>(
+  tableName: string,
+  id: string,
+  schema: T,
+  idColumn: string = "id",
+): number {
+  // Schema 参数仅用于类型检查和 API 一致性，实际删除操作不需要
+  return deleteById(tableName, id, idColumn);
 }
 
 /**
@@ -977,6 +1049,8 @@ export {
 
   findById,
   findMany,
+  findOne,
+  findOneWithSchema,
   findManyWithSchema,
   count,
   exists,
@@ -986,10 +1060,13 @@ export {
   updateManyUnion,
   updateAll,
   updateById,
+  updateByIdWithSchema,
 
   deleteAll,
   deleteById,
+  deleteByIdWithSchema,
   deleteMany,
+  deleteManyWithSchema,
 
   toSQLiteValue,
   fromSQLiteRecord,

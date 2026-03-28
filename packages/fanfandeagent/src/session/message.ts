@@ -21,7 +21,7 @@ import {
 import { NamedError } from "#util/error.ts"
 import { define } from "#bus/bus-event.ts"
 import { iife } from "#util/iife.ts"
-import * as  Identifier  from "#id/id.ts";
+import * as  Identifier from "#id/id.ts";
 import { fn } from "#util/fn.ts";
 import * as db from "#database/Sqlite.ts"
 import * as Provider from "#provider/provider.ts"
@@ -352,7 +352,7 @@ const Base = z.object({
 export const User = Base.extend({
     role: z.literal("user"),
     created: z.number(),
-    summary: z
+    diffSummary: z
         .object({
             title: z.string().optional(),
             body: z.string().optional(),

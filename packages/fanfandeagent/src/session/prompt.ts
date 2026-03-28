@@ -15,6 +15,7 @@ import * as ToolRegistry from "#tool/registry.ts"
 import * as  db from "#database/Sqlite.ts";
 import * as Agent from "#agent/agent.ts"
 import * as  Tool from "#tool/registry.ts"
+import { forEach } from "remeda";
 
 
 
@@ -132,19 +133,13 @@ function start(sessionID: string): AbortSignal | undefined {
 const prompt = fn(PromptInput, async (input) => {
     //获取session,先有session，再有prompt流程
     const session = Session.DataBaseRead("sessions", input.sessionID)
-
     //清理revert历史
-
     //创建 usermessage
     const { messageinfo, parts, } = await createUserMessage(input)
     //session.touch
-
     //input.tool 权限设置
-
     //input.noreply
-
     //在这之前，相当于准备完毕本地的数据，接下来，只需要一个sessonid即可开始循环
-
     return loop({ sessionID: input.sessionID })
 })
 
@@ -159,7 +154,6 @@ export const LoopInput = z.object({
 const loop = fn(LoopInput, async (input) => {
     const { sessionID, resume_existing } = input
 
-    console.log("sessionID" + sessionID)
     //resume and start
     //尝试创建打断
     const abort = start(sessionID)
@@ -176,9 +170,7 @@ const loop = fn(LoopInput, async (input) => {
     const session = Session.DataBaseRead("sessions", input.sessionID)    //执行一次prompt
 
     while (true) {
-        console.log("tessssstttt")
         Status.set(sessionID, { type: "busy" })
-        console.log("tessssstttt")
         //log.info("loop", { step, sessionID })
         //if (abort.aborted) break
         //历史消息
@@ -188,7 +180,7 @@ const loop = fn(LoopInput, async (input) => {
             where: [{ column: "sessionID", value: sessionID }],
             orderBy: [{ column: "created", direction: "ASC" }]
         })
-        console.log(msginfos)
+
 
         let msgs: Message.WithParts[]
 
@@ -218,7 +210,7 @@ const loop = fn(LoopInput, async (input) => {
         let lastAssistant: Message.Assistant | undefined//最后一个assistant消息
         let lastFinished: Message.Assistant | undefined//最后一个已完成的assistant消息
         let tasks: (Message.CompactionPart | Message.SubtaskPart)[] = []// 收集未完成状态下的压缩任务和子任务
-        console.log("tessssstttt")
+
         for (let i = msgs.length - 1; i >= 0; i--) {
             const msg = msgs[i]!
             if (!lastUser && msg.info.role === "user") lastUser = msg.info as Message.User
@@ -286,15 +278,12 @@ const loop = fn(LoopInput, async (input) => {
             Assistant: assistantMessage
             //abort,
         })
-
-
-
         const result = await processor.process({
             user: lastUser,
             sessionID: sessionID,
             model: Provider.testDeepSeekModel,
             agent: Agent.planAgent,
-            system: [],
+            system: ["你是一个助手"],
             abort: abort!,
             messages: [
                 ...Message.toModelMessages(msgs, Provider.testDeepSeekModel)
@@ -305,8 +294,11 @@ const loop = fn(LoopInput, async (input) => {
         })
 
         const modelFinished = processor.message.finish
+
+        
         if (modelFinished) {
-            console.log(modelFinished)
+            console.log("modelFinish: " + modelFinished)
+            break
         }
 
         if (result === "stop") break
@@ -324,15 +316,15 @@ const loop = fn(LoopInput, async (input) => {
     }
 
 
-    // for await (const item of Message.stream(sessionID)) {
-    //     if (item.info.role === "user") continue
-    //     //   const queued = state()[sessionID]?.callbacks ?? []
-    //     //   for (const q of queued) {
-    //     //     q.resolve(item)
-    //     //   }
-    //     //返回第一个"Assiatant"信息
-    //     return item
-    // }
+    for await (const item of Message.stream(sessionID)) {
+        if (item.info.role === "user") continue
+        //   const queued = state()[sessionID]?.callbacks ?? []
+        //   for (const q of queued) {
+        //     q.resolve(item)
+        //   }
+        //返回第一个"Assiatant"信息
+        return item
+    }
 
     throw new Error("Impossible")
 

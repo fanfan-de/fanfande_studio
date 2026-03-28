@@ -1,7 +1,7 @@
 import os from "os"
 //import { Installation } from "@/installation"
-import * as  Provider  from "#provider/provider.ts"
-import * as  Log  from "#util/log.ts"
+import * as  Provider from "#provider/provider.ts"
+import * as  Log from "#util/log.ts"
 import {
   streamText,
   Output,
@@ -21,10 +21,10 @@ import {
 } from "ai"
 import { clone, mergeDeep, pipe } from "remeda"
 //import { ProviderTransform } from "@/provider/transform"
-import * as  Config  from "#config/config.ts"
+import * as  Config from "#config/config.ts"
 import { Instance } from "@/project/instance"
-import * as  Agent  from "#agent/agent.ts"
-import * as  Message  from '#session/message.ts'
+import * as  Agent from "#agent/agent.ts"
+import * as  Message from '#session/message.ts'
 //import { Plugin } from "@/plugin"
 ///import { SystemPrompt } from "./system"
 import { Flag } from "@/flag/flag"
@@ -32,8 +32,8 @@ import { Flag } from "@/flag/flag"
 //import { Auth } from "../auth/auth"
 import { text } from "stream/consumers"
 import { z } from "zod"
-import * as db  from "#database/Sqlite.ts"
-import {deepseek} from "@ai-sdk/deepseek"
+import * as db from "#database/Sqlite.ts"
+import { deepseek } from "@ai-sdk/deepseek"
 
 
 
@@ -50,7 +50,7 @@ export type StreamInput = {
   model: Provider.Model,
   agent: Agent.AgentInfo,
   system: string[],
-  abort: AbortSignal, 
+  abort: AbortSignal,
   messages: ModelMessage[],
   small?: boolean,
   tools: Record<string, Tool>,
@@ -75,7 +75,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
 
   const [language] = await Promise.all([
     Provider.deepseekreasoningmodel
-     //Config.get(),
+    //Config.get(),
     ///Provider.getProvider(input.model.providerID),
     //Auth.get(input.model.providerID),
   ])
@@ -205,11 +205,18 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   return streamText({
     //------事件回调与网络 (Callbacks & Network)------
     onError(error) {
-      console.error("DEBUG - AI SDK 原始错误详情:", error);
+      console.error("事件回调与网络DEBUG - AI SDK 原始错误详情:", error);
+      console.log(error)
     },
-    onFinish: () => { },
-    onStepFinish: () => { },
-    onAbort: () => { },
+    onFinish: () => {
+      console.log("事件回调与网络streamTextfinish")
+    },
+    onStepFinish: () => {
+      console.log("事件回调与网络streamTextonStepFinish")
+    },
+    onAbort: () => {
+      console.log("事件回调与网络streamTextonAbort")
+    },
     //-------网络-----------------
     timeout: { totalMs: 60000, stepMs: 10000 },//超时配置
     abortSignal: controller.signal,//打断配置
