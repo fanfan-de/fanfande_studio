@@ -424,6 +424,5 @@ export async function sandboxes(projectID: string) {
 //project 建表
 if (!db.tableExists("projects")) {
     db.createTableByZodObject("Projects", ProjectInfo)
-    console.log("projects建表")
 }
 

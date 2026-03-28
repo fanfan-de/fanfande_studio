@@ -58,6 +58,7 @@
     "#*": "./src/*"
   },
   "scripts": {
-    "docs": "typedoc"
+    "docs": "typedoc",
+    "test:prompt": "bun test Test/prompt.e2e.test.ts"
   }
 }

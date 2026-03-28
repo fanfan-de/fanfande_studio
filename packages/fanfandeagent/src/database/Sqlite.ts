@@ -500,11 +500,9 @@ function insertOneWithSchema<T extends z.ZodType>(
   schema: T,
 ): number | bigint {
   const parsed = schema.parse(data); // 校验失败抛出 ZodError
-  console.log("insert")
   // 自动检测联合类型
   if (isZodDiscriminatedUnion(schema)) {
     // 调用联合类型专用插入函数
-    console.log("Union insert")
     return insertOneUnion(tableName, parsed, schema as z.ZodDiscriminatedUnion<any, any>);
   }
   

@@ -25,7 +25,6 @@ const levelPriority: Record<Level, number> = {
 }
 
 
-console.log(levelPriority)
 
 //通过比较数字大小来实现日志过滤（例如设置为 `WARN` (2) 时，`INFO` (1) 就不会输出）。
 let level: Level = "INFO"

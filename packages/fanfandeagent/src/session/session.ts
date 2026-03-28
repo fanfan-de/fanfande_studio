@@ -14,7 +14,6 @@ import { zodObjectToColumnDefs, toCreateTableSQL, } from "#database/parser.ts"
 import type { } from "#project/project.ts"
 
 
-console.log("session")
 //#region Type & Interface
 // 定义映射关系
 interface TableRecordMap {
@@ -97,15 +96,12 @@ const childTiltePrefic = "子对话"
 //建表操作
 if (!db.tableExists("sessions")) {
     db.createTableByZodObject("sessions", SessionInfo)
-    console.log("建表")
 }
 if (!db.tableExists("messages")) {
     db.createTableByZodDiscriminatedUnion("messages", Message.MessageInfo)
-    console.log("建表")
 }
 if (!db.tableExists("parts")) {
     db.createTableByZodDiscriminatedUnion("parts", Message.Part)
-    console.log("建表")
 }
 //#endregion
 

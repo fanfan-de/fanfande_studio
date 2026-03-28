@@ -259,8 +259,8 @@ const loop = fn(LoopInput, async (input) => {
             mode: "plan",
             agent: "plan",
             path: {
-                cwd: "",
-                root: ""
+                cwd: Instance.directory,
+                root: Instance.worktree
             },
             cost: 0,
             tokens: {
@@ -292,6 +292,8 @@ const loop = fn(LoopInput, async (input) => {
             tools: {}
             //retries?: number,
         })
+
+        Session.DataBaseCreate("messages", assistantMessage)
 
         const modelFinished = processor.message.finish
 
