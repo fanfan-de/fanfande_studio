@@ -1,4 +1,4 @@
-import * as AI from "ai";
+﻿import * as AI from "ai";
 import z from "zod"
 import { Snapshot } from "../snapshot"
 import {
@@ -50,8 +50,8 @@ export type APIError = z.infer<typeof APIError.Schema>
 
 const PartBase = z.object({
     id: z.string(),
-    sessionid: z.string(),
-    messageid: z.string()
+    sessionID: z.string(),
+    messageID: z.string()
 })
 
 export const SnapshotPart = PartBase.extend({
@@ -74,8 +74,8 @@ export type PatchPart = z.infer<typeof PatchPart>
 export const TextPart = PartBase.extend({
     type: z.literal("text"),
     text: z.string(),
-    synthetic: z.boolean().optional(), // 标记是否为系统合成的文本（而非模型生成的）
-    ignored: z.boolean().optional(),   // 标记该文本是否应该被发送给 LLM（例如仅用于 UI 展示的提示）
+    synthetic: z.boolean().optional(), // 鏍囪鏄惁涓虹郴缁熷悎鎴愮殑鏂囨湰锛堣€岄潪妯″瀷鐢熸垚鐨勶級
+    ignored: z.boolean().optional(),   // 鏍囪璇ユ枃鏈槸鍚﹀簲璇ヨ鍙戦€佺粰 LLM锛堜緥濡備粎鐢ㄤ簬 UI 灞曠ず鐨勬彁绀猴級
     time: z
         .object({
             start: z.number(),
@@ -121,7 +121,7 @@ export const FileSource = FilePartSourceBase.extend({
 })
 
 export const SymbolSource = FilePartSourceBase.extend({
-    type: z.literal("symbol"), // 来自 LSP (Language Server Protocol) 的符号定�?
+    type: z.literal("symbol"), // 鏉ヨ嚜 LSP (Language Server Protocol) 鐨勭鍙峰畾锟?
     path: z.string(),
     //range: LSP.Range,
     name: z.string(),
@@ -131,7 +131,7 @@ export const SymbolSource = FilePartSourceBase.extend({
 })
 
 export const ResourceSource = FilePartSourceBase.extend({
-    type: z.literal("resource"), // 外部资源（如文档链接内容�?
+    type: z.literal("resource"), // 澶栭儴璧勬簮锛堝鏂囨。閾炬帴鍐呭锟?
     clientName: z.string(),
     uri: z.string(),
 }).meta({
@@ -146,7 +146,7 @@ export const FilePart = PartBase.extend({
     type: z.literal("file"),
     mime: z.string(),
     filename: z.string().optional(),
-    url: z.string(), // 通常�?Data URL 或内部存储链�?
+    url: z.string(), // 閫氬父锟?Data URL 鎴栧唴閮ㄥ瓨鍌ㄩ摼锟?
     source: FilePartSource.optional(),
 }).meta({
     ref: "FilePart",
@@ -157,7 +157,7 @@ export const ImagePart = PartBase.extend({
     type: z.literal("image"),
     mime: z.string(),
     filename: z.string().optional(),
-    url: z.string(), // 通常�?Data URL 或内部存储链�?
+    url: z.string(), // 閫氬父锟?Data URL 鎴栧唴閮ㄥ瓨鍌ㄩ摼锟?
     source: FilePartSource.optional(),
 }).meta({
     ref: "ImagePart",
@@ -191,7 +191,7 @@ export const ToolStatePending = z
     .object({
         status: z.literal("pending"),
         input: z.record(z.string(), z.any()),
-        raw: z.string(), // 原始�?JSON 字符串，用于调试解析错误
+        raw: z.string(), // 鍘熷锟?JSON 瀛楃涓诧紝鐢ㄤ簬璋冭瘯瑙ｆ瀽閿欒
     })
     .meta({
         ref: "ToolStatePending",
@@ -217,15 +217,15 @@ export const ToolStateCompleted = z
     .object({
         status: z.literal("completed"),
         input: z.record(z.string(), z.any()),
-        output: z.string(),
+        output: z.preprocess((value) => normalizeToolOutputText(value), z.string()),
         title: z.string(),
         metadata: z.record(z.string(), z.any()),
         time: z.object({
             start: z.number(),
             end: z.number(),
-            compacted: z.number().optional(), // 如果工具输出过长被压缩，记录压缩时间
+            compacted: z.number().optional(), // 濡傛灉宸ュ叿杈撳嚭杩囬暱琚帇缂╋紝璁板綍鍘嬬缉鏃堕棿
         }),
-        attachments: FilePart.array().optional(), // 工具可以返回文件（如生成的图片）
+        attachments: FilePart.array().optional(), // 宸ュ叿鍙互杩斿洖鏂囦欢锛堝鐢熸垚鐨勫浘鐗囷級
     })
     .meta({
         ref: "ToolStateCompleted",
@@ -247,6 +247,27 @@ export const ToolStateError = z
         ref: "ToolStateError",
     })
 export type ToolStateError = z.infer<typeof ToolStateError>
+
+export function normalizeToolOutputText(output: unknown): string {
+    if (typeof output === "string") return output
+    if (output == null) return ""
+
+    if (typeof output === "object") {
+        const candidate = output as Record<string, unknown>
+        if (typeof candidate.result === "string") return candidate.result
+        if (typeof candidate.value === "string") return candidate.value
+        if (typeof candidate.text === "string") return candidate.text
+
+        try {
+            const serialized = JSON.stringify(output)
+            if (serialized) return serialized
+        } catch {
+            // ignore and fall through to String(output)
+        }
+    }
+
+    return String(output)
+}
 
 export const ToolState = z
     .discriminatedUnion("status", [ToolStatePending, ToolStateRunning, ToolStateCompleted, ToolStateError])
@@ -388,10 +409,6 @@ export const Assistant = Base.extend({
     parentID: z.string(),
     modelID: z.string(),
     providerID: z.string(),
-    /**
-     * @deprecated
-     */
-    mode: z.string(),
     agent: z.string(),
     path: z.object({
         cwd: z.string(),
@@ -408,7 +425,7 @@ export const Assistant = Base.extend({
             write: z.number(),
         }),
     }),
-    finish: z.string().optional(),
+    finishReason: z.string().optional(),
 }).meta({
     ref: "AssistantMessage",
 })
@@ -419,10 +436,10 @@ export const MessageInfo = z.discriminatedUnion("role", [User, Assistant]).meta(
 })
 export type MessageInfo = z.infer<typeof MessageInfo>
 
-//messge的content + Meta，就可以理解为一�?message
+//messge鐨刢ontent + Meta锛屽氨鍙互鐞嗚В涓轰竴锟?message
 export const WithParts = z.object({
-    info: MessageInfo,//meta数据
-    parts: z.array(Part),//消息的具体内�?
+    info: MessageInfo,//meta鏁版嵁
+    parts: z.array(Part),//娑堟伅鐨勫叿浣撳唴锟?
 })
 export type WithParts = z.infer<typeof WithParts>
 
@@ -432,6 +449,7 @@ export type WithParts = z.infer<typeof WithParts>
 // }
 
 
+// TODO: move message events out of message.ts after the schema settles.
 export const Event = {
     Updated: define(
         "message.updated",
@@ -473,6 +491,7 @@ export const Event = {
     )
 }
 
+// TODO: move message streaming/query helpers out of message.ts after the schema settles.
 export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
     const messages = db.findManyWithSchema("messages", MessageInfo, {
         where: [{ column: "sessionID", value: sessionID }],
@@ -483,15 +502,15 @@ export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
     })
 
     const parts = db.findManyWithSchema("parts", Part, {
-        where: [{ column: "sessionid", value: sessionID }],
+        where: [{ column: "sessionID", value: sessionID }],
         orderBy: [{ column: "id", direction: "ASC" }],
     })
 
     const partsByMessageID = new Map<string, Part[]>()
     for (const part of parts) {
-        const list = partsByMessageID.get(part.messageid) ?? []
+        const list = partsByMessageID.get(part.messageID) ?? []
         list.push(part)
-        partsByMessageID.set(part.messageid, list)
+        partsByMessageID.set(part.messageID, list)
     }
 
     for (const message of messages) {
@@ -503,25 +522,26 @@ export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
 }
 
 /**
- * 将项目内部的消息格式 WithParts[] 转换�?AI SDK 的消息格�?ModelMessage[]
+ * 灏嗛」鐩唴閮ㄧ殑娑堟伅鏍煎紡 WithParts[] 杞崲锟?AI SDK 鐨勬秷鎭牸锟?ModelMessage[]
  * 
- * 此函数遍历每�?WithParts 对象，根据消息角色（user/assistant）转换为对应�?AI SDK 消息角色�?
- * 并将每个消息的部分（parts）转换为 AI SDK 支持的内容类型（text、reasoning、file、image、tool-call、tool-result）�?
- * 转换过程中会检查模型的能力（capabilities），过滤掉模型不支持的内容类型�?
+ * 姝ゅ嚱鏁伴亶鍘嗘瘡锟?WithParts 瀵硅薄锛屾牴鎹秷鎭鑹诧紙user/assistant锛夎浆鎹负瀵瑰簲锟?AI SDK 娑堟伅瑙掕壊锟?
+ * 骞跺皢姣忎釜娑堟伅鐨勯儴鍒嗭紙parts锛夎浆鎹负 AI SDK 鏀寔鐨勫唴瀹圭被鍨嬶紙text銆乺easoning銆乫ile銆乮mage銆乼ool-call銆乼ool-result锛夛拷?
+ * 杞崲杩囩▼涓細妫€鏌ユā鍨嬬殑鑳藉姏锛坈apabilities锛夛紝杩囨护鎺夋ā鍨嬩笉鏀寔鐨勫唴瀹圭被鍨嬶拷?
  * 
- * @param input - 项目内部的消息数组，每个消息包含元数据（info）和内容部分（parts�?
- * @param model - 提供者模型，包含模型的能力配置，用于过滤不支持的内容类型
- * @returns 符合 AI SDK 格式的消息数组，可直接用�?AI SDK �?API 调用
+ * @param input - 椤圭洰鍐呴儴鐨勬秷鎭暟缁勶紝姣忎釜娑堟伅鍖呭惈鍏冩暟鎹紙info锛夊拰鍐呭閮ㄥ垎锛坧arts锟?
+ * @param model - 鎻愪緵鑰呮ā鍨嬶紝鍖呭惈妯″瀷鐨勮兘鍔涢厤缃紝鐢ㄤ簬杩囨护涓嶆敮鎸佺殑鍐呭绫诲瀷
+ * @returns 绗﹀悎 AI SDK 鏍煎紡鐨勬秷鎭暟缁勶紝鍙洿鎺ョ敤锟?AI SDK 锟?API 璋冪敤
  */
+// TODO: move model message conversion out of message.ts after the schema settles.
 export function toModelMessages(input: WithParts[], model: Provider.Model): ModelMessage[] {
     const result: ModelMessage[] = []
     /** 
-     * 将单�?Part 转换�?AI SDK 支持的内容部�?
-     * 根据 part.type 进行分发，检查模型能力，并构建对应的 AI SDK 内容对象
+     * 灏嗗崟锟?Part 杞崲锟?AI SDK 鏀寔鐨勫唴瀹归儴锟?
+     * 鏍规嵁 part.type 杩涜鍒嗗彂锛屾鏌ユā鍨嬭兘鍔涳紝骞舵瀯寤哄搴旂殑 AI SDK 鍐呭瀵硅薄
      * 
-     * @param part - 项目内部的消息部�?
-     * @param model - 提供者模型，用于检查能力支�?
-     * @returns AI SDK 内容对象或数组，如果不支持则返回 null
+     * @param part - 椤圭洰鍐呴儴鐨勬秷鎭儴锟?
+     * @param model - 鎻愪緵鑰呮ā鍨嬶紝鐢ㄤ簬妫€鏌ヨ兘鍔涙敮锟?
+     * @returns AI SDK 鍐呭瀵硅薄鎴栨暟缁勶紝濡傛灉涓嶆敮鎸佸垯杩斿洖 null
      */
     function convertPartToAIPart(part: Part, model: Provider.Model): any | any[] | null {
         switch (part.type) {
