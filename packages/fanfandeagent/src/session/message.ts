@@ -121,7 +121,7 @@ export const FileSource = FilePartSourceBase.extend({
 })
 
 export const SymbolSource = FilePartSourceBase.extend({
-    type: z.literal("symbol"), // 来自 LSP (Language Server Protocol) 的符号定义
+    type: z.literal("symbol"), // 来自 LSP (Language Server Protocol) 的符号定�?
     path: z.string(),
     //range: LSP.Range,
     name: z.string(),
@@ -131,7 +131,7 @@ export const SymbolSource = FilePartSourceBase.extend({
 })
 
 export const ResourceSource = FilePartSourceBase.extend({
-    type: z.literal("resource"), // 外部资源（如文档链接内容）
+    type: z.literal("resource"), // 外部资源（如文档链接内容�?
     clientName: z.string(),
     uri: z.string(),
 }).meta({
@@ -146,7 +146,7 @@ export const FilePart = PartBase.extend({
     type: z.literal("file"),
     mime: z.string(),
     filename: z.string().optional(),
-    url: z.string(), // 通常是 Data URL 或内部存储链接
+    url: z.string(), // 通常�?Data URL 或内部存储链�?
     source: FilePartSource.optional(),
 }).meta({
     ref: "FilePart",
@@ -157,7 +157,7 @@ export const ImagePart = PartBase.extend({
     type: z.literal("image"),
     mime: z.string(),
     filename: z.string().optional(),
-    url: z.string(), // 通常是 Data URL 或内部存储链接
+    url: z.string(), // 通常�?Data URL 或内部存储链�?
     source: FilePartSource.optional(),
 }).meta({
     ref: "ImagePart",
@@ -191,7 +191,7 @@ export const ToolStatePending = z
     .object({
         status: z.literal("pending"),
         input: z.record(z.string(), z.any()),
-        raw: z.string(), // 原始的 JSON 字符串，用于调试解析错误
+        raw: z.string(), // 原始�?JSON 字符串，用于调试解析错误
     })
     .meta({
         ref: "ToolStatePending",
@@ -414,23 +414,15 @@ export const Assistant = Base.extend({
 })
 export type Assistant = z.infer<typeof Assistant>
 
-export const Environment = Base.extend({
-    // role: z.enum(["Envirnment" , "Function" , "Tool"]),
-    role: z.literal("Envirnment"),
-}).meta({
-    ref: "EnvironmontMessage",
-})
-export type Environment = z.infer<typeof Environment>
-
 export const MessageInfo = z.discriminatedUnion("role", [User, Assistant]).meta({
     ref: "Message",
 })
 export type MessageInfo = z.infer<typeof MessageInfo>
 
-//messge的content + Meta，就可以理解为一个 message
+//messge的content + Meta，就可以理解为一�?message
 export const WithParts = z.object({
     info: MessageInfo,//meta数据
-    parts: z.array(Part),//消息的具体内容
+    parts: z.array(Part),//消息的具体内�?
 })
 export type WithParts = z.infer<typeof WithParts>
 
@@ -511,24 +503,24 @@ export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
 }
 
 /**
- * 将项目内部的消息格式 WithParts[] 转换为 AI SDK 的消息格式 ModelMessage[]
+ * 将项目内部的消息格式 WithParts[] 转换�?AI SDK 的消息格�?ModelMessage[]
  * 
- * 此函数遍历每个 WithParts 对象，根据消息角色（user/assistant/Envirnment）转换为对应的 AI SDK 消息角色，
- * 并将每个消息的部分（parts）转换为 AI SDK 支持的内容类型（text、reasoning、file、image、tool-call、tool-result）。
- * 转换过程中会检查模型的能力（capabilities），过滤掉模型不支持的内容类型。
+ * 此函数遍历每�?WithParts 对象，根据消息角色（user/assistant）转换为对应�?AI SDK 消息角色�?
+ * 并将每个消息的部分（parts）转换为 AI SDK 支持的内容类型（text、reasoning、file、image、tool-call、tool-result）�?
+ * 转换过程中会检查模型的能力（capabilities），过滤掉模型不支持的内容类型�?
  * 
- * @param input - 项目内部的消息数组，每个消息包含元数据（info）和内容部分（parts）
+ * @param input - 项目内部的消息数组，每个消息包含元数据（info）和内容部分（parts�?
  * @param model - 提供者模型，包含模型的能力配置，用于过滤不支持的内容类型
- * @returns 符合 AI SDK 格式的消息数组，可直接用于 AI SDK 的 API 调用
+ * @returns 符合 AI SDK 格式的消息数组，可直接用�?AI SDK �?API 调用
  */
 export function toModelMessages(input: WithParts[], model: Provider.Model): ModelMessage[] {
     const result: ModelMessage[] = []
     /** 
-     * 将单个 Part 转换为 AI SDK 支持的内容部分
+     * 将单�?Part 转换�?AI SDK 支持的内容部�?
      * 根据 part.type 进行分发，检查模型能力，并构建对应的 AI SDK 内容对象
      * 
-     * @param part - 项目内部的消息部分
-     * @param model - 提供者模型，用于检查能力支持
+     * @param part - 项目内部的消息部�?
+     * @param model - 提供者模型，用于检查能力支�?
      * @returns AI SDK 内容对象或数组，如果不支持则返回 null
      */
     function convertPartToAIPart(part: Part, model: Provider.Model): any | any[] | null {
@@ -609,13 +601,11 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
     }
     for (const item of input) {
         const role = item.info.role
-        let aiRole: "user" | "assistant" | "system" | "tool"
+        let aiRole: "user" | "assistant"
         if (role === "user") {
             aiRole = "user"
         } else if (role === "assistant") {
             aiRole = "assistant"
-        } else if (role === "Envirnment") {
-            aiRole = "system"
         } else {
             continue
         }
@@ -639,4 +629,5 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
     }
     return result
 }
+
 
