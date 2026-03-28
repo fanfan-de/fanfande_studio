@@ -481,6 +481,34 @@ export const Event = {
     )
 }
 
+export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
+    const messages = db.findManyWithSchema("messages", MessageInfo, {
+        where: [{ column: "sessionID", value: sessionID }],
+        orderBy: [
+            { column: "created", direction: "ASC" },
+            { column: "id", direction: "ASC" },
+        ],
+    })
+
+    const parts = db.findManyWithSchema("parts", Part, {
+        where: [{ column: "sessionid", value: sessionID }],
+        orderBy: [{ column: "id", direction: "ASC" }],
+    })
+
+    const partsByMessageID = new Map<string, Part[]>()
+    for (const part of parts) {
+        const list = partsByMessageID.get(part.messageid) ?? []
+        list.push(part)
+        partsByMessageID.set(part.messageid, list)
+    }
+
+    for (const message of messages) {
+        yield {
+            info: message,
+            parts: partsByMessageID.get(message.id) ?? [],
+        }
+    }
+}
 
 /**
  * 将项目内部的消息格式 WithParts[] 转换为 AI SDK 的消息格式 ModelMessage[]
