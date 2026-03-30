@@ -59,6 +59,7 @@
   },
   "scripts": {
     "docs": "typedoc",
-    "test:prompt": "bun test Test/prompt.e2e.test.ts"
+    "test:prompt": "bun test Test/prompt.e2e.test.ts",
+    "test:server": "bun test Test/server.api.test.ts"
   }
 }

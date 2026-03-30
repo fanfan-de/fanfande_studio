@@ -1,25 +1,84 @@
 # Server Module Spec
 
-## 概述
-`server` 模块负责暴露 HTTP 接口，把项目、session、配置、provider 等能力以路由形式提供给前端或外部客户端。它是 transport 层，不应该承载业务核心逻辑。
+## Overview
+The `server` module provides the HTTP transport layer for fanfandeagent using Hono. It should translate HTTP requests/responses and delegate all business logic to domain modules (`project`, `session`, etc.).
 
-## 核心职责
-- 组装 Hono 应用
-- 注册 `routes/` 下的所有资源路由
-- 暴露实例管理接口
-- 作为前端和内部模块之间的入口层
+## Current Entry Points
+- `createServerApp(options?)`: build and return a Hono app instance
+- `startServer(options?)`: start Bun HTTP server with the app fetch handler
+- `stopServer()`: stop the active Bun server instance
+- `url()`: return current active server URL
 
-## 主要文件
-- `server.ts`：服务入口和应用组装
-- `routes/projects.ts`：项目相关接口
-- `routes/session.ts`：session 相关接口
+## Middleware Pipeline
+1. Request ID middleware
+- Generate `requestId` by `crypto.randomUUID()`
+- Set context variable `requestId`
+- Return header `x-request-id`
 
-## 设计原则
-- 路由层只做请求 / 响应转换
-- 业务逻辑应放回 project、session、provider、config 等模块
-- 所有接口都应遵循统一错误响应和数据结构
+2. CORS middleware
+- Mount on `/api/*`
+- Use `corsWhitelist` when provided, otherwise allow default CORS behavior
 
-## 约束
-- server 不应直接操作底层数据库表
-- 实例释放、重启等操作必须通过统一生命周期入口
-- 新增路由时应同步维护文档和类型定义
+3. Access log middleware
+- Log `method`, `path`, `status`, `duration`, `requestId`
+
+4. Error handling
+- Unified not-found response for unmatched routes
+- Unified exception handling via `ApiError` and fallback `INTERNAL_ERROR`
+
+## Response Envelope
+All API responses should use a consistent envelope.
+
+Success:
+```json
+{
+  "success": true,
+  "data": {},
+  "requestId": "uuid"
+}
+```
+
+Error:
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "human readable message"
+  },
+  "requestId": "uuid"
+}
+```
+
+## Routes (Current)
+Base routes:
+- `GET /`: service metadata
+- `GET /healthz`: health check (`{ ok: true }`)
+
+Project routes (`/api/projects`):
+- `GET /api/projects`: list projects
+- `GET /api/projects/:id`: get one project by id
+
+Session routes (`/api/sessions`):
+- `GET /api/sessions`: route hint payload
+- `POST /api/sessions`: create session from request body `{ "directory": "..." }`
+- `GET /api/sessions/:id`: get one session by id
+
+## Error Codes (Current)
+- `NOT_FOUND`: route not found
+- `INVALID_PAYLOAD`: request body schema validation failed
+- `PROJECT_NOT_FOUND`: project id does not exist
+- `SESSION_NOT_FOUND`: session id does not exist
+- `INTERNAL_ERROR`: unexpected server error
+
+## Design Constraints
+- Keep route handlers thin: validate input and transform output only
+- Do not embed direct DB table logic in route handlers
+- Keep all responses request-id traceable
+- New routes must include spec updates and tests in `Test/`
+
+## Suggested Next Spec Extensions
+- Add API versioning (`/api/v1`)
+- Add authentication middleware and error codes (`UNAUTHORIZED`, `FORBIDDEN`)
+- Add rate-limit and timeout behavior contracts
+- Define streaming protocol contract for agent output (SSE/WebSocket)
