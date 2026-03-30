@@ -9,7 +9,7 @@ import * as Session from "#session/session.ts"
 
 const log = Log.create({ service: "session.processor" })
 
-/**创建一个
+/**鍒涘缓涓€涓?
  * 
  * @param input 
  * @returns 
@@ -36,7 +36,7 @@ export function create(input: {
                 try {
                     const stream = await LLM.stream(streamInput)
                      let currentText: Message.TextPart | undefined = undefined
-                     //某些模型（如 Claude、Gemini）支持多个并行推理链或嵌套推理
+                     //鏌愪簺妯″瀷锛堝 Claude銆丟emini锛夋敮鎸佸涓苟琛屾帹鐞嗛摼鎴栧祵濂楁帹鐞?
                      let reasoningMap: Record<string, Message.ReasoningPart> = {}
                      let toolcalls: Record<string, Message.ToolPart> = {}
                       for await (const value of stream.fullStream) {
@@ -62,8 +62,8 @@ export function create(input: {
                                         currentText.time.end = Date.now()
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
-                                    //将part写入存储
-                                    Session.DataBaseCreate("parts", currentText)
+                                    //灏唒art鍐欏叆瀛樺偍
+                                    await Session.updatePart(currentText)
                                     process.stdout.write("\n")
 
                                 }
@@ -74,6 +74,7 @@ export function create(input: {
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
 
+                                    await Session.updatePart(currentText)
                                     process.stdout.write(value.text)
                                 }
                                 break;
@@ -107,8 +108,8 @@ export function create(input: {
                                         }
                                         if (value.providerMetadata) part!.metadata = value.providerMetadata
 
-                                        Session.DataBaseCreate("parts", part)
-                                        delete reasoningMap[value.id]//已经存盘，内存可以删除了
+                                        await Session.updatePart(part)
+                                        delete reasoningMap[value.id]//宸茬粡瀛樼洏锛屽唴瀛樺彲浠ュ垹闄や簡
                                     }
                                 }
                                 process.stdout.write("\n")
@@ -118,6 +119,7 @@ export function create(input: {
                                     const part = reasoningMap[value.id]
                                     part!.text += value.text
                                     if (value.providerMetadata) part!.metadata = value.providerMetadata
+                                    await Session.updatePart(part!)
                                     process.stdout.write(value.text)
                                 }
                                 break
@@ -160,12 +162,12 @@ export function create(input: {
                             case "file":
                                 break;
                             case 'tool-call':
-                                // value.toolCallId 工具调用ID
-                                // value.toolName 工具名称
-                                // value.args 工具参数
+                                // value.toolCallId 宸ュ叿璋冪敤ID
+                                // value.toolName 宸ュ叿鍚嶇О
+                                // value.args 宸ュ叿鍙傛暟
                                 const match = toolcalls[value.toolCallId]
                                 if (match) {
-                                    //更新工具调用状态到“运行中”
+                                    //鏇存柊宸ュ叿璋冪敤鐘舵€佸埌鈥滆繍琛屼腑鈥?
                                     const part: Message.ToolPart = {
                                         ...match,
                                         tool: value.toolName,
@@ -226,13 +228,13 @@ export function create(input: {
                                 break;
                              case 'finish':
 
-                                 // 处理完成事件
-                                 // value.finishReason 完成原因
-                                 // value.usage 使用统计（token数量等）
-                                 // TODO: 更新消息的完成状态和时间
-                                 // TODO: 记录使用统计和计费信息
-                                 // TODO: 发送完成事件通知 UI
-                                 // TODO: 可能需要触发消息压缩（compaction）
+                                 // 澶勭悊瀹屾垚浜嬩欢
+                                 // value.finishReason 瀹屾垚鍘熷洜
+                                 // value.usage 浣跨敤缁熻锛坱oken鏁伴噺绛夛級
+                                 // TODO: 鏇存柊娑堟伅鐨勫畬鎴愮姸鎬佸拰鏃堕棿
+                                 // TODO: 璁板綍浣跨敤缁熻鍜岃璐逛俊鎭?
+                                 // TODO: 鍙戦€佸畬鎴愪簨浠堕€氱煡 UI
+                                 // TODO: 鍙兘闇€瑕佽Е鍙戞秷鎭帇缂╋紙compaction锛?
                                  this.message.finishReason = value.finishReason
                                  break;
                             case "abort":
@@ -241,17 +243,17 @@ export function create(input: {
                             case "raw":
                                 break;
                              case 'error':
-                                 // 处理错误事件
-                                 // value.error 错误信息
-                                 // TODO: 记录错误到消息的 error 字段
-                                 // TODO: 更新数据库中的错误状态
-                                 // TODO: 根据错误类型决定是否重试（增加 attempt）
-                                 // TODO: 发送错误事件通知 UI
+                                 // 澶勭悊閿欒浜嬩欢
+                                 // value.error 閿欒淇℃伅
+                                 // TODO: 璁板綍閿欒鍒版秷鎭殑 error 瀛楁
+                                 // TODO: 鏇存柊鏁版嵁搴撲腑鐨勯敊璇姸鎬?
+                                 // TODO: 鏍规嵁閿欒绫诲瀷鍐冲畾鏄惁閲嶈瘯锛堝鍔?attempt锛?
+                                 // TODO: 鍙戦€侀敊璇簨浠堕€氱煡 UI
                                  console.log("processor: error event received:", value.error)
                                  log.error("stream error", { error: value.error })
                                  break;
                             case "finish-step":
-                                //接收到这个value，说明LLM判断结束React loop
+                                //鎺ユ敹鍒拌繖涓獀alue锛岃鏄嶭LM鍒ゆ柇缁撴潫React loop
                                 console.log(value.finishReason)
                                 this.message.finishReason = value.finishReason
 
@@ -260,7 +262,7 @@ export function create(input: {
                             case "tool-approval-request":
                                 break;
                             default:
-                                // 处理未知事件类型
+                                // 澶勭悊鏈煡浜嬩欢绫诲瀷
                                 log.warn(`Unknown stream value type: ${(value as any).type}`);
                                 break;
                        }
@@ -268,7 +270,7 @@ export function create(input: {
                   }
                   catch  (e: any){
                       log.error("processor failure", { error: e.message, stack: e.stack })
-                      throw e  // 重新抛出错误
+                      throw e  // 閲嶆柊鎶涘嚭閿欒
                   }
                 if (needsCompaction) return "compact"
                 if (blocked) return "stop"
@@ -279,5 +281,6 @@ export function create(input: {
     }
     return result
 }
+
 
 

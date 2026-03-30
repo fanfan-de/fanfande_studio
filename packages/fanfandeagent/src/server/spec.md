@@ -63,6 +63,7 @@ Session routes (`/api/sessions`):
 - `GET /api/sessions`: route hint payload
 - `POST /api/sessions`: create session from request body `{ "directory": "..." }`
 - `GET /api/sessions/:id`: get one session by id
+- `POST /api/sessions/:id/messages/stream`: create a new user message and stream assistant output as `text/event-stream`
 
 ## Error Codes (Current)
 - `NOT_FOUND`: route not found

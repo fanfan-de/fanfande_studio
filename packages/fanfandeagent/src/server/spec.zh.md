@@ -63,6 +63,7 @@
 - `GET /api/sessions`：返回路由提示信息
 - `POST /api/sessions`：根据请求体 `{ "directory": "..." }` 创建会话
 - `GET /api/sessions/:id`：按 ID 获取单个会话
+- `POST /api/sessions/:id/messages/stream`：创建一条新的用户消息，并以 `text/event-stream` 流式返回 assistant 输出
 
 ## 当前错误码
 - `NOT_FOUND`：路由不存在
