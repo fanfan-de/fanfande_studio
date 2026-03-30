@@ -157,3 +157,44 @@
 4. 再补 LLM 执行循环。
 5. 最后统一入口层。
 
+
+## 新增待办：前后端 Contract-First 解耦（暂不实施）
+
+> 状态：暂缓，先记录设计与测试边界，后续再落地实现。
+
+### 目标
+
+前端需要知道后端请求/响应格式，但前端代码不直接引用后端实现文件（`packages/fanfandeagent/src/**`）。
+
+### 任务清单
+
+- [ ] 新建独立协议包 `packages/fanfande-contracts`（只放 schema/type/error-code，不放业务实现）
+- [ ] 在协议包中定义 `projects`、`sessions`、`messages/stream` 的请求/响应与 SSE 事件 schema
+- [ ] 后端 `packages/fanfandeagent` 改为依赖 `fanfande-contracts` 做输入输出校验
+- [ ] 前端 `packages/fanfandedesktop` 仅依赖 `fanfande-contracts`（或由其生成的 SDK）
+- [ ] 前端增加 `AgentGateway` 抽象：`MockGateway` / `HttpGateway`，UI 层只调用网关接口
+- [ ] 增加 ESLint 规则：禁止前端直接 import `fanfandeagent` 源码
+- [ ] 增加 CI 合约漂移检查：后端实际响应必须通过 contracts 校验
+
+### 验收标准
+
+- [ ] `ADAPTER=mock` 时，前端不启动后端也可本地开发与跑测
+- [ ] `ADAPTER=http` 时，前端仅通过协议层与后端通信，无跨包源码依赖
+- [ ] 前端仓库中无 `import` 指向 `packages/fanfandeagent/src/**`
+- [ ] 合约测试与联调测试均通过
+
+### 测试指令（规划）
+
+```bash
+# 1) 协议/合约测试：验证后端响应与 contracts 一致
+bun run test:contract
+
+# 2) 前端离线能力：mock 模式不依赖后端
+ADAPTER=mock bun run test
+
+# 3) 前后端联调：HTTP 适配器符合协议
+ADAPTER=http bun run test:integration
+
+# 4) 依赖边界检查：禁止前端直引后端源码
+bun run lint
+```
