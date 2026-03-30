@@ -1,72 +1,63 @@
 import z from "zod"
-import * as Message from "#session/message.ts"
-import * as Agent from "#agent/agent.ts"
-import * as  keyframes  from "hono/css"
-import type { initializeContext } from "zod/v4/core"
-import type { ErrorMapCtx } from "zod/v3"
+import type * as Agent from "#agent/agent.ts"
 
-
-interface Metadata {
-    [key: string]: any
-}
+type Metadata = Record<string, unknown>
 
 export interface InitContext {
-    agent?: Agent.AgentInfo
+  agent?: Agent.AgentInfo
 }
 
-export type Context<M extends Metadata = Metadata> = {
-    sessionID: string
-    messageID: string
+export interface Context {
+  sessionID: string
+  messageID: string
+  cwd?: string
+  worktree?: string
+  abort?: AbortSignal
+}
+
+export interface ToolResult<M extends Metadata = Metadata> {
+  title?: string
+  output: string
+  metadata?: M
 }
 
 export interface ToolInfo<Parameters extends z.ZodType = z.ZodType, M extends Metadata = Metadata> {
-    id: string
-    init: (ctx?: InitContext) => Promise<{
-        description: string //工具描述
-        parameters: Parameters //执行工具需要的参数
-        execute(
-            args: z.infer<Parameters>,
-            ctx: Context,
-        ): Promise<{
-            //title: string
-            //metadata: M
-            output: string
-            //attachments?: Omit<Message.FilePart, "id" | "sessionID" | "messageID">[]
-        }>//工具的执行方法
-        formatValidationError?(error: z.ZodError): string
-    }>
+  id: string
+  init: (ctx?: InitContext) => Promise<{
+    description: string
+    parameters: Parameters
+    execute(args: z.infer<Parameters>, ctx: Context): Promise<ToolResult<M>> | ToolResult<M>
+    formatValidationError?(error: z.ZodError): string
+  }>
 }
 
 export function define<Parameters extends z.ZodType, Result extends Metadata>(
-    id: string,
-    init: ToolInfo<Parameters, Result>["init"]//|Awaited<ReturnType<Info<Parameters,Result>["init"]>>
+  id: string,
+  init: ToolInfo<Parameters, Result>["init"],
 ): ToolInfo<Parameters, Result> {
-    return {
-        id,
-        init: async (initctx) => {
-            const toolinfo = await init(initctx)
-            const execute = toolinfo.execute
+  return {
+    id,
+    init: async (initctx) => {
+      const toolinfo = await init(initctx)
+      const execute = toolinfo.execute
 
-            toolinfo.execute = async (args, ctx) => {
-                try {
-                    toolinfo.parameters.parse(args)
-                } catch (error) {
-                    if (error instanceof z.ZodError && toolinfo.formatValidationError) {
-                        throw new Error(toolinfo.formatValidationError(error), { cause: error })
-                    }
-                    throw new Error(
-                        `The ${id} tool was called with invalid arguments: ${error}.\nPlease rewrite the input so it satisfies the expected schema.`,
-                        { cause: error },
-                    )
-                }
+      toolinfo.execute = async (args, ctx) => {
+        const parsed = toolinfo.parameters.safeParse(args)
+        if (!parsed.success) {
+          if (toolinfo.formatValidationError) {
+            throw new Error(toolinfo.formatValidationError(parsed.error), { cause: parsed.error })
+          }
 
-                const result = execute(args, ctx)
-
-                return {
-                    ...result
-                }
-            }
-            return toolinfo
+          throw new Error(
+            `The ${id} tool was called with invalid arguments: ${parsed.error.message}. Please rewrite the input so it satisfies the expected schema.`,
+            { cause: parsed.error },
+          )
         }
-    }
+
+        return await execute(parsed.data, ctx)
+      }
+
+      return toolinfo
+    },
+  }
 }

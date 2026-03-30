@@ -1,43 +1,43 @@
-// import yargs from "yargs"
-// import { hideBin } from "yargs/helpers"
-// import { RunCommand } from "./cli/cmd/run"
-// import { GenerateCommand } from "./cli/cmd/generate"
-// import { Log } from "./util/log"
-// import { AuthCommand } from "./cli/cmd/auth"
-// import { AgentCommand } from "./cli/cmd/agent"
-// import { UpgradeCommand } from "./cli/cmd/upgrade"
-// import { UninstallCommand } from "./cli/cmd/uninstall"
-// import { ModelsCommand } from "./cli/cmd/models"
-// import { UI } from "./cli/ui"
-// import { Installation } from "./installation/installation"
-// import { NamedError } from "@opencode-ai/util/error"
-// import { FormatError } from "./cli/error"
-// import { ServeCommand } from "./cli/cmd/serve"
-// import { DebugCommand } from "./cli/cmd/debug"
-// import { StatsCommand } from "./cli/cmd/stats"
-// import { McpCommand } from "./cli/cmd/mcp"
-// import { GithubCommand } from "./cli/cmd/github"
-// import { ExportCommand } from "./cli/cmd/export"
-// import { ImportCommand } from "./cli/cmd/import"
-// import { AttachCommand } from "./cli/cmd/tui/attach"
-// import { TuiThreadCommand } from "./cli/cmd/tui/thread"
-// import { AcpCommand } from "./cli/cmd/acp"
-// import { EOL } from "os"
-// import { WebCommand } from "./cli/cmd/web"
-// import { PrCommand } from "./cli/cmd/pr"
-// import { SessionCommand } from "./cli/cmd/session"
+// // import yargs from "yargs"
+// // import { hideBin } from "yargs/helpers"
+// // import { RunCommand } from "./cli/cmd/run"
+// // import { GenerateCommand } from "./cli/cmd/generate"
+// // import { Log } from "./util/log"
+// // import { AuthCommand } from "./cli/cmd/auth"
+// // import { AgentCommand } from "./cli/cmd/agent"
+// // import { UpgradeCommand } from "./cli/cmd/upgrade"
+// // import { UninstallCommand } from "./cli/cmd/uninstall"
+// // import { ModelsCommand } from "./cli/cmd/models"
+// // import { UI } from "./cli/ui"
+// // import { Installation } from "./installation/installation"
+// // import { NamedError } from "@opencode-ai/util/error"
+// // import { FormatError } from "./cli/error"
+// // import { ServeCommand } from "./cli/cmd/serve"
+// // import { DebugCommand } from "./cli/cmd/debug"
+// // import { StatsCommand } from "./cli/cmd/stats"
+// // import { McpCommand } from "./cli/cmd/mcp"
+// // import { GithubCommand } from "./cli/cmd/github"
+// // import { ExportCommand } from "./cli/cmd/export"
+// // import { ImportCommand } from "./cli/cmd/import"
+// // import { AttachCommand } from "./cli/cmd/tui/attach"
+// // import { TuiThreadCommand } from "./cli/cmd/tui/thread"
+// // import { AcpCommand } from "./cli/cmd/acp"
+// // import { EOL } from "os"
+// // import { WebCommand } from "./cli/cmd/web"
+// // import { PrCommand } from "./cli/cmd/pr"
+// // import { SessionCommand } from "./cli/cmd/session"
 
-// process.on("unhandledRejection", (e) => {
-//   Log.Default.error("rejection", {
-//     e: e instanceof Error ? e.message : e,
-//   })
-// })
+// // process.on("unhandledRejection", (e) => {
+// //   Log.Default.error("rejection", {
+// //     e: e instanceof Error ? e.message : e,
+// //   })
+// // })
 
-// process.on("uncaughtException", (e) => {
-//   Log.Default.error("exception", {
-//     e: e instanceof Error ? e.message : e,
-//   })
-// })
+// // process.on("uncaughtException", (e) => {
+// //   Log.Default.error("exception", {
+// //     e: e instanceof Error ? e.message : e,
+// //   })
+// // })
 
 // //process.argv (原始凭据)   process.argv = ["bun", "index.ts", "run", "--print-logs"]
 // const cli = yargs(hideBin(process.argv))

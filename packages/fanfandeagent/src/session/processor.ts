@@ -139,7 +139,12 @@ export function create(input: {
                                 }
                                 toolcalls[value.id] = part
 
-                                await Session.updatePart(part)
+                                try {
+                                    await Session.updatePart(part)
+                                } catch (error) {
+                                    console.error("failed to persist tool-input-start part", part)
+                                    throw error
+                                }
 
                                 break;
                             case "tool-input-end":
@@ -173,6 +178,12 @@ export function create(input: {
                                     }
 
                                     toolcalls[value.toolCallId] = part as Message.ToolPart
+                                    try {
+                                        await Session.updatePart(part)
+                                    } catch (error) {
+                                        console.error("failed to persist tool-call part", part)
+                                        throw error
+                                    }
                                 }
                                 break;
                             case 'tool-result':
@@ -194,6 +205,12 @@ export function create(input: {
                                     }
 
                                     toolcalls[value.toolCallId] = match
+                                    try {
+                                        await Session.updatePart(match)
+                                    } catch (error) {
+                                        console.error("failed to persist tool-result part", match)
+                                        throw error
+                                    }
                                 }
                                 break;
 

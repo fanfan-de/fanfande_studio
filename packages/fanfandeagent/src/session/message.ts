@@ -584,35 +584,6 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
                         input: state.input,
                         providerMetadata: part.metadata
                     }
-                } else if (state.status === "completed") {
-                    return {
-                        type: "tool-result" as const,
-                        toolCallId: part.callID,
-                        toolName: part.tool,
-                        input: state.input,
-                        output: {
-                            result: state.output,
-                            metadata: state.metadata,
-                            title: state.title
-                        },
-                        attachments: state.attachments?.map(att => ({
-                            type: "file" as const,
-                            mime: att.mime,
-                            url: att.url,
-                            filename: att.filename
-                        }))
-                    }
-                } else if (state.status === "error") {
-                    return {
-                        type: "tool-result" as const,
-                        toolCallId: part.callID,
-                        toolName: part.tool,
-                        input: state.input,
-                        output: {
-                            result: state.error,
-                            isError: true
-                        }
-                    }
                 }
                 return null
             default:
@@ -629,23 +600,73 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
         } else {
             continue
         }
-        const content: any[] = []
-        for (const part of item.parts) {
-            const aiPart = convertPartToAIPart(part, model)
-            if (aiPart) {
-                if (Array.isArray(aiPart)) {
-                    content.push(...aiPart)
-                } else {
-                    content.push(aiPart)
-                }
-            }
-        }
-        if (content.length > 0) {
+        const orderedParts = [...item.parts].sort((a, b) => a.id.localeCompare(b.id))
+        const assistantContent: any[] = []
+
+        const flushAssistant = () => {
+            if (assistantContent.length === 0) return
             result.push({
                 role: aiRole,
-                content
+                content: [...assistantContent],
             } as ModelMessage)
+            assistantContent.length = 0
         }
+
+        for (const part of orderedParts) {
+            if (aiRole === "assistant" && part.type === "tool") {
+                const state = part.state
+                if (state.status === "completed" || state.status === "error") {
+                    flushAssistant()
+                    result.push({
+                        role: "assistant",
+                        content: [
+                            {
+                                type: "tool-call" as const,
+                                toolCallId: part.callID,
+                                toolName: part.tool,
+                                input: state.input,
+                                providerMetadata: part.metadata,
+                            },
+                        ],
+                    } as ModelMessage)
+
+                    result.push({
+                        role: "tool",
+                        content: [
+                            {
+                                type: "tool-result" as const,
+                                toolCallId: part.callID,
+                                toolName: part.tool,
+                                input: state.input,
+                                output:
+                                    state.status === "completed"
+                                        ? {
+                                            type: "text" as const,
+                                            value: state.output,
+                                        }
+                                        : {
+                                            type: "error-text" as const,
+                                            value: state.error,
+                                        },
+                                providerMetadata: part.metadata,
+                            },
+                        ] as any,
+                    } as ModelMessage)
+                    continue
+                }
+            }
+
+            const aiPart = convertPartToAIPart(part, model)
+            if (!aiPart) continue
+
+            if (Array.isArray(aiPart)) {
+                assistantContent.push(...aiPart)
+            } else {
+                assistantContent.push(aiPart)
+            }
+        }
+
+        flushAssistant()
     }
     return result
 }

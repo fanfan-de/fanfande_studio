@@ -8,11 +8,8 @@ import {
   wrapLanguageModel,
   type ModelMessage,
   type StreamTextResult,
-  type Tool,
   type ToolSet,
   extractReasoningMiddleware,
-  tool,
-  jsonSchema,
   type StopCondition,
   stepCountIs,
   type PrepareStepResult,
@@ -22,7 +19,6 @@ import {
 import { clone, mergeDeep, pipe } from "remeda"
 //import { ProviderTransform } from "@/provider/transform"
 import * as  Config from "#config/config.ts"
-import { Instance } from "@/project/instance"
 import * as  Agent from "#agent/agent.ts"
 import * as  Message from '#session/message.ts'
 //import { Plugin } from "@/plugin"
@@ -34,6 +30,7 @@ import { text } from "stream/consumers"
 import { z } from "zod"
 import * as db from "#database/Sqlite.ts"
 import { deepseek } from "@ai-sdk/deepseek"
+import { openai } from "@ai-sdk/openai"
 
 
 
@@ -47,13 +44,14 @@ const log = Log.create({ service: "llm" })
 export type StreamInput = {
   user: Message.User,
   sessionID: string,
+  messageID: string,
   model: Provider.Model,
   agent: Agent.AgentInfo,
   system: string[],
   abort: AbortSignal,
   messages: ModelMessage[],
   small?: boolean,
-  tools: Record<string, Tool>,
+  tools?: ToolSet,
   retries?: number,
 }
 
@@ -72,13 +70,6 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     modelID: input.model.id,
     providerID: input.model.providerID,
   })
-
-  const [language] = await Promise.all([
-    Provider.deepseekreasoningmodel
-    //Config.get(),
-    ///Provider.getProvider(input.model.providerID),
-    //Auth.get(input.model.providerID),
-  ])
 
   //const isCodex = provider.id === "openai" && auth?.type === "oauth"
 
@@ -180,7 +171,8 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   //       OUTPUT_TOKEN_MAX,
   //     )
   //**解析和过滤工具**：根据用户权限和代理设置，解析并过滤可用的工具集，获得参数tools
-  const tools = await resolveTools(input)
+  const tools: ToolSet = input.tools ?? {}
+  const model = await resolveLanguageModel(input.model)
 
   // LiteLLM and some Anthropic proxies require the tools parameter to be present
   // when message history contains tool calls, even if no tools are being used.
@@ -338,19 +330,22 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //     extractReasoningMiddleware({ tagName: "think", startWithReasoning: false }),
     //   ],
     // }),
-    model: Provider.deepseekreasoningmodel
+    model,
     //experimental_telemetry: { isEnabled: cfg.experimental?.openTelemetry },
   })
 }
 
-async function resolveTools(input: Pick<StreamInput, "tools" | "agent" | "user">) {
-  //const disabled = PermissionNext.disabled(Object.keys(input.tools), input.agent.permission)
-  for (const tool of Object.keys(input.tools)) {
-    if (input.user.tools?.[tool] === false/* || disabled.has(tool)*/) {
-      delete input.tools[tool]
-    }
+async function resolveLanguageModel(model: Provider.Model) {
+  if (model.providerID === "openai") {
+    return openai(model.api.id)
   }
-  return input.tools
+
+  if (model.providerID === "deepseek") {
+    if (model.api.id === "deepseek-reasoner") return Provider.deepseekreasoningmodel
+    return deepseek.languageModel(model.api.id)
+  }
+
+  return Provider.deepseekreasoningmodel
 }
 
 // Check if messages contain any tool-call content

@@ -9,13 +9,9 @@ import * as Session from "#session/session.ts"
 import * as Processor from "#session/processor.ts"
 //import { Provider } from "#config/config.ts";
 import * as Provider from "#provider/provider.ts"
-import type { AgentInfo } from "#agent/agent.ts";
-import { type Tool as AITool, tool, jsonSchema, asSchema } from "ai"
-import * as ToolRegistry from "#tool/registry.ts"
 import * as  db from "#database/Sqlite.ts";
 import * as Agent from "#agent/agent.ts"
-import * as  Tool from "#tool/registry.ts"
-import { forEach } from "remeda";
+import { resolveTools } from "./resolve-tools.ts"
 
 
 
@@ -52,12 +48,6 @@ export const PromptInput = z.object({
         .optional(),
     agent: z.string().optional(),
     noReply: z.boolean().optional(),
-    tools: z
-        .record(z.string(), z.boolean())
-        .optional()
-        .describe(
-            "@deprecated tools and permissions have been merged, you can set permissions on the session itself now",
-        ),
     system: z.string().optional(),
     variant: z.string().optional(),
     parts: z.array(
@@ -130,7 +120,7 @@ function start(sessionID: string): AbortSignal | undefined {
 
 
 //将prompt loop的入口
-const prompt = fn(PromptInput, async (input) => {
+export const prompt = fn(PromptInput, async (input) => {
     //获取session,先有session，再有prompt流程
     const session = Session.DataBaseRead("sessions", input.sessionID)
     //清理revert历史
@@ -169,6 +159,8 @@ const loop = fn(LoopInput, async (input) => {
     let step = 0
     const session = Session.DataBaseRead("sessions", input.sessionID)    //执行一次prompt
 
+    let currentAssistant: Message.Assistant | undefined
+
     while (true) {
         Status.set(sessionID, { type: "busy" })
         //log.info("loop", { step, sessionID })
@@ -188,7 +180,8 @@ const loop = fn(LoopInput, async (input) => {
 
         // 查询当前session的所有parts
         const allParts = db.findManyWithSchema("parts", Message.Part, {
-            where: [{ column: "sessionID", value: sessionID }]
+            where: [{ column: "sessionID", value: sessionID }],
+            orderBy: [{ column: "id", direction: "ASC" }]
         });
 
         // 按messageID分组
@@ -241,7 +234,7 @@ const loop = fn(LoopInput, async (input) => {
         }
 
         //获取模型参数
-        const model = Provider.deepseekreasoningmodel
+        const model = await Provider.getModel(lastUser.model.providerID, lastUser.model.modelID)
 
         //pending subtask
 
@@ -254,9 +247,9 @@ const loop = fn(LoopInput, async (input) => {
             role: "assistant",
             created: Date.now(),
             parentID: "",
-            modelID: "deepseek-reasoner",
-            providerID: "deepseek",
-            agent: "plan",
+            modelID: model.id,
+            providerID: model.providerID,
+            agent: lastUser.agent,
             path: {
                 cwd: Instance.directory,
                 root: Instance.worktree
@@ -272,6 +265,14 @@ const loop = fn(LoopInput, async (input) => {
                 }
             }
         }
+        currentAssistant = assistantMessage
+
+        const tools = await resolveTools({
+            agent: Agent.planAgent,
+            sessionID,
+            messageID: assistantMessage.id,
+            abort: abort!,
+        })
 
         const processor = Processor.create({
             Assistant: assistantMessage
@@ -280,15 +281,16 @@ const loop = fn(LoopInput, async (input) => {
         const result = await processor.process({
             user: lastUser,
             sessionID: sessionID,
-            model: Provider.testDeepSeekModel,
+            messageID: assistantMessage.id,
+            model,
             agent: Agent.planAgent,
             system: ["你是一个助手"],
             abort: abort!,
             messages: [
-                ...Message.toModelMessages(msgs, Provider.testDeepSeekModel)
+                ...Message.toModelMessages(msgs, model)
             ],
             //small?: boolean,
-            tools: {}
+            tools,
             //retries?: number,
         })
 
@@ -297,7 +299,7 @@ const loop = fn(LoopInput, async (input) => {
         const modelFinished = processor.message.finishReason
 
         
-        if (modelFinished) {
+        if (modelFinished && !["tool-calls", "unknown"].includes(modelFinished)) {
             console.log("modelFinish: " + modelFinished)
             break
         }
@@ -316,6 +318,18 @@ const loop = fn(LoopInput, async (input) => {
         continue
     }
 
+
+    if (!currentAssistant) throw new Error("No assistant message was created.")
+
+    const parts = db.findManyWithSchema("parts", Message.Part, {
+        where: [{ column: "messageID", value: currentAssistant.id }],
+        orderBy: [{ column: "id", direction: "ASC" }],
+    })
+
+    return {
+        info: currentAssistant,
+        parts,
+    }
 
     for await (const item of Message.stream(sessionID)) {
         if (item.info.role === "user") continue
@@ -350,7 +364,6 @@ async function createUserMessage(input: PromptInput) {
         sessionID: input.sessionID,
         role: "user",
         created: Date.now(),
-        tools: input.tools,
         agent: input.agent ?? "plan",
         model: input.model ?? {
             providerID: "deepseek",
@@ -667,11 +680,5 @@ async function createUserMessage(input: PromptInput) {
 
 //#endregion
 
-
-
-export {
-    prompt,
-
-}
 
 

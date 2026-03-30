@@ -20,7 +20,7 @@
 
 ### 任务清单
 
-- [ ] 让 `src/index.ts` 真正成为可执行入口
+- [] 让 `src\dev\bootstrap-smoke.ts` 真正成为可执行入口
 - [ ] 让 `src/server/server.ts` 不只是骨架，而是能驱动一条完整链路
 - [ ] 打通入口到 `Instance` 的初始化
 - [ ] 打通 `Instance` 到 `Project` 的定位与加载

@@ -152,6 +152,24 @@ function toSQLiteValue<T extends Record<string, unknown>>(
   return result;
 }
 
+function normalizeRecordKeys<T extends Record<string, unknown>>(
+  record: T,
+  shape: Record<string, z.ZodTypeAny>,
+): Record<string, SQLiteValue> {
+  const keyMap = new Map<string, string>()
+  for (const key of Object.keys(shape)) {
+    keyMap.set(key.toLowerCase(), key)
+  }
+
+  const normalized: Record<string, SQLiteValue> = {}
+  for (const [key, value] of Object.entries(record) as [string, SQLiteValue][]) {
+    const mapped = keyMap.get(key.toLowerCase()) ?? key
+    normalized[mapped] = value
+  }
+
+  return normalized
+}
+
 
 
 function isZodDiscriminatedUnion(schema: z.ZodType): schema is z.ZodDiscriminatedUnion<any, any> {
@@ -241,7 +259,7 @@ function fromSQLiteRecord<T extends z.ZodType>(
     const variantData = typeof data === 'string' ? data : '';
     
     // 合并数据
-    const merged = mergeUnionData(schema, commonFields as Record<string, unknown>, variantData);
+    const merged = mergeUnionData(schema, normalizeRecordKeys(commonFields as Record<string, unknown>, (schema.options as z.ZodObject<any, any>[])[0]!.shape), variantData);
     
     // 使用 Zod 校验并返回
     return schema.parse(merged);
@@ -253,9 +271,10 @@ function fromSQLiteRecord<T extends z.ZodType>(
     throw new Error()
   }
   const shape = schema.shape;
+  const normalizedRecord = normalizeRecordKeys(record, shape);
   const obj: Record<string, unknown> = {};
 
-  for (const [key, value] of Object.entries(record)) {
+  for (const [key, value] of Object.entries(normalizedRecord)) {
     const fieldSchema = shape[key] as z.ZodTypeAny | undefined;
     if (!fieldSchema) {
       obj[key] = value; // schema 中未定义的字段，原样保留
@@ -1044,6 +1063,7 @@ export {
   insertOneWithSchema,
   insertOneUnion,
   insertManyUnion,
+  upsert,
 
   findById,
   findMany,
@@ -1074,10 +1094,5 @@ export {
 }
 
 // #endregion
-
-
-
-
-
 
 

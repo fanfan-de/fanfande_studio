@@ -229,7 +229,13 @@ const updateMessage = fn(Message.MessageInfo, async (msg) => {
 })
 
 const updatePart = fn(Message.Part, async (part) => {
-    DataBaseCreate("parts", part)
+    const existing = db.findById("parts", Message.Part, part.id)
+    if (existing) {
+        db.updateByIdWithSchema("parts", part.id, part, Message.Part)
+        return
+    }
+
+    db.insertOneWithSchema("parts", part, Message.Part)
 })
 
 //创建session
@@ -287,6 +293,4 @@ export {
 
 
 }
-
-
 
