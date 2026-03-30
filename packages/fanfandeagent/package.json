@@ -60,6 +60,7 @@
   "scripts": {
     "docs": "typedoc",
     "test:prompt": "bun test Test/prompt.e2e.test.ts",
-    "test:server": "bun test Test/server.api.test.ts"
+    "test:server": "bun test Test/server.api.test.ts",
+    "test:server-prompt-e2e": "bun test Test/server.prompt.e2e.test.ts"
   }
 }

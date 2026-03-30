@@ -47,4 +47,32 @@ describe("server api", () => {
     expect(body.success).toBe(false)
     expect(body.error?.code).toBe("NOT_FOUND")
   })
+
+  test("POST /api/sessions/:id/messages/stream should validate payload", async () => {
+    const app = createServerApp()
+    const response = await app.request("http://localhost/api/sessions/session_1/messages/stream", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    const body = (await response.json()) as JsonEnvelope
+
+    expect(response.status).toBe(400)
+    expect(body.success).toBe(false)
+    expect(body.error?.code).toBe("INVALID_PAYLOAD")
+  })
+
+  test("POST /api/sessions/:id/messages/stream should return 404 for missing session", async () => {
+    const app = createServerApp()
+    const response = await app.request("http://localhost/api/sessions/session_missing/messages/stream", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "hello" }),
+    })
+    const body = (await response.json()) as JsonEnvelope
+
+    expect(response.status).toBe(404)
+    expect(body.success).toBe(false)
+    expect(body.error?.code).toBe("SESSION_NOT_FOUND")
+  })
 })

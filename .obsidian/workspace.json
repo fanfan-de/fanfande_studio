@@ -204,6 +204,7 @@
   },
   "active": "f8cb4ca104435170",
   "lastOpenFiles": [
+    "packages/fanfandeagent/Test/server.prompt.e2e.test.ts",
     "packages/fanfandeagent/src/server/spec.zh.md",
     "packages/fanfandeagent/Test/spec.zh.md",
     "packages/fanfandeagent/Test/server.api.test.ts",
@@ -240,7 +241,6 @@
     "packages/fanfandeagent/node_modules/punycode.js/README.md",
     "packages/fanfandeagent/node_modules/mdurl/README.md",
     "packages/fanfandeagent/node_modules/linkify-it/README.md",
-    "packages/fanfandeagent/node_modules/markdown-it/README.md",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/shiki-dependency-tree.svg",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/mini-shiki-dependency-tree.svg"
   ]

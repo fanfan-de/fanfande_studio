@@ -576,15 +576,7 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
             case "tool":
                 if (!model.capabilities.toolcall) return null
                 const state = part.state
-                if (state.status === "pending" || state.status === "running") {
-                    return {
-                        type: "tool-call" as const,
-                        toolCallId: part.callID,
-                        toolName: part.tool,
-                        input: state.input,
-                        providerMetadata: part.metadata
-                    }
-                }
+                if (state.status === "pending" || state.status === "running") return null
                 return null
             default:
                 return null

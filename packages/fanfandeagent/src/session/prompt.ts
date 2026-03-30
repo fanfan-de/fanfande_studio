@@ -112,6 +112,15 @@ function start(sessionID: string): AbortSignal | undefined {
     }
     return controller.signal
 }
+
+export function cancel(sessionID: string) {
+    const s = state()
+    const running = s[sessionID]
+    if (!running) return false
+    running.abort.abort()
+    delete s[sessionID]
+    return true
+}
 //#endregion
 
 
@@ -162,6 +171,7 @@ const loop = fn(LoopInput, async (input) => {
     let currentAssistant: Message.Assistant | undefined
 
     while (true) {
+        if (abort?.aborted) throw new Error("Prompt aborted")
         Status.set(sessionID, { type: "busy" })
         //log.info("loop", { step, sessionID })
         //if (abort.aborted) break
@@ -320,6 +330,9 @@ const loop = fn(LoopInput, async (input) => {
 
 
     if (!currentAssistant) throw new Error("No assistant message was created.")
+
+    const running = state()
+    delete running[sessionID]
 
     const parts = db.findManyWithSchema("parts", Message.Part, {
         where: [{ column: "messageID", value: currentAssistant.id }],

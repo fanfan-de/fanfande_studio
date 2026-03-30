@@ -13,10 +13,17 @@ This folder contains all test assets for the `fanfandeagent` package: unit tests
 ## API Layer Tests
 - `Test/server.api.test.ts` is a deterministic API smoke test for the Hono server layer
 - This file verifies transport behaviors (health check, payload validation, unified 404 envelope)
+- It includes validation and missing-session checks for `POST /api/sessions/:id/messages/stream`
 - It does not verify LLM behavior and therefore does not require real model calls
+
+## API Real Prompt E2E
+- `Test/server.prompt.e2e.test.ts` verifies the real prompt loop through API entry
+- Flow: create session via API -> send message to `/api/sessions/:id/messages/stream` -> assert `started` and `done` SSE events
+- Requires real model credentials (`DEEPSEEK_API_KEY`)
 
 ## Test Commands
 - Run server API smoke tests: `bun run test:server`
+- Run server prompt e2e test: `bun run test:server-prompt-e2e`
 - Run directly: `bun test Test/server.api.test.ts`
 - Existing prompt e2e test: `bun run test:prompt`
 
