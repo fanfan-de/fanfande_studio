@@ -28,13 +28,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "产品面向的用户.md",
+                "file": "Tools/exec_command or bash or shell.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "产品面向的用户"
+              "title": "exec_command or bash or shell"
             }
           }
         ],
@@ -204,6 +204,22 @@
   },
   "active": "f8cb4ca104435170",
   "lastOpenFiles": [
+    "packages/fanfandeagent/src/tool/exec-command.ts",
+    "Tools/apply_patch.md",
+    "Tools/exec_command or bash or shell.md",
+    "packages/fanfandeagent/src/tool/apply-patch.ts",
+    "Tools/subagent.md",
+    "Tools/require_userinput.md",
+    "Tools/未命名.md",
+    "Tools/write_stdin.md",
+    "Tools/websearch.md",
+    "Tools/list.md",
+    "Tools/Bash.md",
+    "Tools/文.md",
+    "Tool工具集合.md",
+    "packages/fanfandeagent/src/session/resolve-tools.ts",
+    "packages/fanfandeagent/Test/tool.real-llm.e2e.test.ts",
+    "产品面向的用户.md",
     "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.js",
     "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.js.map",
     "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.d.ts.map",
@@ -211,12 +227,6 @@
     "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/package.json",
     "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/index.js.map",
     "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/index.js",
-    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/index.d.ts.map",
-    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/escape.js.map",
-    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/index.d.ts",
-    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/escape.d.ts.map",
-    "模块划分.md",
-    "产品面向的用户.md",
     "未命名 2.md",
     "packages/fanfandeagent/node_modules/markdown-it/node_modules/entities/readme.md",
     "自然语言流程图.md",
@@ -231,17 +241,7 @@
     "packages/fanfandeagent/node_modules/markdown-it/README.md",
     "packages/fanfandeagent/node_modules/lunr/README.md",
     "packages/fanfandeagent/node_modules/lunr/CONTRIBUTING.md",
-    "packages/fanfandeagent/node_modules/lunr/CHANGELOG.md",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/shiki-dependency-tree.svg",
-    "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/mini-shiki-dependency-tree.svg",
-    "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/README.md",
-    "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/CHANGELOG.md",
-    "packages/fanfandeagent/node_modules/@shikijs/vscode-textmate/LICENSE.md",
-    "packages/fanfandeagent/node_modules/@shikijs/vscode-textmate/README.md",
-    "packages/fanfandeagent/node_modules/glob/node_modules/minimatch/node_modules/brace-expansion/node_modules/balanced-match/README.md",
-    "packages/fanfandeagent/node_modules/glob/node_modules/minimatch/node_modules/brace-expansion/node_modules/balanced-match/LICENSE.md",
-    "packages/fanfandeagent/node_modules/parse5/node_modules/entities/readme.md",
-    "packages/fanfandeagent/node_modules/glob/node_modules/minimatch/node_modules/brace-expansion/README.md",
-    "packages/fanfandeagent/node_modules/glob/node_modules/minimatch/README.md"
+    "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/mini-shiki-dependency-tree.svg"
   ]
 }

@@ -1,25 +1,37 @@
-import { Instance } from "#project/instance.ts";
-import * as Tool  from "#tool/tool.ts";
-import { BashTool } from "#tool/bash.ts"
-import { custom } from "zod";
-import * as Log from "#util/log.ts"
+import { Instance } from "#project/instance.ts"
+import * as Tool from "#tool/tool.ts"
+import { ApplyPatchTool } from "#tool/apply-patch.ts"
+import { ExecCommandTool } from "#tool/exec-command.ts"
+import { ListDirectoryTool } from "#tool/list-directory.ts"
+import { ReadFileTool } from "#tool/read-file.ts"
+import { ReplaceTextTool } from "#tool/replace-text.ts"
+import { SearchFilesTool } from "#tool/search-files.ts"
+import { WriteFileTool } from "#tool/write-file.ts"
 
-
-const log = Log.create({ service: "tool.registry" })
-
-
-//项目级工具存储 
 export const state = Instance.state(async () => {
-    const custom = [] as Tool.ToolInfo[]
+  return {
+    custom: [] as Tool.ToolInfo[],
+  }
+})
 
-    return { custom }
+export async function tools(): Promise<Tool.ToolInfo[]> {
+  const custom = await state().then((x) => x.custom)
+  return [
+    ReadFileTool,
+    WriteFileTool,
+    ReplaceTextTool,
+    ApplyPatchTool,
+    ListDirectoryTool,
+    SearchFilesTool,
+    ExecCommandTool,
+    ...custom,
+  ]
 }
-)
 
-async function all(): Promise<Tool.ToolInfo[]> {
-    const custom = await state().then((x) => x.custom)
-    return [
-        BashTool,
-        ...custom
-    ]
+export async function get(id: string): Promise<Tool.ToolInfo | undefined> {
+  return (await tools()).find((tool) => tool.id === id)
+}
+
+export async function names(): Promise<string[]> {
+  return (await tools()).map((tool) => tool.id)
 }
