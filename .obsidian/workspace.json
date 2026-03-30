@@ -204,6 +204,8 @@
   },
   "active": "f8cb4ca104435170",
   "lastOpenFiles": [
+    "packages/fanfandeagent/src/server/spec.zh.md",
+    "packages/fanfandeagent/Test/spec.zh.md",
     "packages/fanfandeagent/Test/server.api.test.ts",
     "packages/fanfandeagent/src/server/error.ts",
     "packages/fanfandeagent/src/server/types.ts",
@@ -227,7 +229,6 @@
     "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.js",
     "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.js.map",
     "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.d.ts.map",
-    "packages/fanfandeagent/node_modules/minimatch/dist/commonjs/unescape.d.ts",
     "未命名 2.md",
     "packages/fanfandeagent/node_modules/markdown-it/node_modules/entities/readme.md",
     "自然语言流程图.md",
@@ -240,7 +241,6 @@
     "packages/fanfandeagent/node_modules/mdurl/README.md",
     "packages/fanfandeagent/node_modules/linkify-it/README.md",
     "packages/fanfandeagent/node_modules/markdown-it/README.md",
-    "packages/fanfandeagent/node_modules/lunr/README.md",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/shiki-dependency-tree.svg",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/mini-shiki-dependency-tree.svg"
   ]
