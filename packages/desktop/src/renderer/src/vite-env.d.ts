@@ -13,6 +13,12 @@ declare global {
         chrome: string
         node: string
       }>
+      getWindowState?: () => Promise<{
+        isMaximized: boolean
+      }>
+      showMenu?: (menuKey: "file" | "edit" | "view" | "window" | "help") => Promise<void>
+      windowAction?: (action: "minimize" | "toggle-maximize" | "close") => Promise<void>
+      onWindowStateChange?: (listener: (state: { isMaximized: boolean }) => void) => () => void
     }
   }
 }
