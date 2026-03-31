@@ -1,6 +1,7 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react"
 
 type SessionStatus = "Live" | "Review" | "Ready"
+type TitlebarMenuKey = "file" | "edit" | "view" | "window" | "help"
 
 interface SessionSummary {
   id: string
@@ -253,6 +254,14 @@ function createID(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+const titlebarMenus: Array<{ key: TitlebarMenuKey; label: string }> = [
+  { key: "file", label: "File" },
+  { key: "edit", label: "Edit" },
+  { key: "view", label: "View" },
+  { key: "window", label: "Window" },
+  { key: "help", label: "Help" },
+]
+
 function formatTime(timestamp: number) {
   return new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
@@ -317,6 +326,7 @@ function findSession(workspaces: WorkspaceGroup[], sessionID: string) {
 
 export function App() {
   const [platform, setPlatform] = useState("Desktop")
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false)
   const [workspaces, setWorkspaces] = useState(seedWorkspaces)
   const [activeSessionID, setActiveSessionID] = useState(seedWorkspaces[0].sessions[0].id)
   const [search, setSearch] = useState("")
@@ -341,6 +351,26 @@ export function App() {
 
     return () => {
       mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    window.desktop
+      ?.getWindowState?.()
+      .then((state) => {
+        if (mounted) setIsWindowMaximized(state.isMaximized)
+      })
+      .catch(() => undefined)
+
+    const unsubscribe = window.desktop?.onWindowStateChange?.((state) => {
+      if (mounted) setIsWindowMaximized(state.isMaximized)
+    })
+
+    return () => {
+      mounted = false
+      unsubscribe?.()
     }
   }, [])
 
@@ -371,9 +401,18 @@ export function App() {
     { label: "Focus", value: activeSession.focus },
     { label: "Session", value: activeSession.status },
   ]
+  const titlebarMeta = `${activeWorkspace.name} | ${activeSession.focus} | ${mode}`
 
   function handlePromptApply(prompt: string) {
     setDraft(prompt)
+  }
+
+  function handleTitleMenu(menuKey: TitlebarMenuKey) {
+    void window.desktop?.showMenu?.(menuKey)
+  }
+
+  function handleWindowAction(action: "minimize" | "toggle-maximize" | "close") {
+    void window.desktop?.windowAction?.(action)
   }
 
   function handleSend() {
@@ -416,7 +455,75 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
+    <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
+      <header className="titlebar">
+        <div className="titlebar-surface">
+          <div className="titlebar-left">
+            <nav className="titlebar-menus" aria-label="Application menu">
+              {titlebarMenus.map((menu) => (
+                <button key={menu.key} className="titlebar-menu-button" onClick={() => handleTitleMenu(menu.key)}>
+                  {menu.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="titlebar-center">
+            <div className="titlebar-command" aria-label="Current workspace context">
+              <span className="titlebar-command-icon" aria-hidden="true">
+                <svg viewBox="0 0 16 16">
+                  <path d="M11.25 10.75 14 13.5" />
+                  <circle cx="6.75" cy="6.75" r="4.25" />
+                </svg>
+              </span>
+              <div className="titlebar-command-copy">
+                <strong className="titlebar-command-title">{activeSession.title}</strong>
+                <span className="titlebar-command-meta">{titlebarMeta}</span>
+              </div>
+              <span className="titlebar-command-shortcut">Ctrl K</span>
+            </div>
+          </div>
+
+          <div className="titlebar-right">
+            <div className="titlebar-status" aria-label="Active branch">
+              <span className="label">Branch</span>
+              <strong>{activeSession.branch}</strong>
+            </div>
+
+            <div className="titlebar-controls" aria-label="Window controls">
+              <button className="window-control" aria-label="Minimize window" onClick={() => handleWindowAction("minimize")}>
+                <svg viewBox="0 0 10 10" aria-hidden="true">
+                  <path d="M1 5h8" />
+                </svg>
+              </button>
+              <button
+                className="window-control"
+                aria-label={isWindowMaximized ? "Restore window" : "Maximize window"}
+                onClick={() => handleWindowAction("toggle-maximize")}
+              >
+                {isWindowMaximized ? (
+                  <svg viewBox="0 0 10 10" aria-hidden="true">
+                    <path d="M2 1.5h5v5H2z" />
+                    <path d="M3 3.5h5V8.5H3" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 10 10" aria-hidden="true">
+                    <path d="M1.5 1.5h7v7h-7z" />
+                  </svg>
+                )}
+              </button>
+              <button className="window-control is-close" aria-label="Close window" onClick={() => handleWindowAction("close")}>
+                <svg viewBox="0 0 10 10" aria-hidden="true">
+                  <path d="M2 2l6 6" />
+                  <path d="M8 2L2 8" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="app-shell">
       <aside className="sidebar">
         <div className="brand-card">
           <div className="brand-line">
@@ -594,6 +701,7 @@ export function App() {
 
         <footer className="composer">
           <textarea
+            aria-label="Task draft"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder="描述你希望 Agent 处理的任务、目标或界面方向。"
@@ -608,16 +716,17 @@ export function App() {
             </div>
 
             <div className="composer-actions">
-              <button className="secondary-button" onClick={() => setDraft("")}>
+              <button aria-label="Clear draft" className="secondary-button" onClick={() => setDraft("")}>
                 清空
               </button>
-              <button className="primary-button" onClick={handleSend}>
+              <button aria-label="Send task" className="primary-button" onClick={handleSend}>
                 发送任务
               </button>
             </div>
           </div>
         </footer>
       </section>
-    </main>
+      </main>
+    </div>
   )
 }

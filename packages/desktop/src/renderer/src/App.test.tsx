@@ -17,31 +17,49 @@ describe("App", () => {
         chrome: "130.0.0",
         electron: "39.0.0",
       }),
+      getWindowState: vi.fn().mockResolvedValue({
+        isMaximized: false,
+      }),
+      showMenu: vi.fn().mockResolvedValue(undefined),
+      windowAction: vi.fn().mockResolvedValue(undefined),
+      onWindowStateChange: vi.fn(() => vi.fn()),
     }
   })
 
-  it("renders the Anybox-inspired AI agent workspace", async () => {
+  it("renders the custom desktop titlebar and workspace", async () => {
     render(<App />)
 
     expect(screen.getByRole("heading", { name: "AI Agent Workspace" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "发送任务" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "File" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(await screen.findByText("win32")).toBeInTheDocument()
   })
 
-  it("appends a user prompt and a generated agent turn", async () => {
-    render(<App />)
-
-    fireEvent.change(screen.getByPlaceholderText("描述你希望 Agent 处理的任务、目标或界面方向。"), {
-      target: {
-        value: "请给这版桌面端补一个真实接口接入计划。",
-      },
+  it("applies maximized window styling when the window starts maximized", async () => {
+    window.desktop!.getWindowState = vi.fn().mockResolvedValue({
+      isMaximized: true,
     })
-    fireEvent.click(screen.getByRole("button", { name: "发送任务" }))
+
+    const { container } = render(<App />)
 
     await waitFor(() => {
-      expect(screen.getAllByText("请给这版桌面端补一个真实接口接入计划。").length).toBeGreaterThan(0)
-      expect(screen.getByText("执行草案已生成")).toBeInTheDocument()
-      expect(screen.getByText("真实接口接入位")).toBeInTheDocument()
+      expect(container.firstChild).toHaveClass("window-shell", "is-maximized")
+    })
+  })
+
+  it("appends a prompt and clears the draft input", async () => {
+    render(<App />)
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Ship custom titlebar",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }))
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Ship custom titlebar").length).toBeGreaterThan(0)
+      expect(screen.getByRole("textbox", { name: "Task draft" })).toHaveValue("")
     })
   })
 })

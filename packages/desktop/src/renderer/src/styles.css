@@ -2,10 +2,7 @@
   color-scheme: light;
   font-family: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: #17232f;
-  background:
-    radial-gradient(circle at 10% 0%, rgba(22, 119, 200, 0.16), transparent 24%),
-    radial-gradient(circle at 100% 20%, rgba(93, 157, 235, 0.14), transparent 22%),
-    linear-gradient(180deg, #eef3f8 0%, #f7f9fc 100%);
+  background: #f3f5f7;
 }
 
 * {
@@ -15,14 +12,14 @@
 html,
 body,
 #root {
+  height: 100%;
   min-height: 100%;
 }
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 18% 0%, rgba(23, 114, 196, 0.14), transparent 24%),
-    linear-gradient(180deg, #eff4f8 0%, #f8fafc 100%);
+  background: #f3f5f7;
+  overflow: hidden;
 }
 
 button,
@@ -42,28 +39,254 @@ textarea {
   background: transparent;
 }
 
-.app-shell {
+.window-shell {
+  height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
-  padding: 18px;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 14px 14px 18px;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.window-shell.is-maximized {
+  padding: 0;
+  gap: 0;
+}
+
+.window-shell.is-maximized .titlebar-surface,
+.window-shell.is-maximized .canvas {
+  border-radius: 0;
+}
+
+.window-shell.is-maximized .titlebar-surface {
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
+.titlebar {
+  min-height: 68px;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.titlebar-surface {
+  min-height: 68px;
+  padding: 8px 4px 14px;
+  border-bottom: 1px solid rgba(166, 184, 204, 0.42);
+  background: #f3f5f7;
+  display: grid;
+  grid-template-columns: auto minmax(280px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.titlebar-left,
+.titlebar-center,
+.titlebar-right,
+.titlebar-controls,
+.titlebar-menus,
+.titlebar-brand,
+.titlebar-command {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.titlebar-left {
+  min-width: 0;
+  gap: 14px;
+}
+
+.titlebar-right {
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.titlebar-center {
+  min-width: 0;
+  justify-content: center;
+}
+
+.titlebar-command {
+  width: min(100%, 480px);
+  min-height: 48px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid rgba(165, 183, 203, 0.46);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(53, 79, 106, 0.04);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.titlebar-command-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #edf2f6;
+  color: #607284;
+}
+
+.titlebar-command-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.titlebar-command-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.titlebar-command-title {
+  display: block;
+  overflow: hidden;
+  color: #1f2c39;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.titlebar-command-meta,
+.titlebar-command-shortcut {
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8091a3;
+}
+
+.titlebar-command-shortcut {
+  padding: 0 9px;
+  min-height: 28px;
+  border: 1px solid rgba(170, 186, 203, 0.48);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  background: #f7f9fb;
+}
+
+.titlebar-menu-button,
+.window-control {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-menus {
+  padding: 4px;
+  border: 1px solid rgba(170, 186, 204, 0.4);
+  border-radius: 16px;
+  background: #eef2f5;
+}
+
+.titlebar-menu-button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: transparent;
+  color: #536678;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.titlebar-menu-button:hover,
+.window-control:hover {
+  background: #ffffff;
+  color: #162733;
+  box-shadow: 0 6px 16px rgba(53, 79, 106, 0.05);
+}
+
+.titlebar-status {
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(170, 186, 204, 0.42);
+  border-radius: 16px;
+  background: #eef2f5;
+  display: grid;
+  gap: 4px;
+}
+
+.titlebar-status strong {
+  display: block;
+  overflow: hidden;
+  max-width: 220px;
+  color: #21303f;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.titlebar-controls {
+  margin-left: 2px;
+  padding: 4px;
+  border: 1px solid rgba(170, 186, 204, 0.4);
+  border-radius: 16px;
+  background: #eef2f5;
+}
+
+.window-control {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #4d6478;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.window-control svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.window-control.is-close:hover {
+  background: #db4c40;
+  color: #ffffff;
+}
+
+.app-shell {
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 2px;
   display: grid;
   grid-template-columns: 268px minmax(0, 1fr);
   gap: 18px;
 }
 
-.sidebar,
-.canvas {
-  min-height: 0;
-  border: 1px solid rgba(138, 164, 189, 0.45);
-  box-shadow:
-    0 24px 60px rgba(40, 69, 96, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(18px);
-}
-
 .sidebar {
-  border-radius: 26px;
-  padding: 18px;
-  background: rgba(242, 247, 252, 0.86);
+  min-height: 0;
+  padding: 10px 8px 10px 2px;
+  background: transparent;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -71,40 +294,18 @@ textarea {
 }
 
 .canvas {
+  min-height: 0;
   position: relative;
   overflow: hidden;
+  border: 1px solid rgba(138, 164, 189, 0.45);
   border-radius: 30px;
   padding: 22px 26px 20px;
-  background: rgba(255, 255, 255, 0.78);
+  background: #ffffff;
+  box-shadow: 0 18px 40px rgba(40, 69, 96, 0.06);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 18px;
   animation: rise-in 520ms ease;
-}
-
-.canvas::before,
-.canvas::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-  border-radius: 999px;
-  filter: blur(10px);
-}
-
-.canvas::before {
-  top: -80px;
-  right: 60px;
-  width: 220px;
-  height: 220px;
-  background: rgba(137, 191, 241, 0.18);
-}
-
-.canvas::after {
-  bottom: 120px;
-  left: 80px;
-  width: 240px;
-  height: 240px;
-  background: rgba(223, 233, 246, 0.7);
 }
 
 .brand-card,
@@ -123,7 +324,7 @@ textarea {
 .workspace-group,
 .session-card,
 .empty-state {
-  background: rgba(255, 255, 255, 0.74);
+  background: #ffffff;
 }
 
 .brand-card {
@@ -210,7 +411,7 @@ textarea {
   min-height: 48px;
   padding: 0 14px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.82);
+  background: #ffffff;
   border: 1px solid rgba(169, 189, 212, 0.5);
   color: #182532;
 }
@@ -223,7 +424,7 @@ textarea::placeholder {
 .mode-switch {
   padding: 4px;
   border-radius: 18px;
-  background: rgba(225, 235, 245, 0.74);
+  background: #e8edf2;
 }
 
 .mode-pill {
@@ -399,7 +600,7 @@ textarea::placeholder {
   min-height: 38px;
   padding: 0 14px;
   border-radius: 999px;
-  background: rgba(250, 252, 255, 0.9);
+  background: #ffffff;
   color: #233140;
   cursor: pointer;
   transition:
@@ -411,6 +612,7 @@ textarea::placeholder {
   position: relative;
   z-index: 1;
   min-height: 0;
+  overflow: hidden;
   justify-content: center;
 }
 
@@ -455,7 +657,7 @@ textarea::placeholder {
 .assistant-shell {
   border-radius: 24px;
   padding: 18px;
-  background: rgba(255, 255, 255, 0.9);
+  background: #ffffff;
   display: grid;
   gap: 16px;
 }
@@ -488,7 +690,7 @@ textarea::placeholder {
 .assistant-section {
   border-radius: 18px;
   padding: 14px;
-  background: linear-gradient(180deg, rgba(247, 250, 254, 0.94), rgba(240, 246, 251, 0.94));
+  background: #f5f8fb;
   display: grid;
   gap: 12px;
 }
@@ -509,7 +711,7 @@ textarea::placeholder {
   min-height: 132px;
   border-radius: 18px;
   padding: 14px;
-  background: rgba(255, 255, 255, 0.86);
+  background: #ffffff;
   display: grid;
   gap: 8px;
 }
@@ -531,7 +733,7 @@ textarea::placeholder {
   margin: 0 auto;
   border-radius: 28px;
   padding: 16px 18px;
-  background: rgba(255, 255, 255, 0.94);
+  background: #ffffff;
   animation: rise-in 560ms ease;
 }
 
@@ -557,7 +759,7 @@ textarea::placeholder {
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
-  background: #eef4f9;
+  background: #eef2f5;
 }
 
 .composer-actions {
@@ -577,12 +779,12 @@ textarea::placeholder {
 }
 
 .primary-button {
-  background: linear-gradient(180deg, #1677c8 0%, #1064ad 100%);
+  background: #1677c8;
   color: #ffffff;
 }
 
 .secondary-button {
-  background: rgba(239, 244, 249, 0.96);
+  background: #eef2f5;
   color: #314353;
 }
 
@@ -599,6 +801,16 @@ textarea::placeholder {
 }
 
 @media (max-width: 1100px) {
+  .titlebar-surface {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .titlebar-center {
+    order: 3;
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
   .app-shell {
     grid-template-columns: 1fr;
   }
@@ -621,12 +833,51 @@ textarea::placeholder {
 }
 
 @media (max-width: 720px) {
+  body {
+    overflow: auto;
+  }
+
+  .window-shell {
+    padding: 10px 10px 14px;
+  }
+
   .app-shell {
-    padding: 10px;
+    padding: 0;
     gap: 10px;
   }
 
-  .sidebar,
+  .titlebar-surface {
+    padding: 10px 0 12px;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .titlebar-left {
+    flex-wrap: wrap;
+  }
+
+  .titlebar-right,
+  .titlebar-center {
+    justify-content: flex-start;
+  }
+
+  .titlebar-menus {
+    flex-wrap: wrap;
+  }
+
+  .titlebar-command,
+  .titlebar-status {
+    width: 100%;
+  }
+
+  .titlebar-right {
+    flex-wrap: wrap;
+  }
+
+  .sidebar {
+    padding: 8px 0 0;
+  }
+
   .canvas {
     border-radius: 22px;
     padding: 16px;
