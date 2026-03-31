@@ -3,6 +3,7 @@ import { startTransition, useEffect, useMemo, useState } from "react"
 type SessionStatus = "Live" | "Review" | "Ready"
 type TitlebarMenuKey = "file" | "edit" | "view" | "window" | "help"
 type SidebarActionKey = "density" | "sort" | "new"
+type CanvasMenuKey = "overview" | "artifacts" | "changes" | "console" | "deploy"
 
 interface SessionSummary {
   id: string
@@ -243,6 +244,14 @@ const sidebarActions: Array<{ key: SidebarActionKey; label: string }> = [
   { key: "density", label: "Toggle sidebar density" },
   { key: "sort", label: "Sort sessions" },
   { key: "new", label: "Create session" },
+]
+
+const canvasMenuItems: Array<{ key: CanvasMenuKey; label: string }> = [
+  { key: "overview", label: "Overview" },
+  { key: "artifacts", label: "Artifacts" },
+  { key: "changes", label: "Changes" },
+  { key: "console", label: "Console" },
+  { key: "deploy", label: "Deploy" },
 ]
 
 function createID(prefix: string) {
@@ -676,6 +685,16 @@ export function App() {
         </aside>
 
         <section className="canvas">
+          <nav className="canvas-top-menu" aria-label="Main content menu">
+            <div className="canvas-top-menu-group">
+              {canvasMenuItems.map((item, index) => (
+                <button key={item.key} className={index === 0 ? "canvas-top-menu-button is-active" : "canvas-top-menu-button"}>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </nav>
+
           <header className="canvas-header">
             <div className="canvas-title">
               <span className="label">Active Session</span>

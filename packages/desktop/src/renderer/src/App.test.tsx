@@ -39,6 +39,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Project 2" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument()
     expect(await screen.findByText("win32")).toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Task draft" }).closest("footer")).toHaveClass("prompt-input-shell")
   })

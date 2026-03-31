@@ -398,7 +398,7 @@ textarea {
   padding: 22px 26px 20px;
   background: #ffffff;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 18px;
   animation: rise-in 520ms ease;
 }
@@ -601,9 +601,49 @@ textarea::placeholder {
 .artifact-grid,
 .composer-pills,
 .composer-actions,
-.stage-row {
+.stage-row,
+.canvas-top-menu,
+.canvas-top-menu-group {
   display: flex;
   gap: 12px;
+}
+
+.canvas-top-menu {
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(138, 164, 189, 0.36);
+}
+
+.canvas-top-menu-group {
+  flex-wrap: wrap;
+}
+
+.canvas-top-menu-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 0;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #ffffff;
+  color: #4a5d70;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease,
+    border-color 160ms ease;
+}
+
+.canvas-top-menu-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(111, 153, 194, 0.72);
+  color: #1c2e3f;
+}
+
+.canvas-top-menu-button.is-active {
+  background: #e7f2fb;
+  color: #1a3d5e;
+  border-color: rgba(95, 146, 194, 0.7);
 }
 
 .canvas-header {
@@ -926,6 +966,10 @@ textarea::placeholder {
   .canvas {
     border-radius: 0;
     padding: 16px;
+  }
+
+  .canvas-top-menu {
+    justify-content: flex-start;
   }
 
   .canvas-title h2 {
