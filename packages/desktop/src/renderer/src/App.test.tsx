@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { App } from "./App"
+
+const styles = readFileSync(resolve(process.cwd(), "src/renderer/src/styles.css"), "utf8")
 
 describe("App", () => {
   beforeEach(() => {
@@ -32,7 +36,11 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "AI Agent Workspace" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "File" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Project 2" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(await screen.findByText("win32")).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Task draft" }).closest("footer")).toHaveClass("prompt-input-shell")
   })
 
   it("applies maximized window styling when the window starts maximized", async () => {
@@ -61,5 +69,14 @@ describe("App", () => {
       expect(screen.getAllByText("Ship custom titlebar").length).toBeGreaterThan(0)
       expect(screen.getByRole("textbox", { name: "Task draft" })).toHaveValue("")
     })
+  })
+
+  it("keeps rounded corners only on the prompt input shell", () => {
+    const nonZeroBorderRadii = Array.from(styles.matchAll(/border-radius:\s*([^;]+);/g))
+      .map(([, value]) => value.trim())
+      .filter((value) => !/^0(?:\s|$)/.test(value))
+
+    expect(nonZeroBorderRadii).toEqual(["28px"])
+    expect(styles).toMatch(/\.prompt-input-shell\s*\{[^}]*border-radius:\s*28px;/s)
   })
 })
