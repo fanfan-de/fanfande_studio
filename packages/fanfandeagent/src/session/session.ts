@@ -1,296 +1,197 @@
 import * as Log from "#util/log.ts"
 import z from "zod"
-import *  as  Identifier from "#id/id.ts"
+import * as Identifier from "#id/id.ts"
 import { Snapshot } from "#snapshot/index.ts"
-import * as  Bus from "#bus/project-bus.ts"
-import * as  BusEvent from "#bus/bus-event.ts"
+import * as BusEvent from "#bus/bus-event.ts"
 import * as Message from "#session/message.ts"
-import { Instance } from "#project/instance.ts"
-import * as  Project from "#project/project.ts"
-import * as  Installation from "#installation/installation.ts"
+import * as Installation from "#installation/installation.ts"
 import { fn } from "#util/fn.ts"
 import * as db from "#database/Sqlite.ts"
-import { zodObjectToColumnDefs, toCreateTableSQL, } from "#database/parser.ts"
-import type { } from "#project/project.ts"
 
-
-//#region Type & Interface
-// 定义映射关系
 interface TableRecordMap {
-    projects: Project.ProjectInfo;
-    sessions: SessionInfo;
-    messages: Message.MessageInfo;
-    parts: Message.Part;
+  projects: never
+  sessions: SessionInfo
+  messages: Message.MessageInfo
+  parts: Message.Part
 }
-// 从映射中派生出联合类型
-type TableName = keyof TableRecordMap;
-// 等价于 "projects" | "sessions" | "messages" | "parts"
-type TableRecord = TableRecordMap[TableName];
-// 等价于 Project.Info | Info | Message.Info | Message.Part
+
+type TableName = keyof TableRecordMap
 
 export const SessionInfo = z
-    .object({
-        id: Identifier.schema("session"),//会话唯一标识符 ("session" 类型)
-        slug: z.string().optional(),//简短标识符（用于 URL/显示）
-        projectID: z.string(),//关联的项目ID
-        directory: z.string(),//工作目录路径
-        // parentID: Identifier.schema("session").optional(),//父会话ID（可选，用于会话树）
-        summary: z
-            .object({
-                additions: z.number(),//新增行数
-                deletions: z.number(),//删除行数
-                files: z.number(),//涉及文件数
-                ///diffs: Snapshot.FileDiff.array().optional(),//详细文件差异（可选）
-            })
-            .optional(),//代码变更摘要（可选）？
-        share: z
-            .object({
-                url: z.string(),
-            })
-            .optional(),//分享信息（可选）
-        title: z.string(),//会话标题
-        version: z.string(),//数据结构版本号
-        time: z.object({
-            created: z.number(),
-            updated: z.number(),
-            compacting: z.number().optional(),//压缩时间（可选）
-            archived: z.number().optional(),//归档时间（可选）
-        }),//时间戳记录
-        ///permission: PermissionNext.Ruleset.optional(),//访问权限规则集（可选）
-        revert: z
-            .object({
-                messageID: z.string(),//关联消息ID
-                partID: z.string().optional(),//部分回滚标识（可选）
-                snapshot: z.string().optional(),//目标快照标识（可选）
-                diff: z.string().optional(),//差异标识（可选）
-            })
-            .optional(),//回滚操作信息（可选）
-    })
-    .meta({
-        ref: "Session",
-    })
+  .object({
+    id: Identifier.schema("session"),
+    slug: z.string().optional(),
+    projectID: z.string(),
+    directory: z.string(),
+    summary: z
+      .object({
+        additions: z.number(),
+        deletions: z.number(),
+        files: z.number(),
+      })
+      .optional(),
+    share: z
+      .object({
+        url: z.string(),
+      })
+      .optional(),
+    title: z.string(),
+    version: z.string(),
+    time: z.object({
+      created: z.number(),
+      updated: z.number(),
+      compacting: z.number().optional(),
+      archived: z.number().optional(),
+    }),
+    revert: z
+      .object({
+        messageID: z.string(),
+        partID: z.string().optional(),
+        snapshot: z.string().optional(),
+        diff: z.string().optional(),
+      })
+      .optional(),
+  })
+  .meta({
+    ref: "Session",
+  })
 export type SessionInfo = z.output<typeof SessionInfo>
 
-
 const TableSchemaMap = {
-    projects: Project.ProjectInfo,
-    sessions: SessionInfo,
-    messages: Message.MessageInfo,
-    parts: Message.Part,
-} as const;
-
-
-
-//#endregion
-
-
-
-
-
-
+  sessions: SessionInfo,
+  messages: Message.MessageInfo,
+  parts: Message.Part,
+} as const
 
 const log = Log.create({ service: "session" })
-const parentTiTlePrefix = "新对话"
-const childTiltePrefic = "子对话"
-//#region Modula Initialize----------------------------------------
-//建表操作
+
 if (!db.tableExists("sessions")) {
-    db.createTableByZodObject("sessions", SessionInfo)
+  db.createTableByZodObject("sessions", SessionInfo)
 }
 if (!db.tableExists("messages")) {
-    db.createTableByZodDiscriminatedUnion("messages", Message.MessageInfo)
+  db.createTableByZodDiscriminatedUnion("messages", Message.MessageInfo)
 }
 if (!db.tableExists("parts")) {
-    db.createTableByZodDiscriminatedUnion("parts", Message.Part)
-}
-//#endregion
-
-// database CRUD
-/**
- * 四种数据(project,session,message,part)的数据库crud操作
- * @param tableName 
- * @param tableRecord 对应表的record
- */
-function DataBaseCreate<T extends TableName>(tableName: T, tableRecord: TableRecordMap[T]): void {
-
-    db.insertOneWithSchema(tableName, tableRecord, TableSchemaMap[tableName])
+  db.createTableByZodDiscriminatedUnion("parts", Message.Part)
 }
 
-function DataBaseRead<T extends TableName>(tableName: T, id: string) {
-    const result = db.findById(tableName, TableSchemaMap[tableName], id)
-    if (TableSchemaMap[tableName].parse(result))
-        return result
-    else
-        return null
+function DataBaseCreate<T extends Exclude<TableName, "projects">>(tableName: T, tableRecord: TableRecordMap[T]): void {
+  db.insertOneWithSchema(tableName, tableRecord, TableSchemaMap[tableName])
 }
 
-
-// export const read = fn(Identifier.schema("session"), (key) => {
-//     const record = findById("session", key)
-//     if (record != null)
-//         return fromSQLiteRecord(Info, record)
-//     else
-//         return null
-// })
-
-
-//session 的创建，更新，删除，diff，error事件
-const Event = {
-    Created: BusEvent.define(
-        "session.created",
-        z.object({
-            info: SessionInfo,
-        }),
-    ),
-    Updated: BusEvent.define(
-        "session.updated",
-        z.object({
-            info: SessionInfo,
-        }),
-    ),
-    Deleted: BusEvent.define(
-        "session.deleted",
-        z.object({
-            info: SessionInfo,
-        }),
-    ),
-    Diff: BusEvent.define(
-        "session.diff",
-        z.object({
-            sessionID: z.string(),
-            diff: Snapshot.FileDiff.array(),
-        }),
-    ),
-    Error: BusEvent.define(
-        "session.error",
-        z.object({
-            sessionID: z.string().optional(),
-            error: Message.Assistant.shape.error,
-        }),
-    ),
+function DataBaseRead<T extends Exclude<TableName, "projects">>(tableName: T, id: string) {
+  const result = db.findById(tableName, TableSchemaMap[tableName], id)
+  if (!result) return null
+  return TableSchemaMap[tableName].parse(result)
 }
 
-//创建新的Session,仅仅只是在存储中创建一个记录，而不是instance.state中的session
-async function createSession(
-    input: {
-        //id?: string
-        //title?: string
-        //parentID?: string
-        directory: string
-        projectID: string
-        //permission?: PermissionNext.Ruleset
-    }
-): Promise<SessionInfo> {
-    const result: SessionInfo = {
-        id: Identifier.descending("session"),
-        //slug: Slug.create(),//随机组合一个“形容词”和一个“名词”来创建一个可读性很强的字符串。
-        projectID: input.projectID,
-        directory: input.directory,
-        title: "测试名称",
-        version: Installation.VERSION,
-        time: {
-            created: Date.now(),
-            updated: Date.now(),
-        },
-    }
-    log.info("create", result)
-    //db insert
-    DataBaseCreate("sessions", result)
-
-    // Bus.publish(Event.Created, {
-    //     info: result,
-    // })
-
-    // Bus.publish(Event.Updated, {
-    //     info: result,
-    // })
-
-    return result;
+export const Event = {
+  Created: BusEvent.define(
+    "session.created",
+    z.object({
+      info: SessionInfo,
+    }),
+  ),
+  Updated: BusEvent.define(
+    "session.updated",
+    z.object({
+      info: SessionInfo,
+    }),
+  ),
+  Deleted: BusEvent.define(
+    "session.deleted",
+    z.object({
+      info: SessionInfo,
+    }),
+  ),
+  Diff: BusEvent.define(
+    "session.diff",
+    z.object({
+      sessionID: z.string(),
+      diff: Snapshot.FileDiff.array(),
+    }),
+  ),
+  Error: BusEvent.define(
+    "session.error",
+    z.object({
+      sessionID: z.string().optional(),
+      error: Message.Assistant.shape.error,
+    }),
+  ),
 }
-// async function getSession(input: {
-//     id: string
-// }) {
-//     const result = DataBaseRead("sessions", input.id)
-//     if (!result)
-//         throw new db.NotFoundError({ message: `Session not found: ${input.id}` })
-//     return result
-// }
 
-//删除Session
+async function createSession(input: {
+  directory: string
+  projectID: string
+  title?: string
+}): Promise<SessionInfo> {
+  const now = Date.now()
+  const result: SessionInfo = {
+    id: Identifier.descending("session"),
+    projectID: input.projectID,
+    directory: input.directory,
+    title: input.title?.trim() || "New chat",
+    version: Installation.VERSION,
+    time: {
+      created: now,
+      updated: now,
+    },
+  }
 
-//获取Session下所有的Messages
+  log.info("create", result)
+  DataBaseCreate("sessions", result)
+  return result
+}
 
+function listByProject(projectID: string): SessionInfo[] {
+  return db
+    .findManyWithSchema("sessions", SessionInfo, {
+      where: [{ column: "projectID", value: projectID }],
+    })
+    .sort((left, right) => right.time.updated - left.time.updated)
+}
 
-//创建新的message
-// async function createMessage()
+function removeSession(sessionID: string): SessionInfo | null {
+  const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
+  if (!existing) return null
+
+  db.deleteMany("parts", [{ column: "sessionID", value: sessionID }])
+  db.deleteMany("messages", [{ column: "sessionID", value: sessionID }])
+  db.deleteById("sessions", sessionID)
+
+  return existing
+}
+
+function removeProjectSessions(projectID: string): SessionInfo[] {
+  const sessions = listByProject(projectID)
+  for (const session of sessions) {
+    removeSession(session.id)
+  }
+
+  return sessions
+}
 
 const updateMessage = fn(Message.MessageInfo, async (msg) => {
-    DataBaseCreate("messages", msg)
+  DataBaseCreate("messages", msg)
 })
 
 const updatePart = fn(Message.Part, async (part) => {
-    const existing = db.findById("parts", Message.Part, part.id)
-    if (existing) {
-        db.updateByIdWithSchema("parts", part.id, part, Message.Part)
-        return
-    }
+  const existing = db.findById("parts", Message.Part, part.id)
+  if (existing) {
+    db.updateByIdWithSchema("parts", part.id, part, Message.Part)
+    return
+  }
 
-    db.insertOneWithSchema("parts", part, Message.Part)
+  db.insertOneWithSchema("parts", part, Message.Part)
 })
-
-//创建session
-const createsession = fn(z.object({
-    //parentID: z.string().optional(),
-    title: z.string().optional(),
-    workspaceID: z.string().optional(),
-
-}), async (input) => {
-    const result: SessionInfo = {
-        id: Identifier.descending("session"),
-        //slug: Slug.create(),
-        version: Installation.VERSION,
-        projectID: Instance.project.id,
-        directory: Instance.directory,
-        //workspaceID: input.workspaceID,
-        //parentID: input.parentID,
-        title: "default title",
-        //permission: input.permission,
-        time: {
-            created: Date.now(),
-            updated: Date.now(),
-        },
-    }
-})
-
-
 
 export {
-    Event,//session的生命周期事件
-    //Session的CRUD操作
-    createSession,//在本地创建session记录
-    // forkSession,//
-    // touchSession,//会话保活？
-
-    // getSession,
-    // share,
-    // unshare,
-
-    DataBaseCreate,
-    DataBaseRead,
-
-
-
-    updateMessage,//本地创建message记录
-    updatePart,//本地创建part记录
-
-
-    // remove,
-
-    // initialize,//会话初始化功能，用于在AI对话会话开始时建立连接并准备环境
-
-    //session生命周期
-
-
-
+  createSession,
+  listByProject,
+  removeSession,
+  removeProjectSessions,
+  DataBaseCreate,
+  DataBaseRead,
+  updateMessage,
+  updatePart,
 }
-

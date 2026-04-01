@@ -90,6 +90,23 @@ export function SessionRoutes() {
     })
   })
 
+  app.delete("/:id", (c) => {
+    const id = c.req.param("id")
+    const session = Session.removeSession(id)
+    if (!session) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${id}' not found`)
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        sessionID: session.id,
+        projectID: session.projectID,
+      },
+      requestId: c.get("requestId"),
+    })
+  })
+
   app.post("/:id/messages/stream", async (c) => {
     const sessionID = c.req.param("id")
     const payload = StreamSessionMessageBody.safeParse(await c.req.json().catch(() => undefined))
