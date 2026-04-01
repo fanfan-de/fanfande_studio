@@ -221,13 +221,13 @@ textarea {
 .sidebar-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
 }
 
 .sidebar-action,
 .sidebar-settings {
-  width: 24px;
-  height: 24px;
+  width: 30px;
+  height: 30px;
   border-radius: 0;
   display: inline-flex;
   align-items: center;
@@ -281,8 +281,7 @@ textarea {
   cursor: pointer;
   transition:
     background 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
+    color 160ms ease;
 }
 
 .project-row {
@@ -294,13 +293,10 @@ textarea {
   gap: 7px;
 }
 
-.project-row:hover,
-.session-row:hover,
 .sidebar-action:hover,
 .sidebar-settings:hover,
 .primary-button:hover,
-.secondary-button:hover,
-.signal-chip:hover {
+.secondary-button:hover {
   transform: translateY(-1px);
 }
 
@@ -378,10 +374,8 @@ textarea {
   margin-top: auto;
 }
 
-.metric-card,
 .assistant-shell,
 .composer,
-.signal-chip,
 .empty-state {
   border: 1px solid rgba(166, 186, 208, 0.42);
   box-shadow: 0 14px 34px rgba(46, 81, 118, 0.06);
@@ -398,7 +392,7 @@ textarea {
   padding: 22px 26px 20px;
   background: #ffffff;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 18px;
   animation: rise-in 520ms ease;
 }
@@ -410,7 +404,6 @@ textarea {
 .assistant-header,
 .section-header,
 .composer-toolbar,
-.metrics-grid,
 .mode-switch,
 .sidebar-footer {
   display: flex;
@@ -420,7 +413,6 @@ textarea {
 }
 
 .brand-card h1,
-.canvas-title h2,
 .assistant-header h3 {
   margin: 0;
   letter-spacing: -0.04em;
@@ -432,7 +424,6 @@ textarea {
 }
 
 .brand-card p,
-.canvas-title p,
 .assistant-summary,
 .assistant-section p,
 .assistant-section li,
@@ -443,9 +434,7 @@ textarea {
 }
 
 .label,
-.canvas-title .label,
 .section-title,
-.metric-card span,
 .composer-pill,
 .turn-meta,
 .assistant-header time,
@@ -518,7 +507,6 @@ textarea::placeholder {
 
 .workspace-group-header strong,
 .session-card strong,
-.metric-card strong,
 .artifact-card strong {
   color: #182532;
 }
@@ -594,8 +582,6 @@ textarea::placeholder {
   padding-top: 4px;
 }
 
-.canvas-header,
-.signal-row,
 .thread-shell,
 .thread-column,
 .artifact-grid,
@@ -646,55 +632,6 @@ textarea::placeholder {
   border-color: rgba(95, 146, 194, 0.7);
 }
 
-.canvas-header {
-  position: relative;
-  z-index: 1;
-  align-items: flex-start;
-}
-
-.canvas-title {
-  display: grid;
-  gap: 6px;
-}
-
-.canvas-title h2 {
-  font-size: 36px;
-  line-height: 1.02;
-}
-
-.metrics-grid {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 520px;
-}
-
-.metric-card {
-  min-width: 120px;
-  border-radius: 0;
-  padding: 12px 14px;
-  background: rgba(248, 251, 255, 0.84);
-  display: grid;
-  gap: 6px;
-}
-
-.signal-row {
-  position: relative;
-  z-index: 1;
-  flex-wrap: wrap;
-}
-
-.signal-chip {
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 0;
-  background: #ffffff;
-  color: #233140;
-  cursor: pointer;
-  transition:
-    transform 160ms ease,
-    border-color 160ms ease;
-}
-
 .thread-shell {
   position: relative;
   z-index: 1;
@@ -708,8 +645,15 @@ textarea::placeholder {
   flex-direction: column;
   min-height: 0;
   overflow: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
   padding-right: 6px;
   gap: 18px;
+}
+
+.thread-column::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .turn {
@@ -910,13 +854,6 @@ textarea::placeholder {
     order: 1;
   }
 
-  .canvas-header {
-    flex-direction: column;
-  }
-
-  .metrics-grid {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 720px) {
@@ -970,10 +907,6 @@ textarea::placeholder {
 
   .canvas-top-menu {
     justify-content: flex-start;
-  }
-
-  .canvas-title h2 {
-    font-size: 28px;
   }
 
   .thread-column {
