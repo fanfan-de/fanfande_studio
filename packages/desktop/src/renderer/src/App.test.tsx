@@ -31,16 +31,18 @@ describe("App", () => {
   })
 
   it("renders the custom desktop titlebar and workspace", async () => {
-    render(<App />)
+    const { container } = render(<App />)
 
-    expect(screen.getByRole("heading", { name: "AI Agent Workspace" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "File" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Project 2" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument()
-    expect(await screen.findByText("win32")).toBeInTheDocument()
+    await waitFor(() => {
+      expect(container.querySelector(".canvas-header")).not.toBeInTheDocument()
+      expect(container.querySelector(".signal-row")).not.toBeInTheDocument()
+    })
     expect(screen.getByRole("textbox", { name: "Task draft" }).closest("footer")).toHaveClass("prompt-input-shell")
   })
 
@@ -70,6 +72,48 @@ describe("App", () => {
       expect(screen.getAllByText("Ship custom titlebar").length).toBeGreaterThan(0)
       expect(screen.getByRole("textbox", { name: "Task draft" })).toHaveValue("")
     })
+  })
+
+  it("toggles project tree expansion when clicking the same project", () => {
+    render(<App />)
+
+    const projectTwo = screen.getByRole("button", { name: "Project 2" })
+    expect(projectTwo).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
+
+    fireEvent.click(projectTwo)
+
+    expect(projectTwo).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
+
+    fireEvent.click(projectTwo)
+
+    expect(projectTwo).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
+  })
+
+  it("shows expand/collapse icon only while hovering a project row", () => {
+    render(<App />)
+
+    const projectTwo = screen.getByRole("button", { name: "Project 2" })
+    const projectTwoLeading = screen.getByTestId("project-leading-project-2")
+    const projectOne = screen.getByRole("button", { name: "Project 1" })
+    const projectOneLeading = screen.getByTestId("project-leading-project-1")
+
+    expect(projectTwoLeading).toHaveAttribute("data-icon", "folder")
+    expect(projectOneLeading).toHaveAttribute("data-icon", "folder")
+
+    fireEvent.mouseEnter(projectTwo)
+    expect(projectTwoLeading).toHaveAttribute("data-icon", "expanded")
+
+    fireEvent.mouseLeave(projectTwo)
+    expect(projectTwoLeading).toHaveAttribute("data-icon", "folder")
+
+    fireEvent.mouseEnter(projectOne)
+    expect(projectOneLeading).toHaveAttribute("data-icon", "collapsed")
+
+    fireEvent.mouseLeave(projectOne)
+    expect(projectOneLeading).toHaveAttribute("data-icon", "folder")
   })
 
   it("keeps rounded corners only on the prompt input shell", () => {

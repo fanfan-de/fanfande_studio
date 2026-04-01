@@ -78,9 +78,7 @@
 | 会话行 | Session Row | `session-row` | 单会话切换入口 |
 | 侧栏设置入口 | Sidebar Settings | `sidebar-settings` | 底部设置按钮 |
 | 主画布 | Canvas | `canvas` | 右侧主内容区 |
-| 画布头部 | Canvas Header | `canvas-header` | 标题 + 指标 |
-| 指标网格 | Metrics Grid | `metrics-grid`, `metric-card` | Runtime/Mode/Focus/Session |
-| 快捷提示行 | Signal Row | `signal-row`, `signal-chip` | 一键写入输入框的 prompt |
+| 画布顶部菜单 | Canvas Top Menu | `canvas-top-menu`, `canvas-top-menu-group`, `canvas-top-menu-button` | Overview/Artifacts/Changes/Console/Deploy |
 | 线程容器 | Thread Shell | `thread-shell` | 消息流容器 |
 | 线程列 | Thread Column | `thread-column` | 用户/助手 turn 列表 |
 | 用户消息气泡 | User Bubble | `user-bubble` | 用户 turn 展示 |
@@ -98,7 +96,8 @@
 1. Session Status: `Live | Review | Ready`
 2. Titlebar Menu Key: `file | edit | view | window | help`
 3. Sidebar Action Key: `density | sort | new`
-4. Turn 类型：
+4. Canvas Menu Key: `overview | artifacts | changes | console | deploy`
+5. Turn 类型：
 - `UserTurn`
 - `AssistantTurn`（包含 `summary/reasoning/checklist/artifacts/nextStep`）
 
@@ -139,10 +138,14 @@
 4. 点击项目行：激活该项目第一条会话。
 5. 点击会话行：切换 `activeSessionID`。
 
-### 6.4 快捷提示与发送流程
+### 6.4 画布顶部菜单流程
 
-1. 点击 `signal-chip`：仅将文本填入 `draft`（不自动发送）。
-2. 点击 `Send task`：
+1. 顶部菜单由 `canvasMenuItems` 渲染为 `canvas-top-menu-button`。
+2. 当前仅用于信息架构展示：首项 `Overview` 为默认激活态（`is-active`），其余为占位入口。
+
+### 6.5 发送流程
+
+1. 点击 `Send task`：
 - 若 `draft.trim()` 为空，直接返回。
 - 追加一条 `UserTurn`。
 - 基于当前上下文生成一条 `AssistantTurn`（`buildAgentTurn`）。
@@ -152,7 +155,7 @@
   - `updated = now`
 - 清空 `draft`。
 
-### 6.5 状态转移规则
+### 6.6 状态转移规则
 
 1. 新建会话默认 `Ready`。
 2. 一次发送后，状态由 `Ready -> Live/Review`（取决于 mode）。

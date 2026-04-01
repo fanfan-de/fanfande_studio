@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState } from "react"
+import { startTransition, useEffect, useState } from "react"
 
 type SessionStatus = "Live" | "Review" | "Ready"
 type TitlebarMenuKey = "file" | "edit" | "view" | "window" | "help"
@@ -226,12 +226,6 @@ const initialConversations: Record<string, Turn[]> = {
   ],
 }
 
-const suggestedPrompts = [
-  "Refine the desktop shell spacing and remove dashboard-like noise.",
-  "Turn the active thread into a review-first AI agent flow.",
-  "Outline the next backend integration step for this desktop surface.",
-]
-
 const titlebarMenus: Array<{ key: TitlebarMenuKey; label: string }> = [
   { key: "file", label: "File" },
   { key: "edit", label: "Edit" },
@@ -337,6 +331,14 @@ function ChevronDownIcon() {
   )
 }
 
+function ChevronRightIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10 7l5 5-5 5" />
+    </svg>
+  )
+}
+
 function ExpandIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -424,6 +426,8 @@ export function App() {
   const [isSidebarCondensed, setIsSidebarCondensed] = useState(false)
   const [workspaces, setWorkspaces] = useState(seedWorkspaces)
   const [activeSessionID, setActiveSessionID] = useState(seedWorkspaces[1].sessions[0].id)
+  const [expandedProjectID, setExpandedProjectID] = useState<string | null>(seedWorkspaces[1].id)
+  const [hoveredProjectID, setHoveredProjectID] = useState<string | null>(null)
   const [mode, setMode] = useState<"Autopilot" | "Review">("Autopilot")
   const [draft, setDraft] = useState("Help me align the desktop sidebar with the Pencil design.")
   const [conversations, setConversations] = useState(initialConversations)
@@ -467,21 +471,7 @@ export function App() {
     }
   }, [])
 
-  const metrics = useMemo(
-    () => [
-      { label: "Runtime", value: platform },
-      { label: "Mode", value: mode },
-      { label: "Focus", value: activeSession.focus },
-      { label: "Session", value: activeSession.status },
-    ],
-    [activeSession.focus, activeSession.status, mode, platform],
-  )
-
   const activeTurns = conversations[activeSession.id] ?? []
-
-  function handlePromptApply(prompt: string) {
-    setDraft(prompt)
-  }
 
   function handleTitleMenu(menuKey: TitlebarMenuKey) {
     void window.desktop?.showMenu?.(menuKey)
@@ -544,6 +534,27 @@ export function App() {
       ],
     }))
     setActiveSessionID(newSession.id)
+    setExpandedProjectID(activeWorkspace.id)
+  }
+
+  function handleProjectClick(workspace: WorkspaceGroup) {
+    const isExpanded = expandedProjectID === workspace.id
+
+    if (isExpanded) {
+      setExpandedProjectID(null)
+      return
+    }
+
+    setExpandedProjectID(workspace.id)
+    const currentSessionInWorkspace = workspace.sessions.some((session) => session.id === activeSessionID)
+    if (!currentSessionInWorkspace && workspace.sessions[0]) {
+      setActiveSessionID(workspace.sessions[0].id)
+    }
+  }
+
+  function handleSessionSelect(workspaceID: string, sessionID: string) {
+    setExpandedProjectID(workspaceID)
+    setActiveSessionID(sessionID)
   }
 
   function handleSend() {
@@ -643,21 +654,35 @@ export function App() {
 
           <div className="sidebar-projects">
             {workspaces.map((workspace) => {
-              const expanded = workspace.id === activeWorkspace.id
+              const isActiveWorkspace = workspace.id === activeWorkspace.id
+              const isExpanded = workspace.id === expandedProjectID
+              const showStateIcon = workspace.id === hoveredProjectID
+              const leadingIcon = showStateIcon ? (isExpanded ? "expanded" : "collapsed") : "folder"
 
               return (
                 <section key={workspace.id} className="project-block">
                   <button
-                    className={expanded ? "project-row is-active" : "project-row"}
-                    onClick={() => setActiveSessionID(workspace.sessions[0].id)}
+                    className={isActiveWorkspace ? "project-row is-active" : "project-row"}
+                    aria-expanded={isExpanded}
+                    data-project-id={workspace.id}
+                    onClick={() => handleProjectClick(workspace)}
+                    onMouseEnter={() => setHoveredProjectID(workspace.id)}
+                    onMouseLeave={() => setHoveredProjectID((current) => (current === workspace.id ? null : current))}
+                    onFocus={() => setHoveredProjectID(workspace.id)}
+                    onBlur={() => setHoveredProjectID((current) => (current === workspace.id ? null : current))}
                   >
-                    <span className="project-row-leading" aria-hidden="true">
-                      {expanded ? <ChevronDownIcon /> : <FolderIcon />}
+                    <span
+                      className="project-row-leading"
+                      data-icon={leadingIcon}
+                      data-testid={`project-leading-${workspace.id}`}
+                      aria-hidden="true"
+                    >
+                      {showStateIcon ? isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon /> : <FolderIcon />}
                     </span>
                     <span className="project-row-label">{workspace.name}</span>
                   </button>
 
-                  {expanded ? (
+                  {isExpanded ? (
                     <div className="session-tree">
                       {workspace.sessions.map((session) => {
                         const active = session.id === activeSession.id
@@ -666,7 +691,7 @@ export function App() {
                           <button
                             key={session.id}
                             className={active ? "session-row is-active" : "session-row"}
-                            onClick={() => setActiveSessionID(session.id)}
+                            onClick={() => handleSessionSelect(workspace.id, session.id)}
                           >
                             <span className="session-row-label">{session.title}</span>
                           </button>
@@ -694,33 +719,6 @@ export function App() {
               ))}
             </div>
           </nav>
-
-          <header className="canvas-header">
-            <div className="canvas-title">
-              <span className="label">Active Session</span>
-              <h2>AI Agent Workspace</h2>
-              <p>
-                {activeWorkspace.name} / {activeSession.title}
-              </p>
-            </div>
-
-            <div className="metrics-grid">
-              {metrics.map((metric) => (
-                <article key={metric.label} className="metric-card">
-                  <span>{metric.label}</span>
-                  <strong>{metric.value}</strong>
-                </article>
-              ))}
-            </div>
-          </header>
-
-          <section className="signal-row" aria-label="Quick prompts">
-            {suggestedPrompts.map((prompt) => (
-              <button key={prompt} className="signal-chip" onClick={() => handlePromptApply(prompt)}>
-                {prompt}
-              </button>
-            ))}
-          </section>
 
           <section className="thread-shell">
             <div className="thread-column">
