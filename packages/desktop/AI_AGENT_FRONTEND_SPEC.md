@@ -99,7 +99,7 @@
 4. Canvas Menu Key: `overview | artifacts | changes | console | deploy`
 5. Turn 类型：
 - `UserTurn`
-- `AssistantTurn`（包含 `summary/reasoning/checklist/artifacts/nextStep`）
+- `AssistantTurn`（包含 `summary/reasoning/checklist/artifacts/nextStep/isStreaming`）
 
 核心 state：
 
@@ -111,6 +111,7 @@
 6. `mode` (`Autopilot`/`Review`)。
 7. `draft` 输入框草稿。
 8. `conversations` 会话消息流。
+9. `pending agent streams`（`streamID -> assistant turn` 映射，仅用于前端流式渲染中转）。
 
 ## 6. 交互流程与逻辑
 
@@ -148,11 +149,18 @@
 1. 点击 `Send task`：
 - 若 `draft.trim()` 为空，直接返回。
 - 追加一条 `UserTurn`。
-- 基于当前上下文生成一条 `AssistantTurn`（`buildAgentTurn`）。
-- 更新当前 session：
+- 立即更新当前 session：
   - `status = Live`（Autopilot）或 `Review`（Review 模式）
   - `summary = 用户输入`
   - `updated = now`
+- 若 desktop 未连接 backend，追加本地 fallback `AssistantTurn`（`buildAgentTurn`）。
+- 若 desktop 已连接 backend：
+  - 若当前 UI session 还没有 backend session id，先调用 `createAgentSession()`
+  - 先插入一条 `isStreaming = true` 的占位 `AssistantTurn`
+  - 调用 `streamAgentMessage({ streamID, sessionID, text })`
+  - 通过 `onAgentStreamEvent` 订阅 `started/delta/part/done/error`
+  - 将 SSE 增量写回同一条 assistant turn，而不是等请求结束后再整包追加
+- 更新当前 session：
 - 清空 `draft`。
 
 ### 6.6 状态转移规则
@@ -160,6 +168,8 @@
 1. 新建会话默认 `Ready`。
 2. 一次发送后，状态由 `Ready -> Live/Review`（取决于 mode）。
 3. 会话切换不改变状态，仅切换显示上下文。
+4. 流式 assistant turn 在 `started/delta/part` 期间保持 `isStreaming = true`，收到 `done/error` 后切回 `false`。
+5. 同一条 assistant turn 在流式阶段持续增量更新，避免每个 chunk 生成一张新卡片。
 
 ## 7. 规范约束（必须遵守）
 
@@ -189,6 +199,7 @@ npm run dev
 2. 窗口初始最大化状态能反映到 `window-shell is-maximized`。
 3. 发送任务后，消息追加且输入框清空。
 4. `prompt-input-shell` 是唯一保留圆角的容器（`28px`）。
+5. backend SSE 到达后，线程区必须在请求完成前即可看到流式文本/推理更新。
 
 ## 9. 文档维护规则
 
@@ -197,3 +208,9 @@ npm run dev
 1. 技术栈版本变化。
 2. UI 区域命名变化。
 3. 交互流程/状态逻辑变化。
+## 10. 2026-04-01 Startup Sidebar Loading
+
+- On startup, `App.tsx` should call `window.desktop.listProjectWorkspaces()` when the bridge exposes it.
+- The returned project and session tree replaces the local `seedWorkspaces` sidebar data.
+- If startup loading is unavailable or fails, the existing seed sidebar remains as the fallback UI.
+- Minimum acceptance now also includes rendering backend-loaded projects and their sessions in the sidebar after the initial app mount.
