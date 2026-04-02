@@ -8,6 +8,7 @@ import type {
   AgentProjectDeleteResult,
   AgentProjectInfo,
   AgentProjectWorkspace,
+  AgentSessionHistoryMessage,
   AgentStreamIPCEvent,
   AgentSessionInfo,
   AgentSessionDeleteResult,
@@ -338,6 +339,15 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       ...result.data,
       requestId: result.requestId,
     }
+  })
+
+  ipcMain.handle("desktop:get-session-history", async (_event, input: { sessionID: string }) => {
+    const sessionID = input.sessionID.trim()
+    const result = await requestAgentJSON<AgentSessionHistoryMessage[]>(
+      `/api/sessions/${encodeURIComponent(sessionID)}/messages`,
+    )
+
+    return result.data
   })
 
   ipcMain.handle(

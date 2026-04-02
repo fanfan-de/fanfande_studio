@@ -38,6 +38,7 @@ describe("App", () => {
       createFolderSession: vi.fn(),
       deleteProjectWorkspace: vi.fn(),
       deleteAgentSession: vi.fn(),
+      getSessionHistory: vi.fn().mockResolvedValue([]),
       createAgentSession: vi.fn().mockResolvedValue({
         session: {
           id: "session-backend",
@@ -130,6 +131,146 @@ describe("App", () => {
       expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
     })
     expect(window.desktop!.listFolderWorkspaces).toHaveBeenCalledTimes(1)
+  })
+
+  it("rebuilds the active session history from the server after startup", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-1",
+          sessionID: "session-atlas-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-1", type: "text", text: "Recover the server session" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-1",
+          sessionID: "session-atlas-review",
+          role: "assistant",
+          created: 101,
+        },
+        parts: [{ id: "part-text-1", type: "text", text: "History restored from backend" }],
+      },
+    ])
+
+    render(<App />)
+
+    expect(await screen.findByText("Recover the server session")).toBeInTheDocument()
+    expect(screen.getByText("History restored from backend")).toBeInTheDocument()
+    expect(window.desktop!.getSessionHistory).toHaveBeenCalledWith({
+      sessionID: "session-atlas-review",
+    })
+  })
+
+  it("reloads session history from the server when switching sessions in the sidebar", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+          {
+            id: "session-atlas-followup",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas followup",
+            created: 11,
+            updated: 19,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          info: {
+            id: "msg-user-1",
+            sessionID: "session-atlas-review",
+            role: "user",
+            created: 100,
+          },
+          parts: [{ id: "part-user-1", type: "text", text: "First session prompt" }],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          info: {
+            id: "msg-user-2",
+            sessionID: "session-atlas-followup",
+            role: "user",
+            created: 110,
+          },
+          parts: [{ id: "part-user-2", type: "text", text: "Second session prompt" }],
+        },
+        {
+          info: {
+            id: "msg-assistant-2",
+            sessionID: "session-atlas-followup",
+            role: "assistant",
+            created: 111,
+          },
+          parts: [{ id: "part-text-2", type: "text", text: "Second session reply" }],
+        },
+      ])
+
+    render(<App />)
+
+    expect(await screen.findByText("First session prompt")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Atlas followup" }))
+
+    expect(await screen.findByText("Second session prompt")).toBeInTheDocument()
+    expect(screen.getByText("Second session reply")).toBeInTheDocument()
+    await waitFor(() => {
+      expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(1, {
+        sessionID: "session-atlas-review",
+      })
+      expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(2, {
+        sessionID: "session-atlas-followup",
+      })
+    })
   })
 
   it("keeps the seed sidebar when startup folder loading fails", async () => {
@@ -266,6 +407,9 @@ describe("App", () => {
       })
     })
     expect(await screen.findByRole("button", { name: "Backend chat" })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(document.querySelectorAll(".thread-column .turn")).toHaveLength(0)
+    })
   })
 
   it("creates a session only for the currently selected folder", async () => {
@@ -422,16 +566,140 @@ describe("App", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Send task" }))
 
-    expect(await screen.findByText("Streaming answer")).toBeInTheDocument()
-    expect(screen.getByText("Planning live update.")).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Streaming response" })).toBeInTheDocument()
+    const streamingAnswer = await screen.findByText("Streaming answer")
+    const liveReasoning = screen.getByText("Planning live update.")
+    const reasoningItem = liveReasoning.closest(".trace-item")
+    const textItem = streamingAnswer.closest(".trace-item")
+
+    expect(liveReasoning).toBeInTheDocument()
+    expect(reasoningItem).toHaveAttribute("data-kind", "reasoning")
+    expect(textItem).toHaveAttribute("data-kind", "text")
+    expect(reasoningItem).not.toBeNull()
+    expect(textItem).not.toBeNull()
+    const documentPosition = reasoningItem && textItem ? reasoningItem.compareDocumentPosition(textItem) : 0
+    expect(documentPosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: "Streaming response" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Renderer subscribed to live backend updates.")).not.toBeInTheDocument()
+    expect(screen.queryByText("Waiting for backend response.")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
 
     finishStream?.()
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Backend response received" })).toBeInTheDocument()
+      expect(screen.queryByRole("heading", { name: "Backend response received" })).not.toBeInTheDocument()
+      expect(screen.queryByText("Backend finished streaming this turn.")).not.toBeInTheDocument()
       expect(screen.getByRole("button", { name: "Send task" })).toBeEnabled()
+    })
+  })
+
+  it("keeps consecutive streamed replies isolated to their own assistant cards", async () => {
+    let streamListener:
+      | ((event: {
+          streamID: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+    let callIndex = 0
+    const streamedReplies = [
+      {
+        delta: "First reply",
+        fullText: "First reply",
+        finalText: "First reply",
+      },
+      {
+        delta: "Second reply",
+        fullText: "First replySecond reply",
+        finalText: "Second reply",
+      },
+    ]
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+      streamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+      async (input: {
+        streamID: string
+        sessionID: string
+        text: string
+      }) => {
+        const reply = streamedReplies[callIndex++]
+        if (!reply) {
+          throw new Error("Unexpected extra streamed reply")
+        }
+
+        streamListener?.({
+          streamID: input.streamID,
+          event: "started",
+          data: { sessionID: input.sessionID },
+        })
+        streamListener?.({
+          streamID: input.streamID,
+          event: "delta",
+          data: {
+            kind: "text",
+            delta: reply.delta,
+            text: reply.fullText,
+          },
+        })
+        streamListener?.({
+          streamID: input.streamID,
+          event: "done",
+          data: {
+            sessionID: input.sessionID,
+            parts: [{ id: `part-text-${callIndex}`, type: "text", text: reply.finalText }],
+          },
+        })
+
+        return {
+          streamID: input.streamID,
+        }
+      },
+    )
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
+    })
+
+    const draftInput = screen.getByRole("textbox", { name: "Task draft" })
+    const sendButton = screen.getByRole("button", { name: "Send task" })
+
+    fireEvent.change(draftInput, {
+      target: {
+        value: "First prompt",
+      },
+    })
+    fireEvent.click(sendButton)
+
+    expect(await screen.findByText("First reply")).toBeInTheDocument()
+    await waitFor(() => {
+      expect(sendButton).toBeEnabled()
+    })
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Second prompt",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }))
+
+    expect(await screen.findByText("Second reply")).toBeInTheDocument()
+
+    await waitFor(() => {
+      const firstReplyTurn = screen.getByText("First reply").closest(".assistant-turn")
+      const secondReplyTurn = screen.getByText("Second reply").closest(".assistant-turn")
+
+      expect(firstReplyTurn).not.toBeNull()
+      expect(secondReplyTurn).not.toBeNull()
+      expect(firstReplyTurn).not.toBe(secondReplyTurn)
+      expect(secondReplyTurn).not.toHaveTextContent("First reply")
     })
   })
 
@@ -537,5 +805,10 @@ describe("App", () => {
 
     expect(nonZeroBorderRadii).toEqual(["28px"])
     expect(styles).toMatch(/\.prompt-input-shell\s*\{[^}]*border-radius:\s*28px;/s)
+  })
+
+  it("gives tool trace items a dedicated visual style", () => {
+    expect(styles).toMatch(/\.trace-kind-tool\s*\{[^}]*linear-gradient/s)
+    expect(styles).toMatch(/\.trace-kind-tool\s+\.trace-item-title,\s*\.trace-kind-tool\s+\.trace-item-detail\s*\{[^}]*font-family:/s)
   })
 })

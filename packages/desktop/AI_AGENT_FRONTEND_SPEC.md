@@ -1,216 +1,244 @@
 # AI Agent Frontend Spec (SSOT)
 
-最后更新: 2026-04-01  
+最后更新: 2026-04-02  
 适用范围: `packages/desktop`  
-唯一事实来源: 本文档为前端 UI/交互/命名规范的唯一事实来源（Single Source of Truth, SSOT）。
+唯一事实来源: 本文档只负责 `renderer` 的 UI、状态和交互规范，不负责 server 内部实现细节。
 
 ## 1. 目标与边界
 
-本规范用于统一以下内容，避免“文档叫法”和“代码叫法”不一致：
+本文档用于统一以下内容：
 
-1. 开发技术栈与运行时边界。
-2. 界面区域命名（中文业务名 + 英文代码名）。
-3. 交互流程与核心状态逻辑。
+1. 当前桌面端 UI 的结构和命名。
+2. renderer 层的核心状态模型。
+3. 启动、切换会话、发送消息、流式渲染的真实行为。
+4. 修改前端时必须跑的验证方式。
 
-不在本规范范围内：
+不属于本文档的内容：
 
-1. 后端 API 协议细节（当前为前端本地模拟数据）。
-2. 视觉设计稿细节（颜色/字体微调以代码为准）。
+1. `window.desktop` / IPC / server route 的契约细节。
+2. Electron main 与 preload 的实现说明。
+3. 个人学习笔记或历史方案讨论。
 
-## 2. 技术栈与版本基线
+## 2. 当前实现入口
 
-以 `package.json` 为准：
+以当前代码为准：
 
-- Runtime: `Electron 39.2.7`
-- Frontend: `React 19.2.0` + `react-dom 19.2.0`
-- Build: `electron-vite 5.0.0` + `vite 7.3.1`
-- Language: `TypeScript 5.9.3`
-- Test: `Vitest 4.0.8` + `@testing-library/react 16.3.0` + `jsdom 27.0.0`
+1. 页面入口：`src/renderer/src/main.tsx`
+2. 页面装配：`src/renderer/src/App.tsx`
+3. 纯展示组件：`src/renderer/src/app/components.tsx`
+4. 桌面壳状态：`src/renderer/src/app/use-desktop-shell.ts`
+5. 工作区 / 会话 / 会话流状态：`src/renderer/src/app/use-agent-workspace.ts`
+6. SSE 与历史消息映射：`src/renderer/src/app/stream.ts`
+7. 样式：`src/renderer/src/styles.css`
 
-工程入口：
+## 3. 界面结构与命名
 
-1. 主进程: `src/main/index.ts`
-2. 预加载: `src/preload/index.ts`
-3. 渲染进程入口: `src/renderer/src/main.tsx`
-4. 页面主组件: `src/renderer/src/App.tsx`
-5. 样式: `src/renderer/src/styles.css`
+当前界面固定为“标题栏 + 左侧文件夹导航 + 中央 thread + 底部 composer”。
 
-## 3. 架构职责
-
-1. Main Process (`src/main/index.ts`)
-- 创建 `BrowserWindow`（`frame: false` 自定义标题栏）。
-- 处理 IPC：
-  - `desktop:get-info`
-  - `desktop:get-window-state`
-  - `desktop:window-action`
-  - `desktop:show-menu`
-- 维护窗口最大化状态（含 Windows 手动最大化逻辑）。
-
-2. Preload (`src/preload/index.ts`)
-- 通过 `contextBridge` 暴露 `window.desktop` 安全 API。
-- 作为 Renderer 与 Main 的唯一桥接层。
-
-3. Renderer (`src/renderer/src/App.tsx`)
-- 管理 UI 状态与交互行为。
-- 仅通过 `window.desktop` 访问桌面能力。
-- 当前业务数据为本地 `seedWorkspaces` + `initialConversations`。
-
-## 4. 界面区域命名规范（文档/代码统一）
-
-命名原则：
-
-1. 文档中每个区域必须有“中文业务名 + 英文 Canonical Name”。
-2. 代码中的 `className`、变量名、测试断言优先使用 Canonical Name。
-3. 新增区域必须先补充本表，再落代码。
-
-| 中文业务名 | Canonical Name | 代码锚点（class/结构） | 说明 |
+| 中文业务名 | Canonical Name | 代码锚点 | 说明 |
 | --- | --- | --- | --- |
-| 窗口外壳 | Window Shell | `window-shell` | 页面根容器，承载标题栏和主体区 |
-| 自定义标题栏 | Titlebar | `titlebar`, `titlebar-surface` | 顶部菜单与窗口控制区 |
-| 标题栏菜单区 | Titlebar Menus | `titlebar-menus` | File/Edit/View/Window/Help |
-| 窗口控制区 | Window Controls | `titlebar-controls`, `window-control` | 最小化/最大化/关闭 |
-| 应用主体壳层 | App Shell | `app-shell` | 左侧栏 + 主画布二栏布局 |
-| 项目侧栏 | Sidebar | `sidebar` | 项目与会话导航 |
-| 侧栏动作条 | Sidebar Actions | `sidebar-actions`, `sidebar-action` | 密度切换/排序/新建 |
-| 项目树 | Project Tree | `sidebar-projects`, `project-block` | 项目分组与展开逻辑 |
-| 项目行 | Project Row | `project-row` | 项目一级导航 |
-| 会话树 | Session Tree | `session-tree` | 当前项目下会话列表 |
-| 会话行 | Session Row | `session-row` | 单会话切换入口 |
-| 侧栏设置入口 | Sidebar Settings | `sidebar-settings` | 底部设置按钮 |
-| 主画布 | Canvas | `canvas` | 右侧主内容区 |
-| 画布顶部菜单 | Canvas Top Menu | `canvas-top-menu`, `canvas-top-menu-group`, `canvas-top-menu-button` | Overview/Artifacts/Changes/Console/Deploy |
-| 线程容器 | Thread Shell | `thread-shell` | 消息流容器 |
-| 线程列 | Thread Column | `thread-column` | 用户/助手 turn 列表 |
-| 用户消息气泡 | User Bubble | `user-bubble` | 用户 turn 展示 |
-| 助手消息卡 | Assistant Turn | `assistant-shell` | 结构化 agent 输出 |
-| 阶段标签行 | Stage Row | `stage-row`, `stage-chip` | checklist 可视化 |
-| 产物网格 | Artifact Grid | `artifact-grid`, `artifact-card` | 交付物卡片 |
-| 下一步区块 | Next Step | `assistant-section next-step` | 下一动作建议 |
-| 输入器 | Composer | `composer`, `prompt-input-shell` | 底部文本输入与发送 |
-| 输入器工具栏 | Composer Toolbar | `composer-toolbar` | 模型标签与操作按钮 |
+| 窗口外壳 | Window Shell | `window-shell` | 页面根容器，承载标题栏和主区域 |
+| 自定义标题栏 | Titlebar | `titlebar`, `titlebar-surface` | 原生菜单入口、agent 状态、窗口控制 |
+| 应用主体壳层 | App Shell | `app-shell` | 侧栏、拖拽分隔条、画布的横向布局 |
+| 文件夹侧栏 | Sidebar | `sidebar` | 当前是文件夹工作区导航，不再是旧的 project 卡片墙 |
+| 侧栏动作条 | Sidebar Actions | `sidebar-actions`, `sidebar-action` | `Open folder` / `Toggle sidebar density` / `Sort sessions` / `Create session` |
+| 文件夹工作区块 | Folder Workspace | `project-block` | 以文件夹为主键，显示文件夹名和所属 project 名 |
+| 文件夹行 | Folder Row | `project-row` | 支持选中、展开、折叠、hover 图标切换 |
+| 会话树 | Session Tree | `session-tree` | 当前文件夹下的 session 列表 |
+| 会话行 | Session Row | `session-row` | 当前激活会话切换入口 |
+| 删除会话动作 | Session Delete Action | `row-action` | 删除单个 session |
+| 侧栏缩放条 | Sidebar Resizer | `sidebar-resizer` | 鼠标拖拽和键盘调整侧栏宽度 |
+| 主画布 | Canvas | `canvas` | 顶部菜单、thread、composer 的容器 |
+| 画布顶部菜单 | Canvas Top Menu | `canvas-top-menu` | 当前只承载信息架构，不写业务状态 |
+| Thread 容器 | Thread Shell | `thread-shell`, `thread-column` | 渲染用户 turn 和 assistant trace |
+| 用户消息气泡 | User Bubble | `user-bubble` | 用户文本消息 |
+| Assistant turn | Assistant Turn | `assistant-turn`, `assistant-shell` | 一个 assistant 回复对应一张 trace 卡片 |
+| Trace 列表 | Assistant Trace List | `assistant-trace-list` | reasoning / text / tool / error 等事件顺序容器 |
+| Trace 项 | Trace Item | `trace-item`, `trace-kind-*` | SSE part 或历史消息 part 的渲染结果 |
+| 输入区 | Composer | `composer`, `prompt-input-shell` | 底部任务输入框和操作区 |
 
-## 5. 数据模型（当前前端状态）
+命名约束：
 
-来自 `App.tsx`：
+1. 新增区域时先更新这张表，再落代码。
+2. 新测试优先用 Canonical Name 对应的类名、ARIA label 或稳定文本断言。
+3. 不再在文档里混用“project tree”和“folder workspace tree”指代同一件事。
 
-1. Session Status: `Live | Review | Ready`
-2. Titlebar Menu Key: `file | edit | view | window | help`
-3. Sidebar Action Key: `density | sort | new`
-4. Canvas Menu Key: `overview | artifacts | changes | console | deploy`
-5. Turn 类型：
-- `UserTurn`
-- `AssistantTurn`（包含 `summary/reasoning/checklist/artifacts/nextStep/isStreaming`）
+## 4. 状态模型
 
-核心 state：
+### 4.1 桌面壳状态
 
-1. `platform` 平台信息（来自 `window.desktop.getInfo()`）。
-2. `isWindowMaximized` 窗口状态（来自 IPC + 订阅）。
-3. `isSidebarCondensed` 侧栏密度状态。
-4. `workspaces` 项目与会话树。
-5. `activeSessionID` 当前会话。
-6. `mode` (`Autopilot`/`Review`)。
-7. `draft` 输入框草稿。
-8. `conversations` 会话消息流。
-9. `pending agent streams`（`streamID -> assistant turn` 映射，仅用于前端流式渲染中转）。
+`useDesktopShell()` 负责：
 
-## 6. 交互流程与逻辑
+- `platform`
+- `isWindowMaximized`
+- `isSidebarCondensed`
+- `sidebarWidth`
+- `isSidebarResizing`
+- `agentConnected`
+- `agentDefaultDirectory`
+- `titlebarCommand`
 
-### 6.1 应用启动流程
+这部分状态只关心窗口、agent 连通性和布局壳层，不管理业务会话数据。
 
-1. Renderer 挂载后调用 `window.desktop.getInfo()` 写入 `platform`。
-2. 调用 `window.desktop.getWindowState()` 初始化最大化状态。
-3. 订阅 `onWindowStateChange`，实时同步 `isWindowMaximized`。
-4. 若 API 不可用，保持降级展示（不阻塞 UI）。
+### 4.2 工作区与会话状态
 
-### 6.2 标题栏流程
+`useAgentWorkspace()` 负责：
 
-1. 点击菜单按钮 -> `showMenu(menuKey)` -> Main 弹出对应原生菜单。
-2. 点击窗口按钮 -> `windowAction(action)`：
-- `minimize`
-- `toggle-maximize`
-- `close`
-3. 最大化切换后由 Main 下发 `desktop:window-state-changed`，Renderer 更新外壳 class。
+- `workspaces`
+- `selectedFolderID`
+- `expandedFolderID`
+- `activeSessionID`
+- `draft`
+- `conversations`
+- `agentSessions`
+- `isCreatingProject`
+- `isSending`
+- `deletingSessionID`
 
-### 6.3 侧栏流程
+其中：
 
-1. `density`：切换 `isSidebarCondensed`，仅影响密度样式。
-2. `sort`：按 `updated` 倒序重排每个 workspace 的 `sessions`。
-3. `new`：在当前 workspace 顶部插入新会话，并初始化一条 assistant welcome turn，同时切换为 active。
-4. 点击项目行：激活该项目第一条会话。
-5. 点击会话行：切换 `activeSessionID`。
+1. `workspaces` 的主视角是文件夹工作区，不是 project。
+2. `agentSessions` 用来维护“前端 UI session id -> backend session id”的映射。
+3. 当 session 是从后端加载出来时，映射默认就是 `session.id -> session.id`。
+4. 当 session 只是本地 seed/fallback 数据时，首次发送消息会通过 `createAgentSession()` 惰性拿到 backend session id。
 
-### 6.4 画布顶部菜单流程
+### 4.3 会话与 trace 数据模型
 
-1. 顶部菜单由 `canvasMenuItems` 渲染为 `canvas-top-menu-button`。
-2. 当前仅用于信息架构展示：首项 `Overview` 为默认激活态（`is-active`），其余为占位入口。
+当前 renderer 使用这些关键类型：
 
-### 6.5 发送流程
+- `SessionStatus = "Live" | "Review" | "Ready"`
+- `SidebarActionKey = "project" | "density" | "sort" | "new"`
+- `Turn = UserTurn | AssistantTurn`
+- `AssistantTraceItemKind = "system" | "reasoning" | "text" | "tool" | "file" | "image" | "patch" | "subtask" | "step" | "retry" | "snapshot" | "error"`
 
-1. 点击 `Send task`：
-- 若 `draft.trim()` 为空，直接返回。
-- 追加一条 `UserTurn`。
-- 立即更新当前 session：
-  - `status = Live`（Autopilot）或 `Review`（Review 模式）
-  - `summary = 用户输入`
-  - `updated = now`
-- 若 desktop 未连接 backend，追加本地 fallback `AssistantTurn`（`buildAgentTurn`）。
-- 若 desktop 已连接 backend：
-  - 若当前 UI session 还没有 backend session id，先调用 `createAgentSession()`
-  - 先插入一条 `isStreaming = true` 的占位 `AssistantTurn`
-  - 调用 `streamAgentMessage({ streamID, sessionID, text })`
-  - 通过 `onAgentStreamEvent` 订阅 `started/delta/part/done/error`
-  - 将 SSE 增量写回同一条 assistant turn，而不是等请求结束后再整包追加
-- 更新当前 session：
-- 清空 `draft`。
+当前真实行为：
 
-### 6.6 状态转移规则
+1. 后端加载出的 session 先映射为 `Ready`。
+2. 用户在当前会话发送消息后，该会话会被标记为 `Live`。
+3. `Review` 仍保留在类型里，用于兼容 seed 数据与未来扩展，但当前界面没有单独的 Review 切换入口。
 
-1. 新建会话默认 `Ready`。
-2. 一次发送后，状态由 `Ready -> Live/Review`（取决于 mode）。
-3. 会话切换不改变状态，仅切换显示上下文。
-4. 流式 assistant turn 在 `started/delta/part` 期间保持 `isStreaming = true`，收到 `done/error` 后切回 `false`。
-5. 同一条 assistant turn 在流式阶段持续增量更新，避免每个 chunk 生成一张新卡片。
+## 5. 启动与数据加载
 
-## 7. 规范约束（必须遵守）
+### 5.1 应用启动
 
-1. 所有桌面能力访问必须走 `window.desktop`，禁止 Renderer 直接调用 Node/Electron API。
-2. 新增 UI 区域时，必须先在本文档“命名规范表”登记，再实现代码。
-3. 新增交互时，必须补充“交互流程与逻辑”章节，明确状态读写点。
-4. 若代码与文档冲突，以“先更新文档再改代码”或“代码变更同 PR 同步文档”为准，不允许长期漂移。
+页面挂载后会并行完成三类初始化：
+
+1. `useDesktopShell()` 调 `window.desktop.getInfo()` 写入平台信息。
+2. `useDesktopShell()` 调 `window.desktop.getWindowState()` 并订阅 `onWindowStateChange()`。
+3. `useDesktopShell()` 调 `getAgentConfig()` 和 `getAgentHealth()`，生成标题栏里的 agent 状态文案。
+
+### 5.2 启动时加载工作区
+
+当前启动链路以 `listFolderWorkspaces()` 为准：
+
+1. renderer 调 `window.desktop.listFolderWorkspaces()`。
+2. 成功时，用后端返回的文件夹工作区替换 `seedWorkspaces`。
+3. 失败时，保留 `seedWorkspaces` 作为回退 UI。
+4. 成功加载后，默认选中第一个有 session 的文件夹工作区和它的首个 session。
+
+### 5.3 会话历史回放
+
+当存在激活 session 且 `getSessionHistory()` 可用时：
+
+1. renderer 调 `window.desktop.getSessionHistory({ sessionID })`。
+2. `stream.ts` 使用 `buildTurnsFromHistory()` 把持久化消息重建成 `Turn[]`。
+3. 切换不同 session 时会重新拉取并覆盖当前 thread。
+4. 如果在历史请求返回前，这个会话已经有新的本地追加内容，则旧的历史响应会被丢弃，避免覆盖最新状态。
+
+## 6. 交互流程
+
+### 6.1 标题栏
+
+1. 点击菜单按钮调用 `showMenu(menuKey, anchor)`，由 main 弹出原生菜单。
+2. 点击窗口按钮调用 `windowAction(action)`。
+3. 最大化状态由 main 通过 `desktop:window-state-changed` 反推回来，renderer 不自己猜测。
+
+### 6.2 侧栏
+
+当前四个侧栏动作的真实含义：
+
+1. `project`
+   - 打开系统文件夹选择器。
+   - 选中目录后调用 `openFolderWorkspace({ directory })`。
+   - 成功后把新的文件夹工作区插入侧栏并切到该工作区。
+2. `density`
+   - 只切换侧栏密度样式，不改数据排序。
+3. `sort`
+   - 按 `updated` 对每个文件夹下的 session 倒序重排。
+4. `new`
+   - 在当前选中文件夹下调用 `createFolderSession()`。
+   - 成功后插入新 session，切换为激活会话，并初始化本地 conversation 容器。
+
+文件夹行行为：
+
+1. 点击已选中且已展开的文件夹，会折叠 session 列表。
+2. 点击未展开的文件夹，会展开并优先激活该文件夹的首个 session。
+3. hover 或 focus 文件夹行时，leading icon 会在 `folder / expanded / collapsed` 之间切换。
+
+### 6.3 删除会话
+
+1. 点击会话行右侧删除按钮时，调用 `deleteAgentSession({ sessionID })`。
+2. 成功后从侧栏移除该 session，并清理本地 `conversations` / `agentSessions`。
+3. 如果删除的是当前激活会话，需要重新选择同文件夹下的下一个 session，或者回退到其他文件夹的首个 session。
+
+### 6.4 发送消息
+
+发送逻辑以 `handleSend()` 为准：
+
+1. 空输入不发送。
+2. 先立即把用户 turn 追加到 thread，并清空输入框。
+3. 同步更新当前 session 的 `summary`、`updated`、`status = "Live"`。
+4. 如果后端不可用，生成本地 fallback assistant turn。
+5. 如果后端可用：
+   - 没有 backend session id 时，先走 `createAgentSession()` 兜底创建。
+   - 优先走 `streamAgentMessage()` + `onAgentStreamEvent()`。
+   - 若流式接口不可用，再退回 `sendAgentMessage()` 一次性消费 SSE 文本。
+
+### 6.5 流式 trace 渲染
+
+1. 每次发送只对应一个 streaming assistant turn，不为每个 chunk 新建卡片。
+2. `delta` 事件会持续追加到当前 reasoning/text trace item。
+3. `part` 事件会映射为 `tool`、`file`、`image`、`patch`、`subtask`、`step`、`retry`、`snapshot` 等结构化 trace。
+4. `done` 会把匿名流式 text/reasoning 与最终 part 对齐，并补一个“Response complete”系统项。
+5. `error` 会把当前 turn 落成失败态，而不是静默丢失。
+
+## 7. 约束
+
+1. Renderer 只通过 `window.desktop` 访问桌面和后端能力。
+2. `preload` 是唯一桥接层，renderer 不直接访问 `ipcRenderer`、Node API 或 Electron API。
+3. 文件夹工作区是当前 sidebar 的主视角；如果未来改回 project 视角，必须先更新本文档和 API spec。
+4. session 历史回放和流式更新都要落到同一套 `Turn / AssistantTraceItem` 模型里，不能各自维护一套 UI 结构。
+5. 新增 trace 类型时，必须同步更新 `types.ts`、`stream.ts`、样式和测试。
 
 ## 8. 测试指令
 
-标准命令（在 `packages/desktop` 目录执行）：
+在 `packages/desktop` 目录执行：
 
-```bash
+```powershell
 npm run typecheck
 npm run test
 ```
 
-开发预览：
+修改以下能力时，至少补或确认对应测试：
 
-```bash
-npm run dev
-```
+1. 侧栏加载与回退：`App.test.tsx`
+2. 会话历史回放：`App.test.tsx`、`stream.test.ts`
+3. 流式 SSE 增量渲染：`App.test.tsx`、`stream.test.ts`
+4. trace item 合并规则：`stream.test.ts`
+5. 侧栏缩放与无障碍属性：`App.test.tsx`
 
-最低验收点（与现有测试一致）：
+建议的最低手工验收项：
 
-1. 能渲染标题栏与核心工作区。
-2. 窗口初始最大化状态能反映到 `window-shell is-maximized`。
-3. 发送任务后，消息追加且输入框清空。
-4. `prompt-input-shell` 是唯一保留圆角的容器（`28px`）。
-5. backend SSE 到达后，线程区必须在请求完成前即可看到流式文本/推理更新。
+1. 后端不可用时仍能看到 seed 侧栏。
+2. 后端可用时能加载文件夹工作区并切换会话历史。
+3. 在线发送消息时，`Send task` 在流式过程中会禁用，结束后恢复。
+4. 连续两次流式回复不会串到同一张 assistant 卡片里。
 
 ## 9. 文档维护规则
 
-变更任一项需同步更新本文档并在 PR 描述标注：
+以下情况必须同步更新本文档：
 
-1. 技术栈版本变化。
-2. UI 区域命名变化。
-3. 交互流程/状态逻辑变化。
-## 10. 2026-04-01 Startup Sidebar Loading
-
-- On startup, `App.tsx` should call `window.desktop.listProjectWorkspaces()` when the bridge exposes it.
-- The returned project and session tree replaces the local `seedWorkspaces` sidebar data.
-- If startup loading is unavailable or fails, the existing seed sidebar remains as the fallback UI.
-- Minimum acceptance now also includes rendering backend-loaded projects and their sessions in the sidebar after the initial app mount.
+1. 侧栏主视角、激活规则或命名变化。
+2. `useDesktopShell()` 或 `useAgentWorkspace()` 的核心状态职责变化。
+3. 会话历史回放策略变化。
+4. SSE 事件如何映射为 trace item 的规则变化。

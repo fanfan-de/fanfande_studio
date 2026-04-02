@@ -1,78 +1,84 @@
 # Desktop <-> Server API Spec
 
-最后更新: 2026-04-01  
+最后更新: 2026-04-02  
 适用范围: `packages/desktop`
 
 ## 1. 目标
 
-这份文档描述 `desktop renderer -> preload -> electron main -> fanfandeagent server` 的对接契约。
+本文档描述当前 `renderer -> preload -> electron main -> fanfandeagent server` 的真实契约，重点回答三件事：
 
-这份文档负责：
+1. renderer 现在可以通过 `window.desktop` 调哪些方法。
+2. 这些方法分别落到哪个 IPC 通道、哪个 server route。
+3. 当前桌面端究竟是按什么数据模型和链路在跑。
 
-- 说明 renderer 可调用的 `window.desktop` 接口
-- 标记哪些接口是纯桌面能力，哪些接口会打到 server
-- 说明每个接口对应的 IPC 通道和 server route
-- 记录当前已实现、部分实现、规划中的前后端联动能力
+本文档不负责：
 
-这份文档不负责：
+1. UI 视觉和交互说明。
+2. Electron 窗口生命周期的教学内容。
+3. server 内部模块实现细节。
 
-- UI 视觉和交互细节
-- Electron 本地能力的完整设计
-- server 内部模块实现细节
+相关文档：
 
-server 侧配套文档：
-
-- `packages/fanfandeagent/src/server/DESKTOP_SERVER_API_SPEC.zh.md`
+- 前端规范：`AI_AGENT_FRONTEND_SPEC.md`
+- 架构导图：`FRONTEND_ARCHITECTURE_GUIDE.md`
+- server 侧文档：`../fanfandeagent/src/server/DESKTOP_SERVER_API_SPEC.zh.md`
 
 ## 2. 对接原则
 
 1. Renderer 不直接 `fetch` server。
 2. Renderer 只调用 `window.desktop.*`。
-3. Preload 只做安全暴露和转发，不写业务逻辑。
-4. Electron main 负责调系统能力、调 server HTTP/SSE、把返回值整理成 renderer 需要的结构。
-5. 新增前后端联动需求时，必须同时更新本文件和 server 侧 spec。
+3. Preload 只暴露安全 API，不写业务逻辑。
+4. Main 负责系统能力、HTTP/SSE 请求、数据结构整形和事件转发。
+5. 改动 bridge / IPC / server route 时，desktop 和 server 两侧文档必须一起更新。
 
-## 3. 状态约定
+## 3. 当前 bridge 总览
 
-- `已实现`: 前端、IPC、server 已打通，当前可用。
-- `部分实现`: 有部分链路存在，但不等价于目标需求，不能当作完整能力使用。
-- `规划中`: 还未实现，只在 spec 中定义目标契约。
+### 3.1 纯桌面能力
 
-## 4. 当前接口总览
-
-### 4.1 纯桌面能力
-
-| `window.desktop` 方法 | IPC 通道 | server 依赖 | 状态 | 用途 |
+| `window.desktop` 方法 | IPC 通道 | server 依赖 | 当前 renderer 使用 | 说明 |
 | --- | --- | --- | --- | --- |
-| `getInfo()` | `desktop:get-info` | 否 | 已实现 | 读取平台/Electron/Node 版本 |
-| `getWindowState()` | `desktop:get-window-state` | 否 | 已实现 | 读取窗口最大化状态 |
-| `showMenu(menuKey, anchor?)` | `desktop:show-menu` | 否 | 已实现 | 弹出原生菜单 |
-| `windowAction(action)` | `desktop:window-action` | 否 | 已实现 | 最小化/最大化/关闭 |
-| `getAgentConfig()` | `desktop:get-agent-config` | 否 | 已实现 | 读取 desktop 侧 agent 配置 |
-| `pickProjectDirectory()` | `desktop:pick-project-directory` | 否 | 已实现 | 打开系统文件夹选择器 |
-| `onWindowStateChange(listener)` | event subscription | 否 | 已实现 | 订阅窗口状态变化 |
+| `getInfo()` | `desktop:get-info` | 否 | 是 | 读取平台和运行时版本 |
+| `getWindowState()` | `desktop:get-window-state` | 否 | 是 | 读取窗口最大化状态 |
+| `showMenu(menuKey, anchor?)` | `desktop:show-menu` | 否 | 是 | 弹出原生菜单 |
+| `windowAction(action)` | `desktop:window-action` | 否 | 是 | 窗口最小化 / 最大化 / 关闭 |
+| `getAgentConfig()` | `desktop:get-agent-config` | 否 | 是 | 读取 agent base URL 与默认工作目录 |
+| `pickProjectDirectory()` | `desktop:pick-project-directory` | 否 | 是 | 打开系统文件夹选择器 |
+| `onWindowStateChange(listener)` | Electron event | 否 | 是 | 订阅窗口最大化状态变化 |
 
-### 4.2 会打到 server 的接口
+### 3.2 当前 renderer 正在使用的后端联动能力
 
-| `window.desktop` 方法 | IPC 通道 | server route | 状态 | 说明 |
+| `window.desktop` 方法 | IPC 通道 | server route | 当前状态 | 说明 |
 | --- | --- | --- | --- | --- |
-| `getAgentHealth()` | `desktop:agent-health` | `GET /healthz` | 已实现 | 检查 server 是否可达 |
-| `listProjectWorkspaces()` | `desktop:list-project-workspaces` | `GET /api/projects` + `GET /api/projects/:id/sessions` | 已实现 | 启动时初始化 sidebar 项目树 |
-| `createProjectWorkspace({ directory })` | `desktop:create-project-workspace` | `POST /api/projects` + `GET /api/projects/:id/sessions` | 已实现 | 从目录创建项目并插入 sidebar |
-| `createAgentSession({ directory? })` | `desktop:agent-create-session` | `POST /api/sessions` | 部分实现 | 当前只在首次发送消息时惰性创建 backend session，不是 sidebar 正式的新建 session 接口 |
-| `createProjectSession({ projectID, ... })` | `desktop:create-project-session` | `POST /api/projects/:id/sessions` | 已实现 | 在当前 project 下创建一个真正持久化的 session |
-| `deleteProjectWorkspace({ projectID })` | `desktop:delete-project-workspace` | `DELETE /api/projects/:id` | 已实现 | 删除 project，并级联删除其 sessions/messages/parts |
-| `deleteAgentSession({ sessionID })` | `desktop:delete-agent-session` | `DELETE /api/sessions/:id` | 已实现 | 删除单个 session，并级联删除其 messages/parts |
-| `streamAgentMessage({ streamID, sessionID, text, system?, agent? })` | `desktop:agent-stream-message` | `POST /api/sessions/:id/messages/stream` | 已实现 | 发送消息并把 SSE 增量实时转发给 renderer |
-| `onAgentStreamEvent(listener)` | event subscription | `POST /api/sessions/:id/messages/stream` | 已实现 | 订阅 main 转发的 agent SSE 事件 |
-| `sendAgentMessage({ sessionID, text, system?, agent? })` | `desktop:agent-send-message` | `POST /api/sessions/:id/messages/stream` | 已实现 | 发送消息并消费 SSE |
+| `getAgentHealth()` | `desktop:agent-health` | `GET /healthz` | 已实现 | 检查 agent 服务是否可达 |
+| `listFolderWorkspaces()` | `desktop:list-folder-workspaces` | `GET /api/projects` + `GET /api/projects/:id/sessions` | 已实现 | 启动时拉取文件夹工作区树 |
+| `openFolderWorkspace({ directory })` | `desktop:open-folder-workspace` | `POST /api/projects` + 再次执行 `listFolderWorkspaces()` | 已实现 | 从目录创建/打开项目，并返回目标文件夹工作区 |
+| `createFolderSession({ projectID, directory, title? })` | `desktop:create-folder-session` | `POST /api/projects/:id/sessions` | 已实现 | 在当前文件夹工作区下新增持久化 session |
+| `deleteAgentSession({ sessionID })` | `desktop:delete-agent-session` | `DELETE /api/sessions/:id` | 已实现 | 删除单个 session 及其消息 |
+| `getSessionHistory({ sessionID })` | `desktop:get-session-history` | `GET /api/sessions/:id/messages` | 已实现 | 拉取当前 session 的历史消息 |
+| `createAgentSession({ directory? })` | `desktop:agent-create-session` | `POST /api/sessions` | 兜底可用 | 只在 UI session 没有 backend session id 时兜底创建 |
+| `streamAgentMessage({ streamID, sessionID, text, system?, agent? })` | `desktop:agent-stream-message` | `POST /api/sessions/:id/messages/stream` | 已实现 | 流式读取 SSE 并逐条转发回 renderer |
+| `sendAgentMessage({ sessionID, text, system?, agent? })` | `desktop:agent-send-message` | `POST /api/sessions/:id/messages/stream` | 已实现 | 一次性消费完整 SSE 文本的兼容兜底 |
+| `onAgentStreamEvent(listener)` | Electron event | 同上 | 已实现 | 订阅 main 转发的流式事件 |
 
-## 5. 核心数据模型
+### 3.3 已暴露但当前 renderer 未走主路径的方法
 
-### 5.1 Sidebar 项目树
+这些能力已经在 preload/main 暴露，但当前 `useAgentWorkspace()` 没把它们当主路径使用：
+
+| `window.desktop` 方法 | IPC 通道 | server route | 当前说明 |
+| --- | --- | --- | --- |
+| `listProjectWorkspaces()` | `desktop:list-project-workspaces` | `GET /api/projects` + `GET /api/projects/:id/sessions` | 返回 project 视角的数据；当前 sidebar 不是 project-first |
+| `createProjectWorkspace({ directory })` | `desktop:create-project-workspace` | `POST /api/projects` + `GET /api/projects/:id/sessions` | 返回 project 视角的数据；当前打开文件夹走 `openFolderWorkspace()` |
+| `createProjectSession({ projectID, title?, directory? })` | `desktop:create-project-session` | `POST /api/projects/:id/sessions` | 当前 UI 使用的是 `createFolderSession()` |
+| `deleteProjectWorkspace({ projectID })` | `desktop:delete-project-workspace` | `DELETE /api/projects/:id` | 当前 renderer 还没有 project 级删除入口 |
+
+## 4. 当前核心数据模型
+
+### 4.1 文件夹工作区
+
+当前 renderer 启动时使用的是文件夹视角：
 
 ```ts
-interface LoadedSessionSnapshot {
+interface AgentWorkspaceSession {
   id: string
   projectID: string
   directory: string
@@ -81,299 +87,207 @@ interface LoadedSessionSnapshot {
   updated: number
 }
 
-interface LoadedProjectWorkspace {
+interface AgentFolderWorkspace {
+  id: string
+  directory: string
+  name: string
+  created: number
+  updated: number
+  project: {
+    id: string
+    name: string
+    worktree: string
+  }
+  sessions: AgentWorkspaceSession[]
+}
+```
+
+`id` 当前直接使用目录路径，sidebar 的选中、展开和排序都以这个 id 为准。
+
+### 4.2 Project 视角数据
+
+main/preload 仍保留 project 视角能力：
+
+```ts
+interface AgentProjectWorkspace {
   id: string
   worktree: string
   name?: string
   created: number
   updated: number
-  sessions: LoadedSessionSnapshot[]
+  sessions: AgentWorkspaceSession[]
 }
 ```
 
-用途：
+它不再是当前 sidebar 的主渲染结构，但仍是 bridge 的可用能力。
 
-- `listProjectWorkspaces()`
-- `createProjectWorkspace()`
-- 未来的 `createProjectSession()` 返回值也应可直接映射到这个结构
-
-### 5.2 Agent SSE 事件
+### 4.3 历史消息
 
 ```ts
-interface AgentStreamEvent {
+interface AgentSessionHistoryMessage {
+  info: Record<string, unknown>
+  parts: unknown[]
+}
+```
+
+renderer 侧会进一步解析成：
+
+- 用户 turn
+- assistant turn
+- assistant trace item 列表
+
+### 4.4 SSE 事件
+
+```ts
+interface AgentSSEEvent {
   event: string
   data: unknown
 }
 
-interface AgentStreamIPCEvent extends AgentStreamEvent {
+interface AgentStreamIPCEvent extends AgentSSEEvent {
   streamID: string
 }
 ```
 
-当前 renderer 重点消费：
+当前实际消费的事件名：
 
 - `started`
-- `error`
 - `delta`
 - `part`
 - `done`
+- `error`
 
-## 6. 当前已实现链路
+## 5. 当前已实现链路
 
-### 6.1 启动时加载 sidebar 项目树
-
-时序：
-
-1. `App.tsx` 挂载。
-2. `useEffect()` 调 `window.desktop.listProjectWorkspaces()`。
-3. preload 转发到 `desktop:list-project-workspaces`。
-4. main 请求 `GET /api/projects`。
-5. main 对每个 project 请求 `GET /api/projects/:id/sessions`。
-6. main 聚合为 `LoadedProjectWorkspace[]`。
-7. renderer 用 `mapLoadedWorkspaces()` 刷新 sidebar。
-8. 如果失败，保留本地 `seedWorkspaces` 作为 fallback。
-
-### 6.2 从 sidebar 新建 project
+### 5.1 启动时加载文件夹工作区
 
 时序：
 
-1. 用户点击 sidebar 顶部文件夹按钮。
-2. renderer 调 `window.desktop.pickProjectDirectory()`。
-3. main 打开系统文件夹选择器。
-4. renderer 调 `window.desktop.createProjectWorkspace({ directory })`。
-5. main 请求 `POST /api/projects`。
-6. main 再请求 `GET /api/projects/:id/sessions`，补齐完整 workspace。
-7. renderer 把新 workspace 插入当前 sidebar。
+1. `useAgentWorkspace()` 挂载。
+2. 调 `window.desktop.listFolderWorkspaces()`。
+3. preload 转发到 `desktop:list-folder-workspaces`。
+4. main 先请求 `GET /api/projects`。
+5. main 再为每个 project 请求 `GET /api/projects/:id/sessions`。
+6. main 根据 project 的 `sandboxes` 和 session 的 `directory` 组装 `AgentFolderWorkspace[]`。
+7. renderer 用 `mapLoadedWorkspaces()` 写入侧栏。
+8. 如果失败，保留本地 `seedWorkspaces`。
 
-### 6.3 当前消息发送链路
+### 5.2 打开文件夹并插入侧栏
 
 时序：
 
-1. 用户在某个 UI session 中发送消息。
-2. 如果当前 UI session 还没有 backend session id，renderer 会先调 `window.desktop.createAgentSession({ directory })`。
-3. main 请求 `POST /api/sessions`。
-4. renderer 把返回的 backend session id 暂存到本地 `agentSessions` 映射。
-5. renderer 先为当前消息插入一条占位 assistant turn，并生成 `streamID`。
-6. renderer 调 `window.desktop.streamAgentMessage(...)`。
-7. main 请求 `POST /api/sessions/:id/messages/stream`。
-8. main 逐块读取 SSE，并通过 `onAgentStreamEvent()` 把 `started/delta/part/done/error` 转发给 renderer。
-9. renderer 将这些事件增量写回同一条 assistant turn。
+1. 用户点击 `Open folder`。
+2. renderer 调 `pickProjectDirectory()`。
+3. 用户选中目录后，renderer 调 `openFolderWorkspace({ directory })`。
+4. main 先 `POST /api/projects`，确保该目录对应的 project 存在。
+5. main 再执行一次 `listFolderWorkspaces()`，从最新数据中找到对应目录的文件夹工作区。
+6. renderer 把结果插入本地 `workspaces`，并切到新工作区。
+
+### 5.3 在当前文件夹下创建 session
+
+时序：
+
+1. 用户点击 `Create session`。
+2. renderer 基于当前选中文件夹调用 `createFolderSession({ projectID, directory })`。
+3. main 请求 `POST /api/projects/:id/sessions`。
+4. renderer 把返回 session 插入目标工作区，并初始化本地 conversation 容器。
+
+### 5.4 会话历史回放
+
+时序：
+
+1. startup 选中首个 session，或用户点击其他 session。
+2. renderer 调 `getSessionHistory({ sessionID })`。
+3. main 请求 `GET /api/sessions/:id/messages`。
+4. renderer 把历史消息通过 `buildTurnsFromHistory()` 映射成 UI thread。
+
+### 5.5 流式消息发送
+
+主路径：
+
+1. renderer 先把用户消息写进本地 `conversations`。
+2. 如果当前 UI session 没有 backend session id，则调用 `createAgentSession()` 兜底。
+3. renderer 先插入一个 streaming assistant turn。
+4. renderer 调 `streamAgentMessage({ streamID, sessionID, text })`。
+5. main 请求 `POST /api/sessions/:id/messages/stream`。
+6. main 通过 `readAgentSSEStream()` 逐块读取 SSE。
+7. main 把每个事件通过 `desktop:agent-stream-event` 发送给 renderer。
+8. renderer 把 `delta` / `part` / `done` / `error` 增量应用到同一个 assistant turn。
 
 兼容兜底：
 
-1. 如果 preload 没有暴露流式接口，renderer 回退到 `window.desktop.sendAgentMessage(...)`。
-2. main 请求 `POST /api/sessions/:id/messages/stream`。
-3. main 读取完整 SSE 文本。
-4. renderer 在请求结束后一次性组装 assistant turn。
-
-说明：
-
-- 这条链路已经可以“发送消息”。
-- 但这里的 session 创建是消息发送前的惰性创建，不等价于 sidebar 的“显式新建 session”。
-
-## 7. 当前已知缺口
-
-### 7.1 `createAgentSession()` 仍然是消息发送链路的兜底接口
-
-当前 `createAgentSession({ directory? })` 仍保留为“当 UI session 还没有 backend session id 时，由消息发送链路兜底创建”的兼容接口。
-
-它不是 sidebar 的主创建接口，正式的 sidebar 新建 session 现在应使用 `createProjectSession({ projectID })`。
-
-### 7.2 当前还没有 session 历史消息回放
-
-启动加载 sidebar 时，只会拉取 project 和 session 列表，不会同步拉取每个 session 的消息历史。
-
-当前行为：
-
-- 已存在 session 会显示在 sidebar 中
-- 打开后线程区显示 `Session loaded` 占位
-- 真正的消息内容仍需后续补充单独接口
-
-## 8. 已实现的新增接口
-
-### 8.1 在 project 下新建 session
-
-行为：
-
-- 用户在 sidebar 的某个 project 下点击“新建 session”
-- 前端调用 `window.desktop.createProjectSession({ projectID })`
-- 后端写入 `sessions` 表
-- 前端立即把新 session 显示到该 project 下
-
-建议 desktop 接口：
-
-```ts
-createProjectSession(input: {
-  projectID: string
-  title?: string
-  directory?: string
-}): Promise<{
-  session: LoadedSessionSnapshot
-  requestId?: string
-}>
-```
-
-对应 IPC：
-
-- `desktop:create-project-session`
-
-对应 server route：
-
-- `POST /api/projects/:id/sessions`
-
-当前前端行为：
-
-- 成功后把 `session` 插入对应 `workspace.sessions`
-- 同步初始化 `conversations[session.id]`
-- 把当前选中切到新 session
-
-### 8.2 删除一个 project
-
-行为：
-
-- 用户在 sidebar 删除某个 project
-- server 删除 project 及其关联 sessions/messages/parts
-- 前端把整个 project 从 sidebar 移除
-
-建议 desktop 接口：
-
-```ts
-deleteProjectWorkspace(input: {
-  projectID: string
-}): Promise<{
-  projectID: string
-  deletedSessionIDs: string[]
-  requestId?: string
-}>
-```
-
-对应 IPC：
-
-- `desktop:delete-project-workspace`
-
-对应 server route：
-
-- `DELETE /api/projects/:id`
-
-当前前端行为：
-
-- 删除该 `workspace`
-- 清理本地 `conversations`
-- 清理 `agentSessions`
-- 如果删掉的是当前激活项，需要重新选择下一个可用 session
-
-### 8.3 删除一个 session
-
-行为：
-
-- 用户在某个 project 下删除单个 session
-- server 删除 `sessions/messages/parts`
-- 前端只移除该 session，不影响 project 本身
-
-建议 desktop 接口：
-
-```ts
-deleteAgentSession(input: {
-  sessionID: string
-}): Promise<{
-  sessionID: string
-  projectID: string
-  requestId?: string
-}>
-```
-
-对应 IPC：
-
-- `desktop:delete-agent-session`
-
-对应 server route：
-
-- `DELETE /api/sessions/:id`
-
-当前前端行为：
-
-- 从对应 `workspace.sessions` 移除该 session
-- 清理 `conversations[sessionID]`
-- 清理 `agentSessions[sessionID]`
-- 如果删掉的是当前激活 session，需要重新选择同 project 的其他 session 或下一个 project
-
-## 9. 变更检查清单
-
-新增或修改任意 desktop <-> server 接口时，至少检查：
-
-1. `packages/desktop/src/preload/index.ts`
-2. `packages/desktop/src/main/ipc.ts`
-3. `packages/desktop/src/main/agent-client.ts`
-4. `packages/desktop/src/renderer/src/App.tsx`
-5. `packages/desktop/src/renderer/src/App.test.tsx`
-6. `packages/fanfandeagent/src/server/routes/*.ts`
-7. `packages/fanfandeagent/Test/server.api.test.ts`
-8. 本文档
-9. `packages/fanfandeagent/src/server/DESKTOP_SERVER_API_SPEC.zh.md`
-
-## 10. 新需求记录模板
-
-~~~md
-## X.Y 需求名
-
-状态:
-
-- 已实现 / 部分实现 / 规划中
-
-目标:
-
-- 用户动作
-- 前端预期
-- server 预期
-
-新增或修改的 `window.desktop` 接口:
-
-```ts
-methodName(input): Promise<...>
-```
-
-对应 IPC:
-
-- `desktop:...`
-
-对应 server route:
-
-- `METHOD /api/...`
-
-请求:
-
-```json
-{}
-```
-
-响应:
-
-```json
-{}
-```
-
-前端落地要求:
-
-- renderer 如何更新 state
-- 是否要刷新 sidebar
-- 是否要切换当前选中项
-
-测试:
-
-- desktop renderer test
-- desktop main/ipc test
-- server route test
-~~~
-
-## 11. 测试指令
-
-当前已有联动变更的基础验证命令：
-
-```bash
+1. 如果流式 bridge 不可用，则调用 `sendAgentMessage()`。
+2. main 仍请求同一个 `/messages/stream` route。
+3. 但这次会先完整读取 SSE 文本，再一次性解析为事件数组返回 renderer。
+
+## 6. SSE part 到 UI trace 的映射
+
+当前 `stream.ts` 能识别的 `part.type`：
+
+| `part.type` | UI trace kind | 说明 |
+| --- | --- | --- |
+| `reasoning` | `reasoning` | 推理过程文本 |
+| `text` | `text` | 最终回复文本 |
+| `tool` | `tool` | 工具调用状态与输出 |
+| `file` | `file` | 文件结果 |
+| `image` | `image` | 图片结果 |
+| `patch` | `patch` | 文件改动摘要 |
+| `subtask` | `subtask` | 子任务/委派摘要 |
+| `step-finish` | `step` | 一次推理步骤完成 |
+| `retry` | `retry` | 重试计划 |
+| `snapshot` | `snapshot` | 工作区快照 |
+
+如果新增 server 侧 `part.type`，至少要同步更新：
+
+1. `src/renderer/src/app/types.ts`
+2. `src/renderer/src/app/stream.ts`
+3. `src/renderer/src/styles.css`
+4. `src/renderer/src/app/stream.test.ts`
+
+## 7. 当前已知约束
+
+1. 当前正式 UI 是 folder-first，不是 project-first。
+2. `createAgentSession()` 只是兼容兜底接口，不是 sidebar 新建 session 的主入口。
+3. `deleteProjectWorkspace()` 已经有 bridge，但前端还没有 project 级删除动作。
+4. `sendAgentMessage()` 和 `streamAgentMessage()` 指向同一个 server route，只是 main 的消费方式不同。
+
+## 8. 变更检查清单
+
+改动 desktop 与 server 契约时，至少检查这些文件：
+
+1. `src/preload/index.ts`
+2. `src/main/ipc.ts`
+3. `src/main/agent-client.ts`
+4. `src/main/types.ts`
+5. `src/renderer/src/app/use-agent-workspace.ts`
+6. `src/renderer/src/app/stream.ts`
+7. `src/renderer/src/App.test.tsx`
+8. `src/renderer/src/app/stream.test.ts`
+9. `../fanfandeagent/src/server/routes/*.ts`
+10. `../fanfandeagent/Test/server.api.test.ts`
+11. 本文档
+12. `../fanfandeagent/src/server/DESKTOP_SERVER_API_SPEC.zh.md`
+
+## 9. 测试指令
+
+桌面端：
+
+```powershell
 cd C:\Projects\fanfande_studio\packages\desktop
 npm run typecheck
 npm run test
+```
 
+如果本次改动涉及 server route 或响应结构，再执行：
+
+```powershell
 cd C:\Projects\fanfande_studio\packages\fanfandeagent
 bun test Test/server.api.test.ts
 ```
+
+建议最低联调验收项：
+
+1. 启动后能加载文件夹工作区。
+2. 切换 session 后能回放对应历史消息。
+3. 在线发送消息时能先看到流式 reasoning/text，再看到 `done` 收尾。
+4. 删除 session 后，desktop 和 backend 的 session 视图保持一致。

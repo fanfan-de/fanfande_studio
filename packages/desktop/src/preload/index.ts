@@ -170,6 +170,13 @@ try {
         projectID: string
         requestId?: string
       }>,
+    getSessionHistory: (input: { sessionID: string }) =>
+      ipcRenderer.invoke("desktop:get-session-history", input) as Promise<
+        Array<{
+          info: Record<string, unknown>
+          parts: unknown[]
+        }>
+      >,
     streamAgentMessage: (input: { streamID: string; sessionID: string; text: string; system?: string; agent?: string }) =>
       ipcRenderer.invoke("desktop:agent-stream-message", input) as Promise<{
         streamID: string

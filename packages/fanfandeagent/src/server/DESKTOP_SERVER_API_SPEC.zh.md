@@ -59,18 +59,18 @@
 
 ## 4. route 状态总览
 
-| Route | desktop 消费方 | 状态 | 用途 |
-| --- | --- | --- | --- |
-| `GET /healthz` | `desktop:get-agent-health` | 已实现 | 检查 server 可达性 |
-| `GET /api/projects` | `desktop:list-project-workspaces` | 已实现 | 获取 project 列表 |
-| `POST /api/projects` | `desktop:create-project-workspace` | 已实现 | 从目录创建或识别 project |
-| `GET /api/projects/:id/sessions` | `desktop:list-project-workspaces` / `desktop:create-project-workspace` | 已实现 | 获取 project 下 session 列表 |
-| `POST /api/sessions` | `desktop:agent-create-session` | 部分实现 | 当前只支持按 directory 创建 session，用于发消息前兜底，不等价于 sidebar 新建 session |
-| `POST /api/projects/:id/sessions` | `desktop:create-project-session` | 已实现 | 在某个 project 下正式创建 session |
-| `DELETE /api/projects/:id` | `desktop:delete-project-workspace` | 已实现 | 删除 project 及其关联数据 |
-| `GET /api/sessions/:id` | 当前 desktop 未直接消费 | 已实现 | 获取单个 session |
-| `DELETE /api/sessions/:id` | `desktop:delete-agent-session` | 已实现 | 删除单个 session 及其关联数据 |
-| `POST /api/sessions/:id/messages/stream` | `desktop:agent-stream-message` / `desktop:agent-send-message` | 已实现 | 发送消息并返回 SSE |
+| Route                                    | desktop 消费方                                                            | 状态   | 用途                                                           |
+| ---------------------------------------- | ---------------------------------------------------------------------- | ---- | ------------------------------------------------------------ |
+| `GET /healthz`                           | `desktop:get-agent-health`                                             | 已实现  | 检查 server 可达性                                                |
+| `GET /api/projects`                      | `desktop:list-project-workspaces`                                      | 已实现  | 获取 project 列表                                                |
+| `POST /api/projects`                     | `desktop:create-project-workspace`                                     | 已实现  | 从目录创建或识别 project                                             |
+| `GET /api/projects/:id/sessions`         | `desktop:list-project-workspaces` / `desktop:create-project-workspace` | 已实现  | 获取 project 下 session 列表                                      |
+| `POST /api/sessions`                     | `desktop:agent-create-session`                                         | 部分实现 | 当前只支持按 directory 创建 session，用于发消息前兜底，不等价于 sidebar 新建 session |
+| `POST /api/projects/:id/sessions`        | `desktop:create-project-session`                                       | 已实现  | 在某个 project 下正式创建 session                                    |
+| `DELETE /api/projects/:id`               | `desktop:delete-project-workspace`                                     | 已实现  | 删除 project 及其关联数据                                            |
+| `GET /api/sessions/:id`                  | 当前 desktop 未直接消费                                                       | 已实现  | 获取单个 session                                                 |
+| `DELETE /api/sessions/:id`               | `desktop:delete-agent-session`                                         | 已实现  | 删除单个 session 及其关联数据                                          |
+| `POST /api/sessions/:id/messages/stream` | `desktop:agent-stream-message` / `desktop:agent-send-message`          | 已实现  | 发送消息并返回 SSE                                                  |
 
 ## 5. 当前已实现 route 细则
 
