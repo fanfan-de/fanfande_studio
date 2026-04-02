@@ -4,6 +4,10 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServerApp } from "#server/server.ts"
+import { emitUpdatedAssistantSessionParts, seedSeenSessionParts } from "#server/routes/session.ts"
+import * as Identifier from "#id/id.ts"
+import * as Message from "#session/message.ts"
+import * as Session from "#session/session.ts"
 
 interface JsonEnvelope {
   success: boolean
@@ -66,6 +70,21 @@ interface DeleteProjectResponseEnvelope extends JsonEnvelope {
     projectID: string
     deletedSessionIDs: string[]
   }
+}
+
+interface SessionMessagesResponseEnvelope extends JsonEnvelope {
+  data?: Array<{
+    info: {
+      id: string
+      sessionID: string
+      role: "user" | "assistant"
+    }
+    parts: Array<{
+      id: string
+      type: string
+      text?: string
+    }>
+  }>
 }
 
 async function createGitRepo(root: string, seed: string) {
@@ -150,6 +169,16 @@ describe("server api", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text: "hello" }),
     })
+    const body = (await response.json()) as JsonEnvelope
+
+    expect(response.status).toBe(404)
+    expect(body.success).toBe(false)
+    expect(body.error?.code).toBe("SESSION_NOT_FOUND")
+  })
+
+  test("GET /api/sessions/:id/messages should return 404 for missing session", async () => {
+    const app = createServerApp()
+    const response = await app.request("http://localhost/api/sessions/session_missing/messages")
     const body = (await response.json()) as JsonEnvelope
 
     expect(response.status).toBe(404)
@@ -315,6 +344,220 @@ describe("server api", () => {
     expect(response.status).toBe(200)
     expect(body.success).toBe(true)
     expect(body.data?.some((session) => session.id === createBody.data?.id && session.directory === directory)).toBe(true)
+  })
+
+  test("GET /api/sessions/:id/messages should return stored message history", async () => {
+    const app = createServerApp()
+    const directory = process.cwd()
+
+    const createResponse = await app.request("http://localhost/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ directory }),
+    })
+    const createBody = (await createResponse.json()) as SessionResponseEnvelope
+    const sessionID = createBody.data?.id
+
+    expect(createResponse.status).toBe(201)
+    expect(sessionID).toBeString()
+
+    const userMessage: Message.User = {
+      id: Identifier.ascending("message"),
+      sessionID: sessionID!,
+      role: "user",
+      created: Date.now(),
+      agent: "plan",
+      model: {
+        providerID: "test-provider",
+        modelID: "test-model",
+      },
+    }
+    const userTextPart: Message.TextPart = {
+      id: Identifier.ascending("part"),
+      sessionID: sessionID!,
+      messageID: userMessage.id,
+      type: "text",
+      text: "restore this history",
+    }
+    const assistantMessage: Message.Assistant = {
+      id: Identifier.ascending("message"),
+      sessionID: sessionID!,
+      role: "assistant",
+      created: Date.now() + 1,
+      completed: Date.now() + 2,
+      parentID: userMessage.id,
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "plan",
+      path: {
+        cwd: directory,
+        root: directory,
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+    }
+    const assistantTextPart: Message.TextPart = {
+      id: Identifier.ascending("part"),
+      sessionID: sessionID!,
+      messageID: assistantMessage.id,
+      type: "text",
+      text: "history restored",
+    }
+
+    Session.DataBaseCreate("messages", userMessage)
+    Session.DataBaseCreate("parts", userTextPart)
+    Session.DataBaseCreate("messages", assistantMessage)
+    Session.DataBaseCreate("parts", assistantTextPart)
+
+    const response = await app.request(`http://localhost/api/sessions/${sessionID}/messages`)
+    const body = (await response.json()) as SessionMessagesResponseEnvelope
+
+    expect(response.status).toBe(200)
+    expect(body.success).toBe(true)
+    expect(body.data).toHaveLength(2)
+    expect(body.data?.[0]?.info.role).toBe("user")
+    expect(body.data?.[0]?.parts[0]?.text).toBe("restore this history")
+    expect(body.data?.[1]?.info.role).toBe("assistant")
+    expect(body.data?.[1]?.parts[0]?.text).toBe("history restored")
+  })
+
+  test("stream diff only emits assistant parts created after the stream snapshot", async () => {
+    const app = createServerApp()
+    const directory = process.cwd()
+
+    const createResponse = await app.request("http://localhost/api/sessions", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ directory }),
+    })
+    const createBody = (await createResponse.json()) as SessionResponseEnvelope
+    const sessionID = createBody.data?.id
+
+    expect(createResponse.status).toBe(201)
+    expect(sessionID).toBeString()
+
+    const historicalUserMessage: Message.User = {
+      id: Identifier.ascending("message"),
+      sessionID: sessionID!,
+      role: "user",
+      created: Date.now(),
+      agent: "plan",
+      model: {
+        providerID: "test-provider",
+        modelID: "test-model",
+      },
+    }
+    const historicalUserTextPart: Message.TextPart = {
+      id: Identifier.ascending("part"),
+      sessionID: sessionID!,
+      messageID: historicalUserMessage.id,
+      type: "text",
+      text: "old prompt",
+    }
+    const historicalAssistantMessage: Message.Assistant = {
+      id: Identifier.ascending("message"),
+      sessionID: sessionID!,
+      role: "assistant",
+      created: Date.now() + 1,
+      completed: Date.now() + 2,
+      parentID: historicalUserMessage.id,
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "plan",
+      path: {
+        cwd: directory,
+        root: directory,
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+    }
+    const historicalAssistantTextPart: Message.TextPart = {
+      id: Identifier.ascending("part"),
+      sessionID: sessionID!,
+      messageID: historicalAssistantMessage.id,
+      type: "text",
+      text: "old answer",
+    }
+
+    Session.DataBaseCreate("messages", historicalUserMessage)
+    Session.DataBaseCreate("parts", historicalUserTextPart)
+    Session.DataBaseCreate("messages", historicalAssistantMessage)
+    Session.DataBaseCreate("parts", historicalAssistantTextPart)
+
+    const seenParts = new Map<string, Message.Part>()
+    seedSeenSessionParts(sessionID!, seenParts)
+
+    const nextAssistantMessage: Message.Assistant = {
+      id: Identifier.ascending("message"),
+      sessionID: sessionID!,
+      role: "assistant",
+      created: Date.now() + 3,
+      completed: Date.now() + 4,
+      parentID: historicalUserMessage.id,
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "plan",
+      path: {
+        cwd: directory,
+        root: directory,
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+    }
+    const nextAssistantTextPart: Message.TextPart = {
+      id: Identifier.ascending("part"),
+      sessionID: sessionID!,
+      messageID: nextAssistantMessage.id,
+      type: "text",
+      text: "new answer",
+    }
+
+    Session.DataBaseCreate("messages", nextAssistantMessage)
+    Session.DataBaseCreate("parts", nextAssistantTextPart)
+
+    const streamedEvents: Array<{ event: string; data: unknown }> = []
+    emitUpdatedAssistantSessionParts(sessionID!, seenParts, (event, data) => {
+      streamedEvents.push({ event, data })
+    })
+
+    expect(streamedEvents).toHaveLength(1)
+    expect(streamedEvents[0]?.event).toBe("delta")
+    expect(streamedEvents[0]?.data).toMatchObject({
+      sessionID,
+      messageID: nextAssistantMessage.id,
+      partID: nextAssistantTextPart.id,
+      kind: "text",
+      delta: "new answer",
+      text: "new answer",
+    })
+    expect(streamedEvents.some((item) => {
+      const data = item.data as { partID?: string; text?: string }
+      return data.partID === historicalAssistantTextPart.id || data.text === "old answer"
+    })).toBe(false)
   })
 
   test("GET /api/projects/:id/sessions should return 404 for missing project", async () => {

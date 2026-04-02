@@ -93,3 +93,8 @@ export interface AgentSSEEvent {
 export interface AgentStreamIPCEvent extends AgentSSEEvent {
   streamID: string
 }
+
+export interface AgentSessionHistoryMessage {
+  info: Record<string, unknown>
+  parts: unknown[]
+}

@@ -41,6 +41,71 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function readSessionParts(sessionID: string) {
+  return db.findManyWithSchema("parts", Message.Part, {
+    where: [{ column: "sessionID", value: sessionID }],
+    orderBy: [{ column: "id", direction: "ASC" }],
+  })
+}
+
+export function seedSeenSessionParts(sessionID: string, seenParts: Map<string, Message.Part>) {
+  for (const part of readSessionParts(sessionID)) {
+    seenParts.set(part.id, part)
+  }
+}
+
+export function emitUpdatedAssistantSessionParts(
+  sessionID: string,
+  seenParts: Map<string, Message.Part>,
+  send: (event: string, data: unknown) => void,
+) {
+  const parts = readSessionParts(sessionID)
+
+  for (const part of parts) {
+    const owner = db.findById("messages", Message.MessageInfo, part.messageID)
+    if (owner?.role === "user") {
+      seenParts.set(part.id, part)
+      continue
+    }
+
+    const previous = seenParts.get(part.id)
+    const changed = !previous || JSON.stringify(previous) !== JSON.stringify(part)
+    if (!changed) continue
+
+    if ((part.type === "text" || part.type === "reasoning") && previous?.type === part.type) {
+      const previousText = previous.text
+      const delta = part.text.startsWith(previousText) ? part.text.slice(previousText.length) : part.text
+      if (delta.length > 0) {
+        send("delta", {
+          sessionID,
+          messageID: part.messageID,
+          partID: part.id,
+          kind: part.type,
+          delta,
+          text: part.text,
+        })
+      }
+    } else if (part.type === "text" || part.type === "reasoning") {
+      if (part.text.length > 0) {
+        send("delta", {
+          sessionID,
+          messageID: part.messageID,
+          partID: part.id,
+          kind: part.type,
+          delta: part.text,
+          text: part.text,
+        })
+      } else {
+        send("part", { sessionID, part })
+      }
+    } else {
+      send("part", { sessionID, part })
+    }
+
+    seenParts.set(part.id, part)
+  }
+}
+
 export function SessionRoutes() {
   const app = new Hono<AppEnv>()
 
@@ -90,6 +155,25 @@ export function SessionRoutes() {
     })
   })
 
+  app.get("/:id/messages", async (c) => {
+    const sessionID = c.req.param("id")
+    const session = safeReadSession(sessionID)
+    if (!session) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+    }
+
+    const messages: Message.WithParts[] = []
+    for await (const item of Message.stream(sessionID)) {
+      messages.push(item)
+    }
+
+    return c.json({
+      success: true,
+      data: messages,
+      requestId: c.get("requestId"),
+    })
+  })
+
   app.delete("/:id", (c) => {
     const id = c.req.param("id")
     const session = Session.removeSession(id)
@@ -131,56 +215,10 @@ export function SessionRoutes() {
         }
 
         const seenParts = new Map<string, Message.Part>()
+        seedSeenSessionParts(sessionID, seenParts)
 
         const flushPartUpdates = () => {
-          const parts = db.findManyWithSchema("parts", Message.Part, {
-            where: [{ column: "sessionID", value: sessionID }],
-            orderBy: [{ column: "id", direction: "ASC" }],
-          })
-
-          for (const part of parts) {
-            const owner = db.findById("messages", Message.MessageInfo, part.messageID)
-            if (owner?.role === "user") {
-              seenParts.set(part.id, part)
-              continue
-            }
-
-            const previous = seenParts.get(part.id)
-            const changed = !previous || JSON.stringify(previous) !== JSON.stringify(part)
-            if (!changed) continue
-
-            if ((part.type === "text" || part.type === "reasoning") && previous?.type === part.type) {
-              const previousText = previous.text
-              const delta = part.text.startsWith(previousText) ? part.text.slice(previousText.length) : part.text
-              if (delta.length > 0) {
-                send("delta", {
-                  sessionID,
-                  messageID: part.messageID,
-                  partID: part.id,
-                  kind: part.type,
-                  delta,
-                  text: part.text,
-                })
-              }
-            } else if (part.type === "text" || part.type === "reasoning") {
-              if (part.text.length > 0) {
-                send("delta", {
-                  sessionID,
-                  messageID: part.messageID,
-                  partID: part.id,
-                  kind: part.type,
-                  delta: part.text,
-                  text: part.text,
-                })
-              } else {
-                send("part", { sessionID, part })
-              }
-            } else {
-              send("part", { sessionID, part })
-            }
-
-            seenParts.set(part.id, part)
-          }
+          emitUpdatedAssistantSessionParts(sessionID, seenParts, send)
         }
 
         void (async () => {

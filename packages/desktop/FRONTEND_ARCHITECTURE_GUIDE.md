@@ -1,20 +1,22 @@
 # Fanfande Desktop Frontend Architecture Guide
 
-这份文档面向刚接触前端/Electron 的同学，用来快速理解 `packages/desktop` 的整体结构。
+最后更新: 2026-04-02
 
-## 1. 先记住一句话
+这份文档不再重复 UI 规范或 API 契约，而是专门回答一个问题：当前 `packages/desktop` 的代码到底怎么分层、怎么读、怎么改。
 
-这个项目不是单层前端，而是 3 层：
+## 1. 一句话先记住
 
-- `main`：Electron 主进程，像“桌面操作系统里的控制中心”
-- `preload`：安全桥，负责把允许使用的能力挂到 `window.desktop`
-- `renderer`：React 页面，负责你真正看到和操作的 UI
+当前项目的主链路是：
 
-再加一个外部服务：
+`React UI -> window.desktop bridge -> Electron main -> fanfandeagent`
 
-- `fanfandeagent`：真正处理 AI session / message / stream 的后端
+其中：
 
-## 2. 启动流程图
+- `renderer` 决定界面和状态流
+- `preload` 决定页面能调用什么能力
+- `main` 决定如何访问系统和后端
+
+## 2. 启动总流程
 
 ```mermaid
 flowchart TD
@@ -24,294 +26,271 @@ flowchart TD
     C --> E["registerIpcHandlers()"]
     C --> F["createWindow()"]
     F --> G["BrowserWindow"]
-    G --> H["load preload: src/preload/index.ts"]
-    G --> I["load renderer: src/renderer/index.html"]
-    H --> J["window.desktop API"]
+    G --> H["src/preload/index.ts"]
+    G --> I["src/renderer/index.html"]
+    H --> J["window.desktop"]
     I --> K["src/renderer/src/main.tsx"]
-    K --> L["React App.tsx"]
+    K --> L["App.tsx"]
+    L --> M["useDesktopShell()"]
+    L --> N["useAgentWorkspace()"]
 ```
 
-## 3. 模块关系图
+## 3. 目录和职责
+
+### 3.1 `src/main`
+
+这是 Electron 主进程层，负责窗口、菜单、IPC 和后端网关。
+
+关键文件：
+
+- `src/main/index.ts`
+  - 应用启动入口
+  - 菜单初始化
+  - IPC 注册
+  - 创建主窗口
+- `src/main/window.ts`
+  - `BrowserWindow` 创建与 renderer/preload 装载
+- `src/main/window-state.ts`
+  - 无边框窗口的最大化/恢复兼容逻辑
+- `src/main/menu.ts`
+  - 原生菜单定义
+- `src/main/ipc.ts`
+  - 所有 `desktop:*` IPC 的注册点
+  - 也是 desktop 与 server 的主要拼接层
+- `src/main/agent-client.ts`
+  - agent URL 解析
+  - JSON 请求
+  - SSE 解析和流式读取
+- `src/main/types.ts`
+  - main 层的共享类型定义
+
+### 3.2 `src/preload`
+
+这是唯一桥接层。
+
+关键文件：
+
+- `src/preload/index.ts`
+  - 通过 `contextBridge.exposeInMainWorld("desktop", ...)` 暴露 API
+  - renderer 只依赖这里，不直接依赖 `ipcRenderer`
+
+设计原则：
+
+1. preload 只暴露能力，不做业务编排。
+2. 如果 renderer 需要新的系统能力，先加 main，再加 preload，再在 renderer 消费。
+
+### 3.3 `src/renderer/src`
+
+这是 React 页面层。
+
+关键文件：
+
+- `src/renderer/src/main.tsx`
+  - React 挂载入口
+- `src/renderer/src/App.tsx`
+  - 页面装配层，只负责组合 hooks 与展示组件
+- `src/renderer/src/styles.css`
+  - 全局样式
+- `src/renderer/src/App.test.tsx`
+  - UI 集成测试
+- `src/renderer/src/test-setup.ts`
+  - Vitest + Testing Library 基础设置
+
+### 3.4 `src/renderer/src/app`
+
+这是 renderer 的真实业务层。
+
+按职责划分：
+
+- `components.tsx`
+  - 纯展示组件
+  - `Titlebar`
+  - `Sidebar`
+  - `SidebarResizer`
+  - `CanvasTopMenu`
+  - `ThreadView`
+  - `Composer`
+- `use-desktop-shell.ts`
+  - 平台信息、窗口状态、sidebar 缩放、agent 连通性
+- `use-agent-workspace.ts`
+  - 工作区加载、会话切换、会话删除、发送消息、流式事件订阅
+- `workspace.ts`
+  - 文件夹工作区映射、排序和选中策略
+- `conversation-state.ts`
+  - 会话 turn 的纯函数更新
+- `stream.ts`
+  - 历史消息与 SSE 事件到 UI trace 的映射器
+- `stream.test.ts`
+  - SSE / trace 映射规则的纯逻辑测试
+- `seed-data.ts`
+  - 后端不可用时的本地回退数据
+- `constants.ts`
+  - 菜单、按钮、sidebar 尺寸常量
+- `types.ts`
+  - renderer 业务类型
+- `utils.ts`
+  - 工具函数
+
+## 4. 当前数据流
+
+### 4.1 启动加载
 
 ```mermaid
-flowchart LR
-    subgraph Renderer["Renderer: React UI"]
-        A["main.tsx"]
-        B["App.tsx"]
-        C["styles.css"]
-    end
+sequenceDiagram
+    participant R as Renderer
+    participant P as Preload
+    participant M as Main
+    participant A as Agent Server
 
-    subgraph Preload["Preload: Bridge"]
-        D["preload/index.ts"]
-    end
-
-    subgraph Main["Main: Electron Host"]
-        E["main/index.ts"]
-        F["main/window.ts"]
-        G["main/ipc.ts"]
-        H["main/menu.ts"]
-        I["main/window-state.ts"]
-        J["main/agent-client.ts"]
-        K["main/types.ts"]
-    end
-
-    subgraph Backend["External Backend"]
-        L["fanfandeagent API"]
-    end
-
-    A --> B
-    B --> C
-    B --> D
-    D --> G
-    E --> F
-    E --> G
-    E --> H
-    G --> I
-    G --> J
-    G --> K
-    J --> L
+    R->>P: listFolderWorkspaces()
+    P->>M: desktop:list-folder-workspaces
+    M->>A: GET /api/projects
+    M->>A: GET /api/projects/:id/sessions
+    M-->>P: AgentFolderWorkspace[]
+    P-->>R: Promise resolve
+    R->>R: mapLoadedWorkspaces()
+    R->>P: getSessionHistory({ sessionID })
+    P->>M: desktop:get-session-history
+    M->>A: GET /api/sessions/:id/messages
+    M-->>P: history messages
+    P-->>R: Promise resolve
+    R->>R: buildTurnsFromHistory()
 ```
 
-## 4. 每一层到底做什么
-
-### `src/main`
-
-这是 Electron 主进程层，核心职责是“管理桌面应用本身”：
-
-- `index.ts`
-  - 应用启动入口
-  - 等待 `app.whenReady()`
-  - 创建菜单
-  - 注册 IPC
-  - 创建窗口
-- `window.ts`
-  - 创建 `BrowserWindow`
-  - 指定 `preload` 路径
-  - 加载开发环境 URL 或打包后的 `index.html`
-- `ipc.ts`
-  - 所有 `desktop:*` IPC 通道都在这里注册
-  - 包括窗口控制、菜单弹出、读取 agent 配置、健康检查、创建 session、发送消息
-- `menu.ts`
-  - 定义原生菜单和右键菜单
-- `window-state.ts`
-  - 维护无边框窗口的最大化/恢复状态
-- `agent-client.ts`
-  - 和 `fanfandeagent` 后端通信
-  - 负责拼 URL、请求 JSON、解析 SSE 流
-
-你可以把这一层理解成：`Electron 壳子 + 系统能力 + 后端网关`
-
-### `src/preload`
-
-这是“桥接层”。
-
-浏览器页面不能直接访问 Electron 的危险能力，所以项目通过：
-
-- `contextBridge.exposeInMainWorld("desktop", ...)`
-
-把安全的 API 暴露给页面。
-
-也就是说，React 里不是直接调 `ipcRenderer`，而是调：
-
-- `window.desktop.getInfo()`
-- `window.desktop.getWindowState()`
-- `window.desktop.showMenu()`
-- `window.desktop.windowAction()`
-- `window.desktop.getAgentConfig()`
-- `window.desktop.getAgentHealth()`
-- `window.desktop.createAgentSession()`
-- `window.desktop.sendAgentMessage()`
-
-这是 Electron 项目里非常关键的一层，目的是：
-
-- 限制页面权限
-- 让前端 API 更稳定
-- 让 UI 层不直接依赖 Electron 细节
-
-### `src/renderer`
-
-这是你最熟悉的“前端页面层”。
-
-- `index.html`
-  - 提供根节点 `#root`
-- `src/main.tsx`
-  - React 挂载入口
-- `src/App.tsx`
-  - 主要页面组件
-  - 管理工作区、会话、消息流、输入框、按钮事件、窗口状态
-- `src/styles.css`
-  - 页面样式
-- `App.test.tsx`
-  - 针对 UI 行为的测试
-
-这一层最重要的点是：
-
-- 负责“显示什么”
-- 负责“用户点了以后怎么改状态”
-- 不负责真正创建窗口
-- 不负责直接访问系统 API
-- 不负责直接请求后端，而是通过 `window.desktop`
-
-## 5. 一次“发送任务”的完整数据流
-
-这是最值得新手理解的一条主链路。
+### 4.2 发送消息
 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant R as Renderer(App.tsx)
-    participant P as Preload(window.desktop)
-    participant M as Main(ipc.ts)
-    participant A as Agent API(fanfandeagent)
+    participant R as Renderer
+    participant P as Preload
+    participant M as Main
+    participant A as Agent Server
 
-    U->>R: 输入任务并点击 Send task
-    R->>R: handleSend()
-    R->>R: 先把 user turn 写入本地 state
-
-    alt agent 未连接
-        R->>R: buildAgentTurn() 生成本地 fallback 回复
-        R->>R: 更新 conversations
-    else agent 已连接
-        R->>P: createAgentSession()/sendAgentMessage()
-        P->>M: ipcRenderer.invoke("desktop:*")
-        M->>A: fetch /api/sessions /messages/stream
-        A-->>M: SSE 文本流
-        M->>M: parseSSE()
-        M-->>P: 返回 events
-        P-->>R: Promise resolve
+    U->>R: 点击 Send task
+    R->>R: 追加 user turn
+    alt 已连接 agent 且支持流式
+        R->>P: streamAgentMessage()
+        P->>M: desktop:agent-stream-message
+        M->>A: POST /api/sessions/:id/messages/stream
+        A-->>M: SSE chunks
+        M-->>R: onAgentStreamEvent()
+        R->>R: applyAgentStreamEventToTurn()
+    else 只能走兼容模式
+        R->>P: sendAgentMessage()
+        P->>M: desktop:agent-send-message
+        M->>A: POST /api/sessions/:id/messages/stream
+        M-->>R: parsed events[]
         R->>R: buildAgentTurnFromEvents()
-        R->>R: 更新 conversations 和 sessions
     end
 ```
 
-### 这条链路里谁负责什么
+## 5. 当前结构上的关键设计
 
-- `App.tsx`
-  - 收集用户输入
-  - 更新界面状态
-  - 决定走 fallback 还是走真实 backend
-- `preload/index.ts`
-  - 只是转发，不做复杂业务
-- `main/ipc.ts`
-  - 真正接收页面请求并调用 Electron / backend
-- `main/agent-client.ts`
-  - 处理 HTTP 请求和 SSE 解析
-- `fanfandeagent`
-  - 真正生成 AI 响应
+### 5.1 `App.tsx` 现在是装配层，不是超级组件
 
-## 6. 新手如何读这个项目
+当前 `App.tsx` 只做三件事：
 
-推荐按这个顺序：
+1. 调 `useDesktopShell()`
+2. 调 `useAgentWorkspace()`
+3. 把状态和事件透传给展示组件
 
-1. `src/renderer/src/main.tsx`
-   - 看 React 从哪里开始渲染
-2. `src/renderer/src/App.tsx`
-   - 看页面由哪些状态和事件组成
+如果把新业务逻辑继续堆回 `App.tsx`，文档和实现会再次回到早期“单体组件”状态。
+
+### 5.2 文件夹工作区是当前侧栏主视角
+
+虽然 bridge 里仍有 project 视角方法，但 renderer 当前已经明确采用 folder-first：
+
+1. 侧栏选中、展开、排序都围绕文件夹工作区。
+2. project 名现在只作为文件夹行的辅助元信息显示。
+3. 新 session 创建也以“当前文件夹”而不是“当前 project”作为用户心智入口。
+
+### 5.3 `stream.ts` 是 assistant trace 的单一入口
+
+所有这类数据都必须经过 `stream.ts`：
+
+1. 持久化历史消息
+2. 流式 SSE `delta`
+3. 流式 SSE `part`
+4. `done` / `error` 收尾
+
+这样做的好处是：
+
+1. 历史回放和实时流共用一套 UI 模型。
+2. 测试可以聚焦在纯函数层，而不是只能测整页 UI。
+
+## 6. 推荐阅读顺序
+
+如果你第一次接手这个包，按下面顺序读：
+
+1. `README.md`
+2. `src/main/index.ts`
 3. `src/preload/index.ts`
-   - 看页面究竟能调用哪些桌面 API
-4. `src/main/ipc.ts`
-   - 看这些 API 最终做了什么
-5. `src/main/window.ts`
-   - 看 Electron 窗口怎么创建
-6. `src/main/agent-client.ts`
-   - 看项目怎么请求后端
+4. `src/renderer/src/App.tsx`
+5. `src/renderer/src/app/use-desktop-shell.ts`
+6. `src/renderer/src/app/use-agent-workspace.ts`
+7. `src/renderer/src/app/components.tsx`
+8. `src/renderer/src/app/stream.ts`
+9. `src/main/ipc.ts`
+10. `src/main/agent-client.ts`
+11. `src/renderer/src/App.test.tsx`
+12. `src/renderer/src/app/stream.test.ts`
 
-如果你只想先抓主线，可以只盯这四个文件：
+## 7. 改功能时应该落在哪一层
 
-- `src/renderer/src/App.tsx`
-- `src/preload/index.ts`
-- `src/main/ipc.ts`
-- `src/main/index.ts`
+### 7.1 只改界面和本地状态
 
-## 7. 用“前端框架视角”理解它
+优先改：
 
-如果你以前只学过普通 Web 前端，可以这样类比：
+- `components.tsx`
+- `use-desktop-shell.ts`
+- `use-agent-workspace.ts`
+- `styles.css`
+- 对应测试
 
-- `renderer`
-  - 像普通 React 单页应用
-- `preload`
-  - 像一个受控的前端 SDK
-- `main`
-  - 像“桌面版后端/宿主层”
-- `fanfandeagent`
-  - 像真正的服务端 API
+### 7.2 新增桌面能力
 
-所以这个项目不是单纯 MVC，也不是只有 React 组件树，而是：
+按这个顺序改：
 
-`React UI -> Bridge API -> Electron Host -> Backend API`
+1. `src/main/ipc.ts`
+2. 需要的话补 `src/main/agent-client.ts` 或其他 main 模块
+3. `src/preload/index.ts`
+4. renderer 消费层
+5. 测试和文档
 
-## 8. 当前项目的核心状态分布
+### 7.3 新增后端流式 part 或历史消息结构
 
-`App.tsx` 里集中管理了大部分前端状态，例如：
+至少改：
 
-- 窗口状态：`isWindowMaximized`
-- 侧边栏状态：`isSidebarCondensed`
-- 数据状态：`workspaces`、`conversations`、`agentSessions`
-- 业务状态：`activeSessionID`、`expandedProjectID`、`mode`
-- 请求状态：`agentConnected`、`isSending`
+1. `src/main/types.ts`
+2. `src/renderer/src/app/types.ts`
+3. `src/renderer/src/app/stream.ts`
+4. `src/renderer/src/app/stream.test.ts`
+5. `DESKTOP_SERVER_API_SPEC.md`
 
-这说明当前项目还是“单组件集中管理状态”的阶段。
+## 8. 测试面
 
-优点：
+当前测试主要分两层：
 
-- 新手容易跟
-- 状态流很集中
-- 迭代快
+1. UI 集成测试
+   - 文件：`src/renderer/src/App.test.tsx`
+   - 覆盖启动、侧栏、会话切换、历史回放、发送消息、流式渲染、缩放等行为
+2. 纯逻辑测试
+   - 文件：`src/renderer/src/app/stream.test.ts`
+   - 覆盖 trace 合并、tool 更新、done/error 收尾、历史消息重建等规则
 
-后续如果项目变大，通常会继续拆成：
+标准命令：
 
-- 自定义 hooks
-- UI 子组件
-- 独立的数据层 / store
-
-## 9. 测试命令
-
-在 `packages/desktop` 目录下：
-
-```bash
-npm test
-```
-
-作用：
-
-- 跑 `Vitest + Testing Library`
-- 检查 `App.tsx` 的主要交互是否正常
-- 验证标题栏、项目树展开、发送消息、样式约束等行为
-
-如果只做类型检查：
-
-```bash
+```powershell
 npm run typecheck
+npm run test
 ```
 
-如果启动开发环境观察真实运行流程：
+## 9. 文档更新建议
 
-```bash
-npm run dev
-```
+改动后按这个规则更新文档：
 
-## 10. 你现在应该重点看什么
-
-如果你的目标是“学习如何理解前端框架”，优先理解这 3 件事：
-
-1. 入口在哪里
-   - `main.tsx` 和 `main/index.ts`
-2. 状态在哪里变化
-   - `App.tsx` 的 `useState`、`useEffect`、事件函数
-3. 数据怎么跨层流动
-   - `window.desktop -> ipc -> backend`
-
-当你能回答下面三个问题时，就说明已经看懂这个项目主结构了：
-
-- 页面是从哪个文件挂载出来的？
-- 用户点击 `Send task` 后，数据经过了哪几层？
-- 为什么 React 代码不能直接调用 Electron，而要经过 `preload`？
-## 11. 2026-04-01 Startup Project Tree
-
-The sidebar startup flow is now:
-
-1. `App.tsx` mounts and calls `window.desktop.listProjectWorkspaces()` when available.
-2. The preload bridge forwards that request to the main process.
-3. The main process requests `GET /api/projects` and then `GET /api/projects/:id/sessions`.
-4. The renderer maps the returned data into the sidebar tree.
-5. If the startup fetch fails, the seed sidebar data stays in place as a fallback.
+1. 改 UI 行为和状态流：更新 `AI_AGENT_FRONTEND_SPEC.md`
+2. 改 bridge / IPC / server route：更新 `DESKTOP_SERVER_API_SPEC.md`
+3. 改模块边界或入口：更新本文档
+4. 改入门路径或练习建议：更新 `ELECTRON_LEARNING_TODO.md`

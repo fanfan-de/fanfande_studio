@@ -147,6 +147,23 @@ declare global {
         projectID: string
         requestId?: string
       }>
+      getSessionHistory?: (input: { sessionID: string }) => Promise<
+        Array<{
+          info: {
+            id: string
+            sessionID: string
+            role: "user" | "assistant"
+            created: number
+            completed?: number
+            error?: {
+              message?: string
+              [key: string]: unknown
+            }
+            [key: string]: unknown
+          }
+          parts: unknown[]
+        }>
+      >
       streamAgentMessage?: (input: {
         streamID: string
         sessionID: string
