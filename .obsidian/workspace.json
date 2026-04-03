@@ -43,13 +43,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/fanfandeagent/src/server/DESKTOP_SERVER_API_SPEC.zh.md",
+                "file": "packages/fanfandeagent/todo.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "DESKTOP_SERVER_API_SPEC.zh"
+              "title": "todo"
             }
           }
         ],
@@ -219,6 +219,17 @@
   },
   "active": "35980b6fcb97707f",
   "lastOpenFiles": [
+    "spec.md",
+    "se",
+    "新建文件夹",
+    "packages/fanfandeagent/ARCHITECTURE.md",
+    "packages/fanfandeagent/todo.md",
+    "packages/fanfandeagent/CODING_RULES.md",
+    "Tools/require_userinput.md",
+    "packages/fanfandeagent/WORKFLOW.md",
+    "packages/fanfandeagent/DOMAIN_SPEC.md",
+    "packages/fanfandeagent/src/server/DESKTOP_SERVER_API_SPEC.zh.md",
+    "packages/fanfandeagent/src/server/spec.md",
     "packages/desktop/ELECTRON_LEARNING_TODO.md",
     "packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md",
     "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
@@ -232,16 +243,11 @@
     "packages/desktop/electron.vite.config.1775114788363.mjs",
     "packages/desktop/electron.vite.config.1775114222806.mjs",
     "packages/desktop/electron.vite.config.1775108611859.mjs",
-    "packages/desktop/electron.vite.config.1775108487619.mjs",
-    "packages/desktop/electron.vite.config.1775107278536.mjs",
-    "packages/fanfandeagent/src/server/DESKTOP_SERVER_API_SPEC.zh.md",
-    "packages/fanfandeagent/src/server/spec.md",
     "packages/fanfandeagent/src/server/spec.zh.md",
     "packages/fanfandeagent/src/agent/spec.md",
     "未命名 1.md",
     "未命名 3.md",
     "未命名.md",
-    "Tools/require_userinput.md",
     "packages/fanfandedesktop/node_modules/redent/readme.md",
     "packages/fanfandedesktop/node_modules/@babel/parser/CHANGELOG.md",
     "packages/fanfandedesktop/node_modules/@babel/parser/README.md",
@@ -249,12 +255,6 @@
     "packages/fanfandedesktop/node_modules/node-releases/README.md",
     "packages/fanfandedesktop/node_modules/@testing-library/dom/README.md",
     "packages/fanfandedesktop/node_modules/vite/LICENSE.md",
-    "packages/fanfandedesktop/node_modules/vite/node_modules/esbuild/README.md",
-    "packages/fanfandedesktop/node_modules/dom-accessibility-api/LICENSE.md",
-    "packages/fanfandedesktop/node_modules/dom-accessibility-api/README.md",
-    "packages/fanfandedesktop/node_modules/jsdom/README.md",
-    "packages/fanfandedesktop/node_modules/@types/react/README.md",
-    "packages/fanfandedesktop/node_modules/vitest/README.md",
     "packages/fanfandedesktop/exports/BkxtC.png",
     "packages/fanfandeagent/docs/data-dictionary/assets/icons.svg",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/shiki-dependency-tree.svg",
