@@ -571,6 +571,8 @@ describe("App", () => {
     expect(screen.getByText("Manage shared providers and models for the app.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Provider/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Models/ })).toBeInTheDocument()
+    expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
+    expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Search providers" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /DeepSeek.*Connected/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()

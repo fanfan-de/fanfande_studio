@@ -8,3 +8,14 @@ sidebar 文件夹行，右边有两个button，第一个是“移除”button，
 4.sidebar session行，鼠标hover到的时候，有类似目前文件夹行hover到时候的颜色变化表现
 
 5 toggle sidebar density 这个功能意义不明，不需要这个需求，删去button和对应逻辑
+、
+---
+
+尽量使用图标代替文字（设置，关闭）
+
+![[Pasted image 20260405013212.png]]
+这个部分无需展示
+
+
+
+多语言(暂时不做)

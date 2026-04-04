@@ -596,27 +596,6 @@ export function SettingsPage({
                 activeSection === "services" ? (
                   <section className="settings-services-layout" aria-label="Provider layout">
                     <div className="settings-service-list-panel">
-                      <div className="settings-section-header">
-                        <div>
-                          <span className="label">Catalog</span>
-                          <h3>Provider</h3>
-                        </div>
-                        <p>Choose a provider on the left, then edit the shared credentials and endpoint used across the app.</p>
-                      </div>
-
-                      <div className="settings-section-summary">
-                        <div className="settings-summary-card">
-                          <span className="label">Connected</span>
-                          <strong>{catalog.filter((provider) => provider.available).length}</strong>
-                          <p>Providers currently available in the app.</p>
-                        </div>
-                        <div className="settings-summary-card">
-                          <span className="label">Catalog</span>
-                          <strong>{catalog.length}</strong>
-                          <p>Providers discovered from the catalog, environment, and saved config.</p>
-                        </div>
-                      </div>
-
                       <label className="settings-field settings-search-field">
                         <span className="settings-field-label">Search providers</span>
                         <input
@@ -630,7 +609,7 @@ export function SettingsPage({
 
                       <div className="settings-service-list-body">
                         {filteredCatalog.length > 0 ? (
-                          <div className="settings-service-list" role="list" aria-label="Provider catalog">
+                          <div className="settings-service-list" role="list" aria-label="Provider list">
                             {filteredCatalog.map((provider) => {
                               const providerModels = modelGroups[provider.id] ?? []
                               const isActive = provider.id === activeProvider?.id
