@@ -177,6 +177,196 @@ try {
           parts: unknown[]
         }>
       >,
+    getGlobalProviderCatalog: () =>
+      ipcRenderer.invoke("desktop:get-global-provider-catalog") as Promise<
+        Array<{
+          id: string
+          name: string
+          source: "env" | "config" | "custom" | "api"
+          env: string[]
+          configured: boolean
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+          modelCount: number
+        }>
+      >,
+    getGlobalModels: () =>
+      ipcRenderer.invoke("desktop:get-global-models") as Promise<{
+        items: Array<{
+          id: string
+          providerID: string
+          name: string
+          family?: string
+          status: "alpha" | "beta" | "deprecated" | "active"
+          available: boolean
+          capabilities: {
+            temperature: boolean
+            reasoning: boolean
+            attachment: boolean
+            toolcall: boolean
+            input: {
+              text: boolean
+              audio: boolean
+              image: boolean
+              video: boolean
+              pdf: boolean
+            }
+            output: {
+              text: boolean
+              audio: boolean
+              image: boolean
+              video: boolean
+              pdf: boolean
+            }
+          }
+          limit: {
+            context: number
+            input?: number
+            output: number
+          }
+        }>
+        selection: {
+          model?: string
+          small_model?: string
+        }
+      }>,
+    updateGlobalProvider: (input: {
+      providerID: string
+      provider: {
+        name?: string
+        env?: string[]
+        options?: {
+          apiKey?: string
+          baseURL?: string
+        }
+      }
+    }) =>
+      ipcRenderer.invoke("desktop:update-global-provider", input) as Promise<{
+        provider: {
+          id: string
+          name: string
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+        }
+        selection: {
+          model?: string
+          small_model?: string
+        }
+      }>,
+    deleteGlobalProvider: (input: { providerID: string }) =>
+      ipcRenderer.invoke("desktop:delete-global-provider", input) as Promise<{
+        providerID: string
+        selection: {
+          model?: string
+          small_model?: string
+        }
+      }>,
+    updateGlobalModelSelection: (input: {
+      model?: string | null
+      small_model?: string | null
+    }) =>
+      ipcRenderer.invoke("desktop:update-global-model-selection", input) as Promise<{
+        model?: string
+        small_model?: string
+      }>,
+    getProjectProviderCatalog: (input: { projectID: string }) =>
+      ipcRenderer.invoke("desktop:get-project-provider-catalog", input) as Promise<
+        Array<{
+          id: string
+          name: string
+          source: "env" | "config" | "custom" | "api"
+          env: string[]
+          configured: boolean
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+          modelCount: number
+        }>
+      >,
+    getProjectModels: (input: { projectID: string }) =>
+      ipcRenderer.invoke("desktop:get-project-models", input) as Promise<{
+        items: Array<{
+          id: string
+          providerID: string
+          name: string
+          family?: string
+          status: "alpha" | "beta" | "deprecated" | "active"
+          available: boolean
+          capabilities: {
+            temperature: boolean
+            reasoning: boolean
+            attachment: boolean
+            toolcall: boolean
+            input: {
+              text: boolean
+              audio: boolean
+              image: boolean
+              video: boolean
+              pdf: boolean
+            }
+            output: {
+              text: boolean
+              audio: boolean
+              image: boolean
+              video: boolean
+              pdf: boolean
+            }
+          }
+          limit: {
+            context: number
+            input?: number
+            output: number
+          }
+        }>
+        selection: {
+          model?: string
+          small_model?: string
+        }
+      }>,
+    updateProjectProvider: (input: {
+      projectID: string
+      providerID: string
+      provider: {
+        name?: string
+        env?: string[]
+        options?: {
+          apiKey?: string
+          baseURL?: string
+        }
+      }
+    }) =>
+      ipcRenderer.invoke("desktop:update-project-provider", input) as Promise<{
+        provider: {
+          id: string
+          name: string
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+        }
+        selection: {
+          model?: string
+          small_model?: string
+        }
+      }>,
+    deleteProjectProvider: (input: { projectID: string; providerID: string }) =>
+      ipcRenderer.invoke("desktop:delete-project-provider", input) as Promise<{
+        providerID: string
+        selection: {
+          model?: string
+          small_model?: string
+        }
+      }>,
+    updateProjectModelSelection: (input: {
+      projectID: string
+      model?: string | null
+      small_model?: string | null
+    }) =>
+      ipcRenderer.invoke("desktop:update-project-model-selection", input) as Promise<{
+        model?: string
+        small_model?: string
+      }>,
     streamAgentMessage: (input: { streamID: string; sessionID: string; text: string; system?: string; agent?: string }) =>
       ipcRenderer.invoke("desktop:agent-stream-message", input) as Promise<{
         streamID: string

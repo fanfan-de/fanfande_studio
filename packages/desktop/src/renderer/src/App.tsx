@@ -1,6 +1,7 @@
-import { CanvasTopMenu, Composer, Sidebar, SidebarResizer, ThreadView, Titlebar } from "./app/components"
+import { CanvasTopMenu, Composer, SettingsPage, Sidebar, SidebarResizer, ThreadView, Titlebar } from "./app/components"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
+import { useSettingsPage } from "./app/use-settings-page"
 
 export function App() {
   const {
@@ -12,11 +13,9 @@ export function App() {
     handleSidebarResizerPointerDown,
     handleTitleMenu,
     handleWindowAction,
-    isSidebarCondensed,
     isSidebarResizing,
     isWindowMaximized,
     platform,
-    setIsSidebarCondensed,
     sidebarWidth,
     titlebarCommand,
   } = useDesktopShell()
@@ -27,15 +26,19 @@ export function App() {
     deletingSessionID,
     draft,
     expandedFolderID,
+    handleProjectCreateSession,
     handleProjectClick,
+    handleProjectRemove,
     handleSend,
     handleSessionDelete,
     handleSessionSelect,
     handleSidebarAction,
     hoveredFolderID,
     isCreatingProject,
+    isCreatingSession,
     isSending,
     projectRowRefs,
+    selectedWorkspace,
     selectedFolderID,
     setDraft,
     setHoveredFolderID,
@@ -44,9 +47,30 @@ export function App() {
   } = useAgentWorkspace({
     agentConnected,
     agentDefaultDirectory,
-    onToggleSidebarDensity: () => setIsSidebarCondensed((value) => !value),
     platform,
   })
+
+  const {
+    catalog,
+    closeSettings,
+    deleteProvider,
+    deletingProviderID,
+    isLoading,
+    isOpen,
+    isSavingSelection,
+    loadError,
+    message,
+    models,
+    openSettings,
+    providerDrafts,
+    savedSelection,
+    saveProvider,
+    saveSelection,
+    savingProviderID,
+    selectionDraft,
+    setProviderDraftValue,
+    setSelectionDraftValue,
+  } = useSettingsPage()
 
   return (
     <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
@@ -64,12 +88,16 @@ export function App() {
           expandedFolderID={expandedFolderID}
           hoveredFolderID={hoveredFolderID}
           isCreatingProject={isCreatingProject}
-          isSidebarCondensed={isSidebarCondensed}
+          isCreatingSession={isCreatingSession}
+          isSettingsOpen={isOpen}
           projectRowRefs={projectRowRefs}
           selectedFolderID={selectedFolderID}
           workspaces={workspaces}
           onHoveredFolderChange={setHoveredFolderID}
+          onOpenSettings={openSettings}
+          onProjectCreateSession={handleProjectCreateSession}
           onProjectClick={handleProjectClick}
+          onProjectRemove={handleProjectRemove}
           onSessionDelete={handleSessionDelete}
           onSessionSelect={handleSessionSelect}
           onSidebarAction={handleSidebarAction}
@@ -94,6 +122,27 @@ export function App() {
             onSend={handleSend}
           />
         </section>
+
+        <SettingsPage
+          catalog={catalog}
+          deletingProviderID={deletingProviderID}
+          isLoading={isLoading}
+          isOpen={isOpen}
+          isSavingSelection={isSavingSelection}
+          loadError={loadError}
+          message={message}
+          models={models}
+          providerDrafts={providerDrafts}
+          savedSelection={savedSelection}
+          savingProviderID={savingProviderID}
+          selectionDraft={selectionDraft}
+          onClose={closeSettings}
+          onDeleteProvider={deleteProvider}
+          onProviderDraftChange={setProviderDraftValue}
+          onSaveProvider={saveProvider}
+          onSaveSelection={saveSelection}
+          onSelectionChange={setSelectionDraftValue}
+        />
       </main>
     </div>
   )

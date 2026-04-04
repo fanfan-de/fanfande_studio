@@ -1,538 +1,824 @@
-import * as Log from "#util/log.ts";
 import z from "zod"
-import {
-    type LanguageModel,
-    type Provider,
-    type Provider as SDKProvider,
-} from "ai"
-import * as ModelsDev from "#provider/modelsdev.ts"
-import { createDeepSeek, deepseek } from "@ai-sdk/deepseek";
-import { openai } from "@ai-sdk/openai"
-import { Instance } from "@/project/instance";
-import { mapValues, mergeDeep } from "remeda";
-import { NamedError } from "@/util/error";
 import fuzzysort from "fuzzysort"
-//import { Config } from "@/config/config";
-import { iife } from "@/util/iife";
-import * as  Env from "#env/env.ts";
+import { mapValues } from "remeda"
+import { createDeepSeek } from "@ai-sdk/deepseek"
+import { createOpenAI } from "@ai-sdk/openai"
+import type { LanguageModel, Provider as SDKProvider } from "ai"
+import { Instance } from "#project/instance.ts"
+import { NamedError } from "#util/error.ts"
+import * as ModelsDev from "#provider/modelsdev.ts"
+import * as Config from "#config/config.ts"
+import * as Env from "#env/env.ts"
 
-import { } from "@ai-sdk/deepseek"
+const DEFAULT_MODEL_REF = {
+  providerID: "deepseek",
+  modelID: "deepseek-reasoner",
+} as const
 
-/**
- * 存储所有支持的provider
- */
-
-const log = Log.create({ service: "provider" })
+export const ModelReference = z
+  .object({
+    providerID: z.string(),
+    modelID: z.string(),
+  })
+  .meta({
+    ref: "ModelReference",
+  })
+export type ModelReference = z.infer<typeof ModelReference>
 
 export const Model = z
-    .object({
-        id: z.string(),
-        providerID: z.string(),
-        api: z.object({
-            id: z.string(),
-            url: z.string(),
-            npm: z.string(),
+  .object({
+    id: z.string(),
+    providerID: z.string(),
+    api: z.object({
+      id: z.string(),
+      url: z.string(),
+      npm: z.string(),
+    }),
+    name: z.string(),
+    family: z.string().optional(),
+    capabilities: z.object({
+      temperature: z.boolean(),
+      reasoning: z.boolean(),
+      attachment: z.boolean(),
+      toolcall: z.boolean(),
+      input: z.object({
+        text: z.boolean(),
+        audio: z.boolean(),
+        image: z.boolean(),
+        video: z.boolean(),
+        pdf: z.boolean(),
+      }),
+      output: z.object({
+        text: z.boolean(),
+        audio: z.boolean(),
+        image: z.boolean(),
+        video: z.boolean(),
+        pdf: z.boolean(),
+      }),
+      interleaved: z.union([
+        z.boolean(),
+        z.object({
+          field: z.enum(["reasoning_content", "reasoning_details"]),
         }),
-        name: z.string(),
-        family: z.string().optional(),
-        capabilities: z.object({
-            temperature: z.boolean(),
-            reasoning: z.boolean(),
-            attachment: z.boolean(),
-            toolcall: z.boolean(),
-            input: z.object({
-                text: z.boolean(),
-                audio: z.boolean(),
-                image: z.boolean(),
-                video: z.boolean(),
-                pdf: z.boolean(),
-            }),
-            output: z.object({
-                text: z.boolean(),
-                audio: z.boolean(),
-                image: z.boolean(),
-                video: z.boolean(),
-                pdf: z.boolean(),
-            }),
-            interleaved: z.union([
-                z.boolean(),
-                z.object({
-                    field: z.enum(["reasoning_content", "reasoning_details"]),
-                }),
-            ]),
-        }),
-        cost: z.object({
-            input: z.number(),
-            output: z.number(),
-            cache: z.object({
-                read: z.number(),
-                write: z.number(),
-            }),
-            experimentalOver200K: z
-                .object({
-                    input: z.number(),
-                    output: z.number(),
-                    cache: z.object({
-                        read: z.number(),
-                        write: z.number(),
-                    }),
-                })
-                .optional(),
-        }),
-        limit: z.object({
-            context: z.number(),
-            input: z.number().optional(),
-            output: z.number(),
-        }),
-        status: z.enum(["alpha", "beta", "deprecated", "active"]),
-        options: z.record(z.string(), z.any()),
-        headers: z.record(z.string(), z.string()),
-        release_date: z.string(),
-        variants: z.record(z.string(), z.record(z.string(), z.any())).optional(),
-    })
-    .meta({
-        ref: "Model",
-    })
+      ]),
+    }),
+    cost: z.object({
+      input: z.number(),
+      output: z.number(),
+      cache: z.object({
+        read: z.number(),
+        write: z.number(),
+      }),
+      experimentalOver200K: z
+        .object({
+          input: z.number(),
+          output: z.number(),
+          cache: z.object({
+            read: z.number(),
+            write: z.number(),
+          }),
+        })
+        .optional(),
+    }),
+    limit: z.object({
+      context: z.number(),
+      input: z.number().optional(),
+      output: z.number(),
+    }),
+    status: z.enum(["alpha", "beta", "deprecated", "active"]),
+    options: z.record(z.string(), z.any()),
+    headers: z.record(z.string(), z.string()),
+    release_date: z.string(),
+    variants: z.record(z.string(), z.record(z.string(), z.any())).optional(),
+  })
+  .meta({
+    ref: "Model",
+  })
 export type Model = z.infer<typeof Model>
 
-
 export const ProviderInfo = z
-    .object({
-        id: z.string(),
-        name: z.string(),
-        source: z.enum(["env", "config", "custom", "api"]),
-        env: z.string().array(),
-        key: z.string().optional(),
-        options: z.record(z.string(), z.any()),
-        models: z.record(z.string(), Model),
-    })
-    .meta({
-        ref: "Provider",
-    })
+  .object({
+    id: z.string(),
+    name: z.string(),
+    source: z.enum(["env", "config", "custom", "api"]),
+    env: z.string().array(),
+    key: z.string().optional(),
+    options: z.record(z.string(), z.any()),
+    models: z.record(z.string(), Model),
+  })
+  .meta({
+    ref: "Provider",
+  })
 export type ProviderInfo = z.infer<typeof ProviderInfo>
 
-
-
-/**
- * 
- * return
-        models: Map<string, LanguageModel>() ，Instance可用的Model
-        providers：{ [providerID: string]: ProviderInfo }，Instance可用的的Provider
-        sdk：Map<number, SDKProvider>()    AI SDK提供的 provider
-        modelLoaders,
- */
-const state = Instance.state(async () => {
-    using _ = log.time("state")
-
-    //const config = await Config.get() //用户的配置设置
-    const DevProviders: Record<string, ModelsDev.DevProvider> = await ModelsDev.get()
-    //存储所有的潜在providers的容器（从modeldevs中构建）
-    const AllProviders = mapValues(DevProviders, fromModelsDevProvider)
-    //const disabled = new Set(config.disabled_providers ?? [])
-    //const enabled = config.enabled_providers ? new Set(config.enabled_providers) : null
-
-    // function isProviderAllowed(providerID: string): boolean {
-    //     if (enabled && !enabled.has(providerID)) return false
-    //     if (disabled.has(providerID)) return false
-    //     return true
-    // }
-
-    /**
-     * 项目级的配置，存储已经经过配置，可用的provider和model
-     * 未配置，不可用的不会存在这里
-     */
-    //存储所有已配置的提供者（provider）
-    const providers: { [providerID: string]: ProviderInfo } = {}
-    //字典，所有的可用的model实例，键值是 providerid+languageid
-    const languages = new Map<string, LanguageModel>()
-    //用于抽象不同 AI 服务（OpenAI、Anthropic 等）的模型加载逻辑。
-    // const modelLoaders: {
-    //     [providerID: string]: CustomModelLoader
-    // } = {}
-    //缓存AI SDK Provider实例，键为配置哈希，避免重复初始化
-    const sdk = new Map<number, SDKProvider>()
-
-    log.info("init")
-
-    // const configProviders = Object.entries(config.provider ?? {})
-
-
-    // /**
-    // * 合并提供者配置信息。
-    // * 
-    // * 如果提供者已存在于 providers 中，则将新配置深度合并到现有配置上；
-    // * 否则从 database 中获取基础配置，再与新配置深度合并后存入 providers。
-    // * 
-    // * @param providerID - 提供者标识符（如 "openai", "anthropic"）
-    // * @param provider - 要合并的部分提供者配置信息
-    // */
-    function mergeProvider(providerID: string, provider: Partial<ProviderInfo>) {
-        const existing = providers[providerID]
-        if (existing) {
-            // @ts-expect-error
-            providers[providerID] = mergeDeep(existing, provider)
-            return
-        }
-        const match = AllProviders[providerID]
-        if (!match) return
-        // @ts-expect-error
-        providers[providerID] = mergeDeep(match, provider)
-    }
-
-    // // extend database from config
-    // //从用户配置文件中扩展和合并AI模型提供商的配置。具体来说，它处理用户通过opencode.json
-    // //配置文件自定义的提供商和模型设置。
-    // for (const [providerID, provider] of configProviders) {
-    //     const existing = database[providerID]
-    //     //优先用户配置，其次是数据库预定义的，
-    //     const parsed: Info = {
-    //         id: providerID,
-    //         name: provider.name ?? existing?.name ?? providerID,
-    //         env: provider.env ?? existing?.env ?? [],
-    //         options: mergeDeep(existing?.options ?? {}, provider.options ?? {}),
-    //         source: "config",
-    //         models: existing?.models ?? {},
-    //     }
-
-    //     for (const [modelID, model] of Object.entries(provider.models ?? {})) {
-    //         const existingModel = parsed.models[model.id ?? modelID]
-    //         const name = iife(() => {
-    //             if (model.name) return model.name
-    //             if (model.id && model.id !== modelID) return modelID
-    //             return existingModel?.name ?? modelID
-    //         })
-    //         const parsedModel: Model = {
-    //             id: modelID,
-    //             api: {
-    //                 id: model.id ?? existingModel?.api.id ?? modelID,
-    //                 npm:
-    //                     model.provider?.npm ??
-    //                     provider.npm ??
-    //                     existingModel?.api.npm ??
-    //                     modelsDev[providerID]?.npm ??
-    //                     "@ai-sdk/openai-compatible",
-    //                 url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api!,
-    //             },
-    //             status: model.status ?? existingModel?.status ?? "active",
-    //             name,
-    //             providerID,
-    //             capabilities: {
-    //                 temperature: model.temperature ?? existingModel?.capabilities.temperature ?? false,
-    //                 reasoning: model.reasoning ?? existingModel?.capabilities.reasoning ?? false,
-    //                 attachment: model.attachment ?? existingModel?.capabilities.attachment ?? false,
-    //                 toolcall: model.tool_call ?? existingModel?.capabilities.toolcall ?? true,
-    //                 input: {
-    //                     text: model.modalities?.input?.includes("text") ?? existingModel?.capabilities.input.text ?? true,
-    //                     audio: model.modalities?.input?.includes("audio") ?? existingModel?.capabilities.input.audio ?? false,
-    //                     image: model.modalities?.input?.includes("image") ?? existingModel?.capabilities.input.image ?? false,
-    //                     video: model.modalities?.input?.includes("video") ?? existingModel?.capabilities.input.video ?? false,
-    //                     pdf: model.modalities?.input?.includes("pdf") ?? existingModel?.capabilities.input.pdf ?? false,
-    //                 },
-    //                 output: {
-    //                     text: model.modalities?.output?.includes("text") ?? existingModel?.capabilities.output.text ?? true,
-    //                     audio: model.modalities?.output?.includes("audio") ?? existingModel?.capabilities.output.audio ?? false,
-    //                     image: model.modalities?.output?.includes("image") ?? existingModel?.capabilities.output.image ?? false,
-    //                     video: model.modalities?.output?.includes("video") ?? existingModel?.capabilities.output.video ?? false,
-    //                     pdf: model.modalities?.output?.includes("pdf") ?? existingModel?.capabilities.output.pdf ?? false,
-    //                 },
-    //                 interleaved: model.interleaved ?? false,
-    //             },
-    //             cost: {
-    //                 input: model?.cost?.input ?? existingModel?.cost?.input ?? 0,
-    //                 output: model?.cost?.output ?? existingModel?.cost?.output ?? 0,
-    //                 cache: {
-    //                     read: model?.cost?.cache_read ?? existingModel?.cost?.cache.read ?? 0,
-    //                     write: model?.cost?.cache_write ?? existingModel?.cost?.cache.write ?? 0,
-    //                 },
-    //             },
-    //             options: mergeDeep(existingModel?.options ?? {}, model.options ?? {}),
-    //             limit: {
-    //                 context: model.limit?.context ?? existingModel?.limit?.context ?? 0,
-    //                 output: model.limit?.output ?? existingModel?.limit?.output ?? 0,
-    //             },
-    //             headers: mergeDeep(existingModel?.headers ?? {}, model.headers ?? {}),
-    //             family: model.family ?? existingModel?.family ?? "",
-    //             release_date: model.release_date ?? existingModel?.release_date ?? "",
-    //             variants: {},
-    //         }
-    //         // const merged = mergeDeep(ProviderTransform.variants(parsedModel), model.variants ?? {})
-    //         // parsedModel.variants = mapValues(
-    //         //     pickBy(merged, (v) => !v.disabled),
-    //         //     (v) => omit(v, ["disabled"]),
-    //         // )
-    //         // parsed.models[modelID] = parsedModel
-    //     }
-    //     database[providerID] = parsed
-    // }
-
-    // load env
-    const env = Env.all()
-    for (const [providerID, provider] of Object.entries(AllProviders)) {
-        const apiKey = provider.env.map((item) => env[item]).find(Boolean)
-        if (!apiKey) continue
-        mergeProvider(providerID, {
-            source: "env",
-            key: provider.env.length === 1 ? apiKey : undefined,
-        })
-    }
-
-    for (const [id, provider] of Object.entries(providers)) {
-        for (const [modelID, model] of Object.entries(provider.models)) {
-
-
-        }
-    }
-
-
-
-
-
-    return {
-        models: languages,
-        providers,
-        sdk,
-        // modelLoaders,
-    }
+export const PublicModel = Model.omit({
+  headers: true,
+}).extend({
+  available: z.boolean(),
 })
-/**
- * 列出project的已有的providers
- * @returns 
- */
+export type PublicModel = z.infer<typeof PublicModel>
+
+export const PublicProvider = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    source: z.enum(["env", "config", "custom", "api"]),
+    env: z.array(z.string()),
+    configured: z.boolean(),
+    available: z.boolean(),
+    apiKeyConfigured: z.boolean(),
+    baseURL: z.string().optional(),
+    modelCount: z.number(),
+    models: z.array(PublicModel),
+  })
+  .meta({
+    ref: "PublicProvider",
+  })
+export type PublicProvider = z.infer<typeof PublicProvider>
+
+export const ProviderCatalogItem = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    source: z.enum(["env", "config", "custom", "api"]),
+    env: z.array(z.string()),
+    configured: z.boolean(),
+    available: z.boolean(),
+    apiKeyConfigured: z.boolean(),
+    baseURL: z.string().optional(),
+    modelCount: z.number(),
+  })
+  .meta({
+    ref: "ProviderCatalogItem",
+  })
+export type ProviderCatalogItem = z.infer<typeof ProviderCatalogItem>
+
+const sdkState = Instance.state(() => new Map<string, SDKProvider>())
+const languageState = Instance.state(() => new Map<string, LanguageModel>())
+
+function firstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value !== "string") continue
+    const trimmed = value.trim()
+    if (trimmed) return trimmed
+  }
+  return undefined
+}
+
+function hasProviderConfig(config: Config.Info, providerID: string) {
+  return Boolean(config.provider?.[providerID])
+}
+
+function isProviderAllowed(config: Config.Info, providerID: string) {
+  if (config.enabled_providers && !config.enabled_providers.includes(providerID)) return false
+  if (config.disabled_providers?.includes(providerID)) return false
+  return true
+}
+
+function resolveProviderApiKey(
+  provider: ProviderInfo,
+  providerConfig: Config.Provider | undefined,
+  env: Record<string, string | undefined>,
+) {
+  return firstNonEmptyString(
+    providerConfig?.options?.apiKey,
+    ...provider.env.map((item) => env[item]),
+  )
+}
+
+function sanitizeProviderOptions(options: Config.Provider["options"]) {
+  if (!options) return {}
+  const { apiKey: _apiKey, ...rest } = options
+  return rest
+}
+
+function hasApiKey(provider: ProviderInfo) {
+  return Boolean(firstNonEmptyString(provider.key))
+}
+
+function isAvailable(provider: ProviderInfo) {
+  return hasApiKey(provider) || provider.env.length === 0
+}
+
+function parseModelReference(input: string | undefined) {
+  if (!input) return undefined
+  const [providerID, ...rest] = input.split("/")
+  const modelID = rest.join("/")
+  if (!providerID || !modelID) return undefined
+  return {
+    providerID,
+    modelID,
+  }
+}
+
+function createBaseModelFromConfig(
+  providerID: string,
+  providerConfig: Config.Provider | undefined,
+  modelID: string,
+  modelConfig: NonNullable<Config.Provider["models"]>[string],
+): Model {
+  return {
+    id: modelID,
+    providerID,
+    api: {
+      id: firstNonEmptyString(modelConfig.id, modelID) ?? modelID,
+      url: firstNonEmptyString(modelConfig.provider?.api, providerConfig?.api, providerConfig?.options?.baseURL) ?? "",
+      npm: firstNonEmptyString(modelConfig.provider?.npm, providerConfig?.npm) ?? "@ai-sdk/openai",
+    },
+    name: firstNonEmptyString(modelConfig.name, modelID) ?? modelID,
+    family: modelConfig.family,
+    capabilities: {
+      temperature: modelConfig.temperature ?? true,
+      reasoning: modelConfig.reasoning ?? false,
+      attachment: modelConfig.attachment ?? false,
+      toolcall: modelConfig.tool_call ?? true,
+      input: {
+        text: modelConfig.modalities?.input?.includes("text") ?? true,
+        audio: modelConfig.modalities?.input?.includes("audio") ?? false,
+        image: modelConfig.modalities?.input?.includes("image") ?? false,
+        video: modelConfig.modalities?.input?.includes("video") ?? false,
+        pdf: modelConfig.modalities?.input?.includes("pdf") ?? false,
+      },
+      output: {
+        text: modelConfig.modalities?.output?.includes("text") ?? true,
+        audio: modelConfig.modalities?.output?.includes("audio") ?? false,
+        image: modelConfig.modalities?.output?.includes("image") ?? false,
+        video: modelConfig.modalities?.output?.includes("video") ?? false,
+        pdf: modelConfig.modalities?.output?.includes("pdf") ?? false,
+      },
+      interleaved: modelConfig.interleaved ?? false,
+    },
+    cost: {
+      input: modelConfig.cost?.input ?? 0,
+      output: modelConfig.cost?.output ?? 0,
+      cache: {
+        read: modelConfig.cost?.cache_read ?? 0,
+        write: modelConfig.cost?.cache_write ?? 0,
+      },
+      experimentalOver200K: modelConfig.cost?.context_over_200k
+        ? {
+            input: modelConfig.cost.context_over_200k.input,
+            output: modelConfig.cost.context_over_200k.output,
+            cache: {
+              read: modelConfig.cost.context_over_200k.cache_read ?? 0,
+              write: modelConfig.cost.context_over_200k.cache_write ?? 0,
+            },
+          }
+        : undefined,
+    },
+    limit: {
+      context: modelConfig.limit?.context ?? 0,
+      input: modelConfig.limit?.input,
+      output: modelConfig.limit?.output ?? 0,
+    },
+    status: modelConfig.status ?? "active",
+    options: modelConfig.options ?? {},
+    headers: modelConfig.headers ?? {},
+    release_date: modelConfig.release_date ?? "",
+    variants: modelConfig.variants ?? {},
+  }
+}
+
+function mergeModelConfig(
+  providerID: string,
+  providerConfig: Config.Provider | undefined,
+  modelID: string,
+  baseModel: Model | undefined,
+  modelConfig: NonNullable<Config.Provider["models"]>[string] | undefined,
+) {
+  const base = baseModel
+    ? structuredClone(baseModel)
+    : createBaseModelFromConfig(providerID, providerConfig, modelID, modelConfig ?? {})
+
+  if (!modelConfig) {
+    return {
+      ...base,
+      providerID,
+      api: {
+        ...base.api,
+        url: firstNonEmptyString(providerConfig?.api, providerConfig?.options?.baseURL, base.api.url) ?? "",
+        npm: firstNonEmptyString(providerConfig?.npm, base.api.npm) ?? "@ai-sdk/openai",
+      },
+    }
+  }
+
+  return {
+    ...base,
+    id: modelID,
+    providerID,
+    api: {
+      id: firstNonEmptyString(modelConfig.id, base.api.id, modelID) ?? modelID,
+      url:
+        firstNonEmptyString(modelConfig.provider?.api, providerConfig?.api, providerConfig?.options?.baseURL, base.api.url) ??
+        "",
+      npm: firstNonEmptyString(modelConfig.provider?.npm, providerConfig?.npm, base.api.npm) ?? "@ai-sdk/openai",
+    },
+    name: firstNonEmptyString(modelConfig.name, base.name, modelID) ?? modelID,
+    family: modelConfig.family ?? base.family,
+    capabilities: {
+      temperature: modelConfig.temperature ?? base.capabilities.temperature,
+      reasoning: modelConfig.reasoning ?? base.capabilities.reasoning,
+      attachment: modelConfig.attachment ?? base.capabilities.attachment,
+      toolcall: modelConfig.tool_call ?? base.capabilities.toolcall,
+      input: {
+        text: modelConfig.modalities?.input?.includes("text") ?? base.capabilities.input.text,
+        audio: modelConfig.modalities?.input?.includes("audio") ?? base.capabilities.input.audio,
+        image: modelConfig.modalities?.input?.includes("image") ?? base.capabilities.input.image,
+        video: modelConfig.modalities?.input?.includes("video") ?? base.capabilities.input.video,
+        pdf: modelConfig.modalities?.input?.includes("pdf") ?? base.capabilities.input.pdf,
+      },
+      output: {
+        text: modelConfig.modalities?.output?.includes("text") ?? base.capabilities.output.text,
+        audio: modelConfig.modalities?.output?.includes("audio") ?? base.capabilities.output.audio,
+        image: modelConfig.modalities?.output?.includes("image") ?? base.capabilities.output.image,
+        video: modelConfig.modalities?.output?.includes("video") ?? base.capabilities.output.video,
+        pdf: modelConfig.modalities?.output?.includes("pdf") ?? base.capabilities.output.pdf,
+      },
+      interleaved: modelConfig.interleaved ?? base.capabilities.interleaved,
+    },
+    cost: {
+      input: modelConfig.cost?.input ?? base.cost.input,
+      output: modelConfig.cost?.output ?? base.cost.output,
+      cache: {
+        read: modelConfig.cost?.cache_read ?? base.cost.cache.read,
+        write: modelConfig.cost?.cache_write ?? base.cost.cache.write,
+      },
+      experimentalOver200K: modelConfig.cost?.context_over_200k
+        ? {
+            input: modelConfig.cost.context_over_200k.input,
+            output: modelConfig.cost.context_over_200k.output,
+            cache: {
+              read: modelConfig.cost.context_over_200k.cache_read ?? 0,
+              write: modelConfig.cost.context_over_200k.cache_write ?? 0,
+            },
+          }
+        : base.cost.experimentalOver200K,
+    },
+    limit: {
+      context: modelConfig.limit?.context ?? base.limit.context,
+      input: modelConfig.limit?.input ?? base.limit.input,
+      output: modelConfig.limit?.output ?? base.limit.output,
+    },
+    status: modelConfig.status ?? base.status,
+    options: {
+      ...base.options,
+      ...(modelConfig.options ?? {}),
+    },
+    headers: {
+      ...base.headers,
+      ...(modelConfig.headers ?? {}),
+    },
+    release_date: modelConfig.release_date ?? base.release_date,
+    variants: modelConfig.variants ?? base.variants,
+  } satisfies Model
+}
+
+function applyProviderConfig(
+  providerID: string,
+  baseProvider: ProviderInfo | undefined,
+  providerConfig: Config.Provider | undefined,
+  env: Record<string, string | undefined>,
+) {
+  if (!baseProvider && !providerConfig) return undefined
+
+  const provider: ProviderInfo = baseProvider
+    ? structuredClone(baseProvider)
+    : {
+        id: providerID,
+        name: providerConfig?.name ?? providerID,
+        source: "custom",
+        env: providerConfig?.env ?? [],
+        options: {},
+        models: {},
+      }
+
+  const configured = Boolean(providerConfig) || Boolean(resolveProviderApiKey(provider, providerConfig, env))
+  if (!configured) return undefined
+
+  provider.name = providerConfig?.name ?? provider.name
+  provider.env = providerConfig?.env ?? provider.env
+  provider.source = providerConfig ? "config" : "env"
+  provider.key = resolveProviderApiKey(provider, providerConfig, env)
+  provider.options = sanitizeProviderOptions(providerConfig?.options)
+
+  const resultModels: Record<string, Model> = {}
+  const configModels = providerConfig?.models ?? {}
+
+  for (const [modelID, baseModel] of Object.entries(provider.models)) {
+    resultModels[modelID] = mergeModelConfig(providerID, providerConfig, modelID, baseModel, configModels[modelID])
+  }
+
+  for (const [modelID, modelConfig] of Object.entries(configModels)) {
+    if (resultModels[modelID]) continue
+    resultModels[modelID] = mergeModelConfig(providerID, providerConfig, modelID, undefined, modelConfig)
+  }
+
+  let modelEntries = Object.entries(resultModels)
+  if (providerConfig?.whitelist?.length) {
+    const whitelist = new Set(providerConfig.whitelist)
+    modelEntries = modelEntries.filter(([modelID]) => whitelist.has(modelID))
+  }
+  if (providerConfig?.blacklist?.length) {
+    const blacklist = new Set(providerConfig.blacklist)
+    modelEntries = modelEntries.filter(([modelID]) => !blacklist.has(modelID))
+  }
+
+  provider.models = Object.fromEntries(modelEntries)
+  return provider
+}
+
+async function catalogMap() {
+  const providers = await ModelsDev.get()
+  return mapValues(providers, fromModelsDevProvider)
+}
+
+async function resolveProjectProviders() {
+  const catalog = await catalogMap()
+  const config = await Config.get()
+  const env = Env.all()
+  const providerIDs = new Set<string>([
+    ...Object.keys(catalog),
+    ...Object.keys(config.provider ?? {}),
+  ])
+
+  const configuredProviders: Record<string, ProviderInfo> = {}
+  for (const providerID of providerIDs) {
+    if (!isProviderAllowed(config, providerID)) continue
+    const provider = applyProviderConfig(providerID, catalog[providerID], config.provider?.[providerID], env)
+    if (!provider) continue
+    configuredProviders[providerID] = provider
+  }
+
+  return {
+    catalog,
+    config,
+    providers: configuredProviders,
+  }
+}
+
+function sortProviders<T extends { name: string; id: string }>(items: T[]) {
+  return items.toSorted((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+}
+
+function sortModels<T extends { name: string; id: string; providerID?: string }>(items: T[]) {
+  return items.toSorted(
+    (left, right) =>
+      left.name.localeCompare(right.name) ||
+      (left.providerID ?? "").localeCompare(right.providerID ?? "") ||
+      left.id.localeCompare(right.id),
+  )
+}
+
+function modelBaseURL(provider: ProviderInfo) {
+  const firstModel = Object.values(provider.models)[0]
+  return firstNonEmptyString(provider.options.baseURL, firstModel?.api.url)
+}
+
+function toPublicModel(provider: ProviderInfo, model: Model): PublicModel {
+  return {
+    ...model,
+    available: isAvailable(provider),
+  }
+}
+
+function toPublicProvider(provider: ProviderInfo): PublicProvider {
+  const models = sortModels(Object.values(provider.models).map((model) => toPublicModel(provider, model)))
+  return {
+    id: provider.id,
+    name: provider.name,
+    source: provider.source,
+    env: provider.env,
+    configured: true,
+    available: isAvailable(provider),
+    apiKeyConfigured: hasApiKey(provider),
+    baseURL: modelBaseURL(provider),
+    modelCount: models.length,
+    models,
+  }
+}
+
+function toCatalogItem(baseProvider: ProviderInfo, configuredProvider: ProviderInfo | undefined): ProviderCatalogItem {
+  return {
+    id: baseProvider.id,
+    name: baseProvider.name,
+    source: configuredProvider?.source ?? baseProvider.source,
+    env: baseProvider.env,
+    configured: Boolean(configuredProvider),
+    available: configuredProvider ? isAvailable(configuredProvider) : baseProvider.env.length === 0,
+    apiKeyConfigured: configuredProvider ? hasApiKey(configuredProvider) : false,
+    baseURL: modelBaseURL(configuredProvider ?? baseProvider),
+    modelCount: Object.keys((configuredProvider ?? baseProvider).models).length,
+  }
+}
+
+function runtimeKey(provider: ProviderInfo, model: Model) {
+  return JSON.stringify({
+    providerID: provider.id,
+    modelID: model.id,
+    apiKey: provider.key ?? "",
+    baseURL: firstNonEmptyString(provider.options.baseURL, model.api.url) ?? "",
+    headers: model.headers,
+  })
+}
+
+export async function catalog() {
+  const state = await resolveProjectProviders()
+  return sortProviders(
+    Object.values(state.catalog).map((provider) => toCatalogItem(provider, state.providers[provider.id])),
+  )
+}
+
 async function list() {
-    return state().then((state) => state.providers)
+  const state = await resolveProjectProviders()
+  return state.providers
 }
-//获得project特定的provider
+
+export async function listPublicProviders() {
+  const providers = await list()
+  return sortProviders(Object.values(providers).map(toPublicProvider))
+}
+
+export async function listModels() {
+  const providers = await list()
+  return sortModels(
+    Object.values(providers).flatMap((provider) => Object.values(provider.models).map((model) => toPublicModel(provider, model))),
+  )
+}
+
 async function getProvider(providerID: string) {
-    return state().then((s) => s.providers[providerID])
+  const providers = await list()
+  return providers[providerID]
 }
-//获得模型
+
+export async function getPublicProvider(providerID: string) {
+  const provider = await getProvider(providerID)
+  if (!provider) return undefined
+  return toPublicProvider(provider)
+}
+
 async function getModel(providerID: string, modelID: string) {
-    const s = await state()
-    const provider = s.providers[providerID]
-    if (!provider) {
-        const availableProviders = Object.keys(s.providers)
-        const matches = fuzzysort.go(providerID, availableProviders, { limit: 3, threshold: -10000 })
-        const suggestions = matches.map((m) => m.target)
-        throw new ModelNotFoundError({ providerID, modelID, suggestions })
-    }
+  const providers = await list()
+  const provider = providers[providerID]
+  if (!provider) {
+    const matches = fuzzysort.go(providerID, Object.keys(providers), {
+      limit: 3,
+      threshold: -10000,
+    })
+    throw new ModelNotFoundError({
+      providerID,
+      modelID,
+      suggestions: matches.map((item) => item.target),
+    })
+  }
 
-    const info = provider.models[modelID]
-    if (!info) {
-        const availableModels = Object.keys(provider.models)
-        const matches = fuzzysort.go(modelID, availableModels, { limit: 3, threshold: -10000 })
-        const suggestions = matches.map((m) => m.target)//模糊匹配
-        throw new ModelNotFoundError({ providerID, modelID, suggestions })
-    }
-    return info
+  const model = provider.models[modelID]
+  if (!model) {
+    const matches = fuzzysort.go(modelID, Object.keys(provider.models), {
+      limit: 3,
+      threshold: -10000,
+    })
+    throw new ModelNotFoundError({
+      providerID,
+      modelID,
+      suggestions: matches.map((item) => item.target),
+    })
+  }
+
+  return model
 }
 
+export async function getSelection() {
+  const config = await Config.get()
+  return {
+    model: config.model,
+    small_model: config.small_model,
+  }
+}
+
+export async function getDefaultModelRef(): Promise<ModelReference> {
+  const selection = await getSelection()
+  const parsed = parseModelReference(selection.model)
+  if (parsed) {
+    try {
+      await getModel(parsed.providerID, parsed.modelID)
+      return parsed
+    } catch {
+      // fall through to the first configured model
+    }
+  }
+
+  const models = await listModels()
+  const firstModel = models[0]
+  if (firstModel) {
+    return {
+      providerID: firstModel.providerID,
+      modelID: firstModel.id,
+    }
+  }
+
+  return DEFAULT_MODEL_REF
+}
+
+export async function getLanguage(model: Model): Promise<LanguageModel> {
+  const provider = await getProvider(model.providerID)
+  if (!provider) {
+    throw new InitError({
+      providerID: model.providerID,
+    })
+  }
+
+  const key = runtimeKey(provider, model)
+  const cache = languageState()
+  const cached = cache.get(key)
+  if (cached) return cached
+
+  const sdk = await getSDK(model)
+  const language = sdk.languageModel(model.api.id) as LanguageModel
+  cache.set(key, language)
+  return language
+}
+
+async function getSDK(model: Model) {
+  const provider = await getProvider(model.providerID)
+  if (!provider) {
+    throw new InitError({
+      providerID: model.providerID,
+    })
+  }
+
+  if (!provider.key && provider.env.length > 0) {
+    throw new InitError(
+      {
+        providerID: model.providerID,
+      },
+      {
+        cause: new Error(`Provider '${model.providerID}' is missing an API key`),
+      },
+    )
+  }
+
+  const key = runtimeKey(provider, model)
+  const cache = sdkState()
+  const cached = cache.get(key)
+  if (cached) return cached
+
+  const baseURL = firstNonEmptyString(provider.options.baseURL, model.api.url)
+  const headers = Object.keys(model.headers).length > 0 ? model.headers : undefined
+
+  const sdk =
+    model.api.npm === "@ai-sdk/deepseek" || provider.id === "deepseek"
+      ? createDeepSeek({
+          apiKey: provider.key,
+          baseURL,
+          headers,
+        })
+      : createOpenAI({
+          name: provider.id,
+          apiKey: provider.key,
+          baseURL,
+          headers,
+        })
+
+  cache.set(key, sdk as SDKProvider)
+  return sdk as SDKProvider
+}
 
 function fromModelsDevModel(provider: ModelsDev.DevProvider, model: ModelsDev.DevModel): Model {
-    const m: Model = {
-        id: model.id,
-        providerID: provider.id,
-        api: {
-            id: model.id,
-            url: provider.api!,
-            npm: model.provider?.npm ?? provider.npm ?? "@ai-sdk/openai-compatible",
-        },
-        name: model.name,
-        capabilities: {
-            temperature: model.temperature,
-            reasoning: model.reasoning,
-            attachment: model.attachment,
-            toolcall: model.tool_call,
-            input: {
-                text: model.modalities?.input?.includes("text") ?? false,
-                audio: model.modalities?.input?.includes("audio") ?? false,
-                image: model.modalities?.input?.includes("image") ?? false,
-                video: model.modalities?.input?.includes("video") ?? false,
-                pdf: model.modalities?.input?.includes("pdf") ?? false,
-            },
-            output: {
-                text: model.modalities?.output?.includes("text") ?? false,
-                audio: model.modalities?.output?.includes("audio") ?? false,
-                image: model.modalities?.output?.includes("image") ?? false,
-                video: model.modalities?.output?.includes("video") ?? false,
-                pdf: model.modalities?.output?.includes("pdf") ?? false,
-            },
-            interleaved: model.interleaved ?? false,
-        },
-        cost: {
-            input: model.cost?.input ?? 0,
-            output: model.cost?.output ?? 0,
+  return {
+    id: model.id,
+    providerID: provider.id,
+    api: {
+      id: model.id,
+      url: firstNonEmptyString(model.provider?.api, provider.api) ?? "",
+      npm: firstNonEmptyString(model.provider?.npm, provider.npm) ?? "@ai-sdk/openai",
+    },
+    name: model.name,
+    capabilities: {
+      temperature: model.temperature,
+      reasoning: model.reasoning,
+      attachment: model.attachment,
+      toolcall: model.tool_call,
+      input: {
+        text: model.modalities?.input?.includes("text") ?? false,
+        audio: model.modalities?.input?.includes("audio") ?? false,
+        image: model.modalities?.input?.includes("image") ?? false,
+        video: model.modalities?.input?.includes("video") ?? false,
+        pdf: model.modalities?.input?.includes("pdf") ?? false,
+      },
+      output: {
+        text: model.modalities?.output?.includes("text") ?? false,
+        audio: model.modalities?.output?.includes("audio") ?? false,
+        image: model.modalities?.output?.includes("image") ?? false,
+        video: model.modalities?.output?.includes("video") ?? false,
+        pdf: model.modalities?.output?.includes("pdf") ?? false,
+      },
+      interleaved: model.interleaved ?? false,
+    },
+    cost: {
+      input: model.cost?.input ?? 0,
+      output: model.cost?.output ?? 0,
+      cache: {
+        read: model.cost?.cache_read ?? 0,
+        write: model.cost?.cache_write ?? 0,
+      },
+      experimentalOver200K: model.cost?.context_over_200k
+        ? {
             cache: {
-                read: model.cost?.cache_read ?? 0,
-                write: model.cost?.cache_write ?? 0,
+              read: model.cost.context_over_200k.cache_read ?? 0,
+              write: model.cost.context_over_200k.cache_write ?? 0,
             },
-            experimentalOver200K: model.cost?.context_over_200k
-                ? {
-                    cache: {
-                        read: model.cost.context_over_200k.cache_read ?? 0,
-                        write: model.cost.context_over_200k.cache_write ?? 0,
-                    },
-                    input: model.cost.context_over_200k.input,
-                    output: model.cost.context_over_200k.output,
-                }
-                : undefined,
-        },
-        limit: {
-            context: model.limit.context,
-            input: model.limit.input,
-            output: model.limit.output,
-        },
-        status: model.status ?? "active",
-        options: model.options ?? {},
-        headers: model.headers ?? {},
-        release_date: model.release_date,
-        variants: {},
-        family: model.family,
-    }
-
-    /// m.variants = mapValues(ProviderTransform.variants(m), (v) => v)
-
-    return m
+            input: model.cost.context_over_200k.input,
+            output: model.cost.context_over_200k.output,
+          }
+        : undefined,
+    },
+    limit: {
+      context: model.limit.context,
+      input: model.limit.input,
+      output: model.limit.output,
+    },
+    status: model.status ?? "active",
+    options: model.options ?? {},
+    headers: model.headers ?? {},
+    release_date: model.release_date,
+    variants: model.variants ?? {},
+    family: model.family,
+  }
 }
 
 export function fromModelsDevProvider(provider: ModelsDev.DevProvider): ProviderInfo {
-    return {
-        id: provider.id,
-        source: "custom",
-        name: provider.name,
-        env: provider.env ?? [],
-        options: {},
-        models: mapValues(provider.models, (model) => fromModelsDevModel(provider, model)),
-    }
+  return {
+    id: provider.id,
+    source: "api",
+    name: provider.name,
+    env: provider.env ?? [],
+    options: {},
+    models: mapValues(provider.models, (model) => fromModelsDevModel(provider, model)),
+  }
 }
-/**
- * model，provider都是本项目自己定义的type（准确说是匹配 modeldev上面的定义的结构）
- * 需要找到转成AI SDK中对应的SDK
- * @param model 
- * @returns 
- */
-// async function getLanguage(model: Model): Promise<LanguageModel> {
-//     const s = await state()
-//     //模板字符串语法，
-//     // 使用反引号（`）而不是单引号或双引号
-//     //允许在字符串中嵌入表达式
-//     //表达式用 ${} 包裹
-//     const key = `${model.providerID}/${model.id}`
-//     if (s.models.has(key))
-//         return s.models.get(key)!
-
-//     const provider = s.providers[model.providerID]
-//     const sdk = await getSDK(model)
-
-//     try {
-//         const language = s.modelLoaders[model.providerID]
-//             ? await s.modelLoaders[model.providerID](sdk, model.api.id, provider.options)
-//             : sdk.languageModel(model.api.id)
-//         s.models.set(key, language)
-//         return language
-//     } catch (e) {
-//         if (e instanceof NoSuchModelError)
-//             throw new ModelNotFoundError(
-//                 {
-//                     modelID: model.id,
-//                     providerID: model.providerID,
-//                 },
-//                 { cause: e },
-//             )
-//         throw e
-//     }
-// }
-
-/**
- * 动态初始化并返回一个用于与特定大语言模型 (LLM) 供应商通信的 SDK 实例。
- * @param model 
- */
-async function getSDK(model: Model) {
-
-}
-
-
 
 export const ModelNotFoundError = NamedError.create(
-    "ProviderModelNotFoundError",
-    z.object({
-        providerID: z.string(),
-        modelID: z.string(),
-        suggestions: z.array(z.string()).optional(),
-    }),
+  "ProviderModelNotFoundError",
+  z.object({
+    providerID: z.string(),
+    modelID: z.string(),
+    suggestions: z.array(z.string()).optional(),
+  }),
 )
 
 export const InitError = NamedError.create(
-    "ProviderInitError",
-    z.object({
-        providerID: z.string(),
-    }),
+  "ProviderInitError",
+  z.object({
+    providerID: z.string(),
+  }),
 )
 
-
-const deepseekprovider = deepseek
-const deepseekreasoningmodel = deepseek.languageModel("deepseek-reasoner")
-
-//for test
-//在以下位置撰写一个Model和provider的实例，使用的是deepseek reasoner模型（本文件定义的），以供我测试文件来调用测试
-
-// for test - create Model and Provider instances for deepseek reasoner
 const testDeepSeekDevProvider: ModelsDev.DevProvider = {
-    id: "deepseek",
-    name: "DeepSeek",
-    env: ["DEEPSEEK_API_KEY"],
-    api: "https://api.deepseek.com",
-    npm: "@ai-sdk/deepseek",
-    models: {
-        "deepseek-reasoner": {
-            id: "deepseek-reasoner",
-            name: "DeepSeek Reasoner",
-            family: "deepseek",
-            release_date: "2024-01-01",
-            attachment: false,
-            reasoning: true,
-            temperature: true,
-            tool_call: true,
-            interleaved: undefined,
-            cost: {
-                input: 0.0001,
-                output: 0.0002,
-                cache_read: 0,
-                cache_write: 0,
-            },
-            limit: {
-                context: 128000,
-                input: undefined,
-                output: 4096,
-            },
-            modalities: {
-                input: ["text"],
-                output: ["text"],
-            },
-            status: "beta",
-            options: {},
-            headers: {},
-        },
+  id: "deepseek",
+  name: "DeepSeek",
+  env: ["DEEPSEEK_API_KEY"],
+  api: "https://api.deepseek.com",
+  npm: "@ai-sdk/deepseek",
+  models: {
+    "deepseek-reasoner": {
+      id: "deepseek-reasoner",
+      name: "DeepSeek Reasoner",
+      family: "deepseek",
+      release_date: "2024-01-01",
+      attachment: false,
+      reasoning: true,
+      temperature: true,
+      tool_call: true,
+      interleaved: undefined,
+      cost: {
+        input: 0.0001,
+        output: 0.0002,
+        cache_read: 0,
+        cache_write: 0,
+      },
+      limit: {
+        context: 128000,
+        input: undefined,
+        output: 4096,
+      },
+      modalities: {
+        input: ["text"],
+        output: ["text"],
+      },
+      status: "beta",
+      options: {},
+      headers: {},
     },
-};
-
-const testDeepSeekProvider:ProviderInfo = fromModelsDevProvider(testDeepSeekDevProvider);
-const testDeepSeekModel:Model = testDeepSeekProvider.models["deepseek-reasoner"]!;
-
-
-
-
-
-export {
-    list,
-    getProvider,
-    getModel,
-    //getLanguage,
-    //temp
-    deepseekprovider,
-    deepseekreasoningmodel,
-    testDeepSeekProvider,
-    testDeepSeekModel,
+  },
 }
 
+const testDeepSeekProvider: ProviderInfo = fromModelsDevProvider(testDeepSeekDevProvider)
+const testDeepSeekModel: Model = testDeepSeekProvider.models["deepseek-reasoner"]!
 
-
+export {
+  list,
+  getProvider,
+  getModel,
+  testDeepSeekProvider,
+  testDeepSeekModel,
+}

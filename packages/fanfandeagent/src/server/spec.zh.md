@@ -1,35 +1,21 @@
-# Server 模块规范（中文）
+# Server 模块规范
 
-## 概述
-`server` 模块基于 Hono 提供 `fanfandeagent` 的 HTTP 传输层。它负责请求/响应协议转换，并将业务逻辑委托给领域模块（如 `project`、`session`）。
+## 概览
 
-## 当前入口
-- `createServerApp(options?)`：构建并返回 Hono 应用实例
-- `startServer(options?)`：使用 Bun 启动 HTTP 服务
-- `stopServer()`：停止当前激活的 Bun 服务实例
-- `url()`：返回当前服务 URL
+`server` 模块基于 Hono 提供 `fanfandeagent` 的 HTTP 接口层。
+它只负责：
 
-## 中间件流水线
-1. Request ID 中间件
-- 通过 `crypto.randomUUID()` 生成 `requestId`
-- 写入上下文变量 `requestId`
-- 在响应头返回 `x-request-id`
+- 参数校验
+- 路由分发
+- 响应 envelope 统一
+- 错误码映射
 
-2. CORS 中间件
-- 挂载路径：`/api/*`
-- 若提供 `corsWhitelist` 则使用白名单；否则启用默认 CORS
+业务逻辑由 `project`、`session`、`provider`、`config` 等模块承接。
 
-3. 访问日志中间件
-- 记录 `method`、`path`、`status`、`duration`、`requestId`
-
-4. 错误处理
-- 未匹配路由统一返回 not-found 响应
-- 通过 `ApiError` + fallback `INTERNAL_ERROR` 统一异常响应
-
-## 响应包络
-所有 API 都使用统一响应结构。
+## 响应约定
 
 成功：
+
 ```json
 {
   "success": true,
@@ -39,6 +25,7 @@
 ```
 
 失败：
+
 ```json
 {
   "success": false,
@@ -51,36 +38,68 @@
 ```
 
 ## 当前路由
-基础路由：
-- `GET /`：服务元信息
-- `GET /healthz`：健康检查（`{ ok: true }`）
 
-项目路由（`/api/projects`）：
-- `GET /api/projects`：项目列表
-- `GET /api/projects/:id`：按 ID 获取单个项目
+### 基础
 
-会话路由（`/api/sessions`）：
-- `GET /api/sessions`：返回路由提示信息
-- `POST /api/sessions`：根据请求体 `{ "directory": "..." }` 创建会话
-- `GET /api/sessions/:id`：按 ID 获取单个会话
-- `POST /api/sessions/:id/messages/stream`：创建一条新的用户消息，并以 `text/event-stream` 流式返回 assistant 输出
+- `GET /`
+- `GET /healthz`
 
-## 当前错误码
-- `NOT_FOUND`：路由不存在
-- `INVALID_PAYLOAD`：请求体校验失败
-- `PROJECT_NOT_FOUND`：项目 ID 不存在
-- `SESSION_NOT_FOUND`：会话 ID 不存在
-- `INTERNAL_ERROR`：服务内部异常
+### Project
 
-## 设计约束
-- 路由处理器保持轻量：仅做输入校验与输出转换
-- 路由层不直接写底层数据表
-- 所有响应必须可通过 `requestId` 追踪
-- 新增路由时必须同步更新 spec 与 `Test/` 下测试
+- `GET /api/projects`
+- `POST /api/projects`
+- `GET /api/projects/:id`
+- `DELETE /api/projects/:id`
+- `GET /api/projects/:id/sessions`
+- `POST /api/projects/:id/sessions`
 
-## 后续建议（规范扩展）
-- 增加 API 版本前缀（如 `/api/v1`）
-- 增加鉴权中间件与错误码（`UNAUTHORIZED`、`FORBIDDEN`）
-- 增加限流与超时契约
-- 定义 agent 输出流式协议（SSE/WebSocket）
+### Provider / Model Config
 
+- `GET /api/projects/:id/providers/catalog`
+- `GET /api/projects/:id/providers`
+- `PUT /api/projects/:id/providers/:providerID`
+- `DELETE /api/projects/:id/providers/:providerID`
+- `GET /api/projects/:id/models`
+- `PATCH /api/projects/:id/model-selection`
+
+### Session
+
+- `GET /api/sessions`
+- `POST /api/sessions`
+- `GET /api/sessions/:id`
+- `DELETE /api/sessions/:id`
+- `GET /api/sessions/:id/messages`
+- `POST /api/sessions/:id/messages/stream`
+
+## Provider 路由职责
+
+新增的 provider 路由服务于前端模型配置页：
+
+- `providers/catalog`
+  - 展示所有可选 provider
+- `providers`
+  - 展示当前项目已经配置的 provider
+- `models`
+  - 展示当前项目可选模型
+- `model-selection`
+  - 保存默认模型和小模型
+
+这些路由内部会进入 `Instance` 上下文，以便读取项目级环境变量和 provider 状态。
+
+## 约束
+
+- 路由层不直接拼接模型 catalog
+- 路由层不返回敏感字段，例如 provider key
+- 删除 project 时必须同步清理 project 级 provider 配置
+- 新增 route 后，至少同步更新：
+  - `src/provider/spec.md`
+  - `src/server/spec.zh.md`
+  - 相关 API 对接文档
+  - `Test/server.api.test.ts`
+
+## 测试指令
+
+```powershell
+cd C:\Projects\fanfande_studio
+bun test packages/fanfandeagent/Test/server.api.test.ts
+```

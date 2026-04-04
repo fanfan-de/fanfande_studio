@@ -9,24 +9,22 @@ import * as Identifier from "#id/id.ts"
 import * as Message from "#session/message.ts"
 import * as Session from "#session/session.ts"
 
-interface JsonEnvelope {
+interface JsonEnvelope<T = Record<string, unknown>> {
   success: boolean
   requestId?: string
-  data?: Record<string, unknown>
+  data?: T
   error?: {
     code: string
     message: string
   }
 }
 
-interface SessionResponseEnvelope extends JsonEnvelope {
-  data?: {
-    id: string
-    projectID: string
-    directory: string
-    title: string
-  }
-}
+type SessionResponseEnvelope = JsonEnvelope<{
+  id: string
+  projectID: string
+  directory: string
+  title: string
+}>
 
 interface ProjectRecord {
   id: string
@@ -37,12 +35,10 @@ interface ProjectRecord {
   sandboxes: string[]
 }
 
-interface ProjectsResponseEnvelope extends JsonEnvelope {
-  data?: ProjectRecord[]
-}
+type ProjectsResponseEnvelope = JsonEnvelope<ProjectRecord[]>
 
-interface ProjectSessionsResponseEnvelope extends JsonEnvelope {
-  data?: Array<{
+type ProjectSessionsResponseEnvelope = JsonEnvelope<
+  Array<{
     id: string
     projectID: string
     directory: string
@@ -52,28 +48,22 @@ interface ProjectSessionsResponseEnvelope extends JsonEnvelope {
       updated: number
     }
   }>
-}
+>
 
-interface ProjectResponseEnvelope extends JsonEnvelope {
-  data?: ProjectRecord
-}
+type ProjectResponseEnvelope = JsonEnvelope<ProjectRecord>
 
-interface DeleteSessionResponseEnvelope extends JsonEnvelope {
-  data?: {
-    sessionID: string
-    projectID: string
-  }
-}
+type DeleteSessionResponseEnvelope = JsonEnvelope<{
+  sessionID: string
+  projectID: string
+}>
 
-interface DeleteProjectResponseEnvelope extends JsonEnvelope {
-  data?: {
-    projectID: string
-    deletedSessionIDs: string[]
-  }
-}
+type DeleteProjectResponseEnvelope = JsonEnvelope<{
+  projectID: string
+  deletedSessionIDs: string[]
+}>
 
-interface SessionMessagesResponseEnvelope extends JsonEnvelope {
-  data?: Array<{
+type SessionMessagesResponseEnvelope = JsonEnvelope<
+  Array<{
     info: {
       id: string
       sessionID: string
@@ -85,6 +75,127 @@ interface SessionMessagesResponseEnvelope extends JsonEnvelope {
       text?: string
     }>
   }>
+>
+
+type ProviderCatalogEnvelope = JsonEnvelope<
+  Array<{
+    id: string
+    name: string
+    configured: boolean
+    available: boolean
+    apiKeyConfigured: boolean
+    modelCount: number
+  }>
+>
+
+type ProviderListEnvelope = JsonEnvelope<{
+  items: Array<{
+    id: string
+    name: string
+    configured: boolean
+    available: boolean
+    apiKeyConfigured: boolean
+    modelCount: number
+    models: Array<{
+      id: string
+      providerID: string
+      available: boolean
+    }>
+  }>
+  selection: {
+    model?: string
+    small_model?: string
+  }
+}>
+
+type ProviderUpdateEnvelope = JsonEnvelope<{
+  provider: {
+    id: string
+    name: string
+    available: boolean
+    apiKeyConfigured: boolean
+    models: Array<{
+      id: string
+      providerID: string
+    }>
+  }
+  selection: {
+    model?: string
+    small_model?: string
+  }
+}>
+
+type ProjectModelsEnvelope = JsonEnvelope<{
+  items: Array<{
+    id: string
+    providerID: string
+    available: boolean
+  }>
+  selection: {
+    model?: string
+    small_model?: string
+  }
+}>
+
+const modelsDevFixture = {
+  deepseek: {
+    id: "deepseek",
+    name: "DeepSeek",
+    env: ["DEEPSEEK_API_KEY"],
+    api: "https://api.deepseek.com",
+    npm: "@ai-sdk/deepseek",
+    models: {
+      "deepseek-reasoner": {
+        id: "deepseek-reasoner",
+        name: "DeepSeek Reasoner",
+        family: "deepseek",
+        release_date: "2024-01-01",
+        attachment: false,
+        reasoning: true,
+        temperature: true,
+        tool_call: true,
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+        modalities: {
+          input: ["text"],
+          output: ["text"],
+        },
+        options: {},
+        headers: {},
+      },
+    },
+  },
+  openai: {
+    id: "openai",
+    name: "OpenAI",
+    env: ["OPENAI_API_KEY"],
+    api: "https://api.openai.com/v1",
+    npm: "@ai-sdk/openai",
+    models: {
+      "gpt-4o-mini": {
+        id: "gpt-4o-mini",
+        name: "GPT-4o mini",
+        family: "gpt-4o",
+        release_date: "2024-07-18",
+        attachment: true,
+        reasoning: false,
+        temperature: true,
+        tool_call: true,
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+        modalities: {
+          input: ["text", "image"],
+          output: ["text"],
+        },
+        options: {},
+        headers: {},
+      },
+    },
+  },
 }
 
 async function createGitRepo(root: string, seed: string) {
@@ -95,6 +206,42 @@ async function createGitRepo(root: string, seed: string) {
   await $`git config user.name fanfande-test`.cwd(root).quiet()
   await $`git add README.md`.cwd(root).quiet()
   await $`git commit -m init`.cwd(root).quiet()
+}
+
+function mockModelsDevFetch() {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = new Proxy(originalFetch, {
+    apply(target, thisArg, args: Parameters<typeof fetch>) {
+      const [input, init] = args
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (url === "https://models.dev/api.json") {
+        return Promise.resolve(Response.json(modelsDevFixture))
+      }
+
+      return Reflect.apply(target, thisArg, [input, init])
+    },
+  }) as typeof fetch
+
+  return () => {
+    globalThis.fetch = originalFetch
+  }
+}
+
+async function resetGlobalProviderState(app: ReturnType<typeof createServerApp>) {
+  await app.request("http://localhost/api/providers/deepseek", {
+    method: "DELETE",
+  })
+  await app.request("http://localhost/api/providers/openai", {
+    method: "DELETE",
+  })
+  await app.request("http://localhost/api/model-selection", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model: null,
+      small_model: null,
+    }),
+  })
 }
 
 describe("server api", () => {
@@ -232,6 +379,134 @@ describe("server api", () => {
     expect(sessionsBody.success).toBe(true)
     expect(Array.isArray(sessionsBody.data)).toBe(true)
     expect(sessionsBody.data?.every((session) => session.projectID === createBody.data?.id)).toBe(true)
+  })
+
+  test("global provider routes should expose catalog, configured providers and model selection", async () => {
+    const restoreFetch = mockModelsDevFetch()
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-provider-project-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "provider-project")
+      await resetGlobalProviderState(app)
+
+      const catalogResponse = await app.request("http://localhost/api/providers/catalog")
+      const catalogBody = (await catalogResponse.json()) as ProviderCatalogEnvelope
+
+      expect(catalogResponse.status).toBe(200)
+      expect(catalogBody.success).toBe(true)
+      expect(catalogBody.data?.some((provider) => provider.id === "deepseek" && provider.modelCount > 0)).toBe(true)
+      expect(catalogBody.data?.some((provider) => provider.id === "openai" && provider.configured === false)).toBe(true)
+
+      const configureResponse = await app.request("http://localhost/api/providers/deepseek", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "DeepSeek",
+          whitelist: ["deepseek-reasoner"],
+          options: {
+            apiKey: "test-deepseek-key",
+            baseURL: "https://api.deepseek.com",
+          },
+        }),
+      })
+      const configureBody = (await configureResponse.json()) as ProviderUpdateEnvelope
+
+      expect(configureResponse.status).toBe(200)
+      expect(configureBody.success).toBe(true)
+      expect(configureBody.data?.provider.id).toBe("deepseek")
+      expect(configureBody.data?.provider.apiKeyConfigured).toBe(true)
+      expect(configureBody.data?.provider.available).toBe(true)
+      expect(configureBody.data?.provider.models).toHaveLength(1)
+      expect((configureBody.data?.provider as Record<string, unknown> | undefined)?.key).toBeUndefined()
+
+      const reconfigureResponse = await app.request("http://localhost/api/providers/deepseek", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          options: {
+            baseURL: "https://proxy.deepseek.test/v1",
+          },
+        }),
+      })
+      const reconfigureBody = (await reconfigureResponse.json()) as ProviderUpdateEnvelope
+
+      expect(reconfigureResponse.status).toBe(200)
+      expect(reconfigureBody.success).toBe(true)
+      expect(reconfigureBody.data?.provider.apiKeyConfigured).toBe(true)
+      expect((reconfigureBody.data?.provider as Record<string, unknown> | undefined)?.baseURL).toBe("https://proxy.deepseek.test/v1")
+
+      const providersResponse = await app.request("http://localhost/api/providers")
+      const providersBody = (await providersResponse.json()) as ProviderListEnvelope
+
+      expect(providersResponse.status).toBe(200)
+      expect(providersBody.data?.items).toHaveLength(1)
+      expect(providersBody.data?.items[0]?.id).toBe("deepseek")
+      expect(providersBody.data?.items[0]?.models[0]?.id).toBe("deepseek-reasoner")
+
+      const modelsResponse = await app.request("http://localhost/api/models")
+      const modelsBody = (await modelsResponse.json()) as ProjectModelsEnvelope
+
+      expect(modelsResponse.status).toBe(200)
+      expect(modelsBody.data?.items).toHaveLength(1)
+      expect(modelsBody.data?.items[0]).toMatchObject({
+        providerID: "deepseek",
+        id: "deepseek-reasoner",
+        available: true,
+      })
+
+      const selectionResponse = await app.request("http://localhost/api/model-selection", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "deepseek/deepseek-reasoner",
+        }),
+      })
+      const selectionBody = (await selectionResponse.json()) as JsonEnvelope<{
+        model?: string
+        small_model?: string
+      }>
+
+      expect(selectionResponse.status).toBe(200)
+      expect(selectionBody.data?.model).toBe("deepseek/deepseek-reasoner")
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const compatibilityResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
+      const compatibilityBody = (await compatibilityResponse.json()) as ProjectModelsEnvelope
+
+      expect(compatibilityResponse.status).toBe(200)
+      expect(compatibilityBody.data?.selection.model).toBe("deepseek/deepseek-reasoner")
+      expect(compatibilityBody.data?.items).toHaveLength(1)
+
+      const removeResponse = await app.request("http://localhost/api/providers/deepseek", {
+        method: "DELETE",
+      })
+      const removeBody = (await removeResponse.json()) as JsonEnvelope<{
+        providerID: string
+        selection: {
+          model?: string
+          small_model?: string
+        }
+      }>
+
+      expect(removeResponse.status).toBe(200)
+      expect(removeBody.data?.providerID).toBe("deepseek")
+      expect(removeBody.data?.selection.model).toBeUndefined()
+    } finally {
+      await resetGlobalProviderState(app)
+      restoreFetch()
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
   })
 
   test("POST /api/projects should keep folders in the same git repo under one project", async () => {

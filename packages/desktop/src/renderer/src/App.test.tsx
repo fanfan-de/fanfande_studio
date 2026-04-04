@@ -39,6 +39,27 @@ describe("App", () => {
       deleteProjectWorkspace: vi.fn(),
       deleteAgentSession: vi.fn(),
       getSessionHistory: vi.fn().mockResolvedValue([]),
+      getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
+      getGlobalModels: vi.fn().mockResolvedValue({
+        items: [],
+        selection: {},
+      }),
+      updateGlobalProvider: vi.fn().mockResolvedValue({
+        provider: {
+          id: "deepseek",
+          name: "DeepSeek",
+          available: true,
+          apiKeyConfigured: true,
+        },
+        selection: {},
+      }),
+      deleteGlobalProvider: vi.fn().mockResolvedValue({
+        providerID: "deepseek",
+        selection: {},
+      }),
+      updateGlobalModelSelection: vi.fn().mockResolvedValue({
+        model: "deepseek/deepseek-reasoner",
+      }),
       createAgentSession: vi.fn().mockResolvedValue({
         session: {
           id: "session-backend",
@@ -63,7 +84,10 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Toggle sidebar density" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "\u79FB\u9664 app" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Create session for app" })).toBeInTheDocument()
     expect(screen.getByText("Project 2")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument()
@@ -353,7 +377,7 @@ describe("App", () => {
 
     const openFolder = screen.getByRole("button", { name: "Open folder" })
     fireEvent.click(openFolder)
-    expect(await screen.findByRole("button", { name: "client" })).toHaveClass("is-active")
+    expect((await screen.findByRole("button", { name: "client" })).closest(".project-row")).toHaveClass("is-active")
 
     fireEvent.click(openFolder)
 
@@ -364,8 +388,8 @@ describe("App", () => {
       })
     })
 
-    expect(await screen.findByRole("button", { name: "server" })).toHaveClass("is-active")
-    expect(screen.getByRole("button", { name: "client" })).not.toHaveClass("is-active")
+    expect((await screen.findByRole("button", { name: "server" })).closest(".project-row")).toHaveClass("is-active")
+    expect(screen.getByRole("button", { name: "client" }).closest(".project-row")).not.toHaveClass("is-active")
     expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
   })
 
@@ -428,8 +452,8 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "src" }))
 
-    expect(screen.getByRole("button", { name: "src" })).toHaveClass("is-active")
-    expect(screen.getByRole("button", { name: "app" })).not.toHaveClass("is-active")
+    expect(screen.getByRole("button", { name: "src" }).closest(".project-row")).toHaveClass("is-active")
+    expect(screen.getByRole("button", { name: "app" }).closest(".project-row")).not.toHaveClass("is-active")
     expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
@@ -444,6 +468,400 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Layout follow-up" })).toBeInTheDocument()
     expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
+  })
+
+  it("creates a session from the folder row action", async () => {
+    window.desktop!.createFolderSession = vi.fn().mockResolvedValue({
+      session: {
+        id: "session-layout-scratch",
+        projectID: "project-1",
+        directory: "C:\\Projects\\Project 1\\src",
+        title: "Layout scratch",
+        created: 1,
+        updated: 2,
+      },
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session for src" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.createFolderSession).toHaveBeenCalledWith({
+        projectID: "project-1",
+        directory: "C:\\Projects\\Project 1\\src",
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "Layout scratch" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "src" }).closest(".project-row")).toHaveClass("is-active")
+  })
+
+  it("opens global provider settings", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "config",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.deepseek.com",
+        modelCount: 1,
+      },
+      {
+        id: "openai",
+        name: "OpenAI",
+        source: "api",
+        env: ["OPENAI_API_KEY"],
+        configured: false,
+        available: false,
+        apiKeyConfigured: false,
+        baseURL: "https://api.openai.com/v1",
+        modelCount: 1,
+      },
+    ])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "deepseek-reasoner",
+          providerID: "deepseek",
+          name: "DeepSeek Reasoner",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: true,
+            attachment: false,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+      ],
+      selection: {
+        model: "deepseek/deepseek-reasoner",
+      },
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+
+    const settingsDialog = await screen.findByRole("dialog", { name: "Settings" })
+
+    expect(settingsDialog).toHaveClass("settings-page")
+    expect(screen.getByText("Manage shared providers and models for the app.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Provider/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Models/ })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Search providers" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /DeepSeek.*Connected/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "Provider Configuration" })).toBeInTheDocument()
+    expect(screen.getByLabelText("API key for DeepSeek")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /^Models/ }))
+
+    expect(screen.getByLabelText("Primary model")).toHaveValue("deepseek/deepseek-reasoner")
+    expect(screen.getByRole("heading", { name: "Connected Models" })).toBeInTheDocument()
+    expect(screen.getByText("DeepSeek Reasoner")).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it("saves provider overrides from the settings page", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "deepseek",
+          name: "DeepSeek",
+          source: "api",
+          env: ["DEEPSEEK_API_KEY"],
+          configured: false,
+          available: false,
+          apiKeyConfigured: false,
+          baseURL: "https://api.deepseek.com",
+          modelCount: 1,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "deepseek",
+          name: "DeepSeek",
+          source: "config",
+          env: ["DEEPSEEK_API_KEY"],
+          configured: true,
+          available: true,
+          apiKeyConfigured: true,
+          baseURL: "https://proxy.deepseek.test/v1",
+          modelCount: 1,
+        },
+      ])
+    window.desktop!.getGlobalModels = vi
+      .fn()
+      .mockResolvedValueOnce({
+        items: [],
+        selection: {},
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: "deepseek-reasoner",
+            providerID: "deepseek",
+            name: "DeepSeek Reasoner",
+            status: "active",
+            available: true,
+            capabilities: {
+              temperature: true,
+              reasoning: true,
+              attachment: false,
+              toolcall: true,
+              input: {
+                text: true,
+                audio: false,
+                image: false,
+                video: false,
+                pdf: false,
+              },
+              output: {
+                text: true,
+                audio: false,
+                image: false,
+                video: false,
+                pdf: false,
+              },
+            },
+            limit: {
+              context: 128000,
+              output: 8192,
+            },
+          },
+        ],
+        selection: {},
+      })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    await screen.findByRole("heading", { name: "Provider Configuration" })
+
+    fireEvent.change(screen.getByLabelText("API key for DeepSeek"), {
+      target: {
+        value: "sk-deepseek-test",
+      },
+    })
+    fireEvent.change(screen.getByLabelText("Base URL for DeepSeek"), {
+      target: {
+        value: "https://proxy.deepseek.test/v1",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save DeepSeek settings" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updateGlobalProvider).toHaveBeenCalledWith({
+        providerID: "deepseek",
+        provider: {
+          name: "DeepSeek",
+          env: ["DEEPSEEK_API_KEY"],
+          options: {
+            apiKey: "sk-deepseek-test",
+            baseURL: "https://proxy.deepseek.test/v1",
+          },
+        },
+      })
+    })
+
+    expect(await screen.findByText("Provider settings saved.")).toBeInTheDocument()
+    expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalledTimes(2)
+    expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(2)
+  })
+
+  it("closes settings on escape or backdrop click", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "config",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.deepseek.com",
+        modelCount: 1,
+      },
+    ])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [],
+      selection: {},
+    })
+
+    const { container } = render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument()
+
+    const settingsOverlay = container.querySelector(".settings-page-overlay")
+    expect(settingsOverlay).not.toBeNull()
+    fireEvent.click(settingsOverlay!)
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: "Escape" })
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument()
+    })
+  })
+
+  it("updates the global model selection from settings", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "config",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.deepseek.com",
+        modelCount: 1,
+      },
+      {
+        id: "openai",
+        name: "OpenAI",
+        source: "config",
+        env: ["OPENAI_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.openai.com/v1",
+        modelCount: 1,
+      },
+    ])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "deepseek-reasoner",
+          providerID: "deepseek",
+          name: "DeepSeek Reasoner",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: true,
+            attachment: false,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+        {
+          id: "gpt-4o-mini",
+          providerID: "openai",
+          name: "GPT-4o mini",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: false,
+            attachment: true,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: true,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+      ],
+      selection: {
+        model: "deepseek/deepseek-reasoner",
+      },
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Models/ }))
+    expect(screen.getByText("GPT-4o mini")).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText("Primary model"), {
+      target: {
+        value: "openai/gpt-4o-mini",
+      },
+    })
+    fireEvent.change(screen.getByLabelText("Small model"), {
+      target: {
+        value: "deepseek/deepseek-reasoner",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save model selection" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updateGlobalModelSelection).toHaveBeenCalledWith({
+        model: "openai/gpt-4o-mini",
+        small_model: "deepseek/deepseek-reasoner",
+      })
+    })
+
+    expect(await screen.findByText("Model settings saved.")).toBeInTheDocument()
   })
 
   it("deletes a session from the sidebar", async () => {
@@ -462,6 +880,18 @@ describe("App", () => {
       })
     })
     expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
+  })
+
+  it("removes a folder from the sidebar without deleting it from the backend", () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "\u79FB\u9664 app" }))
+
+    expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "src" }).closest(".project-row")).toHaveClass("is-active")
+    expect(screen.getByRole("button", { name: "Layout pass" })).toBeInTheDocument()
+    expect(window.desktop!.deleteProjectWorkspace).not.toHaveBeenCalled()
   })
 
   it("applies maximized window styling when the window starts maximized", async () => {
@@ -798,6 +1228,13 @@ describe("App", () => {
     expect(srcFolderLeading).toHaveAttribute("data-icon", "folder")
   })
 
+  it("keeps session rows aligned with folder labels and gives them the same hover treatment", () => {
+    expect(styles).toMatch(/\.session-tree\s*\{[^}]*padding-left:\s*calc\(8px \+ 24px \+ 7px\);/s)
+    expect(styles).toMatch(
+      /\.project-row:hover,\s*\.project-row:focus-within,\s*\.session-row:hover,\s*\.session-row:focus-visible\s*\{[^}]*background:\s*rgba\(22,\s*119,\s*200,\s*0\.08\);/s,
+    )
+  })
+
   it("keeps rounded corners only on the prompt input shell", () => {
     const nonZeroBorderRadii = Array.from(styles.matchAll(/border-radius:\s*([^;]+);/g))
       .map(([, value]) => value.trim())
@@ -810,5 +1247,18 @@ describe("App", () => {
   it("gives tool trace items a dedicated visual style", () => {
     expect(styles).toMatch(/\.trace-kind-tool\s*\{[^}]*linear-gradient/s)
     expect(styles).toMatch(/\.trace-kind-tool\s+\.trace-item-title,\s*\.trace-kind-tool\s+\.trace-item-detail\s*\{[^}]*font-family:/s)
+  })
+
+  it("keeps settings surfaces constrained as centered dialogs", () => {
+    expect(styles).toMatch(/\.settings-page-overlay\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*center;[^}]*overflow:\s*auto;/s)
+    expect(styles).toMatch(/\.settings-page\s*\{[^}]*width:\s*min\(100%,\s*1320px\);[^}]*max-height:\s*min\(calc\(100dvh - 64px\),\s*860px\);/s)
+    expect(styles).toMatch(/\.settings-page-body,\s*\.settings-page-shell\s*\{[^}]*grid-template-columns:\s*220px minmax\(0,\s*1fr\);/s)
+    expect(styles).toMatch(/\.settings-services-layout\s*\{[^}]*grid-template-columns:\s*320px minmax\(0,\s*1fr\);/s)
+  })
+
+  it("scopes provider scrolling to the column layout", () => {
+    expect(styles).toMatch(/\.settings-page-main\.is-services\s*\{[^}]*overflow:\s*hidden;/s)
+    expect(styles).toMatch(/\.settings-service-list\s*\{[^}]*overflow:\s*auto;/s)
+    expect(styles).toMatch(/\.settings-service-detail-panel\s*\{[^}]*overflow:\s*auto;/s)
   })
 })

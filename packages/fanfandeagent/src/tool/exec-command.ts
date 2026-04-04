@@ -76,6 +76,7 @@ export const ExecCommandTool = Tool.define(
   "exec_command",
   async () => {
     return {
+      title: "Bash",
       description: "Run a bash command inside the current project boundary.",
       parameters: z.object({
         command: z.string().min(1).describe("Bash command to execute."),
@@ -167,7 +168,7 @@ export const ExecCommandTool = Tool.define(
 
         return {
           title,
-          output: [
+          text: [
             `Command: ${command}`,
             `Workdir: ${toDisplayPath(cwd)}`,
             `Shell: ${bash}`,
@@ -194,5 +195,16 @@ export const ExecCommandTool = Tool.define(
         }
       },
     }
+  },
+  {
+    title: "Bash",
+    aliases: ["bash", "exec-command"],
+    capabilities: {
+      kind: "exec",
+      readOnly: false,
+      destructive: true,
+      concurrency: "exclusive",
+      needsShell: true,
+    },
   },
 )

@@ -365,6 +365,7 @@ export const ApplyPatchTool = Tool.define(
   "apply_patch",
   async () => {
     return {
+      title: "Apply Patch",
       description: "Apply a Git-style unified diff patch to project files.",
       parameters: z.object({
         patch: z.string().min(1).describe("Unified diff text (Git format) containing one or more file patches."),
@@ -477,7 +478,7 @@ export const ApplyPatchTool = Tool.define(
 
         return {
           title: "Applied unified diff",
-          output: [
+          text: [
             `Applied patch to ${actions.length} file(s).`,
             "",
             ...actions.map((action) => `- ${formatAction(action)}`),
@@ -485,5 +486,15 @@ export const ApplyPatchTool = Tool.define(
         }
       },
     }
+  },
+  {
+    title: "Apply Patch",
+    aliases: ["apply-patch"],
+    capabilities: {
+      kind: "write",
+      readOnly: false,
+      destructive: true,
+      concurrency: "exclusive",
+    },
   },
 )

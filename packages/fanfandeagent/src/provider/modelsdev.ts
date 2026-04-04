@@ -1,6 +1,7 @@
 import * as Log from "#util/log.ts"
 import * as Global from "#global/global.ts"
 import path from "path"
+import fs from "fs/promises"
 import z from "zod"
 import * as  Flag from "#flag/flag.ts"
 import * as lazy from "#util/lazy.ts"
@@ -80,9 +81,41 @@ function url() {
     return "https://models.dev"
 }
 
+async function readCache() {
+    const text = await Bun.file(filepath)
+        .text()
+        .catch(() => undefined)
+    if (!text) return undefined
+
+    try {
+        return JSON.parse(text) as Record<string, DevProvider>
+    } catch {
+        return undefined
+    }
+}
+
+async function fetchRemote() {
+    const response = await fetch(`${url()}/api.json`, {
+        headers: {
+            "User-Agent": Installation.USER_AGENT,
+        },
+        signal: AbortSignal.timeout(10 * 1000),
+    })
+
+    if (!response.ok) {
+        throw new Error(`models.dev request failed with status ${response.status}`)
+    }
+
+    const text = await response.text()
+    await fs.mkdir(path.dirname(filepath), { recursive: true })
+    await Bun.write(Bun.file(filepath), text)
+    return JSON.parse(text) as Record<string, DevProvider>
+}
+
 const DevData = lazy.lazy(async () => {
-    const json = await fetch(`${url()}/api.json`).then((x) => x.text())
-    return JSON.parse(json)
+    const cached = await readCache()
+    if (cached) return cached
+    return fetchRemote()
 })
 
 /**
@@ -90,24 +123,26 @@ const DevData = lazy.lazy(async () => {
  * @returns 
  */
 async function get(): Promise<Record<string, DevProvider>> {
-    const result = await DevData()
-    return result as Record<string, DevProvider>
+    try {
+        const result = await DevData()
+        return result as Record<string, DevProvider>
+    } catch (error) {
+        log.error("Failed to load models.dev catalog", {
+            error,
+        })
+        const cached = await readCache()
+        if (cached) return cached
+        throw error
+    }
 }
 //refresh models 
 async function refresh() {
-    const file = Bun.file(filepath)
-    const result = await fetch(`${url()}/api.json`, {
-        headers: {
-            "User-Agent": Installation.USER_AGENT,
-        },
-        signal: AbortSignal.timeout(10 * 1000),
-    }).catch((e) => {
+    const result = await fetchRemote().catch((e) => {
         log.error("Failed to fetch models.dev", {
             error: e,
         })
     })
-    if (result && result.ok) {
-        await Bun.write(file, await result.text())
+    if (result) {
         DevData.reset()
     }
 }

@@ -291,3 +291,22 @@ bun test Test/server.api.test.ts
 2. 切换 session 后能回放对应历史消息。
 3. 在线发送消息时能先看到流式 reasoning/text，再看到 `done` 收尾。
 4. 删除 session 后，desktop 和 backend 的 session 视图保持一致。
+
+## 10. Provider / Model Config Routes
+
+The backend now exposes project-scoped provider configuration routes:
+
+- `GET /api/projects/:id/providers/catalog`
+- `GET /api/projects/:id/providers`
+- `PUT /api/projects/:id/providers/:providerID`
+- `DELETE /api/projects/:id/providers/:providerID`
+- `GET /api/projects/:id/models`
+- `PATCH /api/projects/:id/model-selection`
+
+Recommended desktop integration order:
+
+1. Load `providers/catalog` when opening the project settings view.
+2. Save a provider form with `PUT /providers/:providerID`.
+3. Populate the model picker from `GET /models`.
+4. Persist default model choice with `PATCH /model-selection`.
+5. Pass `{ providerID, modelID }` to `POST /api/sessions/:id/messages/stream` when sending a chat message.

@@ -43,6 +43,7 @@ export const ListDirectoryTool = Tool.define(
   "list-directory",
   async () => {
     return {
+      title: "List Directory",
       description: "List files and folders inside the current project.",
       parameters: z.object({
         path: z.string().optional().describe("Directory to list. Defaults to the project root."),
@@ -58,7 +59,7 @@ export const ListDirectoryTool = Tool.define(
         if (!stats.isDirectory()) {
           return {
             title: `File info ${toDisplayPath(resolved)}`,
-            output: `${toDisplayPath(resolved)} is a file.`,
+            text: `${toDisplayPath(resolved)} is a file.`,
           }
         }
 
@@ -79,9 +80,18 @@ export const ListDirectoryTool = Tool.define(
 
         return {
           title: `List ${toDisplayPath(resolved)}`,
-          output: lines.length > 0 ? lines.join("\n") : "(empty directory)",
+          text: lines.length > 0 ? lines.join("\n") : "(empty directory)",
         }
       },
     }
+  },
+  {
+    title: "List Directory",
+    capabilities: {
+      kind: "read",
+      readOnly: true,
+      destructive: false,
+      concurrency: "safe",
+    },
   },
 )

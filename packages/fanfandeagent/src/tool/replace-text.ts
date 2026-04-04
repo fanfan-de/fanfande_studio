@@ -6,6 +6,7 @@ export const ReplaceTextTool = Tool.define(
   "replace-text",
   async () => {
     return {
+      title: "Replace Text",
       description: "Replace text inside an existing file.",
       parameters: z.object({
         path: z.string().min(1).describe("Absolute or project-relative file path."),
@@ -41,9 +42,18 @@ export const ReplaceTextTool = Tool.define(
 
         return {
           title: `Updated ${toDisplayPath(resolved)}`,
-          output: `Replaced ${count} occurrence(s) in ${toDisplayPath(resolved)}.`,
+          text: `Replaced ${count} occurrence(s) in ${toDisplayPath(resolved)}.`,
         }
       },
     }
+  },
+  {
+    title: "Replace Text",
+    capabilities: {
+      kind: "write",
+      readOnly: false,
+      destructive: true,
+      concurrency: "exclusive",
+    },
   },
 )

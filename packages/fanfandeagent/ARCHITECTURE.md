@@ -185,53 +185,104 @@
 
 ### 5.1 Project
 
-`ProjectInfo` 表示一个项目实体，重点字段：
-- `id`
-- `worktree`
-- `vcs`
-- `name`
-- `icon`
-- `created`
-- `updated`
-- `initialized`
-- `sandboxes`
+`ProjectInfo` 定义在 `src/project/project.ts`，当前真实结构是：
+- `id: string`
+- `worktree: string`
+- `vcs?: "git"`
+- `name?: string`
+- `icon?: { url?: string; override?: string; color?: string }`
+- `commands?: { start?: string }`
+- `created: number`
+- `updated: number`
+- `initialized?: number`
+- `sandboxes: string[]`
+
+补充语义：
+- `worktree` 是项目边界；Git 项目通常是仓库顶层，非 Git 场景会退化为全局项目边界 `/`
+- `sandboxes` 记录这个 project 下面已经识别过、且当前仍存在的目录
+- `commands.start` 是创建新 workspace / worktree 时可复用的启动命令入口
 
 ### 5.2 Session
 
-`SessionInfo` 表示一次会话，重点字段：
-- `id`
-- `projectID`
-- `directory`
-- `title`
-- `version`
-- `time`
-- `summary`
-- `share`
-- `revert`
+`SessionInfo` 定义在 `src/session/session.ts`，当前真实结构是：
+- `id: session id`
+- `slug?: string`
+- `projectID: string`
+- `directory: string`
+- `summary?: { additions: number; deletions: number; files: number }`
+- `share?: { url: string }`
+- `title: string`
+- `version: string`
+- `time: { created: number; updated: number; compacting?: number; archived?: number }`
+- `revert?: { messageID: string; partID?: string; snapshot?: string; diff?: string }`
+
+补充语义：
+- `SessionInfo` 对应的是会话容器，不是一轮消息
+- `summary` 当前是代码变更摘要的聚合结果
+- `time.compacting` / `time.archived` 说明 session 生命周期里已经预留了压缩和归档状态
+- `revert` 记录当前会话可回退的目标锚点，可以落到某条 message、某个 part，或某份 snapshot / diff
 
 ### 5.3 Message / Part
 
-消息采用“元信息 + parts”的方式表达：
-- `MessageInfo` 保存角色、模型、agent、时间等元数据
-- `Part` 保存具体内容
+`session` 的持久化不是只有 `SessionInfo` 一层，而是三层结构：
+- `sessions` 表保存 `SessionInfo`
+- `messages` 表保存 `MessageInfo`
+- `parts` 表保存 `Part`
 
-常见 part 类型：
-- `text`
-- `reasoning`
-- `file`
-- `image`
-- `tool`
-- `subtask`
+`MessageInfo` 定义在 `src/session/message.ts`，当前是按 `role` 区分的联合类型：
+- `User`
+  - `id`
+  - `sessionID`
+  - `role: "user"`
+  - `created`
+  - `diffSummary?: { title?: string; body?: string; diffs: Snapshot.FileDiff[] }`
+  - `agent`
+  - `model: { providerID: string; modelID: string }`
+  - `system?: string`
+  - `tools?: Record<string, boolean>`
+  - `variant?: string`
+- `Assistant`
+  - `id`
+  - `sessionID`
+  - `role: "assistant"`
+  - `created`
+  - `completed?: number`
+  - `error?`
+  - `parentID`
+  - `modelID`
+  - `providerID`
+  - `agent`
+  - `path: { cwd: string; root: string }`
+  - `summary?: boolean`
+  - `cost: number`
+  - `tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }`
+  - `finishReason?: string`
+
+`Part` 共享公共字段 `id / sessionID / messageID`，当前真实类型包括：
+- `text`: `text`，以及 `synthetic?`、`ignored?`、`time?`、`metadata?`
+- `reasoning`: `text`、`time`、`metadata?`
+- `file` / `image`: `mime`、`filename?`、`url`、`source?`
+- `tool`: `callID`、`tool`、`state`、`metadata?`
+- `subtask`: `prompt`、`description`、`agent`、`model?`、`command?`
+- `step-start`
+- `step-finish`
 - `snapshot`
 - `patch`
 - `agent`
 - `retry`
 - `compaction`
 
-这种结构的意义是：
-- message 负责“谁说的”
-- part 负责“说了什么”
-- tool / file / image / snapshot 可以统一纳入会话历史
+其中 `tool.state` 不是单一结构，而是一个状态联合：
+- `pending`
+- `running`
+- `completed`
+- `error`
+
+这种分层的意义是：
+- `SessionInfo` 负责“这次会话是什么”
+- `MessageInfo` 负责“这一轮是谁发出的”
+- `Part` 负责“这一轮里具体包含哪些内容或执行痕迹”
+- `tool`、`file`、`image`、`snapshot`、`step-*` 都能以统一方式进入会话历史
 
 ### 5.4 State
 

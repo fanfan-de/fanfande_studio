@@ -516,3 +516,22 @@ cd C:\Projects\fanfande_studio\packages\desktop
 npm run typecheck
 npm run test
 ```
+
+## 11. Provider / Model 配置接口
+
+本轮后端新增了项目级 provider/model 配置接口：
+
+- `GET /api/projects/:id/providers/catalog`
+- `GET /api/projects/:id/providers`
+- `PUT /api/projects/:id/providers/:providerID`
+- `DELETE /api/projects/:id/providers/:providerID`
+- `GET /api/projects/:id/models`
+- `PATCH /api/projects/:id/model-selection`
+
+桌面端后续接入建议：
+
+1. 配置页先拉 `providers/catalog`
+2. 保存单个 provider 时调 `PUT /providers/:providerID`
+3. 模型下拉框调 `GET /models`
+4. 默认模型切换调 `PATCH /model-selection`
+5. 发消息时，把 `{ providerID, modelID }` 透传给 `/api/sessions/:id/messages/stream`

@@ -378,10 +378,7 @@ async function createUserMessage(input: PromptInput) {
         role: "user",
         created: Date.now(),
         agent: input.agent ?? "plan",
-        model: input.model ?? {
-            providerID: "deepseek",
-            modelID: "deepseek-reasoner",
-        },
+        model: input.model ?? await Provider.getDefaultModelRef(),
         system: input.system,
     }
 

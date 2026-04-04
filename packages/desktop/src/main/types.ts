@@ -98,3 +98,52 @@ export interface AgentSessionHistoryMessage {
   info: Record<string, unknown>
   parts: unknown[]
 }
+
+export interface AgentProviderCatalogItem {
+  id: string
+  name: string
+  source: "env" | "config" | "custom" | "api"
+  env: string[]
+  configured: boolean
+  available: boolean
+  apiKeyConfigured: boolean
+  baseURL?: string
+  modelCount: number
+}
+
+export interface AgentProviderModelCapabilitiesModalities {
+  text: boolean
+  audio: boolean
+  image: boolean
+  video: boolean
+  pdf: boolean
+}
+
+export interface AgentProviderModelCapabilities {
+  temperature: boolean
+  reasoning: boolean
+  attachment: boolean
+  toolcall: boolean
+  input: AgentProviderModelCapabilitiesModalities
+  output: AgentProviderModelCapabilitiesModalities
+}
+
+export interface AgentProviderModel {
+  id: string
+  providerID: string
+  name: string
+  family?: string
+  status: "alpha" | "beta" | "deprecated" | "active"
+  available: boolean
+  capabilities: AgentProviderModelCapabilities
+  limit: {
+    context: number
+    input?: number
+    output: number
+  }
+}
+
+export interface AgentProjectModelSelection {
+  model?: string
+  small_model?: string
+}

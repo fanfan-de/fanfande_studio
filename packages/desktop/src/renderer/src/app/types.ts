@@ -1,6 +1,6 @@
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type TitlebarMenuKey = "file" | "edit" | "view" | "window" | "help"
-export type SidebarActionKey = "project" | "density" | "sort" | "new"
+export type SidebarActionKey = "project" | "sort" | "new"
 export type CanvasMenuKey = "overview" | "artifacts" | "changes" | "console" | "deploy"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
@@ -129,4 +129,58 @@ export interface AgentStreamIPCEvent extends AgentStreamEvent {
 export interface PendingAgentStream {
   sessionID: string
   assistantTurnID: string
+}
+
+export interface ProviderCatalogItem {
+  id: string
+  name: string
+  source: "env" | "config" | "custom" | "api"
+  env: string[]
+  configured: boolean
+  available: boolean
+  apiKeyConfigured: boolean
+  baseURL?: string
+  modelCount: number
+}
+
+export interface ProviderModelCapabilitiesModalities {
+  text: boolean
+  audio: boolean
+  image: boolean
+  video: boolean
+  pdf: boolean
+}
+
+export interface ProviderModelCapabilities {
+  temperature: boolean
+  reasoning: boolean
+  attachment: boolean
+  toolcall: boolean
+  input: ProviderModelCapabilitiesModalities
+  output: ProviderModelCapabilitiesModalities
+}
+
+export interface ProviderModel {
+  id: string
+  providerID: string
+  name: string
+  family?: string
+  status: "alpha" | "beta" | "deprecated" | "active"
+  available: boolean
+  capabilities: ProviderModelCapabilities
+  limit: {
+    context: number
+    input?: number
+    output: number
+  }
+}
+
+export interface ProjectModelSelection {
+  model: string | null
+  smallModel: string | null
+}
+
+export interface ProviderDraftState {
+  apiKey: string
+  baseURL: string
 }
