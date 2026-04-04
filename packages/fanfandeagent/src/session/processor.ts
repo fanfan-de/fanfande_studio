@@ -9,6 +9,94 @@ import * as Session from "#session/session.ts"
 
 const log = Log.create({ service: "session.processor" })
 
+function normalizeToolError(error: unknown): string {
+    if (error instanceof Error && error.message) {
+        return error.message
+    }
+
+    if (typeof error === "string") {
+        return error
+    }
+
+    try {
+        const serialized = JSON.stringify(error)
+        if (serialized) return serialized
+    } catch {
+        // ignore and fall through to String(error)
+    }
+
+    return String(error)
+}
+
+function toAttachmentPart(
+    value: unknown,
+    toolPart: Message.ToolPart,
+): Message.FilePart | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return undefined
+    }
+
+    const candidate = value as Record<string, unknown>
+    if (typeof candidate.url !== "string" || typeof candidate.mime !== "string") {
+        return undefined
+    }
+
+    return {
+        id: Identifier.ascending("part"),
+        sessionID: toolPart.sessionID,
+        messageID: toolPart.messageID,
+        type: "file",
+        url: candidate.url,
+        mime: candidate.mime,
+        filename: typeof candidate.filename === "string" ? candidate.filename : undefined,
+    }
+}
+
+function extractToolResultState(
+    output: unknown,
+    fallbackTitle?: string,
+    fallbackMetadata?: Record<string, unknown>,
+    toolPart?: Message.ToolPart,
+) {
+    let text = Message.normalizeToolOutputText(output)
+    let title = typeof fallbackTitle === "string" ? fallbackTitle : ""
+    let metadata = fallbackMetadata ?? {}
+    let attachments: Message.FilePart[] | undefined
+
+    if (output && typeof output === "object" && !Array.isArray(output)) {
+        const candidate = output as Record<string, unknown>
+
+        if (typeof candidate.text === "string") {
+            text = candidate.text
+        }
+
+        if (typeof candidate.title === "string") {
+            title = candidate.title
+        }
+
+        if (candidate.metadata && typeof candidate.metadata === "object" && !Array.isArray(candidate.metadata)) {
+            metadata = candidate.metadata as Record<string, unknown>
+        }
+
+        if (toolPart && Array.isArray(candidate.attachments)) {
+            const mapped = candidate.attachments
+                .map((attachment) => toAttachmentPart(attachment, toolPart))
+                .filter((attachment): attachment is Message.FilePart => Boolean(attachment))
+
+            if (mapped.length > 0) {
+                attachments = mapped
+            }
+        }
+    }
+
+    return {
+        output: text,
+        title,
+        metadata,
+        attachments,
+    }
+}
+
 /**鍒涘缓涓€涓?
  * 
  * @param input 
@@ -38,7 +126,6 @@ export function create(input: {
                      let currentText: Message.TextPart | undefined = undefined
                      //鏌愪簺妯″瀷锛堝 Claude銆丟emini锛夋敮鎸佸涓苟琛屾帹鐞嗛摼鎴栧祵濂楁帹鐞?
                      let reasoningMap: Record<string, Message.ReasoningPart> = {}
-                     let toolcalls: Record<string, Message.ToolPart> = {}
                       for await (const value of stream.fullStream) {
                          switch (value.type) {
                             case "text-start":
@@ -174,6 +261,8 @@ export function create(input: {
                                         state: {
                                             status: "running",
                                             input: value.input,
+                                            title: value.title,
+                                            metadata: value.providerMetadata,
                                             time: { start: Date.now() }
                                         },
                                         metadata: value.providerMetadata,
@@ -190,19 +279,25 @@ export function create(input: {
                                 break;
                             case 'tool-result':
                                 if (toolcalls[value.toolCallId] && toolcalls[value.toolCallId]?.state.status === "running") {
-                                    const output = Message.normalizeToolOutputText(value.output)
+                                    const normalized = extractToolResultState(
+                                        value.output,
+                                        value.title,
+                                        value.providerMetadata ?? {},
+                                        toolcalls[value.toolCallId],
+                                    )
                                     const match: Message.ToolPart = {
                                         ...toolcalls[value.toolCallId]!,
                                         state: {
                                             status: "completed",
                                             input: value.input,
-                                            output,
-                                            metadata: value.providerMetadata ?? {},
-                                            title: value.title ?? "",
+                                            output: normalized.output,
+                                            metadata: normalized.metadata,
+                                            title: normalized.title,
                                             time: {
                                                 start: (toolcalls[value.toolCallId]!.state as Message.ToolStateRunning).time.start,
                                                 end: Date.now(),
                                             },
+                                            attachments: normalized.attachments,
                                         },
                                     }
 
@@ -217,6 +312,29 @@ export function create(input: {
                                 break;
 
                             case "tool-error":
+                                if (toolcalls[value.toolCallId] && toolcalls[value.toolCallId]?.state.status === "running") {
+                                    const match: Message.ToolPart = {
+                                        ...toolcalls[value.toolCallId]!,
+                                        state: {
+                                            status: "error",
+                                            input: value.input,
+                                            error: normalizeToolError(value.error),
+                                            metadata: value.providerMetadata ?? {},
+                                            time: {
+                                                start: (toolcalls[value.toolCallId]!.state as Message.ToolStateRunning).time.start,
+                                                end: Date.now(),
+                                            },
+                                        },
+                                    }
+
+                                    toolcalls[value.toolCallId] = match
+                                    try {
+                                        await Session.updatePart(match)
+                                    } catch (error) {
+                                        console.error("failed to persist tool-error part", match)
+                                        throw error
+                                    }
+                                }
                                 break;
                             case "tool-output-denied":
                                 break;

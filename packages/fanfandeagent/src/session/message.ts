@@ -617,7 +617,6 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
                                 toolCallId: part.callID,
                                 toolName: part.tool,
                                 input: state.input,
-                                providerMetadata: part.metadata,
                             },
                         ],
                     } as ModelMessage)
@@ -640,7 +639,6 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
                                             type: "error-text" as const,
                                             value: state.error,
                                         },
-                                providerMetadata: part.metadata,
                             },
                         ] as any,
                     } as ModelMessage)

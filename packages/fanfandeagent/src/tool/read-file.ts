@@ -6,6 +6,7 @@ export const ReadFileTool = Tool.define(
   "read-file",
   async () => {
     return {
+      title: "Read File",
       description: "Read a text file or a line range from the current project.",
       parameters: z.object({
         path: z.string().min(1).describe("Absolute or project-relative file path."),
@@ -30,7 +31,7 @@ export const ReadFileTool = Tool.define(
 
         return {
           title: `Read ${toDisplayPath(resolved)}`,
-          output: [
+          text: [
             `Path: ${toDisplayPath(resolved)}`,
             `Lines: ${excerpt.startLine}-${excerpt.endLine} of ${excerpt.totalLines}`,
             excerpt.outOfRange ? "Note: the requested line range starts beyond the end of the file." : undefined,
@@ -41,5 +42,14 @@ export const ReadFileTool = Tool.define(
         }
       },
     }
+  },
+  {
+    title: "Read File",
+    capabilities: {
+      kind: "read",
+      readOnly: true,
+      destructive: false,
+      concurrency: "safe",
+    },
   },
 )

@@ -5,6 +5,9 @@ import type { ApplicationMenus } from "./menu"
 import type {
   AgentEnvelope,
   AgentFolderWorkspace,
+  AgentProjectModelSelection,
+  AgentProviderCatalogItem,
+  AgentProviderModel,
   AgentProjectDeleteResult,
   AgentProjectInfo,
   AgentProjectWorkspace,
@@ -349,6 +352,193 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
     return result.data
   })
+
+  ipcMain.handle("desktop:get-global-provider-catalog", async () => {
+    const result = await requestAgentJSON<AgentProviderCatalogItem[]>("/api/providers/catalog")
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:get-global-models", async () => {
+    const result = await requestAgentJSON<{
+      items: AgentProviderModel[]
+      selection: AgentProjectModelSelection
+    }>("/api/models")
+
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:update-global-provider",
+    async (
+      _event,
+      input: {
+        providerID: string
+        provider: {
+          name?: string
+          env?: string[]
+          options?: {
+            apiKey?: string
+            baseURL?: string
+          }
+        }
+      },
+    ) => {
+      const providerID = input.providerID.trim()
+      const result = await requestAgentJSON<{
+        provider: {
+          id: string
+          name: string
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+        }
+        selection: AgentProjectModelSelection
+      }>(`/api/providers/${encodeURIComponent(providerID)}`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input.provider),
+      })
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:delete-global-provider", async (_event, input: { providerID: string }) => {
+    const providerID = input.providerID.trim()
+    const result = await requestAgentJSON<{
+      providerID: string
+      selection: AgentProjectModelSelection
+    }>(`/api/providers/${encodeURIComponent(providerID)}`, {
+      method: "DELETE",
+    })
+
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:update-global-model-selection",
+    async (
+      _event,
+      input: {
+        model?: string | null
+        small_model?: string | null
+      },
+    ) => {
+      const result = await requestAgentJSON<AgentProjectModelSelection>("/api/model-selection", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: input.model,
+          small_model: input.small_model,
+        }),
+      })
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:get-project-provider-catalog", async (_event, input: { projectID: string }) => {
+    void input.projectID
+    const result = await requestAgentJSON<AgentProviderCatalogItem[]>("/api/providers/catalog")
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:get-project-models", async (_event, input: { projectID: string }) => {
+    const result = await requestAgentJSON<{
+      items: AgentProviderModel[]
+      selection: AgentProjectModelSelection
+    }>("/api/models")
+
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:update-project-provider",
+    async (
+      _event,
+      input: {
+        projectID: string
+        providerID: string
+        provider: {
+          name?: string
+          env?: string[]
+          options?: {
+            apiKey?: string
+            baseURL?: string
+          }
+        }
+      },
+    ) => {
+      void input.projectID
+      const providerID = input.providerID.trim()
+      const result = await requestAgentJSON<{
+        provider: {
+          id: string
+          name: string
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+        }
+        selection: AgentProjectModelSelection
+      }>(`/api/providers/${encodeURIComponent(providerID)}`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input.provider),
+      })
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:delete-project-provider",
+    async (_event, input: { projectID: string; providerID: string }) => {
+      void input.projectID
+      const providerID = input.providerID.trim()
+      const result = await requestAgentJSON<{
+        providerID: string
+        selection: AgentProjectModelSelection
+      }>(`/api/providers/${encodeURIComponent(providerID)}`, {
+        method: "DELETE",
+      })
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:update-project-model-selection",
+    async (
+      _event,
+      input: {
+        projectID: string
+        model?: string | null
+        small_model?: string | null
+      },
+    ) => {
+      void input.projectID
+      const result = await requestAgentJSON<AgentProjectModelSelection>("/api/model-selection", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: input.model,
+          small_model: input.small_model,
+        }),
+      })
+
+      return result.data
+    },
+  )
 
   ipcMain.handle(
     "desktop:agent-stream-message",

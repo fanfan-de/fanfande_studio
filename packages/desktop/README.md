@@ -18,7 +18,7 @@ packages/desktop
 ├─ src/preload               window.desktop 安全桥接
 ├─ src/renderer/src          React 入口
 │  └─ app                    组件、hooks、状态映射、流式事件处理
-├─ AI_AGENT_FRONTEND_SPEC.md 前端 UI / 状态 / 交互规范
+├─ AI_AGENT_FRONTEND_SPEC.md 前端界面结构 / UI / 状态 / 交互规范
 ├─ DESKTOP_SERVER_API_SPEC.md bridge / IPC / server 契约
 ├─ FRONTEND_ARCHITECTURE_GUIDE.md 架构与代码阅读导图
 └─ ELECTRON_LEARNING_TODO.md 新同学入门清单
@@ -76,7 +76,7 @@ bun test Test/server.api.test.ts
 | 文档 | 作用 | 什么时候必须更新 |
 | --- | --- | --- |
 | `README.md` | 项目入口、命令、文档导航 | 新增运行方式、命令或文档结构时 |
-| `AI_AGENT_FRONTEND_SPEC.md` | 前端 UI、状态、交互规范的 SSOT | 改了 renderer 行为、命名、状态流时 |
+| `AI_AGENT_FRONTEND_SPEC.md` | 前端界面结构、UI、状态、交互规范的 SSOT | 改了 renderer 行为、命名、状态流或设置页职责时 |
 | `DESKTOP_SERVER_API_SPEC.md` | `window.desktop`、IPC、server 路由契约 | 改了 preload/main/server 接口时 |
 | `FRONTEND_ARCHITECTURE_GUIDE.md` | 代码结构、模块职责、阅读路线 | 改了模块边界或关键入口时 |
 | `ELECTRON_LEARNING_TODO.md` | 新同学上手路径和练习清单 | 阅读路径或工程流程变化时 |

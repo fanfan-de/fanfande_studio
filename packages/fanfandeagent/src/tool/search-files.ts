@@ -22,6 +22,7 @@ export const SearchFilesTool = Tool.define(
   "search-files",
   async () => {
     return {
+      title: "Search Files",
       description: "Search text across project files.",
       parameters: z.object({
         query: z.string().min(1).describe("Text to search for."),
@@ -79,11 +80,20 @@ export const SearchFilesTool = Tool.define(
 
         return {
           title: `Search ${parameters.query}`,
-          output: hits.length > 0
+          text: hits.length > 0
             ? hits.map(formatHit).join("\n")
             : `No matches found for "${parameters.query}".`,
         }
       },
     }
+  },
+  {
+    title: "Search Files",
+    capabilities: {
+      kind: "search",
+      readOnly: true,
+      destructive: false,
+      concurrency: "safe",
+    },
   },
 )

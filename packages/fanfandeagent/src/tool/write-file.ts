@@ -6,6 +6,7 @@ export const WriteFileTool = Tool.define(
   "write-file",
   async () => {
     return {
+      title: "Write File",
       description: "Write a complete text file inside the current project.",
       parameters: z.object({
         path: z.string().min(1).describe("Absolute or project-relative file path."),
@@ -17,9 +18,18 @@ export const WriteFileTool = Tool.define(
 
         return {
           title: `Wrote ${toDisplayPath(resolved)}`,
-          output: `Wrote ${result.bytes} bytes to ${toDisplayPath(resolved)}.`,
+          text: `Wrote ${result.bytes} bytes to ${toDisplayPath(resolved)}.`,
         }
       },
     }
+  },
+  {
+    title: "Write File",
+    capabilities: {
+      kind: "write",
+      readOnly: false,
+      destructive: true,
+      concurrency: "exclusive",
+    },
   },
 )

@@ -7,7 +7,6 @@ export function useDesktopShell() {
   const appShellRef = useRef<HTMLElement | null>(null)
   const [platform, setPlatform] = useState("Desktop")
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
-  const [isSidebarCondensed, setIsSidebarCondensed] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [isSidebarResizing, setIsSidebarResizing] = useState(false)
   const [agentBaseURL, setAgentBaseURL] = useState("http://127.0.0.1:4096")
@@ -215,11 +214,9 @@ export function useDesktopShell() {
     handleSidebarResizerPointerDown,
     handleTitleMenu,
     handleWindowAction,
-    isSidebarCondensed,
     isSidebarResizing,
     isWindowMaximized,
     platform,
-    setIsSidebarCondensed,
     sidebarWidth,
     titlebarCommand,
   }

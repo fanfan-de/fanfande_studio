@@ -41,14 +41,12 @@ import {
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
   agentDefaultDirectory: string
-  onToggleSidebarDensity: () => void
   platform: string
 }
 
 export function useAgentWorkspace({
   agentConnected,
   agentDefaultDirectory,
-  onToggleSidebarDensity,
   platform,
 }: UseAgentWorkspaceOptions) {
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
@@ -197,6 +195,66 @@ export function useAgentWorkspace({
     threadColumn.scrollTop = threadColumn.scrollHeight
   }, [activeSessionID, activeTurns])
 
+  function removeWorkspaceSessionState(workspace: WorkspaceGroup) {
+    const sessionIDs = new Set(workspace.sessions.map((session) => session.id))
+
+    setConversations((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
+    setAgentSessions((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
+    for (const sessionID of sessionIDs) {
+      delete conversationVersionRef.current[sessionID]
+    }
+
+    for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
+      if (sessionIDs.has(target.sessionID)) {
+        delete pendingStreamsRef.current[streamID]
+      }
+    }
+  }
+
+  async function createSessionForWorkspace(workspace: WorkspaceGroup) {
+    if (isCreatingSession || !window.desktop?.createFolderSession) return
+
+    setIsCreatingSession(true)
+    try {
+      const created = await window.desktop.createFolderSession({
+        projectID: workspace.project.id,
+        directory: workspace.directory,
+      })
+      const nextSession = mapLoadedSession(created.session, workspace.sessions.length)
+      setWorkspaces((prev) => upsertSessionInWorkspace(prev, workspace.id, nextSession))
+      setConversations((prev) => ({
+        ...prev,
+        [created.session.id]: prev[created.session.id] ?? [],
+      }))
+      setAgentSessions((prev) => ({
+        ...prev,
+        [created.session.id]: created.session.id,
+      }))
+      setCanLoadSessionHistory(true)
+      setSelectedFolderID(workspace.id)
+      setActiveSessionID(created.session.id)
+      setExpandedFolderID(workspace.id)
+    } catch (error) {
+      console.error("[desktop] createFolderSession failed:", error)
+    } finally {
+      setIsCreatingSession(false)
+    }
+  }
+
   async function handleSidebarAction(action: SidebarActionKey) {
     if (action === "project") {
       if (isCreatingProject || !window.desktop?.pickProjectDirectory || !window.desktop?.openFolderWorkspace) {
@@ -226,11 +284,6 @@ export function useAgentWorkspace({
       return
     }
 
-    if (action === "density") {
-      onToggleSidebarDensity()
-      return
-    }
-
     if (action === "sort") {
       setWorkspaces((prev) =>
         prev.map((workspace) => ({
@@ -241,33 +294,9 @@ export function useAgentWorkspace({
       return
     }
 
-    if (!selectedWorkspace || isCreatingSession || !window.desktop?.createFolderSession) return
+    if (!selectedWorkspace) return
 
-    setIsCreatingSession(true)
-    try {
-      const created = await window.desktop.createFolderSession({
-        projectID: selectedWorkspace.project.id,
-        directory: selectedWorkspace.directory,
-      })
-      const nextSession = mapLoadedSession(created.session, selectedWorkspace.sessions.length)
-      setWorkspaces((prev) => upsertSessionInWorkspace(prev, selectedWorkspace.id, nextSession))
-      setConversations((prev) => ({
-        ...prev,
-        [created.session.id]: prev[created.session.id] ?? [],
-      }))
-      setAgentSessions((prev) => ({
-        ...prev,
-        [created.session.id]: created.session.id,
-      }))
-      setCanLoadSessionHistory(true)
-      setSelectedFolderID(selectedWorkspace.id)
-      setActiveSessionID(created.session.id)
-      setExpandedFolderID(selectedWorkspace.id)
-    } catch (error) {
-      console.error("[desktop] createFolderSession failed:", error)
-    } finally {
-      setIsCreatingSession(false)
-    }
+    await createSessionForWorkspace(selectedWorkspace)
   }
 
   function handleProjectClick(workspace: WorkspaceGroup) {
@@ -292,6 +321,38 @@ export function useAgentWorkspace({
     setSelectedFolderID(workspaceID)
     setExpandedFolderID(workspaceID)
     setActiveSessionID(sessionID)
+  }
+
+  async function handleProjectCreateSession(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation()
+    await createSessionForWorkspace(workspace)
+  }
+
+  function handleProjectRemove(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation()
+
+    const nextWorkspaces = workspaces.filter((item) => item.id !== workspace.id)
+    const removedSessionIDs = new Set(workspace.sessions.map((session) => session.id))
+    const activeSessionRemoved = Boolean(activeSessionID && removedSessionIDs.has(activeSessionID))
+    const nextActiveSelection =
+      activeSessionRemoved || !activeSessionID
+        ? findFirstSession(nextWorkspaces)
+        : findSession(nextWorkspaces, activeSessionID)
+    const nextSelectedWorkspace =
+      !activeSessionRemoved && selectedFolderID && selectedFolderID !== workspace.id
+        ? findWorkspaceByID(nextWorkspaces, selectedFolderID)
+        : nextActiveSelection.workspace
+    const nextSelectedFolderID = nextSelectedWorkspace?.id ?? nextActiveSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null
+    const nextExpandedWorkspace =
+      expandedFolderID && expandedFolderID !== workspace.id ? findWorkspaceByID(nextWorkspaces, expandedFolderID) : null
+    const nextExpandedFolderID = nextExpandedWorkspace?.id ?? nextSelectedFolderID
+
+    setWorkspaces(nextWorkspaces)
+    removeWorkspaceSessionState(workspace)
+    setSelectedFolderID(nextSelectedFolderID)
+    setExpandedFolderID(nextExpandedFolderID)
+    setActiveSessionID(nextActiveSelection.session?.id ?? null)
+    setHoveredFolderID((current) => (current === workspace.id ? null : current))
   }
 
   async function handleSessionDelete(workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) {
@@ -458,15 +519,19 @@ export function useAgentWorkspace({
     deletingSessionID,
     draft,
     expandedFolderID,
+    handleProjectCreateSession,
     handleProjectClick,
+    handleProjectRemove,
     handleSend,
     handleSessionDelete,
     handleSessionSelect,
     handleSidebarAction,
     hoveredFolderID,
     isCreatingProject,
+    isCreatingSession,
     isSending,
     projectRowRefs,
+    selectedWorkspace,
     selectedFolderID,
     setDraft,
     setHoveredFolderID,

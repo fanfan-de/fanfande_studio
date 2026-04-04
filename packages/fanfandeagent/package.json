@@ -62,6 +62,9 @@
     "docs": "typedoc",
     "test:prompt": "bun test Test/prompt.e2e.test.ts",
     "test:server": "bun test Test/server.api.test.ts",
-    "test:server-prompt-e2e": "bun test Test/server.prompt.e2e.test.ts"
+    "test:server-prompt-e2e": "bun test Test/server.prompt.e2e.test.ts",
+    "test:tool": "bun test Test/tool.contract.test.ts Test/tool.processor.test.ts",
+    "test:tool:e2e": "bun test Test/tool.real-llm.e2e.test.ts",
+    "test:tool:all": "bun run test:tool && bun run test:tool:e2e"
   }
 }

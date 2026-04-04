@@ -19,7 +19,6 @@ export const titlebarMenus: Array<{ key: TitlebarMenuKey; label: string }> = [
 
 export const sidebarActions: Array<{ key: SidebarActionKey; label: string }> = [
   { key: "project", label: "Open folder" },
-  { key: "density", label: "Toggle sidebar density" },
   { key: "sort", label: "Sort sessions" },
   { key: "new", label: "Create session" },
 ]
