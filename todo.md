@@ -16,6 +16,24 @@ sidebar 文件夹行，右边有两个button，第一个是“移除”button，
 ![[Pasted image 20260405013212.png]]
 这个部分无需展示
 
+删去projectinfo里面的icon字段
+暂时注释掉commands字段（不了解其作用）
+
+provider界面信息优化
+
+
+
+
+#bug
+输入错误的API key，可以运行，无法退出循环
+
+- 更关键的是，部分“看起来是 project-scoped”的接口，当前实现其实还是全局配置。比如 PUT /api/projects/:id/providers/:providerID 和 PATCH /api/projects/:id/model-selection 在 route 里写的是 Config.GLOBAL_CONFIG_ID，见 [projects.ts](app://-/index.html?hostId=local) 和 [projects.ts](app://-/index.html?hostId=local)。而 config 模块的默认配置 id 也确实是全局的 __global__，见 [config.ts](app://-/index.html?hostId=local) 和 [config.ts](app://-/index.html?hostId=local)。
+- desktop 这边也暴露了 desktop:get-project-* 这类 IPC，但实际直接忽略 projectID，还是请求全局 /api/providers/catalog、/api/models、/api/model-selection，见 [ipc.ts](app://-/index.html?hostId=local) 和 [ipc.ts](app://-/index.html?hostId=local)。
 
 
 多语言(暂时不做)
+
+
+#question 
+如何安全的本地存储API
+

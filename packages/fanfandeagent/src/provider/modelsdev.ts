@@ -1,15 +1,20 @@
-import * as Log from "#util/log.ts"
-import * as Global from "#global/global.ts"
-import path from "path"
 import fs from "fs/promises"
+import path from "path"
 import z from "zod"
-import * as  Flag from "#flag/flag.ts"
+import * as Global from "#global/global.ts"
+import * as Installation from "#installation/installation.ts"
+import * as Log from "#util/log.ts"
 import * as lazy from "#util/lazy.ts"
-import * as  Installation from "#installation/installation.ts"
 
+const MODELS_DEV_URL = "https://models.dev"
+const REQUEST_TIMEOUT_MS = 10 * 1000
 
 const log = Log.create({ service: "models.dev" })
 const filepath = path.join(Global.Path.cache, "models.json")
+
+// -----------------------------------------------------------------------------
+// 远端 catalog 的 schema
+// -----------------------------------------------------------------------------
 
 const DevModel = z.object({
     id: z.string(),
@@ -77,8 +82,12 @@ const DevProvider = z.object({
 type DevProvider = z.infer<typeof DevProvider>
 
 
-function url() {
-    return "https://models.dev"
+// -----------------------------------------------------------------------------
+// 本地缓存 + 远端拉取
+// -----------------------------------------------------------------------------
+
+function apiURL(pathname: string) {
+    return `${MODELS_DEV_URL}${pathname}`
 }
 
 async function readCache() {
@@ -95,11 +104,11 @@ async function readCache() {
 }
 
 async function fetchRemote() {
-    const response = await fetch(`${url()}/api.json`, {
+    const response = await fetch(apiURL("/api.json"), {
         headers: {
             "User-Agent": Installation.USER_AGENT,
         },
-        signal: AbortSignal.timeout(10 * 1000),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
 
     if (!response.ok) {
@@ -113,14 +122,21 @@ async function fetchRemote() {
 }
 
 const DevData = lazy.lazy(async () => {
+    // 进程内优先复用 lazy 缓存；首次未命中时再去读文件或请求远端。
     const cached = await readCache()
     if (cached) return cached
     return fetchRemote()
 })
 
+// -----------------------------------------------------------------------------
+// 对外 API
+// -----------------------------------------------------------------------------
+
 /**
- * 获得从 modelsdev中构建的  Provider对象
- * @returns 
+ * 按顺序加载 models.dev catalog：
+ * 1. 先看进程内 lazy 缓存。
+ * 2. 再看本地磁盘缓存。
+ * 3. 最后才请求远端接口。
  */
 async function get(): Promise<Record<string, DevProvider>> {
     try {
@@ -135,11 +151,12 @@ async function get(): Promise<Record<string, DevProvider>> {
         throw error
     }
 }
-//refresh models 
+
+// 强制从远端刷新 catalog；刷新成功后清掉进程内缓存，下次 get() 会拿到新数据。
 async function refresh() {
-    const result = await fetchRemote().catch((e) => {
+    const result = await fetchRemote().catch((error) => {
         log.error("Failed to fetch models.dev", {
-            error: e,
+            error,
         })
     })
     if (result) {

@@ -4,61 +4,45 @@
     "type": "split",
     "children": [
       {
-        "id": "fe4020b30de71638",
+        "id": "ee2607011ecd6566",
         "type": "tabs",
-        "dimension": 42.74611398963731,
+        "dimension": 45.660621761658035,
         "children": [
-          {
-            "id": "e8de20d6e430372b",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "未命名 2.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "未命名 2"
-            }
-          },
           {
             "id": "35980b6fcb97707f",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md",
-                "mode": "source",
+                "file": "packages/fanfandeagent/src/provider/spec.md",
+                "mode": "preview",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "FRONTEND_ARCHITECTURE_GUIDE"
+              "title": "spec"
             }
           }
-        ],
-        "currentTab": 1
+        ]
       },
       {
-        "id": "39b1479a179bbe5d",
+        "id": "91ec24b186ff6fb7",
         "type": "tabs",
-        "dimension": 57.2538860103627,
+        "dimension": 54.33937823834197,
         "children": [
           {
-            "id": "a602e430d5a4e147",
+            "id": "62f7f98c3ffa03e2",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
+                "file": "todo.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "AI_AGENT_FRONTEND_SPEC"
+              "title": "todo"
             }
           }
         ]
@@ -118,7 +102,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 358.5086555480957
+    "width": 269.5086555480957
   },
   "right": {
     "id": "0e26e5315e7c2117",
@@ -225,32 +209,36 @@
       "mermaid-tools:Open Mermaid Toolbar": false
     }
   },
-  "active": "a602e430d5a4e147",
+  "active": "35980b6fcb97707f",
   "lastOpenFiles": [
+    "packages/desktop/electron.vite.config.1775385829977.mjs",
+    "packages/fanfandeagent/src/project/spec.md",
     "todo.md",
-    "Pasted image 20260405013212.png",
+    "packages/fanfandeagent/src/provider/AISDK.md",
+    "packages/desktop/electron.vite.config.1775333597235.mjs",
+    "packages/fanfandeagent/ARCHITECTURE.md",
+    "packages/fanfandeagent/src/session/spec.md",
+    "packages/fanfandeagent/src/session/SESSION_ARCHITECTURE.md",
+    "packages/fanfandeagent/todo.md",
+    "packages/fanfandeagent/CODING_RULES.md",
+    "packages/fanfandeagent/WORKFLOW.md",
+    "packages/fanfandeagent/DOMAIN_SPEC.md",
+    "packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md",
     "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
+    "packages/desktop/electron.vite.config.1775328044628.mjs",
+    "packages/fanfandeagent/agent_local_data.db-shm",
+    "packages/fanfandeagent/agent_local_data.db-wal",
+    "packages/fanfandeagent/agent_local_data.db",
+    "packages/desktop/electron.vite.config.1775327760968.mjs",
+    "Pasted image 20260405013212.png",
     "packages/desktop/electron.vite.config.1775322555263.mjs",
     "packages/fanfandeagent/src/server/routes/settings.ts",
     "packages/desktop/electron.vite.config.1775321535762.mjs",
     "packages/desktop/electron.vite.config.1775320816115.mjs",
-    "packages/desktop/electron.vite.config.1775320398021.mjs",
-    "packages/desktop/electron.vite.config.1775318288691.mjs",
     "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
     "packages/desktop/ELECTRON_LEARNING_TODO.md",
-    "packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md",
     "packages/desktop/README.md",
     "packages/desktop/FRONTEND_INTERFACE_STRUCTURE.md",
-    "packages/desktop/electron.vite.config.1775316248783.mjs",
-    "packages/desktop/electron.vite.config.1775316210241.mjs",
-    "packages/desktop/electron.vite.config.1775315622842.mjs",
-    "packages/fanfandeagent/ARCHITECTURE.md",
-    "packages/desktop/electron.vite.config.1775314853252.mjs",
-    "packages/fanfandeagent/CODING_RULES.md",
-    "packages/fanfandeagent/WORKFLOW.md",
-    "packages/fanfandeagent/DOMAIN_SPEC.md",
-    "packages/fanfandeagent/src/session/spec.md",
-    "packages/fanfandeagent/src/session/SESSION_ARCHITECTURE.md",
     "未命名 1.md",
     "spec.md",
     "未命名 3.md",
@@ -260,9 +248,6 @@
     "fanfande_studio_vault/Tools 1/未命名.md",
     "fanfande_studio_vault/Tools 1/write_stdin.md",
     "fanfande_studio_vault/Tools 1/apply_patch.md",
-    "fanfande_studio_vault/Tools 1/require_userinput.md",
-    "packages/fanfandeagent/src/config/spec.md",
-    "packages/fanfandeagent/src/provider/spec.md",
     "packages/fanfandedesktop/exports/BkxtC.png",
     "packages/fanfandeagent/docs/data-dictionary/assets/icons.svg",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/shiki-dependency-tree.svg",

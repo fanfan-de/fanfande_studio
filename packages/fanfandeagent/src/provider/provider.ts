@@ -3,17 +3,24 @@ import fuzzysort from "fuzzysort"
 import { mapValues } from "remeda"
 import { createDeepSeek } from "@ai-sdk/deepseek"
 import { createOpenAI } from "@ai-sdk/openai"
-import type { LanguageModel, Provider as SDKProvider } from "ai"
+import type { LanguageModel, Provider, Provider as SDKProvider } from "ai"
 import { Instance } from "#project/instance.ts"
 import { NamedError } from "#util/error.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Config from "#config/config.ts"
 import * as Env from "#env/env.ts"
 
+const OPENAI_SDK_PACKAGE = "@ai-sdk/openai"
+const DEEPSEEK_SDK_PACKAGE = "@ai-sdk/deepseek"
+
 const DEFAULT_MODEL_REF = {
   providerID: "deepseek",
   modelID: "deepseek-reasoner",
 } as const
+
+// -----------------------------------------------------------------------------
+// 共享的 schema 和对外 DTO
+// -----------------------------------------------------------------------------
 
 export const ModelReference = z
   .object({
@@ -156,6 +163,10 @@ export type ProviderCatalogItem = z.infer<typeof ProviderCatalogItem>
 const sdkState = Instance.state(() => new Map<string, SDKProvider>())
 const languageState = Instance.state(() => new Map<string, LanguageModel>())
 
+// -----------------------------------------------------------------------------
+// 通用小工具
+// -----------------------------------------------------------------------------
+
 function firstNonEmptyString(...values: unknown[]) {
   for (const value of values) {
     if (typeof value !== "string") continue
@@ -211,6 +222,33 @@ function parseModelReference(input: string | undefined) {
   }
 }
 
+function suggestMatches(input: string, candidates: string[]) {
+  return fuzzysort
+    .go(input, candidates, {
+      limit: 3,
+      threshold: -10000,
+    })
+    .map((item) => item.target)
+}
+
+// 当 provider 只存在于项目配置里、不存在于 models.dev catalog 里时，
+// 先构造一个最小可用的 provider 骨架，后续再叠加配置与模型信息。
+function createConfigOnlyProvider(providerID: string, providerConfig: Config.Provider | undefined): ProviderInfo {
+  return {
+    id: providerID,
+    name: providerConfig?.name ?? providerID,
+    source: "custom",
+    env: providerConfig?.env ?? [],
+    options: {},
+    models: {},
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 第一阶段：catalog + config + env -> 当前项目可见的 provider 视图
+// 这一层每次查询都会重新解析一次，所以配置和环境变量的变化会立刻生效。
+// -----------------------------------------------------------------------------
+
 function createBaseModelFromConfig(
   providerID: string,
   providerConfig: Config.Provider | undefined,
@@ -223,7 +261,7 @@ function createBaseModelFromConfig(
     api: {
       id: firstNonEmptyString(modelConfig.id, modelID) ?? modelID,
       url: firstNonEmptyString(modelConfig.provider?.api, providerConfig?.api, providerConfig?.options?.baseURL) ?? "",
-      npm: firstNonEmptyString(modelConfig.provider?.npm, providerConfig?.npm) ?? "@ai-sdk/openai",
+      npm: firstNonEmptyString(modelConfig.provider?.npm, providerConfig?.npm) ?? OPENAI_SDK_PACKAGE,
     },
     name: firstNonEmptyString(modelConfig.name, modelID) ?? modelID,
     family: modelConfig.family,
@@ -297,7 +335,7 @@ function mergeModelConfig(
       api: {
         ...base.api,
         url: firstNonEmptyString(providerConfig?.api, providerConfig?.options?.baseURL, base.api.url) ?? "",
-        npm: firstNonEmptyString(providerConfig?.npm, base.api.npm) ?? "@ai-sdk/openai",
+        npm: firstNonEmptyString(providerConfig?.npm, base.api.npm) ?? OPENAI_SDK_PACKAGE,
       },
     }
   }
@@ -311,7 +349,7 @@ function mergeModelConfig(
       url:
         firstNonEmptyString(modelConfig.provider?.api, providerConfig?.api, providerConfig?.options?.baseURL, base.api.url) ??
         "",
-      npm: firstNonEmptyString(modelConfig.provider?.npm, providerConfig?.npm, base.api.npm) ?? "@ai-sdk/openai",
+      npm: firstNonEmptyString(modelConfig.provider?.npm, providerConfig?.npm, base.api.npm) ?? OPENAI_SDK_PACKAGE,
     },
     name: firstNonEmptyString(modelConfig.name, base.name, modelID) ?? modelID,
     family: modelConfig.family ?? base.family,
@@ -373,6 +411,45 @@ function mergeModelConfig(
   } satisfies Model
 }
 
+function mergeProviderModels(
+  providerID: string,
+  baseModels: Record<string, Model>,
+  providerConfig: Config.Provider | undefined,
+) {
+  // 先以 catalog 里的模型为底，再叠加项目配置里的 override / 自定义模型。
+  const resultModels: Record<string, Model> = {}
+  const configModels = providerConfig?.models ?? {}
+
+  for (const [modelID, baseModel] of Object.entries(baseModels)) {
+    resultModels[modelID] = mergeModelConfig(providerID, providerConfig, modelID, baseModel, configModels[modelID])
+  }
+
+  for (const [modelID, modelConfig] of Object.entries(configModels)) {
+    if (resultModels[modelID]) continue
+    resultModels[modelID] = mergeModelConfig(providerID, providerConfig, modelID, undefined, modelConfig)
+  }
+
+  return resultModels
+}
+
+// provider 级别的 whitelist / blacklist 在所有模型合并完成后再统一过滤。
+function filterProviderModels(models: Record<string, Model>, providerConfig: Config.Provider | undefined) {
+  let modelEntries = Object.entries(models)
+
+  if (providerConfig?.whitelist?.length) {
+    const whitelist = new Set(providerConfig.whitelist)
+    modelEntries = modelEntries.filter(([modelID]) => whitelist.has(modelID))
+  }
+
+  if (providerConfig?.blacklist?.length) {
+    const blacklist = new Set(providerConfig.blacklist)
+    modelEntries = modelEntries.filter(([modelID]) => !blacklist.has(modelID))
+  }
+
+  return Object.fromEntries(modelEntries)
+}
+
+// 把 catalog 里的 provider、项目配置、当前实例环境变量三份信息合成最终 ProviderInfo。
 function applyProviderConfig(
   providerID: string,
   baseProvider: ProviderInfo | undefined,
@@ -383,14 +460,7 @@ function applyProviderConfig(
 
   const provider: ProviderInfo = baseProvider
     ? structuredClone(baseProvider)
-    : {
-        id: providerID,
-        name: providerConfig?.name ?? providerID,
-        source: "custom",
-        env: providerConfig?.env ?? [],
-        options: {},
-        models: {},
-      }
+    : createConfigOnlyProvider(providerID, providerConfig)
 
   const configured = Boolean(providerConfig) || Boolean(resolveProviderApiKey(provider, providerConfig, env))
   if (!configured) return undefined
@@ -400,38 +470,23 @@ function applyProviderConfig(
   provider.source = providerConfig ? "config" : "env"
   provider.key = resolveProviderApiKey(provider, providerConfig, env)
   provider.options = sanitizeProviderOptions(providerConfig?.options)
-
-  const resultModels: Record<string, Model> = {}
-  const configModels = providerConfig?.models ?? {}
-
-  for (const [modelID, baseModel] of Object.entries(provider.models)) {
-    resultModels[modelID] = mergeModelConfig(providerID, providerConfig, modelID, baseModel, configModels[modelID])
-  }
-
-  for (const [modelID, modelConfig] of Object.entries(configModels)) {
-    if (resultModels[modelID]) continue
-    resultModels[modelID] = mergeModelConfig(providerID, providerConfig, modelID, undefined, modelConfig)
-  }
-
-  let modelEntries = Object.entries(resultModels)
-  if (providerConfig?.whitelist?.length) {
-    const whitelist = new Set(providerConfig.whitelist)
-    modelEntries = modelEntries.filter(([modelID]) => whitelist.has(modelID))
-  }
-  if (providerConfig?.blacklist?.length) {
-    const blacklist = new Set(providerConfig.blacklist)
-    modelEntries = modelEntries.filter(([modelID]) => !blacklist.has(modelID))
-  }
-
-  provider.models = Object.fromEntries(modelEntries)
+  provider.models = filterProviderModels(mergeProviderModels(providerID, provider.models, providerConfig), providerConfig)
   return provider
 }
 
-async function catalogMap() {
+async function catalogMap():Promise<Record<string,ProviderInfo>> {
   const providers = await ModelsDev.get()
   return mapValues(providers, fromModelsDevProvider)
 }
 
+/**
+ * 构建“当前项目视角”下真正生效的 provider 视图。
+ *
+ * 执行顺序：
+ * 1. 先读取共享的 models.dev catalog。
+ * 2. 再读取项目配置和当前实例隔离后的环境变量快照。
+ * 3. 最后把 catalog provider 和 config-only provider 合并起来。
+ */
 async function resolveProjectProviders() {
   const catalog = await catalogMap()
   const config = await Config.get()
@@ -444,17 +499,22 @@ async function resolveProjectProviders() {
   const configuredProviders: Record<string, ProviderInfo> = {}
   for (const providerID of providerIDs) {
     if (!isProviderAllowed(config, providerID)) continue
-    const provider = applyProviderConfig(providerID, catalog[providerID], config.provider?.[providerID], env)
+
+    const providerConfig = hasProviderConfig(config, providerID) ? config.provider?.[providerID] : undefined
+    const provider = applyProviderConfig(providerID, catalog[providerID], providerConfig, env)
     if (!provider) continue
     configuredProviders[providerID] = provider
   }
 
   return {
     catalog,
-    config,
     providers: configuredProviders,
   }
 }
+
+// -----------------------------------------------------------------------------
+// 第二阶段：当前项目 provider 视图 -> 对外查询 API
+// -----------------------------------------------------------------------------
 
 function sortProviders<T extends { name: string; id: string }>(items: T[]) {
   return items.toSorted((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
@@ -511,6 +571,9 @@ function toCatalogItem(baseProvider: ProviderInfo, configuredProvider: ProviderI
   }
 }
 
+// 运行时缓存 key。
+// 只要这里参与计算的字段发生变化，就会重新创建 SDK / LanguageModel。
+
 function runtimeKey(provider: ProviderInfo, model: Model) {
   return JSON.stringify({
     providerID: provider.id,
@@ -518,6 +581,15 @@ function runtimeKey(provider: ProviderInfo, model: Model) {
     apiKey: provider.key ?? "",
     baseURL: firstNonEmptyString(provider.options.baseURL, model.api.url) ?? "",
     headers: model.headers,
+  })
+}
+
+async function requireRuntimeProvider(providerID: string) {
+  const provider = await getProvider(providerID)
+  if (provider) return provider
+
+  throw new InitError({
+    providerID,
   })
 }
 
@@ -560,27 +632,19 @@ async function getModel(providerID: string, modelID: string) {
   const providers = await list()
   const provider = providers[providerID]
   if (!provider) {
-    const matches = fuzzysort.go(providerID, Object.keys(providers), {
-      limit: 3,
-      threshold: -10000,
-    })
     throw new ModelNotFoundError({
       providerID,
       modelID,
-      suggestions: matches.map((item) => item.target),
+      suggestions: suggestMatches(providerID, Object.keys(providers)),
     })
   }
 
   const model = provider.models[modelID]
   if (!model) {
-    const matches = fuzzysort.go(modelID, Object.keys(provider.models), {
-      limit: 3,
-      threshold: -10000,
-    })
     throw new ModelNotFoundError({
       providerID,
       modelID,
-      suggestions: matches.map((item) => item.target),
+      suggestions: suggestMatches(modelID, Object.keys(provider.models)),
     })
   }
 
@@ -595,6 +659,12 @@ export async function getSelection() {
   }
 }
 
+/**
+ * 用三步解析默认模型：
+ * 1. 如果配置里保存的 model 仍然有效，就直接使用它。
+ * 2. 否则退回到“当前项目里第一个可用模型”。
+ * 3. 如果连可用模型都没有，再退回到硬编码兜底值。
+ */
 export async function getDefaultModelRef(): Promise<ModelReference> {
   const selection = await getSelection()
   const parsed = parseModelReference(selection.model)
@@ -603,7 +673,7 @@ export async function getDefaultModelRef(): Promise<ModelReference> {
       await getModel(parsed.providerID, parsed.modelID)
       return parsed
     } catch {
-      // fall through to the first configured model
+      // 配置里保存的是陈旧模型时，继续退回到当前可用模型。
     }
   }
 
@@ -619,13 +689,13 @@ export async function getDefaultModelRef(): Promise<ModelReference> {
   return DEFAULT_MODEL_REF
 }
 
+// -----------------------------------------------------------------------------
+// 第三阶段：惰性运行时初始化
+// 只有 session 真正要拿 LanguageModel 发请求时，才会进入这一层。
+// -----------------------------------------------------------------------------
+
 export async function getLanguage(model: Model): Promise<LanguageModel> {
-  const provider = await getProvider(model.providerID)
-  if (!provider) {
-    throw new InitError({
-      providerID: model.providerID,
-    })
-  }
+  const provider = await requireRuntimeProvider(model.providerID)
 
   const key = runtimeKey(provider, model)
   const cache = languageState()
@@ -639,12 +709,8 @@ export async function getLanguage(model: Model): Promise<LanguageModel> {
 }
 
 async function getSDK(model: Model) {
-  const provider = await getProvider(model.providerID)
-  if (!provider) {
-    throw new InitError({
-      providerID: model.providerID,
-    })
-  }
+  // SDK Provider 比 LanguageModel 更底层，先保证它存在，再由上层取 languageModel。
+  const provider = await requireRuntimeProvider(model.providerID)
 
   if (!provider.key && provider.env.length > 0) {
     throw new InitError(
@@ -666,7 +732,7 @@ async function getSDK(model: Model) {
   const headers = Object.keys(model.headers).length > 0 ? model.headers : undefined
 
   const sdk =
-    model.api.npm === "@ai-sdk/deepseek" || provider.id === "deepseek"
+    model.api.npm === DEEPSEEK_SDK_PACKAGE || provider.id === "deepseek"
       ? createDeepSeek({
           apiKey: provider.key,
           baseURL,
@@ -683,6 +749,10 @@ async function getSDK(model: Model) {
   return sdk as SDKProvider
 }
 
+// -----------------------------------------------------------------------------
+// models.dev catalog -> 内部统一 provider 结构
+// -----------------------------------------------------------------------------
+
 function fromModelsDevModel(provider: ModelsDev.DevProvider, model: ModelsDev.DevModel): Model {
   return {
     id: model.id,
@@ -690,7 +760,7 @@ function fromModelsDevModel(provider: ModelsDev.DevProvider, model: ModelsDev.De
     api: {
       id: model.id,
       url: firstNonEmptyString(model.provider?.api, provider.api) ?? "",
-      npm: firstNonEmptyString(model.provider?.npm, provider.npm) ?? "@ai-sdk/openai",
+      npm: firstNonEmptyString(model.provider?.npm, provider.npm) ?? OPENAI_SDK_PACKAGE,
     },
     name: model.name,
     capabilities: {
@@ -773,52 +843,10 @@ export const InitError = NamedError.create(
   }),
 )
 
-const testDeepSeekDevProvider: ModelsDev.DevProvider = {
-  id: "deepseek",
-  name: "DeepSeek",
-  env: ["DEEPSEEK_API_KEY"],
-  api: "https://api.deepseek.com",
-  npm: "@ai-sdk/deepseek",
-  models: {
-    "deepseek-reasoner": {
-      id: "deepseek-reasoner",
-      name: "DeepSeek Reasoner",
-      family: "deepseek",
-      release_date: "2024-01-01",
-      attachment: false,
-      reasoning: true,
-      temperature: true,
-      tool_call: true,
-      interleaved: undefined,
-      cost: {
-        input: 0.0001,
-        output: 0.0002,
-        cache_read: 0,
-        cache_write: 0,
-      },
-      limit: {
-        context: 128000,
-        input: undefined,
-        output: 4096,
-      },
-      modalities: {
-        input: ["text"],
-        output: ["text"],
-      },
-      status: "beta",
-      options: {},
-      headers: {},
-    },
-  },
-}
 
-const testDeepSeekProvider: ProviderInfo = fromModelsDevProvider(testDeepSeekDevProvider)
-const testDeepSeekModel: Model = testDeepSeekProvider.models["deepseek-reasoner"]!
 
 export {
   list,
   getProvider,
   getModel,
-  testDeepSeekProvider,
-  testDeepSeekModel,
 }

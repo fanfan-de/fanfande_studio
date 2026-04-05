@@ -15,7 +15,7 @@
 ### `ProjectInfo`
 项目元数据，包含：
 - `id`: 项目标识
-- `worktree`: 项目的工作树边界
+- `worktree`: 项目的工作树边界,普通 Git 仓库里，worktree 基本就是仓库根目录。
 - `vcs`: 版本控制类型，当前主要是 `git` 或未定义
 - `name`: 可读名称
 - `icon`: 项目图标信息
@@ -196,6 +196,57 @@
 ### `Instance.containsPath(filepath)`
 检查路径是否落在当前实例边界内。
 
+## Server API 暴露面
+
+`project` 模块当前通过 `server.ts` 中的 `app.route("/api/projects", ProjectRoutes())` 暴露给 HTTP 层，
+同时也会被 `session` 路由复用来识别 session 归属的 project。为了避免概念混淆，这里区分“直接暴露的 project 服务”和“以 project 作为作用域的相关服务”。
+
+### 直接暴露的 project 服务
+
+- `GET /api/projects`
+  - 对应 `Project.list()`
+  - 返回当前已记录的 project 列表；读取前会执行项目归并和修复逻辑。
+- `POST /api/projects`
+  - 对应 `Project.fromDirectory(directory)`
+  - 按目录识别 project，必要时创建或更新 `projects` 表记录，并返回 `ProjectInfo`。
+- `GET /api/projects/:id`
+  - 对应 `Project.get(id)`
+  - 读取单个 project 元数据；不存在时返回 `PROJECT_NOT_FOUND`。
+- `DELETE /api/projects/:id`
+  - 先通过 `Project.get(id)` 校验 project 存在，再删除该 project、其 `project_configs` 和关联 sessions。
+  - 这是 project 生命周期的 server 删除入口，但当前删除动作仍在 route 层编排，不是 `project.ts` 单独导出的删除 API(todo,待优化)。
+
+### 以 project 为作用域暴露的相关服务
+
+- `GET /api/projects/:id/sessions`
+  - 先通过 `Project.get(id)` 校验 project 存在，再列出该 project 下的 sessions。
+- `POST /api/projects/:id/sessions`
+  - 先读取 project；
+  - 当请求体传入 `directory` 时，再通过 `Project.fromDirectory(directory)` 校验该目录确实归属于当前 project；
+  - 校验通过后创建 project-scoped session。
+- `GET /api/projects/:id/providers/catalog`
+- `GET /api/projects/:id/providers`
+- `PUT /api/projects/:id/providers/:providerID`
+- `DELETE /api/projects/:id/providers/:providerID`
+- `GET /api/projects/:id/models`
+- `PATCH /api/projects/:id/model-selection`
+  - 这些接口属于 project 作用域下的 provider/model 配置服务。
+  - 它们当前不会直接调用 `project.ts` 的业务方法，只会通过 `Project.get(id)` / `safeReadProject(id)` 把 project 作为前置校验和作用域边界。
+- `POST /api/sessions`
+  - 虽然路径不在 `/api/projects` 下，但内部会调用 `Project.fromDirectory(directory)`。
+  - 这个接口的作用是先确保 session 归属的 project 已被识别和持久化，再创建 session。
+
+### 当前未通过 server 直接暴露的 project 能力
+
+- `Project.update()`
+- `Project.sandboxes()`
+- `Project.setInitialized()`
+- `Instance.provide()`
+- `Instance.state()`
+- `Instance.dispose()` / `Instance.disposeAll()`
+
+这些能力目前仍是 server 内部或模块内部能力，不作为独立 HTTP API 对外提供。
+
 ## Data Flow
 
 ### Storage
@@ -236,3 +287,12 @@ if (Instance.containsPath("/path/to/file")) {
 2. `Instance` 依赖异步上下文，必须在 `provide()` 或已建立上下文的调用链中使用。
 3. 状态清理是并行的，适合做实例退出时的收尾。
 4. `bootstrap.ts` 是为后续初始化扩展预留的标准入口。
+
+## 测试指令
+
+与 `project` 相关的 server API 变更，至少执行：
+
+```powershell
+cd C:\Projects\fanfande_studio
+bun test packages/fanfandeagent/Test/server.api.test.ts
+```
