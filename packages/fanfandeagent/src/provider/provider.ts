@@ -12,11 +12,7 @@ import * as Env from "#env/env.ts"
 
 const OPENAI_SDK_PACKAGE = "@ai-sdk/openai"
 const DEEPSEEK_SDK_PACKAGE = "@ai-sdk/deepseek"
-
-const DEFAULT_MODEL_REF = {
-  providerID: "deepseek",
-  modelID: "deepseek-reasoner",
-} as const
+const PROVIDER_VALIDATION_TIMEOUT_MS = 10_000
 
 // -----------------------------------------------------------------------------
 // 共享的 schema 和对外 DTO
@@ -162,6 +158,31 @@ export type ProviderCatalogItem = z.infer<typeof ProviderCatalogItem>
 
 const sdkState = Instance.state(() => new Map<string, SDKProvider>())
 const languageState = Instance.state(() => new Map<string, LanguageModel>())
+
+type SDKFactoryInput = {
+  provider: ProviderInfo
+  apiKey: string | undefined
+  baseURL: string | undefined
+  headers: Record<string, string> | undefined
+}
+
+// 这里保留的是“运行时 SDK 适配器注册表”，不是 provider 默认值配置。
+// provider / model 选型来自 catalog + 项目配置；这里只负责把选中的模型映射到对应 SDK 工厂。
+const SDK_FACTORIES: Record<string, (input: SDKFactoryInput) => SDKProvider> = {
+  [DEEPSEEK_SDK_PACKAGE]: ({ apiKey, baseURL, headers }) =>
+    createDeepSeek({
+      apiKey,
+      baseURL,
+      headers,
+    }) as SDKProvider,
+  [OPENAI_SDK_PACKAGE]: ({ provider, apiKey, baseURL, headers }) =>
+    createOpenAI({
+      name: provider.id,
+      apiKey,
+      baseURL,
+      headers,
+    }) as SDKProvider,
+}
 
 // -----------------------------------------------------------------------------
 // 通用小工具
@@ -480,32 +501,61 @@ async function catalogMap():Promise<Record<string,ProviderInfo>> {
 }
 
 /**
- * 构建“当前项目视角”下真正生效的 provider 视图。
+ * 解析“当前项目实际生效”的 provider 视图。
  *
  * 执行顺序：
- * 1. 先读取共享的 models.dev catalog。
- * 2. 再读取项目配置和当前实例隔离后的环境变量快照。
- * 3. 最后把 catalog provider 和 config-only provider 合并起来。
+ * 1. 先读取共享的 models.dev catalog，得到系统已知的 provider 基础骨架。
+ * 2. 再读取当前项目配置，拿到 provider 开关、覆盖项和自定义项。
+ * 3. 最后结合当前环境变量，把 catalog、config、env 合并成当前项目真正可用的 provider 集合。
+ *
+ * 返回值同时保留两个视图：
+ * - `catalog`：完整的基础 provider 目录，适合“展示全集”。
+ * - `providers`：当前项目中真正生效的 provider，适合“运行时使用”。
  */
 async function resolveProjectProviders() {
+  // 读取共享 catalog。这里提供“系统已知”的 provider 基础骨架。
   const catalog = await catalogMap()
+  // 读取当前项目配置，里面可能会覆盖 provider 名称、模型、开关等。
   const config = await Config.get()
+  // 读取当前实例环境变量，用于补全 API Key 等运行时字段。
   const env = Env.all()
+
+  // 候选 provider ID 来自两个地方：
+  // 1. catalog 中已有的 provider
+  // 2. config.provider 中额外声明的 provider（例如项目自定义 provider）
+  //
+  // 用 Set 合并是为了去重，避免同一个 provider 被重复处理。
   const providerIDs = new Set<string>([
     ...Object.keys(catalog),
     ...Object.keys(config.provider ?? {}),
   ])
 
+  // 这里只收集最终“在当前项目中生效”的 provider。
+  // 未通过开关过滤，或无法形成有效配置的 provider，不会进入这个结果。
   const configuredProviders: Record<string, ProviderInfo> = {}
   for (const providerID of providerIDs) {
+    // 先检查 provider 是否被 enabled / disabled 规则排除。
     if (!isProviderAllowed(config, providerID)) continue
 
+    // 只有配置里显式声明了该 provider，才读取它的项目级配置；
+    // 否则保持 undefined，让后面的合并逻辑只依赖 catalog 和 env。
     const providerConfig = hasProviderConfig(config, providerID) ? config.provider?.[providerID] : undefined
+
+    // 按优先级合并基础 catalog、项目配置和环境变量：
+    // - catalog 提供默认骨架
+    // - project config 提供覆盖和追加
+    // - env 提供 API Key 等敏感信息
     const provider = applyProviderConfig(providerID, catalog[providerID], providerConfig, env)
+
+    // 返回 undefined 说明这个 provider 虽然在候选集合里，
+    // 但在当前上下文中并没有形成一个“已配置完成”的结果。
     if (!provider) continue
+
+    // 记录最终结果，后续会用它来列出 provider、查 model、初始化 SDK。
     configuredProviders[providerID] = provider
   }
 
+  // 同时返回原始 catalog 和当前项目已生效的 provider 视图。
   return {
     catalog,
     providers: configuredProviders,
@@ -532,6 +582,66 @@ function sortModels<T extends { name: string; id: string; providerID?: string }>
 function modelBaseURL(provider: ProviderInfo) {
   const firstModel = Object.values(provider.models)[0]
   return firstNonEmptyString(provider.options.baseURL, firstModel?.api.url)
+}
+
+function normalizeBaseURL(baseURL: string) {
+  return baseURL.endsWith("/") ? baseURL : `${baseURL}/`
+}
+
+function buildProviderModelsURL(baseURL: string) {
+  try {
+    return new URL("models", normalizeBaseURL(baseURL)).toString()
+  } catch {
+    throw new Error(`Provider base URL '${baseURL}' is not a valid URL`)
+  }
+}
+
+function pickValidationModel(provider: ProviderInfo) {
+  return Object.values(provider.models)[0]
+}
+
+function extractValidationErrorMessage(payload: unknown): string | undefined {
+  if (typeof payload === "string") {
+    const trimmed = payload.trim()
+    return trimmed || undefined
+  }
+
+  if (!payload || typeof payload !== "object") return undefined
+
+  const record = payload as Record<string, unknown>
+  const directMessage = firstNonEmptyString(record.message, record.detail, record.error_description)
+  if (directMessage) return directMessage
+
+  const errorRecord = record.error
+  if (errorRecord && typeof errorRecord === "object") {
+    return firstNonEmptyString(
+      (errorRecord as Record<string, unknown>).message,
+      (errorRecord as Record<string, unknown>).detail,
+      (errorRecord as Record<string, unknown>).error,
+    )
+  }
+
+  return undefined
+}
+
+async function readValidationFailureMessage(response: Response) {
+  const contentType = response.headers.get("content-type") ?? ""
+
+  if (contentType.includes("application/json")) {
+    const payload = await response.json().catch(() => undefined)
+    const parsed = extractValidationErrorMessage(payload)
+    if (parsed) return parsed
+  }
+
+  const text = await response.text().catch(() => "")
+  return extractValidationErrorMessage(text)
+}
+
+function formatValidationFailureMessage(provider: ProviderInfo, status: number, detail?: string) {
+  const summary = status === 401 || status === 403 ? "rejected the API key" : "validation request failed"
+  return detail
+    ? `Provider '${provider.name}' ${summary} (${status}): ${detail}`
+    : `Provider '${provider.name}' ${summary} (${status})`
 }
 
 function toPublicModel(provider: ProviderInfo, model: Model): PublicModel {
@@ -600,6 +710,57 @@ export async function catalog() {
   )
 }
 
+export async function validateProviderConfig(providerID: string, providerConfig: Config.Provider, configID = Config.GLOBAL_CONFIG_ID) {
+  const [catalog, config] = await Promise.all([catalogMap(), Config.get(configID)])
+  const mergedProviderConfig = Config.mergeProviderConfig(config.provider?.[providerID], providerConfig)
+  const provider = applyProviderConfig(providerID, catalog[providerID], mergedProviderConfig, Env.all())
+
+  if (!provider) {
+    throw new Error(`Provider '${providerID}' could not be resolved from the catalog`)
+  }
+
+  if (!provider.key && provider.env.length > 0) {
+    return
+  }
+
+  const model = pickValidationModel(provider)
+  const baseURL = firstNonEmptyString(provider.options.baseURL, model?.api.url)
+  if (!baseURL) {
+    return
+  }
+
+  const headers = new Headers({
+    accept: "application/json",
+  })
+
+  if (provider.key) {
+    headers.set("authorization", `Bearer ${provider.key}`)
+  }
+
+  for (const [key, value] of Object.entries(model?.headers ?? {})) {
+    headers.set(key, value)
+  }
+
+  const modelsURL = buildProviderModelsURL(baseURL)
+
+  let response: Response
+  try {
+    response = await fetch(modelsURL, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(PROVIDER_VALIDATION_TIMEOUT_MS),
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`Could not reach ${provider.name} at ${modelsURL}: ${detail}`)
+  }
+
+  if (!response.ok) {
+    const detail = await readValidationFailureMessage(response)
+    throw new Error(formatValidationFailureMessage(provider, response.status, detail))
+  }
+}
+
 async function list() {
   const state = await resolveProjectProviders()
   return state.providers
@@ -663,7 +824,7 @@ export async function getSelection() {
  * 用三步解析默认模型：
  * 1. 如果配置里保存的 model 仍然有效，就直接使用它。
  * 2. 否则退回到“当前项目里第一个可用模型”。
- * 3. 如果连可用模型都没有，再退回到硬编码兜底值。
+ * 3. 如果连可用模型都没有，直接抛错，要求调用方显式配置 provider / model。
  */
 export async function getDefaultModelRef(): Promise<ModelReference> {
   const selection = await getSelection()
@@ -678,7 +839,7 @@ export async function getDefaultModelRef(): Promise<ModelReference> {
   }
 
   const models = await listModels()
-  const firstModel = models[0]
+  const firstModel = models.find((model) => model.available)
   if (firstModel) {
     return {
       providerID: firstModel.providerID,
@@ -686,7 +847,9 @@ export async function getDefaultModelRef(): Promise<ModelReference> {
     }
   }
 
-  return DEFAULT_MODEL_REF
+  throw new Error(
+    "No provider model is available for this project. Configure a provider/model in the project settings before starting a session.",
+  )
 }
 
 // -----------------------------------------------------------------------------
@@ -730,20 +893,19 @@ async function getSDK(model: Model) {
 
   const baseURL = firstNonEmptyString(provider.options.baseURL, model.api.url)
   const headers = Object.keys(model.headers).length > 0 ? model.headers : undefined
+  const factory = SDK_FACTORIES[model.api.npm]
+  if (!factory) {
+    throw new Error(
+      `Unsupported SDK package '${model.api.npm}' for provider '${provider.id}'. Configure provider.npm or model.provider.npm to a supported AI SDK package.`,
+    )
+  }
 
-  const sdk =
-    model.api.npm === DEEPSEEK_SDK_PACKAGE || provider.id === "deepseek"
-      ? createDeepSeek({
-          apiKey: provider.key,
-          baseURL,
-          headers,
-        })
-      : createOpenAI({
-          name: provider.id,
-          apiKey: provider.key,
-          baseURL,
-          headers,
-        })
+  const sdk = factory({
+    provider,
+    apiKey: provider.key,
+    baseURL,
+    headers,
+  })
 
   cache.set(key, sdk as SDKProvider)
   return sdk as SDKProvider

@@ -1,5 +1,119 @@
 # Provider Module Spec
 
+## 0. 数据处理总览
+
+### 0.1 总图
+
+```text
+ModelsDev.get()
+  -> fromModelsDevProvider()/fromModelsDevModel()
+  -> catalogMap()
+
+Config.get() + Env.all()
+  + catalogMap()
+  -> resolveProjectProviders()
+     -> applyProviderConfig()
+        -> mergeProviderModels()
+        -> filterProviderModels()
+
+=> { catalog, providers }
+
+catalog -> catalog()
+providers -> list() -> listPublicProviders() / listModels() / getPublicProvider()
+providers + model -> getSDK() -> getLanguage()
+```
+
+最核心的理解是：
+
+- `catalog` 是 provider 全局目录，偏基础资料
+- `providers` 是当前解析结果里的生效 provider 视图，偏可运行状态
+- `Model` / `ProviderInfo` 是模块内部结构
+- `PublicModel` / `PublicProvider` / `ProviderCatalogItem` 是 API/UI 对外结构
+
+### 0.2 数据边界
+
+内部结构用于配置合并、模型查询和 SDK 初始化，对外结构用于 API 返回和前端展示。
+
+- `ProviderInfo` 保留内部运行态字段，例如 `key`、`options`、`models: Record<string, Model>`
+- `PublicProvider` 只暴露安全且适合展示的字段，并补充 `configured`、`available`、`apiKeyConfigured`、`baseURL`、`modelCount`
+- `PublicModel` 基于 `Model` 去掉 `headers`，再补上 `available`
+
+因此，这个模块不是把内部对象原样透传给前端，而是显式做了一次“内部模型 -> 公开 DTO”的投影。
+
+### 0.3 第一阶段：原始输入 -> 当前 provider 视图
+
+这一阶段的目标是把共享 catalog、配置和环境变量合成当前生效的 provider 集合。
+
+1. `catalogMap()` 调用 `ModelsDev.get()`，再用 `fromModelsDevProvider()` / `fromModelsDevModel()` 把外部 catalog 标准化成内部 `ProviderInfo` / `Model`
+2. `resolveProjectProviders()` 读取 `Config.get()` 和 `Env.all()`
+3. provider ID 取 `catalog` 与 `config.provider` 的并集
+4. 先用 `isProviderAllowed()` 应用 `enabled_providers` / `disabled_providers`
+5. 再对每个候选 provider 调用 `applyProviderConfig()`
+
+`applyProviderConfig()` 是第一阶段的核心：
+
+- catalog 中已有 provider 时，以 catalog 版本为底
+- catalog 中没有、但配置里有 provider 时，先构造 config-only provider
+- API key 优先级为 `providerConfig.options.apiKey`，再按 `provider.env` 从环境变量里取第一个非空值
+- provider 级 `options` 会先清洗掉 `apiKey`
+- `source` 会按当前解析结果重写为 `config` 或 `env`
+- 模型层先做 `mergeProviderModels()` / `mergeModelConfig()`，再做 `filterProviderModels()`
+
+阶段一结束后，`resolveProjectProviders()` 会返回：
+
+- `catalog`: 标准化后的全局 provider 目录
+- `providers`: 当前解析结果中的生效 provider 集合
+
+### 0.4 第二阶段：内部视图 -> 查询 API
+
+这一阶段的目标是把内部结构变成前端和接口可直接消费的结果。
+
+- `catalog()` 遍历 `state.catalog`，再通过 `toCatalogItem()` 叠加当前配置状态，返回 `ProviderCatalogItem[]`
+- `list()` 返回内部 `providers` map
+- `listPublicProviders()` 基于 `list()` 调用 `toPublicProvider()`，返回 `PublicProvider[]`
+- `listModels()` 把所有生效 provider 下的模型拍平成 `PublicModel[]`
+- `getPublicProvider()` 返回单个对外 provider 视图
+
+需要特别注意：
+
+- `catalog()` 面向目录视图，只覆盖 catalog 里存在的 provider
+- `listPublicProviders()` 面向当前生效视图，包含 config-only provider
+- `toPublicProvider()` 会把 `models` 从 `Record<string, Model>` 转成排序后的 `PublicModel[]`
+
+### 0.5 第三阶段：默认模型选择与运行时初始化
+
+这一阶段只有在真正需要模型调用时才会发生。
+
+1. `getSelection()` 读取配置中的 `model` / `small_model`
+2. `getDefaultModelRef()` 先校验配置里的 `provider/model`，失效时回退到 `listModels()` 的第一个模型，最后才回退到 `DEFAULT_MODEL_REF`
+3. `getLanguage(model)` 根据 `model.providerID` 找到 provider，并按 `runtimeKey()` 做缓存
+4. `getSDK(model)` 校验 key、计算 `baseURL` 和 `headers`，然后创建底层 AI SDK provider
+
+`runtimeKey()` 当前由以下字段组成：
+
+- `providerID`
+- `modelID`
+- `apiKey`
+- `baseURL`
+- `headers`
+
+只要这些字段变化，SDK provider 和 `LanguageModel` 就会重新创建。
+
+### 0.6 作用域与缓存
+
+当前实现里，provider 配置是全局配置，运行时 SDK 缓存则是实例级缓存。
+
+- 路由层通过 `Config.setProvider(Config.GLOBAL_CONFIG_ID, ...)` 写入 provider 配置
+- `provider.ts` 读取时调用 `Config.get()`，默认也是 `GLOBAL_CONFIG_ID`
+- 因此，前端配置好的 provider API key 会被所有 project 共享使用
+- 但 `sdkState` / `languageState` 通过 `Instance.state()` 创建，缓存作用域仍然按项目实例隔离
+
+这意味着当前模块的设计是：
+
+- provider 配置全局共享
+- provider 视图按请求重新解析
+- 底层 SDK / `LanguageModel` 按实例和运行时参数缓存
+
 本文档描述 `packages/fanfandeagent/src/provider` 当前实现出来的真实架构，而不是理想设计。结论都以以下代码为准：
 
 - `packages/fanfandeagent/src/provider/provider.ts`

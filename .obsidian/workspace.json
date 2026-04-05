@@ -6,7 +6,7 @@
       {
         "id": "ee2607011ecd6566",
         "type": "tabs",
-        "dimension": 45.660621761658035,
+        "dimension": 69.21664626682985,
         "children": [
           {
             "id": "35980b6fcb97707f",
@@ -28,7 +28,7 @@
       {
         "id": "91ec24b186ff6fb7",
         "type": "tabs",
-        "dimension": 54.33937823834197,
+        "dimension": 30.78335373317013,
         "children": [
           {
             "id": "62f7f98c3ffa03e2",
@@ -211,6 +211,14 @@
   },
   "active": "35980b6fcb97707f",
   "lastOpenFiles": [
+    "packages/desktop/electron.vite.config.1775392753391.mjs",
+    "packages/desktop/electron.vite.config.1775392122462.mjs",
+    "packages/desktop/electron.vite.config.1775391308537.mjs",
+    "packages/fanfandeagent/agent_local_data.db-shm",
+    "packages/fanfandeagent/agent_local_data.db-wal",
+    "packages/fanfandeagent/agent_local_data.db-journal",
+    "packages/fanfandeagent/agent_local_data.db",
+    "packages/desktop/electron.vite.config.1775391270658.mjs",
     "packages/desktop/electron.vite.config.1775385829977.mjs",
     "packages/fanfandeagent/src/project/spec.md",
     "todo.md",
@@ -226,15 +234,7 @@
     "packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md",
     "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
     "packages/desktop/electron.vite.config.1775328044628.mjs",
-    "packages/fanfandeagent/agent_local_data.db-shm",
-    "packages/fanfandeagent/agent_local_data.db-wal",
-    "packages/fanfandeagent/agent_local_data.db",
-    "packages/desktop/electron.vite.config.1775327760968.mjs",
     "Pasted image 20260405013212.png",
-    "packages/desktop/electron.vite.config.1775322555263.mjs",
-    "packages/fanfandeagent/src/server/routes/settings.ts",
-    "packages/desktop/electron.vite.config.1775321535762.mjs",
-    "packages/desktop/electron.vite.config.1775320816115.mjs",
     "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
     "packages/desktop/ELECTRON_LEARNING_TODO.md",
     "packages/desktop/README.md",

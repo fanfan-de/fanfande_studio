@@ -269,12 +269,9 @@ export async function merge(configID: string, patch: Partial<Info>) {
   return writeConfig(normalizedConfigID, next)
 }
 
-export async function setProvider(configID: string, providerID: string, provider: Provider) {
-  const normalizedConfigID = normalizeConfigID(configID)
-  const current = readConfig(normalizedConfigID)
-  const previous = current.provider?.[providerID]
+export function mergeProviderConfig(previous: Provider | undefined, provider: Provider) {
   const parsed = Provider.parse(provider)
-  const nextProvider = Provider.parse({
+  return Provider.parse({
     ...previous,
     ...parsed,
     env: parsed.env ?? previous?.env,
@@ -283,6 +280,13 @@ export async function setProvider(configID: string, providerID: string, provider
     models: parsed.models ? mergeDeep(previous?.models ?? {}, parsed.models) : previous?.models,
     options: parsed.options ? mergeDeep(previous?.options ?? {}, parsed.options) : previous?.options,
   })
+}
+
+export async function setProvider(configID: string, providerID: string, provider: Provider) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const previous = current.provider?.[providerID]
+  const nextProvider = mergeProviderConfig(previous, provider)
   const next = Info.parse({
     ...current,
     provider: {
