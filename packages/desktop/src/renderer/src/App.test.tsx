@@ -579,7 +579,10 @@ describe("App", () => {
     const settingsDialog = await screen.findByRole("dialog", { name: "Settings" })
 
     expect(settingsDialog).toHaveClass("settings-page")
-    expect(screen.getByText("Manage shared providers and models for the app.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Close settings" })).toBeInTheDocument()
+    expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
+    expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
+    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(2)
     expect(screen.getByRole("button", { name: /^Provider/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Models/ })).toBeInTheDocument()
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
@@ -1384,5 +1387,13 @@ describe("App", () => {
     expect(styles).toMatch(/\.settings-page-main\.is-services\s*\{[^}]*overflow:\s*hidden;/s)
     expect(styles).toMatch(/\.settings-service-list\s*\{[^}]*overflow:\s*auto;/s)
     expect(styles).toMatch(/\.settings-service-detail-panel\s*\{[^}]*overflow:\s*auto;/s)
+  })
+
+  it("keeps the settings primary nav minimal and color-led", () => {
+    expect(styles).toMatch(/\.settings-page-close-button\s*\{[^}]*width:\s*32px;[^}]*background:\s*transparent;/s)
+    expect(styles).toMatch(/\.settings-primary-nav-item\s*\{[^}]*background:\s*transparent;[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);/s)
+    expect(styles).toMatch(/\.settings-primary-nav-item::before\s*\{[^}]*width:\s*2px;[^}]*opacity:\s*0;/s)
+    expect(styles).toMatch(/\.settings-primary-nav-item:hover\s*\{[^}]*color:\s*#1d496c;/s)
+    expect(styles).toMatch(/\.settings-primary-nav-item:focus-visible,\s*\.settings-primary-nav-item\.is-active\s*\{[^}]*color:\s*#0f67aa;/s)
   })
 })

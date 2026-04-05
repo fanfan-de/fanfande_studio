@@ -8,6 +8,7 @@ import {
   FolderIcon,
   MaximizeIcon,
   MinimizeIcon,
+  NavPlaceholderIcon,
   NewItemIcon,
   RestoreIcon,
   SettingsIcon,
@@ -540,41 +541,42 @@ export function SettingsPage({
       onClose()
     }
 
+    const primarySections = [
+      { key: "services" as const, label: "Provider", meta: `${catalog.length} providers` },
+      { key: "defaults" as const, label: "Models", meta: `${visibleModels.length} available` },
+    ]
+
     return (
       <section className="settings-page-overlay" role="presentation" onClick={handleSettingsOverlayClick}>
-        <div className="settings-page" role="dialog" aria-modal="true" aria-labelledby="settings-page-title">
+        <div className="settings-page" role="dialog" aria-modal="true" aria-label="Settings">
           <header className="settings-page-header">
-            <div>
-              <span className="label">Global settings</span>
-              <h2 id="settings-page-title">Settings</h2>
-              <p className="settings-page-copy">Manage shared providers and models for the app.</p>
-            </div>
-
-            <div className="settings-page-actions">
-              <button className="secondary-button" aria-label="Close settings" onClick={onClose}>
-                Close
-              </button>
-            </div>
+            <button className="settings-page-close-button" aria-label="Close settings" title="Close settings" onClick={onClose}>
+              <CloseIcon />
+            </button>
           </header>
 
           <div className="settings-page-shell">
             <aside className="settings-page-primary-nav" aria-label="Settings sections">
-              <button
-                className={activeSection === "services" ? "settings-primary-nav-item is-active" : "settings-primary-nav-item"}
-                aria-current={activeSection === "services" ? "page" : undefined}
-                onClick={() => setActiveSection("services")}
-              >
-                <span>Provider</span>
-                <small>{catalog.length} providers</small>
-              </button>
-              <button
-                className={activeSection === "defaults" ? "settings-primary-nav-item is-active" : "settings-primary-nav-item"}
-                aria-current={activeSection === "defaults" ? "page" : undefined}
-                onClick={() => setActiveSection("defaults")}
-              >
-                <span>Models</span>
-                <small>{visibleModels.length} available</small>
-              </button>
+              {primarySections.map((section) => {
+                const isActive = activeSection === section.key
+
+                return (
+                  <button
+                    key={section.key}
+                    className={isActive ? "settings-primary-nav-item is-active" : "settings-primary-nav-item"}
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => setActiveSection(section.key)}
+                  >
+                    <span className="settings-primary-nav-icon" aria-hidden="true">
+                      <NavPlaceholderIcon />
+                    </span>
+                    <span className="settings-primary-nav-copy">
+                      <span className="settings-primary-nav-label">{section.label}</span>
+                      <small>{section.meta}</small>
+                    </span>
+                  </button>
+                )
+              })}
             </aside>
 
             <div className={activeSection === "services" ? "settings-page-main is-services" : "settings-page-main"}>
