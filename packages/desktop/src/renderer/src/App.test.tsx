@@ -1378,15 +1378,18 @@ describe("App", () => {
 
   it("keeps settings surfaces constrained as centered dialogs", () => {
     expect(styles).toMatch(/\.settings-page-overlay\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*center;[^}]*overflow:\s*auto;/s)
-    expect(styles).toMatch(/\.settings-page\s*\{[^}]*width:\s*min\(100%,\s*1320px\);[^}]*max-height:\s*min\(calc\(100dvh - 64px\),\s*860px\);/s)
+    expect(styles).toMatch(
+      /\.settings-page\s*\{[^}]*width:\s*min\(100%,\s*1320px\);[^}]*height:\s*min\(calc\(100dvh - 64px\),\s*860px\);[^}]*max-height:\s*min\(calc\(100dvh - 64px\),\s*860px\);/s,
+    )
     expect(styles).toMatch(/\.settings-page-body,\s*\.settings-page-shell\s*\{[^}]*grid-template-columns:\s*220px minmax\(0,\s*1fr\);/s)
     expect(styles).toMatch(/\.settings-services-layout\s*\{[^}]*grid-template-columns:\s*320px minmax\(0,\s*1fr\);/s)
   })
 
   it("scopes provider scrolling to the column layout", () => {
     expect(styles).toMatch(/\.settings-page-main\.is-services\s*\{[^}]*overflow:\s*hidden;/s)
-    expect(styles).toMatch(/\.settings-service-list\s*\{[^}]*overflow:\s*auto;/s)
-    expect(styles).toMatch(/\.settings-service-detail-panel\s*\{[^}]*overflow:\s*auto;/s)
+    expect(styles).toMatch(/\.settings-page-content,\s*\.settings-page-main\s*\{[^}]*scrollbar-gutter:\s*stable both-edges;/s)
+    expect(styles).toMatch(/\.settings-service-list\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s)
+    expect(styles).toMatch(/\.settings-service-detail-panel\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s)
   })
 
   it("keeps the settings primary nav minimal and color-led", () => {

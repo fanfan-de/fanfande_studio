@@ -756,6 +756,8 @@ textarea::placeholder {
 
 .settings-page {
   width: min(100%, 1320px);
+  height: min(calc(100vh - 64px), 860px);
+  height: min(calc(100dvh - 64px), 860px);
   max-height: min(calc(100vh - 64px), 860px);
   max-height: min(calc(100dvh - 64px), 860px);
   background: #f8fbff;
@@ -1007,6 +1009,7 @@ textarea::placeholder {
 .settings-page-main {
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable both-edges;
   padding: 18px 20px 24px;
   display: grid;
   align-content: start;
@@ -1145,6 +1148,7 @@ textarea::placeholder {
   min-height: 0;
   height: 100%;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding-right: 4px;
   display: grid;
   gap: 10px;
@@ -1214,6 +1218,7 @@ textarea::placeholder {
 
 .settings-service-detail-panel {
   overflow: auto;
+  scrollbar-gutter: stable;
   padding-right: 4px;
 }
 
