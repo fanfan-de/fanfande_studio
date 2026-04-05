@@ -175,6 +175,16 @@ export function ProjectRoutes() {
       throw new ApiError(400, "INVALID_PAYLOAD", "Body must be a valid provider configuration")
     }
 
+    try {
+      await Provider.validateProviderConfig(providerID, payload.data, Config.GLOBAL_CONFIG_ID)
+    } catch (error) {
+      throw new ApiError(
+        400,
+        "PROVIDER_VALIDATION_FAILED",
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+
     const providerConfig = await Config.setProvider(Config.GLOBAL_CONFIG_ID, providerID, payload.data)
     const provider = await Provider.getPublicProvider(providerID)
     if (!provider) {

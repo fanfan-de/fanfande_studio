@@ -208,14 +208,40 @@ async function createGitRepo(root: string, seed: string) {
   await $`git commit -m init`.cwd(root).quiet()
 }
 
-function mockModelsDevFetch() {
+function mockModelsDevFetch(
+  validationHandler?: (input: { url: string; headers: Headers }) => Response | Promise<Response> | undefined,
+) {
   const originalFetch = globalThis.fetch
   globalThis.fetch = new Proxy(originalFetch, {
     apply(target, thisArg, args: Parameters<typeof fetch>) {
       const [input, init] = args
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
       if (url === "https://models.dev/api.json") {
         return Promise.resolve(Response.json(modelsDevFixture))
+      }
+
+      const customResponse = validationHandler?.({ url, headers })
+      if (customResponse) {
+        return Promise.resolve(customResponse)
+      }
+
+      if (url === "https://api.deepseek.com/models" || url === "https://proxy.deepseek.test/v1/models") {
+        return Promise.resolve(
+          Response.json({
+            object: "list",
+            data: [{ id: "deepseek-reasoner" }],
+          }),
+        )
+      }
+
+      if (url === "https://api.openai.com/v1/models") {
+        return Promise.resolve(
+          Response.json({
+            object: "list",
+            data: [{ id: "gpt-4o-mini" }],
+          }),
+        )
       }
 
       return Reflect.apply(target, thisArg, [input, init])
@@ -506,6 +532,58 @@ describe("server api", () => {
       await resetGlobalProviderState(app)
       restoreFetch()
       await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("PUT /api/providers/:providerID should reject invalid API keys before saving", async () => {
+    const restoreFetch = mockModelsDevFetch(({ url, headers }) => {
+      if (url !== "https://api.deepseek.com/models") return undefined
+
+      if (headers.get("authorization") === "Bearer invalid-deepseek-key") {
+        return new Response(JSON.stringify({ error: { message: "Invalid API key" } }), {
+          status: 401,
+          headers: {
+            "content-type": "application/json",
+          },
+        })
+      }
+
+      return Response.json({
+        object: "list",
+        data: [{ id: "deepseek-reasoner" }],
+      })
+    })
+    const app = createServerApp()
+
+    try {
+      await resetGlobalProviderState(app)
+
+      const response = await app.request("http://localhost/api/providers/deepseek", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "DeepSeek",
+          options: {
+            apiKey: "invalid-deepseek-key",
+            baseURL: "https://api.deepseek.com",
+          },
+        }),
+      })
+      const body = (await response.json()) as JsonEnvelope
+
+      expect(response.status).toBe(400)
+      expect(body.success).toBe(false)
+      expect(body.error?.code).toBe("PROVIDER_VALIDATION_FAILED")
+      expect(body.error?.message).toContain("Invalid API key")
+
+      const providersResponse = await app.request("http://localhost/api/providers")
+      const providersBody = (await providersResponse.json()) as ProviderListEnvelope
+
+      expect(providersResponse.status).toBe(200)
+      expect(providersBody.data?.items).toHaveLength(0)
+    } finally {
+      await resetGlobalProviderState(app)
+      restoreFetch()
     }
   })
 

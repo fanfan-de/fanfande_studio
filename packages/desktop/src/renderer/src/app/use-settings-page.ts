@@ -6,6 +6,10 @@ interface SettingsMessage {
   text: string
 }
 
+interface LoadSettingsOptions {
+  silent?: boolean
+}
+
 function normalizeSelection(selection?: { model?: string; small_model?: string }): ProjectModelSelection {
   return {
     model: selection?.model ?? null,
@@ -54,7 +58,7 @@ export function useSettingsPage() {
     void loadSettingsData()
   }, [isOpen])
 
-  async function loadSettingsData() {
+  async function loadSettingsData(options?: LoadSettingsOptions) {
     if (!window.desktop?.getGlobalProviderCatalog || !window.desktop?.getGlobalModels) {
       setLoadError("Desktop provider settings APIs are unavailable.")
       setCatalog([])
@@ -64,7 +68,9 @@ export function useSettingsPage() {
     }
 
     const requestID = ++requestIDRef.current
-    setIsLoading(true)
+    if (!options?.silent) {
+      setIsLoading(true)
+    }
     setLoadError(null)
 
     try {
@@ -178,7 +184,7 @@ export function useSettingsPage() {
         providerID,
         provider: nextProvider,
       })
-      await loadSettingsData()
+      await loadSettingsData({ silent: true })
       setMessage({
         tone: "success",
         text: "Provider settings saved.",
@@ -205,7 +211,7 @@ export function useSettingsPage() {
       await window.desktop.deleteGlobalProvider({
         providerID,
       })
-      await loadSettingsData()
+      await loadSettingsData({ silent: true })
       setMessage({
         tone: "success",
         text: "Provider settings reset.",

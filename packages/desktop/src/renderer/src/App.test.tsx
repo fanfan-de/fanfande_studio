@@ -6,6 +6,17 @@ import { App } from "./App"
 
 const styles = readFileSync(resolve(process.cwd(), "src/renderer/src/styles.css"), "utf8")
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+
+  return { promise, reject, resolve }
+}
+
 describe("App", () => {
   beforeEach(() => {
     window.desktop = {
@@ -592,6 +603,57 @@ describe("App", () => {
   })
 
   it("saves provider overrides from the settings page", async () => {
+    const refreshedCatalog = createDeferred<
+      {
+        id: string
+        name: string
+        source: string
+        env: string[]
+        configured: boolean
+        available: boolean
+        apiKeyConfigured: boolean
+        baseURL: string
+        modelCount: number
+      }[]
+    >()
+    const refreshedModels = createDeferred<{
+      items: {
+        id: string
+        providerID: string
+        name: string
+        status: string
+        available: boolean
+        capabilities: {
+          temperature: boolean
+          reasoning: boolean
+          attachment: boolean
+          toolcall: boolean
+          input: {
+            text: boolean
+            audio: boolean
+            image: boolean
+            video: boolean
+            pdf: boolean
+          }
+          output: {
+            text: boolean
+            audio: boolean
+            image: boolean
+            video: boolean
+            pdf: boolean
+          }
+        }
+        limit: {
+          context: number
+          output: number
+        }
+      }[]
+      selection: {
+        model?: string
+        small_model?: string
+      }
+    }>()
+
     window.desktop!.getGlobalProviderCatalog = vi
       .fn()
       .mockResolvedValueOnce([
@@ -620,6 +682,7 @@ describe("App", () => {
           modelCount: 1,
         },
       ])
+      .mockImplementationOnce(() => refreshedCatalog.promise)
     window.desktop!.getGlobalModels = vi
       .fn()
       .mockResolvedValueOnce({
@@ -662,6 +725,7 @@ describe("App", () => {
         ],
         selection: {},
       })
+      .mockImplementationOnce(() => refreshedModels.promise)
 
     render(<App />)
 
@@ -693,6 +757,64 @@ describe("App", () => {
           },
         },
       })
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalledTimes(2)
+      expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(2)
+    })
+
+    expect(screen.getByRole("heading", { name: "Provider Configuration" })).toBeInTheDocument()
+    expect(screen.queryByText("Fetching provider catalog")).not.toBeInTheDocument()
+
+    refreshedCatalog.resolve([
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "config",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://proxy.deepseek.test/v1",
+        modelCount: 1,
+      },
+    ])
+    refreshedModels.resolve({
+      items: [
+        {
+          id: "deepseek-reasoner",
+          providerID: "deepseek",
+          name: "DeepSeek Reasoner",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: true,
+            attachment: false,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+      ],
+      selection: {},
     })
 
     expect(await screen.findByText("Provider settings saved.")).toBeInTheDocument()
