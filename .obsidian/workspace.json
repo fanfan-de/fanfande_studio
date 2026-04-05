@@ -6,7 +6,6 @@
       {
         "id": "ee2607011ecd6566",
         "type": "tabs",
-        "dimension": 69.21664626682985,
         "children": [
           {
             "id": "35980b6fcb97707f",
@@ -14,35 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/fanfandeagent/src/provider/spec.md",
+                "file": "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
                 "mode": "preview",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "spec"
-            }
-          }
-        ]
-      },
-      {
-        "id": "91ec24b186ff6fb7",
-        "type": "tabs",
-        "dimension": 30.78335373317013,
-        "children": [
-          {
-            "id": "62f7f98c3ffa03e2",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "todo.md",
-                "mode": "source",
-                "source": false,
-                "backlinks": false
-              },
-              "icon": "lucide-file",
-              "title": "todo"
+              "title": "AI_AGENT_FRONTEND_SPEC"
             }
           }
         ]
@@ -211,6 +188,8 @@
   },
   "active": "35980b6fcb97707f",
   "lastOpenFiles": [
+    "packages/desktop/electron.vite.config.1775394043716.mjs",
+    "packages/fanfandeagent/src/provider/spec.md",
     "packages/desktop/electron.vite.config.1775392753391.mjs",
     "packages/desktop/electron.vite.config.1775392122462.mjs",
     "packages/desktop/electron.vite.config.1775391308537.mjs",
@@ -233,7 +212,6 @@
     "packages/fanfandeagent/DOMAIN_SPEC.md",
     "packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md",
     "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
-    "packages/desktop/electron.vite.config.1775328044628.mjs",
     "Pasted image 20260405013212.png",
     "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
     "packages/desktop/ELECTRON_LEARNING_TODO.md",
@@ -247,7 +225,6 @@
     "fanfande_studio_vault/Tools 1/websearch.md",
     "fanfande_studio_vault/Tools 1/未命名.md",
     "fanfande_studio_vault/Tools 1/write_stdin.md",
-    "fanfande_studio_vault/Tools 1/apply_patch.md",
     "packages/fanfandedesktop/exports/BkxtC.png",
     "packages/fanfandeagent/docs/data-dictionary/assets/icons.svg",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/shiki-dependency-tree.svg",
