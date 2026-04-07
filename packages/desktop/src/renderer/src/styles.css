@@ -1796,20 +1796,24 @@ textarea::placeholder {
   color: #b14537;
 }
 
-.permission-request-stack {
+.permission-request-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(23, 35, 47, 0.18);
+  backdrop-filter: blur(6px);
+}
+
+.permission-request-modal {
+  width: min(100%, 640px);
   display: grid;
   gap: 16px;
 }
 
-.permission-request-card {
-  border: 1px solid rgba(218, 177, 96, 0.48);
-  background: linear-gradient(180deg, #fffaf1 0%, #fff6e8 100%);
-  box-shadow: 0 16px 36px rgba(140, 100, 36, 0.08);
-  padding: 18px;
-  display: grid;
-  gap: 16px;
-}
-
+.permission-request-modal-header,
 .permission-request-header,
 .permission-request-footer,
 .permission-request-badges {
@@ -1819,11 +1823,28 @@ textarea::placeholder {
   gap: 12px;
 }
 
+.permission-request-modal-header h2,
 .permission-request-header h3 {
   margin: 4px 0 0;
-  font-size: 21px;
   line-height: 1.1;
-  color: #37240f;
+  color: #17232f;
+}
+
+.permission-request-modal-header h2 {
+  font-size: 26px;
+}
+
+.permission-request-header h3 {
+  font-size: 22px;
+}
+
+.permission-request-card {
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #ffffff;
+  box-shadow: 0 18px 40px rgba(46, 81, 118, 0.12);
+  padding: 20px;
+  display: grid;
+  gap: 16px;
 }
 
 .permission-request-subtitle,
@@ -1835,7 +1856,7 @@ textarea::placeholder {
 
 .permission-request-subtitle,
 .permission-request-note {
-  color: #705334;
+  color: #526375;
 }
 
 .permission-request-error {
@@ -1853,13 +1874,13 @@ textarea::placeholder {
   padding: 0 10px;
   display: inline-flex;
   align-items: center;
-  border: 1px solid rgba(170, 141, 99, 0.38);
-  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #f4f8fc;
   font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
   font-size: 11px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #6b573f;
+  color: #4b6074;
 }
 
 .permission-risk-chip.is-low {
@@ -1881,17 +1902,20 @@ textarea::placeholder {
   gap: 12px;
 }
 
+.permission-request-grid-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .permission-request-meta {
   min-width: 0;
   padding: 12px;
-  border: 1px solid rgba(211, 180, 126, 0.4);
-  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #f8fbff;
   display: grid;
   gap: 6px;
 }
 
-.permission-request-meta-wide,
-.permission-request-field-wide {
+.permission-request-meta-wide {
   grid-column: 1 / -1;
 }
 
@@ -1900,24 +1924,23 @@ textarea::placeholder {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #8c704f;
+  color: #6b7d90;
 }
 
 .permission-request-meta strong {
-  color: #362513;
+  color: #17232f;
   line-height: 1.5;
   word-break: break-word;
 }
 
 .permission-request-controls {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  gap: 12px;
+  gap: 10px;
 }
 
-.permission-request-field input,
-.permission-request-field select {
-  background: rgba(255, 255, 255, 0.74);
+.permission-scope-switch {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .permission-request-footer {
@@ -1926,6 +1949,10 @@ textarea::placeholder {
 
 .permission-request-actions {
   flex-wrap: wrap;
+}
+
+.permission-request-count {
+  align-self: center;
 }
 
 .composer {
@@ -2313,8 +2340,20 @@ body.is-resizing-sidebar * {
   }
 
   .permission-request-grid,
-  .permission-request-controls {
+  .permission-request-grid-compact,
+  .permission-scope-switch {
     grid-template-columns: 1fr;
+  }
+
+  .permission-request-overlay {
+    padding: 12px;
+  }
+
+  .permission-request-modal-header,
+  .permission-request-header,
+  .permission-request-footer {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .settings-inline-actions {

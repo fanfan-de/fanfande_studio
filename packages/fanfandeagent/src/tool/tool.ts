@@ -58,7 +58,6 @@ export type ToolModelOutput =
   | { type: "error-text"; value: string }
   | { type: "error-json"; value: JSONValue }
   | { type: "execution-denied"; reason?: string }
-
 export interface ToolRuntime<
   Parameters extends z.ZodType = z.ZodType,
   M extends Metadata = Metadata,

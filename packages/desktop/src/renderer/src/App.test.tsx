@@ -390,11 +390,12 @@ describe("App", () => {
 
     render(<App />)
 
-    expect(await screen.findByRole("heading", { name: "Read repo config" })).toBeInTheDocument()
-    expect(screen.getAllByText("README.md").length).toBeGreaterThan(0)
+    const approvalDialog = await screen.findByRole("dialog", { name: "User confirmation required" })
+    expect(within(approvalDialog).getByRole("heading", { name: "Read repo config" })).toBeInTheDocument()
+    expect(within(approvalDialog).getAllByText("README.md").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Approve Read repo config and continue" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Deny Read repo config and continue" })).toBeInTheDocument()
+    expect(within(approvalDialog).getByRole("button", { name: "Approve Read repo config and continue" })).toBeInTheDocument()
+    expect(within(approvalDialog).getByRole("button", { name: "Deny Read repo config and continue" })).toBeInTheDocument()
     await waitFor(() => {
       expect(window.desktop!.getSessionPermissionRequests).toHaveBeenCalledWith({
         sessionID: "session-atlas-review",
@@ -493,28 +494,396 @@ describe("App", () => {
 
     render(<App />)
 
-    const reasonInput = await screen.findByRole("textbox", { name: "Decision reason for Read repo config" })
-    fireEvent.change(reasonInput, {
-      target: {
-        value: "Allow this read.",
-      },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Approve Read repo config and continue" }))
+    const approvalDialog = await screen.findByRole("dialog", { name: "User confirmation required" })
+    fireEvent.click(within(approvalDialog).getByRole("button", { name: "Approve Read repo config and continue" }))
 
     await waitFor(() => {
       expect(window.desktop!.respondPermissionRequest).toHaveBeenCalledWith({
         requestID: "permission-atlas-1",
         approved: true,
         scope: "once",
-        reason: "Allow this read.",
+        reason: undefined,
         resume: true,
       })
     })
     expect(await screen.findByText("Approval recorded and session resumed.")).toBeInTheDocument()
+    expect(screen.queryByRole("dialog", { name: "User confirmation required" })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(2, {
         sessionID: "session-atlas-review",
       })
+      expect(window.desktop!.getSessionPermissionRequests).toHaveBeenNthCalledWith(2, {
+        sessionID: "session-atlas-review",
+      })
+    })
+  })
+
+  it("streams resumed output after approval and clears the waiting tool state first", async () => {
+    let streamListener:
+      | ((event: {
+          streamID: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+    let finishResumeStream: (() => void) | undefined
+
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          info: {
+            id: "msg-assistant-1",
+            sessionID: "session-atlas-review",
+            role: "assistant",
+            created: 100,
+          },
+          parts: [
+            {
+              id: "tool-part-1",
+              type: "tool",
+              tool: "read-file",
+              state: {
+                status: "waiting-approval",
+                approvalID: "approval-atlas-1",
+                input: {
+                  path: "README.md",
+                },
+                title: "Read repo config",
+                time: {
+                  start: 90,
+                },
+              },
+            },
+          ],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          info: {
+            id: "msg-assistant-1",
+            sessionID: "session-atlas-review",
+            role: "assistant",
+            created: 100,
+          },
+          parts: [
+            {
+              id: "tool-part-1",
+              type: "tool",
+              tool: "read-file",
+              state: {
+                status: "completed",
+                input: {
+                  path: "README.md",
+                },
+                output: "README loaded",
+                title: "Read repo config",
+                time: {
+                  start: 90,
+                  end: 120,
+                },
+              },
+            },
+          ],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          info: {
+            id: "msg-assistant-1",
+            sessionID: "session-atlas-review",
+            role: "assistant",
+            created: 100,
+          },
+          parts: [
+            {
+              id: "tool-part-1",
+              type: "tool",
+              tool: "read-file",
+              state: {
+                status: "completed",
+                input: {
+                  path: "README.md",
+                },
+                output: "README loaded",
+                title: "Read repo config",
+                time: {
+                  start: 90,
+                  end: 120,
+                },
+              },
+            },
+          ],
+        },
+        {
+          info: {
+            id: "msg-assistant-2",
+            sessionID: "session-atlas-review",
+            role: "assistant",
+            created: 121,
+          },
+          parts: [{ id: "part-text-2", type: "text", text: "Resumed answer" }],
+        },
+      ])
+    window.desktop!.getSessionPermissionRequests = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "permission-atlas-1",
+          approvalID: "approval-atlas-1",
+          sessionID: "session-atlas-review",
+          messageID: "msg-assistant-1",
+          toolCallID: "toolcall-atlas-1",
+          projectID: "project-atlas",
+          agent: "plan",
+          tool: "read-file",
+          toolKind: "read",
+          title: "Read repo config",
+          risk: "medium",
+          status: "pending",
+          input: {
+            path: "README.md",
+          },
+          resource: {
+            paths: ["README.md"],
+            workdir: "C:\\Projects\\Atlas\\client",
+          },
+          createdAt: 100,
+        },
+      ])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+    window.desktop!.respondPermissionRequest = vi.fn().mockResolvedValue({
+      request: {
+        id: "permission-atlas-1",
+        approvalID: "approval-atlas-1",
+        sessionID: "session-atlas-review",
+        messageID: "msg-assistant-1",
+        toolCallID: "toolcall-atlas-1",
+        projectID: "project-atlas",
+        agent: "plan",
+        tool: "read-file",
+        toolKind: "read",
+        title: "Read repo config",
+        risk: "medium",
+        status: "approved",
+        input: {
+          path: "README.md",
+        },
+        createdAt: 100,
+        resolvedAt: 120,
+        resolutionScope: "once",
+      },
+    })
+    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+      streamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.resumeAgentMessageStream = vi.fn().mockImplementation(
+      async (input: {
+        streamID: string
+        sessionID: string
+      }) => {
+        streamListener?.({
+          streamID: input.streamID,
+          event: "started",
+          data: { sessionID: input.sessionID },
+        })
+        streamListener?.({
+          streamID: input.streamID,
+          event: "delta",
+          data: { kind: "text", delta: "Resumed answer" },
+        })
+
+        await new Promise<void>((resolve) => {
+          finishResumeStream = () => {
+            streamListener?.({
+              streamID: input.streamID,
+              event: "done",
+              data: {
+                sessionID: input.sessionID,
+                parts: [{ id: "part-text-2", type: "text", text: "Resumed answer" }],
+              },
+            })
+            resolve()
+          }
+        })
+
+        return {
+          streamID: input.streamID,
+        }
+      },
+    )
+
+    render(<App />)
+
+    expect(await screen.findByText("Waiting for permission approval before the tool can continue.")).toBeInTheDocument()
+
+    const approvalDialog = await screen.findByRole("dialog", { name: "User confirmation required" })
+    fireEvent.click(within(approvalDialog).getByRole("button", { name: "Approve Read repo config and continue" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.respondPermissionRequest).toHaveBeenCalledWith({
+        requestID: "permission-atlas-1",
+        approved: true,
+        scope: "once",
+        reason: undefined,
+        resume: false,
+      })
+      expect(window.desktop!.resumeAgentMessageStream).toHaveBeenCalledTimes(1)
+    })
+
+    expect(await screen.findByText("README loaded")).toBeInTheDocument()
+    expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
+    expect(await screen.findByText("Resumed answer")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
+
+    finishResumeStream?.()
+
+    await waitFor(() => {
+      expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(3, {
+        sessionID: "session-atlas-review",
+      })
+      expect(screen.getByRole("button", { name: "Send task" })).toBeEnabled()
+    })
+  })
+
+  it("hides the approval dialog immediately after a decision is chosen", async () => {
+    const response = createDeferred<{
+      request: {
+        id: string
+        approvalID: string
+        sessionID: string
+        messageID: string
+        toolCallID: string
+        projectID: string
+        agent: string
+        tool: string
+        toolKind: "read"
+        title: string
+        risk: "medium"
+        status: "approved"
+        input: {
+          path: string
+        }
+        createdAt: number
+        resolvedAt: number
+        resolutionScope: "once"
+      }
+    }>()
+
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([])
+    window.desktop!.getSessionPermissionRequests = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "permission-atlas-1",
+          approvalID: "approval-atlas-1",
+          sessionID: "session-atlas-review",
+          messageID: "message-atlas-1",
+          toolCallID: "toolcall-atlas-1",
+          projectID: "project-atlas",
+          agent: "plan",
+          tool: "read-file",
+          toolKind: "read",
+          title: "Read repo config",
+          risk: "medium",
+          status: "pending",
+          input: {
+            path: "README.md",
+          },
+          resource: {
+            paths: ["README.md"],
+            workdir: "C:\\Projects\\Atlas\\client",
+          },
+          createdAt: 100,
+        },
+      ])
+      .mockResolvedValueOnce([])
+    window.desktop!.respondPermissionRequest = vi.fn().mockReturnValue(response.promise)
+
+    render(<App />)
+
+    const approvalDialog = await screen.findByRole("dialog", { name: "User confirmation required" })
+    fireEvent.click(within(approvalDialog).getByRole("button", { name: "Approve Read repo config and continue" }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "User confirmation required" })).not.toBeInTheDocument()
+    })
+    expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
+
+    response.resolve({
+      request: {
+        id: "permission-atlas-1",
+        approvalID: "approval-atlas-1",
+        sessionID: "session-atlas-review",
+        messageID: "message-atlas-1",
+        toolCallID: "toolcall-atlas-1",
+        projectID: "project-atlas",
+        agent: "plan",
+        tool: "read-file",
+        toolKind: "read",
+        title: "Read repo config",
+        risk: "medium",
+        status: "approved",
+        input: {
+          path: "README.md",
+        },
+        createdAt: 100,
+        resolvedAt: 120,
+        resolutionScope: "once",
+      },
+    })
+
+    await waitFor(() => {
       expect(window.desktop!.getSessionPermissionRequests).toHaveBeenNthCalledWith(2, {
         sessionID: "session-atlas-review",
       })

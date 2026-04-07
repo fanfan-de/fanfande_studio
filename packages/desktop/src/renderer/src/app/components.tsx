@@ -1405,19 +1405,16 @@ export function SettingsPage({
 interface ThreadViewProps {
   activeSession: SessionSummary | null
   activeTurns: Turn[]
-  isResolvingPermissionRequest: boolean
-  pendingPermissionRequests: PermissionRequest[]
-  permissionRequestActionError: string | null
-  permissionRequestActionRequestID: string | null
   threadColumnRef: RefObject<HTMLDivElement | null>
-  onPermissionRequestResponse: (input: {
-    sessionID: string
-    request: PermissionRequest
-    approved: boolean
-    scope: PermissionApprovalScope
-    reason?: string
-  }) => void | Promise<void>
 }
+
+type PermissionRequestResponseHandler = (input: {
+  sessionID: string
+  request: PermissionRequest
+  approved: boolean
+  scope: PermissionApprovalScope
+  reason?: string
+}) => void | Promise<void>
 
 const permissionScopeOptions: Array<{
   value: PermissionApprovalScope
@@ -1474,10 +1471,9 @@ function PermissionRequestCard({
   activeSession: SessionSummary
   isResolving: boolean
   request: PermissionRequest
-  onRespond: ThreadViewProps["onPermissionRequestResponse"]
+  onRespond: PermissionRequestResponseHandler
 }) {
   const [scope, setScope] = useState<PermissionApprovalScope>("once")
-  const [reason, setReason] = useState("")
   const detail = summarizePermissionRequest(request)
   const title = request.title?.trim() || request.tool
 
@@ -1487,7 +1483,6 @@ function PermissionRequestCard({
       request,
       approved,
       scope,
-      reason,
     })
   }
 
@@ -1497,9 +1492,7 @@ function PermissionRequestCard({
         <div>
           <span className="label">Approval Required</span>
           <h3>{title}</h3>
-          <p className="permission-request-subtitle">
-            {detail}
-          </p>
+          <p className="permission-request-subtitle">{detail}</p>
         </div>
         <div className="permission-request-badges">
           <span className={`permission-risk-chip is-${request.risk}`}>{formatPermissionRiskLabel(request.risk)}</span>
@@ -1507,7 +1500,7 @@ function PermissionRequestCard({
         </div>
       </header>
 
-      <div className="permission-request-grid">
+      <div className="permission-request-grid permission-request-grid-compact">
         <div className="permission-request-meta">
           <span className="permission-request-meta-label">Tool</span>
           <strong>{request.tool}</strong>
@@ -1537,37 +1530,25 @@ function PermissionRequestCard({
       </div>
 
       <div className="permission-request-controls">
-        <label className="settings-field permission-request-field">
-          <span className="settings-field-label">Remember decision</span>
-          <select
-            aria-label={`Remember decision scope for ${title}`}
-            disabled={isResolving}
-            value={scope}
-            onChange={(event) => setScope(event.target.value as PermissionApprovalScope)}
-          >
-            {permissionScopeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="settings-field permission-request-field permission-request-field-wide">
-          <span className="settings-field-label">Reason</span>
-          <input
-            aria-label={`Decision reason for ${title}`}
-            disabled={isResolving}
-            placeholder="Optional note for the approval log"
-            type="text"
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-          />
-        </label>
+        <span className="settings-field-label">Apply decision to</span>
+        <div className="mode-switch permission-scope-switch" role="group" aria-label={`Approval scope for ${title}`}>
+          {permissionScopeOptions.map((option) => (
+            <button
+              key={option.value}
+              aria-pressed={scope === option.value}
+              className={scope === option.value ? "mode-pill is-active" : "mode-pill"}
+              disabled={isResolving}
+              onClick={() => setScope(option.value)}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="permission-request-footer">
-        <p className="permission-request-note">Your decision will resume the blocked session after the backend records it.</p>
+        <p className="permission-request-note">The session resumes after this decision is recorded.</p>
         <div className="settings-inline-actions permission-request-actions">
           <button
             className="secondary-button"
@@ -1595,15 +1576,64 @@ function PermissionRequestCard({
   )
 }
 
-export function ThreadView({
+interface PermissionRequestDialogProps {
+  activeSession: SessionSummary | null
+  isResolvingPermissionRequest: boolean
+  pendingPermissionRequests: PermissionRequest[]
+  permissionRequestActionError: string | null
+  permissionRequestActionRequestID: string | null
+  onPermissionRequestResponse: PermissionRequestResponseHandler
+}
+
+export function PermissionRequestDialog({
   activeSession,
-  activeTurns,
   isResolvingPermissionRequest,
   pendingPermissionRequests,
   permissionRequestActionError,
   permissionRequestActionRequestID,
-  threadColumnRef,
   onPermissionRequestResponse,
+}: PermissionRequestDialogProps) {
+  if (!activeSession || isResolvingPermissionRequest || pendingPermissionRequests.length === 0) return null
+
+  const [request] = pendingPermissionRequests
+  const remainingCount = pendingPermissionRequests.length - 1
+
+  return (
+    <section className="permission-request-overlay" role="presentation">
+      <div className="permission-request-modal" role="dialog" aria-modal="true" aria-labelledby="permission-request-title">
+        <header className="permission-request-modal-header">
+          <div>
+            <span className="label">Tool Approval</span>
+            <h2 id="permission-request-title">User confirmation required</h2>
+          </div>
+          {remainingCount > 0 ? (
+            <span className="settings-badge permission-request-count">
+              {remainingCount + 1} requests waiting
+            </span>
+          ) : null}
+        </header>
+
+        <PermissionRequestCard
+          actionError={
+            permissionRequestActionError &&
+            (!permissionRequestActionRequestID || permissionRequestActionRequestID === request.id)
+              ? permissionRequestActionError
+              : null
+          }
+          activeSession={activeSession}
+          isResolving={false}
+          request={request}
+          onRespond={onPermissionRequestResponse}
+        />
+      </div>
+    </section>
+  )
+}
+
+export function ThreadView({
+  activeSession,
+  activeTurns,
+  threadColumnRef,
 }: ThreadViewProps) {
   return (
     <section className="thread-shell">
@@ -1663,23 +1693,6 @@ export function ThreadView({
               </article>
             )
             })}
-
-            {pendingPermissionRequests.length > 0 ? (
-              <section className="permission-request-stack" aria-label="Pending approvals">
-                {pendingPermissionRequests.map((request) => (
-                  <PermissionRequestCard
-                    key={request.id}
-                    actionError={
-                      permissionRequestActionRequestID === request.id ? permissionRequestActionError : null
-                    }
-                    activeSession={activeSession}
-                    isResolving={isResolvingPermissionRequest && permissionRequestActionRequestID === request.id}
-                    request={request}
-                    onRespond={onPermissionRequestResponse}
-                  />
-                ))}
-              </section>
-            ) : null}
           </>
         )}
       </div>

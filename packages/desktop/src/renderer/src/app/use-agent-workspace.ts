@@ -710,10 +710,22 @@ export function useAgentWorkspace({
     reason?: string
   }) {
     const respondPermissionRequest = window.desktop?.respondPermissionRequest
+    const resumeAgentMessageStream = window.desktop?.resumeAgentMessageStream
     if (!respondPermissionRequest || permissionRequestActionRequestID) return
 
+    permissionRequestsRequestRef.current[input.sessionID] = (permissionRequestsRequestRef.current[input.sessionID] ?? 0) + 1
+    const removedRequest = input.request
+    const canStreamResume = Boolean(resumeAgentMessageStream)
+    let requestResolved = false
     setPermissionRequestActionRequestID(input.request.id)
     setPermissionRequestActionError(null)
+    setPendingPermissionRequestsBySession((prev) => {
+      const current = prev[input.sessionID] ?? []
+      return {
+        ...prev,
+        [input.sessionID]: current.filter((request) => request.id !== input.request.id),
+      }
+    })
 
     try {
       await respondPermissionRequest({
@@ -721,15 +733,63 @@ export function useAgentWorkspace({
         approved: input.approved,
         scope: input.scope,
         reason: input.reason?.trim() || undefined,
-        resume: true,
+        resume: !canStreamResume,
+      })
+      requestResolved = true
+
+      await reloadSessionHistoryForSession(input.sessionID, input.request.sessionID).catch((error) => {
+        console.error("[desktop] permission history refresh failed:", error)
+      })
+      await loadPendingPermissionRequestsForSession(input.sessionID, input.request.sessionID).catch((error) => {
+        console.error("[desktop] permission request refresh failed:", error)
       })
 
-      await reloadSessionHistoryForSession(input.sessionID, input.request.sessionID)
-      await loadPendingPermissionRequestsForSession(input.sessionID, input.request.sessionID)
+      if (resumeAgentMessageStream) {
+        const streamID = createID("stream")
+        const streamingTurn = buildStreamingAssistantTurn(input.approved ? "Continue after approval" : "Continue after denial")
+        pendingStreamsRef.current[streamID] = {
+          sessionID: input.sessionID,
+          assistantTurnID: streamingTurn.id,
+        }
+
+        startTransition(() => {
+          appendConversationTurns(input.sessionID, [streamingTurn])
+        })
+
+        try {
+          await resumeAgentMessageStream({
+            streamID,
+            sessionID: input.request.sessionID,
+          })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          delete pendingStreamsRef.current[streamID]
+          startTransition(() => {
+            updateAssistantConversationTurn(input.sessionID, streamingTurn.id, (current) =>
+              buildFailureTurn(message, current),
+            )
+          })
+          throw error
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error("[desktop] respondPermissionRequest failed:", error)
-      setPermissionRequestActionError(message)
+
+      if (!requestResolved) {
+        setPermissionRequestActionError(message)
+        setPendingPermissionRequestsBySession((prev) => {
+          const current = prev[input.sessionID] ?? []
+          if (current.some((request) => request.id === removedRequest.id)) {
+            return prev
+          }
+
+          return {
+            ...prev,
+            [input.sessionID]: [removedRequest, ...current],
+          }
+        })
+      }
     } finally {
       setPermissionRequestActionRequestID(null)
     }

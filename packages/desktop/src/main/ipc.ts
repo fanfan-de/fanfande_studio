@@ -590,6 +590,57 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   )
 
   ipcMain.handle(
+    "desktop:agent-resume-stream",
+    async (
+      event,
+      input: {
+        streamID: string
+        sessionID: string
+      },
+    ) => {
+      const streamID = input.streamID.trim()
+      const sessionID = input.sessionID.trim()
+      const response = await fetch(resolveAgentURL(`/api/sessions/${encodeURIComponent(sessionID)}/resume/stream`), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        const envelope = (await response.json().catch(() => null)) as AgentEnvelope<unknown> | null
+        throw new Error(envelope?.error?.message || `Agent resume stream failed (${response.status})`)
+      }
+
+      const requestId = response.headers.get("x-request-id") ?? undefined
+
+      try {
+        await readAgentSSEStream(response, (item) => {
+          event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
+            streamID,
+            event: item.event,
+            data: item.data,
+          } satisfies AgentStreamIPCEvent)
+        })
+      } catch (error) {
+        event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
+          streamID,
+          event: "error",
+          data: {
+            sessionID,
+            message: error instanceof Error ? error.message : String(error),
+          },
+        } satisfies AgentStreamIPCEvent)
+      }
+
+      return {
+        streamID,
+        requestId,
+      }
+    },
+  )
+
+  ipcMain.handle(
     "desktop:agent-send-message",
     async (
       _event,
