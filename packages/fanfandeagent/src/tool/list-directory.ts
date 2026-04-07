@@ -52,6 +52,19 @@ export const ListDirectoryTool = Tool.define(
         maxEntries: z.number().int().positive().max(5000).optional().describe("Maximum number of entries to return."),
         includeHidden: z.boolean().optional().describe("Include dotfiles and hidden folders."),
       }),
+      describeApproval: (parameters, ctx) => {
+        const resolved = resolveToolPath(parameters.path ?? ".")
+        return {
+          title: `List ${toDisplayPath(resolved)}`,
+          summary: parameters.recursive
+            ? `List files and folders inside ${toDisplayPath(resolved)} recursively.`
+            : `List top-level files and folders inside ${toDisplayPath(resolved)}.`,
+          details: {
+            paths: [toDisplayPath(resolved)],
+            workdir: ctx.cwd,
+          },
+        }
+      },
       execute: async (parameters) => {
         const resolved = resolveToolPath(parameters.path ?? ".")
         const stats = await stat(resolved)

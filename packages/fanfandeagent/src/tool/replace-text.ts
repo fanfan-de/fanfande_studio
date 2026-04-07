@@ -14,6 +14,19 @@ export const ReplaceTextTool = Tool.define(
         replace: z.string().describe("Replacement text."),
         all: z.boolean().optional().describe("Replace every occurrence instead of just the first one."),
       }),
+      describeApproval: (parameters, ctx) => {
+        const resolved = resolveToolPath(parameters.path)
+        return {
+          title: `Update ${toDisplayPath(resolved)}`,
+          summary: parameters.all
+            ? `Replace every occurrence of the selected text in ${toDisplayPath(resolved)}.`
+            : `Replace the first occurrence of the selected text in ${toDisplayPath(resolved)}.`,
+          details: {
+            paths: [toDisplayPath(resolved)],
+            workdir: ctx.cwd,
+          },
+        }
+      },
       execute: async (parameters) => {
         const resolved = resolveToolPath(parameters.path)
         const original = await readTextFile(parameters.path)

@@ -1,3 +1,14 @@
+import type {
+  PermissionDecision as AgentPermissionDecision,
+  PermissionPromptSnapshot as AgentPermissionPromptSnapshot,
+  PermissionRequestPrompt as AgentPermissionRequest,
+  PermissionRequestResolutionRecord as AgentPermissionRequestResolutionRecord,
+  PermissionRequestStatus as AgentPermissionRequestStatus,
+  PermissionResolveResult as AgentPermissionResolveResult,
+  PermissionRisk as AgentPermissionRisk,
+  PermissionToolKind as AgentPermissionToolKind,
+} from "../shared/permission"
+
 export type MenuKey = "file" | "edit" | "view" | "window" | "help"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
 
@@ -99,36 +110,15 @@ export interface AgentSessionHistoryMessage {
   parts: unknown[]
 }
 
-export type AgentPermissionRequestStatus = "pending" | "approved" | "denied" | "expired"
-export type AgentPermissionApprovalScope = "once" | "session" | "project" | "forever"
-export type AgentPermissionRisk = "low" | "medium" | "high" | "critical"
-export type AgentPermissionToolKind = "read" | "write" | "search" | "exec" | "other"
-
-export interface AgentPermissionRequestResource {
-  paths?: string[]
-  command?: string
-  workdir?: string
-}
-
-export interface AgentPermissionRequest {
-  id: string
-  approvalID: string
-  sessionID: string
-  messageID: string
-  toolCallID: string
-  projectID: string
-  agent: string
-  tool: string
-  toolKind?: AgentPermissionToolKind
-  title?: string
-  risk: AgentPermissionRisk
-  status: AgentPermissionRequestStatus
-  input: Record<string, unknown>
-  resource?: AgentPermissionRequestResource
-  createdAt: number
-  resolvedAt?: number
-  resolutionScope?: AgentPermissionApprovalScope
-  resolutionReason?: string
+export type {
+  AgentPermissionDecision,
+  AgentPermissionPromptSnapshot,
+  AgentPermissionRequest,
+  AgentPermissionRequestResolutionRecord,
+  AgentPermissionRequestStatus,
+  AgentPermissionResolveResult,
+  AgentPermissionRisk,
+  AgentPermissionToolKind,
 }
 
 export interface AgentProviderCatalogItem {

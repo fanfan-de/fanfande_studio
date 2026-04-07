@@ -36,6 +36,18 @@ export interface ToolAttachment<M extends Metadata = Metadata> {
   metadata?: M
 }
 
+export interface ToolApprovalDetails {
+  command?: string
+  paths?: string[]
+  workdir?: string
+}
+
+export interface ToolApprovalDescriptor {
+  title?: string
+  summary: string
+  details?: ToolApprovalDetails
+}
+
 export interface ToolOutput<M extends Metadata = Metadata, D = unknown> {
   text: string
   title?: string
@@ -74,6 +86,10 @@ export interface ToolRuntime<
   formatValidationError?(error: z.ZodError): string
   validate?(args: z.infer<Parameters>, ctx: Context): Promise<ToolGuardResult> | ToolGuardResult
   authorize?(args: z.infer<Parameters>, ctx: Context): Promise<ToolGuardResult> | ToolGuardResult
+  describeApproval?(
+    args: z.infer<Parameters>,
+    ctx: Context,
+  ): Awaitable<ToolApprovalDescriptor>
   toModelOutput?(
     result: ToolOutput<M, D>,
   ): Awaitable<ToolModelOutput>

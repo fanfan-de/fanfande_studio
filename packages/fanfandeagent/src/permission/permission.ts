@@ -21,9 +21,13 @@ export {
   ApprovalScope,
   Audit,
   Config as PermissionConfig,
+  Decision,
   ConfigDefaults as PermissionConfigDefaults,
   Request,
+  RequestPrompt,
+  RequestPromptView,
   RequestResolution,
+  RequestResolutionRecord,
   RequestStatus,
   RequestResource,
   Risk,
@@ -37,6 +41,7 @@ type Rule = Schema.Rule
 type Request = Schema.Request
 type Risk = Schema.Risk
 type Action = Schema.Action
+type Decision = Schema.Decision
 
 type ToolDescriptor = {
   id: string
@@ -68,6 +73,7 @@ export type EvaluationResult = {
   derived: {
     paths: string[]
     command?: string
+    workdir?: string
   }
 }
 
@@ -82,6 +88,7 @@ if (!db.tableExists("permission_rules")) {
 if (!db.tableExists("permission_requests")) {
   db.createTableByZodObject("permission_requests", Schema.Request)
 }
+db.syncTableColumnsWithZodObject("permission_requests", Schema.Request)
 if (!db.tableExists("permission_audits")) {
   db.createTableByZodObject("permission_audits", Schema.Audit)
 }
@@ -295,6 +302,122 @@ function deriveRisk(input: EvaluationInput, derivedPaths: string[], command?: st
   return "low"
 }
 
+function decisionToApproved(decision: Decision) {
+  return decision !== "deny"
+}
+
+function decisionToScope(decision: Decision): Schema.ApprovalScope | undefined {
+  switch (decision) {
+    case "allow-once":
+      return "once"
+    case "allow-session":
+      return "session"
+    case "allow-project":
+      return "project"
+    case "allow-forever":
+      return "forever"
+    case "deny":
+      return undefined
+  }
+}
+
+function legacyApprovalToDecision(approved: boolean, scope?: Schema.ApprovalScope): Decision {
+  if (!approved) return "deny"
+
+  switch (scope) {
+    case "session":
+      return "allow-session"
+    case "project":
+      return "allow-project"
+    case "forever":
+      return "allow-forever"
+    case "once":
+    default:
+      return "allow-once"
+  }
+}
+
+function allowedDecisionsFor(decision: EvaluationResult): Decision[] {
+  const allowed: Decision[] = ["deny", "allow-once"]
+  if (decision.rememberable) {
+    allowed.push("allow-session", "allow-project")
+  }
+  return allowed
+}
+
+function summarizeDerivedTarget(derived: EvaluationResult["derived"]) {
+  if (derived.command) return `Run ${derived.command}`
+  if (derived.paths.length === 1) return derived.paths[0]!
+  if (derived.paths.length > 1) return `${derived.paths.length} project paths`
+  return "project resources"
+}
+
+function buildFallbackApprovalDescriptor(input: {
+  tool: string
+  title?: string
+  derived: EvaluationResult["derived"]
+}): Tool.ToolApprovalDescriptor {
+  const title = input.title?.trim() || input.tool
+  return {
+    title,
+    summary: `${title} will access ${summarizeDerivedTarget(input.derived)}.`,
+    details: {
+      command: input.derived.command,
+      paths: input.derived.paths.length > 0 ? input.derived.paths : undefined,
+      workdir: input.derived.workdir,
+    },
+  }
+}
+
+function buildPromptSnapshot(input: {
+  descriptor: Tool.ToolApprovalDescriptor
+  rationale: string
+  risk: Risk
+  derived: EvaluationResult["derived"]
+  allowedDecisions: Decision[]
+  recommendedDecision?: Decision
+}): Schema.RequestPrompt {
+  const details = input.descriptor.details ?? {
+    command: input.derived.command,
+    paths: input.derived.paths.length > 0 ? input.derived.paths : undefined,
+    workdir: input.derived.workdir,
+  }
+
+  const hasDetails = Boolean(details.command || details.workdir || (details.paths?.length ?? 0) > 0)
+  const recommended = input.allowedDecisions.includes(input.recommendedDecision ?? "allow-once")
+    ? (input.recommendedDecision ?? "allow-once")
+    : (input.allowedDecisions.find((decision) => decision !== "deny") ?? "deny")
+
+  return Schema.RequestPrompt.parse({
+    title: input.descriptor.title?.trim() || "Permission request",
+    summary: input.descriptor.summary.trim(),
+    rationale: input.rationale.trim(),
+    risk: input.risk,
+    detailsAvailable: hasDetails,
+    details: hasDetails ? details : undefined,
+    allowedDecisions: input.allowedDecisions,
+    recommendedDecision: recommended,
+  })
+}
+
+function buildRuntimeSnapshot(input: {
+  tool: string
+  toolKind?: Schema.ToolKind
+  rawInput: Record<string, unknown>
+  derived: EvaluationResult["derived"]
+}): Schema.RequestRuntime {
+  return Schema.RequestRuntime.parse({
+    tool: input.tool,
+    toolKind: input.toolKind,
+    input: input.rawInput,
+    resource: {
+      paths: input.derived.paths.length > 0 ? input.derived.paths : undefined,
+      command: input.derived.command,
+      workdir: input.derived.workdir,
+    },
+  })
+}
+
 async function findStoredRequestForToolCall(toolCallID: string | undefined) {
   if (!toolCallID) return undefined
 
@@ -420,6 +543,7 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
   const derived = {
     paths: derivedPaths.relativePaths,
     command,
+    workdir: cwd,
   }
 
   if (isPermissionDisabled()) {
@@ -562,8 +686,18 @@ export async function listRequests(filters: RequestFilters = {}) {
   })
 }
 
+export async function listRequestPrompts(filters: RequestFilters = {}) {
+  const requests = await listRequests(filters)
+  return requests.map((request) => toRequestPromptView(request))
+}
+
 export async function getRequest(id: string) {
   return db.findById("permission_requests", Schema.Request, id)
+}
+
+export async function getRequestPrompt(id: string) {
+  const request = await getRequest(id)
+  return request ? toRequestPromptView(request) : undefined
 }
 
 async function toolDescriptorForName(toolName: string): Promise<ToolDescriptor> {
@@ -623,6 +757,46 @@ export async function registerApprovalRequest(input: {
     input: input.toolPart.state.input,
   })
 
+  const toolInfo = await ToolRegistry.get(input.toolPart.tool)
+  const agentInfo = (await Agent.get(input.assistant.agent)) ?? Agent.planAgent
+  const runtime = toolInfo ? await toolInfo.init({ agent: agentInfo }) : undefined
+  let approvalDescriptor: Tool.ToolApprovalDescriptor | undefined
+  if (runtime?.describeApproval) {
+    try {
+      approvalDescriptor = await runtime.describeApproval(input.toolPart.state.input, {
+        sessionID: input.assistant.sessionID,
+        messageID: input.assistant.id,
+        cwd: input.assistant.path.cwd,
+        worktree: input.assistant.path.root,
+        toolCallID: input.toolPart.callID,
+      })
+    } catch (error) {
+      log.warn("tool-specific approval description failed", {
+        tool: input.toolPart.tool,
+        error: normalizeExecutionError(error),
+      })
+    }
+  }
+
+  const prompt = buildPromptSnapshot({
+    descriptor: approvalDescriptor ?? buildFallbackApprovalDescriptor({
+      tool: input.toolPart.tool,
+      title: input.toolPart.state.title,
+      derived: decision.derived,
+    }),
+    rationale: decision.reason,
+    risk: decision.risk,
+    derived: decision.derived,
+    allowedDecisions: allowedDecisionsFor(decision),
+    recommendedDecision: "allow-once",
+  })
+  const runtimeSnapshot = buildRuntimeSnapshot({
+    tool: input.toolPart.tool,
+    toolKind: descriptor.kind,
+    rawInput: input.toolPart.state.input,
+    derived: decision.derived,
+  })
+
   const record = Schema.Request.parse({
     id: Identifier.ascending("permission"),
     approvalID: input.toolPart.state.approvalID,
@@ -640,8 +814,10 @@ export async function registerApprovalRequest(input: {
     resource: {
       paths: decision.derived.paths.length > 0 ? decision.derived.paths : undefined,
       command: decision.derived.command,
-      workdir: input.assistant.path.cwd,
+      workdir: decision.derived.workdir,
     },
+    prompt,
+    runtime: runtimeSnapshot,
     createdAt: Date.now(),
   })
 
@@ -661,20 +837,76 @@ export async function registerApprovalRequest(input: {
   return record
 }
 
+function ensureRequestResolutionRecord(request: Request): Schema.RequestResolutionRecord | undefined {
+  if (request.resolution) return request.resolution
+  if (!request.resolvedAt) return undefined
+
+  const decision = legacyApprovalToDecision(request.status === "approved", request.resolutionScope)
+  return Schema.RequestResolutionRecord.parse({
+    decision,
+    note: request.resolutionReason,
+    approved: decisionToApproved(decision),
+    scope: decisionToScope(decision),
+    resolvedAt: request.resolvedAt,
+  })
+}
+
+function ensureRequestPrompt(request: Request): Schema.RequestPrompt {
+  if (request.prompt) return request.prompt
+
+  const derived = {
+    paths: request.runtime?.resource?.paths ?? request.resource?.paths ?? [],
+    command: request.runtime?.resource?.command ?? request.resource?.command,
+    workdir: request.runtime?.resource?.workdir ?? request.resource?.workdir,
+  }
+
+  return buildPromptSnapshot({
+    descriptor: buildFallbackApprovalDescriptor({
+      tool: request.runtime?.tool ?? request.tool,
+      title: request.title,
+      derived,
+    }),
+    rationale: "This tool requires approval before it can continue.",
+    risk: request.risk,
+    derived,
+    allowedDecisions: ["deny", "allow-once", "allow-session", "allow-project"],
+    recommendedDecision: "allow-once",
+  })
+}
+
+function toRequestPromptView(request: Request): Schema.RequestPromptView {
+  return Schema.RequestPromptView.parse({
+    id: request.id,
+    approvalID: request.approvalID,
+    sessionID: request.sessionID,
+    messageID: request.messageID,
+    toolCallID: request.toolCallID,
+    projectID: request.projectID,
+    agent: request.agent,
+    status: request.status,
+    createdAt: request.createdAt,
+    prompt: ensureRequestPrompt(request),
+    resolution: ensureRequestResolutionRecord(request),
+  })
+}
+
 function approvalRuleFromRequest(request: Request, resolution: Schema.RequestResolution): Schema.RuleInput | undefined {
-  if (resolution.scope === "once") return undefined
+  if (!decisionToApproved(resolution.decision)) return undefined
+
+  const scope = decisionToScope(resolution.decision)
+  if (!scope || scope === "once") return undefined
 
   return Schema.RuleInput.parse({
     scope:
-      resolution.scope === "session"
+      scope === "session"
         ? "session"
-        : resolution.scope === "project"
+        : scope === "project"
           ? "project"
           : "global",
-    projectID: resolution.scope === "project" ? request.projectID : undefined,
-    sessionID: resolution.scope === "session" ? request.sessionID : undefined,
-    agent: resolution.scope === "session" ? request.agent : undefined,
-    effect: resolution.approved ? "allow" : "deny",
+    projectID: scope === "project" ? request.projectID : undefined,
+    sessionID: scope === "session" ? request.sessionID : undefined,
+    agent: scope === "session" ? request.agent : undefined,
+    effect: "allow",
     tools: [request.tool],
     toolKinds: request.toolKind ? [request.toolKind] : undefined,
     paths: request.resource?.paths,
@@ -683,7 +915,7 @@ function approvalRuleFromRequest(request: Request, resolution: Schema.RequestRes
     destructive: request.toolKind === "write" || request.toolKind === "exec" ? true : undefined,
     readOnly: request.toolKind === "read" || request.toolKind === "search" ? true : undefined,
     needsShell: request.tool === "exec_command" ? true : undefined,
-    reason: resolution.reason?.trim() || `Created from approval request ${request.id}.`,
+    reason: resolution.note?.trim() || `Created from approval request ${request.id}.`,
     createdBy: "approval",
   })
 }
@@ -830,12 +1062,22 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
     }
   }
 
+  const approved = decisionToApproved(resolution.decision)
+  const scope = decisionToScope(resolution.decision)
+
   const next = Schema.Request.parse({
     ...existing,
-    status: resolution.approved ? "approved" : "denied",
+    status: approved ? "approved" : "denied",
     resolvedAt: Date.now(),
-    resolutionScope: resolution.scope,
-    resolutionReason: resolution.reason,
+    resolutionScope: scope,
+    resolutionReason: resolution.note,
+    resolution: {
+      decision: resolution.decision,
+      note: resolution.note,
+      approved,
+      scope,
+      resolvedAt: Date.now(),
+    },
   })
 
   db.updateByIdWithSchema("permission_requests", existing.id, next, Schema.Request)
@@ -846,16 +1088,23 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
     approvalID: next.approvalID,
     toolCallID: next.toolCallID,
     tool: next.tool,
-    action: resolution.approved ? "allow" : "deny",
-    scope: resolution.scope,
-    reason: resolution.reason,
+    action: approved ? "allow" : "deny",
+    scope,
+    reason: resolution.note,
   })
   await Session.updatePart(part)
 
   const derivedRule = approvalRuleFromRequest(next, resolution)
   const createdRule = derivedRule ? await createRule(derivedRule) : undefined
+  if (createdRule) {
+    next.resolution = Schema.RequestResolutionRecord.parse({
+      ...next.resolution,
+      createdRuleID: createdRule.id,
+    })
+    db.updateByIdWithSchema("permission_requests", existing.id, next, Schema.Request)
+  }
 
-  if (resolution.approved) {
+  if (approved) {
     await completeApprovedRequest(next)
   } else {
     await denyApprovedRequest(next)

@@ -20,6 +20,23 @@ export const ReadFileTool = Tool.define(
         message: "endLine must be greater than or equal to startLine.",
         path: ["endLine"],
       }),
+      describeApproval: (parameters, ctx) => {
+        const resolved = resolveToolPath(parameters.path)
+        const lines = parameters.startLine != null
+          ? parameters.endLine != null
+            ? `lines ${parameters.startLine}-${parameters.endLine}`
+            : `starting at line ${parameters.startLine}`
+          : "file contents"
+
+        return {
+          title: `Read ${toDisplayPath(resolved)}`,
+          summary: `Read ${lines} from ${toDisplayPath(resolved)}.`,
+          details: {
+            paths: [toDisplayPath(resolved)],
+            workdir: ctx.cwd,
+          },
+        }
+      },
       execute: async (parameters) => {
         const resolved = resolveToolPath(parameters.path)
         const text = await readTextFile(parameters.path)

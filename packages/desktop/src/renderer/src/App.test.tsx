@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { PermissionRequestPrompt, PermissionResolveResult } from "../../shared/permission"
 import { App } from "./App"
 
 const styles = readFileSync(resolve(process.cwd(), "src/renderer/src/styles.css"), "utf8")
@@ -15,6 +16,95 @@ function createDeferred<T>() {
   })
 
   return { promise, reject, resolve }
+}
+
+type PermissionRequestPromptOverrides = Omit<Partial<PermissionRequestPrompt>, "prompt" | "resolution"> & {
+  prompt?: Omit<Partial<PermissionRequestPrompt["prompt"]>, "details"> & {
+    details?: Partial<NonNullable<PermissionRequestPrompt["prompt"]["details"]>>
+  }
+  resolution?: Partial<NonNullable<PermissionRequestPrompt["resolution"]>>
+}
+
+function createPermissionRequest(overrides: PermissionRequestPromptOverrides = {}): PermissionRequestPrompt {
+  const base: PermissionRequestPrompt = {
+    id: "permission-1",
+    approvalID: "approval-1",
+    sessionID: "session-backend",
+    messageID: "message-1",
+    toolCallID: "toolcall-1",
+    projectID: "project-backend",
+    agent: "plan",
+    status: "pending",
+    createdAt: 1,
+    prompt: {
+      title: "Read repo config",
+      summary: "Read README.md",
+      rationale: "The agent needs your approval before it can continue this tool call.",
+      risk: "medium",
+      detailsAvailable: true,
+      details: {
+        paths: ["README.md"],
+        workdir: "C:\\Projects\\fanfande_studio",
+      },
+      allowedDecisions: ["deny", "allow-once", "allow-session", "allow-project"],
+      recommendedDecision: "allow-once",
+    },
+  }
+
+  const prompt = Object.prototype.hasOwnProperty.call(overrides, "prompt")
+    ? {
+        title: overrides.prompt?.title ?? base.prompt.title,
+        summary: overrides.prompt?.summary ?? base.prompt.summary,
+        rationale: overrides.prompt?.rationale ?? base.prompt.rationale,
+        risk: overrides.prompt?.risk ?? base.prompt.risk,
+        detailsAvailable: overrides.prompt?.detailsAvailable ?? base.prompt.detailsAvailable,
+        details: Object.prototype.hasOwnProperty.call(overrides.prompt ?? {}, "details")
+          ? overrides.prompt?.details
+            ? {
+                ...(base.prompt.details ?? {}),
+                ...overrides.prompt.details,
+              }
+            : overrides.prompt?.details
+          : base.prompt.details,
+        allowedDecisions: overrides.prompt?.allowedDecisions ?? base.prompt.allowedDecisions,
+        recommendedDecision: overrides.prompt?.recommendedDecision ?? base.prompt.recommendedDecision,
+      }
+    : base.prompt
+
+  const resolution = Object.prototype.hasOwnProperty.call(overrides, "resolution")
+    ? overrides.resolution
+      ? {
+          decision: overrides.resolution.decision ?? "allow-once",
+          note: overrides.resolution.note,
+          approved: overrides.resolution.approved ?? true,
+          scope: overrides.resolution.scope ?? "once",
+          resolvedAt: overrides.resolution.resolvedAt ?? 120,
+          createdRuleID: overrides.resolution.createdRuleID,
+        }
+      : overrides.resolution
+    : base.resolution
+
+  return {
+    ...base,
+    ...overrides,
+    prompt,
+    resolution,
+  }
+}
+
+function createPermissionResolveResult(overrides: PermissionRequestPromptOverrides = {}): PermissionResolveResult {
+  return {
+    request: createPermissionRequest({
+      ...overrides,
+      status: overrides.status ?? "approved",
+      resolution: overrides.resolution ?? {
+        decision: "allow-once",
+        approved: true,
+        scope: "once",
+        resolvedAt: 120,
+      },
+    }),
+  }
 }
 
 describe("App", () => {
@@ -52,24 +142,7 @@ describe("App", () => {
       deleteAgentSession: vi.fn(),
       getSessionHistory: vi.fn().mockResolvedValue([]),
       getSessionPermissionRequests: vi.fn().mockResolvedValue([]),
-      respondPermissionRequest: vi.fn().mockResolvedValue({
-        request: {
-          id: "permission-1",
-          approvalID: "approval-1",
-          sessionID: "session-backend",
-          messageID: "message-1",
-          toolCallID: "toolcall-1",
-          projectID: "project-backend",
-          agent: "plan",
-          tool: "read-file",
-          risk: "medium",
-          status: "approved",
-          input: {
-            path: "README.md",
-          },
-          createdAt: 1,
-        },
-      }),
+      respondPermissionRequest: vi.fn().mockResolvedValue(createPermissionResolveResult()),
       getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
       getGlobalModels: vi.fn().mockResolvedValue({
         items: [],
@@ -364,38 +437,32 @@ describe("App", () => {
     ])
     window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([])
     window.desktop!.getSessionPermissionRequests = vi.fn().mockResolvedValue([
-      {
+      createPermissionRequest({
         id: "permission-atlas-1",
         approvalID: "approval-atlas-1",
         sessionID: "session-atlas-review",
         messageID: "message-atlas-1",
         toolCallID: "toolcall-atlas-1",
         projectID: "project-atlas",
-        agent: "plan",
-        tool: "read-file",
-        toolKind: "read",
-        title: "Read repo config",
-        risk: "medium",
-        status: "pending",
-        input: {
-          path: "README.md",
-        },
-        resource: {
-          paths: ["README.md"],
-          workdir: "C:\\Projects\\Atlas\\client",
-        },
         createdAt: 100,
-      },
+        prompt: {
+          details: {
+            paths: ["README.md"],
+            workdir: "C:\\Projects\\Atlas\\client",
+          },
+        },
+      }),
     ])
 
     render(<App />)
 
-    const approvalDialog = await screen.findByRole("dialog", { name: "User confirmation required" })
-    expect(within(approvalDialog).getByRole("heading", { name: "Read repo config" })).toBeInTheDocument()
-    expect(within(approvalDialog).getAllByText("README.md").length).toBeGreaterThan(0)
+    const approvalPanel = await screen.findByRole("region", { name: "Tool approval request" })
+    expect(approvalPanel.closest(".thread-shell")).not.toBeNull()
+    expect(within(approvalPanel).getByRole("heading", { name: "Read repo config" })).toBeInTheDocument()
+    expect(within(approvalPanel).getByText("Read README.md")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
-    expect(within(approvalDialog).getByRole("button", { name: "Approve Read repo config and continue" })).toBeInTheDocument()
-    expect(within(approvalDialog).getByRole("button", { name: "Deny Read repo config and continue" })).toBeInTheDocument()
+    expect(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" })).toBeInTheDocument()
+    expect(within(approvalPanel).getByRole("button", { name: "Deny Read repo config" })).toBeInTheDocument()
     await waitFor(() => {
       expect(window.desktop!.getSessionPermissionRequests).toHaveBeenCalledWith({
         sessionID: "session-atlas-review",
@@ -445,69 +512,50 @@ describe("App", () => {
     window.desktop!.getSessionPermissionRequests = vi
       .fn()
       .mockResolvedValueOnce([
-        {
+        createPermissionRequest({
           id: "permission-atlas-1",
           approvalID: "approval-atlas-1",
           sessionID: "session-atlas-review",
           messageID: "message-atlas-1",
           toolCallID: "toolcall-atlas-1",
           projectID: "project-atlas",
-          agent: "plan",
-          tool: "read-file",
-          toolKind: "read",
-          title: "Read repo config",
-          risk: "medium",
-          status: "pending",
-          input: {
-            path: "README.md",
-          },
-          resource: {
-            paths: ["README.md"],
-            workdir: "C:\\Projects\\Atlas\\client",
-          },
           createdAt: 100,
-        },
+          prompt: {
+            details: {
+              paths: ["README.md"],
+              workdir: "C:\\Projects\\Atlas\\client",
+            },
+          },
+        }),
       ])
       .mockResolvedValueOnce([])
-    window.desktop!.respondPermissionRequest = vi.fn().mockResolvedValue({
-      request: {
+    window.desktop!.respondPermissionRequest = vi.fn().mockResolvedValue(
+      createPermissionResolveResult({
         id: "permission-atlas-1",
         approvalID: "approval-atlas-1",
         sessionID: "session-atlas-review",
         messageID: "message-atlas-1",
         toolCallID: "toolcall-atlas-1",
         projectID: "project-atlas",
-        agent: "plan",
-        tool: "read-file",
-        toolKind: "read",
-        title: "Read repo config",
-        risk: "medium",
-        status: "approved",
-        input: {
-          path: "README.md",
-        },
         createdAt: 100,
-        resolvedAt: 120,
-        resolutionScope: "once",
-      },
-    })
+      }),
+    )
 
     render(<App />)
 
-    const approvalDialog = await screen.findByRole("dialog", { name: "User confirmation required" })
-    fireEvent.click(within(approvalDialog).getByRole("button", { name: "Approve Read repo config and continue" }))
+    const approvalPanel = await screen.findByRole("region", { name: "Tool approval request" })
+    fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" }))
 
     await waitFor(() => {
       expect(window.desktop!.respondPermissionRequest).toHaveBeenCalledWith({
         requestID: "permission-atlas-1",
-        approved: true,
-        scope: "once",
-        reason: undefined,
+        decision: "allow-once",
+        note: undefined,
         resume: true,
       })
     })
     expect(await screen.findByText("Approval recorded and session resumed.")).toBeInTheDocument()
-    expect(screen.queryByRole("dialog", { name: "User confirmation required" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Tool approval request" })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(2, {
         sessionID: "session-atlas-review",
@@ -652,53 +700,35 @@ describe("App", () => {
     window.desktop!.getSessionPermissionRequests = vi
       .fn()
       .mockResolvedValueOnce([
-        {
+        createPermissionRequest({
           id: "permission-atlas-1",
           approvalID: "approval-atlas-1",
           sessionID: "session-atlas-review",
           messageID: "msg-assistant-1",
           toolCallID: "toolcall-atlas-1",
           projectID: "project-atlas",
-          agent: "plan",
-          tool: "read-file",
-          toolKind: "read",
-          title: "Read repo config",
-          risk: "medium",
-          status: "pending",
-          input: {
-            path: "README.md",
-          },
-          resource: {
-            paths: ["README.md"],
-            workdir: "C:\\Projects\\Atlas\\client",
-          },
           createdAt: 100,
-        },
+          prompt: {
+            details: {
+              paths: ["README.md"],
+              workdir: "C:\\Projects\\Atlas\\client",
+            },
+          },
+        }),
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
-    window.desktop!.respondPermissionRequest = vi.fn().mockResolvedValue({
-      request: {
+    window.desktop!.respondPermissionRequest = vi.fn().mockResolvedValue(
+      createPermissionResolveResult({
         id: "permission-atlas-1",
         approvalID: "approval-atlas-1",
         sessionID: "session-atlas-review",
         messageID: "msg-assistant-1",
         toolCallID: "toolcall-atlas-1",
         projectID: "project-atlas",
-        agent: "plan",
-        tool: "read-file",
-        toolKind: "read",
-        title: "Read repo config",
-        risk: "medium",
-        status: "approved",
-        input: {
-          path: "README.md",
-        },
         createdAt: 100,
-        resolvedAt: 120,
-        resolutionScope: "once",
-      },
-    })
+      }),
+    )
     window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
       streamListener = listener
       return vi.fn()
@@ -743,15 +773,14 @@ describe("App", () => {
 
     expect(await screen.findByText("Waiting for permission approval before the tool can continue.")).toBeInTheDocument()
 
-    const approvalDialog = await screen.findByRole("dialog", { name: "User confirmation required" })
-    fireEvent.click(within(approvalDialog).getByRole("button", { name: "Approve Read repo config and continue" }))
+    const approvalPanel = await screen.findByRole("region", { name: "Tool approval request" })
+    fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" }))
 
     await waitFor(() => {
       expect(window.desktop!.respondPermissionRequest).toHaveBeenCalledWith({
         requestID: "permission-atlas-1",
-        approved: true,
-        scope: "once",
-        reason: undefined,
+        decision: "allow-once",
+        note: undefined,
         resume: false,
       })
       expect(window.desktop!.resumeAgentMessageStream).toHaveBeenCalledTimes(1)
@@ -773,28 +802,7 @@ describe("App", () => {
   })
 
   it("hides the approval dialog immediately after a decision is chosen", async () => {
-    const response = createDeferred<{
-      request: {
-        id: string
-        approvalID: string
-        sessionID: string
-        messageID: string
-        toolCallID: string
-        projectID: string
-        agent: string
-        tool: string
-        toolKind: "read"
-        title: string
-        risk: "medium"
-        status: "approved"
-        input: {
-          path: string
-        }
-        createdAt: number
-        resolvedAt: number
-        resolutionScope: "once"
-      }
-    }>()
+    const response = createDeferred<PermissionResolveResult>()
 
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
@@ -824,64 +832,46 @@ describe("App", () => {
     window.desktop!.getSessionPermissionRequests = vi
       .fn()
       .mockResolvedValueOnce([
-        {
+        createPermissionRequest({
           id: "permission-atlas-1",
           approvalID: "approval-atlas-1",
           sessionID: "session-atlas-review",
           messageID: "message-atlas-1",
           toolCallID: "toolcall-atlas-1",
           projectID: "project-atlas",
-          agent: "plan",
-          tool: "read-file",
-          toolKind: "read",
-          title: "Read repo config",
-          risk: "medium",
-          status: "pending",
-          input: {
-            path: "README.md",
-          },
-          resource: {
-            paths: ["README.md"],
-            workdir: "C:\\Projects\\Atlas\\client",
-          },
           createdAt: 100,
-        },
+          prompt: {
+            details: {
+              paths: ["README.md"],
+              workdir: "C:\\Projects\\Atlas\\client",
+            },
+          },
+        }),
       ])
       .mockResolvedValueOnce([])
     window.desktop!.respondPermissionRequest = vi.fn().mockReturnValue(response.promise)
 
     render(<App />)
 
-    const approvalDialog = await screen.findByRole("dialog", { name: "User confirmation required" })
-    fireEvent.click(within(approvalDialog).getByRole("button", { name: "Approve Read repo config and continue" }))
+    const approvalPanel = await screen.findByRole("region", { name: "Tool approval request" })
+    fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" }))
 
     await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "User confirmation required" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("region", { name: "Tool approval request" })).not.toBeInTheDocument()
     })
     expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
 
-    response.resolve({
-      request: {
+    response.resolve(
+      createPermissionResolveResult({
         id: "permission-atlas-1",
         approvalID: "approval-atlas-1",
         sessionID: "session-atlas-review",
         messageID: "message-atlas-1",
         toolCallID: "toolcall-atlas-1",
         projectID: "project-atlas",
-        agent: "plan",
-        tool: "read-file",
-        toolKind: "read",
-        title: "Read repo config",
-        risk: "medium",
-        status: "approved",
-        input: {
-          path: "README.md",
-        },
         createdAt: 100,
-        resolvedAt: 120,
-        resolutionScope: "once",
-      },
-    })
+      }),
+    )
 
     await waitFor(() => {
       expect(window.desktop!.getSessionPermissionRequests).toHaveBeenNthCalledWith(2, {

@@ -113,6 +113,66 @@ function tableExists(tableName: string): boolean {
   return result.count > 0;
 }
 
+function tableColumns(tableName: string): string[] {
+  if (!tableExists(tableName)) return []
+
+  const rows = db
+    .prepare(`PRAGMA table_info("${tableName}");`)
+    .all() as Array<{ name?: string }>
+
+  return rows
+    .map((row) => (typeof row.name === "string" ? row.name : ""))
+    .filter((name) => name.length > 0)
+}
+
+function toAddColumnSQL(tableName: string, column: SQLiteColumnDef): string {
+  const parts: string[] = [`ALTER TABLE "${tableName}" ADD COLUMN "${column.name}"`, column.type]
+
+  if (column.unique) {
+    throw new Error(`ALTER TABLE does not support adding UNIQUE column "${column.name}" safely.`)
+  }
+
+  if (column.primaryKey) {
+    throw new Error(`ALTER TABLE does not support adding PRIMARY KEY column "${column.name}".`)
+  }
+
+  if (!column.nullable) {
+    if (column.defaultValue === undefined) {
+      throw new Error(`Cannot add NOT NULL column "${column.name}" without a default value.`)
+    }
+
+    parts.push("NOT NULL")
+  }
+
+  if (column.defaultValue !== undefined) {
+    const value =
+      typeof column.defaultValue === "string"
+        ? `'${column.defaultValue.replaceAll("'", "''")}'`
+        : String(column.defaultValue)
+    parts.push(`DEFAULT ${value}`)
+  }
+
+  return `${parts.join(" ")};`
+}
+
+function syncTableColumnsWithZodObject<T extends z.ZodRawShape>(
+  tableName: string,
+  schema: z.ZodObject<T>,
+): void {
+  if (!tableExists(tableName)) {
+    createTableByZodObject(tableName, schema)
+    return
+  }
+
+  const existing = new Set(tableColumns(tableName).map((column) => column.toLowerCase()))
+  const definitions = zodObjectToColumnDefs(schema)
+
+  for (const column of Object.values(definitions)) {
+    if (existing.has(column.name.toLowerCase())) continue
+    db.run(toAddColumnSQL(tableName, column))
+  }
+}
+
 
 /**将业务层对象转换为 SQLite 可存储的扁平记录
  *
@@ -1056,6 +1116,7 @@ function deleteAll(tableName: string): number {
 export {
   createTableByZodObject,
   createTableByZodDiscriminatedUnion,
+  syncTableColumnsWithZodObject,
   tableExists,
 
   insertOne,
@@ -1094,5 +1155,4 @@ export {
 }
 
 // #endregion
-
 

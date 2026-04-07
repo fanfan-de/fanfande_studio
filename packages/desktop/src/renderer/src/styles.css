@@ -1796,24 +1796,20 @@ textarea::placeholder {
   color: #b14537;
 }
 
-.permission-request-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(23, 35, 47, 0.18);
-  backdrop-filter: blur(6px);
+.permission-request-turn {
+  animation: rise-in 220ms ease;
 }
 
-.permission-request-modal {
-  width: min(100%, 640px);
+.permission-request-inline {
   display: grid;
   gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(166, 186, 208, 0.46);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 247, 255, 0.92) 100%);
+  box-shadow: 0 16px 36px rgba(46, 81, 118, 0.09);
 }
 
-.permission-request-modal-header,
+.permission-request-inline-header,
 .permission-request-header,
 .permission-request-footer,
 .permission-request-badges {
@@ -1823,19 +1819,16 @@ textarea::placeholder {
   gap: 12px;
 }
 
-.permission-request-modal-header h2,
+.permission-request-inline-header h3,
 .permission-request-header h3 {
   margin: 4px 0 0;
   line-height: 1.1;
   color: #17232f;
 }
 
-.permission-request-modal-header h2 {
-  font-size: 26px;
-}
-
+.permission-request-inline-header h3,
 .permission-request-header h3 {
-  font-size: 22px;
+  font-size: 20px;
 }
 
 .permission-request-card {
@@ -1847,16 +1840,29 @@ textarea::placeholder {
   gap: 16px;
 }
 
+.permission-request-inline .permission-request-card {
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.96);
+}
+
 .permission-request-subtitle,
+.permission-request-rationale,
 .permission-request-note,
+.permission-request-inline-copy,
 .permission-request-error {
   margin: 0;
   line-height: 1.55;
 }
 
 .permission-request-subtitle,
-.permission-request-note {
+.permission-request-rationale,
+.permission-request-note,
+.permission-request-inline-copy {
   color: #526375;
+}
+
+.permission-request-rationale {
+  font-size: 13px;
 }
 
 .permission-request-error {
@@ -1935,6 +1941,41 @@ textarea::placeholder {
 
 .permission-request-controls {
   display: grid;
+  gap: 10px;
+}
+
+.permission-request-disclosure {
+  border: 1px solid rgba(166, 186, 208, 0.34);
+  background: #f8fbff;
+}
+
+.permission-request-disclosure summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4b6074;
+}
+
+.permission-request-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.permission-request-disclosure[open] summary {
+  border-bottom: 1px solid rgba(166, 186, 208, 0.3);
+}
+
+.permission-request-disclosure[open] .permission-request-grid,
+.permission-request-disclosure[open] .permission-request-memory-actions {
+  padding: 12px;
+}
+
+.permission-request-memory-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -2345,11 +2386,11 @@ body.is-resizing-sidebar * {
     grid-template-columns: 1fr;
   }
 
-  .permission-request-overlay {
-    padding: 12px;
+  .permission-request-inline {
+    padding: 16px;
   }
 
-  .permission-request-modal-header,
+  .permission-request-inline-header,
   .permission-request-header,
   .permission-request-footer {
     flex-direction: column;

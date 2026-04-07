@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+import type { PermissionRequestPrompt, PermissionResolveInput, PermissionResolveResult } from "../../shared/permission"
+
 export {}
 
 declare global {
@@ -166,69 +168,9 @@ declare global {
         }>
       >
       getSessionPermissionRequests?: (input: { sessionID: string }) => Promise<
-        Array<{
-          id: string
-          approvalID: string
-          sessionID: string
-          messageID: string
-          toolCallID: string
-          projectID: string
-          agent: string
-          tool: string
-          toolKind?: "read" | "write" | "search" | "exec" | "other"
-          title?: string
-          risk: "low" | "medium" | "high" | "critical"
-          status: "pending" | "approved" | "denied" | "expired"
-          input: Record<string, unknown>
-          resource?: {
-            paths?: string[]
-            command?: string
-            workdir?: string
-          }
-          createdAt: number
-          resolvedAt?: number
-          resolutionScope?: "once" | "session" | "project" | "forever"
-          resolutionReason?: string
-        }>
+        PermissionRequestPrompt[]
       >
-      respondPermissionRequest?: (input: {
-        requestID: string
-        approved: boolean
-        scope?: "once" | "session" | "project" | "forever"
-        reason?: string
-        resume?: boolean
-      }) => Promise<{
-        request: {
-          id: string
-          approvalID: string
-          sessionID: string
-          messageID: string
-          toolCallID: string
-          projectID: string
-          agent: string
-          tool: string
-          toolKind?: "read" | "write" | "search" | "exec" | "other"
-          title?: string
-          risk: "low" | "medium" | "high" | "critical"
-          status: "pending" | "approved" | "denied" | "expired"
-          input: Record<string, unknown>
-          resource?: {
-            paths?: string[]
-            command?: string
-            workdir?: string
-          }
-          createdAt: number
-          resolvedAt?: number
-          resolutionScope?: "once" | "session" | "project" | "forever"
-          resolutionReason?: string
-        }
-        rule?: {
-          id: string
-          scope: "global" | "project" | "session"
-          effect: "allow" | "deny" | "ask"
-        }
-        resumed?: unknown
-      }>
+      respondPermissionRequest?: (input: PermissionResolveInput) => Promise<PermissionResolveResult>
       getGlobalProviderCatalog?: () => Promise<
         Array<{
           id: string

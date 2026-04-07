@@ -9,6 +9,7 @@ import type {
   AgentProviderModel,
   AgentProjectDeleteResult,
   AgentProjectInfo,
+  AgentPermissionResolveResult,
   AgentPermissionRequest,
   AgentProjectWorkspace,
   AgentSessionHistoryMessage,
@@ -296,7 +297,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   ipcMain.handle("desktop:get-session-permission-requests", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
     const result = await requestAgentJSON<AgentPermissionRequest[]>(
-      `/api/permissions/requests?status=pending&sessionID=${encodeURIComponent(sessionID)}`,
+      `/api/permissions/requests?status=pending&view=prompt&sessionID=${encodeURIComponent(sessionID)}`,
     )
 
     return result.data
@@ -308,36 +309,26 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       _event,
       input: {
         requestID: string
-        approved: boolean
-        scope?: "once" | "session" | "project" | "forever"
-        reason?: string
+        decision: "allow-once" | "allow-session" | "allow-project" | "allow-forever" | "deny"
+        note?: string
         resume?: boolean
       },
     ) => {
       const requestID = input.requestID.trim()
-      const pathname = input.approved
-        ? `/api/permissions/requests/${encodeURIComponent(requestID)}/approve`
-        : `/api/permissions/requests/${encodeURIComponent(requestID)}/deny`
-
-      const result = await requestAgentJSON<{
-        request: AgentPermissionRequest
-        rule?: {
-          id: string
-          scope: "global" | "project" | "session"
-          effect: "allow" | "deny" | "ask"
-        }
-        resumed?: unknown
-      }>(pathname, {
+      const result = await requestAgentJSON<AgentPermissionResolveResult>(
+        `/api/permissions/requests/${encodeURIComponent(requestID)}/resolve`,
+        {
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          scope: input.scope ?? "once",
-          reason: input.reason?.trim() || undefined,
+          decision: input.decision,
+          note: input.note?.trim() || undefined,
           resume: input.resume ?? true,
         }),
-      })
+      },
+      )
 
       return result.data
     },

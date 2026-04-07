@@ -370,6 +370,21 @@ export const ApplyPatchTool = Tool.define(
       parameters: z.object({
         patch: z.string().min(1).describe("Unified diff text (Git format) containing one or more file patches."),
       }),
+      describeApproval: (parameters, ctx) => {
+        const filePatches = parseUnifiedDiff(parameters.patch)
+        const touched = filePatches.flatMap((filePatch) => [filePatch.oldPath, filePatch.newPath])
+          .filter((value): value is string => typeof value === "string" && value.length > 0)
+        const uniquePaths = [...new Set(touched)]
+
+        return {
+          title: "Apply patch",
+          summary: `Apply a patch touching ${uniquePaths.length} file(s).`,
+          details: {
+            paths: uniquePaths,
+            workdir: ctx.cwd,
+          },
+        }
+      },
       execute: async (parameters) => {
         const filePatches = parseUnifiedDiff(parameters.patch)
         const actions: ApplyAction[] = []

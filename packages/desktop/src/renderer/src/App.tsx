@@ -1,7 +1,6 @@
 import {
   CanvasTopMenu,
   Composer,
-  PermissionRequestDialog,
   SettingsPage,
   Sidebar,
   SidebarResizer,
@@ -137,8 +136,13 @@ export function App() {
           <CanvasTopMenu />
           <ThreadView
             activeSession={activeSession}
+            isResolvingPermissionRequest={isResolvingPermissionRequest}
+            pendingPermissionRequests={activePendingPermissionRequests}
+            permissionRequestActionError={permissionRequestActionError}
+            permissionRequestActionRequestID={permissionRequestActionRequestID}
             activeTurns={activeTurns}
             threadColumnRef={threadColumnRef}
+            onPermissionRequestResponse={handlePermissionRequestResponse}
           />
           <Composer
             agentMode={composerAgentMode}
@@ -178,15 +182,6 @@ export function App() {
           onSaveProvider={saveProvider}
           onSaveSelection={saveSelection}
           onSelectionChange={setSelectionDraftValue}
-        />
-
-        <PermissionRequestDialog
-          activeSession={activeSession}
-          isResolvingPermissionRequest={isResolvingPermissionRequest}
-          pendingPermissionRequests={activePendingPermissionRequests}
-          permissionRequestActionError={permissionRequestActionError}
-          permissionRequestActionRequestID={permissionRequestActionRequestID}
-          onPermissionRequestResponse={handlePermissionRequestResponse}
         />
       </main>
     </div>
