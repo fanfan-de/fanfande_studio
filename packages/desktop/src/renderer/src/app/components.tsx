@@ -21,7 +21,7 @@ import type {
   AssistantTraceItem,
   ComposerAttachment,
   ComposerModelOption,
-  PermissionApprovalScope,
+  PermissionDecision,
   PermissionRequest,
   ProjectModelSelection,
   ProviderCatalogItem,
@@ -1405,36 +1405,44 @@ export function SettingsPage({
 interface ThreadViewProps {
   activeSession: SessionSummary | null
   activeTurns: Turn[]
+  isResolvingPermissionRequest: boolean
+  pendingPermissionRequests: PermissionRequest[]
+  permissionRequestActionError: string | null
+  permissionRequestActionRequestID: string | null
   threadColumnRef: RefObject<HTMLDivElement | null>
+  onPermissionRequestResponse: PermissionRequestResponseHandler
 }
 
 type PermissionRequestResponseHandler = (input: {
   sessionID: string
   request: PermissionRequest
-  approved: boolean
-  scope: PermissionApprovalScope
-  reason?: string
+  decision: PermissionDecision
+  note?: string
 }) => void | Promise<void>
 
-const permissionScopeOptions: Array<{
-  value: PermissionApprovalScope
-  label: string
-}> = [
-  { value: "once", label: "Once" },
-  { value: "session", label: "Session" },
-  { value: "project", label: "Project" },
-  { value: "forever", label: "Forever" },
-]
+const primaryPermissionDecisions: PermissionDecision[] = ["deny", "allow-once"]
 
-function formatPermissionRiskLabel(risk: PermissionRequest["risk"]) {
+function formatPermissionRiskLabel(risk: PermissionRequest["prompt"]["risk"]) {
   return `${risk} risk`
 }
 
-function summarizePermissionRequest(request: PermissionRequest) {
-  if (request.resource?.command) return request.resource.command
-  if (request.resource?.paths && request.resource.paths.length > 0) return request.resource.paths.join(", ")
-  if (request.title) return request.title
-  return request.tool
+function formatPermissionDecisionLabel(decision: PermissionDecision) {
+  switch (decision) {
+    case "allow-once":
+      return "Allow once"
+    case "allow-session":
+      return "Allow this session"
+    case "allow-project":
+      return "Allow this project"
+    case "allow-forever":
+      return "Allow always"
+    case "deny":
+      return "Deny"
+  }
+}
+
+function isPersistentAllowDecision(decision: PermissionDecision) {
+  return decision === "allow-session" || decision === "allow-project" || decision === "allow-forever"
 }
 
 function TraceItemView({ item }: { item: AssistantTraceItem }) {
@@ -1473,16 +1481,21 @@ function PermissionRequestCard({
   request: PermissionRequest
   onRespond: PermissionRequestResponseHandler
 }) {
-  const [scope, setScope] = useState<PermissionApprovalScope>("once")
-  const detail = summarizePermissionRequest(request)
-  const title = request.title?.trim() || request.tool
+  const title = request.prompt.title.trim()
+  const rememberDecisions = request.prompt.allowedDecisions.filter((decision) => isPersistentAllowDecision(decision))
+  const detailLines = [
+    request.prompt.details?.workdir ? { label: "Workdir", value: request.prompt.details.workdir } : null,
+    request.prompt.details?.command ? { label: "Command", value: request.prompt.details.command } : null,
+    request.prompt.details?.paths && request.prompt.details.paths.length > 0
+      ? { label: "Paths", value: request.prompt.details.paths.join(", ") }
+      : null,
+  ].filter((item): item is { label: string; value: string } => Boolean(item))
 
-  function handleRespond(approved: boolean) {
+  function handleRespond(decision: PermissionDecision) {
     void onRespond({
       sessionID: activeSession.id,
       request,
-      approved,
-      scope,
+      decision,
     })
   }
 
@@ -1492,83 +1505,74 @@ function PermissionRequestCard({
         <div>
           <span className="label">Approval Required</span>
           <h3>{title}</h3>
-          <p className="permission-request-subtitle">{detail}</p>
+          <p className="permission-request-subtitle">{request.prompt.summary}</p>
+          <p className="permission-request-rationale">{request.prompt.rationale}</p>
         </div>
         <div className="permission-request-badges">
-          <span className={`permission-risk-chip is-${request.risk}`}>{formatPermissionRiskLabel(request.risk)}</span>
-          {request.toolKind ? <span className="permission-meta-chip">{request.toolKind}</span> : null}
+          <span className={`permission-risk-chip is-${request.prompt.risk}`}>{formatPermissionRiskLabel(request.prompt.risk)}</span>
         </div>
       </header>
 
-      <div className="permission-request-grid permission-request-grid-compact">
-        <div className="permission-request-meta">
-          <span className="permission-request-meta-label">Tool</span>
-          <strong>{request.tool}</strong>
-        </div>
-        <div className="permission-request-meta">
-          <span className="permission-request-meta-label">Requested</span>
-          <strong>{formatTime(request.createdAt)}</strong>
-        </div>
-        {request.resource?.workdir ? (
-          <div className="permission-request-meta permission-request-meta-wide">
-            <span className="permission-request-meta-label">Workdir</span>
-            <strong>{request.resource.workdir}</strong>
-          </div>
-        ) : null}
-        {request.resource?.command ? (
-          <div className="permission-request-meta permission-request-meta-wide">
-            <span className="permission-request-meta-label">Command</span>
-            <strong>{request.resource.command}</strong>
-          </div>
-        ) : null}
-        {request.resource?.paths && request.resource.paths.length > 0 ? (
-          <div className="permission-request-meta permission-request-meta-wide">
-            <span className="permission-request-meta-label">Paths</span>
-            <strong>{request.resource.paths.join(", ")}</strong>
-          </div>
-        ) : null}
-      </div>
-
       <div className="permission-request-controls">
-        <span className="settings-field-label">Apply decision to</span>
-        <div className="mode-switch permission-scope-switch" role="group" aria-label={`Approval scope for ${title}`}>
-          {permissionScopeOptions.map((option) => (
+        <div className="settings-inline-actions permission-request-actions">
+          {primaryPermissionDecisions.map((decision) => (
             <button
-              key={option.value}
-              aria-pressed={scope === option.value}
-              className={scope === option.value ? "mode-pill is-active" : "mode-pill"}
+              key={decision}
+              className={decision === "allow-once" ? "primary-button" : "secondary-button"}
+              aria-label={`${formatPermissionDecisionLabel(decision)} ${title}`}
               disabled={isResolving}
-              onClick={() => setScope(option.value)}
+              onClick={() => handleRespond(decision)}
               type="button"
             >
-              {option.label}
+              {isResolving ? "Applying..." : formatPermissionDecisionLabel(decision)}
             </button>
           ))}
         </div>
       </div>
 
+      {rememberDecisions.length > 0 ? (
+        <details className="permission-request-disclosure">
+          <summary>Remember this decision</summary>
+          <div className="permission-request-memory-actions">
+            {rememberDecisions.map((decision) => (
+              <button
+                key={decision}
+                className="secondary-button"
+                aria-label={`${formatPermissionDecisionLabel(decision)} ${title}`}
+                disabled={isResolving}
+                onClick={() => handleRespond(decision)}
+                type="button"
+              >
+                {formatPermissionDecisionLabel(decision)}
+              </button>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
+      {request.prompt.detailsAvailable && detailLines.length > 0 ? (
+        <details className="permission-request-disclosure">
+          <summary>View details</summary>
+          <div className="permission-request-grid permission-request-grid-compact">
+            <div className="permission-request-meta">
+              <span className="permission-request-meta-label">Requested</span>
+              <strong>{formatTime(request.createdAt)}</strong>
+            </div>
+            {detailLines.map((item) => (
+              <div
+                key={item.label}
+                className={item.label === "Paths" || item.label === "Command" ? "permission-request-meta permission-request-meta-wide" : "permission-request-meta"}
+              >
+                <span className="permission-request-meta-label">{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
       <div className="permission-request-footer">
         <p className="permission-request-note">The session resumes after this decision is recorded.</p>
-        <div className="settings-inline-actions permission-request-actions">
-          <button
-            className="secondary-button"
-            aria-label={`Deny ${title} and continue`}
-            disabled={isResolving}
-            onClick={() => handleRespond(false)}
-            type="button"
-          >
-            {isResolving ? "Applying..." : "Deny and continue"}
-          </button>
-          <button
-            className="primary-button"
-            aria-label={`Approve ${title} and continue`}
-            disabled={isResolving}
-            onClick={() => handleRespond(true)}
-            type="button"
-          >
-            {isResolving ? "Applying..." : "Approve and continue"}
-          </button>
-        </div>
       </div>
 
       {actionError ? <p className="permission-request-error">{actionError}</p> : null}
@@ -1576,7 +1580,7 @@ function PermissionRequestCard({
   )
 }
 
-interface PermissionRequestDialogProps {
+interface PermissionRequestInlinePromptProps {
   activeSession: SessionSummary | null
   isResolvingPermissionRequest: boolean
   pendingPermissionRequests: PermissionRequest[]
@@ -1585,26 +1589,27 @@ interface PermissionRequestDialogProps {
   onPermissionRequestResponse: PermissionRequestResponseHandler
 }
 
-export function PermissionRequestDialog({
+function PermissionRequestInlinePrompt({
   activeSession,
   isResolvingPermissionRequest,
   pendingPermissionRequests,
   permissionRequestActionError,
   permissionRequestActionRequestID,
   onPermissionRequestResponse,
-}: PermissionRequestDialogProps) {
+}: PermissionRequestInlinePromptProps) {
   if (!activeSession || isResolvingPermissionRequest || pendingPermissionRequests.length === 0) return null
 
   const [request] = pendingPermissionRequests
   const remainingCount = pendingPermissionRequests.length - 1
 
   return (
-    <section className="permission-request-overlay" role="presentation">
-      <div className="permission-request-modal" role="dialog" aria-modal="true" aria-labelledby="permission-request-title">
-        <header className="permission-request-modal-header">
+    <article className="turn assistant-turn permission-request-turn">
+      <section className="permission-request-inline" role="region" aria-labelledby="permission-request-title">
+        <header className="permission-request-inline-header">
           <div>
             <span className="label">Tool Approval</span>
-            <h2 id="permission-request-title">User confirmation required</h2>
+            <h3 id="permission-request-title">Tool approval request</h3>
+            <p className="permission-request-inline-copy">Confirm or deny this tool call directly in the thread shell.</p>
           </div>
           {remainingCount > 0 ? (
             <span className="settings-badge permission-request-count">
@@ -1625,15 +1630,20 @@ export function PermissionRequestDialog({
           request={request}
           onRespond={onPermissionRequestResponse}
         />
-      </div>
-    </section>
+      </section>
+    </article>
   )
 }
 
 export function ThreadView({
   activeSession,
   activeTurns,
+  isResolvingPermissionRequest,
+  pendingPermissionRequests,
+  permissionRequestActionError,
+  permissionRequestActionRequestID,
   threadColumnRef,
+  onPermissionRequestResponse,
 }: ThreadViewProps) {
   return (
     <section className="thread-shell">
@@ -1666,33 +1676,42 @@ export function ThreadView({
         ) : (
           <>
             {activeTurns.map((turn) => {
-            if (turn.kind === "user") {
+              if (turn.kind === "user") {
+                return (
+                  <article key={turn.id} className="turn user-turn">
+                    <div className="turn-meta">
+                      <span>You</span>
+                      <time>{formatTime(turn.timestamp)}</time>
+                    </div>
+                    <div className="user-bubble">{turn.text}</div>
+                  </article>
+                )
+              }
+
+              const visibleItems = turn.items.filter((item) => item.kind !== "system")
+              if (visibleItems.length === 0) return null
+
               return (
-                <article key={turn.id} className="turn user-turn">
-                  <div className="turn-meta">
-                    <span>You</span>
-                    <time>{formatTime(turn.timestamp)}</time>
+                <article key={turn.id} className="turn assistant-turn">
+                  <div className={turn.isStreaming ? "assistant-shell is-streaming" : "assistant-shell"}>
+                    <div className="assistant-trace-list">
+                      {visibleItems.map((item) => (
+                        <TraceItemView key={item.id} item={item} />
+                      ))}
+                    </div>
                   </div>
-                  <div className="user-bubble">{turn.text}</div>
                 </article>
               )
-            }
-
-            const visibleItems = turn.items.filter((item) => item.kind !== "system")
-            if (visibleItems.length === 0) return null
-
-            return (
-              <article key={turn.id} className="turn assistant-turn">
-                <div className={turn.isStreaming ? "assistant-shell is-streaming" : "assistant-shell"}>
-                  <div className="assistant-trace-list">
-                    {visibleItems.map((item) => (
-                      <TraceItemView key={item.id} item={item} />
-                    ))}
-                  </div>
-                </div>
-              </article>
-            )
             })}
+
+            <PermissionRequestInlinePrompt
+              activeSession={activeSession}
+              isResolvingPermissionRequest={isResolvingPermissionRequest}
+              pendingPermissionRequests={pendingPermissionRequests}
+              permissionRequestActionError={permissionRequestActionError}
+              permissionRequestActionRequestID={permissionRequestActionRequestID}
+              onPermissionRequestResponse={onPermissionRequestResponse}
+            />
           </>
         )}
       </div>

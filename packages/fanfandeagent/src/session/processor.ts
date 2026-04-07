@@ -517,14 +517,23 @@ export function create(input: {
 
                                 break;
                             case "tool-approval-request":
+                                const approvalToolCallID =
+                                    value.toolCall?.toolCallId ??
+                                    (value as { toolCallId?: string }).toolCallId
+                                if (!approvalToolCallID) {
+                                    log.warn("tool approval request arrived without a tool call id", {
+                                        approvalId: value.approvalId,
+                                    })
+                                    break
+                                }
                                 if (
-                                    toolcalls[value.toolCallId] &&
+                                    toolcalls[approvalToolCallID] &&
                                     (
-                                        toolcalls[value.toolCallId]?.state.status === "running" ||
-                                        toolcalls[value.toolCallId]?.state.status === "pending"
+                                        toolcalls[approvalToolCallID]?.state.status === "running" ||
+                                        toolcalls[approvalToolCallID]?.state.status === "pending"
                                     )
                                 ) {
-                                    const current = toolcalls[value.toolCallId]!
+                                    const current = toolcalls[approvalToolCallID]!
                                     const waiting: Message.ToolPart = {
                                         ...current,
                                         state: {
@@ -547,7 +556,7 @@ export function create(input: {
                                         metadata: current.metadata,
                                     }
 
-                                    toolcalls[value.toolCallId] = waiting
+                                    toolcalls[approvalToolCallID] = waiting
                                     await Session.updatePart(waiting)
                                     await Permission.registerApprovalRequest({
                                         assistant: {

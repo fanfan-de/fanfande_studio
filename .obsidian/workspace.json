@@ -13,13 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/fanfandeagent/src/tool/bash.spec.md",
+                "file": "todo.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "bash.spec"
+              "title": "todo"
             }
           }
         ]
@@ -188,26 +188,27 @@
   },
   "active": "35980b6fcb97707f",
   "lastOpenFiles": [
+    "packages/desktop/electron.vite.config.1775570216147.mjs",
+    "packages/fanfandeagent/test_file.txt",
+    "packages/desktop/electron.vite.config.1775559723393.mjs",
+    "packages/desktop/src/shared/permission.ts",
+    "packages/desktop/src/shared",
+    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
+    "packages/desktop/electron.vite.config.1775555985308.mjs",
+    "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
+    "packages/fanfandeagent/src/tool/bash.spec.md",
+    "packages/desktop/electron.vite.config.1775555237925.mjs",
+    "packages/desktop/electron.vite.config.1775554917096.mjs",
     "packages/fanfandeagent/Test/prompt.unresolved-tool.test.ts",
     "packages/desktop/electron.vite.config.1775554356626.mjs",
     "packages/desktop/electron.vite.config.1775554172047.mjs",
-    "packages/fanfandeagent/agent_local_data.db-shm",
-    "packages/fanfandeagent/agent_local_data.db-wal",
-    "packages/fanfandeagent/agent_local_data.db",
-    "packages/desktop/electron.vite.config.1775554115288.mjs",
-    "packages/desktop/electron.vite.config.1775553918721.mjs",
-    "packages/desktop/electron.vite.config.1775553660652.mjs",
-    "packages/desktop/electron.vite.config.1775551259371.mjs",
-    "packages/fanfandeagent/Test/prompt.loop.test.ts",
     "packages/fanfandeagent/src/tool/spec.md",
     "packages/fanfandeagent/src/tool/AGENTS.md",
     "packages/fanfandeagent/src/permission/spec.md",
-    "packages/fanfandeagent/src/tool/bash.spec.md",
     "packages/fanfandeagent/src/permission/temp.md",
     "packages/fanfandeagent/src/permission/spec.outdated.md",
     "todo.md",
     "daily/2026-04-06.md",
-    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
     "2026-04-06.md",
     "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/README.md",
     "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/node_modules/@ai-sdk/provider-utils/src/to-json-schema/zod3-to-json-schema/README.md",
@@ -223,7 +224,6 @@
     "packages/fanfandeagent/src/session/SESSION_ARCHITECTURE.md",
     "packages/fanfandeagent/todo.md",
     "packages/fanfandeagent/CODING_RULES.md",
-    "packages/fanfandeagent/WORKFLOW.md",
     "Pasted image 20260405013212.png",
     "packages/fanfandedesktop/exports/BkxtC.png",
     "packages/fanfandeagent/docs/data-dictionary/assets/icons.svg",

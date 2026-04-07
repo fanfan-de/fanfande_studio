@@ -170,8 +170,7 @@ test("permission approval can complete a waiting read-file tool call without res
     })
 
     const resolved = await Permission.resolveRequest(request.id, {
-      approved: true,
-      scope: "once",
+      decision: "allow-once",
     })
 
     expect(resolved.request.status).toBe("approved")

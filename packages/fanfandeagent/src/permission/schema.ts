@@ -16,6 +16,11 @@ export const ApprovalScope = z.enum(["once", "session", "project", "forever"]).m
 })
 export type ApprovalScope = z.infer<typeof ApprovalScope>
 
+export const Decision = z.enum(["allow-once", "allow-session", "allow-project", "allow-forever", "deny"]).meta({
+  ref: "PermissionDecision",
+})
+export type Decision = z.infer<typeof Decision>
+
 export const RequestStatus = z.enum(["pending", "approved", "denied", "expired"]).meta({
   ref: "PermissionRequestStatus",
 })
@@ -97,6 +102,48 @@ export const RequestResource = z
   })
 export type RequestResource = z.infer<typeof RequestResource>
 
+export const RequestPrompt = z
+  .object({
+    title: z.string(),
+    summary: z.string(),
+    rationale: z.string(),
+    risk: Risk,
+    detailsAvailable: z.boolean(),
+    details: RequestResource.optional(),
+    allowedDecisions: z.array(Decision),
+    recommendedDecision: Decision,
+  })
+  .meta({
+    ref: "PermissionRequestPrompt",
+  })
+export type RequestPrompt = z.infer<typeof RequestPrompt>
+
+export const RequestRuntime = z
+  .object({
+    tool: z.string(),
+    toolKind: ToolKind.optional(),
+    input: z.record(z.string(), z.any()),
+    resource: RequestResource.optional(),
+  })
+  .meta({
+    ref: "PermissionRequestRuntime",
+  })
+export type RequestRuntime = z.infer<typeof RequestRuntime>
+
+export const RequestResolutionRecord = z
+  .object({
+    decision: Decision,
+    note: z.string().optional(),
+    approved: z.boolean(),
+    scope: ApprovalScope.optional(),
+    resolvedAt: z.number(),
+    createdRuleID: Identifier.schema("permission").optional(),
+  })
+  .meta({
+    ref: "PermissionRequestResolutionRecord",
+  })
+export type RequestResolutionRecord = z.infer<typeof RequestResolutionRecord>
+
 export const Request = z
   .object({
     id: Identifier.schema("permission"),
@@ -113,10 +160,13 @@ export const Request = z
     status: RequestStatus,
     input: z.record(z.string(), z.any()),
     resource: RequestResource.optional(),
+    prompt: RequestPrompt.optional(),
+    runtime: RequestRuntime.optional(),
     createdAt: z.number(),
     resolvedAt: z.number().optional(),
     resolutionScope: ApprovalScope.optional(),
     resolutionReason: z.string().optional(),
+    resolution: RequestResolutionRecord.optional(),
   })
   .meta({
     ref: "PermissionRequest",
@@ -125,14 +175,32 @@ export type Request = z.infer<typeof Request>
 
 export const RequestResolution = z
   .object({
-    approved: z.boolean(),
-    scope: ApprovalScope.default("once"),
-    reason: z.string().optional(),
+    decision: Decision,
+    note: z.string().optional(),
   })
   .meta({
     ref: "PermissionRequestResolution",
   })
 export type RequestResolution = z.infer<typeof RequestResolution>
+
+export const RequestPromptView = z
+  .object({
+    id: Identifier.schema("permission"),
+    approvalID: z.string(),
+    sessionID: Identifier.schema("session"),
+    messageID: Identifier.schema("message"),
+    toolCallID: z.string(),
+    projectID: z.string(),
+    agent: z.string(),
+    status: RequestStatus,
+    createdAt: z.number(),
+    prompt: RequestPrompt,
+    resolution: RequestResolutionRecord.optional(),
+  })
+  .meta({
+    ref: "PermissionRequestPromptView",
+  })
+export type RequestPromptView = z.infer<typeof RequestPromptView>
 
 export const Audit = z
   .object({

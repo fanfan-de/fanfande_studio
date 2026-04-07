@@ -10,13 +10,34 @@ import type { AppEnv } from "#server/types.ts"
 const ListRequestsQuery = z.object({
   status: Permission.RequestStatus.optional(),
   sessionID: z.string().optional(),
+  view: z.enum(["prompt", "full"]).optional(),
 })
 
-const RespondBody = Permission.RequestResolution.omit({
-  approved: true,
-}).extend({
+const ResolveBody = Permission.RequestResolution.extend({
   resume: z.boolean().optional(),
 })
+
+const LegacyRespondBody = z.object({
+  scope: Permission.ApprovalScope.optional(),
+  reason: z.string().optional(),
+  resume: z.boolean().optional(),
+})
+
+function decisionFromLegacy(approved: boolean, scope?: Permission.ApprovalScope): Permission.Decision {
+  if (!approved) return "deny"
+
+  switch (scope) {
+    case "session":
+      return "allow-session"
+    case "project":
+      return "allow-project"
+    case "forever":
+      return "allow-forever"
+    case "once":
+    default:
+      return "allow-once"
+  }
+}
 
 function safeReadSession(sessionID: string) {
   try {
@@ -79,7 +100,9 @@ export function PermissionsRoutes() {
 
     return c.json({
       success: true,
-      data: await Permission.listRequests(query.data),
+      data: query.data.view === "full"
+        ? await Permission.listRequests(query.data)
+        : await Permission.listRequestPrompts(query.data),
       requestId: c.get("requestId"),
     })
   })
@@ -100,15 +123,14 @@ export function PermissionsRoutes() {
 
   app.post("/requests/:id/approve", async (c) => {
     const id = c.req.param("id")
-    const payload = RespondBody.safeParse(await c.req.json().catch(() => ({})))
+    const payload = LegacyRespondBody.safeParse(await c.req.json().catch(() => ({})))
     if (!payload.success) {
       throw new ApiError(400, "INVALID_PAYLOAD", "Body must contain a valid approval response")
     }
 
     const resolved = await Permission.resolveRequest(id, {
-      approved: true,
-      scope: payload.data.scope,
-      reason: payload.data.reason,
+      decision: decisionFromLegacy(true, payload.data.scope),
+      note: payload.data.reason,
     }).catch((error) => {
       throw new ApiError(400, "PERMISSION_REQUEST_RESOLUTION_FAILED", error instanceof Error ? error.message : String(error))
     })
@@ -130,6 +152,7 @@ export function PermissionsRoutes() {
       success: true,
       data: {
         ...resolved,
+        request: await Permission.getRequestPrompt(resolved.request.id),
         resumed,
       },
       requestId: c.get("requestId"),
@@ -138,15 +161,14 @@ export function PermissionsRoutes() {
 
   app.post("/requests/:id/deny", async (c) => {
     const id = c.req.param("id")
-    const payload = RespondBody.safeParse(await c.req.json().catch(() => ({})))
+    const payload = LegacyRespondBody.safeParse(await c.req.json().catch(() => ({})))
     if (!payload.success) {
       throw new ApiError(400, "INVALID_PAYLOAD", "Body must contain a valid denial response")
     }
 
     const resolved = await Permission.resolveRequest(id, {
-      approved: false,
-      scope: payload.data.scope,
-      reason: payload.data.reason,
+      decision: decisionFromLegacy(false, payload.data.scope),
+      note: payload.data.reason,
     }).catch((error) => {
       throw new ApiError(400, "PERMISSION_REQUEST_RESOLUTION_FAILED", error instanceof Error ? error.message : String(error))
     })
@@ -168,6 +190,45 @@ export function PermissionsRoutes() {
       success: true,
       data: {
         ...resolved,
+        request: await Permission.getRequestPrompt(resolved.request.id),
+        resumed,
+      },
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/requests/:id/resolve", async (c) => {
+    const id = c.req.param("id")
+    const payload = ResolveBody.safeParse(await c.req.json().catch(() => ({})))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must contain a valid permission decision")
+    }
+
+    const resolved = await Permission.resolveRequest(id, {
+      decision: payload.data.decision,
+      note: payload.data.note,
+    }).catch((error) => {
+      throw new ApiError(400, "PERMISSION_REQUEST_RESOLUTION_FAILED", error instanceof Error ? error.message : String(error))
+    })
+
+    let resumed: unknown
+    if (payload.data.resume) {
+      const session = safeReadSession(resolved.request.sessionID)
+      if (!session) {
+        throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${resolved.request.sessionID}' not found`)
+      }
+
+      resumed = await Instance.provide({
+        directory: session.directory,
+        fn: () => Prompt.resume({ sessionID: session.id }),
+      })
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        ...resolved,
+        request: await Permission.getRequestPrompt(resolved.request.id),
         resumed,
       },
       requestId: c.get("requestId"),

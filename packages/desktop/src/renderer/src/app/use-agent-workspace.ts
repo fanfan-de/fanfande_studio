@@ -21,7 +21,7 @@ import type {
   AgentStreamIPCEvent,
   ComposerAttachment,
   ComposerModelOption,
-  PermissionApprovalScope,
+  PermissionDecision,
   PermissionRequest,
   PendingAgentStream,
   ProviderModel,
@@ -358,7 +358,7 @@ export function useAgentWorkspace({
     if (!threadColumn) return
 
     threadColumn.scrollTop = threadColumn.scrollHeight
-  }, [activeSessionID, activeTurns])
+  }, [activeSessionID, activeTurns, activePendingPermissionRequests.length, permissionRequestActionRequestID])
 
   function removeWorkspaceSessionState(workspace: WorkspaceGroup) {
     const sessionIDs = new Set(workspace.sessions.map((session) => session.id))
@@ -705,9 +705,8 @@ export function useAgentWorkspace({
   async function handlePermissionRequestResponse(input: {
     sessionID: string
     request: PermissionRequest
-    approved: boolean
-    scope: PermissionApprovalScope
-    reason?: string
+    decision: PermissionDecision
+    note?: string
   }) {
     const respondPermissionRequest = window.desktop?.respondPermissionRequest
     const resumeAgentMessageStream = window.desktop?.resumeAgentMessageStream
@@ -730,9 +729,8 @@ export function useAgentWorkspace({
     try {
       await respondPermissionRequest({
         requestID: input.request.id,
-        approved: input.approved,
-        scope: input.scope,
-        reason: input.reason?.trim() || undefined,
+        decision: input.decision,
+        note: input.note?.trim() || undefined,
         resume: !canStreamResume,
       })
       requestResolved = true
@@ -746,7 +744,7 @@ export function useAgentWorkspace({
 
       if (resumeAgentMessageStream) {
         const streamID = createID("stream")
-        const streamingTurn = buildStreamingAssistantTurn(input.approved ? "Continue after approval" : "Continue after denial")
+        const streamingTurn = buildStreamingAssistantTurn(input.decision === "deny" ? "Continue after denial" : "Continue after approval")
         pendingStreamsRef.current[streamID] = {
           sessionID: input.sessionID,
           assistantTurnID: streamingTurn.id,

@@ -134,6 +134,22 @@ export const ExecCommandTool = Tool.define(
           return "No bash executable was found."
         }
       },
+      describeApproval: (parameters, ctx) => {
+        const cwd = parameters.workdir
+          ? resolveToolPath(parameters.workdir)
+          : resolveToolPath(ctx.cwd ?? Instance.directory)
+        const displayCwd = toDisplayPath(cwd)
+
+        return {
+          title: parameters.description?.trim() || "Run shell command",
+          summary: `Run a shell command in ${displayCwd}.`,
+          details: {
+            command: parameters.command.trim(),
+            workdir: displayCwd,
+            paths: [displayCwd],
+          },
+        }
+      },
       authorize: (parameters) => {
         const command = parameters.command.trim()
         if (!parameters.allowUnsafe && DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command))) {

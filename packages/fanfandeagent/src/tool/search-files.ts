@@ -32,6 +32,17 @@ export const SearchFilesTool = Tool.define(
         maxResults: z.number().int().positive().max(500).optional().describe("Maximum number of matches to return."),
         includeHidden: z.boolean().optional().describe("Include dotfiles and hidden folders."),
       }),
+      describeApproval: (parameters, ctx) => {
+        const resolved = resolveToolPath(parameters.path ?? ".")
+        return {
+          title: `Search for ${parameters.query}`,
+          summary: `Search ${toDisplayPath(resolved)} for matches of "${parameters.query}".`,
+          details: {
+            paths: [toDisplayPath(resolved)],
+            workdir: ctx.cwd,
+          },
+        }
+      },
       execute: async (parameters) => {
         const basePath = resolveToolPath(parameters.path ?? ".")
         const stats = await Bun.file(basePath).stat().catch(() => undefined)

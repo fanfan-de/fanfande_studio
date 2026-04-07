@@ -12,6 +12,17 @@ export const WriteFileTool = Tool.define(
         path: z.string().min(1).describe("Absolute or project-relative file path."),
         content: z.string().describe("Full file contents to write."),
       }),
+      describeApproval: (parameters, ctx) => {
+        const resolved = resolveToolPath(parameters.path)
+        return {
+          title: `Write ${toDisplayPath(resolved)}`,
+          summary: `Overwrite ${toDisplayPath(resolved)} with new file contents.`,
+          details: {
+            paths: [toDisplayPath(resolved)],
+            workdir: ctx.cwd,
+          },
+        }
+      },
       execute: async (parameters) => {
         const resolved = resolveToolPath(parameters.path)
         const result = await writeTextFile(parameters.path, parameters.content)

@@ -45,4 +45,7 @@ provider界面信息优化
 // await Session.updatePart(currentText)会不会本地IO过于繁重
 
 
+认知/注意力资源是非常重要的
+
+
 

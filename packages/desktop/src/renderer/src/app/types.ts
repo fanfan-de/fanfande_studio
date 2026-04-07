@@ -1,13 +1,31 @@
+import type {
+  PermissionDecision,
+  PermissionPromptDetails,
+  PermissionPromptSnapshot,
+  PermissionRequestPrompt as PermissionRequest,
+  PermissionRequestResolutionRecord,
+  PermissionRequestStatus,
+  PermissionRisk,
+  PermissionToolKind,
+} from "../../../shared/permission"
+
+export type {
+  PermissionDecision,
+  PermissionPromptDetails,
+  PermissionPromptSnapshot,
+  PermissionRequest,
+  PermissionRequestResolutionRecord,
+  PermissionRequestStatus,
+  PermissionRisk,
+  PermissionToolKind,
+}
+
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type TitlebarMenuKey = "file" | "edit" | "view" | "window" | "help"
 export type SidebarActionKey = "project" | "sort" | "new"
 export type CanvasMenuKey = "overview" | "artifacts" | "changes" | "console" | "deploy"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
-export type PermissionRequestStatus = "pending" | "approved" | "denied" | "expired"
-export type PermissionApprovalScope = "once" | "session" | "project" | "forever"
-export type PermissionRisk = "low" | "medium" | "high" | "critical"
-export type PermissionToolKind = "read" | "write" | "search" | "exec" | "other"
 
 export interface SessionSummary {
   id: string
@@ -128,33 +146,6 @@ export interface AgentStreamEvent {
 
 export interface AgentStreamIPCEvent extends AgentStreamEvent {
   streamID: string
-}
-
-export interface PermissionRequestResource {
-  paths?: string[]
-  command?: string
-  workdir?: string
-}
-
-export interface PermissionRequest {
-  id: string
-  approvalID: string
-  sessionID: string
-  messageID: string
-  toolCallID: string
-  projectID: string
-  agent: string
-  tool: string
-  toolKind?: PermissionToolKind
-  title?: string
-  risk: PermissionRisk
-  status: PermissionRequestStatus
-  input: Record<string, unknown>
-  resource?: PermissionRequestResource
-  createdAt: number
-  resolvedAt?: number
-  resolutionScope?: PermissionApprovalScope
-  resolutionReason?: string
 }
 
 export interface PendingAgentStream {
