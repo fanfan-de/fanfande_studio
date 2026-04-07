@@ -3,11 +3,61 @@ import * as  Log from "#util/log.ts"
 import * as LLM from '#session/llm.ts';
 import * as Message from "#session/message.ts"
 import * as  Identifier from "#id/id.ts";
+import { Instance } from "#project/instance.ts"
+import * as Permission from "#permission/permission.ts"
 import { ZodDate } from "zod";
 import { matchedRoutes } from "hono/route";
 import * as Session from "#session/session.ts"
 
 const log = Log.create({ service: "session.processor" })
+const STREAM_PART_PERSIST_INTERVAL_MS = 100
+
+type StreamPersistedPart = Message.TextPart | Message.ReasoningPart
+
+function createStreamPartPersister() {
+    const state = new Map<string, {
+        dirty: boolean
+        lastPersistedAt: number
+    }>()
+
+    async function flush(part: StreamPersistedPart) {
+        const current = state.get(part.id)
+        if (!current?.dirty) {
+            return
+        }
+
+        await Session.updatePart(part)
+        current.dirty = false
+        current.lastPersistedAt = Date.now()
+        state.set(part.id, current)
+    }
+
+    async function persist(part: StreamPersistedPart, force = false) {
+        const current = state.get(part.id) ?? {
+            dirty: false,
+            lastPersistedAt: 0,
+        }
+
+        current.dirty = true
+        state.set(part.id, current)
+
+        if (!force && Date.now() - current.lastPersistedAt < STREAM_PART_PERSIST_INTERVAL_MS) {
+            return
+        }
+
+        await flush(part)
+    }
+
+    function clear(partID: string) {
+        state.delete(partID)
+    }
+
+    return {
+        persist,
+        flush,
+        clear,
+    }
+}
 
 function normalizeToolError(error: unknown): string {
     if (error instanceof Error && error.message) {
@@ -97,14 +147,15 @@ function extractToolResultState(
     }
 }
 
-/**鍒涘缓涓€涓?
- * 
+/**
+ * create a  processor（handle single LLM prompt，not loop）
+ * 不仅仅是LLM端的stream输出过程，还包括工具的执行过程
  * @param input 
  * @returns 
  */
 export function create(input: {
     Assistant: Message.Assistant
-    //abort: AbortSignal
+    abort?: AbortSignal
 }) {
     const toolcalls: Record<string, Message.ToolPart> = {}
     let snapshot: string | undefined
@@ -120,14 +171,55 @@ export function create(input: {
             return toolcalls[toolCallID]
         },
         async process(streamInput: LLM.StreamInput) {
+            const failOpenToolCalls = async (reason: string) => {
+                const end = Date.now()
+
+                for (const [toolCallID, current] of Object.entries(toolcalls)) {
+                    if (
+                        current.state.status === "completed" ||
+                        current.state.status === "error" ||
+                        current.state.status === "denied" ||
+                        current.state.status === "waiting-approval"
+                    ) {
+                        continue
+                    }
+
+                    const start =
+                        current.state.status === "running"
+                            ? current.state.time.start
+                            : end
+
+                    const failed: Message.ToolPart = {
+                        ...current,
+                        state: {
+                            status: "error",
+                            input: current.state.input,
+                            error: reason,
+                            metadata:
+                                current.state.status === "running"
+                                    ? current.state.metadata ?? {}
+                                    : current.metadata ?? {},
+                            time: {
+                                start,
+                                end,
+                            },
+                        },
+                    }
+
+                    toolcalls[toolCallID] = failed
+                    await Session.updatePart(failed)
+                }
+            }
+
             while (true) {
                 try {
                     const stream = await LLM.stream(streamInput)
-                     let currentText: Message.TextPart | undefined = undefined
-                     //鏌愪簺妯″瀷锛堝 Claude銆丟emini锛夋敮鎸佸涓苟琛屾帹鐞嗛摼鎴栧祵濂楁帹鐞?
-                     let reasoningMap: Record<string, Message.ReasoningPart> = {}
-                      for await (const value of stream.fullStream) {
-                         switch (value.type) {
+                    const streamPartPersister = createStreamPartPersister()
+                    let currentText: Message.TextPart | undefined = undefined
+                    // 某些模型（如 Claude、Gemini）支持多个并行推理链或嵌套推理，按 id 分开跟踪
+                    let reasoningMap: Record<string, Message.ReasoningPart> = {}
+                    for await (const value of stream.fullStream) {
+                        switch (value.type) {
                             case "text-start":
                                 currentText = {
                                     id: Identifier.ascending("part"),
@@ -149,8 +241,10 @@ export function create(input: {
                                         currentText.time.end = Date.now()
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
-                                    //灏唒art鍐欏叆瀛樺偍
-                                    await Session.updatePart(currentText)
+                                    // 将 part 写入存储
+                                    await streamPartPersister.persist(currentText, true)
+                                    streamPartPersister.clear(currentText.id)
+                                    currentText = undefined
                                     process.stdout.write("\n")
 
                                 }
@@ -161,7 +255,7 @@ export function create(input: {
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
 
-                                    await Session.updatePart(currentText)
+                                    await streamPartPersister.persist(currentText)
                                     process.stdout.write(value.text)
                                 }
                                 break;
@@ -195,8 +289,9 @@ export function create(input: {
                                         }
                                         if (value.providerMetadata) part!.metadata = value.providerMetadata
 
-                                        await Session.updatePart(part)
-                                        delete reasoningMap[value.id]//宸茬粡瀛樼洏锛屽唴瀛樺彲浠ュ垹闄や簡
+                                        await streamPartPersister.persist(part, true)
+                                        streamPartPersister.clear(part.id)
+                                        delete reasoningMap[value.id] // 已经存盘，内存可以删除了
                                     }
                                 }
                                 process.stdout.write("\n")
@@ -206,7 +301,7 @@ export function create(input: {
                                     const part = reasoningMap[value.id]
                                     part!.text += value.text
                                     if (value.providerMetadata) part!.metadata = value.providerMetadata
-                                    await Session.updatePart(part!)
+                                    await streamPartPersister.persist(part!)
                                     process.stdout.write(value.text)
                                 }
                                 break
@@ -249,12 +344,12 @@ export function create(input: {
                             case "file":
                                 break;
                             case 'tool-call':
-                                // value.toolCallId 宸ュ叿璋冪敤ID
-                                // value.toolName 宸ュ叿鍚嶇О
-                                // value.args 宸ュ叿鍙傛暟
+                                // value.toolCallId 工具调用 ID
+                                // value.toolName 工具名称
+                                // value.args 工具参数
                                 const match = toolcalls[value.toolCallId]
                                 if (match) {
-                                    //鏇存柊宸ュ叿璋冪敤鐘舵€佸埌鈥滆繍琛屼腑鈥?
+                                    // 更新工具调用状态到“运行中”
                                     const part: Message.ToolPart = {
                                         ...match,
                                         tool: value.toolName,
@@ -337,6 +432,43 @@ export function create(input: {
                                 }
                                 break;
                             case "tool-output-denied":
+                                if (
+                                    toolcalls[value.toolCallId] &&
+                                    (
+                                        toolcalls[value.toolCallId]?.state.status === "running" ||
+                                        toolcalls[value.toolCallId]?.state.status === "waiting-approval"
+                                    )
+                                ) {
+                                    const current = toolcalls[value.toolCallId]!
+                                    const start =
+                                        current.state.status === "waiting-approval"
+                                            ? current.state.time.start
+                                            : (current.state as Message.ToolStateRunning).time.start
+
+                                    const match: Message.ToolPart = {
+                                        ...current,
+                                        state: {
+                                            status: "denied",
+                                            approvalID:
+                                                current.state.status === "waiting-approval"
+                                                    ? current.state.approvalID
+                                                    : undefined,
+                                            input: current.state.input,
+                                            reason: "Tool execution was denied.",
+                                            metadata:
+                                                current.state.status === "waiting-approval"
+                                                    ? current.state.metadata
+                                                    : (current.state as Message.ToolStateRunning).metadata,
+                                            time: {
+                                                start,
+                                                end: Date.now(),
+                                            },
+                                        },
+                                    }
+
+                                    toolcalls[value.toolCallId] = match
+                                    await Session.updatePart(match)
+                                }
                                 break;
                             case "start-step":
                                 break;
@@ -344,52 +476,109 @@ export function create(input: {
                                 //SessionStatus.set(input.sessionID, { type: "busy" })
                                 //console.log(value)
                                 break;
-                             case 'finish':
+                            case 'finish':
 
-                                 // 澶勭悊瀹屾垚浜嬩欢
-                                 // value.finishReason 瀹屾垚鍘熷洜
-                                 // value.usage 浣跨敤缁熻锛坱oken鏁伴噺绛夛級
-                                 // TODO: 鏇存柊娑堟伅鐨勫畬鎴愮姸鎬佸拰鏃堕棿
-                                 // TODO: 璁板綍浣跨敤缁熻鍜岃璐逛俊鎭?
-                                 // TODO: 鍙戦€佸畬鎴愪簨浠堕€氱煡 UI
-                                 // TODO: 鍙兘闇€瑕佽Е鍙戞秷鎭帇缂╋紙compaction锛?
-                                 this.message.finishReason = value.finishReason
-                                 break;
+                                // 处理完成事件
+                                // value.finishReason 完成原因
+                                // value.usage 使用统计（token 数量等）
+                                // TODO: 更新消息的完成状态和时间
+                                // TODO: 记录使用统计和计费信息
+                                // TODO: 发送完成事件通知 UI
+                                // TODO: 可能需要触发消息压缩（compaction）
+                                this.message.finishReason = value.finishReason
+                                break;
                             case "abort":
 
                                 break;
                             case "raw":
                                 break;
-                             case 'error':
-                                 // 澶勭悊閿欒浜嬩欢
-                                 // value.error 閿欒淇℃伅
-                                 // TODO: 璁板綍閿欒鍒版秷鎭殑 error 瀛楁
-                                 // TODO: 鏇存柊鏁版嵁搴撲腑鐨勯敊璇姸鎬?
-                                 // TODO: 鏍规嵁閿欒绫诲瀷鍐冲畾鏄惁閲嶈瘯锛堝鍔?attempt锛?
-                                 // TODO: 鍙戦€侀敊璇簨浠堕€氱煡 UI
-                                 console.log("processor: error event received:", value.error)
-                                 log.error("stream error", { error: value.error })
-                                 break;
+                            case 'error':
+                                // 处理错误事件
+                                // value.error 错误信息
+                                // TODO: 记录错误到消息的 error 字段
+                                // TODO: 更新数据库中的错误状态
+                                // TODO: 根据错误类型决定是否重试（增加 attempt）
+                                // TODO: 发送错误事件通知 UI
+                                console.log("processor: error event received:", value.error)
+                                log.error("stream error", { error: value.error })
+                                break;
                             case "finish-step":
-                                //鎺ユ敹鍒拌繖涓獀alue锛岃鏄嶭LM鍒ゆ柇缁撴潫React loop
+                                // 接收到这个 value，说明 LLM 判断结束 React loop
                                 console.log(value.finishReason)
                                 this.message.finishReason = value.finishReason
 
 
                                 break;
                             case "tool-approval-request":
+                                const approvalToolCallId =
+                                    "toolCallId" in value
+                                        ? value.toolCallId
+                                        : value.toolCall.toolCallId
+                                if (
+                                    toolcalls[approvalToolCallId] &&
+                                    (
+                                        toolcalls[approvalToolCallId]?.state.status === "running" ||
+                                        toolcalls[approvalToolCallId]?.state.status === "pending"
+                                    )
+                                ) {
+                                    const current = toolcalls[approvalToolCallId]!
+                                    const waiting: Message.ToolPart = {
+                                        ...current,
+                                        state: {
+                                            status: "waiting-approval",
+                                            approvalID: value.approvalId,
+                                            input: current.state.input,
+                                            title:
+                                                current.state.status === "running"
+                                                    ? current.state.title
+                                                    : undefined,
+                                            metadata:
+                                                (current.state.status === "running" ? current.state.metadata : undefined),
+                                            time: {
+                                                start:
+                                                    current.state.status === "running"
+                                                        ? current.state.time.start
+                                                        : Date.now(),
+                                            },
+                                        },
+                                        metadata: current.metadata,
+                                    }
+
+                                    toolcalls[approvalToolCallId] = waiting
+                                    await Session.updatePart(waiting)
+                                    await Permission.registerApprovalRequest({
+                                        assistant: {
+                                            ...input.Assistant,
+                                            path: {
+                                                cwd: input.Assistant.path.cwd || Instance.directory,
+                                                root: input.Assistant.path.root || Instance.worktree,
+                                            },
+                                        },
+                                        toolPart: waiting,
+                                    })
+                                    blocked = true
+                                }
                                 break;
                             default:
-                                // 澶勭悊鏈煡浜嬩欢绫诲瀷
+                                // 处理未知事件类型
                                 log.warn(`Unknown stream value type: ${(value as any).type}`);
                                 break;
-                       }
-                      }
-                  }
-                  catch  (e: any){
-                      log.error("processor failure", { error: e.message, stack: e.stack })
-                      throw e  // 閲嶆柊鎶涘嚭閿欒
-                  }
+                        }
+                    }
+
+                    if (currentText) {
+                        await streamPartPersister.flush(currentText)
+                    }
+
+                    for (const part of Object.values(reasoningMap)) {
+                        await streamPartPersister.flush(part)
+                    }
+                }
+                catch (e: any) {
+                    await failOpenToolCalls(normalizeToolError(e))
+                    log.error("processor failure", { error: e.message, stack: e.stack })
+                    throw e  // 重新抛出错误
+                }
                 if (needsCompaction) return "compact"
                 if (blocked) return "stop"
                 if (input.Assistant.error) return "stop"
@@ -399,6 +588,3 @@ export function create(input: {
     }
     return result
 }
-
-
-

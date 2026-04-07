@@ -4,6 +4,7 @@ import * as Log from "#util/log.ts"
 import * as db from "#database/Sqlite.ts"
 import { toCreateTableSQL, withPrimaryKey, zodObjectToColumnDefs } from "#database/parser.ts"
 import { DevModel, DevProvider } from "#provider/modelsdev.ts"
+import * as Permission from "#permission/schema.ts"
 
 const log = Log.create({ service: "config" })
 export const GLOBAL_CONFIG_ID = "__global__"
@@ -125,6 +126,7 @@ export const Info = z
       .optional(),
     instructions: z.array(z.string()).optional().describe("Additional instruction files or patterns to include"),
     tools: z.record(z.string(), z.boolean()).optional(),
+    permission: Permission.Config.optional(),
     enterprise: z
       .object({
         url: z.string().optional().describe("Enterprise URL"),
@@ -186,6 +188,7 @@ export const Info = z
     ref: "Config",
   })
 export type Info = z.output<typeof Info>
+export const PermissionConfig = Permission.Config
 
 const ProjectConfigRecord = z.object({
   projectID: z.string(),

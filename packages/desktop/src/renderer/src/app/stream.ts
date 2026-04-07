@@ -169,13 +169,27 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
     const state = readRecord(part.state)
     const rawStatus = readString(state?.status)
     const status: AssistantTraceStatus =
-      rawStatus === "completed" ? "completed" : rawStatus === "error" ? "error" : rawStatus === "pending" ? "pending" : "running"
+      rawStatus === "completed"
+        ? "completed"
+        : rawStatus === "error"
+          ? "error"
+          : rawStatus === "pending"
+            ? "pending"
+            : rawStatus === "waiting-approval"
+              ? "waiting-approval"
+              : rawStatus === "denied"
+                ? "denied"
+                : "running"
     const toolName = readString(part.tool) || "Tool"
     const detail =
       status === "completed"
         ? describeStructuredValue(state?.output, "Tool completed.")
         : status === "error"
           ? readString(state?.error) || "Tool failed."
+          : status === "denied"
+            ? readString(state?.reason) || "Tool execution was denied."
+            : status === "waiting-approval"
+              ? "Waiting for permission approval before the tool can continue."
           : readString(state?.title) || describeStructuredValue(state?.input, "Tool update received.")
 
     return createTraceItem({
@@ -338,6 +352,8 @@ function extractTextParts(parts: unknown[]) {
 function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]) {
   const error = readRecord(info.error)
   if (error) return "Backend request failed"
+  if (items.some((item) => item.status === "waiting-approval")) return "Waiting for permission approval"
+  if (items.some((item) => item.status === "denied")) return "Tool execution denied"
   if (items.some((item) => item.status === "running" || item.status === "pending")) return "Backend response in progress"
   if (items.some((item) => item.kind === "text")) return "Backend response received"
   if (items.some((item) => item.kind === "tool")) return "Tool history restored"

@@ -80,6 +80,25 @@ export function NavPlaceholderIcon() {
   )
 }
 
+export function ConnectedStatusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.25" />
+      <path d="M8.75 12.25 10.9 14.4 15.4 9.9" />
+    </svg>
+  )
+}
+
+export function DisconnectedStatusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.25" />
+      <path d="m9.5 9.5 5 5" />
+      <path d="m14.5 9.5-5 5" />
+    </svg>
+  )
+}
+
 export function DeleteIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">

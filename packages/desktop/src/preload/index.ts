@@ -46,6 +46,7 @@ try {
         error?: string
       }>,
     pickProjectDirectory: () => ipcRenderer.invoke("desktop:pick-project-directory") as Promise<string | null>,
+    pickComposerAttachments: () => ipcRenderer.invoke("desktop:pick-composer-attachments") as Promise<string[]>,
     listFolderWorkspaces: () =>
       ipcRenderer.invoke("desktop:list-folder-workspaces") as Promise<
         Array<{
@@ -177,6 +178,72 @@ try {
           parts: unknown[]
         }>
       >,
+    getSessionPermissionRequests: (input: { sessionID: string }) =>
+      ipcRenderer.invoke("desktop:get-session-permission-requests", input) as Promise<
+        Array<{
+          id: string
+          approvalID: string
+          sessionID: string
+          messageID: string
+          toolCallID: string
+          projectID: string
+          agent: string
+          tool: string
+          toolKind?: "read" | "write" | "search" | "exec" | "other"
+          title?: string
+          risk: "low" | "medium" | "high" | "critical"
+          status: "pending" | "approved" | "denied" | "expired"
+          input: Record<string, unknown>
+          resource?: {
+            paths?: string[]
+            command?: string
+            workdir?: string
+          }
+          createdAt: number
+          resolvedAt?: number
+          resolutionScope?: "once" | "session" | "project" | "forever"
+          resolutionReason?: string
+        }>
+      >,
+    respondPermissionRequest: (input: {
+      requestID: string
+      approved: boolean
+      scope?: "once" | "session" | "project" | "forever"
+      reason?: string
+      resume?: boolean
+    }) =>
+      ipcRenderer.invoke("desktop:respond-permission-request", input) as Promise<{
+        request: {
+          id: string
+          approvalID: string
+          sessionID: string
+          messageID: string
+          toolCallID: string
+          projectID: string
+          agent: string
+          tool: string
+          toolKind?: "read" | "write" | "search" | "exec" | "other"
+          title?: string
+          risk: "low" | "medium" | "high" | "critical"
+          status: "pending" | "approved" | "denied" | "expired"
+          input: Record<string, unknown>
+          resource?: {
+            paths?: string[]
+            command?: string
+            workdir?: string
+          }
+          createdAt: number
+          resolvedAt?: number
+          resolutionScope?: "once" | "session" | "project" | "forever"
+          resolutionReason?: string
+        }
+        rule?: {
+          id: string
+          scope: "global" | "project" | "session"
+          effect: "allow" | "deny" | "ask"
+        }
+        resumed?: unknown
+      }>,
     getGlobalProviderCatalog: () =>
       ipcRenderer.invoke("desktop:get-global-provider-catalog") as Promise<
         Array<{

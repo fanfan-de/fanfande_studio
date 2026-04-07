@@ -51,7 +51,7 @@
 | --- | --- | --- | --- | --- |
 | `getAgentHealth()` | `desktop:agent-health` | `GET /healthz` | 已实现 | 检查 agent 服务是否可达 |
 | `listFolderWorkspaces()` | `desktop:list-folder-workspaces` | `GET /api/projects` + `GET /api/projects/:id/sessions` | 已实现 | 启动时拉取文件夹工作区树 |
-| `openFolderWorkspace({ directory })` | `desktop:open-folder-workspace` | `POST /api/projects` + 再次执行 `listFolderWorkspaces()` | 已实现 | 从目录创建/打开项目，并返回目标文件夹工作区 |
+| `openFolderWorkspace({ directory })` | `desktop:open-folder-workspace` | `POST /api/projects` + `GET /api/projects/:id/sessions` | 已实现 | 从目录创建/打开项目，并返回目标文件夹工作区 |
 | `createFolderSession({ projectID, directory, title? })` | `desktop:create-folder-session` | `POST /api/projects/:id/sessions` | 已实现 | 在当前文件夹工作区下新增持久化 session |
 | `deleteAgentSession({ sessionID })` | `desktop:delete-agent-session` | `DELETE /api/sessions/:id` | 已实现 | 删除单个 session 及其消息 |
 | `getSessionHistory({ sessionID })` | `desktop:get-session-history` | `GET /api/sessions/:id/messages` | 已实现 | 拉取当前 session 的历史消息 |
@@ -168,7 +168,7 @@ interface AgentStreamIPCEvent extends AgentSSEEvent {
 3. preload 转发到 `desktop:list-folder-workspaces`。
 4. main 先请求 `GET /api/projects`。
 5. main 再为每个 project 请求 `GET /api/projects/:id/sessions`。
-6. main 根据 project 的 `sandboxes` 和 session 的 `directory` 组装 `AgentFolderWorkspace[]`。
+6. main 仅根据 session 的 `directory` 组装启动时的 `AgentFolderWorkspace[]`；`sandboxes` 不再参与 sidebar 恢复。
 7. renderer 用 `mapLoadedWorkspaces()` 写入侧栏。
 8. 如果失败，保留本地 `seedWorkspaces`。
 
@@ -180,8 +180,8 @@ interface AgentStreamIPCEvent extends AgentSSEEvent {
 2. renderer 调 `pickProjectDirectory()`。
 3. 用户选中目录后，renderer 调 `openFolderWorkspace({ directory })`。
 4. main 先 `POST /api/projects`，确保该目录对应的 project 存在。
-5. main 再执行一次 `listFolderWorkspaces()`，从最新数据中找到对应目录的文件夹工作区。
-6. renderer 把结果插入本地 `workspaces`，并切到新工作区。
+5. main 再请求该 project 的 session 列表，并按目标 `directory` 组装 folder workspace。
+6. 如果该目录还没有 session，main 返回一个空 session 列表的临时 folder workspace；renderer 再把结果插入本地 `workspaces` 并切到新工作区。
 
 ### 5.3 在当前文件夹下创建 session
 

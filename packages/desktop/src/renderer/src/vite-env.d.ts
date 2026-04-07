@@ -32,6 +32,7 @@ declare global {
         error?: string
       }>
       pickProjectDirectory?: () => Promise<string | null>
+      pickComposerAttachments?: () => Promise<string[]>
       listFolderWorkspaces?: () => Promise<
         Array<{
           id: string
@@ -164,6 +165,70 @@ declare global {
           parts: unknown[]
         }>
       >
+      getSessionPermissionRequests?: (input: { sessionID: string }) => Promise<
+        Array<{
+          id: string
+          approvalID: string
+          sessionID: string
+          messageID: string
+          toolCallID: string
+          projectID: string
+          agent: string
+          tool: string
+          toolKind?: "read" | "write" | "search" | "exec" | "other"
+          title?: string
+          risk: "low" | "medium" | "high" | "critical"
+          status: "pending" | "approved" | "denied" | "expired"
+          input: Record<string, unknown>
+          resource?: {
+            paths?: string[]
+            command?: string
+            workdir?: string
+          }
+          createdAt: number
+          resolvedAt?: number
+          resolutionScope?: "once" | "session" | "project" | "forever"
+          resolutionReason?: string
+        }>
+      >
+      respondPermissionRequest?: (input: {
+        requestID: string
+        approved: boolean
+        scope?: "once" | "session" | "project" | "forever"
+        reason?: string
+        resume?: boolean
+      }) => Promise<{
+        request: {
+          id: string
+          approvalID: string
+          sessionID: string
+          messageID: string
+          toolCallID: string
+          projectID: string
+          agent: string
+          tool: string
+          toolKind?: "read" | "write" | "search" | "exec" | "other"
+          title?: string
+          risk: "low" | "medium" | "high" | "critical"
+          status: "pending" | "approved" | "denied" | "expired"
+          input: Record<string, unknown>
+          resource?: {
+            paths?: string[]
+            command?: string
+            workdir?: string
+          }
+          createdAt: number
+          resolvedAt?: number
+          resolutionScope?: "once" | "session" | "project" | "forever"
+          resolutionReason?: string
+        }
+        rule?: {
+          id: string
+          scope: "global" | "project" | "session"
+          effect: "allow" | "deny" | "ask"
+        }
+        resumed?: unknown
+      }>
       getGlobalProviderCatalog?: () => Promise<
         Array<{
           id: string

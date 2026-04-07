@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { App } from "./App"
 
@@ -44,14 +44,38 @@ describe("App", () => {
         baseURL: "http://127.0.0.1:4096",
       }),
       pickProjectDirectory: vi.fn().mockResolvedValue(null),
+      pickComposerAttachments: vi.fn().mockResolvedValue([]),
       listFolderWorkspaces: vi.fn().mockRejectedValue(new Error("backend unavailable")),
       openFolderWorkspace: vi.fn(),
       createFolderSession: vi.fn(),
       deleteProjectWorkspace: vi.fn(),
       deleteAgentSession: vi.fn(),
       getSessionHistory: vi.fn().mockResolvedValue([]),
+      getSessionPermissionRequests: vi.fn().mockResolvedValue([]),
+      respondPermissionRequest: vi.fn().mockResolvedValue({
+        request: {
+          id: "permission-1",
+          approvalID: "approval-1",
+          sessionID: "session-backend",
+          messageID: "message-1",
+          toolCallID: "toolcall-1",
+          projectID: "project-backend",
+          agent: "plan",
+          tool: "read-file",
+          risk: "medium",
+          status: "approved",
+          input: {
+            path: "README.md",
+          },
+          createdAt: 1,
+        },
+      }),
       getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
       getGlobalModels: vi.fn().mockResolvedValue({
+        items: [],
+        selection: {},
+      }),
+      getProjectModels: vi.fn().mockResolvedValue({
         items: [],
         selection: {},
       }),
@@ -71,6 +95,7 @@ describe("App", () => {
       updateGlobalModelSelection: vi.fn().mockResolvedValue({
         model: "deepseek/deepseek-reasoner",
       }),
+      updateProjectModelSelection: vi.fn().mockResolvedValue({}),
       createAgentSession: vi.fn().mockResolvedValue({
         session: {
           id: "session-backend",
@@ -107,6 +132,10 @@ describe("App", () => {
       expect(container.querySelector(".signal-row")).not.toBeInTheDocument()
     })
     expect(screen.getByRole("textbox", { name: "Task draft" }).closest("footer")).toHaveClass("prompt-input-shell")
+    expect(screen.getByRole("button", { name: "Add image or file" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Model:/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Agent mode:/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
   })
 
   it("loads folder and session lists into the sidebar on startup", async () => {
@@ -304,6 +333,190 @@ describe("App", () => {
       })
       expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(2, {
         sessionID: "session-atlas-followup",
+      })
+    })
+  })
+
+  it("shows pending permission requests for the active session and blocks sending until resolved", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([])
+    window.desktop!.getSessionPermissionRequests = vi.fn().mockResolvedValue([
+      {
+        id: "permission-atlas-1",
+        approvalID: "approval-atlas-1",
+        sessionID: "session-atlas-review",
+        messageID: "message-atlas-1",
+        toolCallID: "toolcall-atlas-1",
+        projectID: "project-atlas",
+        agent: "plan",
+        tool: "read-file",
+        toolKind: "read",
+        title: "Read repo config",
+        risk: "medium",
+        status: "pending",
+        input: {
+          path: "README.md",
+        },
+        resource: {
+          paths: ["README.md"],
+          workdir: "C:\\Projects\\Atlas\\client",
+        },
+        createdAt: 100,
+      },
+    ])
+
+    render(<App />)
+
+    expect(await screen.findByRole("heading", { name: "Read repo config" })).toBeInTheDocument()
+    expect(screen.getAllByText("README.md").length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Approve Read repo config and continue" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Deny Read repo config and continue" })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(window.desktop!.getSessionPermissionRequests).toHaveBeenCalledWith({
+        sessionID: "session-atlas-review",
+      })
+    })
+  })
+
+  it("approves a pending permission request, resumes the session, and refreshes history", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          info: {
+            id: "msg-assistant-2",
+            sessionID: "session-atlas-review",
+            role: "assistant",
+            created: 111,
+          },
+          parts: [{ id: "part-text-2", type: "text", text: "Approval recorded and session resumed." }],
+        },
+      ])
+    window.desktop!.getSessionPermissionRequests = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "permission-atlas-1",
+          approvalID: "approval-atlas-1",
+          sessionID: "session-atlas-review",
+          messageID: "message-atlas-1",
+          toolCallID: "toolcall-atlas-1",
+          projectID: "project-atlas",
+          agent: "plan",
+          tool: "read-file",
+          toolKind: "read",
+          title: "Read repo config",
+          risk: "medium",
+          status: "pending",
+          input: {
+            path: "README.md",
+          },
+          resource: {
+            paths: ["README.md"],
+            workdir: "C:\\Projects\\Atlas\\client",
+          },
+          createdAt: 100,
+        },
+      ])
+      .mockResolvedValueOnce([])
+    window.desktop!.respondPermissionRequest = vi.fn().mockResolvedValue({
+      request: {
+        id: "permission-atlas-1",
+        approvalID: "approval-atlas-1",
+        sessionID: "session-atlas-review",
+        messageID: "message-atlas-1",
+        toolCallID: "toolcall-atlas-1",
+        projectID: "project-atlas",
+        agent: "plan",
+        tool: "read-file",
+        toolKind: "read",
+        title: "Read repo config",
+        risk: "medium",
+        status: "approved",
+        input: {
+          path: "README.md",
+        },
+        createdAt: 100,
+        resolvedAt: 120,
+        resolutionScope: "once",
+      },
+    })
+
+    render(<App />)
+
+    const reasonInput = await screen.findByRole("textbox", { name: "Decision reason for Read repo config" })
+    fireEvent.change(reasonInput, {
+      target: {
+        value: "Allow this read.",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Approve Read repo config and continue" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.respondPermissionRequest).toHaveBeenCalledWith({
+        requestID: "permission-atlas-1",
+        approved: true,
+        scope: "once",
+        reason: "Allow this read.",
+        resume: true,
+      })
+    })
+    expect(await screen.findByText("Approval recorded and session resumed.")).toBeInTheDocument()
+    await waitFor(() => {
+      expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(2, {
+        sessionID: "session-atlas-review",
+      })
+      expect(window.desktop!.getSessionPermissionRequests).toHaveBeenNthCalledWith(2, {
+        sessionID: "session-atlas-review",
       })
     })
   })
@@ -511,17 +724,6 @@ describe("App", () => {
   it("opens global provider settings", async () => {
     window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
       {
-        id: "deepseek",
-        name: "DeepSeek",
-        source: "config",
-        env: ["DEEPSEEK_API_KEY"],
-        configured: true,
-        available: true,
-        apiKeyConfigured: true,
-        baseURL: "https://api.deepseek.com",
-        modelCount: 1,
-      },
-      {
         id: "openai",
         name: "OpenAI",
         source: "api",
@@ -530,6 +732,17 @@ describe("App", () => {
         available: false,
         apiKeyConfigured: false,
         baseURL: "https://api.openai.com/v1",
+        modelCount: 0,
+      },
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "config",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.deepseek.com",
         modelCount: 1,
       },
     ])
@@ -587,11 +800,31 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^Models/ })).toBeInTheDocument()
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
     expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
+    expect(screen.queryByText("Search providers")).not.toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Search providers" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /DeepSeek.*Connected/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
+    expect(screen.queryByText("Catalog")).not.toBeInTheDocument()
+    expect(screen.queryByText("No known models yet")).not.toBeInTheDocument()
+    expect(screen.queryByText("1 known models")).not.toBeInTheDocument()
     expect(await screen.findByRole("heading", { name: "Provider Configuration" })).toBeInTheDocument()
+    const detailHero = settingsDialog.querySelector(".settings-detail-hero")
+    expect(detailHero).not.toBeNull()
+    expect(within(detailHero as HTMLElement).queryByText("Saved config")).not.toBeInTheDocument()
+    expect(screen.queryByText("Provider ID")).not.toBeInTheDocument()
+    expect(screen.queryByText("Environment")).not.toBeInTheDocument()
+    expect(screen.queryByText("Save shared credentials and endpoint overrides for this provider.")).not.toBeInTheDocument()
+    expect(screen.queryByText("Edit the shared credentials and endpoint the app should use when routing to DeepSeek.")).not.toBeInTheDocument()
+    expect(screen.queryByText("Reset removes the saved provider configuration and falls back to environment or catalog defaults.")).not.toBeInTheDocument()
     expect(screen.getByLabelText("API key for DeepSeek")).toBeInTheDocument()
+
+    const providerList = screen.getByRole("list", { name: "Provider list" })
+    const providerButtons = within(providerList).getAllByRole("button")
+    expect(providerButtons[0]).toHaveTextContent("DeepSeek")
+    expect(providerButtons[1]).toHaveTextContent("OpenAI")
+    expect(within(providerList).queryByText("Connected")).not.toBeInTheDocument()
+    expect(within(providerList).queryByText("Not connected")).not.toBeInTheDocument()
+    expect(providerList.querySelectorAll(".settings-status-indicator")).toHaveLength(2)
 
     fireEvent.click(screen.getByRole("button", { name: /^Models/ }))
 
@@ -603,6 +836,49 @@ describe("App", () => {
       expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalledTimes(1)
       expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it("keeps provider configuration focused on editable fields for environment-backed providers", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "env",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.deepseek.com",
+        modelCount: 1,
+      },
+    ])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [],
+      selection: {},
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+
+    const settingsDialog = await screen.findByRole("dialog", { name: "Settings" })
+    await screen.findByRole("heading", { name: "Provider Configuration" })
+
+    const detailPanel = settingsDialog.querySelector(".settings-service-detail-panel")
+    expect(detailPanel).not.toBeNull()
+    expect((detailPanel as HTMLElement).querySelector(".settings-detail-meta-grid")).toBeNull()
+
+    const detailHero = (detailPanel as HTMLElement).querySelector(".settings-detail-hero")
+    expect(detailHero).not.toBeNull()
+    expect(within(detailHero as HTMLElement).queryByText("Environment")).not.toBeInTheDocument()
+    expect(
+      within(detailPanel as HTMLElement).queryByText(
+        "Edit the shared credentials and endpoint the app should use when routing to DeepSeek.",
+      ),
+    ).not.toBeInTheDocument()
+    expect(
+      within(detailPanel as HTMLElement).queryByText("This provider can also inherit credentials from the current environment."),
+    ).not.toBeInTheDocument()
   })
 
   it("saves provider overrides from the settings page", async () => {
@@ -991,6 +1267,167 @@ describe("App", () => {
     expect(await screen.findByText("Model settings saved.")).toBeInTheDocument()
   })
 
+  it("updates the active project model selection from the composer menu", async () => {
+    window.desktop!.getProjectModels = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "deepseek-reasoner",
+          providerID: "deepseek",
+          name: "DeepSeek Reasoner",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: true,
+            attachment: false,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+        {
+          id: "gpt-4o-mini",
+          providerID: "openai",
+          name: "GPT-4o mini",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: false,
+            attachment: true,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: true,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+      ],
+      selection: {
+        model: "deepseek/deepseek-reasoner",
+        small_model: "deepseek/deepseek-reasoner",
+      },
+    })
+    window.desktop!.updateProjectModelSelection = vi.fn().mockResolvedValue({
+      model: "openai/gpt-4o-mini",
+      small_model: "deepseek/deepseek-reasoner",
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Model: DeepSeek Reasoner" }))
+    fireEvent.click(screen.getByRole("button", { name: "GPT-4o mini" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updateProjectModelSelection).toHaveBeenCalledWith({
+        projectID: "project-2",
+        model: "openai/gpt-4o-mini",
+        small_model: "deepseek/deepseek-reasoner",
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "Model: GPT-4o mini" })).toBeInTheDocument()
+  })
+
+  it("adds composer attachments and includes them in agent requests", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.pickComposerAttachments = vi.fn().mockResolvedValue([
+      "C:\\Refs\\hero.png",
+      "C:\\Refs\\brief.pdf",
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Add image or file" }))
+
+    expect(await screen.findByText("hero.png")).toBeInTheDocument()
+    expect(screen.getByText("brief.pdf")).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Use the references to refine the layout",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
+        sessionID: "session-backend",
+        text:
+          "Use the references to refine the layout\n\nAttached files:\n- hero.png: C:\\Refs\\hero.png\n- brief.pdf: C:\\Refs\\brief.pdf",
+        system: undefined,
+      })
+    })
+  })
+
+  it("sends review mode prompts with review system instructions", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent mode: Autopilot" }))
+    fireEvent.click(screen.getByRole("button", { name: "Review" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Audit the toolbar changes",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send task" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
+        sessionID: "session-backend",
+        text: "Audit the toolbar changes",
+        system:
+          "Operate in review mode. Prioritize bugs, regressions, risky assumptions, and missing tests. Present findings first and keep the review concise.",
+      })
+    })
+  })
+
   it("deletes a session from the sidebar", async () => {
     window.desktop!.deleteAgentSession = vi.fn().mockResolvedValue({
       sessionID: "session-chat-1",
@@ -1369,6 +1806,18 @@ describe("App", () => {
 
     expect(nonZeroBorderRadii).toEqual(["28px"])
     expect(styles).toMatch(/\.prompt-input-shell\s*\{[^}]*border-radius:\s*28px;/s)
+  })
+
+  it("styles composer selector buttons as bordered controls", () => {
+    expect(styles).toMatch(
+      /\.composer-selector-button\s*\{[^}]*min-height:\s*34px;[^}]*border:\s*1px solid rgba\(166,\s*186,\s*208,\s*0\.42\);[^}]*background:\s*#f5f8fb;/s,
+    )
+    expect(styles).toMatch(
+      /\.composer-selector-button:hover,\s*\.composer-selector-button:focus-visible\s*\{[^}]*border-color:\s*rgba\(22,\s*119,\s*200,\s*0\.28\);/s,
+    )
+    expect(styles).toMatch(
+      /\.composer-menu-panel\s*\{[^}]*bottom:\s*calc\(100%\s*\+\s*8px\);[^}]*max-height:\s*min\(320px,\s*calc\(100dvh - 180px\)\);[^}]*overflow:\s*auto;/s,
+    )
   })
 
   it("gives tool trace items a dedicated visual style", () => {

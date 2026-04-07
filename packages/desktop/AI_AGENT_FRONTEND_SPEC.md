@@ -101,8 +101,8 @@ Settings Page Dialog
 补充说明：
 
 1. 设置页不是固定三栏，而是“一级导航 + 动态内容区”的框架。
-2. `Model Services` 一级项使用“服务商列表栏 + 详情配置区”的双栏布局。
-3. `Default Models` 一级项使用纵向 panel 布局，展示模型选择和可用模型列表。
+2. `Provider` 一级项使用“服务商列表栏 + 详情配置区”的双栏布局。
+3. `Models` 一级项使用纵向 panel 布局，展示模型选择和可用模型列表。
 4. 当前设置页没有嵌套的二级 provider modal，provider 编辑直接发生在右侧详情区。
 
 | 中文业务名          | Canonical Name         | 代码锚点                                                 | 说明                                                      |

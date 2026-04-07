@@ -1,15 +1,15 @@
 import { BrowserWindow, dialog, ipcMain } from "electron"
-import path from "node:path"
 import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
+import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
 import type { ApplicationMenus } from "./menu"
 import type {
   AgentEnvelope,
-  AgentFolderWorkspace,
   AgentProjectModelSelection,
   AgentProviderCatalogItem,
   AgentProviderModel,
   AgentProjectDeleteResult,
   AgentProjectInfo,
+  AgentPermissionRequest,
   AgentProjectWorkspace,
   AgentSessionHistoryMessage,
   AgentStreamIPCEvent,
@@ -42,30 +42,6 @@ function mapSessionInfo(session: AgentSessionInfo) {
   }
 }
 
-function normalizePath(input: string) {
-  const resolved = path.resolve(input)
-  const normalized = path.normalize(resolved)
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized
-}
-
-function getProjectName(project: { name?: string; worktree: string }) {
-  const trimmed = project.name?.trim()
-  if (trimmed) return trimmed
-
-  const fallback = project.worktree.split(/[\\/]/).filter(Boolean).pop()
-  return fallback || "Global"
-}
-
-function getFolderName(directory: string) {
-  const normalized = directory.replace(/[\\/]+$/, "")
-  const fallback = normalized.split(/[\\/]/).filter(Boolean).pop()
-  return fallback || directory
-}
-
-function samePath(left: string, right: string) {
-  return normalizePath(left) === normalizePath(right)
-}
-
 async function loadProjectWorkspace(project: AgentProjectInfo): Promise<AgentProjectWorkspace> {
   const sessionsResult = await requestAgentJSON<AgentSessionInfo[]>(`/api/projects/${encodeURIComponent(project.id)}/sessions`)
 
@@ -89,47 +65,7 @@ async function listProjectWorkspaces() {
 async function listFolderWorkspaces() {
   const result = await requestAgentJSON<AgentProjectInfo[]>("/api/projects")
   const projectWorkspaces = await Promise.all(result.data.map((project) => loadProjectWorkspace(project)))
-  const folderWorkspaces: AgentFolderWorkspace[] = []
-
-  for (const [index, workspace] of projectWorkspaces.entries()) {
-    const project = result.data[index]
-    if (!project) continue
-    const directories = new Map<string, string>()
-
-    for (const directory of project.sandboxes ?? []) {
-      directories.set(normalizePath(directory), directory)
-    }
-
-    for (const session of workspace.sessions) {
-      directories.set(normalizePath(session.directory), session.directory)
-    }
-
-    if (directories.size === 0 && workspace.worktree && workspace.worktree !== "/") {
-      directories.set(normalizePath(workspace.worktree), workspace.worktree)
-    }
-
-    for (const directory of directories.values()) {
-      const sessions = workspace.sessions
-        .filter((session) => samePath(session.directory, directory))
-        .sort((left, right) => right.updated - left.updated)
-
-      folderWorkspaces.push({
-        id: directory,
-        directory,
-        name: getFolderName(directory),
-        created: sessions[0]?.created ?? workspace.created,
-        updated: sessions[0]?.updated ?? workspace.updated,
-        project: {
-          id: project.id,
-          name: getProjectName(project),
-          worktree: project.worktree,
-        },
-        sessions,
-      })
-    }
-  }
-
-  return folderWorkspaces.sort((left, right) => right.updated - left.updated)
+  return buildFolderWorkspaces(result.data, projectWorkspaces)
 }
 
 export function registerIpcHandlers(menus: ApplicationMenus) {
@@ -220,6 +156,17 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.canceled ? null : result.filePaths[0] ?? null
   })
 
+  ipcMain.handle("desktop:pick-composer-attachments", async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const options = {
+      title: "Select image or file",
+      properties: ["openFile", "multiSelections"] as Array<"openFile" | "multiSelections">,
+    }
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+
+    return result.canceled ? [] : result.filePaths
+  })
+
   ipcMain.handle("desktop:create-project-workspace", async (_event, input: { directory: string }) => {
     const directory = input.directory.trim()
     const result = await requestAgentJSON<AgentProjectInfo>("/api/projects", {
@@ -235,22 +182,15 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
   ipcMain.handle("desktop:open-folder-workspace", async (_event, input: { directory: string }) => {
     const directory = input.directory.trim()
-    await requestAgentJSON<AgentProjectInfo>("/api/projects", {
+    const result = await requestAgentJSON<AgentProjectInfo>("/api/projects", {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify({ directory }),
     })
-
-    const workspaces = await listFolderWorkspaces()
-    const folderWorkspace = workspaces.find((workspace) => samePath(workspace.directory, directory))
-
-    if (!folderWorkspace) {
-      throw new Error(`Folder workspace '${directory}' was not found after creation`)
-    }
-
-    return folderWorkspace
+    const projectWorkspace = await loadProjectWorkspace(result.data)
+    return buildFolderWorkspaceForDirectory(result.data, projectWorkspace, directory)
   })
 
   ipcMain.handle("desktop:agent-create-session", async (_event, input?: { directory?: string }) => {
@@ -352,6 +292,56 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
     return result.data
   })
+
+  ipcMain.handle("desktop:get-session-permission-requests", async (_event, input: { sessionID: string }) => {
+    const sessionID = input.sessionID.trim()
+    const result = await requestAgentJSON<AgentPermissionRequest[]>(
+      `/api/permissions/requests?status=pending&sessionID=${encodeURIComponent(sessionID)}`,
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:respond-permission-request",
+    async (
+      _event,
+      input: {
+        requestID: string
+        approved: boolean
+        scope?: "once" | "session" | "project" | "forever"
+        reason?: string
+        resume?: boolean
+      },
+    ) => {
+      const requestID = input.requestID.trim()
+      const pathname = input.approved
+        ? `/api/permissions/requests/${encodeURIComponent(requestID)}/approve`
+        : `/api/permissions/requests/${encodeURIComponent(requestID)}/deny`
+
+      const result = await requestAgentJSON<{
+        request: AgentPermissionRequest
+        rule?: {
+          id: string
+          scope: "global" | "project" | "session"
+          effect: "allow" | "deny" | "ask"
+        }
+        resumed?: unknown
+      }>(pathname, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          scope: input.scope ?? "once",
+          reason: input.reason?.trim() || undefined,
+          resume: input.resume ?? true,
+        }),
+      })
+
+      return result.data
+    },
+  )
 
   ipcMain.handle("desktop:get-global-provider-catalog", async () => {
     const result = await requestAgentJSON<AgentProviderCatalogItem[]>("/api/providers/catalog")
