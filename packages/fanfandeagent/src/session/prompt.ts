@@ -1,41 +1,39 @@
 import { Instance } from "#project/instance.ts";
 import * as Log from "#util/log.ts";
-import * as Message from "./message"
 import z from "zod";
 import * as Identifier from "#id/id.ts";
 import { fn } from "#util/fn.ts";
-import * as Status from "#session/status.ts"
-import * as Session from "#session/session.ts"
-import * as Processor from "#session/processor.ts"
-import * as Provider from "#provider/provider.ts"
-import * as  db from "#database/Sqlite.ts";
-import * as Agent from "#agent/agent.ts"
-import { resolveTools } from "./resolve-tools.ts"
+import * as Status from "#session/status.ts";
+import * as Session from "#session/session.ts";
+import * as Processor from "#session/processor.ts";
+import * as Provider from "#provider/provider.ts";
+import * as db from "#database/Sqlite.ts";
+import * as Agent from "#agent/agent.ts";
 
+import * as Message from "./message";
+import { resolveTools } from "./resolve-tools.ts";
 
+const log = Log.create({ service: "session.prompt" });
 
-const log = Log.create({ service: "session.prompt" })
+type RunningSession = {
+    abort: AbortController;
+};
 
-//每个项目实例拥有独立的Session State状态隔离，注意，这里是运行时的状态，不是所有的历史session
-//仅仅是当前正在运行的session
-export const state = Instance.state(
-    () => {
-        //每一个会话对应一个条目，表示正在执行session循环
-        const data: Record<
-            string,//sessionID
-            {
-                abort: AbortController//AbortController 对象 - 用于发出取消信号
-                callbacks: {
-                    resolve(input: Message.WithParts): void
-                    reject(): void
-                }[]
-            }//
-        > = {}
-        return data
-    },
-)
+// ====================
+// 业务模块：运行态控制
+// ====================
+// 这里只保存“当前正在执行”的 session loop 控制器，不保存历史消息。
+// 历史会话状态统一以数据库为准，运行态只负责并发保护和取消信号。
+export const state = Instance.state(() => {
+    // 这里只跟踪当前正在运行的 prompt loop。
+    const data: Record<string, RunningSession> = {};
+    return data;
+});
 
-//#region Types & Interfaces
+// ====================
+// 业务模块：外部输入协议
+// ====================
+// prompt API 的原始入参会先经过这里校验，再被拆成 message / part 两层结构。
 export const PromptInput = z.object({
     sessionID: Identifier.schema("session"),
     model: z
@@ -92,280 +90,366 @@ export const PromptInput = z.object({
                 }),
         ]),
     ),
-})
-export type PromptInput = z.infer<typeof PromptInput>
+});
+export type PromptInput = z.infer<typeof PromptInput>;
 
+function start(sessionID: string): AbortController | undefined {
+    // 为当前 session 注册唯一的取消信号；若已存在，说明已有 loop 正在运行。
+    const running = state();
+    if (running[sessionID]) return;
 
-
-//#endregion
-
-// #region Internal Helpers (private)
-function start(sessionID: string): AbortSignal | undefined {
-    const s = state()
-    if (s[sessionID]) return
-    const controller = new AbortController()
-    s[sessionID] = {
+    const controller = new AbortController();
+    running[sessionID] = {
         abort: controller,
-        callbacks: [],
+    };
+
+    return controller;
+}
+
+function finish(sessionID: string, controller?: AbortController) {
+    const running = state();
+    const current = running[sessionID];
+    if (!current) return;
+    if (controller && current.abort !== controller) return;
+    delete running[sessionID];
+}
+
+async function waitForStop(sessionID: string) {
+    while (state()[sessionID]) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    return controller.signal
 }
 
 export function cancel(sessionID: string) {
-    const s = state()
-    const running = s[sessionID]
-    if (!running) return false
-    running.abort.abort()
-    delete s[sessionID]
-    return true
+    // 主动中断某个正在运行的 loop，并从运行态注册表中移除。
+    const running = state();
+    const current = running[sessionID];
+    if (!current) return false;
+
+    current.abort.abort();
+    delete running[sessionID];
+    return true;
 }
-//#endregion
 
-
-//将prompt loop的入口
-export const prompt = fn(PromptInput, async (input) => {
-    //获取session,先有session，再有prompt流程
-    const session = Session.DataBaseRead("sessions", input.sessionID)
-    //清理revert历史
-    //创建 usermessage
-    const { messageinfo, parts, } = await createUserMessage(input)
-    //session.touch
-    //input.tool 权限设置
-    //input.noreply
-    //在这之前，相当于准备完毕本地的数据，接下来，只需要一个sessonid即可开始循环
-    return loop({ sessionID: input.sessionID })
-})
-
-
-
-export const LoopInput = z.object({
-    sessionID: Identifier.schema("session"),
-    resume_existing: z.boolean().optional(),
-})
-
-//一个sessionloop的状态机方法
-const loop = fn(LoopInput, async (input) => {
-    const { sessionID, resume_existing } = input
-
-    //resume and start
-    //尝试创建打断
-    const abort = start(sessionID)
-    if (!abort) {
-        //创建失败，说明当前
-        //return new Promise<Message.WithParts>((resolve, reject)=>{
-        //    resolve(null)
-        //})
+async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
+    const { sessionID, abort, controller } = input;
+    const session = Session.DataBaseRead("sessions", sessionID);
+    if (!session) {
+        throw new Error(`Session '${sessionID}' was not found.`);
     }
 
-    //using _ = defer(() => cancel(sessionID))
+    let currentAssistant: Message.Assistant | undefined;
 
-    let step = 0
-    const session = Session.DataBaseRead("sessions", input.sessionID)    //执行一次prompt
+    try {
+        while (true) {
+            if (abort.aborted) throw new Error("Prompt aborted");
 
-    let currentAssistant: Message.Assistant | undefined
+            Status.set(sessionID, { type: "busy" });
+            const messages = loadMessagesWithParts(sessionID);
 
-    while (true) {
-        if (abort?.aborted) throw new Error("Prompt aborted")
-        Status.set(sessionID, { type: "busy" })
-        //log.info("loop", { step, sessionID })
-        //if (abort.aborted) break
-        //历史消息
+            let lastUser: Message.User | undefined;
+            let lastAssistant: Message.Assistant | undefined;
+            let lastFinished: Message.Assistant | undefined;
 
-        //获取当前会话所需的最新的记忆
-        let msginfos: Message.MessageInfo[] = db.findManyWithSchema("messages", Message.MessageInfo, {
-            where: [{ column: "sessionID", value: sessionID }],
-            orderBy: [{ column: "created", direction: "ASC" }]
-        })
+            for (let i = messages.length - 1; i >= 0; i--) {
+                const message = messages[i]!;
 
-
-        let msgs: Message.WithParts[]
-
-        //遍历msgs，根据每个message的id，从database中的parts表中找到所有的匹配的parts，然后和这个message组合成 withparts组合对象，
-
-        // 查询当前session的所有parts
-        const allParts = db.findManyWithSchema("parts", Message.Part, {
-            where: [{ column: "sessionID", value: sessionID }],
-            orderBy: [{ column: "id", direction: "ASC" }]
-        });
-
-        // 按messageID分组
-        const partsByMessageId = new Map<string, Message.Part[]>();
-        for (const part of allParts) {
-            const list = partsByMessageId.get(part.messageID) || [];
-            list.push(part);
-            partsByMessageId.set(part.messageID, list);
-        }
-
-        // 构建withparts数组
-        msgs = msginfos.map(msginfo => ({
-            info: msginfo,
-            parts: partsByMessageId.get(msginfo.id) || []
-        }));
-
-
-        let lastUser: Message.User | undefined //最后一个用户消息
-        let lastAssistant: Message.Assistant | undefined//最后一个assistant消息
-        let lastFinished: Message.Assistant | undefined//最后一个已完成的assistant消息
-        let tasks: (Message.CompactionPart | Message.SubtaskPart)[] = []// 收集未完成状态下的压缩任务和子任务
-
-        for (let i = msgs.length - 1; i >= 0; i--) {
-            const msg = msgs[i]!
-            if (!lastUser && msg.info.role === "user") lastUser = msg.info as Message.User
-            if (!lastAssistant && msg.info.role === "assistant") lastAssistant = msg.info as Message.Assistant
-            if (!lastFinished && msg.info.role === "assistant" && msg.info.finishReason)
-                lastFinished = msg.info as Message.Assistant
-            if (lastUser && lastFinished) break
-            const task = msg.parts.filter((part) => part.type === "compaction" || part.type === "subtask")
-            if (task && !lastFinished) {
-                tasks.push(...task)
-            }
-        }
-
-        if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
-
-        if (
-            lastAssistant?.finishReason &&
-            !["tool-calls", "unknown"].includes(lastAssistant.finishReason) &&
-            lastUser.id < lastAssistant.id
-        ) {
-            log.info("exiting loop", { sessionID })
-            break
-        }
-
-        step++
-        if (step === 1) {
-            //生成标题，先不做
-        }
-
-        //获取模型参数
-        const model = await Provider.getModel(lastUser.model.providerID, lastUser.model.modelID)
-
-        //pending subtask
-
-        //pending compaction
-
-
-        const assistantMessage: Message.Assistant = {
-            id: Identifier.ascending("message"),
-            sessionID: sessionID,
-            role: "assistant",
-            created: Date.now(),
-            parentID: "",
-            modelID: model.id,
-            providerID: model.providerID,
-            agent: lastUser.agent,
-            path: {
-                cwd: Instance.directory,
-                root: Instance.worktree
-            },
-            cost: 0,
-            tokens: {
-                input: 0,
-                output: 0,
-                reasoning: 0,
-                cache: {
-                    read: 0,
-                    write: 0
+                if (!lastUser && message.info.role === "user") {
+                    lastUser = message.info as Message.User;
                 }
+
+                if (!lastAssistant && message.info.role === "assistant") {
+                    lastAssistant = message.info as Message.Assistant;
+                }
+
+                if (!lastFinished && message.info.role === "assistant" && message.info.finishReason) {
+                    lastFinished = message.info as Message.Assistant;
+                }
+
+                if (lastUser && lastFinished) break;
             }
+
+            if (!lastUser) {
+                throw new Error("No user message found in stream. This should never happen.");
+            }
+
+            if (
+                lastAssistant &&
+                isFinalFinishReason(lastAssistant.finishReason) &&
+                lastUser.id < lastAssistant.id
+            ) {
+                log.info("exiting loop", { sessionID });
+                break;
+            }
+
+            const model = await Provider.getModel(lastUser.model.providerID, lastUser.model.modelID);
+            const assistantMessage = createAssistantMessage(sessionID, lastUser, model);
+            currentAssistant = assistantMessage;
+            await Session.updateMessage(assistantMessage);
+
+            const tools = await resolveTools({
+                agent: Agent.planAgent,
+                sessionID,
+                messageID: assistantMessage.id,
+                abort,
+            });
+
+            const processor = Processor.create({
+                Assistant: assistantMessage,
+                abort,
+            });
+
+            let processResult: Awaited<ReturnType<typeof processor.process>>;
+            try {
+                processResult = await processor.process({
+                    user: lastUser,
+                    sessionID,
+                    messageID: assistantMessage.id,
+                    model,
+                    agent: Agent.planAgent,
+                    system: ["You are a helpful assistant"],
+                    abort,
+                    messages: await Message.toModelMessages(messages, model, {
+                        agent: Agent.planAgent,
+                    }),
+                    tools,
+                });
+            } catch (error) {
+                assistantMessage.error = {
+                    name: "UnknownError",
+                    data: {
+                        message: error instanceof Error ? error.message : String(error),
+                    },
+                } as Message.Assistant["error"];
+                await Session.updateMessage(assistantMessage);
+                throw error;
+            }
+
+            await Session.updateMessage(assistantMessage);
+
+            if (isFinalFinishReason(processor.message.finishReason)) {
+                console.log("modelFinish: " + processor.message.finishReason);
+                break;
+            }
+
+            if (processResult === "stop") break;
         }
-        currentAssistant = assistantMessage
 
-        const tools = await resolveTools({
-            agent: Agent.planAgent,
-            sessionID,
-            messageID: assistantMessage.id,
-            abort: abort!,
-        })
+        const latest = currentAssistant
+            ? {
+                info: currentAssistant,
+                parts: db.findManyWithSchema("parts", Message.Part, {
+                    where: [{ column: "messageID", value: currentAssistant.id }],
+                    orderBy: [{ column: "id", direction: "ASC" }],
+                }),
+            }
+            : latestAssistantWithParts(sessionID);
 
-        const processor = Processor.create({
-            Assistant: assistantMessage
-            //abort,
-        })
-        const result = await processor.process({
-            user: lastUser,
-            sessionID: sessionID,
-            messageID: assistantMessage.id,
-            model,
-            agent: Agent.planAgent,
-            system: ["你是一个助手"],
-            abort: abort!,
-            messages: [
-                ...Message.toModelMessages(msgs, model)
-            ],
-            //small?: boolean,
-            tools,
-            //retries?: number,
-        })
-
-        Session.DataBaseCreate("messages", assistantMessage)
-
-        const modelFinished = processor.message.finishReason
-
-        
-        if (modelFinished && !["tool-calls", "unknown"].includes(modelFinished)) {
-            console.log("modelFinish: " + modelFinished)
-            break
+        if (!latest) {
+            throw new Error("No assistant message was created.");
         }
 
-        if (result === "stop") break
+        return latest;
+    } finally {
+        finish(sessionID, controller);
+        Status.set(sessionID, { type: "idle" });
+    }
+}
 
-        // if (result === "compact") {
-        //     await SessionCompaction.create({
-        //         sessionID,
-        //         agent: lastUser.agent,
-        //         model: lastUser.model,
-        //         auto: true,
-        //         overflow: !processor.message.finishReason,
-        //     })
-        // }
-        continue
+// ====================
+// 业务模块：入口编排
+// ====================
+// prompt 入口负责两件事：
+// 1. 校验目标 session 存在
+// 2. 先落库用户消息，再启动推理循环
+export const prompt = fn(PromptInput, async (input) => {
+    const session = Session.DataBaseRead("sessions", input.sessionID);
+    if (!session) {
+        throw new Error(`Session '${input.sessionID}' was not found.`);
     }
 
+    const controller = start(input.sessionID);
+    if (!controller) {
+        throw new Error(`Session '${input.sessionID}' is already running.`);
+    }
 
-    if (!currentAssistant) throw new Error("No assistant message was created.")
+    try {
+        await createUserMessage(input);
+    } catch (error) {
+        finish(input.sessionID, controller);
+        Status.set(input.sessionID, { type: "idle" });
+        throw error;
+    }
 
-    const running = state()
-    delete running[sessionID]
+    return runLoop({
+        sessionID: input.sessionID,
+        abort: controller.signal,
+        controller,
+    });
+});
 
-    const parts = db.findManyWithSchema("parts", Message.Part, {
-        where: [{ column: "messageID", value: currentAssistant.id }],
+export const ResumeInput = z.object({
+    sessionID: Identifier.schema("session"),
+});
+
+// resume 不创建新的 user message，只尝试继续推进既有会话。
+export const resume = fn(ResumeInput, async (input) => {
+    const session = Session.DataBaseRead("sessions", input.sessionID);
+    if (!session) {
+        throw new Error(`Session '${input.sessionID}' was not found.`);
+    }
+
+    await waitForStop(input.sessionID);
+
+    const controller = start(input.sessionID);
+    if (!controller) {
+        throw new Error(`Session '${input.sessionID}' is already running.`);
+    }
+
+    return runLoop({
+        sessionID: input.sessionID,
+        abort: controller.signal,
+        controller,
+    });
+});
+
+type LoopRuntimeInput = {
+    sessionID: string
+    abort: AbortSignal
+    controller: AbortController
+}
+
+// ====================
+// 业务模块：上下文重建
+// ====================
+// 每一轮都从 messages + parts 重建上下文，而不是依赖内存中的缓存副本。
+// 这样工具执行写入的新 part、恢复会话后的补写等状态都能自然进入下一轮推理。
+function loadMessagesWithParts(sessionID: string): Message.WithParts[] {
+    // 每轮都从 messages + parts 重建上下文，避免内存态与数据库脱节。
+    const messageInfos = db.findManyWithSchema("messages", Message.MessageInfo, {
+        where: [{ column: "sessionID", value: sessionID }],
+        orderBy: [{ column: "created", direction: "ASC" }],
+    });
+
+    const allParts = db.findManyWithSchema("parts", Message.Part, {
+        where: [{ column: "sessionID", value: sessionID }],
         orderBy: [{ column: "id", direction: "ASC" }],
-    })
+    });
 
+    const partsByMessageID = new Map<string, Message.Part[]>();
+    for (const part of allParts) {
+        const list = partsByMessageID.get(part.messageID) ?? [];
+        list.push(part);
+        partsByMessageID.set(part.messageID, list);
+    }
+
+    return messageInfos.map((messageInfo) => ({
+        info: messageInfo,
+        parts: partsByMessageID.get(messageInfo.id) ?? [],
+    }));
+}
+
+function isFinalFinishReason(finishReason?: string) {
+    // `tool-calls` / `unknown` 往往意味着当前轮还没有真正收束，
+    // 其余 finish reason 才可以视为最终回答。
+    return Boolean(finishReason && !["tool-calls", "unknown"].includes(finishReason));
+}
+
+function latestAssistantWithParts(sessionID: string): Message.WithParts | undefined {
+    const messages = loadMessagesWithParts(sessionID);
+    for (let index = messages.length - 1; index >= 0; index--) {
+        const item = messages[index]!;
+        if (item.info.role === "assistant") return item;
+    }
+}
+
+// 先创建 assistant message 的“骨架记录”。
+// 真正的文本、推理链、工具调用结果会在 Processor 执行期间作为 part 持续补齐。
+function createAssistantMessage(
+    sessionID: string,
+    lastUser: Message.User,
+    model: Provider.Model,
+): Message.Assistant {
     return {
-        info: currentAssistant,
-        parts,
+        id: Identifier.ascending("message"),
+        sessionID,
+        role: "assistant",
+        created: Date.now(),
+        parentID: "",
+        modelID: model.id,
+        providerID: model.providerID,
+        agent: lastUser.agent,
+        path: {
+            cwd: Instance.directory,
+            root: Instance.worktree,
+        },
+        cost: 0,
+        tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: {
+                read: 0,
+                write: 0,
+            },
+        },
+    };
+}
+
+// ====================
+// 业务模块：推理循环协调器
+// ====================
+// loop 是 session 级状态机，它把一次完整回答拆成多个“单轮 processor 执行”：
+// 1. 从数据库重建最新上下文
+// 2. 判断当前输入是否已经被回复
+// 3. 绑定模型和工具，创建本轮 assistant 壳消息
+// 4. 调用 Processor 执行单轮推理和工具调用
+// 5. 根据 finishReason / process 结果决定是否继续下一轮
+// ====================
+// 业务模块：输入归一化
+// ====================
+// 把外部 prompt 入参里的 part 转成数据库统一使用的 Part 结构。
+function toUserPart(
+    part: PromptInput["parts"][number],
+    messageID: string,
+    sessionID: string,
+): Message.Part {
+    const base = {
+        id: Identifier.ascending("part"),
+        messageID,
+        sessionID,
+    };
+
+    switch (part.type) {
+        case "file":
+            return {
+                ...base,
+                ...part,
+            } as Message.FilePart;
+        case "agent":
+            return {
+                ...base,
+                ...part,
+            } as Message.AgentPart;
+        case "text":
+            return {
+                ...base,
+                ...part,
+            } as Message.TextPart;
+        case "subtask":
+            return {
+                ...base,
+                ...part,
+            } as Message.SubtaskPart;
     }
+}
 
-    for await (const item of Message.stream(sessionID)) {
-        if (item.info.role === "user") continue
-        //   const queued = state()[sessionID]?.callbacks ?? []
-        //   for (const q of queued) {
-        //     q.resolve(item)
-        //   }
-        //返回第一个"Assiatant"信息
-        return item
-    }
-
-    throw new Error("Impossible")
-
-})
-
-
-//构建 user 以及对应的part，每次用户输入的prompt，构建成message存入database
+// ====================
+// 业务模块：用户消息入库
+// ====================
+// 用户输入会先落成一条 user message，再拆成多条 part。
+// 这样后续无论是模型消费、UI 展示，还是工具补写，都可以复用同一套消息模型。
 async function createUserMessage(input: PromptInput) {
-    //解析agent
-    const agent = {}
-
-    //解析model
-    const model = {}
-
-    //解析Varient
-
-    const variant = {}
-
-    //构建MessageInfo
     const messageinfo: Message.User = {
         id: Identifier.ascending("message"),
         sessionID: input.sessionID,
@@ -374,315 +458,38 @@ async function createUserMessage(input: PromptInput) {
         agent: input.agent ?? "plan",
         model: input.model ?? await Provider.getDefaultModelRef(),
         system: input.system,
+    };
+
+    const parts = input.parts.map((part) =>
+        toUserPart(part, messageinfo.id, input.sessionID),
+    );
+
+    if (Message.User.safeParse(messageinfo).success) {
+        Session.DataBaseCreate("messages", messageinfo);
     }
 
+    // part 校验失败不会阻断整条消息入库，但会打日志，便于排查调用方传参问题。
+    parts.forEach((part, index) => {
+        const parsedPart = Message.Part.safeParse(part);
+        if (parsedPart.success) return;
 
-    //遍历input.parts,todo
-    const parts = await Promise.all(
-        input.parts.map(async (part): Promise<Message.Part> => {
-            if (part.type === "file")
-                return {
-                    id: Identifier.ascending("part"),
-                    messageID: messageinfo.id,
-                    sessionID: input.sessionID,
-                    ...part
-                } as Message.FilePart
-            if (part.type === "agent")
-                return {
-                    id: Identifier.ascending("part"),
-                    messageID: messageinfo.id,
-                    sessionID: input.sessionID,
-                    ...part
-                } as Message.AgentPart
-            if (part.type === "text")
-                return {
-                    id: Identifier.ascending("part"),
-                    messageID: messageinfo.id,
-                    sessionID: input.sessionID,
-                    ...part
-                } as Message.TextPart
-            if (part.type === "subtask")
-                return {
-                    id: Identifier.ascending("part"),
-                    messageID: messageinfo.id,
-                    sessionID: input.sessionID,
-                    ...part
-                } as Message.SubtaskPart
-
-            return {
-                id: Identifier.ascending("part"),
-                messageID: messageinfo.id,
-                sessionID: input.sessionID,
-            } as Message.Part
-        }
-        ))
-
-
-    const parsemessageinfo = Message.User.safeParse(messageinfo)
-    if (!parsemessageinfo.success) {
-        // log.error("invalid user message before save", {
-        //     sessionID: input.sessionID,
-        //     messageID: parsemessageinfo.id,
-        //     agent: parsemessageinfo.agent,
-        //     model: parsemessageinfo.model,
-        //     issues: parsemessageinfo.error.issues,
-        // })
-    }
-    else
-
-        //db 写入message
-        Session.DataBaseCreate("messages", messageinfo)
-
-
-
-
-    //检查
-    parts.forEach(
-        (part, index) => {
-            const parsedPart = Message.Part.safeParse(part)
-            if (parsedPart.success) return
-            log.error("invalid user part before save", {
-                sessionID: input.sessionID,
-                messageID: messageinfo.id,
-                partID: part.id,
-                partType: part.type,
-                index,
-                issues: parsedPart.error.issues,
-                part,
-            })
-        }
-    )
+        log.error("invalid user part before save", {
+            sessionID: input.sessionID,
+            messageID: messageinfo.id,
+            partID: part.id,
+            partType: part.type,
+            index,
+            issues: parsedPart.error.issues,
+            part,
+        });
+    });
 
     for (const part of parts) {
-        Session.DataBaseCreate("parts", part)
+        Session.DataBaseCreate("parts", part);
     }
-
-
 
     return {
         messageinfo,
         parts,
-    }
-
-
-
-
-
-
-
+    };
 }
-
-//构建工具参数
-// export async function resolveTools(input: {
-//     agent: AgentInfo
-//     model: Provider.Model
-//     session: Session.SessionInfo
-//     tools?: Record<string, boolean>
-//     processor: Awaited<ReturnType<typeof Processor.create>>
-//     bypassAgentCheck: boolean
-//     messages: Message.WithParts[]
-// }) {
-//     using _ = log.time("resolveTools")
-//     const tools: Record<string, AITool> = {}
-
-//     // const context = (args: any, options: ToolCallOptions): Tool.Context => ({
-//     //     sessionID: input.session.id,
-//     //     abort: options.abortSignal!,
-//     //     messageID: input.processor.message.id,
-//     //     callID: options.toolCallId,
-//     //     extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck },
-//     //     agent: input.agent.name,
-//     //     messages: input.messages,
-//     //     metadata: async (val: { title?: string; metadata?: any }) => {
-//     //         const match = input.processor.partFromToolCall(options.toolCallId)
-//     //         if (match && match.state.status === "running") {
-//     //             await Session.updatePart({
-//     //                 ...match,
-//     //                 state: {
-//     //                     title: val.title,
-//     //                     metadata: val.metadata,
-//     //                     status: "running",
-//     //                     input: args,
-//     //                     time: {
-//     //                         start: Date.now(),
-//     //                     },
-//     //                 },
-//     //             })
-//     //         }
-//     //     },
-//     //     async ask(req) {
-//     //         await Permission.ask({
-//     //             ...req,
-//     //             sessionID: input.session.id,
-//     //             tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-//     //             ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
-//     //         })
-//     //     },
-//     // })
-
-//     for (const item of await ToolRegistry.tools(
-//         { modelID: ModelID.make(input.model.api.id), providerID: input.model.providerID },
-//         input.agent,
-//     )) {
-//         const schema = ProviderTransform.schema(input.model, z.toJSONSchema(item.parameters))
-//         tools[item.id] = tool({
-//             id: item.id as any,
-//             description: item.description,
-//             inputSchema: jsonSchema(schema as any),
-//             async execute(args, options) {
-//                 const ctx = context(args, options)
-//                 await Plugin.trigger(
-//                     "tool.execute.before",
-//                     {
-//                         tool: item.id,
-//                         sessionID: ctx.sessionID,
-//                         callID: ctx.callID,
-//                     },
-//                     {
-//                         args,
-//                     },
-//                 )
-//                 const result = await item.execute(args, ctx)
-//                 const output = {
-//                     ...result,
-//                     attachments: result.attachments?.map((attachment) => ({
-//                         ...attachment,
-//                         id: PartID.ascending(),
-//                         sessionID: ctx.sessionID,
-//                         messageID: input.processor.message.id,
-//                     })),
-//                 }
-//                 await Plugin.trigger(
-//                     "tool.execute.after",
-//                     {
-//                         tool: item.id,
-//                         sessionID: ctx.sessionID,
-//                         callID: ctx.callID,
-//                         args,
-//                     },
-//                     output,
-//                 )
-//                 return output
-//             },
-//         })
-//     }
-
-//     for (const [key, item] of Object.entries(await MCP.tools())) {
-//         const execute = item.execute
-//         if (!execute) continue
-
-//         const transformed = ProviderTransform.schema(input.model, asSchema(item.inputSchema).jsonSchema)
-//         item.inputSchema = jsonSchema(transformed)
-//         // Wrap execute to add plugin hooks and format output
-//         item.execute = async (args, opts) => {
-//             const ctx = context(args, opts)
-
-//             await Plugin.trigger(
-//                 "tool.execute.before",
-//                 {
-//                     tool: key,
-//                     sessionID: ctx.sessionID,
-//                     callID: opts.toolCallId,
-//                 },
-//                 {
-//                     args,
-//                 },
-//             )
-
-//             await ctx.ask({
-//                 permission: key,
-//                 metadata: {},
-//                 patterns: ["*"],
-//                 always: ["*"],
-//             })
-
-//             const result = await execute(args, opts)
-
-//             await Plugin.trigger(
-//                 "tool.execute.after",
-//                 {
-//                     tool: key,
-//                     sessionID: ctx.sessionID,
-//                     callID: opts.toolCallId,
-//                     args,
-//                 },
-//                 result,
-//             )
-
-//             const textParts: string[] = []
-//             const attachments: Omit<MessageV2.FilePart, "id" | "sessionID" | "messageID">[] = []
-
-//             for (const contentItem of result.content) {
-//                 if (contentItem.type === "text") {
-//                     textParts.push(contentItem.text)
-//                 } else if (contentItem.type === "image") {
-//                     attachments.push({
-//                         type: "file",
-//                         mime: contentItem.mimeType,
-//                         url: `data:${contentItem.mimeType};base64,${contentItem.data}`,
-//                     })
-//                 } else if (contentItem.type === "resource") {
-//                     const { resource } = contentItem
-//                     if (resource.text) {
-//                         textParts.push(resource.text)
-//                     }
-//                     if (resource.blob) {
-//                         attachments.push({
-//                             type: "file",
-//                             mime: resource.mimeType ?? "application/octet-stream",
-//                             url: `data:${resource.mimeType ?? "application/octet-stream"};base64,${resource.blob}`,
-//                             filename: resource.uri,
-//                         })
-//                     }
-//                 }
-//             }
-
-//             const truncated = await Truncate.output(textParts.join("\n\n"), {}, input.agent)
-//             const metadata = {
-//                 ...(result.metadata ?? {}),
-//                 truncated: truncated.truncated,
-//                 ...(truncated.truncated && { outputPath: truncated.outputPath }),
-//             }
-
-//             return {
-//                 title: "",
-//                 metadata,
-//                 output: truncated.content,
-//                 attachments: attachments.map((attachment) => ({
-//                     ...attachment,
-//                     id: PartID.ascending(),
-//                     sessionID: ctx.sessionID,
-//                     messageID: input.processor.message.id,
-//                 })),
-//                 content: result.content, // directly return content to preserve ordering when outputting to model
-//             }
-//         }
-//         tools[key] = item
-//     }
-
-//     return tools
-// }
-
-
-
-//#region  command
-// 2. command 方法：结构化操作的门面模式
-// 设计目的：为重复性、标准化的操作提供参数化、可复用的封装，降低用户认知负荷。
-// 关键设计决策：
-// - 模板驱动：支持 $1、$ARGUMENTS 占位符，实现命令参数化
-// - 智能委派：根据命令配置自动决定是否转为子任务（subtask 机制）
-// - 预处理管道：支持内联 shell 执行（!\`...\``），在 AI 介入前完成必要的数据准备
-// - 事件驱动：发布 Command.Event.Executed 事件，支持系统其他部分的响应
-// 解决的核心问题：用户经常需要执行“运行测试”、“部署到生产”等标准化操作，这些操作有固定模式但需要参数化。通过 command 抽象，用户无需每次都描述完整的工作流程。
-
-
-
-//#endregion
-
-
-//#region  shell  指令输入，不经过LLM
-
-//#endregion
-
-
-

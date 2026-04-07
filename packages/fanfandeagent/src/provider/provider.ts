@@ -1,16 +1,16 @@
 import z from "zod"
 import fuzzysort from "fuzzysort"
 import { mapValues } from "remeda"
-import { createDeepSeek } from "@ai-sdk/deepseek"
-import { createOpenAI } from "@ai-sdk/openai"
 import type { LanguageModel, Provider, Provider as SDKProvider } from "ai"
 import { Instance } from "#project/instance.ts"
 import { NamedError } from "#util/error.ts"
+import { BunProc } from "#bun/index.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Config from "#config/config.ts"
 import * as Env from "#env/env.ts"
 
 const OPENAI_SDK_PACKAGE = "@ai-sdk/openai"
+const OPENAI_COMPATIBLE_SDK_PACKAGE = "@ai-sdk/openai-compatible"
 const DEEPSEEK_SDK_PACKAGE = "@ai-sdk/deepseek"
 const PROVIDER_VALIDATION_TIMEOUT_MS = 10_000
 
@@ -166,22 +166,63 @@ type SDKFactoryInput = {
   headers: Record<string, string> | undefined
 }
 
-// 这里保留的是“运行时 SDK 适配器注册表”，不是 provider 默认值配置。
-// provider / model 选型来自 catalog + 项目配置；这里只负责把选中的模型映射到对应 SDK 工厂。
-const SDK_FACTORIES: Record<string, (input: SDKFactoryInput) => SDKProvider> = {
-  [DEEPSEEK_SDK_PACKAGE]: ({ apiKey, baseURL, headers }) =>
-    createDeepSeek({
-      apiKey,
-      baseURL,
-      headers,
-    }) as SDKProvider,
-  [OPENAI_SDK_PACKAGE]: ({ provider, apiKey, baseURL, headers }) =>
-    createOpenAI({
-      name: provider.id,
-      apiKey,
-      baseURL,
-      headers,
-    }) as SDKProvider,
+type SDKModuleFactory = (options: Record<string, unknown>) => Provider
+
+const SDK_ADAPTERS = {
+  [DEEPSEEK_SDK_PACKAGE]: {
+    version: "2.0.26",
+    exportName: "createDeepSeek",
+    create(input: SDKFactoryInput, factory: SDKModuleFactory) {
+      return factory({
+        apiKey: input.apiKey,
+        baseURL: input.baseURL,
+        headers: input.headers,
+      }) as SDKProvider
+    },
+  },
+  [OPENAI_COMPATIBLE_SDK_PACKAGE]: {
+    version: "2.0.38",
+    exportName: "createOpenAICompatible",
+    create(input: SDKFactoryInput, factory: SDKModuleFactory) {
+      if (!input.baseURL) {
+        throw new Error(
+          `Provider '${input.provider.id}' requires a baseURL when using '${OPENAI_COMPATIBLE_SDK_PACKAGE}'`,
+        )
+      }
+
+      return factory({
+        name: input.provider.id,
+        apiKey: input.apiKey,
+        baseURL: input.baseURL,
+        headers: input.headers,
+      }) as SDKProvider
+    },
+  },
+  [OPENAI_SDK_PACKAGE]: {
+    version: "3.0.48",
+    exportName: "createOpenAI",
+    create(input: SDKFactoryInput, factory: SDKModuleFactory) {
+      return factory({
+        name: input.provider.id,
+        apiKey: input.apiKey,
+        baseURL: input.baseURL,
+        headers: input.headers,
+      }) as SDKProvider
+    },
+  },
+} satisfies Record<
+  string,
+  {
+    version: string
+    exportName: string
+    create(input: SDKFactoryInput, factory: SDKModuleFactory): SDKProvider
+  }
+>
+
+type SupportedSDKPackage = keyof typeof SDK_ADAPTERS
+
+function isSupportedSDKPackage(npmPackage: string): npmPackage is SupportedSDKPackage {
+  return npmPackage in SDK_ADAPTERS
 }
 
 // -----------------------------------------------------------------------------
@@ -871,6 +912,27 @@ export async function getLanguage(model: Model): Promise<LanguageModel> {
   return language
 }
 
+async function loadSDKFactory(npmPackage: string) {
+  if (!isSupportedSDKPackage(npmPackage)) {
+    throw new Error(
+      `Unsupported SDK package '${npmPackage}'. Add it to the SDK adapter allowlist before using it in provider.npm or model.provider.npm.`,
+    )
+  }
+
+  const adapter = SDK_ADAPTERS[npmPackage]
+  const loaded = await BunProc.importPackage<Record<string, unknown>>(npmPackage, adapter.version)
+  const factory = loaded.module[adapter.exportName]
+  if (typeof factory !== "function") {
+    throw new Error(`SDK package '${npmPackage}' is missing export '${adapter.exportName}'`)
+  }
+
+  return {
+    adapter,
+    factory: factory as SDKModuleFactory,
+    version: loaded.version,
+  }
+}
+
 async function getSDK(model: Model) {
   // SDK Provider 比 LanguageModel 更底层，先保证它存在，再由上层取 languageModel。
   const provider = await requireRuntimeProvider(model.providerID)
@@ -893,19 +955,16 @@ async function getSDK(model: Model) {
 
   const baseURL = firstNonEmptyString(provider.options.baseURL, model.api.url)
   const headers = Object.keys(model.headers).length > 0 ? model.headers : undefined
-  const factory = SDK_FACTORIES[model.api.npm]
-  if (!factory) {
-    throw new Error(
-      `Unsupported SDK package '${model.api.npm}' for provider '${provider.id}'. Configure provider.npm or model.provider.npm to a supported AI SDK package.`,
-    )
-  }
-
-  const sdk = factory({
-    provider,
-    apiKey: provider.key,
-    baseURL,
-    headers,
-  })
+  const loaded = await loadSDKFactory(model.api.npm)
+  const sdk = loaded.adapter.create(
+    {
+      provider,
+      apiKey: provider.key,
+      baseURL,
+      headers,
+    },
+    loaded.factory,
+  )
 
   cache.set(key, sdk as SDKProvider)
   return sdk as SDKProvider

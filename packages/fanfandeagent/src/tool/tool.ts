@@ -145,7 +145,14 @@ export function normalizeToolModelOutput(output: ToolModelOutput): Exclude<ToolM
 
   return output
 }
-
+/**
+ * 创建工具定义，并为其运行时包装参数校验、守卫检查和输出标准化逻辑。
+ *
+ * @param id 对外暴露给调用方的稳定工具标识。
+ * @param init 根据初始化上下文构建工具运行时的工厂函数。
+ * @param options 会合并到返回结果中的静态工具元数据。
+ * @returns 一个工具定义；其 execute 方法会执行参数校验、鉴权检查并标准化返回结果。
+ */
 export function define<Parameters extends z.ZodType, Result extends Metadata, Data = unknown>(
   id: string,
   init: ToolInfo<Parameters, Result, Data>["init"],
@@ -155,14 +162,14 @@ export function define<Parameters extends z.ZodType, Result extends Metadata, Da
     id,
     ...options,
     init: async (initctx) => {
-      const toolinfo = await init(initctx)
-      const execute = toolinfo.execute
+      const runtime = await init(initctx)
+      const execute = runtime.execute
 
-      toolinfo.execute = async (args, ctx) => {
-        const parsed = toolinfo.parameters.safeParse(args)
+      runtime.execute = async (args, ctx) => {
+        const parsed = runtime.parameters.safeParse(args)
         if (!parsed.success) {
-          if (toolinfo.formatValidationError) {
-            throw new Error(toolinfo.formatValidationError(parsed.error), { cause: parsed.error })
+          if (runtime.formatValidationError) {
+            throw new Error(runtime.formatValidationError(parsed.error), { cause: parsed.error })
           }
 
           throw new Error(
@@ -171,12 +178,12 @@ export function define<Parameters extends z.ZodType, Result extends Metadata, Da
           )
         }
 
-        const validationFailure = toGuardErrorMessage(await toolinfo.validate?.(parsed.data, ctx))
+        const validationFailure = toGuardErrorMessage(await runtime.validate?.(parsed.data, ctx))
         if (validationFailure) {
           throw new Error(validationFailure)
         }
 
-        const authorizationFailure = toGuardErrorMessage(await toolinfo.authorize?.(parsed.data, ctx))
+        const authorizationFailure = toGuardErrorMessage(await runtime.authorize?.(parsed.data, ctx))
         if (authorizationFailure) {
           throw new Error(authorizationFailure)
         }
@@ -184,7 +191,7 @@ export function define<Parameters extends z.ZodType, Result extends Metadata, Da
         return normalizeToolOutput(await execute(parsed.data, ctx))
       }
 
-      return toolinfo
+      return runtime
     },
   }
 }

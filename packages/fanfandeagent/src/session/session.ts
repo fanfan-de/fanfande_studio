@@ -172,7 +172,13 @@ function removeProjectSessions(projectID: string): SessionInfo[] {
 }
 
 const updateMessage = fn(Message.MessageInfo, async (msg) => {
-  DataBaseCreate("messages", msg)
+  const existing = db.findById("messages", Message.MessageInfo, msg.id)
+  if (existing) {
+    db.updateByIdWithSchema("messages", msg.id, msg, Message.MessageInfo)
+    return
+  }
+
+  db.insertOneWithSchema("messages", msg, Message.MessageInfo)
 })
 
 const updatePart = fn(Message.Part, async (part) => {

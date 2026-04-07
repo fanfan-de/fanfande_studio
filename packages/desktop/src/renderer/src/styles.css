@@ -585,7 +585,6 @@ select {
 }
 
 .label,
-.composer-pill,
 .turn-meta,
 .assistant-header time,
 .trace-item-label,
@@ -1204,6 +1203,33 @@ textarea::placeholder {
   color: #1b2f43;
 }
 
+.settings-status-indicator {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.settings-status-indicator svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.settings-status-indicator.is-connected {
+  color: #2f8a57;
+}
+
+.settings-status-indicator.is-disconnected {
+  color: #8da0b4;
+}
+
 .settings-service-item-copy,
 .settings-detail-hero p,
 .settings-detail-meta-card p {
@@ -1469,7 +1495,7 @@ textarea::placeholder {
 
 .thread-shell,
 .thread-column,
-.composer-pills,
+.composer-selectors,
 .composer-actions,
 .canvas-top-menu,
 .canvas-top-menu-group,
@@ -1758,8 +1784,148 @@ textarea::placeholder {
   color: #2a8357;
 }
 
+.trace-item-status.is-waiting-approval {
+  color: #9a5b08;
+}
+
 .trace-item-status.is-error {
   color: #b14537;
+}
+
+.trace-item-status.is-denied {
+  color: #b14537;
+}
+
+.permission-request-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.permission-request-card {
+  border: 1px solid rgba(218, 177, 96, 0.48);
+  background: linear-gradient(180deg, #fffaf1 0%, #fff6e8 100%);
+  box-shadow: 0 16px 36px rgba(140, 100, 36, 0.08);
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.permission-request-header,
+.permission-request-footer,
+.permission-request-badges {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.permission-request-header h3 {
+  margin: 4px 0 0;
+  font-size: 21px;
+  line-height: 1.1;
+  color: #37240f;
+}
+
+.permission-request-subtitle,
+.permission-request-note,
+.permission-request-error {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.permission-request-subtitle,
+.permission-request-note {
+  color: #705334;
+}
+
+.permission-request-error {
+  color: #a33d2f;
+}
+
+.permission-request-badges {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.permission-risk-chip,
+.permission-meta-chip {
+  min-height: 28px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(170, 141, 99, 0.38);
+  background: rgba(255, 255, 255, 0.68);
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6b573f;
+}
+
+.permission-risk-chip.is-low {
+  color: #2a8357;
+}
+
+.permission-risk-chip.is-medium {
+  color: #8c5a0a;
+}
+
+.permission-risk-chip.is-high,
+.permission-risk-chip.is-critical {
+  color: #b14537;
+}
+
+.permission-request-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.permission-request-meta {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(211, 180, 126, 0.4);
+  background: rgba(255, 255, 255, 0.56);
+  display: grid;
+  gap: 6px;
+}
+
+.permission-request-meta-wide,
+.permission-request-field-wide {
+  grid-column: 1 / -1;
+}
+
+.permission-request-meta-label {
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8c704f;
+}
+
+.permission-request-meta strong {
+  color: #362513;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.permission-request-controls {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.permission-request-field input,
+.permission-request-field select {
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.permission-request-footer {
+  align-items: center;
+}
+
+.permission-request-actions {
+  flex-wrap: wrap;
 }
 
 .composer {
@@ -1789,21 +1955,145 @@ textarea::placeholder {
   margin-top: 12px;
 }
 
-.composer-pills {
+.composer-attachment-strip {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.composer-attachment-chip {
+  min-height: 32px;
+  padding: 0 4px 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #f5f8fb;
+  color: #314353;
+}
+
+.composer-attachment-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+}
+
+.composer-attachment-remove {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  background: transparent;
+  color: #5f7387;
+  cursor: pointer;
+}
+
+.composer-attachment-remove:hover,
+.composer-attachment-remove:focus-visible {
+  background: rgba(22, 119, 200, 0.08);
+  color: #123a5a;
+}
+
+.composer-attachment-remove svg,
+.composer-selector-button svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+}
+
+.composer-selectors {
+  align-items: flex-start;
   flex-wrap: wrap;
 }
 
-.composer-pill {
-  min-height: 28px;
-  padding: 0 10px;
+.composer-menu-anchor {
+  position: relative;
+}
+
+.composer-selector-button {
+  min-height: 34px;
+  padding: 0 12px;
   border-radius: 0;
   display: inline-flex;
   align-items: center;
-  background: #eef2f5;
+  gap: 8px;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #f5f8fb;
+  color: #314353;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.composer-selector-button:hover,
+.composer-selector-button:focus-visible {
+  background: #eef5fb;
+  border-color: rgba(22, 119, 200, 0.28);
+  color: #123a5a;
+}
+
+.composer-menu-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 3;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 64px));
+  max-height: min(320px, calc(100dvh - 180px));
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(46, 81, 118, 0.12);
+}
+
+.composer-menu-option {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  text-align: left;
+  background: transparent;
+  color: #314353;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.composer-menu-option:hover,
+.composer-menu-option:focus-visible,
+.composer-menu-option.is-selected {
+  background: #eef5fb;
+  color: #123a5a;
+}
+
+.composer-menu-empty {
+  margin: 0;
+  padding: 6px 10px;
+  color: #607488;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .composer-actions {
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .primary-button,
@@ -1979,6 +2269,22 @@ body.is-resizing-sidebar * {
     margin-left: 0;
   }
 
+  .composer-menu-anchor {
+    width: 100%;
+  }
+
+  .composer-menu-panel {
+    position: static;
+    width: 100%;
+    max-width: none;
+  }
+
+  .composer-selector-button,
+  .composer-actions .primary-button {
+    justify-content: space-between;
+    width: 100%;
+  }
+
   .settings-page-overlay {
     padding: 12px;
   }
@@ -2003,6 +2309,11 @@ body.is-resizing-sidebar * {
   }
 
   .settings-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .permission-request-grid,
+  .permission-request-controls {
     grid-template-columns: 1fr;
   }
 

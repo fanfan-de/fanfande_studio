@@ -22,13 +22,24 @@ export function App() {
 
   const {
     activeSession,
+    activePendingPermissionRequests,
     activeTurns,
+    composerAgentMode,
+    composerAttachments,
+    composerModelOptions,
+    composerSelectedModel,
+    composerSelectedModelLabel,
     deletingSessionID,
     draft,
     expandedFolderID,
+    handleComposerModelChange,
+    handleComposerModeChange,
+    handlePermissionRequestResponse,
+    handlePickComposerAttachments,
     handleProjectCreateSession,
     handleProjectClick,
     handleProjectRemove,
+    handleRemoveComposerAttachment,
     handleSend,
     handleSessionDelete,
     handleSessionSelect,
@@ -36,7 +47,10 @@ export function App() {
     hoveredFolderID,
     isCreatingProject,
     isCreatingSession,
+    isResolvingPermissionRequest,
     isSending,
+    permissionRequestActionError,
+    permissionRequestActionRequestID,
     projectRowRefs,
     selectedWorkspace,
     selectedFolderID,
@@ -112,13 +126,31 @@ export function App() {
 
         <section className="canvas">
           <CanvasTopMenu />
-          <ThreadView activeSession={activeSession} activeTurns={activeTurns} threadColumnRef={threadColumnRef} />
+          <ThreadView
+            activeSession={activeSession}
+            activeTurns={activeTurns}
+            pendingPermissionRequests={activePendingPermissionRequests}
+            permissionRequestActionError={permissionRequestActionError}
+            permissionRequestActionRequestID={permissionRequestActionRequestID}
+            isResolvingPermissionRequest={isResolvingPermissionRequest}
+            threadColumnRef={threadColumnRef}
+            onPermissionRequestResponse={handlePermissionRequestResponse}
+          />
           <Composer
+            agentMode={composerAgentMode}
+            attachments={composerAttachments}
             draft={draft}
             hasActiveSession={Boolean(activeSession)}
+            hasPendingPermissionRequests={activePendingPermissionRequests.length > 0}
             isSending={isSending}
-            onClear={() => setDraft("")}
+            modelOptions={composerModelOptions}
+            selectedModel={composerSelectedModel}
+            selectedModelLabel={composerSelectedModelLabel}
+            onAgentModeChange={handleComposerModeChange}
             onDraftChange={setDraft}
+            onModelChange={handleComposerModelChange}
+            onPickAttachments={handlePickComposerAttachments}
+            onRemoveAttachment={handleRemoveComposerAttachment}
             onSend={handleSend}
           />
         </section>

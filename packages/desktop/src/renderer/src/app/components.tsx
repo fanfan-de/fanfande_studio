@@ -4,7 +4,9 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
+  ConnectedStatusIcon,
   DeleteIcon,
+  DisconnectedStatusIcon,
   FolderIcon,
   MaximizeIcon,
   MinimizeIcon,
@@ -15,7 +17,12 @@ import {
   SortIcon,
 } from "./icons"
 import type {
+  AppMode,
   AssistantTraceItem,
+  ComposerAttachment,
+  ComposerModelOption,
+  PermissionApprovalScope,
+  PermissionRequest,
   ProjectModelSelection,
   ProviderCatalogItem,
   ProviderDraftState,
@@ -335,18 +342,6 @@ function getProviderKeyPlaceholder(provider: ProviderCatalogItem) {
   return "Enter API key"
 }
 
-function getProviderActionHint(provider: ProviderCatalogItem) {
-  if (provider.source === "config") {
-    return "Reset removes the saved provider configuration and falls back to environment or catalog defaults."
-  }
-
-  if (provider.source === "env") {
-    return "This provider can also inherit credentials from the current environment."
-  }
-
-  return "Saving here updates the shared provider configuration for the app."
-}
-
 function matchesProviderSearch(provider: ProviderCatalogItem, rawQuery: string) {
   const query = rawQuery.trim().toLowerCase()
   if (!query) return true
@@ -362,6 +357,20 @@ function matchesProviderSearch(provider: ProviderCatalogItem, rawQuery: string) 
     .toLowerCase()
 
   return haystack.includes(query)
+}
+
+function getVisibleProvidersForSettings(catalog: ProviderCatalogItem[], rawQuery: string) {
+  return catalog
+    .map((provider, index) => ({ index, provider }))
+    .filter(({ provider }) => matchesProviderSearch(provider, rawQuery))
+    .sort((left, right) => {
+      if (left.provider.available !== right.provider.available) {
+        return left.provider.available ? -1 : 1
+      }
+
+      return left.index - right.index
+    })
+    .map(({ provider }) => provider)
 }
 
 interface ModelListViewProps {
@@ -468,7 +477,7 @@ export function SettingsPage({
     }, {})
     const connectedProviderIDs = new Set(catalog.filter((item) => item.available).map((item) => item.id))
     const visibleModels = models.filter((model) => model.available && connectedProviderIDs.has(model.providerID))
-    const filteredCatalog = catalog.filter((provider) => matchesProviderSearch(provider, providerSearch))
+    const filteredCatalog = getVisibleProvidersForSettings(catalog, providerSearch)
     const activeProvider = selectedProviderID ? catalog.find((item) => item.id === selectedProviderID) ?? null : null
     const activeProviderDraft = activeProvider
       ? (providerDrafts[activeProvider.id] ?? {
@@ -496,7 +505,7 @@ export function SettingsPage({
     useEffect(() => {
       if (activeSection !== "services") return
 
-      const visibleProviders = catalog.filter((provider) => matchesProviderSearch(provider, providerSearch))
+      const visibleProviders = getVisibleProvidersForSettings(catalog, providerSearch)
       if (visibleProviders.length === 0) {
         if (selectedProviderID !== null) {
           setSelectedProviderID(null)
@@ -598,8 +607,7 @@ export function SettingsPage({
                 activeSection === "services" ? (
                   <section className="settings-services-layout" aria-label="Provider layout">
                     <div className="settings-service-list-panel">
-                      <label className="settings-field settings-search-field">
-                        <span className="settings-field-label">Search providers</span>
+                      <div className="settings-field settings-search-field">
                         <input
                           aria-label="Search providers"
                           type="text"
@@ -607,30 +615,39 @@ export function SettingsPage({
                           placeholder="Search providers"
                           onChange={(event: ChangeEvent<HTMLInputElement>) => setProviderSearch(event.target.value)}
                         />
-                      </label>
+                      </div>
 
                       <div className="settings-service-list-body">
                         {filteredCatalog.length > 0 ? (
                           <div className="settings-service-list" role="list" aria-label="Provider list">
                             {filteredCatalog.map((provider) => {
-                              const providerModels = modelGroups[provider.id] ?? []
                               const isActive = provider.id === activeProvider?.id
+                              const connectionLabel = getProviderConnectionLabel(provider)
+                              const sourceLabel = providerSourceLabel(provider)
 
                               return (
                                 <button
                                   key={provider.id}
                                   className={isActive ? "settings-service-item is-active" : "settings-service-item"}
+                                  aria-label={`${provider.name} ${connectionLabel}`}
                                   aria-pressed={isActive}
                                   onClick={() => setSelectedProviderID(provider.id)}
                                 >
                                   <div className="settings-service-item-header">
                                     <strong>{provider.name}</strong>
-                                    <span className="settings-badge">{getProviderConnectionLabel(provider)}</span>
+                                    <span
+                                      className={
+                                        provider.available
+                                          ? "settings-status-indicator is-connected"
+                                          : "settings-status-indicator is-disconnected"
+                                      }
+                                      aria-hidden="true"
+                                      title={connectionLabel}
+                                    >
+                                      {provider.available ? <ConnectedStatusIcon /> : <DisconnectedStatusIcon />}
+                                    </span>
                                   </div>
-                                  <span className="settings-service-item-copy">{providerSourceLabel(provider)}</span>
-                                  <span className="settings-service-item-copy">
-                                    {providerModels.length > 0 ? `${providerModels.length} known models` : "No known models yet"}
-                                  </span>
+                                  {sourceLabel !== "Catalog" ? <span className="settings-service-item-copy">{sourceLabel}</span> : null}
                                 </button>
                               )
                             })}
@@ -650,9 +667,7 @@ export function SettingsPage({
                         <>
                           <div className="settings-detail-hero">
                             <div>
-                              <span className="label">{providerSourceLabel(activeProvider)}</span>
                               <h3>{activeProvider.name}</h3>
-                              <p>Save shared credentials and endpoint overrides for this provider.</p>
                             </div>
 
                             <div className="provider-row-statuses">
@@ -662,30 +677,12 @@ export function SettingsPage({
                             </div>
                           </div>
 
-                          <div className="settings-detail-meta-grid">
-                            <div className="settings-detail-meta-card">
-                              <span className="label">Provider ID</span>
-                              <strong>{activeProvider.id}</strong>
-                              <p>{activeProvider.baseURL ?? "No default endpoint exposed by the catalog."}</p>
-                            </div>
-                            <div className="settings-detail-meta-card">
-                              <span className="label">Environment</span>
-                              <strong>{activeProvider.env.length > 0 ? activeProvider.env.join(", ") : "No env fallback"}</strong>
-                              <p>
-                                {activeProvider.available
-                                  ? "The provider is currently available in the app."
-                                  : "Save credentials to make it available here."}
-                              </p>
-                            </div>
-                          </div>
-
                           <div className="settings-panel">
                             <div className="settings-section-header">
                               <div>
                                 <span className="label">Connection</span>
                                 <h3>Provider Configuration</h3>
                               </div>
-                              <p>Edit the shared credentials and endpoint the app should use when routing to {activeProvider.name}.</p>
                             </div>
 
                             <div className="settings-field-grid">
@@ -713,8 +710,6 @@ export function SettingsPage({
                             </div>
 
                             <div className="settings-actions-row">
-                              <span className="settings-helper-text">{getProviderActionHint(activeProvider)}</span>
-
                               <div className="settings-inline-actions">
                                 {activeProviderCanReset ? (
                                   <button
@@ -1379,12 +1374,6 @@ export function SettingsPage({
                   </div>
 
                   <div className="settings-actions-row">
-                    <span className="settings-helper-text">
-                      {activeProvider.source === "env"
-                        ? "This provider can also inherit credentials from the current environment."
-                        : "Submitting saves a project-level provider override without changing the global catalog."}
-                    </span>
-
                     <div className="settings-inline-actions">
                       <button className="secondary-button" onClick={() => setConnectProviderID(null)}>
                         Cancel
@@ -1416,7 +1405,39 @@ export function SettingsPage({
 interface ThreadViewProps {
   activeSession: SessionSummary | null
   activeTurns: Turn[]
+  isResolvingPermissionRequest: boolean
+  pendingPermissionRequests: PermissionRequest[]
+  permissionRequestActionError: string | null
+  permissionRequestActionRequestID: string | null
   threadColumnRef: RefObject<HTMLDivElement | null>
+  onPermissionRequestResponse: (input: {
+    sessionID: string
+    request: PermissionRequest
+    approved: boolean
+    scope: PermissionApprovalScope
+    reason?: string
+  }) => void | Promise<void>
+}
+
+const permissionScopeOptions: Array<{
+  value: PermissionApprovalScope
+  label: string
+}> = [
+  { value: "once", label: "Once" },
+  { value: "session", label: "Session" },
+  { value: "project", label: "Project" },
+  { value: "forever", label: "Forever" },
+]
+
+function formatPermissionRiskLabel(risk: PermissionRequest["risk"]) {
+  return `${risk} risk`
+}
+
+function summarizePermissionRequest(request: PermissionRequest) {
+  if (request.resource?.command) return request.resource.command
+  if (request.resource?.paths && request.resource.paths.length > 0) return request.resource.paths.join(", ")
+  if (request.title) return request.title
+  return request.tool
 }
 
 function TraceItemView({ item }: { item: AssistantTraceItem }) {
@@ -1442,7 +1463,148 @@ function TraceItemView({ item }: { item: AssistantTraceItem }) {
   )
 }
 
-export function ThreadView({ activeSession, activeTurns, threadColumnRef }: ThreadViewProps) {
+function PermissionRequestCard({
+  actionError,
+  activeSession,
+  isResolving,
+  request,
+  onRespond,
+}: {
+  actionError: string | null
+  activeSession: SessionSummary
+  isResolving: boolean
+  request: PermissionRequest
+  onRespond: ThreadViewProps["onPermissionRequestResponse"]
+}) {
+  const [scope, setScope] = useState<PermissionApprovalScope>("once")
+  const [reason, setReason] = useState("")
+  const detail = summarizePermissionRequest(request)
+  const title = request.title?.trim() || request.tool
+
+  function handleRespond(approved: boolean) {
+    void onRespond({
+      sessionID: activeSession.id,
+      request,
+      approved,
+      scope,
+      reason,
+    })
+  }
+
+  return (
+    <article className="permission-request-card">
+      <header className="permission-request-header">
+        <div>
+          <span className="label">Approval Required</span>
+          <h3>{title}</h3>
+          <p className="permission-request-subtitle">
+            {detail}
+          </p>
+        </div>
+        <div className="permission-request-badges">
+          <span className={`permission-risk-chip is-${request.risk}`}>{formatPermissionRiskLabel(request.risk)}</span>
+          {request.toolKind ? <span className="permission-meta-chip">{request.toolKind}</span> : null}
+        </div>
+      </header>
+
+      <div className="permission-request-grid">
+        <div className="permission-request-meta">
+          <span className="permission-request-meta-label">Tool</span>
+          <strong>{request.tool}</strong>
+        </div>
+        <div className="permission-request-meta">
+          <span className="permission-request-meta-label">Requested</span>
+          <strong>{formatTime(request.createdAt)}</strong>
+        </div>
+        {request.resource?.workdir ? (
+          <div className="permission-request-meta permission-request-meta-wide">
+            <span className="permission-request-meta-label">Workdir</span>
+            <strong>{request.resource.workdir}</strong>
+          </div>
+        ) : null}
+        {request.resource?.command ? (
+          <div className="permission-request-meta permission-request-meta-wide">
+            <span className="permission-request-meta-label">Command</span>
+            <strong>{request.resource.command}</strong>
+          </div>
+        ) : null}
+        {request.resource?.paths && request.resource.paths.length > 0 ? (
+          <div className="permission-request-meta permission-request-meta-wide">
+            <span className="permission-request-meta-label">Paths</span>
+            <strong>{request.resource.paths.join(", ")}</strong>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="permission-request-controls">
+        <label className="settings-field permission-request-field">
+          <span className="settings-field-label">Remember decision</span>
+          <select
+            aria-label={`Remember decision scope for ${title}`}
+            disabled={isResolving}
+            value={scope}
+            onChange={(event) => setScope(event.target.value as PermissionApprovalScope)}
+          >
+            {permissionScopeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="settings-field permission-request-field permission-request-field-wide">
+          <span className="settings-field-label">Reason</span>
+          <input
+            aria-label={`Decision reason for ${title}`}
+            disabled={isResolving}
+            placeholder="Optional note for the approval log"
+            type="text"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </label>
+      </div>
+
+      <div className="permission-request-footer">
+        <p className="permission-request-note">Your decision will resume the blocked session after the backend records it.</p>
+        <div className="settings-inline-actions permission-request-actions">
+          <button
+            className="secondary-button"
+            aria-label={`Deny ${title} and continue`}
+            disabled={isResolving}
+            onClick={() => handleRespond(false)}
+            type="button"
+          >
+            {isResolving ? "Applying..." : "Deny and continue"}
+          </button>
+          <button
+            className="primary-button"
+            aria-label={`Approve ${title} and continue`}
+            disabled={isResolving}
+            onClick={() => handleRespond(true)}
+            type="button"
+          >
+            {isResolving ? "Applying..." : "Approve and continue"}
+          </button>
+        </div>
+      </div>
+
+      {actionError ? <p className="permission-request-error">{actionError}</p> : null}
+    </article>
+  )
+}
+
+export function ThreadView({
+  activeSession,
+  activeTurns,
+  isResolvingPermissionRequest,
+  pendingPermissionRequests,
+  permissionRequestActionError,
+  permissionRequestActionRequestID,
+  threadColumnRef,
+  onPermissionRequestResponse,
+}: ThreadViewProps) {
   return (
     <section className="thread-shell">
       <div ref={threadColumnRef} className="thread-column">
@@ -1471,8 +1633,9 @@ export function ThreadView({ activeSession, activeTurns, threadColumnRef }: Thre
               </div>
             </div>
           </article>
-        ) : activeTurns.length === 0 ? null : (
-          activeTurns.map((turn) => {
+        ) : (
+          <>
+            {activeTurns.map((turn) => {
             if (turn.kind === "user") {
               return (
                 <article key={turn.id} className="turn user-turn">
@@ -1499,7 +1662,25 @@ export function ThreadView({ activeSession, activeTurns, threadColumnRef }: Thre
                 </div>
               </article>
             )
-          })
+            })}
+
+            {pendingPermissionRequests.length > 0 ? (
+              <section className="permission-request-stack" aria-label="Pending approvals">
+                {pendingPermissionRequests.map((request) => (
+                  <PermissionRequestCard
+                    key={request.id}
+                    actionError={
+                      permissionRequestActionRequestID === request.id ? permissionRequestActionError : null
+                    }
+                    activeSession={activeSession}
+                    isResolving={isResolvingPermissionRequest && permissionRequestActionRequestID === request.id}
+                    request={request}
+                    onRespond={onPermissionRequestResponse}
+                  />
+                ))}
+              </section>
+            ) : null}
+          </>
         )}
       </div>
     </section>
@@ -1507,15 +1688,85 @@ export function ThreadView({ activeSession, activeTurns, threadColumnRef }: Thre
 }
 
 interface ComposerProps {
+  agentMode: AppMode
+  attachments: ComposerAttachment[]
   draft: string
   hasActiveSession: boolean
+  hasPendingPermissionRequests: boolean
   isSending: boolean
-  onClear: () => void
+  modelOptions: ComposerModelOption[]
+  selectedModel: string | null
+  selectedModelLabel: string
+  onAgentModeChange: (mode: AppMode) => void
   onDraftChange: (value: string) => void
+  onModelChange: (value: string | null) => void | Promise<void>
+  onPickAttachments: () => void | Promise<void>
+  onRemoveAttachment: (path: string) => void
   onSend: () => void | Promise<void>
 }
 
-export function Composer({ draft, hasActiveSession, isSending, onClear, onDraftChange, onSend }: ComposerProps) {
+type ComposerMenuKey = "model" | "agent" | null
+
+const composerAgentModes: AppMode[] = ["Autopilot", "Review"]
+
+export function Composer({
+  agentMode,
+  attachments,
+  draft,
+  hasActiveSession,
+  hasPendingPermissionRequests,
+  isSending,
+  modelOptions,
+  selectedModel,
+  selectedModelLabel,
+  onAgentModeChange,
+  onDraftChange,
+  onModelChange,
+  onPickAttachments,
+  onRemoveAttachment,
+  onSend,
+}: ComposerProps) {
+  const [openMenu, setOpenMenu] = useState<ComposerMenuKey>(null)
+  const toolbarRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!openMenu) return
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      if (!toolbarRef.current?.contains(event.target as Node)) {
+        setOpenMenu(null)
+      }
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenMenu(null)
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown)
+    window.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown)
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [openMenu])
+
+  function toggleMenu(menu: Exclude<ComposerMenuKey, null>) {
+    setOpenMenu((current) => (current === menu ? null : menu))
+  }
+
+  function handleModelSelect(value: string | null) {
+    setOpenMenu(null)
+    void onModelChange(value)
+  }
+
+  function handleAgentModeSelect(mode: AppMode) {
+    setOpenMenu(null)
+    onAgentModeChange(mode)
+  }
+
   return (
     <footer className="composer prompt-input-shell">
       <textarea
@@ -1526,19 +1777,111 @@ export function Composer({ draft, hasActiveSession, isSending, onClear, onDraftC
         rows={3}
       />
 
-      <div className="composer-toolbar">
-        <div className="composer-pills">
-          <span className="composer-pill">GPT-5.4</span>
-          <span className="composer-pill">Desktop</span>
-          <span className="composer-pill">Anybox Ref</span>
+      {attachments.length > 0 ? (
+        <div className="composer-attachment-strip" aria-label="Selected attachments">
+          {attachments.map((attachment) => (
+            <div key={attachment.path} className="composer-attachment-chip">
+              <span className="composer-attachment-name" title={attachment.path}>
+                {attachment.name}
+              </span>
+              <button
+                aria-label={`Remove ${attachment.name}`}
+                className="composer-attachment-remove"
+                onClick={() => onRemoveAttachment(attachment.path)}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div ref={toolbarRef} className="composer-toolbar">
+        <div className="composer-selectors" aria-label="Composer options">
+          <button aria-label="Add image or file" className="composer-selector-button" onClick={() => void onPickAttachments()} type="button">
+            Add image or file
+          </button>
+
+          <div className="composer-menu-anchor">
+            <button
+              aria-expanded={openMenu === "model"}
+              aria-haspopup="dialog"
+              aria-label={`Model: ${selectedModelLabel}`}
+              className="composer-selector-button"
+              onClick={() => toggleMenu("model")}
+              type="button"
+            >
+              <span>{`Model: ${selectedModelLabel}`}</span>
+              <ChevronDownIcon />
+            </button>
+
+            {openMenu === "model" ? (
+              <div className="composer-menu-panel" role="dialog" aria-label="Model selection">
+                <button
+                  className={selectedModel === null ? "composer-menu-option is-selected" : "composer-menu-option"}
+                  onClick={() => handleModelSelect(null)}
+                  type="button"
+                >
+                  <span>Use server default</span>
+                </button>
+                {modelOptions.length > 0 ? (
+                  modelOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
+                      onClick={() => handleModelSelect(option.value)}
+                      type="button"
+                    >
+                      <span>{option.label}</span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="composer-menu-empty">No visible models are available for this project yet.</p>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="composer-menu-anchor">
+            <button
+              aria-expanded={openMenu === "agent"}
+              aria-haspopup="dialog"
+              aria-label={`Agent mode: ${agentMode}`}
+              className="composer-selector-button"
+              onClick={() => toggleMenu("agent")}
+              type="button"
+            >
+              <span>{`Agent mode: ${agentMode}`}</span>
+              <ChevronDownIcon />
+            </button>
+
+            {openMenu === "agent" ? (
+              <div className="composer-menu-panel" role="dialog" aria-label="Agent mode selection">
+                {composerAgentModes.map((mode) => (
+                  <button
+                    key={mode}
+                    className={agentMode === mode ? "composer-menu-option is-selected" : "composer-menu-option"}
+                    onClick={() => handleAgentModeSelect(mode)}
+                    type="button"
+                  >
+                    <span>{mode}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="composer-actions">
-          <button aria-label="Clear draft" className="secondary-button" onClick={onClear}>
-            Clear
-          </button>
-          <button aria-label="Send task" className="primary-button" disabled={isSending || !hasActiveSession} onClick={() => void onSend()}>
-            {isSending ? "Sending..." : "Send task"}
+          <button
+            aria-label="Send task"
+            className="primary-button"
+            disabled={isSending || !hasActiveSession || hasPendingPermissionRequests}
+            onClick={() => void onSend()}
+            type="button"
+          >
+            {isSending ? "Sending..." : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"}
           </button>
         </div>
       </div>

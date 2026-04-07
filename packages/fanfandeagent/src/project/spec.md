@@ -20,7 +20,7 @@
 - `name`: 可读名称
 - `icon`: 项目图标信息
 - `created` / `updated` / `initialized`: 时间戳
-- `sandboxes`: 该项目下的沙箱目录列表
+- `sandboxes`: 该项目关联的额外工作目录列表，主要对应 git worktree 等额外 workspace 根目录
 
 ### `Instance`
 目录级上下文管理器。

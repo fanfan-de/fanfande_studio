@@ -72,6 +72,23 @@ function isPathInsideProject(directory: string, worktree: string) {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
+function isAdditionalSandboxDirectory(directory: string, worktree: string) {
+  if (isGlobalWorktree(worktree)) return false
+  if (normalizeProjectPath(directory) === normalizeProjectPath(worktree)) return false
+  return !isPathInsideProject(directory, worktree)
+}
+
+function uniqueProjectPaths(input: string[]) {
+  const unique = new Map<string, string>()
+
+  for (const item of input) {
+    if (!item) continue
+    unique.set(normalizeProjectPath(item), item)
+  }
+
+  return [...unique.values()]
+}
+
 function collectLegacyProjects(worktree: string, projectID?: string, sandbox?: string) {
   const normalizedWorktree = isGlobalWorktree(worktree) ? null : normalizeProjectPath(worktree)
   const normalizedSandbox = sandbox ? normalizeProjectPath(sandbox) : null
@@ -132,9 +149,12 @@ function persistProjectRecord(input: {
       sandboxes: [] as string[],
     }
 
-  const sandboxes = Array.from(
-    new Set([...(seedProject.sandboxes ?? []), ...legacyProjects.flatMap((project) => project.sandboxes ?? []), input.sandbox]),
-  ).filter((item) => existsSync(item))
+  const sandboxes = uniqueProjectPaths([
+    ...(seedProject.sandboxes ?? []),
+    ...legacyProjects.flatMap((project) => project.sandboxes ?? []),
+    ...legacyProjects.map((project) => project.worktree),
+    input.sandbox,
+  ]).filter((item) => existsSync(item) && isAdditionalSandboxDirectory(item, input.worktree))
 
   const nextProject: ProjectInfo = {
     ...seedProject,
@@ -230,8 +250,8 @@ async function resolveGitProjectID(cwd: string, gitCommonDir?: string) {
 }
 
 async function resolveProjectIdentity(directory: string) {
-  const sandbox = path.resolve(directory)
-  const matches = Filesystem.up({ targets: [".git"], start: sandbox })
+  const resolvedDirectory = path.resolve(directory)
+  const matches = Filesystem.up({ targets: [".git"], start: resolvedDirectory })
   const gitMarker = await matches.next().then((item) => item.value)
   await matches.return()
 
@@ -240,15 +260,16 @@ async function resolveProjectIdentity(directory: string) {
   if (!gitMarker) {
     return {
       projectID: "global",
-      sandbox,
+      sandbox: resolvedDirectory,
       worktree: "/",
       vcs: defaultVcs,
     }
   }
 
   const gitCwd = path.dirname(gitMarker)
-  const worktree = (await resolveGitTopLevel(gitCwd)) ?? gitCwd
   const gitCommonDir = await resolveGitCommonDir(gitCwd)
+  const sandbox = (await resolveGitTopLevel(gitCwd)) ?? gitCwd
+  const worktree = gitCommonDir ? path.resolve(gitCommonDir, "..") : sandbox
   const projectID = await resolveGitProjectID(gitCwd, gitCommonDir)
 
   return {
@@ -322,8 +343,8 @@ export async function list() {
       ...project,
       name: project.name?.trim() || previous?.name?.trim() || resolveProjectName(project.worktree, project.vcs),
       updated: Math.max(previous?.updated ?? 0, project.updated),
-      sandboxes: Array.from(new Set([...(previous?.sandboxes ?? []), ...(project.sandboxes ?? [])])).filter((item) =>
-        existsSync(item),
+      sandboxes: uniqueProjectPaths([...(previous?.sandboxes ?? []), ...(project.sandboxes ?? [])]).filter(
+        (item) => existsSync(item) && isAdditionalSandboxDirectory(item, project.worktree),
       ),
     }
 
@@ -371,7 +392,7 @@ export async function sandboxes(projectID: string) {
   const valid: string[] = []
   for (const directory of project.sandboxes) {
     const stat = await fs.stat(directory).catch(() => undefined)
-    if (stat?.isDirectory()) valid.push(directory)
+    if (stat?.isDirectory() && isAdditionalSandboxDirectory(directory, project.worktree)) valid.push(directory)
   }
 
   return valid

@@ -4,6 +4,10 @@ export type SidebarActionKey = "project" | "sort" | "new"
 export type CanvasMenuKey = "overview" | "artifacts" | "changes" | "console" | "deploy"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
+export type PermissionRequestStatus = "pending" | "approved" | "denied" | "expired"
+export type PermissionApprovalScope = "once" | "session" | "project" | "forever"
+export type PermissionRisk = "low" | "medium" | "high" | "critical"
+export type PermissionToolKind = "read" | "write" | "search" | "exec" | "other"
 
 export interface SessionSummary {
   id: string
@@ -91,7 +95,7 @@ export type AssistantTraceItemKind =
   | "snapshot"
   | "error"
 
-export type AssistantTraceStatus = "pending" | "running" | "completed" | "error"
+export type AssistantTraceStatus = "pending" | "running" | "completed" | "error" | "waiting-approval" | "denied"
 
 export interface AssistantTraceItem {
   id: string
@@ -124,6 +128,33 @@ export interface AgentStreamEvent {
 
 export interface AgentStreamIPCEvent extends AgentStreamEvent {
   streamID: string
+}
+
+export interface PermissionRequestResource {
+  paths?: string[]
+  command?: string
+  workdir?: string
+}
+
+export interface PermissionRequest {
+  id: string
+  approvalID: string
+  sessionID: string
+  messageID: string
+  toolCallID: string
+  projectID: string
+  agent: string
+  tool: string
+  toolKind?: PermissionToolKind
+  title?: string
+  risk: PermissionRisk
+  status: PermissionRequestStatus
+  input: Record<string, unknown>
+  resource?: PermissionRequestResource
+  createdAt: number
+  resolvedAt?: number
+  resolutionScope?: PermissionApprovalScope
+  resolutionReason?: string
 }
 
 export interface PendingAgentStream {
@@ -178,6 +209,16 @@ export interface ProviderModel {
 export interface ProjectModelSelection {
   model: string | null
   smallModel: string | null
+}
+
+export interface ComposerAttachment {
+  path: string
+  name: string
+}
+
+export interface ComposerModelOption {
+  value: string
+  label: string
 }
 
 export interface ProviderDraftState {

@@ -199,7 +199,7 @@
 
 补充语义：
 - `worktree` 是项目边界；Git 项目通常是仓库顶层，非 Git 场景会退化为全局项目边界 `/`
-- `sandboxes` 记录这个 project 下面已经识别过、且当前仍存在的目录
+- `sandboxes` 记录这个 project 关联的额外工作目录，主要对应 git worktree 等额外 workspace 根目录，不记录普通子目录
 - `commands.start` 是创建新 workspace / worktree 时可复用的启动命令入口
 
 ### 5.2 Session

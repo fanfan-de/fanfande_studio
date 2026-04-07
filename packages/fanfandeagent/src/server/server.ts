@@ -3,6 +3,7 @@ import type { Context } from "hono"
 import { cors } from "hono/cors"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { ProjectRoutes } from "#server/routes/projects.ts"
+import { PermissionsRoutes } from "#server/routes/permissions.ts"
 import { SettingsRoutes } from "#server/routes/settings.ts"
 import { SessionRoutes } from "#server/routes/session.ts"
 import { isApiError } from "#server/error.ts"
@@ -90,6 +91,7 @@ export function createServerApp(options: Pick<ServerOptions, "corsWhitelist"> = 
   )
 
   app.route("/api", SettingsRoutes())
+  app.route("/api/permissions", PermissionsRoutes())
   app.route("/api/projects", ProjectRoutes())
   app.route("/api/sessions", SessionRoutes())
 

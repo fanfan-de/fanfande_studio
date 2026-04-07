@@ -17,8 +17,14 @@ import {
   buildStreamingAssistantTurn,
 } from "./stream"
 import type {
+  AppMode,
   AgentStreamIPCEvent,
+  ComposerAttachment,
+  ComposerModelOption,
+  PermissionApprovalScope,
+  PermissionRequest,
   PendingAgentStream,
+  ProviderModel,
   SessionSummary,
   SidebarActionKey,
   Turn,
@@ -44,6 +50,49 @@ interface UseAgentWorkspaceOptions {
   platform: string
 }
 
+const REVIEW_MODE_SYSTEM_PROMPT =
+  "Operate in review mode. Prioritize bugs, regressions, risky assumptions, and missing tests. Present findings first and keep the review concise."
+
+function normalizeModelSelection(selection?: { model?: string; small_model?: string }) {
+  return {
+    model: selection?.model ?? null,
+    smallModel: selection?.small_model ?? null,
+  }
+}
+
+function getComposerAttachmentName(path: string) {
+  const segments = path.split(/[\\/]/).filter(Boolean)
+  return segments[segments.length - 1] ?? path
+}
+
+function buildComposerAttachment(path: string): ComposerAttachment {
+  return {
+    path,
+    name: getComposerAttachmentName(path),
+  }
+}
+
+function toComposerModelValue(model: ProviderModel) {
+  return `${model.providerID}/${model.id}`
+}
+
+function toComposerModelLabel(model: ProviderModel) {
+  return model.name
+}
+
+function resolveComposerModelLabel(selectedModel: string | null, models: ProviderModel[], isLoading: boolean) {
+  if (isLoading && models.length === 0) return "Loading..."
+  if (!selectedModel) return "Server default"
+  return models.find((model) => toComposerModelValue(model) === selectedModel)?.name ?? selectedModel
+}
+
+function buildPromptWithAttachments(prompt: string, attachments: ComposerAttachment[]) {
+  if (attachments.length === 0) return prompt
+
+  const attachmentLines = attachments.map((attachment) => `- ${attachment.name}: ${attachment.path}`)
+  return `${prompt}\n\nAttached files:\n${attachmentLines.join("\n")}`
+}
+
 export function useAgentWorkspace({
   agentConnected,
   agentDefaultDirectory,
@@ -53,6 +102,7 @@ export function useAgentWorkspace({
   const projectRowRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const pendingStreamsRef = useRef<Record<string, PendingAgentStream>>({})
   const historyRequestRef = useRef(0)
+  const permissionRequestsRequestRef = useRef<Record<string, number>>({})
   const conversationVersionRef = useRef<Record<string, number>>({})
   const [workspaces, setWorkspaces] = useState(seedWorkspaces)
   const [selectedFolderID, setSelectedFolderID] = useState<string | null>(initialSelection.workspace?.id ?? null)
@@ -67,13 +117,38 @@ export function useAgentWorkspace({
   const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [deletingSessionID, setDeletingSessionID] = useState<string | null>(null)
   const [canLoadSessionHistory, setCanLoadSessionHistory] = useState(false)
+  const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySession] = useState<
+    Record<string, PermissionRequest[]>
+  >({})
+  const [permissionRequestActionRequestID, setPermissionRequestActionRequestID] = useState<string | null>(null)
+  const [permissionRequestActionError, setPermissionRequestActionError] = useState<string | null>(null)
+  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([])
+  const [composerAgentMode, setComposerAgentMode] = useState<AppMode>("Autopilot")
+  const [composerModels, setComposerModels] = useState<ProviderModel[]>([])
+  const [composerSelectedModel, setComposerSelectedModel] = useState<string | null>(null)
+  const [composerSmallModel, setComposerSmallModel] = useState<string | null>(null)
+  const [isLoadingComposerModels, setIsLoadingComposerModels] = useState(false)
+  const composerModelsRequestRef = useRef(0)
+  const pendingModelSelectionRef = useRef<Promise<void> | null>(null)
 
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
   const selectedWorkspace = findWorkspaceByID(workspaces, selectedFolderID) ?? activeWorkspace ?? workspaces[0] ?? null
   const activeTurns = activeSession ? conversations[activeSession.id] ?? [] : []
+  const activePendingPermissionRequests = activeSession ? pendingPermissionRequestsBySession[activeSession.id] ?? [] : []
+  const composerModelOptions: ComposerModelOption[] = composerModels
+    .filter((model) => model.available)
+    .map((model) => ({
+      value: toComposerModelValue(model),
+      label: toComposerModelLabel(model),
+    }))
+  const composerSelectedModelLabel = resolveComposerModelLabel(composerSelectedModel, composerModels, isLoadingComposerModels)
 
   function bumpConversationVersion(sessionID: string) {
     conversationVersionRef.current[sessionID] = (conversationVersionRef.current[sessionID] ?? 0) + 1
+  }
+
+  function resolveBackendSessionID(sessionID: string) {
+    return agentSessions[sessionID] ?? sessionID
   }
 
   function replaceConversationTurns(sessionID: string, nextTurns: Turn[]) {
@@ -98,6 +173,40 @@ export function useAgentWorkspace({
     setConversations((prev) => updateAssistantTurnInMap(prev, sessionID, turnID, updater))
   }
 
+  async function reloadSessionHistoryForSession(sessionID: string, backendSessionID = resolveBackendSessionID(sessionID)) {
+    const getSessionHistory = window.desktop?.getSessionHistory
+    if (!getSessionHistory) return
+
+    const messages = await getSessionHistory({ sessionID: backendSessionID })
+    startTransition(() => {
+      replaceConversationTurns(sessionID, buildTurnsFromHistory(messages))
+    })
+  }
+
+  async function loadPendingPermissionRequestsForSession(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+  ) {
+    const getSessionPermissionRequests = window.desktop?.getSessionPermissionRequests
+    if (!getSessionPermissionRequests) return
+
+    const requestID = (permissionRequestsRequestRef.current[sessionID] ?? 0) + 1
+    permissionRequestsRequestRef.current[sessionID] = requestID
+
+    try {
+      const nextRequests = await getSessionPermissionRequests({ sessionID: backendSessionID })
+      if (permissionRequestsRequestRef.current[sessionID] !== requestID) return
+
+      setPendingPermissionRequestsBySession((prev) => ({
+        ...prev,
+        [sessionID]: nextRequests.filter((request) => request.status === "pending"),
+      }))
+    } catch (error) {
+      if (permissionRequestsRequestRef.current[sessionID] !== requestID) return
+      console.error("[desktop] getSessionPermissionRequests failed:", error)
+    }
+  }
+
   useEffect(() => {
     const unsubscribe = window.desktop?.onAgentStreamEvent?.((streamEvent: AgentStreamIPCEvent) => {
       const target = pendingStreamsRef.current[streamEvent.streamID]
@@ -109,6 +218,15 @@ export function useAgentWorkspace({
 
       if (streamEvent.event === "done" || streamEvent.event === "error") {
         delete pendingStreamsRef.current[streamEvent.streamID]
+
+        if (canLoadSessionHistory) {
+          void reloadSessionHistoryForSession(target.sessionID).catch((error) => {
+            console.error("[desktop] stream history refresh failed:", error)
+          })
+          void loadPendingPermissionRequestsForSession(target.sessionID).catch((error) => {
+            console.error("[desktop] stream permission refresh failed:", error)
+          })
+        }
       }
     })
 
@@ -116,7 +234,7 @@ export function useAgentWorkspace({
       pendingStreamsRef.current = {}
       unsubscribe?.()
     }
-  }, [])
+  }, [canLoadSessionHistory])
 
   useEffect(() => {
     let mounted = true
@@ -180,6 +298,53 @@ export function useAgentWorkspace({
   }, [activeSessionID, canLoadSessionHistory])
 
   useEffect(() => {
+    if (!canLoadSessionHistory || !activeSessionID) return
+
+    void loadPendingPermissionRequestsForSession(activeSessionID)
+  }, [activeSessionID, canLoadSessionHistory, agentSessions])
+
+  useEffect(() => {
+    const projectID = selectedWorkspace?.project.id
+    const getProjectModels = window.desktop?.getProjectModels
+
+    if (!projectID || !getProjectModels) {
+      setComposerModels([])
+      setComposerSelectedModel(null)
+      setComposerSmallModel(null)
+      return
+    }
+
+    let cancelled = false
+    const requestID = ++composerModelsRequestRef.current
+    setIsLoadingComposerModels(true)
+
+    getProjectModels({ projectID })
+      .then((payload) => {
+        if (cancelled || composerModelsRequestRef.current !== requestID) return
+        const nextSelection = normalizeModelSelection(payload.selection)
+        setComposerModels(payload.items)
+        setComposerSelectedModel(nextSelection.model)
+        setComposerSmallModel(nextSelection.smallModel)
+      })
+      .catch((error) => {
+        if (cancelled || composerModelsRequestRef.current !== requestID) return
+        console.error("[desktop] getProjectModels failed:", error)
+        setComposerModels([])
+        setComposerSelectedModel(null)
+        setComposerSmallModel(null)
+      })
+      .finally(() => {
+        if (!cancelled && composerModelsRequestRef.current === requestID) {
+          setIsLoadingComposerModels(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedWorkspace?.project.id])
+
+  useEffect(() => {
     if (!selectedFolderID) return
 
     const projectRow = projectRowRefs.current[selectedFolderID]
@@ -214,8 +379,17 @@ export function useAgentWorkspace({
       return next
     })
 
+    setPendingPermissionRequestsBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
     for (const sessionID of sessionIDs) {
       delete conversationVersionRef.current[sessionID]
+      delete permissionRequestsRequestRef.current[sessionID]
     }
 
     for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
@@ -378,7 +552,13 @@ export function useAgentWorkspace({
       setSelectedFolderID(nextSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null)
       setConversations((prev) => removeConversationSession(prev, session.id))
       setAgentSessions((prev) => removeAgentSession(prev, session.id))
+      setPendingPermissionRequestsBySession((prev) => {
+        const next = { ...prev }
+        delete next[session.id]
+        return next
+      })
       delete conversationVersionRef.current[session.id]
+      delete permissionRequestsRequestRef.current[session.id]
       for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
         if (target.sessionID === session.id) {
           delete pendingStreamsRef.current[streamID]
@@ -397,9 +577,15 @@ export function useAgentWorkspace({
     if (!activeSession || !activeWorkspace) return
 
     const text = draft.trim()
-    if (!text || isSending) return
+    if (!text || isSending || activePendingPermissionRequests.length > 0) return
+    if (pendingModelSelectionRef.current) {
+      await pendingModelSelectionRef.current.catch(() => undefined)
+    }
     const uiSessionID = activeSession.id
     const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
+    const attachments = composerAttachments
+    const submissionText = buildPromptWithAttachments(text, attachments)
+    const system = composerAgentMode === "Review" ? REVIEW_MODE_SYSTEM_PROMPT : undefined
 
     const userTurn: Turn = {
       id: createID("user"),
@@ -409,6 +595,7 @@ export function useAgentWorkspace({
     }
 
     setDraft("")
+    setComposerAttachments([])
 
     startTransition(() => {
       appendConversationTurns(uiSessionID, [userTurn])
@@ -474,7 +661,8 @@ export function useAgentWorkspace({
         await window.desktop.streamAgentMessage({
           streamID,
           sessionID: backendSessionID,
-          text,
+          text: submissionText,
+          system,
         })
 
         return
@@ -482,7 +670,8 @@ export function useAgentWorkspace({
 
       const result = await window.desktop.sendAgentMessage?.({
         sessionID: backendSessionID,
-        text,
+        text: submissionText,
+        system,
       })
 
       if (!result) {
@@ -513,15 +702,123 @@ export function useAgentWorkspace({
     }
   }
 
+  async function handlePermissionRequestResponse(input: {
+    sessionID: string
+    request: PermissionRequest
+    approved: boolean
+    scope: PermissionApprovalScope
+    reason?: string
+  }) {
+    const respondPermissionRequest = window.desktop?.respondPermissionRequest
+    if (!respondPermissionRequest || permissionRequestActionRequestID) return
+
+    setPermissionRequestActionRequestID(input.request.id)
+    setPermissionRequestActionError(null)
+
+    try {
+      await respondPermissionRequest({
+        requestID: input.request.id,
+        approved: input.approved,
+        scope: input.scope,
+        reason: input.reason?.trim() || undefined,
+        resume: true,
+      })
+
+      await reloadSessionHistoryForSession(input.sessionID, input.request.sessionID)
+      await loadPendingPermissionRequestsForSession(input.sessionID, input.request.sessionID)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error("[desktop] respondPermissionRequest failed:", error)
+      setPermissionRequestActionError(message)
+    } finally {
+      setPermissionRequestActionRequestID(null)
+    }
+  }
+
+  async function handlePickComposerAttachments() {
+    if (!window.desktop?.pickComposerAttachments) return
+
+    try {
+      const pickedPaths = await window.desktop.pickComposerAttachments()
+      if (!pickedPaths || pickedPaths.length === 0) return
+
+      setComposerAttachments((current) => {
+        const seen = new Set(current.map((attachment) => attachment.path))
+        const nextAttachments = [...current]
+
+        for (const path of pickedPaths) {
+          if (seen.has(path)) continue
+          seen.add(path)
+          nextAttachments.push(buildComposerAttachment(path))
+        }
+
+        return nextAttachments
+      })
+    } catch (error) {
+      console.error("[desktop] pickComposerAttachments failed:", error)
+    }
+  }
+
+  function handleRemoveComposerAttachment(path: string) {
+    setComposerAttachments((current) => current.filter((attachment) => attachment.path !== path))
+  }
+
+  async function handleComposerModelChange(value: string | null) {
+    const projectID = selectedWorkspace?.project.id
+    const updateProjectModelSelection = window.desktop?.updateProjectModelSelection
+    const previousSelection = composerSelectedModel
+    setComposerSelectedModel(value)
+
+    if (!projectID || !updateProjectModelSelection) {
+      return
+    }
+
+    const saveTask = (async () => {
+      try {
+        const result = await updateProjectModelSelection({
+          projectID,
+          model: value,
+          small_model: composerSmallModel,
+        })
+        setComposerSelectedModel(result.model ?? null)
+        setComposerSmallModel(result.small_model ?? composerSmallModel)
+      } catch (error) {
+        console.error("[desktop] updateProjectModelSelection failed:", error)
+        setComposerSelectedModel(previousSelection)
+        throw error
+      }
+    })()
+
+    const trackedTask = saveTask.finally(() => {
+      if (pendingModelSelectionRef.current === trackedTask) {
+        pendingModelSelectionRef.current = null
+      }
+    })
+    pendingModelSelectionRef.current = trackedTask
+
+    await trackedTask
+  }
+
   return {
     activeSession,
+    activePendingPermissionRequests,
     activeTurns,
+    composerAgentMode,
+    composerAttachments,
+    composerModelOptions,
+    composerSelectedModel,
+    composerSelectedModelLabel,
     deletingSessionID,
     draft,
     expandedFolderID,
+    handleComposerModelChange,
+    handleComposerModeChange: setComposerAgentMode,
+    handlePermissionRequestResponse,
+    handlePickComposerAttachments,
     handleProjectCreateSession,
     handleProjectClick,
     handleProjectRemove,
+    handleRemoveComposerAttachment,
     handleSend,
     handleSessionDelete,
     handleSessionSelect,
@@ -529,7 +826,10 @@ export function useAgentWorkspace({
     hoveredFolderID,
     isCreatingProject,
     isCreatingSession,
+    isResolvingPermissionRequest: permissionRequestActionRequestID !== null,
     isSending,
+    permissionRequestActionError,
+    permissionRequestActionRequestID,
     projectRowRefs,
     selectedWorkspace,
     selectedFolderID,

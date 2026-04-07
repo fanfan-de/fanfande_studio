@@ -24,7 +24,9 @@ import { iife } from "#util/iife.ts"
 import * as  Identifier from "#id/id.ts";
 import { fn } from "#util/fn.ts";
 import * as db from "#database/Sqlite.ts"
+import type * as Agent from "#agent/agent.ts"
 import * as Provider from "#provider/provider.ts"
+import * as Permission from "#permission/schema.ts"
 
 export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
 export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
@@ -232,6 +234,39 @@ export const ToolStateCompleted = z
     })
 export type ToolStateCompleted = z.infer<typeof ToolStateCompleted>
 
+export const ToolStateWaitingApproval = z
+    .object({
+        status: z.literal("waiting-approval"),
+        approvalID: z.string(),
+        input: z.record(z.string(), z.any()),
+        title: z.string().optional(),
+        metadata: z.record(z.string(), z.any()).optional(),
+        time: z.object({
+            start: z.number(),
+        }),
+    })
+    .meta({
+        ref: "ToolStateWaitingApproval",
+    })
+export type ToolStateWaitingApproval = z.infer<typeof ToolStateWaitingApproval>
+
+export const ToolStateDenied = z
+    .object({
+        status: z.literal("denied"),
+        approvalID: z.string().optional(),
+        input: z.record(z.string(), z.any()),
+        reason: z.string(),
+        metadata: z.record(z.string(), z.any()).optional(),
+        time: z.object({
+            start: z.number(),
+            end: z.number(),
+        }),
+    })
+    .meta({
+        ref: "ToolStateDenied",
+    })
+export type ToolStateDenied = z.infer<typeof ToolStateDenied>
+
 export const ToolStateError = z
     .object({
         status: z.literal("error"),
@@ -270,7 +305,14 @@ export function normalizeToolOutputText(output: unknown): string {
 }
 
 export const ToolState = z
-    .discriminatedUnion("status", [ToolStatePending, ToolStateRunning, ToolStateCompleted, ToolStateError])
+    .discriminatedUnion("status", [
+        ToolStatePending,
+        ToolStateRunning,
+        ToolStateWaitingApproval,
+        ToolStateCompleted,
+        ToolStateDenied,
+        ToolStateError,
+    ])
     .meta({
         ref: "ToolState",
     })
@@ -285,6 +327,20 @@ export const ToolPart = PartBase.extend({
     ref: "ToolPart",
 })
 export type ToolPart = z.infer<typeof ToolPart>
+
+export const PermissionPart = PartBase.extend({
+    type: z.literal("permission"),
+    approvalID: z.string(),
+    toolCallID: z.string(),
+    tool: z.string(),
+    action: Permission.Action,
+    scope: Permission.ApprovalScope.optional(),
+    reason: z.string().optional(),
+    created: z.number(),
+}).meta({
+    ref: "PermissionPart",
+})
+export type PermissionPart = z.infer<typeof PermissionPart>
 
 export const SubtaskPart = PartBase.extend({
     type: z.literal("subtask"),
@@ -349,6 +405,7 @@ export const Part = z
         ReasoningPart,
         FilePart,
         ToolPart,
+        PermissionPart,
         StepStartPart,
         StepFinishPart,
         SnapshotPart,
@@ -533,29 +590,41 @@ export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
  * @returns 绗﹀悎 AI SDK 鏍煎紡鐨勬秷鎭暟缁勶紝鍙洿鎺ョ敤锟?AI SDK 锟?API 璋冪敤
  */
 // TODO: move model message conversion out of message.ts after the schema settles.
-export function toModelMessages(input: WithParts[], model: Provider.Model): ModelMessage[] {
+export async function toModelMessages(
+    input: WithParts[],
+    model: Provider.Model,
+    options?: {
+        agent?: Agent.AgentInfo
+    },
+): Promise<ModelMessage[]> {
     const result: ModelMessage[] = []
-    /** 
-     * 灏嗗崟锟?Part 杞崲锟?AI SDK 鏀寔鐨勫唴瀹归儴锟?
-     * 鏍规嵁 part.type 杩涜鍒嗗彂锛屾鏌ユā鍨嬭兘鍔涳紝骞舵瀯寤哄搴旂殑 AI SDK 鍐呭瀵硅薄
-     * 
-     * @param part - 椤圭洰鍐呴儴鐨勬秷鎭儴锟?
-     * @param model - 鎻愪緵鑰呮ā鍨嬶紝鐢ㄤ簬妫€鏌ヨ兘鍔涙敮锟?
-     * @returns AI SDK 鍐呭瀵硅薄鎴栨暟缁勶紝濡傛灉涓嶆敮鎸佸垯杩斿洖 null
-     */
+    const toolRuntimeCache = new Map<string, Promise<any | undefined>>()
+
+    async function getToolModules() {
+        const [toolModule, registryModule] = await Promise.all([
+            import("#tool/tool.ts"),
+            import("#tool/registry.ts"),
+        ])
+
+        return {
+            Tool: toolModule,
+            ToolRegistry: registryModule,
+        }
+    }
+
     function convertPartToAIPart(part: Part, model: Provider.Model): any | any[] | null {
         switch (part.type) {
             case "text":
                 if (part.ignored) return null
                 return {
                     type: "text" as const,
-                    text: part.text
+                    text: part.text,
                 }
             case "reasoning":
                 if (!model.capabilities.reasoning) return null
                 return {
                     type: "reasoning" as const,
-                    text: part.text
+                    text: part.text,
                 }
             case "file":
                 if (!model.capabilities.attachment) return null
@@ -563,7 +632,7 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
                     type: "file" as const,
                     mime: part.mime,
                     url: part.url,
-                    filename: part.filename
+                    filename: part.filename,
                 }
             case "image":
                 if (!model.capabilities.attachment) return null
@@ -571,17 +640,65 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
                     type: "image" as const,
                     mime: part.mime,
                     url: part.url,
-                    filename: part.filename
+                    filename: part.filename,
                 }
             case "tool":
-                if (!model.capabilities.toolcall) return null
-                const state = part.state
-                if (state.status === "pending" || state.status === "running") return null
+            case "permission":
                 return null
             default:
                 return null
         }
     }
+
+    async function resolveToolModelOutput(part: ToolPart): Promise<{
+        type: "text" | "json" | "error-text" | "error-json" | "execution-denied"
+        value?: unknown
+        reason?: string
+    }> {
+        const state = part.state
+        if (state.status === "denied") {
+            return {
+                type: "execution-denied",
+                reason: state.reason,
+            }
+        }
+
+        if (state.status === "error") {
+            return {
+                type: "error-text",
+                value: state.error,
+            }
+        }
+
+        const cachedRuntime = toolRuntimeCache.get(part.tool) ?? (async () => {
+            const { ToolRegistry } = await getToolModules()
+            const info = await ToolRegistry.get(part.tool)
+            if (!info) return undefined
+            return info.init(options?.agent ? { agent: options.agent } : undefined)
+        })()
+
+        toolRuntimeCache.set(part.tool, cachedRuntime)
+        const runtime = await cachedRuntime
+        const completed = state as ToolStateCompleted
+        const reconstructed = {
+            text: completed.output,
+            title: completed.title,
+            metadata: completed.metadata,
+            attachments: completed.attachments?.map((attachment) => ({
+                url: attachment.url,
+                mime: attachment.mime,
+                filename: attachment.filename,
+            })),
+        }
+
+        const { Tool } = await getToolModules()
+        if (!runtime?.toModelOutput) {
+            return Tool.normalizeToolModelOutput(reconstructed.text)
+        }
+
+        return Tool.normalizeToolModelOutput(await runtime.toModelOutput(reconstructed))
+    }
+
     for (const item of input) {
         const role = item.info.role
         let aiRole: "user" | "assistant"
@@ -592,9 +709,17 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
         } else {
             continue
         }
-        const orderedParts = [...item.parts].sort((a, b) => a.id.localeCompare(b.id))
-        const assistantContent: any[] = []
 
+        const orderedParts = [...item.parts].sort((a, b) => a.id.localeCompare(b.id))
+        const approvalsByToolCallID = new Map<string, PermissionPart[]>()
+        for (const part of orderedParts) {
+            if (part.type !== "permission") continue
+            const list = approvalsByToolCallID.get(part.toolCallID) ?? []
+            list.push(part)
+            approvalsByToolCallID.set(part.toolCallID, list)
+        }
+
+        const assistantContent: any[] = []
         const flushAssistant = () => {
             if (assistantContent.length === 0) return
             result.push({
@@ -607,41 +732,67 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
         for (const part of orderedParts) {
             if (aiRole === "assistant" && part.type === "tool") {
                 const state = part.state
-                if (state.status === "completed" || state.status === "error") {
+                const approvals = approvalsByToolCallID.get(part.callID) ?? []
+                const approvalRequest = approvals.find((approval) => approval.action === "ask")
+                const approvalResponse = approvals.find(
+                    (approval) => approval.action === "allow" || approval.action === "deny",
+                )
+
+                if (
+                    state.status === "waiting-approval" ||
+                    state.status === "completed" ||
+                    state.status === "error" ||
+                    state.status === "denied"
+                ) {
                     flushAssistant()
-                    result.push({
-                        role: "assistant",
-                        content: [
-                            {
-                                type: "tool-call" as const,
-                                toolCallId: part.callID,
-                                toolName: part.tool,
-                                input: state.input,
-                            },
-                        ],
-                    } as ModelMessage)
+
+                    const assistantToolContent: any[] = [
+                        {
+                            type: "tool-call" as const,
+                            toolCallId: part.callID,
+                            toolName: part.tool,
+                            input: state.input,
+                        },
+                    ]
+
+                    if (approvalRequest) {
+                        assistantToolContent.push({
+                            type: "tool-approval-request" as const,
+                            approvalId: approvalRequest.approvalID,
+                            toolCallId: part.callID,
+                        })
+                    }
 
                     result.push({
-                        role: "tool",
-                        content: [
-                            {
-                                type: "tool-result" as const,
-                                toolCallId: part.callID,
-                                toolName: part.tool,
-                                input: state.input,
-                                output:
-                                    state.status === "completed"
-                                        ? {
-                                            type: "text" as const,
-                                            value: state.output,
-                                        }
-                                        : {
-                                            type: "error-text" as const,
-                                            value: state.error,
-                                        },
-                            },
-                        ] as any,
+                        role: "assistant",
+                        content: assistantToolContent,
                     } as ModelMessage)
+
+                    const toolContent: any[] = []
+                    if (approvalRequest && approvalResponse) {
+                        toolContent.push({
+                            type: "tool-approval-response" as const,
+                            approvalId: approvalRequest.approvalID,
+                            approved: approvalResponse.action === "allow",
+                            reason: approvalResponse.reason,
+                        })
+                    }
+
+                    if (state.status === "completed" || state.status === "error" || state.status === "denied") {
+                        toolContent.push({
+                            type: "tool-result" as const,
+                            toolCallId: part.callID,
+                            toolName: part.tool,
+                            output: await resolveToolModelOutput(part),
+                        })
+                    }
+
+                    if (toolContent.length > 0) {
+                        result.push({
+                            role: "tool",
+                            content: toolContent as any,
+                        } as ModelMessage)
+                    }
                     continue
                 }
             }
@@ -658,6 +809,7 @@ export function toModelMessages(input: WithParts[], model: Provider.Model): Mode
 
         flushAssistant()
     }
+
     return result
 }
 

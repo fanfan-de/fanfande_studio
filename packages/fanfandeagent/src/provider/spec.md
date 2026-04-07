@@ -87,7 +87,10 @@ providers + model -> getSDK() -> getLanguage()
 1. `getSelection()` 读取配置中的 `model` / `small_model`
 2. `getDefaultModelRef()` 先校验配置里的 `provider/model`，失效时回退到 `listModels()` 的第一个模型，最后才回退到 `DEFAULT_MODEL_REF`
 3. `getLanguage(model)` 根据 `model.providerID` 找到 provider，并按 `runtimeKey()` 做缓存
-4. `getSDK(model)` 校验 key、计算 `baseURL` 和 `headers`，然后创建底层 AI SDK provider
+4. `getSDK(model)` 校验 key、计算 `baseURL` 和 `headers`
+5. `getSDK(model)` 再根据 `model.api.npm` 命中 provider 内置的 SDK allowlist
+6. 命中后通过 `BunProc.importPackage()` 按需安装并动态加载对应 SDK 包
+7. 最后才创建底层 AI SDK provider
 
 `runtimeKey()` 当前由以下字段组成：
 
@@ -112,6 +115,7 @@ providers + model -> getSDK() -> getLanguage()
 
 - provider 配置全局共享
 - provider 视图按请求重新解析
+- provider SDK 按 allowlist + 固定版本按需安装
 - 底层 SDK / `LanguageModel` 按实例和运行时参数缓存
 
 本文档描述 `packages/fanfandeagent/src/provider` 当前实现出来的真实架构，而不是理想设计。结论都以以下代码为准：
@@ -150,7 +154,8 @@ providers + model -> getSDK() -> getLanguage()
 - 定义给前端/API 暴露的 DTO：`PublicModel`、`PublicProvider`、`ProviderCatalogItem`
 - 从 `models.dev` catalog 和项目配置生成“项目视图”
 - 提供查询接口：`catalog()`、`listPublicProviders()`、`listModels()`、`getModel()` 等
-- 初始化并缓存 AI SDK provider / language model
+- 维护运行时 SDK allowlist、固定版本和适配器映射
+- 按需安装 / 加载 SDK，并缓存 AI SDK provider / language model
 
 ### `modelsdev.ts`
 

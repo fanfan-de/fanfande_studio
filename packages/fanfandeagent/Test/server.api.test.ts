@@ -630,11 +630,60 @@ describe("server api", () => {
           (project) =>
             project.id === firstBody.data?.id &&
             project.worktree === repositoryRoot &&
-            project.sandboxes.includes(firstDirectory) &&
-            project.sandboxes.includes(secondDirectory),
+            project.sandboxes.length === 0,
         ),
       ).toBe(true)
     } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("POST /api/projects should track extra git worktrees in sandboxes", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-worktree-root-"))
+    const extraWorktree = join(tmpdir(), `fanfande-worktree-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+
+    try {
+      await createGitRepo(repositoryRoot, "shared-repo")
+      await $`git worktree add ${extraWorktree} -b test-worktree`.cwd(repositoryRoot).quiet()
+
+      const rootResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const rootBody = (await rootResponse.json()) as ProjectResponseEnvelope
+
+      const extraResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: extraWorktree }),
+      })
+      const extraBody = (await extraResponse.json()) as ProjectResponseEnvelope
+
+      expect(rootResponse.status).toBe(201)
+      expect(extraResponse.status).toBe(201)
+      expect(rootBody.data?.id).toBeString()
+      expect(extraBody.data?.id).toBe(rootBody.data?.id)
+      expect(rootBody.data?.worktree).toBe(repositoryRoot)
+      expect(extraBody.data?.worktree).toBe(repositoryRoot)
+      expect(extraBody.data?.sandboxes).toContain(extraWorktree)
+      expect(extraBody.data?.sandboxes).not.toContain(repositoryRoot)
+
+      const listResponse = await app.request("http://localhost/api/projects")
+      const listBody = (await listResponse.json()) as ProjectsResponseEnvelope
+
+      expect(listResponse.status).toBe(200)
+      expect(
+        listBody.data?.some(
+          (project) =>
+            project.id === rootBody.data?.id &&
+            project.worktree === repositoryRoot &&
+            project.sandboxes.includes(extraWorktree),
+        ),
+      ).toBe(true)
+    } finally {
+      await rm(extraWorktree, { recursive: true, force: true })
       await rm(repositoryRoot, { recursive: true, force: true })
     }
   })

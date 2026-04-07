@@ -24,17 +24,26 @@ export namespace Scheduler {
   }
 
   const shared = create()
+  let instanceState:
+    | undefined
+    | ReturnType<typeof Instance.state<Entry>>
 
-  const state = Instance.state(
-    () => create(),
-    async (entry) => {
-      for (const timer of entry.timers.values()) {
-        clearInterval(timer)
-      }
-      entry.tasks.clear()
-      entry.timers.clear()
-    },
-  )
+  function state() {
+    if (!instanceState) {
+      instanceState = Instance.state(
+        () => create(),
+        async (entry) => {
+          for (const timer of entry.timers.values()) {
+            clearInterval(timer)
+          }
+          entry.tasks.clear()
+          entry.timers.clear()
+        },
+      )
+    }
+
+    return instanceState()
+  }
 
   export function register(task: Task) {
     const scope = task.scope ?? "instance"
