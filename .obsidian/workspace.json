@@ -13,13 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "todo.md",
+                "file": "TODO_secure_provider_credentials.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "todo"
+              "title": "TODO_secure_provider_credentials"
             }
           }
         ]
@@ -186,8 +186,14 @@
       "mermaid-tools:Open Mermaid Toolbar": false
     }
   },
-  "active": "35980b6fcb97707f",
+  "active": "94ee0976010eed33",
   "lastOpenFiles": [
+    "packages/desktop/electron.vite.config.1775575751663.mjs",
+    "todo.md",
+    "TODO_secure_provider_credentials.md",
+    "Pasted image 20260405013212.png",
+    "spec.md",
+    "packages/fanfandeagent/BACKLOG.md",
     "packages/desktop/electron.vite.config.1775572641401.mjs",
     "packages/desktop/electron.vite.config.1775570216147.mjs",
     "packages/fanfandeagent/test_file.txt",
@@ -201,13 +207,11 @@
     "packages/desktop/electron.vite.config.1775555237925.mjs",
     "packages/desktop/electron.vite.config.1775554917096.mjs",
     "packages/fanfandeagent/Test/prompt.unresolved-tool.test.ts",
-    "packages/desktop/electron.vite.config.1775554356626.mjs",
     "packages/fanfandeagent/src/tool/spec.md",
     "packages/fanfandeagent/src/tool/AGENTS.md",
     "packages/fanfandeagent/src/permission/spec.md",
     "packages/fanfandeagent/src/permission/temp.md",
     "packages/fanfandeagent/src/permission/spec.outdated.md",
-    "todo.md",
     "daily/2026-04-06.md",
     "2026-04-06.md",
     "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/README.md",
@@ -215,16 +219,12 @@
     "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/node_modules/@ai-sdk/provider-utils/README.md",
     "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/node_modules/@ai-sdk/provider-utils/CHANGELOG.md",
     "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/CHANGELOG.md",
-    "TODO_secure_provider_credentials.md",
     "packages/fanfandeagent/src/provider/spec.md",
     "packages/fanfandeagent/src/project/spec.md",
     "packages/fanfandeagent/src/provider/AISDK.md",
     "packages/fanfandeagent/ARCHITECTURE.md",
     "packages/fanfandeagent/src/session/spec.md",
     "packages/fanfandeagent/src/session/SESSION_ARCHITECTURE.md",
-    "packages/fanfandeagent/todo.md",
-    "packages/fanfandeagent/CODING_RULES.md",
-    "Pasted image 20260405013212.png",
     "packages/fanfandedesktop/exports/BkxtC.png",
     "packages/fanfandeagent/docs/data-dictionary/assets/icons.svg",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/shiki-dependency-tree.svg",
