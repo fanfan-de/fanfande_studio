@@ -419,6 +419,13 @@ declare global {
         streamID: string
         requestId?: string
       }>
+      resumeAgentMessageStream?: (input: {
+        streamID: string
+        sessionID: string
+      }) => Promise<{
+        streamID: string
+        requestId?: string
+      }>
       sendAgentMessage?: (input: { sessionID: string; text: string; system?: string; agent?: string }) => Promise<{
         events: Array<{
           event: string

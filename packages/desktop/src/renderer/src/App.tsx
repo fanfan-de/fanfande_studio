@@ -1,4 +1,13 @@
-import { CanvasTopMenu, Composer, SettingsPage, Sidebar, SidebarResizer, ThreadView, Titlebar } from "./app/components"
+import {
+  CanvasTopMenu,
+  Composer,
+  PermissionRequestDialog,
+  SettingsPage,
+  Sidebar,
+  SidebarResizer,
+  ThreadView,
+  Titlebar,
+} from "./app/components"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useSettingsPage } from "./app/use-settings-page"
@@ -129,19 +138,14 @@ export function App() {
           <ThreadView
             activeSession={activeSession}
             activeTurns={activeTurns}
-            pendingPermissionRequests={activePendingPermissionRequests}
-            permissionRequestActionError={permissionRequestActionError}
-            permissionRequestActionRequestID={permissionRequestActionRequestID}
-            isResolvingPermissionRequest={isResolvingPermissionRequest}
             threadColumnRef={threadColumnRef}
-            onPermissionRequestResponse={handlePermissionRequestResponse}
           />
           <Composer
             agentMode={composerAgentMode}
             attachments={composerAttachments}
             draft={draft}
             hasActiveSession={Boolean(activeSession)}
-            hasPendingPermissionRequests={activePendingPermissionRequests.length > 0}
+            hasPendingPermissionRequests={activePendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
             isSending={isSending}
             modelOptions={composerModelOptions}
             selectedModel={composerSelectedModel}
@@ -174,6 +178,15 @@ export function App() {
           onSaveProvider={saveProvider}
           onSaveSelection={saveSelection}
           onSelectionChange={setSelectionDraftValue}
+        />
+
+        <PermissionRequestDialog
+          activeSession={activeSession}
+          isResolvingPermissionRequest={isResolvingPermissionRequest}
+          pendingPermissionRequests={activePendingPermissionRequests}
+          permissionRequestActionError={permissionRequestActionError}
+          permissionRequestActionRequestID={permissionRequestActionRequestID}
+          onPermissionRequestResponse={handlePermissionRequestResponse}
         />
       </main>
     </div>

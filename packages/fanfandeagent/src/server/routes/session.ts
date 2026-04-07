@@ -48,6 +48,11 @@ function readSessionParts(sessionID: string) {
   })
 }
 
+type SessionStreamResult = {
+  info: Message.MessageInfo
+  parts: Message.Part[]
+}
+
 export function seedSeenSessionParts(sessionID: string, seenParts: Map<string, Message.Part>) {
   for (const part of readSessionParts(sessionID)) {
     seenParts.set(part.id, part)
@@ -104,6 +109,102 @@ export function emitUpdatedAssistantSessionParts(
 
     seenParts.set(part.id, part)
   }
+}
+
+function createSessionExecutionStream(input: {
+  sessionID: string
+  execute: () => Promise<SessionStreamResult>
+  cancel: () => void
+  requestId?: string
+}) {
+  let cancelled = false
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder()
+
+      const send = (event: string, data: unknown) => {
+        if (cancelled) return
+        controller.enqueue(encoder.encode(toSSE(event, data)))
+      }
+
+      const seenParts = new Map<string, Message.Part>()
+      seedSeenSessionParts(input.sessionID, seenParts)
+
+      const flushPartUpdates = () => {
+        emitUpdatedAssistantSessionParts(input.sessionID, seenParts, send)
+      }
+
+      void (async () => {
+        send("started", {
+          sessionID: input.sessionID,
+          timestamp: Date.now(),
+        })
+
+        let resolved: SessionStreamResult | undefined
+        let failed: unknown
+        let done = false
+
+        input.execute()
+          .then((value) => {
+            resolved = value
+            done = true
+          })
+          .catch((error) => {
+            failed = error
+            done = true
+          })
+
+        while (!done && !cancelled) {
+          flushPartUpdates()
+          await sleep(120)
+        }
+
+        flushPartUpdates()
+
+        if (!cancelled) {
+          if (failed) {
+            send("error", {
+              sessionID: input.sessionID,
+              message: failed instanceof Error ? failed.message : String(failed),
+            })
+          } else if (resolved) {
+            send("done", {
+              sessionID: input.sessionID,
+              message: resolved.info,
+              parts: resolved.parts,
+            })
+          } else {
+            send("error", {
+              sessionID: input.sessionID,
+              message: "Prompt exited unexpectedly",
+            })
+          }
+        }
+
+        if (!cancelled) controller.close()
+      })().catch((error) => {
+        send("error", {
+          sessionID: input.sessionID,
+          message: error instanceof Error ? error.message : String(error),
+        })
+        if (!cancelled) controller.close()
+      })
+    },
+    cancel() {
+      cancelled = true
+      input.cancel()
+    },
+  })
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-request-id": input.requestId,
+    },
+  })
 }
 
 export function SessionRoutes() {
@@ -203,108 +304,49 @@ export function SessionRoutes() {
       throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
     }
 
-    let cancelled = false
-
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        const encoder = new TextEncoder()
-
-        const send = (event: string, data: unknown) => {
-          if (cancelled) return
-          controller.enqueue(encoder.encode(toSSE(event, data)))
-        }
-
-        const seenParts = new Map<string, Message.Part>()
-        seedSeenSessionParts(sessionID, seenParts)
-
-        const flushPartUpdates = () => {
-          emitUpdatedAssistantSessionParts(sessionID, seenParts, send)
-        }
-
-        void (async () => {
-          send("started", {
-            sessionID,
-            timestamp: Date.now(),
-          })
-
-          const promptPromise = Instance.provide({
-            directory: session.directory,
-            fn: () =>
-              Prompt.prompt({
-                sessionID,
-                parts: [
-                  {
-                    type: "text",
-                    text: payload.data.text,
-                  },
-                ],
-                system: payload.data.system,
-                agent: payload.data.agent,
-                model: payload.data.model,
-              }),
-          }).then(async (value) => (await value) as { info: Message.MessageInfo; parts: Message.Part[] })
-
-          let resolved: { info: Message.MessageInfo; parts: Message.Part[] } | undefined
-          let failed: unknown
-          let done = false
-          promptPromise
-            .then((value) => {
-              resolved = value
-              done = true
-            })
-            .catch((error) => {
-              failed = error
-              done = true
-            })
-
-          while (!done && !cancelled) {
-            flushPartUpdates()
-            await sleep(120)
-          }
-
-          flushPartUpdates()
-
-          if (!cancelled) {
-            if (failed) {
-              send("error", {
-                sessionID,
-                message: failed instanceof Error ? failed.message : String(failed),
-              })
-            } else if (resolved) {
-              send("done", {
-                sessionID,
-                message: resolved.info,
-                parts: resolved.parts,
-              })
-            } else {
-              send("error", {
-                sessionID,
-                message: "Prompt exited unexpectedly",
-              })
-            }
-          }
-
-          if (!cancelled) controller.close()
-        })().catch((error) => {
-          send("error", {
-            sessionID,
-            message: error instanceof Error ? error.message : String(error),
-          })
-          if (!cancelled) controller.close()
-        })
-      },
-      cancel() {
-        cancelled = true
+    return createSessionExecutionStream({
+      sessionID,
+      requestId: c.get("requestId"),
+      execute: () =>
+        Instance.provide({
+          directory: session.directory,
+          fn: () =>
+            Prompt.prompt({
+              sessionID,
+              parts: [
+                {
+                  type: "text",
+                  text: payload.data.text,
+                },
+              ],
+              system: payload.data.system,
+              agent: payload.data.agent,
+              model: payload.data.model,
+            }),
+        }).then(async (value) => (await value) as SessionStreamResult),
+      cancel: () => {
         void Prompt.cancel(sessionID)
       },
     })
+  })
 
-    return new Response(stream, {
-      headers: {
-        "content-type": "text/event-stream; charset=utf-8",
-        "cache-control": "no-cache, no-transform",
-        connection: "keep-alive",
-        "x-request-id": c.get("requestId"),
+  app.post("/:id/resume/stream", async (c) => {
+    const sessionID = c.req.param("id")
+    const session = safeReadSession(sessionID)
+    if (!session) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+    }
+
+    return createSessionExecutionStream({
+      sessionID,
+      requestId: c.get("requestId"),
+      execute: () =>
+        Instance.provide({
+          directory: session.directory,
+          fn: () => Prompt.resume({ sessionID }),
+        }).then(async (value) => (await value) as SessionStreamResult),
+      cancel: () => {
+        void Prompt.cancel(sessionID)
       },
     })
   })

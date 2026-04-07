@@ -439,6 +439,11 @@ try {
         streamID: string
         requestId?: string
       }>,
+    resumeAgentMessageStream: (input: { streamID: string; sessionID: string }) =>
+      ipcRenderer.invoke("desktop:agent-resume-stream", input) as Promise<{
+        streamID: string
+        requestId?: string
+      }>,
     sendAgentMessage: (input: { sessionID: string; text: string; system?: string; agent?: string }) =>
       ipcRenderer.invoke("desktop:agent-send-message", input) as Promise<{
         events: AgentSSEEvent[]

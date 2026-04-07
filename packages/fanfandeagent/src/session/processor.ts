@@ -323,13 +323,13 @@ export function create(input: {
                                 }
                                 toolcalls[value.id] = part
 
-                                try {
-                                    await Session.updatePart(part)
-                                } catch (error) {
-                                    console.error("failed to persist tool-input-start part", part)
-                                    throw error
-                                }
-
+                                //这个阶段无需落盘，只需维护内存状态
+                                // try {
+                                //     await Session.updatePart(part)
+                                // } catch (error) {
+                                //     console.error("failed to persist tool-input-start part", part)
+                                //     throw error
+                                // }
                                 break;
                             case "tool-input-end":
                                 break;
@@ -510,18 +510,14 @@ export function create(input: {
 
                                 break;
                             case "tool-approval-request":
-                                const approvalToolCallId =
-                                    "toolCallId" in value
-                                        ? value.toolCallId
-                                        : value.toolCall.toolCallId
                                 if (
-                                    toolcalls[approvalToolCallId] &&
+                                    toolcalls[value.approvalId] &&
                                     (
-                                        toolcalls[approvalToolCallId]?.state.status === "running" ||
-                                        toolcalls[approvalToolCallId]?.state.status === "pending"
+                                        toolcalls[value.approvalId]?.state.status === "running" ||
+                                        toolcalls[value.approvalId]?.state.status === "pending"
                                     )
                                 ) {
-                                    const current = toolcalls[approvalToolCallId]!
+                                    const current = toolcalls[value.approvalId]!
                                     const waiting: Message.ToolPart = {
                                         ...current,
                                         state: {
@@ -544,7 +540,7 @@ export function create(input: {
                                         metadata: current.metadata,
                                     }
 
-                                    toolcalls[approvalToolCallId] = waiting
+                                    toolcalls[value.approvalId] = waiting
                                     await Session.updatePart(waiting)
                                     await Permission.registerApprovalRequest({
                                         assistant: {
@@ -575,7 +571,6 @@ export function create(input: {
                     }
                 }
                 catch (e: any) {
-                    await failOpenToolCalls(normalizeToolError(e))
                     log.error("processor failure", { error: e.message, stack: e.stack })
                     throw e  // 重新抛出错误
                 }

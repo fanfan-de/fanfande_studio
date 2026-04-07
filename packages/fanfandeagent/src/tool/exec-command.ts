@@ -90,7 +90,7 @@ export const ExecCommandTool = Tool.define(
           const issuePath = issue.path.length > 0 ? issue.path.join(".") : "input"
           return `${issuePath}: ${issue.message}`
         })
-
+        
         return issues.length > 0
           ? `Invalid exec_command arguments. ${issues.join(" ")}`
           : "Invalid exec_command arguments."
