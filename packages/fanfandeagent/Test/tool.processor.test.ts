@@ -244,4 +244,79 @@ describe("processor tool persistence", () => {
     expect(approvalRequests).toHaveLength(1)
     expect(processor.partFromToolCall("tool-approval")?.state.status).toBe("waiting-approval")
   })
+
+  it("stops and fails dangling tool calls when the stream ends without a result", async () => {
+    const updatedParts: any[] = []
+
+    mock.module("#session/llm.ts", () => ({
+      stream: async () => ({
+        fullStream: (async function* () {
+          yield { type: "start" }
+          yield {
+            type: "tool-input-start",
+            id: "tool-stuck",
+            toolName: "bash",
+          }
+          yield {
+            type: "tool-call",
+            toolCallId: "tool-stuck",
+            toolName: "bash",
+            input: { command: "pwd" },
+            title: "Bash",
+          }
+          yield {
+            type: "finish",
+            finishReason: "tool-calls",
+          }
+        })(),
+      }),
+    }))
+
+    mock.module("#session/session.ts", () => ({
+      updatePart: async (part: unknown) => {
+        updatedParts.push(structuredClone(part))
+      },
+    }))
+
+    const Processor = await import("#session/processor.ts")
+
+    const assistant = {
+      id: "assistant-stuck",
+      sessionID: "session-stuck",
+      role: "assistant",
+      created: Date.now(),
+      parentID: "user-stuck",
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "plan",
+      path: {
+        cwd: ".",
+        root: ".",
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+    } as any
+
+    const processor = Processor.create({
+      Assistant: assistant,
+    })
+
+    expect(await processor.process({} as never)).toBe("stop")
+
+    const failed = updatedParts.find(
+      (part) => part.type === "tool" && part.callID === "tool-stuck" && part.state?.status === "error",
+    )
+
+    expect(failed).toBeDefined()
+    expect(failed.state.error).toContain("did not complete")
+    expect(processor.partFromToolCall("tool-stuck")?.state.status).toBe("error")
+  })
 })

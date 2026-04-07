@@ -173,6 +173,18 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
                 throw new Error("No user message found in stream. This should never happen.");
             }
 
+            const outstandingTool = findOutstandingToolAfterUser(messages, lastUser.id);
+            if (outstandingTool) {
+                log.warn("stopping prompt loop because the latest user turn still has an unresolved tool", {
+                    sessionID,
+                    assistantID: outstandingTool.assistant.id,
+                    toolCallID: outstandingTool.toolPart.callID,
+                    tool: outstandingTool.toolPart.tool,
+                    status: outstandingTool.toolPart.state.status,
+                });
+                break;
+            }
+
             if (
                 lastAssistant &&
                 isFinalFinishReason(lastAssistant.finishReason) &&
@@ -347,6 +359,39 @@ function loadMessagesWithParts(sessionID: string): Message.WithParts[] {
         info: messageInfo,
         parts: partsByMessageID.get(messageInfo.id) ?? [],
     }));
+}
+
+function findOutstandingToolAfterUser(
+    messages: Message.WithParts[],
+    userMessageID: string,
+) {
+    let afterUser = false;
+
+    for (const message of messages) {
+        if (!afterUser) {
+            afterUser = message.info.id === userMessageID;
+            continue;
+        }
+
+        if (message.info.role !== "assistant") continue;
+
+        const toolPart = message.parts.find(
+            (part): part is Message.ToolPart =>
+                part.type === "tool" &&
+                (
+                    part.state.status === "pending" ||
+                    part.state.status === "running" ||
+                    part.state.status === "waiting-approval"
+                ),
+        );
+
+        if (toolPart) {
+            return {
+                assistant: message.info as Message.Assistant,
+                toolPart,
+            };
+        }
+    }
 }
 
 function isFinalFinishReason(finishReason?: string) {

@@ -188,6 +188,8 @@
   },
   "active": "35980b6fcb97707f",
   "lastOpenFiles": [
+    "packages/fanfandeagent/Test/prompt.unresolved-tool.test.ts",
+    "packages/desktop/electron.vite.config.1775554356626.mjs",
     "packages/desktop/electron.vite.config.1775554172047.mjs",
     "packages/fanfandeagent/agent_local_data.db-shm",
     "packages/fanfandeagent/agent_local_data.db-wal",
@@ -197,8 +199,6 @@
     "packages/desktop/electron.vite.config.1775553660652.mjs",
     "packages/desktop/electron.vite.config.1775551259371.mjs",
     "packages/fanfandeagent/Test/prompt.loop.test.ts",
-    "packages/desktop/electron.vite.config.1775549538051.mjs",
-    "packages/desktop/electron.vite.config.1775549449677.mjs",
     "packages/fanfandeagent/src/tool/spec.md",
     "packages/fanfandeagent/src/tool/AGENTS.md",
     "packages/fanfandeagent/src/permission/spec.md",

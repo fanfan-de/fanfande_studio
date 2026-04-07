@@ -211,6 +211,13 @@ export function create(input: {
                 }
             }
 
+            const listActiveToolCalls = () =>
+                Object.values(toolcalls).filter(
+                    (part) =>
+                        part.state.status === "pending" ||
+                        part.state.status === "running",
+                )
+
             while (true) {
                 try {
                     const stream = await LLM.stream(streamInput)
@@ -511,13 +518,13 @@ export function create(input: {
                                 break;
                             case "tool-approval-request":
                                 if (
-                                    toolcalls[value.approvalId] &&
+                                    toolcalls[value.toolCallId] &&
                                     (
-                                        toolcalls[value.approvalId]?.state.status === "running" ||
-                                        toolcalls[value.approvalId]?.state.status === "pending"
+                                        toolcalls[value.toolCallId]?.state.status === "running" ||
+                                        toolcalls[value.toolCallId]?.state.status === "pending"
                                     )
                                 ) {
-                                    const current = toolcalls[value.approvalId]!
+                                    const current = toolcalls[value.toolCallId]!
                                     const waiting: Message.ToolPart = {
                                         ...current,
                                         state: {
@@ -540,7 +547,7 @@ export function create(input: {
                                         metadata: current.metadata,
                                     }
 
-                                    toolcalls[value.approvalId] = waiting
+                                    toolcalls[value.toolCallId] = waiting
                                     await Session.updatePart(waiting)
                                     await Permission.registerApprovalRequest({
                                         assistant: {
@@ -569,8 +576,23 @@ export function create(input: {
                     for (const part of Object.values(reasoningMap)) {
                         await streamPartPersister.flush(part)
                     }
+
+                    const activeToolCalls = listActiveToolCalls()
+                    if (activeToolCalls.length > 0) {
+                        const reason = "Tool call did not complete before the model response finished."
+                        await failOpenToolCalls(reason)
+                        log.warn("stopping processor because tool calls were left unresolved", {
+                            activeToolCalls: activeToolCalls.map((part) => ({
+                                callID: part.callID,
+                                tool: part.tool,
+                                status: part.state.status,
+                            })),
+                        })
+                        return "stop"
+                    }
                 }
                 catch (e: any) {
+                    await failOpenToolCalls(normalizeToolError(e))
                     log.error("processor failure", { error: e.message, stack: e.stack })
                     throw e  // 重新抛出错误
                 }
