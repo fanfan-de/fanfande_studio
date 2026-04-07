@@ -188,6 +188,7 @@
   },
   "active": "35980b6fcb97707f",
   "lastOpenFiles": [
+    "packages/desktop/electron.vite.config.1775572641401.mjs",
     "packages/desktop/electron.vite.config.1775570216147.mjs",
     "packages/fanfandeagent/test_file.txt",
     "packages/desktop/electron.vite.config.1775559723393.mjs",
@@ -201,7 +202,6 @@
     "packages/desktop/electron.vite.config.1775554917096.mjs",
     "packages/fanfandeagent/Test/prompt.unresolved-tool.test.ts",
     "packages/desktop/electron.vite.config.1775554356626.mjs",
-    "packages/desktop/electron.vite.config.1775554172047.mjs",
     "packages/fanfandeagent/src/tool/spec.md",
     "packages/fanfandeagent/src/tool/AGENTS.md",
     "packages/fanfandeagent/src/permission/spec.md",
