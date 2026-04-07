@@ -62,6 +62,37 @@ export const Provider = DevProvider.partial()
   })
 export type Provider = z.infer<typeof Provider>
 
+const ProviderMapField = z
+  .record(z.string(), Provider)
+  .optional()
+  .describe("Custom provider configurations and model overrides")
+
+const ModelField = z.string().describe("Model to use in the format of provider/model, eg anthropic/claude-2")
+
+const SmallModelField = z
+  .string()
+  .describe("Small model to use for tasks like title generation in the format of provider/model")
+
+const EnabledProvidersField = z
+  .array(z.string())
+  .optional()
+  .describe("When set, ONLY these providers will be enabled. All other providers will be ignored")
+
+const DisabledProvidersField = z.array(z.string()).optional().describe("Disable providers that are loaded automatically")
+
+const ProviderConfigFields = {
+  disabled_providers: DisabledProvidersField,
+  enabled_providers: EnabledProvidersField,
+  model: ModelField.optional(),
+  small_model: SmallModelField.optional(),
+  provider: ProviderMapField,
+}
+
+const ModelSelectionFields = {
+  model: ModelField.nullable().optional(),
+  small_model: SmallModelField.nullable().optional(),
+}
+
 export const Info = z
   .object({
     $schema: z.string().optional().describe("JSON schema reference for configuration validation"),
@@ -89,16 +120,7 @@ export const Info = z
       .describe(
         "Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications",
       ),
-    disabled_providers: z.array(z.string()).optional().describe("Disable providers that are loaded automatically"),
-    enabled_providers: z
-      .array(z.string())
-      .optional()
-      .describe("When set, ONLY these providers will be enabled. All other providers will be ignored"),
-    model: z.string().describe("Model to use in the format of provider/model, eg anthropic/claude-2").optional(),
-    small_model: z
-      .string()
-      .describe("Small model to use for tasks like title generation in the format of provider/model")
-      .optional(),
+    ...ProviderConfigFields,
     default_agent: z
       .string()
       .optional()
@@ -106,10 +128,6 @@ export const Info = z
         "Default agent to use when none is specified. Must be a primary agent. Falls back to 'build' if not set or if the specified agent is invalid.",
       ),
     username: z.string().optional().describe("Custom username to display in conversations instead of system username"),
-    provider: z
-      .record(z.string(), Provider)
-      .optional()
-      .describe("Custom provider configurations and model overrides"),
     formatter: z
       .union([
         z.literal(false),
@@ -197,13 +215,7 @@ const ProjectConfigRecord = z.object({
 type ProjectConfigRecord = z.infer<typeof ProjectConfigRecord>
 
 export const ProjectProviderConfig = z
-  .object({
-    provider: z.record(z.string(), Provider).optional(),
-    model: z.string().optional(),
-    small_model: z.string().optional(),
-    enabled_providers: z.array(z.string()).optional(),
-    disabled_providers: z.array(z.string()).optional(),
-  })
+  .object(ProviderConfigFields)
   .strict()
   .meta({
     ref: "ProjectProviderConfig",
@@ -211,15 +223,22 @@ export const ProjectProviderConfig = z
 export type ProjectProviderConfig = z.infer<typeof ProjectProviderConfig>
 
 export const ModelSelection = z
-  .object({
-    model: z.string().nullable().optional(),
-    small_model: z.string().nullable().optional(),
-  })
+  .object(ModelSelectionFields)
   .strict()
   .meta({
     ref: "ProjectModelSelection",
   })
 export type ModelSelection = z.infer<typeof ModelSelection>
+
+function projectProviderConfigFromInfo(config: Info): ProjectProviderConfig {
+  return {
+    provider: config.provider,
+    model: config.model,
+    small_model: config.small_model,
+    enabled_providers: config.enabled_providers,
+    disabled_providers: config.disabled_providers,
+  }
+}
 
 function createProjectConfigTable() {
   if (db.tableExists("project_configs")) return
@@ -318,13 +337,7 @@ export async function removeProvider(configID: string, providerID: string) {
 
 export async function getProviderConfig(configID = GLOBAL_CONFIG_ID): Promise<ProjectProviderConfig> {
   const config = readConfig(normalizeConfigID(configID))
-  return {
-    provider: config.provider,
-    model: config.model,
-    small_model: config.small_model,
-    enabled_providers: config.enabled_providers,
-    disabled_providers: config.disabled_providers,
-  }
+  return projectProviderConfigFromInfo(config)
 }
 
 export async function setModelSelection(configID: string, input: ModelSelection) {
