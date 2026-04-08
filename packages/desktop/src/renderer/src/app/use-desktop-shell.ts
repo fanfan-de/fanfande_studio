@@ -3,15 +3,32 @@ import { DEFAULT_SIDEBAR_WIDTH, SIDEBAR_KEYBOARD_STEP } from "./constants"
 import type { TitlebarMenuKey, WindowAction } from "./types"
 import { clamp, resolveSidebarWidthBounds } from "./utils"
 
+const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
+
+function readActivityRailVisibilityPreference() {
+  if (typeof window === "undefined") return true
+
+  try {
+    const storedValue = window.localStorage.getItem(ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY)
+    if (storedValue === null) return true
+    return storedValue !== "false"
+  } catch {
+    return true
+  }
+}
+
 export function useDesktopShell() {
   const appShellRef = useRef<HTMLElement | null>(null)
   const [platform, setPlatform] = useState("Desktop")
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
+  const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isSidebarResizing, setIsSidebarResizing] = useState(false)
   const [agentBaseURL, setAgentBaseURL] = useState("http://127.0.0.1:4096")
   const [agentDefaultDirectory, setAgentDefaultDirectory] = useState("")
   const [agentConnected, setAgentConnected] = useState(false)
+  const lastExpandedSidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH)
 
   useEffect(() => {
     let mounted = true
@@ -80,12 +97,24 @@ export function useDesktopShell() {
   }, [])
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY, String(isActivityRailVisible))
+    } catch {
+      return
+    }
+  }, [isActivityRailVisible])
+
+  useEffect(() => {
     function syncSidebarWidthToViewport() {
       const rect = appShellRef.current?.getBoundingClientRect()
       if (!rect || rect.width <= 0) return
 
       const bounds = resolveSidebarWidthBounds(rect.width)
-      setSidebarWidth((current) => clamp(current, bounds.min, bounds.max))
+      setSidebarWidth((current) => {
+        const nextWidth = clamp(current, bounds.min, bounds.max)
+        lastExpandedSidebarWidthRef.current = nextWidth
+        return nextWidth
+      })
     }
 
     syncSidebarWidthToViewport()
@@ -103,7 +132,9 @@ export function useDesktopShell() {
       if (!rect || rect.width <= 0) return
 
       const bounds = resolveSidebarWidthBounds(rect.width)
-      setSidebarWidth(clamp(event.clientX - rect.left, bounds.min, bounds.max))
+      const nextWidth = clamp(event.clientX - rect.left, bounds.min, bounds.max)
+      lastExpandedSidebarWidthRef.current = nextWidth
+      setSidebarWidth(nextWidth)
     }
 
     function stopSidebarResize() {
@@ -126,7 +157,19 @@ export function useDesktopShell() {
   function adjustSidebarWidth(delta: number) {
     const rect = appShellRef.current?.getBoundingClientRect()
     const bounds = resolveSidebarWidthBounds(rect?.width)
-    setSidebarWidth((current) => clamp(current + delta, bounds.min, bounds.max))
+    setSidebarWidth((current) => {
+      const nextWidth = clamp(current + delta, bounds.min, bounds.max)
+      lastExpandedSidebarWidthRef.current = nextWidth
+      return nextWidth
+    })
+  }
+
+  function restoreSidebar() {
+    const rect = appShellRef.current?.getBoundingClientRect()
+    const bounds = resolveSidebarWidthBounds(rect?.width)
+    const nextWidth = clamp(lastExpandedSidebarWidthRef.current, bounds.min, bounds.max)
+    setSidebarWidth(nextWidth)
+    setIsSidebarCollapsed(false)
   }
 
   function handleSidebarResizerPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -135,7 +178,9 @@ export function useDesktopShell() {
     const rect = appShellRef.current?.getBoundingClientRect()
     if (rect?.width && rect.width > 0) {
       const bounds = resolveSidebarWidthBounds(rect.width)
-      setSidebarWidth(clamp(event.clientX - rect.left, bounds.min, bounds.max))
+      const nextWidth = clamp(event.clientX - rect.left, bounds.min, bounds.max)
+      lastExpandedSidebarWidthRef.current = nextWidth
+      setSidebarWidth(nextWidth)
     }
 
     event.preventDefault()
@@ -160,14 +205,35 @@ export function useDesktopShell() {
 
     if (event.key === "Home") {
       event.preventDefault()
+      lastExpandedSidebarWidthRef.current = bounds.min
       setSidebarWidth(bounds.min)
       return
     }
 
     if (event.key === "End") {
       event.preventDefault()
+      lastExpandedSidebarWidthRef.current = bounds.max
       setSidebarWidth(bounds.max)
     }
+  }
+
+  function handleSidebarToggle() {
+    if (isSidebarCollapsed) {
+      restoreSidebar()
+      return
+    }
+
+    lastExpandedSidebarWidthRef.current = sidebarWidth
+    setIsSidebarResizing(false)
+    setIsSidebarCollapsed(true)
+  }
+
+  function handleActivityRailVisibilityChange(nextVisible: boolean) {
+    if (!nextVisible) {
+      setIsSidebarResizing(false)
+    }
+
+    setIsActivityRailVisible(nextVisible)
   }
 
   function handleTitleMenu(menuKey: TitlebarMenuKey, event: MouseEvent<HTMLButtonElement>) {
@@ -202,6 +268,9 @@ export function useDesktopShell() {
     ? `agent://${agentBaseURL.replace(/^https?:\/\//, "")}`
     : `agent://offline (${agentBaseURL.replace(/^https?:\/\//, "")})`
   const appShellStyle = {
+    "--activity-rail-display-width": isActivityRailVisible ? "54px" : "0px",
+    "--sidebar-display-width": isSidebarCollapsed ? "0px" : `${sidebarWidth}px`,
+    "--sidebar-resizer-width": isSidebarCollapsed ? "0px" : "10px",
     "--sidebar-width": `${sidebarWidth}px`,
   } as CSSProperties
 
@@ -210,10 +279,14 @@ export function useDesktopShell() {
     agentDefaultDirectory,
     appShellRef,
     appShellStyle,
+    handleActivityRailVisibilityChange,
     handleSidebarResizerKeyDown,
     handleSidebarResizerPointerDown,
+    handleSidebarToggle,
     handleTitleMenu,
     handleWindowAction,
+    isActivityRailVisible,
+    isSidebarCollapsed,
     isSidebarResizing,
     isWindowMaximized,
     platform,

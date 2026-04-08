@@ -1,0 +1,4 @@
+interface:
+  display_name: "Start Fanfande Dev"
+  short_description: "Launch the Fanfande server and desktop client."
+  default_prompt: "Use $fanfande-start-dev to launch the Fanfande Studio server and desktop client for local testing."

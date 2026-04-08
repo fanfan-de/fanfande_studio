@@ -1,9 +1,11 @@
 import {
+  ActivityRail,
   CanvasTopMenu,
   Composer,
   SettingsPage,
   Sidebar,
   SidebarResizer,
+  SidebarToggleButton,
   ThreadView,
   Titlebar,
 } from "./app/components"
@@ -17,10 +19,14 @@ export function App() {
     agentDefaultDirectory,
     appShellRef,
     appShellStyle,
+    handleActivityRailVisibilityChange,
     handleSidebarResizerKeyDown,
     handleSidebarResizerPointerDown,
+    handleSidebarToggle,
     handleTitleMenu,
     handleWindowAction,
+    isActivityRailVisible,
+    isSidebarCollapsed,
     isSidebarResizing,
     isWindowMaximized,
     platform,
@@ -104,33 +110,44 @@ export function App() {
       />
 
       <main ref={appShellRef} className="app-shell" style={appShellStyle}>
-        <Sidebar
-          activeSessionID={activeSession?.id ?? null}
-          deletingSessionID={deletingSessionID}
-          expandedFolderID={expandedFolderID}
-          hoveredFolderID={hoveredFolderID}
-          isCreatingProject={isCreatingProject}
-          isCreatingSession={isCreatingSession}
-          isSettingsOpen={isOpen}
-          projectRowRefs={projectRowRefs}
-          selectedFolderID={selectedFolderID}
-          workspaces={workspaces}
-          onHoveredFolderChange={setHoveredFolderID}
-          onOpenSettings={openSettings}
-          onProjectCreateSession={handleProjectCreateSession}
-          onProjectClick={handleProjectClick}
-          onProjectRemove={handleProjectRemove}
-          onSessionDelete={handleSessionDelete}
-          onSessionSelect={handleSessionSelect}
-          onSidebarAction={handleSidebarAction}
+        <ActivityRail isVisible={isActivityRailVisible} />
+        <SidebarToggleButton
+          isActivityRailVisible={isActivityRailVisible}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={handleSidebarToggle}
         />
 
-        <SidebarResizer
-          isSidebarResizing={isSidebarResizing}
-          sidebarWidth={sidebarWidth}
-          onKeyDown={handleSidebarResizerKeyDown}
-          onPointerDown={handleSidebarResizerPointerDown}
-        />
+        {!isSidebarCollapsed ? (
+          <>
+            <Sidebar
+              activeSessionID={activeSession?.id ?? null}
+              deletingSessionID={deletingSessionID}
+              expandedFolderID={expandedFolderID}
+              hoveredFolderID={hoveredFolderID}
+              isCreatingProject={isCreatingProject}
+              isCreatingSession={isCreatingSession}
+              isSettingsOpen={isOpen}
+              projectRowRefs={projectRowRefs}
+              selectedFolderID={selectedFolderID}
+              workspaces={workspaces}
+              onHoveredFolderChange={setHoveredFolderID}
+              onOpenSettings={openSettings}
+              onProjectCreateSession={handleProjectCreateSession}
+              onProjectClick={handleProjectClick}
+              onProjectRemove={handleProjectRemove}
+              onSessionDelete={handleSessionDelete}
+              onSessionSelect={handleSessionSelect}
+              onSidebarAction={handleSidebarAction}
+            />
+
+            <SidebarResizer
+              isSidebarResizing={isSidebarResizing}
+              sidebarWidth={sidebarWidth}
+              onKeyDown={handleSidebarResizerKeyDown}
+              onPointerDown={handleSidebarResizerPointerDown}
+            />
+          </>
+        ) : null}
 
         <section className="canvas">
           <CanvasTopMenu />
@@ -166,6 +183,7 @@ export function App() {
         <SettingsPage
           catalog={catalog}
           deletingProviderID={deletingProviderID}
+          isActivityRailVisible={isActivityRailVisible}
           isLoading={isLoading}
           isOpen={isOpen}
           isSavingSelection={isSavingSelection}
@@ -176,6 +194,7 @@ export function App() {
           savedSelection={savedSelection}
           savingProviderID={savingProviderID}
           selectionDraft={selectionDraft}
+          onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
           onClose={closeSettings}
           onDeleteProvider={deleteProvider}
           onProviderDraftChange={setProviderDraftValue}

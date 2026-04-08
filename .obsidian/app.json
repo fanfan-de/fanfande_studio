@@ -3,5 +3,6 @@
   "strictLineBreaks": true,
   "showLineNumber": false,
   "useMarkdownLinks": false,
-  "readableLineLength": false
+  "readableLineLength": false,
+  "showInlineTitle": true
 }
