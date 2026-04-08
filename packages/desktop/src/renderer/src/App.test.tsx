@@ -1202,12 +1202,11 @@ describe("App", () => {
   it("toggles the left rail from appearance settings", async () => {
     const { container } = render(<App />)
     const appShell = container.querySelector(".app-shell") as HTMLElement | null
-    const activityRail = container.querySelector(".activity-rail") as HTMLElement | null
+    const getActivityRail = () => container.querySelector(".activity-rail") as HTMLElement | null
 
     expect(appShell).not.toBeNull()
-    expect(activityRail).not.toBeNull()
-    expect(activityRail).not.toHaveClass("is-hidden")
-    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument()
+    expect(getActivityRail()).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".activity-rail")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
@@ -1216,25 +1215,28 @@ describe("App", () => {
 
     const railSwitch = screen.getByRole("switch", { name: "Show left rail" })
     expect(railSwitch).toHaveAttribute("aria-checked", "true")
-    expect(activityRail).not.toHaveClass("is-hidden")
+    expect(getActivityRail()).not.toBeNull()
     expect(appShell!.getAttribute("style")).toContain("--activity-rail-display-width: 54px")
 
     fireEvent.click(railSwitch)
 
     expect(railSwitch).toHaveAttribute("aria-checked", "false")
-    expect(activityRail).toHaveClass("is-hidden")
+    expect(getActivityRail()).toBeNull()
     expect(appShell!.getAttribute("style")).toContain("--activity-rail-display-width: 0px")
     expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".sidebar-actions")).not.toBeNull()
 
     fireEvent.click(screen.getAllByRole("button", { name: "Close settings" })[0])
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain("--sidebar-display-width: 0px")
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Expand sidebar" }).closest(".canvas-top-menu")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }))
     expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".sidebar-actions")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
@@ -1242,9 +1244,10 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Show left rail" }))
 
     expect(screen.getByRole("switch", { name: "Show left rail" })).toHaveAttribute("aria-checked", "true")
-    expect(activityRail).not.toHaveClass("is-hidden")
+    expect(getActivityRail()).not.toBeNull()
     expect(appShell!.getAttribute("style")).toContain("--activity-rail-display-width: 54px")
     expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".activity-rail")).not.toBeNull()
   })
 
   it("keeps provider configuration focused on editable fields for environment-backed providers", async () => {
@@ -2124,13 +2127,14 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
   })
 
-  it("collapses the sidebar from the pinned toggle and restores it on second click", () => {
+  it("collapses the sidebar from the rail toggle and restores it on second click", () => {
     const { container } = render(<App />)
     const appShell = container.querySelector(".app-shell") as HTMLElement | null
 
     expect(appShell).not.toBeNull()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByTestId("sidebar-resizer")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".activity-rail")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }))
 
@@ -2138,12 +2142,14 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Open folder" })).not.toBeInTheDocument()
     expect(screen.queryByTestId("sidebar-resizer")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Expand sidebar" }).closest(".activity-rail")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain("--sidebar-display-width: 236px")
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByTestId("sidebar-resizer")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".activity-rail")).not.toBeNull()
   })
 
   it("resizes the sidebar when dragging the divider", async () => {

@@ -105,7 +105,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 239.5
+    "width": 364.5
   },
   "right": {
     "id": "0e26e5315e7c2117",
@@ -207,7 +207,8 @@
       }
     ],
     "direction": "horizontal",
-    "width": 358.5
+    "width": 395.5,
+    "collapsed": true
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -224,6 +225,9 @@
   },
   "active": "e5d113a158731212",
   "lastOpenFiles": [
+    "packages/desktop/out/renderer/assets/index-CusdR4LL.css",
+    "packages/desktop/out/renderer/assets/index-Rx1kFPO2.js",
+    "packages/desktop/electron.vite.config.1775689368405.mjs",
     "packages/desktop/out/renderer/assets/index-CsS-LneH.js",
     "packages/desktop/out/renderer/assets/index-d15d-MHf.css",
     "packages/desktop/electron.vite.config.1775687925070.mjs",
@@ -243,10 +247,7 @@
     "packages/fanfandeagent/node_modules/yoga-layout/README.md",
     "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
     "packages/desktop/electron.vite.config.1775684356298.mjs",
-    "packages/desktop/electron.vite.config.1775681227284.mjs",
     "daily/2026-04-09.md",
-    "packages/desktop/electron.vite.config.1775674901299.mjs",
-    "packages/fanfandeagent/src/util/process.ts",
     "packages/fanfandeagent/src/agent/prompt/plan.md",
     "packages/fanfandeagent/BACKLOG.md",
     "packages/desktop/DESKTOP_SERVER_API_SPEC.md",

@@ -235,21 +235,6 @@ select {
   animation: rise-in 360ms ease;
 }
 
-.activity-rail.is-hidden {
-  background: transparent;
-  border-right-color: transparent;
-}
-
-.sidebar-toggle-dock {
-  position: absolute;
-  top: 14px;
-  left: 9px;
-  z-index: 2;
-  display: flex;
-  justify-content: center;
-  pointer-events: none;
-}
-
 .sidebar-toggle-button {
   width: 36px;
   height: 36px;
@@ -269,33 +254,6 @@ select {
     box-shadow 160ms ease;
 }
 
-.sidebar-toggle-button.is-detached {
-  border: 1px solid rgba(166, 186, 208, 0.46);
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 12px 28px rgba(46, 81, 118, 0.12);
-}
-
-.sidebar-toggle-button:hover,
-.sidebar-toggle-button:focus-visible,
-.sidebar-toggle-button.is-active {
-  background: rgba(22, 119, 200, 0.1);
-  color: #143b59;
-  box-shadow: inset 0 0 0 1px rgba(95, 146, 194, 0.22);
-}
-
-.sidebar-toggle-button.is-detached.is-active {
-  background: rgba(231, 242, 251, 0.96);
-}
-
-.sidebar-toggle-button:hover,
-.sidebar-toggle-button:focus-visible {
-  transform: translateY(-1px);
-}
-
-.sidebar-toggle-button:focus-visible {
-  outline: none;
-}
-
 .sidebar-toggle-button svg {
   width: 18px;
   height: 18px;
@@ -304,6 +262,27 @@ select {
   stroke-width: 1.65;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.sidebar-toggle-button.is-rail {
+  color: #5a6e81;
+}
+
+.sidebar-toggle-button.is-rail:hover,
+.sidebar-toggle-button.is-rail:focus-visible,
+.sidebar-toggle-button.is-rail.is-active {
+  background: rgba(22, 119, 200, 0.1);
+  color: #143b59;
+  box-shadow: inset 0 0 0 1px rgba(95, 146, 194, 0.22);
+}
+
+.sidebar-toggle-button.is-rail:hover,
+.sidebar-toggle-button.is-rail:focus-visible {
+  transform: translateY(-1px);
+}
+
+.sidebar-toggle-button.is-rail:focus-visible {
+  outline: none;
 }
 
 .sidebar {
@@ -360,6 +339,7 @@ select {
 }
 
 .sidebar-action,
+.sidebar-toggle-button.is-sidebar,
 .sidebar-settings,
 .row-action {
   width: 30px;
@@ -378,6 +358,9 @@ select {
 }
 
 .sidebar-action:hover,
+.sidebar-toggle-button.is-sidebar:focus-visible,
+.sidebar-toggle-button.is-sidebar:hover,
+.sidebar-toggle-button.is-sidebar.is-active,
 .sidebar-settings:hover,
 .row-action:hover {
   background: rgba(22, 119, 200, 0.08);
@@ -385,6 +368,7 @@ select {
 }
 
 .sidebar-action svg,
+.sidebar-toggle-button.is-sidebar svg,
 .sidebar-settings svg,
 .row-action svg,
 .project-row-leading svg {
@@ -479,11 +463,17 @@ select {
 }
 
 .sidebar-action:hover,
+.sidebar-toggle-button.is-sidebar:focus-visible,
+.sidebar-toggle-button.is-sidebar:hover,
 .sidebar-settings:hover,
 .row-action:hover,
 .primary-button:hover,
 .secondary-button:hover {
   transform: translateY(-1px);
+}
+
+.sidebar-toggle-button.is-sidebar:focus-visible {
+  outline: none;
 }
 
 .sidebar-action:disabled,
@@ -1681,13 +1671,32 @@ textarea::placeholder {
 
 .canvas-top-menu {
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding-bottom: 10px;
   border-bottom: 1px solid rgba(138, 164, 189, 0.36);
 }
 
 .canvas-top-menu-group {
   flex-wrap: wrap;
+}
+
+.sidebar-toggle-button.is-canvas {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #ffffff;
+  color: #4a5d70;
+}
+
+.sidebar-toggle-button.is-canvas:hover,
+.sidebar-toggle-button.is-canvas:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(111, 153, 194, 0.72);
+  color: #1c2e3f;
+}
+
+.sidebar-toggle-button.is-canvas:focus-visible {
+  outline: none;
 }
 
 .canvas-top-menu-button {
@@ -2495,10 +2504,6 @@ body.is-resizing-sidebar * {
   .activity-rail {
     padding-top: 12px;
     padding-bottom: 12px;
-  }
-
-  .sidebar-toggle-dock {
-    top: 12px;
   }
 
   .canvas {

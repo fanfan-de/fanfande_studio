@@ -5,7 +5,6 @@ import {
   SettingsPage,
   Sidebar,
   SidebarResizer,
-  SidebarToggleButton,
   ThreadView,
   Titlebar,
 } from "./app/components"
@@ -110,12 +109,9 @@ export function App() {
       />
 
       <main ref={appShellRef} className="app-shell" style={appShellStyle}>
-        <ActivityRail isVisible={isActivityRailVisible} />
-        <SidebarToggleButton
-          isActivityRailVisible={isActivityRailVisible}
-          isSidebarCollapsed={isSidebarCollapsed}
-          onToggleSidebar={handleSidebarToggle}
-        />
+        {isActivityRailVisible ? (
+          <ActivityRail isSidebarCollapsed={isSidebarCollapsed} onToggleSidebar={handleSidebarToggle} />
+        ) : null}
 
         {!isSidebarCollapsed ? (
           <>
@@ -127,6 +123,7 @@ export function App() {
               isCreatingProject={isCreatingProject}
               isCreatingSession={isCreatingSession}
               isSettingsOpen={isOpen}
+              showSidebarToggleButton={!isActivityRailVisible}
               projectRowRefs={projectRowRefs}
               selectedFolderID={selectedFolderID}
               workspaces={workspaces}
@@ -138,6 +135,7 @@ export function App() {
               onSessionDelete={handleSessionDelete}
               onSessionSelect={handleSessionSelect}
               onSidebarAction={handleSidebarAction}
+              onToggleSidebar={handleSidebarToggle}
             />
 
             <SidebarResizer
@@ -150,7 +148,10 @@ export function App() {
         ) : null}
 
         <section className="canvas">
-          <CanvasTopMenu />
+          <CanvasTopMenu
+            showSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
+            onToggleSidebar={handleSidebarToggle}
+          />
           <ThreadView
             activeSession={activeSession}
             isResolvingPermissionRequest={isResolvingPermissionRequest}
