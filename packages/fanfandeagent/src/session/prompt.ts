@@ -9,14 +9,18 @@ import * as Processor from "#session/processor.ts";
 import * as Provider from "#provider/provider.ts";
 import * as db from "#database/Sqlite.ts";
 import * as Agent from "#agent/agent.ts";
+import * as SystemPrompt from "#session/system.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
+//import type { string } from "yargs";
 
 const log = Log.create({ service: "session.prompt" });
 
 type RunningSession = {
     abort: AbortController;
+   // lastAgent: string | undefined;
+    //lastModel: any | undefined;
 };
 
 // ====================
@@ -93,18 +97,19 @@ export const PromptInput = z.object({
 });
 export type PromptInput = z.infer<typeof PromptInput>;
 
-function start(sessionID: string): AbortController | undefined {
-    // 为当前 session 注册唯一的取消信号；若已存在，说明已有 loop 正在运行。
-    const running = state();
-    if (running[sessionID]) return;
+// function start(sessionID: string): AbortController | undefined {
+//     // 为当前 session 注册唯一的取消信号；若已存在，说明已有 loop 正在运行。
+//     const running = state();
+//     if (running[sessionID]) return;
 
-    const controller = new AbortController();
-    running[sessionID] = {
-        abort: controller,
-    };
+//     const controller = new AbortController();
+//     running[sessionID] = {
+//         abort: controller,
+//         latestAgent:Input.
+//     };
 
-    return controller;
-}
+//     return controller;
+// }
 
 function finish(sessionID: string, controller?: AbortController) {
     const running = state();
@@ -145,6 +150,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
             if (abort.aborted) throw new Error("Prompt aborted");
 
             Status.set(sessionID, { type: "busy" });
+            //组装 history  memory
             const messages = loadMessagesWithParts(sessionID);
 
             let lastUser: Message.User | undefined;
@@ -194,17 +200,29 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
                 break;
             }
 
+            //获得runtime model
             const model = await Provider.getModel(lastUser.model.providerID, lastUser.model.modelID);
+
             const assistantMessage = createAssistantMessage(sessionID, lastUser, model);
             currentAssistant = assistantMessage;
             await Session.updateMessage(assistantMessage);
 
+            //解析工具参数
             const tools = await resolveTools({
                 agent: Agent.planAgent,
                 sessionID,
                 messageID: assistantMessage.id,
                 abort,
             });
+
+            //组装 静态系统提示词,(base + 项目环境)
+            const system = [
+                //SystemPrompt.provider(model),//每一个模型对应一个system prompt，我觉得不是很必要
+                ...SystemPrompt.defaultPrompt(),
+                ...await SystemPrompt.environment(model),
+            ]
+
+
 
             const processor = Processor.create({
                 Assistant: assistantMessage,
@@ -219,7 +237,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
                     messageID: assistantMessage.id,
                     model,
                     agent: Agent.planAgent,
-                    system: ["You are a helpful assistant"],
+                    system: system,
                     abort,
                     messages: await Message.toModelMessages(messages, model, {
                         agent: Agent.planAgent,
@@ -280,12 +298,22 @@ export const prompt = fn(PromptInput, async (input) => {
         throw new Error(`Session '${input.sessionID}' was not found.`);
     }
 
-    const controller = start(input.sessionID);
-    if (!controller) {
+    //已有 loop 正在运行。
+    if (state()[input.sessionID]) {
         throw new Error(`Session '${input.sessionID}' is already running.`);
     }
+    //
+    const controller = new AbortController();
+    state()[input.sessionID] = {
+        abort: controller,
+        //lastAgent: input.agent,
+        //lastModel: input.model,
+    };
+
 
     try {
+        //判断当前session最新的assistant message是什么mode，如果mode发生变化，插入一个system message
+        //Session.DataBaseRead("messages")
         await createUserMessage(input);
     } catch (error) {
         finish(input.sessionID, controller);
@@ -313,10 +341,19 @@ export const resume = fn(ResumeInput, async (input) => {
 
     await waitForStop(input.sessionID);
 
-    const controller = start(input.sessionID);
-    if (!controller) {
+    //const controller = start(input.sessionID);
+
+
+    // 为当前 session 注册唯一的取消信号；若已存在，说明已有 loop 正在运行。
+    const running = state();
+    if (running[input.sessionID])
         throw new Error(`Session '${input.sessionID}' is already running.`);
-    }
+
+    const controller = new AbortController();
+    running[input.sessionID] = {
+        abort: controller,
+
+    };
 
     return runLoop({
         sessionID: input.sessionID,
@@ -500,7 +537,7 @@ async function createUserMessage(input: PromptInput) {
         sessionID: input.sessionID,
         role: "user",
         created: Date.now(),
-        agent: input.agent ?? "plan",
+        agent: input.agent ?? "default",
         model: input.model ?? await Provider.getDefaultModelRef(),
         system: input.system,
     };

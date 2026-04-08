@@ -36,8 +36,8 @@ const log = Log.create({ service: "llm" })
 
 //export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
 
-//export const VERSION = "1.0.0"; // 闅忎究鍔犱釜鍊?
-//`StreamInput`锛氱敤浜庢祦寮忓鐞?LLM 娑堟伅鐨勮緭鍏ュ弬鏁扮被鍨嬪畾涔夛紙浣跨敤vercal sdk  闇€瑕佺殑鍙傛暟锛?
+//export const VERSION = "1.0.0"; // 版本号
+// `StreamInput` 定义了发起 LLM 流式请求时需要的上下文参数。
 
 export type StreamInput = {
   user: Message.User,
@@ -71,25 +71,12 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
 
   //const isCodex = provider.id === "openai" && auth?.type === "oauth"
 
-  //绯荤粺鎻愮ず璇?
+  // 组装 system prompt
   const system = []
   system.push(
     [
-      // use agent prompt otherwise provider prompt
-      // 1. 鍩虹鎸囦护閫夋嫨锛氬鏋?agent锛堟櫤鑳戒綋锛夋湁鎻愮ず璇嶅垯鐢ㄥ畠锛屽惁鍒欐牴鎹ā鍨嬭幏鍙栨彁渚涘晢鎻愮ず璇?
-      // For Codex sessions, skip SystemPrompt.provider() since it's sent via options.instructions
-      // 娉ㄦ剰锛氬鏋滄槸 Codex 妯″瀷浼氳瘽锛屽垯璺宠繃鎻愪緵鍟嗘彁绀鸿瘝锛屽洜涓哄畠浼氶€氳繃 options.instructions 鍙戦€?
-      ///...(input.agent.prompt ? [input.agent.prompt] : isCodex ? [] : SystemPrompt.provider(input.model)),
-      // any custom prompt passed into this call
-
       ...input.system,
-      // any custom prompt from last user message
-      // 3. 鏈€鍚庝竴椤圭敤鎴锋秷鎭腑鍙兘鎼哄甫鐨勮嚜瀹氫箟绯荤粺鎸囦护锛堝鏋滄湁鐨勮瘽锛?
-
-      ...(input.user.system ? [input.user.system] : []),
     ]
-      .filter((x) => x)
-      .join("\n"),
   )
 
   const header = system[0]
@@ -156,7 +143,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   //     headers: {},
   //   },
   // )
-  //鍒涘缓涓€涓狝bortController,灏嗕箣signal娉ㄥ叆streamtext鍙傛暟
+  // 将 AbortController.signal 传给 streamText，用于中断请求。
   
 
 
@@ -168,7 +155,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   //       input.model.limit.output,
   //       OUTPUT_TOKEN_MAX,
   //     )
-  //**瑙ｆ瀽鍜岃繃婊ゅ伐鍏?*锛氭牴鎹敤鎴锋潈闄愬拰浠ｇ悊璁剧疆锛岃В鏋愬苟杩囨护鍙敤鐨勫伐鍏烽泦锛岃幏寰楀弬鏁皌ools
+  // 准备工具集，并解析最终使用的语言模型。
   const tools: ToolSet = input.tools ?? {}
   const model = await resolveLanguageModel(input.model)
 
@@ -191,49 +178,49 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   //     execute: async () => ({ output: "", title: "", metadata: {} }),
   //   })
   // }
-  //**鎵ц娴佸紡鐢熸垚**锛氳皟鐢?Vercel AI SDK锛屽苟鎸傝浇涓棿浠讹紙Middleware锛夊鐞嗘帹鐞嗗唴瀹瑰拰鍙傛暟杞崲銆?
+  // 使用 Vercel AI SDK 发起流式请求；如需推理抽取，可在这里接入 middleware。
   return streamText({
-    //------浜嬩欢鍥炶皟涓庣綉缁?(Callbacks & Network)------
+    // ------ 回调与网络配置（Callbacks & Network）------
     onError(error) {
-      console.error("浜嬩欢鍥炶皟涓庣綉缁淒EBUG - AI SDK 鍘熷閿欒璇︽儏:", error);
+      console.error("流式请求回调异常：AI SDK onError 捕获到错误", error)
       console.log(error)
     },
     onFinish: () => {
-      console.log("浜嬩欢鍥炶皟涓庣綉缁渟treamTextfinish")
+      console.log("流式请求结束：streamText.onFinish")
     },
     onStepFinish: () => {
-      console.log("浜嬩欢鍥炶皟涓庣綉缁渟treamTextonStepFinish")
+      console.log("流式步骤结束：streamText.onStepFinish")
     },
     onAbort: () => {
-      console.log("浜嬩欢鍥炶皟涓庣綉缁渟treamTextonAbort")
+      console.log("流式请求中止：streamText.onAbort")
     },
-    //-------缃戠粶-----------------
-    timeout: { totalMs: 60000, stepMs: 10000 },//瓒呮椂閰嶇疆
-    abortSignal: input.abort,//鎵撴柇閰嶇疆
-    maxRetries: input.retries ?? 0,//閲嶈瘯娆℃暟
+    // ------- 基础生成参数 ----------------
+    timeout: { totalMs: 60000, stepMs: 10000 },// 总超时与单步超时
+    abortSignal: input.abort,// 取消信号
+    maxRetries: input.retries ?? 0,// 最大重试次数
     //headers:       //Additional HTTP headers to be sent with the request. Only applicable for HTTP-based providers.
-    //-----------杈撳嚭閰嶇疆--------------------
-    output: Output.text(),//閰嶇疆杈撳嚭鏍煎紡锛岄粯璁ゅ氨鏄痶ext
+    //----------- 输出与采样参数 --------------------
+    output: Output.text(),// 输出纯文本
     ///temperature: params.temperature,
     temperature: 1,
     ///topP: params.topP,
     ///topK: params.topK,
     //maxOutputTokens : maxOutputTokens ,
-    presencePenalty: 0,//鎺у埗妯″瀷鈥滆皥璁烘柊璇濋鈥濈殑绉瀬,鍙鍑虹幇杩囷紝鎯╃綒灏辨槸鍥哄畾鐨勩€?
-    frequencyPenalty: 0,//棰戠巼鎯╃綒,鎶戝埗妯″瀷鍦ㄧ敓鎴愬唴瀹规椂鍙嶅浣跨敤鐩稿悓鐨勮瘝姹囨垨鐭,鍑虹幇娆℃暟瓒婂锛屾儵缃氬氨瓒婇噸锛堢疮绉埗锛夈€?
-    ///providerOptions: ProviderTransform.providerOptions(input.model, params.options),//铏界劧 SDK锛堝 Vercel AI SDK锛夎瘯鍥炬妸鎵€鏈夋ā鍨?
-    //  锛圤penAI, Claude, Gemini 绛夛級鐨勫弬鏁伴兘缁熶竴鍖栵紙姣斿 temperature, maxTokens锛夛紝
-    // 浣嗘瘡涓緵搴斿晢鎬绘湁涓€浜涚嫭瀹躲€侀潪鏍囧噯鐨勫姛鑳姐€?
-    //providerOptions 灏辨槸璁╀綘浼犻€掕繖浜涗緵搴斿晢涓撳睘鍙傛暟鐨勨€滃彛琚嬧€濄€?
-    activeTools: Object.keys(tools).filter((x) => x !== "invalid"),//鍙敤宸ュ叿
+    presencePenalty: 0,// 降低重复提及已出现主题的倾向
+    frequencyPenalty: 0,// 降低重复使用相同词语或短语的倾向
+    ///providerOptions: ProviderTransform.providerOptions(input.model, params.options),// 如需透传 provider 专有参数，可在这里扩展
+    // OpenAI、Claude、Gemini 等模型支持的 providerOptions 并不完全一致。
+    // 如果后续需要细粒度控制，可以在这里按 provider 组装额外参数。
+    // providerOptions 会原样透传给底层 SDK，用于覆盖各家模型的专有配置。
+    activeTools: Object.keys(tools).filter((x) => x !== "invalid"),// 过滤掉兜底的 invalid 工具
 
-    ///stopSequences:, //string[],缁撴潫瀛楃涓?
-    ///seed:123124,//seed锛堥殢鏈虹瀛愶級鏄竴涓敤浜庢帶鍒堕殢鏈烘€с€佸疄鐜扮粨鏋滃彲澶嶇幇鎬х殑鍏抽敭鍙傛暟銆?
-    includeRawChunks: false,//鍦ㄦ祦寮忎紶杈擄紙Streaming锛夎繃绋嬩腑锛岃兘澶熺洿鎺ヨ幏鍙栨潵鑷ぇ妯″瀷渚涘簲鍟嗭紙濡?OpenAI銆丄nthropic 绛夛級鐨勨€滃師濮嬫暟鎹寘鈥濄€?
-    //------------澶氭浠诲姟璁剧疆-----------------
-    //stopWhen:()=>{return true}, //鍐欏叆澶氭浠诲姟鐨勬墦鏂€昏緫
-    //prepareStep:()=>{return {}},              //鏍规嵁鍓嶄竴姝ョ殑缁撴灉锛屼复鏃舵敼鍙樹笅涓€姝ョ殑鎿嶄綔鏂瑰紡銆?
-    //------------瀹為獙-----------------------
+    ///stopSequences:, // string[]，自定义停止序列
+    ///seed:123124,// 固定随机种子，便于结果复现
+    includeRawChunks: false,// 不返回底层原始分块，减少流式噪声与兼容性问题
+    //------------ 实验能力扩展 ----------------
+    //stopWhen:()=>{return true}, // stopWhen 可用于提前终止生成
+    //prepareStep:()=>{return {}},              // prepareStep 可在每一步执行前动态调整参数
+    //------------ 工具调用修复 ----------------------
     // async experimental_repairToolCall(failed) {
     //   const lower = failed.toolCall.toolName.toLowerCase()
     //   if (lower !== failed.toolCall.toolName && tools[lower]) {
@@ -255,30 +242,30 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //     toolName: "invalid",
     //   }
     // },
-    //async experimental_generateMessageId:()=>{return {}},//鑷畾涔夌敓鎴愭瘡鏉℃秷鎭敮涓€鏍囪瘑绗︼紙ID锛夌殑閫昏緫,streamtext浼间箮娌℃湁锛?
+    //async experimental_generateMessageId:()=>{return {}},// 自定义消息 ID 生成器；streamText 默认会自动生成 ID
     //async experimental_transform(failed){}
     //experimental_telemetry
-    //experimental_context(){},  //鎶婂紑鍙戣€呬唬鐮佷腑鐨勨€滅郴缁熷彉閲忊€濈洿鎺ヤ紶閫掔粰宸ュ叿锛圱ools锛夌殑鎵ц鍑芥暟锛岃€屼笉璁?AI 妯″瀷鐪嬪埌杩欎簺淇℃伅銆?
-    //   async experimental_download(downloads){// Vercel AI SDK 鎻愪緵鐨勪竴涓疄楠屾€ч珮绾у姛鑳斤紝瀹冨厑璁镐綘瀹屽叏鎺ョ鍜岃嚜瀹氫箟 Prompt 涓?URL 璧勬簮鐨勪笅杞借涓恒€?
+    //experimental_context(){},  // 可在这里为工具调用或多模态下载补充上下文。
+    //   async experimental_download(downloads){// Vercel AI SDK 支持拦截下载请求，把 Prompt 中的 URL 转成模型可消费的二进制内容
     //       return Promise.all(
     //           downloads.map(async ({ url }) => 
     //             {
-    //               // 1. 妫€鏌ユ槸鍚︽槸鎴戜滑鐨勭鏈夊煙鍚?
+    //               // 1. 命中私有资源域名时，走自定义下载逻辑
     //               if (url.hostname === 'my-private-s3.com') {
-    //                 // 2. 鎵嬪姩涓嬭浇锛屽苟甯︿笂绉佹湁鐨?Token
+    //                 // 2. 带鉴权 Token 拉取私有对象
     //                 const response = await fetch(url, {
     //                   headers: { 'Authorization': 'Bearer MY_S3_TOKEN' }
     //                 });
     //                 const buffer = await response.arrayBuffer();
 
-    //                 // 3. 杩斿洖缁?SDK 鏁版嵁锛孲DK 浼氬皢鍏惰浆鍖栦负鏁版嵁娴佸彂缁?AI
+    //                 // 3. 按 SDK 约定返回二进制数据和媒体类型，供模型消费
     //                 return {
     //                   data: new Uint8Array(buffer),
     //                   mediaType: response.headers.get('content-type') || 'image/jpeg'
     //                 };
     //               }
 
-    //               // 4. 鍏朵粬鍏綉閾炬帴锛岃繑鍥?null 璁╂ā鍨嬭嚜宸卞鐞?
+    //               // 4. 不处理的地址返回 null，交还默认下载流程
     //               return null;
     //             }
     //           )
@@ -305,12 +292,8 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //   ...input.model.headers,
     //   ...headers,
     // },
+    system:input.system.join(""),
     prompt: [
-      {
-        role: "system",
-        content: "you are a helpful assistant",
-      },
-
       ...input.messages,
     ],
     // model: wrapLanguageModel({

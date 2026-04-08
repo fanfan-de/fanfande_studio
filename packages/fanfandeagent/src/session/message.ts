@@ -76,8 +76,8 @@ export type PatchPart = z.infer<typeof PatchPart>
 export const TextPart = PartBase.extend({
     type: z.literal("text"),
     text: z.string(),
-    synthetic: z.boolean().optional(), // 鏍囪鏄惁涓虹郴缁熷悎鎴愮殑鏂囨湰锛堣€岄潪妯″瀷鐢熸垚鐨勶級
-    ignored: z.boolean().optional(),   // 鏍囪璇ユ枃鏈槸鍚﹀簲璇ヨ鍙戦€佺粰 LLM锛堜緥濡備粎鐢ㄤ簬 UI 灞曠ず鐨勬彁绀猴級
+    synthetic: z.boolean().optional(), // 标记是否为系统合成的文本，而非模型生成的内容
+    ignored: z.boolean().optional(),   // 标记该文本是否应发送给 LLM，例如仅用于 UI 展示的提示
     time: z
         .object({
             start: z.number(),
@@ -123,7 +123,7 @@ export const FileSource = FilePartSourceBase.extend({
 })
 
 export const SymbolSource = FilePartSourceBase.extend({
-    type: z.literal("symbol"), // 鏉ヨ嚜 LSP (Language Server Protocol) 鐨勭鍙峰畾锟?
+    type: z.literal("symbol"), // 来自 LSP (Language Server Protocol) 的符号定义
     path: z.string(),
     //range: LSP.Range,
     name: z.string(),
@@ -133,7 +133,7 @@ export const SymbolSource = FilePartSourceBase.extend({
 })
 
 export const ResourceSource = FilePartSourceBase.extend({
-    type: z.literal("resource"), // 澶栭儴璧勬簮锛堝鏂囨。閾炬帴鍐呭锟?
+    type: z.literal("resource"), // 外部资源，例如文档链接内容
     clientName: z.string(),
     uri: z.string(),
 }).meta({
@@ -148,7 +148,7 @@ export const FilePart = PartBase.extend({
     type: z.literal("file"),
     mime: z.string(),
     filename: z.string().optional(),
-    url: z.string(), // 閫氬父锟?Data URL 鎴栧唴閮ㄥ瓨鍌ㄩ摼锟?
+    url: z.string(), // 通常是 Data URL 或内部存储链接
     source: FilePartSource.optional(),
 }).meta({
     ref: "FilePart",
@@ -159,7 +159,7 @@ export const ImagePart = PartBase.extend({
     type: z.literal("image"),
     mime: z.string(),
     filename: z.string().optional(),
-    url: z.string(), // 閫氬父锟?Data URL 鎴栧唴閮ㄥ瓨鍌ㄩ摼锟?
+    url: z.string(), // 通常是 Data URL 或内部存储链接
     source: FilePartSource.optional(),
 }).meta({
     ref: "ImagePart",
@@ -193,7 +193,7 @@ export const ToolStatePending = z
     .object({
         status: z.literal("pending"),
         input: z.record(z.string(), z.any()),
-        raw: z.string(), // 鍘熷锟?JSON 瀛楃涓诧紝鐢ㄤ簬璋冭瘯瑙ｆ瀽閿欒
+        raw: z.string(), // 原始 JSON 字符串，用于调试解析错误
     })
     .meta({
         ref: "ToolStatePending",
@@ -225,9 +225,9 @@ export const ToolStateCompleted = z
         time: z.object({
             start: z.number(),
             end: z.number(),
-            compacted: z.number().optional(), // 濡傛灉宸ュ叿杈撳嚭杩囬暱琚帇缂╋紝璁板綍鍘嬬缉鏃堕棿
+            compacted: z.number().optional(), // 如果工具输出过长被压缩，记录压缩发生的时间
         }),
-        attachments: FilePart.array().optional(), // 宸ュ叿鍙互杩斿洖鏂囦欢锛堝鐢熸垚鐨勫浘鐗囷級
+        attachments: FilePart.array().optional(), // 工具可以返回文件，例如生成的图片
     })
     .meta({
         ref: "ToolStateCompleted",
@@ -421,7 +421,7 @@ export const Part = z
 export type Part = z.infer<typeof Part>
 
 
-//---------------Message Meta Data----------------------------------------------------------------------------
+//---------------消息元数据----------------------------------------------------------------------------
 
 const Base = z.object({
     id: z.string(),
@@ -488,15 +488,26 @@ export const Assistant = Base.extend({
 })
 export type Assistant = z.infer<typeof Assistant>
 
-export const MessageInfo = z.discriminatedUnion("role", [User, Assistant]).meta({
+export const System = Base.extend({
+    role: z.literal("system"),
+    created: z.number(),
+    modelID: z.string(),
+    providerID: z.string(),
+    agent: z.string(),
+}).meta({
+    ref: "SystemMessage",
+})
+export type System = z.infer<typeof System>
+
+export const MessageInfo = z.discriminatedUnion("role", [User, Assistant,System]).meta({
     ref: "Message",
 })
 export type MessageInfo = z.infer<typeof MessageInfo>
 
-//messge鐨刢ontent + Meta锛屽氨鍙互鐞嗚В涓轰竴锟?message
+// message 的 content + meta，可以理解为一条完整消息
 export const WithParts = z.object({
-    info: MessageInfo,//meta鏁版嵁
-    parts: z.array(Part),//娑堟伅鐨勫叿浣撳唴锟?
+    info: MessageInfo,//元数据
+    parts: z.array(Part),//消息的具体内容
 })
 export type WithParts = z.infer<typeof WithParts>
 
@@ -579,15 +590,17 @@ export async function* stream(sessionID: string): AsyncGenerator<WithParts> {
 }
 
 /**
- * 灏嗛」鐩唴閮ㄧ殑娑堟伅鏍煎紡 WithParts[] 杞崲锟?AI SDK 鐨勬秷鎭牸锟?ModelMessage[]
- * 
- * 姝ゅ嚱鏁伴亶鍘嗘瘡锟?WithParts 瀵硅薄锛屾牴鎹秷鎭鑹诧紙user/assistant锛夎浆鎹负瀵瑰簲锟?AI SDK 娑堟伅瑙掕壊锟?
- * 骞跺皢姣忎釜娑堟伅鐨勯儴鍒嗭紙parts锛夎浆鎹负 AI SDK 鏀寔鐨勫唴瀹圭被鍨嬶紙text銆乺easoning銆乫ile銆乮mage銆乼ool-call銆乼ool-result锛夛拷?
- * 杞崲杩囩▼涓細妫€鏌ユā鍨嬬殑鑳藉姏锛坈apabilities锛夛紝杩囨护鎺夋ā鍨嬩笉鏀寔鐨勫唴瀹圭被鍨嬶拷?
- * 
- * @param input - 椤圭洰鍐呴儴鐨勬秷鎭暟缁勶紝姣忎釜娑堟伅鍖呭惈鍏冩暟鎹紙info锛夊拰鍐呭閮ㄥ垎锛坧arts锟?
- * @param model - 鎻愪緵鑰呮ā鍨嬶紝鍖呭惈妯″瀷鐨勮兘鍔涢厤缃紝鐢ㄤ簬杩囨护涓嶆敮鎸佺殑鍐呭绫诲瀷
- * @returns 绗﹀悎 AI SDK 鏍煎紡鐨勬秷鎭暟缁勶紝鍙洿鎺ョ敤锟?AI SDK 锟?API 璋冪敤
+ * 将项目内部的消息格式 `WithParts[]` 转换为 AI SDK 使用的 `ModelMessage[]`。
+ *
+ * 该函数会遍历每条消息，根据角色将内部消息映射为 AI SDK 的消息角色，
+ * 并把消息中的各类 part 转换为 AI SDK 可识别的内容类型，例如
+ * `text`、`reasoning`、`file`、`image`、`tool-call` 和 `tool-result`。
+ *
+ * 转换过程中会结合模型能力配置 `capabilities` 过滤掉目标模型不支持的内容类型。
+ *
+ * @param input 项目内部消息数组。每条消息都包含元数据 `info` 和内容片段 `parts`
+ * @param model 目标模型信息，包含模型能力配置，用于过滤不支持的内容类型
+ * @returns 符合 AI SDK 格式的消息数组，可直接用于模型调用
  */
 // TODO: move model message conversion out of message.ts after the schema settles.
 export async function toModelMessages(
