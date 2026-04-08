@@ -84,47 +84,57 @@ export function Titlebar({ isWindowMaximized, titlebarCommand, onMenuClick, onWi
   )
 }
 
+type SidebarToggleButtonVariant = "rail" | "sidebar" | "canvas"
+
 interface SidebarToggleButtonProps {
-  isActivityRailVisible: boolean
   isSidebarCollapsed: boolean
   onToggleSidebar: () => void
+  variant: SidebarToggleButtonVariant
 }
 
-export function SidebarToggleButton({
-  isActivityRailVisible,
-  isSidebarCollapsed,
-  onToggleSidebar,
-}: SidebarToggleButtonProps) {
+function getSidebarToggleLabel(isSidebarCollapsed: boolean) {
+  return isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+}
+
+export function SidebarToggleButton({ isSidebarCollapsed, onToggleSidebar, variant }: SidebarToggleButtonProps) {
+  const label = getSidebarToggleLabel(isSidebarCollapsed)
   const buttonClassName = [
     "sidebar-toggle-button",
-    !isActivityRailVisible ? "is-detached" : "",
+    `is-${variant}`,
     !isSidebarCollapsed ? "is-active" : "",
   ]
     .filter(Boolean)
     .join(" ")
 
   return (
-    <div className="sidebar-toggle-dock">
-      <button
-        className={buttonClassName}
-        aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        aria-pressed={!isSidebarCollapsed}
-        title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        type="button"
-        onClick={onToggleSidebar}
-      >
-        <NavPlaceholderIcon />
-      </button>
-    </div>
+    <button
+      className={buttonClassName}
+      aria-label={label}
+      aria-pressed={!isSidebarCollapsed}
+      title={label}
+      type="button"
+      onClick={onToggleSidebar}
+    >
+      <NavPlaceholderIcon />
+    </button>
   )
 }
 
 interface ActivityRailProps {
-  isVisible: boolean
+  isSidebarCollapsed: boolean
+  onToggleSidebar: () => void
 }
 
-export function ActivityRail({ isVisible }: ActivityRailProps) {
-  return <div className={isVisible ? "activity-rail" : "activity-rail is-hidden"} aria-hidden="true" />
+export function ActivityRail({ isSidebarCollapsed, onToggleSidebar }: ActivityRailProps) {
+  return (
+    <aside className="activity-rail" aria-label="Primary navigation rail">
+      <SidebarToggleButton
+        isSidebarCollapsed={isSidebarCollapsed}
+        onToggleSidebar={onToggleSidebar}
+        variant="rail"
+      />
+    </aside>
+  )
 }
 
 interface SidebarProps {
@@ -135,6 +145,7 @@ interface SidebarProps {
   isCreatingProject: boolean
   isCreatingSession: boolean
   isSettingsOpen: boolean
+  showSidebarToggleButton: boolean
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
   selectedFolderID: string | null
   workspaces: WorkspaceGroup[]
@@ -146,6 +157,7 @@ interface SidebarProps {
   onSessionDelete: (workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) => void
   onSessionSelect: (workspaceID: string, sessionID: string) => void
   onSidebarAction: (action: SidebarActionKey) => void | Promise<void>
+  onToggleSidebar: () => void
 }
 
 export function Sidebar({
@@ -156,6 +168,7 @@ export function Sidebar({
   isCreatingProject,
   isCreatingSession,
   isSettingsOpen,
+  showSidebarToggleButton,
   projectRowRefs,
   selectedFolderID,
   workspaces,
@@ -167,6 +180,7 @@ export function Sidebar({
   onSessionDelete,
   onSessionSelect,
   onSidebarAction,
+  onToggleSidebar,
 }: SidebarProps) {
   return (
     <aside id="app-sidebar" className="sidebar" aria-label="Folder navigation">
@@ -185,6 +199,9 @@ export function Sidebar({
             {action.key === "new" ? <NewItemIcon /> : null}
           </button>
         ))}
+        {showSidebarToggleButton ? (
+          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} variant="sidebar" />
+        ) : null}
       </div>
 
       <div className="sidebar-projects">
@@ -323,9 +340,17 @@ export function SidebarResizer({ isSidebarResizing, sidebarWidth, onKeyDown, onP
   )
 }
 
-export function CanvasTopMenu() {
+interface CanvasTopMenuProps {
+  showSidebarToggleButton: boolean
+  onToggleSidebar: () => void
+}
+
+export function CanvasTopMenu({ showSidebarToggleButton, onToggleSidebar }: CanvasTopMenuProps) {
   return (
     <nav className="canvas-top-menu" aria-label="Main content menu">
+      {showSidebarToggleButton ? (
+        <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleSidebar} variant="canvas" />
+      ) : null}
       <div className="canvas-top-menu-group">
         {canvasMenuItems.map((item, index) => (
           <button key={item.key} className={index === 0 ? "canvas-top-menu-button is-active" : "canvas-top-menu-button"}>
@@ -661,7 +686,7 @@ export function SettingsPage({
                         <span className="label">Shell</span>
                         <h3>Layout Visibility</h3>
                       </div>
-                      <p>Control whether the narrow navigation rail stays pinned on the far left edge of the desktop shell.</p>
+                      <p>Control whether the narrow navigation rail is shown on the far left edge of the desktop shell.</p>
                     </div>
 
                     <button
@@ -674,14 +699,14 @@ export function SettingsPage({
                     >
                       <span className="settings-toggle-copy">
                         <strong>Show left rail</strong>
-                        <small>Display the narrow rail surface on the far left while keeping the sidebar toggle pinned in place.</small>
+                        <small>Display the narrow rail and keep the sidebar toggle inside it.</small>
                       </span>
                       <span className="settings-toggle-control" aria-hidden="true">
                         <span className="settings-toggle-thumb" />
                       </span>
                     </button>
 
-                    <p className="settings-helper-text">When hidden, the sidebar shifts to the left edge and the pinned toggle stays in the same spot.</p>
+                    <p className="settings-helper-text">When hidden, the toggle moves to the sidebar header or the canvas top menu depending on whether the sidebar is open.</p>
                   </section>
 
                   <section className="settings-panel">
@@ -690,7 +715,7 @@ export function SettingsPage({
                         <span className="label">Current</span>
                         <h3>Left Rail Status</h3>
                       </div>
-                      <p>The sidebar toggle stays pinned either way. Turning the rail off lets the sidebar reclaim that width.</p>
+                      <p>Turning the rail off lets the sidebar reclaim that width and moves the toggle into the current surface.</p>
                     </div>
 
                     <div className="settings-section-summary">
@@ -699,8 +724,8 @@ export function SettingsPage({
                         <strong>{isActivityRailVisible ? "Shown" : "Hidden"}</strong>
                         <p>
                           {isActivityRailVisible
-                            ? "The narrow rail remains visible and frames the pinned sidebar toggle."
-                            : "The rail surface is hidden, the sidebar shifts left, and the pinned toggle stays in the same spot."}
+                            ? "The narrow rail is visible and always contains the sidebar toggle."
+                            : "The rail is hidden, and the toggle appears in the sidebar header or canvas top menu depending on the current layout."}
                         </p>
                       </article>
                     </div>

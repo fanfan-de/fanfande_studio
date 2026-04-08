@@ -3,6 +3,6 @@
   "accentColor": "",
   "cssTheme": "Minimal",
   "nativeMenus": false,
-  "showRibbon": false,
+  "showRibbon": true,
   "showViewHeader": true
 }
