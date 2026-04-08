@@ -1,5 +1,7 @@
-import {Instance}  from "#project/instance.ts"
+import { Instance } from "#project/instance.ts"
+import { CompactionPart } from "#session/message.ts"
 import z from "zod"
+
 
 export const AgentInfo = z
   .object({
@@ -29,13 +31,26 @@ export type AgentInfo = z.infer<typeof AgentInfo>
 
 const state = Instance.state(async () => {
   const result: Record<string, AgentInfo> = {
+    default: {
+      name: "default",
+      description: "The default agent. Executes tools based on configured permissions.",
+      mode: "primary",
+      options: {},
+      native: true,
+    },
     plan: {
       name: "plan",
       description: "Plan mode. Disallows all edit tools.",
       mode: "primary",
       native: true,
       options: {},
-      steps: Infinity
+      steps: Infinity,
+    },
+    compaction:{
+      name: "compaction",
+      mode: "subagent",
+      native:true,
+      options:{},
     }
   }
 
@@ -47,7 +62,7 @@ const state = Instance.state(async () => {
  * @param agent 
  * @returns 
  */
-export async function get(agent:string): Promise<AgentInfo|undefined>{
+export async function get(agent: string): Promise<AgentInfo | undefined> {
   return state().then((x) => x[agent])
 }
 
@@ -82,12 +97,12 @@ export async function defaultAgent() {
 
 //在这里创建一个agent（该文件中定义的类型）的实例，并导出
 export const planAgent: AgentInfo = {
-    name: "plan",
-    description: "Plan mode. Disallows all edit tools.",
-    mode: "primary",
-    native: true,
-    options: {},
-    steps: Infinity
+  name: "plan",
+  description: "Plan mode. Disallows all edit tools.",
+  mode: "primary",
+  native: true,
+  options: {},
+  steps: Infinity
 }
 
 

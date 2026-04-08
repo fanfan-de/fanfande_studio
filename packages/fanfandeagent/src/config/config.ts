@@ -67,6 +67,7 @@ const ProviderMapField = z
   .optional()
   .describe("Custom provider configurations and model overrides")
 
+  
 const ModelField = z.string().describe("Model to use in the format of provider/model, eg anthropic/claude-2")
 
 const SmallModelField = z
