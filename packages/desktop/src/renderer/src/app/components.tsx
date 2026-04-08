@@ -84,23 +84,27 @@ export function Titlebar({ isWindowMaximized, titlebarCommand, onMenuClick, onWi
   )
 }
 
+type SidebarSide = "left" | "right"
 type SidebarToggleButtonVariant = "rail" | "sidebar" | "canvas"
 
 interface SidebarToggleButtonProps {
   isSidebarCollapsed: boolean
   onToggleSidebar: () => void
+  side: SidebarSide
   variant: SidebarToggleButtonVariant
 }
 
-function getSidebarToggleLabel(isSidebarCollapsed: boolean) {
-  return isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+function getSidebarToggleLabel(isSidebarCollapsed: boolean, side: SidebarSide) {
+  const sideLabel = side === "left" ? "left" : "right"
+  return isSidebarCollapsed ? `Expand ${sideLabel} sidebar` : `Collapse ${sideLabel} sidebar`
 }
 
-export function SidebarToggleButton({ isSidebarCollapsed, onToggleSidebar, variant }: SidebarToggleButtonProps) {
-  const label = getSidebarToggleLabel(isSidebarCollapsed)
+export function SidebarToggleButton({ isSidebarCollapsed, onToggleSidebar, side, variant }: SidebarToggleButtonProps) {
+  const label = getSidebarToggleLabel(isSidebarCollapsed, side)
   const buttonClassName = [
     "sidebar-toggle-button",
     `is-${variant}`,
+    `is-${side}`,
     !isSidebarCollapsed ? "is-active" : "",
   ]
     .filter(Boolean)
@@ -123,14 +127,18 @@ export function SidebarToggleButton({ isSidebarCollapsed, onToggleSidebar, varia
 interface ActivityRailProps {
   isSidebarCollapsed: boolean
   onToggleSidebar: () => void
+  side: SidebarSide
 }
 
-export function ActivityRail({ isSidebarCollapsed, onToggleSidebar }: ActivityRailProps) {
+export function ActivityRail({ isSidebarCollapsed, onToggleSidebar, side }: ActivityRailProps) {
+  const railClassName = side === "right" ? "activity-rail is-right" : "activity-rail"
+
   return (
-    <aside className="activity-rail" aria-label="Primary navigation rail">
+    <aside className={railClassName} aria-label={side === "left" ? "Primary navigation rail" : "Inspector rail"}>
       <SidebarToggleButton
         isSidebarCollapsed={isSidebarCollapsed}
         onToggleSidebar={onToggleSidebar}
+        side={side}
         variant="rail"
       />
     </aside>
@@ -200,7 +208,7 @@ export function Sidebar({
           </button>
         ))}
         {showSidebarToggleButton ? (
-          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} variant="sidebar" />
+          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="left" variant="sidebar" />
         ) : null}
       </div>
 
@@ -314,25 +322,171 @@ export function Sidebar({
   )
 }
 
+interface RightSidebarProps {
+  activeSession: SessionSummary | null
+  activeTurnCount: number
+  attachmentCount: number
+  composerAgentMode: AppMode
+  isAgentConnected: boolean
+  isSending: boolean
+  pendingPermissionRequestCount: number
+  selectedModelLabel: string
+  selectedWorkspace: WorkspaceGroup | null
+  onToggleSidebar: () => void
+}
+
+export function RightSidebar({
+  activeSession,
+  activeTurnCount,
+  attachmentCount,
+  composerAgentMode,
+  isAgentConnected,
+  isSending,
+  pendingPermissionRequestCount,
+  selectedModelLabel,
+  selectedWorkspace,
+  onToggleSidebar,
+}: RightSidebarProps) {
+  const runtimeStatus = pendingPermissionRequestCount > 0
+    ? `${pendingPermissionRequestCount} waiting`
+    : isSending
+      ? "Sending"
+      : "Clear"
+
+  return (
+    <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
+      <header className="right-sidebar-header">
+        <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="right" variant="sidebar" />
+        <div className="right-sidebar-header-copy">
+          <span className="label">Inspector</span>
+          <h3>Session Context</h3>
+          <p>Keep the active session, project metadata, and runtime state visible beside the thread.</p>
+        </div>
+      </header>
+
+      <section className="right-sidebar-section">
+        <div className="right-sidebar-section-header">
+          <span className="label">Active Session</span>
+          {activeSession ? <span className="settings-badge">{activeSession.status}</span> : null}
+        </div>
+        {activeSession ? (
+          <div className="right-sidebar-stack">
+            <div>
+              <h4>{activeSession.title}</h4>
+              <p>{activeSession.summary}</p>
+            </div>
+            <div className="right-sidebar-meta-grid">
+              <article className="right-sidebar-metric">
+                <span className="right-sidebar-metric-label">Branch</span>
+                <strong>{activeSession.branch}</strong>
+              </article>
+              <article className="right-sidebar-metric">
+                <span className="right-sidebar-metric-label">Focus</span>
+                <strong>{activeSession.focus}</strong>
+              </article>
+              <article className="right-sidebar-metric">
+                <span className="right-sidebar-metric-label">Updated</span>
+                <strong>{formatTime(activeSession.updated)}</strong>
+              </article>
+              <article className="right-sidebar-metric">
+                <span className="right-sidebar-metric-label">Turns</span>
+                <strong>{String(activeTurnCount)}</strong>
+              </article>
+            </div>
+          </div>
+        ) : (
+          <div className="right-sidebar-empty">
+            <p>Select a session from the left sidebar to populate the inspector.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="right-sidebar-section">
+        <div className="right-sidebar-section-header">
+          <span className="label">Workspace</span>
+          {selectedWorkspace ? <span className="settings-badge">{selectedWorkspace.sessions.length} sessions</span> : null}
+        </div>
+        {selectedWorkspace ? (
+          <div className="right-sidebar-stack">
+            <div>
+              <h4>{selectedWorkspace.name}</h4>
+              <p>{selectedWorkspace.project.name}</p>
+            </div>
+            <div className="right-sidebar-list">
+              <div className="right-sidebar-list-row">
+                <span>Directory</span>
+                <strong>{selectedWorkspace.directory}</strong>
+              </div>
+              <div className="right-sidebar-list-row">
+                <span>Worktree</span>
+                <strong>{selectedWorkspace.project.worktree}</strong>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="right-sidebar-empty">
+            <p>No workspace is currently selected.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="right-sidebar-section">
+        <div className="right-sidebar-section-header">
+          <span className="label">Runtime</span>
+          <span className={isAgentConnected ? "settings-badge is-highlight" : "settings-badge"}>
+            {isAgentConnected ? "Connected" : "Offline"}
+          </span>
+        </div>
+        <div className="right-sidebar-meta-grid">
+          <article className="right-sidebar-metric">
+            <span className="right-sidebar-metric-label">Mode</span>
+            <strong>{composerAgentMode}</strong>
+          </article>
+          <article className="right-sidebar-metric">
+            <span className="right-sidebar-metric-label">Model</span>
+            <strong>{selectedModelLabel}</strong>
+          </article>
+          <article className="right-sidebar-metric">
+            <span className="right-sidebar-metric-label">Attachments</span>
+            <strong>{String(attachmentCount)}</strong>
+          </article>
+          <article className="right-sidebar-metric">
+            <span className="right-sidebar-metric-label">Queue</span>
+            <strong>{runtimeStatus}</strong>
+          </article>
+        </div>
+      </section>
+    </aside>
+  )
+}
+
 interface SidebarResizerProps {
   isSidebarResizing: boolean
+  side: SidebarSide
   sidebarWidth: number
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void
 }
 
-export function SidebarResizer({ isSidebarResizing, sidebarWidth, onKeyDown, onPointerDown }: SidebarResizerProps) {
+export function SidebarResizer({ isSidebarResizing, side, sidebarWidth, onKeyDown, onPointerDown }: SidebarResizerProps) {
+  const resizerClassName = side === "right"
+    ? isSidebarResizing ? "sidebar-resizer is-right is-active" : "sidebar-resizer is-right"
+    : isSidebarResizing ? "sidebar-resizer is-active" : "sidebar-resizer"
+  const ariaLabel = side === "right" ? "Resize right sidebar" : "Resize left sidebar"
+  const controlsID = side === "right" ? "app-sidebar-right" : "app-sidebar"
+  const testID = side === "right" ? "right-sidebar-resizer" : "sidebar-resizer"
+
   return (
     <div
-      className={isSidebarResizing ? "sidebar-resizer is-active" : "sidebar-resizer"}
+      className={resizerClassName}
       role="separator"
-      aria-label="Resize sidebar"
-      aria-controls="app-sidebar"
+      aria-label={ariaLabel}
+      aria-controls={controlsID}
       aria-orientation="vertical"
       aria-valuemin={MIN_SIDEBAR_WIDTH}
       aria-valuemax={MAX_SIDEBAR_WIDTH}
       aria-valuenow={sidebarWidth}
-      data-testid="sidebar-resizer"
+      data-testid={testID}
       tabIndex={0}
       onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
@@ -341,22 +495,36 @@ export function SidebarResizer({ isSidebarResizing, sidebarWidth, onKeyDown, onP
 }
 
 interface CanvasTopMenuProps {
-  showSidebarToggleButton: boolean
-  onToggleSidebar: () => void
+  showLeftSidebarToggleButton: boolean
+  showRightSidebarToggleButton: boolean
+  onToggleLeftSidebar: () => void
+  onToggleRightSidebar: () => void
 }
 
-export function CanvasTopMenu({ showSidebarToggleButton, onToggleSidebar }: CanvasTopMenuProps) {
+export function CanvasTopMenu({
+  showLeftSidebarToggleButton,
+  showRightSidebarToggleButton,
+  onToggleLeftSidebar,
+  onToggleRightSidebar,
+}: CanvasTopMenuProps) {
   return (
     <nav className="canvas-top-menu" aria-label="Main content menu">
-      {showSidebarToggleButton ? (
-        <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleSidebar} variant="canvas" />
-      ) : null}
+      <div className="canvas-top-menu-leading">
+        {showLeftSidebarToggleButton ? (
+          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="canvas" />
+        ) : null}
+      </div>
       <div className="canvas-top-menu-group">
         {canvasMenuItems.map((item, index) => (
           <button key={item.key} className={index === 0 ? "canvas-top-menu-button is-active" : "canvas-top-menu-button"}>
             {item.label}
           </button>
         ))}
+      </div>
+      <div className="canvas-top-menu-trailing">
+        {showRightSidebarToggleButton ? (
+          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleRightSidebar} side="right" variant="canvas" />
+        ) : null}
       </div>
     </nav>
   )
@@ -686,7 +854,7 @@ export function SettingsPage({
                         <span className="label">Shell</span>
                         <h3>Layout Visibility</h3>
                       </div>
-                      <p>Control whether the narrow navigation rail is shown on the far left edge of the desktop shell.</p>
+                      <p>Control whether the narrow navigation rail is shown on the left edge of the desktop shell.</p>
                     </div>
 
                     <button
@@ -698,7 +866,12 @@ export function SettingsPage({
                       onClick={() => onActivityRailVisibilityChange(!isActivityRailVisible)}
                     >
                       <span className="settings-toggle-copy">
-                        <strong>Show left rail</strong>
+                        <strong className="settings-toggle-title">
+                          <span className="settings-toggle-icon" aria-hidden="true">
+                            <LayoutSidebarLeftIcon />
+                          </span>
+                          <span>Show left rail</span>
+                        </strong>
                         <small>Display the narrow rail and keep the sidebar toggle inside it.</small>
                       </span>
                       <span className="settings-toggle-control" aria-hidden="true">
@@ -706,26 +879,35 @@ export function SettingsPage({
                       </span>
                     </button>
 
-                    <p className="settings-helper-text">When hidden, the toggle moves to the sidebar header or the canvas top menu depending on whether the sidebar is open.</p>
+                    <p className="settings-helper-text">
+                      When the left rail is hidden, its toggle moves into the left sidebar header or the left side of the canvas top menu. The right inspector has no rail, so its toggle always switches between the inspector header and the right side of the canvas top menu.
+                    </p>
                   </section>
 
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>
                         <span className="label">Current</span>
-                        <h3>Left Rail Status</h3>
+                        <h3>Toggle Placement</h3>
                       </div>
-                      <p>Turning the rail off lets the sidebar reclaim that width and moves the toggle into the current surface.</p>
+                      <p>The left rail is optional. The right inspector always keeps its toggle on the active surface.</p>
                     </div>
 
                     <div className="settings-section-summary">
                       <article className="settings-summary-card">
-                        <span className="label">Visibility</span>
+                        <span className="label">Left</span>
                         <strong>{isActivityRailVisible ? "Shown" : "Hidden"}</strong>
                         <p>
                           {isActivityRailVisible
                             ? "The narrow rail is visible and always contains the sidebar toggle."
                             : "The rail is hidden, and the toggle appears in the sidebar header or canvas top menu depending on the current layout."}
+                        </p>
+                      </article>
+                      <article className="settings-summary-card">
+                        <span className="label">Right</span>
+                        <strong>No rail</strong>
+                        <p>
+                          The inspector toggle lives in the right sidebar header while the sidebar is open, and moves to the canvas top menu when the inspector is collapsed.
                         </p>
                       </article>
                     </div>

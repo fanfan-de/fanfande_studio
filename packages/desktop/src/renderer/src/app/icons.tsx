@@ -92,6 +92,18 @@ export function LayoutSidebarLeftIcon() {
   )
 }
 
+export function LayoutSidebarRightIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4.75 5.75h14.5a1.5 1.5 0 0 1 1.5 1.5v9.5a1.5 1.5 0 0 1-1.5 1.5H4.75a1.5 1.5 0 0 1-1.5-1.5v-9.5a1.5 1.5 0 0 1 1.5-1.5Z" />
+      <path d="M15.5 5.75v12.5" />
+      <path d="M16.7 9.25h1.8" />
+      <path d="M16.7 12h1.8" />
+      <path d="M16.7 14.75h1.8" />
+    </svg>
+  )
+}
+
 export function ConnectedStatusIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">

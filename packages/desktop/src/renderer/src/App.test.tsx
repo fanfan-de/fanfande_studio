@@ -192,15 +192,17 @@ describe("App", () => {
 
     expect(screen.getByRole("button", { name: "File" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "\u79FB\u9664 app" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Create session for app" })).toBeInTheDocument()
-    expect(screen.getByText("Project 2")).toBeInTheDocument()
+    expect(screen.getAllByText("Project 2").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument()
+    expect(screen.getByText("Session Context")).toBeInTheDocument()
     await waitFor(() => {
       expect(container.querySelector(".canvas-header")).not.toBeInTheDocument()
       expect(container.querySelector(".signal-row")).not.toBeInTheDocument()
@@ -263,7 +265,7 @@ describe("App", () => {
     render(<App />)
 
     expect(await screen.findByRole("button", { name: "client" })).toBeInTheDocument()
-    expect(screen.getByText("Atlas")).toBeInTheDocument()
+    expect(screen.getAllByText("Atlas").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Atlas review" })).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
@@ -920,7 +922,7 @@ describe("App", () => {
       })
     })
     expect(await screen.findByRole("button", { name: "client" })).toBeInTheDocument()
-    expect(screen.getByText("Orion")).toBeInTheDocument()
+    expect(screen.getAllByText("Orion").length).toBeGreaterThan(0)
   })
 
   it("shows each newly opened folder and keeps only the latest one selected", async () => {
@@ -1202,11 +1204,11 @@ describe("App", () => {
   it("toggles the left rail from appearance settings", async () => {
     const { container } = render(<App />)
     const appShell = container.querySelector(".app-shell") as HTMLElement | null
-    const getActivityRail = () => container.querySelector(".activity-rail") as HTMLElement | null
+    const getLeftActivityRail = () => container.querySelector(".activity-rail:not(.is-right)") as HTMLElement | null
 
     expect(appShell).not.toBeNull()
-    expect(getActivityRail()).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".activity-rail")).not.toBeNull()
+    expect(getLeftActivityRail()).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
@@ -1215,28 +1217,28 @@ describe("App", () => {
 
     const railSwitch = screen.getByRole("switch", { name: "Show left rail" })
     expect(railSwitch).toHaveAttribute("aria-checked", "true")
-    expect(getActivityRail()).not.toBeNull()
+    expect(getLeftActivityRail()).not.toBeNull()
     expect(appShell!.getAttribute("style")).toContain("--activity-rail-display-width: 54px")
 
     fireEvent.click(railSwitch)
 
     expect(railSwitch).toHaveAttribute("aria-checked", "false")
-    expect(getActivityRail()).toBeNull()
+    expect(getLeftActivityRail()).toBeNull()
     expect(appShell!.getAttribute("style")).toContain("--activity-rail-display-width: 0px")
-    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".sidebar-actions")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".sidebar-actions")).not.toBeNull()
 
     fireEvent.click(screen.getAllByRole("button", { name: "Close settings" })[0])
-    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }))
+    fireEvent.click(screen.getByRole("button", { name: "Collapse left sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain("--sidebar-display-width: 0px")
-    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Expand sidebar" }).closest(".canvas-top-menu")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Expand left sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Expand left sidebar" }).closest(".canvas-top-menu")).not.toBeNull()
 
-    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }))
-    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".sidebar-actions")).not.toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Expand left sidebar" }))
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".sidebar-actions")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
@@ -1244,10 +1246,22 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Show left rail" }))
 
     expect(screen.getByRole("switch", { name: "Show left rail" })).toHaveAttribute("aria-checked", "true")
-    expect(getActivityRail()).not.toBeNull()
+    expect(getLeftActivityRail()).not.toBeNull()
     expect(appShell!.getAttribute("style")).toContain("--activity-rail-display-width: 54px")
-    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".activity-rail")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
+  })
+
+  it("keeps appearance settings focused on the left rail only", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+
+    expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
+    expect(screen.queryByRole("switch", { name: "Show right rail" })).not.toBeInTheDocument()
+    expect(screen.getByText("No rail")).toBeInTheDocument()
   })
 
   it("keeps provider configuration focused on editable fields for environment-backed providers", async () => {
@@ -2134,25 +2148,50 @@ describe("App", () => {
     expect(appShell).not.toBeNull()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByTestId("sidebar-resizer")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".activity-rail")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
 
-    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }))
+    fireEvent.click(screen.getByRole("button", { name: "Collapse left sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain("--sidebar-display-width: 0px")
     expect(screen.queryByRole("button", { name: "Open folder" })).not.toBeInTheDocument()
     expect(screen.queryByTestId("sidebar-resizer")).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Expand sidebar" }).closest(".activity-rail")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Expand left sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Expand left sidebar" }).closest(".activity-rail")).not.toBeNull()
 
-    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }))
+    fireEvent.click(screen.getByRole("button", { name: "Expand left sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain("--sidebar-display-width: 236px")
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByTestId("sidebar-resizer")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse sidebar" }).closest(".activity-rail")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
   })
 
-  it("resizes the sidebar when dragging the divider", async () => {
+  it("collapses the right sidebar from its header toggle and restores it from the canvas menu", () => {
+    const { container } = render(<App />)
+    const appShell = container.querySelector(".app-shell") as HTMLElement | null
+
+    expect(appShell).not.toBeNull()
+    expect(screen.getByText("Session Context")).toBeInTheDocument()
+    expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".right-sidebar-header")).not.toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse right sidebar" }))
+
+    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-display-width: 0px")
+    expect(screen.queryByText("Session Context")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("right-sidebar-resizer")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Expand right sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".canvas-top-menu")).not.toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand right sidebar" }))
+
+    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-display-width: 236px")
+    expect(screen.getByText("Session Context")).toBeInTheDocument()
+    expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".right-sidebar-header")).not.toBeNull()
+  })
+
+  it("resizes the left sidebar when dragging the divider", async () => {
     const { container } = render(<App />)
     const appShell = container.querySelector(".app-shell") as HTMLElement | null
 
@@ -2172,11 +2211,13 @@ describe("App", () => {
       }),
     })
 
+    fireEvent.click(screen.getByRole("button", { name: "Collapse right sidebar" }))
+
     expect(appShell!.getAttribute("style")).toContain("--sidebar-width: 236px")
 
     fireEvent.pointerDown(screen.getByTestId("sidebar-resizer"), {
       button: 0,
-      clientX: 236,
+      clientX: 290,
     })
 
     await waitFor(() => {
@@ -2184,7 +2225,7 @@ describe("App", () => {
     })
 
     fireEvent.pointerMove(window, {
-      clientX: 320,
+      clientX: 374,
     })
     expect(appShell!.getAttribute("style")).toContain("--sidebar-width: 320px")
 
@@ -2197,6 +2238,61 @@ describe("App", () => {
       clientX: 120,
     })
     expect(appShell!.getAttribute("style")).toContain("--sidebar-width: 192px")
+
+    fireEvent.pointerUp(window)
+
+    await waitFor(() => {
+      expect(document.body).not.toHaveClass("is-resizing-sidebar")
+    })
+  })
+
+  it("resizes the right sidebar when dragging the divider", async () => {
+    const { container } = render(<App />)
+    const appShell = container.querySelector(".app-shell") as HTMLElement | null
+
+    expect(appShell).not.toBeNull()
+    Object.defineProperty(appShell!, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 1200,
+        bottom: 800,
+        width: 1200,
+        height: 800,
+        toJSON: () => ({}),
+      }),
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse left sidebar" }))
+
+    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 236px")
+
+    fireEvent.pointerDown(screen.getByTestId("right-sidebar-resizer"), {
+      button: 0,
+      clientX: 964,
+    })
+
+    await waitFor(() => {
+      expect(document.body).toHaveClass("is-resizing-sidebar")
+    })
+
+    fireEvent.pointerMove(window, {
+      clientX: 880,
+    })
+    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 320px")
+
+    fireEvent.pointerMove(window, {
+      clientX: 640,
+    })
+    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 420px")
+
+    fireEvent.pointerMove(window, {
+      clientX: 1100,
+    })
+    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 192px")
 
     fireEvent.pointerUp(window)
 
