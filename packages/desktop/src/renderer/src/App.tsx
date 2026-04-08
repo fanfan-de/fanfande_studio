@@ -2,6 +2,7 @@ import {
   ActivityRail,
   CanvasTopMenu,
   Composer,
+  RightSidebar,
   SettingsPage,
   Sidebar,
   SidebarResizer,
@@ -19,16 +20,22 @@ export function App() {
     appShellRef,
     appShellStyle,
     handleActivityRailVisibilityChange,
+    handleRightSidebarResizerKeyDown,
+    handleRightSidebarResizerPointerDown,
+    handleRightSidebarToggle,
     handleSidebarResizerKeyDown,
     handleSidebarResizerPointerDown,
     handleSidebarToggle,
     handleTitleMenu,
     handleWindowAction,
     isActivityRailVisible,
+    isRightSidebarCollapsed,
+    isRightSidebarResizing,
     isSidebarCollapsed,
     isSidebarResizing,
     isWindowMaximized,
     platform,
+    rightSidebarWidth,
     sidebarWidth,
     titlebarCommand,
   } = useDesktopShell()
@@ -110,7 +117,7 @@ export function App() {
 
       <main ref={appShellRef} className="app-shell" style={appShellStyle}>
         {isActivityRailVisible ? (
-          <ActivityRail isSidebarCollapsed={isSidebarCollapsed} onToggleSidebar={handleSidebarToggle} />
+          <ActivityRail isSidebarCollapsed={isSidebarCollapsed} onToggleSidebar={handleSidebarToggle} side="left" />
         ) : null}
 
         {!isSidebarCollapsed ? (
@@ -140,6 +147,7 @@ export function App() {
 
             <SidebarResizer
               isSidebarResizing={isSidebarResizing}
+              side="left"
               sidebarWidth={sidebarWidth}
               onKeyDown={handleSidebarResizerKeyDown}
               onPointerDown={handleSidebarResizerPointerDown}
@@ -149,8 +157,10 @@ export function App() {
 
         <section className="canvas">
           <CanvasTopMenu
-            showSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
-            onToggleSidebar={handleSidebarToggle}
+            showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
+            showRightSidebarToggleButton={isRightSidebarCollapsed}
+            onToggleLeftSidebar={handleSidebarToggle}
+            onToggleRightSidebar={handleRightSidebarToggle}
           />
           <ThreadView
             activeSession={activeSession}
@@ -180,6 +190,31 @@ export function App() {
             onSend={handleSend}
           />
         </section>
+
+        {!isRightSidebarCollapsed ? (
+          <>
+            <SidebarResizer
+              isSidebarResizing={isRightSidebarResizing}
+              side="right"
+              sidebarWidth={rightSidebarWidth}
+              onKeyDown={handleRightSidebarResizerKeyDown}
+              onPointerDown={handleRightSidebarResizerPointerDown}
+            />
+
+            <RightSidebar
+              activeSession={activeSession}
+              activeTurnCount={activeTurns.length}
+              attachmentCount={composerAttachments.length}
+              composerAgentMode={composerAgentMode}
+              isAgentConnected={agentConnected}
+              isSending={isSending}
+              pendingPermissionRequestCount={activePendingPermissionRequests.length + (isResolvingPermissionRequest ? 1 : 0)}
+              selectedModelLabel={composerSelectedModelLabel}
+              selectedWorkspace={selectedWorkspace}
+              onToggleSidebar={handleRightSidebarToggle}
+            />
+          </>
+        ) : null}
 
         <SettingsPage
           catalog={catalog}
