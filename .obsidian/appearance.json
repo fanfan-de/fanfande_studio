@@ -1,6 +1,8 @@
 {
-  "theme": "obsidian",
+  "theme": "moonstone",
   "accentColor": "",
   "cssTheme": "Minimal",
-  "nativeMenus": false
+  "nativeMenus": false,
+  "showRibbon": false,
+  "showViewHeader": true
 }

@@ -8,6 +8,7 @@ import {
   DeleteIcon,
   DisconnectedStatusIcon,
   FolderIcon,
+  LayoutSidebarLeftIcon,
   MaximizeIcon,
   MinimizeIcon,
   NavPlaceholderIcon,
@@ -81,6 +82,49 @@ export function Titlebar({ isWindowMaximized, titlebarCommand, onMenuClick, onWi
       </div>
     </header>
   )
+}
+
+interface SidebarToggleButtonProps {
+  isActivityRailVisible: boolean
+  isSidebarCollapsed: boolean
+  onToggleSidebar: () => void
+}
+
+export function SidebarToggleButton({
+  isActivityRailVisible,
+  isSidebarCollapsed,
+  onToggleSidebar,
+}: SidebarToggleButtonProps) {
+  const buttonClassName = [
+    "sidebar-toggle-button",
+    !isActivityRailVisible ? "is-detached" : "",
+    !isSidebarCollapsed ? "is-active" : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+
+  return (
+    <div className="sidebar-toggle-dock">
+      <button
+        className={buttonClassName}
+        aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-pressed={!isSidebarCollapsed}
+        title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        type="button"
+        onClick={onToggleSidebar}
+      >
+        <NavPlaceholderIcon />
+      </button>
+    </div>
+  )
+}
+
+interface ActivityRailProps {
+  isVisible: boolean
+}
+
+export function ActivityRail({ isVisible }: ActivityRailProps) {
+  return <div className={isVisible ? "activity-rail" : "activity-rail is-hidden"} aria-hidden="true" />
 }
 
 interface SidebarProps {
@@ -424,6 +468,7 @@ function ModelListView({ catalog, models, selectionDraft }: ModelListViewProps) 
 interface SettingsPageProps {
   catalog: ProviderCatalogItem[]
   deletingProviderID: string | null
+  isActivityRailVisible: boolean
   isLoading: boolean
   isOpen: boolean
   isSavingSelection: boolean
@@ -437,6 +482,7 @@ interface SettingsPageProps {
   savedSelection: ProjectModelSelection
   savingProviderID: string | null
   selectionDraft: ProjectModelSelection
+  onActivityRailVisibilityChange: (value: boolean) => void
   onClose: () => void
   onDeleteProvider: (providerID: string) => void | Promise<void>
   onProviderDraftChange: (providerID: string, field: keyof ProviderDraftState, value: string) => void
@@ -448,6 +494,7 @@ interface SettingsPageProps {
 export function SettingsPage({
   catalog,
   deletingProviderID,
+  isActivityRailVisible,
   isLoading,
   isOpen,
   isSavingSelection,
@@ -458,6 +505,7 @@ export function SettingsPage({
   savedSelection,
   savingProviderID,
   selectionDraft,
+  onActivityRailVisibilityChange,
   onClose,
   onDeleteProvider,
   onProviderDraftChange,
@@ -466,7 +514,7 @@ export function SettingsPage({
   onSelectionChange,
 }: SettingsPageProps) {
   {
-    const [activeSection, setActiveSection] = useState<"services" | "defaults">("services")
+    const [activeSection, setActiveSection] = useState<"services" | "defaults" | "appearance">("services")
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
     const serviceDetailPanelRef = useRef<HTMLDivElement | null>(null)
@@ -551,8 +599,9 @@ export function SettingsPage({
     }
 
     const primarySections = [
-      { key: "services" as const, label: "Provider", meta: `${catalog.length} providers` },
-      { key: "defaults" as const, label: "Models", meta: `${visibleModels.length} available` },
+      { key: "services" as const, label: "Provider", meta: `${catalog.length} providers`, Icon: SettingsIcon },
+      { key: "defaults" as const, label: "Models", meta: `${visibleModels.length} available`, Icon: ConnectedStatusIcon },
+      { key: "appearance" as const, label: "Appearance", meta: "1 option", Icon: LayoutSidebarLeftIcon },
     ]
 
     return (
@@ -568,6 +617,7 @@ export function SettingsPage({
             <aside className="settings-page-primary-nav" aria-label="Settings sections">
               {primarySections.map((section) => {
                 const isActive = activeSection === section.key
+                const Icon = section.Icon
 
                 return (
                   <button
@@ -577,7 +627,7 @@ export function SettingsPage({
                     onClick={() => setActiveSection(section.key)}
                   >
                     <span className="settings-primary-nav-icon" aria-hidden="true">
-                      <NavPlaceholderIcon />
+                      <Icon />
                     </span>
                     <span className="settings-primary-nav-copy">
                       <span className="settings-primary-nav-label">{section.label}</span>
@@ -593,9 +643,9 @@ export function SettingsPage({
                 <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>{message.text}</div>
               ) : null}
 
-              {loadError ? <div className="settings-banner is-error">{loadError}</div> : null}
+              {loadError && activeSection !== "appearance" ? <div className="settings-banner is-error">{loadError}</div> : null}
 
-              {isLoading ? (
+              {isLoading && activeSection !== "appearance" ? (
                 <article className="settings-empty-state">
                   <span className="label">Loading</span>
                   <h3>Fetching provider catalog</h3>
@@ -603,7 +653,60 @@ export function SettingsPage({
                 </article>
               ) : null}
 
-              {showLoadedState ? (
+              {activeSection === "appearance" ? (
+                <div className="settings-appearance-layout">
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Shell</span>
+                        <h3>Layout Visibility</h3>
+                      </div>
+                      <p>Control whether the narrow navigation rail stays pinned on the far left edge of the desktop shell.</p>
+                    </div>
+
+                    <button
+                      className={isActivityRailVisible ? "settings-toggle-card is-active" : "settings-toggle-card"}
+                      role="switch"
+                      aria-checked={isActivityRailVisible}
+                      aria-label="Show left rail"
+                      type="button"
+                      onClick={() => onActivityRailVisibilityChange(!isActivityRailVisible)}
+                    >
+                      <span className="settings-toggle-copy">
+                        <strong>Show left rail</strong>
+                        <small>Display the narrow rail surface on the far left while keeping the sidebar toggle pinned in place.</small>
+                      </span>
+                      <span className="settings-toggle-control" aria-hidden="true">
+                        <span className="settings-toggle-thumb" />
+                      </span>
+                    </button>
+
+                    <p className="settings-helper-text">When hidden, the sidebar shifts to the left edge and the pinned toggle stays in the same spot.</p>
+                  </section>
+
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Current</span>
+                        <h3>Left Rail Status</h3>
+                      </div>
+                      <p>The sidebar toggle stays pinned either way. Turning the rail off lets the sidebar reclaim that width.</p>
+                    </div>
+
+                    <div className="settings-section-summary">
+                      <article className="settings-summary-card">
+                        <span className="label">Visibility</span>
+                        <strong>{isActivityRailVisible ? "Shown" : "Hidden"}</strong>
+                        <p>
+                          {isActivityRailVisible
+                            ? "The narrow rail remains visible and frames the pinned sidebar toggle."
+                            : "The rail surface is hidden, the sidebar shifts left, and the pinned toggle stays in the same spot."}
+                        </p>
+                      </article>
+                    </div>
+                  </section>
+                </div>
+              ) : showLoadedState ? (
                 activeSection === "services" ? (
                   <section className="settings-services-layout" aria-label="Provider layout">
                     <div className="settings-service-list-panel">

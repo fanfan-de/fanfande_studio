@@ -4,25 +4,51 @@
     "type": "split",
     "children": [
       {
-        "id": "ee2607011ecd6566",
+        "id": "21f84a804b14e467",
         "type": "tabs",
         "children": [
           {
-            "id": "35980b6fcb97707f",
+            "id": "6286338ceb67313f",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "TODO_secure_provider_credentials.md",
+                "file": "未命名 1.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "TODO_secure_provider_credentials"
+              "title": "未命名 1"
+            }
+          },
+          {
+            "id": "e583f4adce91a234",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "新标签页"
+            }
+          },
+          {
+            "id": "e5d113a158731212",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
+                "mode": "source",
+                "source": false,
+                "backlinks": false
+              },
+              "icon": "lucide-file",
+              "title": "AI_AGENT_FRONTEND_SPEC"
             }
           }
-        ]
+        ],
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -79,7 +105,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 269.5086555480957
+    "width": 239.5
   },
   "right": {
     "id": "0e26e5315e7c2117",
@@ -95,7 +121,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "SessionPrompt 中 Callbacks 队列等待机制详解.md",
+                "file": "未命名 1.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -105,7 +131,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "SessionPrompt 中 Callbacks 队列等待机制详解 的反向链接列表"
+              "title": "未命名 1 的反向链接列表"
             }
           },
           {
@@ -114,12 +140,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "SessionPrompt 中 Callbacks 队列等待机制详解.md",
+                "file": "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "SessionPrompt 中 Callbacks 队列等待机制详解 的出链列表"
+              "title": "AI_AGENT_FRONTEND_SPEC 的出链列表"
             }
           },
           {
@@ -157,57 +183,72 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "SessionPrompt 中 Callbacks 队列等待机制详解.md",
+                "file": "未命名 1.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "SessionPrompt 中 Callbacks 队列等待机制详解 的大纲"
+              "title": "未命名 1 的大纲"
+            }
+          },
+          {
+            "id": "cd4761e565d104e7",
+            "type": "leaf",
+            "state": {
+              "type": "mermaid-toolbar-view",
+              "state": {},
+              "icon": "trident-custom",
+              "title": "Mermaid Toolbar"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 358.5
   },
   "left-ribbon": {
     "hiddenItems": {
-      "switcher:打开快速切换": false,
+      "mermaid-tools:Open Mermaid Toolbar": false,
       "graph:查看关系图谱": false,
       "canvas:新建白板": false,
       "daily-notes:打开/创建今天的日记": false,
       "templates:插入模板": false,
       "command-palette:打开命令面板": false,
       "bases:新建数据库": false,
-      "zhihu:Open Zhihu side view": false,
-      "mermaid-tools:Open Mermaid Toolbar": false
+      "switcher:打开快速切换": false,
+      "zhihu:Open Zhihu side view": false
     }
   },
-  "active": "35980b6fcb97707f",
+  "active": "e5d113a158731212",
   "lastOpenFiles": [
-    "未命名.md",
+    "packages/desktop/out/renderer/assets/index-CsS-LneH.js",
+    "packages/desktop/out/renderer/assets/index-d15d-MHf.css",
+    "packages/desktop/electron.vite.config.1775687925070.mjs",
+    "packages/desktop/electron.vite.config.1775687763448.mjs",
+    "packages/desktop/out/renderer/assets/index-BKb7iR81.css",
+    "packages/desktop/out/renderer/assets/index-DHG52akH.js",
+    "packages/desktop/electron.vite.config.1775687550410.mjs",
+    "未命名 1.md",
+    "Pasted image 20260405013212.png",
+    "TODO_secure_provider_credentials.md",
     "记录设计的取舍.md",
     "todo.md",
+    "未命名.md",
+    "未命名.canvas",
+    "examples.md",
+    "spec.md",
+    "packages/fanfandeagent/node_modules/yoga-layout/README.md",
+    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
+    "packages/desktop/electron.vite.config.1775684356298.mjs",
+    "packages/desktop/electron.vite.config.1775681227284.mjs",
     "daily/2026-04-09.md",
     "packages/desktop/electron.vite.config.1775674901299.mjs",
-    "TODO_secure_provider_credentials.md",
     "packages/fanfandeagent/src/util/process.ts",
-    "packages/fanfandeagent/src/file/ripgrep.ts",
-    "packages/fanfandeagent/src/file",
-    "packages/fanfandeagent/src/session/prompt/trinity.txt",
-    "packages/fanfandeagent/src/session/prompt/plan copy.txt",
-    "packages/fanfandeagent/src/session/prompt/plan-reminder-anthropic.txt",
-    "packages/fanfandeagent/src/session/prompt/max-steps.txt",
-    "packages/fanfandeagent/src/session/prompt/kimi.txt",
-    "packages/fanfandeagent/src/session/prompt/gpt.txt",
     "packages/fanfandeagent/src/agent/prompt/plan.md",
-    "Pasted image 20260405013212.png",
-    "spec.md",
     "packages/fanfandeagent/BACKLOG.md",
-    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
     "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
     "packages/fanfandeagent/src/tool/bash.spec.md",
     "packages/fanfandeagent/src/tool/spec.md",
@@ -221,10 +262,6 @@
     "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/node_modules/@ai-sdk/provider-utils/src/to-json-schema/zod3-to-json-schema/README.md",
     "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/node_modules/@ai-sdk/provider-utils/README.md",
     "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/node_modules/@ai-sdk/provider-utils/CHANGELOG.md",
-    "packages/fanfandeagent/node_modules/@ai-sdk/openai-compatible/CHANGELOG.md",
-    "packages/fanfandeagent/src/provider/spec.md",
-    "packages/fanfandeagent/src/project/spec.md",
-    "packages/fanfandeagent/src/provider/AISDK.md",
     "packages/fanfandedesktop/exports/BkxtC.png",
     "packages/fanfandeagent/docs/data-dictionary/assets/icons.svg",
     "packages/fanfandeagent/node_modules/@gerrit0/mini-shiki/static/shiki-dependency-tree.svg",
