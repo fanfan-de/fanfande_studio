@@ -64,10 +64,29 @@ export const SnapshotPart = PartBase.extend({
 })
 export type SnapshotPart = z.infer<typeof SnapshotPart>
 
+export const FileChangeSummary = z
+    .object({
+        file: z.string(),
+        additions: z.number(),
+        deletions: z.number(),
+    })
+    .meta({
+        ref: "FileChangeSummary",
+    })
+export type FileChangeSummary = z.infer<typeof FileChangeSummary>
+
 export const PatchPart = PartBase.extend({
     type: z.literal("patch"),
     hash: z.string(),
     files: z.string().array(),
+    changes: FileChangeSummary.array().optional(),
+    summary: z
+        .object({
+            additions: z.number(),
+            deletions: z.number(),
+            files: z.number(),
+        })
+        .optional(),
 }).meta({
     ref: "PatchPart",
 })
@@ -434,7 +453,14 @@ export const User = Base.extend({
         .object({
             title: z.string().optional(),
             body: z.string().optional(),
-            diffs: Snapshot.FileDiff.array(),
+            stats: z
+                .object({
+                    additions: z.number(),
+                    deletions: z.number(),
+                    files: z.number(),
+                })
+                .optional(),
+            diffs: FileChangeSummary.array(),
         })
         .optional(),
     agent: z.string(),

@@ -218,13 +218,41 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
 
   if (type === "patch") {
     const files = Array.isArray(part.files) ? part.files.filter((item): item is string => typeof item === "string") : []
+    const changes = Array.isArray(part.changes)
+      ? part.changes
+          .map((change) => readRecord(change))
+          .filter((change): change is Record<string, unknown> => Boolean(change))
+          .map((change) => ({
+            file: readString(change.file),
+            additions: readNumber(change.additions),
+            deletions: readNumber(change.deletions),
+          }))
+          .filter((change) => Boolean(change.file))
+      : []
+    const summary = readRecord(part.summary)
+    const additions = readNumber(summary?.additions) || changes.reduce((count, change) => count + change.additions, 0)
+    const deletions = readNumber(summary?.deletions) || changes.reduce((count, change) => count + change.deletions, 0)
+    const fileCount = readNumber(summary?.files) || changes.length || files.length
+    const detail = changes.length > 0
+      ? compactText(
+          changes
+            .map((change) => `${change.file} (+${change.additions} -${change.deletions})`)
+            .join("\n"),
+          240,
+        )
+      : files.length > 0
+        ? compactText(files.join(", "), 220)
+        : "Patch metadata received from the backend."
+
     return createTraceItem({
       id: sourceID,
       sourceID,
       kind: "patch",
       label: "Patch",
-      title: files.length > 0 ? `${files.length} file change${files.length === 1 ? "" : "s"}` : "Patch update",
-      detail: files.length > 0 ? compactText(files.join(", "), 220) : "Patch metadata received from the backend.",
+      title: fileCount > 0
+        ? `${fileCount} file change${fileCount === 1 ? "" : "s"} (+${additions} -${deletions})`
+        : "Patch update",
+      detail,
       status: "completed",
     })
   }

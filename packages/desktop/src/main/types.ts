@@ -110,6 +110,23 @@ export interface AgentSessionHistoryMessage {
   parts: unknown[]
 }
 
+export interface AgentSessionDiffFile {
+  file: string
+  additions: number
+  deletions: number
+}
+
+export interface AgentSessionDiffSummary {
+  title?: string
+  body?: string
+  stats?: {
+    additions: number
+    deletions: number
+    files: number
+  }
+  diffs: AgentSessionDiffFile[]
+}
+
 export type {
   AgentPermissionDecision,
   AgentPermissionPromptSnapshot,

@@ -28,6 +28,7 @@ import type {
   ProviderCatalogItem,
   ProviderDraftState,
   ProviderModel,
+  SessionDiffSummary,
   SessionSummary,
   SidebarActionKey,
   TitlebarMenuKey,
@@ -326,6 +327,7 @@ export function Sidebar({
 
 interface RightSidebarProps {
   activeSession: SessionSummary | null
+  activeSessionDiff: SessionDiffSummary | null
   activeTurnCount: number
   attachmentCount: number
   composerAgentMode: AppMode
@@ -339,6 +341,7 @@ interface RightSidebarProps {
 
 export function RightSidebar({
   activeSession,
+  activeSessionDiff,
   activeTurnCount,
   attachmentCount,
   composerAgentMode,
@@ -354,6 +357,7 @@ export function RightSidebar({
     : isSending
       ? "Sending"
       : "Clear"
+  const changedFilesCount = activeSessionDiff?.stats?.files ?? activeSessionDiff?.diffs.length ?? 0
 
   return (
     <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
@@ -425,6 +429,40 @@ export function RightSidebar({
         ) : (
           <div className="right-sidebar-empty">
             <p>No workspace is currently selected.</p>
+          </div>
+        )}
+      </section>
+
+      <section className="right-sidebar-section">
+        <div className="right-sidebar-section-header">
+          <span className="label">Changed Files</span>
+          {activeSession ? <span className="settings-badge">{String(changedFilesCount)} files</span> : null}
+        </div>
+        {activeSession ? (
+          activeSessionDiff && activeSessionDiff.diffs.length > 0 ? (
+            <div className="right-sidebar-stack">
+              {activeSessionDiff.title ? <p>{activeSessionDiff.title}</p> : null}
+              <div className="right-sidebar-change-list">
+                {activeSessionDiff.diffs.map((diff) => (
+                  <div key={diff.file} className="right-sidebar-change-row">
+                    <div className="right-sidebar-change-copy">
+                      <strong>{diff.file}</strong>
+                    </div>
+                    <span className="right-sidebar-change-stat">
+                      +{diff.additions} -{diff.deletions}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="right-sidebar-empty">
+              <p>No tracked workspace changes for this session yet.</p>
+            </div>
+          )
+        ) : (
+          <div className="right-sidebar-empty">
+            <p>Select a session to inspect its file changes.</p>
           </div>
         )}
       </section>

@@ -835,6 +835,37 @@ select {
   gap: 8px;
 }
 
+.right-sidebar-change-list {
+  display: grid;
+  gap: 8px;
+}
+
+.right-sidebar-change-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid rgba(166, 186, 208, 0.26);
+  background: #f8fbff;
+}
+
+.right-sidebar-change-copy {
+  min-width: 0;
+}
+
+.right-sidebar-change-copy strong {
+  color: #17232f;
+  word-break: break-word;
+}
+
+.right-sidebar-change-stat {
+  color: #42586d;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .right-sidebar-empty {
   padding: 10px 12px;
   border: 1px dashed rgba(166, 186, 208, 0.5);

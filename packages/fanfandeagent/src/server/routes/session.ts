@@ -4,6 +4,7 @@ import * as Project from "#project/project.ts"
 import * as Session from "#session/session.ts"
 import * as Prompt from "#session/prompt.ts"
 import * as Message from "#session/message.ts"
+import * as SessionDiff from "#session/diff.ts"
 import * as db from "#database/Sqlite.ts"
 import { Instance } from "#project/instance.ts"
 import { ApiError } from "#server/error.ts"
@@ -271,6 +272,25 @@ export function SessionRoutes() {
     return c.json({
       success: true,
       data: messages,
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/:id/diff", async (c) => {
+    const sessionID = c.req.param("id")
+    const session = safeReadSession(sessionID)
+    if (!session) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+    }
+
+    const diff = await Instance.provide({
+      directory: session.directory,
+      fn: () => SessionDiff.computeSessionDiffSummary(sessionID),
+    })
+
+    return c.json({
+      success: true,
+      data: diff ?? SessionDiff.buildDiffSummary([]),
       requestId: c.get("requestId"),
     })
   })

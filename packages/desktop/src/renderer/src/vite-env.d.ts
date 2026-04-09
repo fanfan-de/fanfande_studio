@@ -167,6 +167,20 @@ declare global {
           parts: unknown[]
         }>
       >
+      getSessionDiff?: (input: { sessionID: string }) => Promise<{
+        title?: string
+        body?: string
+        stats?: {
+          additions: number
+          deletions: number
+          files: number
+        }
+        diffs: Array<{
+          file: string
+          additions: number
+          deletions: number
+        }>
+      }>
       getSessionPermissionRequests?: (input: { sessionID: string }) => Promise<
         PermissionRequestPrompt[]
       >

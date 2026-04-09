@@ -92,6 +92,23 @@ export interface LoadedSessionHistoryMessage {
   parts: unknown[]
 }
 
+export interface SessionDiffFile {
+  file: string
+  additions: number
+  deletions: number
+}
+
+export interface SessionDiffSummary {
+  title?: string
+  body?: string
+  stats?: {
+    additions: number
+    deletions: number
+    files: number
+  }
+  diffs: SessionDiffFile[]
+}
+
 export interface UserTurn {
   id: string
   kind: "user"

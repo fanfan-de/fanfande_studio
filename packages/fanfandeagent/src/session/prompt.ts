@@ -10,6 +10,8 @@ import * as Provider from "#provider/provider.ts";
 import * as db from "#database/Sqlite.ts";
 import * as Agent from "#agent/agent.ts";
 import * as SystemPrompt from "#session/system.ts"
+import { Snapshot } from "#snapshot/index.ts"
+import * as SessionDiff from "#session/diff.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
@@ -144,7 +146,6 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
     }
 
     let currentAssistant: Message.Assistant | undefined;
-
     try {
         while (true) {
             if (abort.aborted) throw new Error("Prompt aborted");
@@ -310,22 +311,68 @@ export const prompt = fn(PromptInput, async (input) => {
         //lastModel: input.model,
     };
 
+    const baselineSnapshot = await Snapshot.track().catch((error) => {
+        log.warn("failed to capture pre-turn snapshot", {
+            sessionID: input.sessionID,
+            error: error instanceof Error ? error.message : String(error),
+        })
+        return undefined
+    })
+
+    let userMessage: Awaited<ReturnType<typeof createUserMessage>>
+
 
     try {
         //判断当前session最新的assistant message是什么mode，如果mode发生变化，插入一个system message
         //Session.DataBaseRead("messages")
-        await createUserMessage(input);
+        userMessage = await createUserMessage(input, {
+            snapshot: baselineSnapshot,
+        });
     } catch (error) {
         finish(input.sessionID, controller);
         Status.set(input.sessionID, { type: "idle" });
         throw error;
     }
 
-    return runLoop({
-        sessionID: input.sessionID,
-        abort: controller.signal,
-        controller,
-    });
+    try {
+        const result = await runLoop({
+            sessionID: input.sessionID,
+            abort: controller.signal,
+            controller,
+        });
+
+        await persistDiffArtifacts({
+            sessionID: input.sessionID,
+            userMessageID: userMessage.messageinfo.id,
+            snapshot: baselineSnapshot,
+            assistantMessageID: result.info.role === "assistant" ? result.info.id : undefined,
+        }).catch((error) => {
+            log.warn("failed to persist prompt diff artifacts", {
+                sessionID: input.sessionID,
+                error: error instanceof Error ? error.message : String(error),
+            })
+        })
+
+        return result
+    } catch (error) {
+        const latestAssistant = latestAssistantWithPartsAfter(
+            input.sessionID,
+            userMessage.messageinfo.id,
+        )
+        await persistDiffArtifacts({
+            sessionID: input.sessionID,
+            userMessageID: userMessage.messageinfo.id,
+            snapshot: baselineSnapshot,
+            assistantMessageID: latestAssistant?.info.role === "assistant" ? latestAssistant.info.id : undefined,
+        }).catch((persistError) => {
+            log.warn("failed to persist prompt diff artifacts after error", {
+                sessionID: input.sessionID,
+                error: persistError instanceof Error ? persistError.message : String(persistError),
+            })
+        })
+
+        throw error
+    }
 });
 
 export const ResumeInput = z.object({
@@ -354,12 +401,47 @@ export const resume = fn(ResumeInput, async (input) => {
         abort: controller,
 
     };
+    const latestUser = SessionDiff.findLatestUserMessageWithSnapshot(input.sessionID)
 
-    return runLoop({
-        sessionID: input.sessionID,
-        abort: controller.signal,
-        controller,
-    });
+    try {
+        const result = await runLoop({
+            sessionID: input.sessionID,
+            abort: controller.signal,
+            controller,
+        });
+
+        await persistDiffArtifacts({
+            sessionID: input.sessionID,
+            userMessageID: latestUser?.message.id ?? "",
+            snapshot: latestUser?.snapshot,
+            assistantMessageID: result.info.role === "assistant" ? result.info.id : undefined,
+        }).catch((error) => {
+            log.warn("failed to persist resume diff artifacts", {
+                sessionID: input.sessionID,
+                error: error instanceof Error ? error.message : String(error),
+            })
+        })
+
+        return result
+    } catch (error) {
+        const latestAssistant = latestAssistantWithPartsAfter(
+            input.sessionID,
+            latestUser?.message.id,
+        )
+        await persistDiffArtifacts({
+            sessionID: input.sessionID,
+            userMessageID: latestUser?.message.id ?? "",
+            snapshot: latestUser?.snapshot,
+            assistantMessageID: latestAssistant?.info.role === "assistant" ? latestAssistant.info.id : undefined,
+        }).catch((persistError) => {
+            log.warn("failed to persist resume diff artifacts after error", {
+                sessionID: input.sessionID,
+                error: persistError instanceof Error ? persistError.message : String(persistError),
+            })
+        })
+
+        throw error
+    }
 });
 
 type LoopRuntimeInput = {
@@ -443,6 +525,84 @@ function latestAssistantWithParts(sessionID: string): Message.WithParts | undefi
         const item = messages[index]!;
         if (item.info.role === "assistant") return item;
     }
+}
+
+function latestAssistantWithPartsAfter(
+    sessionID: string,
+    userMessageID?: string,
+): Message.WithParts | undefined {
+    if (!userMessageID) return
+
+    const messages = loadMessagesWithParts(sessionID)
+    let afterUser = false
+    let latestAssistant: Message.WithParts | undefined
+
+    for (const message of messages) {
+        if (!afterUser) {
+            afterUser = message.info.id === userMessageID
+            continue
+        }
+
+        if (message.info.role === "assistant") {
+            latestAssistant = message
+        }
+    }
+
+    return latestAssistant
+}
+
+function readPatchPart(messageID: string): Message.PatchPart | undefined {
+    const parts = db.findManyWithSchema("parts", Message.Part, {
+        where: [{ column: "messageID", value: messageID }],
+        orderBy: [{ column: "id", direction: "ASC" }],
+    })
+
+    return parts.find((part): part is Message.PatchPart => part.type === "patch")
+}
+
+async function persistDiffArtifacts(input: {
+    sessionID: string
+    userMessageID: string
+    snapshot: string | undefined
+    assistantMessageID?: string
+}) {
+    if (!input.snapshot || !input.userMessageID) return
+
+    const message = db.findById("messages", Message.MessageInfo, input.userMessageID)
+    if (!message || message.role !== "user") return
+
+    const diffSummary = await SessionDiff.computeDiffSummaryFromSnapshot(input.snapshot)
+    const nextUser: Message.User = {
+        ...(message as Message.User),
+        diffSummary,
+    }
+    await Session.updateMessage(nextUser)
+
+    if (!input.assistantMessageID) return
+
+    const existingPatch = readPatchPart(input.assistantMessageID)
+    if (diffSummary.diffs.length === 0) {
+        if (existingPatch) {
+            db.deleteById("parts", existingPatch.id)
+        }
+        return
+    }
+
+    const currentSnapshot = await Snapshot.track()
+    if (!currentSnapshot) return
+
+    const patchPart: Message.PatchPart = {
+        id: existingPatch?.id ?? Identifier.ascending("part"),
+        sessionID: input.sessionID,
+        messageID: input.assistantMessageID,
+        type: "patch",
+        hash: currentSnapshot,
+        files: diffSummary.diffs.map((diff) => diff.file),
+        changes: diffSummary.diffs,
+        summary: diffSummary.stats,
+    }
+
+    await Session.updatePart(patchPart)
 }
 
 // 先创建 assistant message 的“骨架记录”。
@@ -531,7 +691,7 @@ function toUserPart(
 // ====================
 // 用户输入会先落成一条 user message，再拆成多条 part。
 // 这样后续无论是模型消费、UI 展示，还是工具补写，都可以复用同一套消息模型。
-async function createUserMessage(input: PromptInput) {
+async function createUserMessage(input: PromptInput, options?: { snapshot?: string }) {
     const messageinfo: Message.User = {
         id: Identifier.ascending("message"),
         sessionID: input.sessionID,
@@ -545,6 +705,16 @@ async function createUserMessage(input: PromptInput) {
     const parts = input.parts.map((part) =>
         toUserPart(part, messageinfo.id, input.sessionID),
     );
+
+    if (options?.snapshot) {
+        parts.push({
+            id: Identifier.ascending("part"),
+            sessionID: input.sessionID,
+            messageID: messageinfo.id,
+            type: "snapshot",
+            snapshot: options.snapshot,
+        } satisfies Message.SnapshotPart)
+    }
 
     if (Message.User.safeParse(messageinfo).success) {
         Session.DataBaseCreate("messages", messageinfo);
