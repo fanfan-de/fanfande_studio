@@ -18,6 +18,59 @@ type AgentSSEEvent = {
 type AgentStreamIPCEvent = AgentSSEEvent & {
   streamID: string
 }
+type PtySessionInfo = {
+  id: string
+  title: string
+  cwd: string
+  shell: string
+  rows: number
+  cols: number
+  status: "running" | "exited" | "deleted"
+  exitCode: number | null
+  createdAt: number
+  updatedAt: number
+  cursor: number
+}
+type PtyReplayPayload = {
+  mode: "delta" | "reset"
+  buffer: string
+  cursor: number
+  startCursor: number
+}
+type PtyIPCEvent =
+  | {
+      ptyID: string
+      type: "transport"
+      state: "connecting" | "connected" | "disconnected" | "error"
+      code?: number
+      reason?: string
+      userInitiated?: boolean
+      message?: string
+    }
+  | {
+      ptyID: string
+      type: "ready"
+      session: PtySessionInfo
+      replay: PtyReplayPayload
+    }
+  | {
+      ptyID: string
+      type: "output"
+      id: string
+      data: string
+      cursor: number
+    }
+  | {
+      ptyID: string
+      type: "state" | "exited" | "deleted"
+      session: PtySessionInfo
+    }
+  | {
+      ptyID: string
+      type: "error"
+      code: string
+      message: string
+    }
 type GitActionResult = {
   directory: string
   root: string
@@ -58,6 +111,20 @@ try {
         requestId?: string
         error?: string
       }>,
+    createPtySession: (input?: { title?: string; cwd?: string; shell?: string; rows?: number; cols?: number }) =>
+      ipcRenderer.invoke("desktop:create-pty-session", input) as Promise<PtySessionInfo>,
+    getPtySession: (input: { id: string }) =>
+      ipcRenderer.invoke("desktop:get-pty-session", input) as Promise<PtySessionInfo>,
+    updatePtySession: (input: { id: string; title?: string; rows?: number; cols?: number }) =>
+      ipcRenderer.invoke("desktop:update-pty-session", input) as Promise<PtySessionInfo>,
+    deletePtySession: (input: { id: string }) =>
+      ipcRenderer.invoke("desktop:delete-pty-session", input) as Promise<PtySessionInfo>,
+    attachPtySession: (input: { id: string; cursor?: number }) =>
+      ipcRenderer.invoke("desktop:attach-pty-session", input) as Promise<PtySessionInfo>,
+    detachPtySession: (input: { id: string }) =>
+      ipcRenderer.invoke("desktop:detach-pty-session", input) as Promise<boolean>,
+    writePtyInput: (input: { id: string; data: string }) =>
+      ipcRenderer.invoke("desktop:write-pty-input", input) as Promise<void>,
     pickProjectDirectory: () => ipcRenderer.invoke("desktop:pick-project-directory") as Promise<string | null>,
     pickComposerAttachments: () => ipcRenderer.invoke("desktop:pick-composer-attachments") as Promise<string[]>,
     gitCommit: (input: { directory: string; message: string }) =>
@@ -428,6 +495,17 @@ try {
 
       return () => {
         ipcRenderer.removeListener("desktop:agent-stream-event", wrappedListener)
+      }
+    },
+    onPtyEvent: (listener: (event: PtyIPCEvent) => void) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, ptyEvent: PtyIPCEvent) => {
+        listener(ptyEvent)
+      }
+
+      ipcRenderer.on("desktop:pty-event", wrappedListener)
+
+      return () => {
+        ipcRenderer.removeListener("desktop:pty-event", wrappedListener)
       }
     },
     onWindowStateChange: (listener: (state: { isMaximized: boolean }) => void) => {

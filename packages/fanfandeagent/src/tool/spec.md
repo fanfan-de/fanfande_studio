@@ -1,353 +1,399 @@
-[]() # 工具模块规范
+# 工具模块规范
 
-`tool` 模块是 agent 的能力边界层，负责把模型可调用能力组织成统一的 contract、统一的注册入口，以及一组可校验、可执行、可审计的内置工具。它应该保持高内聚，只承载工具定义与工具运行逻辑；同时保持低耦合，只依赖必要的基础设施，避免把业务域规则沉到本目录。
+`tool` 模块是 agent 的能力边界层。它负责定义统一的工具 contract、维护内置工具注册表，并提供少量跨工具共享的 helper。当前实现还通过 `session/resolve-tools.ts -> permission/permission.ts -> session/processor.ts -> session/message.ts` 串起模型侧调用、审批、持久化和历史回放。
 
-## 文件整体架构
-### 工具的类型
-bash
-read
-write
-grep
+本文档以当前代码实现为准，不描述尚未落地的设计。
 
-mcp
-skill
+## 1. 模块边界
 
+- `src/tool/**` 只负责工具定义、工具注册、共享 helper 和内置工具实现。
+- prompt 编排、权限策略、消息持久化、模型消息转换不在本目录内实现，但本模块会向这些链路暴露稳定接口。
+- 当前模块没有公开的“动态注册 / 注销工具”API；`registry.ts` 中的 `state().custom` 只是内部预留扩展槽位。
+- 结构化工具优先，`exec_command` 是兜底执行能力，不是默认实现手段。
 
+## 2. 当前目录结构
 
-### 总体分层
-- `tool.ts`
-  - 定义模块级 contract，是所有工具实现共同依赖的核心抽象。
-  - 提供 `define()` 包装器，把参数校验、预校验、授权校验、结果归一化统一收口。
-- `registry.ts`
-  - 负责注册和暴露工具集合。
-  - 对内收集内置工具和自定义工具，对外提供按名称查找、列举名称、校验唯一性的能力。
-- `shared.ts`
-  - 提供多个工具共享的底层 helper。
-  - 当前主要负责路径边界检查、文本文件读写、行范围格式化。
+### 2.1 核心文件
 
-### 具体工具文件
-- `read-file.ts`
-  - 读取文本文件全文或指定行范围。
-- `list-directory.ts`
-  - 列出目录内容，必要时识别目标是否是文件。
-- `search-files.ts`
-  - 在文件或目录范围内做文本搜索。
-- `write-file.ts`
-  - 写入完整文本文件。
-- `replace-text.ts`
-  - 对已有文本文件执行精确替换。
-- `apply-patch.ts`
-  - 应用 unified diff 补丁，支持创建、更新、删除、重命名。
-- `exec-command.ts`
-  - 作为兜底工具，在项目边界内执行 shell 命令，并负责危险命令拦截、超时和输出截断。
+| 文件 | 作用 |
+| --- | --- |
+| `tool.ts` | 定义模块级 contract：类型、`define()` 包装器、名称匹配、输出归一化 |
+| `registry.ts` | 汇总当前内置工具，暴露 `tools()` / `get()` / `names()` |
+| `shared.ts` | 提供路径解析、展示路径、文本读写、行范围渲染等公共 helper |
+| `read-file.ts` | 读取文本文件全文或行范围 |
+| `list-directory.ts` | 列出目录内容，可递归 |
+| `search-files.ts` | 在文件或目录范围内做文本搜索 |
+| `write-file.ts` | 写入完整文本文件 |
+| `replace-text.ts` | 对现有文本文件做精确替换 |
+| `apply-patch.ts` | 应用 Git 风格 unified diff |
+| `exec-command.ts` | 在项目边界内执行 Bash 命令 |
+| `bash.spec.md` | `exec_command` 的专项设计文档 |
 
-### 架构约束
-- 一个工具一个文件，避免工具之间的实现细节互相缠绕。
-- 工具文件优先依赖 `tool.ts` 和 `shared.ts`，不要直接依赖其它工具文件。
-- 与 tool 无关的业务流程、prompt 编排、session 持久化逻辑不应进入本目录。
-- 必要耦合可以存在，但要保持单向依赖，且写清楚原因。
+### 2.2 模块外但与 tool 强耦合的协作点
 
-## 数据结构
+| 文件 | 作用 |
+| --- | --- |
+| `src/session/resolve-tools.ts` | 把 `ToolInfo` 包装成 AI SDK `tool({...})`，接入权限判断与模型输出适配 |
+| `src/permission/permission.ts` | 基于工具能力和输入做权限评估；在审批请求落库时消费 `describeApproval()` |
+| `src/session/processor.ts` | 持久化工具调用状态：`pending`、`running`、`waiting-approval`、`completed`、`error`、`denied` |
+| `src/session/message.ts` | 历史消息回放时重建 tool result，并调用 `toModelOutput()` |
 
-### 结构总览
+## 3. 当前内置工具
 
-| 结构 | 定义位置 | 所属阶段 | 核心职责 | 对外稳定性 |
+### 3.1 ToolKind
+
+`tool.ts` 里当前真实存在的工具大类只有：
+
+- `read`
+- `write`
+- `search`
+- `exec`
+- `other`
+
+### 3.2 内置工具清单
+
+| id | aliases | kind | 能力标签 | 当前默认行为 |
 | --- | --- | --- | --- | --- |
-| `Metadata` | `tool.ts` | 通用基础 | 约束结构化元数据为键值对象 | 稳定 |
-| `Awaitable<T>` | `tool.ts` | 通用基础 | 统一同步/异步 hook 返回值签名 | 稳定 |
-| `ToolCapabilities` | `tool.ts` | 定义阶段 | 描述工具的静态能力标签 | 稳定 |
-| `InitContext` | `tool.ts` | 初始化阶段 | 向 `init()` 传入调用方相关信息 | 稳定 |
-| `Context` | `tool.ts` | 执行阶段 | 描述一次工具调用的运行上下文 | 稳定 |
-| `ToolAttachment` | `tool.ts` | 结果阶段 | 描述工具返回的附件 | 稳定 |
-| `ToolOutput` | `tool.ts` | 结果阶段 | 统一工具输出外形 | 稳定 |
-| `ToolGuardResult` | `tool.ts` | 校验/授权阶段 | 表达放行或拒绝执行 | 稳定 |
-| `ToolModelOutput` | `tool.ts` | 模型适配阶段 | 把结果转换为模型层消费格式 | 稳定 |
-| `ToolRuntime` | `tool.ts` | 实例化后 | 承载本次调用的参数 schema 和执行逻辑 | 稳定 |
-| `ToolInfo<Parameters, M, D>` | `tool.ts` | 定义阶段 | 描述可注册、可发现、可初始化的工具定义 | 稳定 |
-| `state().custom` | `registry.ts` | 注册表运行时 | 保存动态注册的自定义工具 | 内部 |
-| `formatLineRange()` 返回值 | `shared.ts` | 文件读取阶段 | 稳定表达行范围渲染结果 | 内部 |
-| `FilePatch` / `Hunk` / `HunkLine` / `ApplyAction` / `SplitContent` | `apply-patch.ts` | 补丁应用阶段 | 解析并执行 unified diff | 内部 |
+| `read-file` | 无 | `read` | `readOnly=true` `destructive=false` `concurrency=safe` | 默认返回前 250 行；支持 `startLine` / `endLine` / `maxLines` |
+| `list-directory` | 无 | `read` | `readOnly=true` `destructive=false` `concurrency=safe` | 默认只列当前层；递归时默认 `maxDepth=3`；默认最多 200 条 |
+| `search-files` | 无 | `search` | `readOnly=true` `destructive=false` `concurrency=safe` | 默认 `maxResults=20`；默认大小写不敏感；目录扫描默认跳过 `.git` 和 `node_modules` |
+| `write-file` | 无 | `write` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 覆盖写入完整文件内容 |
+| `replace-text` | 无 | `write` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 默认只替换首个匹配；`all=true` 时替换所有匹配 |
+| `apply_patch` | `apply-patch` | `write` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 顺序处理多文件 unified diff；支持 create/update/delete/move/unchanged |
+| `exec_command` | `bash` `exec-command` | `exec` | `readOnly=false` `destructive=true` `concurrency=exclusive` `needsShell=true` | 使用 `bash -lc` 执行命令；默认超时和输出上限来自 `Flag` |
 
-### 核心 contract
+### 3.3 审批描述能力
 
-#### 基础类型
+当前 7 个内置工具都实现了 `describeApproval()`。权限系统在真正创建审批请求时会优先读取工具提供的审批描述；若工具未实现或运行失败，再退回 permission 层的通用描述。
 
-| 类型             | 实际定义                      | 用途                             |
-| -------------- | ------------------------- | ------------------------------ |
-| `Metadata`     | `Record<string, unknown>` | 约束 `metadata` 只能承载可序列化的结构化键值信息 |
-| `Awaitable<T>` | `T \| Promise<T>`         | 允许 hook 和执行函数同时支持同步返回与异步返回     |
+## 4. 核心 contract
 
-#### `ToolCapabilities`
+### 4.1 基础类型
 
-`ToolCapabilities` 不重复描述实现细节，只向上层暴露稳定的静态信号，供工具选择、调度、风险控制和界面展示使用。
-
-| 关联类型 | 可选值 | 说明 |
-| --- | --- | --- |
-| `ToolKind` | `read` / `write` / `search` / `exec` / `other` | 工具的大类语义，用于粗粒度能力路由 |
-| `ToolConcurrency` | `safe` / `exclusive` | `safe` 表示可并发，`exclusive` 表示需要串行独占 |
-
-| 字段 | 类型 | 是否必填 | 含义 | 设计目的 |
-| --- | --- | --- | --- | --- |
-| `kind` | `ToolKind` | 否 | 声明工具属于读取、写入、搜索、执行等哪一类 | 让上层优先选择结构化工具，并支持界面按能力分组 |
-| `readOnly` | `boolean` | 否 | 声明工具是否只读、不会修改项目状态 | 让上层快速区分“安全探索”和“有副作用操作” |
-| `destructive` | `boolean` | 否 | 声明工具是否可能删除、覆盖或产生不可逆副作用 | 在执行前识别高风险操作，触发更保守的策略 |
-| `concurrency` | `ToolConcurrency` | 否 | 声明工具是否适合并发执行 | 避免多个写工具或 shell 工具同时运行导致竞争和污染 |
-| `needsShell` | `boolean` | 否 | 声明工具是否依赖外部 shell 或子进程环境 | 让上层提前判断运行环境是否满足前置条件 |
-
-#### `InitContext` 与 `Context`
-
-两者都属于“上下文”，但生命周期不同：`InitContext` 只在工具实例化时使用，`Context` 会贯穿单次执行过程。
-
-| 结构 | 创建时机 | 消费方 | 作用 |
+| 名称 | 定义位置 | 说明 | 稳定性 |
 | --- | --- | --- | --- |
-| `InitContext` | 调用 `ToolInfo.init(ctx?)` 时 | `init()` | 基于调用方信息生成本次可用的 `ToolRuntime` |
-| `Context` | 调用 `runtime.execute(args, ctx)` 时 | `execute()` / `validate()` / `authorize()` | 传递会话、目录、取消信号等单次执行上下文 |
+| `Metadata` | `tool.ts` | 模块内部别名：`Record<string, unknown>`；被 `ToolOutput` / `ToolAttachment` 等泛型使用，但未单独导出 | 内部 |
+| `Awaitable<T>` | `tool.ts` | `T \| Promise<T>`，统一同步 / 异步 hook 返回值 | 稳定 |
+| `ToolKind` | `tool.ts` | `read` / `write` / `search` / `exec` / `other` | 稳定 |
+| `ToolConcurrency` | `tool.ts` | `safe` / `exclusive` | 稳定 |
 
-`InitContext` 字段：
+### 4.2 `ToolCapabilities`
 
-| 字段 | 类型 | 是否必填 | 含义 |
-| --- | --- | --- | --- |
-| `agent` | `Agent.AgentInfo` | 否 | 当前调用工具的 agent 信息，用于按调用方生成 runtime |
-
-`Context` 字段：
-
-| 字段 | 类型 | 是否必填 | 含义 |
-| --- | --- | --- | --- |
-| `sessionID` | `string` | 是 | 当前会话标识 |
-| `messageID` | `string` | 是 | 当前消息标识 |
-| `cwd` | `string` | 否 | 本次调用的工作目录 |
-| `worktree` | `string` | 否 | 当前 worktree 标识或路径信息 |
-| `abort` | `AbortSignal` | 否 | 外部取消信号，供长时间任务中止执行 |
-| `toolCallID` | `string` | 否 | 单次工具调用标识，便于日志和追踪 |
-
-#### `ToolAttachment` 与 `ToolOutput`
-
-`ToolOutput` 是模块层最重要的稳定返回结构，要求始终至少包含 `text`；其余字段用于补充结构化信息和附件。
-
-`ToolAttachment` 字段：
-
-| 字段 | 类型 | 是否必填 | 含义 |
-| --- | --- | --- | --- |
-| `url` | `string` | 是 | 附件资源地址 |
-| `mime` | `string` | 是 | 附件 MIME 类型 |
-| `filename` | `string` | 否 | 附件展示或落盘时使用的文件名 |
-| `metadata` | `M` | 否 | 与附件关联的附加结构化信息 |
-
-`ToolOutput` 字段：
-
-| 字段 | 类型 | 是否必填 | 含义 | 设计约束 |
-| --- | --- | --- | --- | --- |
-| `text` | `string` | 是 | 面向人类和日志的主文本结果 | 所有工具最终都必须能归一到该字段 |
-| `title` | `string` | 否 | 结果标题 | 用于 UI 展示，不替代 `text` |
-| `metadata` | `M` | 否 | 面向程序消费的结构化附加信息 | 保持键值对象外形，便于审计和扩展 |
-| `data` | `D` | 否 | 更贴近业务结果的结构化载荷 | 允许上层直接消费，不必从 `text` 反解析 |
-| `attachments` | `ToolAttachment<M>[]` | 否 | 附件列表 | 用于承载文件、链接或其它外部资源 |
-
-#### `ToolGuardResult` 与 `ToolModelOutput`
-
-`ToolGuardResult` 是 `validate()` 和 `authorize()` 的统一返回结构；它不表达“成功结果”，只表达“是否拒绝继续执行”。
-
-| 结构 | 允许形态 | 含义 | `define()` 中的处理方式 |
-| --- | --- | --- | --- |
-| `ToolGuardResult` | `void` | 放行 | 继续后续步骤 |
-| `ToolGuardResult` | `string` | 拒绝，并携带错误信息 | trim 后抛出为执行错误 |
-| `ToolGuardResult` | `{ message: string }` | 拒绝，并携带结构化错误信息 | 读取 `message` 后抛出为执行错误 |
-
-`ToolModelOutput` 用于把 `ToolOutput` 再转换成更适合模型层直接消费的结果形态。
-
-| 形态 | 示例结构 | 用途 |
-| --- | --- | --- |
-| 文本快捷写法 | `string` | 作为 `{ type: "text", value }` 的简写 |
-| 文本结果 | `{ type: "text"; value: string }` | 返回普通文本 |
-| JSON 结果 | `{ type: "json"; value: JSONValue }` | 返回结构化 JSON |
-| 错误文本 | `{ type: "error-text"; value: string }` | 返回面向模型的文本错误 |
-| 错误 JSON | `{ type: "error-json"; value: JSONValue }` | 返回结构化错误信息 |
-| 执行拒绝 | `{ type: "execution-denied"; reason?: string }` | 显式表达工具因策略或权限被拒绝 |
-
-#### `ToolRuntime`
-
-`ToolRuntime` 是工具经过 `init()` 实例化后的运行时定义，描述“这一次调用具体如何执行”。
-
-| 字段 / 方法 | 类型 | 是否必填 | 含义 |
-| --- | --- | --- | --- |
-| `description` | `string` | 是 | 工具描述，供模型和上层理解用途 |
-| `title` | `string` | 否 | 工具展示标题 |
-| `parameters` | `Parameters` | 是 | 本次 runtime 使用的 Zod 参数 schema |
-| `execute(args, ctx)` | `Awaitable<ToolOutput<M, D> \| string>` | 是 | 真正的执行入口 |
-| `formatValidationError(error)` | `(error: z.ZodError) => string` | 否 | 自定义 schema 校验失败时的报错文案 |
-| `validate(args, ctx)` | `Promise<ToolGuardResult> \| ToolGuardResult` | 否 | 执行前的预校验 |
-| `authorize(args, ctx)` | `Promise<ToolGuardResult> \| ToolGuardResult` | 否 | 执行前的授权校验 |
-| `toModelOutput(result)` | `Awaitable<ToolModelOutput>` | 否 | 把标准结果转换为模型层输出 |
-
-#### `ToolInfo<Parameters, M, D>`
-
-`ToolInfo` 是注册表真正管理的对象。它描述的不是“一次执行”，而是“一个可被系统识别、初始化和调用的工具定义”。
-
-`ToolInfo` 与 `ToolRuntime` 的分工：
-
-| 维度 | `ToolInfo` | `ToolRuntime` |
-| --- | --- | --- |
-| 面向对象 | 静态工具定义 | 单次调用的运行时实例 |
-| 创建时机 | 模块加载或注册时 | `ToolInfo.init(ctx?)` 被调用时 |
-| 持有方 | `registry.ts` | 执行链路 |
-| 关注点 | 身份、别名、能力标签、初始化入口 | 参数 schema、描述、校验钩子、执行逻辑 |
-| 是否应长期持有 | 是 | 否，只服务于当前调用 |
-
-泛型参数：
-
-| 泛型参数 | 约束 | 含义 | 设计目的 |
-| --- | --- | --- | --- |
-| `Parameters` | `extends z.ZodType` | 工具输入 schema 类型 | 让 schema 与 `execute()` / `validate()` / `authorize()` 的参数类型保持一致 |
-| `M` | `extends Metadata` | `metadata` 的结构类型 | 允许工具返回更精确的结构化附加信息 |
-| `D` | `= unknown` | `data` 的结构类型 | 允许工具输出程序更易消费的结构化结果 |
-
-字段：
-
-| 字段 | 类型 | 是否必填 | 含义 | 设计目的 |
-| --- | --- | --- | --- | --- |
-| `id` | `string` | 是 | 工具主标识 | 保证注册、查找、调用和审计日志中的唯一身份 |
-| `title` | `string` | 否 | 面向界面或人类阅读的标题 | 将内部 `id` 与展示名称分离 |
-| `aliases` | `string[]` | 否 | 兼容名称或别名 | 支持历史命名兼容和更友好的调用映射 |
-| `capabilities` | `ToolCapabilities` | 否 | 工具能力标签集合 | 让上层在执行前理解风险、类别和调度约束 |
-| `init(ctx?)` | `(ctx?: InitContext) => Promise<ToolRuntime<Parameters, M, D>>` | 是 | 根据初始化上下文生成本次调用使用的 runtime | 把定义阶段与实例化阶段分离，避免静态定义被调用态污染 |
-
-### 注册表内部状态
-
-`registry.ts` 除了暴露 `tools()`、`get()`、`names()`，还维护一份动态注册状态，用于合并内置工具与自定义工具。
-
-| 结构 | 类型 | 定义位置 | 作用 | 备注 |
-| --- | --- | --- | --- | --- |
-| `state().custom` | `Tool.ToolInfo[]` | `registry.ts` | 保存运行时追加的自定义工具定义 | `tools()` 会把它与内置工具合并，并校验 `id` / `alias` 唯一性 |
-
-### 共享内部数据
-
-#### `shared.ts` 产出的共享结果
-
-| 数据 | 来源 | 结构 | 消费方 | 说明 |
-| --- | --- | --- | --- | --- |
-| 规范化绝对路径 | `resolveToolPath(inputPath)` | `string` | 所有文件类工具、`exec_command` | 已经过项目边界校验，且做过路径规范化 |
-| 稳定展示路径 | `toDisplayPath(resolvedPath)` | `string` | 所有需要输出路径的工具 | 将绝对路径收敛为项目内相对路径；根目录显示为 `.` |
-| 文本写入结果 | `writeTextFile(inputPath, content)` | `{ path: string; bytes: number }` | 写文件类工具、`apply_patch` | 返回写入后的绝对路径与 UTF-8 字节数 |
-| 行范围渲染结果 | `formatLineRange(text, startLine, endLine)` | 对象 | `read-file` | 统一行号渲染、范围裁剪和越界信息 |
-
-`formatLineRange()` 返回值字段：
+`ToolCapabilities` 是工具定义阶段的静态标签，当前主要被 `permission.evaluate()` 消费。
 
 | 字段 | 类型 | 含义 |
 | --- | --- | --- |
-| `rendered` | `string` | 带行号的文本片段 |
-| `totalLines` | `number` | 原文本总行数 |
-| `startLine` | `number` | 实际生效的起始行号 |
-| `endLine` | `number` | 实际生效的结束行号 |
-| `outOfRange` | `boolean` | 请求起始行是否已超出文件末尾 |
+| `kind` | `ToolKind` | 工具大类 |
+| `readOnly` | `boolean` | 是否只读 |
+| `destructive` | `boolean` | 是否有显著副作用 |
+| `concurrency` | `ToolConcurrency` | 是否适合并发执行 |
+| `needsShell` | `boolean` | 是否依赖外部 shell 环境 |
 
-#### `apply-patch.ts` 内部结构
+### 4.3 初始化与执行上下文
 
-以下结构只服务于 `apply_patch` 的内部实现，不作为模块级稳定接口暴露，但它们决定了 unified diff 的解析和落盘方式。
-
-| 结构 | 主要字段 | 作用 |
+| 结构 | 字段 | 说明 |
 | --- | --- | --- |
-| `HunkLine` | `type`、`text` | 表示补丁中的单行变更 |
-| `Hunk` | `oldStart`、`oldCount`、`newStart`、`newCount`、`lines` | 表示一个 `@@ ... @@` hunk 的范围与内容 |
-| `FilePatch` | `oldPath`、`newPath`、`hunks`、`oldNoNewlineAtEnd`、`newNoNewlineAtEnd` | 表示单个文件级补丁 |
-| `ApplyAction` | 见下表 | 表示补丁应用后的结果摘要，用于最终输出 |
-| `SplitContent` | `lines`、`newline`、`hasFinalNewline` | 表示被拆分后的文件内容和换行风格 |
+| `InitContext` | `agent?: Agent.AgentInfo` | `ToolInfo.init(ctx?)` 的输入。当前主要用于按 agent 初始化 runtime |
+| `Context` | `sessionID` `messageID` `cwd?` `worktree?` `abort?` `toolCallID?` | 单次执行上下文。`resolve-tools.ts` 会在真正执行时注入这些字段 |
 
-`HunkLine.type` 可选值：
+### 4.4 输出与审批描述
 
-| 值 | 含义 |
+| 结构 | 字段 | 说明 |
+| --- | --- | --- |
+| `ToolAttachment<M>` | `url` `mime` `filename?` `metadata?` | 工具返回的附件描述 |
+| `ToolApprovalDetails` | `command?` `paths?` `workdir?` | 审批弹窗和权限记录可直接展示的细节 |
+| `ToolApprovalDescriptor` | `title?` `summary` `details?` | 工具可选提供的审批摘要 |
+| `ToolOutput<M, D>` | `text` `title?` `metadata?` `data?` `attachments?` | 模块层统一输出结构；`text` 始终必需 |
+| `ToolGuardResult` | `void` / `string` / `{ message: string }` | `validate()` 和 `authorize()` 的统一返回值 |
+| `ToolModelOutput` | `string` 或结构化 union | 模型侧消费的结果形态：`text` / `json` / `error-text` / `error-json` / `execution-denied` |
+
+### 4.5 `ToolRuntime`
+
+`ToolRuntime` 描述“这一次调用具体怎么执行”。
+
+| 字段 / 方法 | 是否必需 | 说明 |
+| --- | --- | --- |
+| `description` | 是 | 工具描述，提供给模型和上层 |
+| `title` | 否 | 展示标题 |
+| `parameters` | 是 | 当前 runtime 使用的 Zod schema |
+| `execute(args, ctx)` | 是 | 真正执行工具逻辑 |
+| `formatValidationError(error)` | 否 | 自定义 schema 错误文案 |
+| `validate(args, ctx)` | 否 | 执行前预校验 |
+| `authorize(args, ctx)` | 否 | 工具内部额外授权检查 |
+| `describeApproval(args, ctx)` | 否 | 生成审批标题、摘要和详情；由 permission 层消费 |
+| `toModelOutput(result)` | 否 | 把标准 `ToolOutput` 转成模型侧稳定格式 |
+
+### 4.6 `ToolInfo`
+
+`ToolInfo` 是注册表保存的静态定义，不等于一次运行实例。
+
+| 字段 | 说明 |
 | --- | --- |
-| `context` | 上下文行，必须与原文件内容完全匹配 |
-| `add` | 新增行 |
-| `remove` | 删除行 |
+| `id` | 工具主标识 |
+| `title` | 展示标题 |
+| `aliases` | 兼容名称或短名 |
+| `capabilities` | 静态能力标签 |
+| `init(ctx?)` | 基于 `InitContext` 生成 `ToolRuntime` |
 
-`ApplyAction.kind` 可选值：
+`ToolInfo` 与 `ToolRuntime` 的分工：
 
-| 值 | 结果形态 | 额外字段 |
-| --- | --- | --- |
-| `created` | 创建文件 | `path` |
-| `updated` | 更新文件 | `path` |
-| `deleted` | 删除文件 | `path` |
-| `moved` | 重命名或移动文件 | `from`、`to` |
-| `unchanged` | 补丁应用后内容未变化 | `path` |
+- `ToolInfo`：静态定义，负责被注册、发现和初始化
+- `ToolRuntime`：运行时实例，负责参数 schema、审批描述、执行和模型输出转换
 
-## 暴露的核心接口
+### 4.7 `define()` 的包装行为
 
-### 通用接口
-- `define(id, init, options)`
-  - 模块最核心的入口。
-  - 负责把工具实现包装成统一 contract，并自动执行 schema 校验、预校验、授权检查和结果归一化。
-- `toolMatchesName(tool, name)`
-  - 用于同时匹配 `id` 和 `aliases`。
-- `normalizeToolOutput(result)`
-  - 把字符串或结构化结果统一归一成 `ToolOutput`。
-- `normalizeToolModelOutput(output)`
-  - 把工具返回的模型输出统一归一成结构化结果。
+`define(id, init, options)` 是模块级统一入口。它会在 `init()` 返回 runtime 之后，重写 runtime 的 `execute()`，统一收口以下逻辑：
 
-### 注册表接口
-- `tools()`
-  - 返回当前可用工具列表，包括内置工具和自定义工具。
-- `get(id)`
-  - 按工具名或别名查找工具。
-- `names()`
-  - 返回当前所有已暴露的工具名与别名。
+1. 用 `runtime.parameters.safeParse(args)` 做 schema 校验
+2. 如存在 `formatValidationError()`，优先使用工具自定义错误文案
+3. 调用 `validate()`；返回 `string` 或 `{ message }` 时直接抛错
+4. 调用 `authorize()`；返回 `string` 或 `{ message }` 时直接抛错
+5. 执行原始 `execute()`
+6. 通过 `normalizeToolOutput()` 统一成标准 `ToolOutput`
 
-### 模块提供的核心服务
-- 探索类服务
-  - `read-file`
-  - `list-directory`
-  - `search-files`
-- 修改类服务
-  - `write-file`
-  - `replace-text`
-  - `apply_patch`
-- 兜底执行服务
-  - `exec_command`
+`define()` 不会替工具自动生成 `describeApproval()` 或 `toModelOutput()`；这两个能力仍由具体工具自行实现。
 
-### 服务边界
-- 所有文件类服务都必须先通过项目边界检查。
-- 所有工具输入都必须走 Zod schema。
-- `exec_command` 不应替代结构化工具，它只在没有更合适结构化能力时兜底使用。
+### 4.8 归一化 helper
 
-## 数据流水线
+| 接口 | 作用 |
+| --- | --- |
+| `toolMatchesName(tool, name)` | 同时匹配 `id` 和 `aliases` |
+| `normalizeToolOutput(result)` | 把 `string` 或 `ToolOutput` 统一成标准 `ToolOutput` |
+| `normalizeToolModelOutput(output)` | 把模型输出的字符串快捷写法统一成 `{ type: "text", value }` |
 
-### 初始化逻辑
-### 定义阶段
-1. 模块加载后，具体工具文件先各自导出 `ToolInfo`。
-2. `registry.ts` 收集内置工具和运行时注册的自定义工具。
-3. 调用 `tools()` 时，注册表会合并所有工具，并校验 `id` 和 `alias` 的唯一性。
-4. 上层通过 `get()` 或 `names()` 获取工具目录信息。
-5. 这一阶段系统持有的是工具的静态定义，用于注册、列举、查找和能力理解。
+## 5. 注册表与共享 helper
 
-### 实例化阶段
-1. 当上层真正要执行某个工具时，先通过 `registry.get()` 按 `id` 或 `alias` 找到对应 `ToolInfo`。
-2. 调用 `ToolInfo.init(ctx?)`，生成本次执行要使用的 `ToolRuntime`。
-3. 这一阶段完成的是从静态定义到运行时对象的转换，让工具绑定本次调用上下文并准备执行入口。
+### 5.1 `registry.ts`
 
-### 运行时逻辑
-#### 执行阶段
-1. 调用 `runtime.execute(args, ctx)` 时，先由 `define()` 包装器执行参数 schema 校验。
-2. 如工具实现了 `validate()`，先执行预校验；返回失败则直接拒绝。
-3. 如工具实现了 `authorize()`，再执行授权校验；返回失败则直接拒绝。
-4. 进入真实 `execute()` 逻辑，完成文件读取、写入、搜索、补丁应用或命令执行。
-5. 执行结果被归一为 `ToolOutput`；如需要面向模型输出，再走 `toModelOutput()`。
-6. 上层会把归一后的结果回写到消息处理链路与会话历史中。
+当前对外暴露的注册表接口只有：
 
-### 文件类工具流水线
-1. 接收用户输入路径。
-2. 通过 `resolveToolPath()` 转成绝对路径。
-3. 使用 `Instance.containsPath()` 保证路径在项目边界内。
-4. 执行读写或搜索。
-5. 通过 `toDisplayPath()` 和统一文本格式输出结果。
+- `tools()`：返回内置工具列表与内部 `state().custom` 的合并结果，并校验 `id` / `alias` 唯一性
+- `get(id)`：按 `id` 或 `alias` 查找工具
+- `names()`：返回所有已暴露名称
 
-### `exec_command` 运行逻辑
-1. `formatValidationError()` 将 Zod schema 失败转换成更适合 `exec_command` 的错误文案。
-2. `validate()` 负责拒绝仅空白字符命令、无效工作目录、已取消调用和缺失 bash 可执行文件等前置条件问题。
-3. `authorize()` 在默认情况下拦截已知危险命令模式；只有显式传入 `allowUnsafe=true` 才会放行。
-4. `execute()` 解析 bash 路径，使用 `bash -lc` 启动子进程，并绑定超时与 `abort` 取消信号。
-5. `execute()` 对 `stdout` 和 `stderr` 做长度截断控制，并返回面向用户的摘要文本与结构化 metadata。
-6. `toModelOutput()` 把标准结果转换成结构化 JSON，向模型暴露命令、工作目录、退出状态和捕获到的输出。
+`state().custom` 当前只是 `Instance.state(async () => ({ custom: [] as Tool.ToolInfo[] }))` 的内部存储，没有公开的注册 / 注销函数。文档和调用方都不应把它当成稳定扩展 API。
 
-## 约束与演进
-- 修改任何文件职责、核心数据结构、核心接口或流水线时，都要同步更新本文件。
-- 如果新增工具，必须同时补注册、补测试、补本规范中的对应说明。
-- 后续可以扩展 `delete-file`、`move-file`、`git-status`、`git-diff` 等工具，但仍要遵守当前 contract 和边界约束。
+### 5.2 `shared.ts`
+
+`shared.ts` 当前只包含多工具共用、且足够稳定的文件 helper：
+
+| 接口 | 当前行为 |
+| --- | --- |
+| `resolveToolPath(inputPath)` | 相对路径始终以 `Instance.directory` 解析；绝对路径会被标准化；越过项目边界则抛错 |
+| `toDisplayPath(resolvedPath)` | 将绝对路径折叠为项目相对路径；根目录显示为 `.` |
+| `readTextFile(inputPath)` | 解析路径后按 UTF-8 读取文本 |
+| `writeTextFile(inputPath, content)` | 自动创建父目录，按 UTF-8 写入，返回绝对路径与字节数 |
+| `formatLineRange(text, startLine, endLine)` | 统一行号渲染、范围裁剪和越界标记 |
+
+`formatLineRange()` 返回：
+
+| 字段 | 含义 |
+| --- | --- |
+| `rendered` | 带行号的文本片段 |
+| `totalLines` | 原文总行数 |
+| `startLine` | 实际生效的起始行号 |
+| `endLine` | 实际生效的结束行号 |
+| `outOfRange` | 请求起始行是否超出文件末尾 |
+
+## 6. 各内置工具的真实行为
+
+### 6.1 `read-file`
+
+- 参数：`path` 必填；`startLine`、`endLine`、`maxLines` 可选
+- 默认行为：
+  - `startLine` 默认 `1`
+  - `maxLines` 默认 `250`
+  - 未传 `endLine` 时：
+    - 若传了 `startLine`，默认读取 `startLine + maxLines - 1`
+    - 否则默认读取前 `maxLines` 行
+- 会在文本结果里明确输出：
+  - 解析后的展示路径
+  - 实际返回行范围
+  - 是否越界
+  - 是否被截断
+
+### 6.2 `list-directory`
+
+- 参数：`path?`、`recursive?`、`maxDepth?`、`maxEntries?`、`includeHidden?`
+- 默认行为：
+  - `path` 默认项目根目录
+  - `recursive=false` 时，`maxDepth=0`
+  - `recursive=true` 时，`maxDepth` 默认 `3`
+  - `maxEntries` 默认 `200`
+  - `includeHidden` 默认 `false`
+- 如果目标路径是文件，不抛错，而是返回“这是一个文件”
+- 遍历顺序直接来自文件系统读取结果，当前未额外排序
+
+### 6.3 `search-files`
+
+- 参数：`query` 必填；`path?`、`glob?`、`caseSensitive?`、`maxResults?`、`includeHidden?`
+- 默认行为：
+  - `path` 默认项目根目录
+  - `glob` 默认 `**/*`
+  - `caseSensitive` 默认 `false`
+  - `maxResults` 默认 `20`
+  - `includeHidden` 默认 `false`
+- 若 `path` 是单文件，只扫描该文件
+- 若 `path` 是目录，使用 `Bun.Glob` 扫描文件，并默认跳过 `.git` 与 `node_modules`
+- 无法按 UTF-8 读取的文件当前会被静默跳过
+
+### 6.4 `write-file`
+
+- 参数：`path`、`content`
+- 当前行为是完整覆盖写入，不做合并或增量编辑
+- 会自动创建缺失的父目录
+
+### 6.5 `replace-text`
+
+- 参数：`path`、`search`、`replace`、`all?`
+- `all=true` 时替换全部匹配；否则只替换首个匹配
+- 如果未找到匹配文本，会抛错，不会创建文件
+
+### 6.6 `apply_patch`
+
+- 参数只有 `patch`
+- 当前支持的 patch 行为：
+  - 创建文件
+  - 更新文件
+  - 删除文件
+  - 重命名 / 移动文件
+  - 内容未变时记录为 `unchanged`
+- 当前支持处理 `\ No newline at end of file`
+- 多文件 patch 按顺序逐个执行；当前实现不是事务性的
+- rename 的实现是“先写入目标，再删除源文件”
+
+`apply-patch.ts` 中与 patch 解析直接相关的内部结构：
+
+| 结构 | 作用 |
+| --- | --- |
+| `HunkLine` | 表示 `context` / `add` / `remove` 单行 |
+| `Hunk` | 表示一个 `@@ ... @@` 区块 |
+| `FilePatch` | 表示单个文件级 patch |
+| `ApplyAction` | 汇总创建、更新、删除、移动、未变更等结果 |
+| `SplitContent` | 保存拆分后的行数组、换行风格和末尾换行状态 |
+
+### 6.7 `exec_command`
+
+- 使用 `bash -lc <command>` 执行，不依赖宿主 shell 语义
+- `workdir` 默认当前项目目录
+- `timeoutMs` 默认 `Flag.FanFande_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS ?? 60000`
+- `maxOutputChars` 默认 `Flag.FanFande_EXPERIMENTAL_BASH_MAX_OUTPUT_LENGTH ?? 12000`
+- `validate()` 负责检查：
+  - 调用是否已取消
+  - 命令是否为空白
+  - `workdir` 是否在项目边界内、是否为目录
+  - Bash 是否可用
+- `authorize()` 默认拦截已知危险模式；只有显式传入 `allowUnsafe=true` 才会放行
+- 非零退出码不会自动抛错；只要命令已成功启动并结束，就返回结果，由 `exitCode` / `status` 表达失败
+- `toModelOutput()` 当前会返回 JSON，暴露命令、工作目录、shell、退出状态、截断标记、stdout、stderr
+
+## 7. 执行、审批与结果回放链路
+
+### 7.1 定义发现阶段
+
+1. 具体工具文件导出各自的 `ToolInfo`
+2. `registry.ts` 汇总内置工具
+3. 上层通过 `tools()` / `get()` / `names()` 发现当前可用工具
+
+这一阶段只处理静态定义，不涉及真正执行。
+
+### 7.2 模型工具包装阶段
+
+`session/resolve-tools.ts` 会：
+
+1. 读取 `ToolRegistry.tools()`
+2. 对每个 `ToolInfo` 调用 `init({ agent })`
+3. 将 `ToolRuntime` 包装为 AI SDK `tool({...})`
+4. 把同一个工具同时注册到 `id` 和 `aliases`
+
+包装后的模型侧工具具备三条关键链路：
+
+- `needsApproval()`：调用 `permission.evaluate()` 判断是否需要人工批准
+- `execute()`：再次调用 `permission.evaluate()`，只在 `allow` 时真正执行 runtime
+- `toModelOutput()`：先标准化 `ToolOutput`，再按需调用 runtime 的 `toModelOutput()`
+
+### 7.3 权限与审批阶段
+
+`permission.evaluate()` 当前会消费这些静态 / 运行时信息：
+
+- `tool.id`
+- `tool.kind`
+- `tool.readOnly`
+- `tool.destructive`
+- `tool.needsShell`
+- 输入中派生出的路径、命令、workdir
+
+当前默认权限策略：
+
+- `read` / `search`：默认 `allow`
+- `write` / `exec` / `other`：默认 `ask`
+- `critical` 风险：默认 `deny`
+
+当模型流里出现 `tool-approval-request` 事件时，`session/processor.ts` 会把工具状态落成 `waiting-approval`，随后 `permission.registerApprovalRequest()` 会：
+
+1. 再次调用 `evaluate()`
+2. 尝试读取 `runtime.describeApproval()`
+3. 生成审批快照并写入 `permission_requests`
+4. 追加一条 `permission` part，动作是 `ask`
+
+如果工具没有实现 `describeApproval()`，或该方法执行失败，permission 层会生成通用 fallback 描述。
+
+### 7.4 持久化阶段
+
+`session/processor.ts` 当前维护的工具状态机：
+
+| 状态 | 触发时机 |
+| --- | --- |
+| `pending` | 收到 `tool-input-start` |
+| `running` | 收到 `tool-call` |
+| `waiting-approval` | 收到 `tool-approval-request` |
+| `completed` | 收到 `tool-result` |
+| `error` | 收到 `tool-error`，或响应结束时仍有悬空 tool call |
+| `denied` | 收到 `tool-output-denied`，或审批被用户拒绝 |
+
+持久化时，processor 会从工具输出中提取：
+
+- `text`
+- `title`
+- `metadata`
+- `attachments`
+
+并把附件映射成消息系统里的 `file` part 结构。
+
+### 7.5 历史消息回放阶段
+
+`session/message.ts` 在把内部消息转换成 AI SDK `ModelMessage[]` 时，会对已完成的 tool part 做重建：
+
+1. 从注册表重新找到对应工具
+2. 再次 `init()` 出 runtime
+3. 用持久化的 `output`、`title`、`metadata`、`attachments` 重建标准输出
+4. 如果 runtime 提供了 `toModelOutput()`，则调用它
+5. 否则退回到纯文本输出
+
+因此，`toModelOutput()` 不只影响实时执行，也影响历史 tool result 的回放格式。
+
+## 8. 当前实现约束
+
+- 一个具体工具一个文件
+- 具体工具优先依赖 `tool.ts` 和 `shared.ts`，不互相调用其它工具文件
+- 工具的能力标签必须和真实副作用保持一致，因为 permission 直接依赖这些标签
+- 当前所有文件类工具的相对路径解析都基于 `Instance.directory`，不是 `ctx.cwd`
+- `state().custom` 目前不是公开扩展点，不能在其它模块里当正式 API 使用
+
+## 9. Tool 模块 TODO
+
+### P0
+
+- `apply_patch` 的多文件应用目前不是事务性的；中途失败时，前面已经写入的文件不会自动回滚。
+- 现有直接测试覆盖偏向 `exec_command` 和流程层，缺少对 `read-file`、`list-directory`、`search-files`、`write-file`、`replace-text`、`apply_patch` 的细粒度成功 / 失败用例。
+
+### P1
+
+- `describeApproval()` 已进入真实链路，但缺少针对审批快照内容的专门测试。
+- `state().custom` 已有内部存储，但没有正式的注册 / 注销 API；需要决定是补公开扩展接口，还是收敛这块设计。
+- 文件类工具当前统一以 `Instance.directory` 解析相对路径，而不是按 `ctx.cwd`；需要明确这是最终语义还是后续要支持 cwd-relative。
+
+### P2
+
+- 多数工具只返回 `text` / `title`，结构化 `metadata` / `data` 的约定还不统一；后续可以补稳定的 machine-readable 输出。
+- `list-directory` / `search-files` 的输出顺序与截断信息还不够稳定；后续可补排序策略与结构化统计。

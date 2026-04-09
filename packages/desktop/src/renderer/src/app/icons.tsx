@@ -168,3 +168,13 @@ export function CloseIcon() {
     </svg>
   )
 }
+
+export function TerminalIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v10a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 17V7A1.5 1.5 0 0 1 4 5.5Z" />
+      <path d="m7 10 3 2-3 2" />
+      <path d="M12.5 14h4.5" />
+    </svg>
+  )
+}

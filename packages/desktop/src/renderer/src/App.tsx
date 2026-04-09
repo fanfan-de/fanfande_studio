@@ -9,6 +9,9 @@ import {
   ThreadView,
   Titlebar,
 } from "./app/components"
+import { TerminalPanel } from "./app/terminal/TerminalPanel"
+import { TerminalPanelToggleButton } from "./app/terminal/TerminalPanelToggleButton"
+import { useTerminalWorkspace } from "./app/terminal/use-terminal-workspace"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useSettingsPage } from "./app/use-settings-page"
@@ -107,6 +110,24 @@ export function App() {
     setSelectionDraftValue,
   } = useSettingsPage()
 
+  const {
+    activeSession: activeTerminalSession,
+    handleCloseTerminal,
+    handleCreateTerminal,
+    handlePanelHeightChange,
+    handleSelectTerminal,
+    handleTerminalInput,
+    handleTerminalResize,
+    handleTerminalSnapshotChange,
+    handleTogglePanel,
+    isOpen: isTerminalPanelOpen,
+    panelHeight: terminalPanelHeight,
+    sessions: terminalSessions,
+  } = useTerminalWorkspace({
+    defaultCwd: agentDefaultDirectory,
+    currentWorkspaceDirectory: selectedWorkspace?.directory ?? null,
+  })
+
   return (
     <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
       <Titlebar
@@ -190,6 +211,25 @@ export function App() {
             onPickAttachments={handlePickComposerAttachments}
             onRemoveAttachment={handleRemoveComposerAttachment}
             onSend={handleSend}
+          />
+          {!isTerminalPanelOpen ? (
+            <div className="canvas-terminal-toggle-anchor">
+              <TerminalPanelToggleButton isOpen={false} onToggle={() => void handleTogglePanel()} />
+            </div>
+          ) : null}
+          <TerminalPanel
+            activeSession={activeTerminalSession}
+            isOpen={isTerminalPanelOpen}
+            panelHeight={terminalPanelHeight}
+            sessions={terminalSessions}
+            onCloseTerminal={handleCloseTerminal}
+            onCreateTerminal={handleCreateTerminal}
+            onPanelHeightChange={handlePanelHeightChange}
+            onSelectTerminal={handleSelectTerminal}
+            onTerminalInput={handleTerminalInput}
+            onTerminalResize={handleTerminalResize}
+            onTerminalSnapshotChange={handleTerminalSnapshotChange}
+            onTogglePanel={() => void handleTogglePanel()}
           />
         </section>
 

@@ -1,19 +1,23 @@
 import { Hono } from "hono"
 import type { Context } from "hono"
+import { createBunWebSocket } from "hono/bun"
 import { cors } from "hono/cors"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { ProjectRoutes } from "#server/routes/projects.ts"
 import { PermissionsRoutes } from "#server/routes/permissions.ts"
+import { PtyRoutes } from "#server/routes/pty.ts"
 import { SettingsRoutes } from "#server/routes/settings.ts"
 import { SessionRoutes } from "#server/routes/session.ts"
 import { isApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
+import { getPtyRegistry, type PtyRegistry } from "#pty/registry.ts"
 import * as Log from "#util/log.ts"
 
 export interface ServerOptions {
   host?: string
   port?: number
   corsWhitelist?: string[]
+  ptyRegistry?: PtyRegistry
 }
 
 const log = Log.create({ service: "server" })
@@ -43,8 +47,14 @@ function parsePort(input: string | undefined, fallback: number) {
 }
 
 export function createServerApp(options: Pick<ServerOptions, "corsWhitelist"> = {}) {
+  return createServerRuntime(options).app
+}
+
+export function createServerRuntime(options: Pick<ServerOptions, "corsWhitelist" | "ptyRegistry"> = {}) {
   const app = new Hono<AppEnv>()
   const whitelist = (options.corsWhitelist ?? []).filter(Boolean)
+  const { upgradeWebSocket, websocket } = createBunWebSocket()
+  const ptyRegistry = options.ptyRegistry ?? getPtyRegistry()
 
   app.use("*", async (c, next) => {
     const requestId = crypto.randomUUID()
@@ -92,6 +102,7 @@ export function createServerApp(options: Pick<ServerOptions, "corsWhitelist"> = 
 
   app.route("/api", SettingsRoutes())
   app.route("/api/permissions", PermissionsRoutes())
+  app.route("/api/pty", PtyRoutes({ registry: ptyRegistry, upgradeWebSocket }))
   app.route("/api/projects", ProjectRoutes())
   app.route("/api/sessions", SessionRoutes())
 
@@ -108,7 +119,10 @@ export function createServerApp(options: Pick<ServerOptions, "corsWhitelist"> = 
     return jsonError(c, 500, "INTERNAL_ERROR", "Internal server error")
   })
 
-  return app
+  return {
+    app,
+    websocket,
+  }
 }
 
 export function url() {
@@ -120,11 +134,17 @@ export function startServer(options: ServerOptions = {}) {
 
   const host = options.host ?? process.env["FanFande_SERVER_HOST"] ?? "127.0.0.1"
   const port = options.port ?? parsePort(process.env["FanFande_SERVER_PORT"], 4096)
-  const app = createServerApp({ corsWhitelist: options.corsWhitelist })
+  const runtime = createServerRuntime({
+    corsWhitelist: options.corsWhitelist,
+    ptyRegistry: options.ptyRegistry,
+  })
   activeServer = Bun.serve({
     hostname: host,
     port,
-    fetch: app.fetch,
+    fetch(request, server) {
+      return runtime.app.fetch(request, server)
+    },
+    websocket: runtime.websocket,
   })
   activeURL = new URL(`http://${host}:${port}`)
   log.info("server-started", {

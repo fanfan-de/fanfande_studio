@@ -294,3 +294,69 @@ npm run test
 2. 改 bridge / IPC / server route：更新 `DESKTOP_SERVER_API_SPEC.md`
 3. 改模块边界或入口：更新本文档
 4. 改入门路径或练习建议：更新 `ELECTRON_LEARNING_TODO.md`
+
+## 10. Terminal Panel Architecture
+
+The first-stage terminal feature lives inside the renderer canvas area as a bottom panel. It does not bypass the desktop bridge and it does not introduce a global state framework.
+
+### 10.1 Renderer modules
+
+The terminal feature is split under `src/renderer/src/app/terminal`:
+
+- `types.ts`: terminal session, transport, snapshot, and workspace state types
+- `storage.ts`: `localStorage` persistence for terminal workspace snapshots
+- `client.ts`: thin wrapper around `window.desktop.*` PTY bridge methods
+- `use-terminal-workspace.ts`: terminal workspace state, attach/detach, reconnect, snapshot persistence, and resize debounce
+- `TerminalPanel.tsx`: bottom panel shell and resize handle
+- `TerminalTabs.tsx`: tab strip, panel collapse toggle, create button, close button
+- `TerminalView.tsx`: `xterm.js` mounting, output writer queue, fit/resizes, and per-terminal surface
+
+### 10.2 Why it lives here
+
+- `App.tsx` remains an assembly layer. It wires `useTerminalWorkspace()` into `ThreadView`, `Composer`, the collapsed canvas anchor, and the bottom terminal panel without absorbing terminal internals.
+- PTY persistence and reconnect logic stay in a dedicated hook instead of the shared chat workspace hook.
+- Storage is isolated in the terminal module so UI components stay declarative.
+- `xterm.js` is mounted per active tab, while tab/session state is retained in the hook to avoid losing buffer content when switching tabs.
+
+### 10.3 UI placement
+
+- The terminal open/close entry point lives on the active surface: bottom-left canvas anchor while collapsed, terminal tab strip while expanded.
+- `TerminalPanel` renders below `ThreadView` and above `Composer`.
+- The panel keeps its own height state and resize handle.
+- The first time the panel opens and no PTY exists, the hook auto-creates one terminal session.
+
+### 10.4 State and recovery rules
+
+- Local source of truth: `useTerminalWorkspace()`
+- Persistent snapshot: `localStorage`
+- Remote source of truth for PTY lifecycle/output: `fanfandeagent`
+- Reconnect path: restore snapshot -> attach active PTY -> request replay from last cursor
+- If the agent reports the PTY is missing, the terminal record is marked `invalid` and reconnect stops
+
+### 10.5 Desktop integration points
+
+Files touched in the desktop shell layer:
+
+- `src/preload/index.ts`
+- `src/main/ipc.ts`
+- `src/main/agent-client.ts`
+- `src/main/types.ts`
+- `src/main/pty-proxy.ts`
+
+The renderer still only talks to `window.desktop`. `src/main/pty-proxy.ts` is the only place that maps a renderer window to an agent PTY WebSocket.
+
+### 10.6 Tests
+
+Terminal coverage is split across:
+
+- `src/renderer/src/app/terminal/storage.test.ts`
+- `src/renderer/src/app/terminal/use-terminal-workspace.test.tsx`
+- `src/renderer/src/App.test.tsx`
+
+Current coverage focuses on:
+
+- panel open/close
+- first terminal auto-create
+- tab switching
+- snapshot restore
+- reconnect with cursor-based replay
