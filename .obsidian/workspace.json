@@ -225,6 +225,8 @@
   },
   "active": "e5d113a158731212",
   "lastOpenFiles": [
+    "packages/desktop/electron.vite.config.1775731089257.mjs",
+    "packages/desktop/electron.vite.config.1775730782882.mjs",
     "packages/fanfandeagent/src/session/diff-summary.ts",
     "packages/fanfandeagent/Test/session.diff.test.ts",
     "packages/fanfandeagent/src/session/diff.ts",
@@ -238,8 +240,6 @@
     "packages/desktop/out/renderer/assets/index-CnuoHGkT.js",
     "packages/desktop/out/renderer/assets/index-DZEQQTz8.css",
     "packages/desktop/electron.vite.config.1775690518673.mjs",
-    "packages/desktop/out/renderer/assets/index-CusdR4LL.css",
-    "packages/desktop/out/renderer/assets/index-Rx1kFPO2.js",
     "未命名 1.md",
     "Pasted image 20260405013212.png",
     "TODO_secure_provider_credentials.md",

@@ -69,7 +69,6 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     providerID: input.model.providerID,
   })
 
-  //const isCodex = provider.id === "openai" && auth?.type === "oauth"
 
   // 组装 system prompt
   const system = []
@@ -78,19 +77,6 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
       ...input.system,
     ]
   )
-
-  const header = system[0]
-  const original = clone(system)
-  //await Plugin.trigger("experimental.chat.system.transform", { sessionID: input.sessionID }, { system })
-  if (system.length === 0) {
-    system.push(...original)
-  }
-  // rejoin to maintain 2-part structure for caching if header unchanged
-  if (system.length > 2 && system[0] === header) {
-    const rest = system.slice(1)
-    system.length = 0
-    system.push(header, rest.join("\n"))
-  }
 
   // const variant =
   //   !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
@@ -182,17 +168,17 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   return streamText({
     // ------ 回调与网络配置（Callbacks & Network）------
     onError(error) {
-      console.error("流式请求回调异常：AI SDK onError 捕获到错误", error)
-      console.log(error)
+      //console.error("流式请求回调异常：AI SDK onError 捕获到错误", error)
+      //console.log(error)
     },
     onFinish: () => {
-      console.log("流式请求结束：streamText.onFinish")
+      //console.log("流式请求结束：streamText.onFinish")
     },
     onStepFinish: () => {
-      console.log("流式步骤结束：streamText.onStepFinish")
+      //console.log("流式步骤结束：streamText.onStepFinish")
     },
     onAbort: () => {
-      console.log("流式请求中止：streamText.onAbort")
+      //console.log("流式请求中止：streamText.onAbort")
     },
     // ------- 基础生成参数 ----------------
     timeout: { totalMs: 60000, stepMs: 10000 },// 总超时与单步超时
