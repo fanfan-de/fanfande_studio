@@ -38,13 +38,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
+                "file": "daily/2026-04-09.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "AI_AGENT_FRONTEND_SPEC"
+              "title": "2026-04-09"
             }
           }
         ],
@@ -140,12 +140,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
+                "file": "daily/2026-04-09.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "AI_AGENT_FRONTEND_SPEC 的出链列表"
+              "title": "2026-04-09 的出链列表"
             }
           },
           {
@@ -225,6 +225,10 @@
   },
   "active": "e5d113a158731212",
   "lastOpenFiles": [
+    "packages/desktop/桌面端界面结构与命名.md",
+    "todo.md",
+    "examples.md",
+    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
     "packages/desktop/out/renderer/assets/index-BuGcBISc.js",
     "packages/desktop/out/renderer/assets/index-DVR38YKg.css",
     "packages/desktop/electron.vite.config.1775690546666.mjs",
@@ -235,18 +239,14 @@
     "packages/desktop/out/renderer/assets/index-Rx1kFPO2.js",
     "packages/desktop/electron.vite.config.1775689368405.mjs",
     "packages/desktop/out/renderer/assets/index-CsS-LneH.js",
-    "packages/desktop/out/renderer/assets/index-d15d-MHf.css",
     "未命名 1.md",
     "Pasted image 20260405013212.png",
     "TODO_secure_provider_credentials.md",
     "记录设计的取舍.md",
-    "todo.md",
     "未命名.md",
     "未命名.canvas",
-    "examples.md",
     "spec.md",
     "packages/fanfandeagent/node_modules/yoga-layout/README.md",
-    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
     "daily/2026-04-09.md",
     "packages/fanfandeagent/src/agent/prompt/plan.md",
     "packages/fanfandeagent/BACKLOG.md",
