@@ -1,6 +1,6 @@
 import * as db from "#database/Sqlite.ts"
 import * as Message from "#session/message.ts"
-import { Snapshot } from "#snapshot/index.ts"
+import * as  Snapshot  from "#snapshot/snapshot.ts"
 import {
     buildDiffSummary as buildCompactDiffSummary,
     buildDetailedDiffSummary as buildDetailedDiffSummaryBase,

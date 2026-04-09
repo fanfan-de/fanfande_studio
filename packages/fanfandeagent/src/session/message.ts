@@ -1,6 +1,6 @@
 ﻿import * as AI from "ai";
 import z from "zod"
-import { Snapshot } from "../snapshot"
+import * as Snapshot  from "#snapshot/snapshot.ts"
 import {
     //     APICallError,
     //     convertToModelMessages,

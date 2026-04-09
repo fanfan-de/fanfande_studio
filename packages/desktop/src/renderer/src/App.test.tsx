@@ -447,18 +447,23 @@ describe("App", () => {
       ],
     })
 
-    render(<App />)
+    const { container } = render(<App />)
 
     expect(await screen.findByText("2 file changes (+8 -3)")).toBeInTheDocument()
     expect(screen.getByText(/src\/App\.tsx \(\+5 -1\).*src\/styles\.css \(\+3 -2\)/)).toBeInTheDocument()
     expect(screen.getAllByText("src/App.tsx").length).toBeGreaterThan(0)
     expect(screen.getAllByText("src/styles.css").length).toBeGreaterThan(0)
     expect(screen.queryByText("@@ -1,2 +1,2 @@")).not.toBeInTheDocument()
+    expect(screen.queryByText("diff --git a/src/App.tsx b/src/App.tsx")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle diff for src/App.tsx" }))
 
-    expect(screen.getByText("@@ -1,2 +1,2 @@")).toBeInTheDocument()
-    expect(screen.getByText('+import { NewToolbar } from "./toolbar"')).toBeInTheDocument()
+    expect(screen.queryByText("@@ -1,2 +1,2 @@")).not.toBeInTheDocument()
+    expect(screen.getByText('import { OldToolbar } from "./toolbar"')).toBeInTheDocument()
+    expect(screen.getByText('import { NewToolbar } from "./toolbar"')).toBeInTheDocument()
+    expect(container.querySelectorAll(".right-sidebar-diff-row").length).toBeGreaterThan(0)
+    expect(container.querySelectorAll(".right-sidebar-diff-row.is-add").length).toBeGreaterThan(0)
+    expect(container.querySelectorAll(".right-sidebar-diff-row.is-remove").length).toBeGreaterThan(0)
     expect(window.desktop!.getSessionDiff).toHaveBeenCalledWith({
       sessionID: "session-atlas-review",
     })
