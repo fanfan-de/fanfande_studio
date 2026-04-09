@@ -192,24 +192,26 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <aside id="app-sidebar" className="sidebar" aria-label="Folder navigation">
-      <div className="sidebar-actions" aria-label="Sidebar actions">
-        {sidebarActions.map((action) => (
-          <button
-            key={action.key}
-            className="sidebar-action"
-            aria-label={action.label}
-            title={action.label}
-            disabled={action.key === "project" ? isCreatingProject : false}
-            onClick={() => void onSidebarAction(action.key)}
-          >
-            {action.key === "project" ? <FolderIcon /> : null}
-            {action.key === "sort" ? <SortIcon /> : null}
-            {action.key === "new" ? <NewItemIcon /> : null}
-          </button>
-        ))}
-        {showSidebarToggleButton ? (
-          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="left" variant="sidebar" />
-        ) : null}
+      <div className="sidebar-actions panel-toolbar" aria-label="Sidebar actions">
+        <div className="panel-toolbar-actions sidebar-actions-buttons">
+          {sidebarActions.map((action) => (
+            <button
+              key={action.key}
+              className="sidebar-action"
+              aria-label={action.label}
+              title={action.label}
+              disabled={action.key === "project" ? isCreatingProject : false}
+              onClick={() => void onSidebarAction(action.key)}
+            >
+              {action.key === "project" ? <FolderIcon /> : null}
+              {action.key === "sort" ? <SortIcon /> : null}
+              {action.key === "new" ? <NewItemIcon /> : null}
+            </button>
+          ))}
+          {showSidebarToggleButton ? (
+            <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="left" variant="sidebar" />
+          ) : null}
+        </div>
       </div>
 
       <div className="sidebar-projects">
@@ -355,12 +357,9 @@ export function RightSidebar({
 
   return (
     <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
-      <header className="right-sidebar-header">
-        <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="right" variant="sidebar" />
-        <div className="right-sidebar-header-copy">
-          <span className="label">Inspector</span>
-          <h3>Session Context</h3>
-          <p>Keep the active session, project metadata, and runtime state visible beside the thread.</p>
+      <header className="right-sidebar-header panel-toolbar">
+        <div className="panel-toolbar-actions right-sidebar-header-actions">
+          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="right" variant="sidebar" />
         </div>
       </header>
 
@@ -508,7 +507,7 @@ export function CanvasTopMenu({
   onToggleRightSidebar,
 }: CanvasTopMenuProps) {
   return (
-    <nav className="canvas-top-menu" aria-label="Main content menu">
+    <nav className="canvas-top-menu panel-toolbar" aria-label="Main content menu">
       <div className="canvas-top-menu-leading">
         {showLeftSidebarToggleButton ? (
           <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="canvas" />

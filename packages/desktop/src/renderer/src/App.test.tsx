@@ -202,7 +202,7 @@ describe("App", () => {
     expect(screen.getAllByText("Project 2").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument()
-    expect(screen.getByText("Session Context")).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     await waitFor(() => {
       expect(container.querySelector(".canvas-header")).not.toBeInTheDocument()
       expect(container.querySelector(".signal-row")).not.toBeInTheDocument()
@@ -2171,14 +2171,14 @@ describe("App", () => {
     const appShell = container.querySelector(".app-shell") as HTMLElement | null
 
     expect(appShell).not.toBeNull()
-    expect(screen.getByText("Session Context")).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".right-sidebar-header")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse right sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain("--right-sidebar-display-width: 0px")
-    expect(screen.queryByText("Session Context")).not.toBeInTheDocument()
+    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     expect(screen.queryByTestId("right-sidebar-resizer")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Expand right sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".canvas-top-menu")).not.toBeNull()
@@ -2186,7 +2186,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand right sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain("--right-sidebar-display-width: 236px")
-    expect(screen.getByText("Session Context")).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".right-sidebar-header")).not.toBeNull()
   })
