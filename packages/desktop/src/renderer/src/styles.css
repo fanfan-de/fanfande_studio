@@ -3064,6 +3064,7 @@ textarea::placeholder {
 
 .terminal-xterm .xterm-viewport {
   overflow-y: auto !important;
+  scrollbar-gutter: stable;
 }
 
 .terminal-empty-state {

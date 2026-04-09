@@ -1,6 +1,8 @@
 import os from "node:os"
+import { spawn as spawnChild } from "node:child_process"
 import path from "node:path"
 import { stat } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 import { spawn, type IPty } from "node-pty"
 import { Flag } from "#flag/flag.ts"
 import { which } from "#util/which.ts"
@@ -23,6 +25,25 @@ export interface PtyRuntimeAdapter {
     env: Record<string, string>
   }): PtyRuntimeHandle
 }
+
+type NodePtyWorkerEvent =
+  | {
+      type: "ready"
+      pid: number
+    }
+  | {
+      type: "data"
+      data: string
+    }
+  | {
+      type: "exit"
+      exitCode: number | null
+      signal?: number
+    }
+  | {
+      type: "error"
+      message: string
+    }
 
 async function isExistingFile(candidate: string) {
   return stat(candidate).then((entry) => entry.isFile()).catch(() => false)
@@ -181,7 +202,162 @@ function wrapRuntimeHandle(term: IPty): PtyRuntimeHandle {
   }
 }
 
+function shouldUseNodePtySidecar() {
+  return Boolean(process.versions.bun) && process.platform === "win32"
+}
+
+function resolveNodeBinary() {
+  return which("node.exe") ?? which("node")
+}
+
+function createNodePtySidecarRuntimeAdapter(): PtyRuntimeAdapter {
+  const nodeBinary = resolveNodeBinary()
+  if (!nodeBinary) {
+    throw new Error("Node.js is required to host PTY input on Windows when running the server with Bun")
+  }
+
+  const workerPath = fileURLToPath(new URL("./node-pty-worker.mjs", import.meta.url))
+
+  return {
+    spawn(input) {
+      const child = spawnChild(nodeBinary, [workerPath], {
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      })
+      const dataListeners = new Set<(data: string) => void>()
+      const exitListeners = new Set<(event: { exitCode: number | null; signal?: number }) => void>()
+      let stdoutBuffer = ""
+      let hasExited = false
+
+      function emitData(data: string) {
+        for (const listener of [...dataListeners]) {
+          listener(data)
+        }
+      }
+
+      function emitExit(event: { exitCode: number | null; signal?: number }) {
+        if (hasExited) return
+        hasExited = true
+        for (const listener of [...exitListeners]) {
+          listener(event)
+        }
+      }
+
+      function sendCommand(payload: Record<string, unknown>) {
+        if (child.stdin.destroyed || !child.stdin.writable) {
+          throw new Error("PTY worker stdin is unavailable")
+        }
+
+        child.stdin.write(`${JSON.stringify(payload)}\n`)
+      }
+
+      child.stdout.setEncoding("utf8")
+      child.stdout.on("data", (chunk: string) => {
+        stdoutBuffer += chunk
+        const lines = stdoutBuffer.split(/\r?\n/)
+        stdoutBuffer = lines.pop() ?? ""
+
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (!trimmed) continue
+
+          let event: NodePtyWorkerEvent
+          try {
+            event = JSON.parse(trimmed) as NodePtyWorkerEvent
+          } catch {
+            continue
+          }
+
+          if (event.type === "data") {
+            emitData(event.data)
+            continue
+          }
+
+          if (event.type === "exit") {
+            emitExit({
+              exitCode: event.exitCode,
+              signal: event.signal,
+            })
+            continue
+          }
+
+          if (event.type === "error") {
+            emitData(`\r\n[pty worker error] ${event.message}\r\n`)
+          }
+        }
+      })
+
+      child.stderr.setEncoding("utf8")
+      child.stderr.on("data", (chunk: string) => {
+        emitData(`\r\n[pty worker stderr] ${chunk}\r\n`)
+      })
+
+      child.once("exit", (code, signal) => {
+        emitExit({
+          exitCode: typeof code === "number" ? code : null,
+          signal: typeof signal === "string" ? undefined : signal ?? undefined,
+        })
+      })
+
+      sendCommand({
+        type: "start",
+        shell: input.shell,
+        cwd: input.cwd,
+        rows: input.rows,
+        cols: input.cols,
+        env: input.env,
+      })
+
+      return {
+        pid: child.pid ?? 0,
+        write(data) {
+          sendCommand({
+            type: "write",
+            data,
+          })
+        },
+        resize(cols, rows) {
+          sendCommand({
+            type: "resize",
+            cols,
+            rows,
+          })
+        },
+        kill() {
+          try {
+            sendCommand({
+              type: "kill",
+            })
+          } catch {
+            // The worker may already be gone.
+          }
+
+          if (!child.killed) {
+            child.kill()
+          }
+        },
+        onData(listener) {
+          dataListeners.add(listener)
+          return () => {
+            dataListeners.delete(listener)
+          }
+        },
+        onExit(listener) {
+          exitListeners.add(listener)
+          return () => {
+            exitListeners.delete(listener)
+          }
+        },
+      }
+    },
+  }
+}
+
 export function createNodePtyRuntimeAdapter(): PtyRuntimeAdapter {
+  if (shouldUseNodePtySidecar()) {
+    return createNodePtySidecarRuntimeAdapter()
+  }
+
   return {
     spawn(input) {
       const term = spawn(input.shell, [], {
@@ -197,4 +373,3 @@ export function createNodePtyRuntimeAdapter(): PtyRuntimeAdapter {
     },
   }
 }
-

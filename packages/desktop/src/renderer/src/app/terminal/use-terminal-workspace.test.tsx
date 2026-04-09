@@ -183,4 +183,117 @@ describe("useTerminalWorkspace", () => {
       })
     })
   })
+
+  it("replaces a restored stale terminal session when the PTY no longer exists", async () => {
+    window.localStorage.setItem(
+      "desktop.terminal.workspace.v1",
+      JSON.stringify({
+        version: 1,
+        isOpen: true,
+        activePtyID: "pty-stale",
+        order: ["pty-stale"],
+        panelHeight: 320,
+        sessions: [
+          {
+            ptyID: "pty-stale",
+            title: "Stale terminal",
+            cwd: "C:\\Projects\\fanfande_studio",
+            shell: "powershell.exe",
+            rows: 24,
+            cols: 80,
+            status: "running",
+            exitCode: null,
+            createdAt: 1,
+            updatedAt: 1,
+            cursor: 7,
+            buffer: "stale",
+            scrollTop: 0,
+          },
+        ],
+      }),
+    )
+
+    window.desktop!.attachPtySession = vi.fn().mockImplementation(async ({ id }: { id: string }) => {
+      if (id === "pty-stale") {
+        throw new Error("PTY session 'pty-stale' not found")
+      }
+
+      return {
+        id,
+        title: "Terminal 1",
+        cwd: "C:\\Projects\\fanfande_studio",
+        shell: "powershell.exe",
+        rows: 24,
+        cols: 80,
+        status: "running",
+        exitCode: null,
+        createdAt: 2,
+        updatedAt: 2,
+        cursor: 0,
+      }
+    })
+
+    render(<Harness />)
+
+    await waitFor(() => {
+      expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
+        id: "pty-stale",
+        cursor: 7,
+      })
+    })
+
+    await waitFor(() => {
+      expect(window.desktop?.createPtySession).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(window.desktop?.attachPtySession).toHaveBeenLastCalledWith({
+        id: "pty-1",
+        cursor: 0,
+      })
+    })
+
+    expect(screen.getByTestId("is-open")).toHaveTextContent("open")
+    expect(screen.getByTestId("active-id")).toHaveTextContent("pty-1")
+    expect(screen.getByTestId("session-count")).toHaveTextContent("1")
+  })
+
+  it("does not rewrite local storage for live buffer output", async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem")
+
+    render(<Harness />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+
+    await waitFor(() => {
+      expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
+        id: "pty-1",
+        cursor: 0,
+      })
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+    setItemSpy.mockClear()
+
+    act(() => {
+      ptyListener?.({
+        ptyID: "pty-1",
+        type: "output",
+        id: "out-1",
+        data: "echo test",
+        cursor: 9,
+      })
+    })
+
+    expect(screen.getByTestId("session-buffers")).toHaveTextContent("pty-1:echo test")
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    expect(setItemSpy).not.toHaveBeenCalled()
+    setItemSpy.mockRestore()
+  })
 })
