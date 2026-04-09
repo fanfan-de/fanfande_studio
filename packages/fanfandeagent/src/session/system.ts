@@ -44,9 +44,10 @@ export function defaultPrompt ()
 
 export async function environment(model: Provider.Model) {
     const project = Instance.project
+    const modelName = model.api?.id ?? model.id
     return [
         [
-            `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
+            `You are powered by the model named ${modelName}. The exact model ID is ${model.providerID}/${modelName}`,
             `Here is some useful information about the environment you are running in:`,
             `<env>`,
             `  Working directory: ${Instance.directory}`,

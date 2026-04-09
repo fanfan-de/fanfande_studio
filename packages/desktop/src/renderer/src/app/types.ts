@@ -23,7 +23,6 @@ export type {
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type TitlebarMenuKey = "file" | "edit" | "view" | "window" | "help"
 export type SidebarActionKey = "project" | "sort" | "new"
-export type CanvasMenuKey = "overview" | "artifacts" | "changes" | "console" | "deploy"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type RefObject, type SetStateAction } from "react"
-import { canvasMenuItems, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions, titlebarMenus } from "./constants"
+import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions, titlebarMenus } from "./constants"
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -576,13 +576,221 @@ export function SidebarResizer({ isSidebarResizing, side, sidebarWidth, onKeyDow
 }
 
 interface CanvasTopMenuProps {
+  gitDirectory: string | null
   showLeftSidebarToggleButton: boolean
   showRightSidebarToggleButton: boolean
   onToggleLeftSidebar: () => void
   onToggleRightSidebar: () => void
 }
 
+function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
+  const menuRef = useRef<HTMLFormElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [commitMessage, setCommitMessage] = useState("")
+  const [pendingAction, setPendingAction] = useState<"commit" | "push" | null>(null)
+  const [status, setStatus] = useState<{
+    tone: "neutral" | "success" | "error"
+    text: string
+  }>({
+    tone: "neutral",
+    text: "",
+  })
+
+  const gitCommit = window.desktop?.gitCommit
+  const gitPush = window.desktop?.gitPush
+  const isCommitReady = Boolean(gitDirectory && gitCommit)
+  const isPushReady = Boolean(gitDirectory && gitPush)
+
+  useEffect(() => {
+    if (!isMenuOpen) return
+
+    inputRef.current?.focus()
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      setIsMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isMenuOpen])
+
+  useEffect(() => {
+    setIsMenuOpen(false)
+    setCommitMessage("")
+    setStatus({
+      tone: "neutral",
+      text: "",
+    })
+  }, [gitDirectory])
+
+  async function handleCommit() {
+    const message = commitMessage.trim()
+
+    if (!message) {
+      setStatus({
+        tone: "error",
+        text: "请输入提交说明。",
+      })
+      return
+    }
+
+    if (!gitDirectory || !gitCommit) {
+      setStatus({
+        tone: "error",
+        text: "当前工作区不可用。",
+      })
+      return
+    }
+
+    setPendingAction("commit")
+    setStatus({
+      tone: "neutral",
+      text: "正在提交...",
+    })
+
+    try {
+      const result = await gitCommit({
+        directory: gitDirectory,
+        message,
+      })
+      setCommitMessage("")
+      setStatus({
+        tone: "success",
+        text: result.summary,
+      })
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  async function handlePush() {
+    if (!gitDirectory || !gitPush) {
+      setStatus({
+        tone: "error",
+        text: "当前工作区不可用。",
+      })
+      return
+    }
+
+    setPendingAction("push")
+    setStatus({
+      tone: "neutral",
+      text: "正在推送...",
+    })
+
+    try {
+      const result = await gitPush({
+        directory: gitDirectory,
+      })
+      setStatus({
+        tone: "success",
+        text: result.summary,
+      })
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  return (
+    <div className="canvas-top-menu-quick-anchor">
+      <button
+        ref={buttonRef}
+        type="button"
+        className="canvas-top-menu-button canvas-top-menu-git-trigger"
+        aria-controls="canvas-top-menu-git-menu"
+        aria-expanded={isMenuOpen}
+        aria-haspopup="dialog"
+        onClick={() => setIsMenuOpen((current) => !current)}
+      >
+        Git
+        <ChevronDownIcon />
+      </button>
+
+      {isMenuOpen ? (
+        <form
+          ref={menuRef}
+          id="canvas-top-menu-git-menu"
+          className="canvas-top-menu-quick-panel"
+          role="dialog"
+          aria-label="Git quick menu"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void handleCommit()
+          }}
+        >
+          <label className="canvas-top-menu-quick-field">
+            <span>提交说明</span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={commitMessage}
+              placeholder="输入 commit message"
+              onChange={(event: ChangeEvent<HTMLInputElement>) => setCommitMessage(event.target.value)}
+            />
+          </label>
+
+          <div className="canvas-top-menu-quick-actions">
+            <button type="submit" className="primary-button" disabled={!isCommitReady || pendingAction !== null}>
+              {pendingAction === "commit" ? "提交中..." : "提交"}
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={!isPushReady || pendingAction !== null}
+              onClick={() => {
+                void handlePush()
+              }}
+            >
+              {pendingAction === "push" ? "推送中..." : "推送"}
+            </button>
+          </div>
+
+          <p
+            className={[
+              "canvas-top-menu-quick-status",
+              status.tone === "success" ? "is-success" : "",
+              status.tone === "error" ? "is-error" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-live="polite"
+          >
+            {status.text || (!gitDirectory ? "当前没有可用的 Git 工作区。" : "提交会自动执行 git add -A。")}
+          </p>
+        </form>
+      ) : null}
+    </div>
+  )
+}
+
 export function CanvasTopMenu({
+  gitDirectory,
   showLeftSidebarToggleButton,
   showRightSidebarToggleButton,
   onToggleLeftSidebar,
@@ -595,14 +803,9 @@ export function CanvasTopMenu({
           <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="canvas" />
         ) : null}
       </div>
-      <div className="canvas-top-menu-group">
-        {canvasMenuItems.map((item, index) => (
-          <button key={item.key} className={index === 0 ? "canvas-top-menu-button is-active" : "canvas-top-menu-button"}>
-            {item.label}
-          </button>
-        ))}
-      </div>
+      <div className="canvas-top-menu-group" aria-hidden="true" />
       <div className="canvas-top-menu-trailing">
+        <GitQuickMenuButton gitDirectory={gitDirectory} />
         {showRightSidebarToggleButton ? (
           <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleRightSidebar} side="right" variant="canvas" />
         ) : null}

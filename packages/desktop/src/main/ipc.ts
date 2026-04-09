@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from "electron"
 import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
+import { commitGitChanges, pushGitChanges } from "./git"
 import type { ApplicationMenus } from "./menu"
 import type {
   AgentEnvelope,
@@ -168,6 +169,12 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
     return result.canceled ? [] : result.filePaths
   })
+
+  ipcMain.handle("desktop:git-commit", async (_event, input: { directory: string; message: string }) =>
+    commitGitChanges(input.directory, input.message),
+  )
+
+  ipcMain.handle("desktop:git-push", async (_event, input: { directory: string }) => pushGitChanges(input.directory))
 
   ipcMain.handle("desktop:create-project-workspace", async (_event, input: { directory: string }) => {
     const directory = input.directory.trim()

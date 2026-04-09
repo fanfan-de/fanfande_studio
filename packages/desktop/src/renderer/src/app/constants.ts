@@ -1,4 +1,4 @@
-import type { CanvasMenuKey, SidebarActionKey, TitlebarMenuKey } from "./types"
+import type { SidebarActionKey, TitlebarMenuKey } from "./types"
 
 export const DEFAULT_SIDEBAR_WIDTH = 236
 export const MIN_SIDEBAR_WIDTH = 192
@@ -21,12 +21,4 @@ export const sidebarActions: Array<{ key: SidebarActionKey; label: string }> = [
   { key: "project", label: "Open folder" },
   { key: "sort", label: "Sort sessions" },
   { key: "new", label: "Create session" },
-]
-
-export const canvasMenuItems: Array<{ key: CanvasMenuKey; label: string }> = [
-  { key: "overview", label: "Overview" },
-  { key: "artifacts", label: "Artifacts" },
-  { key: "changes", label: "Changes" },
-  { key: "console", label: "Console" },
-  { key: "deploy", label: "Deploy" },
 ]

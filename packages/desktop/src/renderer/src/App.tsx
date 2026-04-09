@@ -73,6 +73,7 @@ export function App() {
     permissionRequestActionError,
     permissionRequestActionRequestID,
     projectRowRefs,
+    selectedWorkspace,
     selectedFolderID,
     setDraft,
     setHoveredFolderID,
@@ -157,6 +158,7 @@ export function App() {
 
         <section className="canvas">
           <CanvasTopMenu
+            gitDirectory={selectedWorkspace?.project.worktree ?? null}
             showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
             showRightSidebarToggleButton={isRightSidebarCollapsed}
             onToggleLeftSidebar={handleSidebarToggle}
