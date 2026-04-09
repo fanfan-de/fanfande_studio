@@ -10,7 +10,7 @@ import * as Provider from "#provider/provider.ts";
 import * as db from "#database/Sqlite.ts";
 import * as Agent from "#agent/agent.ts";
 import * as SystemPrompt from "#session/system.ts"
-import { Snapshot } from "#snapshot/index.ts"
+import * as Snapshot  from "#snapshot/snapshot.ts"
 import * as SessionDiff from "#session/diff.ts"
 
 import * as Message from "./message";

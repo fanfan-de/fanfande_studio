@@ -331,40 +331,140 @@ interface RightSidebarProps {
   onToggleSidebar: () => void
 }
 
-type DiffPreviewTone = "meta" | "hunk" | "add" | "remove" | "context"
+type DiffPreviewLineTone = "add" | "remove" | "context"
 
-function getDiffPreviewTone(line: string): DiffPreviewTone {
-  if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
-    return "meta"
+interface ParsedDiffRow {
+  content: string
+  newLineNumber: number | null
+  oldLineNumber: number | null
+  tone: DiffPreviewLineTone
+}
+
+interface ParsedDiffHunk {
+  header: string
+  rows: ParsedDiffRow[]
+}
+
+const DIFF_HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: ?(.*))?$/
+
+function formatDiffRange(start: number, count: number) {
+  if (count <= 0) return `line ${start}`
+  if (count === 1) return `line ${start}`
+  return `lines ${start}-${start + count - 1}`
+}
+
+function parsePatchHunks(patch?: string): ParsedDiffHunk[] {
+  if (!patch?.trim()) return []
+
+  const hunks: ParsedDiffHunk[] = []
+  let activeHunk: ParsedDiffHunk | null = null
+  let oldLineNumber = 0
+  let newLineNumber = 0
+
+  for (const rawLine of patch.split(/\r?\n/)) {
+    const hunkMatch = rawLine.match(DIFF_HUNK_HEADER_PATTERN)
+    if (hunkMatch) {
+      const oldStart = Number(hunkMatch[1] ?? "0")
+      const oldCount = Number(hunkMatch[2] ?? "1")
+      const newStart = Number(hunkMatch[3] ?? "0")
+      const newCount = Number(hunkMatch[4] ?? "1")
+      const context = hunkMatch[5]?.trim()
+      const header = context
+        ? `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)} · ${context}`
+        : `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)}`
+
+      activeHunk = {
+        header,
+        rows: [],
+      }
+      hunks.push(activeHunk)
+      oldLineNumber = oldStart
+      newLineNumber = newStart
+      continue
+    }
+
+    if (!activeHunk) continue
+    if (!rawLine || rawLine === "\\ No newline at end of file") continue
+
+    const prefix = rawLine[0]
+    const content = rawLine.slice(1)
+
+    if (prefix === " ") {
+      activeHunk.rows.push({
+        content,
+        oldLineNumber,
+        newLineNumber,
+        tone: "context",
+      })
+      oldLineNumber += 1
+      newLineNumber += 1
+      continue
+    }
+
+    if (prefix === "-") {
+      activeHunk.rows.push({
+        content,
+        oldLineNumber,
+        newLineNumber: null,
+        tone: "remove",
+      })
+      oldLineNumber += 1
+      continue
+    }
+
+    if (prefix === "+") {
+      activeHunk.rows.push({
+        content,
+        oldLineNumber: null,
+        newLineNumber,
+        tone: "add",
+      })
+      newLineNumber += 1
+    }
   }
-  if (line.startsWith("@@")) return "hunk"
-  if (line.startsWith("+")) return "add"
-  if (line.startsWith("-")) return "remove"
-  return "context"
+
+  return hunks.filter((hunk) => hunk.rows.length > 0)
 }
 
 function DiffPreview({ file, patch }: { file: string; patch?: string }) {
   if (!patch?.trim()) {
     return (
       <div className="right-sidebar-diff-empty">
-        <p>No textual diff preview is available for {file}.</p>
+        <p>No line-by-line diff preview is available for {file}.</p>
+      </div>
+    )
+  }
+
+  const hunks = parsePatchHunks(patch)
+
+  if (hunks.length === 0) {
+    return (
+      <div className="right-sidebar-diff-empty">
+        <p>No line-by-line diff preview is available for {file}.</p>
       </div>
     )
   }
 
   return (
     <div className="right-sidebar-diff-preview" role="region" aria-label={`Diff preview for ${file}`}>
-      <pre className="right-sidebar-diff-code">
-        {patch.split(/\r?\n/).map((line, index) => {
-          const tone = getDiffPreviewTone(line)
-          const className = `right-sidebar-diff-line is-${tone}`
-          return (
-            <span key={`${file}-${index}-${line}`} className={className}>
-              {line || " "}
-            </span>
-          )
-        })}
-      </pre>
+      <div className="right-sidebar-diff-code">
+        {hunks.map((hunk, hunkIndex) => (
+          <section key={`${file}-hunk-${hunkIndex}`} className="right-sidebar-diff-hunk" aria-label={hunk.header}>
+            <div className="right-sidebar-diff-hunk-header">{hunk.header}</div>
+            {hunk.rows.map((row, rowIndex) => (
+              <div key={`${file}-${hunkIndex}-${rowIndex}`} className={`right-sidebar-diff-row is-${row.tone}`}>
+                <span className="right-sidebar-diff-line-number" aria-hidden="true">
+                  {row.oldLineNumber ?? ""}
+                </span>
+                <span className="right-sidebar-diff-line-number" aria-hidden="true">
+                  {row.newLineNumber ?? ""}
+                </span>
+                <span className="right-sidebar-diff-content">{row.content || " "}</span>
+              </div>
+            ))}
+          </section>
+        ))}
+      </div>
     </div>
   )
 }

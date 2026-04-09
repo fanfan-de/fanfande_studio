@@ -1,7 +1,7 @@
 import * as Log from "#util/log.ts"
 import z from "zod"
 import * as Identifier from "#id/id.ts"
-import { Snapshot } from "#snapshot/index.ts"
+import * as Snapshot  from "#snapshot/snapshot.ts"
 import * as BusEvent from "#bus/bus-event.ts"
 import * as Message from "#session/message.ts"
 import * as Installation from "#installation/installation.ts"
