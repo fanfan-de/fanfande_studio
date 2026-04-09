@@ -7,6 +7,15 @@ export function FolderIcon() {
   )
 }
 
+export function PaperclipIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9.75 12.25 15.9 6.1a3.1 3.1 0 1 1 4.38 4.38l-8.14 8.14a5 5 0 1 1-7.07-7.07l7.43-7.43" />
+      <path d="M8.98 15.62 16.4 8.2a1.9 1.9 0 1 1 2.68 2.68l-6.15 6.15a3.8 3.8 0 1 1-5.37-5.37l5.05-5.05" />
+    </svg>
+  )
+}
+
 export function ChevronDownIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -175,6 +184,15 @@ export function TerminalIcon() {
       <path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v10a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 17V7A1.5 1.5 0 0 1 4 5.5Z" />
       <path d="m7 10 3 2-3 2" />
       <path d="M12.5 14h4.5" />
+    </svg>
+  )
+}
+
+export function ArrowUpIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 18V6" />
+      <path d="m7 11 5-5 5 5" />
     </svg>
   )
 }

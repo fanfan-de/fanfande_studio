@@ -2782,6 +2782,14 @@ textarea::placeholder {
     color 160ms ease;
 }
 
+.composer-selector-button.is-icon-only,
+.composer-actions .primary-button.is-icon-only {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
 .composer-selector-button:hover,
 .composer-selector-button:focus-visible {
   background: #eef5fb;
@@ -3111,6 +3119,19 @@ body.is-resizing-terminal-panel * {
   color: #ffffff;
 }
 
+.composer-actions .primary-button.is-icon-only {
+  width: 40px;
+  min-width: 40px;
+}
+
+.composer-actions .primary-button.is-icon-only svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+}
+
 .secondary-button {
   background: #eef2f5;
   color: #314353;
@@ -3338,6 +3359,18 @@ body.is-resizing-sidebar * {
   .composer-actions .primary-button {
     justify-content: space-between;
     width: 100%;
+  }
+
+  .composer-selector-button.is-icon-only,
+  .composer-actions .primary-button.is-icon-only {
+    width: 34px;
+    min-width: 34px;
+    justify-content: center;
+  }
+
+  .composer-actions .primary-button.is-icon-only {
+    width: 40px;
+    min-width: 40px;
   }
 
   .settings-page-overlay {

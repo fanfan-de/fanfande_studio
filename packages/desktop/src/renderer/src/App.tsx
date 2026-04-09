@@ -48,7 +48,6 @@ export function App() {
     activeSessionDiff,
     activePendingPermissionRequests,
     activeTurns,
-    composerAgentMode,
     composerAttachments,
     composerModelOptions,
     composerSelectedModel,
@@ -57,7 +56,6 @@ export function App() {
     draft,
     expandedFolderID,
     handleComposerModelChange,
-    handleComposerModeChange,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleProjectCreateSession,
@@ -178,7 +176,6 @@ export function App() {
             onPermissionRequestResponse={handlePermissionRequestResponse}
           />
           <Composer
-            agentMode={composerAgentMode}
             attachments={composerAttachments}
             draft={draft}
             hasActiveSession={Boolean(activeSession)}
@@ -187,7 +184,6 @@ export function App() {
             modelOptions={composerModelOptions}
             selectedModel={composerSelectedModel}
             selectedModelLabel={composerSelectedModelLabel}
-            onAgentModeChange={handleComposerModeChange}
             onDraftChange={setDraft}
             onModelChange={handleComposerModelChange}
             onPickAttachments={handlePickComposerAttachments}
@@ -264,6 +260,7 @@ function TerminalArea({ currentWorkspaceDirectory, defaultCwd }: TerminalAreaPro
     isOpen,
     panelHeight,
     sessions,
+    subscribeToTerminalStream,
   } = useTerminalWorkspace({
     defaultCwd,
     currentWorkspaceDirectory,
@@ -289,6 +286,7 @@ function TerminalArea({ currentWorkspaceDirectory, defaultCwd }: TerminalAreaPro
         onTerminalResize={handleTerminalResize}
         onTerminalSnapshotChange={handleTerminalSnapshotChange}
         onTogglePanel={() => void handleTogglePanel()}
+        subscribeToTerminalStream={subscribeToTerminalStream}
       />
     </>
   )

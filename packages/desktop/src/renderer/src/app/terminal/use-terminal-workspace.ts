@@ -1,7 +1,7 @@
-import { startTransition, useEffect, useMemo, useRef, useState } from "react"
+import { startTransition, useEffect, useRef, useState } from "react"
 import { mapPtySessionInfoToRecord, terminalClient } from "./client"
 import { loadTerminalWorkspaceState, saveTerminalWorkspaceState, serializeTerminalWorkspaceState } from "./storage"
-import type { PtyEvent, TerminalSessionRecord, TerminalWorkspaceState } from "./types"
+import type { PtyEvent, TerminalSessionRecord, TerminalStreamEvent, TerminalWorkspaceState } from "./types"
 
 const MIN_PANEL_HEIGHT = 220
 const MAX_PANEL_HEIGHT = 560
@@ -51,27 +51,12 @@ function upsertSession(state: TerminalWorkspaceState, session: TerminalSessionRe
   }
 }
 
-function appendSessionBuffer(
-  state: TerminalWorkspaceState,
-  ptyID: string,
-  input: { data: string; cursor: number },
-): TerminalWorkspaceState {
-  const current = state.sessions[ptyID]
-  if (!current) return state
-
-  return {
-    ...state,
-    sessions: {
-      ...state.sessions,
-      [ptyID]: {
-        ...current,
-        buffer: `${current.buffer}${input.data}`,
-        cursor: input.cursor,
-        updatedAt: Date.now(),
-      },
-    },
-  }
+interface LiveTerminalSessionSnapshot {
+  buffer: string
+  cursor: number
 }
+
+type TerminalStreamListener = (event: TerminalStreamEvent) => void
 
 export interface UseTerminalWorkspaceOptions {
   defaultCwd: string
@@ -81,6 +66,20 @@ export interface UseTerminalWorkspaceOptions {
 export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: UseTerminalWorkspaceOptions) {
   const [workspace, setWorkspace] = useState(() => loadTerminalWorkspaceState())
   const workspaceRef = useRef(workspace)
+  // Keep the hot terminal buffer path outside React state so typing does not trigger
+  // a render + diff cycle for every PTY output chunk.
+  const liveSessionsRef = useRef<Record<string, LiveTerminalSessionSnapshot>>(
+    Object.fromEntries(
+      Object.values(workspace.sessions).map((session) => [
+        session.ptyID,
+        {
+          buffer: session.buffer,
+          cursor: session.cursor,
+        },
+      ]),
+    ),
+  )
+  const terminalStreamListenersRef = useRef<Record<string, Set<TerminalStreamListener>>>({})
   const attachedPtyIDRef = useRef<string | null>(null)
   const reconnectTimersRef = useRef<Record<string, number>>({})
   const reconnectAttemptsRef = useRef<Record<string, number>>({})
@@ -88,8 +87,72 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
   const persistTimerRef = useRef<number | null>(null)
   const persistedSnapshotRef = useRef(serializeTerminalWorkspaceState(workspace))
 
-  const sessions = useMemo(() => orderedSessions(workspace), [workspace])
-  const activeSession = workspace.activePtyID ? workspace.sessions[workspace.activePtyID] ?? null : null
+  function readLiveSessionSnapshot(ptyID: string, fallback?: Pick<TerminalSessionRecord, "buffer" | "cursor">) {
+    const existing = liveSessionsRef.current[ptyID]
+    if (existing) return existing
+
+    const session = workspaceRef.current.sessions[ptyID]
+    const nextSnapshot = {
+      buffer: fallback?.buffer ?? session?.buffer ?? "",
+      cursor: fallback?.cursor ?? session?.cursor ?? 0,
+    }
+    liveSessionsRef.current[ptyID] = nextSnapshot
+    return nextSnapshot
+  }
+
+  function writeLiveSessionSnapshot(
+    ptyID: string,
+    input: Partial<LiveTerminalSessionSnapshot> & { buffer?: string; cursor?: number },
+  ) {
+    const current = readLiveSessionSnapshot(ptyID)
+    const nextSnapshot = {
+      buffer: input.buffer ?? current.buffer,
+      cursor: input.cursor ?? current.cursor,
+    }
+    liveSessionsRef.current[ptyID] = nextSnapshot
+    return nextSnapshot
+  }
+
+  function materializeSession(session: TerminalSessionRecord) {
+    const live = readLiveSessionSnapshot(session.ptyID, session)
+    return {
+      ...session,
+      buffer: live.buffer,
+      cursor: live.cursor,
+    }
+  }
+
+  function emitTerminalStreamEvent(ptyID: string, event: TerminalStreamEvent) {
+    const listeners = terminalStreamListenersRef.current[ptyID]
+    if (!listeners || listeners.size === 0) return
+
+    for (const listener of [...listeners]) {
+      listener(event)
+    }
+  }
+
+  function getKnownCursor(ptyID: string) {
+    return readLiveSessionSnapshot(ptyID).cursor
+  }
+
+  const subscribeToTerminalStream = useRef((ptyID: string, listener: TerminalStreamListener) => {
+    const listeners = terminalStreamListenersRef.current[ptyID] ?? new Set<TerminalStreamListener>()
+    listeners.add(listener)
+    terminalStreamListenersRef.current[ptyID] = listeners
+
+    return () => {
+      listeners.delete(listener)
+      if (listeners.size === 0) {
+        delete terminalStreamListenersRef.current[ptyID]
+      }
+    }
+  }).current
+
+  const sessions = orderedSessions(workspace).map((session) => materializeSession(session))
+  const activeSession =
+    workspace.activePtyID && workspace.sessions[workspace.activePtyID]
+      ? materializeSession(workspace.sessions[workspace.activePtyID]!)
+      : null
 
   useEffect(() => {
     workspaceRef.current = workspace
@@ -138,6 +201,8 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
     const current = workspaceRef.current
     const shouldCreateReplacement = current.isOpen && current.activePtyID === ptyID && current.order.length === 1
 
+    delete liveSessionsRef.current[ptyID]
+    delete terminalStreamListenersRef.current[ptyID]
     updateWorkspace((workspaceState) => removeSession(workspaceState, ptyID))
 
     if (shouldCreateReplacement) {
@@ -188,7 +253,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
 
     reconnectTimersRef.current[ptyID] = window.setTimeout(() => {
       delete reconnectTimersRef.current[ptyID]
-      void attachSession(ptyID, workspaceRef.current.sessions[ptyID]?.cursor ?? 0)
+      void attachSession(ptyID, getKnownCursor(ptyID))
     }, delay)
   }
 
@@ -322,31 +387,55 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
         if (event.type === "ready") {
           cancelReconnect(event.ptyID)
           attachedPtyIDRef.current = event.ptyID
+          const previous = readLiveSessionSnapshot(event.ptyID)
+          const replayBuffer =
+            event.replay.mode === "reset" ? event.replay.buffer : `${previous.buffer}${event.replay.buffer}`
+
+          writeLiveSessionSnapshot(event.ptyID, {
+            buffer: replayBuffer,
+            cursor: event.replay.cursor,
+          })
+
+          if (event.replay.mode === "reset") {
+            emitTerminalStreamEvent(event.ptyID, {
+              type: "replace",
+              buffer: replayBuffer,
+              cursor: event.replay.cursor,
+              scrollTop: workspaceRef.current.sessions[event.ptyID]?.scrollTop ?? 0,
+            })
+          } else if (event.replay.buffer) {
+            emitTerminalStreamEvent(event.ptyID, {
+              type: "append",
+              data: event.replay.buffer,
+              cursor: event.replay.cursor,
+            })
+          }
+
           updateWorkspace((current) => {
-            const previous = current.sessions[event.ptyID]
-            const replayBuffer =
-              event.replay.mode === "reset"
-                ? event.replay.buffer
-                : `${previous?.buffer ?? ""}${event.replay.buffer}`
+            const previousSession = current.sessions[event.ptyID]
 
             return upsertSession(
               current,
-              {
-                ...mapPtySessionInfoToRecord(event.session, {
-                  buffer: replayBuffer,
-                  scrollTop: previous?.scrollTop ?? 0,
-                  transportState: "connected",
-                }),
-                buffer: replayBuffer,
-                cursor: event.replay.cursor,
-              },
+              mapPtySessionInfoToRecord(event.session, {
+                buffer: previousSession?.buffer ?? "",
+                scrollTop: previousSession?.scrollTop ?? 0,
+                transportState: "connected",
+              }),
             )
           })
           return
         }
 
         if (event.type === "output") {
-          updateWorkspace((current) => appendSessionBuffer(current, event.ptyID, event))
+          writeLiveSessionSnapshot(event.ptyID, {
+            buffer: `${readLiveSessionSnapshot(event.ptyID).buffer}${event.data}`,
+            cursor: event.cursor,
+          })
+          emitTerminalStreamEvent(event.ptyID, {
+            type: "append",
+            data: event.data,
+            cursor: event.cursor,
+          })
           return
         }
 
@@ -354,6 +443,10 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
           if (event.type === "deleted") {
             cancelReconnect(event.ptyID)
           }
+
+          writeLiveSessionSnapshot(event.ptyID, {
+            cursor: event.session.cursor,
+          })
 
           updateWorkspace((current) => {
             const previous = current.sessions[event.ptyID]
@@ -418,7 +511,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
     }
 
     if (attachedPtyIDRef.current === targetPtyID) return
-    void attachSession(targetPtyID, workspace.sessions[targetPtyID]?.cursor ?? 0)
+    void attachSession(targetPtyID, getKnownCursor(targetPtyID))
   }, [workspace.activePtyID, workspace.isOpen])
 
   async function handleCreateTerminal(openPanel = true) {
@@ -426,6 +519,10 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
       const cwd = currentWorkspaceDirectory?.trim() || defaultCwd.trim() || undefined
       const session = await terminalClient.createSession({
         cwd,
+      })
+      writeLiveSessionSnapshot(session.id, {
+        buffer: "",
+        cursor: session.cursor,
       })
 
       updateWorkspace((current) =>
@@ -512,6 +609,8 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
         sessions: nextSessions,
       }
     })
+    delete liveSessionsRef.current[ptyID]
+    delete terminalStreamListenersRef.current[ptyID]
   }
 
   function handlePanelHeightChange(height: number) {
@@ -596,5 +695,6 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
     handleTerminalResize,
     handleTerminalSnapshotChange,
     handleTogglePanel,
+    subscribeToTerminalStream,
   }
 }

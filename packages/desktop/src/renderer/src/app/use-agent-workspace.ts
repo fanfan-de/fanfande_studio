@@ -17,7 +17,6 @@ import {
   buildStreamingAssistantTurn,
 } from "./stream"
 import type {
-  AppMode,
   AgentStreamIPCEvent,
   ComposerAttachment,
   ComposerModelOption,
@@ -50,9 +49,6 @@ interface UseAgentWorkspaceOptions {
   agentDefaultDirectory: string
   platform: string
 }
-
-const REVIEW_MODE_SYSTEM_PROMPT =
-  "Operate in review mode. Prioritize bugs, regressions, risky assumptions, and missing tests. Present findings first and keep the review concise."
 
 function normalizeModelSelection(selection?: { model?: string; small_model?: string }) {
   return {
@@ -126,7 +122,6 @@ export function useAgentWorkspace({
   const [permissionRequestActionRequestID, setPermissionRequestActionRequestID] = useState<string | null>(null)
   const [permissionRequestActionError, setPermissionRequestActionError] = useState<string | null>(null)
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([])
-  const [composerAgentMode, setComposerAgentMode] = useState<AppMode>("Autopilot")
   const [composerModels, setComposerModels] = useState<ProviderModel[]>([])
   const [composerSelectedModel, setComposerSelectedModel] = useState<string | null>(null)
   const [composerSmallModel, setComposerSmallModel] = useState<string | null>(null)
@@ -637,7 +632,6 @@ export function useAgentWorkspace({
     const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
     const attachments = composerAttachments
     const submissionText = buildPromptWithAttachments(text, attachments)
-    const system = composerAgentMode === "Review" ? REVIEW_MODE_SYSTEM_PROMPT : undefined
 
     const userTurn: Turn = {
       id: createID("user"),
@@ -714,7 +708,6 @@ export function useAgentWorkspace({
           streamID,
           sessionID: backendSessionID,
           text: submissionText,
-          system,
         })
 
         return
@@ -723,7 +716,6 @@ export function useAgentWorkspace({
       const result = await window.desktop.sendAgentMessage?.({
         sessionID: backendSessionID,
         text: submissionText,
-        system,
       })
 
       if (!result) {
@@ -917,7 +909,6 @@ export function useAgentWorkspace({
     activeSessionDiff,
     activePendingPermissionRequests,
     activeTurns,
-    composerAgentMode,
     composerAttachments,
     composerModelOptions,
     composerSelectedModel,
@@ -926,7 +917,6 @@ export function useAgentWorkspace({
     draft,
     expandedFolderID,
     handleComposerModelChange,
-    handleComposerModeChange: setComposerAgentMode,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleProjectCreateSession,

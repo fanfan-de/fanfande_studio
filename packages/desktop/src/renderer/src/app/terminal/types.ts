@@ -1,5 +1,17 @@
 export type TerminalSessionStatus = "running" | "exited" | "deleted" | "invalid"
 export type TerminalTransportState = "idle" | "connecting" | "connected" | "disconnected" | "error"
+export type TerminalStreamEvent =
+  | {
+      type: "append"
+      data: string
+      cursor: number
+    }
+  | {
+      type: "replace"
+      buffer: string
+      cursor: number
+      scrollTop: number
+    }
 
 export interface TerminalSessionRecord {
   ptyID: string
@@ -107,4 +119,3 @@ export type PtyEvent =
       code: string
       message: string
     }
-

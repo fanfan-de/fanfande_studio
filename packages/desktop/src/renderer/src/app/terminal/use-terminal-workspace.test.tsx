@@ -258,7 +258,7 @@ describe("useTerminalWorkspace", () => {
     expect(screen.getByTestId("session-count")).toHaveTextContent("1")
   })
 
-  it("does not rewrite local storage for live buffer output", async () => {
+  it("keeps live output out of storage while reconnecting with the latest cursor", async () => {
     const setItemSpy = vi.spyOn(Storage.prototype, "setItem")
 
     render(<Harness />)
@@ -287,7 +287,25 @@ describe("useTerminalWorkspace", () => {
       })
     })
 
-    expect(screen.getByTestId("session-buffers")).toHaveTextContent("pty-1:echo test")
+    act(() => {
+      ptyListener?.({
+        ptyID: "pty-1",
+        type: "transport",
+        state: "disconnected",
+        userInitiated: false,
+      })
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 700))
+    })
+
+    await waitFor(() => {
+      expect(window.desktop?.attachPtySession).toHaveBeenLastCalledWith({
+        id: "pty-1",
+        cursor: 9,
+      })
+    })
 
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 150))

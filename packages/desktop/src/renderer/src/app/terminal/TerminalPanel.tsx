@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { TerminalTabs } from "./TerminalTabs"
 import { TerminalView } from "./TerminalView"
-import type { TerminalSessionRecord } from "./types"
+import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
 
 interface TerminalPanelProps {
   activeSession: TerminalSessionRecord | null
@@ -16,6 +16,7 @@ interface TerminalPanelProps {
   onTerminalResize: (ptyID: string, rows: number, cols: number) => void
   onTerminalSnapshotChange: (ptyID: string, input: { scrollTop?: number }) => void
   onTogglePanel: () => void | Promise<void>
+  subscribeToTerminalStream: (ptyID: string, listener: (event: TerminalStreamEvent) => void) => () => void
 }
 
 const MIN_PANEL_HEIGHT = 220
@@ -38,6 +39,7 @@ export function TerminalPanel({
   onTerminalResize,
   onTerminalSnapshotChange,
   onTogglePanel,
+  subscribeToTerminalStream,
 }: TerminalPanelProps) {
   const [isResizing, setIsResizing] = useState(false)
   const startRef = useRef<{ pointerY: number; height: number } | null>(null)
@@ -106,6 +108,7 @@ export function TerminalPanel({
           onInput={onTerminalInput}
           onResize={onTerminalResize}
           onSnapshotChange={onTerminalSnapshotChange}
+          subscribeToTerminalStream={subscribeToTerminalStream}
         />
       ) : (
         <div className="terminal-empty-state">

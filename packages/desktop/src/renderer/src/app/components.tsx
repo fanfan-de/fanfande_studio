@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type RefObject, type SetStateAction } from "react"
 import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions, titlebarMenus } from "./constants"
 import {
+  ArrowUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
@@ -13,12 +14,12 @@ import {
   MinimizeIcon,
   NavPlaceholderIcon,
   NewItemIcon,
+  PaperclipIcon,
   RestoreIcon,
   SettingsIcon,
   SortIcon,
 } from "./icons"
 import type {
-  AppMode,
   AssistantTraceItem,
   ComposerAttachment,
   ComposerModelOption,
@@ -2314,7 +2315,6 @@ export function ThreadView({
 }
 
 interface ComposerProps {
-  agentMode: AppMode
   attachments: ComposerAttachment[]
   draft: string
   hasActiveSession: boolean
@@ -2323,7 +2323,6 @@ interface ComposerProps {
   modelOptions: ComposerModelOption[]
   selectedModel: string | null
   selectedModelLabel: string
-  onAgentModeChange: (mode: AppMode) => void
   onDraftChange: (value: string) => void
   onModelChange: (value: string | null) => void | Promise<void>
   onPickAttachments: () => void | Promise<void>
@@ -2331,12 +2330,9 @@ interface ComposerProps {
   onSend: () => void | Promise<void>
 }
 
-type ComposerMenuKey = "model" | "agent" | null
-
-const composerAgentModes: AppMode[] = ["Autopilot", "Review"]
+type ComposerMenuKey = "model" | null
 
 export function Composer({
-  agentMode,
   attachments,
   draft,
   hasActiveSession,
@@ -2345,7 +2341,6 @@ export function Composer({
   modelOptions,
   selectedModel,
   selectedModelLabel,
-  onAgentModeChange,
   onDraftChange,
   onModelChange,
   onPickAttachments,
@@ -2388,10 +2383,7 @@ export function Composer({
     void onModelChange(value)
   }
 
-  function handleAgentModeSelect(mode: AppMode) {
-    setOpenMenu(null)
-    onAgentModeChange(mode)
-  }
+  const sendButtonLabel = isSending ? "Sending task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
 
   return (
     <footer className="composer prompt-input-shell">
@@ -2425,20 +2417,26 @@ export function Composer({
 
       <div ref={toolbarRef} className="composer-toolbar">
         <div className="composer-selectors" aria-label="Composer options">
-          <button aria-label="Add image or file" className="composer-selector-button" onClick={() => void onPickAttachments()} type="button">
-            Add image or file
+          <button
+            aria-label="Add image or file"
+            className="composer-selector-button is-icon-only"
+            onClick={() => void onPickAttachments()}
+            title="Add image or file"
+            type="button"
+          >
+            <PaperclipIcon />
           </button>
 
           <div className="composer-menu-anchor">
             <button
               aria-expanded={openMenu === "model"}
               aria-haspopup="dialog"
-              aria-label={`Model: ${selectedModelLabel}`}
+              aria-label={`Select model: ${selectedModelLabel}`}
               className="composer-selector-button"
               onClick={() => toggleMenu("model")}
               type="button"
             >
-              <span>{`Model: ${selectedModelLabel}`}</span>
+              <span>{selectedModelLabel}</span>
               <ChevronDownIcon />
             </button>
 
@@ -2468,46 +2466,18 @@ export function Composer({
               </div>
             ) : null}
           </div>
-
-          <div className="composer-menu-anchor">
-            <button
-              aria-expanded={openMenu === "agent"}
-              aria-haspopup="dialog"
-              aria-label={`Agent mode: ${agentMode}`}
-              className="composer-selector-button"
-              onClick={() => toggleMenu("agent")}
-              type="button"
-            >
-              <span>{`Agent mode: ${agentMode}`}</span>
-              <ChevronDownIcon />
-            </button>
-
-            {openMenu === "agent" ? (
-              <div className="composer-menu-panel" role="dialog" aria-label="Agent mode selection">
-                {composerAgentModes.map((mode) => (
-                  <button
-                    key={mode}
-                    className={agentMode === mode ? "composer-menu-option is-selected" : "composer-menu-option"}
-                    onClick={() => handleAgentModeSelect(mode)}
-                    type="button"
-                  >
-                    <span>{mode}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
         </div>
 
         <div className="composer-actions">
           <button
-            aria-label="Send task"
-            className="primary-button"
+            aria-label={sendButtonLabel}
+            className="primary-button is-icon-only"
             disabled={isSending || !hasActiveSession || hasPendingPermissionRequests}
             onClick={() => void onSend()}
+            title={sendButtonLabel}
             type="button"
           >
-            {isSending ? "Sending..." : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"}
+            <ArrowUpIcon />
           </button>
         </div>
       </div>

@@ -18,6 +18,10 @@ function createDeferred<T>() {
   return { promise, reject, resolve }
 }
 
+function getComposerSendButton() {
+  return screen.getByRole("button", { name: /^(Send|Sending) task$|^Resolve approval first$/ })
+}
+
 type PermissionRequestPromptOverrides = Omit<Partial<PermissionRequestPrompt>, "prompt" | "resolution"> & {
   prompt?: Omit<Partial<PermissionRequestPrompt["prompt"]>, "details"> & {
     details?: Partial<NonNullable<PermissionRequestPrompt["prompt"]["details"]>>
@@ -282,8 +286,8 @@ describe("App", () => {
     })
     expect(screen.getByRole("textbox", { name: "Task draft" }).closest("footer")).toHaveClass("prompt-input-shell")
     expect(screen.getByRole("button", { name: "Add image or file" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /^Model:/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /^Agent mode:/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Select model:/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
   })
 
@@ -750,7 +754,7 @@ describe("App", () => {
     expect(approvalPanel.closest(".thread-shell")).not.toBeNull()
     expect(within(approvalPanel).getByRole("heading", { name: "Read repo config" })).toBeInTheDocument()
     expect(within(approvalPanel).getByText("Read README.md")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
+    expect(getComposerSendButton()).toBeDisabled()
     expect(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" })).toBeInTheDocument()
     expect(within(approvalPanel).getByRole("button", { name: "Deny Read repo config" })).toBeInTheDocument()
     await waitFor(() => {
@@ -1079,7 +1083,7 @@ describe("App", () => {
     expect(await screen.findByText("README loaded")).toBeInTheDocument()
     expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
     expect(await screen.findByText("Resumed answer")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
+    expect(getComposerSendButton()).toBeDisabled()
 
     finishResumeStream?.()
 
@@ -1087,7 +1091,7 @@ describe("App", () => {
       expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(3, {
         sessionID: "session-atlas-review",
       })
-      expect(screen.getByRole("button", { name: "Send task" })).toBeEnabled()
+      expect(getComposerSendButton()).toBeEnabled()
     })
   })
 
@@ -1149,7 +1153,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.queryByRole("region", { name: "Tool approval request" })).not.toBeInTheDocument()
     })
-    expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
+    expect(getComposerSendButton()).toBeDisabled()
 
     response.resolve(
       createPermissionResolveResult({
@@ -2058,7 +2062,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Model: DeepSeek Reasoner" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Select model: DeepSeek Reasoner" }))
     fireEvent.click(screen.getByRole("button", { name: "GPT-4o mini" }))
 
     await waitFor(() => {
@@ -2069,7 +2073,7 @@ describe("App", () => {
       })
     })
 
-    expect(await screen.findByRole("button", { name: "Model: GPT-4o mini" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Select model: GPT-4o mini" })).toBeInTheDocument()
   })
 
   it("adds composer attachments and includes them in agent requests", async () => {
@@ -2098,19 +2102,18 @@ describe("App", () => {
         value: "Use the references to refine the layout",
       },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Send task" }))
+    fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
       expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
         sessionID: "session-backend",
         text:
           "Use the references to refine the layout\n\nAttached files:\n- hero.png: C:\\Refs\\hero.png\n- brief.pdf: C:\\Refs\\brief.pdf",
-        system: undefined,
       })
     })
   })
 
-  it("sends review mode prompts with review system instructions", async () => {
+  it("submits composer prompts without an agent mode selector", async () => {
     window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
       ok: true,
       baseURL: "http://127.0.0.1:4096",
@@ -2122,21 +2125,18 @@ describe("App", () => {
       expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Agent mode: Autopilot" }))
-    fireEvent.click(screen.getByRole("button", { name: "Review" }))
+    expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
       target: {
         value: "Audit the toolbar changes",
       },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Send task" }))
+    fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
       expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
         sessionID: "session-backend",
         text: "Audit the toolbar changes",
-        system:
-          "Operate in review mode. Prioritize bugs, regressions, risky assumptions, and missing tests. Present findings first and keep the review concise.",
       })
     })
   })
@@ -2191,7 +2191,7 @@ describe("App", () => {
         value: "Ship custom titlebar",
       },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Send task" }))
+    fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
       expect(screen.getAllByText("Ship custom titlebar").length).toBeGreaterThan(0)
@@ -2271,7 +2271,7 @@ describe("App", () => {
         value: "Show live output",
       },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Send task" }))
+    fireEvent.click(getComposerSendButton())
 
     const streamingAnswer = await screen.findByText("Streaming answer")
     const liveReasoning = screen.getByText("Planning live update.")
@@ -2288,14 +2288,14 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: "Streaming response" })).not.toBeInTheDocument()
     expect(screen.queryByText("Renderer subscribed to live backend updates.")).not.toBeInTheDocument()
     expect(screen.queryByText("Waiting for backend response.")).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Send task" })).toBeDisabled()
+    expect(getComposerSendButton()).toBeDisabled()
 
     finishStream?.()
 
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "Backend response received" })).not.toBeInTheDocument()
       expect(screen.queryByText("Backend finished streaming this turn.")).not.toBeInTheDocument()
-      expect(screen.getByRole("button", { name: "Send task" })).toBeEnabled()
+      expect(getComposerSendButton()).toBeEnabled()
     })
   })
 
@@ -2376,7 +2376,7 @@ describe("App", () => {
     })
 
     const draftInput = screen.getByRole("textbox", { name: "Task draft" })
-    const sendButton = screen.getByRole("button", { name: "Send task" })
+    const sendButton = getComposerSendButton()
 
     fireEvent.change(draftInput, {
       target: {
@@ -2395,7 +2395,7 @@ describe("App", () => {
         value: "Second prompt",
       },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Send task" }))
+    fireEvent.click(getComposerSendButton())
 
     expect(await screen.findByText("Second reply")).toBeInTheDocument()
 
@@ -2461,6 +2461,72 @@ describe("App", () => {
     })
 
     expect(screen.getByRole("button", { name: "Toggle terminal panel" }).closest(".canvas-terminal-toggle-anchor")).not.toBeNull()
+  })
+
+  it("appends live terminal output directly into the active terminal view", async () => {
+    let ptyListener:
+      | ((event: {
+          ptyID: string
+          type: string
+          [key: string]: unknown
+        }) => void)
+      | undefined
+
+    window.desktop!.onPtyEvent = vi.fn((listener) => {
+      ptyListener = listener
+      return vi.fn()
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle terminal panel" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.attachPtySession).toHaveBeenCalledWith({
+        id: "pty-1",
+        cursor: 0,
+      })
+    })
+
+    act(() => {
+      ptyListener?.({
+        ptyID: "pty-1",
+        type: "ready",
+        session: {
+          id: "pty-1",
+          title: "Terminal 1",
+          cwd: "C:\\Projects\\fanfande_studio",
+          shell: "powershell.exe",
+          rows: 24,
+          cols: 80,
+          status: "running",
+          exitCode: null,
+          createdAt: 1,
+          updatedAt: 1,
+          cursor: 8,
+        },
+        replay: {
+          mode: "reset",
+          buffer: "prompt> ",
+          cursor: 8,
+          startCursor: 0,
+        },
+      })
+    })
+
+    expect(await screen.findByText(/prompt>/)).toBeInTheDocument()
+
+    act(() => {
+      ptyListener?.({
+        ptyID: "pty-1",
+        type: "output",
+        id: "out-1",
+        data: "dir",
+        cursor: 11,
+      })
+    })
+
+    expect(await screen.findByText(/prompt>\s*dir/)).toBeInTheDocument()
   })
 
   it("keeps terminal output when switching between tabs", async () => {

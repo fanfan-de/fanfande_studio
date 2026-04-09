@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useRef } from "react"
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
-import type { TerminalSessionRecord } from "./types"
+import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
 
 interface TerminalViewProps {
   panelHeight: number
@@ -9,15 +9,21 @@ interface TerminalViewProps {
   onInput: (data: string) => void | Promise<void>
   onResize: (ptyID: string, rows: number, cols: number) => void
   onSnapshotChange: (ptyID: string, input: { scrollTop?: number }) => void
+  subscribeToTerminalStream: (ptyID: string, listener: (event: TerminalStreamEvent) => void) => () => void
 }
 
-export function TerminalView({ panelHeight, session, onInput, onResize, onSnapshotChange }: TerminalViewProps) {
+export function TerminalView({
+  panelHeight,
+  session,
+  onInput,
+  onResize,
+  onSnapshotChange,
+  subscribeToTerminalStream,
+}: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const previousBufferRef = useRef("")
-  const previousCursorRef = useRef(0)
-  const flushTimerRef = useRef<number | null>(null)
+  const flushFrameRef = useRef<number | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
   const lastReportedScrollTopRef = useRef(0)
   const writeQueueRef = useRef<string[]>([])
@@ -25,6 +31,66 @@ export function TerminalView({ panelHeight, session, onInput, onResize, onSnapsh
   const handleInput = useEffectEvent(onInput)
   const handleResize = useEffectEvent(onResize)
   const handleSnapshotChange = useEffectEvent(onSnapshotChange)
+  const handleTerminalStream = useEffectEvent((event: TerminalStreamEvent) => {
+    const terminal = terminalRef.current
+    if (!terminal) return
+
+    if (event.type === "replace") {
+      if (flushFrameRef.current !== null) {
+        window.cancelAnimationFrame(flushFrameRef.current)
+        flushFrameRef.current = null
+      }
+
+      writeQueueRef.current = []
+      isFlushingRef.current = false
+      lastReportedScrollTopRef.current = event.scrollTop
+      terminal.reset()
+
+      if (!event.buffer) {
+        terminal.scrollToLine(event.scrollTop)
+        return
+      }
+
+      terminal.write(event.buffer, () => {
+        terminal.scrollToLine(event.scrollTop)
+      })
+      return
+    }
+
+    if (!event.data) return
+
+    writeQueueRef.current.push(event.data)
+    if (isFlushingRef.current) return
+
+    const flushWrites = () => {
+      flushFrameRef.current = null
+
+      const currentTerminal = terminalRef.current
+      if (!currentTerminal) {
+        isFlushingRef.current = false
+        return
+      }
+
+      const nextChunk = writeQueueRef.current.join("")
+      writeQueueRef.current = []
+      if (!nextChunk) {
+        isFlushingRef.current = false
+        return
+      }
+
+      currentTerminal.write(nextChunk, () => {
+        if (writeQueueRef.current.length > 0) {
+          flushFrameRef.current = window.requestAnimationFrame(flushWrites)
+          return
+        }
+
+        isFlushingRef.current = false
+      })
+    }
+
+    isFlushingRef.current = true
+    flushFrameRef.current = window.requestAnimationFrame(flushWrites)
+  })
 
   useEffect(() => {
     const container = containerRef.current
@@ -66,8 +132,6 @@ export function TerminalView({ panelHeight, session, onInput, onResize, onSnapsh
     terminal.loadAddon(fitAddon)
     terminal.open(container)
     terminal.write(session.buffer)
-    previousBufferRef.current = session.buffer
-    previousCursorRef.current = session.cursor
     lastReportedScrollTopRef.current = session.scrollTop
     terminal.scrollToLine(session.scrollTop)
     terminal.focus()
@@ -110,8 +174,8 @@ export function TerminalView({ panelHeight, session, onInput, onResize, onSnapsh
     return () => {
       window.clearTimeout(fitTimer)
       window.removeEventListener("resize", handleWindowResize)
-      if (flushTimerRef.current !== null) {
-        window.clearTimeout(flushTimerRef.current)
+      if (flushFrameRef.current !== null) {
+        window.cancelAnimationFrame(flushFrameRef.current)
       }
       if (scrollFrameRef.current !== null) {
         window.cancelAnimationFrame(scrollFrameRef.current)
@@ -123,6 +187,7 @@ export function TerminalView({ panelHeight, session, onInput, onResize, onSnapsh
       fitAddonRef.current = null
       writeQueueRef.current = []
       isFlushingRef.current = false
+      flushFrameRef.current = null
     }
   }, [handleInput, handleResize, handleSnapshotChange, session.ptyID])
 
@@ -146,53 +211,8 @@ export function TerminalView({ panelHeight, session, onInput, onResize, onSnapsh
   }, [handleResize, panelHeight, session.cols, session.ptyID, session.rows])
 
   useEffect(() => {
-    const terminal = terminalRef.current
-    if (!terminal) return
-
-    const previousBuffer = previousBufferRef.current
-    const previousCursor = previousCursorRef.current
-    const shouldReset = session.cursor < previousCursor || !session.buffer.startsWith(previousBuffer)
-
-    if (shouldReset) {
-      terminal.reset()
-      writeQueueRef.current = []
-      previousBufferRef.current = ""
-    }
-
-    const delta = shouldReset ? session.buffer : session.buffer.slice(previousBuffer.length)
-    previousBufferRef.current = session.buffer
-    previousCursorRef.current = session.cursor
-    if (!delta) return
-
-    writeQueueRef.current.push(delta)
-    if (isFlushingRef.current) return
-
-    const flushWrites = () => {
-      const currentTerminal = terminalRef.current
-      if (!currentTerminal) {
-        isFlushingRef.current = false
-        return
-      }
-
-      const nextChunk = writeQueueRef.current.shift()
-      if (!nextChunk) {
-        isFlushingRef.current = false
-        return
-      }
-
-      currentTerminal.write(nextChunk, () => {
-        if (writeQueueRef.current.length > 0) {
-          flushWrites()
-          return
-        }
-
-        isFlushingRef.current = false
-      })
-    }
-
-    isFlushingRef.current = true
-    flushTimerRef.current = window.setTimeout(flushWrites, 16)
-  }, [session.buffer, session.cursor])
+    return subscribeToTerminalStream(session.ptyID, handleTerminalStream)
+  }, [handleTerminalStream, session.ptyID, subscribeToTerminalStream])
 
   return (
     <div className="terminal-view-shell">
