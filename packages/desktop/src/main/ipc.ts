@@ -12,6 +12,7 @@ import type {
   AgentPermissionResolveResult,
   AgentPermissionRequest,
   AgentProjectWorkspace,
+  AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
   AgentStreamIPCEvent,
   AgentSessionInfo,
@@ -289,6 +290,15 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     const sessionID = input.sessionID.trim()
     const result = await requestAgentJSON<AgentSessionHistoryMessage[]>(
       `/api/sessions/${encodeURIComponent(sessionID)}/messages`,
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:get-session-diff", async (_event, input: { sessionID: string }) => {
+    const sessionID = input.sessionID.trim()
+    const result = await requestAgentJSON<AgentSessionDiffSummary>(
+      `/api/sessions/${encodeURIComponent(sessionID)}/diff`,
     )
 
     return result.data

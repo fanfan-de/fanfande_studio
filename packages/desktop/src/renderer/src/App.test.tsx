@@ -142,6 +142,9 @@ describe("App", () => {
       deleteProjectWorkspace: vi.fn(),
       deleteAgentSession: vi.fn(),
       getSessionHistory: vi.fn().mockResolvedValue([]),
+      getSessionDiff: vi.fn().mockResolvedValue({
+        diffs: [],
+      }),
       getSessionPermissionRequests: vi.fn().mockResolvedValue([]),
       respondPermissionRequest: vi.fn().mockResolvedValue(createPermissionResolveResult()),
       getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
@@ -324,6 +327,107 @@ describe("App", () => {
     expect(await screen.findByText("Recover the server session")).toBeInTheDocument()
     expect(screen.getByText("History restored from backend")).toBeInTheDocument()
     expect(window.desktop!.getSessionHistory).toHaveBeenCalledWith({
+      sessionID: "session-atlas-review",
+    })
+  })
+
+  it("loads session diff summaries into the inspector and renders patch trace items from history", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-1",
+          sessionID: "session-atlas-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-1", type: "text", text: "Ship the toolbar update" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-1",
+          sessionID: "session-atlas-review",
+          role: "assistant",
+          created: 101,
+        },
+        parts: [
+          {
+            id: "part-patch-1",
+            type: "patch",
+            hash: "snapshot-2",
+            files: ["src/App.tsx", "src/styles.css"],
+            summary: {
+              files: 2,
+              additions: 8,
+              deletions: 3,
+            },
+            changes: [
+              {
+                file: "src/App.tsx",
+                additions: 5,
+                deletions: 1,
+              },
+              {
+                file: "src/styles.css",
+                additions: 3,
+                deletions: 2,
+              },
+            ],
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionDiff = vi.fn().mockResolvedValue({
+      title: "2 file changes (+8 -3)",
+      stats: {
+        files: 2,
+        additions: 8,
+        deletions: 3,
+      },
+      diffs: [
+        {
+          file: "src/App.tsx",
+          additions: 5,
+          deletions: 1,
+        },
+        {
+          file: "src/styles.css",
+          additions: 3,
+          deletions: 2,
+        },
+      ],
+    })
+
+    render(<App />)
+
+    expect(await screen.findByText("2 file changes (+8 -3)")).toBeInTheDocument()
+    expect(screen.getByText(/src\/App\.tsx \(\+5 -1\).*src\/styles\.css \(\+3 -2\)/)).toBeInTheDocument()
+    expect(screen.getAllByText("src/App.tsx").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("src/styles.css").length).toBeGreaterThan(0)
+    expect(window.desktop!.getSessionDiff).toHaveBeenCalledWith({
       sessionID: "session-atlas-review",
     })
   })

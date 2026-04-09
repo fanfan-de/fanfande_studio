@@ -25,6 +25,7 @@ import type {
   PermissionRequest,
   PendingAgentStream,
   ProviderModel,
+  SessionDiffSummary,
   SessionSummary,
   SidebarActionKey,
   Turn,
@@ -102,6 +103,7 @@ export function useAgentWorkspace({
   const projectRowRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const pendingStreamsRef = useRef<Record<string, PendingAgentStream>>({})
   const historyRequestRef = useRef(0)
+  const sessionDiffRequestRef = useRef<Record<string, number>>({})
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
   const conversationVersionRef = useRef<Record<string, number>>({})
   const [workspaces, setWorkspaces] = useState(seedWorkspaces)
@@ -120,6 +122,7 @@ export function useAgentWorkspace({
   const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySession] = useState<
     Record<string, PermissionRequest[]>
   >({})
+  const [sessionDiffBySession, setSessionDiffBySession] = useState<Record<string, SessionDiffSummary>>({})
   const [permissionRequestActionRequestID, setPermissionRequestActionRequestID] = useState<string | null>(null)
   const [permissionRequestActionError, setPermissionRequestActionError] = useState<string | null>(null)
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([])
@@ -134,6 +137,7 @@ export function useAgentWorkspace({
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
   const selectedWorkspace = findWorkspaceByID(workspaces, selectedFolderID) ?? activeWorkspace ?? workspaces[0] ?? null
   const activeTurns = activeSession ? conversations[activeSession.id] ?? [] : []
+  const activeSessionDiff = activeSession ? sessionDiffBySession[activeSession.id] ?? null : null
   const activePendingPermissionRequests = activeSession ? pendingPermissionRequestsBySession[activeSession.id] ?? [] : []
   const composerModelOptions: ComposerModelOption[] = composerModels
     .filter((model) => model.available)
@@ -183,6 +187,30 @@ export function useAgentWorkspace({
     })
   }
 
+  async function loadSessionDiffForSession(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+  ) {
+    const getSessionDiff = window.desktop?.getSessionDiff
+    if (!getSessionDiff) return
+
+    const requestID = (sessionDiffRequestRef.current[sessionID] ?? 0) + 1
+    sessionDiffRequestRef.current[sessionID] = requestID
+
+    try {
+      const nextDiff = await getSessionDiff({ sessionID: backendSessionID })
+      if (sessionDiffRequestRef.current[sessionID] !== requestID) return
+
+      setSessionDiffBySession((prev) => ({
+        ...prev,
+        [sessionID]: nextDiff,
+      }))
+    } catch (error) {
+      if (sessionDiffRequestRef.current[sessionID] !== requestID) return
+      console.error("[desktop] getSessionDiff failed:", error)
+    }
+  }
+
   async function loadPendingPermissionRequestsForSession(
     sessionID: string,
     backendSessionID = resolveBackendSessionID(sessionID),
@@ -222,6 +250,9 @@ export function useAgentWorkspace({
         if (canLoadSessionHistory) {
           void reloadSessionHistoryForSession(target.sessionID).catch((error) => {
             console.error("[desktop] stream history refresh failed:", error)
+          })
+          void loadSessionDiffForSession(target.sessionID).catch((error) => {
+            console.error("[desktop] stream diff refresh failed:", error)
           })
           void loadPendingPermissionRequestsForSession(target.sessionID).catch((error) => {
             console.error("[desktop] stream permission refresh failed:", error)
@@ -296,6 +327,12 @@ export function useAgentWorkspace({
       cancelled = true
     }
   }, [activeSessionID, canLoadSessionHistory])
+
+  useEffect(() => {
+    if (!canLoadSessionHistory || !activeSessionID) return
+
+    void loadSessionDiffForSession(activeSessionID)
+  }, [activeSessionID, canLoadSessionHistory, agentSessions])
 
   useEffect(() => {
     if (!canLoadSessionHistory || !activeSessionID) return
@@ -387,9 +424,18 @@ export function useAgentWorkspace({
       return next
     })
 
+    setSessionDiffBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
     for (const sessionID of sessionIDs) {
       delete conversationVersionRef.current[sessionID]
       delete permissionRequestsRequestRef.current[sessionID]
+      delete sessionDiffRequestRef.current[sessionID]
     }
 
     for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
@@ -557,8 +603,14 @@ export function useAgentWorkspace({
         delete next[session.id]
         return next
       })
+      setSessionDiffBySession((prev) => {
+        const next = { ...prev }
+        delete next[session.id]
+        return next
+      })
       delete conversationVersionRef.current[session.id]
       delete permissionRequestsRequestRef.current[session.id]
+      delete sessionDiffRequestRef.current[session.id]
       for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
         if (target.sessionID === session.id) {
           delete pendingStreamsRef.current[streamID]
@@ -738,6 +790,9 @@ export function useAgentWorkspace({
       await reloadSessionHistoryForSession(input.sessionID, input.request.sessionID).catch((error) => {
         console.error("[desktop] permission history refresh failed:", error)
       })
+      await loadSessionDiffForSession(input.sessionID, input.request.sessionID).catch((error) => {
+        console.error("[desktop] permission diff refresh failed:", error)
+      })
       await loadPendingPermissionRequestsForSession(input.sessionID, input.request.sessionID).catch((error) => {
         console.error("[desktop] permission request refresh failed:", error)
       })
@@ -859,6 +914,7 @@ export function useAgentWorkspace({
 
   return {
     activeSession,
+    activeSessionDiff,
     activePendingPermissionRequests,
     activeTurns,
     composerAgentMode,

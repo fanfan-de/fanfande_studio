@@ -183,6 +183,21 @@ try {
           parts: unknown[]
         }>
       >,
+    getSessionDiff: (input: { sessionID: string }) =>
+      ipcRenderer.invoke("desktop:get-session-diff", input) as Promise<{
+        title?: string
+        body?: string
+        stats?: {
+          additions: number
+          deletions: number
+          files: number
+        }
+        diffs: Array<{
+          file: string
+          additions: number
+          deletions: number
+        }>
+      }>,
     getSessionPermissionRequests: (input: { sessionID: string }) =>
       ipcRenderer.invoke("desktop:get-session-permission-requests", input) as Promise<PermissionRequestPrompt[]>,
     respondPermissionRequest: (input: PermissionResolveInput) =>

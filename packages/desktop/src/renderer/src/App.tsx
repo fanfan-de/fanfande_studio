@@ -42,6 +42,7 @@ export function App() {
 
   const {
     activeSession,
+    activeSessionDiff,
     activePendingPermissionRequests,
     activeTurns,
     composerAgentMode,
@@ -203,6 +204,7 @@ export function App() {
 
             <RightSidebar
               activeSession={activeSession}
+              activeSessionDiff={activeSessionDiff}
               activeTurnCount={activeTurns.length}
               attachmentCount={composerAttachments.length}
               composerAgentMode={composerAgentMode}
