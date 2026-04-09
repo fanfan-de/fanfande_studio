@@ -17,6 +17,10 @@ export interface DiffSummary {
     diffs: CompactFileDiff[]
 }
 
+export type DetailedDiffSummary<T extends CompactFileDiff> = Omit<DiffSummary, "diffs"> & {
+    diffs: T[]
+}
+
 export function summarizeSnapshotFileDiffs<T extends {
         file: string
         additions: number
@@ -61,6 +65,14 @@ export function buildDiffSummary(diffs: CompactFileDiff[]): DiffSummary {
         title,
         body,
         stats,
+        diffs,
+    }
+}
+
+export function buildDetailedDiffSummary<T extends CompactFileDiff>(diffs: T[]): DetailedDiffSummary<T> {
+    const summary = buildDiffSummary(summarizeSnapshotFileDiffs(diffs))
+    return {
+        ...summary,
         diffs,
     }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildDiffSummary, summarizeSnapshotFileDiffs } from "#session/diff-summary.ts"
+import { buildDetailedDiffSummary, buildDiffSummary, summarizeSnapshotFileDiffs } from "#session/diff-summary.ts"
 
 describe("session diff summary", () => {
   test("maps snapshot file diffs into compact file summaries", () => {
@@ -77,5 +77,30 @@ describe("session diff summary", () => {
     })
     expect(summary.title).toBe("No file changes")
     expect(summary.body).toBe("No tracked workspace changes were captured for this turn.")
+  })
+
+  test("preserves detailed patch text for UI expansion", () => {
+    const summary = buildDetailedDiffSummary([
+      {
+        file: "src/App.tsx",
+        before: "old",
+        after: "new",
+        additions: 1,
+        deletions: 1,
+        patch: [
+          "diff --git a/src/App.tsx b/src/App.tsx",
+          "@@ -1 +1 @@",
+          "-old",
+          "+new",
+        ].join("\n"),
+      },
+    ])
+
+    expect(summary.stats).toEqual({
+      files: 1,
+      additions: 1,
+      deletions: 1,
+    })
+    expect(summary.diffs[0]?.patch).toContain("@@ -1 +1 @@")
   })
 })

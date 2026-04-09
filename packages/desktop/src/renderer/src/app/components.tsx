@@ -328,36 +328,58 @@ export function Sidebar({
 interface RightSidebarProps {
   activeSession: SessionSummary | null
   activeSessionDiff: SessionDiffSummary | null
-  activeTurnCount: number
-  attachmentCount: number
-  composerAgentMode: AppMode
-  isAgentConnected: boolean
-  isSending: boolean
-  pendingPermissionRequestCount: number
-  selectedModelLabel: string
-  selectedWorkspace: WorkspaceGroup | null
   onToggleSidebar: () => void
+}
+
+type DiffPreviewTone = "meta" | "hunk" | "add" | "remove" | "context"
+
+function getDiffPreviewTone(line: string): DiffPreviewTone {
+  if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("--- ") || line.startsWith("+++ ")) {
+    return "meta"
+  }
+  if (line.startsWith("@@")) return "hunk"
+  if (line.startsWith("+")) return "add"
+  if (line.startsWith("-")) return "remove"
+  return "context"
+}
+
+function DiffPreview({ file, patch }: { file: string; patch?: string }) {
+  if (!patch?.trim()) {
+    return (
+      <div className="right-sidebar-diff-empty">
+        <p>No textual diff preview is available for {file}.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="right-sidebar-diff-preview" role="region" aria-label={`Diff preview for ${file}`}>
+      <pre className="right-sidebar-diff-code">
+        {patch.split(/\r?\n/).map((line, index) => {
+          const tone = getDiffPreviewTone(line)
+          const className = `right-sidebar-diff-line is-${tone}`
+          return (
+            <span key={`${file}-${index}-${line}`} className={className}>
+              {line || " "}
+            </span>
+          )
+        })}
+      </pre>
+    </div>
+  )
 }
 
 export function RightSidebar({
   activeSession,
   activeSessionDiff,
-  activeTurnCount,
-  attachmentCount,
-  composerAgentMode,
-  isAgentConnected,
-  isSending,
-  pendingPermissionRequestCount,
-  selectedModelLabel,
-  selectedWorkspace,
   onToggleSidebar,
 }: RightSidebarProps) {
-  const runtimeStatus = pendingPermissionRequestCount > 0
-    ? `${pendingPermissionRequestCount} waiting`
-    : isSending
-      ? "Sending"
-      : "Clear"
+  const [expandedDiffFile, setExpandedDiffFile] = useState<string | null>(null)
   const changedFilesCount = activeSessionDiff?.stats?.files ?? activeSessionDiff?.diffs.length ?? 0
+
+  useEffect(() => {
+    setExpandedDiffFile(null)
+  }, [activeSession?.id, activeSessionDiff?.title])
 
   return (
     <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
@@ -366,72 +388,6 @@ export function RightSidebar({
           <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="right" variant="sidebar" />
         </div>
       </header>
-
-      <section className="right-sidebar-section">
-        <div className="right-sidebar-section-header">
-          <span className="label">Active Session</span>
-          {activeSession ? <span className="settings-badge">{activeSession.status}</span> : null}
-        </div>
-        {activeSession ? (
-          <div className="right-sidebar-stack">
-            <div>
-              <h4>{activeSession.title}</h4>
-              <p>{activeSession.summary}</p>
-            </div>
-            <div className="right-sidebar-meta-grid">
-              <article className="right-sidebar-metric">
-                <span className="right-sidebar-metric-label">Branch</span>
-                <strong>{activeSession.branch}</strong>
-              </article>
-              <article className="right-sidebar-metric">
-                <span className="right-sidebar-metric-label">Focus</span>
-                <strong>{activeSession.focus}</strong>
-              </article>
-              <article className="right-sidebar-metric">
-                <span className="right-sidebar-metric-label">Updated</span>
-                <strong>{formatTime(activeSession.updated)}</strong>
-              </article>
-              <article className="right-sidebar-metric">
-                <span className="right-sidebar-metric-label">Turns</span>
-                <strong>{String(activeTurnCount)}</strong>
-              </article>
-            </div>
-          </div>
-        ) : (
-          <div className="right-sidebar-empty">
-            <p>Select a session from the left sidebar to populate the inspector.</p>
-          </div>
-        )}
-      </section>
-
-      <section className="right-sidebar-section">
-        <div className="right-sidebar-section-header">
-          <span className="label">Workspace</span>
-          {selectedWorkspace ? <span className="settings-badge">{selectedWorkspace.sessions.length} sessions</span> : null}
-        </div>
-        {selectedWorkspace ? (
-          <div className="right-sidebar-stack">
-            <div>
-              <h4>{selectedWorkspace.name}</h4>
-              <p>{selectedWorkspace.project.name}</p>
-            </div>
-            <div className="right-sidebar-list">
-              <div className="right-sidebar-list-row">
-                <span>Directory</span>
-                <strong>{selectedWorkspace.directory}</strong>
-              </div>
-              <div className="right-sidebar-list-row">
-                <span>Worktree</span>
-                <strong>{selectedWorkspace.project.worktree}</strong>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="right-sidebar-empty">
-            <p>No workspace is currently selected.</p>
-          </div>
-        )}
-      </section>
 
       <section className="right-sidebar-section">
         <div className="right-sidebar-section-header">
@@ -445,12 +401,27 @@ export function RightSidebar({
               <div className="right-sidebar-change-list">
                 {activeSessionDiff.diffs.map((diff) => (
                   <div key={diff.file} className="right-sidebar-change-row">
-                    <div className="right-sidebar-change-copy">
-                      <strong>{diff.file}</strong>
-                    </div>
-                    <span className="right-sidebar-change-stat">
-                      +{diff.additions} -{diff.deletions}
-                    </span>
+                    <button
+                      type="button"
+                      className="right-sidebar-change-toggle"
+                      aria-expanded={expandedDiffFile === diff.file}
+                      aria-label={`Toggle diff for ${diff.file}`}
+                      onClick={() => setExpandedDiffFile((current) => (current === diff.file ? null : diff.file))}
+                    >
+                      <span className="right-sidebar-change-icon" aria-hidden="true">
+                        {expandedDiffFile === diff.file ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                      </span>
+                      <div className="right-sidebar-change-copy">
+                        <strong>{diff.file}</strong>
+                        <span className="right-sidebar-change-action">
+                          {expandedDiffFile === diff.file ? "Hide diff" : "Show diff"}
+                        </span>
+                      </div>
+                      <span className="right-sidebar-change-stat">
+                        +{diff.additions} -{diff.deletions}
+                      </span>
+                    </button>
+                    {expandedDiffFile === diff.file ? <DiffPreview file={diff.file} patch={diff.patch} /> : null}
                   </div>
                 ))}
               </div>
@@ -465,33 +436,6 @@ export function RightSidebar({
             <p>Select a session to inspect its file changes.</p>
           </div>
         )}
-      </section>
-
-      <section className="right-sidebar-section">
-        <div className="right-sidebar-section-header">
-          <span className="label">Runtime</span>
-          <span className={isAgentConnected ? "settings-badge is-highlight" : "settings-badge"}>
-            {isAgentConnected ? "Connected" : "Offline"}
-          </span>
-        </div>
-        <div className="right-sidebar-meta-grid">
-          <article className="right-sidebar-metric">
-            <span className="right-sidebar-metric-label">Mode</span>
-            <strong>{composerAgentMode}</strong>
-          </article>
-          <article className="right-sidebar-metric">
-            <span className="right-sidebar-metric-label">Model</span>
-            <strong>{selectedModelLabel}</strong>
-          </article>
-          <article className="right-sidebar-metric">
-            <span className="right-sidebar-metric-label">Attachments</span>
-            <strong>{String(attachmentCount)}</strong>
-          </article>
-          <article className="right-sidebar-metric">
-            <span className="right-sidebar-metric-label">Queue</span>
-            <strong>{runtimeStatus}</strong>
-          </article>
-        </div>
       </section>
     </aside>
   )

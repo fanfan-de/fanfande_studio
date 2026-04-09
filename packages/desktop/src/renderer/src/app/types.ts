@@ -96,6 +96,7 @@ export interface SessionDiffFile {
   file: string
   additions: number
   deletions: number
+  patch?: string
 }
 
 export interface SessionDiffSummary {

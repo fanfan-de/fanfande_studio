@@ -841,17 +841,54 @@ select {
 }
 
 .right-sidebar-change-row {
+  border: 1px solid rgba(166, 186, 208, 0.26);
+  background: #f8fbff;
+  overflow: hidden;
+}
+
+.right-sidebar-change-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: start;
   padding: 10px;
-  border: 1px solid rgba(166, 186, 208, 0.26);
-  background: #f8fbff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.right-sidebar-change-toggle:hover,
+.right-sidebar-change-toggle:focus-visible {
+  background: rgba(255, 255, 255, 0.72);
+  outline: none;
+}
+
+.right-sidebar-change-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #5a7186;
+}
+
+.right-sidebar-change-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.right-sidebar-change-action {
+  color: #60778d;
+  font-size: 12px;
 }
 
 .right-sidebar-change-copy {
   min-width: 0;
+  display: grid;
+  gap: 4px;
 }
 
 .right-sidebar-change-copy strong {
@@ -864,6 +901,53 @@ select {
   font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
   font-size: 12px;
   white-space: nowrap;
+}
+
+.right-sidebar-diff-preview {
+  border-top: 1px solid rgba(166, 186, 208, 0.26);
+  background: #ffffff;
+  overflow: auto;
+  max-height: 320px;
+}
+
+.right-sidebar-diff-code {
+  margin: 0;
+  padding: 10px 0;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  min-width: max-content;
+}
+
+.right-sidebar-diff-line {
+  display: block;
+  padding: 0 10px;
+}
+
+.right-sidebar-diff-line.is-meta {
+  color: #60778d;
+}
+
+.right-sidebar-diff-line.is-hunk {
+  background: #eef5ff;
+  color: #1b507a;
+}
+
+.right-sidebar-diff-line.is-add {
+  background: #eef9f0;
+  color: #245c3a;
+}
+
+.right-sidebar-diff-line.is-remove {
+  background: #fff1ef;
+  color: #8f3127;
+}
+
+.right-sidebar-diff-empty {
+  padding: 10px;
+  border-top: 1px solid rgba(166, 186, 208, 0.26);
+  background: #ffffff;
 }
 
 .right-sidebar-empty {

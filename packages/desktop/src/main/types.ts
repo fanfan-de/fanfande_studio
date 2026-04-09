@@ -114,6 +114,7 @@ export interface AgentSessionDiffFile {
   file: string
   additions: number
   deletions: number
+  patch?: string
 }
 
 export interface AgentSessionDiffSummary {
