@@ -535,3 +535,126 @@ npm run test
 3. 模型下拉框调 `GET /models`
 4. 默认模型切换调 `PATCH /model-selection`
 5. 发消息时，把 `{ providerID, modelID }` 透传给 `/api/sessions/:id/messages/stream`
+
+## 12. PTY / Terminal Routes
+
+The server now exposes a PTY module for the desktop terminal panel. The lifecycle stays in `packages/fanfandeagent`; Electron main is only a bridge/proxy.
+
+### 12.1 Route overview
+
+| Route | Status | Used by desktop | Notes |
+| --- | --- | --- | --- |
+| `POST /api/pty` | implemented | `desktop:create-pty-session` | Create a PTY session |
+| `GET /api/pty/:id` | implemented | `desktop:get-pty-session`, `desktop:attach-pty-session` | Query PTY state |
+| `PUT /api/pty/:id` | implemented | `desktop:update-pty-session` | Resize / retitle |
+| `DELETE /api/pty/:id` | implemented | `desktop:delete-pty-session` | Destroy a PTY session |
+| `GET /api/pty/:id/connect` | implemented | `desktop:attach-pty-session` via main proxy | PTY WebSocket attach/reconnect |
+
+### 12.2 Session shape
+
+`/api/pty*` returns and streams `PtySessionInfo`-style metadata with:
+
+```ts
+{
+  id: string
+  title: string
+  cwd: string
+  shell: string
+  rows: number
+  cols: number
+  status: "running" | "exited" | "deleted"
+  exitCode: number | null
+  createdAt: number
+  updatedAt: number
+  cursor: number
+}
+```
+
+### 12.3 HTTP contracts
+
+`POST /api/pty`
+
+```json
+{
+  "cwd": "C:\\Projects\\fanfande_studio",
+  "rows": 24,
+  "cols": 80,
+  "title": "Terminal 1"
+}
+```
+
+Success response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "pty_xxx",
+    "title": "Terminal 1",
+    "cwd": "C:\\Projects\\fanfande_studio",
+    "shell": "powershell.exe",
+    "rows": 24,
+    "cols": 80,
+    "status": "running",
+    "exitCode": null,
+    "createdAt": 0,
+    "updatedAt": 0,
+    "cursor": 0
+  },
+  "requestId": "uuid"
+}
+```
+
+`PUT /api/pty/:id` accepts partial updates for `rows`, `cols`, and `title`.
+
+`DELETE /api/pty/:id` marks the PTY deleted and tears down the runtime.
+
+### 12.4 WebSocket contract
+
+Desktop attaches through:
+
+`GET /api/pty/:id/connect?cursor=<lastKnownCursor>`
+
+The agent replies with structured messages:
+
+- `ready`: initial session metadata plus replay payload
+- `output`: incremental output chunk with new cursor
+- `state`: refreshed session metadata
+- `exited`: PTY exited
+- `deleted`: PTY deleted
+- `error`: protocol/runtime error
+
+Client messages currently supported:
+
+- `input`: write terminal stdin
+- `ping`: keepalive
+
+### 12.5 Recovery and retention
+
+- Each PTY keeps an in-memory buffer and monotonic `cursor`.
+- Reconnect with a `cursor` only replays missing output.
+- If the requested cursor is too old for the retained buffer window, the server falls back to a `reset` replay payload.
+- Exited PTYs stay queryable for a short retention window so the renderer can show an ended state before cleanup.
+
+### 12.6 Security boundaries
+
+- PTY routes continue to bind only on `127.0.0.1` with the rest of the agent server.
+- The desktop renderer must not connect to PTY routes directly.
+- PTY `cwd` is validated against the current project worktree / sandbox roots.
+- PTY environment variables are assembled from an allowlist instead of blindly inheriting the host environment.
+
+### 12.7 Events
+
+The PTY module publishes lifecycle events in the existing bus style:
+
+- `pty.created`
+- `pty.updated`
+- `pty.exited`
+- `pty.deleted`
+
+### 12.8 Tests
+
+```bash
+cd C:\Projects\fanfande_studio\packages\fanfandeagent
+bun test Test/server.pty.test.ts
+```

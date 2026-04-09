@@ -333,6 +333,7 @@
 2. 左侧文件夹与 session。
 3. 中间当前会话 thread。
 4. 底部带模型、模式和附件能力的 composer。
+5. composer 下方可展开的 terminal panel；折叠态入口固定在 canvas 左下角，展开态入口固定在 terminal 菜单栏最左侧。
 5. 右侧 Inspector。
 
 ### 8.3 无会话空态

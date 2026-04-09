@@ -803,7 +803,7 @@ export function CanvasTopMenu({
           <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="canvas" />
         ) : null}
       </div>
-      <div className="canvas-top-menu-group" aria-hidden="true" />
+      <div className="canvas-top-menu-group" />
       <div className="canvas-top-menu-trailing">
         <GitQuickMenuButton gitDirectory={gitDirectory} />
         {showRightSidebarToggleButton ? (

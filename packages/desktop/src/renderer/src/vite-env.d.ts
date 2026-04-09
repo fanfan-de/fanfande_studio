@@ -33,6 +33,79 @@ declare global {
         requestId?: string
         error?: string
       }>
+      createPtySession?: (input?: {
+        title?: string
+        cwd?: string
+        shell?: string
+        rows?: number
+        cols?: number
+      }) => Promise<{
+        id: string
+        title: string
+        cwd: string
+        shell: string
+        rows: number
+        cols: number
+        status: "running" | "exited" | "deleted"
+        exitCode: number | null
+        createdAt: number
+        updatedAt: number
+        cursor: number
+      }>
+      getPtySession?: (input: { id: string }) => Promise<{
+        id: string
+        title: string
+        cwd: string
+        shell: string
+        rows: number
+        cols: number
+        status: "running" | "exited" | "deleted"
+        exitCode: number | null
+        createdAt: number
+        updatedAt: number
+        cursor: number
+      }>
+      updatePtySession?: (input: { id: string; title?: string; rows?: number; cols?: number }) => Promise<{
+        id: string
+        title: string
+        cwd: string
+        shell: string
+        rows: number
+        cols: number
+        status: "running" | "exited" | "deleted"
+        exitCode: number | null
+        createdAt: number
+        updatedAt: number
+        cursor: number
+      }>
+      deletePtySession?: (input: { id: string }) => Promise<{
+        id: string
+        title: string
+        cwd: string
+        shell: string
+        rows: number
+        cols: number
+        status: "running" | "exited" | "deleted"
+        exitCode: number | null
+        createdAt: number
+        updatedAt: number
+        cursor: number
+      }>
+      attachPtySession?: (input: { id: string; cursor?: number }) => Promise<{
+        id: string
+        title: string
+        cwd: string
+        shell: string
+        rows: number
+        cols: number
+        status: "running" | "exited" | "deleted"
+        exitCode: number | null
+        createdAt: number
+        updatedAt: number
+        cursor: number
+      }>
+      detachPtySession?: (input: { id: string }) => Promise<boolean>
+      writePtyInput?: (input: { id: string; data: string }) => Promise<void>
       pickProjectDirectory?: () => Promise<string | null>
       pickComposerAttachments?: () => Promise<string[]>
       gitCommit?: (input: { directory: string; message: string }) => Promise<{
@@ -412,6 +485,72 @@ declare global {
           event: string
           data: unknown
         }) => void,
+      ) => () => void
+      onPtyEvent?: (
+        listener: (event:
+          | {
+              ptyID: string
+              type: "transport"
+              state: "connecting" | "connected" | "disconnected" | "error"
+              code?: number
+              reason?: string
+              userInitiated?: boolean
+              message?: string
+            }
+          | {
+              ptyID: string
+              type: "ready"
+              session: {
+                id: string
+                title: string
+                cwd: string
+                shell: string
+                rows: number
+                cols: number
+                status: "running" | "exited" | "deleted"
+                exitCode: number | null
+                createdAt: number
+                updatedAt: number
+                cursor: number
+              }
+              replay: {
+                mode: "delta" | "reset"
+                buffer: string
+                cursor: number
+                startCursor: number
+              }
+            }
+          | {
+              ptyID: string
+              type: "output"
+              id: string
+              data: string
+              cursor: number
+            }
+          | {
+              ptyID: string
+              type: "state" | "exited" | "deleted"
+              session: {
+                id: string
+                title: string
+                cwd: string
+                shell: string
+                rows: number
+                cols: number
+                status: "running" | "exited" | "deleted"
+                exitCode: number | null
+                createdAt: number
+                updatedAt: number
+                cursor: number
+              }
+            }
+          | {
+              ptyID: string
+              type: "error"
+              code: string
+              message: string
+            },
+        ) => void,
       ) => () => void
       onWindowStateChange?: (listener: (state: { isMaximized: boolean }) => void) => () => void
     }

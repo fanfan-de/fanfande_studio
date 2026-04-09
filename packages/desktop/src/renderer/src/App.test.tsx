@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PermissionRequestPrompt, PermissionResolveResult } from "../../shared/permission"
 import { App } from "./App"
@@ -134,6 +134,49 @@ describe("App", () => {
         ok: false,
         baseURL: "http://127.0.0.1:4096",
       }),
+      createPtySession: vi.fn().mockResolvedValue({
+        id: "pty-1",
+        title: "Terminal 1",
+        cwd: "C:\\Projects\\fanfande_studio",
+        shell: "powershell.exe",
+        rows: 24,
+        cols: 80,
+        status: "running",
+        exitCode: null,
+        createdAt: 1,
+        updatedAt: 1,
+        cursor: 0,
+      }),
+      getPtySession: vi.fn().mockResolvedValue({
+        id: "pty-1",
+        title: "Terminal 1",
+        cwd: "C:\\Projects\\fanfande_studio",
+        shell: "powershell.exe",
+        rows: 24,
+        cols: 80,
+        status: "running",
+        exitCode: null,
+        createdAt: 1,
+        updatedAt: 1,
+        cursor: 0,
+      }),
+      updatePtySession: vi.fn().mockResolvedValue(undefined),
+      deletePtySession: vi.fn().mockResolvedValue(undefined),
+      attachPtySession: vi.fn().mockResolvedValue({
+        id: "pty-1",
+        title: "Terminal 1",
+        cwd: "C:\\Projects\\fanfande_studio",
+        shell: "powershell.exe",
+        rows: 24,
+        cols: 80,
+        status: "running",
+        exitCode: null,
+        createdAt: 1,
+        updatedAt: 1,
+        cursor: 0,
+      }),
+      detachPtySession: vi.fn().mockResolvedValue(true),
+      writePtyInput: vi.fn().mockResolvedValue(undefined),
       pickProjectDirectory: vi.fn().mockResolvedValue(null),
       pickComposerAttachments: vi.fn().mockResolvedValue([]),
       gitCommit: vi.fn().mockResolvedValue({
@@ -202,6 +245,7 @@ describe("App", () => {
       }),
       showMenu: vi.fn().mockResolvedValue(undefined),
       windowAction: vi.fn().mockResolvedValue(undefined),
+      onPtyEvent: vi.fn(() => vi.fn()),
       onWindowStateChange: vi.fn(() => vi.fn()),
     }
   })
@@ -2382,6 +2426,177 @@ describe("App", () => {
 
     expect(appFolder).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
+  })
+
+  it("toggles the terminal panel from the canvas bottom-left anchor and auto-creates the first terminal", async () => {
+    render(<App />)
+
+    const collapsedToggle = screen.getByRole("button", { name: "Toggle terminal panel" })
+    expect(collapsedToggle.closest(".canvas-terminal-toggle-anchor")).not.toBeNull()
+
+    fireEvent.click(collapsedToggle)
+
+    await waitFor(() => {
+      expect(window.desktop!.createPtySession).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.attachPtySession).toHaveBeenCalledWith({
+        id: "pty-1",
+        cursor: 0,
+      })
+    })
+
+    expect(screen.getByRole("tablist", { name: "Terminal tabs" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "New terminal" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Toggle terminal panel" }).closest(".terminal-tabs")).not.toBeNull()
+
+    const composer = document.querySelector(".composer")
+    const terminalPanel = document.querySelector(".terminal-panel")
+    expect(composer).not.toBeNull()
+    expect(terminalPanel).not.toBeNull()
+    expect(composer!.compareDocumentPosition(terminalPanel!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle terminal panel" }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole("tablist", { name: "Terminal tabs" })).not.toBeInTheDocument()
+    })
+
+    expect(screen.getByRole("button", { name: "Toggle terminal panel" }).closest(".canvas-terminal-toggle-anchor")).not.toBeNull()
+  })
+
+  it("keeps terminal output when switching between tabs", async () => {
+    let ptyListener:
+      | ((event: {
+          ptyID: string
+          type: string
+          [key: string]: unknown
+        }) => void)
+      | undefined
+
+    window.desktop!.onPtyEvent = vi.fn((listener) => {
+      ptyListener = listener
+      return vi.fn()
+    })
+    window.desktop!.createPtySession = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "pty-1",
+        title: "Terminal 1",
+        cwd: "C:\\Projects\\fanfande_studio",
+        shell: "powershell.exe",
+        rows: 24,
+        cols: 80,
+        status: "running",
+        exitCode: null,
+        createdAt: 1,
+        updatedAt: 1,
+        cursor: 0,
+      })
+      .mockResolvedValueOnce({
+        id: "pty-2",
+        title: "Terminal 2",
+        cwd: "C:\\Projects\\fanfande_studio",
+        shell: "powershell.exe",
+        rows: 24,
+        cols: 80,
+        status: "running",
+        exitCode: null,
+        createdAt: 2,
+        updatedAt: 2,
+        cursor: 0,
+      })
+    window.desktop!.attachPtySession = vi.fn().mockImplementation(async ({ id }: { id: string }) => ({
+      id,
+      title: id === "pty-1" ? "Terminal 1" : "Terminal 2",
+      cwd: "C:\\Projects\\fanfande_studio",
+      shell: "powershell.exe",
+      rows: 24,
+      cols: 80,
+      status: "running",
+      exitCode: null,
+      createdAt: 1,
+      updatedAt: 1,
+      cursor: 0,
+    }))
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle terminal panel" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.createPtySession).toHaveBeenCalledTimes(1)
+    })
+
+    act(() => {
+      ptyListener?.({
+        ptyID: "pty-1",
+        type: "ready",
+        session: {
+          id: "pty-1",
+          title: "Terminal 1",
+          cwd: "C:\\Projects\\fanfande_studio",
+          shell: "powershell.exe",
+          rows: 24,
+          cols: 80,
+          status: "running",
+          exitCode: null,
+          createdAt: 1,
+          updatedAt: 1,
+          cursor: 12,
+        },
+        replay: {
+          mode: "reset",
+          buffer: "first output",
+          cursor: 12,
+          startCursor: 0,
+        },
+      })
+    })
+
+    expect(await screen.findByText("first output")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "New terminal" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.createPtySession).toHaveBeenCalledTimes(2)
+      expect(window.desktop!.attachPtySession).toHaveBeenCalledWith({
+        id: "pty-2",
+        cursor: 0,
+      })
+    })
+
+    act(() => {
+      ptyListener?.({
+        ptyID: "pty-2",
+        type: "ready",
+        session: {
+          id: "pty-2",
+          title: "Terminal 2",
+          cwd: "C:\\Projects\\fanfande_studio",
+          shell: "powershell.exe",
+          rows: 24,
+          cols: 80,
+          status: "running",
+          exitCode: null,
+          createdAt: 2,
+          updatedAt: 2,
+          cursor: 13,
+        },
+        replay: {
+          mode: "reset",
+          buffer: "second output",
+          cursor: 13,
+          startCursor: 0,
+        },
+      })
+    })
+
+    expect(await screen.findByText("second output")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("tab", { name: /Terminal 1/i }))
+    expect(await screen.findByText("first output")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("tab", { name: /Terminal 2/i }))
+    expect(await screen.findByText("second output")).toBeInTheDocument()
   })
 
   it("collapses the sidebar from the rail toggle and restores it on second click", () => {

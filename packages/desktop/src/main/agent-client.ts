@@ -15,6 +15,23 @@ export function resolveAgentURL(pathname: string) {
   return new URL(pathname, normalizedBase).toString()
 }
 
+export function resolveAgentWebSocketURL(
+  pathname: string,
+  searchParams?: Record<string, string | number | undefined>,
+) {
+  const url = new URL(resolveAgentURL(pathname))
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+
+  if (searchParams) {
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (value === undefined || value === null || value === "") continue
+      url.searchParams.set(key, String(value))
+    }
+  }
+
+  return url.toString()
+}
+
 export async function requestAgentJSON<T>(pathname: string, init?: RequestInit) {
   const response = await fetch(resolveAgentURL(pathname), init)
   const envelope = (await response.json().catch(() => null)) as AgentEnvelope<T> | null

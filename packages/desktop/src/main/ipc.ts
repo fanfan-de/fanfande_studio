@@ -3,9 +3,11 @@ import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolve
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
 import { commitGitChanges, pushGitChanges } from "./git"
 import type { ApplicationMenus } from "./menu"
+import { PtyProxyManager, PTY_EVENT_CHANNEL } from "./pty-proxy"
 import type {
   AgentEnvelope,
   AgentProjectModelSelection,
+  AgentPtySessionInfo,
   AgentProviderCatalogItem,
   AgentProviderModel,
   AgentProjectDeleteResult,
@@ -72,6 +74,8 @@ async function listFolderWorkspaces() {
 }
 
 export function registerIpcHandlers(menus: ApplicationMenus) {
+  const ptyProxyManager = new PtyProxyManager()
+
   ipcMain.handle("desktop:get-info", () => ({
     platform: process.platform,
     electron: process.versions.electron,
@@ -147,6 +151,86 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
   ipcMain.handle("desktop:list-folder-workspaces", async () => listFolderWorkspaces())
   ipcMain.handle("desktop:list-project-workspaces", async () => listProjectWorkspaces())
+
+  ipcMain.handle(
+    "desktop:create-pty-session",
+    async (
+      _event,
+      input?: {
+        title?: string
+        cwd?: string
+        shell?: string
+        rows?: number
+        cols?: number
+      },
+    ) => {
+      const result = await requestAgentJSON<AgentPtySessionInfo>("/api/pty", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input ?? {}),
+      })
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:get-pty-session", async (_event, input: { id: string }) => {
+    const id = input.id.trim()
+    const result = await requestAgentJSON<AgentPtySessionInfo>(`/api/pty/${encodeURIComponent(id)}`)
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:update-pty-session",
+    async (
+      _event,
+      input: {
+        id: string
+        title?: string
+        rows?: number
+        cols?: number
+      },
+    ) => {
+      const id = input.id.trim()
+      const result = await requestAgentJSON<AgentPtySessionInfo>(`/api/pty/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          title: input.title,
+          rows: input.rows,
+          cols: input.cols,
+        }),
+      })
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:delete-pty-session", async (event, input: { id: string }) => {
+    const id = input.id.trim()
+    ptyProxyManager.detach(event.sender, id)
+    const result = await requestAgentJSON<AgentPtySessionInfo>(`/api/pty/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    })
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:attach-pty-session", async (event, input: { id: string; cursor?: number }) =>
+    ptyProxyManager.attach(event.sender, input),
+  )
+
+  ipcMain.handle("desktop:detach-pty-session", async (event, input: { id: string }) =>
+    ptyProxyManager.detach(event.sender, input.id),
+  )
+
+  ipcMain.handle("desktop:write-pty-input", async (event, input: { id: string; data: string }) =>
+    ptyProxyManager.write(event.sender, input),
+  )
 
   ipcMain.handle("desktop:pick-project-directory", async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -631,7 +715,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           } satisfies AgentStreamIPCEvent)
         })
       } catch (error) {
-        event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
+          event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
           streamID,
           event: "error",
           data: {

@@ -187,3 +187,68 @@ export interface AgentProjectModelSelection {
   model?: string
   small_model?: string
 }
+
+export interface AgentPtySessionInfo {
+  id: string
+  title: string
+  cwd: string
+  shell: string
+  rows: number
+  cols: number
+  status: "running" | "exited" | "deleted"
+  exitCode: number | null
+  createdAt: number
+  updatedAt: number
+  cursor: number
+}
+
+export interface AgentPtyReplayPayload {
+  mode: "delta" | "reset"
+  buffer: string
+  cursor: number
+  startCursor: number
+}
+
+export type AgentPtySocketMessage =
+  | {
+      type: "ready"
+      session: AgentPtySessionInfo
+      replay: AgentPtyReplayPayload
+    }
+  | {
+      type: "output"
+      id: string
+      data: string
+      cursor: number
+    }
+  | {
+      type: "state"
+      session: AgentPtySessionInfo
+    }
+  | {
+      type: "exited"
+      session: AgentPtySessionInfo
+    }
+  | {
+      type: "deleted"
+      session: AgentPtySessionInfo
+    }
+  | {
+      type: "error"
+      code: string
+      message: string
+    }
+
+export type PtyTransportIPCEvent =
+  | {
+      ptyID: string
+      type: "transport"
+      state: "connecting" | "connected" | "disconnected" | "error"
+      code?: number
+      reason?: string
+      userInitiated?: boolean
+      message?: string
+    }
+  | ({
+      ptyID: string
+    } & AgentPtySocketMessage)

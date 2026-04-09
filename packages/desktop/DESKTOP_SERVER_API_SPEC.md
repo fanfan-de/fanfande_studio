@@ -310,3 +310,67 @@ Recommended desktop integration order:
 3. Populate the model picker from `GET /models`.
 4. Persist default model choice with `PATCH /model-selection`.
 5. Pass `{ providerID, modelID }` to `POST /api/sessions/:id/messages/stream` when sending a chat message.
+
+## 11. PTY / Terminal Panel API
+
+The desktop app now exposes a first-stage terminal flow that strictly stays on the existing chain:
+
+`renderer -> window.desktop -> preload -> Electron main -> fanfandeagent`
+
+The renderer does not call the sidecar PTY HTTP API directly and does not open a WebSocket to the agent directly.
+
+### 11.1 Bridge methods
+
+| `window.desktop` method | IPC channel | Server/API dependency | Purpose |
+| --- | --- | --- | --- |
+| `createPtySession({ cwd?, rows?, cols?, shell?, title? })` | `desktop:create-pty-session` | `POST /api/pty` | Create a PTY session in the agent |
+| `getPtySession({ id })` | `desktop:get-pty-session` | `GET /api/pty/:id` | Query PTY session metadata |
+| `updatePtySession({ id, rows?, cols?, title? })` | `desktop:update-pty-session` | `PUT /api/pty/:id` | Resize or retitle a PTY session |
+| `deletePtySession({ id })` | `desktop:delete-pty-session` | `DELETE /api/pty/:id` | Destroy a PTY session |
+| `attachPtySession({ id, cursor? })` | `desktop:attach-pty-session` | `GET /api/pty/:id` + `GET /api/pty/:id/connect` | Ask main to create a proxied PTY socket for the current renderer |
+| `detachPtySession({ id })` | `desktop:detach-pty-session` | proxied socket cleanup | Close the proxied PTY socket for the current renderer |
+| `writePtyInput({ id, data })` | `desktop:write-pty-input` | proxied socket message | Send terminal stdin through the main-owned WebSocket |
+| `onPtyEvent(listener)` | `desktop:pty-event` | main forwarded socket events | Subscribe to PTY transport and output events |
+
+### 11.2 Agent routes used by desktop
+
+| Route | Used by | Notes |
+| --- | --- | --- |
+| `POST /api/pty` | `createPtySession()` | Returns PTY session info in the standard JSON envelope |
+| `GET /api/pty/:id` | `getPtySession()` and `attachPtySession()` | Used to validate existence and hydrate metadata |
+| `PUT /api/pty/:id` | `updatePtySession()` | Current desktop usage is terminal resize |
+| `DELETE /api/pty/:id` | `deletePtySession()` | PTY lifecycle stays in the agent |
+| `GET /api/pty/:id/connect` | `attachPtySession()` via main proxy | Main owns the WebSocket and forwards events to renderer |
+
+### 11.3 Renderer event model
+
+The proxied PTY event stream follows the same "main forwards, renderer consumes" principle as `onAgentStreamEvent()`.
+
+Current event families:
+
+- `transport`: main-side socket state changes (`connecting`, `connected`, `disconnected`, `error`)
+- `ready`: initial attach success, session metadata, and replay payload
+- `output`: incremental PTY output with the latest cursor
+- `state`: session metadata refresh
+- `exited`: PTY exit notification with `exitCode`
+- `deleted`: PTY deleted notification
+- `error`: protocol/runtime error for this PTY
+
+### 11.4 Recovery contract
+
+- Renderer persists a terminal workspace snapshot in `localStorage`.
+- Snapshot fields include `ptyID`, `buffer`, `cursor`, `rows`, `cols`, `scrollTop`, `title`, and `status`.
+- Re-mount first restores the local snapshot, then asks main to attach with the last known `cursor`.
+- Main does not own terminal business state; it only owns the renderer <-> socket mapping.
+- The agent keeps the PTY buffer and cursor and only replays missing output on reconnect.
+
+### 11.5 Verification commands
+
+```powershell
+cd C:\Projects\fanfande_studio\packages\desktop
+npm run typecheck
+npm run test
+
+cd C:\Projects\fanfande_studio\packages\fanfandeagent
+bun test Test/server.pty.test.ts
+```
