@@ -285,12 +285,12 @@ export function SessionRoutes() {
 
     const diff = await Instance.provide({
       directory: session.directory,
-      fn: () => SessionDiff.computeSessionDiffSummary(sessionID),
+      fn: () => SessionDiff.computeSessionDetailedDiff(sessionID),
     })
 
     return c.json({
       success: true,
-      data: diff ?? SessionDiff.buildDiffSummary([]),
+      data: diff ?? SessionDiff.buildDetailedDiffSummary([]),
       requestId: c.get("requestId"),
     })
   })

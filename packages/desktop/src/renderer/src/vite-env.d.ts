@@ -179,6 +179,7 @@ declare global {
           file: string
           additions: number
           deletions: number
+          patch?: string
         }>
       }>
       getSessionPermissionRequests?: (input: { sessionID: string }) => Promise<

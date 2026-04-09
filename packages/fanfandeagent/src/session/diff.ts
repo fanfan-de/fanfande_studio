@@ -3,11 +3,15 @@ import * as Message from "#session/message.ts"
 import { Snapshot } from "#snapshot/index.ts"
 import {
     buildDiffSummary as buildCompactDiffSummary,
+    buildDetailedDiffSummary as buildDetailedDiffSummaryBase,
     summarizeSnapshotFileDiffs,
     type CompactFileDiff,
 } from "#session/diff-summary.ts"
 
 export type DiffSummary = NonNullable<Message.User["diffSummary"]>
+export interface DetailedDiffSummary extends Omit<DiffSummary, "diffs"> {
+    diffs: Snapshot.FileDiff[]
+}
 
 function listSessionParts(sessionID: string) {
     return db.findManyWithSchema("parts", Message.Part, {
@@ -32,6 +36,10 @@ export function summarizeFileDiffs(diffs: Snapshot.FileDiff[]): Message.FileChan
 
 export function buildDiffSummary(diffs: Message.FileChangeSummary[]): DiffSummary {
     return buildCompactDiffSummary(diffs as CompactFileDiff[])
+}
+
+export function buildDetailedDiffSummary(diffs: Snapshot.FileDiff[]): DetailedDiffSummary {
+    return buildDetailedDiffSummaryBase(diffs)
 }
 
 export function findEarliestSessionSnapshot(sessionID: string): string | undefined {
@@ -81,8 +89,24 @@ export async function computeDiffSummaryFromSnapshot(snapshot: string): Promise<
     return buildDiffSummary(diffs)
 }
 
+export async function computeDetailedDiffFromSnapshot(snapshot: string): Promise<DetailedDiffSummary> {
+    const currentSnapshot = await Snapshot.track()
+    if (!currentSnapshot) {
+        return buildDetailedDiffSummary([])
+    }
+
+    const diffs = await Snapshot.diffFull(snapshot, currentSnapshot)
+    return buildDetailedDiffSummary(diffs)
+}
+
 export async function computeSessionDiffSummary(sessionID: string): Promise<DiffSummary | null> {
     const baseline = findEarliestSessionSnapshot(sessionID)
     if (!baseline) return null
     return computeDiffSummaryFromSnapshot(baseline)
+}
+
+export async function computeSessionDetailedDiff(sessionID: string): Promise<DetailedDiffSummary | null> {
+    const baseline = findEarliestSessionSnapshot(sessionID)
+    if (!baseline) return null
+    return computeDetailedDiffFromSnapshot(baseline)
 }

@@ -192,6 +192,7 @@ describe("App", () => {
 
   it("renders the custom desktop titlebar and folder workspace", async () => {
     const { container } = render(<App />)
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
 
     expect(screen.getByRole("button", { name: "File" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
@@ -205,7 +206,11 @@ describe("App", () => {
     expect(screen.getAllByText("Project 2").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument()
-    expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
+    expect(inspector).toBeInTheDocument()
+    expect(within(inspector).getByText("Changed Files")).toBeInTheDocument()
+    expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
+    expect(within(inspector).queryByText("Workspace")).not.toBeInTheDocument()
+    expect(within(inspector).queryByText("Runtime")).not.toBeInTheDocument()
     await waitFor(() => {
       expect(container.querySelector(".canvas-header")).not.toBeInTheDocument()
       expect(container.querySelector(".signal-row")).not.toBeInTheDocument()
@@ -412,11 +417,32 @@ describe("App", () => {
           file: "src/App.tsx",
           additions: 5,
           deletions: 1,
+          patch: [
+            "diff --git a/src/App.tsx b/src/App.tsx",
+            "index 1111111..2222222 100644",
+            "--- a/src/App.tsx",
+            "+++ b/src/App.tsx",
+            "@@ -1,2 +1,2 @@",
+            '-import { OldToolbar } from "./toolbar"',
+            '+import { NewToolbar } from "./toolbar"',
+            ' export function App() {',
+          ].join("\n"),
         },
         {
           file: "src/styles.css",
           additions: 3,
           deletions: 2,
+          patch: [
+            "diff --git a/src/styles.css b/src/styles.css",
+            "index 3333333..4444444 100644",
+            "--- a/src/styles.css",
+            "+++ b/src/styles.css",
+            "@@ -12,2 +12,3 @@",
+            "-.toolbar { display: flex; }",
+            "+.toolbar {",
+            "+  display: grid;",
+            "+}",
+          ].join("\n"),
         },
       ],
     })
@@ -427,6 +453,12 @@ describe("App", () => {
     expect(screen.getByText(/src\/App\.tsx \(\+5 -1\).*src\/styles\.css \(\+3 -2\)/)).toBeInTheDocument()
     expect(screen.getAllByText("src/App.tsx").length).toBeGreaterThan(0)
     expect(screen.getAllByText("src/styles.css").length).toBeGreaterThan(0)
+    expect(screen.queryByText("@@ -1,2 +1,2 @@")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle diff for src/App.tsx" }))
+
+    expect(screen.getByText("@@ -1,2 +1,2 @@")).toBeInTheDocument()
+    expect(screen.getByText('+import { NewToolbar } from "./toolbar"')).toBeInTheDocument()
     expect(window.desktop!.getSessionDiff).toHaveBeenCalledWith({
       sessionID: "session-atlas-review",
     })

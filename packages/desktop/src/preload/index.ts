@@ -196,6 +196,7 @@ try {
           file: string
           additions: number
           deletions: number
+          patch?: string
         }>
       }>,
     getSessionPermissionRequests: (input: { sessionID: string }) =>

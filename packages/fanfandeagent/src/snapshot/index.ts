@@ -189,6 +189,7 @@ export namespace Snapshot {
       after: z.string(),
       additions: z.number(),
       deletions: z.number(),
+      patch: z.string().optional(),
     })
     .meta({
       ref: "FileDiff",
@@ -209,6 +210,25 @@ export namespace Snapshot {
       return `[DEBUG ERROR] git show ${hash}:${file} failed: ${stderr}`
     }
 
+    const showPatch = async (file: string) => {
+      const response =
+        await $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --no-renames ${from} ${to} -- ${file}`
+          .quiet()
+          .cwd(Instance.directory)
+          .nothrow()
+
+      if (response.exitCode === 0) return response.text().trim()
+
+      log.warn("failed to get file diff patch", {
+        file,
+        from,
+        to,
+        exitCode: response.exitCode,
+        stderr: response.stderr.toString(),
+      })
+      return ""
+    }
+
     for await (const line of $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --no-renames --numstat ${from} ${to} -- .`
       .quiet()
       .cwd(Instance.directory)
@@ -221,6 +241,7 @@ export namespace Snapshot {
 
       const before = isBinaryFile ? "" : await show(from, file)
       const after = isBinaryFile ? "" : await show(to, file)
+      const patch = await showPatch(file)
       const added = isBinaryFile ? 0 : parseInt(additions!)
       const deleted = isBinaryFile ? 0 : parseInt(deletions!)
       result.push({
@@ -229,6 +250,7 @@ export namespace Snapshot {
         after,
         additions: Number.isFinite(added) ? added : 0,
         deletions: Number.isFinite(deleted) ? deleted : 0,
+        patch,
       })
     }
     return result

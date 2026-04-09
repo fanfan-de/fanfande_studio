@@ -73,7 +73,6 @@ export function App() {
     permissionRequestActionError,
     permissionRequestActionRequestID,
     projectRowRefs,
-    selectedWorkspace,
     selectedFolderID,
     setDraft,
     setHoveredFolderID,
@@ -205,14 +204,6 @@ export function App() {
             <RightSidebar
               activeSession={activeSession}
               activeSessionDiff={activeSessionDiff}
-              activeTurnCount={activeTurns.length}
-              attachmentCount={composerAttachments.length}
-              composerAgentMode={composerAgentMode}
-              isAgentConnected={agentConnected}
-              isSending={isSending}
-              pendingPermissionRequestCount={activePendingPermissionRequests.length + (isResolvingPermissionRequest ? 1 : 0)}
-              selectedModelLabel={composerSelectedModelLabel}
-              selectedWorkspace={selectedWorkspace}
               onToggleSidebar={handleRightSidebarToggle}
             />
           </>
