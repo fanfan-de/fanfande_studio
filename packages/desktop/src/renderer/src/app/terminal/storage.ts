@@ -9,6 +9,9 @@ const TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v1"
 const DEFAULT_PANEL_HEIGHT = 280
 
 function toStoredSession(session: TerminalSessionRecord): TerminalStorageSessionSnapshot {
+  // PTY scrollback is live data owned by the backend. Persist only the
+  // structural shell state so typing and streaming output do not rewrite
+  // large buffers into localStorage on every frame.
   return {
     ptyID: session.ptyID,
     title: session.title,
@@ -19,10 +22,10 @@ function toStoredSession(session: TerminalSessionRecord): TerminalStorageSession
     status: session.status,
     exitCode: session.exitCode,
     createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    cursor: session.cursor,
-    buffer: session.buffer,
-    scrollTop: session.scrollTop,
+    updatedAt: session.createdAt,
+    cursor: 0,
+    buffer: "",
+    scrollTop: 0,
   }
 }
 
@@ -74,6 +77,12 @@ export function loadTerminalWorkspaceState(): TerminalWorkspaceState {
 export function saveTerminalWorkspaceState(state: TerminalWorkspaceState) {
   if (typeof window === "undefined") return
 
+  const payload = serializeTerminalWorkspaceState(state)
+
+  window.localStorage.setItem(TERMINAL_STORAGE_KEY, payload)
+}
+
+export function serializeTerminalWorkspaceState(state: TerminalWorkspaceState) {
   const payload: TerminalStoragePayload = {
     version: 1,
     isOpen: state.isOpen,
@@ -83,11 +92,10 @@ export function saveTerminalWorkspaceState(state: TerminalWorkspaceState) {
     panelHeight: state.panelHeight,
   }
 
-  window.localStorage.setItem(TERMINAL_STORAGE_KEY, JSON.stringify(payload))
+  return JSON.stringify(payload)
 }
 
 export function clearTerminalWorkspaceState() {
   if (typeof window === "undefined") return
   window.localStorage.removeItem(TERMINAL_STORAGE_KEY)
 }
-

@@ -44,9 +44,9 @@ describe("terminal storage", () => {
     expect(restored.panelHeight).toBe(320)
     expect(restored.sessions["pty-1"]).toMatchObject({
       title: "Workspace shell",
-      buffer: "hello world",
-      cursor: 11,
-      scrollTop: 4,
+      buffer: "",
+      cursor: 0,
+      scrollTop: 0,
       transportState: "idle",
     })
   })
@@ -68,4 +68,3 @@ describe("terminal storage", () => {
     expect(loadTerminalWorkspaceState()).toEqual(createEmptyTerminalWorkspaceState())
   })
 })
-

@@ -1,6 +1,6 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react"
 import { mapPtySessionInfoToRecord, terminalClient } from "./client"
-import { createEmptyTerminalWorkspaceState, loadTerminalWorkspaceState, saveTerminalWorkspaceState } from "./storage"
+import { loadTerminalWorkspaceState, saveTerminalWorkspaceState, serializeTerminalWorkspaceState } from "./storage"
 import type { PtyEvent, TerminalSessionRecord, TerminalWorkspaceState } from "./types"
 
 const MIN_PANEL_HEIGHT = 220
@@ -19,6 +19,21 @@ function nextActivePtyID(order: string[], removedPtyID: string) {
   const index = order.indexOf(removedPtyID)
   if (index === -1) return order[0] ?? null
   return order[index + 1] ?? order[index - 1] ?? null
+}
+
+function removeSession(state: TerminalWorkspaceState, ptyID: string): TerminalWorkspaceState {
+  if (!state.sessions[ptyID]) return state
+
+  const nextOrder = state.order.filter((id) => id !== ptyID)
+  const nextSessions = { ...state.sessions }
+  delete nextSessions[ptyID]
+
+  return {
+    ...state,
+    activePtyID: state.activePtyID === ptyID ? nextActivePtyID(nextOrder, ptyID) : state.activePtyID,
+    order: nextOrder,
+    sessions: nextSessions,
+  }
 }
 
 function upsertSession(state: TerminalWorkspaceState, session: TerminalSessionRecord, activate = false): TerminalWorkspaceState {
@@ -71,6 +86,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
   const reconnectAttemptsRef = useRef<Record<string, number>>({})
   const resizeTimersRef = useRef<Record<string, number>>({})
   const persistTimerRef = useRef<number | null>(null)
+  const persistedSnapshotRef = useRef(serializeTerminalWorkspaceState(workspace))
 
   const sessions = useMemo(() => orderedSessions(workspace), [workspace])
   const activeSession = workspace.activePtyID ? workspace.sessions[workspace.activePtyID] ?? null : null
@@ -80,6 +96,12 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
   }, [workspace])
 
   useEffect(() => {
+    const nextSnapshot = serializeTerminalWorkspaceState(workspace)
+    if (nextSnapshot === persistedSnapshotRef.current) {
+      return
+    }
+    persistedSnapshotRef.current = nextSnapshot
+
     if (persistTimerRef.current !== null) {
       window.clearTimeout(persistTimerRef.current)
     }
@@ -110,6 +132,17 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
       delete reconnectTimersRef.current[ptyID]
     }
     delete reconnectAttemptsRef.current[ptyID]
+  }
+
+  async function replaceMissingSession(ptyID: string) {
+    const current = workspaceRef.current
+    const shouldCreateReplacement = current.isOpen && current.activePtyID === ptyID && current.order.length === 1
+
+    updateWorkspace((workspaceState) => removeSession(workspaceState, ptyID))
+
+    if (shouldCreateReplacement) {
+      await handleCreateTerminal(true)
+    }
   }
 
   async function detachSession(ptyID: string, userInitiated = false) {
@@ -208,6 +241,11 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
       const message = error instanceof Error ? error.message : String(error)
       const isMissing = /not found/i.test(message)
 
+      if (isMissing) {
+        await replaceMissingSession(ptyID)
+        return
+      }
+
       updateWorkspace((current) => {
         const session = current.sessions[ptyID]
         if (!session) return current
@@ -217,7 +255,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
             ...current.sessions,
             [ptyID]: {
               ...session,
-              status: isMissing ? "invalid" : session.status,
+              status: session.status,
               transportState: "error",
               lastError: message,
             },
@@ -225,9 +263,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
         }
       })
 
-      if (!isMissing) {
-        scheduleReconnect(ptyID)
-      }
+      scheduleReconnect(ptyID)
     }
   }
 
@@ -254,7 +290,8 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
                         : event.state === "connected"
                           ? "connected"
                           : "disconnected",
-                  lastError: event.state === "error" ? event.message : session.lastError,
+                  lastError:
+                    event.state === "error" ? event.message : event.state === "connected" ? undefined : session.lastError,
                 },
               },
             }
@@ -517,13 +554,15 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
     updateWorkspace((current) => {
       const session = current.sessions[ptyID]
       if (!session) return current
+      const nextScrollTop = input.scrollTop ?? session.scrollTop
+      if (nextScrollTop === session.scrollTop) return current
       return {
         ...current,
         sessions: {
           ...current.sessions,
           [ptyID]: {
             ...session,
-            scrollTop: input.scrollTop ?? session.scrollTop,
+            scrollTop: nextScrollTop,
           },
         },
       }

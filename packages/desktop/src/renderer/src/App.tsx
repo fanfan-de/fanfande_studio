@@ -110,24 +110,6 @@ export function App() {
     setSelectionDraftValue,
   } = useSettingsPage()
 
-  const {
-    activeSession: activeTerminalSession,
-    handleCloseTerminal,
-    handleCreateTerminal,
-    handlePanelHeightChange,
-    handleSelectTerminal,
-    handleTerminalInput,
-    handleTerminalResize,
-    handleTerminalSnapshotChange,
-    handleTogglePanel,
-    isOpen: isTerminalPanelOpen,
-    panelHeight: terminalPanelHeight,
-    sessions: terminalSessions,
-  } = useTerminalWorkspace({
-    defaultCwd: agentDefaultDirectory,
-    currentWorkspaceDirectory: selectedWorkspace?.directory ?? null,
-  })
-
   return (
     <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
       <Titlebar
@@ -212,24 +194,9 @@ export function App() {
             onRemoveAttachment={handleRemoveComposerAttachment}
             onSend={handleSend}
           />
-          {!isTerminalPanelOpen ? (
-            <div className="canvas-terminal-toggle-anchor">
-              <TerminalPanelToggleButton isOpen={false} onToggle={() => void handleTogglePanel()} />
-            </div>
-          ) : null}
-          <TerminalPanel
-            activeSession={activeTerminalSession}
-            isOpen={isTerminalPanelOpen}
-            panelHeight={terminalPanelHeight}
-            sessions={terminalSessions}
-            onCloseTerminal={handleCloseTerminal}
-            onCreateTerminal={handleCreateTerminal}
-            onPanelHeightChange={handlePanelHeightChange}
-            onSelectTerminal={handleSelectTerminal}
-            onTerminalInput={handleTerminalInput}
-            onTerminalResize={handleTerminalResize}
-            onTerminalSnapshotChange={handleTerminalSnapshotChange}
-            onTogglePanel={() => void handleTogglePanel()}
+          <TerminalArea
+            currentWorkspaceDirectory={selectedWorkspace?.directory ?? null}
+            defaultCwd={agentDefaultDirectory}
           />
         </section>
 
@@ -275,5 +242,54 @@ export function App() {
         />
       </main>
     </div>
+  )
+}
+
+interface TerminalAreaProps {
+  currentWorkspaceDirectory: string | null
+  defaultCwd: string
+}
+
+function TerminalArea({ currentWorkspaceDirectory, defaultCwd }: TerminalAreaProps) {
+  const {
+    activeSession,
+    handleCloseTerminal,
+    handleCreateTerminal,
+    handlePanelHeightChange,
+    handleSelectTerminal,
+    handleTerminalInput,
+    handleTerminalResize,
+    handleTerminalSnapshotChange,
+    handleTogglePanel,
+    isOpen,
+    panelHeight,
+    sessions,
+  } = useTerminalWorkspace({
+    defaultCwd,
+    currentWorkspaceDirectory,
+  })
+
+  return (
+    <>
+      {!isOpen ? (
+        <div className="canvas-terminal-toggle-anchor">
+          <TerminalPanelToggleButton isOpen={false} onToggle={() => void handleTogglePanel()} />
+        </div>
+      ) : null}
+      <TerminalPanel
+        activeSession={activeSession}
+        isOpen={isOpen}
+        panelHeight={panelHeight}
+        sessions={sessions}
+        onCloseTerminal={handleCloseTerminal}
+        onCreateTerminal={handleCreateTerminal}
+        onPanelHeightChange={handlePanelHeightChange}
+        onSelectTerminal={handleSelectTerminal}
+        onTerminalInput={handleTerminalInput}
+        onTerminalResize={handleTerminalResize}
+        onTerminalSnapshotChange={handleTerminalSnapshotChange}
+        onTogglePanel={() => void handleTogglePanel()}
+      />
+    </>
   )
 }

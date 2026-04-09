@@ -156,6 +156,18 @@ afterEach(() => {
   }
 })
 
+async function waitForWrites(read: () => string[] | undefined, expected: string[]) {
+  const started = Date.now()
+
+  while (Date.now() - started < 2_000) {
+    const value = read()
+    if (JSON.stringify(value) === JSON.stringify(expected)) return
+    await Bun.sleep(20)
+  }
+
+  expect(read()).toEqual(expected)
+}
+
 async function startPtyTestServer() {
   const runtime = new FakePtyRuntime()
   const registry = createPtyRegistry({
@@ -306,6 +318,29 @@ describe("server pty api", () => {
         exitCode: 17,
       },
     })
+
+    socket.close()
+  })
+
+  test("forwards websocket input to the PTY runtime", async () => {
+    const { baseURL, runtime } = await startPtyTestServer()
+    const created = await createPty(baseURL)
+    const ptyID = created.body.data?.id
+
+    expect(ptyID).toBeString()
+
+    const socket = await SocketHarness.connect(`${baseURL.replace("http", "ws")}/api/pty/${ptyID}/connect`)
+    const ready = await socket.nextMessage()
+    expect(ready.type).toBe("ready")
+
+    socket.socket.send(
+      JSON.stringify({
+        type: "input",
+        data: "echo 123\r",
+      }),
+    )
+
+    await waitForWrites(() => runtime.handles[0]?.writes, ["echo 123\r"])
 
     socket.close()
   })

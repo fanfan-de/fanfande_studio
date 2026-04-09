@@ -31,6 +31,13 @@ function parseCursor(value: string | undefined) {
   return parsed
 }
 
+function readClientMessageData(data: MessageEvent["data"]) {
+  if (typeof data === "string") return data
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data)
+  if (ArrayBuffer.isView(data)) return new TextDecoder().decode(data)
+  throw new Error("PTY websocket payload must be text")
+}
+
 export function PtyRoutes(options: { registry: PtyRegistry; upgradeWebSocket: UpgradeWebSocket }) {
   const app = new Hono<AppEnv>()
 
@@ -154,7 +161,20 @@ export function PtyRoutes(options: { registry: PtyRegistry; upgradeWebSocket: Up
           })
         },
         onMessage(event, ws) {
-          const payload = PtyClientMessage.safeParse(JSON.parse(String(event.data)))
+          let parsedData: unknown
+
+          try {
+            parsedData = JSON.parse(readClientMessageData(event.data))
+          } catch {
+            sendServerMessage(ws, {
+              type: "error",
+              code: "INVALID_MESSAGE",
+              message: "PTY message must be valid JSON text",
+            })
+            return
+          }
+
+          const payload = PtyClientMessage.safeParse(parsedData)
           if (!payload.success) {
             sendServerMessage(ws, {
               type: "error",

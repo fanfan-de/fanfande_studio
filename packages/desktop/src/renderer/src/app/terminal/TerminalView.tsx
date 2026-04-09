@@ -18,6 +18,8 @@ export function TerminalView({ panelHeight, session, onInput, onResize, onSnapsh
   const previousBufferRef = useRef("")
   const previousCursorRef = useRef(0)
   const flushTimerRef = useRef<number | null>(null)
+  const scrollFrameRef = useRef<number | null>(null)
+  const lastReportedScrollTopRef = useRef(0)
   const writeQueueRef = useRef<string[]>([])
   const isFlushingRef = useRef(false)
   const handleInput = useEffectEvent(onInput)
@@ -66,6 +68,7 @@ export function TerminalView({ panelHeight, session, onInput, onResize, onSnapsh
     terminal.write(session.buffer)
     previousBufferRef.current = session.buffer
     previousCursorRef.current = session.cursor
+    lastReportedScrollTopRef.current = session.scrollTop
     terminal.scrollToLine(session.scrollTop)
     terminal.focus()
 
@@ -73,8 +76,19 @@ export function TerminalView({ panelHeight, session, onInput, onResize, onSnapsh
       void handleInput(data)
     })
     const disposeScroll = terminal.onScroll(() => {
-      handleSnapshotChange(session.ptyID, {
-        scrollTop: terminal.buffer.active.viewportY,
+      const nextScrollTop = terminal.buffer.active.viewportY
+      if (nextScrollTop === lastReportedScrollTopRef.current) return
+
+      lastReportedScrollTopRef.current = nextScrollTop
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current)
+      }
+
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null
+        handleSnapshotChange(session.ptyID, {
+          scrollTop: nextScrollTop,
+        })
       })
     })
 
@@ -98,6 +112,9 @@ export function TerminalView({ panelHeight, session, onInput, onResize, onSnapsh
       window.removeEventListener("resize", handleWindowResize)
       if (flushTimerRef.current !== null) {
         window.clearTimeout(flushTimerRef.current)
+      }
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current)
       }
       disposeInput.dispose()
       disposeScroll.dispose()
