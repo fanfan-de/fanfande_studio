@@ -40,10 +40,12 @@ export namespace Flag {
     truthy("FanFande_ENABLE_EXA") || FanFande_EXPERIMENTAL || truthy("FanFande_EXPERIMENTAL_EXA")
   export const FanFande_EXPERIMENTAL_BASH_MAX_OUTPUT_LENGTH = number("FanFande_EXPERIMENTAL_BASH_MAX_OUTPUT_LENGTH")
   export const FanFande_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS = number("FanFande_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS")
+  export const FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT = number("FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT")
   export const FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX = number("FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX")
   export const FanFande_EXPERIMENTAL_OXFMT = FanFande_EXPERIMENTAL || truthy("FanFande_EXPERIMENTAL_OXFMT")
   export const FanFande_EXPERIMENTAL_LSP_TY = truthy("FanFande_EXPERIMENTAL_LSP_TY")
   export const FanFande_EXPERIMENTAL_LSP_TOOL = FanFande_EXPERIMENTAL || truthy("FanFande_EXPERIMENTAL_LSP_TOOL")
+  export const FanFande_DEBUG_STREAM_STDOUT = truthy("FanFande_DEBUG_STREAM_STDOUT")
   export const FanFande_DISABLE_FILETIME_CHECK = truthy("FanFande_DISABLE_FILETIME_CHECK")
   export const FanFande_EXPERIMENTAL_PLAN_MODE = FanFande_EXPERIMENTAL || truthy("FanFande_EXPERIMENTAL_PLAN_MODE")
   export const FanFande_MODELS_URL = process.env["OPENCODE_MODELS_URL"]

@@ -136,6 +136,22 @@ describe("App", () => {
       }),
       pickProjectDirectory: vi.fn().mockResolvedValue(null),
       pickComposerAttachments: vi.fn().mockResolvedValue([]),
+      gitCommit: vi.fn().mockResolvedValue({
+        directory: "C:\\Projects\\Project 2",
+        root: "C:\\Projects\\Project 2",
+        branch: "main",
+        stdout: "",
+        stderr: "",
+        summary: "已提交到 main",
+      }),
+      gitPush: vi.fn().mockResolvedValue({
+        directory: "C:\\Projects\\Project 2",
+        root: "C:\\Projects\\Project 2",
+        branch: "main",
+        stdout: "",
+        stderr: "",
+        summary: "已推送 main",
+      }),
       listFolderWorkspaces: vi.fn().mockRejectedValue(new Error("backend unavailable")),
       openFolderWorkspace: vi.fn(),
       createFolderSession: vi.fn(),
@@ -205,7 +221,12 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Create session for app" })).toBeInTheDocument()
     expect(screen.getAllByText("Project 2").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Overview" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Git" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Artifacts" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Changes" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Console" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument()
     expect(inspector).toBeInTheDocument()
     expect(within(inspector).getByText("Changed Files")).toBeInTheDocument()
     expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
@@ -220,6 +241,87 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^Model:/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Agent mode:/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
+  })
+
+  it("opens the git quick menu and triggers commit and push for the active workspace", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitCommit = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      stdout: "",
+      stderr: "",
+      summary: "已提交到 main",
+    })
+    window.desktop!.gitPush = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      stdout: "",
+      stderr: "",
+      summary: "已推送 main",
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.listFolderWorkspaces).toHaveBeenCalledTimes(1)
+    })
+    await screen.findByRole("button", { name: "Atlas review" })
+
+    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+
+    expect(await screen.findByRole("textbox", { name: "提交说明" })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole("textbox", { name: "提交说明" }), {
+      target: {
+        value: "chore: wire git quick menu",
+      },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "提交" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.gitCommit).toHaveBeenCalledWith({
+        directory: "C:\\Projects\\Atlas",
+        message: "chore: wire git quick menu",
+      })
+    })
+
+    expect(await screen.findByText("已提交到 main")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "推送" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.gitPush).toHaveBeenCalledWith({
+        directory: "C:\\Projects\\Atlas",
+      })
+    })
+
+    expect(await screen.findByText("已推送 main")).toBeInTheDocument()
   })
 
   it("loads folder and session lists into the sidebar on startup", async () => {

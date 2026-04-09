@@ -204,7 +204,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     ///seed:123124,// 固定随机种子，便于结果复现
     includeRawChunks: false,// 不返回底层原始分块，减少流式噪声与兼容性问题
     //------------ 实验能力扩展 ----------------
-    //stopWhen:()=>{return true}, // stopWhen 可用于提前终止生成
+    stopWhen: stepCountIs(1),
     //prepareStep:()=>{return {}},              // prepareStep 可在每一步执行前动态调整参数
     //------------ 工具调用修复 ----------------------
     // async experimental_repairToolCall(failed) {

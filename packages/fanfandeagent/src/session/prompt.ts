@@ -12,12 +12,14 @@ import * as Agent from "#agent/agent.ts";
 import * as SystemPrompt from "#session/system.ts"
 import * as Snapshot  from "#snapshot/snapshot.ts"
 import * as SessionDiff from "#session/diff.ts"
+import { Flag } from "#flag/flag.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
 //import type { string } from "yargs";
 
 const log = Log.create({ service: "session.prompt" });
+const DEFAULT_PROMPT_LOOP_LIMIT = Flag.FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT ?? 16
 
 type RunningSession = {
     abort: AbortController;
@@ -146,6 +148,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
     }
 
     let currentAssistant: Message.Assistant | undefined;
+    let iteration = 0;
     try {
         while (true) {
             if (abort.aborted) throw new Error("Prompt aborted");
@@ -180,6 +183,21 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
                 throw new Error("No user message found in stream. This should never happen.");
             }
 
+            const agent = (await Agent.get(lastUser.agent)) ?? Agent.planAgent;
+            const maxLoopIterations = Math.min(agent.steps ?? DEFAULT_PROMPT_LOOP_LIMIT, DEFAULT_PROMPT_LOOP_LIMIT);
+            iteration += 1;
+            if (iteration > maxLoopIterations) {
+                log.error("prompt loop exceeded maximum iterations", {
+                    sessionID,
+                    userMessageID: lastUser.id,
+                    agent: agent.name,
+                    maxLoopIterations,
+                });
+                throw new Error(
+                    `Prompt loop exceeded ${maxLoopIterations} iterations without reaching a final response.`,
+                );
+            }
+
             const outstandingTool = findOutstandingToolAfterUser(messages, lastUser.id);
             if (outstandingTool) {
                 log.warn("stopping prompt loop because the latest user turn still has an unresolved tool", {
@@ -210,7 +228,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
 
             //解析工具参数
             const tools = await resolveTools({
-                agent: Agent.planAgent,
+                agent,
                 sessionID,
                 messageID: assistantMessage.id,
                 abort,
@@ -237,11 +255,11 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
                     sessionID,
                     messageID: assistantMessage.id,
                     model,
-                    agent: Agent.planAgent,
+                    agent,
                     system: system,
                     abort,
                     messages: await Message.toModelMessages(messages, model, {
-                        agent: Agent.planAgent,
+                        agent,
                     }),
                     tools,
                 });
@@ -259,7 +277,11 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
             await Session.updateMessage(assistantMessage);
 
             if (isFinalFinishReason(processor.message.finishReason)) {
-                console.log("modelFinish: " + processor.message.finishReason);
+                log.info("model-finish", {
+                    sessionID,
+                    finishReason: processor.message.finishReason,
+                    iteration,
+                });
                 break;
             }
 

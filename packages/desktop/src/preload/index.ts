@@ -18,6 +18,14 @@ type AgentSSEEvent = {
 type AgentStreamIPCEvent = AgentSSEEvent & {
   streamID: string
 }
+type GitActionResult = {
+  directory: string
+  root: string
+  branch: string | null
+  stdout: string
+  stderr: string
+  summary: string
+}
 
 const safeProcess = typeof process !== "undefined" ? process : undefined
 
@@ -52,6 +60,9 @@ try {
       }>,
     pickProjectDirectory: () => ipcRenderer.invoke("desktop:pick-project-directory") as Promise<string | null>,
     pickComposerAttachments: () => ipcRenderer.invoke("desktop:pick-composer-attachments") as Promise<string[]>,
+    gitCommit: (input: { directory: string; message: string }) =>
+      ipcRenderer.invoke("desktop:git-commit", input) as Promise<GitActionResult>,
+    gitPush: (input: { directory: string }) => ipcRenderer.invoke("desktop:git-push", input) as Promise<GitActionResult>,
     listFolderWorkspaces: () =>
       ipcRenderer.invoke("desktop:list-folder-workspaces") as Promise<
         Array<{

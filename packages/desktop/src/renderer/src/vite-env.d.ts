@@ -35,6 +35,22 @@ declare global {
       }>
       pickProjectDirectory?: () => Promise<string | null>
       pickComposerAttachments?: () => Promise<string[]>
+      gitCommit?: (input: { directory: string; message: string }) => Promise<{
+        directory: string
+        root: string
+        branch: string | null
+        stdout: string
+        stderr: string
+        summary: string
+      }>
+      gitPush?: (input: { directory: string }) => Promise<{
+        directory: string
+        root: string
+        branch: string | null
+        stdout: string
+        stderr: string
+        summary: string
+      }>
       listFolderWorkspaces?: () => Promise<
         Array<{
           id: string

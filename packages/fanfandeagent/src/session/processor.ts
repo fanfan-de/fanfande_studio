@@ -8,9 +8,11 @@ import * as Permission from "#permission/permission.ts"
 import { ZodDate } from "zod";
 import { matchedRoutes } from "hono/route";
 import * as Session from "#session/session.ts"
+import { Flag } from "#flag/flag.ts"
 
 const log = Log.create({ service: "session.processor" })
 const STREAM_PART_PERSIST_INTERVAL_MS = 100
+const ENABLE_STREAM_STDOUT_DEBUG = Flag.FanFande_DEBUG_STREAM_STDOUT
 
 type StreamPersistedPart = Message.TextPart | Message.ReasoningPart
 
@@ -76,6 +78,11 @@ function normalizeToolError(error: unknown): string {
     }
 
     return String(error)
+}
+
+function writeStreamDebug(value: string) {
+    if (!ENABLE_STREAM_STDOUT_DEBUG) return
+    process.stdout.write(value)
 }
 
 function toAttachmentPart(
@@ -239,7 +246,7 @@ export function create(input: {
                                     },
                                     metadata: value.providerMetadata,
                                 }
-                                process.stdout.write("text-start:")
+                                writeStreamDebug("text-start:")
                                 break;
                             case "text-end":
                                 if (currentText) {
@@ -252,7 +259,7 @@ export function create(input: {
                                     await streamPartPersister.persist(currentText, true)
                                     streamPartPersister.clear(currentText.id)
                                     currentText = undefined
-                                    process.stdout.write("\n")
+                                    writeStreamDebug("\n")
 
                                 }
                                 break;
@@ -263,7 +270,7 @@ export function create(input: {
                                         currentText.metadata = value.providerMetadata
 
                                     await streamPartPersister.persist(currentText)
-                                    process.stdout.write(value.text)
+                                    writeStreamDebug(value.text)
                                 }
                                 break;
                             case "reasoning-start":
@@ -281,7 +288,7 @@ export function create(input: {
                                 }
                                 reasoningMap[value.id] = reasoningPart
 
-                                process.stdout.write("reasoning start")
+                                writeStreamDebug("reasoning start")
 
                                 break;
                             case "reasoning-end":
@@ -301,7 +308,7 @@ export function create(input: {
                                         delete reasoningMap[value.id] // 已经存盘，内存可以删除了
                                     }
                                 }
-                                process.stdout.write("\n")
+                                writeStreamDebug("\n")
                                 break;
                             case "reasoning-delta":
                                 if (value.id in reasoningMap) {
@@ -309,7 +316,7 @@ export function create(input: {
                                     part!.text += value.text
                                     if (value.providerMetadata) part!.metadata = value.providerMetadata
                                     await streamPartPersister.persist(part!)
-                                    process.stdout.write(value.text)
+                                    writeStreamDebug(value.text)
                                 }
                                 break
 
@@ -374,7 +381,11 @@ export function create(input: {
                                     try {
                                         await Session.updatePart(part)
                                     } catch (error) {
-                                        console.error("failed to persist tool-call part", part)
+                                        log.error("failed to persist tool-call part", {
+                                            callID: part.callID,
+                                            tool: part.tool,
+                                            error: normalizeToolError(error),
+                                        })
                                         throw error
                                     }
                                 }
@@ -407,7 +418,11 @@ export function create(input: {
                                     try {
                                         await Session.updatePart(match)
                                     } catch (error) {
-                                        console.error("failed to persist tool-result part", match)
+                                        log.error("failed to persist tool-result part", {
+                                            callID: match.callID,
+                                            tool: match.tool,
+                                            error: normalizeToolError(error),
+                                        })
                                         throw error
                                     }
                                 }
@@ -433,7 +448,11 @@ export function create(input: {
                                     try {
                                         await Session.updatePart(match)
                                     } catch (error) {
-                                        console.error("failed to persist tool-error part", match)
+                                        log.error("failed to persist tool-error part", {
+                                            callID: match.callID,
+                                            tool: match.tool,
+                                            error: normalizeToolError(error),
+                                        })
                                         throw error
                                     }
                                 }
@@ -506,12 +525,10 @@ export function create(input: {
                                 // TODO: 更新数据库中的错误状态
                                 // TODO: 根据错误类型决定是否重试（增加 attempt）
                                 // TODO: 发送错误事件通知 UI
-                                console.log("processor: error event received:", value.error)
                                 log.error("stream error", { error: value.error })
                                 break;
                             case "finish-step":
                                 // 接收到这个 value，说明 LLM 判断结束 React loop
-                                console.log(value.finishReason)
                                 this.message.finishReason = value.finishReason
 
 

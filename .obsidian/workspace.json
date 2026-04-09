@@ -38,13 +38,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "daily/2026-04-09.md",
+                "file": "packages/desktop/桌面端界面结构与命名.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "2026-04-09"
+              "title": "桌面端界面结构与命名"
             }
           }
         ],
@@ -140,12 +140,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "daily/2026-04-09.md",
+                "file": "packages/desktop/桌面端界面结构与命名.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "2026-04-09 的出链列表"
+              "title": "桌面端界面结构与命名 的出链列表"
             }
           },
           {
@@ -225,21 +225,23 @@
   },
   "active": "e5d113a158731212",
   "lastOpenFiles": [
+    "packages/desktop/src/main/git.ts",
+    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
+    "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
+    "daily/2026-04-09.md",
+    "packages/desktop/electron.vite.config.1775744946394.mjs",
+    "packages/fanfandeagent/agent_local_data.db-shm",
+    "packages/fanfandeagent/agent_local_data.db-wal",
+    "packages/fanfandeagent/agent_local_data.db",
+    "packages/desktop/electron.vite.config.1775744918769.mjs",
     "packages/desktop/electron.vite.config.1775742063850.mjs",
     "packages/desktop/electron.vite.config.1775740918261.mjs",
     "packages/fanfandeagent/src/snapshot/snapshot.ts",
     "packages/desktop/electron.vite.config.1775740285883.mjs",
     "packages/desktop/electron.vite.config.1775739358559.mjs",
-    "packages/desktop/electron.vite.config.1775731089257.mjs",
-    "packages/desktop/electron.vite.config.1775730782882.mjs",
-    "packages/fanfandeagent/src/session/diff-summary.ts",
-    "packages/fanfandeagent/Test/session.diff.test.ts",
-    "packages/fanfandeagent/src/session/diff.ts",
     "packages/desktop/桌面端界面结构与命名.md",
     "todo.md",
     "examples.md",
-    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
-    "packages/desktop/out/renderer/assets/index-BuGcBISc.js",
     "未命名 1.md",
     "Pasted image 20260405013212.png",
     "TODO_secure_provider_credentials.md",
@@ -248,10 +250,8 @@
     "未命名.canvas",
     "spec.md",
     "packages/fanfandeagent/node_modules/yoga-layout/README.md",
-    "daily/2026-04-09.md",
     "packages/fanfandeagent/src/agent/prompt/plan.md",
     "packages/fanfandeagent/BACKLOG.md",
-    "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
     "packages/fanfandeagent/src/tool/bash.spec.md",
     "packages/fanfandeagent/src/tool/spec.md",
     "packages/fanfandeagent/src/tool/AGENTS.md",
