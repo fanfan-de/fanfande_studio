@@ -47,40 +47,54 @@ interface ExecCommandMetadata extends Record<string, unknown> {
   stderr: string
 }
 
+async function isExistingFile(filePath: string) {
+  return await stat(filePath).then((fileStat) => fileStat.isFile()).catch(() => false)
+}
+
+export async function resolveExecCommandBashExecutable(options?: {
+  env?: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
+  shellEnv?: string | null
+  configuredGitBashPath?: string | null
+  whichCommand?: typeof which
+  isFile?: (filePath: string) => Promise<boolean>
+}) {
+  const env = options?.env ?? process.env
+  const platform = options?.platform ?? process.platform
+  const shellEnv = options?.shellEnv ?? env.SHELL
+  const configuredGitBashPath = options?.configuredGitBashPath ?? Flag.FanFande_GIT_BASH_PATH
+  const whichCommand = options?.whichCommand ?? which
+  const isFile = options?.isFile ?? isExistingFile
+
+  if (shellEnv && /bash(\.exe)?$/i.test(path.basename(shellEnv))) {
+    return shellEnv
+  }
+
+  if (configuredGitBashPath && await isFile(configuredGitBashPath)) {
+    return configuredGitBashPath
+  }
+
+  if (platform === "win32") {
+    const git = whichCommand("git.exe", env) ?? whichCommand("git", env)
+    if (git) {
+      const gitBash = path.resolve(git, "..", "..", "bin", "bash.exe")
+      if (await isFile(gitBash)) {
+        return gitBash
+      }
+    }
+  }
+
+  const fromPath = whichCommand("bash", env) ?? whichCommand("bash.exe", env)
+  if (fromPath) return fromPath
+
+  throw new Error(
+    "No bash executable was found. Set SHELL to bash, set FanFande_GIT_BASH_PATH, or install bash into PATH.",
+  )
+}
+
 export const ExecCommandTool = Tool.define(
   "exec_command",
   async (): Promise<Tool.ToolRuntime<typeof ExecCommandParameters, ExecCommandMetadata>> => {
-    const resolveBashExecutable = async () => {
-      const fromShellEnv = process.env.SHELL
-      if (fromShellEnv && /bash(\.exe)?$/i.test(path.basename(fromShellEnv))) {
-        return fromShellEnv
-      }
-
-      if (
-        Flag.FanFande_GIT_BASH_PATH
-        && await stat(Flag.FanFande_GIT_BASH_PATH).then((s) => s.isFile()).catch(() => false)
-      ) {
-        return Flag.FanFande_GIT_BASH_PATH
-      }
-
-      const fromPath = which("bash") ?? which("bash.exe")
-      if (fromPath) return fromPath
-
-      if (process.platform === "win32") {
-        const git = which("git")
-        if (git) {
-          const gitBash = path.resolve(git, "..", "..", "bin", "bash.exe")
-          if (await stat(gitBash).then((s) => s.isFile()).catch(() => false)) {
-            return gitBash
-          }
-        }
-      }
-
-      throw new Error(
-        "No bash executable was found. Set SHELL to bash, set FanFande_GIT_BASH_PATH, or install bash into PATH.",
-      )
-    }
-
     return {
       title: "Bash",
       description: "Run a bash command inside the current project boundary.",
@@ -124,7 +138,7 @@ export const ExecCommandTool = Tool.define(
         }
 
         try {
-          await resolveBashExecutable()
+          await resolveExecCommandBashExecutable()
         } catch (error) {
           if (error instanceof Error) {
             const message = error.message.trim()
@@ -174,7 +188,7 @@ export const ExecCommandTool = Tool.define(
         const command = parameters.command.trim()
         const timeoutMs = parameters.timeoutMs ?? DEFAULT_TIMEOUT_MS
         const maxOutputChars = parameters.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS
-        const bash = await resolveBashExecutable()
+        const bash = await resolveExecCommandBashExecutable()
 
         const proc = spawn(bash, ["-lc", command], {
           cwd,

@@ -60,7 +60,7 @@
 | `write-file` | 无 | `write` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 覆盖写入完整文件内容 |
 | `replace-text` | 无 | `write` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 默认只替换首个匹配；`all=true` 时替换所有匹配 |
 | `apply_patch` | `apply-patch` | `write` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 顺序处理多文件 unified diff；支持 create/update/delete/move/unchanged |
-| `exec_command` | `bash` `exec-command` | `exec` | `readOnly=false` `destructive=true` `concurrency=exclusive` `needsShell=true` | 使用 `bash -lc` 执行命令；默认超时和输出上限来自 `Flag` |
+| `exec_command` | `bash` `exec-command` | `exec` | `readOnly=false` `destructive=true` `concurrency=exclusive` `needsShell=true` | 使用 `bash -lc` 执行命令；Windows 下优先解析 Git Bash；默认超时和输出上限来自 `Flag` |
 
 ### 3.3 审批描述能力
 

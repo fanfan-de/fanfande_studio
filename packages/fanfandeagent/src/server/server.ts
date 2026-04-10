@@ -16,6 +16,7 @@ import * as Log from "#util/log.ts"
 export interface ServerOptions {
   host?: string
   port?: number
+  idleTimeout?: number
   corsWhitelist?: string[]
   ptyRegistry?: PtyRegistry
 }
@@ -44,6 +45,15 @@ function parsePort(input: string | undefined, fallback: number) {
   const parsed = Number(input)
   if (!Number.isInteger(parsed) || parsed <= 0) return fallback
   return parsed
+}
+
+function parseIdleTimeout(input: string | undefined, fallback: number) {
+  if (input === undefined) return fallback
+
+  const parsed = Number(input)
+  if (!Number.isInteger(parsed) || parsed < 0) return fallback
+
+  return Math.min(parsed, 255)
 }
 
 export function createServerApp(options: Pick<ServerOptions, "corsWhitelist"> = {}) {
@@ -134,6 +144,7 @@ export function startServer(options: ServerOptions = {}) {
 
   const host = options.host ?? process.env["FanFande_SERVER_HOST"] ?? "127.0.0.1"
   const port = options.port ?? parsePort(process.env["FanFande_SERVER_PORT"], 4096)
+  const idleTimeout = options.idleTimeout ?? parseIdleTimeout(process.env["FanFande_SERVER_IDLE_TIMEOUT"], 120)
   const runtime = createServerRuntime({
     corsWhitelist: options.corsWhitelist,
     ptyRegistry: options.ptyRegistry,
@@ -141,6 +152,7 @@ export function startServer(options: ServerOptions = {}) {
   activeServer = Bun.serve({
     hostname: host,
     port,
+    idleTimeout,
     fetch(request, server) {
       return runtime.app.fetch(request, server)
     },
@@ -150,6 +162,7 @@ export function startServer(options: ServerOptions = {}) {
   log.info("server-started", {
     host,
     port,
+    idleTimeout,
     url: activeURL.toString(),
   })
   return activeServer

@@ -619,6 +619,264 @@ describe("App", () => {
     })
   })
 
+  it("splits assistant turns into reasoning, tools, response, and file change panels", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-1",
+          sessionID: "session-atlas-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-1", type: "text", text: "Audit the release flow" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-1",
+          sessionID: "session-atlas-review",
+          role: "assistant",
+          created: 101,
+        },
+        parts: [
+          { id: "reasoning-1", type: "reasoning", text: "Inspecting workspace." },
+          {
+            id: "tool-1",
+            type: "tool",
+            tool: "npm test",
+            state: {
+              status: "completed",
+              output: "ok",
+            },
+          },
+          { id: "reasoning-2", type: "reasoning", text: "Evaluating test output." },
+          { id: "text-1", type: "text", text: "All checks passed." },
+          {
+            id: "patch-1",
+            type: "patch",
+            summary: {
+              files: 1,
+              additions: 2,
+              deletions: 1,
+            },
+            changes: [
+              {
+                file: "src/App.tsx",
+                additions: 2,
+                deletions: 1,
+              },
+            ],
+          },
+        ],
+      },
+    ])
+
+    render(<App />)
+
+    const assistantTurn = (await screen.findByText("All checks passed.")).closest(".assistant-turn") as HTMLElement | null
+
+    expect(assistantTurn).not.toBeNull()
+
+    const reasoningSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "Reasoning" })
+    const toolsSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "Tools" })
+    const responseSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "Response" })
+    const fileChangeSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "File Changes" })
+
+    expect(within(reasoningSection).getByText("Inspecting workspace.")).toBeInTheDocument()
+    expect(within(reasoningSection).queryByRole("button", { name: /npm test.*completed/i })).not.toBeInTheDocument()
+    expect(within(reasoningSection).getByText("Evaluating test output.")).toBeInTheDocument()
+    expect(reasoningSection.querySelectorAll(".assistant-reasoning-round")).toHaveLength(2)
+
+    expect(within(toolsSection).getByRole("button", { name: /npm test.*completed/i })).toBeInTheDocument()
+    expect(within(toolsSection).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
+
+    expect(within(responseSection).getByText("All checks passed.")).toBeInTheDocument()
+    expect(within(responseSection).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
+
+    expect(within(fileChangeSection).getByText("1 file change (+2 -1)")).toBeInTheDocument()
+    expect(within(fileChangeSection).getByText("src/App.tsx (+2 -1)")).toBeInTheDocument()
+    expect(within(fileChangeSection).queryByText("All checks passed.")).not.toBeInTheDocument()
+  })
+
+  it("keeps the response hidden until completion while reasoning and file changes stream in first", async () => {
+    let streamListener:
+      | ((event: {
+          streamID: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+    let activeStreamID = ""
+    let activeSessionID = ""
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+      streamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+      async (input: {
+        streamID: string
+        sessionID: string
+        text: string
+      }) => {
+        activeStreamID = input.streamID
+        activeSessionID = input.sessionID
+
+        streamListener?.({
+          streamID: input.streamID,
+          event: "started",
+          data: { sessionID: input.sessionID },
+        })
+        streamListener?.({
+          streamID: input.streamID,
+          event: "delta",
+          data: { kind: "reasoning", delta: "Planning live update." },
+        })
+
+        return {
+          streamID: input.streamID,
+        }
+      },
+    )
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Show live output",
+      },
+    })
+    fireEvent.click(getComposerSendButton())
+
+    const reasoningText = await screen.findByText("Planning live update.")
+    const assistantTurn = reasoningText.closest(".assistant-turn") as HTMLElement | null
+
+    expect(assistantTurn).not.toBeNull()
+
+    const reasoningSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "Reasoning" })
+    expect(within(reasoningSection).getByText("Planning live update.")).toBeInTheDocument()
+    expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "Response" })).not.toBeInTheDocument()
+    expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
+
+    act(() => {
+      streamListener?.({
+        streamID: activeStreamID,
+        event: "delta",
+        data: { kind: "text", delta: "Streaming answer" },
+      })
+    })
+
+    expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "Response" })).not.toBeInTheDocument()
+    expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
+
+    act(() => {
+      streamListener?.({
+        streamID: activeStreamID,
+        event: "part",
+        data: {
+          part: {
+            id: "patch-1",
+            type: "patch",
+            summary: {
+              files: 1,
+              additions: 2,
+              deletions: 1,
+            },
+            changes: [
+              {
+                file: "src/App.tsx",
+                additions: 2,
+                deletions: 1,
+              },
+            ],
+          },
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(within(assistantTurn as HTMLElement).getByRole("region", { name: "File Changes" })).toBeInTheDocument()
+    })
+
+    const fileChangeSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "File Changes" })
+    expect(within(fileChangeSection).getByText("1 file change (+2 -1)")).toBeInTheDocument()
+    expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "Response" })).not.toBeInTheDocument()
+
+    act(() => {
+      streamListener?.({
+        streamID: activeStreamID,
+        event: "done",
+        data: {
+          sessionID: activeSessionID,
+          parts: [
+            { id: "reasoning-1", type: "reasoning", text: "Planning live update." },
+            { id: "text-1", type: "text", text: "Streaming answer" },
+            {
+              id: "patch-1",
+              type: "patch",
+              summary: {
+                files: 1,
+                additions: 2,
+                deletions: 1,
+              },
+              changes: [
+                {
+                  file: "src/App.tsx",
+                  additions: 2,
+                  deletions: 1,
+                },
+              ],
+            },
+          ],
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(within(assistantTurn as HTMLElement).getByRole("region", { name: "Response" })).toBeInTheDocument()
+    })
+
+    const responseSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "Response" })
+    expect(within(responseSection).getByText("Streaming answer")).toBeInTheDocument()
+
+    const reasoningPosition = reasoningSection.compareDocumentPosition(responseSection)
+    const responsePosition = responseSection.compareDocumentPosition(fileChangeSection)
+    expect(reasoningPosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(responsePosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it("reloads session history from the server when switching sessions in the sidebar", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
@@ -1065,6 +1323,13 @@ describe("App", () => {
 
     render(<App />)
 
+    const toolTraceToggle = await screen.findByRole("button", { name: /read-file.*waiting approval/i })
+    expect(toolTraceToggle).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
+
+    fireEvent.click(toolTraceToggle)
+
+    expect(toolTraceToggle).toHaveAttribute("aria-expanded", "true")
     expect(await screen.findByText("Waiting for permission approval before the tool can continue.")).toBeInTheDocument()
 
     const approvalPanel = await screen.findByRole("region", { name: "Tool approval request" })
@@ -1082,10 +1347,14 @@ describe("App", () => {
 
     expect(await screen.findByText("README loaded")).toBeInTheDocument()
     expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
-    expect(await screen.findByText("Resumed answer")).toBeInTheDocument()
+    expect(screen.queryByText("Resumed answer")).not.toBeInTheDocument()
     expect(getComposerSendButton()).toBeDisabled()
 
-    finishResumeStream?.()
+    act(() => {
+      finishResumeStream?.()
+    })
+
+    expect(await screen.findByText("Resumed answer")).toBeInTheDocument()
 
     await waitFor(() => {
       expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(3, {
@@ -2199,7 +2468,7 @@ describe("App", () => {
     })
   })
 
-  it("renders streamed agent output before the request promise resolves", async () => {
+  it("renders streamed reasoning before completion and only shows the response after completion", async () => {
     let streamListener:
       | ((event: {
           streamID: string
@@ -2271,26 +2540,29 @@ describe("App", () => {
         value: "Show live output",
       },
     })
-    fireEvent.click(getComposerSendButton())
+    await act(async () => {
+      fireEvent.click(getComposerSendButton())
+      await Promise.resolve()
+    })
 
-    const streamingAnswer = await screen.findByText("Streaming answer")
-    const liveReasoning = screen.getByText("Planning live update.")
+    const liveReasoning = await screen.findByText("Planning live update.")
     const reasoningItem = liveReasoning.closest(".trace-item")
-    const textItem = streamingAnswer.closest(".trace-item")
 
     expect(liveReasoning).toBeInTheDocument()
     expect(reasoningItem).toHaveAttribute("data-kind", "reasoning")
-    expect(textItem).toHaveAttribute("data-kind", "text")
     expect(reasoningItem).not.toBeNull()
-    expect(textItem).not.toBeNull()
-    const documentPosition = reasoningItem && textItem ? reasoningItem.compareDocumentPosition(textItem) : 0
-    expect(documentPosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(reasoningItem?.querySelector(".trace-item-header")).toBeNull()
+    expect(screen.queryByText("Streaming answer")).not.toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Streaming response" })).not.toBeInTheDocument()
     expect(screen.queryByText("Renderer subscribed to live backend updates.")).not.toBeInTheDocument()
     expect(screen.queryByText("Waiting for backend response.")).not.toBeInTheDocument()
     expect(getComposerSendButton()).toBeDisabled()
 
-    finishStream?.()
+    act(() => {
+      finishStream?.()
+    })
+
+    expect(await screen.findByText("Streaming answer")).toBeInTheDocument()
 
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "Backend response received" })).not.toBeInTheDocument()
@@ -2881,9 +3153,11 @@ describe("App", () => {
     )
   })
 
-  it("gives tool trace items a dedicated visual style", () => {
-    expect(styles).toMatch(/\.trace-kind-tool\s*\{[^}]*linear-gradient/s)
-    expect(styles).toMatch(/\.trace-kind-tool\s+\.trace-item-title,\s*\.trace-kind-tool\s+\.trace-item-detail\s*\{[^}]*font-family:/s)
+  it("styles assistant turns as three stacked panels with call separators", () => {
+    expect(styles).toMatch(/\.assistant-section\s*\{[^}]*border:\s*1px solid rgba\(166,\s*186,\s*208,\s*0\.42\);[^}]*padding:\s*14px 16px;/s)
+    expect(styles).toMatch(/\.assistant-reasoning-separator::before,\s*\.assistant-reasoning-separator::after\s*\{[^}]*height:\s*1px;/s)
+    expect(styles).toMatch(/\.assistant-section\.is-response\s+\.trace-item-header\s*\{[^}]*display:\s*none;/s)
+    expect(styles).toMatch(/\.trace-item-toggle\s*\{[^}]*background:\s*transparent;[^}]*text-align:\s*left;[^}]*cursor:\s*pointer;/s)
   })
 
   it("keeps settings surfaces constrained as centered dialogs", () => {

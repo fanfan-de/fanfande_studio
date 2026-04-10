@@ -27,16 +27,17 @@ type RunningSession = {
     //lastModel: any | undefined;
 };
 
+const runningSessions: Record<string, RunningSession> = Object.create(null);
+
 // ====================
 // 业务模块：运行态控制
 // ====================
 // 这里只保存“当前正在执行”的 session loop 控制器，不保存历史消息。
 // 历史会话状态统一以数据库为准，运行态只负责并发保护和取消信号。
-export const state = Instance.state(() => {
+export function state() {
     // 这里只跟踪当前正在运行的 prompt loop。
-    const data: Record<string, RunningSession> = {};
-    return data;
-});
+    return runningSessions;
+}
 
 // ====================
 // 业务模块：外部输入协议

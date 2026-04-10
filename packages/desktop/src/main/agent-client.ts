@@ -50,10 +50,7 @@ export async function requestAgentJSON<T>(pathname: string, init?: RequestInit) 
 export function parseSSE(raw: string): AgentSSEEvent[] {
   const events: AgentSSEEvent[] = []
 
-  for (const block of raw
-    .split(/\r?\n\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)) {
+  for (const block of raw.split(/\r?\n\r?\n/)) {
     const parsed = parseSSEBlock(block)
     if (parsed) events.push(parsed)
   }
@@ -62,14 +59,32 @@ export function parseSSE(raw: string): AgentSSEEvent[] {
 }
 
 function parseSSEBlock(block: string): AgentSSEEvent | null {
-  if (!block) return null
+  if (!block.trim()) return null
 
-  const lines = block.split(/\r?\n/)
-  const eventName = lines.find((line) => line.startsWith("event:"))?.slice("event:".length).trim()
-  const payload = lines
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice("data:".length).trim())
-    .join("\n")
+  let eventName = ""
+  const dataLines: string[] = []
+
+  for (const rawLine of block.split(/\r?\n/)) {
+    if (!rawLine || rawLine.startsWith(":")) continue
+
+    const separatorIndex = rawLine.indexOf(":")
+    const field = separatorIndex === -1 ? rawLine : rawLine.slice(0, separatorIndex)
+    let value = separatorIndex === -1 ? "" : rawLine.slice(separatorIndex + 1)
+    if (value.startsWith(" ")) {
+      value = value.slice(1)
+    }
+
+    if (field === "event") {
+      eventName = value.trim()
+      continue
+    }
+
+    if (field === "data") {
+      dataLines.push(value)
+    }
+  }
+
+  const payload = dataLines.join("\n")
 
   if (!eventName || !payload) return null
 
@@ -90,14 +105,14 @@ export function consumeSSEBuffer(raw: string, flush = false) {
   let match: RegExpExecArray | null
 
   while ((match = boundaryPattern.exec(raw)) !== null) {
-    const parsed = parseSSEBlock(raw.slice(lastIndex, match.index).trim())
+    const parsed = parseSSEBlock(raw.slice(lastIndex, match.index))
     if (parsed) events.push(parsed)
     lastIndex = match.index + match[0].length
   }
 
   const remainder = raw.slice(lastIndex)
   if (flush) {
-    const parsed = parseSSEBlock(remainder.trim())
+    const parsed = parseSSEBlock(remainder)
     if (parsed) events.push(parsed)
     return {
       events,

@@ -6,7 +6,7 @@ import path from "node:path"
 import z from "zod"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/message.ts"
-import { ExecCommandTool } from "#tool/exec-command.ts"
+import { ExecCommandTool, resolveExecCommandBashExecutable } from "#tool/exec-command.ts"
 import * as Tool from "#tool/tool.ts"
 
 async function createGitRepo(root: string, seed: string) {
@@ -236,6 +236,32 @@ describe("tool contract", () => {
       await rm(repositoryRoot, { recursive: true, force: true })
     }
   }, 120000)
+
+  it("prefers Git Bash before a generic PATH bash on Windows", async () => {
+    const selected = await resolveExecCommandBashExecutable({
+      platform: "win32",
+      shellEnv: "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      configuredGitBashPath: null,
+      env: {
+        PATH: "C:\\WINDOWS\\System32",
+        PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      },
+      whichCommand: (command) => {
+        if (command === "git.exe" || command === "git") {
+          return "C:\\Apps\\Git\\cmd\\git.exe"
+        }
+
+        if (command === "bash" || command === "bash.exe") {
+          return "C:\\WINDOWS\\System32\\bash.exe"
+        }
+
+        return null
+      },
+      isFile: async (filePath) => filePath === "C:\\Apps\\Git\\bin\\bash.exe",
+    })
+
+    expect(selected).toBe("C:\\Apps\\Git\\bin\\bash.exe")
+  })
 
   it("replays completed tool history through the tool model output formatter", async () => {
     const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-tool-history-"))

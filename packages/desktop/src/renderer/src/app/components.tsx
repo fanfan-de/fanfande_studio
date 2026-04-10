@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type RefObject, type SetStateAction } from "react"
+import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
 import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions, titlebarMenus } from "./constants"
 import {
   ArrowUpIcon,
@@ -2040,15 +2040,259 @@ function isPersistentAllowDecision(decision: PermissionDecision) {
   return decision === "allow-session" || decision === "allow-project" || decision === "allow-forever"
 }
 
+type AssistantTraceSectionKey = "reasoning" | "tools" | "response" | "file-change"
+
+function isResponseTraceItem(item: AssistantTraceItem) {
+  return item.kind === "text"
+}
+
+function isToolTraceItem(item: AssistantTraceItem) {
+  return item.kind === "tool"
+}
+
+function isFileChangeTraceItem(item: AssistantTraceItem) {
+  return item.kind === "patch" || item.kind === "file" || item.kind === "image"
+}
+
+function partitionAssistantTraceItems(items: AssistantTraceItem[]) {
+  const reasoning: AssistantTraceItem[] = []
+  const tools: AssistantTraceItem[] = []
+  const response: AssistantTraceItem[] = []
+  const fileChange: AssistantTraceItem[] = []
+
+  items.forEach((item) => {
+    if (isResponseTraceItem(item)) {
+      response.push(item)
+      return
+    }
+
+    if (isFileChangeTraceItem(item)) {
+      fileChange.push(item)
+      return
+    }
+
+    if (isToolTraceItem(item)) {
+      tools.push(item)
+      return
+    }
+
+    reasoning.push(item)
+  })
+
+  return {
+    reasoning,
+    tools,
+    response,
+    fileChange,
+  }
+}
+
+function buildReasoningRounds(items: AssistantTraceItem[]) {
+  const rounds: AssistantTraceItem[][] = []
+  let currentRound: AssistantTraceItem[] = []
+  let sawToolSinceLastReasoning = false
+
+  items.forEach((item) => {
+    if (item.kind === "tool") {
+      if (currentRound.length > 0) {
+        sawToolSinceLastReasoning = true
+      }
+      return
+    }
+
+    if (item.kind !== "reasoning") {
+      return
+    }
+
+    if (currentRound.length > 0 && sawToolSinceLastReasoning) {
+      rounds.push(currentRound)
+      currentRound = []
+      sawToolSinceLastReasoning = false
+    }
+
+    currentRound.push(item)
+  })
+
+  if (currentRound.length > 0) {
+    rounds.push(currentRound)
+  }
+
+  return rounds
+}
+
+function AssistantTraceSection({
+  children,
+  sectionKey,
+  title,
+  turnID,
+}: {
+  children: ReactNode
+  sectionKey: AssistantTraceSectionKey
+  title: string
+  turnID: string
+}) {
+  const titleID = `${turnID}-${sectionKey}-title`
+
+  return (
+    <section className={`assistant-section is-${sectionKey}`} role="region" aria-labelledby={titleID}>
+      <header className="assistant-section-header">
+        <span id={titleID} className="label assistant-section-label">
+          {title}
+        </span>
+      </header>
+      <div className="assistant-section-body">{children}</div>
+    </section>
+  )
+}
+
+function AssistantTurnSections({
+  items,
+  turnID,
+}: {
+  items: AssistantTraceItem[]
+  turnID: string
+}) {
+  const sections = partitionAssistantTraceItems(items)
+  const reasoningRounds = buildReasoningRounds(items)
+
+  return (
+    <>
+      {reasoningRounds.length > 0 ? (
+        <AssistantTraceSection sectionKey="reasoning" title="Reasoning" turnID={turnID}>
+          <div className="assistant-reasoning-stack">
+            {reasoningRounds.map((round, index) => (
+              <div key={`${turnID}-reasoning-round-${index + 1}`} className="assistant-reasoning-round">
+                {index > 0 ? (
+                  <div className="assistant-reasoning-separator">
+                    <span>{`Call ${index + 1}`}</span>
+                  </div>
+                ) : null}
+                <div className="assistant-section-list">
+                  {round.map((item) => (
+                    <TraceItemView key={item.id} item={item} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </AssistantTraceSection>
+      ) : null}
+
+      {sections.tools.length > 0 ? (
+        <AssistantTraceSection sectionKey="tools" title="Tools" turnID={turnID}>
+          <div className="assistant-section-list">
+            {sections.tools.map((item) => (
+              <TraceItemView key={item.id} item={item} />
+            ))}
+          </div>
+        </AssistantTraceSection>
+      ) : null}
+
+      {sections.response.length > 0 ? (
+        <AssistantTraceSection sectionKey="response" title="Response" turnID={turnID}>
+          <div className="assistant-response-stack">
+            {sections.response.map((item) => (
+              <TraceItemView key={item.id} item={item} />
+            ))}
+          </div>
+        </AssistantTraceSection>
+      ) : null}
+
+      {sections.fileChange.length > 0 ? (
+        <AssistantTraceSection sectionKey="file-change" title="File Changes" turnID={turnID}>
+          <div className="assistant-file-change-stack">
+            {sections.fileChange.map((item) => (
+              <TraceItemView key={item.id} item={item} />
+            ))}
+          </div>
+        </AssistantTraceSection>
+      ) : null}
+    </>
+  )
+}
+
+function formatTraceStatusText(status?: AssistantTraceItem["status"]) {
+  switch (status) {
+    case "waiting-approval":
+      return "waiting approval"
+    case "completed":
+      return "completed"
+    case "running":
+      return "running"
+    case "pending":
+      return "pending"
+    case "error":
+      return "error"
+    case "denied":
+      return "denied"
+    default:
+      return null
+  }
+}
+
 function TraceItemView({ item }: { item: AssistantTraceItem }) {
+  const [isExpanded, setIsExpanded] = useState(false)
   const className = [
     "trace-item",
     `trace-kind-${item.kind}`,
+    item.kind === "reasoning" || item.kind === "tool" ? "is-plain" : "",
     item.isStreaming ? "is-streaming" : "",
     item.status ? `is-${item.status}` : "",
   ]
     .filter(Boolean)
     .join(" ")
+
+  if (item.kind === "reasoning") {
+    return (
+      <article className={className} data-kind={item.kind}>
+        {item.text ? <p className="trace-item-text trace-item-plain-text">{item.text}</p> : null}
+        {item.detail ? <p className="trace-item-detail trace-item-plain-detail">{item.detail}</p> : null}
+      </article>
+    )
+  }
+
+  if (item.kind === "tool") {
+    const statusText = formatTraceStatusText(item.status)
+    const summaryTitle = item.title || item.label
+    const hasDisclosureContent = Boolean(item.text || item.detail)
+    const disclosureID = `trace-item-disclosure-${item.id}`
+
+    return (
+      <article className={className} data-kind={item.kind}>
+        {hasDisclosureContent ? (
+          <button
+            className="trace-item-toggle"
+            type="button"
+            aria-expanded={isExpanded}
+            aria-controls={disclosureID}
+            onClick={() => setIsExpanded((current) => !current)}
+          >
+            <span className="trace-item-toggle-summary">
+              <span className="trace-item-toggle-icon" aria-hidden="true">
+                {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+              </span>
+              <span className="trace-item-toggle-line">
+                <span className="trace-item-inline-title">{summaryTitle}</span>
+                {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
+              </span>
+            </span>
+          </button>
+        ) : (
+          <p className="trace-item-toggle-line">
+            <span className="trace-item-inline-title">{summaryTitle}</span>
+            {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
+          </p>
+        )}
+
+        {hasDisclosureContent && isExpanded ? (
+          <div id={disclosureID} className="trace-item-disclosure">
+            {item.text ? <p className="trace-item-text">{item.text}</p> : null}
+            {item.detail ? <p className="trace-item-detail">{item.detail}</p> : null}
+          </div>
+        ) : null}
+      </article>
+    )
+  }
 
   return (
     <article className={className} data-kind={item.kind}>
@@ -2288,12 +2532,8 @@ export function ThreadView({
 
               return (
                 <article key={turn.id} className="turn assistant-turn">
-                  <div className={turn.isStreaming ? "assistant-shell is-streaming" : "assistant-shell"}>
-                    <div className="assistant-trace-list">
-                      {visibleItems.map((item) => (
-                        <TraceItemView key={item.id} item={item} />
-                      ))}
-                    </div>
+                  <div className={turn.isStreaming ? "assistant-shell is-sectioned is-streaming" : "assistant-shell is-sectioned"}>
+                    <AssistantTurnSections turnID={turn.id} items={visibleItems} />
                   </div>
                 </article>
               )

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { applyAgentStreamEventToTurn, buildStreamingAssistantTurn, buildTurnsFromHistory } from "./stream"
 
 describe("stream trace reducer", () => {
-  it("preserves reasoning before text in the trace order", () => {
+  it("waits until completion before surfacing the response text", () => {
     let turn = buildStreamingAssistantTurn("Show live trace")
 
     turn = applyAgentStreamEventToTurn(turn, {
@@ -23,8 +23,17 @@ describe("stream trace reducer", () => {
       },
     })
 
-    expect(turn.items.map((item) => item.kind)).toEqual(["system", "reasoning", "text"])
+    expect(turn.items.map((item) => item.kind)).toEqual(["system", "reasoning"])
     expect(turn.items[1]?.text).toBe("Planning live update.")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "done",
+      data: {
+        parts: [{ id: "part-text", type: "text", text: "Streaming answer" }],
+      },
+    })
+
+    expect(turn.items.map((item) => item.kind)).toEqual(["system", "reasoning", "text", "system"])
     expect(turn.items[2]?.text).toBe("Streaming answer")
   })
 
@@ -122,7 +131,7 @@ describe("stream trace reducer", () => {
     expect(turn.items[4]?.title).toBe("Response complete")
   })
 
-  it("updates the original text trace item when the same text part resumes after a tool event", () => {
+  it("keeps response deltas hidden until the finalized text part arrives after a tool event", () => {
     let turn = buildStreamingAssistantTurn("Resume text after tool")
 
     turn = applyAgentStreamEventToTurn(turn, {
@@ -160,10 +169,22 @@ describe("stream trace reducer", () => {
       },
     })
 
+    expect(turn.items.filter((item) => item.kind === "text")).toHaveLength(0)
+    expect(turn.items.map((item) => item.kind)).toEqual(["system", "tool"])
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "done",
+      data: {
+        parts: [
+          { id: "tool-3", type: "tool", tool: "npm test", state: { status: "completed", output: "ok" } },
+          { id: "text-1", type: "text", text: "First sentence. Second sentence." },
+        ],
+      },
+    })
+
     const textItems = turn.items.filter((item) => item.kind === "text")
     expect(textItems).toHaveLength(1)
     expect(textItems[0]?.text).toBe("First sentence. Second sentence.")
-    expect(turn.items.map((item) => item.kind)).toEqual(["system", "text", "tool"])
   })
 
   it("replaces anonymous streamed text with the finalized text part on completion", () => {

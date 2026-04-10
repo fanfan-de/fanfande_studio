@@ -165,22 +165,22 @@
 
 ## 7. Bash 可执行文件解析策略
 
-工具通过 `resolveBashExecutable()` 定位真正要执行的 Bash，可按以下顺序解析：
+工具通过 `resolveExecCommandBashExecutable()` 定位真正要执行的 Bash，可按以下顺序解析：
 
 1. 读取 `process.env.SHELL`
    - 只有当 basename 匹配 `bash` 或 `bash.exe` 时才接受
 2. 读取环境变量 `FanFande_GIT_BASH_PATH`
    - 仅当该路径存在且是文件时接受
-3. 从 `PATH` 查找 `bash` 或 `bash.exe`
-4. 若当前平台为 Windows
+3. 若当前平台为 Windows
    - 先查找 `git`
    - 再从 Git 安装路径推导 `../../bin/bash.exe`
+4. 从 `PATH` 查找 `bash` 或 `bash.exe`
 5. 仍找不到则报错
 
 设计原因：
 
 - 明确要求 Bash 语义，避免不同 shell 的语义差异
-- Windows 上优先支持 Git Bash，降低部署要求
+- Windows 上优先选择 Git Bash，避免误命中 `System32\bash.exe` 这类通用 Bash 入口
 - 通过显式解析路径，减少依赖宿主 shell 默认行为
 
 ## 8. 平台行为说明

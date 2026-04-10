@@ -42,6 +42,9 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+const STREAM_POLL_INTERVAL_MS = 120
+const STREAM_HEARTBEAT_INTERVAL_MS = 3000
+
 function readSessionParts(sessionID: string) {
   return db.findManyWithSchema("parts", Message.Part, {
     where: [{ column: "sessionID", value: sessionID }],
@@ -112,21 +115,35 @@ export function emitUpdatedAssistantSessionParts(
   }
 }
 
-function createSessionExecutionStream(input: {
+export function createSessionExecutionStream(input: {
   sessionID: string
   execute: () => Promise<SessionStreamResult>
   cancel: () => void
   requestId?: string
+  pollIntervalMs?: number
+  heartbeatIntervalMs?: number
 }) {
   let cancelled = false
+  const pollIntervalMs = input.pollIntervalMs ?? STREAM_POLL_INTERVAL_MS
+  const heartbeatIntervalMs = input.heartbeatIntervalMs ?? STREAM_HEARTBEAT_INTERVAL_MS
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const encoder = new TextEncoder()
+      let lastChunkAt = 0
+
+      const enqueue = (chunk: string) => {
+        if (cancelled) return
+        controller.enqueue(encoder.encode(chunk))
+        lastChunkAt = Date.now()
+      }
 
       const send = (event: string, data: unknown) => {
-        if (cancelled) return
-        controller.enqueue(encoder.encode(toSSE(event, data)))
+        enqueue(toSSE(event, data))
+      }
+
+      const sendKeepalive = () => {
+        enqueue(`: keepalive ${Date.now()}\n\n`)
       }
 
       const seenParts = new Map<string, Message.Part>()
@@ -158,7 +175,10 @@ function createSessionExecutionStream(input: {
 
         while (!done && !cancelled) {
           flushPartUpdates()
-          await sleep(120)
+          if (!done && !cancelled && Date.now() - lastChunkAt >= heartbeatIntervalMs) {
+            sendKeepalive()
+          }
+          await sleep(pollIntervalMs)
         }
 
         flushPartUpdates()

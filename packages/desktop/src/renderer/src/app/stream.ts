@@ -111,6 +111,10 @@ function appendTraceDelta(
     sourceID?: string
   },
 ) {
+  if (input.kind === "text") {
+    return clearStreamingItems(items)
+  }
+
   const nextItems = clearStreamingItems(items)
   const existingIndex = input.sourceID
     ? nextItems.findIndex((item) => item.kind === input.kind && item.sourceID === input.sourceID)

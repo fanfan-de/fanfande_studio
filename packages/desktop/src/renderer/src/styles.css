@@ -2281,9 +2281,23 @@ textarea::placeholder {
   gap: 14px;
 }
 
+.assistant-shell.is-sectioned {
+  padding: 0;
+  background: transparent;
+  gap: 12px;
+}
+
 .assistant-shell.is-streaming {
   border-color: rgba(97, 146, 193, 0.52);
   box-shadow: 0 16px 38px rgba(48, 86, 124, 0.08);
+}
+
+.assistant-shell.is-sectioned.is-streaming {
+  box-shadow: none;
+}
+
+.assistant-shell.is-sectioned.is-streaming .assistant-section {
+  border-color: rgba(97, 146, 193, 0.46);
 }
 
 .assistant-header h3 {
@@ -2291,9 +2305,75 @@ textarea::placeholder {
   line-height: 1.1;
 }
 
+.assistant-section {
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #ffffff;
+  padding: 14px 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.assistant-section.is-reasoning {
+  background: #fbfcfe;
+}
+
+.assistant-section.is-file-change {
+  background: #fcfdff;
+}
+
+.assistant-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.assistant-section-label {
+  color: #4b6074;
+}
+
+.assistant-section-body,
+.assistant-section-list,
+.assistant-reasoning-stack,
+.assistant-response-stack,
+.assistant-file-change-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.assistant-section-empty {
+  margin: 0;
+  color: #6b7d90;
+  line-height: 1.6;
+}
+
+.assistant-reasoning-round {
+  display: grid;
+  gap: 8px;
+}
+
+.assistant-reasoning-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #7a8c9d;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.assistant-reasoning-separator::before,
+.assistant-reasoning-separator::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: rgba(166, 186, 208, 0.42);
+}
+
 .assistant-trace-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .trace-item {
@@ -2304,6 +2384,14 @@ textarea::placeholder {
   background: #f5f8fb;
   display: grid;
   gap: 6px;
+}
+
+.trace-item.is-plain {
+  border-left: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 4px;
 }
 
 .trace-item::before {
@@ -2317,6 +2405,10 @@ textarea::placeholder {
   border-radius: 0;
   background: #8fa2b5;
   box-shadow: 0 0 0 1px rgba(145, 167, 191, 0.4);
+}
+
+.trace-item.is-plain::before {
+  display: none;
 }
 
 .trace-item-header {
@@ -2337,6 +2429,73 @@ textarea::placeholder {
 
 .trace-item-detail {
   color: #607386;
+}
+
+.trace-item-plain-text,
+.trace-item-plain-detail {
+  color: #526375;
+}
+
+.trace-item-toggle {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trace-item-toggle-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.trace-item-toggle-icon {
+  width: 14px;
+  height: 14px;
+  margin-top: 4px;
+  color: #6b7d90;
+  flex: 0 0 auto;
+}
+
+.trace-item-toggle-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trace-item-toggle-line {
+  margin: 0;
+  color: #2d4153;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.trace-item-inline-title,
+.trace-item-inline-status {
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+}
+
+.trace-item-inline-title {
+  color: #2d4153;
+}
+
+.trace-item-inline-status {
+  color: #6b7d90;
+}
+
+.trace-item-disclosure {
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
 }
 
 .trace-item-status {
@@ -2370,8 +2529,49 @@ textarea::placeholder {
   border-left-color: rgba(113, 136, 158, 0.74);
 }
 
+.trace-kind-reasoning,
+.trace-kind-tool {
+  background: transparent;
+  border-left: 0;
+  box-shadow: none;
+}
+
 .trace-kind-reasoning::before {
   background: #71889e;
+}
+
+.trace-kind-reasoning .trace-item-text,
+.trace-kind-reasoning .trace-item-detail {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.assistant-section.is-reasoning .trace-item,
+.assistant-section.is-response .trace-item {
+  border-left: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.assistant-section.is-reasoning .trace-item::before,
+.assistant-section.is-response .trace-item::before,
+.assistant-section.is-file-change .trace-item::before {
+  display: none;
+}
+
+.assistant-section.is-response .trace-item-header {
+  display: none;
+}
+
+.assistant-section.is-response .trace-item-text {
+  color: #17232f;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.assistant-section.is-response .trace-item-detail {
+  color: #526375;
 }
 
 .trace-kind-text {
@@ -2404,44 +2604,48 @@ textarea::placeholder {
   background: #6a9ac2;
 }
 
-.trace-kind-tool {
-  background: linear-gradient(180deg, #edf6ff 0%, #f7fbff 100%);
-  border-left-color: rgba(55, 114, 170, 0.84);
-  box-shadow: inset 0 0 0 1px rgba(123, 168, 212, 0.34);
-}
-
-.trace-kind-tool::before {
-  background: #3773aa;
-  box-shadow: 0 0 0 1px rgba(100, 147, 192, 0.34);
-}
-
-.trace-kind-tool .trace-item-label,
-.trace-kind-tool .trace-item-status {
-  color: #2e608f;
-}
-
-.trace-kind-tool .trace-item-title,
 .trace-kind-tool .trace-item-detail {
   font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
-}
-
-.trace-kind-tool .trace-item-title {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  padding: 0 8px;
-  border: 1px solid rgba(124, 163, 202, 0.45);
-  background: rgba(255, 255, 255, 0.82);
-  font-size: 12px;
-  letter-spacing: 0.02em;
-}
-
-.trace-kind-tool .trace-item-detail {
   font-size: 12px;
   line-height: 1.7;
   color: #42586d;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.trace-kind-tool .trace-item-toggle:hover .trace-item-inline-title,
+.trace-kind-tool .trace-item-toggle:focus-visible .trace-item-inline-title {
+  color: #0f67aa;
+}
+
+.trace-kind-tool .trace-item-toggle:hover .trace-item-inline-status,
+.trace-kind-tool .trace-item-toggle:focus-visible .trace-item-inline-status {
+  color: #0f67aa;
+}
+
+.trace-kind-tool .trace-item-toggle:focus-visible {
+  outline: none;
+}
+
+.assistant-section.is-file-change .trace-item {
+  border-left: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 6px;
+}
+
+.assistant-section.is-file-change .trace-item + .trace-item {
+  border-top: 1px solid rgba(166, 186, 208, 0.32);
+  padding-top: 12px;
+}
+
+.assistant-section.is-file-change .trace-item-header {
+  gap: 10px;
+}
+
+.assistant-section.is-file-change .trace-item-title {
+  font-size: 14px;
 }
 
 .trace-kind-error {

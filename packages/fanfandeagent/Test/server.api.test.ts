@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServerApp } from "#server/server.ts"
-import { emitUpdatedAssistantSessionParts, seedSeenSessionParts } from "#server/routes/session.ts"
+import { createSessionExecutionStream, emitUpdatedAssistantSessionParts, seedSeenSessionParts } from "#server/routes/session.ts"
 import * as Identifier from "#id/id.ts"
 import * as Message from "#session/message.ts"
 import * as Session from "#session/session.ts"
@@ -960,6 +960,32 @@ describe("server api", () => {
       const data = item.data as { partID?: string; text?: string }
       return data.partID === historicalAssistantTextPart.id || data.text === "old answer"
     })).toBe(false)
+  })
+
+  test("session execution stream emits keepalive comments while waiting for a long response", async () => {
+    const response = createSessionExecutionStream({
+      sessionID: "session_keepalive",
+      pollIntervalMs: 10,
+      heartbeatIntervalMs: 20,
+      execute: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60))
+        return {
+          info: {
+            id: "message_keepalive",
+            sessionID: "session_keepalive",
+            role: "assistant",
+          } as Message.MessageInfo,
+          parts: [],
+        }
+      },
+      cancel: () => {},
+    })
+
+    const raw = await response.text()
+
+    expect(raw).toContain("event: started")
+    expect(raw).toContain(": keepalive")
+    expect(raw).toContain("event: done")
   })
 
   test("GET /api/projects/:id/sessions should return 404 for missing project", async () => {
