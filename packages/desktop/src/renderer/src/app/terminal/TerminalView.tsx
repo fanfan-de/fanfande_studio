@@ -1,7 +1,23 @@
-import { useEffect, useEffectEvent, useRef } from "react"
+import { memo, useEffect, useEffectEvent, useRef } from "react"
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
 import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
+
+function shouldAutoFocusTerminal(container: HTMLElement) {
+  const activeElement = document.activeElement
+  if (!(activeElement instanceof HTMLElement)) return true
+  if (activeElement === document.body) return true
+  if (container.contains(activeElement)) return true
+  if (activeElement.closest(".terminal-panel, .canvas-terminal-toggle-anchor")) return true
+
+  const isEditableControl =
+    activeElement instanceof HTMLInputElement ||
+    activeElement instanceof HTMLTextAreaElement ||
+    activeElement.isContentEditable ||
+    activeElement.getAttribute("role") === "textbox"
+
+  return !isEditableControl
+}
 
 interface TerminalViewProps {
   panelHeight: number
@@ -12,7 +28,7 @@ interface TerminalViewProps {
   subscribeToTerminalStream: (ptyID: string, listener: (event: TerminalStreamEvent) => void) => () => void
 }
 
-export function TerminalView({
+export const TerminalView = memo(function TerminalView({
   panelHeight,
   session,
   onInput,
@@ -26,11 +42,30 @@ export function TerminalView({
   const flushFrameRef = useRef<number | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
   const lastReportedScrollTopRef = useRef(0)
+  const lastMeasuredDimensionsRef = useRef<{ rows: number; cols: number } | null>(null)
   const writeQueueRef = useRef<string[]>([])
   const isFlushingRef = useRef(false)
   const handleInput = useEffectEvent(onInput)
   const handleResize = useEffectEvent(onResize)
   const handleSnapshotChange = useEffectEvent(onSnapshotChange)
+  const fitTerminal = useEffectEvent(() => {
+    const fitAddon = fitAddonRef.current
+    if (!fitAddon) return
+
+    fitAddon.fit()
+    const dimensions = fitAddon.proposeDimensions()
+    if (!dimensions) return
+
+    const lastMeasured = lastMeasuredDimensionsRef.current
+    if (lastMeasured && lastMeasured.rows === dimensions.rows && lastMeasured.cols === dimensions.cols) {
+      return
+    }
+
+    lastMeasuredDimensionsRef.current = dimensions
+    if (dimensions.rows !== session.rows || dimensions.cols !== session.cols) {
+      handleResize(session.ptyID, dimensions.rows, dimensions.cols)
+    }
+  })
   const handleTerminalStream = useEffectEvent((event: TerminalStreamEvent) => {
     const terminal = terminalRef.current
     if (!terminal) return
@@ -134,7 +169,9 @@ export function TerminalView({
     terminal.write(session.buffer)
     lastReportedScrollTopRef.current = session.scrollTop
     terminal.scrollToLine(session.scrollTop)
-    terminal.focus()
+    if (shouldAutoFocusTerminal(container)) {
+      terminal.focus()
+    }
 
     const disposeInput = terminal.onData((data) => {
       void handleInput(data)
@@ -157,17 +194,13 @@ export function TerminalView({
     })
 
     terminalRef.current = terminal
-
-    const fitTerminal = () => {
-      fitAddon.fit()
-      const dimensions = fitAddon.proposeDimensions()
-      if (!dimensions) return
-      if (dimensions.rows !== session.rows || dimensions.cols !== session.cols) {
-        handleResize(session.ptyID, dimensions.rows, dimensions.cols)
-      }
+    lastMeasuredDimensionsRef.current = {
+      rows: session.rows,
+      cols: session.cols,
     }
-
-    const fitTimer = window.setTimeout(fitTerminal, 0)
+    const fitTimer = window.setTimeout(() => {
+      fitTerminal()
+    }, 0)
     const handleWindowResize = () => fitTerminal()
     window.addEventListener("resize", handleWindowResize)
 
@@ -182,33 +215,33 @@ export function TerminalView({
       }
       disposeInput.dispose()
       disposeScroll.dispose()
+      fitAddon.dispose()
       terminal.dispose()
       terminalRef.current = null
       fitAddonRef.current = null
+      lastMeasuredDimensionsRef.current = null
       writeQueueRef.current = []
       isFlushingRef.current = false
       flushFrameRef.current = null
     }
-  }, [handleInput, handleResize, handleSnapshotChange, session.ptyID])
+  }, [fitTerminal, handleInput, handleSnapshotChange, session.ptyID])
 
   useEffect(() => {
-    const fitAddon = fitAddonRef.current
-    const terminal = terminalRef.current
-    if (!fitAddon || !terminal) return
-
     const timer = window.setTimeout(() => {
-      fitAddon.fit()
-      const dimensions = fitAddon.proposeDimensions()
-      if (dimensions && (dimensions.rows !== session.rows || dimensions.cols !== session.cols)) {
-        handleResize(session.ptyID, dimensions.rows, dimensions.cols)
-      }
-      terminal.focus()
+      fitTerminal()
     }, 0)
 
     return () => {
       window.clearTimeout(timer)
     }
-  }, [handleResize, panelHeight, session.cols, session.ptyID, session.rows])
+  }, [fitTerminal, panelHeight, session.ptyID])
+
+  useEffect(() => {
+    lastMeasuredDimensionsRef.current = {
+      rows: session.rows,
+      cols: session.cols,
+    }
+  }, [session.cols, session.rows])
 
   useEffect(() => {
     return subscribeToTerminalStream(session.ptyID, handleTerminalStream)
@@ -216,14 +249,6 @@ export function TerminalView({
 
   return (
     <div className="terminal-view-shell">
-      <div className="terminal-view-meta">
-        <span className="terminal-meta-pill">{session.cwd}</span>
-        <span className="terminal-meta-pill">{session.shell}</span>
-        <span className={`terminal-meta-pill is-${session.transportState}`}>{session.transportState}</span>
-        <span className={`terminal-meta-pill is-${session.status}`}>{session.status}</span>
-        {session.exitCode !== null ? <span className="terminal-meta-pill">exit {String(session.exitCode)}</span> : null}
-      </div>
-
       {session.lastError ? <p className="terminal-view-error">{session.lastError}</p> : null}
 
       <div
@@ -236,4 +261,4 @@ export function TerminalView({
       </div>
     </div>
   )
-}
+})

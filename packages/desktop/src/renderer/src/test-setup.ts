@@ -20,6 +20,7 @@ class MockTerminal {
 
   open(element: HTMLElement) {
     this.element = element
+    this.element.tabIndex = -1
     this.element.textContent = ""
   }
 
@@ -48,7 +49,9 @@ class MockTerminal {
     }
   }
 
-  focus() {}
+  focus() {
+    this.element?.focus()
+  }
 
   reset() {
     if (this.element) {

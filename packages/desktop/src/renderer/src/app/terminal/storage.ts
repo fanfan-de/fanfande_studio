@@ -10,8 +10,8 @@ const DEFAULT_PANEL_HEIGHT = 280
 
 function toStoredSession(session: TerminalSessionRecord): TerminalStorageSessionSnapshot {
   // PTY scrollback is live data owned by the backend. Persist only the
-  // structural shell state so typing and streaming output do not rewrite
-  // large buffers into localStorage on every frame.
+  // structural shell state plus the viewport position so reconnecting or
+  // reloading does not jump back to the top of the terminal.
   return {
     ptyID: session.ptyID,
     title: session.title,
@@ -25,7 +25,7 @@ function toStoredSession(session: TerminalSessionRecord): TerminalStorageSession
     updatedAt: session.createdAt,
     cursor: 0,
     buffer: "",
-    scrollTop: 0,
+    scrollTop: session.scrollTop,
   }
 }
 

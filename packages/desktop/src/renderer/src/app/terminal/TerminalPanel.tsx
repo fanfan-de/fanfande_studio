@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { TerminalTabs } from "./TerminalTabs"
 import { TerminalView } from "./TerminalView"
 import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
@@ -26,7 +26,7 @@ function clampHeight(value: number) {
   return Math.max(MIN_PANEL_HEIGHT, Math.min(MAX_PANEL_HEIGHT, value))
 }
 
-export function TerminalPanel({
+export const TerminalPanel = memo(function TerminalPanel({
   activeSession,
   isOpen,
   panelHeight,
@@ -42,20 +42,58 @@ export function TerminalPanel({
   subscribeToTerminalStream,
 }: TerminalPanelProps) {
   const [isResizing, setIsResizing] = useState(false)
+  const [previewHeight, setPreviewHeight] = useState(panelHeight)
   const startRef = useRef<{ pointerY: number; height: number } | null>(null)
+  const previewHeightRef = useRef(panelHeight)
+  const animationFrameRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (isResizing) return
+    previewHeightRef.current = panelHeight
+    setPreviewHeight(panelHeight)
+  }, [isResizing, panelHeight])
+
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current)
+        animationFrameRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!isResizing) return
 
+    const queuePreviewHeight = (height: number) => {
+      previewHeightRef.current = height
+      if (animationFrameRef.current !== null) return
+
+      animationFrameRef.current = window.requestAnimationFrame(() => {
+        animationFrameRef.current = null
+        setPreviewHeight(previewHeightRef.current)
+      })
+    }
+
     const handlePointerMove = (event: globalThis.PointerEvent) => {
       if (!startRef.current) return
       const delta = startRef.current.pointerY - event.clientY
-      onPanelHeightChange(clampHeight(startRef.current.height + delta))
+      queuePreviewHeight(clampHeight(startRef.current.height + delta))
     }
 
     const stopResize = () => {
+      const committedHeight = startRef.current?.height ?? panelHeight
+      const nextHeight = previewHeightRef.current
       startRef.current = null
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current)
+        animationFrameRef.current = null
+      }
+      setPreviewHeight(nextHeight)
       setIsResizing(false)
+      if (nextHeight !== committedHeight) {
+        onPanelHeightChange(nextHeight)
+      }
     }
 
     document.body.classList.add("is-resizing-terminal-panel")
@@ -69,12 +107,14 @@ export function TerminalPanel({
       window.removeEventListener("pointerup", stopResize)
       window.removeEventListener("pointercancel", stopResize)
     }
-  }, [isResizing, onPanelHeightChange])
+  }, [isResizing, onPanelHeightChange, panelHeight])
 
   if (!isOpen) return null
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return
+    previewHeightRef.current = panelHeight
+    setPreviewHeight(panelHeight)
     startRef.current = {
       pointerY: event.clientY,
       height: panelHeight,
@@ -82,8 +122,10 @@ export function TerminalPanel({
     setIsResizing(true)
   }
 
+  const renderedHeight = isResizing ? previewHeight : panelHeight
+
   return (
-    <section className="terminal-panel" style={{ height: `${String(panelHeight)}px` }}>
+    <section className={isResizing ? "terminal-panel is-resizing" : "terminal-panel"} style={{ height: `${String(renderedHeight)}px` }}>
       <div
         className={isResizing ? "terminal-panel-resizer is-active" : "terminal-panel-resizer"}
         onPointerDown={handlePointerDown}
@@ -103,7 +145,7 @@ export function TerminalPanel({
 
       {activeSession ? (
         <TerminalView
-          panelHeight={panelHeight}
+          panelHeight={renderedHeight}
           session={activeSession}
           onInput={onTerminalInput}
           onResize={onTerminalResize}
@@ -120,4 +162,4 @@ export function TerminalPanel({
       )}
     </section>
   )
-}
+})

@@ -46,7 +46,7 @@ describe("terminal storage", () => {
       title: "Workspace shell",
       buffer: "",
       cursor: 0,
-      scrollTop: 0,
+      scrollTop: 4,
       transportState: "idle",
     })
   })

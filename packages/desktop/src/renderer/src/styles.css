@@ -2854,17 +2854,24 @@ textarea::placeholder {
   position: relative;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  border: 1px solid rgba(166, 186, 208, 0.42);
-  background: #f7fbff;
-  box-shadow: 0 14px 34px rgba(46, 81, 118, 0.08);
+  border: 0;
+  border-top: 1px solid rgba(138, 164, 189, 0.28);
+  background: linear-gradient(180deg, rgba(247, 251, 255, 0.96) 0%, #ffffff 100%);
+  box-shadow: none;
   overflow: hidden;
+  contain: layout paint;
+  overflow-anchor: none;
+}
+
+.terminal-panel.is-resizing {
+  will-change: height;
 }
 
 .terminal-panel-resizer {
   position: relative;
   height: 10px;
   cursor: row-resize;
-  background: linear-gradient(180deg, rgba(231, 242, 251, 0.6) 0%, rgba(247, 251, 255, 0.2) 100%);
+  background: transparent;
 }
 
 .terminal-panel-resizer::after {
@@ -2872,10 +2879,10 @@ textarea::placeholder {
   position: absolute;
   top: 4px;
   left: 50%;
-  width: 72px;
+  width: 64px;
   height: 2px;
   transform: translateX(-50%);
-  background: rgba(116, 143, 169, 0.52);
+  background: rgba(116, 143, 169, 0.34);
 }
 
 .terminal-panel-resizer.is-active::after,
@@ -2884,61 +2891,75 @@ textarea::placeholder {
 }
 
 .terminal-tabs,
-.terminal-tabs-list,
-.terminal-view-meta {
+.terminal-tabs-list {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .terminal-tabs {
-  min-height: 48px;
-  padding: 0 12px;
+  min-height: 42px;
+  padding: 0 10px 0 12px;
   justify-content: flex-start;
-  border-bottom: 1px solid rgba(166, 186, 208, 0.26);
-  background: rgba(255, 255, 255, 0.88);
+  background: transparent;
 }
 
 .terminal-tabs-list {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   overflow: auto;
   scrollbar-width: thin;
 }
 
 .terminal-panel-toggle-button {
-  gap: 8px;
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #5a6e81;
   flex-shrink: 0;
+}
+
+.terminal-panel-toggle-button:hover,
+.terminal-panel-toggle-button:focus-visible,
+.terminal-panel-toggle-button.is-active {
+  border: 0;
+  background: rgba(22, 119, 200, 0.08);
+  box-shadow: none;
 }
 
 .terminal-tab {
   min-width: 0;
   display: inline-flex;
-  align-items: stretch;
-  border: 1px solid transparent;
+  align-items: center;
+  gap: 2px;
+  border: 0;
   background: transparent;
   color: #55697d;
 }
 
 .terminal-tab.is-active {
-  border-color: rgba(22, 119, 200, 0.34);
-  background: #e7f2fb;
+  background: rgba(22, 119, 200, 0.08);
   color: #153a59;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
 }
 
 .terminal-tab-trigger {
   min-width: 0;
-  padding: 8px 12px;
-  display: grid;
-  gap: 2px;
+  min-height: 32px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
   text-align: left;
   background: transparent;
   color: inherit;
   cursor: pointer;
 }
 
-.terminal-tab-title,
-.terminal-tab-status {
+.terminal-tab-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2946,48 +2967,37 @@ textarea::placeholder {
 }
 
 .terminal-tab-title {
-  font-weight: 600;
-}
-
-.terminal-tab-status {
-  color: #678094;
-  font-size: 11px;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .terminal-tab-close,
 .terminal-panel-create {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   border: 0;
   background: transparent;
   color: #5a6e81;
   cursor: pointer;
   transition:
     background 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
-}
-
-.terminal-tab-close {
-  width: 32px;
+    color 160ms ease;
 }
 
 .terminal-panel-create {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(166, 186, 208, 0.38);
-  background: rgba(255, 255, 255, 0.92);
+  margin-left: 2px;
 }
 
 .terminal-tab-close:hover,
-.terminal-panel-create:hover {
+.terminal-tab-close:focus-visible,
+.terminal-panel-create:hover,
+.terminal-panel-create:focus-visible {
   color: #1d2a35;
   background: rgba(22, 119, 200, 0.08);
-  transform: translateY(-1px);
 }
 
 .terminal-tab-close svg,
@@ -3005,46 +3015,10 @@ textarea::placeholder {
 
 .terminal-view-shell {
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 10px;
-  padding: 12px;
-}
-
-.terminal-view-meta {
-  flex-wrap: wrap;
-}
-
-.terminal-meta-pill {
-  min-height: 24px;
-  padding: 0 8px;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid rgba(166, 186, 208, 0.34);
-  background: rgba(255, 255, 255, 0.86);
-  color: #4c6174;
-  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
-  font-size: 11px;
-}
-
-.terminal-meta-pill.is-connected,
-.terminal-meta-pill.is-running {
-  color: #1f6b3d;
-}
-
-.terminal-meta-pill.is-connecting,
-.terminal-meta-pill.is-disconnected {
-  color: #8a5a0b;
-}
-
-.terminal-meta-pill.is-error,
-.terminal-meta-pill.is-invalid,
-.terminal-meta-pill.is-deleted {
-  color: #b13a3a;
-}
-
-.terminal-meta-pill.is-exited {
-  color: #6b7d90;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 12px 12px;
 }
 
 .terminal-view-error {
@@ -3055,9 +3029,13 @@ textarea::placeholder {
 
 .terminal-surface {
   min-height: 0;
-  border: 1px solid rgba(19, 34, 49, 0.48);
+  flex: 1 1 auto;
+  border: 0;
   background: #0f1b26;
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  contain: layout paint;
+  overflow-anchor: none;
 }
 
 .terminal-xterm,
@@ -3067,12 +3045,14 @@ textarea::placeholder {
 
 .terminal-xterm {
   min-height: 0;
-  padding: 8px;
+  padding: 10px 12px 12px;
 }
 
 .terminal-xterm .xterm-viewport {
   overflow-y: auto !important;
   scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
 }
 
 .terminal-empty-state {

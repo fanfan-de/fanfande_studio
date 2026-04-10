@@ -1,4 +1,5 @@
-import { CloseIcon, NewItemIcon } from "../icons"
+import { memo } from "react"
+import { CloseIcon, PlusIcon } from "../icons"
 import { TerminalPanelToggleButton } from "./TerminalPanelToggleButton"
 import type { TerminalSessionRecord } from "./types"
 
@@ -24,7 +25,7 @@ function formatTerminalStatus(session: TerminalSessionRecord) {
   return "Running"
 }
 
-export function TerminalTabs({
+export const TerminalTabs = memo(function TerminalTabs({
   activePtyID,
   sessions,
   onCloseTerminal,
@@ -44,6 +45,7 @@ export function TerminalTabs({
               <button
                 className="terminal-tab-trigger"
                 role="tab"
+                aria-label={`${session.title}, ${formatTerminalStatus(session)}`}
                 aria-selected={isActive}
                 aria-controls={`terminal-panel-${session.ptyID}`}
                 id={`terminal-tab-${session.ptyID}`}
@@ -51,7 +53,6 @@ export function TerminalTabs({
                 type="button"
               >
                 <span className="terminal-tab-title">{session.title}</span>
-                <span className="terminal-tab-status">{formatTerminalStatus(session)}</span>
               </button>
 
               <button
@@ -68,9 +69,8 @@ export function TerminalTabs({
       </div>
 
       <button className="terminal-panel-create" aria-label="New terminal" onClick={() => void onCreateTerminal()} type="button">
-        <NewItemIcon />
-        <span>New terminal</span>
+        <PlusIcon />
       </button>
     </div>
   )
-}
+})

@@ -2447,6 +2447,10 @@ describe("App", () => {
     expect(screen.getByRole("tablist", { name: "Terminal tabs" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "New terminal" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Toggle terminal panel" }).closest(".terminal-tabs")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "New terminal" })).toHaveTextContent("")
+    expect(screen.getByRole("button", { name: "Toggle terminal panel" })).toHaveTextContent("")
+    expect(screen.queryByText("New terminal")).not.toBeInTheDocument()
+    expect(document.querySelector(".terminal-view-meta")).toBeNull()
 
     const composer = document.querySelector(".composer")
     const terminalPanel = document.querySelector(".terminal-panel")

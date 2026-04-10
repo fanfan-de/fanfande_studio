@@ -25,6 +25,18 @@ function Harness() {
       >
         Close active
       </button>
+      <button
+        disabled={!terminal.activeSession}
+        onClick={() =>
+          terminal.activeSession &&
+          terminal.handleTerminalSnapshotChange(terminal.activeSession.ptyID, {
+            scrollTop: 42,
+          })
+        }
+        type="button"
+      >
+        Snapshot
+      </button>
       <div data-testid="is-open">{terminal.isOpen ? "open" : "closed"}</div>
       <div data-testid="active-id">{terminal.activeSession?.ptyID ?? "none"}</div>
       <div data-testid="session-count">{String(terminal.sessions.length)}</div>
@@ -313,5 +325,35 @@ describe("useTerminalWorkspace", () => {
 
     expect(setItemSpy).not.toHaveBeenCalled()
     setItemSpy.mockRestore()
+  })
+
+  it("persists terminal scroll position from the live snapshot path", async () => {
+    render(<Harness />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+
+    await waitFor(() => {
+      expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
+        id: "pty-1",
+        cursor: 0,
+      })
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId("active-id")).toHaveTextContent("pty-1")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Snapshot" }))
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    })
+
+    const persisted = window.localStorage.getItem("desktop.terminal.workspace.v1")
+    expect(persisted).not.toBeNull()
+
+    const payload = JSON.parse(persisted!)
+    expect(payload.sessions).toHaveLength(1)
+    expect(payload.sessions[0]?.scrollTop).toBe(42)
+    expect(payload.sessions[0]?.buffer).toBe("")
   })
 })

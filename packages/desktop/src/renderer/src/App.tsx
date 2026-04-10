@@ -1,3 +1,4 @@
+import { memo } from "react"
 import {
   ActivityRail,
   CanvasTopMenu,
@@ -246,7 +247,7 @@ interface TerminalAreaProps {
   defaultCwd: string
 }
 
-function TerminalArea({ currentWorkspaceDirectory, defaultCwd }: TerminalAreaProps) {
+const TerminalArea = memo(function TerminalArea({ currentWorkspaceDirectory, defaultCwd }: TerminalAreaProps) {
   const {
     activeSession,
     handleCloseTerminal,
@@ -290,4 +291,4 @@ function TerminalArea({ currentWorkspaceDirectory, defaultCwd }: TerminalAreaPro
       />
     </>
   )
-}
+})
