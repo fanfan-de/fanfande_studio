@@ -619,7 +619,7 @@ describe("App", () => {
     })
   })
 
-  it("splits assistant turns into reasoning, tools, response, and file change panels", async () => {
+  it("renders assistant trace blocks in backend order instead of grouping by type", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
         id: "C:\\Projects\\Atlas\\client",
@@ -673,6 +673,15 @@ describe("App", () => {
             },
           },
           { id: "reasoning-2", type: "reasoning", text: "Evaluating test output." },
+          {
+            id: "tool-2",
+            type: "tool",
+            tool: "write-file",
+            state: {
+              status: "completed",
+              output: "README updated",
+            },
+          },
           { id: "text-1", type: "text", text: "All checks passed." },
           {
             id: "patch-1",
@@ -700,25 +709,29 @@ describe("App", () => {
 
     expect(assistantTurn).not.toBeNull()
 
-    const reasoningSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "Reasoning" })
-    const toolsSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "Tools" })
-    const responseSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "Response" })
-    const fileChangeSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "File Changes" })
+    const sectionElements = Array.from((assistantTurn as HTMLElement).querySelectorAll(".assistant-section"))
+    const sectionTitles = sectionElements.map((section) => section.querySelector(".assistant-section-label")?.textContent?.trim())
 
-    expect(within(reasoningSection).getByText("Inspecting workspace.")).toBeInTheDocument()
-    expect(within(reasoningSection).queryByRole("button", { name: /npm test.*completed/i })).not.toBeInTheDocument()
-    expect(within(reasoningSection).getByText("Evaluating test output.")).toBeInTheDocument()
-    expect(reasoningSection.querySelectorAll(".assistant-reasoning-round")).toHaveLength(2)
+    expect(sectionTitles).toEqual(["Reasoning", "Tools", "Reasoning", "Tools", "Response", "File Changes"])
 
-    expect(within(toolsSection).getByRole("button", { name: /npm test.*completed/i })).toBeInTheDocument()
-    expect(within(toolsSection).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
+    expect(within(sectionElements[0] as HTMLElement).getByText("Inspecting workspace.")).toBeInTheDocument()
+    expect(within(sectionElements[0] as HTMLElement).queryByRole("button", { name: /npm test.*completed/i })).not.toBeInTheDocument()
 
-    expect(within(responseSection).getByText("All checks passed.")).toBeInTheDocument()
-    expect(within(responseSection).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
+    expect(within(sectionElements[1] as HTMLElement).getByRole("button", { name: /npm test.*completed/i })).toBeInTheDocument()
+    expect(within(sectionElements[1] as HTMLElement).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
 
-    expect(within(fileChangeSection).getByText("1 file change (+2 -1)")).toBeInTheDocument()
-    expect(within(fileChangeSection).getByText("src/App.tsx (+2 -1)")).toBeInTheDocument()
-    expect(within(fileChangeSection).queryByText("All checks passed.")).not.toBeInTheDocument()
+    expect(within(sectionElements[2] as HTMLElement).getByText("Evaluating test output.")).toBeInTheDocument()
+    expect(within(sectionElements[2] as HTMLElement).queryByRole("button", { name: /write-file.*completed/i })).not.toBeInTheDocument()
+
+    expect(within(sectionElements[3] as HTMLElement).getByRole("button", { name: /write-file.*completed/i })).toBeInTheDocument()
+    expect(within(sectionElements[3] as HTMLElement).queryByText("Evaluating test output.")).not.toBeInTheDocument()
+
+    expect(within(sectionElements[4] as HTMLElement).getByText("All checks passed.")).toBeInTheDocument()
+    expect(within(sectionElements[4] as HTMLElement).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
+
+    expect(within(sectionElements[5] as HTMLElement).getByText("1 file change (+2 -1)")).toBeInTheDocument()
+    expect(within(sectionElements[5] as HTMLElement).getByText("src/App.tsx (+2 -1)")).toBeInTheDocument()
+    expect(within(sectionElements[5] as HTMLElement).queryByText("All checks passed.")).not.toBeInTheDocument()
   })
 
   it("keeps the response hidden until completion while reasoning and file changes stream in first", async () => {
@@ -871,10 +884,10 @@ describe("App", () => {
     const responseSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "Response" })
     expect(within(responseSection).getByText("Streaming answer")).toBeInTheDocument()
 
-    const reasoningPosition = reasoningSection.compareDocumentPosition(responseSection)
-    const responsePosition = responseSection.compareDocumentPosition(fileChangeSection)
+    const reasoningPosition = reasoningSection.compareDocumentPosition(fileChangeSection)
+    const fileChangePosition = fileChangeSection.compareDocumentPosition(responseSection)
     expect(reasoningPosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(responsePosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(fileChangePosition & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it("reloads session history from the server when switching sessions in the sidebar", async () => {

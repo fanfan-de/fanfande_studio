@@ -2054,84 +2054,66 @@ function isFileChangeTraceItem(item: AssistantTraceItem) {
   return item.kind === "patch" || item.kind === "file" || item.kind === "image"
 }
 
-function partitionAssistantTraceItems(items: AssistantTraceItem[]) {
-  const reasoning: AssistantTraceItem[] = []
-  const tools: AssistantTraceItem[] = []
-  const response: AssistantTraceItem[] = []
-  const fileChange: AssistantTraceItem[] = []
+function traceSectionKeyForItem(item: AssistantTraceItem): AssistantTraceSectionKey {
+  if (isResponseTraceItem(item)) return "response"
+  if (isFileChangeTraceItem(item)) return "file-change"
+  if (isToolTraceItem(item)) return "tools"
+  return "reasoning"
+}
 
-  items.forEach((item) => {
-    if (isResponseTraceItem(item)) {
-      response.push(item)
-      return
-    }
-
-    if (isFileChangeTraceItem(item)) {
-      fileChange.push(item)
-      return
-    }
-
-    if (isToolTraceItem(item)) {
-      tools.push(item)
-      return
-    }
-
-    reasoning.push(item)
-  })
-
-  return {
-    reasoning,
-    tools,
-    response,
-    fileChange,
+function traceSectionTitle(sectionKey: AssistantTraceSectionKey) {
+  switch (sectionKey) {
+    case "tools":
+      return "Tools"
+    case "response":
+      return "Response"
+    case "file-change":
+      return "File Changes"
+    default:
+      return "Reasoning"
   }
 }
 
-function buildReasoningRounds(items: AssistantTraceItem[]) {
-  const rounds: AssistantTraceItem[][] = []
-  let currentRound: AssistantTraceItem[] = []
-  let sawToolSinceLastReasoning = false
+function buildAssistantTraceBlocks(items: AssistantTraceItem[]) {
+  return items.reduce<
+    {
+      sectionKey: AssistantTraceSectionKey
+      title: string
+      items: AssistantTraceItem[]
+    }[]
+  >((blocks, item) => {
+    const sectionKey = traceSectionKeyForItem(item)
+    const lastBlock = blocks[blocks.length - 1]
 
-  items.forEach((item) => {
-    if (item.kind === "tool") {
-      if (currentRound.length > 0) {
-        sawToolSinceLastReasoning = true
-      }
-      return
+    if (lastBlock && lastBlock.sectionKey === sectionKey) {
+      lastBlock.items.push(item)
+      return blocks
     }
 
-    if (item.kind !== "reasoning") {
-      return
-    }
+    blocks.push({
+      sectionKey,
+      title: traceSectionTitle(sectionKey),
+      items: [item],
+    })
 
-    if (currentRound.length > 0 && sawToolSinceLastReasoning) {
-      rounds.push(currentRound)
-      currentRound = []
-      sawToolSinceLastReasoning = false
-    }
-
-    currentRound.push(item)
-  })
-
-  if (currentRound.length > 0) {
-    rounds.push(currentRound)
-  }
-
-  return rounds
+    return blocks
+  }, [])
 }
 
 function AssistantTraceSection({
   children,
+  sectionIndex,
   sectionKey,
   title,
   turnID,
 }: {
   children: ReactNode
+  sectionIndex: number
   sectionKey: AssistantTraceSectionKey
   title: string
   turnID: string
 }) {
-  const titleID = `${turnID}-${sectionKey}-title`
+  const titleID = `${turnID}-${sectionKey}-${sectionIndex}-title`
 
   return (
     <section className={`assistant-section is-${sectionKey}`} role="region" aria-labelledby={titleID}>
@@ -2152,61 +2134,33 @@ function AssistantTurnSections({
   items: AssistantTraceItem[]
   turnID: string
 }) {
-  const sections = partitionAssistantTraceItems(items)
-  const reasoningRounds = buildReasoningRounds(items)
+  const blocks = buildAssistantTraceBlocks(items)
 
   return (
     <>
-      {reasoningRounds.length > 0 ? (
-        <AssistantTraceSection sectionKey="reasoning" title="Reasoning" turnID={turnID}>
-          <div className="assistant-reasoning-stack">
-            {reasoningRounds.map((round, index) => (
-              <div key={`${turnID}-reasoning-round-${index + 1}`} className="assistant-reasoning-round">
-                {index > 0 ? (
-                  <div className="assistant-reasoning-separator">
-                    <span>{`Call ${index + 1}`}</span>
-                  </div>
-                ) : null}
-                <div className="assistant-section-list">
-                  {round.map((item) => (
-                    <TraceItemView key={item.id} item={item} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </AssistantTraceSection>
-      ) : null}
-
-      {sections.tools.length > 0 ? (
-        <AssistantTraceSection sectionKey="tools" title="Tools" turnID={turnID}>
-          <div className="assistant-section-list">
-            {sections.tools.map((item) => (
+      {blocks.map((block, index) => (
+        <AssistantTraceSection
+          key={`${turnID}-${block.sectionKey}-${index}`}
+          sectionIndex={index}
+          sectionKey={block.sectionKey}
+          title={block.title}
+          turnID={turnID}
+        >
+          <div
+            className={
+              block.sectionKey === "response"
+                ? "assistant-response-stack"
+                : block.sectionKey === "file-change"
+                  ? "assistant-file-change-stack"
+                  : "assistant-section-list"
+            }
+          >
+            {block.items.map((item) => (
               <TraceItemView key={item.id} item={item} />
             ))}
           </div>
         </AssistantTraceSection>
-      ) : null}
-
-      {sections.response.length > 0 ? (
-        <AssistantTraceSection sectionKey="response" title="Response" turnID={turnID}>
-          <div className="assistant-response-stack">
-            {sections.response.map((item) => (
-              <TraceItemView key={item.id} item={item} />
-            ))}
-          </div>
-        </AssistantTraceSection>
-      ) : null}
-
-      {sections.fileChange.length > 0 ? (
-        <AssistantTraceSection sectionKey="file-change" title="File Changes" turnID={turnID}>
-          <div className="assistant-file-change-stack">
-            {sections.fileChange.map((item) => (
-              <TraceItemView key={item.id} item={item} />
-            ))}
-          </div>
-        </AssistantTraceSection>
-      ) : null}
+      ))}
     </>
   )
 }

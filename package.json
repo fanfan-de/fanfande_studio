@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "corepack pnpm --filter fanfande-desktop-agent build",
+    "dist": "corepack pnpm --filter fanfande-desktop-agent dist",
+    "test": "corepack pnpm --filter fanfande-desktop-agent test",
+    "typecheck": "corepack pnpm --filter fanfande-desktop-agent typecheck"
   },
   "keywords": [],
   "author": "",

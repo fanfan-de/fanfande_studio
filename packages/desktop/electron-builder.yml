@@ -1,0 +1,30 @@
+appId: com.fanfande.studio
+productName: Fanfande Studio
+artifactName: ${productName}-${version}-${arch}.${ext}
+asar: true
+afterPack: ./scripts/after-pack-icon.cjs
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: build/agent-runtime
+    to: agent
+    filter:
+      - "**/*"
+win:
+  icon: build/icon.ico
+  signAndEditExecutable: false
+  signExts: []
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/installerIcon.ico
+  installerHeaderIcon: build/installerIcon.ico
+  uninstallerIcon: build/installerIcon.ico

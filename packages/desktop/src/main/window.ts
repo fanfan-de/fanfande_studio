@@ -26,6 +26,19 @@ function resolvePreloadPath(mainDir: string) {
   return candidatePaths[0]
 }
 
+function resolveWindowIconPath(mainDir: string) {
+  const rootDir = app.getAppPath()
+  const iconFileName = process.platform === "win32" ? "icon.ico" : "icon.png"
+  const candidatePaths = [
+    path.join(process.cwd(), "build", iconFileName),
+    path.join(rootDir, "build", iconFileName),
+    path.join(mainDir, "../../build", iconFileName),
+    path.join(mainDir, "../build", iconFileName),
+  ]
+
+  return candidatePaths.find((candidate) => fs.existsSync(candidate))
+}
+
 export function createWindow(mainDir: string) {
   const win = new BrowserWindow({
     width: 1440,
@@ -36,6 +49,7 @@ export function createWindow(mainDir: string) {
     roundedCorners: false,
     autoHideMenuBar: true,
     backgroundColor: "#eff3f7",
+    icon: resolveWindowIconPath(mainDir),
     show: false,
     webPreferences: {
       preload: resolvePreloadPath(mainDir),

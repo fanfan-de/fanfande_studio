@@ -207,7 +207,16 @@ function shouldUseNodePtySidecar() {
 }
 
 function resolveNodeBinary() {
-  return which("node.exe") ?? which("node")
+  return process.env["FanFande_NODE_BINARY"]?.trim() || which("node.exe") || which("node")
+}
+
+function buildNodeSidecarEnvironment() {
+  const env = { ...process.env }
+  if (process.env["FanFande_NODE_RUN_AS_NODE"] === "1") {
+    env.ELECTRON_RUN_AS_NODE = "1"
+  }
+
+  return env
 }
 
 function createNodePtySidecarRuntimeAdapter(): PtyRuntimeAdapter {
@@ -222,6 +231,7 @@ function createNodePtySidecarRuntimeAdapter(): PtyRuntimeAdapter {
     spawn(input) {
       const child = spawnChild(nodeBinary, [workerPath], {
         stdio: ["pipe", "pipe", "pipe"],
+        env: buildNodeSidecarEnvironment(),
         windowsHide: true,
       })
       const dataListeners = new Set<(data: string) => void>()
