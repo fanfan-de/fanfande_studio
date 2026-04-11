@@ -10,12 +10,15 @@ import {
   DisconnectedStatusIcon,
   FolderIcon,
   LayoutSidebarLeftIcon,
+  LeftSidebarCollapseIcon,
+  LeftSidebarExpandIcon,
   MaximizeIcon,
   MinimizeIcon,
-  NavPlaceholderIcon,
   NewItemIcon,
   PaperclipIcon,
   RestoreIcon,
+  RightSidebarCollapseIcon,
+  RightSidebarExpandIcon,
   SettingsIcon,
   SortIcon,
 } from "./icons"
@@ -101,8 +104,17 @@ function getSidebarToggleLabel(isSidebarCollapsed: boolean, side: SidebarSide) {
   return isSidebarCollapsed ? `Expand ${sideLabel} sidebar` : `Collapse ${sideLabel} sidebar`
 }
 
+function getSidebarToggleIcon(isSidebarCollapsed: boolean, side: SidebarSide) {
+  if (side === "left") {
+    return isSidebarCollapsed ? LeftSidebarExpandIcon : LeftSidebarCollapseIcon
+  }
+
+  return isSidebarCollapsed ? RightSidebarExpandIcon : RightSidebarCollapseIcon
+}
+
 export function SidebarToggleButton({ isSidebarCollapsed, onToggleSidebar, side, variant }: SidebarToggleButtonProps) {
   const label = getSidebarToggleLabel(isSidebarCollapsed, side)
+  const Icon = getSidebarToggleIcon(isSidebarCollapsed, side)
   const buttonClassName = [
     "sidebar-toggle-button",
     `is-${variant}`,
@@ -121,7 +133,7 @@ export function SidebarToggleButton({ isSidebarCollapsed, onToggleSidebar, side,
       type="button"
       onClick={onToggleSidebar}
     >
-      <NavPlaceholderIcon />
+      <Icon />
     </button>
   )
 }

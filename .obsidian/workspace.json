@@ -13,13 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "daily/2026-04-11.md",
+                "file": "packages/desktop/ELECTRON_LEARNING_TODO.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "2026-04-11"
+              "title": "ELECTRON_LEARNING_TODO"
             }
           }
         ]
@@ -95,7 +95,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "daily/2026-04-11.md",
+                "file": "packages/desktop/ELECTRON_LEARNING_TODO.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -105,7 +105,7 @@
                 "unlinkedCollapsed": false
               },
               "icon": "links-coming-in",
-              "title": "2026-04-11 的反向链接列表"
+              "title": "ELECTRON_LEARNING_TODO 的反向链接列表"
             }
           },
           {
@@ -114,12 +114,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "daily/2026-04-11.md",
+                "file": "packages/desktop/ELECTRON_LEARNING_TODO.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "2026-04-11 的出链列表"
+              "title": "ELECTRON_LEARNING_TODO 的出链列表"
             }
           },
           {
@@ -157,13 +157,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "daily/2026-04-11.md",
+                "file": "packages/desktop/ELECTRON_LEARNING_TODO.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "2026-04-11 的大纲"
+              "title": "ELECTRON_LEARNING_TODO 的大纲"
             }
           },
           {
@@ -212,6 +212,8 @@
   },
   "active": "6286338ceb67313f",
   "lastOpenFiles": [
+    "Pasted image 20260405013212.png",
+    "daily/2026-04-11.md",
     "packages/desktop/electron.vite.config.1775887644584.mjs",
     "packages/desktop/src/renderer/src/app/icons.tsx",
     "packages/desktop/package.json.3758856229",
@@ -222,13 +224,10 @@
     "packages/desktop/build/agent-runtime/node_modules/node-pty/lib/worker",
     "packages/desktop/electron.vite.config.1775886412084.mjs",
     "packages/desktop/electron.vite.config.1775886209328.mjs",
-    "_tmp_78480_1c9e18a2e096b018a876d5690384b85c",
     "TODO_secure_provider_credentials.md",
-    "Pasted image 20260405013212.png",
     "记录设计的取舍.md",
     "todo.md",
     "examples.md",
-    "daily/2026-04-11.md",
     "未命名 1.md",
     "packages/desktop/build/extracted-exe-icon-final.png",
     "packages/desktop/build/extracted-exe-icon-after-rcedit-copy.png",

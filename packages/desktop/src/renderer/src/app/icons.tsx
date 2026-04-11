@@ -9,9 +9,12 @@ import {
   FilePlus2,
   Folder,
   LayoutPanelLeft,
-  Menu,
   Minus,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRight,
+  PanelRightClose,
+  PanelRightOpen,
   Paperclip,
   Plus,
   Settings,
@@ -39,9 +42,12 @@ export const SortIcon = createIcon(SortAsc)
 export const NewItemIcon = createIcon(FilePlus2)
 export const PlusIcon = createIcon(Plus)
 export const SettingsIcon = createIcon(Settings)
-export const NavPlaceholderIcon = createIcon(Menu)
 export const LayoutSidebarLeftIcon = createIcon(LayoutPanelLeft)
 export const LayoutSidebarRightIcon = createIcon(PanelRight)
+export const LeftSidebarCollapseIcon = createIcon(PanelLeftClose)
+export const LeftSidebarExpandIcon = createIcon(PanelLeftOpen)
+export const RightSidebarCollapseIcon = createIcon(PanelRightClose)
+export const RightSidebarExpandIcon = createIcon(PanelRightOpen)
 export const ConnectedStatusIcon = createIcon(CircleCheck)
 export const DisconnectedStatusIcon = createIcon(CircleX)
 export const DeleteIcon = createIcon(Trash2)
