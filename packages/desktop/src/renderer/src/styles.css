@@ -124,10 +124,10 @@ select {
   --activity-rail-width: 54px;
   --activity-rail-display-width: var(--activity-rail-width);
   --section-toolbar-height: 40px;
-  --section-toolbar-offset: 8px;
+  --section-toolbar-offset: 14px;
   --section-toolbar-control-size: 36px;
-  --section-toolbar-icon-size: 20px;
-  --sidebar-toggle-icon-size: 22px;
+  --section-toolbar-icon-size: 25px;
+  --sidebar-toggle-icon-size: 27.5px;
   --section-toolbar-pill-height: 30px;
   --section-toolbar-baseline: calc(var(--section-toolbar-offset) + var(--section-toolbar-height));
   --sidebar-display-width: var(--sidebar-width);
@@ -172,7 +172,7 @@ select {
   grid-row: 1;
   min-height: 0;
   min-width: 0;
-  padding: 14px 8px;
+  padding: 4px 8px 14px;
   background: linear-gradient(180deg, #edf4fb 0%, #f5f9fd 100%);
   border-right: 1px solid rgba(138, 164, 189, 0.24);
   display: flex;
@@ -206,37 +206,43 @@ select {
   height: var(--sidebar-toggle-icon-size);
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.65;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .sidebar-toggle-button.is-rail {
+  width: var(--section-toolbar-control-size);
+  height: var(--section-toolbar-control-size);
+  margin: calc((var(--section-toolbar-height) - var(--section-toolbar-control-size)) / 2) 0;
   color: #5a6e81;
+  box-shadow: none;
+}
+
+.sidebar-toggle-button.is-rail svg {
+  width: var(--section-toolbar-icon-size);
+  height: var(--section-toolbar-icon-size);
 }
 
 .sidebar-toggle-button.is-rail:hover,
 .sidebar-toggle-button.is-rail:focus-visible,
 .sidebar-toggle-button.is-rail.is-active {
-  background: rgba(22, 119, 200, 0.1);
-  color: #143b59;
-  box-shadow: inset 0 0 0 1px rgba(95, 146, 194, 0.22);
-}
-
-.sidebar-toggle-button.is-rail:hover,
-.sidebar-toggle-button.is-rail:focus-visible {
-  transform: translateY(-1px);
+  background: transparent;
+  color: #1d2a35;
+  box-shadow: none;
+  transform: none;
 }
 
 .sidebar-toggle-button.is-rail:focus-visible {
-  outline: none;
+  outline: 2px solid rgba(22, 119, 200, 0.18);
+  outline-offset: 2px;
 }
 
 .sidebar {
   grid-column: 2;
   min-height: 0;
   min-width: 0;
-  padding: 14px;
+  padding: 0 14px 14px;
   background: #f3f7fd;
   border-right: 0;
   display: flex;
@@ -293,7 +299,7 @@ select {
   position: relative;
   z-index: 4;
   min-height: var(--section-toolbar-height);
-  padding: 0 0 8px;
+  padding: 4px 0;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -848,7 +854,7 @@ select {
   height: var(--section-toolbar-icon-size);
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -1130,7 +1136,7 @@ select {
   min-width: 0;
   position: relative;
   overflow: hidden;
-  padding: 14px 26px 20px;
+  padding: 0 26px 20px;
   background: #ffffff;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
@@ -2387,9 +2393,9 @@ textarea::placeholder {
 }
 
 .canvas-region-top-menu .session-tab-close svg {
-  width: 11px;
-  height: 11px;
-  stroke-width: 2.15;
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.25;
 }
 
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu,
@@ -2427,7 +2433,7 @@ textarea::placeholder {
 
 .canvas-region-top-menu-add-glyph {
   display: inline-block;
-  font-size: 24px;
+  font-size: 30px;
   line-height: 1;
   font-weight: 400;
   transform: none;
@@ -3629,7 +3635,7 @@ textarea::placeholder {
   height: var(--section-toolbar-icon-size);
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -3844,7 +3850,7 @@ body.is-resizing-sidebar * {
   }
 
   .panel-toolbar {
-    padding-bottom: 8px;
+    padding: 4px 0;
     border-bottom: 1px solid rgba(138, 164, 189, 0.36);
   }
 }
@@ -3871,17 +3877,17 @@ body.is-resizing-sidebar * {
   }
 
   .sidebar {
-    padding: 12px;
+    padding: 0 12px 12px;
   }
 
   .activity-rail {
-    padding-top: 12px;
+    padding-top: 4px;
     padding-bottom: 12px;
   }
 
   .canvas {
     border-radius: 0;
-    padding: 16px;
+    padding: 0 16px 16px;
   }
 
   .canvas-terminal-toggle-anchor {
