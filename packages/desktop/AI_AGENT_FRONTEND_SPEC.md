@@ -43,9 +43,9 @@
 3. Sidebar 的主视角仍是文件夹工作区，不是 project dashboard，也不是 project-first 树。
 4. Thread 区不是纯聊天记录，而是“用户 turn + assistant trace”；如果当前会话有待审批工具调用，thread 末尾还会追加内联审批卡片。
 5. Composer 不是纯文本输入框；它同时承载附件选择、项目级模型切换和 agent mode 切换。
-6. 右侧栏当前是 Inspector，展示激活会话、选中工作区和运行态摘要，不是 `Canvas Tool Panel`。
+6. 右侧栏当前是 Inspector；它现在是“右侧区域 top menu + 当前右侧视图”的结构，不是 `Canvas Tool Panel`。
 7. `SettingsPage` 现在是全局 provider / model / shell appearance 设置中心，不再依赖当前选中 workspace 或 project。
-8. `CanvasTopMenu` 的菜单项仍是静态信息架构；真实交互只包括在两侧边栏折叠时承载恢复按钮。
+8. `Canvas` 现在有两层顶部结构：`Canvas Region Top Menu` 负责 session tabs 与边栏恢复入口，`Session Canvas Top Menu` 负责当前 session canvas 的局部操作。
 
 ## 4. 界面结构与命名
 
@@ -77,7 +77,7 @@
 当前真实约束：
 
 1. 左侧窄轨可见性会持久化到 `localStorage`，键名是 `desktop.activityRailVisible`。
-2. 左右侧栏的宽度和折叠状态完全由 `useDesktopShell()` 维护，`CanvasTopMenu` 不维护自己的面板状态。
+2. 左右侧栏的宽度和折叠状态完全由 `useDesktopShell()` 维护；顶部菜单只消费这些状态，不维护自己的面板状态。
 3. 当前没有 `activeCanvasToolPanel` 之类的状态机。
 
 ### 5.2 `useAgentWorkspace()`
@@ -85,6 +85,8 @@
 `useAgentWorkspace()` 负责文件夹工作区、会话、thread、工具审批流，以及 composer 的运行态：
 
 - 工作区与会话：`workspaces`、`selectedFolderID`、`expandedFolderID`、`hoveredFolderID`、`activeSessionID`
+- 区域级视图状态：`leftSidebarView`、`rightSidebarView`
+- Canvas 区域数据：`canvasSessionTabs`
 - thread：`conversations`、`activeTurns`、`draft`、`isSending`
 - UI session 映射：`agentSessions`
 - 侧栏操作过程：`isCreatingProject`、`isCreatingSession`、`deletingSessionID`
@@ -126,7 +128,8 @@
 
 - `SessionStatus = "Live" | "Review" | "Ready"`
 - `SidebarActionKey = "project" | "sort" | "new"`
-- `CanvasMenuKey = "overview" | "artifacts" | "changes" | "console" | "deploy"`
+- `LeftSidebarView = "workspace"`
+- `RightSidebarView = "changes"`
 - `AppMode = "Autopilot" | "Review"`
 - `Turn = UserTurn | AssistantTurn`
 - `AssistantTraceItemKind = "system" | "reasoning" | "text" | "tool" | "file" | "image" | "patch" | "subtask" | "step" | "retry" | "snapshot" | "error"`
@@ -212,11 +215,11 @@
 
 1. 左侧窄轨可见时，左侧栏折叠/恢复按钮固定放在窄轨中。
 2. 左侧窄轨隐藏时：
-   - 左侧栏展开态下，折叠按钮显示在左侧栏动作条内。
-   - 左侧栏折叠态下，恢复按钮显示在 `CanvasTopMenu` 左侧。
+   - 左侧栏展开态下，折叠按钮显示在 `Left Sidebar Top Menu` 内。
+   - 左侧栏折叠态下，恢复按钮显示在 `Canvas Region Top Menu` 左侧。
 3. 右侧 Inspector 没有窄轨：
-   - 展开态下，折叠按钮显示在 Inspector 头部。
-   - 折叠态下，恢复按钮显示在 `CanvasTopMenu` 右侧。
+   - 展开态下，折叠按钮显示在 `Right Sidebar Top Menu` 内。
+   - 折叠态下，恢复按钮显示在 `Canvas Region Top Menu` 右侧。
 4. 左右分隔条都支持鼠标拖拽和键盘调整，键盘交互包含 `ArrowLeft` / `ArrowRight` / `Home` / `End`。
 
 ### 7.3 侧栏动作
@@ -299,22 +302,26 @@
 7. `Appearance` 页面当前只有 `Show left rail` 一个开关，它直接驱动 `useDesktopShell()` 的左侧窄轨状态。
 8. 设置页按 `Escape` 或点击 backdrop 时会直接关闭，没有嵌套的二级 modal。
 
-### 7.10 Canvas Top Menu
+### 7.10 Canvas Region Top Menu + Session Canvas Top Menu
 
-`CanvasTopMenu` 当前真实行为：
+当前 Canvas 顶部结构分成两层：
 
-1. 只根据 `canvasMenuItems` 渲染一排静态按钮。
-2. 第一项 `Overview` 通过静态类名呈现激活态。
-3. 当前菜单项没有 click handler、没有内容区切换、没有右侧工具面板状态。
-4. 当左侧栏或右侧 Inspector 处于折叠态时，顶部菜单会承载对应的恢复按钮。
+1. `Canvas Region Top Menu`
+   - 负责渲染当前 `selectedWorkspace.sessions` 对应的 session tabs。
+   - `activeSessionID` 决定当前激活 tab。
+   - 当左侧栏或右侧 Inspector 处于折叠态时，顶部菜单会承载对应的恢复按钮。
+2. `Session Canvas Top Menu`
+   - 属于当前 session canvas 的局部 top menu。
+   - 当前主要承载 Git quick menu。
+   - 不负责切换 session，也不负责切换左右区域视图。
 
 ### 7.11 Right Sidebar / Inspector
 
-1. Inspector 展开时固定展示 `Active Session`、`Workspace`、`Runtime` 三个区块。
-2. `Active Session` 区块显示标题、摘要、branch、focus、更新时间和 turn 数量。
-3. `Workspace` 区块显示目录、worktree 和 session 数量。
-4. `Runtime` 区块显示 agent 连通状态、agent mode、当前模型、附件数和审批/发送队列状态。
-5. 当前没有右侧窄轨，也没有独立的 Inspector 状态机。
+1. Inspector 展开时先渲染 `Right Sidebar Top Menu`，再渲染当前激活的右侧视图。
+2. 当前唯一已实现的右侧视图是 `changes`。
+3. `changes` 视图展示 `Changed Files` 区块和 diff preview。
+4. 当前右侧 top menu 负责切换右侧视图，并承载右栏折叠按钮。
+5. 当前没有右侧窄轨。
 
 ## 8. 关键界面状态
 
@@ -379,8 +386,8 @@
 
 用户看到：
 
-1. 左侧栏折叠后，其恢复按钮要么在左侧窄轨，要么在 `CanvasTopMenu` 左侧。
-2. 右侧 Inspector 折叠后，其恢复按钮在 `CanvasTopMenu` 右侧。
+1. 左侧栏折叠后，其恢复按钮要么在左侧窄轨，要么在 `Canvas Region Top Menu` 左侧。
+2. 右侧 Inspector 折叠后，其恢复按钮在 `Canvas Region Top Menu` 右侧。
 3. 左右侧栏的恢复宽度会回到最近一次展开宽度，而不是固定默认值。
 
 ## 9. 约束
@@ -391,7 +398,7 @@
 4. session 历史回放和流式更新都要落到同一套 `Turn / AssistantTraceItem` 模型里，不能各自维护一套 UI 结构。
 5. `system` trace item 当前属于状态模型的一部分，但不在常规 assistant 卡片中渲染；如果未来要展示它们，必须同步更新本文档和测试。
 6. 新增 trace 类型时，必须同步更新 `types.ts`、`stream.ts`、样式和测试。
-7. 如果未来真的让 `CanvasTopMenu` 驱动内容切换、补上右侧工具面板，或让 Inspector 拥有独立状态机，必须先更新文档。
+7. 如果未来调整 `Canvas Region Top Menu`、`Session Canvas Top Menu`、Inspector top menu 或新增左右区域视图，必须先更新文档。
 8. 如果设置页重新改回 workspace / project 级作用域，必须先更新本文档和 API spec。
 
 ## 10. 测试指令
@@ -436,4 +443,4 @@ npm run dev
 2. 会话历史回放策略、流式 trace 映射规则、审批流或发送流程变化。
 3. 设置页的作用域、分组、保存链路或 Appearance 能力变化。
 4. Composer 的模型选择、附件、agent mode 行为变化。
-5. `CanvasTopMenu`、Inspector、左右侧栏之间的切换关系变化。
+5. `Canvas Region Top Menu`、`Session Canvas Top Menu`、Inspector、左右侧栏之间的切换关系变化。

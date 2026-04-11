@@ -21,8 +21,9 @@ export type {
 }
 
 export type SessionStatus = "Live" | "Review" | "Ready"
-export type TitlebarMenuKey = "file" | "edit" | "view" | "window" | "help"
 export type SidebarActionKey = "project" | "sort" | "new"
+export type LeftSidebarView = "workspace"
+export type RightSidebarView = "changes"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
 
@@ -34,6 +35,12 @@ export interface SessionSummary {
   updated: number
   focus: string
   summary: string
+}
+
+export interface CreateSessionTab {
+  id: string
+  workspaceID: string | null
+  title: string
 }
 
 export interface WorkspaceGroup {

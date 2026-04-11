@@ -20,10 +20,13 @@ import type {
   AgentStreamIPCEvent,
   ComposerAttachment,
   ComposerModelOption,
+  CreateSessionTab,
+  LeftSidebarView,
   PermissionDecision,
   PermissionRequest,
   PendingAgentStream,
   ProviderModel,
+  RightSidebarView,
   SessionDiffSummary,
   SessionSummary,
   SidebarActionKey,
@@ -90,6 +93,56 @@ function buildPromptWithAttachments(prompt: string, attachments: ComposerAttachm
   return `${prompt}\n\nAttached files:\n${attachmentLines.join("\n")}`
 }
 
+function getUniqueSessionIDs(sessionIDs: string[]) {
+  const seen = new Set<string>()
+  const nextSessionIDs: string[] = []
+
+  for (const sessionID of sessionIDs) {
+    if (seen.has(sessionID)) continue
+    seen.add(sessionID)
+    nextSessionIDs.push(sessionID)
+  }
+
+  return nextSessionIDs
+}
+
+function getNextSessionTabAfterClose(sessionIDs: string[], closedSessionID: string) {
+  const index = sessionIDs.indexOf(closedSessionID)
+  if (index === -1) return sessionIDs[sessionIDs.length - 1] ?? null
+
+  return sessionIDs[index + 1] ?? sessionIDs[index - 1] ?? null
+}
+
+function createCreateSessionTab(workspaceID: string | null): CreateSessionTab {
+  return {
+    id: createID("create-session-tab"),
+    workspaceID,
+    title: "",
+  }
+}
+
+function resolveCreateSessionWorkspaceID(
+  workspaces: WorkspaceGroup[],
+  preferredWorkspaceID?: string | null,
+  selectedFolderID?: string | null,
+  activeWorkspaceID?: string | null,
+) {
+  const candidateIDs = [preferredWorkspaceID, selectedFolderID, activeWorkspaceID]
+
+  for (const candidateID of candidateIDs) {
+    if (!candidateID) continue
+    if (findWorkspaceByID(workspaces, candidateID)) {
+      return candidateID
+    }
+  }
+
+  return workspaces[0]?.id ?? null
+}
+
+const initialCreateSessionTab = initialSelection.session === null
+  ? createCreateSessionTab(initialSelection.workspace?.id ?? null)
+  : null
+
 export function useAgentWorkspace({
   agentConnected,
   agentDefaultDirectory,
@@ -102,11 +155,19 @@ export function useAgentWorkspace({
   const sessionDiffRequestRef = useRef<Record<string, number>>({})
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
   const conversationVersionRef = useRef<Record<string, number>>({})
+  const lastFocusedSessionIDRef = useRef<string | null>(initialSelection.session?.id ?? null)
   const [workspaces, setWorkspaces] = useState(seedWorkspaces)
   const [selectedFolderID, setSelectedFolderID] = useState<string | null>(initialSelection.workspace?.id ?? null)
   const [activeSessionID, setActiveSessionID] = useState<string | null>(initialSelection.session?.id ?? null)
+  const [openCanvasSessionIDs, setOpenCanvasSessionIDs] = useState<string[]>(
+    initialSelection.session ? [initialSelection.session.id] : [],
+  )
+  const [createSessionTabs, setCreateSessionTabs] = useState<CreateSessionTab[]>(initialCreateSessionTab ? [initialCreateSessionTab] : [])
+  const [activeCreateSessionTabID, setActiveCreateSessionTabID] = useState<string | null>(initialCreateSessionTab?.id ?? null)
   const [expandedFolderID, setExpandedFolderID] = useState<string | null>(initialSelection.workspace?.id ?? null)
   const [hoveredFolderID, setHoveredFolderID] = useState<string | null>(null)
+  const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("workspace")
+  const [rightSidebarView, setRightSidebarView] = useState<RightSidebarView>("changes")
   const [draft, setDraft] = useState("Help me align the desktop sidebar with the Pencil design.")
   const [conversations, setConversations] = useState(initialConversations)
   const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
@@ -134,6 +195,14 @@ export function useAgentWorkspace({
   const activeTurns = activeSession ? conversations[activeSession.id] ?? [] : []
   const activeSessionDiff = activeSession ? sessionDiffBySession[activeSession.id] ?? null : null
   const activePendingPermissionRequests = activeSession ? pendingPermissionRequestsBySession[activeSession.id] ?? [] : []
+  const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
+  const isCreateSessionTabActive = activeCreateSessionTab !== null
+  const createSessionWorkspaceID = activeCreateSessionTab?.workspaceID ?? null
+  const createSessionTitle = activeCreateSessionTab?.title ?? ""
+  const canvasSessionTabs = openCanvasSessionIDs.flatMap((sessionID) => {
+    const { session } = findSession(workspaces, sessionID)
+    return session ? [session] : []
+  })
   const composerModelOptions: ComposerModelOption[] = composerModels
     .filter((model) => model.available)
     .map((model) => ({
@@ -285,9 +354,14 @@ export function useAgentWorkspace({
 
         const nextSelection = findFirstSession(nextWorkspaces)
         const nextFolderID = nextSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null
+        const nextCreateSessionTab = nextSelection.session === null ? createCreateSessionTab(nextFolderID) : null
         setSelectedFolderID(nextFolderID)
         setExpandedFolderID(nextFolderID)
         setActiveSessionID(nextSelection.session?.id ?? null)
+        setOpenCanvasSessionIDs(nextSelection.session ? [nextSelection.session.id] : [])
+        setCreateSessionTabs(nextCreateSessionTab ? [nextCreateSessionTab] : [])
+        setActiveCreateSessionTabID(nextCreateSessionTab?.id ?? null)
+        lastFocusedSessionIDRef.current = nextSelection.session?.id ?? null
       })
       .catch(() => undefined)
 
@@ -392,6 +466,110 @@ export function useAgentWorkspace({
     threadColumn.scrollTop = threadColumn.scrollHeight
   }, [activeSessionID, activeTurns, activePendingPermissionRequests.length, permissionRequestActionRequestID])
 
+  useEffect(() => {
+    const validWorkspaceIDs = new Set(workspaces.map((workspace) => workspace.id))
+    const validSessionIDs = new Set(workspaces.flatMap((workspace) => workspace.sessions.map((session) => session.id)))
+
+    setOpenCanvasSessionIDs((current) => {
+      const next = current.filter((sessionID) => validSessionIDs.has(sessionID))
+      return next.length === current.length ? current : next
+    })
+
+    const fallbackWorkspaceID = resolveCreateSessionWorkspaceID(workspaces, selectedFolderID, activeWorkspace?.id ?? null)
+
+    setCreateSessionTabs((current) => {
+      let changed = false
+      const next = current.map((tab) => {
+        const nextWorkspaceID = tab.workspaceID && validWorkspaceIDs.has(tab.workspaceID) ? tab.workspaceID : fallbackWorkspaceID
+
+        if (nextWorkspaceID === tab.workspaceID) {
+          return tab
+        }
+
+        changed = true
+        return {
+          ...tab,
+          workspaceID: nextWorkspaceID,
+        }
+      })
+
+      return changed ? next : current
+    })
+  }, [activeWorkspace?.id, selectedFolderID, workspaces])
+
+  useEffect(() => {
+    if (openCanvasSessionIDs.length > 0) return
+
+    const fallbackWorkspaceID = resolveCreateSessionWorkspaceID(
+      workspaces,
+      activeCreateSessionTab?.workspaceID ?? null,
+      selectedFolderID,
+      activeWorkspace?.id ?? null,
+    )
+    const fallbackCreateSessionTab =
+      activeCreateSessionTab ??
+      createSessionTabs[createSessionTabs.length - 1] ??
+      createCreateSessionTab(fallbackWorkspaceID)
+
+    if (createSessionTabs.length === 0) {
+      setCreateSessionTabs([fallbackCreateSessionTab])
+    }
+
+    setActiveCreateSessionTabID(fallbackCreateSessionTab.id)
+    setActiveSessionID(null)
+
+    if (fallbackCreateSessionTab.workspaceID !== selectedFolderID) {
+      setSelectedFolderID(fallbackCreateSessionTab.workspaceID)
+      setExpandedFolderID(fallbackCreateSessionTab.workspaceID)
+    }
+  }, [activeCreateSessionTab, createSessionTabs, openCanvasSessionIDs, selectedFolderID, workspaces, activeWorkspace?.id])
+
+  function focusSession(workspaceID: string, sessionID: string) {
+    lastFocusedSessionIDRef.current = sessionID
+    setSelectedFolderID(workspaceID)
+    setExpandedFolderID(workspaceID)
+    setActiveSessionID(sessionID)
+    setActiveCreateSessionTabID(null)
+    setOpenCanvasSessionIDs((current) => getUniqueSessionIDs([...current, sessionID]))
+  }
+
+  function focusCreateSessionTab(createSessionTabID: string) {
+    const nextCreateSessionTab = createSessionTabs.find((tab) => tab.id === createSessionTabID)
+    if (!nextCreateSessionTab) return
+
+    setActiveCreateSessionTabID(nextCreateSessionTab.id)
+    setActiveSessionID(null)
+    setSelectedFolderID(nextCreateSessionTab.workspaceID)
+    setExpandedFolderID(nextCreateSessionTab.workspaceID)
+  }
+
+  function openCreateSessionTab(preferredWorkspaceID?: string | null) {
+    const nextWorkspaceID = resolveCreateSessionWorkspaceID(
+      workspaces,
+      preferredWorkspaceID,
+      selectedFolderID,
+      activeWorkspace?.id ?? null,
+    )
+    const nextCreateSessionTab = createCreateSessionTab(nextWorkspaceID)
+
+    setCreateSessionTabs((current) => [...current, nextCreateSessionTab])
+    setActiveCreateSessionTabID(nextCreateSessionTab.id)
+    setActiveSessionID(null)
+
+    setSelectedFolderID(nextWorkspaceID)
+    setExpandedFolderID(nextWorkspaceID)
+  }
+
+  function focusMostRecentCreateSessionTab(preferredWorkspaceID?: string | null) {
+    const nextCreateSessionTabID = activeCreateSessionTabID ?? createSessionTabs[createSessionTabs.length - 1]?.id ?? null
+    if (nextCreateSessionTabID) {
+      focusCreateSessionTab(nextCreateSessionTabID)
+      return
+    }
+
+    openCreateSessionTab(preferredWorkspaceID)
+  }
+
   function removeWorkspaceSessionState(workspace: WorkspaceGroup) {
     const sessionIDs = new Set(workspace.sessions.map((session) => session.id))
 
@@ -440,14 +618,23 @@ export function useAgentWorkspace({
     }
   }
 
-  async function createSessionForWorkspace(workspace: WorkspaceGroup) {
+  async function createSessionForWorkspace(
+    workspace: WorkspaceGroup,
+    options?: {
+      createSessionTabID?: string | null
+      closeCreateTab?: boolean
+      title?: string
+    },
+  ) {
     if (isCreatingSession || !window.desktop?.createFolderSession) return
 
     setIsCreatingSession(true)
     try {
+      const nextTitle = options?.title?.trim()
       const created = await window.desktop.createFolderSession({
         projectID: workspace.project.id,
         directory: workspace.directory,
+        title: nextTitle || undefined,
       })
       const nextSession = mapLoadedSession(created.session, workspace.sessions.length)
       setWorkspaces((prev) => upsertSessionInWorkspace(prev, workspace.id, nextSession))
@@ -460,9 +647,24 @@ export function useAgentWorkspace({
         [created.session.id]: created.session.id,
       }))
       setCanLoadSessionHistory(true)
-      setSelectedFolderID(workspace.id)
-      setActiveSessionID(created.session.id)
-      setExpandedFolderID(workspace.id)
+
+      if (options?.closeCreateTab && options.createSessionTabID) {
+        setCreateSessionTabs((current) => current.filter((tab) => tab.id !== options.createSessionTabID))
+      } else if (options?.createSessionTabID) {
+        setCreateSessionTabs((current) =>
+          current.map((tab) =>
+            tab.id === options.createSessionTabID
+              ? {
+                  ...tab,
+                  title: "",
+                  workspaceID: workspace.id,
+                }
+              : tab,
+          ),
+        )
+      }
+
+      focusSession(workspace.id, created.session.id)
     } catch (error) {
       console.error("[desktop] createFolderSession failed:", error)
     } finally {
@@ -491,6 +693,16 @@ export function useAgentWorkspace({
         setExpandedFolderID(createdWorkspace.id)
         setSelectedFolderID(createdWorkspace.id)
         setActiveSessionID(createdWorkspace.sessions[0]?.id ?? null)
+        setOpenCanvasSessionIDs(createdWorkspace.sessions[0]?.id ? [createdWorkspace.sessions[0].id] : [])
+        if (createdWorkspace.sessions[0]) {
+          setCreateSessionTabs([])
+          setActiveCreateSessionTabID(null)
+        } else {
+          const nextCreateSessionTab = createCreateSessionTab(createdWorkspace.id)
+          setCreateSessionTabs([nextCreateSessionTab])
+          setActiveCreateSessionTabID(nextCreateSessionTab.id)
+        }
+        lastFocusedSessionIDRef.current = createdWorkspace.sessions[0]?.id ?? null
       } catch (error) {
         console.error("[desktop] openFolderWorkspace failed:", error)
       } finally {
@@ -509,9 +721,7 @@ export function useAgentWorkspace({
       return
     }
 
-    if (!selectedWorkspace) return
-
-    await createSessionForWorkspace(selectedWorkspace)
+    openCreateSessionTab(selectedWorkspace?.id ?? workspaces[0]?.id ?? null)
   }
 
   function handleProjectClick(workspace: WorkspaceGroup) {
@@ -521,26 +731,38 @@ export function useAgentWorkspace({
 
     if (isSelected && isExpanded) {
       setExpandedFolderID(null)
-      if (!workspace.sessions.some((session) => session.id === activeSessionID)) {
-        setActiveSessionID(workspace.sessions[0]?.id ?? null)
+      if (workspace.sessions.length === 0) {
+        openCreateSessionTab(workspace.id)
+        return
+      }
+
+      if (isCreateSessionTabActive || !workspace.sessions.some((session) => session.id === activeSessionID)) {
+        focusSession(workspace.id, workspace.sessions[0].id)
       }
       return
     }
 
     setExpandedFolderID(workspace.id)
     const currentSessionInWorkspace = workspace.sessions.some((session) => session.id === activeSessionID)
-    setActiveSessionID(currentSessionInWorkspace ? activeSessionID : workspace.sessions[0]?.id ?? null)
+    if (workspace.sessions.length === 0) {
+      openCreateSessionTab(workspace.id)
+      return
+    }
+
+    if (currentSessionInWorkspace && !isCreateSessionTabActive && activeSessionID) {
+      return
+    }
+
+    focusSession(workspace.id, workspace.sessions[0].id)
   }
 
   function handleSessionSelect(workspaceID: string, sessionID: string) {
-    setSelectedFolderID(workspaceID)
-    setExpandedFolderID(workspaceID)
-    setActiveSessionID(sessionID)
+    focusSession(workspaceID, sessionID)
   }
 
   async function handleProjectCreateSession(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
-    await createSessionForWorkspace(workspace)
+    openCreateSessionTab(workspace.id)
   }
 
   function handleProjectRemove(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
@@ -548,26 +770,56 @@ export function useAgentWorkspace({
 
     const nextWorkspaces = workspaces.filter((item) => item.id !== workspace.id)
     const removedSessionIDs = new Set(workspace.sessions.map((session) => session.id))
-    const activeSessionRemoved = Boolean(activeSessionID && removedSessionIDs.has(activeSessionID))
-    const nextActiveSelection =
-      activeSessionRemoved || !activeSessionID
-        ? findFirstSession(nextWorkspaces)
-        : findSession(nextWorkspaces, activeSessionID)
-    const nextSelectedWorkspace =
-      !activeSessionRemoved && selectedFolderID && selectedFolderID !== workspace.id
-        ? findWorkspaceByID(nextWorkspaces, selectedFolderID)
-        : nextActiveSelection.workspace
-    const nextSelectedFolderID = nextSelectedWorkspace?.id ?? nextActiveSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null
-    const nextExpandedWorkspace =
-      expandedFolderID && expandedFolderID !== workspace.id ? findWorkspaceByID(nextWorkspaces, expandedFolderID) : null
-    const nextExpandedFolderID = nextExpandedWorkspace?.id ?? nextSelectedFolderID
+    const nextOpenCanvasSessionIDs = openCanvasSessionIDs.filter((sessionID) => !removedSessionIDs.has(sessionID))
+    const nextFallbackSessionID =
+      (lastFocusedSessionIDRef.current && nextOpenCanvasSessionIDs.includes(lastFocusedSessionIDRef.current)
+        ? lastFocusedSessionIDRef.current
+        : null) ??
+      nextOpenCanvasSessionIDs[nextOpenCanvasSessionIDs.length - 1] ??
+      null
+    const nextFallbackSelection = nextFallbackSessionID ? findSession(nextWorkspaces, nextFallbackSessionID) : { workspace: null, session: null }
+    const nextCreateSessionWorkspaceID = resolveCreateSessionWorkspaceID(
+      nextWorkspaces,
+      activeCreateSessionTab?.workspaceID === workspace.id ? null : activeCreateSessionTab?.workspaceID ?? null,
+      nextFallbackSelection.workspace?.id ?? selectedFolderID,
+    )
+    const nextCreateSessionTabs = createSessionTabs.map((tab) => {
+      const nextWorkspaceID =
+        (tab.workspaceID && tab.workspaceID !== workspace.id ? findWorkspaceByID(nextWorkspaces, tab.workspaceID)?.id : null) ??
+        nextCreateSessionWorkspaceID
+
+      return nextWorkspaceID === tab.workspaceID
+        ? tab
+        : {
+            ...tab,
+            workspaceID: nextWorkspaceID,
+          }
+    })
+    const nextActiveCreateSessionTabID =
+      (activeCreateSessionTabID && nextCreateSessionTabs.some((tab) => tab.id === activeCreateSessionTabID) ? activeCreateSessionTabID : null) ??
+      nextCreateSessionTabs[nextCreateSessionTabs.length - 1]?.id ??
+      null
 
     setWorkspaces(nextWorkspaces)
+    setOpenCanvasSessionIDs(nextOpenCanvasSessionIDs)
     removeWorkspaceSessionState(workspace)
-    setSelectedFolderID(nextSelectedFolderID)
-    setExpandedFolderID(nextExpandedFolderID)
-    setActiveSessionID(nextActiveSelection.session?.id ?? null)
+    setCreateSessionTabs(nextCreateSessionTabs)
     setHoveredFolderID((current) => (current === workspace.id ? null : current))
+
+    if (isCreateSessionTabActive || nextFallbackSelection.session === null) {
+      const nextActiveCreateSessionTab = nextCreateSessionTabs.find((tab) => tab.id === nextActiveCreateSessionTabID) ?? null
+      setActiveCreateSessionTabID(nextActiveCreateSessionTabID)
+      setSelectedFolderID(nextActiveCreateSessionTab?.workspaceID ?? nextCreateSessionWorkspaceID)
+      setExpandedFolderID(nextActiveCreateSessionTab?.workspaceID ?? nextCreateSessionWorkspaceID)
+      setActiveSessionID(null)
+      return
+    }
+
+    lastFocusedSessionIDRef.current = nextFallbackSelection.session.id
+    setSelectedFolderID(nextFallbackSelection.workspace?.id ?? nextCreateSessionWorkspaceID)
+    setExpandedFolderID(nextFallbackSelection.workspace?.id ?? nextCreateSessionWorkspaceID)
+    setActiveSessionID(nextFallbackSelection.session.id)
+    setActiveCreateSessionTabID(null)
   }
 
   async function handleSessionDelete(workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) {
@@ -587,10 +839,35 @@ export function useAgentWorkspace({
             : item,
         ),
       )
-      const nextSelection = selectAfterSessionDelete(nextWorkspaces, workspace.id, session.id, activeSessionID)
+      const nextOpenCanvasSessionIDs = openCanvasSessionIDs.filter((sessionID) => sessionID !== session.id)
+      const nextCreateSessionWorkspaceID = resolveCreateSessionWorkspaceID(
+        nextWorkspaces,
+        activeCreateSessionTab?.workspaceID ?? createSessionWorkspaceID,
+        workspace.id,
+      )
+      const nextCreateSessionTabs = createSessionTabs.map((tab) => {
+        const nextWorkspaceID = findWorkspaceByID(nextWorkspaces, tab.workspaceID ?? "")?.id ?? nextCreateSessionWorkspaceID
+
+        return nextWorkspaceID === tab.workspaceID
+          ? tab
+          : {
+              ...tab,
+              workspaceID: nextWorkspaceID,
+            }
+      })
+      const nextSessionID =
+        getNextSessionTabAfterClose(openCanvasSessionIDs, session.id) &&
+        nextOpenCanvasSessionIDs.includes(getNextSessionTabAfterClose(openCanvasSessionIDs, session.id) ?? "")
+          ? getNextSessionTabAfterClose(openCanvasSessionIDs, session.id)
+          : null
+      const nextSelection =
+        nextSessionID && activeSessionID === session.id
+          ? findSession(nextWorkspaces, nextSessionID)
+          : selectAfterSessionDelete(nextWorkspaces, workspace.id, session.id, activeSessionID)
 
       setWorkspaces(nextWorkspaces)
-      setSelectedFolderID(nextSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null)
+      setOpenCanvasSessionIDs(nextOpenCanvasSessionIDs)
+      setCreateSessionTabs(nextCreateSessionTabs)
       setConversations((prev) => removeConversationSession(prev, session.id))
       setAgentSessions((prev) => removeAgentSession(prev, session.id))
       setPendingPermissionRequestsBySession((prev) => {
@@ -611,13 +888,152 @@ export function useAgentWorkspace({
           delete pendingStreamsRef.current[streamID]
         }
       }
-      setExpandedFolderID(nextSelection.workspace?.id ?? null)
-      setActiveSessionID(nextSelection.session?.id ?? null)
+
+      if (nextOpenCanvasSessionIDs.length === 0) {
+        const nextFallbackCreateSessionTab =
+          (activeCreateSessionTabID ? nextCreateSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) : null) ??
+          nextCreateSessionTabs[nextCreateSessionTabs.length - 1] ??
+          createCreateSessionTab(nextCreateSessionWorkspaceID)
+
+        if (nextCreateSessionTabs.length === 0) {
+          setCreateSessionTabs([nextFallbackCreateSessionTab])
+        }
+
+        setActiveCreateSessionTabID(nextFallbackCreateSessionTab.id)
+        setSelectedFolderID(nextFallbackCreateSessionTab.workspaceID)
+        setExpandedFolderID(nextFallbackCreateSessionTab.workspaceID)
+        setActiveSessionID(null)
+      } else {
+        setSelectedFolderID(nextSelection.workspace?.id ?? nextCreateSessionWorkspaceID ?? nextWorkspaces[0]?.id ?? null)
+        setExpandedFolderID(nextSelection.workspace?.id ?? nextCreateSessionWorkspaceID ?? null)
+        setActiveSessionID(nextSelection.session?.id ?? null)
+        setActiveCreateSessionTabID(null)
+        if (nextSelection.session) {
+          lastFocusedSessionIDRef.current = nextSelection.session.id
+        }
+      }
     } catch (error) {
       console.error("[desktop] deleteAgentSession failed:", error)
     } finally {
       setDeletingSessionID(null)
     }
+  }
+
+  function handleCanvasSessionTabSelect(sessionID: string) {
+    const nextSelection = findSession(workspaces, sessionID)
+    if (!nextSelection.workspace || !nextSelection.session) return
+
+    focusSession(nextSelection.workspace.id, nextSelection.session.id)
+  }
+
+  function handleCanvasSessionTabClose(sessionID: string) {
+    const nextOpenCanvasSessionIDs = openCanvasSessionIDs.filter((currentSessionID) => currentSessionID !== sessionID)
+    setOpenCanvasSessionIDs(nextOpenCanvasSessionIDs)
+
+    if (activeSessionID !== sessionID || isCreateSessionTabActive) {
+      if (nextOpenCanvasSessionIDs.length === 0) {
+        focusMostRecentCreateSessionTab(selectedFolderID)
+      }
+      return
+    }
+
+    const nextSessionID = getNextSessionTabAfterClose(openCanvasSessionIDs, sessionID)
+    if (nextSessionID) {
+      const nextSelection = findSession(workspaces, nextSessionID)
+      if (nextSelection.workspace && nextSelection.session) {
+        focusSession(nextSelection.workspace.id, nextSelection.session.id)
+        return
+      }
+    }
+
+    focusMostRecentCreateSessionTab(selectedFolderID)
+  }
+
+  function handleCreateSessionTabSelect(createSessionTabID: string) {
+    focusCreateSessionTab(createSessionTabID)
+  }
+
+  function handleOpenCreateSessionTab(preferredWorkspaceID?: string | null) {
+    openCreateSessionTab(preferredWorkspaceID)
+  }
+
+  function handleCloseCreateSessionTab(createSessionTabID: string) {
+    if (openCanvasSessionIDs.length === 0 && createSessionTabs.length === 1) {
+      return
+    }
+
+    const nextCreateSessionTabs = createSessionTabs.filter((tab) => tab.id !== createSessionTabID)
+    setCreateSessionTabs(nextCreateSessionTabs)
+
+    if (activeCreateSessionTabID !== createSessionTabID) {
+      return
+    }
+
+    const nextCreateSessionTabID = getNextSessionTabAfterClose(
+      createSessionTabs.map((tab) => tab.id),
+      createSessionTabID,
+    )
+    if (nextCreateSessionTabID) {
+      focusCreateSessionTab(nextCreateSessionTabID)
+      return
+    }
+
+    const nextSessionID =
+      (lastFocusedSessionIDRef.current && openCanvasSessionIDs.includes(lastFocusedSessionIDRef.current)
+        ? lastFocusedSessionIDRef.current
+        : null) ?? openCanvasSessionIDs[openCanvasSessionIDs.length - 1] ?? null
+
+    if (!nextSessionID) return
+
+    const nextSelection = findSession(workspaces, nextSessionID)
+    if (!nextSelection.workspace || !nextSelection.session) return
+
+    focusSession(nextSelection.workspace.id, nextSelection.session.id)
+  }
+
+  function handleCreateSessionWorkspaceChange(workspaceID: string) {
+    if (!activeCreateSessionTabID) return
+
+    setCreateSessionTabs((current) =>
+      current.map((tab) =>
+        tab.id === activeCreateSessionTabID
+          ? {
+              ...tab,
+              workspaceID,
+            }
+          : tab,
+      ),
+    )
+    setSelectedFolderID(workspaceID)
+    setExpandedFolderID(workspaceID)
+  }
+
+  function handleCreateSessionTitleChange(value: string) {
+    if (!activeCreateSessionTabID) return
+
+    setCreateSessionTabs((current) =>
+      current.map((tab) =>
+        tab.id === activeCreateSessionTabID
+          ? {
+              ...tab,
+              title: value,
+            }
+          : tab,
+      ),
+    )
+  }
+
+  async function handleCreateSessionSubmit() {
+    if (!activeCreateSessionTab) return
+
+    const workspace = findWorkspaceByID(workspaces, activeCreateSessionTab.workspaceID)
+    if (!workspace) return
+
+    await createSessionForWorkspace(workspace, {
+      closeCreateTab: true,
+      createSessionTabID: activeCreateSessionTab.id,
+      title: activeCreateSessionTab.title,
+    })
   }
 
   async function handleSend() {
@@ -904,37 +1320,63 @@ export function useAgentWorkspace({
     await trackedTask
   }
 
+  function handleLeftSidebarViewChange(nextView: LeftSidebarView) {
+    setLeftSidebarView(nextView)
+  }
+
+  function handleRightSidebarViewChange(nextView: RightSidebarView) {
+    setRightSidebarView(nextView)
+  }
+
   return {
+    activeCreateSessionTabID,
     activeSession,
     activeSessionDiff,
     activePendingPermissionRequests,
     activeTurns,
+    canvasSessionTabs,
     composerAttachments,
     composerModelOptions,
     composerSelectedModel,
     composerSelectedModelLabel,
+    createSessionTabs,
+    createSessionTitle,
+    createSessionWorkspaceID,
     deletingSessionID,
     draft,
     expandedFolderID,
+    handleCanvasSessionTabClose,
+    handleCanvasSessionTabSelect,
+    handleCreateSessionTabSelect,
     handleComposerModelChange,
+    handleCloseCreateSessionTab,
+    handleCreateSessionSubmit,
+    handleCreateSessionTitleChange,
+    handleCreateSessionWorkspaceChange,
+    handleLeftSidebarViewChange,
+    handleOpenCreateSessionTab,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleProjectCreateSession,
     handleProjectClick,
     handleProjectRemove,
     handleRemoveComposerAttachment,
+    handleRightSidebarViewChange,
     handleSend,
     handleSessionDelete,
     handleSessionSelect,
     handleSidebarAction,
     hoveredFolderID,
+    isCreateSessionTabActive,
     isCreatingProject,
     isCreatingSession,
     isResolvingPermissionRequest: permissionRequestActionRequestID !== null,
     isSending,
+    leftSidebarView,
     permissionRequestActionError,
     permissionRequestActionRequestID,
     projectRowRefs,
+    rightSidebarView,
     selectedWorkspace,
     selectedFolderID,
     setDraft,

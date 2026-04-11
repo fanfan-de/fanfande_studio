@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react"
 import { DEFAULT_SIDEBAR_WIDTH, SIDEBAR_KEYBOARD_STEP } from "./constants"
-import type { TitlebarMenuKey, WindowAction } from "./types"
+import type { WindowAction } from "./types"
 import { clamp, resolveSidebarWidthBounds } from "./utils"
 
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
@@ -33,7 +33,6 @@ export function useDesktopShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false)
   const [activeSidebarResizer, setActiveSidebarResizer] = useState<SidebarResizerSide | null>(null)
-  const [agentBaseURL, setAgentBaseURL] = useState("http://127.0.0.1:4096")
   const [agentDefaultDirectory, setAgentDefaultDirectory] = useState("")
   const [agentConnected, setAgentConnected] = useState(false)
   const lastExpandedSidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH)
@@ -115,12 +114,8 @@ export function useDesktopShell() {
     Promise.all([configPromise, healthPromise])
       .then(([config, health]) => {
         if (!mounted) return
-        if (config?.baseURL) setAgentBaseURL(config.baseURL)
         if (config?.defaultDirectory) setAgentDefaultDirectory(config.defaultDirectory)
-        if (health) {
-          setAgentConnected(health.ok)
-          if (!config?.baseURL && health.baseURL) setAgentBaseURL(health.baseURL)
-        }
+        if (health) setAgentConnected(health.ok)
       })
       .catch(() => {
         if (mounted) setAgentConnected(false)
@@ -360,23 +355,6 @@ export function useDesktopShell() {
     setIsActivityRailVisible(nextVisible)
   }
 
-  function handleTitleMenu(menuKey: TitlebarMenuKey, event: MouseEvent<HTMLButtonElement>) {
-    if (!window.desktop?.showMenu) {
-      console.warn("[desktop] showMenu is unavailable. preload may not be loaded.")
-      return
-    }
-
-    const rect = event.currentTarget.getBoundingClientRect()
-    const anchor = {
-      x: Math.round(rect.left),
-      y: Math.round(rect.bottom),
-    }
-
-    void window.desktop.showMenu(menuKey, anchor).catch((error) => {
-      console.error("[desktop] showMenu failed:", error)
-    })
-  }
-
   function handleWindowAction(action: WindowAction) {
     if (!window.desktop?.windowAction) {
       console.warn("[desktop] windowAction is unavailable. preload may not be loaded.")
@@ -388,9 +366,6 @@ export function useDesktopShell() {
     })
   }
 
-  const titlebarCommand = agentConnected
-    ? `agent://${agentBaseURL.replace(/^https?:\/\//, "")}`
-    : `agent://offline (${agentBaseURL.replace(/^https?:\/\//, "")})`
   const appShellStyle = {
     "--activity-rail-display-width": isActivityRailVisible ? "54px" : "0px",
     "--sidebar-display-width": isSidebarCollapsed ? "0px" : `${sidebarWidth}px`,
@@ -413,7 +388,6 @@ export function useDesktopShell() {
     handleRightSidebarResizerKeyDown,
     handleRightSidebarResizerPointerDown,
     handleRightSidebarToggle,
-    handleTitleMenu,
     handleWindowAction,
     isActivityRailVisible,
     isSidebarCollapsed,
@@ -424,6 +398,5 @@ export function useDesktopShell() {
     platform,
     rightSidebarWidth,
     sidebarWidth,
-    titlebarCommand,
   }
 }

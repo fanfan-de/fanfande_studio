@@ -1,14 +1,16 @@
 import { memo } from "react"
 import {
   ActivityRail,
-  CanvasTopMenu,
+  CanvasRegionTopMenu,
   Composer,
+  CreateSessionCanvas,
   RightSidebar,
+  SessionCanvasTopMenu,
   SettingsPage,
   Sidebar,
   SidebarResizer,
   ThreadView,
-  Titlebar,
+  WindowChrome,
 } from "./app/components"
 import { TerminalPanel } from "./app/terminal/TerminalPanel"
 import { TerminalPanelToggleButton } from "./app/terminal/TerminalPanelToggleButton"
@@ -30,7 +32,6 @@ export function App() {
     handleSidebarResizerKeyDown,
     handleSidebarResizerPointerDown,
     handleSidebarToggle,
-    handleTitleMenu,
     handleWindowAction,
     isActivityRailVisible,
     isRightSidebarCollapsed,
@@ -41,40 +42,57 @@ export function App() {
     platform,
     rightSidebarWidth,
     sidebarWidth,
-    titlebarCommand,
   } = useDesktopShell()
 
   const {
     activeSession,
+    activeCreateSessionTabID,
     activeSessionDiff,
     activePendingPermissionRequests,
     activeTurns,
+    canvasSessionTabs,
     composerAttachments,
     composerModelOptions,
     composerSelectedModel,
     composerSelectedModelLabel,
+    createSessionTabs,
+    createSessionTitle,
+    createSessionWorkspaceID,
     deletingSessionID,
     draft,
     expandedFolderID,
+    handleCanvasSessionTabClose,
+    handleCanvasSessionTabSelect,
+    handleCreateSessionTabSelect,
     handleComposerModelChange,
+    handleCloseCreateSessionTab,
+    handleCreateSessionSubmit,
+    handleCreateSessionTitleChange,
+    handleCreateSessionWorkspaceChange,
+    handleLeftSidebarViewChange,
+    handleOpenCreateSessionTab,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleProjectCreateSession,
     handleProjectClick,
     handleProjectRemove,
     handleRemoveComposerAttachment,
+    handleRightSidebarViewChange,
     handleSend,
     handleSessionDelete,
     handleSessionSelect,
     handleSidebarAction,
     hoveredFolderID,
+    isCreateSessionTabActive,
     isCreatingProject,
     isCreatingSession,
     isResolvingPermissionRequest,
     isSending,
+    leftSidebarView,
     permissionRequestActionError,
     permissionRequestActionRequestID,
     projectRowRefs,
+    rightSidebarView,
     selectedWorkspace,
     selectedFolderID,
     setDraft,
@@ -111,12 +129,7 @@ export function App() {
 
   return (
     <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
-      <Titlebar
-        isWindowMaximized={isWindowMaximized}
-        titlebarCommand={titlebarCommand}
-        onMenuClick={handleTitleMenu}
-        onWindowAction={handleWindowAction}
-      />
+      <WindowChrome isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
 
       <main ref={appShellRef} className="app-shell" style={appShellStyle}>
         {isActivityRailVisible ? (
@@ -127,6 +140,7 @@ export function App() {
           <>
             <Sidebar
               activeSessionID={activeSession?.id ?? null}
+              activeView={leftSidebarView}
               deletingSessionID={deletingSessionID}
               expandedFolderID={expandedFolderID}
               hoveredFolderID={hoveredFolderID}
@@ -146,6 +160,7 @@ export function App() {
               onSessionSelect={handleSessionSelect}
               onSidebarAction={handleSidebarAction}
               onToggleSidebar={handleSidebarToggle}
+              onViewChange={handleLeftSidebarViewChange}
             />
 
             <SidebarResizer
@@ -159,38 +174,65 @@ export function App() {
         ) : null}
 
         <section className="canvas">
-          <CanvasTopMenu
-            gitDirectory={selectedWorkspace?.project.worktree ?? null}
-            showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
-            showRightSidebarToggleButton={isRightSidebarCollapsed}
-            onToggleLeftSidebar={handleSidebarToggle}
-            onToggleRightSidebar={handleRightSidebarToggle}
-          />
-          <ThreadView
-            activeSession={activeSession}
-            isResolvingPermissionRequest={isResolvingPermissionRequest}
-            pendingPermissionRequests={activePendingPermissionRequests}
-            permissionRequestActionError={permissionRequestActionError}
-            permissionRequestActionRequestID={permissionRequestActionRequestID}
-            activeTurns={activeTurns}
-            threadColumnRef={threadColumnRef}
-            onPermissionRequestResponse={handlePermissionRequestResponse}
-          />
-          <Composer
-            attachments={composerAttachments}
-            draft={draft}
-            hasActiveSession={Boolean(activeSession)}
-            hasPendingPermissionRequests={activePendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
-            isSending={isSending}
-            modelOptions={composerModelOptions}
-            selectedModel={composerSelectedModel}
-            selectedModelLabel={composerSelectedModelLabel}
-            onDraftChange={setDraft}
-            onModelChange={handleComposerModelChange}
-            onPickAttachments={handlePickComposerAttachments}
-            onRemoveAttachment={handleRemoveComposerAttachment}
-            onSend={handleSend}
-          />
+          <div className="canvas-top-stack">
+            <CanvasRegionTopMenu
+              activeSessionID={activeSession?.id ?? null}
+              activeCreateSessionTabID={activeCreateSessionTabID}
+              createSessionTabs={createSessionTabs}
+              sessions={canvasSessionTabs}
+              onCloseCreateSessionTab={handleCloseCreateSessionTab}
+              onAddCreateSessionTab={() => handleOpenCreateSessionTab(selectedWorkspace?.id ?? null)}
+              onSelectCreateSessionTab={handleCreateSessionTabSelect}
+              onSessionClose={handleCanvasSessionTabClose}
+              onSessionSelect={handleCanvasSessionTabSelect}
+              showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
+              showRightSidebarToggleButton={isRightSidebarCollapsed}
+              onToggleLeftSidebar={handleSidebarToggle}
+              onToggleRightSidebar={handleRightSidebarToggle}
+            />
+            {!isCreateSessionTabActive ? (
+              <SessionCanvasTopMenu activeSession={activeSession} gitDirectory={selectedWorkspace?.project.worktree ?? null} />
+            ) : null}
+          </div>
+          {isCreateSessionTabActive ? (
+            <CreateSessionCanvas
+              isCreatingSession={isCreatingSession}
+              selectedWorkspaceID={createSessionWorkspaceID}
+              title={createSessionTitle}
+              workspaces={workspaces}
+              onCreateSession={handleCreateSessionSubmit}
+              onTitleChange={handleCreateSessionTitleChange}
+              onWorkspaceChange={handleCreateSessionWorkspaceChange}
+            />
+          ) : (
+            <>
+              <ThreadView
+                activeSession={activeSession}
+                isResolvingPermissionRequest={isResolvingPermissionRequest}
+                pendingPermissionRequests={activePendingPermissionRequests}
+                permissionRequestActionError={permissionRequestActionError}
+                permissionRequestActionRequestID={permissionRequestActionRequestID}
+                activeTurns={activeTurns}
+                threadColumnRef={threadColumnRef}
+                onPermissionRequestResponse={handlePermissionRequestResponse}
+              />
+              <Composer
+                attachments={composerAttachments}
+                draft={draft}
+                hasActiveSession={Boolean(activeSession)}
+                hasPendingPermissionRequests={activePendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+                isSending={isSending}
+                modelOptions={composerModelOptions}
+                selectedModel={composerSelectedModel}
+                selectedModelLabel={composerSelectedModelLabel}
+                onDraftChange={setDraft}
+                onModelChange={handleComposerModelChange}
+                onPickAttachments={handlePickComposerAttachments}
+                onRemoveAttachment={handleRemoveComposerAttachment}
+                onSend={handleSend}
+              />
+            </>
+          )}
           <TerminalArea
             currentWorkspaceDirectory={selectedWorkspace?.directory ?? null}
             defaultCwd={agentDefaultDirectory}
@@ -210,7 +252,9 @@ export function App() {
             <RightSidebar
               activeSession={activeSession}
               activeSessionDiff={activeSessionDiff}
+              activeView={rightSidebarView}
               onToggleSidebar={handleRightSidebarToggle}
+              onViewChange={handleRightSidebarViewChange}
             />
           </>
         ) : null}

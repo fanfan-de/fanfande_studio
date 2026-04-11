@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
-import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions, titlebarMenus } from "./constants"
+import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions } from "./constants"
 import {
   ArrowUpIcon,
   ChevronDownIcon,
@@ -10,6 +10,7 @@ import {
   DisconnectedStatusIcon,
   FolderIcon,
   LayoutSidebarLeftIcon,
+  LayoutSidebarRightIcon,
   LeftSidebarCollapseIcon,
   LeftSidebarExpandIcon,
   MaximizeIcon,
@@ -26,71 +27,52 @@ import type {
   AssistantTraceItem,
   ComposerAttachment,
   ComposerModelOption,
+  CreateSessionTab,
+  LeftSidebarView,
   PermissionDecision,
   PermissionRequest,
   ProjectModelSelection,
   ProviderCatalogItem,
   ProviderDraftState,
   ProviderModel,
+  RightSidebarView,
   SessionDiffSummary,
   SessionSummary,
   SidebarActionKey,
-  TitlebarMenuKey,
   Turn,
   WindowAction,
   WorkspaceGroup,
 } from "./types"
 import { formatTime } from "./utils"
 
-interface TitlebarProps {
+interface WindowChromeProps {
   isWindowMaximized: boolean
-  titlebarCommand: string
-  onMenuClick: (menuKey: TitlebarMenuKey, event: MouseEvent<HTMLButtonElement>) => void
   onWindowAction: (action: WindowAction) => void
 }
 
-export function Titlebar({ isWindowMaximized, titlebarCommand, onMenuClick, onWindowAction }: TitlebarProps) {
+export function WindowChrome({ isWindowMaximized, onWindowAction }: WindowChromeProps) {
   return (
-    <header className="titlebar">
-      <div className="titlebar-surface">
-        <div className="titlebar-left">
-          <div className="titlebar-brand" aria-hidden="true">
-            <span className="titlebar-mark">*</span>
-          </div>
-          <nav className="titlebar-menus" aria-label="Application menu">
-            {titlebarMenus.map((menu) => (
-              <button key={menu.key} className="titlebar-menu-button" onClick={(event) => onMenuClick(menu.key, event)}>
-                {menu.label}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        <div className="titlebar-right">
-          <div className="titlebar-command">{titlebarCommand}</div>
-          <div className="titlebar-controls" aria-label="Window controls">
-            <button className="window-control" aria-label="Minimize window" onClick={() => onWindowAction("minimize")}>
-              <MinimizeIcon />
-            </button>
-            <button
-              className="window-control"
-              aria-label={isWindowMaximized ? "Restore window" : "Maximize window"}
-              onClick={() => onWindowAction("toggle-maximize")}
-            >
-              {isWindowMaximized ? <RestoreIcon /> : <MaximizeIcon />}
-            </button>
-            <button className="window-control is-close" aria-label="Close window" onClick={() => onWindowAction("close")}>
-              <CloseIcon />
-            </button>
-          </div>
-        </div>
-      </div>
-    </header>
+    <div className="window-controls-floating" role="group" aria-label="Window controls">
+      <button className="window-control" aria-label="Minimize window" type="button" onClick={() => onWindowAction("minimize")}>
+        <MinimizeIcon />
+      </button>
+      <button
+        className="window-control"
+        aria-label={isWindowMaximized ? "Restore window" : "Maximize window"}
+        type="button"
+        onClick={() => onWindowAction("toggle-maximize")}
+      >
+        {isWindowMaximized ? <RestoreIcon /> : <MaximizeIcon />}
+      </button>
+      <button className="window-control is-close" aria-label="Close window" type="button" onClick={() => onWindowAction("close")}>
+        <CloseIcon />
+      </button>
+    </div>
   )
 }
 
 type SidebarSide = "left" | "right"
-type SidebarToggleButtonVariant = "rail" | "sidebar" | "canvas"
+type SidebarToggleButtonVariant = "rail" | "sidebar" | "top-menu"
 
 interface SidebarToggleButtonProps {
   isSidebarCollapsed: boolean
@@ -161,6 +143,7 @@ export function ActivityRail({ isSidebarCollapsed, onToggleSidebar, side }: Acti
 
 interface SidebarProps {
   activeSessionID: string | null
+  activeView: LeftSidebarView
   deletingSessionID: string | null
   expandedFolderID: string | null
   hoveredFolderID: string | null
@@ -180,33 +163,100 @@ interface SidebarProps {
   onSessionSelect: (workspaceID: string, sessionID: string) => void
   onSidebarAction: (action: SidebarActionKey) => void | Promise<void>
   onToggleSidebar: () => void
+  onViewChange: (view: LeftSidebarView) => void
 }
 
-export function Sidebar({
+interface TopMenuViewButtonProps {
+  active: boolean
+  label: string
+  onClick: () => void
+  children: ReactNode
+}
+
+function TopMenuViewButton({ active, label, onClick, children }: TopMenuViewButtonProps) {
+  return (
+    <button
+      className={active ? "top-menu-view-button is-active" : "top-menu-view-button"}
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      type="button"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
+interface LeftSidebarTopMenuProps {
+  activeView: LeftSidebarView
+  showSidebarToggleButton: boolean
+  onToggleSidebar: () => void
+  onViewChange: (view: LeftSidebarView) => void
+}
+
+function LeftSidebarTopMenu({
+  activeView,
+  showSidebarToggleButton,
+  onToggleSidebar,
+  onViewChange,
+}: LeftSidebarTopMenuProps) {
+  return (
+    <header className="left-sidebar-top-menu panel-toolbar" aria-label="Left sidebar top menu">
+      <div className="left-sidebar-top-menu-tabs">
+        <TopMenuViewButton active={activeView === "workspace"} label="Workspace" onClick={() => onViewChange("workspace")}>
+          <LayoutSidebarLeftIcon />
+        </TopMenuViewButton>
+      </div>
+      <div className="left-sidebar-top-menu-actions">
+        {showSidebarToggleButton ? (
+          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="left" variant="top-menu" />
+        ) : null}
+      </div>
+    </header>
+  )
+}
+
+interface FolderWorkspaceViewProps {
+  activeSessionID: string | null
+  deletingSessionID: string | null
+  expandedFolderID: string | null
+  hoveredFolderID: string | null
+  isCreatingProject: boolean
+  isCreatingSession: boolean
+  projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
+  selectedFolderID: string | null
+  workspaces: WorkspaceGroup[]
+  onHoveredFolderChange: Dispatch<SetStateAction<string | null>>
+  onProjectClick: (workspace: WorkspaceGroup) => void
+  onProjectCreateSession: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void | Promise<void>
+  onProjectRemove: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void
+  onSessionDelete: (workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) => void
+  onSessionSelect: (workspaceID: string, sessionID: string) => void
+  onSidebarAction: (action: SidebarActionKey) => void | Promise<void>
+}
+
+function FolderWorkspaceView({
   activeSessionID,
   deletingSessionID,
   expandedFolderID,
   hoveredFolderID,
   isCreatingProject,
   isCreatingSession,
-  isSettingsOpen,
-  showSidebarToggleButton,
   projectRowRefs,
   selectedFolderID,
   workspaces,
   onHoveredFolderChange,
-  onOpenSettings,
   onProjectClick,
   onProjectCreateSession,
   onProjectRemove,
   onSessionDelete,
   onSessionSelect,
   onSidebarAction,
-  onToggleSidebar,
-}: SidebarProps) {
+}: FolderWorkspaceViewProps) {
   return (
-    <aside id="app-sidebar" className="sidebar" aria-label="Folder navigation">
-      <div className="sidebar-actions panel-toolbar" aria-label="Sidebar actions">
+    <section className="sidebar-view sidebar-view-workspace" aria-label="Workspace sidebar view">
+      <div className="sidebar-actions view-toolbar" aria-label="Workspace view actions">
         <div className="panel-toolbar-actions sidebar-actions-buttons">
           {sidebarActions.map((action) => (
             <button
@@ -222,9 +272,6 @@ export function Sidebar({
               {action.key === "new" ? <NewItemIcon /> : null}
             </button>
           ))}
-          {showSidebarToggleButton ? (
-            <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="left" variant="sidebar" />
-          ) : null}
         </div>
       </div>
 
@@ -263,14 +310,14 @@ export function Sidebar({
                     data-folder-id={workspace.id}
                     onClick={() => onProjectClick(workspace)}
                   >
-                  <span className="project-row-leading" data-icon={leadingIcon} data-testid={`project-leading-${workspace.id}`} aria-hidden="true">
-                    {showStateIcon ? isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon /> : <FolderIcon />}
-                  </span>
-                  <span className="project-row-text">
-                    <span className="project-row-label">{workspace.name}</span>
-                    <span className="project-row-meta">{workspace.project.name}</span>
-                  </span>
-                </button>
+                    <span className="project-row-leading" data-icon={leadingIcon} data-testid={`project-leading-${workspace.id}`} aria-hidden="true">
+                      {showStateIcon ? isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon /> : <FolderIcon />}
+                    </span>
+                    <span className="project-row-text">
+                      <span className="project-row-label">{workspace.name}</span>
+                      <span className="project-row-meta">{workspace.project.name}</span>
+                    </span>
+                  </button>
                   <div className="project-row-actions" aria-label={`${workspace.name} actions`}>
                     <button
                       className="row-action project-row-action"
@@ -324,6 +371,65 @@ export function Sidebar({
           )
         })}
       </div>
+    </section>
+  )
+}
+
+export function Sidebar({
+  activeSessionID,
+  activeView,
+  deletingSessionID,
+  expandedFolderID,
+  hoveredFolderID,
+  isCreatingProject,
+  isCreatingSession,
+  isSettingsOpen,
+  showSidebarToggleButton,
+  projectRowRefs,
+  selectedFolderID,
+  workspaces,
+  onHoveredFolderChange,
+  onOpenSettings,
+  onProjectClick,
+  onProjectCreateSession,
+  onProjectRemove,
+  onSessionDelete,
+  onSessionSelect,
+  onSidebarAction,
+  onToggleSidebar,
+  onViewChange,
+}: SidebarProps) {
+  return (
+    <aside id="app-sidebar" className="sidebar" aria-label="Primary sidebar">
+      <LeftSidebarTopMenu
+        activeView={activeView}
+        showSidebarToggleButton={showSidebarToggleButton}
+        onToggleSidebar={onToggleSidebar}
+        onViewChange={onViewChange}
+      />
+
+      <div className="sidebar-view-host">
+        {activeView === "workspace" ? (
+          <FolderWorkspaceView
+            activeSessionID={activeSessionID}
+            deletingSessionID={deletingSessionID}
+            expandedFolderID={expandedFolderID}
+            hoveredFolderID={hoveredFolderID}
+            isCreatingProject={isCreatingProject}
+            isCreatingSession={isCreatingSession}
+            projectRowRefs={projectRowRefs}
+            selectedFolderID={selectedFolderID}
+            workspaces={workspaces}
+            onHoveredFolderChange={onHoveredFolderChange}
+            onProjectClick={onProjectClick}
+            onProjectCreateSession={onProjectCreateSession}
+            onProjectRemove={onProjectRemove}
+            onSessionDelete={onSessionDelete}
+            onSessionSelect={onSessionSelect}
+            onSidebarAction={onSidebarAction}
+          />
+        ) : null}
+      </div>
 
       <button
         className={isSettingsOpen ? "sidebar-settings is-active" : "sidebar-settings"}
@@ -342,6 +448,8 @@ interface RightSidebarProps {
   activeSession: SessionSummary | null
   activeSessionDiff: SessionDiffSummary | null
   onToggleSidebar: () => void
+  activeView: RightSidebarView
+  onViewChange: (view: RightSidebarView) => void
 }
 
 type DiffPreviewLineTone = "add" | "remove" | "context"
@@ -485,7 +593,9 @@ function DiffPreview({ file, patch }: { file: string; patch?: string }) {
 export function RightSidebar({
   activeSession,
   activeSessionDiff,
+  activeView,
   onToggleSidebar,
+  onViewChange,
 }: RightSidebarProps) {
   const [expandedDiffFile, setExpandedDiffFile] = useState<string | null>(null)
   const changedFilesCount = activeSessionDiff?.stats?.files ?? activeSessionDiff?.diffs.length ?? 0
@@ -496,60 +606,69 @@ export function RightSidebar({
 
   return (
     <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
-      <header className="right-sidebar-header panel-toolbar">
-        <div className="panel-toolbar-actions right-sidebar-header-actions">
-          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="right" variant="sidebar" />
+      <header className="right-sidebar-top-menu panel-toolbar">
+        <div className="right-sidebar-top-menu-tabs">
+          <TopMenuViewButton active={activeView === "changes"} label="Changes" onClick={() => onViewChange("changes")}>
+            <LayoutSidebarRightIcon />
+          </TopMenuViewButton>
+        </div>
+        <div className="right-sidebar-top-menu-actions">
+          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="right" variant="top-menu" />
         </div>
       </header>
 
-      <section className="right-sidebar-section">
-        <div className="right-sidebar-section-header">
-          <span className="label">Changed Files</span>
-          {activeSession ? <span className="settings-badge">{String(changedFilesCount)} files</span> : null}
-        </div>
-        {activeSession ? (
-          activeSessionDiff && activeSessionDiff.diffs.length > 0 ? (
-            <div className="right-sidebar-stack">
-              {activeSessionDiff.title ? <p>{activeSessionDiff.title}</p> : null}
-              <div className="right-sidebar-change-list">
-                {activeSessionDiff.diffs.map((diff) => (
-                  <div key={diff.file} className="right-sidebar-change-row">
-                    <button
-                      type="button"
-                      className="right-sidebar-change-toggle"
-                      aria-expanded={expandedDiffFile === diff.file}
-                      aria-label={`Toggle diff for ${diff.file}`}
-                      onClick={() => setExpandedDiffFile((current) => (current === diff.file ? null : diff.file))}
-                    >
-                      <span className="right-sidebar-change-icon" aria-hidden="true">
-                        {expandedDiffFile === diff.file ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                      </span>
-                      <div className="right-sidebar-change-copy">
-                        <strong>{diff.file}</strong>
-                        <span className="right-sidebar-change-action">
-                          {expandedDiffFile === diff.file ? "Hide diff" : "Show diff"}
-                        </span>
+      <div className="right-sidebar-view-host">
+        {activeView === "changes" ? (
+          <section className="right-sidebar-section">
+            <div className="right-sidebar-section-header">
+              <span className="label">Changed Files</span>
+              {activeSession ? <span className="settings-badge">{String(changedFilesCount)} files</span> : null}
+            </div>
+            {activeSession ? (
+              activeSessionDiff && activeSessionDiff.diffs.length > 0 ? (
+                <div className="right-sidebar-stack">
+                  {activeSessionDiff.title ? <p>{activeSessionDiff.title}</p> : null}
+                  <div className="right-sidebar-change-list">
+                    {activeSessionDiff.diffs.map((diff) => (
+                      <div key={diff.file} className="right-sidebar-change-row">
+                        <button
+                          type="button"
+                          className="right-sidebar-change-toggle"
+                          aria-expanded={expandedDiffFile === diff.file}
+                          aria-label={`Toggle diff for ${diff.file}`}
+                          onClick={() => setExpandedDiffFile((current) => (current === diff.file ? null : diff.file))}
+                        >
+                          <span className="right-sidebar-change-icon" aria-hidden="true">
+                            {expandedDiffFile === diff.file ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                          </span>
+                          <div className="right-sidebar-change-copy">
+                            <strong>{diff.file}</strong>
+                            <span className="right-sidebar-change-action">
+                              {expandedDiffFile === diff.file ? "Hide diff" : "Show diff"}
+                            </span>
+                          </div>
+                          <span className="right-sidebar-change-stat">
+                            +{diff.additions} -{diff.deletions}
+                          </span>
+                        </button>
+                        {expandedDiffFile === diff.file ? <DiffPreview file={diff.file} patch={diff.patch} /> : null}
                       </div>
-                      <span className="right-sidebar-change-stat">
-                        +{diff.additions} -{diff.deletions}
-                      </span>
-                    </button>
-                    {expandedDiffFile === diff.file ? <DiffPreview file={diff.file} patch={diff.patch} /> : null}
+                    ))}
                   </div>
-                ))}
+                </div>
+              ) : (
+                <div className="right-sidebar-empty">
+                  <p>No tracked workspace changes for this session yet.</p>
+                </div>
+              )
+            ) : (
+              <div className="right-sidebar-empty">
+                <p>Select a session to inspect its file changes.</p>
               </div>
-            </div>
-          ) : (
-            <div className="right-sidebar-empty">
-              <p>No tracked workspace changes for this session yet.</p>
-            </div>
-          )
-        ) : (
-          <div className="right-sidebar-empty">
-            <p>Select a session to inspect its file changes.</p>
-          </div>
-        )}
-      </section>
+            )}
+          </section>
+        ) : null}
+      </div>
     </aside>
   )
 }
@@ -588,12 +707,34 @@ export function SidebarResizer({ isSidebarResizing, side, sidebarWidth, onKeyDow
   )
 }
 
-interface CanvasTopMenuProps {
-  gitDirectory: string | null
+interface CanvasRegionTopMenuProps {
+  activeSessionID: string | null
+  activeCreateSessionTabID: string | null
+  createSessionTabs: CreateSessionTab[]
+  sessions: SessionSummary[]
   showLeftSidebarToggleButton: boolean
   showRightSidebarToggleButton: boolean
+  onAddCreateSessionTab: () => void
+  onCloseCreateSessionTab: (tabID: string) => void
+  onSelectCreateSessionTab: (tabID: string) => void
+  onSessionClose: (sessionID: string) => void
+  onSessionSelect: (sessionID: string) => void
   onToggleLeftSidebar: () => void
   onToggleRightSidebar: () => void
+}
+
+function getCreateSessionTabTitle(tab: CreateSessionTab, _index: number) {
+  const trimmedTitle = tab.title.trim()
+  if (trimmedTitle) return trimmedTitle
+  return "Create session"
+}
+
+function getCreateSessionTabSwitchLabel(tab: CreateSessionTab, index: number) {
+  return tab.title.trim() ? `Switch to create session draft ${tab.title.trim()}` : index === 0 ? "Switch to create session tab" : `Switch to create session tab ${index + 1}`
+}
+
+function getCreateSessionTabCloseLabel(tab: CreateSessionTab, index: number) {
+  return tab.title.trim() ? `Close create session draft ${tab.title.trim()}` : index === 0 ? "Close create session tab" : `Close create session tab ${index + 1}`
 }
 
 function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
@@ -802,28 +943,234 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
   )
 }
 
-export function CanvasTopMenu({
-  gitDirectory,
+export function CanvasRegionTopMenu({
+  activeSessionID,
+  activeCreateSessionTabID,
+  createSessionTabs,
+  sessions,
+  onAddCreateSessionTab,
   showLeftSidebarToggleButton,
   showRightSidebarToggleButton,
+  onCloseCreateSessionTab,
+  onSelectCreateSessionTab,
+  onSessionClose,
+  onSessionSelect,
   onToggleLeftSidebar,
   onToggleRightSidebar,
-}: CanvasTopMenuProps) {
+}: CanvasRegionTopMenuProps) {
+  const canCloseCreateSessionTab = sessions.length > 0 || createSessionTabs.length > 1
+
   return (
-    <nav className="canvas-top-menu panel-toolbar" aria-label="Main content menu">
-      <div className="canvas-top-menu-leading">
+    <nav className="canvas-region-top-menu panel-toolbar" aria-label="Canvas region top menu">
+      <div className="canvas-region-top-menu-leading">
         {showLeftSidebarToggleButton ? (
-          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="canvas" />
+          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="top-menu" />
         ) : null}
       </div>
-      <div className="canvas-top-menu-group" />
-      <div className="canvas-top-menu-trailing">
-        <GitQuickMenuButton gitDirectory={gitDirectory} />
+      <div className="canvas-region-top-menu-tabs-shell">
+        <div className="canvas-region-top-menu-tabs" aria-label="Session tabs">
+          {sessions.map((session) => {
+            const isActive = activeCreateSessionTabID === null && session.id === activeSessionID
+
+            return (
+              <div key={session.id} className={isActive ? "session-tab is-active" : "session-tab"}>
+                <button
+                  className="session-tab-trigger"
+                  aria-label={`Switch to session ${session.title}`}
+                  aria-pressed={isActive}
+                  title={`Switch to session ${session.title}`}
+                  type="button"
+                  onClick={() => onSessionSelect(session.id)}
+                >
+                  <span className="session-tab-title">{session.title}</span>
+                </button>
+                <button
+                  className="session-tab-close"
+                  aria-label={`Close session tab ${session.title}`}
+                  title={`Close session tab ${session.title}`}
+                  type="button"
+                  onClick={() => onSessionClose(session.id)}
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            )
+          })}
+
+          {createSessionTabs.map((tab, index) => {
+            const isActive = activeCreateSessionTabID === tab.id
+            const switchLabel = getCreateSessionTabSwitchLabel(tab, index)
+            const closeLabel = getCreateSessionTabCloseLabel(tab, index)
+
+            return (
+              <div key={tab.id} className={isActive ? "session-tab is-active is-create-tab" : "session-tab is-create-tab"}>
+                <button
+                  className="session-tab-trigger"
+                  aria-label={switchLabel}
+                  aria-pressed={isActive}
+                  title={switchLabel}
+                  type="button"
+                  onClick={() => onSelectCreateSessionTab(tab.id)}
+                >
+                  <span className="session-tab-title">{getCreateSessionTabTitle(tab, index)}</span>
+                </button>
+                {canCloseCreateSessionTab ? (
+                  <button
+                    className="session-tab-close"
+                    aria-label={closeLabel}
+                    title={closeLabel}
+                    type="button"
+                    onClick={() => onCloseCreateSessionTab(tab.id)}
+                  >
+                    <CloseIcon />
+                  </button>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+        <button className="canvas-region-top-menu-add-button" aria-label="Add session tab" title="Add session tab" type="button" onClick={onAddCreateSessionTab}>
+          <span className="canvas-region-top-menu-add-glyph" aria-hidden="true">
+            +
+          </span>
+        </button>
+      </div>
+      <div className="canvas-region-top-menu-trailing">
         {showRightSidebarToggleButton ? (
-          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleRightSidebar} side="right" variant="canvas" />
+          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleRightSidebar} side="right" variant="top-menu" />
         ) : null}
       </div>
     </nav>
+  )
+}
+
+interface SessionCanvasTopMenuProps {
+  activeSession: SessionSummary | null
+  gitDirectory: string | null
+}
+
+export function SessionCanvasTopMenu({ activeSession, gitDirectory }: SessionCanvasTopMenuProps) {
+  return (
+    <header className="session-canvas-top-menu panel-toolbar" aria-label="Session canvas top menu">
+      <div className="panel-toolbar-copy session-canvas-top-menu-copy">
+        <span className="label">Session Canvas</span>
+        <strong>{activeSession?.title ?? "No session selected"}</strong>
+      </div>
+      <div className="session-canvas-top-menu-actions">
+        <GitQuickMenuButton gitDirectory={gitDirectory} />
+      </div>
+    </header>
+  )
+}
+
+interface CreateSessionCanvasProps {
+  isCreatingSession: boolean
+  selectedWorkspaceID: string | null
+  title: string
+  workspaces: WorkspaceGroup[]
+  onCreateSession: () => void | Promise<void>
+  onTitleChange: (value: string) => void
+  onWorkspaceChange: (workspaceID: string) => void
+}
+
+export function CreateSessionCanvas({
+  isCreatingSession,
+  selectedWorkspaceID,
+  title,
+  workspaces,
+  onCreateSession,
+  onTitleChange,
+  onWorkspaceChange,
+}: CreateSessionCanvasProps) {
+  const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID) ?? null
+
+  if (workspaces.length === 0) {
+    return (
+      <section className="thread-shell create-session-shell">
+        <article className="create-session-card">
+          <header className="assistant-header create-session-header">
+            <div>
+              <span className="label">Create Session</span>
+              <h3>No folder workspace available</h3>
+            </div>
+          </header>
+          <p className="create-session-copy">Open a folder workspace from the left sidebar first, then create the session here.</p>
+        </article>
+      </section>
+    )
+  }
+
+  return (
+    <section className="thread-shell create-session-shell">
+      <form
+        className="create-session-card"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void onCreateSession()
+        }}
+      >
+        <header className="assistant-header create-session-header">
+          <div>
+            <span className="label">Create Session</span>
+            <h3>Open a new session tab</h3>
+          </div>
+        </header>
+
+        <p className="create-session-copy">Choose a folder workspace, optionally name the session, then create it into the canvas.</p>
+
+        <div className="create-session-fields">
+          <label className="create-session-field">
+            <span className="label">Folder Workspace</span>
+            <select
+              aria-label="Session folder workspace"
+              value={selectedWorkspaceID ?? ""}
+              onChange={(event: ChangeEvent<HTMLSelectElement>) => onWorkspaceChange(event.target.value)}
+            >
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.project.name} / {workspace.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="create-session-field">
+            <span className="label">Session Title</span>
+            <input
+              aria-label="Session title"
+              placeholder="Optional session title"
+              type="text"
+              value={title}
+              onChange={(event: ChangeEvent<HTMLInputElement>) => onTitleChange(event.target.value)}
+            />
+          </label>
+        </div>
+
+        {selectedWorkspace ? (
+          <article className="create-session-workspace-card">
+            <span className="label">Target Folder</span>
+            <strong>
+              {selectedWorkspace.project.name} / {selectedWorkspace.name}
+            </strong>
+            <p>{selectedWorkspace.directory}</p>
+          </article>
+        ) : null}
+
+        <div className="create-session-actions">
+          <button
+            className="secondary-button"
+            disabled={isCreatingSession || title.trim().length === 0}
+            type="button"
+            onClick={() => onTitleChange("")}
+          >
+            Reset title
+          </button>
+          <button className="primary-button" disabled={isCreatingSession || !selectedWorkspaceID} type="submit">
+            {isCreatingSession ? "Creating session..." : "Create session"}
+          </button>
+        </div>
+      </form>
+    </section>
   )
 }
 

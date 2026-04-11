@@ -1,7 +1,7 @@
 {
   "theme": "moonstone",
   "accentColor": "",
-  "cssTheme": "Minimal",
+  "cssTheme": "",
   "nativeMenus": false,
   "showRibbon": true,
   "showViewHeader": true
