@@ -14,6 +14,8 @@ import type {
   AgentProjectInfo,
   AgentPermissionResolveResult,
   AgentPermissionRequest,
+  AgentSkillInfo,
+  AgentMcpServerSummary,
   AgentProjectWorkspace,
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
@@ -525,17 +527,20 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   )
 
   ipcMain.handle("desktop:get-project-provider-catalog", async (_event, input: { projectID: string }) => {
-    void input.projectID
-    const result = await requestAgentJSON<AgentProviderCatalogItem[]>("/api/providers/catalog")
+    const projectID = input.projectID.trim()
+    const result = await requestAgentJSON<AgentProviderCatalogItem[]>(
+      `/api/projects/${encodeURIComponent(projectID)}/providers/catalog`,
+    )
 
     return result.data
   })
 
   ipcMain.handle("desktop:get-project-models", async (_event, input: { projectID: string }) => {
+    const projectID = input.projectID.trim()
     const result = await requestAgentJSON<{
       items: AgentProviderModel[]
       selection: AgentProjectModelSelection
-    }>("/api/models")
+    }>(`/api/projects/${encodeURIComponent(projectID)}/models`)
 
     return result.data
   })
@@ -557,7 +562,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         }
       },
     ) => {
-      void input.projectID
+      const projectID = input.projectID.trim()
       const providerID = input.providerID.trim()
       const result = await requestAgentJSON<{
         provider: {
@@ -568,7 +573,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           baseURL?: string
         }
         selection: AgentProjectModelSelection
-      }>(`/api/providers/${encodeURIComponent(providerID)}`, {
+      }>(`/api/projects/${encodeURIComponent(projectID)}/providers/${encodeURIComponent(providerID)}`, {
         method: "PUT",
         headers: {
           "content-type": "application/json",
@@ -583,12 +588,12 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   ipcMain.handle(
     "desktop:delete-project-provider",
     async (_event, input: { projectID: string; providerID: string }) => {
-      void input.projectID
+      const projectID = input.projectID.trim()
       const providerID = input.providerID.trim()
       const result = await requestAgentJSON<{
         providerID: string
         selection: AgentProjectModelSelection
-      }>(`/api/providers/${encodeURIComponent(providerID)}`, {
+      }>(`/api/projects/${encodeURIComponent(projectID)}/providers/${encodeURIComponent(providerID)}`, {
         method: "DELETE",
       })
 
@@ -606,8 +611,10 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         small_model?: string | null
       },
     ) => {
-      void input.projectID
-      const result = await requestAgentJSON<AgentProjectModelSelection>("/api/model-selection", {
+      const projectID = input.projectID.trim()
+      const result = await requestAgentJSON<AgentProjectModelSelection>(
+        `/api/projects/${encodeURIComponent(projectID)}/model-selection`,
+        {
         method: "PATCH",
         headers: {
           "content-type": "application/json",
@@ -616,7 +623,69 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           model: input.model,
           small_model: input.small_model,
         }),
-      })
+      },
+      )
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:get-project-skills", async (_event, input: { projectID: string }) => {
+    const projectID = input.projectID.trim()
+    const result = await requestAgentJSON<AgentSkillInfo[]>(
+      `/api/projects/${encodeURIComponent(projectID)}/skills`,
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:get-project-mcp-servers", async (_event, input: { projectID: string }) => {
+    const projectID = input.projectID.trim()
+    const result = await requestAgentJSON<AgentMcpServerSummary[]>(
+      `/api/projects/${encodeURIComponent(projectID)}/mcp/servers`,
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:update-project-mcp-server",
+    async (
+      _event,
+      input: {
+        projectID: string
+        serverID: string
+        server: Omit<AgentMcpServerSummary, "id">
+      },
+    ) => {
+      const projectID = input.projectID.trim()
+      const serverID = input.serverID.trim()
+      const result = await requestAgentJSON<AgentMcpServerSummary>(
+        `/api/projects/${encodeURIComponent(projectID)}/mcp/servers/${encodeURIComponent(serverID)}`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(input.server),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:delete-project-mcp-server",
+    async (_event, input: { projectID: string; serverID: string }) => {
+      const projectID = input.projectID.trim()
+      const serverID = input.serverID.trim()
+      const result = await requestAgentJSON<{ serverID: string; removed: boolean }>(
+        `/api/projects/${encodeURIComponent(projectID)}/mcp/servers/${encodeURIComponent(serverID)}`,
+        {
+          method: "DELETE",
+        },
+      )
 
       return result.data
     },
@@ -632,6 +701,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         text: string
         system?: string
         agent?: string
+        skills?: string[]
       },
     ) => {
       const streamID = input.streamID.trim()
@@ -645,6 +715,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           text: input.text,
           system: input.system,
           agent: input.agent,
+          skills: input.skills,
         }),
       })
 
@@ -741,6 +812,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         text: string
         system?: string
         agent?: string
+        skills?: string[]
       },
     ) => {
       const sessionID = input.sessionID.trim()
@@ -753,6 +825,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           text: input.text,
           system: input.system,
           agent: input.agent,
+          skills: input.skills,
         }),
       })
 

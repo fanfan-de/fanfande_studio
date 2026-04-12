@@ -8,6 +8,7 @@ import { createSessionExecutionStream, emitUpdatedAssistantSessionParts, seedSee
 import * as Identifier from "#id/id.ts"
 import * as Message from "#session/message.ts"
 import * as Session from "#session/session.ts"
+import * as Env from "#env/env.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {
   success: boolean
@@ -135,6 +136,47 @@ type ProjectModelsEnvelope = JsonEnvelope<{
     model?: string
     small_model?: string
   }
+}>
+
+type SkillListEnvelope = JsonEnvelope<
+  Array<{
+    id: string
+    name: string
+    description: string
+    path: string
+    scope: "project" | "user"
+  }>
+>
+
+type McpServerListEnvelope = JsonEnvelope<
+  Array<{
+    id: string
+    name?: string
+    transport: "stdio"
+    command: string
+    args?: string[]
+    env?: Record<string, string>
+    cwd?: string
+    enabled: boolean
+    timeoutMs?: number
+  }>
+>
+
+type McpServerEnvelope = JsonEnvelope<{
+  id: string
+  name?: string
+  transport: "stdio"
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  enabled: boolean
+  timeoutMs?: number
+}>
+
+type McpDeleteEnvelope = JsonEnvelope<{
+  serverID: string
+  removed: boolean
 }>
 
 const modelsDevFixture = {
@@ -268,6 +310,38 @@ async function resetGlobalProviderState(app: ReturnType<typeof createServerApp>)
       small_model: null,
     }),
   })
+}
+
+async function withTemporaryEnv<T>(
+  overrides: Record<string, string | undefined>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const backup = new Map<string, string | undefined>()
+
+  for (const [key, value] of Object.entries(overrides)) {
+    backup.set(key, process.env[key])
+    if (value === undefined) {
+      delete process.env[key]
+      Env.remove(key)
+    } else {
+      process.env[key] = value
+      Env.set(key, value)
+    }
+  }
+
+  try {
+    return await fn()
+  } finally {
+    for (const [key, value] of backup.entries()) {
+      if (value === undefined) {
+        delete process.env[key]
+        Env.remove(key)
+      } else {
+        process.env[key] = value
+        Env.set(key, value)
+      }
+    }
+  }
 }
 
 describe("server api", () => {
@@ -407,94 +481,216 @@ describe("server api", () => {
     expect(sessionsBody.data?.every((session) => session.projectID === createBody.data?.id)).toBe(true)
   })
 
-  test("global provider routes should expose catalog, configured providers and model selection", async () => {
+  test("global and project provider routes should stay isolated", async () => {
     const restoreFetch = mockModelsDevFetch()
     const app = createServerApp()
     const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-provider-project-"))
 
     try {
-      await createGitRepo(repositoryRoot, "provider-project")
+      await withTemporaryEnv(
+        {
+          OPENAI_API_KEY: undefined,
+          DEEPSEEK_API_KEY: undefined,
+        },
+        async () => {
+          await createGitRepo(repositoryRoot, "provider-project")
+          await resetGlobalProviderState(app)
+
+          const catalogResponse = await app.request("http://localhost/api/providers/catalog")
+          const catalogBody = (await catalogResponse.json()) as ProviderCatalogEnvelope
+
+          expect(catalogResponse.status).toBe(200)
+          expect(catalogBody.success).toBe(true)
+          expect(catalogBody.data?.some((provider) => provider.id === "deepseek" && provider.modelCount > 0)).toBe(true)
+          expect(catalogBody.data?.some((provider) => provider.id === "openai" && provider.configured === false)).toBe(true)
+
+          const configureResponse = await app.request("http://localhost/api/providers/deepseek", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              name: "DeepSeek",
+              whitelist: ["deepseek-reasoner"],
+              options: {
+                apiKey: "test-deepseek-key",
+                baseURL: "https://api.deepseek.com",
+              },
+            }),
+          })
+          const configureBody = (await configureResponse.json()) as ProviderUpdateEnvelope
+
+          expect(configureResponse.status).toBe(200)
+          expect(configureBody.success).toBe(true)
+          expect(configureBody.data?.provider.id).toBe("deepseek")
+          expect(configureBody.data?.provider.apiKeyConfigured).toBe(true)
+          expect(configureBody.data?.provider.available).toBe(true)
+          expect(configureBody.data?.provider.models).toHaveLength(1)
+          expect((configureBody.data?.provider as Record<string, unknown> | undefined)?.key).toBeUndefined()
+
+          const reconfigureResponse = await app.request("http://localhost/api/providers/deepseek", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              options: {
+                baseURL: "https://proxy.deepseek.test/v1",
+              },
+            }),
+          })
+          const reconfigureBody = (await reconfigureResponse.json()) as ProviderUpdateEnvelope
+
+          expect(reconfigureResponse.status).toBe(200)
+          expect(reconfigureBody.success).toBe(true)
+          expect(reconfigureBody.data?.provider.apiKeyConfigured).toBe(true)
+          expect((reconfigureBody.data?.provider as Record<string, unknown> | undefined)?.baseURL).toBe("https://proxy.deepseek.test/v1")
+
+          const providersResponse = await app.request("http://localhost/api/providers")
+          const providersBody = (await providersResponse.json()) as ProviderListEnvelope
+
+          expect(providersResponse.status).toBe(200)
+          expect(providersBody.data?.items).toHaveLength(1)
+          expect(providersBody.data?.items[0]?.id).toBe("deepseek")
+          expect(providersBody.data?.items[0]?.models[0]?.id).toBe("deepseek-reasoner")
+
+          const modelsResponse = await app.request("http://localhost/api/models")
+          const modelsBody = (await modelsResponse.json()) as ProjectModelsEnvelope
+
+          expect(modelsResponse.status).toBe(200)
+          expect(modelsBody.data?.items).toHaveLength(1)
+          expect(modelsBody.data?.items[0]).toMatchObject({
+            providerID: "deepseek",
+            id: "deepseek-reasoner",
+            available: true,
+          })
+
+          const selectionResponse = await app.request("http://localhost/api/model-selection", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              model: "deepseek/deepseek-reasoner",
+            }),
+          })
+          const selectionBody = (await selectionResponse.json()) as JsonEnvelope<{
+            model?: string
+            small_model?: string
+          }>
+
+          expect(selectionResponse.status).toBe(200)
+          expect(selectionBody.data?.model).toBe("deepseek/deepseek-reasoner")
+
+          const projectResponse = await app.request("http://localhost/api/projects", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ directory: repositoryRoot }),
+          })
+          const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+          const projectID = projectBody.data?.id
+
+          expect(projectResponse.status).toBe(201)
+          expect(projectID).toBeString()
+
+          const compatibilityResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
+          const compatibilityBody = (await compatibilityResponse.json()) as ProjectModelsEnvelope
+
+          expect(compatibilityResponse.status).toBe(200)
+          expect(compatibilityBody.data?.selection.model).toBeUndefined()
+          expect(compatibilityBody.data?.items).toHaveLength(0)
+
+          const projectConfigureResponse = await app.request(`http://localhost/api/projects/${projectID}/providers/openai`, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              name: "OpenAI",
+              whitelist: ["gpt-4o-mini"],
+              options: {
+                apiKey: "test-openai-key",
+                baseURL: "https://api.openai.com/v1",
+              },
+            }),
+          })
+          const projectConfigureBody = (await projectConfigureResponse.json()) as ProviderUpdateEnvelope
+
+          expect(projectConfigureResponse.status).toBe(200)
+          expect(projectConfigureBody.data?.provider.id).toBe("openai")
+          expect(projectConfigureBody.data?.provider.apiKeyConfigured).toBe(true)
+
+          const projectModelsResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
+          const projectModelsBody = (await projectModelsResponse.json()) as ProjectModelsEnvelope
+
+          expect(projectModelsResponse.status).toBe(200)
+          expect(projectModelsBody.data?.items).toHaveLength(1)
+          expect(projectModelsBody.data?.items[0]).toMatchObject({
+            providerID: "openai",
+            id: "gpt-4o-mini",
+            available: true,
+          })
+          expect(projectModelsBody.data?.selection.model).toBeUndefined()
+
+          const globalModelsAfterProjectResponse = await app.request("http://localhost/api/models")
+          const globalModelsAfterProjectBody = (await globalModelsAfterProjectResponse.json()) as ProjectModelsEnvelope
+
+          expect(globalModelsAfterProjectResponse.status).toBe(200)
+          expect(globalModelsAfterProjectBody.data?.items).toHaveLength(1)
+          expect(globalModelsAfterProjectBody.data?.items[0]).toMatchObject({
+            providerID: "deepseek",
+            id: "deepseek-reasoner",
+          })
+
+          const removeResponse = await app.request("http://localhost/api/providers/deepseek", {
+            method: "DELETE",
+          })
+          const removeBody = (await removeResponse.json()) as JsonEnvelope<{
+            providerID: string
+            selection: {
+              model?: string
+              small_model?: string
+            }
+          }>
+
+          expect(removeResponse.status).toBe(200)
+          expect(removeBody.data?.providerID).toBe("deepseek")
+          expect(removeBody.data?.selection.model).toBeUndefined()
+        },
+      )
+    } finally {
       await resetGlobalProviderState(app)
+      restoreFetch()
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
 
-      const catalogResponse = await app.request("http://localhost/api/providers/catalog")
-      const catalogBody = (await catalogResponse.json()) as ProviderCatalogEnvelope
+  test("GET /api/projects/:id/skills should list project skills with metadata fallback", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-skills-project-"))
 
-      expect(catalogResponse.status).toBe(200)
-      expect(catalogBody.success).toBe(true)
-      expect(catalogBody.data?.some((provider) => provider.id === "deepseek" && provider.modelCount > 0)).toBe(true)
-      expect(catalogBody.data?.some((provider) => provider.id === "openai" && provider.configured === false)).toBe(true)
+    try {
+      await createGitRepo(repositoryRoot, "skills-project")
+      await mkdir(join(repositoryRoot, ".codex", "skills", "reviewer"), { recursive: true })
+      await writeFile(
+        join(repositoryRoot, ".codex", "skills", "reviewer", "SKILL.md"),
+        [
+          "---",
+          "name: Reviewer",
+          "description: Review code changes before merge",
+          "---",
+          "",
+          "# Reviewer",
+          "",
+          "Always review carefully.",
+          "",
+        ].join("\n"),
+      )
 
-      const configureResponse = await app.request("http://localhost/api/providers/deepseek", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: "DeepSeek",
-          whitelist: ["deepseek-reasoner"],
-          options: {
-            apiKey: "test-deepseek-key",
-            baseURL: "https://api.deepseek.com",
-          },
-        }),
-      })
-      const configureBody = (await configureResponse.json()) as ProviderUpdateEnvelope
-
-      expect(configureResponse.status).toBe(200)
-      expect(configureBody.success).toBe(true)
-      expect(configureBody.data?.provider.id).toBe("deepseek")
-      expect(configureBody.data?.provider.apiKeyConfigured).toBe(true)
-      expect(configureBody.data?.provider.available).toBe(true)
-      expect(configureBody.data?.provider.models).toHaveLength(1)
-      expect((configureBody.data?.provider as Record<string, unknown> | undefined)?.key).toBeUndefined()
-
-      const reconfigureResponse = await app.request("http://localhost/api/providers/deepseek", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          options: {
-            baseURL: "https://proxy.deepseek.test/v1",
-          },
-        }),
-      })
-      const reconfigureBody = (await reconfigureResponse.json()) as ProviderUpdateEnvelope
-
-      expect(reconfigureResponse.status).toBe(200)
-      expect(reconfigureBody.success).toBe(true)
-      expect(reconfigureBody.data?.provider.apiKeyConfigured).toBe(true)
-      expect((reconfigureBody.data?.provider as Record<string, unknown> | undefined)?.baseURL).toBe("https://proxy.deepseek.test/v1")
-
-      const providersResponse = await app.request("http://localhost/api/providers")
-      const providersBody = (await providersResponse.json()) as ProviderListEnvelope
-
-      expect(providersResponse.status).toBe(200)
-      expect(providersBody.data?.items).toHaveLength(1)
-      expect(providersBody.data?.items[0]?.id).toBe("deepseek")
-      expect(providersBody.data?.items[0]?.models[0]?.id).toBe("deepseek-reasoner")
-
-      const modelsResponse = await app.request("http://localhost/api/models")
-      const modelsBody = (await modelsResponse.json()) as ProjectModelsEnvelope
-
-      expect(modelsResponse.status).toBe(200)
-      expect(modelsBody.data?.items).toHaveLength(1)
-      expect(modelsBody.data?.items[0]).toMatchObject({
-        providerID: "deepseek",
-        id: "deepseek-reasoner",
-        available: true,
-      })
-
-      const selectionResponse = await app.request("http://localhost/api/model-selection", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          model: "deepseek/deepseek-reasoner",
-        }),
-      })
-      const selectionBody = (await selectionResponse.json()) as JsonEnvelope<{
-        model?: string
-        small_model?: string
-      }>
-
-      expect(selectionResponse.status).toBe(200)
-      expect(selectionBody.data?.model).toBe("deepseek/deepseek-reasoner")
+      await mkdir(join(repositoryRoot, ".codex", "skills", "writer"), { recursive: true })
+      await writeFile(
+        join(repositoryRoot, ".codex", "skills", "writer", "SKILL.md"),
+        [
+          "# Writer",
+          "",
+          "Draft concise release notes from the latest change set.",
+          "",
+          "Include user-facing impact first.",
+          "",
+        ].join("\n"),
+      )
 
       const projectResponse = await app.request("http://localhost/api/projects", {
         method: "POST",
@@ -507,30 +703,103 @@ describe("server api", () => {
       expect(projectResponse.status).toBe(201)
       expect(projectID).toBeString()
 
-      const compatibilityResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
-      const compatibilityBody = (await compatibilityResponse.json()) as ProjectModelsEnvelope
+      const response = await app.request(`http://localhost/api/projects/${projectID}/skills`)
+      const body = (await response.json()) as SkillListEnvelope
 
-      expect(compatibilityResponse.status).toBe(200)
-      expect(compatibilityBody.data?.selection.model).toBe("deepseek/deepseek-reasoner")
-      expect(compatibilityBody.data?.items).toHaveLength(1)
+      expect(response.status).toBe(200)
+      expect(body.success).toBe(true)
+      expect(body.data).toHaveLength(2)
+      expect(body.data?.find((skill) => skill.id === "project:reviewer")).toMatchObject({
+        name: "Reviewer",
+        description: "Review code changes before merge",
+        scope: "project",
+      })
+      expect(body.data?.find((skill) => skill.id === "project:writer")).toMatchObject({
+        name: "writer",
+        description: "Writer",
+        scope: "project",
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
 
-      const removeResponse = await app.request("http://localhost/api/providers/deepseek", {
+  test("project MCP routes should persist project-scoped server configs", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-mcp-project-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "mcp-project")
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const createResponse = await app.request(`http://localhost/api/projects/${projectID}/mcp/servers/filesystem`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "Filesystem",
+          command: "node",
+          args: ["server.js"],
+          env: {
+            MCP_MODE: "test",
+          },
+          cwd: ".",
+          enabled: true,
+          timeoutMs: 45000,
+        }),
+      })
+      const createBody = (await createResponse.json()) as McpServerEnvelope
+
+      expect(createResponse.status).toBe(200)
+      expect(createBody.data).toMatchObject({
+        id: "filesystem",
+        name: "Filesystem",
+        transport: "stdio",
+        command: "node",
+        args: ["server.js"],
+        cwd: ".",
+        enabled: true,
+        timeoutMs: 45000,
+      })
+
+      const listResponse = await app.request(`http://localhost/api/projects/${projectID}/mcp/servers`)
+      const listBody = (await listResponse.json()) as McpServerListEnvelope
+
+      expect(listResponse.status).toBe(200)
+      expect(listBody.data).toHaveLength(1)
+      expect(listBody.data?.[0]).toMatchObject({
+        id: "filesystem",
+        env: {
+          MCP_MODE: "test",
+        },
+      })
+
+      const deleteResponse = await app.request(`http://localhost/api/projects/${projectID}/mcp/servers/filesystem`, {
         method: "DELETE",
       })
-      const removeBody = (await removeResponse.json()) as JsonEnvelope<{
-        providerID: string
-        selection: {
-          model?: string
-          small_model?: string
-        }
-      }>
+      const deleteBody = (await deleteResponse.json()) as McpDeleteEnvelope
 
-      expect(removeResponse.status).toBe(200)
-      expect(removeBody.data?.providerID).toBe("deepseek")
-      expect(removeBody.data?.selection.model).toBeUndefined()
+      expect(deleteResponse.status).toBe(200)
+      expect(deleteBody.data).toEqual({
+        serverID: "filesystem",
+        removed: true,
+      })
+
+      const emptyResponse = await app.request(`http://localhost/api/projects/${projectID}/mcp/servers`)
+      const emptyBody = (await emptyResponse.json()) as McpServerListEnvelope
+
+      expect(emptyResponse.status).toBe(200)
+      expect(emptyBody.data).toHaveLength(0)
     } finally {
-      await resetGlobalProviderState(app)
-      restoreFetch()
       await rm(repositoryRoot, { recursive: true, force: true })
     }
   })
@@ -556,31 +825,39 @@ describe("server api", () => {
     const app = createServerApp()
 
     try {
-      await resetGlobalProviderState(app)
+      await withTemporaryEnv(
+        {
+          OPENAI_API_KEY: undefined,
+          DEEPSEEK_API_KEY: undefined,
+        },
+        async () => {
+          await resetGlobalProviderState(app)
 
-      const response = await app.request("http://localhost/api/providers/deepseek", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          name: "DeepSeek",
-          options: {
-            apiKey: "invalid-deepseek-key",
-            baseURL: "https://api.deepseek.com",
-          },
-        }),
-      })
-      const body = (await response.json()) as JsonEnvelope
+          const response = await app.request("http://localhost/api/providers/deepseek", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              name: "DeepSeek",
+              options: {
+                apiKey: "invalid-deepseek-key",
+                baseURL: "https://api.deepseek.com",
+              },
+            }),
+          })
+          const body = (await response.json()) as JsonEnvelope
 
-      expect(response.status).toBe(400)
-      expect(body.success).toBe(false)
-      expect(body.error?.code).toBe("PROVIDER_VALIDATION_FAILED")
-      expect(body.error?.message).toContain("Invalid API key")
+          expect(response.status).toBe(400)
+          expect(body.success).toBe(false)
+          expect(body.error?.code).toBe("PROVIDER_VALIDATION_FAILED")
+          expect(body.error?.message).toContain("Invalid API key")
 
-      const providersResponse = await app.request("http://localhost/api/providers")
-      const providersBody = (await providersResponse.json()) as ProviderListEnvelope
+          const providersResponse = await app.request("http://localhost/api/providers")
+          const providersBody = (await providersResponse.json()) as ProviderListEnvelope
 
-      expect(providersResponse.status).toBe(200)
-      expect(providersBody.data?.items).toHaveLength(0)
+          expect(providersResponse.status).toBe(200)
+          expect(providersBody.data?.items).toHaveLength(0)
+        },
+      )
     } finally {
       await resetGlobalProviderState(app)
       restoreFetch()

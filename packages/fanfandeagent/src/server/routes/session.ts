@@ -18,6 +18,7 @@ const StreamSessionMessageBody = z.object({
   text: z.string().min(1),
   system: z.string().optional(),
   agent: z.string().optional(),
+  skills: z.array(z.string()).optional(),
   model: z
     .object({
       providerID: z.string(),
@@ -361,6 +362,7 @@ export function SessionRoutes() {
               ],
               system: payload.data.system,
               agent: payload.data.agent,
+              skills: payload.data.skills,
               model: payload.data.model,
             }),
         }).then(async (value) => (await value) as SessionStreamResult),

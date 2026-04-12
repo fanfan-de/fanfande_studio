@@ -1761,7 +1761,8 @@ textarea::placeholder {
 }
 
 .settings-field input,
-.settings-field select {
+.settings-field select,
+.settings-field textarea {
   min-height: 44px;
   padding: 0 12px;
   border: 1px solid rgba(169, 189, 212, 0.5);
@@ -1769,8 +1770,28 @@ textarea::placeholder {
   color: #182532;
 }
 
-.settings-field input::placeholder {
+.settings-field textarea {
+  min-height: 120px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  resize: vertical;
+  font: inherit;
+}
+
+.settings-field input::placeholder,
+.settings-field textarea::placeholder {
   color: #8da0b4;
+}
+
+.settings-checkbox-field {
+  align-content: start;
+}
+
+.settings-checkbox-field input {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  padding: 0;
 }
 
 .settings-actions-row {
@@ -3612,6 +3633,8 @@ textarea::placeholder {
   padding: 0 10px;
   display: inline-flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   text-align: left;
   background: transparent;
   color: #314353;
@@ -3634,6 +3657,29 @@ textarea::placeholder {
   color: #607488;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.composer-menu-option-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.composer-menu-option-copy strong {
+  color: currentColor;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.composer-menu-option-copy small,
+.composer-menu-option-check {
+  color: #607488;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.composer-menu-option-check {
+  flex: 0 0 auto;
 }
 
 .composer-actions {

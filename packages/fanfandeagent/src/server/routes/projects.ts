@@ -5,6 +5,7 @@ import * as Project from "#project/project.ts"
 import * as Session from "#session/session.ts"
 import * as Config from "#config/config.ts"
 import * as Provider from "#provider/provider.ts"
+import * as Skill from "#skill/skill.ts"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
 
@@ -15,6 +16,10 @@ const CreateProjectBody = z.object({
 const CreateProjectSessionBody = z.object({
   directory: z.string().min(1).optional(),
   title: z.string().min(1).optional(),
+})
+
+const UpdateMcpServerBody = Config.McpServerConfig.omit({
+  id: true,
 })
 
 function safeReadProject(projectID: string) {
@@ -124,7 +129,7 @@ export function ProjectRoutes() {
     const id = c.req.param("id")
     safeReadProject(id)
 
-    const catalog = await Provider.catalog()
+    const catalog = await Provider.catalog(id)
 
     return c.json({
       success: true,
@@ -138,8 +143,8 @@ export function ProjectRoutes() {
     safeReadProject(id)
 
     const data = {
-      items: await Provider.listPublicProviders(),
-      selection: await Provider.getSelection(),
+      items: await Provider.listPublicProviders(id),
+      selection: await Provider.getSelection(id),
     }
 
     return c.json({
@@ -154,8 +159,8 @@ export function ProjectRoutes() {
     safeReadProject(id)
 
     const data = {
-      items: await Provider.listModels(),
-      selection: await Provider.getSelection(),
+      items: await Provider.listModels(id),
+      selection: await Provider.getSelection(id),
     }
 
     return c.json({
@@ -176,7 +181,7 @@ export function ProjectRoutes() {
     }
 
     try {
-      await Provider.validateProviderConfig(providerID, payload.data, Config.GLOBAL_CONFIG_ID)
+      await Provider.validateProviderConfig(providerID, payload.data, id)
     } catch (error) {
       throw new ApiError(
         400,
@@ -185,8 +190,8 @@ export function ProjectRoutes() {
       )
     }
 
-    const providerConfig = await Config.setProvider(Config.GLOBAL_CONFIG_ID, providerID, payload.data)
-    const provider = await Provider.getPublicProvider(providerID)
+    const providerConfig = await Config.setProvider(id, providerID, payload.data)
+    const provider = await Provider.getPublicProvider(providerID, id)
     if (!provider) {
       throw new ApiError(404, "PROVIDER_NOT_FOUND", `Provider '${providerID}' not found in the catalog`)
     }
@@ -211,7 +216,7 @@ export function ProjectRoutes() {
     const providerID = c.req.param("providerID")
     safeReadProject(id)
 
-    const providerConfig = await Config.removeProvider(Config.GLOBAL_CONFIG_ID, providerID)
+    const providerConfig = await Config.removeProvider(id, providerID)
 
     return c.json({
       success: true,
@@ -237,20 +242,75 @@ export function ProjectRoutes() {
 
     if (payload.data.model) {
       const ref = parseModelReference(payload.data.model)
-      await Provider.getModel(ref.providerID, ref.modelID)
+      await Provider.getModel(ref.providerID, ref.modelID, id)
     }
 
     if (payload.data.small_model) {
       const ref = parseModelReference(payload.data.small_model)
-      await Provider.getModel(ref.providerID, ref.modelID)
+      await Provider.getModel(ref.providerID, ref.modelID, id)
     }
 
-    const selection = await Config.setModelSelection(Config.GLOBAL_CONFIG_ID, payload.data)
+    const selection = await Config.setModelSelection(id, payload.data)
     return c.json({
       success: true,
       data: {
         model: selection.model,
         small_model: selection.small_model,
+      },
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/:id/skills", async (c) => {
+    const id = c.req.param("id")
+    const project = safeReadProject(id)
+
+    return c.json({
+      success: true,
+      data: await Skill.list(project.worktree),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/:id/mcp/servers", async (c) => {
+    const id = c.req.param("id")
+    safeReadProject(id)
+
+    return c.json({
+      success: true,
+      data: await Config.listMcpServers(id),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.put("/:id/mcp/servers/:serverID", async (c) => {
+    const id = c.req.param("id")
+    const serverID = c.req.param("serverID")
+    safeReadProject(id)
+
+    const payload = UpdateMcpServerBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must be a valid MCP stdio server configuration")
+    }
+
+    const server = await Config.setMcpServer(id, serverID, payload.data)
+    return c.json({
+      success: true,
+      data: server,
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.delete("/:id/mcp/servers/:serverID", async (c) => {
+    const id = c.req.param("id")
+    const serverID = c.req.param("serverID")
+    safeReadProject(id)
+
+    return c.json({
+      success: true,
+      data: {
+        serverID,
+        removed: Boolean(await Config.removeMcpServer(id, serverID)),
       },
       requestId: c.get("requestId"),
     })

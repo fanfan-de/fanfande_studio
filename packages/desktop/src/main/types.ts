@@ -188,6 +188,26 @@ export interface AgentProjectModelSelection {
   small_model?: string
 }
 
+export interface AgentSkillInfo {
+  id: string
+  name: string
+  description: string
+  path: string
+  scope: "project" | "user"
+}
+
+export interface AgentMcpServerSummary {
+  id: string
+  name?: string
+  transport: "stdio"
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  enabled: boolean
+  timeoutMs?: number
+}
+
 export interface AgentPtySessionInfo {
   id: string
   title: string

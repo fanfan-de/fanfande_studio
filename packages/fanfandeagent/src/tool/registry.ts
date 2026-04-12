@@ -7,6 +7,7 @@ import { ReadFileTool } from "#tool/read-file.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { SearchFilesTool } from "#tool/search-files.ts"
 import { WriteFileTool } from "#tool/write-file.ts"
+import * as Mcp from "#mcp/manager.ts"
 
 function exposedNames(tool: Tool.ToolInfo): string[] {
   return [tool.id, ...(tool.aliases ?? [])]
@@ -35,6 +36,7 @@ export const state = Instance.state(async () => {
 
 export async function tools(): Promise<Tool.ToolInfo[]> {
   const custom = await state().then((x) => x.custom)
+  const mcpTools = await Mcp.tools()
   const result = [
     ReadFileTool,
     WriteFileTool,
@@ -43,6 +45,7 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
     ListDirectoryTool,
     SearchFilesTool,
     ExecCommandTool,
+    ...mcpTools,
     ...custom,
   ]
 

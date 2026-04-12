@@ -284,6 +284,16 @@ function parseModelReference(input: string | undefined) {
   }
 }
 
+function resolveConfigID(configID?: string) {
+  if (configID) return configID
+
+  try {
+    return Instance.project.id
+  } catch {
+    return Config.GLOBAL_CONFIG_ID
+  }
+}
+
 function suggestMatches(input: string, candidates: string[]) {
   return fuzzysort
     .go(input, candidates, {
@@ -553,11 +563,11 @@ async function catalogMap():Promise<Record<string,ProviderInfo>> {
  * - `catalog`：完整的基础 provider 目录，适合“展示全集”。
  * - `providers`：当前项目中真正生效的 provider，适合“运行时使用”。
  */
-async function resolveProjectProviders() {
+async function resolveProjectProviders(configID = resolveConfigID()) {
   // 读取共享 catalog。这里提供“系统已知”的 provider 基础骨架。
   const catalog = await catalogMap()
   // 读取当前项目配置，里面可能会覆盖 provider 名称、模型、开关等。
-  const config = await Config.get()
+  const config = await Config.get(configID)
   // 读取当前实例环境变量，用于补全 API Key 等运行时字段。
   const env = Env.all()
 
@@ -735,8 +745,8 @@ function runtimeKey(provider: ProviderInfo, model: Model) {
   })
 }
 
-async function requireRuntimeProvider(providerID: string) {
-  const provider = await getProvider(providerID)
+async function requireRuntimeProvider(providerID: string, configID = resolveConfigID()) {
+  const provider = await getProvider(providerID, configID)
   if (provider) return provider
 
   throw new InitError({
@@ -744,8 +754,8 @@ async function requireRuntimeProvider(providerID: string) {
   })
 }
 
-export async function catalog() {
-  const state = await resolveProjectProviders()
+export async function catalog(configID = resolveConfigID()) {
+  const state = await resolveProjectProviders(configID)
   return sortProviders(
     Object.values(state.catalog).map((provider) => toCatalogItem(provider, state.providers[provider.id])),
   )
@@ -802,36 +812,36 @@ export async function validateProviderConfig(providerID: string, providerConfig:
   }
 }
 
-async function list() {
-  const state = await resolveProjectProviders()
+async function list(configID = resolveConfigID()) {
+  const state = await resolveProjectProviders(configID)
   return state.providers
 }
 
-export async function listPublicProviders() {
-  const providers = await list()
+export async function listPublicProviders(configID = resolveConfigID()) {
+  const providers = await list(configID)
   return sortProviders(Object.values(providers).map(toPublicProvider))
 }
 
-export async function listModels() {
-  const providers = await list()
+export async function listModels(configID = resolveConfigID()) {
+  const providers = await list(configID)
   return sortModels(
     Object.values(providers).flatMap((provider) => Object.values(provider.models).map((model) => toPublicModel(provider, model))),
   )
 }
 
-async function getProvider(providerID: string) {
-  const providers = await list()
+async function getProvider(providerID: string, configID = resolveConfigID()) {
+  const providers = await list(configID)
   return providers[providerID]
 }
 
-export async function getPublicProvider(providerID: string) {
-  const provider = await getProvider(providerID)
+export async function getPublicProvider(providerID: string, configID = resolveConfigID()) {
+  const provider = await getProvider(providerID, configID)
   if (!provider) return undefined
   return toPublicProvider(provider)
 }
 
-async function getModel(providerID: string, modelID: string) {
-  const providers = await list()
+async function getModel(providerID: string, modelID: string, configID = resolveConfigID()) {
+  const providers = await list(configID)
   const provider = providers[providerID]
   if (!provider) {
     throw new ModelNotFoundError({
@@ -853,8 +863,8 @@ async function getModel(providerID: string, modelID: string) {
   return model
 }
 
-export async function getSelection() {
-  const config = await Config.get()
+export async function getSelection(configID = resolveConfigID()) {
+  const config = await Config.get(configID)
   return {
     model: config.model,
     small_model: config.small_model,
@@ -867,19 +877,19 @@ export async function getSelection() {
  * 2. 否则退回到“当前项目里第一个可用模型”。
  * 3. 如果连可用模型都没有，直接抛错，要求调用方显式配置 provider / model。
  */
-export async function getDefaultModelRef(): Promise<ModelReference> {
-  const selection = await getSelection()
+export async function getDefaultModelRef(configID = resolveConfigID()): Promise<ModelReference> {
+  const selection = await getSelection(configID)
   const parsed = parseModelReference(selection.model)
   if (parsed) {
     try {
-      await getModel(parsed.providerID, parsed.modelID)
+      await getModel(parsed.providerID, parsed.modelID, configID)
       return parsed
     } catch {
       // 配置里保存的是陈旧模型时，继续退回到当前可用模型。
     }
   }
 
-  const models = await listModels()
+  const models = await listModels(configID)
   const firstModel = models.find((model) => model.available)
   if (firstModel) {
     return {
@@ -898,15 +908,15 @@ export async function getDefaultModelRef(): Promise<ModelReference> {
 // 只有 session 真正要拿 LanguageModel 发请求时，才会进入这一层。
 // -----------------------------------------------------------------------------
 
-export async function getLanguage(model: Model): Promise<LanguageModel> {
-  const provider = await requireRuntimeProvider(model.providerID)
+export async function getLanguage(model: Model, configID = resolveConfigID()): Promise<LanguageModel> {
+  const provider = await requireRuntimeProvider(model.providerID, configID)
 
   const key = runtimeKey(provider, model)
   const cache = languageState()
   const cached = cache.get(key)
   if (cached) return cached
 
-  const sdk = await getSDK(model)
+  const sdk = await getSDK(model, configID)
   const language = sdk.languageModel(model.api.id) as LanguageModel
   cache.set(key, language)
   return language
@@ -933,9 +943,9 @@ async function loadSDKFactory(npmPackage: string) {
   }
 }
 
-async function getSDK(model: Model) {
+async function getSDK(model: Model, configID = resolveConfigID()) {
   // SDK Provider 比 LanguageModel 更底层，先保证它存在，再由上层取 languageModel。
-  const provider = await requireRuntimeProvider(model.providerID)
+  const provider = await requireRuntimeProvider(model.providerID, configID)
 
   if (!provider.key && provider.env.length > 0) {
     throw new InitError(

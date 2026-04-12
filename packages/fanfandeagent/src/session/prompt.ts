@@ -54,6 +54,7 @@ export const PromptInput = z.object({
     agent: z.string().optional(),
     noReply: z.boolean().optional(),
     system: z.string().optional(),
+    skills: z.array(z.string()).optional(),
     variant: z.string().optional(),
     parts: z.array(
         z.discriminatedUnion("type", [
@@ -221,7 +222,11 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
             }
 
             //获得runtime model
-            const model = await Provider.getModel(lastUser.model.providerID, lastUser.model.modelID);
+            const model = await Provider.getModel(
+                lastUser.model.providerID,
+                lastUser.model.modelID,
+                Instance.project.id,
+            );
 
             const assistantMessage = createAssistantMessage(sessionID, lastUser, model);
             currentAssistant = assistantMessage;
@@ -240,6 +245,8 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
                 //SystemPrompt.provider(model),//每一个模型对应一个system prompt，我觉得不是很必要
                 ...SystemPrompt.defaultPrompt(),
                 ...await SystemPrompt.environment(model),
+                ...await SystemPrompt.skills(lastUser.skills ?? []),
+                ...(lastUser.system ? [lastUser.system] : []),
             ]
 
 
@@ -721,8 +728,9 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         role: "user",
         created: Date.now(),
         agent: input.agent ?? "default",
-        model: input.model ?? await Provider.getDefaultModelRef(),
+        model: input.model ?? await Provider.getDefaultModelRef(Instance.project.id),
         system: input.system,
+        skills: input.skills,
     };
 
     const parts = input.parts.map((part) =>

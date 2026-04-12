@@ -54,8 +54,11 @@ export function App() {
     canvasSessionTabs,
     composerAttachments,
     composerModelOptions,
+    composerSkillOptions,
     composerSelectedModel,
     composerSelectedModelLabel,
+    composerSelectedSkillIDs,
+    composerSelectedSkillLabel,
     createSessionTabs,
     createSessionTitle,
     createSessionWorkspaceID,
@@ -66,6 +69,7 @@ export function App() {
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
     handleComposerModelChange,
+    handleComposerSkillToggle,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
     handleCreateSessionTitleChange,
@@ -107,26 +111,43 @@ export function App() {
   })
 
   const {
+    activeMcpServerID,
     catalog,
     closeSettings,
+    deleteMcpServer,
     deleteProvider,
+    deletingMcpServerID,
     deletingProviderID,
     isLoading,
     isOpen,
     isSavingSelection,
     loadError,
+    mcpServerDraft,
+    mcpServers,
     message,
     models,
     openSettings,
+    projectID,
+    projectName,
+    projectWorktree,
     providerDrafts,
     savedSelection,
+    saveMcpServer,
     saveProvider,
     saveSelection,
+    savingMcpServerID,
     savingProviderID,
+    selectMcpServer,
     selectionDraft,
+    setMcpServerDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
-  } = useSettingsPage()
+    startNewMcpServer,
+  } = useSettingsPage({
+    projectID: selectedWorkspace?.project.id ?? null,
+    projectName: selectedWorkspace?.project.name ?? null,
+    projectWorktree: selectedWorkspace?.project.worktree ?? null,
+  })
 
   return (
     <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
@@ -224,10 +245,14 @@ export function App() {
                 hasPendingPermissionRequests={activePendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
                 isSending={isSending}
                 modelOptions={composerModelOptions}
+                skillOptions={composerSkillOptions}
                 selectedModel={composerSelectedModel}
                 selectedModelLabel={composerSelectedModelLabel}
+                selectedSkillIDs={composerSelectedSkillIDs}
+                selectedSkillLabel={composerSelectedSkillLabel}
                 onDraftChange={setDraft}
                 onModelChange={handleComposerModelChange}
+                onSkillToggle={handleComposerSkillToggle}
                 onPickAttachments={handlePickComposerAttachments}
                 onRemoveAttachment={handleRemoveComposerAttachment}
                 onSend={handleSend}
@@ -260,26 +285,39 @@ export function App() {
         ) : null}
 
         <SettingsPage
+          activeMcpServerID={activeMcpServerID}
           catalog={catalog}
+          deletingMcpServerID={deletingMcpServerID}
           deletingProviderID={deletingProviderID}
           isActivityRailVisible={isActivityRailVisible}
           isLoading={isLoading}
           isOpen={isOpen}
           isSavingSelection={isSavingSelection}
           loadError={loadError}
+          mcpServerDraft={mcpServerDraft}
+          mcpServers={mcpServers}
           message={message}
           models={models}
+          projectID={projectID}
+          projectName={projectName}
+          projectWorktree={projectWorktree}
           providerDrafts={providerDrafts}
           savedSelection={savedSelection}
+          savingMcpServerID={savingMcpServerID}
           savingProviderID={savingProviderID}
           selectionDraft={selectionDraft}
           onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
           onClose={closeSettings}
+          onDeleteMcpServer={deleteMcpServer}
           onDeleteProvider={deleteProvider}
+          onMcpServerDraftChange={setMcpServerDraftValue}
+          onMcpServerSelect={selectMcpServer}
           onProviderDraftChange={setProviderDraftValue}
+          onSaveMcpServer={saveMcpServer}
           onSaveProvider={saveProvider}
           onSaveSelection={saveSelection}
           onSelectionChange={setSelectionDraftValue}
+          onStartNewMcpServer={startNewMcpServer}
         />
       </main>
     </div>

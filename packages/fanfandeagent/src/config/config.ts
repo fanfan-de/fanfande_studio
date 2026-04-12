@@ -94,6 +94,45 @@ const ModelSelectionFields = {
   small_model: SmallModelField.nullable().optional(),
 }
 
+export const McpServerTransport = z.literal("stdio").meta({
+  ref: "McpServerTransport",
+})
+export type McpServerTransport = z.infer<typeof McpServerTransport>
+
+export const McpServerConfig = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1).optional(),
+    transport: McpServerTransport.optional(),
+    command: z.string().min(1),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    cwd: z.string().min(1).optional(),
+    enabled: z.boolean().optional(),
+    timeoutMs: z.number().int().positive().optional(),
+  })
+  .strict()
+  .meta({
+    ref: "McpServerConfig",
+  })
+export type McpServerConfig = z.infer<typeof McpServerConfig>
+
+export const McpServerSummary = McpServerConfig.extend({
+  transport: McpServerTransport,
+  enabled: z.boolean(),
+}).meta({
+  ref: "McpServerSummary",
+})
+export type McpServerSummary = z.infer<typeof McpServerSummary>
+
+const McpConfigField = z
+  .object({
+    servers: z.record(z.string(), McpServerConfig).optional(),
+  })
+  .strict()
+  .optional()
+  .describe("Project-scoped MCP server definitions")
+
 export const Info = z
   .object({
     $schema: z.string().optional().describe("JSON schema reference for configuration validation"),
@@ -145,6 +184,7 @@ export const Info = z
       .optional(),
     instructions: z.array(z.string()).optional().describe("Additional instruction files or patterns to include"),
     tools: z.record(z.string(), z.boolean()).optional(),
+    mcp: McpConfigField,
     permission: Permission.Config.optional(),
     enterprise: z
       .object({
@@ -249,6 +289,14 @@ function createProjectConfigTable() {
   db.db.run(toCreateTableSQL("project_configs", columns))
 }
 
+function normalizeMcpServer(config: McpServerConfig): McpServerSummary {
+  return {
+    ...config,
+    transport: "stdio",
+    enabled: config.enabled ?? true,
+  }
+}
+
 createProjectConfigTable()
 
 function normalizeConfigID(configID: string | undefined) {
@@ -351,4 +399,57 @@ export async function setModelSelection(configID: string, input: ModelSelection)
     small_model: parsed.small_model === null ? undefined : parsed.small_model ?? current.small_model,
   }
   return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+export async function listMcpServers(configID = GLOBAL_CONFIG_ID): Promise<McpServerSummary[]> {
+  const config = readConfig(normalizeConfigID(configID))
+  const servers = Object.values(config.mcp?.servers ?? {}).map((server) => normalizeMcpServer(server))
+  return servers.toSorted((left, right) => left.id.localeCompare(right.id))
+}
+
+export async function getMcpServer(configID: string, serverID: string): Promise<McpServerSummary | undefined> {
+  const config = readConfig(normalizeConfigID(configID))
+  const server = config.mcp?.servers?.[serverID]
+  if (!server) return undefined
+  return normalizeMcpServer(server)
+}
+
+export async function setMcpServer(configID: string, serverID: string, server: Omit<McpServerConfig, "id">) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const parsed = McpServerConfig.parse({
+    ...server,
+    id: serverID,
+  })
+  const next: Info = {
+    ...current,
+    mcp: {
+      servers: {
+        ...(current.mcp?.servers ?? {}),
+        [serverID]: parsed,
+      },
+    },
+  }
+  writeConfig(normalizedConfigID, Info.parse(next))
+  return normalizeMcpServer(parsed)
+}
+
+export async function removeMcpServer(configID: string, serverID: string) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const servers = { ...(current.mcp?.servers ?? {}) }
+  const removed = servers[serverID]
+  delete servers[serverID]
+
+  const next: Info = {
+    ...current,
+    mcp:
+      Object.keys(servers).length > 0
+        ? {
+            servers,
+          }
+        : undefined,
+  }
+  writeConfig(normalizedConfigID, Info.parse(next))
+  return removed ? normalizeMcpServer(removed) : undefined
 }

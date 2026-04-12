@@ -14,6 +14,7 @@ import PROMPT_KIMI from "./prompt/kimi.txt"
 import PROMPT_CODEX from "./prompt/codex.txt"
 import PROMPT_TRINITY from "./prompt/trinity.txt"
 import * as Provider from "#provider/provider.ts"
+import * as Skill from "#skill/skill.ts"
 //import type { Agent } from "@/agent/agent"
 //import { Permission } from "@/permission"
 //import { Skill } from "@/skill"
@@ -69,6 +70,11 @@ export async function environment(model: Provider.Model) {
             `</directories>`,
         ].join("\n"),
     ]
+}
+
+export async function skills(skillIDs: string[]) {
+    if (skillIDs.length === 0) return []
+    return await Skill.loadPromptSections(Instance.worktree, skillIDs)
 }
 
 //   export async function skills(agent: Agent.Info) {

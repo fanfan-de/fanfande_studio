@@ -79,6 +79,24 @@ type GitActionResult = {
   stderr: string
   summary: string
 }
+type SkillInfo = {
+  id: string
+  name: string
+  description: string
+  path: string
+  scope: "project" | "user"
+}
+type McpServerSummary = {
+  id: string
+  name?: string
+  transport: "stdio"
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  enabled: boolean
+  timeoutMs?: number
+}
 
 const safeProcess = typeof process !== "undefined" ? process : undefined
 
@@ -429,6 +447,21 @@ try {
           small_model?: string
         }
       }>,
+    getProjectSkills: (input: { projectID: string }) =>
+      ipcRenderer.invoke("desktop:get-project-skills", input) as Promise<SkillInfo[]>,
+    getProjectMcpServers: (input: { projectID: string }) =>
+      ipcRenderer.invoke("desktop:get-project-mcp-servers", input) as Promise<McpServerSummary[]>,
+    updateProjectMcpServer: (input: {
+      projectID: string
+      serverID: string
+      server: Omit<McpServerSummary, "id">
+    }) =>
+      ipcRenderer.invoke("desktop:update-project-mcp-server", input) as Promise<McpServerSummary>,
+    deleteProjectMcpServer: (input: { projectID: string; serverID: string }) =>
+      ipcRenderer.invoke("desktop:delete-project-mcp-server", input) as Promise<{
+        serverID: string
+        removed: boolean
+      }>,
     updateProjectProvider: (input: {
       projectID: string
       providerID: string
@@ -471,7 +504,14 @@ try {
         model?: string
         small_model?: string
       }>,
-    streamAgentMessage: (input: { streamID: string; sessionID: string; text: string; system?: string; agent?: string }) =>
+    streamAgentMessage: (input: {
+      streamID: string
+      sessionID: string
+      text: string
+      system?: string
+      agent?: string
+      skills?: string[]
+    }) =>
       ipcRenderer.invoke("desktop:agent-stream-message", input) as Promise<{
         streamID: string
         requestId?: string
@@ -481,7 +521,13 @@ try {
         streamID: string
         requestId?: string
       }>,
-    sendAgentMessage: (input: { sessionID: string; text: string; system?: string; agent?: string }) =>
+    sendAgentMessage: (input: {
+      sessionID: string
+      text: string
+      system?: string
+      agent?: string
+      skills?: string[]
+    }) =>
       ipcRenderer.invoke("desktop:agent-send-message", input) as Promise<{
         events: AgentSSEEvent[]
         requestId?: string

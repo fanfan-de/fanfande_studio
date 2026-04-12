@@ -469,6 +469,7 @@ export const User = Base.extend({
         modelID: z.string(),
     }),
     system: z.string().optional(),
+    skills: z.array(z.string()).optional(),
     tools: z.record(z.string(), z.boolean()).optional(),
     variant: z.string().optional(),
 }).meta({

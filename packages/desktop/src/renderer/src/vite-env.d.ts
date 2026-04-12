@@ -416,6 +416,56 @@ declare global {
           small_model?: string
         }
       }>
+      getProjectSkills?: (input: { projectID: string }) => Promise<
+        Array<{
+          id: string
+          name: string
+          description: string
+          path: string
+          scope: "project" | "user"
+        }>
+      >
+      getProjectMcpServers?: (input: { projectID: string }) => Promise<
+        Array<{
+          id: string
+          name?: string
+          transport: "stdio"
+          command: string
+          args?: string[]
+          env?: Record<string, string>
+          cwd?: string
+          enabled: boolean
+          timeoutMs?: number
+        }>
+      >
+      updateProjectMcpServer?: (input: {
+        projectID: string
+        serverID: string
+        server: {
+          name?: string
+          transport: "stdio"
+          command: string
+          args?: string[]
+          env?: Record<string, string>
+          cwd?: string
+          enabled: boolean
+          timeoutMs?: number
+        }
+      }) => Promise<{
+        id: string
+        name?: string
+        transport: "stdio"
+        command: string
+        args?: string[]
+        env?: Record<string, string>
+        cwd?: string
+        enabled: boolean
+        timeoutMs?: number
+      }>
+      deleteProjectMcpServer?: (input: { projectID: string; serverID: string }) => Promise<{
+        serverID: string
+        removed: boolean
+      }>
       updateProjectProvider?: (input: {
         projectID: string
         providerID: string
@@ -461,6 +511,7 @@ declare global {
         text: string
         system?: string
         agent?: string
+        skills?: string[]
       }) => Promise<{
         streamID: string
         requestId?: string
@@ -472,7 +523,13 @@ declare global {
         streamID: string
         requestId?: string
       }>
-      sendAgentMessage?: (input: { sessionID: string; text: string; system?: string; agent?: string }) => Promise<{
+      sendAgentMessage?: (input: {
+        sessionID: string
+        text: string
+        system?: string
+        agent?: string
+        skills?: string[]
+      }) => Promise<{
         events: Array<{
           event: string
           data: unknown

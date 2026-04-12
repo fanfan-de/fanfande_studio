@@ -27,8 +27,11 @@ import type {
   AssistantTraceItem,
   ComposerAttachment,
   ComposerModelOption,
+  ComposerSkillOption,
   CreateSessionTab,
   LeftSidebarView,
+  McpServerDraftState,
+  McpServerSummary,
   PermissionDecision,
   PermissionRequest,
   ProjectModelSelection,
@@ -1313,55 +1316,81 @@ function ModelListView({ catalog, models, selectionDraft }: ModelListViewProps) 
 }
 
 interface SettingsPageProps {
+  activeMcpServerID: string | null
   catalog: ProviderCatalogItem[]
+  deletingMcpServerID: string | null
   deletingProviderID: string | null
   isActivityRailVisible: boolean
   isLoading: boolean
   isOpen: boolean
   isSavingSelection: boolean
   loadError: string | null
+  mcpServerDraft: McpServerDraftState
+  mcpServers: McpServerSummary[]
   message: {
     tone: "success" | "error"
     text: string
   } | null
   models: ProviderModel[]
+  projectID: string | null
+  projectName: string | null
+  projectWorktree: string | null
   providerDrafts: Record<string, ProviderDraftState>
   savedSelection: ProjectModelSelection
+  savingMcpServerID: string | null
   savingProviderID: string | null
   selectionDraft: ProjectModelSelection
   onActivityRailVisibilityChange: (value: boolean) => void
   onClose: () => void
+  onDeleteMcpServer: (serverID: string) => void | Promise<void>
   onDeleteProvider: (providerID: string) => void | Promise<void>
+  onMcpServerDraftChange: (field: keyof McpServerDraftState, value: string | boolean) => void
+  onMcpServerSelect: (serverID: string) => void
   onProviderDraftChange: (providerID: string, field: keyof ProviderDraftState, value: string) => void
+  onSaveMcpServer: () => boolean | Promise<boolean>
   onSaveProvider: (providerID: string) => boolean | Promise<boolean>
   onSaveSelection: () => void | Promise<void>
   onSelectionChange: (field: keyof ProjectModelSelection, value: string | null) => void
+  onStartNewMcpServer: () => void
 }
 
 export function SettingsPage({
+  activeMcpServerID,
   catalog,
+  deletingMcpServerID,
   deletingProviderID,
   isActivityRailVisible,
   isLoading,
   isOpen,
   isSavingSelection,
   loadError,
+  mcpServerDraft,
+  mcpServers,
   message,
   models,
+  projectID,
+  projectName,
+  projectWorktree,
   providerDrafts,
   savedSelection,
+  savingMcpServerID,
   savingProviderID,
   selectionDraft,
   onActivityRailVisibilityChange,
   onClose,
+  onDeleteMcpServer,
   onDeleteProvider,
+  onMcpServerDraftChange,
+  onMcpServerSelect,
   onProviderDraftChange,
+  onSaveMcpServer,
   onSaveProvider,
   onSaveSelection,
   onSelectionChange,
+  onStartNewMcpServer,
 }: SettingsPageProps) {
   {
-    const [activeSection, setActiveSection] = useState<"services" | "defaults" | "appearance">("services")
+    const [activeSection, setActiveSection] = useState<"services" | "defaults" | "mcp" | "appearance">("services")
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
     const serviceDetailPanelRef = useRef<HTMLDivElement | null>(null)
@@ -1388,6 +1417,13 @@ export function SettingsPage({
     const activeProviderCanReset = activeProvider?.source === "config"
     const selectionUnchanged =
       savedSelection.model === selectionDraft.model && savedSelection.smallModel === selectionDraft.smallModel
+    const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
+    const mcpSaveLabel = activeMcpServer ? "Save server" : "Create server"
+    const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
+    const mcpServerBusy = Boolean(
+      (mcpServerBusyID && savingMcpServerID === mcpServerBusyID) ||
+      (mcpServerBusyID && deletingMcpServerID === mcpServerBusyID),
+    )
     const showLoadedState = !isLoading && !loadError
     useEffect(() => {
       if (!isOpen) {
@@ -1448,6 +1484,12 @@ export function SettingsPage({
     const primarySections = [
       { key: "services" as const, label: "Provider", meta: `${catalog.length} providers`, Icon: SettingsIcon },
       { key: "defaults" as const, label: "Models", meta: `${visibleModels.length} available`, Icon: ConnectedStatusIcon },
+      {
+        key: "mcp" as const,
+        label: "MCP",
+        meta: projectID ? `${mcpServers.length} servers` : "Select a project",
+        Icon: FolderIcon,
+      },
       { key: "appearance" as const, label: "Appearance", meta: "1 option", Icon: LayoutSidebarLeftIcon },
     ]
 
@@ -1722,6 +1764,240 @@ export function SettingsPage({
                           <span className="label">No Provider</span>
                           <h3>Select a provider from the list</h3>
                           <p>The right side will show credentials, endpoint overrides, and provider models for the current selection.</p>
+                        </article>
+                      )}
+                    </div>
+                  </section>
+                ) : activeSection === "mcp" ? (
+                  <section className="settings-services-layout" aria-label="MCP server layout">
+                    <div className="settings-service-list-panel">
+                      <div className="settings-panel">
+                        <div className="settings-section-header">
+                          <div>
+                            <span className="label">Project</span>
+                            <h3>MCP Servers</h3>
+                          </div>
+                          <p>
+                            {projectID
+                              ? "Configure stdio MCP servers for the currently selected project."
+                              : "Select a project from the workspace sidebar to configure MCP servers."}
+                          </p>
+                        </div>
+
+                        {projectID ? (
+                          <>
+                            <div className="settings-project-chip">
+                              <strong>{projectName ?? "Current project"}</strong>
+                              <span>{projectWorktree ?? projectID}</span>
+                            </div>
+
+                            <div className="settings-actions-row">
+                              <span className="settings-helper-text">
+                                Each argument and environment variable entry is stored on the project and exposed to the agent as trusted MCP configuration.
+                              </span>
+                              <button className="secondary-button" onClick={onStartNewMcpServer} type="button">
+                                New server
+                              </button>
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+
+                      <div className="settings-service-list-body">
+                        {!projectID ? (
+                          <article className="settings-empty-state settings-service-list-empty-state">
+                            <span className="label">No Project</span>
+                            <h3>Pick a project first</h3>
+                            <p>The MCP section is project-scoped, so it only appears when a workspace project is active.</p>
+                          </article>
+                        ) : mcpServers.length > 0 ? (
+                          <div className="settings-service-list" role="list" aria-label="MCP servers">
+                            {mcpServers.map((server) => {
+                              const isActive = server.id === activeMcpServerID
+
+                              return (
+                                <button
+                                  key={server.id}
+                                  className={isActive ? "settings-service-item is-active" : "settings-service-item"}
+                                  aria-label={`${server.name ?? server.id} ${server.enabled ? "enabled" : "disabled"}`}
+                                  aria-pressed={isActive}
+                                  onClick={() => onMcpServerSelect(server.id)}
+                                >
+                                  <div className="settings-service-item-header">
+                                    <strong>{server.name ?? server.id}</strong>
+                                    <span className={server.enabled ? "settings-badge is-highlight" : "settings-badge"}>
+                                      {server.enabled ? "Enabled" : "Disabled"}
+                                    </span>
+                                  </div>
+                                  <span className="settings-service-item-copy">{server.command}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <article className="settings-empty-state settings-service-list-empty-state">
+                            <span className="label">No Servers</span>
+                            <h3>No MCP servers configured yet</h3>
+                            <p>Create a stdio server here, then the agent can resolve its tools on the next turn.</p>
+                          </article>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="settings-service-detail-panel">
+                      {projectID ? (
+                        <>
+                          <div className="settings-detail-hero">
+                            <div>
+                              <h3>{activeMcpServer ? activeMcpServer.name ?? activeMcpServer.id : "Create MCP server"}</h3>
+                              <p className="settings-page-copy">
+                                {activeMcpServer
+                                  ? "Edit the selected MCP server definition for this project."
+                                  : "Define a new stdio MCP server and expose its tools to the agent."}
+                              </p>
+                            </div>
+
+                            <div className="provider-row-statuses">
+                              <span className="settings-badge">{activeMcpServer ? "Editing" : "New"}</span>
+                              <span className={mcpServerDraft.enabled ? "settings-badge is-highlight" : "settings-badge"}>
+                                {mcpServerDraft.enabled ? "Enabled" : "Disabled"}
+                              </span>
+                              <span className="settings-badge">stdio</span>
+                            </div>
+                          </div>
+
+                          <div className="settings-panel">
+                            <div className="settings-section-header">
+                              <div>
+                                <span className="label">Definition</span>
+                                <h3>Server Configuration</h3>
+                              </div>
+                              <p>Use one argument per line and one environment variable per line in KEY=value format.</p>
+                            </div>
+
+                            <div className="settings-field-grid">
+                              <label className="settings-field">
+                                <span className="settings-field-label">Server ID</span>
+                                <input
+                                  aria-label="MCP server id"
+                                  type="text"
+                                  value={mcpServerDraft.id}
+                                  placeholder="filesystem"
+                                  onChange={(event) => onMcpServerDraftChange("id", event.target.value)}
+                                />
+                              </label>
+
+                              <label className="settings-field">
+                                <span className="settings-field-label">Name</span>
+                                <input
+                                  aria-label="MCP server name"
+                                  type="text"
+                                  value={mcpServerDraft.name}
+                                  placeholder="Filesystem"
+                                  onChange={(event) => onMcpServerDraftChange("name", event.target.value)}
+                                />
+                              </label>
+
+                              <label className="settings-field">
+                                <span className="settings-field-label">Command</span>
+                                <input
+                                  aria-label="MCP server command"
+                                  type="text"
+                                  value={mcpServerDraft.command}
+                                  placeholder="npx"
+                                  onChange={(event) => onMcpServerDraftChange("command", event.target.value)}
+                                />
+                              </label>
+
+                              <label className="settings-field">
+                                <span className="settings-field-label">Working directory</span>
+                                <input
+                                  aria-label="MCP server working directory"
+                                  type="text"
+                                  value={mcpServerDraft.cwd}
+                                  placeholder="Optional, relative to the project root"
+                                  onChange={(event) => onMcpServerDraftChange("cwd", event.target.value)}
+                                />
+                              </label>
+
+                              <label className="settings-field">
+                                <span className="settings-field-label">Timeout (ms)</span>
+                                <input
+                                  aria-label="MCP server timeout"
+                                  type="text"
+                                  value={mcpServerDraft.timeoutMs}
+                                  placeholder="Optional"
+                                  onChange={(event) => onMcpServerDraftChange("timeoutMs", event.target.value)}
+                                />
+                              </label>
+
+                              <label className="settings-field settings-checkbox-field">
+                                <span className="settings-field-label">Enabled</span>
+                                <input
+                                  aria-label="Enable MCP server"
+                                  checked={mcpServerDraft.enabled}
+                                  type="checkbox"
+                                  onChange={(event) => onMcpServerDraftChange("enabled", event.target.checked)}
+                                />
+                              </label>
+                            </div>
+
+                            <div className="settings-field-grid">
+                              <label className="settings-field">
+                                <span className="settings-field-label">Arguments</span>
+                                <textarea
+                                  aria-label="MCP server arguments"
+                                  rows={5}
+                                  value={mcpServerDraft.args}
+                                  placeholder="one argument per line"
+                                  onChange={(event) => onMcpServerDraftChange("args", event.target.value)}
+                                />
+                              </label>
+
+                              <label className="settings-field">
+                                <span className="settings-field-label">Environment</span>
+                                <textarea
+                                  aria-label="MCP server environment"
+                                  rows={5}
+                                  value={mcpServerDraft.env}
+                                  placeholder="KEY=value"
+                                  onChange={(event) => onMcpServerDraftChange("env", event.target.value)}
+                                />
+                              </label>
+                            </div>
+
+                            <div className="settings-actions-row">
+                              <span className="settings-helper-text">
+                                Servers start lazily when the agent resolves tools for this project. Tool approval still flows through the existing permission system.
+                              </span>
+                              <div className="settings-inline-actions">
+                                {activeMcpServer ? (
+                                  <button
+                                    className="secondary-button"
+                                    disabled={mcpServerBusy}
+                                    onClick={() => void onDeleteMcpServer(activeMcpServer.id)}
+                                    type="button"
+                                  >
+                                    {deletingMcpServerID === activeMcpServer.id ? "Removing..." : "Remove"}
+                                  </button>
+                                ) : null}
+                                <button
+                                  className="primary-button"
+                                  disabled={mcpServerBusy || !mcpServerDraft.id.trim() || !mcpServerDraft.command.trim()}
+                                  onClick={() => void onSaveMcpServer()}
+                                  type="button"
+                                >
+                                  {savingMcpServerID === (activeMcpServerID ?? mcpServerDraft.id.trim()) ? "Saving..." : mcpSaveLabel}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <article className="settings-empty-state settings-detail-empty-state">
+                          <span className="label">No Project</span>
+                          <h3>Select a project from the sidebar</h3>
+                          <p>The MCP server definitions are stored in the project config, so there is nothing to edit until a project is active.</p>
                         </article>
                       )}
                     </div>
@@ -2949,16 +3225,20 @@ interface ComposerProps {
   hasPendingPermissionRequests: boolean
   isSending: boolean
   modelOptions: ComposerModelOption[]
+  skillOptions: ComposerSkillOption[]
   selectedModel: string | null
   selectedModelLabel: string
+  selectedSkillIDs: string[]
+  selectedSkillLabel: string
   onDraftChange: (value: string) => void
   onModelChange: (value: string | null) => void | Promise<void>
+  onSkillToggle: (value: string) => void
   onPickAttachments: () => void | Promise<void>
   onRemoveAttachment: (path: string) => void
   onSend: () => void | Promise<void>
 }
 
-type ComposerMenuKey = "model" | null
+type ComposerMenuKey = "model" | "skill" | null
 
 export function Composer({
   attachments,
@@ -2967,10 +3247,14 @@ export function Composer({
   hasPendingPermissionRequests,
   isSending,
   modelOptions,
+  skillOptions,
   selectedModel,
   selectedModelLabel,
+  selectedSkillIDs,
+  selectedSkillLabel,
   onDraftChange,
   onModelChange,
+  onSkillToggle,
   onPickAttachments,
   onRemoveAttachment,
   onSend,
@@ -3009,6 +3293,10 @@ export function Composer({
   function handleModelSelect(value: string | null) {
     setOpenMenu(null)
     void onModelChange(value)
+  }
+
+  function handleSkillToggle(value: string) {
+    void onSkillToggle(value)
   }
 
   const sendButtonLabel = isSending ? "Sending task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
@@ -3090,6 +3378,47 @@ export function Composer({
                   ))
                 ) : (
                   <p className="composer-menu-empty">No visible models are available for this project yet.</p>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="composer-menu-anchor">
+            <button
+              aria-expanded={openMenu === "skill"}
+              aria-haspopup="dialog"
+              aria-label={`Select skills: ${selectedSkillLabel}`}
+              className="composer-selector-button"
+              onClick={() => toggleMenu("skill")}
+              type="button"
+            >
+              <span>{selectedSkillLabel}</span>
+              <ChevronDownIcon />
+            </button>
+
+            {openMenu === "skill" ? (
+              <div className="composer-menu-panel" role="dialog" aria-label="Skill selection">
+                {skillOptions.length > 0 ? (
+                  skillOptions.map((option) => {
+                    const isSelected = selectedSkillIDs.includes(option.value)
+
+                    return (
+                      <button
+                        key={option.value}
+                        className={isSelected ? "composer-menu-option is-selected" : "composer-menu-option"}
+                        onClick={() => handleSkillToggle(option.value)}
+                        type="button"
+                      >
+                        <span className="composer-menu-option-copy">
+                          <strong>{option.label}</strong>
+                          <small>{option.description}</small>
+                        </span>
+                        <span className="composer-menu-option-check">{isSelected ? "Selected" : "Add"}</span>
+                      </button>
+                    )
+                  })
+                ) : (
+                  <p className="composer-menu-empty">No Codex-style skills are available for this project.</p>
                 )}
               </div>
             ) : null}

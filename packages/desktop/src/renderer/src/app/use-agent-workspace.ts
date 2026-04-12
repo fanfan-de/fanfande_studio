@@ -20,6 +20,7 @@ import type {
   AgentStreamIPCEvent,
   ComposerAttachment,
   ComposerModelOption,
+  ComposerSkillOption,
   CreateSessionTab,
   LeftSidebarView,
   PermissionDecision,
@@ -29,6 +30,7 @@ import type {
   RightSidebarView,
   SessionDiffSummary,
   SessionSummary,
+  SkillInfo,
   SidebarActionKey,
   Turn,
   WorkspaceGroup,
@@ -84,6 +86,15 @@ function resolveComposerModelLabel(selectedModel: string | null, models: Provide
   if (isLoading && models.length === 0) return "Loading..."
   if (!selectedModel) return "Server default"
   return models.find((model) => toComposerModelValue(model) === selectedModel)?.name ?? selectedModel
+}
+
+function resolveComposerSkillLabel(selectedSkillIDs: string[], skills: SkillInfo[], isLoading: boolean) {
+  if (isLoading && skills.length === 0) return "Loading skills..."
+  if (selectedSkillIDs.length === 0) return "Skills"
+  if (selectedSkillIDs.length === 1) {
+    return skills.find((skill) => skill.id === selectedSkillIDs[0])?.name ?? "1 skill"
+  }
+  return `${selectedSkillIDs.length} skills`
 }
 
 function buildPromptWithAttachments(prompt: string, attachments: ComposerAttachment[]) {
@@ -187,7 +198,11 @@ export function useAgentWorkspace({
   const [composerSelectedModel, setComposerSelectedModel] = useState<string | null>(null)
   const [composerSmallModel, setComposerSmallModel] = useState<string | null>(null)
   const [isLoadingComposerModels, setIsLoadingComposerModels] = useState(false)
+  const [composerSkills, setComposerSkills] = useState<SkillInfo[]>([])
+  const [composerSelectedSkillIDs, setComposerSelectedSkillIDs] = useState<string[]>([])
+  const [isLoadingComposerSkills, setIsLoadingComposerSkills] = useState(false)
   const composerModelsRequestRef = useRef(0)
+  const composerSkillsRequestRef = useRef(0)
   const pendingModelSelectionRef = useRef<Promise<void> | null>(null)
 
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
@@ -209,7 +224,17 @@ export function useAgentWorkspace({
       value: toComposerModelValue(model),
       label: toComposerModelLabel(model),
     }))
+  const composerSkillOptions: ComposerSkillOption[] = composerSkills.map((skill) => ({
+    value: skill.id,
+    label: skill.name,
+    description: skill.description,
+  }))
   const composerSelectedModelLabel = resolveComposerModelLabel(composerSelectedModel, composerModels, isLoadingComposerModels)
+  const composerSelectedSkillLabel = resolveComposerSkillLabel(
+    composerSelectedSkillIDs,
+    composerSkills,
+    isLoadingComposerSkills,
+  )
 
   function bumpConversationVersion(sessionID: string) {
     conversationVersionRef.current[sessionID] = (conversationVersionRef.current[sessionID] ?? 0) + 1
@@ -442,6 +467,44 @@ export function useAgentWorkspace({
       .finally(() => {
         if (!cancelled && composerModelsRequestRef.current === requestID) {
           setIsLoadingComposerModels(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedWorkspace?.project.id])
+
+  useEffect(() => {
+    const projectID = selectedWorkspace?.project.id
+    const getProjectSkills = window.desktop?.getProjectSkills
+
+    if (!projectID || !getProjectSkills) {
+      setComposerSkills([])
+      setComposerSelectedSkillIDs([])
+      setIsLoadingComposerSkills(false)
+      return
+    }
+
+    let cancelled = false
+    const requestID = ++composerSkillsRequestRef.current
+    setIsLoadingComposerSkills(true)
+
+    getProjectSkills({ projectID })
+      .then((skills) => {
+        if (cancelled || composerSkillsRequestRef.current !== requestID) return
+        setComposerSkills(skills)
+        setComposerSelectedSkillIDs((current) => current.filter((skillID) => skills.some((skill) => skill.id === skillID)))
+      })
+      .catch((error) => {
+        if (cancelled || composerSkillsRequestRef.current !== requestID) return
+        console.error("[desktop] getProjectSkills failed:", error)
+        setComposerSkills([])
+        setComposerSelectedSkillIDs([])
+      })
+      .finally(() => {
+        if (!cancelled && composerSkillsRequestRef.current === requestID) {
+          setIsLoadingComposerSkills(false)
         }
       })
 
@@ -1078,6 +1141,7 @@ export function useAgentWorkspace({
     const uiSessionID = activeSession.id
     const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
     const attachments = composerAttachments
+    const selectedSkillIDs = composerSelectedSkillIDs
     const submissionText = buildPromptWithAttachments(text, attachments)
 
     const userTurn: Turn = {
@@ -1155,7 +1219,10 @@ export function useAgentWorkspace({
           streamID,
           sessionID: backendSessionID,
           text: submissionText,
+          skills: selectedSkillIDs,
         })
+
+        setComposerSelectedSkillIDs([])
 
         return
       }
@@ -1163,6 +1230,7 @@ export function useAgentWorkspace({
       const result = await window.desktop.sendAgentMessage?.({
         sessionID: backendSessionID,
         text: submissionText,
+        skills: selectedSkillIDs,
       })
 
       if (!result) {
@@ -1173,6 +1241,7 @@ export function useAgentWorkspace({
       startTransition(() => {
         appendConversationTurns(uiSessionID, [backendTurn])
       })
+      setComposerSelectedSkillIDs([])
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (streamID) {
@@ -1351,6 +1420,12 @@ export function useAgentWorkspace({
     await trackedTask
   }
 
+  function handleComposerSkillToggle(value: string) {
+    setComposerSelectedSkillIDs((current) =>
+      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
+    )
+  }
+
   function handleLeftSidebarViewChange(nextView: LeftSidebarView) {
     setLeftSidebarView(nextView)
   }
@@ -1368,8 +1443,11 @@ export function useAgentWorkspace({
     canvasSessionTabs,
     composerAttachments,
     composerModelOptions,
+    composerSkillOptions,
     composerSelectedModel,
     composerSelectedModelLabel,
+    composerSelectedSkillIDs,
+    composerSelectedSkillLabel,
     createSessionTabs,
     createSessionTitle,
     createSessionWorkspaceID,
@@ -1380,6 +1458,7 @@ export function useAgentWorkspace({
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
     handleComposerModelChange,
+    handleComposerSkillToggle,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
     handleCreateSessionTitleChange,

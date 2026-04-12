@@ -53,13 +53,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "todo.md",
+                "file": "packages/fanfandeagent/docs/skills-mcp-architecture.zh.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "todo"
+              "title": "skills-mcp-architecture.zh"
             }
           }
         ],
@@ -136,7 +136,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "todo.md",
+                "file": "packages/fanfandeagent/docs/skills-mcp-architecture.zh.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -146,7 +146,7 @@
                 "unlinkedCollapsed": false
               },
               "icon": "links-coming-in",
-              "title": "todo 的反向链接列表"
+              "title": "skills-mcp-architecture.zh 的反向链接列表"
             }
           },
           {
@@ -155,12 +155,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "todo.md",
+                "file": "packages/fanfandeagent/docs/skills-mcp-architecture.zh.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "todo 的出链列表"
+              "title": "skills-mcp-architecture.zh 的出链列表"
             }
           },
           {
@@ -198,13 +198,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "todo.md",
+                "file": "packages/fanfandeagent/docs/skills-mcp-architecture.zh.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "todo 的大纲"
+              "title": "skills-mcp-architecture.zh 的大纲"
             }
           },
           {
@@ -254,18 +254,21 @@
   },
   "active": "bd079b772eaef396",
   "lastOpenFiles": [
-    "daily/2026-04-12.md",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/conpty/conpty.dll",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/winpty-agent.pdb",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/winpty-agent.exe",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/winpty.pdb",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.node",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/winpty.dll",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.pdb",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/pty.node",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/pty.pdb",
+    "packages/desktop/electron.vite.config.1776024885133.mjs",
+    "packages/desktop/electron.vite.config.1776024858382.mjs",
+    "packages/fanfandeagent/Skills/Auto-Sync Subpath Imports.md",
+    "packages/desktop/electron.vite.config.1776022125064.mjs",
+    "packages/desktop/electron.vite.config.1776022020234.mjs",
+    "packages/desktop/out/renderer/index.html",
+    "packages/desktop/out/renderer/assets/index-bfXosB5u.js",
+    "packages/desktop/out/renderer/assets/index-CpuUqjRQ.css",
+    "packages/desktop/out/renderer/assets",
+    "packages/desktop/electron.vite.config.1776021858231.mjs",
+    "packages/desktop/build/agent-runtime/node_modules/node-pty/lib/conpty_console_list_agent.js",
+    "packages/desktop/build/agent-runtime/node_modules/node-pty/LICENSE",
+    "packages/fanfandeagent/docs/skills-mcp-architecture.zh.md",
     "todo.md",
+    "daily/2026-04-12.md",
     "packages/desktop/桌面端界面结构与命名.md",
     "packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md",
     "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
@@ -303,8 +306,6 @@
     "packages/fanfandeagent/node_modules/node-pty/deps/winpty/RELEASES.md",
     "packages/fanfandeagent/node_modules/node-pty/deps/winpty/README.md",
     "packages/desktop/node_modules/@xterm/addon-fit/README.md",
-    "未命名.canvas",
-    "daily/2026-04-09.md",
-    "未命名.md"
+    "未命名.canvas"
   ]
 }

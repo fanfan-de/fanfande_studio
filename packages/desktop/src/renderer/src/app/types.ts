@@ -236,7 +236,44 @@ export interface ComposerModelOption {
   label: string
 }
 
+export interface ComposerSkillOption {
+  value: string
+  label: string
+  description: string
+}
+
 export interface ProviderDraftState {
   apiKey: string
   baseURL: string
+}
+
+export interface SkillInfo {
+  id: string
+  name: string
+  description: string
+  path: string
+  scope: "project" | "user"
+}
+
+export interface McpServerSummary {
+  id: string
+  name?: string
+  transport: "stdio"
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  enabled: boolean
+  timeoutMs?: number
+}
+
+export interface McpServerDraftState {
+  id: string
+  name: string
+  command: string
+  args: string
+  env: string
+  cwd: string
+  enabled: boolean
+  timeoutMs: string
 }

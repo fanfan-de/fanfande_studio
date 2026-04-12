@@ -50,8 +50,10 @@
     "#scheduler/*": "./src/scheduler/*",
     "#server/*": "./src/server/*",
     "#session/*": "./src/session/*",
+    "#skill/*": "./src/skill/*",
     "#shell/*": "./src/shell/*",
     "#snapshot/*": "./src/snapshot/*",
+    "#mcp/*": "./src/mcp/*",
     "#tool/*": "./src/tool/*",
     "#util/*": "./src/util/*",
     "#*": "./src/*"
