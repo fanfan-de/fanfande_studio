@@ -53,13 +53,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "daily/2026-04-12.md",
+                "file": "todo.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "2026-04-12"
+              "title": "todo"
             }
           }
         ],
@@ -136,7 +136,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "daily/2026-04-12.md",
+                "file": "todo.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -146,7 +146,7 @@
                 "unlinkedCollapsed": false
               },
               "icon": "links-coming-in",
-              "title": "2026-04-12 的反向链接列表"
+              "title": "todo 的反向链接列表"
             }
           },
           {
@@ -155,12 +155,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "daily/2026-04-12.md",
+                "file": "todo.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "2026-04-12 的出链列表"
+              "title": "todo 的出链列表"
             }
           },
           {
@@ -198,13 +198,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "daily/2026-04-12.md",
+                "file": "todo.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "2026-04-12 的大纲"
+              "title": "todo 的大纲"
             }
           },
           {
@@ -254,6 +254,7 @@
   },
   "active": "bd079b772eaef396",
   "lastOpenFiles": [
+    "daily/2026-04-12.md",
     "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe",
     "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/conpty/conpty.dll",
     "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/winpty-agent.pdb",
@@ -264,11 +265,9 @@
     "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/conpty_console_list.pdb",
     "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/pty.node",
     "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/pty.pdb",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/prebuilds/win32-x64/conpty.pdb",
     "todo.md",
     "packages/desktop/桌面端界面结构与命名.md",
     "packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md",
-    "daily/2026-04-12.md",
     "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
     "TODO_secure_provider_credentials.md",
     "未命名 6.canvas",
