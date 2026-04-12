@@ -524,12 +524,16 @@ export function useAgentWorkspace({
     }
   }, [activeCreateSessionTab, createSessionTabs, openCanvasSessionIDs, selectedFolderID, workspaces, activeWorkspace?.id])
 
-  function focusSession(workspaceID: string, sessionID: string) {
+  function activateSessionTab(workspaceID: string, sessionID: string) {
     lastFocusedSessionIDRef.current = sessionID
     setSelectedFolderID(workspaceID)
     setExpandedFolderID(workspaceID)
     setActiveSessionID(sessionID)
     setActiveCreateSessionTabID(null)
+  }
+
+  function focusSession(workspaceID: string, sessionID: string) {
+    activateSessionTab(workspaceID, sessionID)
     setOpenCanvasSessionIDs((current) => getUniqueSessionIDs([...current, sessionID]))
   }
 
@@ -757,6 +761,33 @@ export function useAgentWorkspace({
   }
 
   function handleSessionSelect(workspaceID: string, sessionID: string) {
+    if (openCanvasSessionIDs.includes(sessionID)) {
+      activateSessionTab(workspaceID, sessionID)
+      return
+    }
+
+    if (activeSessionID) {
+      activateSessionTab(workspaceID, sessionID)
+      setOpenCanvasSessionIDs((current) => {
+        const activeIndex = current.indexOf(activeSessionID)
+        if (activeIndex === -1) {
+          return getUniqueSessionIDs([...current, sessionID])
+        }
+
+        const nextSessionIDs = [...current]
+        nextSessionIDs[activeIndex] = sessionID
+        return nextSessionIDs
+      })
+      return
+    }
+
+    if (activeCreateSessionTabID) {
+      activateSessionTab(workspaceID, sessionID)
+      setCreateSessionTabs((current) => current.filter((tab) => tab.id !== activeCreateSessionTabID))
+      setOpenCanvasSessionIDs((current) => getUniqueSessionIDs([...current, sessionID]))
+      return
+    }
+
     focusSession(workspaceID, sessionID)
   }
 

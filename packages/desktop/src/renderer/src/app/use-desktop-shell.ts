@@ -4,6 +4,8 @@ import type { WindowAction } from "./types"
 import { clamp, resolveSidebarWidthBounds } from "./utils"
 
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
+const WINDOW_CONTROLS_CLEARANCE_FALLBACK = 124
+const WINDOW_CONTROLS_CLEARANCE_PADDING = 24
 
 type SidebarResizerSide = "left" | "right"
 
@@ -25,8 +27,10 @@ function readActivityRailVisibilityPreference() {
 
 export function useDesktopShell() {
   const appShellRef = useRef<HTMLElement | null>(null)
+  const windowControlsRef = useRef<HTMLDivElement | null>(null)
   const [platform, setPlatform] = useState("Desktop")
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
+  const [windowControlsClearance, setWindowControlsClearance] = useState(WINDOW_CONTROLS_CLEARANCE_FALLBACK)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
@@ -78,6 +82,37 @@ export function useDesktopShell() {
 
     return () => {
       mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const controls = windowControlsRef.current
+    if (!controls) return
+
+    const syncWindowControlsClearance = () => {
+      const rect = controls.getBoundingClientRect()
+      if (rect.width <= 0) return
+
+      const nextClearance = Math.ceil(rect.width) + WINDOW_CONTROLS_CLEARANCE_PADDING
+      setWindowControlsClearance((current) => (current === nextClearance ? current : nextClearance))
+    }
+
+    syncWindowControlsClearance()
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => {
+        syncWindowControlsClearance()
+      })
+      observer.observe(controls)
+
+      return () => {
+        observer.disconnect()
+      }
+    }
+
+    window.addEventListener("resize", syncWindowControlsClearance)
+    return () => {
+      window.removeEventListener("resize", syncWindowControlsClearance)
     }
   }, [])
 
@@ -367,6 +402,9 @@ export function useDesktopShell() {
   }
 
   const appShellStyle = {
+    "--window-controls-clearance": `${windowControlsClearance}px`,
+    "--window-controls-canvas-clearance": isRightSidebarCollapsed ? `${windowControlsClearance}px` : "0px",
+    "--window-controls-right-sidebar-clearance": isRightSidebarCollapsed ? "0px" : `${windowControlsClearance}px`,
     "--activity-rail-display-width": isActivityRailVisible ? "54px" : "0px",
     "--sidebar-display-width": isSidebarCollapsed ? "0px" : `${sidebarWidth}px`,
     "--sidebar-resizer-width": isSidebarCollapsed ? "0px" : "10px",
@@ -398,5 +436,6 @@ export function useDesktopShell() {
     platform,
     rightSidebarWidth,
     sidebarWidth,
+    windowControlsRef,
   }
 }

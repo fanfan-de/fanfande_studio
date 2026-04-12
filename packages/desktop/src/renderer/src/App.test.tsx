@@ -189,7 +189,7 @@ describe("App", () => {
         branch: "main",
         stdout: "",
         stderr: "",
-        summary: "已提交到 main",
+        summary: "宸叉彁浜ゅ埌 main",
       }),
       gitPush: vi.fn().mockResolvedValue({
         directory: "C:\\Projects\\Project 2",
@@ -197,7 +197,7 @@ describe("App", () => {
         branch: "main",
         stdout: "",
         stderr: "",
-        summary: "已推送 main",
+        summary: "宸叉帹閫?main",
       }),
       listFolderWorkspaces: vi.fn().mockRejectedValue(new Error("backend unavailable")),
       openFolderWorkspace: vi.fn(),
@@ -264,6 +264,8 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "File" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu-trailing")).toHaveClass("is-right-sidebar-expanded")
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
@@ -294,6 +296,18 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^Select model:/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
+  })
+
+  it("routes window control clicks through the desktop bridge", () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Minimize window" }))
+    fireEvent.click(screen.getByRole("button", { name: "Maximize window" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close window" }))
+
+    expect(window.desktop!.windowAction).toHaveBeenNthCalledWith(1, "minimize")
+    expect(window.desktop!.windowAction).toHaveBeenNthCalledWith(2, "toggle-maximize")
+    expect(window.desktop!.windowAction).toHaveBeenNthCalledWith(3, "close")
   })
 
   it("opens the git quick menu and triggers commit and push for the active workspace", async () => {
@@ -327,7 +341,7 @@ describe("App", () => {
       branch: "main",
       stdout: "",
       stderr: "",
-      summary: "已提交到 main",
+      summary: "宸叉彁浜ゅ埌 main",
     })
     window.desktop!.gitPush = vi.fn().mockResolvedValue({
       directory: "C:\\Projects\\Atlas",
@@ -335,7 +349,7 @@ describe("App", () => {
       branch: "main",
       stdout: "",
       stderr: "",
-      summary: "已推送 main",
+      summary: "宸叉帹閫?main",
     })
 
     render(<App />)
@@ -347,15 +361,15 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Git" }))
 
-    expect(await screen.findByRole("textbox", { name: "提交说明" })).toBeInTheDocument()
+    expect(await screen.findByRole("textbox", { name: "Commit message" })).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole("textbox", { name: "提交说明" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Commit message" }), {
       target: {
         value: "chore: wire git quick menu",
       },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "提交" }))
+    fireEvent.click(screen.getByRole("button", { name: "Commit" }))
 
     await waitFor(() => {
       expect(window.desktop!.gitCommit).toHaveBeenCalledWith({
@@ -364,9 +378,9 @@ describe("App", () => {
       })
     })
 
-    expect(await screen.findByText("已提交到 main")).toBeInTheDocument()
+    expect(await screen.findByText("宸叉彁浜ゅ埌 main")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "推送" }))
+    fireEvent.click(screen.getByRole("button", { name: "Push" }))
 
     await waitFor(() => {
       expect(window.desktop!.gitPush).toHaveBeenCalledWith({
@@ -374,7 +388,7 @@ describe("App", () => {
       })
     })
 
-    expect(await screen.findByText("已推送 main")).toBeInTheDocument()
+    expect(await screen.findByText("宸叉帹閫?main")).toBeInTheDocument()
   })
 
   it("loads folder and session lists into the sidebar on startup", async () => {
@@ -1572,21 +1586,40 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
   })
 
-  it("opens sidebar-selected sessions as independent canvas tabs and keeps focus in sync", async () => {
+  it("replaces the focused session tab when selecting a different sidebar session", async () => {
     render(<App />)
 
+    expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to session Chat 2" })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Chat 2" }))
 
-    expect(await screen.findByRole("button", { name: "Switch to session Chat 2" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByRole("button", { name: "Switch to session Chat 1" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Chat 2" }).closest(".session-row")).toHaveClass("is-active")
     expect(screen.getByRole("button", { name: "app" }).closest(".project-row")).toHaveClass("is-active")
+  })
 
-    fireEvent.click(screen.getByRole("button", { name: "Switch to session Chat 1" }))
+  it("reuses open session tabs and replaces the active create tab when selecting from the sidebar", async () => {
+    render(<App />)
 
-    expect(screen.getByRole("button", { name: "Chat 1" }).closest(".session-row")).toHaveClass("is-active")
-    expect(screen.getByRole("button", { name: "app" }).closest(".project-row")).toHaveClass("is-active")
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    await screen.findByText("Open a new session tab")
+
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat 2" }))
+
+    expect(await screen.findByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Switch to create session tab" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat 1" }))
+
+    expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Switch to session Chat 2" })).toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Switch to session Chat 1" })).toHaveLength(1)
+    expect(screen.getAllByRole("button", { name: "Switch to session Chat 2" })).toHaveLength(1)
   })
 
   it("falls back to the create session tab when the last session tab closes", async () => {
@@ -3047,29 +3080,41 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
   })
 
-  it("collapses the right sidebar from its header toggle and restores it from the canvas menu", () => {
+  it("collapses and restores the right sidebar from the canvas menu", () => {
     const { container } = render(<App />)
     const appShell = container.querySelector(".app-shell") as HTMLElement | null
+    const rightSidebarTopMenu = screen.getByLabelText("Right sidebar top menu")
 
     expect(appShell).not.toBeNull()
+    expect(appShell!.getAttribute("style")).toContain("--window-controls-right-sidebar-clearance: 124px")
+    expect(appShell!.getAttribute("style")).toContain("--window-controls-canvas-clearance: 0px")
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".right-sidebar-top-menu")).not.toBeNull()
+    expect(within(rightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu-trailing")).toHaveClass("is-right-sidebar-expanded")
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse right sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain("--right-sidebar-display-width: 0px")
+    expect(appShell!.getAttribute("style")).toContain("--window-controls-right-sidebar-clearance: 0px")
+    expect(appShell!.getAttribute("style")).toContain("--window-controls-canvas-clearance: 124px")
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     expect(screen.queryByTestId("right-sidebar-resizer")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Expand right sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".canvas-region-top-menu")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".canvas-region-top-menu-trailing")).toHaveClass("is-right-sidebar-collapsed")
 
     fireEvent.click(screen.getByRole("button", { name: "Expand right sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain("--right-sidebar-display-width: 236px")
+    expect(appShell!.getAttribute("style")).toContain("--window-controls-right-sidebar-clearance: 124px")
+    expect(appShell!.getAttribute("style")).toContain("--window-controls-canvas-clearance: 0px")
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".right-sidebar-top-menu")).not.toBeNull()
+    expect(within(rightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu-trailing")).toHaveClass("is-right-sidebar-expanded")
   })
 
   it("resizes the left sidebar when dragging the divider", async () => {
@@ -3213,13 +3258,16 @@ describe("App", () => {
     )
   })
 
-  it("limits rounded corners to the prompt input shell and canvas tab caps", () => {
-    const nonZeroBorderRadii = Array.from(styles.matchAll(/border-radius:\s*([^;]+);/g))
-      .map(([, value]) => value.trim())
-      .filter((value) => !/^0(?:\s|$)/.test(value))
-      .sort()
+  it("limits rounded corners to the prompt input shell, icon tabs, and canvas tab caps", () => {
+    const nonZeroBorderRadii = Array.from(
+      new Set(
+        Array.from(styles.matchAll(/border-radius:\s*([^;]+);/g))
+          .map(([, value]) => value.trim())
+          .filter((value) => !/^0(?:\s|$)/.test(value)),
+      ),
+    ).sort()
 
-    expect(nonZeroBorderRadii).toEqual(["28px", "var(--canvas-region-tab-cap-radius) var(--canvas-region-tab-cap-radius) 0 0"])
+    expect(nonZeroBorderRadii).toEqual(["28px", "8px", "var(--canvas-region-tab-cap-radius) var(--canvas-region-tab-cap-radius) 0 0"])
     expect(styles).toMatch(/\.prompt-input-shell\s*\{[^}]*border-radius:\s*28px;/s)
     expect(styles).toMatch(
       /\.canvas-region-top-menu\s*\{[^}]*--canvas-region-tab-cap-radius:\s*8px;/s,
@@ -3229,26 +3277,56 @@ describe("App", () => {
     )
   })
 
-  it("keeps the canvas tabs as a simple bordered strip above the session header", () => {
+  it("keeps the canvas tabs separate from the session top menu", () => {
     expect(styles).toMatch(/\.canvas\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto auto;[^}]*gap:\s*14px;/s)
-    expect(styles).toMatch(/\.canvas-top-stack\s*\{[^}]*display:\s*grid;[^}]*gap:\s*8px;/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*end;[^}]*padding-bottom:\s*0;/s)
+    expect(styles).toMatch(/\.canvas-top-stack\s*\{[^}]*display:\s*grid;[^}]*gap:\s*6px;/s)
+    expect(styles).toMatch(/\.window-controls-floating\s*\{[^}]*top:\s*5px;[^}]*gap:\s*10px;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
+    expect(styles).toMatch(/\.window-control\s*\{[^}]*width:\s*30px;[^}]*min-width:\s*30px;[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*border-radius:\s*8px;[^}]*color:\s*#5f7384;/s)
+    expect(styles).toMatch(/\.window-control svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
+    expect(styles).toMatch(/\.window-control:hover,\s*\.window-control:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);[^}]*color:\s*#22303d;[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.panel-toolbar\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*padding:\s*0;/s)
+    expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\.is-canvas\s*\{[^}]*width:\s*var\(--window-controls-canvas-clearance\);/s)
+    expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\.is-right-sidebar\s*\{[^}]*width:\s*var\(--window-controls-right-sidebar-clearance\);/s)
+    expect(styles).toMatch(/--section-toolbar-baseline:\s*var\(--section-toolbar-height\);/s)
+    expect(styles).toMatch(/--section-toolbar-icon-size:\s*18px;/s)
+    expect(styles).toMatch(/--section-toolbar-aux-icon-size:\s*12px;/s)
+    expect(styles).toMatch(/\.top-menu-view-button\s*\{[^}]*border-radius:\s*8px;[^}]*background:\s*transparent;/s)
+    expect(styles).toMatch(/\.top-menu-view-button-icon\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-top-menu svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
+    expect(styles).toMatch(/\.session-tab-close svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
+    expect(styles).toMatch(/\.canvas-top-menu-git-trigger svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
+    expect(styles).toMatch(/\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
+    expect(styles).toMatch(/\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\s*\{[^}]*border-radius:\s*8px;/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail:hover,\s*\.sidebar-toggle-button\.is-rail:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-active:hover,\s*\.sidebar-toggle-button\.is-rail\.is-active:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
+    expect(styles).toMatch(/\.session-tab-trigger,\s*\.session-tab-close,[\s\S]*?\.canvas-region-top-menu-add-button\s*\{[^}]*border-radius:\s*8px;/s)
+    expect(styles).toMatch(/\.session-tab-close:hover,\s*\.session-tab-close:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*color:\s*#22303d;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu \.sidebar-toggle-button\.is-top-menu:hover,\s*\.canvas-region-top-menu-add-button:hover\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
+    expect(styles).toMatch(/--canvas-region-tab-hover:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab:hover\s*\{[^}]*background:\s*var\(--canvas-region-tab-hover\);[^}]*border-color:\s*transparent;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\.is-active:hover,\s*\.canvas-region-top-menu\s+\.session-tab\.is-active:focus-within\s*\{[^}]*linear-gradient\(0deg,\s*rgba\(84,\s*96,\s*109,\s*0\.12\),\s*rgba\(84,\s*96,\s*109,\s*0\.12\)\)/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;[^}]*gap:\s*12px;[^}]*padding-bottom:\s*0;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu\s*\{[^}]*padding-right:\s*var\(--window-controls-canvas-clearance\);/s)
     expect(styles).toMatch(/\.app-shell::after\s*\{[^}]*top:\s*var\(--section-toolbar-baseline\);[^}]*left:\s*var\(--activity-rail-display-width\);[^}]*right:\s*0;/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu-tabs-shell\s*\{[^}]*display:\s*flex;[^}]*gap:\s*2px;[^}]*max-width:\s*none;[^}]*justify-self:\s*stretch;/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu-tabs\s*\{[^}]*flex:\s*0 1 auto;[^}]*align-items:\s*flex-end;[^}]*overflow-x:\s*auto;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu-trailing\.is-right-sidebar-expanded\s*\{[^}]*margin-right:\s*calc\(-1 \* var\(--canvas-inline-padding\)\);/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu-trailing\.is-right-sidebar-collapsed\s*\{[^}]*margin-right:\s*8px;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu-tabs-shell\s*\{[^}]*display:\s*flex;[^}]*gap:\s*4px;[^}]*max-width:\s*none;[^}]*justify-self:\s*stretch;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu-tabs\s*\{[^}]*flex:\s*0 1 auto;[^}]*align-items:\s*center;[^}]*overflow-x:\s*auto;[^}]*padding-top:\s*0;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-add-button\s*\{[^}]*width:\s*28px;[^}]*min-width:\s*28px;[^}]*min-height:\s*28px;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-add-glyph\s*\{[^}]*font-size:\s*22px;[^}]*line-height:\s*1;/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\s*\{[^}]*min-height:\s*34px;[^}]*padding:\s*0 10px 0 12px;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\s*\{[^}]*min-height:\s*var\(--canvas-region-tab-height\);[^}]*padding:\s*0 10px 0 12px;/s)
     expect(styles).toMatch(
-      /\.canvas-region-top-menu\s+\.session-tab\.is-active\s*\{[^}]*background:\s*#ffffff;[^}]*border-color:\s*var\(--canvas-region-tab-border\);[^}]*z-index:\s*1;/s,
+      /\.canvas-region-top-menu\s+\.session-tab\.is-active\s*\{[^}]*background:\s*linear-gradient\(180deg,\s*#ffffff 0%,\s*#fcfdff 100%\);[^}]*border-color:\s*var\(--canvas-region-tab-border\);[^}]*box-shadow:\s*0 1px 0 #ffffff,\s*inset 0 2px 0 var\(--canvas-region-tab-active-accent\);/s,
     )
-    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\.is-active::before\s*\{[^}]*content:\s*none;/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\.is-active::after\s*\{[^}]*content:\s*none;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\.is-active::before\s*\{[^}]*content:\s*\"\";[^}]*height:\s*2px;[^}]*background:\s*var\(--canvas-region-tab-active-accent\);/s)
     expect(styles).toMatch(
-      /\.session-canvas-top-menu\s*\{[^}]*min-height:\s*auto;[^}]*margin-top:\s*0;[^}]*padding:\s*10px 0 12px;[^}]*background:\s*transparent;/s,
+      /\.session-canvas-top-menu\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;[^}]*gap:\s*12px;/s,
     )
     expect(styles).toMatch(
-      /\.session-canvas-top-menu::after\s*\{[^}]*left:\s*0;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*height:\s*1px;/s,
+      /\.session-canvas-top-menu-copy strong\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
     )
   })
 

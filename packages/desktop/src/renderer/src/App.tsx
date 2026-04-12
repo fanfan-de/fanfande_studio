@@ -42,6 +42,7 @@ export function App() {
     platform,
     rightSidebarWidth,
     sidebarWidth,
+    windowControlsRef,
   } = useDesktopShell()
 
   const {
@@ -129,7 +130,7 @@ export function App() {
 
   return (
     <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
-      <WindowChrome isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
+      <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
 
       <main ref={appShellRef} className="app-shell" style={appShellStyle}>
         {isActivityRailVisible ? (
@@ -186,7 +187,7 @@ export function App() {
               onSessionClose={handleCanvasSessionTabClose}
               onSessionSelect={handleCanvasSessionTabSelect}
               showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
-              showRightSidebarToggleButton={isRightSidebarCollapsed}
+              isRightSidebarCollapsed={isRightSidebarCollapsed}
               onToggleLeftSidebar={handleSidebarToggle}
               onToggleRightSidebar={handleRightSidebarToggle}
             />
@@ -253,7 +254,6 @@ export function App() {
               activeSession={activeSession}
               activeSessionDiff={activeSessionDiff}
               activeView={rightSidebarView}
-              onToggleSidebar={handleRightSidebarToggle}
               onViewChange={handleRightSidebarViewChange}
             />
           </>

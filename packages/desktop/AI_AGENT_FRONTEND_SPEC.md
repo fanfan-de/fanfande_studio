@@ -1,6 +1,6 @@
 # AI Agent Frontend Spec (SSOT)
 
-最后更新: 2026-04-09  
+最后更新: 2026-04-12  
 适用范围: `packages/desktop`  
 唯一事实来源: 本文档负责 `renderer` 的状态模型、交互流程和测试约束；稳定界面结构与命名已拆分到独立文档维护。
 
@@ -39,13 +39,14 @@
 ## 3. 当前产品心智模型
 
 1. `packages/desktop` 当前仍是单窗口、单主页面工作台，没有前端路由。
-2. 当前工作台由 `Titlebar + App Shell` 构成；`App Shell` 内包含可选左侧窄轨、可折叠左侧栏、Canvas、可折叠右侧 Inspector，以及覆盖式 Settings Page。
+2. 当前工作台由 `Window Controls Floating + App Shell` 构成；`App Shell` 内包含可选左侧窄轨、可折叠左侧栏、Canvas、可折叠右侧 Inspector，以及覆盖式 Settings Page。
 3. Sidebar 的主视角仍是文件夹工作区，不是 project dashboard，也不是 project-first 树。
 4. Thread 区不是纯聊天记录，而是“用户 turn + assistant trace”；如果当前会话有待审批工具调用，thread 末尾还会追加内联审批卡片。
-5. Composer 不是纯文本输入框；它同时承载附件选择、项目级模型切换和 agent mode 切换。
+5. Composer 不是纯文本输入框；它同时承载附件选择、项目级模型切换和发送动作。
 6. 右侧栏当前是 Inspector；它现在是“右侧区域 top menu + 当前右侧视图”的结构，不是 `Canvas Tool Panel`。
 7. `SettingsPage` 现在是全局 provider / model / shell appearance 设置中心，不再依赖当前选中 workspace 或 project。
-8. `Canvas` 现在有两层顶部结构：`Canvas Region Top Menu` 负责 session tabs 与边栏恢复入口，`Session Canvas Top Menu` 负责当前 session canvas 的局部操作。
+8. `Canvas` 现在有两层顶部结构：`Canvas Region Top Menu` 负责 session tabs、create-session tabs 与边栏切换入口，`Session Canvas Top Menu` 负责当前 session canvas 的局部操作。
+9. `Canvas` 底部还有一块可折叠的 terminal region；折叠态入口固定在画布左下角，展开态入口固定在 terminal tabs 最左侧。
 
 ## 4. 界面结构与命名
 
@@ -70,8 +71,9 @@
 - 折叠状态：`isSidebarCollapsed`、`isRightSidebarCollapsed`
 - resize 状态：`isSidebarResizing`、`isRightSidebarResizing`
 - 左侧窄轨：`isActivityRailVisible`
-- agent 连通性：`agentConnected`、`agentDefaultDirectory`、`titlebarCommand`
-- 交互处理器：`handleSidebarToggle()`、`handleRightSidebarToggle()`、`handleActivityRailVisibilityChange()`、`handleTitleMenu()`、`handleWindowAction()`
+- agent 连通性：`agentConnected`、`agentDefaultDirectory`
+- 窗口控制：`windowControlsRef`、`handleWindowAction()`
+- 交互处理器：`handleSidebarToggle()`、`handleRightSidebarToggle()`、`handleActivityRailVisibilityChange()`
 - 布局输出：`appShellRef`、`appShellStyle`
 
 当前真实约束：
@@ -86,12 +88,13 @@
 
 - 工作区与会话：`workspaces`、`selectedFolderID`、`expandedFolderID`、`hoveredFolderID`、`activeSessionID`
 - 区域级视图状态：`leftSidebarView`、`rightSidebarView`
-- Canvas 区域数据：`canvasSessionTabs`
+- Canvas 区域数据：`canvasSessionTabs`、`createSessionTabs`、`activeCreateSessionTabID`
+- create-session 草稿：`createSessionTitle`、`createSessionWorkspaceID`
 - thread：`conversations`、`activeTurns`、`draft`、`isSending`
 - UI session 映射：`agentSessions`
 - 侧栏操作过程：`isCreatingProject`、`isCreatingSession`、`deletingSessionID`
 - 工具审批：`activePendingPermissionRequests`、`permissionRequestActionRequestID`、`permissionRequestActionError`
-- composer：`composerAttachments`、`composerAgentMode`、`composerModelOptions`、`composerSelectedModel`、`composerSelectedModelLabel`
+- composer：`composerAttachments`、`composerModelOptions`、`composerSelectedModel`、`composerSelectedModelLabel`
 
 当前真实约束：
 
@@ -99,7 +102,7 @@
 2. `agentSessions` 维护“前端 UI session id -> backend session id”的映射。
 3. 从后端加载出来的 session 默认映射为 `session.id -> session.id`。
 4. 选中工作区的 `project.id` 会驱动 composer 模型列表；这部分是项目级，而不是全局设置页级。
-5. `composerAgentMode === "Review"` 时，发送链路会注入固定 review system prompt。
+5. `createSessionTabs` 可以和普通 session tabs 并存；激活 create-session tab 时，Canvas 会切到创建表单，而不是 thread。
 6. `composerAttachments` 会在真正提交时被附加到 prompt 文本末尾。
 7. 只要存在待审批请求，composer 发送按钮就会禁用。
 
@@ -204,12 +207,12 @@
 
 ## 7. 交互流程
 
-### 7.1 标题栏
+### 7.1 窗口控制
 
-1. 点击菜单按钮调用 `showMenu(menuKey, anchor)`，由 main 弹出原生菜单。
+1. 当前 renderer 没有独立 `Titlebar`；只渲染浮动的 `WindowChrome` 按钮组。
 2. 点击窗口按钮调用 `windowAction(action)`。
 3. 最大化状态由 main 通过 `onWindowStateChange()` 推回 renderer。
-4. 标题栏命令文案来自 `agentConnected + agentBaseURL`，格式为 `agent://...` 或 `agent://offline (...)`。
+4. `windowControlsRef` 只用于测量右上角按钮组宽度，并给 Canvas / Inspector 预留空白，不承载菜单或状态文案。
 
 ### 7.2 壳层切换与缩放
 
@@ -218,8 +221,8 @@
    - 左侧栏展开态下，折叠按钮显示在 `Left Sidebar Top Menu` 内。
    - 左侧栏折叠态下，恢复按钮显示在 `Canvas Region Top Menu` 左侧。
 3. 右侧 Inspector 没有窄轨：
-   - 展开态下，折叠按钮显示在 `Right Sidebar Top Menu` 内。
-   - 折叠态下，恢复按钮显示在 `Canvas Region Top Menu` 右侧。
+   - 展开态和折叠态都通过 `Canvas Region Top Menu` 右侧按钮切换。
+   - `Right Sidebar Top Menu` 不承载折叠/恢复按钮。
 4. 左右分隔条都支持鼠标拖拽和键盘调整，键盘交互包含 `ArrowLeft` / `ArrowRight` / `Home` / `End`。
 
 ### 7.3 侧栏动作
@@ -307,10 +310,13 @@
 当前 Canvas 顶部结构分成两层：
 
 1. `Canvas Region Top Menu`
-   - 负责渲染当前 `selectedWorkspace.sessions` 对应的 session tabs。
-   - `activeSessionID` 决定当前激活 tab。
-   - 当左侧栏或右侧 Inspector 处于折叠态时，顶部菜单会承载对应的恢复按钮。
+   - 负责渲染已打开 session tabs 与 create-session tabs。
+   - `activeSessionID + activeCreateSessionTabID` 共同决定当前激活 tab。
+   - 左侧栏在“窄轨隐藏且左栏折叠”时，恢复按钮显示在顶部菜单左侧。
+   - 右侧 Inspector 的切换按钮始终显示在顶部菜单右侧。
 2. `Session Canvas Top Menu`
+   - 只要当前不是 create-session tab 就会渲染。
+   - `activeSession` 为空时，会显示 `No session selected`。
    - 属于当前 session canvas 的局部 top menu。
    - 当前主要承载 Git quick menu。
    - 不负责切换 session，也不负责切换左右区域视图。
@@ -320,7 +326,7 @@
 1. Inspector 展开时先渲染 `Right Sidebar Top Menu`，再渲染当前激活的右侧视图。
 2. 当前唯一已实现的右侧视图是 `changes`。
 3. `changes` 视图展示 `Changed Files` 区块和 diff preview。
-4. 当前右侧 top menu 负责切换右侧视图，并承载右栏折叠按钮。
+4. 当前右侧 top menu 只负责右侧视图按钮，不承载右栏折叠按钮。
 5. 当前没有右侧窄轨。
 
 ## 8. 关键界面状态
@@ -339,9 +345,9 @@
 1. 可选的左侧窄轨。
 2. 左侧文件夹与 session。
 3. 中间当前会话 thread。
-4. 底部带模型、模式和附件能力的 composer。
+4. 底部带模型和附件能力的 composer。
 5. composer 下方可展开的 terminal panel；折叠态入口固定在 canvas 左下角，展开态入口固定在 terminal 菜单栏最左侧。
-5. 右侧 Inspector。
+6. 右侧 Inspector。
 
 ### 8.3 无会话空态
 
@@ -387,7 +393,7 @@
 用户看到：
 
 1. 左侧栏折叠后，其恢复按钮要么在左侧窄轨，要么在 `Canvas Region Top Menu` 左侧。
-2. 右侧 Inspector 折叠后，其恢复按钮在 `Canvas Region Top Menu` 右侧。
+2. 右侧 Inspector 的切换按钮始终在 `Canvas Region Top Menu` 右侧，不会移动到 Inspector header。
 3. 左右侧栏的恢复宽度会回到最近一次展开宽度，而不是固定默认值。
 
 ## 9. 约束
@@ -423,7 +429,7 @@ npm run dev
 3. 流式 SSE 增量渲染与 trace 合并：`src/renderer/src/App.test.tsx`、`src/renderer/src/app/stream.test.ts`
 4. 工具审批加载、审批提交、恢复流式执行与发送禁用：`src/renderer/src/App.test.tsx`
 5. 左右侧栏折叠、恢复、拖拽与键盘缩放：`src/renderer/src/App.test.tsx`
-6. composer 模型菜单、agent mode、附件行为：`src/renderer/src/App.test.tsx`
+6. composer 模型菜单、附件行为：`src/renderer/src/App.test.tsx`
 7. 设置页 Provider / Models / Appearance 三个分组：`src/renderer/src/App.test.tsx`
 
 建议的最低手工验收项：
@@ -442,5 +448,5 @@ npm run dev
 1. `useDesktopShell()`、`useAgentWorkspace()`、`useSettingsPage()` 的核心状态职责变化。
 2. 会话历史回放策略、流式 trace 映射规则、审批流或发送流程变化。
 3. 设置页的作用域、分组、保存链路或 Appearance 能力变化。
-4. Composer 的模型选择、附件、agent mode 行为变化。
+4. Composer 的模型选择、附件或发送禁用行为变化。
 5. `Canvas Region Top Menu`、`Session Canvas Top Menu`、Inspector、左右侧栏之间的切换关系变化。

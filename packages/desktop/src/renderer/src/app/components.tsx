@@ -46,13 +46,18 @@ import type {
 import { formatTime } from "./utils"
 
 interface WindowChromeProps {
+  controlsRef: RefObject<HTMLDivElement | null>
   isWindowMaximized: boolean
   onWindowAction: (action: WindowAction) => void
 }
 
-export function WindowChrome({ isWindowMaximized, onWindowAction }: WindowChromeProps) {
+function WindowControlsSpacer({ variant }: { variant: "canvas" | "right-sidebar" }) {
+  return <div className={`panel-toolbar-window-controls-spacer is-${variant}`} aria-hidden="true" />
+}
+
+export function WindowChrome({ controlsRef, isWindowMaximized, onWindowAction }: WindowChromeProps) {
   return (
-    <div className="window-controls-floating" role="group" aria-label="Window controls">
+    <div ref={controlsRef} className="window-controls-floating" role="group" aria-label="Window controls">
       <button className="window-control" aria-label="Minimize window" type="button" onClick={() => onWindowAction("minimize")}>
         <MinimizeIcon />
       </button>
@@ -166,14 +171,17 @@ interface SidebarProps {
   onViewChange: (view: LeftSidebarView) => void
 }
 
-interface TopMenuViewButtonProps {
+function TopMenuViewButton({
+  active,
+  children,
+  label,
+  onClick,
+}: {
   active: boolean
+  children: ReactNode
   label: string
   onClick: () => void
-  children: ReactNode
-}
-
-function TopMenuViewButton({ active, label, onClick, children }: TopMenuViewButtonProps) {
+}) {
   return (
     <button
       className={active ? "top-menu-view-button is-active" : "top-menu-view-button"}
@@ -183,7 +191,9 @@ function TopMenuViewButton({ active, label, onClick, children }: TopMenuViewButt
       type="button"
       onClick={onClick}
     >
-      {children}
+      <span className="top-menu-view-button-icon" aria-hidden="true">
+        {children}
+      </span>
     </button>
   )
 }
@@ -447,7 +457,6 @@ export function Sidebar({
 interface RightSidebarProps {
   activeSession: SessionSummary | null
   activeSessionDiff: SessionDiffSummary | null
-  onToggleSidebar: () => void
   activeView: RightSidebarView
   onViewChange: (view: RightSidebarView) => void
 }
@@ -491,7 +500,7 @@ function parsePatchHunks(patch?: string): ParsedDiffHunk[] {
       const newCount = Number(hunkMatch[4] ?? "1")
       const context = hunkMatch[5]?.trim()
       const header = context
-        ? `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)} · ${context}`
+        ? `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)} 路 ${context}`
         : `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)}`
 
       activeHunk = {
@@ -594,7 +603,6 @@ export function RightSidebar({
   activeSession,
   activeSessionDiff,
   activeView,
-  onToggleSidebar,
   onViewChange,
 }: RightSidebarProps) {
   const [expandedDiffFile, setExpandedDiffFile] = useState<string | null>(null)
@@ -606,15 +614,13 @@ export function RightSidebar({
 
   return (
     <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
-      <header className="right-sidebar-top-menu panel-toolbar">
+      <header className="right-sidebar-top-menu panel-toolbar" aria-label="Right sidebar top menu">
         <div className="right-sidebar-top-menu-tabs">
           <TopMenuViewButton active={activeView === "changes"} label="Changes" onClick={() => onViewChange("changes")}>
             <LayoutSidebarRightIcon />
           </TopMenuViewButton>
         </div>
-        <div className="right-sidebar-top-menu-actions">
-          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="right" variant="top-menu" />
-        </div>
+        <WindowControlsSpacer variant="right-sidebar" />
       </header>
 
       <div className="right-sidebar-view-host">
@@ -713,7 +719,7 @@ interface CanvasRegionTopMenuProps {
   createSessionTabs: CreateSessionTab[]
   sessions: SessionSummary[]
   showLeftSidebarToggleButton: boolean
-  showRightSidebarToggleButton: boolean
+  isRightSidebarCollapsed: boolean
   onAddCreateSessionTab: () => void
   onCloseCreateSessionTab: (tabID: string) => void
   onSelectCreateSessionTab: (tabID: string) => void
@@ -799,7 +805,7 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
     if (!message) {
       setStatus({
         tone: "error",
-        text: "请输入提交说明。",
+        text: "Enter a commit message.",
       })
       return
     }
@@ -807,7 +813,7 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
     if (!gitDirectory || !gitCommit) {
       setStatus({
         tone: "error",
-        text: "当前工作区不可用。",
+        text: "The current workspace is unavailable.",
       })
       return
     }
@@ -815,7 +821,7 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
     setPendingAction("commit")
     setStatus({
       tone: "neutral",
-      text: "正在提交...",
+      text: "Committing changes...",
     })
 
     try {
@@ -842,7 +848,7 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
     if (!gitDirectory || !gitPush) {
       setStatus({
         tone: "error",
-        text: "当前工作区不可用。",
+        text: "The current workspace is unavailable.",
       })
       return
     }
@@ -850,7 +856,7 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
     setPendingAction("push")
     setStatus({
       tone: "neutral",
-      text: "正在推送...",
+      text: "Pushing branch...",
     })
 
     try {
@@ -876,10 +882,11 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
       <button
         ref={buttonRef}
         type="button"
-        className="canvas-top-menu-button canvas-top-menu-git-trigger"
+        className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-git-trigger is-active" : "canvas-top-menu-button canvas-top-menu-git-trigger"}
         aria-controls="canvas-top-menu-git-menu"
         aria-expanded={isMenuOpen}
         aria-haspopup="dialog"
+        title="Git actions"
         onClick={() => setIsMenuOpen((current) => !current)}
       >
         Git
@@ -899,19 +906,19 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
           }}
         >
           <label className="canvas-top-menu-quick-field">
-            <span>提交说明</span>
+            <span>Commit message</span>
             <input
               ref={inputRef}
               type="text"
               value={commitMessage}
-              placeholder="输入 commit message"
+              placeholder="Enter commit message"
               onChange={(event: ChangeEvent<HTMLInputElement>) => setCommitMessage(event.target.value)}
             />
           </label>
 
           <div className="canvas-top-menu-quick-actions">
             <button type="submit" className="primary-button" disabled={!isCommitReady || pendingAction !== null}>
-              {pendingAction === "commit" ? "提交中..." : "提交"}
+              {pendingAction === "commit" ? "Committing..." : "Commit"}
             </button>
             <button
               type="button"
@@ -921,7 +928,7 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
                 void handlePush()
               }}
             >
-              {pendingAction === "push" ? "推送中..." : "推送"}
+              {pendingAction === "push" ? "Pushing..." : "Push"}
             </button>
           </div>
 
@@ -935,7 +942,10 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
               .join(" ")}
             aria-live="polite"
           >
-            {status.text || (!gitDirectory ? "当前没有可用的 Git 工作区。" : "提交会自动执行 git add -A。")}
+            {status.text ||
+              (!gitDirectory
+                ? "The current workspace does not have an available Git worktree."
+                : "Commit stages workspace changes with git add -A before creating the commit.")}
           </p>
         </form>
       ) : null}
@@ -950,7 +960,7 @@ export function CanvasRegionTopMenu({
   sessions,
   onAddCreateSessionTab,
   showLeftSidebarToggleButton,
-  showRightSidebarToggleButton,
+  isRightSidebarCollapsed,
   onCloseCreateSessionTab,
   onSelectCreateSessionTab,
   onSessionClose,
@@ -1035,11 +1045,10 @@ export function CanvasRegionTopMenu({
           </span>
         </button>
       </div>
-      <div className="canvas-region-top-menu-trailing">
-        {showRightSidebarToggleButton ? (
-          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleRightSidebar} side="right" variant="top-menu" />
-        ) : null}
+      <div className={isRightSidebarCollapsed ? "canvas-region-top-menu-trailing is-right-sidebar-collapsed" : "canvas-region-top-menu-trailing is-right-sidebar-expanded"}>
+        <SidebarToggleButton isSidebarCollapsed={isRightSidebarCollapsed} onToggleSidebar={onToggleRightSidebar} side="right" variant="top-menu" />
       </div>
+      <WindowControlsSpacer variant="canvas" />
     </nav>
   )
 }
@@ -1051,15 +1060,16 @@ interface SessionCanvasTopMenuProps {
 
 export function SessionCanvasTopMenu({ activeSession, gitDirectory }: SessionCanvasTopMenuProps) {
   return (
-    <header className="session-canvas-top-menu panel-toolbar" aria-label="Session canvas top menu">
-      <div className="panel-toolbar-copy session-canvas-top-menu-copy">
-        <span className="label">Session Canvas</span>
+    <div className="session-canvas-top-menu panel-toolbar" aria-label="Session canvas top menu">
+      <div className="session-canvas-top-menu-copy">
+        <span className="label">Session</span>
         <strong>{activeSession?.title ?? "No session selected"}</strong>
       </div>
       <div className="session-canvas-top-menu-actions">
         <GitQuickMenuButton gitDirectory={gitDirectory} />
       </div>
-    </header>
+      <WindowControlsSpacer variant="canvas" />
+    </div>
   )
 }
 
@@ -2195,7 +2205,7 @@ export function SettingsPage({
 
                           <p className="provider-card-copy">
                             <strong>{provider.id}</strong>
-                            {provider.env.length > 0 ? ` · Env ${provider.env.join(", ")}` : " · No env key required"}
+                            {provider.env.length > 0 ? ` 路 Env ${provider.env.join(", ")}` : " 路 No env key required"}
                           </p>
 
                           <div className="provider-model-strip">
@@ -2203,7 +2213,7 @@ export function SettingsPage({
                               providerModels.slice(0, 3).map((model) => (
                                 <div key={`${model.providerID}/${model.id}`} className="provider-model-chip">
                                   <strong>{model.name}</strong>
-                                  <span>{buildModelTags(model).join(" · ")}</span>
+                                  <span>{buildModelTags(model).join(" 路 ")}</span>
                                 </div>
                               ))
                             ) : (
@@ -3037,3 +3047,4 @@ export function Composer({
     </footer>
   )
 }
+
