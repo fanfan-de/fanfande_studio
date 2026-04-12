@@ -2450,47 +2450,69 @@ function buildAssistantTraceBlocks(items: AssistantTraceItem[]) {
       title: string
       items: AssistantTraceItem[]
     }[]
-  >((blocks, item) => {
-    const sectionKey = traceSectionKeyForItem(item)
-    const lastBlock = blocks[blocks.length - 1]
+  >(
+    (blocks, item) => {
+      const sectionKey = traceSectionKeyForItem(item)
+      if (sectionKey === "file-change") {
+        const fileChangeBlock = blocks.find((block) => block.sectionKey === "file-change")
+        if (fileChangeBlock) {
+          fileChangeBlock.items.push(item)
+          return blocks
+        }
 
-    if (lastBlock && lastBlock.sectionKey === sectionKey) {
-      lastBlock.items.push(item)
+        blocks.push({
+          sectionKey,
+          title: traceSectionTitle(sectionKey),
+          items: [item],
+        })
+        return blocks
+      }
+
+      const fileChangeBlockIndex = blocks.findIndex((block) => block.sectionKey === "file-change")
+      const insertIndex = fileChangeBlockIndex === -1 ? blocks.length : fileChangeBlockIndex
+      const previousBlock = blocks[insertIndex - 1]
+
+      if (previousBlock && previousBlock.sectionKey === sectionKey) {
+        previousBlock.items.push(item)
+        return blocks
+      }
+
+      blocks.splice(insertIndex, 0, {
+        sectionKey,
+        title: traceSectionTitle(sectionKey),
+        items: [item],
+      })
       return blocks
-    }
+    },
+    [],
+  )
+}
 
-    blocks.push({
-      sectionKey,
-      title: traceSectionTitle(sectionKey),
-      items: [item],
-    })
+function filterRenderedAssistantTraceItems(items: AssistantTraceItem[], showFileChanges: boolean) {
+  if (showFileChanges) return items
 
-    return blocks
-  }, [])
+  return items.filter((item) => traceSectionKeyForItem(item) !== "file-change")
+}
+
+function summarizeFileChangeItems(items: AssistantTraceItem[]) {
+  const latestPatch = [...items].reverse().find((item) => item.kind === "patch")
+  if (latestPatch) return [latestPatch]
+
+  const latestItem = items[items.length - 1]
+  return latestItem ? [latestItem] : []
 }
 
 function AssistantTraceSection({
   children,
-  sectionIndex,
   sectionKey,
   title,
-  turnID,
 }: {
   children: ReactNode
-  sectionIndex: number
   sectionKey: AssistantTraceSectionKey
   title: string
-  turnID: string
 }) {
-  const titleID = `${turnID}-${sectionKey}-${sectionIndex}-title`
-
   return (
-    <section className={`assistant-section is-${sectionKey}`} role="region" aria-labelledby={titleID}>
-      <header className="assistant-section-header">
-        <span id={titleID} className="label assistant-section-label">
-          {title}
-        </span>
-      </header>
+    <section className={`assistant-section is-${sectionKey}`} role="region" aria-label={title}>
       <div className="assistant-section-body">{children}</div>
     </section>
   )
@@ -2498,38 +2520,42 @@ function AssistantTraceSection({
 
 function AssistantTurnSections({
   items,
+  showFileChanges,
   turnID,
 }: {
   items: AssistantTraceItem[]
+  showFileChanges: boolean
   turnID: string
 }) {
-  const blocks = buildAssistantTraceBlocks(items)
+  const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges))
 
   return (
     <>
-      {blocks.map((block, index) => (
-        <AssistantTraceSection
-          key={`${turnID}-${block.sectionKey}-${index}`}
-          sectionIndex={index}
-          sectionKey={block.sectionKey}
-          title={block.title}
-          turnID={turnID}
-        >
-          <div
-            className={
-              block.sectionKey === "response"
-                ? "assistant-response-stack"
-                : block.sectionKey === "file-change"
-                  ? "assistant-file-change-stack"
-                  : "assistant-section-list"
-            }
+      {blocks.map((block, index) => {
+        const renderedItems = block.sectionKey === "file-change" ? summarizeFileChangeItems(block.items) : block.items
+
+        return (
+          <AssistantTraceSection
+            key={`${turnID}-${block.sectionKey}-${index}`}
+            sectionKey={block.sectionKey}
+            title={block.title}
           >
-            {block.items.map((item) => (
-              <TraceItemView key={item.id} item={item} />
-            ))}
-          </div>
-        </AssistantTraceSection>
-      ))}
+            <div
+              className={
+                block.sectionKey === "response"
+                  ? "assistant-response-stack"
+                  : block.sectionKey === "file-change"
+                    ? "assistant-file-change-stack"
+                    : "assistant-section-list"
+              }
+            >
+              {renderedItems.map((item) => (
+                <TraceItemView key={item.id} item={item} />
+              ))}
+            </div>
+          </AssistantTraceSection>
+        )
+      })}
     </>
   )
 }
@@ -2797,6 +2823,33 @@ function PermissionRequestInlinePrompt({
   )
 }
 
+function findAssistantCycleBounds(turns: Turn[], assistantTurnIndex: number) {
+  let startIndex = assistantTurnIndex
+  while (startIndex > 0 && turns[startIndex - 1]?.kind === "assistant") {
+    startIndex -= 1
+  }
+
+  let endIndex = assistantTurnIndex
+  while (endIndex + 1 < turns.length && turns[endIndex + 1]?.kind === "assistant") {
+    endIndex += 1
+  }
+
+  return { startIndex, endIndex }
+}
+
+function collectAssistantCycleFileChangeItems(turns: Turn[], startIndex: number, endIndex: number) {
+  const items: AssistantTraceItem[] = []
+
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    const turn = turns[index]
+    if (!turn || turn.kind !== "assistant") continue
+
+    items.push(...turn.items.filter((item) => item.kind !== "system" && isFileChangeTraceItem(item)))
+  }
+
+  return items
+}
+
 export function ThreadView({
   activeSession,
   activeTurns,
@@ -2837,7 +2890,7 @@ export function ThreadView({
           </article>
         ) : (
           <>
-            {activeTurns.map((turn) => {
+            {activeTurns.map((turn, turnIndex) => {
               if (turn.kind === "user") {
                 return (
                   <article key={turn.id} className="turn user-turn">
@@ -2850,13 +2903,25 @@ export function ThreadView({
                 )
               }
 
-              const visibleItems = turn.items.filter((item) => item.kind !== "system")
+              const { startIndex, endIndex } = findAssistantCycleBounds(activeTurns, turnIndex)
+              const isCycleFinalTurn = turnIndex === endIndex
+              const cycleFileChangeItems = isCycleFinalTurn
+                ? collectAssistantCycleFileChangeItems(activeTurns, startIndex, endIndex)
+                : []
+              const visibleItems = [
+                ...turn.items.filter((item) => item.kind !== "system" && !isFileChangeTraceItem(item)),
+                ...cycleFileChangeItems,
+              ]
               if (visibleItems.length === 0) return null
 
               return (
                 <article key={turn.id} className="turn assistant-turn">
                   <div className={turn.isStreaming ? "assistant-shell is-sectioned is-streaming" : "assistant-shell is-sectioned"}>
-                    <AssistantTurnSections turnID={turn.id} items={visibleItems} />
+                    <AssistantTurnSections
+                      turnID={turn.id}
+                      items={visibleItems}
+                      showFileChanges={isCycleFinalTurn && !turn.isStreaming}
+                    />
                   </div>
                 </article>
               )

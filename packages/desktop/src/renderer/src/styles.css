@@ -2855,8 +2855,10 @@ textarea::placeholder {
 }
 
 .assistant-shell.is-sectioned {
+  border: 0;
   padding: 0;
   background: transparent;
+  box-shadow: none;
   gap: 12px;
 }
 
@@ -2886,8 +2888,20 @@ textarea::placeholder {
   gap: 12px;
 }
 
+.assistant-section.is-reasoning,
+.assistant-section.is-response,
+.assistant-section.is-tools {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
 .assistant-section.is-reasoning {
-  background: #fbfcfe;
+  gap: 10px;
+}
+
+.assistant-section.is-tools {
+  gap: 10px;
 }
 
 .assistant-section.is-file-change {
