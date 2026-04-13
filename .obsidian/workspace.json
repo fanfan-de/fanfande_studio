@@ -53,13 +53,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/desktop/桌面端界面结构与命名.md",
+                "file": "TODO/打通github自动发布workflow.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "桌面端界面结构与命名"
+              "title": "打通github自动发布workflow"
             }
           }
         ],
@@ -245,6 +245,8 @@
   },
   "active": "6c65c165cfa3234f",
   "lastOpenFiles": [
+    "packages/desktop/桌面端界面结构与命名.md",
+    "TODO/打通github自动发布workflow.md",
     "未命名 3.md",
     "packages/fanfandeagent/src/tool/read-skill-resource.ts",
     "packages/fanfandeagent/src/tool/load-skill.ts",
@@ -272,7 +274,6 @@
     "TODO",
     "packages/desktop/electron.vite.config.1776074211174.mjs",
     "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
-    "packages/desktop/桌面端界面结构与命名.md",
     "daily/2026-04-12.md",
     "daily/2026-04-13.md",
     "packages/fanfandeagent/docs/skills-mcp-architecture.zh.md",
