@@ -1,4 +1,5 @@
 import * as testobject from "./testobject.test"
+import "./sqlite.cleanup.ts"
 import { prompt } from "#session/prompt.ts"
 import { test, expect, mock } from "bun:test"
 import * as Session from "#session/session.ts"

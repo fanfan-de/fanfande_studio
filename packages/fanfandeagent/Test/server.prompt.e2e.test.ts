@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import "./sqlite.cleanup.ts"
 import { createServerApp } from "#server/server.ts"
 
 interface SSEEvent {
@@ -87,4 +88,3 @@ test("api e2e: create and send message with streaming assistant response", async
   const doneData = done?.data as { message?: { role?: string } } | undefined
   expect(doneData?.message?.role).toBe("assistant")
 }, 240000)
-

@@ -15,6 +15,23 @@ import * as Session from "#session/session.ts"
 import * as Schema from "#permission/schema.ts"
 
 const log = Log.create({ service: "permission" })
+let permissionTablesGeneration = -1
+
+function ensurePermissionTables() {
+  const generation = db.getDatabaseGeneration()
+  if (permissionTablesGeneration === generation && generation > 0) return
+  if (!db.tableExists("permission_rules")) {
+    db.createTableByZodObject("permission_rules", Schema.Rule)
+  }
+  if (!db.tableExists("permission_requests")) {
+    db.createTableByZodObject("permission_requests", Schema.Request)
+  }
+  db.syncTableColumnsWithZodObject("permission_requests", Schema.Request)
+  if (!db.tableExists("permission_audits")) {
+    db.createTableByZodObject("permission_audits", Schema.Audit)
+  }
+  permissionTablesGeneration = db.getDatabaseGeneration()
+}
 
 export {
   Action,
@@ -80,17 +97,6 @@ export type EvaluationResult = {
 type RequestFilters = {
   status?: Schema.RequestStatus
   sessionID?: string
-}
-
-if (!db.tableExists("permission_rules")) {
-  db.createTableByZodObject("permission_rules", Schema.Rule)
-}
-if (!db.tableExists("permission_requests")) {
-  db.createTableByZodObject("permission_requests", Schema.Request)
-}
-db.syncTableColumnsWithZodObject("permission_requests", Schema.Request)
-if (!db.tableExists("permission_audits")) {
-  db.createTableByZodObject("permission_audits", Schema.Audit)
 }
 
 const DEFAULT_SCOPE_PRIORITY: Record<Schema.RuleScope | "default", number> = {
@@ -453,6 +459,7 @@ function ruleMatches(rule: Rule, input: EvaluationInput, derived: EvaluationResu
 }
 
 async function loadRuleSet(projectID: string) {
+  ensurePermissionTables()
   const [globalConfig, projectConfig] = await Promise.all([
     Config.get(Config.GLOBAL_CONFIG_ID),
     Config.get(projectID),
@@ -516,6 +523,7 @@ function chooseMatchingRule(matches: Rule[]) {
 }
 
 async function audit(input: EvaluationInput, decision: EvaluationResult) {
+  ensurePermissionTables()
   const record = Schema.Audit.parse({
     id: Identifier.ascending("permission"),
     sessionID: input.sessionID,
@@ -536,6 +544,7 @@ async function audit(input: EvaluationInput, decision: EvaluationResult) {
 }
 
 export async function evaluate(input: EvaluationInput): Promise<EvaluationResult> {
+  ensurePermissionTables()
   const command = typeof input.input.command === "string" ? input.input.command.trim() : undefined
   const cwd = input.cwd ?? Instance.directory
   const worktree = input.worktree ?? Instance.worktree
@@ -649,12 +658,14 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
 }
 
 export async function listRules() {
+  ensurePermissionTables()
   return db.findManyWithSchema("permission_rules", Schema.Rule, {
     orderBy: [{ column: "createdAt", direction: "DESC" }],
   })
 }
 
 export async function createRule(input: Schema.RuleInput) {
+  ensurePermissionTables()
   const now = Date.now()
   const record = Schema.Rule.parse({
     id: Identifier.ascending("permission"),
@@ -670,6 +681,7 @@ export async function createRule(input: Schema.RuleInput) {
 }
 
 export async function deleteRule(id: string) {
+  ensurePermissionTables()
   const existing = db.findById("permission_rules", Schema.Rule, id)
   if (!existing) return null
   db.deleteById("permission_rules", id)
@@ -677,6 +689,7 @@ export async function deleteRule(id: string) {
 }
 
 export async function listRequests(filters: RequestFilters = {}) {
+  ensurePermissionTables()
   const where: { column: string; value: string }[] = []
   if (filters.status) where.push({ column: "status", value: filters.status })
   if (filters.sessionID) where.push({ column: "sessionID", value: filters.sessionID })
@@ -692,6 +705,7 @@ export async function listRequestPrompts(filters: RequestFilters = {}) {
 }
 
 export async function getRequest(id: string) {
+  ensurePermissionTables()
   return db.findById("permission_requests", Schema.Request, id)
 }
 
@@ -740,6 +754,7 @@ export async function registerApprovalRequest(input: {
   assistant: Message.Assistant
   toolPart: Message.ToolPart
 }) {
+  ensurePermissionTables()
   if (input.toolPart.state.status !== "waiting-approval") {
     throw new Error("Tool part must be in waiting-approval state before creating an approval request.")
   }
@@ -921,6 +936,7 @@ function approvalRuleFromRequest(request: Request, resolution: Schema.RequestRes
 }
 
 function findToolPart(sessionID: string, toolCallID: string) {
+  ensurePermissionTables()
   const parts = db.findManyWithSchema("parts", Message.Part, {
     where: [{ column: "sessionID", value: sessionID }],
     orderBy: [{ column: "id", direction: "ASC" }],
@@ -1051,6 +1067,7 @@ async function denyApprovedRequest(request: Request) {
 }
 
 export async function resolveRequest(id: string, resolution: Schema.RequestResolution) {
+  ensurePermissionTables()
   const existing = await getRequest(id)
   if (!existing) {
     throw new Error(`Permission request '${id}' was not found.`)

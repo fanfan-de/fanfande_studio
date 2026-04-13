@@ -13,6 +13,16 @@ import { existsSync } from "fs"
 import * as Session from "#session/session.ts"
 
 const log = Log.create({ service: "project" })
+let projectTableGeneration = -1
+
+function ensureProjectTable() {
+  const generation = db.getDatabaseGeneration()
+  if (projectTableGeneration === generation && generation > 0) return
+  if (!db.tableExists("projects")) {
+    db.createTableByZodObject("projects", ProjectInfo)
+  }
+  projectTableGeneration = db.getDatabaseGeneration()
+}
 
 export const ProjectInfo = z
   .object({
@@ -289,6 +299,7 @@ async function resolveProjectIdentity(directory: string) {
 }
 
 export async function fromDirectory(directory: string): Promise<{ project: ProjectInfo; sandbox: string }> {
+  ensureProjectTable()
   log.info("fromDirectory", { directory })
 
   const resolved = await resolveProjectIdentity(directory)
@@ -313,6 +324,7 @@ export async function fromDirectory(directory: string): Promise<{ project: Proje
 }
 
 export async function setInitialized(projectID: string) {
+  ensureProjectTable()
   db.updateById("projects", projectID, {
     initialized: Date.now(),
   })
@@ -339,6 +351,7 @@ async function repairProjects() {
 }
 
 export async function list() {
+  ensureProjectTable()
   await repairProjects()
 
   const projects = db.findMany("projects", ProjectInfo)
@@ -363,6 +376,7 @@ export async function list() {
 }
 
 export function get(id: string): ProjectInfo | undefined {
+  ensureProjectTable()
   const row = db.findById("projects", ProjectInfo, id)
   return row ?? undefined
 }
@@ -374,6 +388,7 @@ export const update = fn(
     icon: ProjectInfo.shape.icon.optional(),
   }),
   async (input) => {
+    ensureProjectTable()
     db.updateById("projects", input.projectID, {
       name: input.name ? input.name : null,
       icon: input.icon ? input.icon : null,
@@ -394,6 +409,7 @@ export const update = fn(
 )
 
 export async function sandboxes(projectID: string) {
+  ensureProjectTable()
   const project = db.findById("projects", ProjectInfo, projectID)
   if (!project?.sandboxes) return []
 
@@ -406,6 +422,3 @@ export async function sandboxes(projectID: string) {
   return valid
 }
 
-if (!db.tableExists("projects")) {
-  db.createTableByZodObject("projects", ProjectInfo)
-}

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import "./sqlite.cleanup.ts"
 import { cancel, state } from "#session/prompt.ts"
 
 test("cancel can run without a project async context", () => {

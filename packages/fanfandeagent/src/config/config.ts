@@ -449,12 +449,20 @@ function projectProviderConfigFromInfo(config: Info): ProjectProviderConfig {
   }
 }
 
-function createProjectConfigTable() {
-  if (db.tableExists("project_configs")) return
+let projectConfigTableGeneration = -1
+
+function ensureProjectConfigTable() {
+  const generation = db.getDatabaseGeneration()
+  if (projectConfigTableGeneration === generation && generation > 0) return
+  if (db.tableExists("project_configs")) {
+    projectConfigTableGeneration = db.getDatabaseGeneration()
+    return
+  }
 
   const columns = zodObjectToColumnDefs(ProjectConfigRecord)
   columns.projectID = withPrimaryKey(columns.projectID)
   db.db.run(toCreateTableSQL("project_configs", columns))
+  projectConfigTableGeneration = db.getDatabaseGeneration()
 }
 
 function normalizeMcpServer(config: McpServerConfig): McpServerSummary {
@@ -484,8 +492,6 @@ function normalizeMcpServer(config: McpServerConfig): McpServerSummary {
     enabled: stdio.enabled ?? true,
   }
 }
-
-createProjectConfigTable()
 
 function normalizeConfigID(configID: string | undefined) {
   const trimmed = configID?.trim()
@@ -521,11 +527,13 @@ function normalizeSkillIDs(skillIDs: string[]) {
 }
 
 function readConfig(configID: string): Info {
+  ensureProjectConfigTable()
   const row = db.findById("project_configs", ProjectConfigRecord, configID, "projectID")
   return row?.config ?? {}
 }
 
 function writeConfig(configID: string, config: Info) {
+  ensureProjectConfigTable()
   db.upsert(
     "project_configs",
     {

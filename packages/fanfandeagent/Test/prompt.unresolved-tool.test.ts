@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test"
+import "./sqlite.cleanup.ts"
 import * as Identifier from "#id/id.ts"
 import { Instance } from "#project/instance.ts"
 

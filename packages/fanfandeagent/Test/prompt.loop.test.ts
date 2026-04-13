@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test"
+import "./sqlite.cleanup.ts"
 import { Instance } from "#project/instance.ts"
 
 describe("prompt loop concurrency", () => {

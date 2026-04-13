@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import "./sqlite.cleanup.ts"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { Instance } from "#project/instance.ts"

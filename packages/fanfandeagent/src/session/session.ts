@@ -64,22 +64,30 @@ const TableSchemaMap = {
 } as const
 
 const log = Log.create({ service: "session" })
+let sessionTablesGeneration = -1
 
-if (!db.tableExists("sessions")) {
-  db.createTableByZodObject("sessions", SessionInfo)
-}
-if (!db.tableExists("messages")) {
-  db.createTableByZodDiscriminatedUnion("messages", Message.MessageInfo)
-}
-if (!db.tableExists("parts")) {
-  db.createTableByZodDiscriminatedUnion("parts", Message.Part)
+function ensureSessionTables() {
+  const generation = db.getDatabaseGeneration()
+  if (sessionTablesGeneration === generation && generation > 0) return
+  if (!db.tableExists("sessions")) {
+    db.createTableByZodObject("sessions", SessionInfo)
+  }
+  if (!db.tableExists("messages")) {
+    db.createTableByZodDiscriminatedUnion("messages", Message.MessageInfo)
+  }
+  if (!db.tableExists("parts")) {
+    db.createTableByZodDiscriminatedUnion("parts", Message.Part)
+  }
+  sessionTablesGeneration = db.getDatabaseGeneration()
 }
 
 function DataBaseCreate<T extends Exclude<TableName, "projects">>(tableName: T, tableRecord: TableRecordMap[T]): void {
+  ensureSessionTables()
   db.insertOneWithSchema(tableName, tableRecord, TableSchemaMap[tableName])
 }
 
 function DataBaseRead<T extends Exclude<TableName, "projects">>(tableName: T, id: string) {
+  ensureSessionTables()
   const result = db.findById(tableName, TableSchemaMap[tableName], id)
   if (!result) return null
   return TableSchemaMap[tableName].parse(result)
@@ -144,6 +152,7 @@ async function createSession(input: {
 }
 
 function listByProject(projectID: string): SessionInfo[] {
+  ensureSessionTables()
   return db
     .findManyWithSchema("sessions", SessionInfo, {
       where: [{ column: "projectID", value: projectID }],
@@ -152,6 +161,7 @@ function listByProject(projectID: string): SessionInfo[] {
 }
 
 function removeSession(sessionID: string): SessionInfo | null {
+  ensureSessionTables()
   const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
   if (!existing) return null
 
@@ -172,6 +182,7 @@ function removeProjectSessions(projectID: string): SessionInfo[] {
 }
 
 const updateMessage = fn(Message.MessageInfo, async (msg) => {
+  ensureSessionTables()
   const existing = db.findById("messages", Message.MessageInfo, msg.id)
   if (existing) {
     db.updateByIdWithSchema("messages", msg.id, msg, Message.MessageInfo)
@@ -182,6 +193,7 @@ const updateMessage = fn(Message.MessageInfo, async (msg) => {
 })
 
 const updatePart = fn(Message.Part, async (part) => {
+  ensureSessionTables()
   const existing = db.findById("parts", Message.Part, part.id)
   if (existing) {
     db.updateByIdWithSchema("parts", part.id, part, Message.Part)

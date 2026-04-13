@@ -7,7 +7,8 @@ import type { SQLiteColumnDef } from "./parser"
 
 
 // #region Constants ──────────────────────────────────────
-const DATABASE_FILE = "agent_local_data.db";
+const DEFAULT_DATABASE_FILE = "agent_local_data.db";
+const DATABASE_FILE_ENV = "FanFande_DATABASE_FILE";
 // #endregion
 
 // #region Types & Interfaces ─────────────────────────────
@@ -40,7 +41,107 @@ interface QueryOptions {
 
 
 // #region Core Logic ─────────────────────────────────────
-export const db = new Database(DATABASE_FILE, { create: true });
+let activeDatabase: Database | undefined
+let activeDatabaseFile: string | undefined
+let activeDatabaseGeneration = 0
+let lifecycleHooksRegistered = false
+
+function resolveDatabaseFile() {
+  const configured = process.env[DATABASE_FILE_ENV]?.trim()
+  return configured && configured.length > 0 ? configured : DEFAULT_DATABASE_FILE
+}
+
+function configureDatabase(database: Database) {
+  // Keep write performance while still enforcing foreign keys per connection.
+  database.run("PRAGMA journal_mode = WAL;")
+  database.run("PRAGMA synchronous = NORMAL;")
+  database.run("PRAGMA foreign_keys = ON;")
+}
+
+function registerLifecycleHooks() {
+  if (lifecycleHooksRegistered) return
+  lifecycleHooksRegistered = true
+
+  process.on("beforeExit", () => {
+    closeDatabase()
+  })
+  process.on("exit", () => {
+    closeDatabase()
+  })
+}
+
+function openDatabase(databaseFile: string) {
+  const database = new Database(databaseFile, { create: true })
+  configureDatabase(database)
+  activeDatabase = database
+  activeDatabaseFile = databaseFile
+  activeDatabaseGeneration += 1
+  registerLifecycleHooks()
+  return database
+}
+
+export function getDatabase() {
+  const databaseFile = resolveDatabaseFile()
+  if (activeDatabase && activeDatabaseFile === databaseFile) {
+    return activeDatabase
+  }
+
+  if (activeDatabase) {
+    closeDatabase()
+  }
+
+  return openDatabase(databaseFile)
+}
+
+export function closeDatabase() {
+  if (!activeDatabase) return
+
+  const database = activeDatabase
+  activeDatabase = undefined
+  activeDatabaseFile = undefined
+  activeDatabaseGeneration += 1
+
+  try {
+    database.run("PRAGMA wal_checkpoint(TRUNCATE);")
+  } catch {
+    // Ignore checkpoint failures during teardown.
+  }
+
+  try {
+    database.close()
+  } catch {
+    // Ignore close failures so teardown stays idempotent.
+  }
+}
+
+export function setDatabaseFile(databaseFile?: string) {
+  const next = databaseFile?.trim()
+  if (next) {
+    process.env[DATABASE_FILE_ENV] = next
+  } else {
+    delete process.env[DATABASE_FILE_ENV]
+  }
+
+  if (activeDatabase && activeDatabaseFile !== resolveDatabaseFile()) {
+    closeDatabase()
+  }
+}
+
+export function getDatabaseGeneration() {
+  return activeDatabaseGeneration
+}
+
+export const db = new Proxy({} as Database, {
+  get(_target, prop) {
+    const database = getDatabase()
+    const value = Reflect.get(database as object, prop, database)
+    return typeof value === "function" ? value.bind(database) : value
+  },
+  set(_target, prop, value) {
+    const database = getDatabase()
+    return Reflect.set(database as object, prop, value, database)
+  },
+}) as Database
 // 性能优化 PRAGMA
 db.run("PRAGMA journal_mode = WAL;"); // WAL 模式：并发读写性能大幅提升
 db.run("PRAGMA synchronous = NORMAL;"); // 降低同步级别，在 WAL 模式下依然安全
@@ -1155,4 +1256,3 @@ export {
 }
 
 // #endregion
-

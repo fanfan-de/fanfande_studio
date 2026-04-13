@@ -1,4 +1,5 @@
 import { test, expect, beforeEach, afterEach } from "bun:test"
+import "./sqlite.cleanup.ts"
 import * as Sqlite from "#database/Sqlite.ts"
 import * as Parser from "#database/parser.ts"
 import { z } from "zod"

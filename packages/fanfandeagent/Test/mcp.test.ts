@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import "./sqlite.cleanup.ts"
 import { $ } from "bun"
 import { once } from "node:events"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
