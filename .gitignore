@@ -9,3 +9,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+
+# Local Obsidian workspace state
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
