@@ -169,3 +169,6 @@ pnpm dist
 3. `packages/fanfandeagent/src/server/server.ts`
 4. `packages/fanfandeagent/src/session/`
 
+## License
+
+This project is licensed under the MIT License. See [LICENSE](./LICENSE) for details.

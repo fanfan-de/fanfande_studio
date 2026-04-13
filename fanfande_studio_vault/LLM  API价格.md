@@ -1,4 +1,4 @@
-deepseek
+epseek
 ![[Pasted image 20260128111103.png]]
 qwen
 ![[Pasted image 20260128111119.png]]
