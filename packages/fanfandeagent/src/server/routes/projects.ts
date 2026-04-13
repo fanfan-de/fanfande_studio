@@ -6,6 +6,8 @@ import * as Session from "#session/session.ts"
 import * as Config from "#config/config.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
+import * as Mcp from "#mcp/manager.ts"
+import { Instance } from "#project/instance.ts"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
 
@@ -18,9 +20,9 @@ const CreateProjectSessionBody = z.object({
   title: z.string().min(1).optional(),
 })
 
-const UpdateMcpServerBody = Config.McpServerConfig.omit({
-  id: true,
-})
+const UpdateMcpServerBody = Config.McpServerInput
+const UpdateProjectSkillSelectionBody = Config.ProjectSkillSelection
+const UpdateProjectMcpSelectionBody = Config.ProjectMcpSelection
 
 function safeReadProject(projectID: string) {
   const project = Project.get(projectID)
@@ -272,13 +274,102 @@ export function ProjectRoutes() {
     })
   })
 
+  app.get("/:id/skills/selection", async (c) => {
+    const id = c.req.param("id")
+    const project = safeReadProject(id)
+
+    return c.json({
+      success: true,
+      data: {
+        skillIDs: await Skill.resolveSelectedSkillIDs(project.worktree, await Config.getSelectedSkillIDs(id)),
+      },
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.put("/:id/skills/selection", async (c) => {
+    const id = c.req.param("id")
+    const project = safeReadProject(id)
+
+    const payload = UpdateProjectSkillSelectionBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must contain a 'skillIDs' string array")
+    }
+
+    const skillIDs = await Skill.resolveSelectedSkillIDs(project.worktree, payload.data.skillIDs)
+    const config = await Config.setSelectedSkillIDs(id, skillIDs)
+
+    return c.json({
+      success: true,
+      data: {
+        skillIDs: config.selected_skills ?? [],
+      },
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/:id/mcp/selection", async (c) => {
+    const id = c.req.param("id")
+    safeReadProject(id)
+
+    return c.json({
+      success: true,
+      data: {
+        serverIDs: await Config.getSelectedMcpServerIDs(id),
+      },
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.put("/:id/mcp/selection", async (c) => {
+    const id = c.req.param("id")
+    safeReadProject(id)
+
+    const payload = UpdateProjectMcpSelectionBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must contain a 'serverIDs' string array")
+    }
+
+    const config = await Config.setSelectedMcpServerIDs(id, payload.data.serverIDs)
+
+    return c.json({
+      success: true,
+      data: {
+        serverIDs: config.selected_mcp_servers ?? [],
+      },
+      requestId: c.get("requestId"),
+    })
+  })
+
   app.get("/:id/mcp/servers", async (c) => {
     const id = c.req.param("id")
     safeReadProject(id)
 
     return c.json({
       success: true,
-      data: await Config.listMcpServers(id),
+      data: await Config.resolveProjectMcpServers(id),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/:id/mcp/servers/:serverID/diagnostic", async (c) => {
+    const id = c.req.param("id")
+    const serverID = c.req.param("serverID")
+    const project = safeReadProject(id)
+
+    const server = await Config.getProjectMcpServer(id, serverID)
+    if (!server) {
+      throw new ApiError(404, "MCP_SERVER_NOT_FOUND", `MCP server '${serverID}' is not available for project '${id}'`)
+    }
+
+    const diagnostic = await Instance.provide({
+      directory: project.worktree,
+      fn: async () => await Mcp.diagnose(serverID),
+    })
+
+    return c.json({
+      success: true,
+      data: diagnostic,
       requestId: c.get("requestId"),
     })
   })
@@ -290,7 +381,7 @@ export function ProjectRoutes() {
 
     const payload = UpdateMcpServerBody.safeParse(await c.req.json().catch(() => undefined))
     if (!payload.success) {
-      throw new ApiError(400, "INVALID_PAYLOAD", "Body must be a valid MCP stdio server configuration")
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must be a valid MCP server configuration")
     }
 
     const server = await Config.setMcpServer(id, serverID, payload.data)

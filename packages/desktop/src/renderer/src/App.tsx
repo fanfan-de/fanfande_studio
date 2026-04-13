@@ -1,9 +1,11 @@
 import { memo } from "react"
 import {
   ActivityRail,
+  CanvasRegionUtilityMenu,
   CanvasRegionTopMenu,
   Composer,
   CreateSessionCanvas,
+  GlobalSkillsCanvas,
   RightSidebar,
   SessionCanvasTopMenu,
   SettingsPage,
@@ -17,6 +19,7 @@ import { TerminalPanelToggleButton } from "./app/terminal/TerminalPanelToggleBut
 import { useTerminalWorkspace } from "./app/terminal/use-terminal-workspace"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
+import { useGlobalSkills } from "./app/use-global-skills"
 import { useSettingsPage } from "./app/use-settings-page"
 
 export function App() {
@@ -53,7 +56,10 @@ export function App() {
     activeTurns,
     canvasSessionTabs,
     composerAttachments,
+    composerMcpOptions,
     composerModelOptions,
+    composerSelectedMcpLabel,
+    composerSelectedMcpServerIDs,
     composerSkillOptions,
     composerSelectedModel,
     composerSelectedModelLabel,
@@ -68,6 +74,7 @@ export function App() {
     handleCanvasSessionTabClose,
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
+    handleComposerMcpToggle,
     handleComposerModelChange,
     handleComposerSkillToggle,
     handleCloseCreateSessionTab,
@@ -97,6 +104,8 @@ export function App() {
     permissionRequestActionError,
     permissionRequestActionRequestID,
     projectRowRefs,
+    refreshComposerMcp,
+    refreshComposerSkills,
     rightSidebarView,
     selectedWorkspace,
     selectedFolderID,
@@ -111,7 +120,44 @@ export function App() {
   })
 
   const {
+    creatingGlobalSkillName,
+    deletingGlobalSkillDirectory,
+    expandedSkillPaths,
+    globalSkillsMessage,
+    globalSkillsRoot,
+    globalSkillsTree,
+    handleCreateGlobalSkill,
+    handleCreateGlobalSkillDraftCancel,
+    handleCreateGlobalSkillDraftChange,
+    handleCreateGlobalSkillDraftStart,
+    handleDeleteGlobalSkill,
+    handleGlobalSkillDirectoryToggle,
+    handleGlobalSkillDraftChange,
+    handleGlobalSkillFileSelect,
+    handleRenameGlobalSkill,
+    handleRenameGlobalSkillDraftCancel,
+    handleRenameGlobalSkillDraftChange,
+    handleRenameGlobalSkillDraftStart,
+    handleSaveGlobalSkillFile,
+    isCreateGlobalSkillDraftVisible,
+    isCreatingGlobalSkill,
+    isDirtyGlobalSkillFile,
+    isLoadingGlobalSkillFile,
+    isLoadingGlobalSkillsTree,
+    isSavingGlobalSkillFile,
+    renamingGlobalSkillDirectory,
+    renamingGlobalSkillDraftDirectory,
+    renamingGlobalSkillName,
+    selectedGlobalSkillDirectory,
+    selectedGlobalSkillFileContent,
+    selectedGlobalSkillFilePath,
+  } = useGlobalSkills({
+    onSkillsUpdated: refreshComposerSkills,
+  })
+
+  const {
     activeMcpServerID,
+    activeMcpServerDiagnostic,
     catalog,
     closeSettings,
     deleteMcpServer,
@@ -144,6 +190,7 @@ export function App() {
     setSelectionDraftValue,
     startNewMcpServer,
   } = useSettingsPage({
+    onMcpUpdated: refreshComposerMcp,
     projectID: selectedWorkspace?.project.id ?? null,
     projectName: selectedWorkspace?.project.name ?? null,
     projectWorktree: selectedWorkspace?.project.worktree ?? null,
@@ -163,16 +210,39 @@ export function App() {
             <Sidebar
               activeSessionID={activeSession?.id ?? null}
               activeView={leftSidebarView}
+              deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
               deletingSessionID={deletingSessionID}
               expandedFolderID={expandedFolderID}
+              expandedSkillPaths={expandedSkillPaths}
+              creatingGlobalSkillName={creatingGlobalSkillName}
+              globalSkillsRoot={globalSkillsRoot}
+              globalSkillsTree={globalSkillsTree}
               hoveredFolderID={hoveredFolderID}
+              isCreateGlobalSkillDraftVisible={isCreateGlobalSkillDraftVisible}
+              isCreatingGlobalSkill={isCreatingGlobalSkill}
               isCreatingProject={isCreatingProject}
               isCreatingSession={isCreatingSession}
+              isLoadingSkillsTree={isLoadingGlobalSkillsTree}
               isSettingsOpen={isOpen}
+              renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
+              renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
+              renamingGlobalSkillName={renamingGlobalSkillName}
+              selectedGlobalSkillFilePath={selectedGlobalSkillFilePath}
               showSidebarToggleButton={!isActivityRailVisible}
               projectRowRefs={projectRowRefs}
               selectedFolderID={selectedFolderID}
               workspaces={workspaces}
+              onCreateGlobalSkill={handleCreateGlobalSkill}
+              onCreateGlobalSkillDraftCancel={handleCreateGlobalSkillDraftCancel}
+              onCreateGlobalSkillDraftChange={handleCreateGlobalSkillDraftChange}
+              onCreateGlobalSkillDraftStart={handleCreateGlobalSkillDraftStart}
+              onDeleteGlobalSkill={handleDeleteGlobalSkill}
+              onGlobalSkillDirectoryToggle={handleGlobalSkillDirectoryToggle}
+              onGlobalSkillFileSelect={handleGlobalSkillFileSelect}
+              onRenameGlobalSkill={handleRenameGlobalSkill}
+              onRenameGlobalSkillDraftCancel={handleRenameGlobalSkillDraftCancel}
+              onRenameGlobalSkillDraftChange={handleRenameGlobalSkillDraftChange}
+              onRenameGlobalSkillDraftStart={handleRenameGlobalSkillDraftStart}
               onHoveredFolderChange={setHoveredFolderID}
               onOpenSettings={openSettings}
               onProjectCreateSession={handleProjectCreateSession}
@@ -197,26 +267,62 @@ export function App() {
 
         <section className="canvas">
           <div className="canvas-top-stack">
-            <CanvasRegionTopMenu
-              activeSessionID={activeSession?.id ?? null}
-              activeCreateSessionTabID={activeCreateSessionTabID}
-              createSessionTabs={createSessionTabs}
-              sessions={canvasSessionTabs}
-              onCloseCreateSessionTab={handleCloseCreateSessionTab}
-              onAddCreateSessionTab={() => handleOpenCreateSessionTab(selectedWorkspace?.id ?? null)}
-              onSelectCreateSessionTab={handleCreateSessionTabSelect}
-              onSessionClose={handleCanvasSessionTabClose}
-              onSessionSelect={handleCanvasSessionTabSelect}
-              showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
-              isRightSidebarCollapsed={isRightSidebarCollapsed}
-              onToggleLeftSidebar={handleSidebarToggle}
-              onToggleRightSidebar={handleRightSidebarToggle}
-            />
-            {!isCreateSessionTabActive ? (
-              <SessionCanvasTopMenu activeSession={activeSession} gitDirectory={selectedWorkspace?.project.worktree ?? null} />
+            {leftSidebarView === "skills" ? (
+              <CanvasRegionUtilityMenu
+                isRightSidebarCollapsed={isRightSidebarCollapsed}
+                label="Global Skills"
+                onToggleLeftSidebar={handleSidebarToggle}
+                onToggleRightSidebar={handleRightSidebarToggle}
+                showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
+              />
+            ) : (
+              <CanvasRegionTopMenu
+                activeSessionID={activeSession?.id ?? null}
+                activeCreateSessionTabID={activeCreateSessionTabID}
+                createSessionTabs={createSessionTabs}
+                sessions={canvasSessionTabs}
+                onCloseCreateSessionTab={handleCloseCreateSessionTab}
+                onAddCreateSessionTab={() => handleOpenCreateSessionTab(selectedWorkspace?.id ?? null)}
+                onSelectCreateSessionTab={handleCreateSessionTabSelect}
+                onSessionClose={handleCanvasSessionTabClose}
+                onSessionSelect={handleCanvasSessionTabSelect}
+                showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
+                isRightSidebarCollapsed={isRightSidebarCollapsed}
+                onToggleLeftSidebar={handleSidebarToggle}
+                onToggleRightSidebar={handleRightSidebarToggle}
+              />
+            )}
+            {leftSidebarView === "skills" ? null : !isCreateSessionTabActive ? (
+              <SessionCanvasTopMenu
+                activeSession={activeSession}
+                gitDirectory={selectedWorkspace?.project.worktree ?? null}
+                mcpOptions={composerMcpOptions}
+                selectedMcpServerIDs={composerSelectedMcpServerIDs}
+                selectedMcpServerLabel={composerSelectedMcpLabel}
+                onMcpServerToggle={handleComposerMcpToggle}
+                skillOptions={composerSkillOptions}
+                selectedSkillIDs={composerSelectedSkillIDs}
+                selectedSkillLabel={composerSelectedSkillLabel}
+                onSkillToggle={handleComposerSkillToggle}
+              />
             ) : null}
           </div>
-          {isCreateSessionTabActive ? (
+          {leftSidebarView === "skills" ? (
+            <GlobalSkillsCanvas
+              deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
+              globalSkillsMessage={globalSkillsMessage}
+              globalSkillsRoot={globalSkillsRoot}
+              isDirty={isDirtyGlobalSkillFile}
+              isLoadingFile={isLoadingGlobalSkillFile}
+              isSavingFile={isSavingGlobalSkillFile}
+              selectedFileContent={selectedGlobalSkillFileContent}
+              selectedFilePath={selectedGlobalSkillFilePath}
+              selectedSkillDirectoryName={selectedGlobalSkillDirectory?.name ?? null}
+              onChange={handleGlobalSkillDraftChange}
+              onDelete={handleDeleteGlobalSkill}
+              onSave={handleSaveGlobalSkillFile}
+            />
+          ) : isCreateSessionTabActive ? (
             <CreateSessionCanvas
               isCreatingSession={isCreatingSession}
               selectedWorkspaceID={createSessionWorkspaceID}
@@ -245,14 +351,10 @@ export function App() {
                 hasPendingPermissionRequests={activePendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
                 isSending={isSending}
                 modelOptions={composerModelOptions}
-                skillOptions={composerSkillOptions}
                 selectedModel={composerSelectedModel}
                 selectedModelLabel={composerSelectedModelLabel}
-                selectedSkillIDs={composerSelectedSkillIDs}
-                selectedSkillLabel={composerSelectedSkillLabel}
                 onDraftChange={setDraft}
                 onModelChange={handleComposerModelChange}
-                onSkillToggle={handleComposerSkillToggle}
                 onPickAttachments={handlePickComposerAttachments}
                 onRemoveAttachment={handleRemoveComposerAttachment}
                 onSend={handleSend}
@@ -276,8 +378,8 @@ export function App() {
             />
 
             <RightSidebar
-              activeSession={activeSession}
-              activeSessionDiff={activeSessionDiff}
+              activeSession={leftSidebarView === "skills" ? null : activeSession}
+              activeSessionDiff={leftSidebarView === "skills" ? null : activeSessionDiff}
               activeView={rightSidebarView}
               onViewChange={handleRightSidebarViewChange}
             />
@@ -286,6 +388,7 @@ export function App() {
 
         <SettingsPage
           activeMcpServerID={activeMcpServerID}
+          activeMcpServerDiagnostic={activeMcpServerDiagnostic}
           catalog={catalog}
           deletingMcpServerID={deletingMcpServerID}
           deletingProviderID={deletingProviderID}

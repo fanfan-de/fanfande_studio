@@ -4,6 +4,13 @@ import type { PermissionRequestPrompt, PermissionResolveInput, PermissionResolve
 
 export {}
 
+interface DesktopGlobalSkillTreeNode {
+  name: string
+  path: string
+  kind: "directory" | "file"
+  children?: DesktopGlobalSkillTreeNode[]
+}
+
 declare global {
   interface Window {
     desktop?: {
@@ -364,6 +371,168 @@ declare global {
         model?: string
         small_model?: string
       }>
+      getGlobalMcpServers?: () => Promise<
+        Array<
+          | {
+              id: string
+              name?: string
+              transport: "stdio"
+              command: string
+              args?: string[]
+              env?: Record<string, string>
+              cwd?: string
+              enabled: boolean
+              timeoutMs?: number
+            }
+          | {
+              id: string
+              name?: string
+              transport: "remote"
+              provider?: "openai"
+              serverUrl?: string
+              connectorId?: string
+              authorization?: string
+              headers?: Record<string, string>
+              serverDescription?: string
+              allowedTools?:
+                | string[]
+                | {
+                    readOnly?: boolean
+                    toolNames?: string[]
+                  }
+              requireApproval?:
+                | "always"
+                | "never"
+                | {
+                    never?: {
+                      toolNames?: string[]
+                    }
+                  }
+              enabled: boolean
+              timeoutMs?: number
+            }
+        >
+      >
+      updateGlobalMcpServer?: (input: {
+        serverID: string
+        server:
+          | {
+              name?: string
+              transport?: "stdio"
+              command: string
+              args?: string[]
+              env?: Record<string, string>
+              cwd?: string
+              enabled: boolean
+              timeoutMs?: number
+            }
+          | {
+              name?: string
+              transport: "remote"
+              provider?: "openai"
+              serverUrl?: string
+              connectorId?: string
+              authorization?: string
+              headers?: Record<string, string>
+              serverDescription?: string
+              allowedTools?:
+                | string[]
+                | {
+                    readOnly?: boolean
+                    toolNames?: string[]
+                  }
+              requireApproval?:
+                | "always"
+                | "never"
+                | {
+                    never?: {
+                      toolNames?: string[]
+                    }
+                  }
+              enabled: boolean
+              timeoutMs?: number
+            }
+      }) => Promise<
+        | {
+            id: string
+            name?: string
+            transport: "stdio"
+            command: string
+            args?: string[]
+            env?: Record<string, string>
+            cwd?: string
+            enabled: boolean
+            timeoutMs?: number
+          }
+        | {
+            id: string
+            name?: string
+            transport: "remote"
+            provider?: "openai"
+            serverUrl?: string
+            connectorId?: string
+            authorization?: string
+            headers?: Record<string, string>
+            serverDescription?: string
+            allowedTools?:
+              | string[]
+              | {
+                  readOnly?: boolean
+                  toolNames?: string[]
+                }
+            requireApproval?:
+              | "always"
+              | "never"
+              | {
+                  never?: {
+                    toolNames?: string[]
+                  }
+                }
+            enabled: boolean
+            timeoutMs?: number
+          }
+      >
+      deleteGlobalMcpServer?: (input: { serverID: string }) => Promise<{
+        serverID: string
+        removed: boolean
+      }>
+      getGlobalSkills?: () => Promise<
+        Array<{
+          id: string
+          name: string
+          description: string
+          path: string
+          scope: "project" | "user"
+        }>
+      >
+      getGlobalSkillsTree?: () => Promise<{
+        root: string
+        items: DesktopGlobalSkillTreeNode[]
+      }>
+      readGlobalSkillFile?: (input: { path: string }) => Promise<{
+        path: string
+        content: string
+      }>
+      updateGlobalSkillFile?: (input: { path: string; content: string }) => Promise<{
+        path: string
+        content: string
+      }>
+      createGlobalSkill?: (input: { name: string }) => Promise<{
+        directory: string
+        file: {
+          path: string
+          content: string
+        }
+      }>
+      renameGlobalSkill?: (input: { directory: string; name: string }) => Promise<{
+        previousDirectory: string
+        directory: string
+        filePath: string | null
+      }>
+      deleteGlobalSkill?: (input: { directory: string }) => Promise<{
+        directory: string
+        removed: boolean
+      }>
       getProjectProviderCatalog?: (input: { projectID: string }) => Promise<
         Array<{
           id: string
@@ -425,43 +594,154 @@ declare global {
           scope: "project" | "user"
         }>
       >
+      getProjectSkillSelection?: (input: { projectID: string }) => Promise<{
+        skillIDs: string[]
+      }>
+      updateProjectSkillSelection?: (input: {
+        projectID: string
+        skillIDs: string[]
+      }) => Promise<{
+        skillIDs: string[]
+      }>
+      getProjectMcpSelection?: (input: { projectID: string }) => Promise<{
+        serverIDs: string[]
+      }>
+      updateProjectMcpSelection?: (input: {
+        projectID: string
+        serverIDs: string[]
+      }) => Promise<{
+        serverIDs: string[]
+      }>
       getProjectMcpServers?: (input: { projectID: string }) => Promise<
-        Array<{
-          id: string
-          name?: string
-          transport: "stdio"
-          command: string
-          args?: string[]
-          env?: Record<string, string>
-          cwd?: string
-          enabled: boolean
-          timeoutMs?: number
-        }>
+        Array<
+          | {
+              id: string
+              name?: string
+              transport: "stdio"
+              command: string
+              args?: string[]
+              env?: Record<string, string>
+              cwd?: string
+              enabled: boolean
+              timeoutMs?: number
+            }
+          | {
+              id: string
+              name?: string
+              transport: "remote"
+              provider?: "openai"
+              serverUrl?: string
+              connectorId?: string
+              authorization?: string
+              headers?: Record<string, string>
+              serverDescription?: string
+              allowedTools?:
+                | string[]
+                | {
+                    readOnly?: boolean
+                    toolNames?: string[]
+                  }
+              requireApproval?:
+                | "always"
+                | "never"
+                | {
+                    never?: {
+                      toolNames?: string[]
+                    }
+                  }
+              enabled: boolean
+              timeoutMs?: number
+            }
+        >
       >
+      getProjectMcpServerDiagnostic?: (input: { projectID: string; serverID: string }) => Promise<{
+        serverID: string
+        enabled: boolean
+        ok: boolean
+        toolCount: number
+        toolNames: string[]
+        error?: string
+      }>
       updateProjectMcpServer?: (input: {
         projectID: string
         serverID: string
-        server: {
-          name?: string
-          transport: "stdio"
-          command: string
-          args?: string[]
-          env?: Record<string, string>
-          cwd?: string
-          enabled: boolean
-          timeoutMs?: number
-        }
-      }) => Promise<{
-        id: string
-        name?: string
-        transport: "stdio"
-        command: string
-        args?: string[]
-        env?: Record<string, string>
-        cwd?: string
-        enabled: boolean
-        timeoutMs?: number
-      }>
+        server:
+          | {
+              name?: string
+              transport?: "stdio"
+              command: string
+              args?: string[]
+              env?: Record<string, string>
+              cwd?: string
+              enabled: boolean
+              timeoutMs?: number
+            }
+          | {
+              name?: string
+              transport: "remote"
+              provider?: "openai"
+              serverUrl?: string
+              connectorId?: string
+              authorization?: string
+              headers?: Record<string, string>
+              serverDescription?: string
+              allowedTools?:
+                | string[]
+                | {
+                    readOnly?: boolean
+                    toolNames?: string[]
+                  }
+              requireApproval?:
+                | "always"
+                | "never"
+                | {
+                    never?: {
+                      toolNames?: string[]
+                    }
+                  }
+              enabled: boolean
+              timeoutMs?: number
+            }
+      }) => Promise<
+        | {
+            id: string
+            name?: string
+            transport: "stdio"
+            command: string
+            args?: string[]
+            env?: Record<string, string>
+            cwd?: string
+            enabled: boolean
+            timeoutMs?: number
+          }
+        | {
+            id: string
+            name?: string
+            transport: "remote"
+            provider?: "openai"
+            serverUrl?: string
+            connectorId?: string
+            authorization?: string
+            headers?: Record<string, string>
+            serverDescription?: string
+            allowedTools?:
+              | string[]
+              | {
+                  readOnly?: boolean
+                  toolNames?: string[]
+                }
+            requireApproval?:
+              | "always"
+              | "never"
+              | {
+                  never?: {
+                    toolNames?: string[]
+                  }
+                }
+            enabled: boolean
+            timeoutMs?: number
+          }
+      >
       deleteProjectMcpServer?: (input: { projectID: string; serverID: string }) => Promise<{
         serverID: string
         removed: boolean

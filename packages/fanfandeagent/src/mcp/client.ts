@@ -1,43 +1,13 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+import { type Stream } from "node:stream"
 import { pathToFileURL } from "node:url"
-import * as Log from "#util/log.ts"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import type { McpServerSummary } from "#config/config.ts"
+import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "mcp.client" })
-const JSONRPC_VERSION = "2.0" as const
-const MCP_PROTOCOL_VERSION = "2025-06-18"
-const JSONRPC_METHOD_NOT_FOUND = -32601
-
-type JsonRpcID = number | string
-
-interface JsonRpcRequest {
-  jsonrpc: typeof JSONRPC_VERSION
-  id: JsonRpcID
-  method: string
-  params?: unknown
-}
-
-interface JsonRpcNotification {
-  jsonrpc: typeof JSONRPC_VERSION
-  method: string
-  params?: unknown
-}
-
-interface JsonRpcSuccess {
-  jsonrpc: typeof JSONRPC_VERSION
-  id: JsonRpcID
-  result: unknown
-}
-
-interface JsonRpcFailure {
-  jsonrpc: typeof JSONRPC_VERSION
-  id: JsonRpcID | null
-  error: {
-    code: number
-    message: string
-    data?: unknown
-  }
-}
 
 export interface McpToolDefinition {
   name: string
@@ -60,12 +30,6 @@ export interface McpToolCallResult {
   isError?: boolean
 }
 
-type PendingRequest = {
-  reject: (error: Error) => void
-  resolve: (value: unknown) => void
-  timer: ReturnType<typeof setTimeout>
-}
-
 export interface McpClientOptions {
   cwd: string
   onToolsChanged?: () => void
@@ -74,23 +38,84 @@ export interface McpClientOptions {
   worktree: string
 }
 
-function createRpcErrorMessage(method: string, error: JsonRpcFailure["error"]) {
-  return `${method} failed (${error.code}): ${error.message}`
-}
-
 function getToolDisplayName(tool: McpToolDefinition) {
   return tool.title || tool.annotations?.title || tool.name
 }
 
+function mergeProcessEnv(overrides?: Record<string, string>) {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
+
+  return {
+    ...env,
+    ...(overrides ?? {}),
+  }
+}
+
+function resolveAuthorizationHeader(authorization: string | undefined) {
+  if (!authorization) return undefined
+  if (/^[A-Za-z][A-Za-z0-9+.-]*\s+\S/.test(authorization)) {
+    return authorization
+  }
+
+  return `Bearer ${authorization}`
+}
+
+function buildRemoteHeaders(server: Extract<McpServerSummary, { transport: "remote" }>) {
+  const authorization = resolveAuthorizationHeader(server.authorization)
+  const headers: Record<string, string> = {
+    ...(server.headers ?? {}),
+  }
+
+  if (authorization) {
+    headers.Authorization = authorization
+  }
+
+  return Object.keys(headers).length > 0 ? headers : undefined
+}
+
+function normalizeCallResult(result: unknown): McpToolCallResult {
+  if (result && typeof result === "object" && Array.isArray((result as { content?: unknown[] }).content)) {
+    return result as McpToolCallResult
+  }
+
+  if (result && typeof result === "object" && "toolResult" in (result as Record<string, unknown>)) {
+    const toolResult = (result as { toolResult: unknown }).toolResult
+    return {
+      content: [
+        {
+          type: "text",
+          text: typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult),
+        },
+      ],
+      structuredContent:
+        toolResult && typeof toolResult === "object" && !Array.isArray(toolResult)
+          ? (toolResult as Record<string, unknown>)
+          : undefined,
+      isError: false,
+    }
+  }
+
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(result),
+      },
+    ],
+    isError: false,
+  }
+}
+
 export class McpClient {
-  private child?: ChildProcessWithoutNullStreams
+  private client?: Client
   private closed = false
   private initializePromise?: Promise<void>
-  private nextRequestID = 1
-  private pending = new Map<JsonRpcID, PendingRequest>()
   private readonly options: McpClientOptions
   private readonly stderrLines: string[] = []
-  private stdoutBuffer = ""
+  private stderrStream?: Stream | null
+  private transport?: StdioClientTransport | StreamableHTTPClientTransport
 
   constructor(options: McpClientOptions) {
     this.options = options
@@ -100,19 +125,23 @@ export class McpClient {
     if (this.closed) return
     this.closed = true
 
-    for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timer)
-      pending.reject(new Error(`MCP request ${String(id)} was interrupted because the server closed.`))
+    const closeTasks: Promise<unknown>[] = []
+    if (this.transport instanceof StreamableHTTPClientTransport && this.transport.sessionId) {
+      closeTasks.push(this.transport.terminateSession().catch(() => undefined))
     }
-    this.pending.clear()
 
-    if (!this.child) return
+    if (this.client) {
+      closeTasks.push(this.client.close().catch(() => undefined))
+    } else if (this.transport) {
+      closeTasks.push(this.transport.close().catch(() => undefined))
+    }
 
-    this.child.stdout.removeAllListeners()
-    this.child.stderr.removeAllListeners()
-    this.child.removeAllListeners()
-    this.child.kill()
-    this.child = undefined
+    await Promise.allSettled(closeTasks)
+    this.stderrStream?.removeAllListeners()
+    this.stderrStream = undefined
+    this.transport = undefined
+    this.client = undefined
+    this.initializePromise = undefined
   }
 
   async listTools(): Promise<McpToolDefinition[]> {
@@ -121,11 +150,10 @@ export class McpClient {
     let cursor: string | undefined
 
     do {
-      const result = (await this.request("tools/list", cursor ? { cursor } : undefined)) as {
-        nextCursor?: string
-        tools?: McpToolDefinition[]
-      }
-      tools.push(...(result.tools ?? []))
+      const result = await this.client!.listTools(cursor ? { cursor } : undefined, {
+        timeout: this.options.requestTimeoutMs,
+      })
+      tools.push(...(result.tools as McpToolDefinition[]))
       cursor = result.nextCursor
     } while (cursor)
 
@@ -139,70 +167,153 @@ export class McpClient {
   ): Promise<McpToolCallResult> {
     await this.ensureInitialized()
 
-    return (await this.request(
-      "tools/call",
+    return normalizeCallResult(await this.client!.callTool(
       {
         name: toolName,
         arguments: args,
       },
-      abort,
-    )) as McpToolCallResult
+      undefined,
+      {
+        signal: abort,
+        timeout: this.options.requestTimeoutMs,
+      },
+    ))
   }
 
   private async ensureInitialized() {
     if (this.initializePromise) return this.initializePromise
 
-    this.initializePromise = (async () => {
-      const child = this.startProcess()
-      this.child = child
+    const promise = (async () => {
+      if (this.closed) {
+        throw new Error(`MCP server '${this.options.server.id}' is closed.`)
+      }
 
-      const initialize = (await this.request("initialize", {
-        protocolVersion: MCP_PROTOCOL_VERSION,
-        capabilities: {
-          roots: {
-            listChanged: false,
-          },
-        },
-        clientInfo: {
+      const client = new Client(
+        {
           name: "fanfandeagent",
           version: "1.0.0",
         },
-      })) as {
-        protocolVersion?: string
+        {
+          capabilities: {
+            roots: {
+              listChanged: false,
+            },
+          },
+          listChanged: {
+            tools: {
+              onChanged: (error) => {
+                if (error) {
+                  log.warn("failed to refresh mcp tools after list_changed", {
+                    serverID: this.options.server.id,
+                    error: error instanceof Error ? error.message : String(error),
+                  })
+                }
+                this.options.onToolsChanged?.()
+              },
+            },
+          },
+        },
+      )
+
+      client.setRequestHandler(ListRootsRequestSchema, async () => ({
+        roots: [this.options.cwd, this.options.worktree]
+          .filter((value, index, all) => value && all.indexOf(value) === index)
+          .map((value) => ({
+            uri: pathToFileURL(value).toString(),
+            name: value === this.options.cwd ? "cwd" : "worktree",
+          })),
+      }))
+
+      const transport = this.createTransport()
+      transport.onerror = (error) => {
+        if (this.closed) return
+        log.warn("mcp transport error", {
+          serverID: this.options.server.id,
+          error: error instanceof Error ? error.message : String(error),
+          detail: this.stderrLines.at(-1),
+        })
+      }
+      transport.onclose = () => {
+        if (this.closed) return
+        this.client = undefined
+        this.transport = undefined
+        this.initializePromise = undefined
+        log.warn("mcp transport closed", {
+          serverID: this.options.server.id,
+          detail: this.stderrLines.at(-1),
+        })
       }
 
-      if (initialize.protocolVersion && initialize.protocolVersion !== MCP_PROTOCOL_VERSION) {
+      this.transport = transport
+      this.client = client
+      await client.connect(transport, {
+        timeout: this.options.requestTimeoutMs,
+      })
+    })().catch(async (error) => {
+      const detail = this.stderrHint()
+      await this.disposeTransport()
+      this.client = undefined
+      this.transport = undefined
+      this.initializePromise = undefined
+
+      if (error instanceof Error && detail) {
+        throw new Error(`${error.message}${detail}`)
+      }
+
+      throw error
+    })
+
+    this.initializePromise = promise
+    return await promise
+  }
+
+  private async disposeTransport() {
+    this.stderrStream?.removeAllListeners()
+    this.stderrStream = undefined
+    if (!this.transport) return
+    await this.transport.close().catch(() => undefined)
+  }
+
+  private createTransport() {
+    if (this.options.server.transport === "remote") {
+      if (!this.options.server.serverUrl) {
         throw new Error(
-          `MCP server '${this.options.server.id}' requested unsupported protocol version '${initialize.protocolVersion}'.`,
+          `MCP server '${this.options.server.id}' is missing serverUrl. Connector-based remote MCP configs are no longer executable by the local HTTP client.`,
         )
       }
 
-      this.notify("notifications/initialized")
-    })()
+      return new StreamableHTTPClientTransport(new URL(this.options.server.serverUrl), {
+        requestInit: (() => {
+          const headers = buildRemoteHeaders(this.options.server)
+          return headers ? { headers } : undefined
+        })(),
+      })
+    }
 
-    return this.initializePromise
+    const transport = new StdioClientTransport({
+      command: this.options.server.command,
+      args: this.options.server.args ?? [],
+      cwd: this.options.cwd,
+      env: mergeProcessEnv(this.options.server.env),
+      stderr: "pipe",
+    })
+    this.captureStderr(transport.stderr)
+    return transport
   }
 
-  private startProcess() {
-    const child = spawn(this.options.server.command, this.options.server.args ?? [], {
-      cwd: this.options.cwd,
-      env: {
-        ...process.env,
-        ...(this.options.server.env ?? {}),
-      },
-      stdio: "pipe",
-    })
+  private captureStderr(stream: Stream | null) {
+    this.stderrStream?.removeAllListeners()
+    this.stderrStream = stream
+    if (!stream) return
 
-    child.stdout.setEncoding("utf8")
-    child.stderr.setEncoding("utf8")
-
-    child.stdout.on("data", (chunk: string) => {
-      this.stdoutBuffer += chunk
-      this.flushStdoutBuffer()
-    })
-
-    child.stderr.on("data", (chunk: string) => {
-      for (const line of chunk.split(/\r?\n/)) {
+    const stderrStream = stream as NodeJS.ReadableStream & {
+      setEncoding?: (encoding: BufferEncoding) => void
+      on(event: "data", listener: (chunk: Buffer | string) => void): NodeJS.ReadableStream
+    }
+    stderrStream.setEncoding?.("utf8")
+    stderrStream.on("data", (chunk) => {
+      const text = typeof chunk === "string" ? chunk : chunk.toString("utf8")
+      for (const line of text.split(/\r?\n/)) {
         const trimmed = line.trim()
         if (!trimmed) continue
         this.stderrLines.push(trimmed)
@@ -211,275 +322,6 @@ export class McpClient {
         }
       }
     })
-
-    child.on("exit", (code, signal) => {
-      const detail = this.stderrLines.at(-1)
-      const reason = [
-        `MCP server '${this.options.server.id}' exited`,
-        typeof code === "number" ? `with code ${code}` : "",
-        signal ? `after signal ${signal}` : "",
-        detail ? `(${detail})` : "",
-      ]
-        .filter(Boolean)
-        .join(" ")
-      this.rejectAllPending(new Error(reason))
-      this.child = undefined
-      this.initializePromise = undefined
-      if (!this.closed) {
-        log.warn("mcp server exited", {
-          serverID: this.options.server.id,
-          code,
-          signal,
-          detail,
-        })
-      }
-    })
-
-    child.on("error", (error) => {
-      this.rejectAllPending(error)
-      this.child = undefined
-      this.initializePromise = undefined
-    })
-
-    return child
-  }
-
-  private flushStdoutBuffer() {
-    while (true) {
-      const newlineIndex = this.stdoutBuffer.indexOf("\n")
-      if (newlineIndex === -1) break
-
-      const line = this.stdoutBuffer.slice(0, newlineIndex).trim()
-      this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1)
-      if (!line) continue
-      this.handleIncoming(line)
-    }
-  }
-
-  private handleIncoming(line: string) {
-    let payload: unknown
-    try {
-      payload = JSON.parse(line)
-    } catch (error) {
-      log.warn("failed to parse mcp message", {
-        serverID: this.options.server.id,
-        error: error instanceof Error ? error.message : String(error),
-        line,
-      })
-      return
-    }
-
-    if (Array.isArray(payload)) {
-      for (const item of payload) {
-        this.handleMessage(item)
-      }
-      return
-    }
-
-    this.handleMessage(payload)
-  }
-
-  private handleMessage(payload: unknown) {
-    if (!payload || typeof payload !== "object") return
-
-    const record = payload as Record<string, unknown>
-    if (typeof record.method === "string" && "id" in record) {
-      void this.handleServerRequest(record as unknown as JsonRpcRequest)
-      return
-    }
-
-    if (typeof record.method === "string") {
-      this.handleNotification(record as unknown as JsonRpcNotification)
-      return
-    }
-
-    if ("id" in record && "result" in record) {
-      this.resolvePending(record as unknown as JsonRpcSuccess)
-      return
-    }
-
-    if ("id" in record && "error" in record) {
-      this.rejectPending(record as unknown as JsonRpcFailure)
-    }
-  }
-
-  private async handleServerRequest(request: JsonRpcRequest) {
-    try {
-      if (request.method === "ping") {
-        this.respond(request.id, {})
-        return
-      }
-
-      if (request.method === "roots/list") {
-        const roots = [this.options.cwd, this.options.worktree]
-          .filter((value, index, all) => value && all.indexOf(value) === index)
-          .map((value) => ({
-            uri: pathToFileURL(value).toString(),
-            name: value === this.options.cwd ? "cwd" : "worktree",
-          }))
-
-        this.respond(request.id, { roots })
-        return
-      }
-
-      this.respondError(request.id, {
-        code: JSONRPC_METHOD_NOT_FOUND,
-        message: `Unsupported MCP method '${request.method}'`,
-      })
-    } catch (error) {
-      this.respondError(request.id, {
-        code: -32000,
-        message: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-
-  private handleNotification(notification: JsonRpcNotification) {
-    switch (notification.method) {
-      case "notifications/tools/list_changed":
-        this.options.onToolsChanged?.()
-        return
-      case "notifications/message":
-      case "notifications/progress":
-      case "notifications/resources/list_changed":
-      case "notifications/prompts/list_changed":
-      case "notifications/resources/updated":
-      case "notifications/cancelled":
-        return
-      default:
-        log.debug("ignored mcp notification", {
-          serverID: this.options.server.id,
-          method: notification.method,
-        })
-    }
-  }
-
-  private async request(method: string, params?: unknown, abort?: AbortSignal): Promise<unknown> {
-    await this.ensureProcessWritable()
-    const id = this.nextRequestID++
-
-    return await new Promise<unknown>((resolve, reject) => {
-      let settled = false
-      const timer = setTimeout(() => {
-        this.pending.delete(id)
-        settled = true
-        this.notify("notifications/cancelled", {
-          requestId: id,
-          reason: `${method} timed out`,
-        })
-        reject(
-          new Error(
-            `MCP request '${method}' timed out after ${this.options.requestTimeoutMs}ms for server '${this.options.server.id}'.`,
-          ),
-        )
-      }, this.options.requestTimeoutMs)
-
-      const finalize = <T>(fn: (value: T) => void, value: T) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        abort?.removeEventListener("abort", abortListener)
-        fn(value)
-      }
-
-      const abortListener = () => {
-        this.pending.delete(id)
-        this.notify("notifications/cancelled", {
-          requestId: id,
-          reason: `${method} aborted`,
-        })
-        finalize(reject, new Error(`MCP request '${method}' was aborted.`))
-      }
-
-      if (abort?.aborted) {
-        finalize(reject, new Error(`MCP request '${method}' was aborted.`))
-        return
-      }
-
-      abort?.addEventListener("abort", abortListener, { once: true })
-      this.pending.set(id, {
-        resolve: (value) => finalize(resolve, value),
-        reject: (error) => finalize(reject, error),
-        timer,
-      })
-
-      this.write({
-        jsonrpc: JSONRPC_VERSION,
-        id,
-        method,
-        params,
-      })
-    })
-  }
-
-  private ensureProcessWritable() {
-    if (this.closed) {
-      throw new Error(`MCP server '${this.options.server.id}' is closed.`)
-    }
-
-    if (!this.child?.stdin.writable) {
-      throw new Error(
-        `MCP server '${this.options.server.id}' is not accepting requests.${this.stderrHint()}`,
-      )
-    }
-  }
-
-  private notify(method: string, params?: unknown) {
-    if (!this.child?.stdin.writable) return
-    this.write({
-      jsonrpc: JSONRPC_VERSION,
-      method,
-      params,
-    })
-  }
-
-  private respond(id: JsonRpcID, result: unknown) {
-    this.write({
-      jsonrpc: JSONRPC_VERSION,
-      id,
-      result,
-    })
-  }
-
-  private respondError(id: JsonRpcID, error: JsonRpcFailure["error"]) {
-    this.write({
-      jsonrpc: JSONRPC_VERSION,
-      id,
-      error,
-    })
-  }
-
-  private write(payload: object) {
-    if (!this.child?.stdin.writable) {
-      throw new Error(`MCP server '${this.options.server.id}' closed before the request could be written.`)
-    }
-
-    this.child.stdin.write(`${JSON.stringify(payload)}\n`)
-  }
-
-  private rejectAllPending(error: Error) {
-    for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timer)
-      pending.reject(error)
-      this.pending.delete(id)
-    }
-  }
-
-  private resolvePending(response: JsonRpcSuccess) {
-    const pending = this.pending.get(response.id)
-    if (!pending) return
-    this.pending.delete(response.id)
-    clearTimeout(pending.timer)
-    pending.resolve(response.result)
-  }
-
-  private rejectPending(response: JsonRpcFailure) {
-    if (response.id === null) return
-    const pending = this.pending.get(response.id)
-    if (!pending) return
-    this.pending.delete(response.id)
-    clearTimeout(pending.timer)
-    pending.reject(new Error(createRpcErrorMessage("request", response.error)))
   }
 
   private stderrHint() {

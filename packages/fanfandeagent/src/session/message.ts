@@ -239,6 +239,7 @@ export const ToolStateCompleted = z
         status: z.literal("completed"),
         input: z.record(z.string(), z.any()),
         output: z.preprocess((value) => normalizeToolOutputText(value), z.string()),
+        modelOutput: z.any().optional(),
         title: z.string(),
         metadata: z.record(z.string(), z.any()),
         time: z.object({
@@ -340,6 +341,7 @@ export const ToolPart = PartBase.extend({
     type: z.literal("tool"),
     callID: z.string(),
     tool: z.string(),
+    providerExecuted: z.boolean().optional(),
     state: ToolState,
     metadata: z.record(z.string(), z.any()).optional(),
 }).meta({
@@ -696,6 +698,14 @@ export async function toModelMessages(
         reason?: string
     }> {
         const state = part.state
+        if (part.providerExecuted && state.status === "completed" && state.modelOutput !== undefined) {
+            return state.modelOutput as {
+                type: "text" | "json" | "error-text" | "error-json" | "execution-denied"
+                value?: unknown
+                reason?: string
+            }
+        }
+
         if (state.status === "denied") {
             return {
                 type: "execution-denied",
@@ -792,6 +802,8 @@ export async function toModelMessages(
                             toolCallId: part.callID,
                             toolName: part.tool,
                             input: state.input,
+                            ...(part.providerExecuted ? { providerExecuted: true } : {}),
+                            ...(part.metadata ? { providerOptions: part.metadata } : {}),
                         },
                     ]
 
@@ -800,6 +812,16 @@ export async function toModelMessages(
                             type: "tool-approval-request" as const,
                             approvalId: approvalRequest.approvalID,
                             toolCallId: part.callID,
+                        })
+                    }
+
+                    if (part.providerExecuted && (state.status === "completed" || state.status === "error")) {
+                        assistantToolContent.push({
+                            type: "tool-result" as const,
+                            toolCallId: part.callID,
+                            toolName: part.tool,
+                            output: await resolveToolModelOutput(part),
+                            ...(state.metadata ? { providerOptions: state.metadata } : {}),
                         })
                     }
 
@@ -815,10 +837,11 @@ export async function toModelMessages(
                             approvalId: approvalRequest.approvalID,
                             approved: approvalResponse.action === "allow",
                             reason: approvalResponse.reason,
+                            ...(part.providerExecuted ? { providerExecuted: true } : {}),
                         })
                     }
 
-                    if (state.status === "completed" || state.status === "error" || state.status === "denied") {
+                    if (!part.providerExecuted && (state.status === "completed" || state.status === "error" || state.status === "denied")) {
                         toolContent.push({
                             type: "tool-result" as const,
                             toolCallId: part.callID,

@@ -86,7 +86,35 @@ type SkillInfo = {
   path: string
   scope: "project" | "user"
 }
-type McpServerSummary = {
+type GlobalSkillTreeNode = {
+  name: string
+  path: string
+  kind: "directory" | "file"
+  children?: GlobalSkillTreeNode[]
+}
+type GlobalSkillTree = {
+  root: string
+  items: GlobalSkillTreeNode[]
+}
+type GlobalSkillFileDocument = {
+  path: string
+  content: string
+}
+type McpAllowedTools =
+  | string[]
+  | {
+      readOnly?: boolean
+      toolNames?: string[]
+    }
+type McpRequireApproval =
+  | "always"
+  | "never"
+  | {
+      never?: {
+        toolNames?: string[]
+      }
+    }
+type StdioMcpServerSummary = {
   id: string
   name?: string
   transport: "stdio"
@@ -96,6 +124,36 @@ type McpServerSummary = {
   cwd?: string
   enabled: boolean
   timeoutMs?: number
+}
+type RemoteMcpServerSummary = {
+  id: string
+  name?: string
+  transport: "remote"
+  provider?: "openai"
+  serverUrl?: string
+  connectorId?: string
+  authorization?: string
+  headers?: Record<string, string>
+  serverDescription?: string
+  allowedTools?: McpAllowedTools
+  requireApproval?: McpRequireApproval
+  enabled: boolean
+  timeoutMs?: number
+}
+type McpServerSummary = StdioMcpServerSummary | RemoteMcpServerSummary
+type McpServerDiagnostic = {
+  serverID: string
+  enabled: boolean
+  ok: boolean
+  toolCount: number
+  toolNames: string[]
+  error?: string
+}
+type ProjectSkillSelection = {
+  skillIDs: string[]
+}
+type ProjectMcpSelection = {
+  serverIDs: string[]
 }
 
 const safeProcess = typeof process !== "undefined" ? process : undefined
@@ -393,6 +451,42 @@ try {
         model?: string
         small_model?: string
       }>,
+    getGlobalMcpServers: () =>
+      ipcRenderer.invoke("desktop:get-global-mcp-servers") as Promise<McpServerSummary[]>,
+    updateGlobalMcpServer: (input: {
+      serverID: string
+      server: Omit<McpServerSummary, "id">
+    }) =>
+      ipcRenderer.invoke("desktop:update-global-mcp-server", input) as Promise<McpServerSummary>,
+    deleteGlobalMcpServer: (input: { serverID: string }) =>
+      ipcRenderer.invoke("desktop:delete-global-mcp-server", input) as Promise<{
+        serverID: string
+        removed: boolean
+      }>,
+    getGlobalSkills: () =>
+      ipcRenderer.invoke("desktop:get-global-skills") as Promise<SkillInfo[]>,
+    getGlobalSkillsTree: () =>
+      ipcRenderer.invoke("desktop:get-global-skills-tree") as Promise<GlobalSkillTree>,
+    readGlobalSkillFile: (input: { path: string }) =>
+      ipcRenderer.invoke("desktop:read-global-skill-file", input) as Promise<GlobalSkillFileDocument>,
+    updateGlobalSkillFile: (input: { path: string; content: string }) =>
+      ipcRenderer.invoke("desktop:update-global-skill-file", input) as Promise<GlobalSkillFileDocument>,
+    createGlobalSkill: (input: { name: string }) =>
+      ipcRenderer.invoke("desktop:create-global-skill", input) as Promise<{
+        directory: string
+        file: GlobalSkillFileDocument
+      }>,
+    renameGlobalSkill: (input: { directory: string; name: string }) =>
+      ipcRenderer.invoke("desktop:rename-global-skill", input) as Promise<{
+        previousDirectory: string
+        directory: string
+        filePath: string | null
+      }>,
+    deleteGlobalSkill: (input: { directory: string }) =>
+      ipcRenderer.invoke("desktop:delete-global-skill", input) as Promise<{
+        directory: string
+        removed: boolean
+      }>,
     getProjectProviderCatalog: (input: { projectID: string }) =>
       ipcRenderer.invoke("desktop:get-project-provider-catalog", input) as Promise<
         Array<{
@@ -449,8 +543,18 @@ try {
       }>,
     getProjectSkills: (input: { projectID: string }) =>
       ipcRenderer.invoke("desktop:get-project-skills", input) as Promise<SkillInfo[]>,
+    getProjectSkillSelection: (input: { projectID: string }) =>
+      ipcRenderer.invoke("desktop:get-project-skill-selection", input) as Promise<ProjectSkillSelection>,
+    updateProjectSkillSelection: (input: { projectID: string; skillIDs: string[] }) =>
+      ipcRenderer.invoke("desktop:update-project-skill-selection", input) as Promise<ProjectSkillSelection>,
+    getProjectMcpSelection: (input: { projectID: string }) =>
+      ipcRenderer.invoke("desktop:get-project-mcp-selection", input) as Promise<ProjectMcpSelection>,
+    updateProjectMcpSelection: (input: { projectID: string; serverIDs: string[] }) =>
+      ipcRenderer.invoke("desktop:update-project-mcp-selection", input) as Promise<ProjectMcpSelection>,
     getProjectMcpServers: (input: { projectID: string }) =>
       ipcRenderer.invoke("desktop:get-project-mcp-servers", input) as Promise<McpServerSummary[]>,
+    getProjectMcpServerDiagnostic: (input: { projectID: string; serverID: string }) =>
+      ipcRenderer.invoke("desktop:get-project-mcp-server-diagnostic", input) as Promise<McpServerDiagnostic>,
     updateProjectMcpServer: (input: {
       projectID: string
       serverID: string

@@ -10,6 +10,7 @@ import * as Provider from "#provider/provider.ts";
 import * as db from "#database/Sqlite.ts";
 import * as Agent from "#agent/agent.ts";
 import * as SystemPrompt from "#session/system.ts"
+import * as Skill from "#skill/skill.ts"
 import * as Snapshot  from "#snapshot/snapshot.ts"
 import * as SessionDiff from "#session/diff.ts"
 import { Flag } from "#flag/flag.ts"
@@ -245,7 +246,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
                 //SystemPrompt.provider(model),//每一个模型对应一个system prompt，我觉得不是很必要
                 ...SystemPrompt.defaultPrompt(),
                 ...await SystemPrompt.environment(model),
-                ...await SystemPrompt.skills(lastUser.skills ?? []),
+                ...await SystemPrompt.skills(sessionID, lastUser.skills ?? []),
                 ...(lastUser.system ? [lastUser.system] : []),
             ]
 
@@ -348,6 +349,14 @@ export const prompt = fn(PromptInput, async (input) => {
         })
         return undefined
     })
+    const nextInput: PromptInput = {
+        ...input,
+        skills: await Skill.resolveTurnSkillIDs({
+            projectID: session.projectID,
+            projectRoot: Instance.worktree,
+            requestedSkillIDs: input.skills,
+        }),
+    }
 
     let userMessage: Awaited<ReturnType<typeof createUserMessage>>
 
@@ -355,7 +364,7 @@ export const prompt = fn(PromptInput, async (input) => {
     try {
         //判断当前session最新的assistant message是什么mode，如果mode发生变化，插入一个system message
         //Session.DataBaseRead("messages")
-        userMessage = await createUserMessage(input, {
+        userMessage = await createUserMessage(nextInput, {
             snapshot: baselineSnapshot,
         });
     } catch (error) {

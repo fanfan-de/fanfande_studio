@@ -188,6 +188,14 @@ export interface AgentProjectModelSelection {
   small_model?: string
 }
 
+export interface AgentProjectSkillSelection {
+  skillIDs: string[]
+}
+
+export interface AgentProjectMcpSelection {
+  serverIDs: string[]
+}
+
 export interface AgentSkillInfo {
   id: string
   name: string
@@ -196,7 +204,46 @@ export interface AgentSkillInfo {
   scope: "project" | "user"
 }
 
-export interface AgentMcpServerSummary {
+export interface AgentGlobalSkillTreeNode {
+  name: string
+  path: string
+  kind: "directory" | "file"
+  children?: AgentGlobalSkillTreeNode[]
+}
+
+export interface AgentGlobalSkillTree {
+  root: string
+  items: AgentGlobalSkillTreeNode[]
+}
+
+export interface AgentGlobalSkillFileDocument {
+  path: string
+  content: string
+}
+
+export interface AgentGlobalSkillRenameResult {
+  previousDirectory: string
+  directory: string
+  filePath: string | null
+}
+
+export type AgentMcpAllowedTools =
+  | string[]
+  | {
+      readOnly?: boolean
+      toolNames?: string[]
+    }
+
+export type AgentMcpRequireApproval =
+  | "always"
+  | "never"
+  | {
+      never?: {
+        toolNames?: string[]
+      }
+    }
+
+export interface AgentStdioMcpServerSummary {
   id: string
   name?: string
   transport: "stdio"
@@ -206,6 +253,33 @@ export interface AgentMcpServerSummary {
   cwd?: string
   enabled: boolean
   timeoutMs?: number
+}
+
+export interface AgentRemoteMcpServerSummary {
+  id: string
+  name?: string
+  transport: "remote"
+  provider?: "openai"
+  serverUrl?: string
+  connectorId?: string
+  authorization?: string
+  headers?: Record<string, string>
+  serverDescription?: string
+  allowedTools?: AgentMcpAllowedTools
+  requireApproval?: AgentMcpRequireApproval
+  enabled: boolean
+  timeoutMs?: number
+}
+
+export type AgentMcpServerSummary = AgentStdioMcpServerSummary | AgentRemoteMcpServerSummary
+
+export interface AgentMcpServerDiagnostic {
+  serverID: string
+  enabled: boolean
+  ok: boolean
+  toolCount: number
+  toolNames: string[]
+  error?: string
 }
 
 export interface AgentPtySessionInfo {

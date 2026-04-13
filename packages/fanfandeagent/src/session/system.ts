@@ -72,9 +72,9 @@ export async function environment(model: Provider.Model) {
     ]
 }
 
-export async function skills(skillIDs: string[]) {
-    if (skillIDs.length === 0) return []
-    return await Skill.loadPromptSections(Instance.worktree, skillIDs)
+export async function skills(sessionID: string, skillIDs: string[]) {
+    Skill.configureSessionSkills(sessionID, skillIDs)
+    return await Skill.loadPromptCatalogSections(Instance.worktree, skillIDs)
 }
 
 //   export async function skills(agent: Agent.Info) {

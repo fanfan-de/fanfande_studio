@@ -22,7 +22,7 @@ export type {
 
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project" | "sort" | "new"
-export type LeftSidebarView = "workspace"
+export type LeftSidebarView = "workspace" | "skills"
 export type RightSidebarView = "changes"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
@@ -226,6 +226,14 @@ export interface ProjectModelSelection {
   smallModel: string | null
 }
 
+export interface ProjectSkillSelection {
+  skillIDs: string[]
+}
+
+export interface ProjectMcpSelection {
+  serverIDs: string[]
+}
+
 export interface ComposerAttachment {
   path: string
   name: string
@@ -237,6 +245,12 @@ export interface ComposerModelOption {
 }
 
 export interface ComposerSkillOption {
+  value: string
+  label: string
+  description: string
+}
+
+export interface ComposerMcpOption {
   value: string
   label: string
   description: string
@@ -255,7 +269,40 @@ export interface SkillInfo {
   scope: "project" | "user"
 }
 
-export interface McpServerSummary {
+export interface GlobalSkillTreeNode {
+  name: string
+  path: string
+  kind: "directory" | "file"
+  children?: GlobalSkillTreeNode[]
+}
+
+export interface GlobalSkillTree {
+  root: string
+  items: GlobalSkillTreeNode[]
+}
+
+export interface GlobalSkillFileDocument {
+  path: string
+  content: string
+}
+
+export type McpAllowedTools =
+  | string[]
+  | {
+      readOnly?: boolean
+      toolNames?: string[]
+    }
+
+export type McpRequireApproval =
+  | "always"
+  | "never"
+  | {
+      never?: {
+        toolNames?: string[]
+      }
+    }
+
+export interface StdioMcpServerSummary {
   id: string
   name?: string
   transport: "stdio"
@@ -267,13 +314,46 @@ export interface McpServerSummary {
   timeoutMs?: number
 }
 
+export interface RemoteMcpServerSummary {
+  id: string
+  name?: string
+  transport: "remote"
+  provider?: "openai"
+  serverUrl?: string
+  connectorId?: string
+  authorization?: string
+  headers?: Record<string, string>
+  serverDescription?: string
+  allowedTools?: McpAllowedTools
+  requireApproval?: McpRequireApproval
+  enabled: boolean
+  timeoutMs?: number
+}
+
+export type McpServerSummary = StdioMcpServerSummary | RemoteMcpServerSummary
+
+export interface McpServerDiagnostic {
+  serverID: string
+  enabled: boolean
+  ok: boolean
+  toolCount: number
+  toolNames: string[]
+  error?: string
+}
+
 export interface McpServerDraftState {
   id: string
   name: string
+  transport: "stdio" | "remote"
   command: string
   args: string
   env: string
   cwd: string
+  serverUrl: string
+  authorization: string
+  headers: string
+  allowedToolsMode: "all" | "names" | "read-only" | "read-only-names"
+  allowedToolNames: string
   enabled: boolean
   timeoutMs: string
 }

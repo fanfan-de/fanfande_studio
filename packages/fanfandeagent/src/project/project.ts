@@ -65,6 +65,14 @@ function resolveProjectName(worktree: string, vcs: ProjectInfo["vcs"]) {
   return "Global"
 }
 
+function resolveStoredProjectName(worktree: string, vcs: ProjectInfo["vcs"], currentName?: string) {
+  const canonicalName = resolveProjectName(worktree, vcs)
+  if (isGlobalWorktree(worktree)) return canonicalName
+
+  const trimmed = currentName?.trim()
+  return trimmed || canonicalName
+}
+
 function isPathInsideProject(directory: string, worktree: string) {
   if (isGlobalWorktree(worktree)) return true
 
@@ -161,7 +169,7 @@ function persistProjectRecord(input: {
     id: input.projectID,
     worktree: input.worktree,
     vcs: input.vcs,
-    name: seedProject.name?.trim() || resolveProjectName(input.worktree, input.vcs),
+    name: resolveStoredProjectName(input.worktree, input.vcs, seedProject.name),
     updated: now,
     sandboxes,
   }
@@ -341,7 +349,7 @@ export async function list() {
     const nextProject: ProjectInfo = {
       ...(previous ?? project),
       ...project,
-      name: project.name?.trim() || previous?.name?.trim() || resolveProjectName(project.worktree, project.vcs),
+      name: resolveStoredProjectName(project.worktree, project.vcs, project.name ?? previous?.name),
       updated: Math.max(previous?.updated ?? 0, project.updated),
       sandboxes: uniqueProjectPaths([...(previous?.sandboxes ?? []), ...(project.sandboxes ?? [])]).filter(
         (item) => existsSync(item) && isAdditionalSandboxDirectory(item, project.worktree),

@@ -368,4 +368,124 @@ describe("tool contract", () => {
       await rm(repositoryRoot, { recursive: true, force: true })
     }
   }, 120000)
+
+  it("replays provider-executed MCP history on the assistant message", async () => {
+    const model = {
+      capabilities: {
+        reasoning: false,
+        attachment: false,
+        toolcall: true,
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "assistant-provider-executed",
+            sessionID: "session-provider-executed",
+            role: "assistant",
+            created: Date.now(),
+            parentID: "user-provider-executed",
+            modelID: "gpt-5",
+            providerID: "openai",
+            agent: "plan",
+            path: {
+              cwd: ".",
+              root: ".",
+            },
+            cost: 0,
+            tokens: {
+              input: 0,
+              output: 0,
+              reasoning: 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            },
+          } as Message.Assistant,
+          parts: [
+            {
+              id: "provider-executed-tool",
+              sessionID: "session-provider-executed",
+              messageID: "assistant-provider-executed",
+              type: "tool",
+              callID: "call-provider-executed",
+              tool: "mcp.remote-search",
+              providerExecuted: true,
+              metadata: {
+                openai: {
+                  itemId: "item-1",
+                },
+              },
+              state: {
+                status: "completed",
+                input: {
+                  query: "latest ai news",
+                },
+                output: "headline results",
+                modelOutput: {
+                  type: "call",
+                  serverLabel: "remote-search",
+                  name: "search",
+                  arguments: "{\"query\":\"latest ai news\"}",
+                  output: "headline results",
+                },
+                title: "Remote Search",
+                metadata: {
+                  openai: {
+                    itemId: "item-1",
+                  },
+                },
+                time: {
+                  start: 1,
+                  end: 2,
+                },
+              },
+            } as Message.ToolPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    const assistantMessage = messages.find((item) => item.role === "assistant") as any
+    expect(assistantMessage).toBeDefined()
+    expect(assistantMessage.content).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "call-provider-executed",
+        toolName: "mcp.remote-search",
+        input: {
+          query: "latest ai news",
+        },
+        providerExecuted: true,
+        providerOptions: {
+          openai: {
+            itemId: "item-1",
+          },
+        },
+      },
+      {
+        type: "tool-result",
+        toolCallId: "call-provider-executed",
+        toolName: "mcp.remote-search",
+        output: {
+          type: "call",
+          serverLabel: "remote-search",
+          name: "search",
+          arguments: "{\"query\":\"latest ai news\"}",
+          output: "headline results",
+        },
+        providerOptions: {
+          openai: {
+            itemId: "item-1",
+          },
+        },
+      },
+    ])
+
+    expect(messages.find((item) => item.role === "tool")).toBeUndefined()
+  })
 })

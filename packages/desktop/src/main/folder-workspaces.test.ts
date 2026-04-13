@@ -93,4 +93,58 @@ describe("folder workspace helpers", () => {
       sessions: [],
     })
   })
+
+  it("forces global folders to display the canonical Global project name", () => {
+    const project = {
+      id: "global",
+      worktree: "/",
+      name: "AAA测试项目",
+      created: 1,
+      updated: 2,
+      sandboxes: [],
+    }
+
+    const workspace = {
+      id: "global",
+      worktree: "/",
+      name: "AAA测试项目",
+      created: 1,
+      updated: 2,
+      sessions: [
+        {
+          id: "session-global-folder",
+          projectID: "global",
+          directory: "C:\\Users\\demo\\纯净想",
+          title: "New chat",
+          created: 10,
+          updated: 20,
+        },
+      ],
+    }
+
+    expect(buildFolderWorkspaces([project], [workspace])).toEqual([
+      {
+        id: "C:\\Users\\demo\\纯净想",
+        directory: "C:\\Users\\demo\\纯净想",
+        name: "纯净想",
+        created: 10,
+        updated: 20,
+        project: {
+          id: "global",
+          name: "Global",
+          worktree: "/",
+        },
+        sessions: [
+          {
+            id: "session-global-folder",
+            projectID: "global",
+            directory: "C:\\Users\\demo\\纯净想",
+            title: "New chat",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+  })
 })

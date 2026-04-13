@@ -94,33 +94,179 @@ const ModelSelectionFields = {
   small_model: SmallModelField.nullable().optional(),
 }
 
-export const McpServerTransport = z.literal("stdio").meta({
+const SelectedMcpServersField = z
+  .array(z.string())
+  .optional()
+  .describe("Project-scoped selected global MCP server ids")
+
+const SelectedSkillsField = z
+  .array(z.string())
+  .optional()
+  .describe("Project-scoped selected skill ids")
+
+export const McpServerTransport = z.enum(["stdio", "remote"]).meta({
   ref: "McpServerTransport",
 })
 export type McpServerTransport = z.infer<typeof McpServerTransport>
 
-export const McpServerConfig = z
+export const McpRemoteProvider = z.literal("openai").meta({
+  ref: "McpRemoteProvider",
+})
+export type McpRemoteProvider = z.infer<typeof McpRemoteProvider>
+
+export const McpAllowedTools = z
+  .union([
+    z.array(z.string()),
+    z.object({
+      readOnly: z.boolean().optional(),
+      toolNames: z.array(z.string()).optional(),
+    }),
+  ])
+  .optional()
+  .meta({
+    ref: "McpAllowedTools",
+  })
+export type McpAllowedTools = z.infer<typeof McpAllowedTools>
+
+export const McpRequireApproval = z
+  .union([
+    z.enum(["always", "never"]),
+    z.object({
+      never: z
+        .object({
+          toolNames: z.array(z.string()).optional(),
+        })
+        .optional(),
+    }),
+  ])
+  .optional()
+  .meta({
+    ref: "McpRequireApproval",
+  })
+export type McpRequireApproval = z.infer<typeof McpRequireApproval>
+
+const McpServerBaseFields = {
+  id: z.string().min(1),
+  name: z.string().min(1).optional(),
+  enabled: z.boolean().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+} as const
+
+export const McpStdioServerConfig = z
   .object({
-    id: z.string().min(1),
-    name: z.string().min(1).optional(),
-    transport: McpServerTransport.optional(),
+    ...McpServerBaseFields,
+    transport: z.literal("stdio").optional(),
     command: z.string().min(1),
     args: z.array(z.string()).optional(),
     env: z.record(z.string(), z.string()).optional(),
     cwd: z.string().min(1).optional(),
-    enabled: z.boolean().optional(),
-    timeoutMs: z.number().int().positive().optional(),
   })
   .strict()
   .meta({
-    ref: "McpServerConfig",
+    ref: "McpStdioServerConfig",
   })
+export type McpStdioServerConfig = z.infer<typeof McpStdioServerConfig>
+
+export const McpRemoteServerConfig = z
+  .object({
+    ...McpServerBaseFields,
+    transport: z.literal("remote"),
+    provider: McpRemoteProvider.optional(),
+    serverUrl: z.string().min(1).optional(),
+    connectorId: z.string().min(1).optional(),
+    authorization: z.string().min(1).optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    serverDescription: z.string().min(1).optional(),
+    allowedTools: McpAllowedTools,
+    requireApproval: McpRequireApproval,
+  })
+  .strict()
+  .refine((value) => Boolean(value.serverUrl || value.connectorId), {
+    message: "Remote MCP servers require either serverUrl or connectorId.",
+    path: ["serverUrl"],
+  })
+  .meta({
+    ref: "McpRemoteServerConfig",
+  })
+export type McpRemoteServerConfig = z.infer<typeof McpRemoteServerConfig>
+
+export const McpServerConfig = z.union([McpStdioServerConfig, McpRemoteServerConfig]).meta({
+  ref: "McpServerConfig",
+})
 export type McpServerConfig = z.infer<typeof McpServerConfig>
 
-export const McpServerSummary = McpServerConfig.extend({
-  transport: McpServerTransport,
+export const McpStdioServerInput = McpStdioServerConfig.omit({
+  id: true,
+}).meta({
+  ref: "McpStdioServerInput",
+})
+export type McpStdioServerInput = z.infer<typeof McpStdioServerInput>
+
+export const McpRemoteServerInput = z
+  .object({
+    name: z.string().min(1).optional(),
+    enabled: z.boolean().optional(),
+    timeoutMs: z.number().int().positive().optional(),
+    transport: z.literal("remote"),
+    provider: McpRemoteProvider.optional(),
+    serverUrl: z.string().min(1).optional(),
+    connectorId: z.string().min(1).optional(),
+    authorization: z.string().min(1).optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    serverDescription: z.string().min(1).optional(),
+    allowedTools: McpAllowedTools,
+    requireApproval: McpRequireApproval,
+  })
+  .strict()
+  .refine((value) => Boolean(value.serverUrl || value.connectorId), {
+    message: "Remote MCP servers require either serverUrl or connectorId.",
+    path: ["serverUrl"],
+  })
+  .meta({
+    ref: "McpRemoteServerInput",
+  })
+export type McpRemoteServerInput = z.infer<typeof McpRemoteServerInput>
+
+export const McpServerInput = z.union([McpStdioServerInput, McpRemoteServerInput]).meta({
+  ref: "McpServerInput",
+})
+export type McpServerInput = z.infer<typeof McpServerInput>
+
+export const McpStdioServerSummary = McpStdioServerConfig.extend({
+  transport: z.literal("stdio"),
   enabled: z.boolean(),
 }).meta({
+  ref: "McpStdioServerSummary",
+})
+export type McpStdioServerSummary = z.infer<typeof McpStdioServerSummary>
+
+export const McpRemoteServerSummary = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1).optional(),
+    enabled: z.boolean(),
+    timeoutMs: z.number().int().positive().optional(),
+    transport: z.literal("remote"),
+    provider: McpRemoteProvider.optional(),
+    serverUrl: z.string().min(1).optional(),
+    connectorId: z.string().min(1).optional(),
+    authorization: z.string().min(1).optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    serverDescription: z.string().min(1).optional(),
+    allowedTools: McpAllowedTools,
+    requireApproval: McpRequireApproval,
+  })
+  .strict()
+  .refine((value) => Boolean(value.serverUrl || value.connectorId), {
+    message: "Remote MCP servers require either serverUrl or connectorId.",
+    path: ["serverUrl"],
+  })
+  .meta({
+    ref: "McpRemoteServerSummary",
+  })
+export type McpRemoteServerSummary = z.infer<typeof McpRemoteServerSummary>
+
+export const McpServerSummary = z.union([McpStdioServerSummary, McpRemoteServerSummary]).meta({
   ref: "McpServerSummary",
 })
 export type McpServerSummary = z.infer<typeof McpServerSummary>
@@ -131,7 +277,7 @@ const McpConfigField = z
   })
   .strict()
   .optional()
-  .describe("Project-scoped MCP server definitions")
+  .describe("MCP server definitions")
 
 export const Info = z
   .object({
@@ -185,6 +331,8 @@ export const Info = z
     instructions: z.array(z.string()).optional().describe("Additional instruction files or patterns to include"),
     tools: z.record(z.string(), z.boolean()).optional(),
     mcp: McpConfigField,
+    selected_mcp_servers: SelectedMcpServersField,
+    selected_skills: SelectedSkillsField,
     permission: Permission.Config.optional(),
     enterprise: z
       .object({
@@ -271,6 +419,26 @@ export const ModelSelection = z
   })
 export type ModelSelection = z.infer<typeof ModelSelection>
 
+export const ProjectMcpSelection = z
+  .object({
+    serverIDs: z.array(z.string()),
+  })
+  .strict()
+  .meta({
+    ref: "ProjectMcpSelection",
+  })
+export type ProjectMcpSelection = z.infer<typeof ProjectMcpSelection>
+
+export const ProjectSkillSelection = z
+  .object({
+    skillIDs: z.array(z.string()),
+  })
+  .strict()
+  .meta({
+    ref: "ProjectSkillSelection",
+  })
+export type ProjectSkillSelection = z.infer<typeof ProjectSkillSelection>
+
 function projectProviderConfigFromInfo(config: Info): ProjectProviderConfig {
   return {
     provider: config.provider,
@@ -290,10 +458,30 @@ function createProjectConfigTable() {
 }
 
 function normalizeMcpServer(config: McpServerConfig): McpServerSummary {
+  if ((config.transport ?? "stdio") === "remote") {
+    const remote = config as McpRemoteServerConfig
+    return {
+      id: remote.id,
+      name: remote.name,
+      transport: "remote",
+      serverUrl: remote.serverUrl,
+      authorization: remote.authorization,
+      headers: remote.headers,
+      allowedTools: remote.allowedTools,
+      requireApproval: remote.requireApproval,
+      provider: remote.provider,
+      connectorId: remote.connectorId,
+      serverDescription: remote.serverDescription,
+      enabled: remote.enabled ?? true,
+      timeoutMs: remote.timeoutMs,
+    }
+  }
+
+  const stdio = config as McpStdioServerConfig
   return {
-    ...config,
+    ...stdio,
     transport: "stdio",
-    enabled: config.enabled ?? true,
+    enabled: stdio.enabled ?? true,
   }
 }
 
@@ -302,6 +490,34 @@ createProjectConfigTable()
 function normalizeConfigID(configID: string | undefined) {
   const trimmed = configID?.trim()
   return trimmed && trimmed.length > 0 ? trimmed : GLOBAL_CONFIG_ID
+}
+
+function normalizeMcpServerIDs(serverIDs: string[]) {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const serverID of serverIDs) {
+    const trimmed = serverID.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    result.push(trimmed)
+  }
+
+  return result
+}
+
+function normalizeSkillIDs(skillIDs: string[]) {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const skillID of skillIDs) {
+    const trimmed = skillID.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    result.push(trimmed)
+  }
+
+  return result
 }
 
 function readConfig(configID: string): Info {
@@ -407,6 +623,72 @@ export async function listMcpServers(configID = GLOBAL_CONFIG_ID): Promise<McpSe
   return servers.toSorted((left, right) => left.id.localeCompare(right.id))
 }
 
+function readSelectedMcpServerIDs(configID: string) {
+  const selected = readConfig(configID).selected_mcp_servers
+  return selected ? normalizeMcpServerIDs(selected) : null
+}
+
+export async function getSelectedMcpServerIDs(configID: string): Promise<string[]> {
+  return readSelectedMcpServerIDs(normalizeConfigID(configID)) ?? []
+}
+
+export async function setSelectedMcpServerIDs(configID: string, serverIDs: string[]) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const next: Info = {
+    ...current,
+    selected_mcp_servers: normalizeMcpServerIDs(serverIDs),
+  }
+
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+function readSelectedSkillIDs(configID: string) {
+  const selected = readConfig(configID).selected_skills
+  return selected ? normalizeSkillIDs(selected) : null
+}
+
+export async function getSelectedSkillIDs(configID: string): Promise<string[]> {
+  return readSelectedSkillIDs(normalizeConfigID(configID)) ?? []
+}
+
+export async function setSelectedSkillIDs(configID: string, skillIDs: string[]) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const next: Info = {
+    ...current,
+    selected_skills: normalizeSkillIDs(skillIDs),
+  }
+
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+export async function resolveProjectMcpServers(projectID: string): Promise<McpServerSummary[]> {
+  const normalizedProjectID = normalizeConfigID(projectID)
+  const selectedServerIDs = readSelectedMcpServerIDs(normalizedProjectID)
+  const globalServers = await listMcpServers(GLOBAL_CONFIG_ID)
+
+  if (selectedServerIDs !== null) {
+    if (selectedServerIDs.length === 0) return []
+
+    const selectedServerIDSet = new Set(selectedServerIDs)
+    return globalServers.filter((server) => selectedServerIDSet.has(server.id))
+  }
+
+  return await listMcpServers(normalizedProjectID)
+}
+
+export async function getProjectMcpServer(projectID: string, serverID: string): Promise<McpServerSummary | undefined> {
+  const normalizedProjectID = normalizeConfigID(projectID)
+  const trimmedServerID = serverID.trim()
+  if (!trimmedServerID) return undefined
+
+  const globalServer = await getMcpServer(GLOBAL_CONFIG_ID, trimmedServerID)
+  if (globalServer) return globalServer
+
+  return await getMcpServer(normalizedProjectID, trimmedServerID)
+}
+
 export async function getMcpServer(configID: string, serverID: string): Promise<McpServerSummary | undefined> {
   const config = readConfig(normalizeConfigID(configID))
   const server = config.mcp?.servers?.[serverID]
@@ -414,7 +696,7 @@ export async function getMcpServer(configID: string, serverID: string): Promise<
   return normalizeMcpServer(server)
 }
 
-export async function setMcpServer(configID: string, serverID: string, server: Omit<McpServerConfig, "id">) {
+export async function setMcpServer(configID: string, serverID: string, server: McpServerInput) {
   const normalizedConfigID = normalizeConfigID(configID)
   const current = readConfig(normalizedConfigID)
   const parsed = McpServerConfig.parse({

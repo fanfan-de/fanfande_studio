@@ -1,13 +1,19 @@
 import { readdir } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import matter from "gray-matter"
 import z from "zod"
+import * as Config from "#config/config.ts"
+import { Instance } from "#project/instance.ts"
 import * as Filesystem from "#util/filesystem.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "skill" })
 const SKILL_FILENAME = "SKILL.md"
+const skillSessionState = Instance.state(() => new Map<string, {
+  allowedSkillIDs: string[] | null
+  loadedSkillIDs: Set<string>
+}>())
 
 export const SkillScope = z.enum(["project", "user"]).meta({
   ref: "SkillScope",
@@ -70,6 +76,69 @@ function skillRoots(projectRoot: string) {
   ]
 }
 
+function userSkillRoot() {
+  return join(homedir(), ".anybox", "skills")
+}
+
+function normalizeSkillIDs(skillIDs: string[]) {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const skillID of skillIDs) {
+    const trimmed = skillID.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    result.push(trimmed)
+  }
+
+  return result
+}
+
+function toSkillInfo(skill: SkillDocument): SkillInfo {
+  const { body: _body, ...info } = skill
+  return info
+}
+
+function getSessionSkillState(sessionID: string) {
+  const state = skillSessionState()
+  let entry = state.get(sessionID)
+  if (!entry) {
+    entry = {
+      allowedSkillIDs: null,
+      loadedSkillIDs: new Set<string>(),
+    }
+    state.set(sessionID, entry)
+  }
+
+  return entry
+}
+
+function isSkillAllowed(skillID: string, allowedSkillIDs: string[] | null | undefined) {
+  if (!allowedSkillIDs || allowedSkillIDs.length === 0) return true
+  return allowedSkillIDs.includes(skillID)
+}
+
+function ensureRelativeSkillResourcePath(inputPath: string) {
+  const trimmed = inputPath.trim()
+  if (!trimmed) {
+    throw new Error("Skill resource path must not be empty.")
+  }
+  if (isAbsolute(trimmed)) {
+    throw new Error("Skill resource path must be relative to the skill directory.")
+  }
+
+  return trimmed
+}
+
+function toPromptSkillSummary(skill: SkillInfo) {
+  return [
+    `<skill_summary id="${skill.id}" name="${skill.name}" scope="${skill.scope}">`,
+    `description: ${skill.description}`,
+    `path: ${skill.path}`,
+    `</skill_summary>`,
+  ].join("\n")
+}
+
 async function readSkillDocument(scope: SkillScope, directoryPath: string): Promise<SkillDocument | undefined> {
   const path = join(directoryPath, SKILL_FILENAME)
   if (!(await Filesystem.exists(path))) return undefined
@@ -114,7 +183,11 @@ async function discoverDocuments(projectRoot: string): Promise<SkillDocument[]> 
 }
 
 export async function list(projectRoot: string): Promise<SkillInfo[]> {
-  return (await discoverDocuments(projectRoot)).map(({ body: _body, ...info }) => info)
+  return (await discoverDocuments(projectRoot)).map(toSkillInfo)
+}
+
+export async function listGlobal(): Promise<SkillInfo[]> {
+  return (await discoverInRoot("user", userSkillRoot())).map(toSkillInfo)
 }
 
 export async function getSelected(projectRoot: string, skillIDs: string[]): Promise<SkillDocument[]> {
@@ -144,14 +217,113 @@ export async function getSelected(projectRoot: string, skillIDs: string[]): Prom
   return result
 }
 
-export async function loadPromptSections(projectRoot: string, skillIDs: string[]): Promise<string[]> {
-  const selected = await getSelected(projectRoot, skillIDs)
+export async function resolveSelectedSkillIDs(projectRoot: string, skillIDs: string[]): Promise<string[]> {
+  return (await getSelected(projectRoot, skillIDs)).map((skill) => skill.id)
+}
 
-  return selected.map((skill) =>
-    [
-      `<skill id="${skill.id}" name="${skill.name}" scope="${skill.scope}">`,
-      skill.body,
-      `</skill>`,
-    ].join("\n"),
-  )
+export async function resolveTurnSkillIDs(input: {
+  projectID: string
+  projectRoot: string
+  requestedSkillIDs?: string[]
+}): Promise<string[]> {
+  const requestedSkillIDs = input.requestedSkillIDs ?? await Config.getSelectedSkillIDs(input.projectID)
+  return await resolveSelectedSkillIDs(input.projectRoot, requestedSkillIDs)
+}
+
+export function configureSessionSkills(sessionID: string, skillIDs: string[]) {
+  const state = getSessionSkillState(sessionID)
+  const normalized = normalizeSkillIDs(skillIDs)
+  state.allowedSkillIDs = normalized.length > 0 ? normalized : null
+  state.loadedSkillIDs.clear()
+}
+
+export function getAllowedSkillIDs(sessionID: string) {
+  const allowedSkillIDs = getSessionSkillState(sessionID).allowedSkillIDs
+  return allowedSkillIDs ? [...allowedSkillIDs] : null
+}
+
+export function markSkillLoaded(sessionID: string, skillID: string) {
+  getSessionSkillState(sessionID).loadedSkillIDs.add(skillID)
+}
+
+export function isSkillLoaded(sessionID: string, skillID: string) {
+  return getSessionSkillState(sessionID).loadedSkillIDs.has(skillID)
+}
+
+export async function listForPrompt(projectRoot: string, skillIDs: string[]): Promise<SkillInfo[]> {
+  const selected = skillIDs.length === 0
+    ? await discoverDocuments(projectRoot)
+    : await getSelected(projectRoot, skillIDs)
+
+  return selected.map(toSkillInfo)
+}
+
+export async function loadPromptCatalogSections(projectRoot: string, skillIDs: string[]): Promise<string[]> {
+  const selected = await listForPrompt(projectRoot, skillIDs)
+  if (selected.length === 0) return []
+
+  const selectedOnly = skillIDs.length > 0
+  return [[
+    `<skills progressive="true" mode="${selectedOnly ? "selected" : "discoverable"}">`,
+    "Skills are loaded progressively. Do not assume a skill's full workflow from metadata alone.",
+    "Use the load-skill tool to read a skill's SKILL.md before following that skill's instructions.",
+    "Use the read-skill-resource tool only after load-skill, and only for relative files referenced by that skill.",
+    selectedOnly
+      ? "The user preselected the following skills for this turn. Stay within this set unless the user changes it."
+      : "The following skills are available for this turn. Load one only when it clearly matches the task.",
+    "",
+    ...selected.map(toPromptSkillSummary),
+    `</skills>`,
+  ].join("\n")]
+}
+
+export async function loadByID(
+  projectRoot: string,
+  skillID: string,
+  options?: {
+    allowedSkillIDs?: string[] | null
+  },
+): Promise<SkillDocument | undefined> {
+  const normalizedID = skillID.trim()
+  if (!normalizedID) return undefined
+  if (!isSkillAllowed(normalizedID, options?.allowedSkillIDs)) return undefined
+
+  return (await getSelected(projectRoot, [normalizedID]))[0]
+}
+
+export async function resolveResourcePath(
+  projectRoot: string,
+  skillID: string,
+  resourcePath: string,
+  options?: {
+    allowedSkillIDs?: string[] | null
+  },
+): Promise<{
+  skill: SkillDocument
+  resourcePath: string
+}> {
+  const skill = await loadByID(projectRoot, skillID, options)
+  if (!skill) {
+    throw new Error(`Skill '${skillID}' was not found or is not available for this turn.`)
+  }
+
+  const trimmedResourcePath = ensureRelativeSkillResourcePath(resourcePath)
+  const skillDirectory = dirname(skill.path)
+  const resolvedPath = Filesystem.normalizePath(resolve(skillDirectory, trimmedResourcePath))
+  const relativePath = relative(skillDirectory, resolvedPath)
+
+  if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    throw new Error(`Skill resource '${resourcePath}' is outside the skill directory.`)
+  }
+  if (!(await Filesystem.exists(resolvedPath))) {
+    throw new Error(`Skill resource '${resourcePath}' does not exist for skill '${skillID}'.`)
+  }
+  if (await Filesystem.isDir(resolvedPath)) {
+    throw new Error(`Skill resource '${resourcePath}' must be a file, not a directory.`)
+  }
+
+  return {
+    skill,
+    resourcePath: resolvedPath,
+  }
 }

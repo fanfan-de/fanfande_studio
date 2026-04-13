@@ -23,7 +23,7 @@ The script starts exactly these commands:
 - Do not replace the commands with alternatives unless the user explicitly changes the workflow.
 - Start the two processes in separate windows; do not run one after the other in the same blocking shell.
 - If either window exits immediately, inspect the visible error in that window and report it before retrying.
-- The script resolves the repository root relative to the skill location, so keep this skill inside the project root at `.codex/skills/fanfande-start-dev`.
+- The script resolves the repository root relative to the skill location, so keep this skill inside the project root at `.anybox/skills/fanfande-start-dev`.
 
 ## Resource
 

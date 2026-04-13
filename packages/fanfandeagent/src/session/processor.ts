@@ -1,4 +1,4 @@
-import * as Provider from "#provider/provider.ts";
+﻿import * as Provider from "#provider/provider.ts";
 import * as  Log from "#util/log.ts"
 import * as LLM from '#session/llm.ts';
 import * as Message from "#session/message.ts"
@@ -155,8 +155,8 @@ function extractToolResultState(
 }
 
 /**
- * create a  processor（handle single LLM prompt，not loop）
- * 不仅仅是LLM端的stream输出过程，还包括工具的执行过程
+ * create a  processor锛坔andle single LLM prompt锛宯ot loop锛?
+ * 涓嶄粎浠呮槸LLM绔殑stream杈撳嚭杩囩▼锛岃繕鍖呮嫭宸ュ叿鐨勬墽琛岃繃绋?
  * @param input 
  * @returns 
  */
@@ -230,7 +230,7 @@ export function create(input: {
                     const stream = await LLM.stream(streamInput)
                     const streamPartPersister = createStreamPartPersister()
                     let currentText: Message.TextPart | undefined = undefined
-                    // 某些模型（如 Claude、Gemini）支持多个并行推理链或嵌套推理，按 id 分开跟踪
+                    // 鏌愪簺妯″瀷锛堝 Claude銆丟emini锛夋敮鎸佸涓苟琛屾帹鐞嗛摼鎴栧祵濂楁帹鐞嗭紝鎸?id 鍒嗗紑璺熻釜
                     let reasoningMap: Record<string, Message.ReasoningPart> = {}
                     for await (const value of stream.fullStream) {
                         switch (value.type) {
@@ -255,7 +255,7 @@ export function create(input: {
                                         currentText.time.end = Date.now()
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
-                                    // 将 part 写入存储
+                                    // 灏?part 鍐欏叆瀛樺偍
                                     await streamPartPersister.persist(currentText, true)
                                     streamPartPersister.clear(currentText.id)
                                     currentText = undefined
@@ -305,7 +305,7 @@ export function create(input: {
 
                                         await streamPartPersister.persist(part, true)
                                         streamPartPersister.clear(part.id)
-                                        delete reasoningMap[value.id] // 已经存盘，内存可以删除了
+                                        delete reasoningMap[value.id] // 宸茬粡瀛樼洏锛屽唴瀛樺彲浠ュ垹闄や簡
                                     }
                                 }
                                 writeStreamDebug("\n")
@@ -321,7 +321,7 @@ export function create(input: {
                                 break
 
                             case "tool-input-start":
-                                const part: Message.ToolPart = {
+                                const pendingPart: Message.ToolPart = {
                                     id: Identifier.ascending("part"),
                                     sessionID: input.Assistant.sessionID,
                                     messageID: input.Assistant.id,
@@ -335,13 +335,13 @@ export function create(input: {
                                     },
                                     metadata: value.providerMetadata,
                                 }
-                                toolcalls[value.id] = part
+                                toolcalls[value.id] = pendingPart
 
-                                //这个阶段无需落盘，只需维护内存状态
+                                //杩欎釜闃舵鏃犻渶钀界洏锛屽彧闇€缁存姢鍐呭瓨鐘舵€?
                                 // try {
-                                //     await Session.updatePart(part)
+                                //     await Session.updatePart(pendingPart)
                                 // } catch (error) {
-                                //     console.error("failed to persist tool-input-start part", part)
+                                //     console.error("failed to persist tool-input-start part", pendingPart)
                                 //     throw error
                                 // }
                                 break;
@@ -358,52 +358,67 @@ export function create(input: {
                             case "file":
                                 break;
                             case 'tool-call':
-                                // value.toolCallId 工具调用 ID
-                                // value.toolName 工具名称
-                                // value.args 工具参数
+                                // value.toolCallId 宸ュ叿璋冪敤 ID
+                                // value.toolName 宸ュ叿鍚嶇О
+                                // value.args 宸ュ叿鍙傛暟
                                 const match = toolcalls[value.toolCallId]
-                                if (match) {
-                                    // 更新工具调用状态到“运行中”
-                                    const part: Message.ToolPart = {
-                                        ...match,
-                                        tool: value.toolName,
-                                        state: {
-                                            status: "running",
-                                            input: value.input,
-                                            title: value.title,
-                                            metadata: value.providerMetadata,
-                                            time: { start: Date.now() }
-                                        },
+                                const part: Message.ToolPart = {
+                                    ...(match ?? {
+                                        id: Identifier.ascending("part"),
+                                        sessionID: input.Assistant.sessionID,
+                                        messageID: input.Assistant.id,
+                                        type: "tool" as const,
+                                        callID: value.toolCallId,
+                                    }),
+                                    tool: value.toolName,
+                                    providerExecuted: value.providerExecuted === true ? true : match?.providerExecuted,
+                                    state: {
+                                        status: "running",
+                                        input: value.input,
+                                        title: value.title,
                                         metadata: value.providerMetadata,
-                                    }
-
-                                    toolcalls[value.toolCallId] = part as Message.ToolPart
-                                    try {
-                                        await Session.updatePart(part)
-                                    } catch (error) {
-                                        log.error("failed to persist tool-call part", {
-                                            callID: part.callID,
-                                            tool: part.tool,
-                                            error: normalizeToolError(error),
-                                        })
-                                        throw error
-                                    }
+                                        time: {
+                                            start:
+                                                match?.state.status === "running"
+                                                    ? match.state.time.start
+                                                    : Date.now(),
+                                        }
+                                    },
+                                    metadata: value.providerMetadata ?? match?.metadata,
+                                }
+                                toolcalls[value.toolCallId] = part
+                                try {
+                                    await Session.updatePart(part)
+                                } catch (error) {
+                                    log.error("failed to persist tool-call part", {
+                                        callID: part.callID,
+                                        tool: part.tool,
+                                        error: normalizeToolError(error),
+                                    })
+                                    throw error
                                 }
                                 break;
                             case 'tool-result':
                                 if (toolcalls[value.toolCallId] && toolcalls[value.toolCallId]?.state.status === "running") {
+                                    const resultValue = value as { output?: unknown; result?: unknown }
+                                    const rawToolOutput = resultValue.output ?? resultValue.result
                                     const normalized = extractToolResultState(
-                                        value.output,
+                                        rawToolOutput,
                                         value.title,
                                         value.providerMetadata ?? {},
                                         toolcalls[value.toolCallId],
                                     )
                                     const match: Message.ToolPart = {
                                         ...toolcalls[value.toolCallId]!,
+                                        providerExecuted:
+                                            value.providerExecuted === true
+                                                ? true
+                                                : toolcalls[value.toolCallId]!.providerExecuted,
                                         state: {
                                             status: "completed",
                                             input: value.input,
                                             output: normalized.output,
+                                            modelOutput: rawToolOutput,
                                             metadata: normalized.metadata,
                                             title: normalized.title,
                                             time: {
@@ -432,6 +447,10 @@ export function create(input: {
                                 if (toolcalls[value.toolCallId] && toolcalls[value.toolCallId]?.state.status === "running") {
                                     const match: Message.ToolPart = {
                                         ...toolcalls[value.toolCallId]!,
+                                        providerExecuted:
+                                            value.providerExecuted === true
+                                                ? true
+                                                : toolcalls[value.toolCallId]!.providerExecuted,
                                         state: {
                                             status: "error",
                                             input: value.input,
@@ -504,13 +523,13 @@ export function create(input: {
                                 break;
                             case 'finish':
 
-                                // 处理完成事件
-                                // value.finishReason 完成原因
-                                // value.usage 使用统计（token 数量等）
-                                // TODO: 更新消息的完成状态和时间
-                                // TODO: 记录使用统计和计费信息
-                                // TODO: 发送完成事件通知 UI
-                                // TODO: 可能需要触发消息压缩（compaction）
+                                // 澶勭悊瀹屾垚浜嬩欢
+                                // value.finishReason 瀹屾垚鍘熷洜
+                                // value.usage 浣跨敤缁熻锛坱oken 鏁伴噺绛夛級
+                                // TODO: 鏇存柊娑堟伅鐨勫畬鎴愮姸鎬佸拰鏃堕棿
+                                // TODO: 璁板綍浣跨敤缁熻鍜岃璐逛俊鎭?
+                                // TODO: 鍙戦€佸畬鎴愪簨浠堕€氱煡 UI
+                                // TODO: 鍙兘闇€瑕佽Е鍙戞秷鎭帇缂╋紙compaction锛?
                                 this.message.finishReason = value.finishReason
                                 break;
                             case "abort":
@@ -519,16 +538,16 @@ export function create(input: {
                             case "raw":
                                 break;
                             case 'error':
-                                // 处理错误事件
-                                // value.error 错误信息
-                                // TODO: 记录错误到消息的 error 字段
-                                // TODO: 更新数据库中的错误状态
-                                // TODO: 根据错误类型决定是否重试（增加 attempt）
-                                // TODO: 发送错误事件通知 UI
+                                // 澶勭悊閿欒浜嬩欢
+                                // value.error 閿欒淇℃伅
+                                // TODO: 璁板綍閿欒鍒版秷鎭殑 error 瀛楁
+                                // TODO: 鏇存柊鏁版嵁搴撲腑鐨勯敊璇姸鎬?
+                                // TODO: 鏍规嵁閿欒绫诲瀷鍐冲畾鏄惁閲嶈瘯锛堝鍔?attempt锛?
+                                // TODO: 鍙戦€侀敊璇簨浠堕€氱煡 UI
                                 log.error("stream error", { error: value.error })
                                 break;
                             case "finish-step":
-                                // 接收到这个 value，说明 LLM 判断结束 React loop
+                                // 鎺ユ敹鍒拌繖涓?value锛岃鏄?LLM 鍒ゆ柇缁撴潫 React loop
                                 this.message.finishReason = value.finishReason
 
 
@@ -589,7 +608,7 @@ export function create(input: {
                                 }
                                 break;
                             default:
-                                // 处理未知事件类型
+                                // 澶勭悊鏈煡浜嬩欢绫诲瀷
                                 log.warn(`Unknown stream value type: ${(value as any).type}`);
                                 break;
                         }
@@ -620,7 +639,7 @@ export function create(input: {
                 catch (e: any) {
                     await failOpenToolCalls(normalizeToolError(e))
                     log.error("processor failure", { error: e.message, stack: e.stack })
-                    throw e  // 重新抛出错误
+                    throw e  // 閲嶆柊鎶涘嚭閿欒
                 }
                 if (needsCompaction) return "compact"
                 if (blocked) return "stop"

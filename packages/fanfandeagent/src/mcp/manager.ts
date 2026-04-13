@@ -19,6 +19,15 @@ type ManagedServer = {
   toolsPromise?: Promise<McpToolDefinition[]>
 }
 
+export interface McpServerDiagnostic {
+  serverID: string
+  enabled: boolean
+  ok: boolean
+  toolCount: number
+  toolNames: string[]
+  error?: string
+}
+
 type LiteralValue = string | number | bigint | boolean | null | undefined
 
 const MCP_STRUCTURED_CONTENT_KEY = "mcpStructuredContent"
@@ -207,7 +216,7 @@ export class McpManager {
   }
 
   async tools(): Promise<Tool.ToolInfo[]> {
-    const servers = await Config.listMcpServers(this.projectID)
+    const servers = await Config.resolveProjectMcpServers(this.projectID)
     await this.reconcile(servers)
     const result: Tool.ToolInfo[] = []
     const seen = new Map<string, string>()
@@ -220,7 +229,7 @@ export class McpManager {
 
       let tools: McpToolDefinition[]
       try {
-        tools = await this.serverTools(handle)
+        tools = this.filterTools(server, await this.serverTools(handle))
       } catch (error) {
         log.warn("failed to list mcp tools", {
           projectID: this.projectID,
@@ -242,6 +251,62 @@ export class McpManager {
     }
 
     return result
+  }
+
+  async diagnose(serverID: string): Promise<McpServerDiagnostic> {
+    const activeServers = await Config.resolveProjectMcpServers(this.projectID)
+    const server = await Config.getProjectMcpServer(this.projectID, serverID)
+    if (!server) {
+      throw new Error(`MCP server '${serverID}' is not available for project '${this.projectID}'.`)
+    }
+
+    const serversToReconcile = activeServers.some((item) => item.id === server.id)
+      ? activeServers
+      : [...activeServers, server]
+    await this.reconcile(serversToReconcile)
+
+    if (!server.enabled) {
+      return {
+        serverID,
+        enabled: false,
+        ok: false,
+        toolCount: 0,
+        toolNames: [],
+        error: "Server is disabled.",
+      }
+    }
+
+    const handle = this.handles.get(server.id)
+    if (!handle) {
+      return {
+        serverID,
+        enabled: true,
+        ok: false,
+        toolCount: 0,
+        toolNames: [],
+        error: "Server handle is unavailable.",
+      }
+    }
+
+    try {
+      const tools = this.filterTools(server, await this.serverTools(handle))
+      return {
+        serverID,
+        enabled: true,
+        ok: true,
+        toolCount: tools.length,
+        toolNames: tools.map((tool) => tool.name),
+      }
+    } catch (error) {
+      return {
+        serverID,
+        enabled: true,
+        ok: false,
+        toolCount: 0,
+        toolNames: [],
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
   }
 
   private async reconcile(servers: Config.McpServerSummary[]) {
@@ -377,7 +442,7 @@ export class McpManager {
 
     const timeout = handle.config.timeoutMs ?? (await Config.get(this.projectID)).experimental?.mcp_timeout ?? 30_000
     handle.client = new McpClient({
-      cwd: resolveServerCwd(handle.config.cwd),
+      cwd: handle.config.transport === "stdio" ? resolveServerCwd(handle.config.cwd) : Instance.directory,
       onToolsChanged: () => {
         handle.toolsPromise = undefined
       },
@@ -387,6 +452,32 @@ export class McpManager {
     })
 
     return handle.client
+  }
+
+  private filterTools(server: Config.McpServerSummary, tools: McpToolDefinition[]) {
+    if (server.transport !== "remote" || !server.allowedTools) {
+      return tools
+    }
+
+    const allowedTools = server.allowedTools
+    const namedTools = new Set(
+      Array.isArray(allowedTools)
+        ? allowedTools
+        : allowedTools.toolNames ?? [],
+    )
+    const requireReadOnly = !Array.isArray(allowedTools) && allowedTools.readOnly === true
+
+    return tools.filter((tool) => {
+      if (requireReadOnly && tool.annotations?.readOnlyHint !== true) {
+        return false
+      }
+
+      if (namedTools.size > 0 && !namedTools.has(tool.name)) {
+        return false
+      }
+
+      return true
+    })
   }
 }
 
@@ -405,4 +496,8 @@ const managerState = Instance.state(
 
 export async function tools() {
   return await managerState().tools()
+}
+
+export async function diagnose(serverID: string) {
+  return await managerState().diagnose(serverID)
 }

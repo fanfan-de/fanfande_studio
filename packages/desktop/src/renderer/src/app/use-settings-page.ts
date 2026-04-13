@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import type {
+  McpAllowedTools,
+  McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
   ProjectModelSelection,
@@ -18,6 +20,7 @@ interface LoadSettingsOptions {
 }
 
 interface UseSettingsPageOptions {
+  onMcpUpdated?: () => void | Promise<void>
   projectID: string | null
   projectName?: string | null
   projectWorktree?: string | null
@@ -40,16 +43,79 @@ function buildProviderDrafts(items: ProviderCatalogItem[]) {
   }, {})
 }
 
+function tryParseStringArrayLiteral(input: string) {
+  const trimmed = input.trim()
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return null
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (!Array.isArray(parsed) || parsed.some((value) => typeof value !== "string")) {
+      return null
+    }
+
+    return parsed
+      .map((value) => value.trim())
+      .filter(Boolean)
+  } catch {
+    return null
+  }
+}
+
+function parseLineList(input: string) {
+  const parsedLiteral = tryParseStringArrayLiteral(input)
+  if (parsedLiteral) return parsedLiteral
+
+  return input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function stringifyLineList(entries?: string[]) {
+  return (entries ?? [])
+    .flatMap((entry) => tryParseStringArrayLiteral(entry) ?? [entry])
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .join("\n")
+}
+
+function stringifyKeyValueEntries(entries?: Record<string, string>) {
+  return Object.entries(entries ?? {})
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n")
+}
+
+function stringifyAllowedToolNames(allowedTools?: McpAllowedTools) {
+  if (Array.isArray(allowedTools)) {
+    return stringifyLineList(allowedTools)
+  }
+
+  return stringifyLineList(allowedTools?.toolNames)
+}
+
+function resolveAllowedToolsMode(allowedTools?: McpAllowedTools): McpServerDraftState["allowedToolsMode"] {
+  if (!allowedTools) return "all"
+  if (Array.isArray(allowedTools)) return "names"
+  if (allowedTools.readOnly && (allowedTools.toolNames?.length ?? 0) > 0) return "read-only-names"
+  if (allowedTools.readOnly) return "read-only"
+  if ((allowedTools.toolNames?.length ?? 0) > 0) return "names"
+  return "all"
+}
+
 function toMcpDraft(server?: McpServerSummary): McpServerDraftState {
   return {
     id: server?.id ?? "",
     name: server?.name ?? "",
-    command: server?.command ?? "",
-    args: (server?.args ?? []).join("\n"),
-    env: Object.entries(server?.env ?? {})
-      .map(([key, value]) => `${key}=${value}`)
-      .join("\n"),
-    cwd: server?.cwd ?? "",
+    transport: server?.transport ?? "stdio",
+    command: server?.transport === "stdio" ? server.command : "",
+    args: server?.transport === "stdio" ? stringifyLineList(server.args) : "",
+    env: server?.transport === "stdio" ? stringifyKeyValueEntries(server.env) : "",
+    cwd: server?.transport === "stdio" ? (server.cwd ?? "") : "",
+    serverUrl: server?.transport === "remote" ? (server.serverUrl ?? "") : "",
+    authorization: server?.transport === "remote" ? (server.authorization ?? "") : "",
+    headers: server?.transport === "remote" ? stringifyKeyValueEntries(server.headers) : "",
+    allowedToolsMode: server?.transport === "remote" ? resolveAllowedToolsMode(server.allowedTools) : "all",
+    allowedToolNames: server?.transport === "remote" ? stringifyAllowedToolNames(server.allowedTools) : "",
     enabled: server?.enabled ?? true,
     timeoutMs: typeof server?.timeoutMs === "number" ? String(server.timeoutMs) : "",
   }
@@ -59,27 +125,85 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
-function parseMcpEnv(input: string) {
-  const entries = input
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const separatorIndex = line.indexOf("=")
-      if (separatorIndex === -1) {
-        throw new Error(`Invalid environment line '${line}'. Use KEY=value format.`)
-      }
+function formatMcpDiagnosticMessage(diagnostic: McpServerDiagnostic): SettingsMessage {
+  if (diagnostic.ok) {
+    return {
+      tone: "success",
+      text:
+        diagnostic.toolCount > 0
+          ? `MCP server reachable. Listed ${diagnostic.toolCount} tool${diagnostic.toolCount === 1 ? "" : "s"}.`
+          : "MCP server reachable, but it did not expose any tools.",
+    }
+  }
 
-      const key = line.slice(0, separatorIndex).trim()
-      const value = line.slice(separatorIndex + 1)
-      if (!key) {
-        throw new Error(`Invalid environment line '${line}'. Environment keys cannot be empty.`)
-      }
+  return {
+    tone: "error",
+    text: diagnostic.error
+      ? `MCP server saved, but tool discovery failed: ${diagnostic.error}`
+      : "MCP server saved, but tool discovery failed.",
+  }
+}
 
-      return [key, value] as const
-    })
+function parseMcpKeyValue(input: string, label: string) {
+  const entries = parseLineList(input).map((line) => {
+    const separatorIndex = line.indexOf("=")
+    if (separatorIndex === -1) {
+      throw new Error(`Invalid ${label} line '${line}'. Use KEY=value format.`)
+    }
+
+    const key = line.slice(0, separatorIndex).trim()
+    const value = line.slice(separatorIndex + 1)
+    if (!key) {
+      throw new Error(`Invalid ${label} line '${line}'. Keys cannot be empty.`)
+    }
+
+    return [key, value] as const
+  })
 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+function buildAllowedTools(draft: McpServerDraftState): McpAllowedTools | undefined {
+  const toolNames = parseLineList(draft.allowedToolNames)
+
+  switch (draft.allowedToolsMode) {
+    case "all":
+      return undefined
+    case "names":
+      return toolNames.length > 0 ? toolNames : undefined
+    case "read-only":
+      return { readOnly: true }
+    case "read-only-names":
+      return {
+        readOnly: true,
+        ...(toolNames.length > 0 ? { toolNames } : {}),
+      }
+  }
+}
+
+function getMcpServerValidationError(draft: McpServerDraftState) {
+  const serverID = draft.id.trim()
+  if (!serverID) {
+    return "MCP servers require an id."
+  }
+
+  if (draft.transport === "stdio" && !draft.command.trim()) {
+    return "Local MCP servers require a command."
+  }
+
+  if (draft.transport === "remote" && !draft.serverUrl.trim()) {
+    return "Remote MCP servers require a server URL."
+  }
+
+  if (
+    draft.transport === "remote" &&
+    (draft.allowedToolsMode === "names" || draft.allowedToolsMode === "read-only-names") &&
+    parseLineList(draft.allowedToolNames).length === 0
+  ) {
+    return "Named tool filters require at least one tool name."
+  }
+
+  return null
 }
 
 export function useSettingsPage(options: UseSettingsPageOptions) {
@@ -96,6 +220,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   })
   const [providerDrafts, setProviderDrafts] = useState<Record<string, ProviderDraftState>>({})
   const [mcpServers, setMcpServers] = useState<McpServerSummary[]>([])
+  const [mcpDiagnostics, setMcpDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
   const [activeMcpServerID, setActiveMcpServerID] = useState<string | null>(null)
   const [mcpServerDraft, setMcpServerDraft] = useState<McpServerDraftState>(() => toMcpDraft())
   const [isLoading, setIsLoading] = useState(false)
@@ -107,6 +232,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [savingMcpServerID, setSavingMcpServerID] = useState<string | null>(null)
   const [deletingMcpServerID, setDeletingMcpServerID] = useState<string | null>(null)
   const requestIDRef = useRef(0)
+  const mcpDiagnosticRequestIDRef = useRef<Record<string, number>>({})
 
   useEffect(() => {
     if (!isOpen) return
@@ -114,13 +240,28 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     void loadSettingsData()
   }, [isOpen, options.projectID])
 
+  async function notifyMcpUpdated() {
+    try {
+      await options.onMcpUpdated?.()
+    } catch (error) {
+      console.error("[desktop] global MCP sync failed:", error)
+    }
+  }
+
+  useEffect(() => {
+    if (!isOpen || !options.projectID || !activeMcpServerID) return
+
+    void loadMcpServerDiagnostic(options.projectID, activeMcpServerID)
+  }, [activeMcpServerID, isOpen, options.projectID])
+
   async function loadSettingsData(optionsArg?: LoadSettingsOptions) {
-    if (!window.desktop?.getGlobalProviderCatalog || !window.desktop?.getGlobalModels) {
+    if (!window.desktop?.getGlobalProviderCatalog || !window.desktop?.getGlobalModels || !window.desktop?.getGlobalMcpServers) {
       setLoadError("Desktop provider settings APIs are unavailable.")
       setCatalog([])
       setModels([])
       setProviderDrafts({})
       setMcpServers([])
+      setMcpDiagnostics({})
       setMcpServerDraft(toMcpDraft())
       setActiveMcpServerID(null)
       return
@@ -136,9 +277,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       const [nextCatalog, modelPayload, nextMcpServers] = await Promise.all([
         window.desktop.getGlobalProviderCatalog(),
         window.desktop.getGlobalModels(),
-        options.projectID && window.desktop?.getProjectMcpServers
-          ? window.desktop.getProjectMcpServers({ projectID: options.projectID })
-          : Promise.resolve([] as McpServerSummary[]),
+        window.desktop.getGlobalMcpServers(),
       ])
 
       if (requestIDRef.current !== requestID) return
@@ -150,6 +289,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setSelectionDraft(nextSelection)
       setProviderDrafts(buildProviderDrafts(nextCatalog))
       setMcpServers(nextMcpServers)
+      setMcpDiagnostics((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([serverID]) => nextMcpServers.some((server) => server.id === serverID)),
+        ),
+      )
       setActiveMcpServerID((current) => {
         if (!current) return current
         return nextMcpServers.some((server) => server.id === current) ? current : null
@@ -165,6 +309,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setModels([])
       setProviderDrafts({})
       setMcpServers([])
+      setMcpDiagnostics({})
       setMcpServerDraft(toMcpDraft())
       setActiveMcpServerID(null)
       setLoadError(getErrorMessage(error))
@@ -172,6 +317,45 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       if (requestIDRef.current === requestID) {
         setIsLoading(false)
       }
+    }
+  }
+
+  async function loadMcpServerDiagnostic(projectID: string, serverID: string) {
+    if (!window.desktop?.getProjectMcpServerDiagnostic) return null
+
+    const requestID = (mcpDiagnosticRequestIDRef.current[serverID] ?? 0) + 1
+    mcpDiagnosticRequestIDRef.current[serverID] = requestID
+
+    try {
+      const diagnostic = await window.desktop.getProjectMcpServerDiagnostic({
+        projectID,
+        serverID,
+      })
+
+      if (mcpDiagnosticRequestIDRef.current[serverID] !== requestID) return null
+
+      setMcpDiagnostics((current) => ({
+        ...current,
+        [serverID]: diagnostic,
+      }))
+
+      return diagnostic
+    } catch (error) {
+      if (mcpDiagnosticRequestIDRef.current[serverID] !== requestID) return null
+
+      const diagnostic: McpServerDiagnostic = {
+        serverID,
+        enabled: true,
+        ok: false,
+        toolCount: 0,
+        toolNames: [],
+        error: getErrorMessage(error),
+      }
+      setMcpDiagnostics((current) => ({
+        ...current,
+        [serverID]: diagnostic,
+      }))
+      return diagnostic
     }
   }
 
@@ -348,14 +532,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function saveMcpServer() {
-    if (!options.projectID || !window.desktop?.updateProjectMcpServer) return false
+    if (!window.desktop?.updateGlobalMcpServer) return false
 
     const serverID = mcpServerDraft.id.trim()
-    const command = mcpServerDraft.command.trim()
-    if (!serverID || !command) {
+    const validationError = getMcpServerValidationError(mcpServerDraft)
+    if (validationError) {
       setMessage({
         tone: "error",
-        text: "MCP servers require both an id and a command.",
+        text: validationError,
       })
       return false
     }
@@ -364,26 +548,36 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setMessage(null)
 
     try {
-      await window.desktop.updateProjectMcpServer({
-        projectID: options.projectID,
+      await window.desktop.updateGlobalMcpServer({
         serverID,
-        server: {
-          name: mcpServerDraft.name.trim() || undefined,
-          transport: "stdio",
-          command,
-          args: mcpServerDraft.args
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter(Boolean),
-          env: parseMcpEnv(mcpServerDraft.env),
-          cwd: mcpServerDraft.cwd.trim() || undefined,
-          enabled: mcpServerDraft.enabled,
-          timeoutMs: mcpServerDraft.timeoutMs.trim() ? Number(mcpServerDraft.timeoutMs.trim()) : undefined,
-        },
+        server:
+          mcpServerDraft.transport === "stdio"
+            ? {
+                name: mcpServerDraft.name.trim() || undefined,
+                transport: "stdio",
+                command: mcpServerDraft.command.trim(),
+                args: parseLineList(mcpServerDraft.args),
+                env: parseMcpKeyValue(mcpServerDraft.env, "environment"),
+                cwd: mcpServerDraft.cwd.trim() || undefined,
+                enabled: mcpServerDraft.enabled,
+                timeoutMs: mcpServerDraft.timeoutMs.trim() ? Number(mcpServerDraft.timeoutMs.trim()) : undefined,
+              }
+            : {
+                name: mcpServerDraft.name.trim() || undefined,
+                transport: "remote",
+                serverUrl: mcpServerDraft.serverUrl.trim(),
+                authorization: mcpServerDraft.authorization.trim() || undefined,
+                headers: parseMcpKeyValue(mcpServerDraft.headers, "header"),
+                allowedTools: buildAllowedTools(mcpServerDraft),
+                enabled: mcpServerDraft.enabled,
+                timeoutMs: mcpServerDraft.timeoutMs.trim() ? Number(mcpServerDraft.timeoutMs.trim()) : undefined,
+              },
       })
       await loadSettingsData({ silent: true })
+      await notifyMcpUpdated()
       setActiveMcpServerID(serverID)
-      setMessage({
+      const diagnostic = options.projectID ? await loadMcpServerDiagnostic(options.projectID, serverID) : null
+      setMessage(diagnostic ? formatMcpDiagnosticMessage(diagnostic) : {
         tone: "success",
         text: "MCP server saved.",
       })
@@ -400,20 +594,25 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function deleteMcpServer(serverID: string) {
-    if (!options.projectID || !window.desktop?.deleteProjectMcpServer) return
+    if (!window.desktop?.deleteGlobalMcpServer) return
 
     setDeletingMcpServerID(serverID)
     setMessage(null)
 
     try {
-      await window.desktop.deleteProjectMcpServer({
-        projectID: options.projectID,
+      await window.desktop.deleteGlobalMcpServer({
         serverID,
       })
       await loadSettingsData({ silent: true })
+      await notifyMcpUpdated()
       if (activeMcpServerID === serverID) {
         startNewMcpServer()
       }
+      setMcpDiagnostics((current) => {
+        const next = { ...current }
+        delete next[serverID]
+        return next
+      })
       setMessage({
         tone: "success",
         text: "MCP server removed.",
@@ -430,6 +629,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
   return {
     activeMcpServerID,
+    activeMcpServerDiagnostic: activeMcpServerID ? mcpDiagnostics[activeMcpServerID] ?? null : null,
     catalog,
     closeSettings,
     deleteMcpServer,

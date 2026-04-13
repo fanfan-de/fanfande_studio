@@ -980,6 +980,10 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
   return sdk as SDKProvider
 }
 
+export async function getSDKProvider(model: Model, configID = resolveConfigID()) {
+  return await getSDK(model, configID)
+}
+
 // -----------------------------------------------------------------------------
 // models.dev catalog -> 内部统一 provider 结构
 // -----------------------------------------------------------------------------

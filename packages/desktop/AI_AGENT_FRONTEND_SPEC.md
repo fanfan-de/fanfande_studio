@@ -84,7 +84,7 @@
 
 ### 5.2 `useAgentWorkspace()`
 
-`useAgentWorkspace()` 负责文件夹工作区、会话、thread、工具审批流，以及 composer 的运行态：
+`useAgentWorkspace()` 负责文件夹工作区、会话、thread、工具审批流，以及 composer 运行态与项目级发送配置：
 
 - 工作区与会话：`workspaces`、`selectedFolderID`、`expandedFolderID`、`hoveredFolderID`、`activeSessionID`
 - 区域级视图状态：`leftSidebarView`、`rightSidebarView`
@@ -95,6 +95,7 @@
 - 侧栏操作过程：`isCreatingProject`、`isCreatingSession`、`deletingSessionID`
 - 工具审批：`activePendingPermissionRequests`、`permissionRequestActionRequestID`、`permissionRequestActionError`
 - composer：`composerAttachments`、`composerModelOptions`、`composerSelectedModel`、`composerSelectedModelLabel`
+- 项目级 skills 发送配置：`composerSkillOptions`、`composerSelectedSkillIDs`、`composerSelectedSkillLabel`
 
 当前真实约束：
 
@@ -104,7 +105,8 @@
 4. 选中工作区的 `project.id` 会驱动 composer 模型列表；这部分是项目级，而不是全局设置页级。
 5. `createSessionTabs` 可以和普通 session tabs 并存；激活 create-session tab 时，Canvas 会切到创建表单，而不是 thread。
 6. `composerAttachments` 会在真正提交时被附加到 prompt 文本末尾。
-7. 只要存在待审批请求，composer 发送按钮就会禁用。
+7. `composerSelectedSkillIDs` 由 `Session Canvas Top Menu` 右侧的项目级 skills 菜单维护，发送成功后会清空。
+8. 只要存在待审批请求，composer 发送按钮就会禁用。
 
 ### 5.3 `useSettingsPage()`
 
@@ -272,6 +274,7 @@
    - 没有 backend session id 时，先走 `createAgentSession()` 兜底创建。
    - `Review` 模式会附加固定 review system prompt。
    - 附件会被编码进 prompt 末尾的 `Attached files:` 段落。
+   - 当前项目 skills 菜单里的已选 `skill ids` 会通过 `skills` 字段一并发送。
    - 优先走 `streamAgentMessage()` + `onAgentStreamEvent()`。
    - 若流式接口不可用，再退回 `sendAgentMessage()` 一次性消费事件数组。
 
@@ -318,7 +321,7 @@
    - 只要当前不是 create-session tab 就会渲染。
    - `activeSession` 为空时，会显示 `No session selected`。
    - 属于当前 session canvas 的局部 top menu。
-   - 当前主要承载 Git quick menu。
+   - 当前承载项目级 skills 菜单和 Git quick menu。
    - 不负责切换 session，也不负责切换左右区域视图。
 
 ### 7.11 Right Sidebar / Inspector
@@ -429,7 +432,7 @@ npm run dev
 3. 流式 SSE 增量渲染与 trace 合并：`src/renderer/src/App.test.tsx`、`src/renderer/src/app/stream.test.ts`
 4. 工具审批加载、审批提交、恢复流式执行与发送禁用：`src/renderer/src/App.test.tsx`
 5. 左右侧栏折叠、恢复、拖拽与键盘缩放：`src/renderer/src/App.test.tsx`
-6. composer 模型菜单、附件行为：`src/renderer/src/App.test.tsx`
+6. composer 模型菜单、Session Canvas Top Menu skills 菜单、附件行为：`src/renderer/src/App.test.tsx`
 7. 设置页 Provider / Models / Appearance 三个分组：`src/renderer/src/App.test.tsx`
 
 建议的最低手工验收项：

@@ -148,21 +148,27 @@ type SkillListEnvelope = JsonEnvelope<
   }>
 >
 
-type McpServerListEnvelope = JsonEnvelope<
-  Array<{
-    id: string
-    name?: string
-    transport: "stdio"
-    command: string
-    args?: string[]
-    env?: Record<string, string>
-    cwd?: string
-    enabled: boolean
-    timeoutMs?: number
-  }>
->
+type ProjectSkillSelectionEnvelope = JsonEnvelope<{
+  skillIDs: string[]
+}>
 
-type McpServerEnvelope = JsonEnvelope<{
+type McpAllowedTools =
+  | string[]
+  | {
+      readOnly?: boolean
+      toolNames?: string[]
+    }
+
+type McpRequireApproval =
+  | "always"
+  | "never"
+  | {
+      never?: {
+        toolNames?: string[]
+      }
+    }
+
+type StdioMcpServerSummary = {
   id: string
   name?: string
   transport: "stdio"
@@ -172,7 +178,29 @@ type McpServerEnvelope = JsonEnvelope<{
   cwd?: string
   enabled: boolean
   timeoutMs?: number
-}>
+}
+
+type RemoteMcpServerSummary = {
+  id: string
+  name?: string
+  transport: "remote"
+  provider?: "openai"
+  serverUrl: string
+  connectorId?: string
+  authorization?: string
+  headers?: Record<string, string>
+  serverDescription?: string
+  allowedTools?: McpAllowedTools
+  requireApproval?: McpRequireApproval
+  enabled: boolean
+  timeoutMs?: number
+}
+
+type McpServerListEnvelope = JsonEnvelope<
+  Array<StdioMcpServerSummary | RemoteMcpServerSummary>
+>
+
+type McpServerEnvelope = JsonEnvelope<StdioMcpServerSummary | RemoteMcpServerSummary>
 
 type McpDeleteEnvelope = JsonEnvelope<{
   serverID: string
@@ -663,9 +691,9 @@ describe("server api", () => {
 
     try {
       await createGitRepo(repositoryRoot, "skills-project")
-      await mkdir(join(repositoryRoot, ".codex", "skills", "reviewer"), { recursive: true })
+      await mkdir(join(repositoryRoot, ".anybox", "skills", "reviewer"), { recursive: true })
       await writeFile(
-        join(repositoryRoot, ".codex", "skills", "reviewer", "SKILL.md"),
+        join(repositoryRoot, ".anybox", "skills", "reviewer", "SKILL.md"),
         [
           "---",
           "name: Reviewer",
@@ -679,9 +707,9 @@ describe("server api", () => {
         ].join("\n"),
       )
 
-      await mkdir(join(repositoryRoot, ".codex", "skills", "writer"), { recursive: true })
+      await mkdir(join(repositoryRoot, ".anybox", "skills", "writer"), { recursive: true })
       await writeFile(
-        join(repositoryRoot, ".codex", "skills", "writer", "SKILL.md"),
+        join(repositoryRoot, ".anybox", "skills", "writer", "SKILL.md"),
         [
           "# Writer",
           "",
@@ -708,16 +736,76 @@ describe("server api", () => {
 
       expect(response.status).toBe(200)
       expect(body.success).toBe(true)
-      expect(body.data).toHaveLength(2)
-      expect(body.data?.find((skill) => skill.id === "project:reviewer")).toMatchObject({
+      const projectSkills = body.data?.filter((skill) => skill.scope === "project") ?? []
+      expect(projectSkills).toHaveLength(2)
+      expect(projectSkills.find((skill) => skill.id === "project:reviewer")).toMatchObject({
         name: "Reviewer",
         description: "Review code changes before merge",
         scope: "project",
       })
-      expect(body.data?.find((skill) => skill.id === "project:writer")).toMatchObject({
+      expect(projectSkills.find((skill) => skill.id === "project:writer")).toMatchObject({
         name: "writer",
         description: "Writer",
         scope: "project",
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project skill selection routes should persist project-scoped skill ids", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-skill-selection-project-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "skill-selection-project")
+      await mkdir(join(repositoryRoot, ".anybox", "skills", "reviewer"), { recursive: true })
+      await writeFile(
+        join(repositoryRoot, ".anybox", "skills", "reviewer", "SKILL.md"),
+        [
+          "---",
+          "name: Reviewer",
+          "description: Review code changes before merge",
+          "---",
+          "",
+          "# Reviewer",
+          "",
+          "Always review carefully.",
+          "",
+        ].join("\n"),
+      )
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const updateResponse = await app.request(`http://localhost/api/projects/${projectID}/skills/selection`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          skillIDs: ["project:reviewer", "project:missing", "project:reviewer"],
+        }),
+      })
+      const updateBody = (await updateResponse.json()) as ProjectSkillSelectionEnvelope
+
+      expect(updateResponse.status).toBe(200)
+      expect(updateBody.data).toEqual({
+        skillIDs: ["project:reviewer"],
+      })
+
+      const readResponse = await app.request(`http://localhost/api/projects/${projectID}/skills/selection`)
+      const readBody = (await readResponse.json()) as ProjectSkillSelectionEnvelope
+
+      expect(readResponse.status).toBe(200)
+      expect(readBody.data).toEqual({
+        skillIDs: ["project:reviewer"],
       })
     } finally {
       await rm(repositoryRoot, { recursive: true, force: true })
@@ -799,6 +887,76 @@ describe("server api", () => {
 
       expect(emptyResponse.status).toBe(200)
       expect(emptyBody.data).toHaveLength(0)
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project MCP routes should persist remote MCP server configs", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-remote-mcp-project-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "remote-mcp-project")
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const createResponse = await app.request(`http://localhost/api/projects/${projectID}/mcp/servers/remote-search`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "Remote Search",
+          transport: "remote",
+          serverUrl: "https://mcp.example.test/server",
+          headers: {
+            "x-api-key": "secret",
+          },
+          allowedTools: {
+            readOnly: true,
+            toolNames: ["search"],
+          },
+          enabled: true,
+          timeoutMs: 30000,
+        }),
+      })
+      const createBody = (await createResponse.json()) as McpServerEnvelope
+
+      expect(createResponse.status).toBe(200)
+      expect(createBody.data).toMatchObject({
+        id: "remote-search",
+        name: "Remote Search",
+        transport: "remote",
+        serverUrl: "https://mcp.example.test/server",
+        headers: {
+          "x-api-key": "secret",
+        },
+        allowedTools: {
+          readOnly: true,
+          toolNames: ["search"],
+        },
+        enabled: true,
+        timeoutMs: 30000,
+      })
+
+      const listResponse = await app.request(`http://localhost/api/projects/${projectID}/mcp/servers`)
+      const listBody = (await listResponse.json()) as McpServerListEnvelope
+
+      expect(listResponse.status).toBe(200)
+      expect(listBody.data).toHaveLength(1)
+      expect(listBody.data?.[0]).toMatchObject({
+        id: "remote-search",
+        transport: "remote",
+        serverUrl: "https://mcp.example.test/server",
+      })
     } finally {
       await rm(repositoryRoot, { recursive: true, force: true })
     }

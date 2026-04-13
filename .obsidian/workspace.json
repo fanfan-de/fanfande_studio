@@ -53,17 +53,32 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "packages/fanfandeagent/docs/skills-mcp-architecture.zh.md",
+                "file": "TODO/todo.md",
                 "mode": "source",
                 "source": false,
                 "backlinks": false
               },
               "icon": "lucide-file",
-              "title": "skills-mcp-architecture.zh"
+              "title": "todo"
+            }
+          },
+          {
+            "id": "6c65c165cfa3234f",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "packages/desktop/桌面端界面结构与命名.md",
+                "mode": "source",
+                "source": false,
+                "backlinks": false
+              },
+              "icon": "lucide-file",
+              "title": "桌面端界面结构与命名"
             }
           }
         ],
-        "currentTab": 3
+        "currentTab": 4
       }
     ],
     "direction": "vertical"
@@ -221,27 +236,17 @@
               "icon": "lucide-file",
               "title": "TODO_secure_provider_credentials"
             }
-          },
-          {
-            "id": "5a8673284426277e",
-            "type": "leaf",
-            "state": {
-              "type": "mermaid-toolbar-view",
-              "state": {},
-              "icon": "trident-custom",
-              "title": "Mermaid Toolbar"
-            }
           }
         ],
-        "currentTab": 6
+        "currentTab": 5
       }
     ],
     "direction": "horizontal",
-    "width": 409.5
+    "width": 409.5,
+    "collapsed": true
   },
   "left-ribbon": {
     "hiddenItems": {
-      "mermaid-tools:Open Mermaid Toolbar": false,
       "graph:查看关系图谱": false,
       "canvas:新建白板": false,
       "daily-notes:打开/创建今天的日记": false,
@@ -249,46 +254,55 @@
       "command-palette:打开命令面板": false,
       "bases:新建数据库": false,
       "switcher:打开快速切换": false,
-      "zhihu:Open Zhihu side view": false
+      "zhihu:Open Zhihu side view": false,
+      "mermaid-tools:Open Mermaid Toolbar": false
     }
   },
-  "active": "bd079b772eaef396",
+  "active": "6c65c165cfa3234f",
   "lastOpenFiles": [
-    "packages/desktop/electron.vite.config.1776024885133.mjs",
-    "packages/desktop/electron.vite.config.1776024858382.mjs",
-    "packages/fanfandeagent/Skills/Auto-Sync Subpath Imports.md",
-    "packages/desktop/electron.vite.config.1776022125064.mjs",
-    "packages/desktop/electron.vite.config.1776022020234.mjs",
-    "packages/desktop/out/renderer/index.html",
-    "packages/desktop/out/renderer/assets/index-bfXosB5u.js",
-    "packages/desktop/out/renderer/assets/index-CpuUqjRQ.css",
-    "packages/desktop/out/renderer/assets",
-    "packages/desktop/electron.vite.config.1776021858231.mjs",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/lib/conpty_console_list_agent.js",
-    "packages/desktop/build/agent-runtime/node_modules/node-pty/LICENSE",
-    "packages/fanfandeagent/docs/skills-mcp-architecture.zh.md",
-    "todo.md",
-    "daily/2026-04-12.md",
+    "packages/desktop/electron.vite.config.1776074211174.mjs",
+    "packages/desktop/electron.vite.config.1776073428661.mjs",
+    "packages/desktop/electron.vite.config.1776073164206.mjs",
+    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
+    "TODO/压缩机制.md",
+    "packages/desktop/electron.vite.config.1776072700992.mjs",
+    "packages/desktop/electron.vite.config.1776072162674.mjs",
+    "TODO/快捷键.md",
+    "TODO/create session页面的logo展示.md",
+    "TODO/composer的信息展示（当前的上下文量）.md",
+    "TODO/加入正在思考前端状态.md",
     "packages/desktop/桌面端界面结构与命名.md",
+    "TODO/thread  shell 优化.md",
+    "packages/fanfandeagent/src/tool/read-skill-resource.ts",
+    "packages/fanfandeagent/src/tool/load-skill.ts",
+    "TODO/斜杠指令.md",
+    "TODO/apperance.md",
+    "TODO/多语言=.md",
+    "TODO/session  tab   分栏，单独窗口.md",
+    "未命名 3.md",
+    "TODO/todo.md",
+    "TODO/diff优化.md",
+    "TODO/system prompt替换.md",
+    "TODO/skills.md",
+    "TODO/session打断，引导，.md",
+    "TODO",
+    "packages/desktop/electron.vite.config.1776065708868.mjs",
+    "packages/desktop/electron.vite.config.1776065018303.mjs",
+    "packages/desktop/electron.vite.config.1776064947067.mjs",
+    "daily/2026-04-12.md",
+    "daily/2026-04-13.md",
+    "packages/fanfandeagent/docs/skills-mcp-architecture.zh.md",
+    "packages/fanfandeagent/Skills/Auto-Sync Subpath Imports.md",
     "packages/desktop/FRONTEND_ARCHITECTURE_GUIDE.md",
     "packages/desktop/DESKTOP_SERVER_API_SPEC.md",
     "TODO_secure_provider_credentials.md",
     "未命名 6.canvas",
-    "daily/2026-04-11.md",
     "未命名 5.canvas",
     "未命名 4.canvas",
     "未命名 3.canvas",
     "未命名 2.canvas",
-    "packages/desktop/README.md",
-    "packages/desktop/ELECTRON_LEARNING_TODO.md",
-    "OBSIDIAN_UI_SPEC.md",
-    "packages/desktop/AI_AGENT_FRONTEND_SPEC.md",
-    "未命名 2.md",
     "未命名 1.canvas",
     "Pasted image 20260405013212.png",
-    "记录设计的取舍.md",
-    "examples.md",
-    "未命名 1.md",
     "packages/desktop/build/extracted-exe-icon-final.png",
     "packages/desktop/build/extracted-exe-icon-after-rcedit-copy.png",
     "packages/desktop/build/extracted-exe-icon-after-rcedit.png",
@@ -298,14 +312,6 @@
     "packages/desktop/build/icon-master.png",
     "packages/desktop/src/renderer/public/logo.svg",
     "packages/desktop/build/icon.svg",
-    "packages/desktop/node_modules/@xterm/xterm/README.md",
-    "packages/fanfandeagent/src/tool/spec.md",
-    "packages/fanfandeagent/node_modules/node-addon-api/tools/README.md",
-    "packages/fanfandeagent/node_modules/node-addon-api/README.md",
-    "packages/fanfandeagent/node_modules/node-addon-api/LICENSE.md",
-    "packages/fanfandeagent/node_modules/node-pty/deps/winpty/RELEASES.md",
-    "packages/fanfandeagent/node_modules/node-pty/deps/winpty/README.md",
-    "packages/desktop/node_modules/@xterm/addon-fit/README.md",
     "未命名.canvas"
   ]
 }

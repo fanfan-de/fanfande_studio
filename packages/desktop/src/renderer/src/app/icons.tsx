@@ -6,6 +6,7 @@ import {
   CircleX,
   Copy,
   Expand,
+  FileText,
   FilePlus2,
   Folder,
   LayoutPanelLeft,
@@ -38,6 +39,7 @@ export const PaperclipIcon = createIcon(Paperclip)
 export const ChevronDownIcon = createIcon(ChevronDown)
 export const ChevronRightIcon = createIcon(ChevronRight)
 export const ExpandIcon = createIcon(Expand)
+export const FileTextIcon = createIcon(FileText)
 export const SortIcon = createIcon(SortAsc)
 export const NewItemIcon = createIcon(FilePlus2)
 export const PlusIcon = createIcon(Plus)

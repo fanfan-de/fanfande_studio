@@ -156,6 +156,115 @@ describe("processor tool persistence", () => {
     }
   })
 
+  it("persists provider-executed tool calls without a prior input-start event", async () => {
+    const updatedParts: any[] = []
+
+    mock.module("#session/llm.ts", () => ({
+      stream: async () => ({
+        fullStream: (async function* () {
+          yield { type: "start" }
+          yield {
+            type: "tool-call",
+            toolCallId: "remote-tool-1",
+            toolName: "mcp.remote-search",
+            input: { query: "latest ai news" },
+            title: "Remote Search",
+            providerExecuted: true,
+            providerMetadata: { call_id: "provider-call-1" },
+          }
+          yield {
+            type: "tool-result",
+            toolCallId: "remote-tool-1",
+            toolName: "mcp.remote-search",
+            input: { query: "latest ai news" },
+            providerExecuted: true,
+            providerMetadata: { approval: "none" },
+            output: {
+              type: "call",
+              serverLabel: "remote-search",
+              name: "search",
+              arguments: "{\"query\":\"latest ai news\"}",
+              output: "headline results",
+            },
+          }
+          yield {
+            type: "finish",
+            finishReason: "stop",
+          }
+        })(),
+      }),
+    }))
+
+    mock.module("#session/session.ts", () => ({
+      updatePart: async (part: unknown) => {
+        updatedParts.push(structuredClone(part))
+      },
+    }))
+
+    const Processor = await import("#session/processor.ts")
+
+    const assistant = {
+      id: "assistant-remote",
+      sessionID: "session-remote",
+      role: "assistant",
+      created: Date.now(),
+      parentID: "user-remote",
+      modelID: "test-model",
+      providerID: "openai",
+      agent: "plan",
+      path: {
+        cwd: ".",
+        root: ".",
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+    } as any
+
+    const processor = Processor.create({
+      Assistant: assistant,
+    })
+
+    expect(await processor.process({} as never)).toBe("continue")
+
+    const running = updatedParts.find(
+      (part) => part.type === "tool" && part.callID === "remote-tool-1" && part.state?.status === "running",
+    )
+    expect(running).toBeDefined()
+    expect(running.providerExecuted).toBe(true)
+
+    const completed = updatedParts.find(
+      (part) => part.type === "tool" && part.callID === "remote-tool-1" && part.state?.status === "completed",
+    )
+    expect(completed).toBeDefined()
+    expect(completed.providerExecuted).toBe(true)
+    expect(completed.state.modelOutput).toEqual({
+      type: "call",
+      serverLabel: "remote-search",
+      name: "search",
+      arguments: "{\"query\":\"latest ai news\"}",
+      output: "headline results",
+    })
+
+    const persisted = processor.partFromToolCall("remote-tool-1")
+    expect(persisted?.providerExecuted).toBe(true)
+    expect(persisted?.state.status).toBe("completed")
+    expect((persisted?.state as any).modelOutput).toEqual({
+      type: "call",
+      serverLabel: "remote-search",
+      name: "search",
+      arguments: "{\"query\":\"latest ai news\"}",
+      output: "headline results",
+    })
+  })
+
   it("stops the loop and persists waiting approval state when approval is requested", async () => {
     const updatedParts: any[] = []
     const approvalRequests: any[] = []

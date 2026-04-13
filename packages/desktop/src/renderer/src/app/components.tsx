@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
+import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
 import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions } from "./constants"
 import {
   ArrowUpIcon,
@@ -8,6 +8,7 @@ import {
   ConnectedStatusIcon,
   DeleteIcon,
   DisconnectedStatusIcon,
+  FileTextIcon,
   FolderIcon,
   LayoutSidebarLeftIcon,
   LayoutSidebarRightIcon,
@@ -26,10 +27,13 @@ import {
 import type {
   AssistantTraceItem,
   ComposerAttachment,
+  ComposerMcpOption,
   ComposerModelOption,
   ComposerSkillOption,
   CreateSessionTab,
+  GlobalSkillTreeNode,
   LeftSidebarView,
+  McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
   PermissionDecision,
@@ -152,16 +156,39 @@ export function ActivityRail({ isSidebarCollapsed, onToggleSidebar, side }: Acti
 interface SidebarProps {
   activeSessionID: string | null
   activeView: LeftSidebarView
+  deletingGlobalSkillDirectory: string | null
   deletingSessionID: string | null
   expandedFolderID: string | null
+  expandedSkillPaths: string[]
+  creatingGlobalSkillName: string
+  globalSkillsRoot: string
+  globalSkillsTree: GlobalSkillTreeNode[]
   hoveredFolderID: string | null
+  isCreateGlobalSkillDraftVisible: boolean
+  isCreatingGlobalSkill: boolean
   isCreatingProject: boolean
   isCreatingSession: boolean
+  isLoadingSkillsTree: boolean
   isSettingsOpen: boolean
+  renamingGlobalSkillDirectory: string | null
+  renamingGlobalSkillDraftDirectory: string | null
+  renamingGlobalSkillName: string
+  selectedGlobalSkillFilePath: string | null
   showSidebarToggleButton: boolean
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
   selectedFolderID: string | null
   workspaces: WorkspaceGroup[]
+  onCreateGlobalSkill: () => void | Promise<void>
+  onCreateGlobalSkillDraftCancel: () => void
+  onCreateGlobalSkillDraftChange: (value: string) => void
+  onCreateGlobalSkillDraftStart: () => void
+  onDeleteGlobalSkill: (directoryPath?: string) => void | Promise<void>
+  onGlobalSkillDirectoryToggle: (path: string) => void
+  onGlobalSkillFileSelect: (path: string) => void | Promise<void>
+  onRenameGlobalSkill: () => void | Promise<void>
+  onRenameGlobalSkillDraftCancel: () => void
+  onRenameGlobalSkillDraftChange: (value: string) => void
+  onRenameGlobalSkillDraftStart: (directoryPath: string) => void
   onHoveredFolderChange: Dispatch<SetStateAction<string | null>>
   onOpenSettings: () => void
   onProjectClick: (workspace: WorkspaceGroup) => void
@@ -219,6 +246,9 @@ function LeftSidebarTopMenu({
       <div className="left-sidebar-top-menu-tabs">
         <TopMenuViewButton active={activeView === "workspace"} label="Workspace" onClick={() => onViewChange("workspace")}>
           <LayoutSidebarLeftIcon />
+        </TopMenuViewButton>
+        <TopMenuViewButton active={activeView === "skills"} label="Skills" onClick={() => onViewChange("skills")}>
+          <FileTextIcon />
         </TopMenuViewButton>
       </div>
       <div className="left-sidebar-top-menu-actions">
@@ -388,19 +418,345 @@ function FolderWorkspaceView({
   )
 }
 
+function SkillsTreeNodeRow({
+  deletingGlobalSkillDirectory,
+  depth = 0,
+  expandedSkillPaths,
+  node,
+  renamingGlobalSkillDirectory,
+  renamingGlobalSkillDraftDirectory,
+  renamingGlobalSkillName,
+  selectedGlobalSkillFilePath,
+  onDeleteGlobalSkill,
+  onDirectoryToggle,
+  onFileSelect,
+  onRenameGlobalSkill,
+  onRenameGlobalSkillDraftCancel,
+  onRenameGlobalSkillDraftChange,
+  onRenameGlobalSkillDraftStart,
+}: {
+  deletingGlobalSkillDirectory: string | null
+  depth?: number
+  expandedSkillPaths: string[]
+  node: GlobalSkillTreeNode
+  renamingGlobalSkillDirectory: string | null
+  renamingGlobalSkillDraftDirectory: string | null
+  renamingGlobalSkillName: string
+  selectedGlobalSkillFilePath: string | null
+  onDeleteGlobalSkill: (directoryPath?: string) => void | Promise<void>
+  onDirectoryToggle: (path: string) => void
+  onFileSelect: (path: string) => void | Promise<void>
+  onRenameGlobalSkill: () => void | Promise<void>
+  onRenameGlobalSkillDraftCancel: () => void
+  onRenameGlobalSkillDraftChange: (value: string) => void
+  onRenameGlobalSkillDraftStart: (directoryPath: string) => void
+}) {
+  if (node.kind === "file") {
+    const isActive = node.path === selectedGlobalSkillFilePath
+
+    return (
+      <div className="skill-tree-item skill-tree-item-file">
+        <button
+          className={isActive ? "skill-tree-row is-active" : "skill-tree-row"}
+          title={node.path}
+          type="button"
+          onClick={() => void onFileSelect(node.path)}
+        >
+          <span className="skill-tree-leading" aria-hidden="true">
+            <FileTextIcon />
+          </span>
+          <span className="skill-tree-label">{node.name}</span>
+        </button>
+      </div>
+    )
+  }
+
+  const isExpanded = expandedSkillPaths.includes(node.path)
+  const showDeleteAction = depth === 0
+  const isRenameDraftVisible = depth === 0 && renamingGlobalSkillDraftDirectory === node.path
+  const isRenamePending = renamingGlobalSkillDirectory === node.path
+
+  function handleDirectoryDoubleClick(event: MouseEvent<HTMLButtonElement>) {
+    if (depth !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    onRenameGlobalSkillDraftStart(node.path)
+  }
+
+  function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void onRenameGlobalSkill()
+  }
+
+  function handleRenameInputBlur(event: FocusEvent<HTMLInputElement>) {
+    if (event.currentTarget.form?.contains(event.relatedTarget as Node | null)) return
+    onRenameGlobalSkillDraftCancel()
+  }
+
+  function handleRenameInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault()
+      void onRenameGlobalSkill()
+      return
+    }
+
+    if (event.key !== "Escape") return
+    event.preventDefault()
+    onRenameGlobalSkillDraftCancel()
+  }
+
+  return (
+    <div className="skill-tree-item">
+      <div className="skill-tree-row-shell">
+        {isRenameDraftVisible ? (
+          <form className="skill-tree-rename-form" aria-label={`Rename skill ${node.name}`} onSubmit={handleRenameSubmit}>
+            <span className="skill-tree-leading" aria-hidden="true">
+              {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+            </span>
+            <input
+              autoFocus
+              className="skill-tree-rename-input"
+              aria-label={`Rename global skill ${node.name}`}
+              disabled={isRenamePending}
+              type="text"
+              value={renamingGlobalSkillName}
+              onBlur={handleRenameInputBlur}
+              onChange={(event) => onRenameGlobalSkillDraftChange(event.target.value)}
+              onKeyDown={handleRenameInputKeyDown}
+            />
+          </form>
+        ) : (
+          <button
+            className="skill-tree-row"
+            aria-expanded={isExpanded}
+            title={depth === 0 ? `${node.path}\nDouble-click to rename` : node.path}
+            type="button"
+            onClick={() => onDirectoryToggle(node.path)}
+            onDoubleClick={handleDirectoryDoubleClick}
+          >
+            <span className="skill-tree-leading" aria-hidden="true">
+              {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+            </span>
+            <span className="skill-tree-label">{node.name}</span>
+          </button>
+        )}
+        {showDeleteAction ? (
+          <button
+            className="row-action skill-tree-row-action"
+            aria-label={`Delete skill ${node.name}`}
+            disabled={deletingGlobalSkillDirectory === node.path || isRenameDraftVisible || isRenamePending}
+            title={`Delete skill ${node.name}`}
+            type="button"
+            onClick={() => void onDeleteGlobalSkill(node.path)}
+          >
+            <DeleteIcon />
+          </button>
+        ) : null}
+      </div>
+
+      {isExpanded && node.children?.length ? (
+        <div className="skill-tree-children">
+          {node.children.map((child) => (
+            <SkillsTreeNodeRow
+              key={child.path}
+              deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
+              depth={depth + 1}
+              expandedSkillPaths={expandedSkillPaths}
+              node={child}
+              renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
+              renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
+              renamingGlobalSkillName={renamingGlobalSkillName}
+              selectedGlobalSkillFilePath={selectedGlobalSkillFilePath}
+              onDeleteGlobalSkill={onDeleteGlobalSkill}
+              onDirectoryToggle={onDirectoryToggle}
+              onFileSelect={onFileSelect}
+              onRenameGlobalSkill={onRenameGlobalSkill}
+              onRenameGlobalSkillDraftCancel={onRenameGlobalSkillDraftCancel}
+              onRenameGlobalSkillDraftChange={onRenameGlobalSkillDraftChange}
+              onRenameGlobalSkillDraftStart={onRenameGlobalSkillDraftStart}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+interface SkillsSidebarViewProps {
+  deletingGlobalSkillDirectory: string | null
+  expandedSkillPaths: string[]
+  creatingGlobalSkillName: string
+  globalSkillsRoot: string
+  globalSkillsTree: GlobalSkillTreeNode[]
+  isCreateGlobalSkillDraftVisible: boolean
+  isCreatingGlobalSkill: boolean
+  isLoadingSkillsTree: boolean
+  renamingGlobalSkillDirectory: string | null
+  renamingGlobalSkillDraftDirectory: string | null
+  renamingGlobalSkillName: string
+  selectedGlobalSkillFilePath: string | null
+  onCreateGlobalSkill: () => void | Promise<void>
+  onCreateGlobalSkillDraftCancel: () => void
+  onCreateGlobalSkillDraftChange: (value: string) => void
+  onCreateGlobalSkillDraftStart: () => void
+  onDeleteGlobalSkill: (directoryPath?: string) => void | Promise<void>
+  onGlobalSkillDirectoryToggle: (path: string) => void
+  onGlobalSkillFileSelect: (path: string) => void | Promise<void>
+  onRenameGlobalSkill: () => void | Promise<void>
+  onRenameGlobalSkillDraftCancel: () => void
+  onRenameGlobalSkillDraftChange: (value: string) => void
+  onRenameGlobalSkillDraftStart: (directoryPath: string) => void
+}
+
+function SkillsSidebarView({
+  deletingGlobalSkillDirectory,
+  expandedSkillPaths,
+  creatingGlobalSkillName,
+  globalSkillsRoot,
+  globalSkillsTree,
+  isCreateGlobalSkillDraftVisible,
+  isCreatingGlobalSkill,
+  isLoadingSkillsTree,
+  renamingGlobalSkillDirectory,
+  renamingGlobalSkillDraftDirectory,
+  renamingGlobalSkillName,
+  selectedGlobalSkillFilePath,
+  onCreateGlobalSkill,
+  onCreateGlobalSkillDraftCancel,
+  onCreateGlobalSkillDraftChange,
+  onCreateGlobalSkillDraftStart,
+  onDeleteGlobalSkill,
+  onGlobalSkillDirectoryToggle,
+  onGlobalSkillFileSelect,
+  onRenameGlobalSkill,
+  onRenameGlobalSkillDraftCancel,
+  onRenameGlobalSkillDraftChange,
+  onRenameGlobalSkillDraftStart,
+}: SkillsSidebarViewProps) {
+  function handleCreateSkillSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void onCreateGlobalSkill()
+  }
+
+  function handleCreateSkillKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Escape") return
+    event.preventDefault()
+    onCreateGlobalSkillDraftCancel()
+  }
+
+  return (
+    <section className="sidebar-view sidebar-view-skills" aria-label="Skills sidebar view">
+      <div className="sidebar-actions view-toolbar" aria-label="Skills view actions">
+        <div className="panel-toolbar-copy sidebar-path-copy">
+          <span className="label">Global</span>
+          <strong>Skills</strong>
+          <small title={globalSkillsRoot}>{globalSkillsRoot || "Loading global skills root..."}</small>
+        </div>
+        <div className="panel-toolbar-actions sidebar-actions-buttons">
+          <button
+            className="sidebar-action"
+            aria-label="Create global skill"
+            disabled={isCreatingGlobalSkill || isCreateGlobalSkillDraftVisible || Boolean(renamingGlobalSkillDraftDirectory || renamingGlobalSkillDirectory)}
+            title="Create global skill"
+            type="button"
+            onClick={onCreateGlobalSkillDraftStart}
+          >
+            <NewItemIcon />
+          </button>
+        </div>
+      </div>
+
+      {isCreateGlobalSkillDraftVisible ? (
+        <form className="skills-create-form" aria-label="Create global skill form" onSubmit={handleCreateSkillSubmit}>
+          <input
+            autoFocus
+            className="skills-create-input"
+            aria-label="New global skill name"
+            disabled={isCreatingGlobalSkill}
+            placeholder="new-skill"
+            type="text"
+            value={creatingGlobalSkillName}
+            onChange={(event) => onCreateGlobalSkillDraftChange(event.target.value)}
+            onKeyDown={handleCreateSkillKeyDown}
+          />
+          <div className="skills-create-actions">
+            <button disabled={isCreatingGlobalSkill} type="submit">
+              Create
+            </button>
+            <button disabled={isCreatingGlobalSkill} type="button" onClick={onCreateGlobalSkillDraftCancel}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+
+      <div className="skills-tree-root">
+        {isLoadingSkillsTree && globalSkillsTree.length === 0 ? (
+          <p className="skills-tree-empty">Loading global skills...</p>
+        ) : globalSkillsTree.length > 0 ? (
+          globalSkillsTree.map((node) => (
+            <SkillsTreeNodeRow
+              key={node.path}
+              deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
+              expandedSkillPaths={expandedSkillPaths}
+              node={node}
+              renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
+              renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
+              renamingGlobalSkillName={renamingGlobalSkillName}
+              selectedGlobalSkillFilePath={selectedGlobalSkillFilePath}
+              onDeleteGlobalSkill={onDeleteGlobalSkill}
+              onDirectoryToggle={onGlobalSkillDirectoryToggle}
+              onFileSelect={onGlobalSkillFileSelect}
+              onRenameGlobalSkill={onRenameGlobalSkill}
+              onRenameGlobalSkillDraftCancel={onRenameGlobalSkillDraftCancel}
+              onRenameGlobalSkillDraftChange={onRenameGlobalSkillDraftChange}
+              onRenameGlobalSkillDraftStart={onRenameGlobalSkillDraftStart}
+            />
+          ))
+        ) : (
+          <p className="skills-tree-empty">No global skills exist yet. Use the add button to create the first one.</p>
+        )}
+      </div>
+    </section>
+  )
+}
+
 export function Sidebar({
   activeSessionID,
   activeView,
+  deletingGlobalSkillDirectory,
   deletingSessionID,
   expandedFolderID,
+  expandedSkillPaths,
+  creatingGlobalSkillName,
+  globalSkillsRoot,
+  globalSkillsTree,
   hoveredFolderID,
+  isCreateGlobalSkillDraftVisible,
+  isCreatingGlobalSkill,
   isCreatingProject,
   isCreatingSession,
+  isLoadingSkillsTree,
   isSettingsOpen,
+  renamingGlobalSkillDirectory,
+  renamingGlobalSkillDraftDirectory,
+  renamingGlobalSkillName,
+  selectedGlobalSkillFilePath,
   showSidebarToggleButton,
   projectRowRefs,
   selectedFolderID,
   workspaces,
+  onCreateGlobalSkill,
+  onCreateGlobalSkillDraftCancel,
+  onCreateGlobalSkillDraftChange,
+  onCreateGlobalSkillDraftStart,
+  onDeleteGlobalSkill,
+  onGlobalSkillDirectoryToggle,
+  onGlobalSkillFileSelect,
+  onRenameGlobalSkill,
+  onRenameGlobalSkillDraftCancel,
+  onRenameGlobalSkillDraftChange,
+  onRenameGlobalSkillDraftStart,
   onHoveredFolderChange,
   onOpenSettings,
   onProjectClick,
@@ -440,6 +796,33 @@ export function Sidebar({
             onSessionDelete={onSessionDelete}
             onSessionSelect={onSessionSelect}
             onSidebarAction={onSidebarAction}
+          />
+        ) : null}
+        {activeView === "skills" ? (
+          <SkillsSidebarView
+            deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
+            expandedSkillPaths={expandedSkillPaths}
+            creatingGlobalSkillName={creatingGlobalSkillName}
+            globalSkillsRoot={globalSkillsRoot}
+            globalSkillsTree={globalSkillsTree}
+            isCreateGlobalSkillDraftVisible={isCreateGlobalSkillDraftVisible}
+            isCreatingGlobalSkill={isCreatingGlobalSkill}
+            isLoadingSkillsTree={isLoadingSkillsTree}
+            renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
+            renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
+            renamingGlobalSkillName={renamingGlobalSkillName}
+            selectedGlobalSkillFilePath={selectedGlobalSkillFilePath}
+            onCreateGlobalSkill={onCreateGlobalSkill}
+            onCreateGlobalSkillDraftCancel={onCreateGlobalSkillDraftCancel}
+            onCreateGlobalSkillDraftChange={onCreateGlobalSkillDraftChange}
+            onCreateGlobalSkillDraftStart={onCreateGlobalSkillDraftStart}
+            onDeleteGlobalSkill={onDeleteGlobalSkill}
+            onGlobalSkillDirectoryToggle={onGlobalSkillDirectoryToggle}
+            onGlobalSkillFileSelect={onGlobalSkillFileSelect}
+            onRenameGlobalSkill={onRenameGlobalSkill}
+            onRenameGlobalSkillDraftCancel={onRenameGlobalSkillDraftCancel}
+            onRenameGlobalSkillDraftChange={onRenameGlobalSkillDraftChange}
+            onRenameGlobalSkillDraftStart={onRenameGlobalSkillDraftStart}
           />
         ) : null}
       </div>
@@ -1056,12 +1439,248 @@ export function CanvasRegionTopMenu({
   )
 }
 
+export function CanvasRegionUtilityMenu({
+  isRightSidebarCollapsed,
+  label,
+  onToggleLeftSidebar,
+  onToggleRightSidebar,
+  showLeftSidebarToggleButton,
+}: {
+  isRightSidebarCollapsed: boolean
+  label: string
+  onToggleLeftSidebar: () => void
+  onToggleRightSidebar: () => void
+  showLeftSidebarToggleButton: boolean
+}) {
+  return (
+    <nav className="canvas-region-top-menu panel-toolbar" aria-label={`${label} top menu`}>
+      <div className="canvas-region-top-menu-leading">
+        {showLeftSidebarToggleButton ? (
+          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="top-menu" />
+        ) : null}
+      </div>
+      <div className="canvas-region-top-menu-tabs-shell">
+        <div className="canvas-region-top-menu-empty">{label}</div>
+      </div>
+      <div className={isRightSidebarCollapsed ? "canvas-region-top-menu-trailing is-right-sidebar-collapsed" : "canvas-region-top-menu-trailing is-right-sidebar-expanded"}>
+        <SidebarToggleButton isSidebarCollapsed={isRightSidebarCollapsed} onToggleSidebar={onToggleRightSidebar} side="right" variant="top-menu" />
+      </div>
+      <WindowControlsSpacer variant="canvas" />
+    </nav>
+  )
+}
+
 interface SessionCanvasTopMenuProps {
   activeSession: SessionSummary | null
   gitDirectory: string | null
+  mcpOptions: ComposerMcpOption[]
+  selectedMcpServerIDs: string[]
+  selectedMcpServerLabel: string
+  onMcpServerToggle: (value: string) => void | Promise<void>
+  skillOptions: ComposerSkillOption[]
+  selectedSkillIDs: string[]
+  selectedSkillLabel: string
+  onSkillToggle: (value: string) => void
 }
 
-export function SessionCanvasTopMenu({ activeSession, gitDirectory }: SessionCanvasTopMenuProps) {
+function ProjectMcpMenuButton({
+  mcpOptions,
+  selectedMcpServerIDs,
+  selectedMcpServerLabel,
+  onMcpServerToggle,
+}: {
+  mcpOptions: ComposerMcpOption[]
+  selectedMcpServerIDs: string[]
+  selectedMcpServerLabel: string
+  onMcpServerToggle: (value: string) => void | Promise<void>
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+  useEffect(() => {
+    if (!isMenuOpen) return
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      setIsMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isMenuOpen])
+
+  return (
+    <div className="canvas-top-menu-selector-anchor">
+      <button
+        ref={buttonRef}
+        type="button"
+        className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-mcp-trigger is-active" : "canvas-top-menu-button canvas-top-menu-mcp-trigger"}
+        aria-controls="canvas-top-menu-mcp-menu"
+        aria-expanded={isMenuOpen}
+        aria-haspopup="dialog"
+        aria-label={`Select project MCP servers: ${selectedMcpServerLabel}`}
+        title={`Project MCP servers: ${selectedMcpServerLabel}`}
+        onClick={() => setIsMenuOpen((current) => !current)}
+      >
+        <span>{selectedMcpServerLabel}</span>
+        <ChevronDownIcon />
+      </button>
+
+      {isMenuOpen ? (
+        <div
+          ref={menuRef}
+          id="canvas-top-menu-mcp-menu"
+          className="canvas-top-menu-selector-panel"
+          role="dialog"
+          aria-label="Project MCP server selection"
+        >
+          {mcpOptions.length > 0 ? (
+            mcpOptions.map((option) => {
+              const isSelected = selectedMcpServerIDs.includes(option.value)
+
+              return (
+                <button
+                  key={option.value}
+                  className={isSelected ? "composer-menu-option is-selected" : "composer-menu-option"}
+                  onClick={() => void onMcpServerToggle(option.value)}
+                  type="button"
+                >
+                  <span className="composer-menu-option-copy">
+                    <strong>{option.label}</strong>
+                    <small>{option.description}</small>
+                  </span>
+                  <span className="composer-menu-option-check">{isSelected ? "Enabled" : "Enable"}</span>
+                </button>
+              )
+            })
+          ) : (
+            <p className="composer-menu-empty">No global MCP servers are available yet.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ProjectSkillsMenuButton({
+  skillOptions,
+  selectedSkillIDs,
+  selectedSkillLabel,
+  onSkillToggle,
+}: {
+  skillOptions: ComposerSkillOption[]
+  selectedSkillIDs: string[]
+  selectedSkillLabel: string
+  onSkillToggle: (value: string) => void
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+  useEffect(() => {
+    if (!isMenuOpen) return
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      setIsMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isMenuOpen])
+
+  return (
+    <div className="canvas-top-menu-selector-anchor">
+      <button
+        ref={buttonRef}
+        type="button"
+        className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-skill-trigger is-active" : "canvas-top-menu-button canvas-top-menu-skill-trigger"}
+        aria-controls="canvas-top-menu-skill-menu"
+        aria-expanded={isMenuOpen}
+        aria-haspopup="dialog"
+        aria-label={`Select project skills: ${selectedSkillLabel}`}
+        title={`Project skills: ${selectedSkillLabel}`}
+        onClick={() => setIsMenuOpen((current) => !current)}
+      >
+        <span>{selectedSkillLabel}</span>
+        <ChevronDownIcon />
+      </button>
+
+      {isMenuOpen ? (
+        <div
+          ref={menuRef}
+          id="canvas-top-menu-skill-menu"
+          className="canvas-top-menu-selector-panel"
+          role="dialog"
+          aria-label="Project skill selection"
+        >
+          {skillOptions.length > 0 ? (
+            skillOptions.map((option) => {
+              const isSelected = selectedSkillIDs.includes(option.value)
+
+              return (
+                <button
+                  key={option.value}
+                  className={isSelected ? "composer-menu-option is-selected" : "composer-menu-option"}
+                  onClick={() => onSkillToggle(option.value)}
+                  type="button"
+                >
+                  <span className="composer-menu-option-copy">
+                    <strong>{option.label}</strong>
+                    <small>{option.description}</small>
+                  </span>
+                  <span className="composer-menu-option-check">{isSelected ? "Selected" : "Add"}</span>
+                </button>
+              )
+            })
+          ) : (
+            <p className="composer-menu-empty">No project skills are available yet.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function SessionCanvasTopMenu({
+  activeSession,
+  gitDirectory,
+  mcpOptions,
+  selectedMcpServerIDs,
+  selectedMcpServerLabel,
+  onMcpServerToggle,
+  skillOptions,
+  selectedSkillIDs,
+  selectedSkillLabel,
+  onSkillToggle,
+}: SessionCanvasTopMenuProps) {
   return (
     <div className="session-canvas-top-menu panel-toolbar" aria-label="Session canvas top menu">
       <div className="session-canvas-top-menu-copy">
@@ -1069,10 +1688,115 @@ export function SessionCanvasTopMenu({ activeSession, gitDirectory }: SessionCan
         <strong>{activeSession?.title ?? "No session selected"}</strong>
       </div>
       <div className="session-canvas-top-menu-actions">
+        <ProjectMcpMenuButton
+          mcpOptions={mcpOptions}
+          selectedMcpServerIDs={selectedMcpServerIDs}
+          selectedMcpServerLabel={selectedMcpServerLabel}
+          onMcpServerToggle={onMcpServerToggle}
+        />
+        <ProjectSkillsMenuButton
+          skillOptions={skillOptions}
+          selectedSkillIDs={selectedSkillIDs}
+          selectedSkillLabel={selectedSkillLabel}
+          onSkillToggle={onSkillToggle}
+        />
         <GitQuickMenuButton gitDirectory={gitDirectory} />
       </div>
       <WindowControlsSpacer variant="canvas" />
     </div>
+  )
+}
+
+interface GlobalSkillsCanvasProps {
+  deletingGlobalSkillDirectory: string | null
+  globalSkillsMessage: {
+    tone: "success" | "error"
+    text: string
+  } | null
+  globalSkillsRoot: string
+  isDirty: boolean
+  isLoadingFile: boolean
+  isSavingFile: boolean
+  selectedFileContent: string
+  selectedFilePath: string | null
+  selectedSkillDirectoryName: string | null
+  onChange: (value: string) => void
+  onDelete: () => void | Promise<void>
+  onSave: () => void | Promise<void>
+}
+
+export function GlobalSkillsCanvas({
+  deletingGlobalSkillDirectory,
+  globalSkillsMessage,
+  globalSkillsRoot,
+  isDirty,
+  isLoadingFile,
+  isSavingFile,
+  selectedFileContent,
+  selectedFilePath,
+  selectedSkillDirectoryName,
+  onChange,
+  onDelete,
+  onSave,
+}: GlobalSkillsCanvasProps) {
+  if (!selectedFilePath) {
+    return (
+      <section className="global-skills-canvas">
+        <div className="global-skills-editor-shell">
+          <div className="global-skills-empty-state global-skills-editor-empty-state">
+            <span className="label">Global Skills</span>
+            <h3>No skill file selected</h3>
+            <p>{globalSkillsRoot ? `Open a file from ${globalSkillsRoot} or create a new skill from the left sidebar.` : "Loading the global skills root..."}</p>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section className="global-skills-canvas">
+      <div className="global-skills-toolbar">
+        {globalSkillsMessage ? (
+          <div
+            className={
+              globalSkillsMessage.tone === "success"
+                ? "settings-banner is-success global-skills-toolbar-message"
+                : "settings-banner is-error global-skills-toolbar-message"
+            }
+          >
+            {globalSkillsMessage.text}
+          </div>
+        ) : (
+          <div className="global-skills-toolbar-spacer" aria-hidden="true" />
+        )}
+        <div className="global-skills-toolbar-actions">
+          <button className="secondary-button" disabled={!selectedSkillDirectoryName || deletingGlobalSkillDirectory !== null} type="button" onClick={() => void onDelete()}>
+            {deletingGlobalSkillDirectory ? "Deleting..." : "Delete"}
+          </button>
+          <button className="primary-button" disabled={!isDirty || isSavingFile} type="button" onClick={() => void onSave()}>
+            {isSavingFile ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+
+      <div className="global-skills-editor-shell">
+        {isLoadingFile ? (
+          <div className="global-skills-empty-state global-skills-editor-empty-state">
+            <span className="label">Loading</span>
+            <h3>Opening skill file</h3>
+            <p>Reading the current file from the global skills directory.</p>
+          </div>
+        ) : (
+          <textarea
+            aria-label="Global skill editor"
+            className="global-skills-editor"
+            spellCheck={false}
+            value={selectedFileContent}
+            onChange={(event) => onChange(event.target.value)}
+          />
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -1315,8 +2039,21 @@ function ModelListView({ catalog, models, selectionDraft }: ModelListViewProps) 
   )
 }
 
+function getMcpServerSummaryLine(server: McpServerSummary) {
+  if (server.transport === "stdio") {
+    return server.command
+  }
+
+  return server.serverUrl ?? server.connectorId ?? "Remote HTTP MCP"
+}
+
+function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServerDraftState["transport"]) {
+  return transport === "remote" ? "http" : "stdio"
+}
+
 interface SettingsPageProps {
   activeMcpServerID: string | null
+  activeMcpServerDiagnostic: McpServerDiagnostic | null
   catalog: ProviderCatalogItem[]
   deletingMcpServerID: string | null
   deletingProviderID: string | null
@@ -1356,6 +2093,7 @@ interface SettingsPageProps {
 
 export function SettingsPage({
   activeMcpServerID,
+  activeMcpServerDiagnostic,
   catalog,
   deletingMcpServerID,
   deletingProviderID,
@@ -1424,6 +2162,19 @@ export function SettingsPage({
       (mcpServerBusyID && savingMcpServerID === mcpServerBusyID) ||
       (mcpServerBusyID && deletingMcpServerID === mcpServerBusyID),
     )
+    const mcpServerValidationError = !mcpServerDraft.id.trim()
+      ? "MCP servers require an id."
+      : mcpServerDraft.transport === "stdio"
+        ? !mcpServerDraft.command.trim()
+          ? "Local MCP servers require a command."
+          : null
+        : !mcpServerDraft.serverUrl.trim()
+          ? "Remote MCP servers require a server URL."
+          : (mcpServerDraft.allowedToolsMode === "names" || mcpServerDraft.allowedToolsMode === "read-only-names") &&
+              !mcpServerDraft.allowedToolNames.trim()
+            ? "Named tool filters require at least one tool name."
+            : null
+    const mcpServerCanSave = !mcpServerValidationError
     const showLoadedState = !isLoading && !loadError
     useEffect(() => {
       if (!isOpen) {
@@ -1487,7 +2238,7 @@ export function SettingsPage({
       {
         key: "mcp" as const,
         label: "MCP",
-        meta: projectID ? `${mcpServers.length} servers` : "Select a project",
+        meta: `${mcpServers.length} servers`,
         Icon: FolderIcon,
       },
       { key: "appearance" as const, label: "Appearance", meta: "1 option", Icon: LayoutSidebarLeftIcon },
@@ -1774,43 +2525,33 @@ export function SettingsPage({
                       <div className="settings-panel">
                         <div className="settings-section-header">
                           <div>
-                            <span className="label">Project</span>
+                            <span className="label">Global</span>
                             <h3>MCP Servers</h3>
                           </div>
-                          <p>
-                            {projectID
-                              ? "Configure stdio MCP servers for the currently selected project."
-                              : "Select a project from the workspace sidebar to configure MCP servers."}
-                          </p>
+                          <p>Configure reusable local and remote MCP servers once, then enable them per project from the session canvas top menu.</p>
                         </div>
 
                         {projectID ? (
-                          <>
-                            <div className="settings-project-chip">
-                              <strong>{projectName ?? "Current project"}</strong>
-                              <span>{projectWorktree ?? projectID}</span>
-                            </div>
-
-                            <div className="settings-actions-row">
-                              <span className="settings-helper-text">
-                                Each argument and environment variable entry is stored on the project and exposed to the agent as trusted MCP configuration.
-                              </span>
-                              <button className="secondary-button" onClick={onStartNewMcpServer} type="button">
-                                New server
-                              </button>
-                            </div>
-                          </>
+                          <div className="settings-project-chip">
+                            <strong>Diagnostic context</strong>
+                            <span>{projectName ?? "Current project"} · {projectWorktree ?? projectID}</span>
+                          </div>
                         ) : null}
+
+                        <div className="settings-actions-row">
+                          <span className="settings-helper-text">
+                            {projectID
+                              ? "Global server definitions are shared across projects. Relative working directories resolve against the selected project during diagnostics."
+                              : "Global server definitions are shared across projects. Select a project to run diagnostics with relative working directories."}
+                          </span>
+                          <button className="secondary-button" onClick={onStartNewMcpServer} type="button">
+                            New server
+                          </button>
+                        </div>
                       </div>
 
                       <div className="settings-service-list-body">
-                        {!projectID ? (
-                          <article className="settings-empty-state settings-service-list-empty-state">
-                            <span className="label">No Project</span>
-                            <h3>Pick a project first</h3>
-                            <p>The MCP section is project-scoped, so it only appears when a workspace project is active.</p>
-                          </article>
-                        ) : mcpServers.length > 0 ? (
+                        {mcpServers.length > 0 ? (
                           <div className="settings-service-list" role="list" aria-label="MCP servers">
                             {mcpServers.map((server) => {
                               const isActive = server.id === activeMcpServerID
@@ -1825,11 +2566,14 @@ export function SettingsPage({
                                 >
                                   <div className="settings-service-item-header">
                                     <strong>{server.name ?? server.id}</strong>
-                                    <span className={server.enabled ? "settings-badge is-highlight" : "settings-badge"}>
-                                      {server.enabled ? "Enabled" : "Disabled"}
-                                    </span>
+                                    <div className="provider-row-statuses">
+                                      <span className="settings-badge">{getMcpTransportLabel(server.transport)}</span>
+                                      <span className={server.enabled ? "settings-badge is-highlight" : "settings-badge"}>
+                                        {server.enabled ? "Enabled" : "Disabled"}
+                                      </span>
+                                    </div>
                                   </div>
-                                  <span className="settings-service-item-copy">{server.command}</span>
+                                  <span className="settings-service-item-copy">{getMcpServerSummaryLine(server)}</span>
                                 </button>
                               )
                             })}
@@ -1837,43 +2581,56 @@ export function SettingsPage({
                         ) : (
                           <article className="settings-empty-state settings-service-list-empty-state">
                             <span className="label">No Servers</span>
-                            <h3>No MCP servers configured yet</h3>
-                            <p>Create a stdio server here, then the agent can resolve its tools on the next turn.</p>
+                            <h3>No global MCP servers configured yet</h3>
+                            <p>Create a reusable local or remote server here, then enable it from a project when needed.</p>
                           </article>
                         )}
                       </div>
                     </div>
 
                     <div className="settings-service-detail-panel">
-                      {projectID ? (
-                        <>
-                          <div className="settings-detail-hero">
-                            <div>
-                              <h3>{activeMcpServer ? activeMcpServer.name ?? activeMcpServer.id : "Create MCP server"}</h3>
-                              <p className="settings-page-copy">
-                                {activeMcpServer
-                                  ? "Edit the selected MCP server definition for this project."
-                                  : "Define a new stdio MCP server and expose its tools to the agent."}
-                              </p>
-                            </div>
-
-                            <div className="provider-row-statuses">
-                              <span className="settings-badge">{activeMcpServer ? "Editing" : "New"}</span>
-                              <span className={mcpServerDraft.enabled ? "settings-badge is-highlight" : "settings-badge"}>
-                                {mcpServerDraft.enabled ? "Enabled" : "Disabled"}
-                              </span>
-                              <span className="settings-badge">stdio</span>
-                            </div>
+                      <>
+                        <div className="settings-detail-hero">
+                          <div>
+                            <h3>{activeMcpServer ? activeMcpServer.name ?? activeMcpServer.id : "Create MCP server"}</h3>
+                            <p className="settings-page-copy">
+                              {activeMcpServer
+                                ? "Edit the selected global MCP server definition."
+                                : "Define a reusable local or remote MCP server. Projects can enable it from the session canvas top menu."}
+                            </p>
                           </div>
 
-                          <div className="settings-panel">
-                            <div className="settings-section-header">
-                              <div>
-                                <span className="label">Definition</span>
-                                <h3>Server Configuration</h3>
-                              </div>
-                              <p>Use one argument per line and one environment variable per line in KEY=value format.</p>
+                          <div className="provider-row-statuses">
+                            <span className="settings-badge">{activeMcpServer ? "Editing" : "New"}</span>
+                            <span className={mcpServerDraft.enabled ? "settings-badge is-highlight" : "settings-badge"}>
+                              {mcpServerDraft.enabled ? "Enabled" : "Disabled"}
+                            </span>
+                            <span className="settings-badge">{getMcpTransportLabel(mcpServerDraft.transport)}</span>
+                          </div>
+                        </div>
+
+                        <div className="settings-panel">
+                          <div className="settings-section-header">
+                            <div>
+                              <span className="label">Definition</span>
+                              <h3>Server Configuration</h3>
                             </div>
+                            <p>
+                              {mcpServerDraft.transport === "stdio"
+                                ? "Use one argument per line and one environment variable per line in KEY=value format."
+                                : "Connect a remote MCP server over HTTP. Headers are sent by the local agent, and tool approval stays in the local permission system."}
+                            </p>
+                          </div>
+
+                          {activeMcpServerDiagnostic ? (
+                            <div className={activeMcpServerDiagnostic.ok ? "settings-banner is-success" : "settings-banner is-error"}>
+                              {activeMcpServerDiagnostic.ok
+                                ? activeMcpServerDiagnostic.toolCount > 0
+                                  ? `Reachable. Exposed tools: ${activeMcpServerDiagnostic.toolNames.join(", ")}`
+                                  : "Reachable, but the server did not expose any tools."
+                                : activeMcpServerDiagnostic.error ?? "Tool discovery failed."}
+                            </div>
+                          ) : null}
 
                             <div className="settings-field-grid">
                               <label className="settings-field">
@@ -1899,26 +2656,53 @@ export function SettingsPage({
                               </label>
 
                               <label className="settings-field">
-                                <span className="settings-field-label">Command</span>
-                                <input
-                                  aria-label="MCP server command"
-                                  type="text"
-                                  value={mcpServerDraft.command}
-                                  placeholder="npx"
-                                  onChange={(event) => onMcpServerDraftChange("command", event.target.value)}
-                                />
+                                <span className="settings-field-label">Transport</span>
+                                <select
+                                  aria-label="MCP server transport"
+                                  value={mcpServerDraft.transport}
+                                  onChange={(event) => onMcpServerDraftChange("transport", event.target.value)}
+                                >
+                                  <option value="stdio">Local stdio</option>
+                                  <option value="remote">Remote HTTP</option>
+                                </select>
                               </label>
 
-                              <label className="settings-field">
-                                <span className="settings-field-label">Working directory</span>
-                                <input
-                                  aria-label="MCP server working directory"
-                                  type="text"
-                                  value={mcpServerDraft.cwd}
-                                  placeholder="Optional, relative to the project root"
-                                  onChange={(event) => onMcpServerDraftChange("cwd", event.target.value)}
-                                />
-                              </label>
+                              {mcpServerDraft.transport === "stdio" ? (
+                                <label className="settings-field">
+                                  <span className="settings-field-label">Command</span>
+                                  <input
+                                    aria-label="MCP server command"
+                                    type="text"
+                                    value={mcpServerDraft.command}
+                                    placeholder="npx"
+                                    onChange={(event) => onMcpServerDraftChange("command", event.target.value)}
+                                  />
+                                </label>
+                              ) : null}
+
+                              {mcpServerDraft.transport === "stdio" ? (
+                                <label className="settings-field">
+                                  <span className="settings-field-label">Working directory</span>
+                                  <input
+                                    aria-label="MCP server working directory"
+                                    type="text"
+                                    value={mcpServerDraft.cwd}
+                                    placeholder="Optional, relative to the active project root"
+                                    onChange={(event) => onMcpServerDraftChange("cwd", event.target.value)}
+                                  />
+                                </label>
+                              ) : (
+                                <label className="settings-field">
+                                  <span className="settings-field-label">Server URL</span>
+                                  <input
+                                    aria-label="MCP server URL"
+                                    type="text"
+                                    value={mcpServerDraft.serverUrl}
+                                    placeholder="https://mcp.example.com"
+                                    onChange={(event) => onMcpServerDraftChange("serverUrl", event.target.value)}
+                                  />
+                                </label>
+                              )}
 
                               <label className="settings-field">
                                 <span className="settings-field-label">Timeout (ms)</span>
@@ -1942,33 +2726,94 @@ export function SettingsPage({
                               </label>
                             </div>
 
-                            <div className="settings-field-grid">
-                              <label className="settings-field">
-                                <span className="settings-field-label">Arguments</span>
-                                <textarea
-                                  aria-label="MCP server arguments"
-                                  rows={5}
-                                  value={mcpServerDraft.args}
-                                  placeholder="one argument per line"
-                                  onChange={(event) => onMcpServerDraftChange("args", event.target.value)}
-                                />
-                              </label>
+                            {mcpServerDraft.transport === "stdio" ? (
+                              <div className="settings-field-grid">
+                                <label className="settings-field">
+                                  <span className="settings-field-label">Arguments</span>
+                                  <textarea
+                                    aria-label="MCP server arguments"
+                                    rows={5}
+                                    value={mcpServerDraft.args}
+                                    placeholder="one argument per line"
+                                    onChange={(event) => onMcpServerDraftChange("args", event.target.value)}
+                                  />
+                                </label>
 
-                              <label className="settings-field">
-                                <span className="settings-field-label">Environment</span>
-                                <textarea
-                                  aria-label="MCP server environment"
-                                  rows={5}
-                                  value={mcpServerDraft.env}
-                                  placeholder="KEY=value"
-                                  onChange={(event) => onMcpServerDraftChange("env", event.target.value)}
-                                />
-                              </label>
-                            </div>
+                                <label className="settings-field">
+                                  <span className="settings-field-label">Environment</span>
+                                  <textarea
+                                    aria-label="MCP server environment"
+                                    rows={5}
+                                    value={mcpServerDraft.env}
+                                    placeholder="KEY=value"
+                                    onChange={(event) => onMcpServerDraftChange("env", event.target.value)}
+                                  />
+                                </label>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="settings-field-grid">
+                                  <label className="settings-field">
+                                    <span className="settings-field-label">Authorization</span>
+                                    <input
+                                      aria-label="MCP authorization"
+                                      type="text"
+                                      value={mcpServerDraft.authorization}
+                                      placeholder="Optional Authorization header value"
+                                      onChange={(event) => onMcpServerDraftChange("authorization", event.target.value)}
+                                    />
+                                  </label>
+
+                                  <label className="settings-field">
+                                    <span className="settings-field-label">Headers</span>
+                                    <textarea
+                                      aria-label="MCP server headers"
+                                      rows={5}
+                                      value={mcpServerDraft.headers}
+                                      placeholder="KEY=value"
+                                      onChange={(event) => onMcpServerDraftChange("headers", event.target.value)}
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="settings-field-grid">
+                                  <label className="settings-field">
+                                    <span className="settings-field-label">Allowed tools</span>
+                                    <select
+                                      aria-label="MCP allowed tools mode"
+                                      value={mcpServerDraft.allowedToolsMode}
+                                      onChange={(event) => onMcpServerDraftChange("allowedToolsMode", event.target.value)}
+                                    >
+                                      <option value="all">All tools</option>
+                                      <option value="names">Named tools only</option>
+                                      <option value="read-only">Read-only tools</option>
+                                      <option value="read-only-names">Read-only named tools</option>
+                                    </select>
+                                  </label>
+
+                                  {mcpServerDraft.allowedToolsMode === "names" || mcpServerDraft.allowedToolsMode === "read-only-names" ? (
+                                    <label className="settings-field">
+                                      <span className="settings-field-label">Allowed tool names</span>
+                                      <textarea
+                                        aria-label="MCP allowed tool names"
+                                        rows={5}
+                                        value={mcpServerDraft.allowedToolNames}
+                                        placeholder="one tool name per line"
+                                        onChange={(event) => onMcpServerDraftChange("allowedToolNames", event.target.value)}
+                                      />
+                                    </label>
+                                  ) : null}
+                                </div>
+                              </>
+                            )}
 
                             <div className="settings-actions-row">
                               <span className="settings-helper-text">
-                                Servers start lazily when the agent resolves tools for this project. Tool approval still flows through the existing permission system.
+                                {mcpServerValidationError
+                                  ? mcpServerValidationError
+                                  : mcpServerDraft.transport === "remote"
+                                    ? "Remote MCP servers are connected locally over HTTP. Approval still flows through the existing permission system."
+                                    : "Servers start lazily when a project enables them and the agent resolves tools. Tool approval still flows through the existing permission system."}
                               </span>
                               <div className="settings-inline-actions">
                                 {activeMcpServer ? (
@@ -1983,7 +2828,7 @@ export function SettingsPage({
                                 ) : null}
                                 <button
                                   className="primary-button"
-                                  disabled={mcpServerBusy || !mcpServerDraft.id.trim() || !mcpServerDraft.command.trim()}
+                                  disabled={mcpServerBusy || !mcpServerCanSave}
                                   onClick={() => void onSaveMcpServer()}
                                   type="button"
                                 >
@@ -1993,14 +2838,7 @@ export function SettingsPage({
                             </div>
                           </div>
                         </>
-                      ) : (
-                        <article className="settings-empty-state settings-detail-empty-state">
-                          <span className="label">No Project</span>
-                          <h3>Select a project from the sidebar</h3>
-                          <p>The MCP server definitions are stored in the project config, so there is nothing to edit until a project is active.</p>
-                        </article>
-                      )}
-                    </div>
+                      </div>
                   </section>
                 ) : (
                   <div className="settings-default-layout">
@@ -3225,20 +4063,16 @@ interface ComposerProps {
   hasPendingPermissionRequests: boolean
   isSending: boolean
   modelOptions: ComposerModelOption[]
-  skillOptions: ComposerSkillOption[]
   selectedModel: string | null
   selectedModelLabel: string
-  selectedSkillIDs: string[]
-  selectedSkillLabel: string
   onDraftChange: (value: string) => void
   onModelChange: (value: string | null) => void | Promise<void>
-  onSkillToggle: (value: string) => void
   onPickAttachments: () => void | Promise<void>
   onRemoveAttachment: (path: string) => void
   onSend: () => void | Promise<void>
 }
 
-type ComposerMenuKey = "model" | "skill" | null
+type ComposerMenuKey = "model" | null
 
 export function Composer({
   attachments,
@@ -3247,14 +4081,10 @@ export function Composer({
   hasPendingPermissionRequests,
   isSending,
   modelOptions,
-  skillOptions,
   selectedModel,
   selectedModelLabel,
-  selectedSkillIDs,
-  selectedSkillLabel,
   onDraftChange,
   onModelChange,
-  onSkillToggle,
   onPickAttachments,
   onRemoveAttachment,
   onSend,
@@ -3293,10 +4123,6 @@ export function Composer({
   function handleModelSelect(value: string | null) {
     setOpenMenu(null)
     void onModelChange(value)
-  }
-
-  function handleSkillToggle(value: string) {
-    void onSkillToggle(value)
   }
 
   const sendButtonLabel = isSending ? "Sending task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
@@ -3378,47 +4204,6 @@ export function Composer({
                   ))
                 ) : (
                   <p className="composer-menu-empty">No visible models are available for this project yet.</p>
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="composer-menu-anchor">
-            <button
-              aria-expanded={openMenu === "skill"}
-              aria-haspopup="dialog"
-              aria-label={`Select skills: ${selectedSkillLabel}`}
-              className="composer-selector-button"
-              onClick={() => toggleMenu("skill")}
-              type="button"
-            >
-              <span>{selectedSkillLabel}</span>
-              <ChevronDownIcon />
-            </button>
-
-            {openMenu === "skill" ? (
-              <div className="composer-menu-panel" role="dialog" aria-label="Skill selection">
-                {skillOptions.length > 0 ? (
-                  skillOptions.map((option) => {
-                    const isSelected = selectedSkillIDs.includes(option.value)
-
-                    return (
-                      <button
-                        key={option.value}
-                        className={isSelected ? "composer-menu-option is-selected" : "composer-menu-option"}
-                        onClick={() => handleSkillToggle(option.value)}
-                        type="button"
-                      >
-                        <span className="composer-menu-option-copy">
-                          <strong>{option.label}</strong>
-                          <small>{option.description}</small>
-                        </span>
-                        <span className="composer-menu-option-check">{isSelected ? "Selected" : "Add"}</span>
-                      </button>
-                    )
-                  })
-                ) : (
-                  <p className="composer-menu-empty">No Codex-style skills are available for this project.</p>
                 )}
               </div>
             ) : null}

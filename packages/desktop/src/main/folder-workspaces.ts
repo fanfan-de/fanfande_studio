@@ -12,6 +12,8 @@ function samePath(left: string, right: string) {
 }
 
 function getProjectName(project: { name?: string; worktree: string }) {
+  if (project.worktree === "/") return "Global"
+
   const trimmed = project.name?.trim()
   if (trimmed) return trimmed
 

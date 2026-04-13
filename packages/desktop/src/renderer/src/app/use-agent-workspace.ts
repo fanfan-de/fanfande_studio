@@ -19,10 +19,12 @@ import {
 import type {
   AgentStreamIPCEvent,
   ComposerAttachment,
+  ComposerMcpOption,
   ComposerModelOption,
   ComposerSkillOption,
   CreateSessionTab,
   LeftSidebarView,
+  McpServerSummary,
   PermissionDecision,
   PermissionRequest,
   PendingAgentStream,
@@ -95,6 +97,23 @@ function resolveComposerSkillLabel(selectedSkillIDs: string[], skills: SkillInfo
     return skills.find((skill) => skill.id === selectedSkillIDs[0])?.name ?? "1 skill"
   }
   return `${selectedSkillIDs.length} skills`
+}
+
+function describeComposerMcpServer(server: McpServerSummary) {
+  if (server.transport === "stdio") {
+    return server.command
+  }
+
+  return server.serverUrl ?? server.connectorId ?? "Remote HTTP MCP"
+}
+
+function resolveComposerMcpLabel(selectedServerIDs: string[], servers: McpServerSummary[], isLoading: boolean) {
+  if (isLoading && servers.length === 0) return "Loading MCP..."
+  if (selectedServerIDs.length === 0) return "MCP"
+  if (selectedServerIDs.length === 1) {
+    return servers.find((server) => server.id === selectedServerIDs[0])?.name ?? "1 server"
+  }
+  return `${selectedServerIDs.length} servers`
 }
 
 function buildPromptWithAttachments(prompt: string, attachments: ComposerAttachment[]) {
@@ -201,8 +220,14 @@ export function useAgentWorkspace({
   const [composerSkills, setComposerSkills] = useState<SkillInfo[]>([])
   const [composerSelectedSkillIDs, setComposerSelectedSkillIDs] = useState<string[]>([])
   const [isLoadingComposerSkills, setIsLoadingComposerSkills] = useState(false)
+  const [composerMcpServers, setComposerMcpServers] = useState<McpServerSummary[]>([])
+  const [composerSelectedMcpServerIDs, setComposerSelectedMcpServerIDs] = useState<string[]>([])
+  const [isLoadingComposerMcp, setIsLoadingComposerMcp] = useState(false)
   const composerModelsRequestRef = useRef(0)
   const composerSkillsRequestRef = useRef(0)
+  const composerSkillSelectionRequestRef = useRef(0)
+  const composerMcpRequestRef = useRef(0)
+  const composerMcpSelectionRequestRef = useRef(0)
   const pendingModelSelectionRef = useRef<Promise<void> | null>(null)
 
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
@@ -229,11 +254,21 @@ export function useAgentWorkspace({
     label: skill.name,
     description: skill.description,
   }))
+  const composerMcpOptions: ComposerMcpOption[] = composerMcpServers.map((server) => ({
+    value: server.id,
+    label: server.name ?? server.id,
+    description: describeComposerMcpServer(server),
+  }))
   const composerSelectedModelLabel = resolveComposerModelLabel(composerSelectedModel, composerModels, isLoadingComposerModels)
   const composerSelectedSkillLabel = resolveComposerSkillLabel(
     composerSelectedSkillIDs,
     composerSkills,
     isLoadingComposerSkills,
+  )
+  const composerSelectedMcpLabel = resolveComposerMcpLabel(
+    composerSelectedMcpServerIDs,
+    composerMcpServers,
+    isLoadingComposerMcp,
   )
 
   function bumpConversationVersion(sessionID: string) {
@@ -475,42 +510,83 @@ export function useAgentWorkspace({
     }
   }, [selectedWorkspace?.project.id])
 
-  useEffect(() => {
+  async function refreshComposerSkills() {
     const projectID = selectedWorkspace?.project.id
     const getProjectSkills = window.desktop?.getProjectSkills
-
-    if (!projectID || !getProjectSkills) {
+    const getProjectSkillSelection = window.desktop?.getProjectSkillSelection
+    if (!projectID || !getProjectSkills || !getProjectSkillSelection) {
       setComposerSkills([])
       setComposerSelectedSkillIDs([])
       setIsLoadingComposerSkills(false)
       return
     }
 
-    let cancelled = false
     const requestID = ++composerSkillsRequestRef.current
     setIsLoadingComposerSkills(true)
 
-    getProjectSkills({ projectID })
-      .then((skills) => {
-        if (cancelled || composerSkillsRequestRef.current !== requestID) return
-        setComposerSkills(skills)
-        setComposerSelectedSkillIDs((current) => current.filter((skillID) => skills.some((skill) => skill.id === skillID)))
-      })
-      .catch((error) => {
-        if (cancelled || composerSkillsRequestRef.current !== requestID) return
-        console.error("[desktop] getProjectSkills failed:", error)
-        setComposerSkills([])
-        setComposerSelectedSkillIDs([])
-      })
-      .finally(() => {
-        if (!cancelled && composerSkillsRequestRef.current === requestID) {
-          setIsLoadingComposerSkills(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
+    try {
+      const [skills, selection] = await Promise.all([
+        getProjectSkills({ projectID }),
+        getProjectSkillSelection({ projectID }),
+      ])
+      if (composerSkillsRequestRef.current !== requestID) return
+      const availableSkillIDs = new Set(skills.map((skill) => skill.id))
+      setComposerSkills(skills)
+      setComposerSelectedSkillIDs(selection.skillIDs.filter((skillID) => availableSkillIDs.has(skillID)))
+    } catch (error) {
+      if (composerSkillsRequestRef.current !== requestID) return
+      console.error("[desktop] refreshComposerSkills failed:", error)
+      setComposerSkills([])
+      setComposerSelectedSkillIDs([])
+    } finally {
+      if (composerSkillsRequestRef.current === requestID) {
+        setIsLoadingComposerSkills(false)
+      }
     }
+  }
+
+  useEffect(() => {
+    void refreshComposerSkills()
+  }, [selectedWorkspace?.project.id])
+
+  async function refreshComposerMcp() {
+    const projectID = selectedWorkspace?.project.id
+    const getGlobalMcpServers = window.desktop?.getGlobalMcpServers
+    const getProjectMcpSelection = window.desktop?.getProjectMcpSelection
+    if (!projectID || !getGlobalMcpServers || !getProjectMcpSelection) {
+      setComposerMcpServers([])
+      setComposerSelectedMcpServerIDs([])
+      setIsLoadingComposerMcp(false)
+      return
+    }
+
+    const requestID = ++composerMcpRequestRef.current
+    setIsLoadingComposerMcp(true)
+
+    try {
+      const [servers, selection] = await Promise.all([
+        getGlobalMcpServers(),
+        getProjectMcpSelection({ projectID }),
+      ])
+      if (composerMcpRequestRef.current !== requestID) return
+
+      const availableServerIDs = new Set(servers.map((server) => server.id))
+      setComposerMcpServers(servers)
+      setComposerSelectedMcpServerIDs(selection.serverIDs.filter((serverID) => availableServerIDs.has(serverID)))
+    } catch (error) {
+      if (composerMcpRequestRef.current !== requestID) return
+      console.error("[desktop] MCP selector refresh failed:", error)
+      setComposerMcpServers([])
+      setComposerSelectedMcpServerIDs([])
+    } finally {
+      if (composerMcpRequestRef.current === requestID) {
+        setIsLoadingComposerMcp(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    void refreshComposerMcp()
   }, [selectedWorkspace?.project.id])
 
   useEffect(() => {
@@ -1222,8 +1298,6 @@ export function useAgentWorkspace({
           skills: selectedSkillIDs,
         })
 
-        setComposerSelectedSkillIDs([])
-
         return
       }
 
@@ -1241,7 +1315,6 @@ export function useAgentWorkspace({
       startTransition(() => {
         appendConversationTurns(uiSessionID, [backendTurn])
       })
-      setComposerSelectedSkillIDs([])
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (streamID) {
@@ -1420,10 +1493,66 @@ export function useAgentWorkspace({
     await trackedTask
   }
 
-  function handleComposerSkillToggle(value: string) {
-    setComposerSelectedSkillIDs((current) =>
-      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
-    )
+  async function handleComposerSkillToggle(value: string) {
+    const projectID = selectedWorkspace?.project.id
+    const updateProjectSkillSelection = window.desktop?.updateProjectSkillSelection
+    if (!projectID || !updateProjectSkillSelection) {
+      return
+    }
+
+    let nextSelection: string[] = []
+    setComposerSelectedSkillIDs((current) => {
+      nextSelection = current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
+      return nextSelection
+    })
+
+    const requestID = ++composerSkillSelectionRequestRef.current
+
+    try {
+      const result = await updateProjectSkillSelection({
+        projectID,
+        skillIDs: nextSelection,
+      })
+      if (composerSkillSelectionRequestRef.current !== requestID) return
+
+      const availableSkillIDs = new Set(composerSkills.map((skill) => skill.id))
+      setComposerSelectedSkillIDs(result.skillIDs.filter((skillID) => availableSkillIDs.has(skillID)))
+    } catch (error) {
+      if (composerSkillSelectionRequestRef.current !== requestID) return
+      console.error("[desktop] updateProjectSkillSelection failed:", error)
+      void refreshComposerSkills()
+    }
+  }
+
+  async function handleComposerMcpToggle(value: string) {
+    const projectID = selectedWorkspace?.project.id
+    const updateProjectMcpSelection = window.desktop?.updateProjectMcpSelection
+    if (!projectID || !updateProjectMcpSelection) {
+      return
+    }
+
+    let nextSelection: string[] = []
+    setComposerSelectedMcpServerIDs((current) => {
+      nextSelection = current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
+      return nextSelection
+    })
+
+    const requestID = ++composerMcpSelectionRequestRef.current
+
+    try {
+      const result = await updateProjectMcpSelection({
+        projectID,
+        serverIDs: nextSelection,
+      })
+      if (composerMcpSelectionRequestRef.current !== requestID) return
+
+      const availableServerIDs = new Set(composerMcpServers.map((server) => server.id))
+      setComposerSelectedMcpServerIDs(result.serverIDs.filter((serverID) => availableServerIDs.has(serverID)))
+    } catch (error) {
+      if (composerMcpSelectionRequestRef.current !== requestID) return
+      console.error("[desktop] updateProjectMcpSelection failed:", error)
+      void refreshComposerMcp()
+    }
   }
 
   function handleLeftSidebarViewChange(nextView: LeftSidebarView) {
@@ -1442,7 +1571,10 @@ export function useAgentWorkspace({
     activeTurns,
     canvasSessionTabs,
     composerAttachments,
+    composerMcpOptions,
     composerModelOptions,
+    composerSelectedMcpLabel,
+    composerSelectedMcpServerIDs,
     composerSkillOptions,
     composerSelectedModel,
     composerSelectedModelLabel,
@@ -1458,6 +1590,7 @@ export function useAgentWorkspace({
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
     handleComposerModelChange,
+    handleComposerMcpToggle,
     handleComposerSkillToggle,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
@@ -1486,6 +1619,8 @@ export function useAgentWorkspace({
     permissionRequestActionError,
     permissionRequestActionRequestID,
     projectRowRefs,
+    refreshComposerMcp,
+    refreshComposerSkills,
     rightSidebarView,
     selectedWorkspace,
     selectedFolderID,

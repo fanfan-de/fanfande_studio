@@ -3,7 +3,9 @@ import * as Tool from "#tool/tool.ts"
 import { ApplyPatchTool } from "#tool/apply-patch.ts"
 import { ExecCommandTool } from "#tool/exec-command.ts"
 import { ListDirectoryTool } from "#tool/list-directory.ts"
+import { LoadSkillTool } from "#tool/load-skill.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
+import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { SearchFilesTool } from "#tool/search-files.ts"
 import { WriteFileTool } from "#tool/write-file.ts"
@@ -39,6 +41,8 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
   const mcpTools = await Mcp.tools()
   const result = [
     ReadFileTool,
+    LoadSkillTool,
+    ReadSkillResourceTool,
     WriteFileTool,
     ReplaceTextTool,
     ApplyPatchTool,

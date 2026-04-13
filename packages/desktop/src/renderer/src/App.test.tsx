@@ -208,6 +208,20 @@ describe("App", () => {
       getSessionDiff: vi.fn().mockResolvedValue({
         diffs: [],
       }),
+      getGlobalSkills: vi.fn().mockResolvedValue([]),
+      getProjectSkills: vi.fn().mockResolvedValue([]),
+      getProjectSkillSelection: vi.fn().mockResolvedValue({
+        skillIDs: [],
+      }),
+      getGlobalSkillsTree: vi.fn().mockResolvedValue({
+        root: "C:\\Users\\19128\\.anybox\\skills",
+        items: [],
+      }),
+      readGlobalSkillFile: vi.fn(),
+      updateGlobalSkillFile: vi.fn(),
+      createGlobalSkill: vi.fn(),
+      renameGlobalSkill: vi.fn(),
+      deleteGlobalSkill: vi.fn(),
       getSessionPermissionRequests: vi.fn().mockResolvedValue([]),
       respondPermissionRequest: vi.fn().mockResolvedValue(createPermissionResolveResult()),
       getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
@@ -215,9 +229,13 @@ describe("App", () => {
         items: [],
         selection: {},
       }),
+      getGlobalMcpServers: vi.fn().mockResolvedValue([]),
       getProjectModels: vi.fn().mockResolvedValue({
         items: [],
         selection: {},
+      }),
+      getProjectMcpSelection: vi.fn().mockResolvedValue({
+        serverIDs: [],
       }),
       updateGlobalProvider: vi.fn().mockResolvedValue({
         provider: {
@@ -235,7 +253,23 @@ describe("App", () => {
       updateGlobalModelSelection: vi.fn().mockResolvedValue({
         model: "deepseek/deepseek-reasoner",
       }),
+      updateGlobalMcpServer: vi.fn().mockResolvedValue({
+        id: "filesystem",
+        transport: "stdio",
+        command: "npx",
+        enabled: true,
+      }),
+      deleteGlobalMcpServer: vi.fn().mockResolvedValue({
+        serverID: "filesystem",
+        removed: true,
+      }),
       updateProjectModelSelection: vi.fn().mockResolvedValue({}),
+      updateProjectSkillSelection: vi.fn().mockResolvedValue({
+        skillIDs: [],
+      }),
+      updateProjectMcpSelection: vi.fn().mockResolvedValue({
+        serverIDs: [],
+      }),
       createAgentSession: vi.fn().mockResolvedValue({
         session: {
           id: "session-backend",
@@ -296,6 +330,152 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^Select model:/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
+  })
+
+  it("creates a global skill from the inline draft form", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    const directoryPath = `${root}\\layout-review`
+    const filePath = `${directoryPath}\\SKILL.md`
+    const content = ["---", "name: layout-review", "description: Describe when this skill should be used.", "---", "", "# layout-review"].join("\n")
+
+    window.desktop!.getGlobalSkillsTree = vi
+      .fn()
+      .mockResolvedValueOnce({
+        root,
+        items: [],
+      })
+      .mockResolvedValueOnce({
+        root,
+        items: [
+          {
+            name: "layout-review",
+            path: directoryPath,
+            kind: "directory",
+            children: [
+              {
+                name: "SKILL.md",
+                path: filePath,
+                kind: "file",
+              },
+            ],
+          },
+        ],
+      })
+    window.desktop!.createGlobalSkill = vi.fn().mockResolvedValue({
+      directory: directoryPath,
+      file: {
+        path: filePath,
+        content,
+      },
+    })
+    window.desktop!.readGlobalSkillFile = vi.fn().mockResolvedValue({
+      path: filePath,
+      content,
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }))
+
+    await screen.findByText("No global skills exist yet. Use the add button to create the first one.")
+
+    fireEvent.click(screen.getByRole("button", { name: "Create global skill" }))
+
+    const nameInput = screen.getByRole("textbox", { name: "New global skill name" })
+    fireEvent.change(nameInput, { target: { value: "layout-review" } })
+    fireEvent.click(screen.getByRole("button", { name: "Create" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.createGlobalSkill).toHaveBeenCalledWith({ name: "layout-review" })
+    })
+
+    await screen.findByRole("button", { name: "SKILL.md" })
+    expect(screen.queryByRole("textbox", { name: "New global skill name" })).not.toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
+  })
+
+  it("renames a global skill from the tree with double click", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    const oldDirectoryPath = `${root}\\layout-review`
+    const oldFilePath = `${oldDirectoryPath}\\SKILL.md`
+    const nextDirectoryPath = `${root}\\layout-audit`
+    const nextFilePath = `${nextDirectoryPath}\\SKILL.md`
+    const oldContent = ["---", "name: layout-review", "description: Describe when this skill should be used.", "---", "", "# layout-review"].join("\n")
+    const nextContent = ["---", "name: layout-audit", "description: Describe when this skill should be used.", "---", "", "# layout-audit"].join("\n")
+
+    window.desktop!.getGlobalSkillsTree = vi
+      .fn()
+      .mockResolvedValueOnce({
+        root,
+        items: [
+          {
+            name: "layout-review",
+            path: oldDirectoryPath,
+            kind: "directory",
+            children: [
+              {
+                name: "SKILL.md",
+                path: oldFilePath,
+                kind: "file",
+              },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        root,
+        items: [
+          {
+            name: "layout-audit",
+            path: nextDirectoryPath,
+            kind: "directory",
+            children: [
+              {
+                name: "SKILL.md",
+                path: nextFilePath,
+                kind: "file",
+              },
+            ],
+          },
+        ],
+      })
+    window.desktop!.readGlobalSkillFile = vi
+      .fn()
+      .mockResolvedValueOnce({
+        path: oldFilePath,
+        content: oldContent,
+      })
+      .mockResolvedValueOnce({
+        path: nextFilePath,
+        content: nextContent,
+      })
+    window.desktop!.renameGlobalSkill = vi.fn().mockResolvedValue({
+      previousDirectory: oldDirectoryPath,
+      directory: nextDirectoryPath,
+      filePath: nextFilePath,
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }))
+
+    const oldDirectoryButton = await screen.findByRole("button", { name: "layout-review" })
+    fireEvent.doubleClick(oldDirectoryButton)
+
+    const renameInput = await screen.findByRole("textbox", { name: "Rename global skill layout-review" })
+    fireEvent.change(renameInput, { target: { value: "layout-audit" } })
+    fireEvent.keyDown(renameInput, { key: "Enter" })
+
+    await waitFor(() => {
+      expect(window.desktop!.renameGlobalSkill).toHaveBeenCalledWith({
+        directory: oldDirectoryPath,
+        name: "layout-audit",
+      })
+    })
+
+    await screen.findByRole("button", { name: "layout-audit" })
+    expect(screen.queryByRole("textbox", { name: "Rename global skill layout-review" })).not.toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(nextContent)
   })
 
   it("routes window control clicks through the desktop bridge", () => {
@@ -2007,7 +2187,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Close settings" })).toBeInTheDocument()
     expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
-    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(3)
+    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(4)
     expect(screen.getByRole("button", { name: /^Provider/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Models/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Appearance/ })).toBeInTheDocument()
@@ -2048,6 +2228,77 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalledTimes(1)
       expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it("edits global MCP servers from settings and keeps diagnostics project-aware", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [],
+      selection: {},
+    })
+    window.desktop!.getGlobalMcpServers = vi.fn().mockResolvedValue([
+      {
+        id: "filesystem",
+        name: "Filesystem",
+        transport: "stdio",
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem"],
+        enabled: true,
+      },
+    ])
+    window.desktop!.updateGlobalMcpServer = vi.fn().mockResolvedValue({
+      id: "filesystem",
+      name: "Filesystem Tools",
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem"],
+      enabled: true,
+    })
+    window.desktop!.getProjectMcpServerDiagnostic = vi.fn().mockResolvedValue({
+      serverID: "filesystem",
+      enabled: true,
+      ok: true,
+      toolCount: 1,
+      toolNames: ["read_file"],
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    fireEvent.click(await screen.findByRole("button", { name: /^MCP/ }))
+
+    expect(await screen.findByText("Configure reusable local and remote MCP servers once, then enable them per project from the session canvas top menu.")).toBeInTheDocument()
+    expect(screen.queryByText("Pick a project first")).not.toBeInTheDocument()
+    expect(screen.getByText("Diagnostic context")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /Filesystem enabled/ }))
+    fireEvent.change(screen.getByRole("textbox", { name: "MCP server name" }), {
+      target: { value: "Filesystem Tools" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Save server" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updateGlobalMcpServer).toHaveBeenCalledWith({
+        serverID: "filesystem",
+        server: {
+          name: "Filesystem Tools",
+          transport: "stdio",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-filesystem"],
+          env: undefined,
+          cwd: undefined,
+          enabled: true,
+          timeoutMs: undefined,
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.getProjectMcpServerDiagnostic).toHaveBeenCalledWith({
+        projectID: "project-2",
+        serverID: "filesystem",
+      })
     })
   })
 
@@ -2635,6 +2886,134 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Select model: GPT-4o mini" })).toBeInTheDocument()
   })
 
+  it("renders the project skill selector in the session canvas top menu and still sends selected skills", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.getProjectSkills = vi.fn().mockResolvedValue([
+      {
+        id: "skill-layout-review",
+        name: "layout-review",
+        description: "Review the current layout against the desktop shell spec.",
+        path: "C:\\Users\\19128\\.anybox\\skills\\layout-review\\SKILL.md",
+        scope: "user",
+      },
+    ])
+    window.desktop!.getProjectSkillSelection = vi.fn().mockResolvedValue({
+      skillIDs: [],
+    })
+    window.desktop!.updateProjectSkillSelection = vi.fn().mockResolvedValue({
+      skillIDs: ["skill-layout-review"],
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+    })
+
+    const skillButton = await screen.findByRole("button", { name: "Select project skills: Skills" })
+    expect(skillButton.closest(".session-canvas-top-menu")).not.toBeNull()
+
+    const composer = document.querySelector(".composer")
+    expect(composer).not.toBeNull()
+    expect(within(composer as HTMLElement).queryByRole("button", { name: /^Select project skills:/ })).not.toBeInTheDocument()
+
+    fireEvent.click(skillButton)
+
+    const skillMenu = screen.getByRole("dialog", { name: "Project skill selection" })
+    fireEvent.click(within(skillMenu).getByRole("button", { name: /layout-review/i }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updateProjectSkillSelection).toHaveBeenCalledWith({
+        projectID: "project-2",
+        skillIDs: ["skill-layout-review"],
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "Select project skills: layout-review" })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Use the project skill selection for this task",
+      },
+    })
+    fireEvent.click(getComposerSendButton())
+
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
+        sessionID: "session-backend",
+        skills: ["skill-layout-review"],
+        text: "Use the project skill selection for this task",
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "Select project skills: layout-review" })).toBeInTheDocument()
+  })
+
+  it("renders the project MCP selector in the session canvas top menu and persists selected servers", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.getGlobalMcpServers = vi.fn().mockResolvedValue([
+      {
+        id: "filesystem",
+        name: "Filesystem",
+        transport: "stdio",
+        command: "npx",
+        enabled: true,
+      },
+    ])
+    window.desktop!.getProjectMcpSelection = vi.fn().mockResolvedValue({
+      serverIDs: [],
+    })
+    window.desktop!.updateProjectMcpSelection = vi.fn().mockResolvedValue({
+      serverIDs: ["filesystem"],
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+    })
+
+    const mcpButton = await screen.findByRole("button", { name: "Select project MCP servers: MCP" })
+    expect(mcpButton.closest(".session-canvas-top-menu")).not.toBeNull()
+
+    fireEvent.click(mcpButton)
+
+    const mcpMenu = screen.getByRole("dialog", { name: "Project MCP server selection" })
+    fireEvent.click(within(mcpMenu).getByRole("button", { name: /Filesystem/i }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updateProjectMcpSelection).toHaveBeenCalledWith({
+        projectID: "project-2",
+        serverIDs: ["filesystem"],
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "Select project MCP servers: Filesystem" })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Keep the selected MCP servers on the project",
+      },
+    })
+    fireEvent.click(getComposerSendButton())
+
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
+        sessionID: "session-backend",
+        skills: [],
+        text: "Keep the selected MCP servers on the project",
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "Select project MCP servers: Filesystem" })).toBeInTheDocument()
+  })
+
   it("adds composer attachments and includes them in agent requests", async () => {
     window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
       ok: true,
@@ -2666,6 +3045,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
         sessionID: "session-backend",
+        skills: [],
         text:
           "Use the references to refine the layout\n\nAttached files:\n- hero.png: C:\\Refs\\hero.png\n- brief.pdf: C:\\Refs\\brief.pdf",
       })
@@ -2695,6 +3075,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
         sessionID: "session-backend",
+        skills: [],
         text: "Audit the toolbar changes",
       })
     })
@@ -3503,6 +3884,12 @@ describe("App", () => {
     )
     expect(styles).toMatch(
       /\.session-canvas-top-menu-copy strong\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
+    )
+    expect(styles).toMatch(
+      /\.canvas-top-menu-mcp-trigger,\s*\.canvas-top-menu-skill-trigger\s*\{[^}]*gap:\s*6px;[^}]*max-width:\s*min\(240px,\s*40vw\);/s,
+    )
+    expect(styles).toMatch(
+      /\.canvas-top-menu-selector-panel\s*\{[^}]*top:\s*calc\(100%\s*\+\s*8px\);[^}]*right:\s*0;[^}]*min-width:\s*260px;[^}]*max-height:\s*min\(320px,\s*calc\(100dvh - 180px\)\);/s,
     )
   })
 

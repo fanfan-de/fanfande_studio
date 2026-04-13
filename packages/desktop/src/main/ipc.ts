@@ -6,6 +6,11 @@ import type { ApplicationMenus } from "./menu"
 import { PtyProxyManager, PTY_EVENT_CHANNEL } from "./pty-proxy"
 import type {
   AgentEnvelope,
+  AgentGlobalSkillFileDocument,
+  AgentGlobalSkillRenameResult,
+  AgentGlobalSkillTree,
+  AgentProjectMcpSelection,
+  AgentProjectSkillSelection,
   AgentProjectModelSelection,
   AgentPtySessionInfo,
   AgentProviderCatalogItem,
@@ -16,6 +21,7 @@ import type {
   AgentPermissionRequest,
   AgentSkillInfo,
   AgentMcpServerSummary,
+  AgentMcpServerDiagnostic,
   AgentProjectWorkspace,
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
@@ -526,6 +532,124 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
+  ipcMain.handle("desktop:get-global-mcp-servers", async () => {
+    const result = await requestAgentJSON<AgentMcpServerSummary[]>("/api/mcp/servers")
+
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:update-global-mcp-server",
+    async (
+      _event,
+      input: {
+        serverID: string
+        server: Omit<AgentMcpServerSummary, "id">
+      },
+    ) => {
+      const serverID = input.serverID.trim()
+      const result = await requestAgentJSON<AgentMcpServerSummary>(`/api/mcp/servers/${encodeURIComponent(serverID)}`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input.server),
+      })
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:delete-global-mcp-server", async (_event, input: { serverID: string }) => {
+    const serverID = input.serverID.trim()
+    const result = await requestAgentJSON<{ serverID: string; removed: boolean }>(
+      `/api/mcp/servers/${encodeURIComponent(serverID)}`,
+      {
+        method: "DELETE",
+      },
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:get-global-skills", async () => {
+    const result = await requestAgentJSON<AgentSkillInfo[]>("/api/skills")
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:get-global-skills-tree", async () => {
+    const result = await requestAgentJSON<AgentGlobalSkillTree>("/api/skills/tree")
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:read-global-skill-file", async (_event, input: { path: string }) => {
+    const result = await requestAgentJSON<AgentGlobalSkillFileDocument>(
+      `/api/skills/file?path=${encodeURIComponent(input.path.trim())}`,
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:update-global-skill-file", async (_event, input: { path: string; content: string }) => {
+    const result = await requestAgentJSON<AgentGlobalSkillFileDocument>("/api/skills/file", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        path: input.path,
+        content: input.content,
+      }),
+    })
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:create-global-skill", async (_event, input: { name: string }) => {
+    const result = await requestAgentJSON<{
+      directory: string
+      file: AgentGlobalSkillFileDocument
+    }>("/api/skills", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        name: input.name,
+      }),
+    })
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:rename-global-skill", async (_event, input: { directory: string; name: string }) => {
+    const result = await requestAgentJSON<AgentGlobalSkillRenameResult>("/api/skills", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        directory: input.directory,
+        name: input.name,
+      }),
+    })
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:delete-global-skill", async (_event, input: { directory: string }) => {
+    const result = await requestAgentJSON<{ directory: string; removed: boolean }>(
+      `/api/skills?directory=${encodeURIComponent(input.directory.trim())}`,
+      {
+        method: "DELETE",
+      },
+    )
+
+    return result.data
+  })
+
   ipcMain.handle("desktop:get-project-provider-catalog", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentProviderCatalogItem[]>(
@@ -639,6 +763,66 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
+  ipcMain.handle("desktop:get-project-skill-selection", async (_event, input: { projectID: string }) => {
+    const projectID = input.projectID.trim()
+    const result = await requestAgentJSON<AgentProjectSkillSelection>(
+      `/api/projects/${encodeURIComponent(projectID)}/skills/selection`,
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:update-project-skill-selection",
+    async (_event, input: { projectID: string; skillIDs: string[] }) => {
+      const projectID = input.projectID.trim()
+      const result = await requestAgentJSON<AgentProjectSkillSelection>(
+        `/api/projects/${encodeURIComponent(projectID)}/skills/selection`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            skillIDs: input.skillIDs,
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:get-project-mcp-selection", async (_event, input: { projectID: string }) => {
+    const projectID = input.projectID.trim()
+    const result = await requestAgentJSON<AgentProjectMcpSelection>(
+      `/api/projects/${encodeURIComponent(projectID)}/mcp/selection`,
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:update-project-mcp-selection",
+    async (_event, input: { projectID: string; serverIDs: string[] }) => {
+      const projectID = input.projectID.trim()
+      const result = await requestAgentJSON<AgentProjectMcpSelection>(
+        `/api/projects/${encodeURIComponent(projectID)}/mcp/selection`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            serverIDs: input.serverIDs,
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
   ipcMain.handle("desktop:get-project-mcp-servers", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentMcpServerSummary[]>(
@@ -647,6 +831,19 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
     return result.data
   })
+
+  ipcMain.handle(
+    "desktop:get-project-mcp-server-diagnostic",
+    async (_event, input: { projectID: string; serverID: string }) => {
+      const projectID = input.projectID.trim()
+      const serverID = input.serverID.trim()
+      const result = await requestAgentJSON<AgentMcpServerDiagnostic>(
+        `/api/projects/${encodeURIComponent(projectID)}/mcp/servers/${encodeURIComponent(serverID)}/diagnostic`,
+      )
+
+      return result.data
+    },
+  )
 
   ipcMain.handle(
     "desktop:update-project-mcp-server",
