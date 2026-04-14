@@ -369,6 +369,203 @@ describe("tool contract", () => {
     }
   }, 120000)
 
+  it("maps user image and file parts to the AI SDK multimodal shape", async () => {
+    const model = {
+      capabilities: {
+        reasoning: false,
+        attachment: true,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: true,
+          video: false,
+          pdf: true,
+        },
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "user-multimodal",
+            sessionID: "session-multimodal",
+            role: "user",
+            created: Date.now(),
+            agent: "plan",
+            model: {
+              providerID: "test-provider",
+              modelID: "test-model",
+            },
+          } as Message.User,
+          parts: [
+            {
+              id: "part-1",
+              sessionID: "session-multimodal",
+              messageID: "user-multimodal",
+              type: "text",
+              text: "Describe these references.",
+            } as Message.TextPart,
+            {
+              id: "part-2",
+              sessionID: "session-multimodal",
+              messageID: "user-multimodal",
+              type: "image",
+              mime: "image/png",
+              filename: "hero.png",
+              url: "data:image/png;base64,aGVsbG8=",
+            } as Message.ImagePart,
+            {
+              id: "part-3",
+              sessionID: "session-multimodal",
+              messageID: "user-multimodal",
+              type: "file",
+              mime: "application/pdf",
+              filename: "brief.pdf",
+              url: "data:application/pdf;base64,aGVsbG8=",
+            } as Message.FilePart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "Describe these references.",
+        },
+        {
+          type: "image",
+          image: "data:image/png;base64,aGVsbG8=",
+          mediaType: "image/png",
+        },
+        {
+          type: "file",
+          data: "data:application/pdf;base64,aGVsbG8=",
+          filename: "brief.pdf",
+          mediaType: "application/pdf",
+        },
+      ],
+    })
+  })
+
+  it("fails fast with a clear error when the model does not support image input", async () => {
+    const model = {
+      id: "deepseek-chat",
+      providerID: "deepseek",
+      capabilities: {
+        reasoning: false,
+        attachment: true,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+      },
+    } as any
+
+    await expect(
+      Message.toModelMessages(
+        [
+          {
+            info: {
+              id: "user-image-unsupported",
+              sessionID: "session-image-unsupported",
+              role: "user",
+              created: Date.now(),
+              agent: "plan",
+              model: {
+                providerID: "deepseek",
+                modelID: "deepseek-chat",
+              },
+            } as Message.User,
+            parts: [
+              {
+                id: "part-1",
+                sessionID: "session-image-unsupported",
+                messageID: "user-image-unsupported",
+                type: "image",
+                mime: "image/png",
+                filename: "hero.png",
+                url: "data:image/png;base64,aGVsbG8=",
+              } as Message.ImagePart,
+            ],
+          },
+        ],
+        model,
+      ),
+    ).rejects.toThrow("does not support image input")
+  })
+
+  it("accepts image parts when the model supports image input without generic attachments", async () => {
+    const model = {
+      id: "qwen-vl-max",
+      providerID: "alibaba-cn",
+      capabilities: {
+        reasoning: false,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: true,
+          video: false,
+          pdf: false,
+        },
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "user-image-supported",
+            sessionID: "session-image-supported",
+            role: "user",
+            created: Date.now(),
+            agent: "plan",
+            model: {
+              providerID: "alibaba-cn",
+              modelID: "qwen-vl-max",
+            },
+          } as Message.User,
+          parts: [
+            {
+              id: "part-1",
+              sessionID: "session-image-supported",
+              messageID: "user-image-supported",
+              type: "image",
+              mime: "image/png",
+              filename: "hero.png",
+              url: "data:image/png;base64,aGVsbG8=",
+            } as Message.ImagePart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      content: [
+        {
+          type: "image",
+          image: "data:image/png;base64,aGVsbG8=",
+          mediaType: "image/png",
+        },
+      ],
+    })
+  })
+
   it("replays provider-executed MCP history on the assistant message", async () => {
     const model = {
       capabilities: {

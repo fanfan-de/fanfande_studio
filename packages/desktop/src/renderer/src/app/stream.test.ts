@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { applyAgentStreamEventToTurn, buildStreamingAssistantTurn, buildTurnsFromHistory } from "./stream"
+import { applyAgentStreamEventToTurn, buildStreamingAssistantTurn, buildTurnsFromHistory, buildUserTurnText } from "./stream"
 
 describe("stream trace reducer", () => {
-  it("waits until completion before surfacing the response text", () => {
+  it("surfaces the response text while the stream is still running", () => {
     let turn = buildStreamingAssistantTurn("Show live trace")
+    expect(turn.runtime.phase).toBe("waiting_first_event")
 
     turn = applyAgentStreamEventToTurn(turn, {
       event: "delta",
@@ -13,6 +14,7 @@ describe("stream trace reducer", () => {
         delta: "Planning live update.",
       },
     })
+    expect(turn.runtime.phase).toBe("reasoning")
 
     turn = applyAgentStreamEventToTurn(turn, {
       event: "delta",
@@ -22,9 +24,15 @@ describe("stream trace reducer", () => {
         delta: "Streaming answer",
       },
     })
+    expect(turn.runtime.phase).toBe("responding")
 
-    expect(turn.items.map((item) => item.kind)).toEqual(["system", "reasoning"])
+    expect(turn.items.map((item) => item.kind)).toEqual(["system", "reasoning", "text"])
     expect(turn.items[1]?.text).toBe("Planning live update.")
+    expect(turn.items[2]).toMatchObject({
+      kind: "text",
+      text: "Streaming answer",
+      isStreaming: true,
+    })
 
     turn = applyAgentStreamEventToTurn(turn, {
       event: "done",
@@ -35,6 +43,7 @@ describe("stream trace reducer", () => {
 
     expect(turn.items.map((item) => item.kind)).toEqual(["system", "reasoning", "text", "system"])
     expect(turn.items[2]?.text).toBe("Streaming answer")
+    expect(turn.runtime.phase).toBe("completed")
   })
 
   it("keeps repeated tool updates on the same trace item", () => {
@@ -131,7 +140,7 @@ describe("stream trace reducer", () => {
     expect(turn.items[4]?.title).toBe("Response complete")
   })
 
-  it("keeps response deltas hidden until the finalized text part arrives after a tool event", () => {
+  it("updates the original text trace item when the same text part resumes after a tool event", () => {
     let turn = buildStreamingAssistantTurn("Resume text after tool")
 
     turn = applyAgentStreamEventToTurn(turn, {
@@ -169,8 +178,13 @@ describe("stream trace reducer", () => {
       },
     })
 
-    expect(turn.items.filter((item) => item.kind === "text")).toHaveLength(0)
-    expect(turn.items.map((item) => item.kind)).toEqual(["system", "tool"])
+    const streamingTextItems = turn.items.filter((item) => item.kind === "text")
+    expect(streamingTextItems).toHaveLength(1)
+    expect(streamingTextItems[0]).toMatchObject({
+      text: "First sentence. Second sentence.",
+      isStreaming: true,
+    })
+    expect(turn.items.map((item) => item.kind)).toEqual(["system", "text", "tool"])
 
     turn = applyAgentStreamEventToTurn(turn, {
       event: "done",
@@ -199,6 +213,12 @@ describe("stream trace reducer", () => {
       },
     })
 
+    expect(turn.items.filter((item) => item.kind === "text")).toHaveLength(1)
+    expect(turn.items.find((item) => item.kind === "text")).toMatchObject({
+      text: "First reply. Second reply.",
+      isStreaming: true,
+    })
+
     turn = applyAgentStreamEventToTurn(turn, {
       event: "done",
       data: {
@@ -209,6 +229,47 @@ describe("stream trace reducer", () => {
     const textItems = turn.items.filter((item) => item.kind === "text")
     expect(textItems).toHaveLength(1)
     expect(textItems[0]?.text).toBe("Second reply.")
+  })
+
+  it("marks blocked turns as waiting for approval when completion carries a waiting tool", () => {
+    let turn = buildStreamingAssistantTurn("Review file access")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "part",
+      data: {
+        part: {
+          id: "tool-waiting",
+          type: "tool",
+          tool: "read-file",
+          state: {
+            status: "waiting-approval",
+            title: "Read repo config",
+          },
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "done",
+      data: {
+        status: "blocked",
+        parts: [
+          {
+            id: "tool-waiting",
+            type: "tool",
+            tool: "read-file",
+            state: {
+              status: "waiting-approval",
+              title: "Read repo config",
+            },
+          },
+        ],
+      },
+    })
+
+    expect(turn.state).toBe("Waiting for permission approval")
+    expect(turn.runtime.phase).toBe("waiting_approval")
+    expect(turn.items.some((item) => item.title === "Approval required")).toBe(true)
   })
 
   it("rebuilds user and assistant turns from persisted session history", () => {
@@ -250,7 +311,42 @@ describe("stream trace reducer", () => {
       timestamp: 11,
       state: "Backend response received",
     })
+    expect(turns[1]?.kind === "assistant" ? turns[1].runtime.phase : null).toBe("completed")
     expect(turns[1]?.kind === "assistant" ? turns[1].items.map((item) => item.kind) : []).toEqual(["reasoning", "text"])
+  })
+
+  it("summarizes user attachments when the persisted turn has no text content", () => {
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "msg-user-attachments",
+          sessionID: "session-1",
+          role: "user",
+          created: 15,
+        },
+        parts: [
+          { id: "part-image-1", type: "image", filename: "hero.png", mime: "image/png", url: "data:image/png;base64,abc" },
+          { id: "part-file-1", type: "file", filename: "brief.pdf", mime: "application/pdf", url: "data:application/pdf;base64,xyz" },
+        ],
+      },
+    ])
+
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toMatchObject({
+      id: "msg-user-attachments",
+      kind: "user",
+      text: "Sent 2 attachments: hero.png, brief.pdf",
+      timestamp: 15,
+    })
+  })
+
+  it("includes attachment names when optimistic user text is built locally", () => {
+    expect(
+      buildUserTurnText({
+        text: "Review these references",
+        attachmentNames: ["hero.png", "brief.pdf"],
+      }),
+    ).toBe("Review these references\n\nAttachments: hero.png, brief.pdf")
   })
 
   it("adds an error trace when the persisted assistant turn failed", () => {
@@ -275,6 +371,7 @@ describe("stream trace reducer", () => {
       kind: "assistant",
       state: "Backend request failed",
     })
+    expect(turns[0]?.kind === "assistant" ? turns[0].runtime.phase : null).toBe("failed")
     expect(turns[0]?.kind === "assistant" ? turns[0].items.map((item) => item.kind) : []).toEqual(["error"])
   })
 })

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState, type MouseEvent } from "react"
+import { startTransition, useEffect, useEffectEvent, useRef, useState, type MouseEvent } from "react"
 import {
   appendConversationTurns as appendConversationTurnsToMap,
   ensureAgentSessions,
@@ -12,24 +12,29 @@ import {
   applyAgentStreamEventToTurn,
   buildAgentTurn,
   buildAgentTurnFromEvents,
+  buildUserTurnText,
   buildTurnsFromHistory,
   buildFailureTurn,
+  buildSessionStreamingAssistantTurn,
   buildStreamingAssistantTurn,
 } from "./stream"
 import type {
   AgentStreamIPCEvent,
+  AgentSessionStreamIPCEvent,
   ComposerAttachment,
   ComposerMcpOption,
   ComposerModelOption,
   ComposerSkillOption,
   CreateSessionTab,
   LeftSidebarView,
+  LoadedSessionHistoryMessage,
   McpServerSummary,
   PermissionDecision,
   PermissionRequest,
   PendingAgentStream,
   ProviderModel,
   RightSidebarView,
+  SessionContextUsage,
   SessionDiffSummary,
   SessionSummary,
   SkillInfo,
@@ -57,6 +62,15 @@ interface UseAgentWorkspaceOptions {
   platform: string
 }
 
+interface ComposerAttachmentCapabilities {
+  image: boolean
+  pdf: boolean
+}
+
+type ComposerAttachmentKind = "image" | "pdf" | "unsupported"
+
+const IMAGE_ATTACHMENT_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"])
+
 function normalizeModelSelection(selection?: { model?: string; small_model?: string }) {
   return {
     model: selection?.model ?? null,
@@ -76,6 +90,77 @@ function buildComposerAttachment(path: string): ComposerAttachment {
   }
 }
 
+function getComposerAttachmentKind(path: string): ComposerAttachmentKind {
+  const normalizedPath = path.trim().toLowerCase()
+  const extension = normalizedPath.split(".").pop() ?? ""
+  if (IMAGE_ATTACHMENT_EXTENSIONS.has(extension)) return "image"
+  if (extension === "pdf") return "pdf"
+  return "unsupported"
+}
+
+function resolveComposerEffectiveModel(
+  selectedModel: string | null,
+  models: ProviderModel[],
+  defaultModel: ProviderModel | null,
+) {
+  if (!selectedModel) return defaultModel
+  return models.find((model) => toComposerModelValue(model) === selectedModel) ?? defaultModel
+}
+
+function getComposerAttachmentCapabilities(model: ProviderModel | null): ComposerAttachmentCapabilities {
+  return {
+    image: Boolean(model?.capabilities.input.image),
+    pdf: Boolean(model?.capabilities.attachment && model?.capabilities.input.pdf),
+  }
+}
+
+function isComposerAttachmentSupported(path: string, capabilities: ComposerAttachmentCapabilities) {
+  const kind = getComposerAttachmentKind(path)
+  if (kind === "image") return capabilities.image
+  if (kind === "pdf") return capabilities.pdf
+  return false
+}
+
+function describeComposerAttachmentSupport(capabilities: ComposerAttachmentCapabilities) {
+  if (capabilities.image && capabilities.pdf) return "images and PDFs"
+  if (capabilities.image) return "images"
+  if (capabilities.pdf) return "PDFs"
+  return null
+}
+
+function getComposerAttachmentDisabledReason(
+  model: ProviderModel | null,
+  capabilities: ComposerAttachmentCapabilities,
+  isLoading: boolean,
+) {
+  if (describeComposerAttachmentSupport(capabilities)) return null
+  if (isLoading) return "Loading model capabilities..."
+  if (!model) return "No available model for this project supports image or PDF input."
+  return `${model.name} does not support image or PDF input.`
+}
+
+function getComposerAttachmentError(
+  attachments: ComposerAttachment[],
+  model: ProviderModel | null,
+  capabilities: ComposerAttachmentCapabilities,
+) {
+  const unsupportedAttachments = attachments.filter((attachment) => !isComposerAttachmentSupported(attachment.path, capabilities))
+  if (unsupportedAttachments.length === 0) return null
+
+  const unsupportedKinds = new Set(unsupportedAttachments.map((attachment) => getComposerAttachmentKind(attachment.path)))
+  if (unsupportedKinds.has("unsupported")) {
+    return "Desktop composer attachments currently support images and PDFs only."
+  }
+
+  const supportedDescription = describeComposerAttachmentSupport(capabilities)
+  if (!supportedDescription) {
+    if (!model) return "Attachments are unavailable until a compatible model is available."
+    return `${model.name} does not support image or PDF input. Remove attachments or switch models.`
+  }
+
+  return `${model?.name ?? "The current model"} only accepts ${supportedDescription}. Remove incompatible attachments or switch models.`
+}
+
 function toComposerModelValue(model: ProviderModel) {
   return `${model.providerID}/${model.id}`
 }
@@ -84,9 +169,16 @@ function toComposerModelLabel(model: ProviderModel) {
   return model.name
 }
 
-function resolveComposerModelLabel(selectedModel: string | null, models: ProviderModel[], isLoading: boolean) {
-  if (isLoading && models.length === 0) return "Loading..."
-  if (!selectedModel) return "Server default"
+function resolveComposerModelLabel(
+  selectedModel: string | null,
+  models: ProviderModel[],
+  effectiveModel: ProviderModel | null,
+  isLoading: boolean,
+) {
+  if (isLoading && models.length === 0 && !effectiveModel) return "Loading..."
+  if (!selectedModel) {
+    return effectiveModel ? `Server default (${effectiveModel.name})` : "Server default"
+  }
   return models.find((model) => toComposerModelValue(model) === selectedModel)?.name ?? selectedModel
 }
 
@@ -116,13 +208,6 @@ function resolveComposerMcpLabel(selectedServerIDs: string[], servers: McpServer
   return `${selectedServerIDs.length} servers`
 }
 
-function buildPromptWithAttachments(prompt: string, attachments: ComposerAttachment[]) {
-  if (attachments.length === 0) return prompt
-
-  const attachmentLines = attachments.map((attachment) => `- ${attachment.name}: ${attachment.path}`)
-  return `${prompt}\n\nAttached files:\n${attachmentLines.join("\n")}`
-}
-
 function getUniqueSessionIDs(sessionIDs: string[]) {
   const seen = new Set<string>()
   const nextSessionIDs: string[] = []
@@ -141,6 +226,63 @@ function getNextSessionTabAfterClose(sessionIDs: string[], closedSessionID: stri
   if (index === -1) return sessionIDs[sessionIDs.length - 1] ?? null
 
   return sessionIDs[index + 1] ?? sessionIDs[index - 1] ?? null
+}
+
+function readStreamString(value: unknown) {
+  return typeof value === "string" ? value : ""
+}
+
+function readStreamNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+function readStreamRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function readSessionContextUsageFromMessageInfo(value: unknown): SessionContextUsage | null {
+  const message = readStreamRecord(value)
+  if (!message || readStreamString(message.role) !== "assistant") return null
+
+  const tokens = readStreamRecord(message.tokens)
+  if (!tokens) return null
+
+  const inputTokens = readStreamNumber(tokens.input) ?? 0
+  const outputTokens = readStreamNumber(tokens.output) ?? 0
+  const reasoningTokens = readStreamNumber(tokens.reasoning) ?? 0
+  const cache = readStreamRecord(tokens.cache)
+  const cacheReadTokens = readStreamNumber(cache?.read) ?? 0
+  const cacheWriteTokens = readStreamNumber(cache?.write) ?? 0
+  const totalTokens = inputTokens + outputTokens
+
+  if (inputTokens <= 0 && outputTokens <= 0 && reasoningTokens <= 0 && cacheReadTokens <= 0 && cacheWriteTokens <= 0) {
+    return null
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    reasoningTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    measuredAt: readStreamNumber(message.completed) ?? readStreamNumber(message.created) ?? Date.now(),
+  }
+}
+
+function readSessionContextUsageFromDoneEventData(value: unknown) {
+  const payload = readStreamRecord(value)
+  return readSessionContextUsageFromMessageInfo(payload?.message)
+}
+
+function readLatestSessionContextUsageFromHistory(messages: LoadedSessionHistoryMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const usage = readSessionContextUsageFromMessageInfo(messages[index]?.info)
+    if (usage) return usage
+  }
+
+  return null
 }
 
 function createCreateSessionTab(workspaceID: string | null): CreateSessionTab {
@@ -172,6 +314,7 @@ function resolveCreateSessionWorkspaceID(
 const initialCreateSessionTab = initialSelection.session === null
   ? createCreateSessionTab(initialSelection.workspace?.id ?? null)
   : null
+const seedWorkspaceIDs = new Set(seedWorkspaces.map((workspace) => workspace.id))
 
 export function useAgentWorkspace({
   agentConnected,
@@ -185,6 +328,12 @@ export function useAgentWorkspace({
   const sessionDiffRequestRef = useRef<Record<string, number>>({})
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
   const conversationVersionRef = useRef<Record<string, number>>({})
+  const skipNextHistoryLoadRef = useRef<Record<string, boolean>>({})
+  const initialFolderWorkspacesLoadedRef = useRef(false)
+  const preserveLocalWorkspaceStateOnInitialLoadRef = useRef(false)
+  const subscribedSessionStreamsRef = useRef<Record<string, string>>({})
+  const seenStreamCursorsRef = useRef<Record<string, string[]>>({})
+  const turnTargetsRef = useRef<Record<string, { sessionID: string; assistantTurnID: string }>>({})
   const lastFocusedSessionIDRef = useRef<string | null>(initialSelection.session?.id ?? null)
   const [workspaces, setWorkspaces] = useState(seedWorkspaces)
   const [selectedFolderID, setSelectedFolderID] = useState<string | null>(initialSelection.workspace?.id ?? null)
@@ -206,14 +355,19 @@ export function useAgentWorkspace({
   const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [deletingSessionID, setDeletingSessionID] = useState<string | null>(null)
   const [canLoadSessionHistory, setCanLoadSessionHistory] = useState(false)
+  const [isInitialWorkspaceLoadPending, setIsInitialWorkspaceLoadPending] = useState(() =>
+    Boolean(window.desktop?.listFolderWorkspaces),
+  )
   const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySession] = useState<
     Record<string, PermissionRequest[]>
   >({})
   const [sessionDiffBySession, setSessionDiffBySession] = useState<Record<string, SessionDiffSummary>>({})
+  const [contextUsageBySession, setContextUsageBySession] = useState<Record<string, SessionContextUsage>>({})
   const [permissionRequestActionRequestID, setPermissionRequestActionRequestID] = useState<string | null>(null)
   const [permissionRequestActionError, setPermissionRequestActionError] = useState<string | null>(null)
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([])
   const [composerModels, setComposerModels] = useState<ProviderModel[]>([])
+  const [composerDefaultModel, setComposerDefaultModel] = useState<ProviderModel | null>(null)
   const [composerSelectedModel, setComposerSelectedModel] = useState<string | null>(null)
   const [composerSmallModel, setComposerSmallModel] = useState<string | null>(null)
   const [isLoadingComposerModels, setIsLoadingComposerModels] = useState(false)
@@ -229,12 +383,28 @@ export function useAgentWorkspace({
   const composerMcpRequestRef = useRef(0)
   const composerMcpSelectionRequestRef = useRef(0)
   const pendingModelSelectionRef = useRef<Promise<void> | null>(null)
+  const composerAttachmentPolicyRef = useRef<{
+    attachmentError: string | null
+    disabledReason: string | null
+    allowImage: boolean
+    allowPdf: boolean
+  }>({
+    attachmentError: null,
+    disabledReason: "Loading model capabilities...",
+    allowImage: false,
+    allowPdf: false,
+  })
 
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
   const selectedWorkspace = findWorkspaceByID(workspaces, selectedFolderID) ?? activeWorkspace ?? workspaces[0] ?? null
+  const selectedProjectID =
+    isInitialWorkspaceLoadPending && selectedWorkspace && seedWorkspaceIDs.has(selectedWorkspace.id)
+      ? null
+      : selectedWorkspace?.project.id ?? null
   const activeTurns = activeSession ? conversations[activeSession.id] ?? [] : []
   const activeSessionDiff = activeSession ? sessionDiffBySession[activeSession.id] ?? null : null
   const activePendingPermissionRequests = activeSession ? pendingPermissionRequestsBySession[activeSession.id] ?? [] : []
+  const activeSessionContextUsage = activeSession ? contextUsageBySession[activeSession.id] ?? null : null
   const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
   const isCreateSessionTabActive = activeCreateSessionTab !== null
   const createSessionWorkspaceID = activeCreateSessionTab?.workspaceID ?? null
@@ -249,6 +419,24 @@ export function useAgentWorkspace({
       value: toComposerModelValue(model),
       label: toComposerModelLabel(model),
     }))
+  const composerEffectiveModel = resolveComposerEffectiveModel(composerSelectedModel, composerModels, composerDefaultModel)
+  const composerAttachmentCapabilities = getComposerAttachmentCapabilities(composerEffectiveModel)
+  const composerAttachmentDisabledReason = getComposerAttachmentDisabledReason(
+    composerEffectiveModel,
+    composerAttachmentCapabilities,
+    isLoadingComposerModels,
+  )
+  const composerUnsupportedAttachments = composerAttachments.filter(
+    (attachment) => !isComposerAttachmentSupported(attachment.path, composerAttachmentCapabilities),
+  )
+  const composerAttachmentError = getComposerAttachmentError(
+    composerAttachments,
+    composerEffectiveModel,
+    composerAttachmentCapabilities,
+  )
+  const composerAttachmentButtonTitle =
+    composerAttachmentDisabledReason ??
+    `Add ${describeComposerAttachmentSupport(composerAttachmentCapabilities) ?? "attachments"}.`
   const composerSkillOptions: ComposerSkillOption[] = composerSkills.map((skill) => ({
     value: skill.id,
     label: skill.name,
@@ -259,7 +447,12 @@ export function useAgentWorkspace({
     label: server.name ?? server.id,
     description: describeComposerMcpServer(server),
   }))
-  const composerSelectedModelLabel = resolveComposerModelLabel(composerSelectedModel, composerModels, isLoadingComposerModels)
+  const composerSelectedModelLabel = resolveComposerModelLabel(
+    composerSelectedModel,
+    composerModels,
+    composerEffectiveModel,
+    isLoadingComposerModels,
+  )
   const composerSelectedSkillLabel = resolveComposerSkillLabel(
     composerSelectedSkillIDs,
     composerSkills,
@@ -270,13 +463,90 @@ export function useAgentWorkspace({
     composerMcpServers,
     isLoadingComposerMcp,
   )
+  const composerContextWindow = composerEffectiveModel?.limit.context ?? null
+  composerAttachmentPolicyRef.current = {
+    attachmentError: composerAttachmentError,
+    disabledReason: composerAttachmentDisabledReason,
+    allowImage: composerAttachmentCapabilities.image,
+    allowPdf: composerAttachmentCapabilities.pdf,
+  }
+
+  function updateSessionContextUsage(sessionID: string, usage: SessionContextUsage | null) {
+    setContextUsageBySession((prev) => {
+      if (!usage) {
+        if (!(sessionID in prev)) return prev
+        const next = { ...prev }
+        delete next[sessionID]
+        return next
+      }
+
+      const current = prev[sessionID]
+      if (
+        current &&
+        current.inputTokens === usage.inputTokens &&
+        current.outputTokens === usage.outputTokens &&
+        current.totalTokens === usage.totalTokens &&
+        current.reasoningTokens === usage.reasoningTokens &&
+        current.cacheReadTokens === usage.cacheReadTokens &&
+        current.cacheWriteTokens === usage.cacheWriteTokens &&
+        current.measuredAt === usage.measuredAt
+      ) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        [sessionID]: usage,
+      }
+    })
+  }
 
   function bumpConversationVersion(sessionID: string) {
     conversationVersionRef.current[sessionID] = (conversationVersionRef.current[sessionID] ?? 0) + 1
   }
 
+  function resolveUISessionID(backendSessionID: string) {
+    const directMatch = agentSessions[backendSessionID]
+    if (directMatch === backendSessionID || conversations[backendSessionID]) {
+      return backendSessionID
+    }
+
+    for (const [uiSessionID, mappedBackendSessionID] of Object.entries(agentSessions)) {
+      if (mappedBackendSessionID === backendSessionID) {
+        return uiSessionID
+      }
+    }
+
+    return conversations[backendSessionID] ? backendSessionID : null
+  }
+
   function resolveBackendSessionID(sessionID: string) {
     return agentSessions[sessionID] ?? sessionID
+  }
+
+  function turnTargetKey(backendSessionID: string, turnID: string) {
+    return `${backendSessionID}:${turnID}`
+  }
+
+  function rememberSeenCursor(sessionID: string, cursor: string) {
+    if (!cursor) return false
+
+    const current = seenStreamCursorsRef.current[sessionID] ?? []
+    if (current.includes(cursor)) {
+      return true
+    }
+
+    const next = [...current, cursor]
+    if (next.length > 200) {
+      next.splice(0, next.length - 200)
+    }
+    seenStreamCursorsRef.current[sessionID] = next
+    return false
+  }
+
+  function cleanupTurnTarget(backendSessionID: string | undefined, turnID: string | undefined) {
+    if (!backendSessionID || !turnID) return
+    delete turnTargetsRef.current[turnTargetKey(backendSessionID, turnID)]
   }
 
   function replaceConversationTurns(sessionID: string, nextTurns: Turn[]) {
@@ -301,13 +571,161 @@ export function useAgentWorkspace({
     setConversations((prev) => updateAssistantTurnInMap(prev, sessionID, turnID, updater))
   }
 
+  function resolveStreamCursor(event: { id?: string; data: unknown }) {
+    const payload = readStreamRecord(event.data)
+    return readStreamString(payload?.cursor) || event.id || ""
+  }
+
+  function resolveStreamTurnID(event: { data: unknown }) {
+    const payload = readStreamRecord(event.data)
+    return readStreamString(payload?.turnID) || undefined
+  }
+
+  function ensureAssistantTurnForBackendTurn(input: {
+    uiSessionID: string
+    backendSessionID: string
+    turnID: string
+  }) {
+    const targetKey = turnTargetKey(input.backendSessionID, input.turnID)
+    const existing = turnTargetsRef.current[targetKey]
+    if (existing) {
+      return existing.assistantTurnID
+    }
+
+    const pending = Object.values(pendingStreamsRef.current).find(
+      (target) =>
+        target.sessionID === input.uiSessionID &&
+        target.backendSessionID === input.backendSessionID &&
+        (!target.backendTurnID || target.backendTurnID === input.turnID),
+    )
+
+    if (pending) {
+      pending.backendTurnID = input.turnID
+      turnTargetsRef.current[targetKey] = {
+        sessionID: input.uiSessionID,
+        assistantTurnID: pending.assistantTurnID,
+      }
+      return pending.assistantTurnID
+    }
+
+    const streamingTurn = buildSessionStreamingAssistantTurn()
+    turnTargetsRef.current[targetKey] = {
+      sessionID: input.uiSessionID,
+      assistantTurnID: streamingTurn.id,
+    }
+
+    appendConversationTurns(input.uiSessionID, [streamingTurn])
+
+    return streamingTurn.id
+  }
+
+  function handleRequestStreamEvent(streamEvent: AgentStreamIPCEvent) {
+    const target = pendingStreamsRef.current[streamEvent.streamID]
+    if (!target) return
+
+    const cursor = resolveStreamCursor(streamEvent)
+    if (cursor && rememberSeenCursor(target.sessionID, cursor)) {
+      return
+    }
+
+    const backendTurnID = resolveStreamTurnID(streamEvent)
+    if (backendTurnID) {
+      const backendSessionID = target.backendSessionID ?? resolveBackendSessionID(target.sessionID)
+      target.backendSessionID = backendSessionID
+      target.backendTurnID = backendTurnID
+      turnTargetsRef.current[turnTargetKey(backendSessionID, backendTurnID)] = {
+        sessionID: target.sessionID,
+        assistantTurnID: target.assistantTurnID,
+      }
+    }
+
+    startTransition(() => {
+      updateAssistantConversationTurn(target.sessionID, target.assistantTurnID, (turn) =>
+        applyAgentStreamEventToTurn(turn, streamEvent),
+      )
+    })
+
+    if (streamEvent.event === "done" || streamEvent.event === "error") {
+      if (streamEvent.event === "done") {
+        updateSessionContextUsage(target.sessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
+      }
+      delete pendingStreamsRef.current[streamEvent.streamID]
+      cleanupTurnTarget(target.backendSessionID, target.backendTurnID)
+
+      if (canLoadSessionHistory) {
+        void reloadSessionHistoryForSession(target.sessionID).catch((error) => {
+          console.error("[desktop] stream history refresh failed:", error)
+        })
+        void loadSessionDiffForSession(target.sessionID).catch((error) => {
+          console.error("[desktop] stream diff refresh failed:", error)
+        })
+        void loadPendingPermissionRequestsForSession(target.sessionID).catch((error) => {
+          console.error("[desktop] stream permission refresh failed:", error)
+        })
+      }
+    }
+  }
+
+  function handleSessionStreamEvent(streamEvent: AgentSessionStreamIPCEvent) {
+    const uiSessionID = resolveUISessionID(streamEvent.sessionID)
+    if (!uiSessionID) return
+
+    const cursor = resolveStreamCursor(streamEvent)
+    if (cursor && rememberSeenCursor(uiSessionID, cursor)) {
+      return
+    }
+
+    const backendTurnID = resolveStreamTurnID(streamEvent)
+    if (!backendTurnID) {
+      if (streamEvent.event === "done" || streamEvent.event === "error") {
+        if (streamEvent.event === "done") {
+          updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
+        }
+        void reloadSessionHistoryForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
+          console.error("[desktop] session stream history refresh failed:", error)
+        })
+      }
+      return
+    }
+
+    const assistantTurnID = ensureAssistantTurnForBackendTurn({
+      uiSessionID,
+      backendSessionID: streamEvent.sessionID,
+      turnID: backendTurnID,
+    })
+
+    startTransition(() => {
+      updateAssistantConversationTurn(uiSessionID, assistantTurnID, (turn) => applyAgentStreamEventToTurn(turn, streamEvent))
+    })
+
+    if (streamEvent.event === "done" || streamEvent.event === "error") {
+      if (streamEvent.event === "done") {
+        updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
+      }
+      cleanupTurnTarget(streamEvent.sessionID, backendTurnID)
+      if (canLoadSessionHistory) {
+        void reloadSessionHistoryForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
+          console.error("[desktop] session stream history refresh failed:", error)
+        })
+        void loadSessionDiffForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
+          console.error("[desktop] session stream diff refresh failed:", error)
+        })
+        void loadPendingPermissionRequestsForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
+          console.error("[desktop] session stream permission refresh failed:", error)
+        })
+      }
+    }
+  }
+
   async function reloadSessionHistoryForSession(sessionID: string, backendSessionID = resolveBackendSessionID(sessionID)) {
     const getSessionHistory = window.desktop?.getSessionHistory
     if (!getSessionHistory) return
 
     const messages = await getSessionHistory({ sessionID: backendSessionID })
+    const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
     startTransition(() => {
       replaceConversationTurns(sessionID, buildTurnsFromHistory(messages))
+      updateSessionContextUsage(sessionID, nextContextUsage)
     })
   }
 
@@ -359,37 +777,81 @@ export function useAgentWorkspace({
     }
   }
 
+  const handleRequestStreamEventEffect = useEffectEvent((streamEvent: AgentStreamIPCEvent) => {
+    handleRequestStreamEvent(streamEvent)
+  })
+
+  const handleSessionStreamEventEffect = useEffectEvent((streamEvent: AgentSessionStreamIPCEvent) => {
+    handleSessionStreamEvent(streamEvent)
+  })
+
   useEffect(() => {
     const unsubscribe = window.desktop?.onAgentStreamEvent?.((streamEvent: AgentStreamIPCEvent) => {
-      const target = pendingStreamsRef.current[streamEvent.streamID]
-      if (!target) return
-
-      startTransition(() => {
-        updateAssistantConversationTurn(target.sessionID, target.assistantTurnID, (turn) => applyAgentStreamEventToTurn(turn, streamEvent))
-      })
-
-      if (streamEvent.event === "done" || streamEvent.event === "error") {
-        delete pendingStreamsRef.current[streamEvent.streamID]
-
-        if (canLoadSessionHistory) {
-          void reloadSessionHistoryForSession(target.sessionID).catch((error) => {
-            console.error("[desktop] stream history refresh failed:", error)
-          })
-          void loadSessionDiffForSession(target.sessionID).catch((error) => {
-            console.error("[desktop] stream diff refresh failed:", error)
-          })
-          void loadPendingPermissionRequestsForSession(target.sessionID).catch((error) => {
-            console.error("[desktop] stream permission refresh failed:", error)
-          })
-        }
-      }
+      handleRequestStreamEventEffect(streamEvent)
     })
 
     return () => {
       pendingStreamsRef.current = {}
       unsubscribe?.()
     }
-  }, [canLoadSessionHistory])
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = window.desktop?.onAgentSessionStreamEvent?.((streamEvent: AgentSessionStreamIPCEvent) => {
+      handleSessionStreamEventEffect(streamEvent)
+    })
+
+    return () => {
+      unsubscribe?.()
+    }
+  }, [])
+
+  useEffect(() => {
+    const subscribeSessionStream = window.desktop?.subscribeAgentSessionStream
+    const unsubscribeSessionStream = window.desktop?.unsubscribeAgentSessionStream
+
+    if (!agentConnected || !canLoadSessionHistory || !subscribeSessionStream || !unsubscribeSessionStream) {
+      if (unsubscribeSessionStream) {
+        for (const backendSessionID of Object.values(subscribedSessionStreamsRef.current)) {
+          void unsubscribeSessionStream({ sessionID: backendSessionID }).catch(() => undefined)
+        }
+      }
+      subscribedSessionStreamsRef.current = {}
+      return
+    }
+
+    const nextSubscriptions = Object.fromEntries(
+      openCanvasSessionIDs
+        .map((uiSessionID) => [uiSessionID, resolveBackendSessionID(uiSessionID)] as const)
+        .filter(([, backendSessionID]) => Boolean(backendSessionID)),
+    )
+
+    for (const [uiSessionID, backendSessionID] of Object.entries(subscribedSessionStreamsRef.current)) {
+      if (nextSubscriptions[uiSessionID] === backendSessionID) continue
+      void unsubscribeSessionStream({ sessionID: backendSessionID }).catch(() => undefined)
+      delete subscribedSessionStreamsRef.current[uiSessionID]
+    }
+
+    for (const [uiSessionID, backendSessionID] of Object.entries(nextSubscriptions)) {
+      if (subscribedSessionStreamsRef.current[uiSessionID] === backendSessionID) continue
+      subscribedSessionStreamsRef.current[uiSessionID] = backendSessionID
+      void subscribeSessionStream({ sessionID: backendSessionID }).catch((error) => {
+        console.error("[desktop] subscribeAgentSessionStream failed:", error)
+      })
+    }
+  }, [agentConnected, canLoadSessionHistory, openCanvasSessionIDs, agentSessions])
+
+  useEffect(() => {
+    return () => {
+      const unsubscribeSessionStream = window.desktop?.unsubscribeAgentSessionStream
+      if (!unsubscribeSessionStream) return
+
+      for (const backendSessionID of Object.values(subscribedSessionStreamsRef.current)) {
+        void unsubscribeSessionStream({ sessionID: backendSessionID }).catch(() => undefined)
+      }
+      subscribedSessionStreamsRef.current = {}
+    }
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -407,23 +869,42 @@ export function useAgentWorkspace({
 
         const nextWorkspaces = mapLoadedWorkspaces(loadedWorkspaces)
         const loadedSessionIDs = loadedWorkspaces.flatMap((workspace) => workspace.sessions.map((session) => session.id))
-        setWorkspaces(nextWorkspaces)
+        const preserveLocalWorkspaceState = preserveLocalWorkspaceStateOnInitialLoadRef.current
+        setWorkspaces((current) => {
+          if (!preserveLocalWorkspaceState) {
+            return nextWorkspaces
+          }
+
+          const loadedWorkspaceIDs = new Set(nextWorkspaces.map((workspace) => workspace.id))
+          const preservedWorkspaces = current.filter(
+            (workspace) => !loadedWorkspaceIDs.has(workspace.id) && !seedWorkspaceIDs.has(workspace.id),
+          )
+
+          return sortWorkspaceGroups([...nextWorkspaces, ...preservedWorkspaces])
+        })
         setConversations((prev) => ensureConversationSessions(prev, loadedSessionIDs))
         setAgentSessions((prev) => ensureAgentSessions(prev, loadedSessionIDs))
         setCanLoadSessionHistory(true)
 
-        const nextSelection = findFirstSession(nextWorkspaces)
-        const nextFolderID = nextSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null
-        const nextCreateSessionTab = nextSelection.session === null ? createCreateSessionTab(nextFolderID) : null
-        setSelectedFolderID(nextFolderID)
-        setExpandedFolderID(nextFolderID)
-        setActiveSessionID(nextSelection.session?.id ?? null)
-        setOpenCanvasSessionIDs(nextSelection.session ? [nextSelection.session.id] : [])
-        setCreateSessionTabs(nextCreateSessionTab ? [nextCreateSessionTab] : [])
-        setActiveCreateSessionTabID(nextCreateSessionTab?.id ?? null)
-        lastFocusedSessionIDRef.current = nextSelection.session?.id ?? null
+        if (!preserveLocalWorkspaceState) {
+          const nextSelection = findFirstSession(nextWorkspaces)
+          const nextFolderID = nextSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null
+          const nextCreateSessionTab = nextSelection.session === null ? createCreateSessionTab(nextFolderID) : null
+          setSelectedFolderID(nextFolderID)
+          setExpandedFolderID(nextFolderID)
+          setActiveSessionID(nextSelection.session?.id ?? null)
+          setOpenCanvasSessionIDs(nextSelection.session ? [nextSelection.session.id] : [])
+          setCreateSessionTabs(nextCreateSessionTab ? [nextCreateSessionTab] : [])
+          setActiveCreateSessionTabID(nextCreateSessionTab?.id ?? null)
+          lastFocusedSessionIDRef.current = nextSelection.session?.id ?? null
+        }
+
+        initialFolderWorkspacesLoadedRef.current = true
+        setIsInitialWorkspaceLoadPending(false)
       })
-      .catch(() => undefined)
+      .catch(() => {
+        setIsInitialWorkspaceLoadPending(false)
+      })
 
     return () => {
       mounted = false
@@ -434,6 +915,11 @@ export function useAgentWorkspace({
     const getSessionHistory = window.desktop?.getSessionHistory
     if (!canLoadSessionHistory || !activeSessionID || !getSessionHistory) return
 
+    if (skipNextHistoryLoadRef.current[activeSessionID]) {
+      delete skipNextHistoryLoadRef.current[activeSessionID]
+      return
+    }
+
     let cancelled = false
     const sessionID = activeSessionID
     const requestID = ++historyRequestRef.current
@@ -443,9 +929,11 @@ export function useAgentWorkspace({
       .then((messages) => {
         if (cancelled || historyRequestRef.current !== requestID) return
         if ((conversationVersionRef.current[sessionID] ?? 0) !== baselineVersion) return
+        const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
 
         startTransition(() => {
           replaceConversationTurns(sessionID, buildTurnsFromHistory(messages))
+          updateSessionContextUsage(sessionID, nextContextUsage)
         })
       })
       .catch((error) => {
@@ -469,49 +957,49 @@ export function useAgentWorkspace({
     void loadPendingPermissionRequestsForSession(activeSessionID)
   }, [activeSessionID, canLoadSessionHistory, agentSessions])
 
-  useEffect(() => {
-    const projectID = selectedWorkspace?.project.id
+  async function refreshComposerModels() {
+    const projectID = selectedProjectID
     const getProjectModels = window.desktop?.getProjectModels
 
     if (!projectID || !getProjectModels) {
       setComposerModels([])
+      setComposerDefaultModel(null)
       setComposerSelectedModel(null)
       setComposerSmallModel(null)
       return
     }
 
-    let cancelled = false
     const requestID = ++composerModelsRequestRef.current
     setIsLoadingComposerModels(true)
 
-    getProjectModels({ projectID })
-      .then((payload) => {
-        if (cancelled || composerModelsRequestRef.current !== requestID) return
-        const nextSelection = normalizeModelSelection(payload.selection)
-        setComposerModels(payload.items)
-        setComposerSelectedModel(nextSelection.model)
-        setComposerSmallModel(nextSelection.smallModel)
-      })
-      .catch((error) => {
-        if (cancelled || composerModelsRequestRef.current !== requestID) return
-        console.error("[desktop] getProjectModels failed:", error)
-        setComposerModels([])
-        setComposerSelectedModel(null)
-        setComposerSmallModel(null)
-      })
-      .finally(() => {
-        if (!cancelled && composerModelsRequestRef.current === requestID) {
-          setIsLoadingComposerModels(false)
-        }
-      })
-
-    return () => {
-      cancelled = true
+    try {
+      const payload = await getProjectModels({ projectID })
+      if (composerModelsRequestRef.current !== requestID) return
+      const nextSelection = normalizeModelSelection(payload.selection)
+      setComposerModels(payload.items)
+      setComposerDefaultModel(payload.effectiveModel ?? null)
+      setComposerSelectedModel(nextSelection.model)
+      setComposerSmallModel(nextSelection.smallModel)
+    } catch (error) {
+      if (composerModelsRequestRef.current !== requestID) return
+      console.error("[desktop] refreshComposerModels failed:", error)
+      setComposerModels([])
+      setComposerDefaultModel(null)
+      setComposerSelectedModel(null)
+      setComposerSmallModel(null)
+    } finally {
+      if (composerModelsRequestRef.current === requestID) {
+        setIsLoadingComposerModels(false)
+      }
     }
-  }, [selectedWorkspace?.project.id])
+  }
+
+  useEffect(() => {
+    void refreshComposerModels()
+  }, [selectedProjectID])
 
   async function refreshComposerSkills() {
-    const projectID = selectedWorkspace?.project.id
+    const projectID = selectedProjectID
     const getProjectSkills = window.desktop?.getProjectSkills
     const getProjectSkillSelection = window.desktop?.getProjectSkillSelection
     if (!projectID || !getProjectSkills || !getProjectSkillSelection) {
@@ -547,10 +1035,10 @@ export function useAgentWorkspace({
 
   useEffect(() => {
     void refreshComposerSkills()
-  }, [selectedWorkspace?.project.id])
+  }, [selectedProjectID])
 
   async function refreshComposerMcp() {
-    const projectID = selectedWorkspace?.project.id
+    const projectID = selectedProjectID
     const getGlobalMcpServers = window.desktop?.getGlobalMcpServers
     const getProjectMcpSelection = window.desktop?.getProjectMcpSelection
     if (!projectID || !getGlobalMcpServers || !getProjectMcpSelection) {
@@ -587,7 +1075,7 @@ export function useAgentWorkspace({
 
   useEffect(() => {
     void refreshComposerMcp()
-  }, [selectedWorkspace?.project.id])
+  }, [selectedProjectID])
 
   useEffect(() => {
     if (!selectedFolderID) return
@@ -748,10 +1236,26 @@ export function useAgentWorkspace({
       return next
     })
 
+    setContextUsageBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
     for (const sessionID of sessionIDs) {
       delete conversationVersionRef.current[sessionID]
       delete permissionRequestsRequestRef.current[sessionID]
       delete sessionDiffRequestRef.current[sessionID]
+      delete seenStreamCursorsRef.current[sessionID]
+      delete subscribedSessionStreamsRef.current[sessionID]
+    }
+
+    for (const [turnKey, target] of Object.entries(turnTargetsRef.current)) {
+      if (sessionIDs.has(target.sessionID)) {
+        delete turnTargetsRef.current[turnKey]
+      }
     }
 
     for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
@@ -766,10 +1270,11 @@ export function useAgentWorkspace({
     options?: {
       createSessionTabID?: string | null
       closeCreateTab?: boolean
+      skipInitialHistoryLoad?: boolean
       title?: string
     },
   ) {
-    if (isCreatingSession || !window.desktop?.createFolderSession) return
+    if (isCreatingSession || !window.desktop?.createFolderSession) return null
 
     setIsCreatingSession(true)
     try {
@@ -790,6 +1295,9 @@ export function useAgentWorkspace({
         [created.session.id]: created.session.id,
       }))
       setCanLoadSessionHistory(true)
+      if (options?.skipInitialHistoryLoad) {
+        skipNextHistoryLoadRef.current[created.session.id] = true
+      }
 
       if (options?.closeCreateTab && options.createSessionTabID) {
         setCreateSessionTabs((current) => current.filter((tab) => tab.id !== options.createSessionTabID))
@@ -808,8 +1316,14 @@ export function useAgentWorkspace({
       }
 
       focusSession(workspace.id, created.session.id)
+      return {
+        backendSessionID: created.session.id,
+        session: nextSession,
+        workspace,
+      }
     } catch (error) {
       console.error("[desktop] createFolderSession failed:", error)
+      return null
     } finally {
       setIsCreatingSession(false)
     }
@@ -827,6 +1341,9 @@ export function useAgentWorkspace({
         if (!directory) return
 
         const createdWorkspace = await window.desktop.openFolderWorkspace({ directory })
+        if (!initialFolderWorkspacesLoadedRef.current) {
+          preserveLocalWorkspaceStateOnInitialLoadRef.current = true
+        }
         const nextWorkspace = mapLoadedWorkspace(createdWorkspace)
         const createdSessionIDs = createdWorkspace.sessions.map((session) => session.id)
         setWorkspaces((prev) => upsertWorkspaceGroup(prev, nextWorkspace))
@@ -1050,9 +1567,21 @@ export function useAgentWorkspace({
         delete next[session.id]
         return next
       })
+      setContextUsageBySession((prev) => {
+        const next = { ...prev }
+        delete next[session.id]
+        return next
+      })
       delete conversationVersionRef.current[session.id]
       delete permissionRequestsRequestRef.current[session.id]
       delete sessionDiffRequestRef.current[session.id]
+      delete seenStreamCursorsRef.current[session.id]
+      delete subscribedSessionStreamsRef.current[session.id]
+      for (const [turnKey, target] of Object.entries(turnTargetsRef.current)) {
+        if (target.sessionID === session.id) {
+          delete turnTargetsRef.current[turnKey]
+        }
+      }
       for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
         if (target.sessionID === session.id) {
           delete pendingStreamsRef.current[streamID]
@@ -1202,55 +1731,61 @@ export function useAgentWorkspace({
     await createSessionForWorkspace(workspace, {
       closeCreateTab: true,
       createSessionTabID: activeCreateSessionTab.id,
-      title: activeCreateSessionTab.title,
     })
   }
 
-  async function handleSend() {
-    if (!activeSession || !activeWorkspace) return
-
-    const text = draft.trim()
-    if (!text || isSending || activePendingPermissionRequests.length > 0) return
-    if (pendingModelSelectionRef.current) {
-      await pendingModelSelectionRef.current.catch(() => undefined)
-    }
-    const uiSessionID = activeSession.id
+  async function sendPromptToSession(input: {
+    backendSessionID?: string | null
+    session: SessionSummary
+    text: string
+    workspace: WorkspaceGroup
+  }) {
+    const { session, text, workspace } = input
+    const uiSessionID = session.id
     const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
     const attachments = composerAttachments
     const selectedSkillIDs = composerSelectedSkillIDs
-    const submissionText = buildPromptWithAttachments(text, attachments)
+    const normalizedText = text.trim()
+    const attachmentInputs = attachments.map((attachment) => ({
+      path: attachment.path,
+      name: attachment.name,
+    }))
+    const userTurnText = buildUserTurnText({
+      text: normalizedText,
+      attachmentNames: attachments.map((attachment) => attachment.name),
+    })
 
     const userTurn: Turn = {
       id: createID("user"),
       kind: "user",
-      text,
+      text: userTurnText,
       timestamp: Date.now(),
     }
 
     setDraft("")
     setComposerAttachments([])
 
-    startTransition(() => {
-      appendConversationTurns(uiSessionID, [userTurn])
-      setWorkspaces((prev) =>
-        prev.map((workspace) => ({
-          ...workspace,
-          sessions: workspace.sessions.map((session) =>
-            session.id === uiSessionID
-              ? {
-                  ...session,
-                  status: "Live",
-                  summary: text,
-                  updated: Date.now(),
-                }
-              : session,
-          ),
-        })),
-      )
+    appendConversationTurns(uiSessionID, [userTurn])
+    setWorkspaces((prev) => {
+      const nextUpdatedAt = Date.now()
+
+      return prev.map((currentWorkspace) => ({
+        ...currentWorkspace,
+        sessions: currentWorkspace.sessions.map((currentSession) =>
+              currentSession.id === uiSessionID
+            ? {
+                ...currentSession,
+                status: "Live",
+                summary: userTurnText,
+                updated: nextUpdatedAt,
+              }
+            : currentSession,
+        ),
+      }))
     })
 
     if (!agentConnected || !window.desktop?.createAgentSession || (!canStream && !window.desktop?.sendAgentMessage)) {
-      const fallback = buildAgentTurn(text, activeSession, activeWorkspace.name, platform)
+      const fallback = buildAgentTurn(userTurnText, session, workspace.name, platform)
       startTransition(() => {
         appendConversationTurns(uiSessionID, [fallback])
       })
@@ -1262,7 +1797,7 @@ export function useAgentWorkspace({
     let streamID: string | null = null
 
     try {
-      let backendSessionID = agentSessions[uiSessionID]
+      let backendSessionID = input.backendSessionID ?? agentSessions[uiSessionID]
       if (!backendSessionID) {
         const created = await window.desktop.createAgentSession({
           directory: agentDefaultDirectory || undefined,
@@ -1279,22 +1814,22 @@ export function useAgentWorkspace({
       }
 
       if (canStream && window.desktop?.streamAgentMessage) {
-        const streamingTurn = buildStreamingAssistantTurn(text)
+        const streamingTurn = buildStreamingAssistantTurn(userTurnText)
         streamingTurnID = streamingTurn.id
         streamID = createID("stream")
         pendingStreamsRef.current[streamID] = {
           sessionID: uiSessionID,
+          backendSessionID,
           assistantTurnID: streamingTurn.id,
         }
 
-        startTransition(() => {
-          appendConversationTurns(uiSessionID, [streamingTurn])
-        })
+        appendConversationTurns(uiSessionID, [streamingTurn])
 
         await window.desktop.streamAgentMessage({
           streamID,
           sessionID: backendSessionID,
-          text: submissionText,
+          ...(normalizedText ? { text: normalizedText } : {}),
+          ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
           skills: selectedSkillIDs,
         })
 
@@ -1303,7 +1838,8 @@ export function useAgentWorkspace({
 
       const result = await window.desktop.sendAgentMessage?.({
         sessionID: backendSessionID,
-        text: submissionText,
+        ...(normalizedText ? { text: normalizedText } : {}),
+        ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         skills: selectedSkillIDs,
       })
 
@@ -1311,7 +1847,7 @@ export function useAgentWorkspace({
         throw new Error("Desktop preload does not expose an agent send method")
       }
 
-      const backendTurn = buildAgentTurnFromEvents(result.events, text)
+      const backendTurn = buildAgentTurnFromEvents(result.events, userTurnText)
       startTransition(() => {
         appendConversationTurns(uiSessionID, [backendTurn])
       })
@@ -1333,6 +1869,43 @@ export function useAgentWorkspace({
     } finally {
       setIsSending(false)
     }
+  }
+
+  async function handleSend(draftOverride?: string) {
+    const text = (draftOverride ?? draft).trim()
+    if ((!text && composerAttachments.length === 0) || isSending || activePendingPermissionRequests.length > 0) return
+    if (pendingModelSelectionRef.current) {
+      await pendingModelSelectionRef.current.catch(() => undefined)
+    }
+    if (composerAttachmentPolicyRef.current.attachmentError) return
+
+    if (activeSession && activeWorkspace) {
+      await sendPromptToSession({
+        session: activeSession,
+        text,
+        workspace: activeWorkspace,
+      })
+      return
+    }
+
+    if (!activeCreateSessionTab) return
+
+    const workspace = findWorkspaceByID(workspaces, activeCreateSessionTab.workspaceID)
+    if (!workspace) return
+
+    const created = await createSessionForWorkspace(workspace, {
+      closeCreateTab: true,
+      createSessionTabID: activeCreateSessionTab.id,
+      skipInitialHistoryLoad: true,
+    })
+    if (!created) return
+
+    await sendPromptToSession({
+      backendSessionID: created.backendSessionID,
+      session: created.session,
+      text,
+      workspace: created.workspace,
+    })
   }
 
   async function handlePermissionRequestResponse(input: {
@@ -1383,12 +1956,11 @@ export function useAgentWorkspace({
         const streamingTurn = buildStreamingAssistantTurn(input.decision === "deny" ? "Continue after denial" : "Continue after approval")
         pendingStreamsRef.current[streamID] = {
           sessionID: input.sessionID,
+          backendSessionID: input.request.sessionID,
           assistantTurnID: streamingTurn.id,
         }
 
-        startTransition(() => {
-          appendConversationTurns(input.sessionID, [streamingTurn])
-        })
+        appendConversationTurns(input.sessionID, [streamingTurn])
 
         try {
           await resumeAgentMessageStream({
@@ -1430,17 +2002,26 @@ export function useAgentWorkspace({
   }
 
   async function handlePickComposerAttachments() {
-    if (!window.desktop?.pickComposerAttachments) return
+    const pickComposerAttachments = window.desktop?.pickComposerAttachments
+    if (!pickComposerAttachments) return
+
+    const { allowImage, allowPdf, disabledReason } = composerAttachmentPolicyRef.current
+    if (disabledReason) return
 
     try {
-      const pickedPaths = await window.desktop.pickComposerAttachments()
+      const pickedPaths = await pickComposerAttachments({
+        allowImage,
+        allowPdf,
+      })
       if (!pickedPaths || pickedPaths.length === 0) return
 
       setComposerAttachments((current) => {
         const seen = new Set(current.map((attachment) => attachment.path))
         const nextAttachments = [...current]
+        const supportedCapabilities = { image: allowImage, pdf: allowPdf }
 
         for (const path of pickedPaths) {
+          if (!isComposerAttachmentSupported(path, supportedCapabilities)) continue
           if (seen.has(path)) continue
           seen.add(path)
           nextAttachments.push(buildComposerAttachment(path))
@@ -1458,7 +2039,7 @@ export function useAgentWorkspace({
   }
 
   async function handleComposerModelChange(value: string | null) {
-    const projectID = selectedWorkspace?.project.id
+    const projectID = selectedProjectID
     const updateProjectModelSelection = window.desktop?.updateProjectModelSelection
     const previousSelection = composerSelectedModel
     setComposerSelectedModel(value)
@@ -1494,7 +2075,7 @@ export function useAgentWorkspace({
   }
 
   async function handleComposerSkillToggle(value: string) {
-    const projectID = selectedWorkspace?.project.id
+    const projectID = selectedProjectID
     const updateProjectSkillSelection = window.desktop?.updateProjectSkillSelection
     if (!projectID || !updateProjectSkillSelection) {
       return
@@ -1525,7 +2106,7 @@ export function useAgentWorkspace({
   }
 
   async function handleComposerMcpToggle(value: string) {
-    const projectID = selectedWorkspace?.project.id
+    const projectID = selectedProjectID
     const updateProjectMcpSelection = window.desktop?.updateProjectMcpSelection
     if (!projectID || !updateProjectMcpSelection) {
       return
@@ -1566,13 +2147,18 @@ export function useAgentWorkspace({
   return {
     activeCreateSessionTabID,
     activeSession,
+    activeSessionContextUsage,
     activeSessionDiff,
     activePendingPermissionRequests,
     activeTurns,
     canvasSessionTabs,
     composerAttachments,
+    composerAttachmentButtonTitle,
+    composerAttachmentDisabledReason,
+    composerAttachmentError,
     composerMcpOptions,
     composerModelOptions,
+    composerContextWindow,
     composerSelectedMcpLabel,
     composerSelectedMcpServerIDs,
     composerSkillOptions,
@@ -1580,6 +2166,7 @@ export function useAgentWorkspace({
     composerSelectedModelLabel,
     composerSelectedSkillIDs,
     composerSelectedSkillLabel,
+    composerUnsupportedAttachmentPaths: composerUnsupportedAttachments.map((attachment) => attachment.path),
     createSessionTabs,
     createSessionTitle,
     createSessionWorkspaceID,
@@ -1620,8 +2207,10 @@ export function useAgentWorkspace({
     permissionRequestActionRequestID,
     projectRowRefs,
     refreshComposerMcp,
+    refreshComposerModels,
     refreshComposerSkills,
     rightSidebarView,
+    selectedProjectID,
     selectedWorkspace,
     selectedFolderID,
     setDraft,

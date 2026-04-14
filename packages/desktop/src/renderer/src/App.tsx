@@ -14,6 +14,7 @@ import {
   ThreadView,
   WindowChrome,
 } from "./app/components"
+import { ComposerUtilityBar } from "./app/ComposerUtilityBar"
 import { TerminalPanel } from "./app/terminal/TerminalPanel"
 import { TerminalPanelToggleButton } from "./app/terminal/TerminalPanelToggleButton"
 import { useTerminalWorkspace } from "./app/terminal/use-terminal-workspace"
@@ -50,12 +51,17 @@ export function App() {
 
   const {
     activeSession,
+    activeSessionContextUsage,
     activeCreateSessionTabID,
     activeSessionDiff,
     activePendingPermissionRequests,
     activeTurns,
     canvasSessionTabs,
     composerAttachments,
+    composerAttachmentButtonTitle,
+    composerAttachmentDisabledReason,
+    composerAttachmentError,
+    composerContextWindow,
     composerMcpOptions,
     composerModelOptions,
     composerSelectedMcpLabel,
@@ -65,8 +71,8 @@ export function App() {
     composerSelectedModelLabel,
     composerSelectedSkillIDs,
     composerSelectedSkillLabel,
+    composerUnsupportedAttachmentPaths,
     createSessionTabs,
-    createSessionTitle,
     createSessionWorkspaceID,
     deletingSessionID,
     draft,
@@ -79,7 +85,6 @@ export function App() {
     handleComposerSkillToggle,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
-    handleCreateSessionTitleChange,
     handleCreateSessionWorkspaceChange,
     handleLeftSidebarViewChange,
     handleOpenCreateSessionTab,
@@ -105,6 +110,7 @@ export function App() {
     permissionRequestActionRequestID,
     projectRowRefs,
     refreshComposerMcp,
+    refreshComposerModels,
     refreshComposerSkills,
     rightSidebarView,
     selectedWorkspace,
@@ -191,10 +197,21 @@ export function App() {
     startNewMcpServer,
   } = useSettingsPage({
     onMcpUpdated: refreshComposerMcp,
+    onProviderModelsUpdated: refreshComposerModels,
     projectID: selectedWorkspace?.project.id ?? null,
     projectName: selectedWorkspace?.project.name ?? null,
     projectWorktree: selectedWorkspace?.project.worktree ?? null,
   })
+
+  const activeCreateSessionWorkspace =
+    (createSessionWorkspaceID ? workspaces.find((workspace) => workspace.id === createSessionWorkspaceID) ?? null : null) ?? selectedWorkspace
+  const sessionCanvasWorkspace = isCreateSessionTabActive ? activeCreateSessionWorkspace : selectedWorkspace
+  const sessionCanvasTopMenuLabel = isCreateSessionTabActive ? "Create session" : "Session"
+  const sessionCanvasTopMenuTitle = activeSession
+    ? activeSession.title
+    : activeCreateSessionWorkspace
+      ? `${activeCreateSessionWorkspace.project.name} / ${activeCreateSessionWorkspace.name}`
+      : "No project selected"
 
   return (
     <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
@@ -281,6 +298,7 @@ export function App() {
                 activeCreateSessionTabID={activeCreateSessionTabID}
                 createSessionTabs={createSessionTabs}
                 sessions={canvasSessionTabs}
+                workspaces={workspaces}
                 onCloseCreateSessionTab={handleCloseCreateSessionTab}
                 onAddCreateSessionTab={() => handleOpenCreateSessionTab(selectedWorkspace?.id ?? null)}
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}
@@ -292,10 +310,12 @@ export function App() {
                 onToggleRightSidebar={handleRightSidebarToggle}
               />
             )}
-            {leftSidebarView === "skills" ? null : !isCreateSessionTabActive ? (
+            {leftSidebarView === "skills" ? null : (
               <SessionCanvasTopMenu
-                activeSession={activeSession}
-                gitDirectory={selectedWorkspace?.project.worktree ?? null}
+                contextLabel={sessionCanvasTopMenuLabel}
+                contextTitle={sessionCanvasTopMenuTitle}
+                gitProjectID={sessionCanvasWorkspace?.project.id ?? null}
+                gitDirectory={sessionCanvasWorkspace?.directory ?? null}
                 mcpOptions={composerMcpOptions}
                 selectedMcpServerIDs={composerSelectedMcpServerIDs}
                 selectedMcpServerLabel={composerSelectedMcpLabel}
@@ -305,7 +325,7 @@ export function App() {
                 selectedSkillLabel={composerSelectedSkillLabel}
                 onSkillToggle={handleComposerSkillToggle}
               />
-            ) : null}
+            )}
           </div>
           {leftSidebarView === "skills" ? (
             <GlobalSkillsCanvas
@@ -323,15 +343,36 @@ export function App() {
               onSave={handleSaveGlobalSkillFile}
             />
           ) : isCreateSessionTabActive ? (
-            <CreateSessionCanvas
-              isCreatingSession={isCreatingSession}
-              selectedWorkspaceID={createSessionWorkspaceID}
-              title={createSessionTitle}
-              workspaces={workspaces}
-              onCreateSession={handleCreateSessionSubmit}
-              onTitleChange={handleCreateSessionTitleChange}
-              onWorkspaceChange={handleCreateSessionWorkspaceChange}
-            />
+            <>
+              <CreateSessionCanvas
+                isCreatingSession={isCreatingSession}
+                selectedWorkspaceID={createSessionWorkspaceID}
+                workspaces={workspaces}
+                onWorkspaceChange={handleCreateSessionWorkspaceChange}
+              />
+              <div className="composer-stack">
+                <Composer
+                  attachments={composerAttachments}
+                  attachmentButtonTitle={composerAttachmentButtonTitle}
+                  attachmentDisabledReason={composerAttachmentDisabledReason}
+                  attachmentError={composerAttachmentError}
+                  canSend={Boolean(createSessionWorkspaceID)}
+                  draft={draft}
+                  hasPendingPermissionRequests={false}
+                  isSending={isSending || isCreatingSession}
+                  modelOptions={composerModelOptions}
+                  selectedModel={composerSelectedModel}
+                  selectedModelLabel={composerSelectedModelLabel}
+                  unsupportedAttachmentPaths={composerUnsupportedAttachmentPaths}
+                  onDraftChange={setDraft}
+                  onModelChange={handleComposerModelChange}
+                  onPickAttachments={handlePickComposerAttachments}
+                  onRemoveAttachment={handleRemoveComposerAttachment}
+                  onSend={handleSend}
+                />
+                <ComposerUtilityBar contextWindow={composerContextWindow} usage={null} />
+              </div>
+            </>
           ) : (
             <>
               <ThreadView
@@ -344,21 +385,28 @@ export function App() {
                 threadColumnRef={threadColumnRef}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
               />
-              <Composer
-                attachments={composerAttachments}
-                draft={draft}
-                hasActiveSession={Boolean(activeSession)}
-                hasPendingPermissionRequests={activePendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
-                isSending={isSending}
-                modelOptions={composerModelOptions}
-                selectedModel={composerSelectedModel}
-                selectedModelLabel={composerSelectedModelLabel}
-                onDraftChange={setDraft}
-                onModelChange={handleComposerModelChange}
-                onPickAttachments={handlePickComposerAttachments}
-                onRemoveAttachment={handleRemoveComposerAttachment}
-                onSend={handleSend}
-              />
+              <div className="composer-stack">
+                <Composer
+                  attachments={composerAttachments}
+                  attachmentButtonTitle={composerAttachmentButtonTitle}
+                  attachmentDisabledReason={composerAttachmentDisabledReason}
+                  attachmentError={composerAttachmentError}
+                  canSend={Boolean(activeSession)}
+                  draft={draft}
+                  hasPendingPermissionRequests={activePendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+                  isSending={isSending}
+                  modelOptions={composerModelOptions}
+                  selectedModel={composerSelectedModel}
+                  selectedModelLabel={composerSelectedModelLabel}
+                  unsupportedAttachmentPaths={composerUnsupportedAttachmentPaths}
+                  onDraftChange={setDraft}
+                  onModelChange={handleComposerModelChange}
+                  onPickAttachments={handlePickComposerAttachments}
+                  onRemoveAttachment={handleRemoveComposerAttachment}
+                  onSend={handleSend}
+                />
+                <ComposerUtilityBar contextWindow={composerContextWindow} usage={activeSessionContextUsage} />
+              </div>
             </>
           )}
           <TerminalArea

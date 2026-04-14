@@ -97,12 +97,17 @@ export interface AgentEnvelope<T> {
 }
 
 export interface AgentSSEEvent {
+  id?: string
   event: string
   data: unknown
 }
 
 export interface AgentStreamIPCEvent extends AgentSSEEvent {
   streamID: string
+}
+
+export interface AgentSessionStreamIPCEvent extends AgentSSEEvent {
+  sessionID: string
 }
 
 export interface AgentSessionHistoryMessage {
@@ -186,6 +191,12 @@ export interface AgentProviderModel {
 export interface AgentProjectModelSelection {
   model?: string
   small_model?: string
+}
+
+export interface AgentProjectModelsResult {
+  items: AgentProviderModel[]
+  selection: AgentProjectModelSelection
+  effectiveModel?: AgentProviderModel | null
 }
 
 export interface AgentProjectSkillSelection {

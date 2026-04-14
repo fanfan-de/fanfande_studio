@@ -617,15 +617,15 @@ select {
 .project-row:focus-within,
 .session-row:hover,
 .session-row:focus-visible {
-  background: rgba(22, 119, 200, 0.08);
-  color: #1d2a35;
+  background: rgba(84, 96, 109, 0.08);
+  color: #20303e;
   outline: none;
 }
 
 .project-row {
   min-height: 36px;
   padding: 0 4px 0 8px;
-  border-radius: 0;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -637,7 +637,7 @@ select {
   min-height: 32px;
   flex: 1 1 auto;
   padding: 0;
-  border-radius: 0;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -766,7 +766,7 @@ select {
 .session-row {
   min-height: 32px;
   padding: 0 8px 0 0;
-  border-radius: 0;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
 }
@@ -2978,6 +2978,33 @@ textarea::placeholder {
   box-shadow: 0 18px 36px rgba(36, 59, 82, 0.14);
 }
 
+.git-quick-menu-panel {
+  width: min(360px, calc(100vw - 32px));
+}
+
+.git-quick-menu-options,
+.git-quick-menu-form {
+  display: grid;
+  gap: 6px;
+}
+
+.git-quick-menu-option {
+  min-height: 48px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.git-quick-menu-option:disabled {
+  background: #f3f6f8;
+  color: #94a3b2;
+  cursor: not-allowed;
+}
+
+.git-quick-menu-option:disabled .composer-menu-option-copy small,
+.git-quick-menu-option:disabled .composer-menu-option-check {
+  color: #94a3b2;
+}
+
 .canvas-top-menu-selector-panel {
   position: absolute;
   top: calc(100% + 8px);
@@ -3049,74 +3076,51 @@ textarea::placeholder {
 }
 
 .create-session-shell {
-  display: grid;
-  place-items: start center;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0;
 }
 
 .create-session-card {
-  width: min(100%, 760px);
-  padding: 22px;
-  border: 1px solid rgba(166, 186, 208, 0.42);
-  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
-  box-shadow: 0 18px 40px rgba(46, 81, 118, 0.08);
+  width: min(100%, 360px);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   display: grid;
+  justify-items: center;
   gap: 18px;
   animation: rise-in 260ms ease;
 }
 
-.create-session-header {
-  align-items: flex-start;
+.create-session-logo {
+  width: min(200px, 48vw);
+  height: auto;
+  aspect-ratio: 740 / 724;
+  object-fit: contain;
+  filter: none;
 }
 
-.create-session-copy,
-.create-session-workspace-card p {
-  margin: 0;
-  color: #5b6f82;
-  line-height: 1.6;
-}
-
-.create-session-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
-}
-
-.create-session-field {
-  display: grid;
-  gap: 8px;
-}
-
-.create-session-field select,
-.create-session-field input {
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid rgba(166, 186, 208, 0.42);
-  background: #f8fbff;
+.create-session-native-select {
+  min-width: min(100%, 320px);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #182532;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  appearance: none;
+  cursor: pointer;
 }
 
-.create-session-field input::placeholder {
-  color: #8da0b4;
-}
-
-.create-session-workspace-card {
-  padding: 16px;
-  border: 1px solid rgba(166, 186, 208, 0.42);
-  background: rgba(255, 255, 255, 0.92);
-  display: grid;
-  gap: 6px;
-}
-
-.create-session-workspace-card strong {
-  color: #182532;
-  letter-spacing: -0.03em;
-}
-
-.create-session-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+.create-session-native-select:hover,
+.create-session-native-select:focus-visible {
+  color: #123a5a;
+  outline: none;
 }
 
 .thread-shell {
@@ -3258,6 +3262,18 @@ textarea::placeholder {
   margin: 0;
   color: #6b7d90;
   line-height: 1.6;
+}
+
+.assistant-ephemeral-state {
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.assistant-ephemeral-hint {
+  margin: 0;
+  color: #607487;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .assistant-reasoning-round {
@@ -3806,6 +3822,78 @@ textarea::placeholder {
   border-radius: 28px;
 }
 
+.composer-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.composer-utility-bar {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.composer-utility-chip {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: rgba(245, 248, 251, 0.94);
+  color: #5f7384;
+}
+
+.context-pressure-indicator.is-low {
+  color: #2a8357;
+}
+
+.context-pressure-indicator.is-medium {
+  color: #9a6a18;
+}
+
+.context-pressure-indicator.is-high {
+  color: #b14537;
+}
+
+.context-pressure-ring {
+  width: 28px;
+  height: 28px;
+  overflow: visible;
+}
+
+.context-pressure-ring-track,
+.context-pressure-ring-progress,
+.context-pressure-ring-core {
+  fill: none;
+}
+
+.context-pressure-ring-track,
+.context-pressure-ring-progress {
+  stroke-width: 2.5;
+}
+
+.context-pressure-ring-track {
+  stroke: rgba(116, 143, 169, 0.22);
+}
+
+.context-pressure-ring-progress {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 14px 14px;
+  transition: stroke-dashoffset 180ms ease, stroke 180ms ease;
+}
+
+.context-pressure-ring-core {
+  fill: currentColor;
+  opacity: 0.88;
+}
+
 .composer textarea {
   width: 100%;
   resize: none;
@@ -3834,6 +3922,12 @@ textarea::placeholder {
   border: 1px solid rgba(166, 186, 208, 0.42);
   background: #f5f8fb;
   color: #314353;
+}
+
+.composer-attachment-chip.is-invalid {
+  border-color: rgba(187, 63, 63, 0.32);
+  background: #fff4f4;
+  color: #7d1f1f;
 }
 
 .composer-attachment-name {
@@ -3912,6 +4006,18 @@ textarea::placeholder {
   background: #eef5fb;
   border-color: rgba(22, 119, 200, 0.28);
   color: #123a5a;
+}
+
+.composer-selector-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.composer-attachment-note {
+  margin: 12px 0 0;
+  color: #9b2c2c;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .composer-menu-panel {

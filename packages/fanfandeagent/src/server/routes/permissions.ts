@@ -130,6 +130,7 @@ export function PermissionsRoutes() {
 
     const resolved = await Permission.resolveRequest(id, {
       decision: decisionFromLegacy(true, payload.data.scope),
+      scope: payload.data.scope,
       note: payload.data.reason,
     }).catch((error) => {
       throw new ApiError(400, "PERMISSION_REQUEST_RESOLUTION_FAILED", error instanceof Error ? error.message : String(error))
@@ -168,6 +169,7 @@ export function PermissionsRoutes() {
 
     const resolved = await Permission.resolveRequest(id, {
       decision: decisionFromLegacy(false, payload.data.scope),
+      scope: payload.data.scope,
       note: payload.data.reason,
     }).catch((error) => {
       throw new ApiError(400, "PERMISSION_REQUEST_RESOLUTION_FAILED", error instanceof Error ? error.message : String(error))
@@ -206,6 +208,7 @@ export function PermissionsRoutes() {
 
     const resolved = await Permission.resolveRequest(id, {
       decision: payload.data.decision,
+      scope: payload.data.scope,
       note: payload.data.note,
     }).catch((error) => {
       throw new ApiError(400, "PERMISSION_REQUEST_RESOLUTION_FAILED", error instanceof Error ? error.message : String(error))

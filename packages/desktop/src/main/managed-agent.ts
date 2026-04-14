@@ -20,15 +20,20 @@ interface ManagedAgentProcess {
   readonly baseURL: string
   readonly child: ChildProcessByStdio<null, Readable, Readable>
   readonly port: number
+  readonly sourceRuntime: boolean
 }
 
 interface ManagedAgentLaunchSpec {
   readonly label: string
   readonly command: string
   readonly args: string[]
+  readonly sourceRuntime: boolean
 }
 
 let managedAgent: ManagedAgentProcess | undefined
+let sourceRuntimeWatcher: fs.FSWatcher | undefined
+let sourceRuntimeRestartTimer: ReturnType<typeof setTimeout> | undefined
+let sourceRuntimeRestartPromise: Promise<void> | undefined
 
 function log(message: string, ...details: unknown[]) {
   console.log("[desktop][agent]", message, ...details)
@@ -103,6 +108,7 @@ function resolveSourceAgentLaunchSpec() {
     label: `source runtime (${entrypoint})`,
     command: bunBinary,
     args: ["run", entrypoint],
+    sourceRuntime: true,
   } satisfies ManagedAgentLaunchSpec
 }
 
@@ -117,6 +123,7 @@ function resolveBundledAgentLaunchSpecs() {
         label: `bundled runtime (${candidate})`,
         command: bunBinary,
         args: [entrypoint],
+        sourceRuntime: false,
       })
     }
   }
@@ -181,6 +188,44 @@ function attachProcessLogging(child: ChildProcessByStdio<null, Readable, Readabl
   })
 }
 
+function clearSourceRuntimeRestartTimer() {
+  if (!sourceRuntimeRestartTimer) return
+  clearTimeout(sourceRuntimeRestartTimer)
+  sourceRuntimeRestartTimer = undefined
+}
+
+function resolveSourceWatchRoot() {
+  if (app.isPackaged) return undefined
+
+  const desktopAppPath = app.getAppPath()
+  const repoRoot = path.resolve(desktopAppPath, "..", "..")
+  const watchRoot = path.join(repoRoot, "packages", "fanfandeagent", "src")
+  return fs.existsSync(watchRoot) ? watchRoot : undefined
+}
+
+function ensureSourceRuntimeWatcher() {
+  if (app.isPackaged || sourceRuntimeWatcher) return
+
+  const watchRoot = resolveSourceWatchRoot()
+  if (!watchRoot) return
+
+  try {
+    sourceRuntimeWatcher = fs.watch(watchRoot, { recursive: true }, (_eventType, filename) => {
+      if (!managedAgent?.sourceRuntime) return
+
+      const changedPath = typeof filename === "string" && filename.trim().length > 0 ? filename.trim() : "unknown"
+      clearSourceRuntimeRestartTimer()
+      sourceRuntimeRestartTimer = setTimeout(() => {
+        sourceRuntimeRestartTimer = undefined
+        void restartManagedAgent(`source changed (${changedPath})`)
+      }, 150)
+    })
+    log(`watching source runtime for changes at ${watchRoot}`)
+  } catch (error) {
+    logError(`failed to watch source runtime at ${watchRoot}`, error)
+  }
+}
+
 async function waitForAgentHealth(
   baseURL: string,
   child: ChildProcessByStdio<null, Readable, Readable>,
@@ -204,6 +249,24 @@ async function waitForAgentHealth(
   }
 
   throw new Error(`Managed agent did not become healthy within ${timeoutMs}ms`)
+}
+
+async function restartManagedAgent(reason: string) {
+  if (sourceRuntimeRestartPromise) return sourceRuntimeRestartPromise
+
+  sourceRuntimeRestartPromise = (async () => {
+    log(`restarting managed agent: ${reason}`)
+    await stopManagedAgent()
+    await ensureManagedAgentRunning()
+  })()
+    .catch((error) => {
+      logError(`managed agent restart failed: ${reason}`, error)
+    })
+    .finally(() => {
+      sourceRuntimeRestartPromise = undefined
+    })
+
+  return sourceRuntimeRestartPromise
 }
 
 export async function ensureManagedAgentRunning() {
@@ -252,6 +315,7 @@ export async function ensureManagedAgentRunning() {
       child,
       baseURL,
       port,
+      sourceRuntime: spec.sourceRuntime,
     }
 
     attachProcessLogging(child)
@@ -267,6 +331,9 @@ export async function ensureManagedAgentRunning() {
       process.env[MANAGED_AGENT_BASE_URL_ENV] = baseURL
       if (!process.env[MANAGED_AGENT_WORKDIR_ENV]?.trim()) {
         process.env[MANAGED_AGENT_WORKDIR_ENV] = app.getPath("home")
+      }
+      if (spec.sourceRuntime) {
+        ensureSourceRuntimeWatcher()
       }
       log(`managed agent ready at ${baseURL} via ${spec.label}`)
       return baseURL
@@ -292,6 +359,7 @@ export async function stopManagedAgent() {
   const current = managedAgent
   managedAgent = undefined
   delete process.env[MANAGED_AGENT_BASE_URL_ENV]
+  clearSourceRuntimeRestartTimer()
 
   if (!current || current.child.exitCode !== null) return
 

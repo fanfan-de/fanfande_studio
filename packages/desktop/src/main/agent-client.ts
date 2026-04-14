@@ -61,6 +61,7 @@ export function parseSSE(raw: string): AgentSSEEvent[] {
 function parseSSEBlock(block: string): AgentSSEEvent | null {
   if (!block.trim()) return null
 
+  let eventID = ""
   let eventName = ""
   const dataLines: string[] = []
 
@@ -72,6 +73,11 @@ function parseSSEBlock(block: string): AgentSSEEvent | null {
     let value = separatorIndex === -1 ? "" : rawLine.slice(separatorIndex + 1)
     if (value.startsWith(" ")) {
       value = value.slice(1)
+    }
+
+    if (field === "id") {
+      eventID = value.trim()
+      continue
     }
 
     if (field === "event") {
@@ -95,7 +101,11 @@ function parseSSEBlock(block: string): AgentSSEEvent | null {
     data = payload
   }
 
-  return { event: eventName, data }
+  return {
+    ...(eventID ? { id: eventID } : {}),
+    event: eventName,
+    data,
+  }
 }
 
 export function consumeSSEBuffer(raw: string, flush = false) {

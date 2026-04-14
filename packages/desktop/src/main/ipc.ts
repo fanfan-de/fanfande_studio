@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from "electron"
 import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
-import { commitGitChanges, pushGitChanges } from "./git"
+import { commitGitChanges, createGitBranch, createGitPullRequest, getGitCapabilities, pushGitChanges } from "./git"
 import type { ApplicationMenus } from "./menu"
 import { PtyProxyManager, PTY_EVENT_CHANNEL } from "./pty-proxy"
 import type {
@@ -10,6 +10,7 @@ import type {
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
   AgentProjectMcpSelection,
+  AgentProjectModelsResult,
   AgentProjectSkillSelection,
   AgentProjectModelSelection,
   AgentPtySessionInfo,
@@ -25,6 +26,7 @@ import type {
   AgentProjectWorkspace,
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
+  AgentSessionStreamIPCEvent,
   AgentStreamIPCEvent,
   AgentSessionInfo,
   AgentSessionDeleteResult,
@@ -35,6 +37,7 @@ import type {
 import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sendWindowState } from "./window-state"
 
 const AGENT_STREAM_EVENT_CHANNEL = "desktop:agent-stream-event"
+const AGENT_SESSION_STREAM_EVENT_CHANNEL = "desktop:agent-session-stream-event"
 
 function normalizeShowMenuInput(input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }) {
   if (typeof input === "string") {
@@ -81,8 +84,132 @@ async function listFolderWorkspaces() {
   return buildFolderWorkspaces(result.data, projectWorkspaces)
 }
 
+type SessionStreamSubscription = {
+  lastEventID?: string
+  disposed: boolean
+  abortController: AbortController | null
+  restartTimer: ReturnType<typeof setTimeout> | null
+  start(): Promise<void>
+  dispose(): void
+}
+
+function sessionStreamSubscriptionKey(webContentsID: number, sessionID: string) {
+  return `${webContentsID}:${sessionID}`
+}
+
 export function registerIpcHandlers(menus: ApplicationMenus) {
   const ptyProxyManager = new PtyProxyManager()
+  const sessionStreamSubscriptions = new Map<string, SessionStreamSubscription>()
+  const sessionStreamCleanupTargets = new Set<number>()
+
+  function getSessionStreamSubscription(webContentsID: number, sessionID: string) {
+    return sessionStreamSubscriptions.get(sessionStreamSubscriptionKey(webContentsID, sessionID))
+  }
+
+  function removeSessionStreamSubscription(webContentsID: number, sessionID: string) {
+    const key = sessionStreamSubscriptionKey(webContentsID, sessionID)
+    const subscription = sessionStreamSubscriptions.get(key)
+    if (!subscription) return false
+    subscription.dispose()
+    sessionStreamSubscriptions.delete(key)
+    return true
+  }
+
+  function createSessionStreamSubscription(target: Electron.WebContents, sessionID: string): SessionStreamSubscription {
+    let lastEventID: string | undefined
+    let disposed = false
+    let abortController: AbortController | null = null
+    let restartTimer: ReturnType<typeof setTimeout> | null = null
+
+    const scheduleRestart = () => {
+      if (disposed || restartTimer || target.isDestroyed()) return
+      restartTimer = setTimeout(() => {
+        restartTimer = null
+        void start()
+      }, 500)
+    }
+
+    const dispose = () => {
+      disposed = true
+      if (restartTimer) {
+        clearTimeout(restartTimer)
+        restartTimer = null
+      }
+      abortController?.abort()
+      abortController = null
+    }
+
+    const start = async () => {
+      if (disposed || target.isDestroyed()) return
+
+      abortController?.abort()
+      abortController = new AbortController()
+
+      try {
+        const response = await fetch(resolveAgentURL(`/api/sessions/${encodeURIComponent(sessionID)}/events/stream`), {
+          headers: lastEventID
+            ? {
+                "Last-Event-ID": lastEventID,
+              }
+            : undefined,
+          signal: abortController.signal,
+        })
+
+        if (!response.ok) {
+          const envelope = (await response.json().catch(() => null)) as AgentEnvelope<unknown> | null
+          throw new Error(envelope?.error?.message || `Session stream failed (${response.status})`)
+        }
+
+        await readAgentSSEStream(response, (item) => {
+          if (disposed || target.isDestroyed()) return
+          if (item.id) {
+            lastEventID = item.id
+          }
+
+          target.send(AGENT_SESSION_STREAM_EVENT_CHANNEL, {
+            sessionID,
+            id: item.id,
+            event: item.event,
+            data: item.data,
+          } satisfies AgentSessionStreamIPCEvent)
+        })
+
+        if (!disposed) {
+          scheduleRestart()
+        }
+      } catch (error) {
+        const aborted = error instanceof Error && error.name === "AbortError"
+        if (disposed || aborted) return
+
+        target.send(AGENT_SESSION_STREAM_EVENT_CHANNEL, {
+          sessionID,
+          event: "error",
+          data: {
+            sessionID,
+            message: error instanceof Error ? error.message : String(error),
+          },
+        } satisfies AgentSessionStreamIPCEvent)
+        scheduleRestart()
+      }
+    }
+
+    return {
+      get lastEventID() {
+        return lastEventID
+      },
+      get disposed() {
+        return disposed
+      },
+      get abortController() {
+        return abortController
+      },
+      get restartTimer() {
+        return restartTimer
+      },
+      start,
+      dispose,
+    }
+  }
 
   ipcMain.handle("desktop:get-info", () => ({
     platform: process.platform,
@@ -251,22 +378,60 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.canceled ? null : result.filePaths[0] ?? null
   })
 
-  ipcMain.handle("desktop:pick-composer-attachments", async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    const options = {
-      title: "Select image or file",
-      properties: ["openFile", "multiSelections"] as Array<"openFile" | "multiSelections">,
-    }
-    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+  ipcMain.handle(
+    "desktop:pick-composer-attachments",
+    async (event, input?: { allowImage?: boolean; allowPdf?: boolean }) => {
+      const allowImage = input?.allowImage ?? true
+      const allowPdf = input?.allowPdf ?? true
+      const filters = [
+        ...(allowImage
+          ? [
+              {
+                name: "Images",
+                extensions: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"],
+              },
+            ]
+          : []),
+        ...(allowPdf
+          ? [
+              {
+                name: "PDFs",
+                extensions: ["pdf"],
+              },
+            ]
+          : []),
+      ]
 
-    return result.canceled ? [] : result.filePaths
-  })
+      const title = allowImage && allowPdf ? "Select image or PDF" : allowImage ? "Select image" : "Select PDF"
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const options = {
+        title,
+        properties: ["openFile", "multiSelections"] as Array<"openFile" | "multiSelections">,
+        ...(filters.length > 0 ? { filters } : {}),
+      }
+      const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
 
-  ipcMain.handle("desktop:git-commit", async (_event, input: { directory: string; message: string }) =>
-    commitGitChanges(input.directory, input.message),
+      return result.canceled ? [] : result.filePaths
+    },
   )
 
-  ipcMain.handle("desktop:git-push", async (_event, input: { directory: string }) => pushGitChanges(input.directory))
+  ipcMain.handle("desktop:git-get-capabilities", async (_event, input: { projectID: string; directory: string }) =>
+    getGitCapabilities(input),
+  )
+
+  ipcMain.handle("desktop:git-commit", async (_event, input: { projectID: string; directory: string; message: string }) =>
+    commitGitChanges(input),
+  )
+
+  ipcMain.handle("desktop:git-push", async (_event, input: { projectID: string; directory: string }) => pushGitChanges(input))
+
+  ipcMain.handle("desktop:git-create-branch", async (_event, input: { projectID: string; directory: string; name: string }) =>
+    createGitBranch(input),
+  )
+
+  ipcMain.handle("desktop:git-create-pull-request", async (_event, input: { projectID: string; directory: string }) =>
+    createGitPullRequest(input),
+  )
 
   ipcMain.handle("desktop:create-project-workspace", async (_event, input: { directory: string }) => {
     const directory = input.directory.trim()
@@ -661,10 +826,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
   ipcMain.handle("desktop:get-project-models", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
-    const result = await requestAgentJSON<{
-      items: AgentProviderModel[]
-      selection: AgentProjectModelSelection
-    }>(`/api/projects/${encodeURIComponent(projectID)}/models`)
+    const result = await requestAgentJSON<AgentProjectModelsResult>(`/api/projects/${encodeURIComponent(projectID)}/models`)
 
     return result.data
   })
@@ -895,7 +1057,11 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       input: {
         streamID: string
         sessionID: string
-        text: string
+        text?: string
+        attachments?: Array<{
+          path: string
+          name?: string
+        }>
         system?: string
         agent?: string
         skills?: string[]
@@ -910,6 +1076,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         },
         body: JSON.stringify({
           text: input.text,
+          attachments: input.attachments,
           system: input.system,
           agent: input.agent,
           skills: input.skills,
@@ -927,6 +1094,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         await readAgentSSEStream(response, (item) => {
           event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
             streamID,
+            id: item.id,
             event: item.event,
             data: item.data,
           } satisfies AgentStreamIPCEvent)
@@ -947,6 +1115,51 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         requestId,
       }
     },
+  )
+
+  ipcMain.handle(
+    "desktop:subscribe-agent-session-stream",
+    async (event, input: { sessionID: string }) => {
+      const sessionID = input.sessionID.trim()
+      const target = event.sender
+      const existing = getSessionStreamSubscription(target.id, sessionID)
+      if (existing) {
+        return {
+          sessionID,
+          lastEventID: existing.lastEventID,
+        }
+      }
+
+      const subscription = createSessionStreamSubscription(target, sessionID)
+      sessionStreamSubscriptions.set(sessionStreamSubscriptionKey(target.id, sessionID), subscription)
+
+      if (!sessionStreamCleanupTargets.has(target.id)) {
+        sessionStreamCleanupTargets.add(target.id)
+        target.once("destroyed", () => {
+          for (const [key, streamSubscription] of [...sessionStreamSubscriptions.entries()]) {
+            if (!key.startsWith(`${target.id}:`)) continue
+            streamSubscription.dispose()
+            sessionStreamSubscriptions.delete(key)
+          }
+          sessionStreamCleanupTargets.delete(target.id)
+        })
+      }
+
+      void subscription.start()
+
+      return {
+        sessionID,
+        lastEventID: subscription.lastEventID,
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:unsubscribe-agent-session-stream",
+    async (event, input: { sessionID: string }) => ({
+      sessionID: input.sessionID.trim(),
+      removed: removeSessionStreamSubscription(event.sender.id, input.sessionID.trim()),
+    }),
   )
 
   ipcMain.handle(
@@ -978,6 +1191,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         await readAgentSSEStream(response, (item) => {
           event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
             streamID,
+            id: item.id,
             event: item.event,
             data: item.data,
           } satisfies AgentStreamIPCEvent)
@@ -1006,7 +1220,11 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       _event,
       input: {
         sessionID: string
-        text: string
+        text?: string
+        attachments?: Array<{
+          path: string
+          name?: string
+        }>
         system?: string
         agent?: string
         skills?: string[]
@@ -1020,6 +1238,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         },
         body: JSON.stringify({
           text: input.text,
+          attachments: input.attachments,
           system: input.system,
           agent: input.agent,
           skills: input.skills,

@@ -11,12 +11,14 @@
             "id": "c5a1715926c1dbb3",
             "type": "leaf",
             "state": {
-              "type": "release-notes",
+              "type": "markdown",
               "state": {
-                "currentVersion": "1.11.7"
+                "file": "LLM  API价格.md",
+                "mode": "source",
+                "source": false
               },
-              "icon": "lucide-book-up",
-              "title": "版本说明 1.11.7"
+              "icon": "lucide-file",
+              "title": "LLM  API价格"
             }
           }
         ]
@@ -51,7 +53,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "qwen",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -72,7 +74,8 @@
               "title": "书签"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
@@ -179,5 +182,7 @@
     }
   },
   "active": "c5a1715926c1dbb3",
-  "lastOpenFiles": []
+  "lastOpenFiles": [
+    "AISDKDocument.md"
+  ]
 }

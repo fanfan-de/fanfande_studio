@@ -1,8 +1,21 @@
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
+import { requestAgentJSON } from "./agent-client"
 
-const execFileAsync = promisify(execFile)
-const GIT_MAX_BUFFER = 8 * 1024 * 1024
+export interface GitCapabilityState {
+  enabled: boolean
+  reason?: string
+}
+
+export interface GitCapabilities {
+  directory: string
+  root: string | null
+  branch: string | null
+  defaultBranch: string | null
+  isGitRepo: boolean
+  canCommit: GitCapabilityState
+  canPush: GitCapabilityState
+  canCreatePullRequest: GitCapabilityState
+  canCreateBranch: GitCapabilityState
+}
 
 export interface GitActionResult {
   directory: string
@@ -11,99 +24,75 @@ export interface GitActionResult {
   stdout: string
   stderr: string
   summary: string
+  url?: string
 }
 
-function buildGitError(error: unknown) {
-  if (error instanceof Error) {
-    const stdout = "stdout" in error && typeof error.stdout === "string" ? error.stdout.trim() : ""
-    const stderr = "stderr" in error && typeof error.stderr === "string" ? error.stderr.trim() : ""
-    return new Error(stderr || stdout || error.message)
-  }
-
-  return new Error(String(error))
+function encodeProjectPath(projectID: string, suffix: string) {
+  return `/api/projects/${encodeURIComponent(projectID)}/git/${suffix}`
 }
 
-async function runGitCommand(directory: string, args: string[]) {
-  const targetDirectory = directory.trim()
-  if (!targetDirectory) {
-    throw new Error("缺少 Git 工作目录。")
-  }
-
-  try {
-    const result = await execFileAsync("git", ["-C", targetDirectory, ...args], {
-      windowsHide: true,
-      maxBuffer: GIT_MAX_BUFFER,
-    })
-
-    return {
-      stdout: result.stdout.trim(),
-      stderr: result.stderr.trim(),
-    }
-  } catch (error) {
-    throw buildGitError(error)
-  }
+export async function getGitCapabilities(input: { projectID: string; directory: string }): Promise<GitCapabilities> {
+  const projectID = input.projectID.trim()
+  const directory = input.directory.trim()
+  const pathname = encodeProjectPath(projectID, `capabilities?directory=${encodeURIComponent(directory)}`)
+  const result = await requestAgentJSON<GitCapabilities>(pathname)
+  return result.data
 }
 
-async function resolveGitRoot(directory: string) {
-  const result = await runGitCommand(directory, ["rev-parse", "--show-toplevel"])
-  if (!result.stdout) {
-    throw new Error("未找到 Git 仓库根目录。")
-  }
+export async function commitGitChanges(input: { projectID: string; directory: string; message: string }): Promise<GitActionResult> {
+  const result = await requestAgentJSON<GitActionResult>(encodeProjectPath(input.projectID.trim(), "commit"), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      directory: input.directory.trim(),
+      message: input.message,
+    }),
+  })
 
-  return result.stdout
+  return result.data
 }
 
-async function resolveCurrentBranch(directory: string) {
-  try {
-    const result = await runGitCommand(directory, ["rev-parse", "--abbrev-ref", "HEAD"])
-    if (!result.stdout || result.stdout === "HEAD") {
-      return null
-    }
+export async function pushGitChanges(input: { projectID: string; directory: string }): Promise<GitActionResult> {
+  const result = await requestAgentJSON<GitActionResult>(encodeProjectPath(input.projectID.trim(), "push"), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      directory: input.directory.trim(),
+    }),
+  })
 
-    return result.stdout
-  } catch {
-    return null
-  }
+  return result.data
 }
 
-export async function commitGitChanges(directory: string, message: string): Promise<GitActionResult> {
-  const trimmedMessage = message.trim()
-  if (!trimmedMessage) {
-    throw new Error("请输入提交说明。")
-  }
+export async function createGitBranch(input: { projectID: string; directory: string; name: string }): Promise<GitActionResult> {
+  const result = await requestAgentJSON<GitActionResult>(encodeProjectPath(input.projectID.trim(), "branches"), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      directory: input.directory.trim(),
+      name: input.name,
+    }),
+  })
 
-  const root = await resolveGitRoot(directory)
-  await runGitCommand(root, ["add", "-A"])
-
-  const stagedDiff = await runGitCommand(root, ["diff", "--cached", "--name-only"])
-  if (!stagedDiff.stdout) {
-    throw new Error("当前没有可提交的改动。")
-  }
-
-  const result = await runGitCommand(root, ["commit", "-m", trimmedMessage])
-  const branch = await resolveCurrentBranch(root)
-
-  return {
-    directory,
-    root,
-    branch,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    summary: branch ? `已提交到 ${branch}` : "已完成提交。",
-  }
+  return result.data
 }
 
-export async function pushGitChanges(directory: string): Promise<GitActionResult> {
-  const root = await resolveGitRoot(directory)
-  const result = await runGitCommand(root, ["push"])
-  const branch = await resolveCurrentBranch(root)
+export async function createGitPullRequest(input: { projectID: string; directory: string }): Promise<GitActionResult> {
+  const result = await requestAgentJSON<GitActionResult>(encodeProjectPath(input.projectID.trim(), "pull-requests"), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      directory: input.directory.trim(),
+    }),
+  })
 
-  return {
-    directory,
-    root,
-    branch,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    summary: branch ? `已推送 ${branch}` : "已完成推送。",
-  }
+  return result.data
 }

@@ -14,6 +14,7 @@ import * as Skill from "#skill/skill.ts"
 import * as Snapshot  from "#snapshot/snapshot.ts"
 import * as SessionDiff from "#session/diff.ts"
 import { Flag } from "#flag/flag.ts"
+import * as Orchestrator from "#session/orchestrator.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
@@ -79,6 +80,16 @@ export const PromptInput = z.object({
                 .meta({
                     ref: "FilePartInput",
                 }),
+            Message.ImagePart.omit({
+                messageID: true,
+                sessionID: true,
+            })
+                .partial({
+                    id: true,
+                })
+                .meta({
+                    ref: "ImagePartInput",
+                }),
             Message.AgentPart.omit({
                 messageID: true,
                 sessionID: true,
@@ -132,6 +143,36 @@ async function waitForStop(sessionID: string) {
     }
 }
 
+async function persistMessageRecord(
+    message: Message.MessageInfo,
+    turn?: Orchestrator.TurnContext,
+) {
+    if (turn) {
+        turn.emit("message.recorded", {
+            message,
+        })
+        return
+    }
+
+    await Session.updateMessage(message)
+}
+
+async function removePartRecord(
+    partID: string,
+    turn?: Orchestrator.TurnContext,
+    messageID?: string,
+) {
+    if (turn) {
+        turn.emit("part.removed", {
+            partID,
+            messageID,
+        })
+        return
+    }
+
+    Session.deletePart(partID)
+}
+
 export function cancel(sessionID: string) {
     // 主动中断某个正在运行的 loop，并从运行态注册表中移除。
     const running = state();
@@ -143,9 +184,15 @@ export function cancel(sessionID: string) {
     return true;
 }
 
-async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
-    const { sessionID, abort, controller } = input;
-    const session = Session.DataBaseRead("sessions", sessionID);
+type RunLoopResult = {
+    latest: Message.WithParts
+    status: "completed" | "blocked" | "stopped"
+    finishReason?: string
+}
+
+async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
+    const { sessionID, abort, controller, turn } = input;
+    const session = Session.DataBaseRead("sessions", sessionID) as Session.SessionInfo | null;
     if (!session) {
         throw new Error(`Session '${sessionID}' was not found.`);
     }
@@ -231,7 +278,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
 
             const assistantMessage = createAssistantMessage(sessionID, lastUser, model);
             currentAssistant = assistantMessage;
-            await Session.updateMessage(assistantMessage);
+            await persistMessageRecord(assistantMessage, turn);
 
             //解析工具参数
             const tools = await resolveTools({
@@ -255,6 +302,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
             const processor = Processor.create({
                 Assistant: assistantMessage,
                 abort,
+                turn,
             });
 
             let processResult: Awaited<ReturnType<typeof processor.process>>;
@@ -279,11 +327,11 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
                         message: error instanceof Error ? error.message : String(error),
                     },
                 } as Message.Assistant["error"];
-                await Session.updateMessage(assistantMessage);
+                await persistMessageRecord(assistantMessage, turn);
                 throw error;
             }
 
-            await Session.updateMessage(assistantMessage);
+            await persistMessageRecord(assistantMessage, turn);
 
             if (isFinalFinishReason(processor.message.finishReason)) {
                 log.info("model-finish", {
@@ -311,7 +359,21 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
             throw new Error("No assistant message was created.");
         }
 
-        return latest;
+        const finishReason = latest.info.role === "assistant" ? latest.info.finishReason : undefined
+        const blockedByApproval = latest.parts.some(
+            (part): part is Message.ToolPart =>
+                part.type === "tool" && part.state.status === "waiting-approval",
+        )
+
+        return {
+            latest,
+            status: blockedByApproval
+                ? "blocked"
+                : isFinalFinishReason(finishReason)
+                    ? "completed"
+                    : "stopped",
+            finishReason,
+        };
     } finally {
         finish(sessionID, controller);
         Status.set(sessionID, { type: "idle" });
@@ -325,7 +387,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<Message.WithParts> {
 // 1. 校验目标 session 存在
 // 2. 先落库用户消息，再启动推理循环
 export const prompt = fn(PromptInput, async (input) => {
-    const session = Session.DataBaseRead("sessions", input.sessionID);
+    const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
     if (!session) {
         throw new Error(`Session '${input.sessionID}' was not found.`);
     }
@@ -359,6 +421,7 @@ export const prompt = fn(PromptInput, async (input) => {
     }
 
     let userMessage: Awaited<ReturnType<typeof createUserMessage>>
+    let turn: Orchestrator.TurnContext | undefined
 
 
     try {
@@ -374,17 +437,44 @@ export const prompt = fn(PromptInput, async (input) => {
     }
 
     try {
+        turn = Orchestrator.startTurn({
+            sessionID: input.sessionID,
+            userMessageID: userMessage.messageinfo.id,
+            agent: userMessage.messageinfo.agent,
+            model: userMessage.messageinfo.model,
+        })
+
+        turn.emit("message.recorded", {
+            message: userMessage.messageinfo,
+        })
+
+        for (const part of userMessage.parts) {
+            if (part.type === "snapshot") {
+                turn.emit("snapshot.captured", {
+                    part,
+                    phase: "turn-start",
+                })
+                continue
+            }
+
+            turn.emit("part.recorded", {
+                part,
+            })
+        }
+
         const result = await runLoop({
             sessionID: input.sessionID,
             abort: controller.signal,
             controller,
+            turn,
         });
 
         await persistDiffArtifacts({
             sessionID: input.sessionID,
             userMessageID: userMessage.messageinfo.id,
             snapshot: baselineSnapshot,
-            assistantMessageID: result.info.role === "assistant" ? result.info.id : undefined,
+            assistantMessageID: result.latest.info.role === "assistant" ? result.latest.info.id : undefined,
+            turn,
         }).catch((error) => {
             log.warn("failed to persist prompt diff artifacts", {
                 sessionID: input.sessionID,
@@ -392,7 +482,14 @@ export const prompt = fn(PromptInput, async (input) => {
             })
         })
 
-        return result
+        turn.emit("turn.completed", {
+            status: result.status,
+            finishReason: result.finishReason,
+            message: result.latest.info,
+            parts: result.latest.parts,
+        })
+
+        return result.latest
     } catch (error) {
         const latestAssistant = latestAssistantWithPartsAfter(
             input.sessionID,
@@ -403,6 +500,7 @@ export const prompt = fn(PromptInput, async (input) => {
             userMessageID: userMessage.messageinfo.id,
             snapshot: baselineSnapshot,
             assistantMessageID: latestAssistant?.info.role === "assistant" ? latestAssistant.info.id : undefined,
+            turn,
         }).catch((persistError) => {
             log.warn("failed to persist prompt diff artifacts after error", {
                 sessionID: input.sessionID,
@@ -410,7 +508,21 @@ export const prompt = fn(PromptInput, async (input) => {
             })
         })
 
+        if (turn) {
+            turn.emit("turn.failed", {
+                error: error instanceof Error ? error.message : String(error),
+                message: latestAssistant?.info,
+                parts: latestAssistant?.parts,
+            })
+        }
+
         throw error
+    } finally {
+        if (turn) {
+            Orchestrator.finishTurn(turn)
+        }
+        finish(input.sessionID, controller)
+        Status.set(input.sessionID, { type: "idle" })
     }
 });
 
@@ -420,7 +532,7 @@ export const ResumeInput = z.object({
 
 // resume 不创建新的 user message，只尝试继续推进既有会话。
 export const resume = fn(ResumeInput, async (input) => {
-    const session = Session.DataBaseRead("sessions", input.sessionID);
+    const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
     if (!session) {
         throw new Error(`Session '${input.sessionID}' was not found.`);
     }
@@ -441,19 +553,30 @@ export const resume = fn(ResumeInput, async (input) => {
 
     };
     const latestUser = SessionDiff.findLatestUserMessageWithSnapshot(input.sessionID)
+    let turn: Orchestrator.TurnContext | undefined
 
     try {
+        turn = Orchestrator.startTurn({
+            sessionID: input.sessionID,
+            userMessageID: latestUser?.message.id,
+            agent: latestUser?.message.agent,
+            model: latestUser?.message.model,
+            resume: true,
+        })
+
         const result = await runLoop({
             sessionID: input.sessionID,
             abort: controller.signal,
             controller,
+            turn,
         });
 
         await persistDiffArtifacts({
             sessionID: input.sessionID,
             userMessageID: latestUser?.message.id ?? "",
             snapshot: latestUser?.snapshot,
-            assistantMessageID: result.info.role === "assistant" ? result.info.id : undefined,
+            assistantMessageID: result.latest.info.role === "assistant" ? result.latest.info.id : undefined,
+            turn,
         }).catch((error) => {
             log.warn("failed to persist resume diff artifacts", {
                 sessionID: input.sessionID,
@@ -461,7 +584,14 @@ export const resume = fn(ResumeInput, async (input) => {
             })
         })
 
-        return result
+        turn.emit("turn.completed", {
+            status: result.status,
+            finishReason: result.finishReason,
+            message: result.latest.info,
+            parts: result.latest.parts,
+        })
+
+        return result.latest
     } catch (error) {
         const latestAssistant = latestAssistantWithPartsAfter(
             input.sessionID,
@@ -472,6 +602,7 @@ export const resume = fn(ResumeInput, async (input) => {
             userMessageID: latestUser?.message.id ?? "",
             snapshot: latestUser?.snapshot,
             assistantMessageID: latestAssistant?.info.role === "assistant" ? latestAssistant.info.id : undefined,
+            turn,
         }).catch((persistError) => {
             log.warn("failed to persist resume diff artifacts after error", {
                 sessionID: input.sessionID,
@@ -479,7 +610,21 @@ export const resume = fn(ResumeInput, async (input) => {
             })
         })
 
+        if (turn) {
+            turn.emit("turn.failed", {
+                error: error instanceof Error ? error.message : String(error),
+                message: latestAssistant?.info,
+                parts: latestAssistant?.parts,
+            })
+        }
+
         throw error
+    } finally {
+        if (turn) {
+            Orchestrator.finishTurn(turn)
+        }
+        finish(input.sessionID, controller)
+        Status.set(input.sessionID, { type: "idle" })
     }
 });
 
@@ -487,6 +632,7 @@ type LoopRuntimeInput = {
     sessionID: string
     abort: AbortSignal
     controller: AbortController
+    turn: Orchestrator.TurnContext
 }
 
 // ====================
@@ -604,6 +750,7 @@ async function persistDiffArtifacts(input: {
     userMessageID: string
     snapshot: string | undefined
     assistantMessageID?: string
+    turn?: Orchestrator.TurnContext
 }) {
     if (!input.snapshot || !input.userMessageID) return
 
@@ -615,14 +762,14 @@ async function persistDiffArtifacts(input: {
         ...(message as Message.User),
         diffSummary,
     }
-    await Session.updateMessage(nextUser)
+    await persistMessageRecord(nextUser, input.turn)
 
     if (!input.assistantMessageID) return
 
     const existingPatch = readPatchPart(input.assistantMessageID)
     if (diffSummary.diffs.length === 0) {
         if (existingPatch) {
-            db.deleteById("parts", existingPatch.id)
+            await removePartRecord(existingPatch.id, input.turn, existingPatch.messageID)
         }
         return
     }
@@ -639,6 +786,13 @@ async function persistDiffArtifacts(input: {
         files: diffSummary.diffs.map((diff) => diff.file),
         changes: diffSummary.diffs,
         summary: diffSummary.stats,
+    }
+
+    if (input.turn) {
+        input.turn.emit("patch.generated", {
+            part: patchPart,
+        })
+        return
     }
 
     await Session.updatePart(patchPart)
@@ -707,6 +861,11 @@ function toUserPart(
                 ...base,
                 ...part,
             } as Message.FilePart;
+        case "image":
+            return {
+                ...base,
+                ...part,
+            } as Message.ImagePart;
         case "agent":
             return {
                 ...base,
@@ -756,9 +915,6 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         } satisfies Message.SnapshotPart)
     }
 
-    if (Message.User.safeParse(messageinfo).success) {
-        Session.DataBaseCreate("messages", messageinfo);
-    }
 
     // part 校验失败不会阻断整条消息入库，但会打日志，便于排查调用方传参问题。
     parts.forEach((part, index) => {
@@ -775,10 +931,6 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
             part,
         });
     });
-
-    for (const part of parts) {
-        Session.DataBaseCreate("parts", part);
-    }
 
     return {
         messageinfo,

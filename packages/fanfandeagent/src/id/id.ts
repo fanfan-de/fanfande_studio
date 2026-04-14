@@ -4,6 +4,8 @@ import { randomBytes } from "crypto"
 
 const prefixes = {
   session: "ses",
+  turn: "trn",
+  event: "evt",
   message: "msg",
   permission: "per",
   question: "que",

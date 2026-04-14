@@ -1,4 +1,4 @@
-import type { AssistantTraceItem, AssistantTraceItemKind, Turn, WorkspaceGroup } from "./types"
+import type { AssistantTraceItem, AssistantTraceItemKind, AssistantTurnRuntime, Turn, WorkspaceGroup } from "./types"
 
 const timestamp = (value: string) => new Date(value).getTime()
 
@@ -15,6 +15,16 @@ function traceItem(
     timestamp: timestamp(time),
     label,
     ...details,
+  }
+}
+
+function completedRuntime(time: string): AssistantTurnRuntime {
+  const value = timestamp(time)
+  return {
+    phase: "completed",
+    startedAt: value,
+    updatedAt: value,
+    firstVisibleAt: value,
   }
 }
 
@@ -111,6 +121,7 @@ export const initialConversations: Record<string, Turn[]> = {
       id: "layout-agent-1",
       kind: "assistant",
       timestamp: timestamp("2026-03-31T09:13:00+08:00"),
+      runtime: completedRuntime("2026-03-31T09:13:00+08:00"),
       state: "Shell structure aligned",
       items: [
         traceItem("layout-trace-1", "system", "2026-03-31T09:13:00+08:00", "Prompt", {
@@ -151,6 +162,7 @@ export const initialConversations: Record<string, Turn[]> = {
       id: "chat-agent-1",
       kind: "assistant",
       timestamp: timestamp("2026-03-31T10:08:00+08:00"),
+      runtime: completedRuntime("2026-03-31T10:08:00+08:00"),
       state: "Sidebar direction corrected",
       items: [
         traceItem("chat-trace-1", "system", "2026-03-31T10:08:00+08:00", "Prompt", {
@@ -185,6 +197,7 @@ export const initialConversations: Record<string, Turn[]> = {
       id: "chat-review-1",
       kind: "assistant",
       timestamp: timestamp("2026-03-31T08:36:00+08:00"),
+      runtime: completedRuntime("2026-03-31T08:36:00+08:00"),
       state: "Review lane scoped",
       items: [
         traceItem("review-trace-1", "reasoning", "2026-03-31T08:36:00+08:00", "Reasoning", {
@@ -209,6 +222,7 @@ export const initialConversations: Record<string, Turn[]> = {
       id: "delivery-agent-1",
       kind: "assistant",
       timestamp: timestamp("2026-03-30T18:06:00+08:00"),
+      runtime: completedRuntime("2026-03-30T18:06:00+08:00"),
       state: "Plan ready",
       items: [
         traceItem("plan-trace-1", "system", "2026-03-30T18:06:00+08:00", "System", {

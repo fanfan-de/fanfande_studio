@@ -8,11 +8,13 @@ import { BunProc } from "#bun/index.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Config from "#config/config.ts"
 import * as Env from "#env/env.ts"
+import * as Log from "#util/log.ts"
 
 const OPENAI_SDK_PACKAGE = "@ai-sdk/openai"
 const OPENAI_COMPATIBLE_SDK_PACKAGE = "@ai-sdk/openai-compatible"
 const DEEPSEEK_SDK_PACKAGE = "@ai-sdk/deepseek"
 const PROVIDER_VALIDATION_TIMEOUT_MS = 10_000
+const log = Log.create({ service: "provider" })
 
 // -----------------------------------------------------------------------------
 // 共享的 schema 和对外 DTO
@@ -966,6 +968,14 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
   const baseURL = firstNonEmptyString(provider.options.baseURL, model.api.url)
   const headers = Object.keys(model.headers).length > 0 ? model.headers : undefined
   const loaded = await loadSDKFactory(model.api.npm)
+  log.info("initializing sdk provider", {
+    providerID: model.providerID,
+    modelID: model.id,
+    sdkPackage: model.api.npm,
+    baseURL,
+    apiKeyConfigured: Boolean(provider.key),
+    headersConfigured: Boolean(headers),
+  })
   const sdk = loaded.adapter.create(
     {
       provider,

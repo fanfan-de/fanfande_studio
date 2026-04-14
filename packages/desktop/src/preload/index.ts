@@ -12,11 +12,15 @@ type MenuAnchor = {
   y: number
 }
 type AgentSSEEvent = {
+  id?: string
   event: string
   data: unknown
 }
 type AgentStreamIPCEvent = AgentSSEEvent & {
   streamID: string
+}
+type AgentSessionStreamIPCEvent = AgentSSEEvent & {
+  sessionID: string
 }
 type PtySessionInfo = {
   id: string
@@ -78,6 +82,22 @@ type GitActionResult = {
   stdout: string
   stderr: string
   summary: string
+  url?: string
+}
+type GitCapabilityState = {
+  enabled: boolean
+  reason?: string
+}
+type GitCapabilities = {
+  directory: string
+  root: string | null
+  branch: string | null
+  defaultBranch: string | null
+  isGitRepo: boolean
+  canCommit: GitCapabilityState
+  canPush: GitCapabilityState
+  canCreatePullRequest: GitCapabilityState
+  canCreateBranch: GitCapabilityState
 }
 type SkillInfo = {
   id: string
@@ -99,6 +119,10 @@ type GlobalSkillTree = {
 type GlobalSkillFileDocument = {
   path: string
   content: string
+}
+type ComposerAttachmentInput = {
+  path: string
+  name?: string
 }
 type McpAllowedTools =
   | string[]
@@ -202,10 +226,18 @@ try {
     writePtyInput: (input: { id: string; data: string }) =>
       ipcRenderer.invoke("desktop:write-pty-input", input) as Promise<void>,
     pickProjectDirectory: () => ipcRenderer.invoke("desktop:pick-project-directory") as Promise<string | null>,
-    pickComposerAttachments: () => ipcRenderer.invoke("desktop:pick-composer-attachments") as Promise<string[]>,
-    gitCommit: (input: { directory: string; message: string }) =>
+    pickComposerAttachments: (input?: { allowImage?: boolean; allowPdf?: boolean }) =>
+      ipcRenderer.invoke("desktop:pick-composer-attachments", input) as Promise<string[]>,
+    gitGetCapabilities: (input: { projectID: string; directory: string }) =>
+      ipcRenderer.invoke("desktop:git-get-capabilities", input) as Promise<GitCapabilities>,
+    gitCommit: (input: { projectID: string; directory: string; message: string }) =>
       ipcRenderer.invoke("desktop:git-commit", input) as Promise<GitActionResult>,
-    gitPush: (input: { directory: string }) => ipcRenderer.invoke("desktop:git-push", input) as Promise<GitActionResult>,
+    gitPush: (input: { projectID: string; directory: string }) =>
+      ipcRenderer.invoke("desktop:git-push", input) as Promise<GitActionResult>,
+    gitCreateBranch: (input: { projectID: string; directory: string; name: string }) =>
+      ipcRenderer.invoke("desktop:git-create-branch", input) as Promise<GitActionResult>,
+    gitCreatePullRequest: (input: { projectID: string; directory: string }) =>
+      ipcRenderer.invoke("desktop:git-create-pull-request", input) as Promise<GitActionResult>,
     listFolderWorkspaces: () =>
       ipcRenderer.invoke("desktop:list-folder-workspaces") as Promise<
         Array<{
@@ -540,6 +572,39 @@ try {
           model?: string
           small_model?: string
         }
+        effectiveModel?: {
+          id: string
+          providerID: string
+          name: string
+          family?: string
+          status: "alpha" | "beta" | "deprecated" | "active"
+          available: boolean
+          capabilities: {
+            temperature: boolean
+            reasoning: boolean
+            attachment: boolean
+            toolcall: boolean
+            input: {
+              text: boolean
+              audio: boolean
+              image: boolean
+              video: boolean
+              pdf: boolean
+            }
+            output: {
+              text: boolean
+              audio: boolean
+              image: boolean
+              video: boolean
+              pdf: boolean
+            }
+          }
+          limit: {
+            context: number
+            input?: number
+            output: number
+          }
+        } | null
       }>,
     getProjectSkills: (input: { projectID: string }) =>
       ipcRenderer.invoke("desktop:get-project-skills", input) as Promise<SkillInfo[]>,
@@ -611,7 +676,8 @@ try {
     streamAgentMessage: (input: {
       streamID: string
       sessionID: string
-      text: string
+      text?: string
+      attachments?: ComposerAttachmentInput[]
       system?: string
       agent?: string
       skills?: string[]
@@ -625,9 +691,20 @@ try {
         streamID: string
         requestId?: string
       }>,
+    subscribeAgentSessionStream: (input: { sessionID: string }) =>
+      ipcRenderer.invoke("desktop:subscribe-agent-session-stream", input) as Promise<{
+        sessionID: string
+        lastEventID?: string
+      }>,
+    unsubscribeAgentSessionStream: (input: { sessionID: string }) =>
+      ipcRenderer.invoke("desktop:unsubscribe-agent-session-stream", input) as Promise<{
+        sessionID: string
+        removed: boolean
+      }>,
     sendAgentMessage: (input: {
       sessionID: string
-      text: string
+      text?: string
+      attachments?: ComposerAttachmentInput[]
       system?: string
       agent?: string
       skills?: string[]
@@ -645,6 +722,17 @@ try {
 
       return () => {
         ipcRenderer.removeListener("desktop:agent-stream-event", wrappedListener)
+      }
+    },
+    onAgentSessionStreamEvent: (listener: (event: AgentSessionStreamIPCEvent) => void) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, streamEvent: AgentSessionStreamIPCEvent) => {
+        listener(streamEvent)
+      }
+
+      ipcRenderer.on("desktop:agent-session-stream-event", wrappedListener)
+
+      return () => {
+        ipcRenderer.removeListener("desktop:agent-session-stream-event", wrappedListener)
       }
     },
     onPtyEvent: (listener: (event: PtyIPCEvent) => void) => {

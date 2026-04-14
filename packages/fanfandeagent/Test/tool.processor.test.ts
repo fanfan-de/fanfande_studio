@@ -1,8 +1,41 @@
-import { describe, expect, it, mock } from "bun:test"
+import { afterEach, describe, expect, it, mock } from "bun:test"
+import { Instance } from "#project/instance.ts"
+
+function createTurnRecorder(sessionID: string) {
+  const events: Array<{ type: string; payload: any }> = []
+
+  return {
+    events,
+    turn: {
+      sessionID,
+      turnID: "turn-test",
+      emit(type: string, payload: unknown) {
+        events.push({
+          type,
+          payload: structuredClone(payload),
+        })
+
+        return {
+          eventID: `${type}-${events.length}`,
+          sessionID,
+          turnID: "turn-test",
+          seq: events.length,
+          timestamp: Date.now(),
+          type,
+          payload,
+        }
+      },
+      close() {},
+    } as any,
+  }
+}
 
 describe("processor tool persistence", () => {
-  it("persists structured tool results and tool errors", async () => {
-    const updatedParts: any[] = []
+  afterEach(() => {
+    mock.restore()
+  })
+
+  it("emits structured tool results and tool errors as runtime events", async () => {
     const originalNow = Date.now
     Date.now = () => 1000
 
@@ -89,13 +122,8 @@ describe("processor tool persistence", () => {
         }),
       }))
 
-      mock.module("#session/session.ts", () => ({
-        updatePart: async (part: unknown) => {
-          updatedParts.push(structuredClone(part))
-        },
-      }))
-
       const Processor = await import("#session/processor.ts")
+      const recorded = createTurnRecorder("session-1")
 
       const assistant = {
         id: "assistant-1",
@@ -124,30 +152,42 @@ describe("processor tool persistence", () => {
 
       const processor = Processor.create({
         Assistant: assistant,
+        turn: recorded.turn,
       })
 
       expect(await processor.process({} as never)).toBe("continue")
 
-      const textUpdates = updatedParts.filter((part) => part.type === "text")
-      expect(textUpdates).toHaveLength(2)
-      expect(textUpdates[0]?.text).toBe("hel")
-      expect(textUpdates[1]?.text).toBe("hello!")
+      const textUpdates = recorded.events.filter((event) => event.type === "text.part.delta")
+      expect(textUpdates).toHaveLength(3)
+      expect(textUpdates[0]?.payload.text).toBe("hel")
+      expect(textUpdates[2]?.payload.text).toBe("hello!")
 
-      const completed = updatedParts.find(
-        (part) => part.type === "tool" && part.callID === "tool-1" && part.state?.status === "completed",
+      const completedText = recorded.events.find((event) => event.type === "text.part.completed")
+      expect(completedText?.payload.part.text).toBe("hello!")
+
+      const completed = recorded.events.find(
+        (event) =>
+          event.type === "tool.call.completed" &&
+          event.payload.part.type === "tool" &&
+          event.payload.part.callID === "tool-1" &&
+          event.payload.part.state?.status === "completed",
       )
       expect(completed).toBeDefined()
-      expect(completed.state.output).toBe("alpha")
-      expect(completed.state.title).toBe("Read a.txt")
-      expect(completed.state.metadata).toEqual({ source: "unit" })
-      expect(completed.state.attachments).toHaveLength(1)
+      expect(completed?.payload.part.state.output).toBe("alpha")
+      expect(completed?.payload.part.state.title).toBe("Read a.txt")
+      expect(completed?.payload.part.state.metadata).toEqual({ source: "unit" })
+      expect(completed?.payload.part.state.attachments).toHaveLength(1)
 
-      const failed = updatedParts.find(
-        (part) => part.type === "tool" && part.callID === "tool-2" && part.state?.status === "error",
+      const failed = recorded.events.find(
+        (event) =>
+          event.type === "tool.call.failed" &&
+          event.payload.part.type === "tool" &&
+          event.payload.part.callID === "tool-2" &&
+          event.payload.part.state?.status === "error",
       )
       expect(failed).toBeDefined()
-      expect(failed.state.error).toBe("boom")
-      expect(failed.state.metadata).toEqual({ source: "unit" })
+      expect(failed?.payload.part.state.error).toBe("boom")
+      expect(failed?.payload.part.state.metadata).toEqual({ source: "unit" })
 
       expect(processor.partFromToolCall("tool-1")?.state.status).toBe("completed")
       expect(processor.partFromToolCall("tool-2")?.state.status).toBe("error")
@@ -156,9 +196,7 @@ describe("processor tool persistence", () => {
     }
   })
 
-  it("persists provider-executed tool calls without a prior input-start event", async () => {
-    const updatedParts: any[] = []
-
+  it("emits provider-executed tool calls without a prior input-start event", async () => {
     mock.module("#session/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
@@ -195,13 +233,8 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    mock.module("#session/session.ts", () => ({
-      updatePart: async (part: unknown) => {
-        updatedParts.push(structuredClone(part))
-      },
-    }))
-
     const Processor = await import("#session/processor.ts")
+    const recorded = createTurnRecorder("session-remote")
 
     const assistant = {
       id: "assistant-remote",
@@ -230,22 +263,31 @@ describe("processor tool persistence", () => {
 
     const processor = Processor.create({
       Assistant: assistant,
+      turn: recorded.turn,
     })
 
     expect(await processor.process({} as never)).toBe("continue")
 
-    const running = updatedParts.find(
-      (part) => part.type === "tool" && part.callID === "remote-tool-1" && part.state?.status === "running",
+    const running = recorded.events.find(
+      (event) =>
+        event.type === "tool.call.started" &&
+        event.payload.part.type === "tool" &&
+        event.payload.part.callID === "remote-tool-1" &&
+        event.payload.part.state?.status === "running",
     )
     expect(running).toBeDefined()
-    expect(running.providerExecuted).toBe(true)
+    expect(running?.payload.part.providerExecuted).toBe(true)
 
-    const completed = updatedParts.find(
-      (part) => part.type === "tool" && part.callID === "remote-tool-1" && part.state?.status === "completed",
+    const completed = recorded.events.find(
+      (event) =>
+        event.type === "tool.call.completed" &&
+        event.payload.part.type === "tool" &&
+        event.payload.part.callID === "remote-tool-1" &&
+        event.payload.part.state?.status === "completed",
     )
     expect(completed).toBeDefined()
-    expect(completed.providerExecuted).toBe(true)
-    expect(completed.state.modelOutput).toEqual({
+    expect(completed?.payload.part.providerExecuted).toBe(true)
+    expect(completed?.payload.part.state.modelOutput).toEqual({
       type: "call",
       serverLabel: "remote-search",
       name: "search",
@@ -265,10 +307,7 @@ describe("processor tool persistence", () => {
     })
   })
 
-  it("stops the loop and persists waiting approval state when approval is requested", async () => {
-    const updatedParts: any[] = []
-    const approvalRequests: any[] = []
-
+  it("stops the loop and emits waiting approval state when approval is requested", async () => {
     mock.module("#session/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
@@ -298,65 +337,64 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    mock.module("#session/session.ts", () => ({
-      updatePart: async (part: unknown) => {
-        updatedParts.push(structuredClone(part))
-      },
-    }))
-
-    mock.module("#permission/permission.ts", () => ({
-      registerApprovalRequest: async (payload: unknown) => {
-        approvalRequests.push(structuredClone(payload))
-      },
-    }))
-
     const Processor = await import("#session/processor.ts")
+    const recorded = createTurnRecorder("session-approval")
 
-    const assistant = {
-      id: "assistant-approval",
-      sessionID: "session-approval",
-      role: "assistant",
-      created: Date.now(),
-      parentID: "user-approval",
-      modelID: "test-model",
-      providerID: "test-provider",
-      agent: "plan",
-      path: {
-        cwd: ".",
-        root: ".",
-      },
-      cost: 0,
-      tokens: {
-        input: 0,
-        output: 0,
-        reasoning: 0,
-        cache: {
-          read: 0,
-          write: 0,
-        },
-      },
-    } as any
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const assistant = {
+          id: "msg-assistant-approval",
+          sessionID: "session-approval",
+          role: "assistant",
+          created: Date.now(),
+          parentID: "user-approval",
+          modelID: "test-model",
+          providerID: "test-provider",
+          agent: "plan",
+          path: {
+            cwd: Instance.directory,
+            root: Instance.worktree,
+          },
+          cost: 0,
+          tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: {
+              read: 0,
+              write: 0,
+            },
+          },
+        } as any
 
-    const processor = Processor.create({
-      Assistant: assistant,
+        const processor = Processor.create({
+          Assistant: assistant,
+          turn: recorded.turn,
+        })
+
+        expect(await processor.process({} as never)).toBe("stop")
+        expect(processor.partFromToolCall("tool-approval")?.state.status).toBe("waiting-approval")
+      },
     })
 
-    expect(await processor.process({} as never)).toBe("stop")
-
-    const waiting = updatedParts.find(
-      (part) => part.type === "tool" && part.callID === "tool-approval" && part.state?.status === "waiting-approval",
+    const waiting = recorded.events.find(
+      (event) =>
+        event.type === "tool.call.waiting_approval" &&
+        event.payload.part.type === "tool" &&
+        event.payload.part.callID === "tool-approval" &&
+        event.payload.part.state?.status === "waiting-approval",
     )
-
     expect(waiting).toBeDefined()
-    expect(waiting.state.approvalID).toBe("approval-1")
-    expect(waiting.state.input).toEqual({ path: "a.txt", content: "alpha" })
-    expect(approvalRequests).toHaveLength(1)
-    expect(processor.partFromToolCall("tool-approval")?.state.status).toBe("waiting-approval")
+    expect(waiting?.payload.part.state.approvalID).toBe("approval-1")
+    expect(waiting?.payload.part.state.input).toEqual({ path: "a.txt", content: "alpha" })
+
+    const request = recorded.events.find((event) => event.type === "permission.requested")
+    expect(request).toBeDefined()
+    expect(request?.payload.request.approvalID).toBe("approval-1")
   })
 
   it("stops and fails dangling tool calls when the stream ends without a result", async () => {
-    const updatedParts: any[] = []
-
     mock.module("#session/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
@@ -381,13 +419,8 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    mock.module("#session/session.ts", () => ({
-      updatePart: async (part: unknown) => {
-        updatedParts.push(structuredClone(part))
-      },
-    }))
-
     const Processor = await import("#session/processor.ts")
+    const recorded = createTurnRecorder("session-stuck")
 
     const assistant = {
       id: "assistant-stuck",
@@ -416,16 +449,21 @@ describe("processor tool persistence", () => {
 
     const processor = Processor.create({
       Assistant: assistant,
+      turn: recorded.turn,
     })
 
     expect(await processor.process({} as never)).toBe("stop")
 
-    const failed = updatedParts.find(
-      (part) => part.type === "tool" && part.callID === "tool-stuck" && part.state?.status === "error",
+    const failed = recorded.events.find(
+      (event) =>
+        event.type === "tool.call.failed" &&
+        event.payload.part.type === "tool" &&
+        event.payload.part.callID === "tool-stuck" &&
+        event.payload.part.state?.status === "error",
     )
 
     expect(failed).toBeDefined()
-    expect(failed.state.error).toContain("did not complete")
+    expect(failed?.payload.part.state.error).toContain("did not complete")
     expect(processor.partFromToolCall("tool-stuck")?.state.status).toBe("error")
   })
 })

@@ -11,6 +11,11 @@ const REQUEST_TIMEOUT_MS = 10 * 1000
 
 const log = Log.create({ service: "models.dev" })
 const filepath = path.join(Global.Path.cache, "models.json")
+type DevCatalog = Record<string, DevProvider>
+type CacheSnapshot = {
+    data: DevCatalog
+    signature?: string
+}
 
 // -----------------------------------------------------------------------------
 // 远端 catalog 的 schema
@@ -91,16 +96,42 @@ function apiURL(pathname: string) {
 }
 
 async function readCache() {
+    const signature = await fs
+        .stat(filepath)
+        .then((stat) => `${stat.mtimeMs}:${stat.size}`)
+        .catch(() => undefined)
     const text = await Bun.file(filepath)
         .text()
         .catch(() => undefined)
     if (!text) return undefined
 
     try {
-        return JSON.parse(text) as Record<string, DevProvider>
+        return {
+            data: JSON.parse(text) as DevCatalog,
+            signature,
+        } satisfies CacheSnapshot
     } catch {
         return undefined
     }
+}
+
+let loadedCacheSignature: string | undefined
+
+async function invalidateIfCacheChanged() {
+    if (!loadedCacheSignature) return
+
+    const currentSignature = await fs
+        .stat(filepath)
+        .then((stat) => `${stat.mtimeMs}:${stat.size}`)
+        .catch(() => undefined)
+    if (!currentSignature || currentSignature === loadedCacheSignature) return
+
+    log.info("models.dev cache changed on disk; invalidating in-memory catalog", {
+        previous: loadedCacheSignature,
+        next: currentSignature,
+    })
+    loadedCacheSignature = undefined
+    DevData.reset()
 }
 
 async function fetchRemote() {
@@ -118,13 +149,20 @@ async function fetchRemote() {
     const text = await response.text()
     await fs.mkdir(path.dirname(filepath), { recursive: true })
     await Bun.write(Bun.file(filepath), text)
-    return JSON.parse(text) as Record<string, DevProvider>
+    loadedCacheSignature = await fs
+        .stat(filepath)
+        .then((stat) => `${stat.mtimeMs}:${stat.size}`)
+        .catch(() => undefined)
+    return JSON.parse(text) as DevCatalog
 }
 
 const DevData = lazy.lazy(async () => {
     // 进程内优先复用 lazy 缓存；首次未命中时再去读文件或请求远端。
     const cached = await readCache()
-    if (cached) return cached
+    if (cached) {
+        loadedCacheSignature = cached.signature
+        return cached.data
+    }
     return fetchRemote()
 })
 
@@ -140,14 +178,18 @@ const DevData = lazy.lazy(async () => {
  */
 async function get(): Promise<Record<string, DevProvider>> {
     try {
+        await invalidateIfCacheChanged()
         const result = await DevData()
-        return result as Record<string, DevProvider>
+        return result as DevCatalog
     } catch (error) {
         log.error("Failed to load models.dev catalog", {
             error,
         })
         const cached = await readCache()
-        if (cached) return cached
+        if (cached) {
+            loadedCacheSignature = cached.signature
+            return cached.data
+        }
         throw error
     }
 }

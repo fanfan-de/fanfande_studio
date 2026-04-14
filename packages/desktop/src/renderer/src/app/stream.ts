@@ -4,6 +4,8 @@ import type {
   AssistantTraceItem,
   AssistantTraceStatus,
   AssistantTurn,
+  AssistantTurnPhase,
+  AssistantTurnRuntime,
   LoadedSessionHistoryMessage,
   SessionSummary,
   Turn,
@@ -48,6 +50,68 @@ function createTraceItem(
     id: input.id ?? createID("trace"),
     timestamp: input.timestamp ?? Date.now(),
     ...input,
+  }
+}
+
+function isVisibleAssistantTraceItem(item: AssistantTraceItem) {
+  return item.kind !== "system"
+}
+
+function createAssistantTurnRuntime(input: {
+  phase: AssistantTurnPhase
+  startedAt?: number
+  updatedAt?: number
+  items?: AssistantTraceItem[]
+  toolName?: string
+  approvalRequestID?: string
+  errorMessage?: string
+}): AssistantTurnRuntime {
+  const startedAt = input.startedAt ?? Date.now()
+  const updatedAt = input.updatedAt ?? startedAt
+  const hasVisibleItems = (input.items ?? []).some(isVisibleAssistantTraceItem)
+
+  return {
+    phase: input.phase,
+    startedAt,
+    updatedAt,
+    ...(hasVisibleItems ? { firstVisibleAt: startedAt } : {}),
+    ...(input.toolName ? { toolName: input.toolName } : {}),
+    ...(input.approvalRequestID ? { approvalRequestID: input.approvalRequestID } : {}),
+    ...(input.errorMessage ? { errorMessage: input.errorMessage } : {}),
+  }
+}
+
+function updateAssistantTurnLifecycle(
+  turn: AssistantTurn,
+  input: {
+    phase?: AssistantTurnPhase
+    state?: string
+    updatedAt?: number
+    toolName?: string | null
+    approvalRequestID?: string | null
+    errorMessage?: string | null
+  },
+  items = turn.items,
+): AssistantTurn {
+  const updatedAt = input.updatedAt ?? Date.now()
+  const nextRuntime: AssistantTurnRuntime = {
+    ...turn.runtime,
+    ...(input.phase ? { phase: input.phase } : {}),
+    updatedAt,
+    ...("toolName" in input ? { toolName: input.toolName ?? undefined } : {}),
+    ...("approvalRequestID" in input ? { approvalRequestID: input.approvalRequestID ?? undefined } : {}),
+    ...("errorMessage" in input ? { errorMessage: input.errorMessage ?? undefined } : {}),
+  }
+
+  if (!nextRuntime.firstVisibleAt && items.some(isVisibleAssistantTraceItem)) {
+    nextRuntime.firstVisibleAt = updatedAt
+  }
+
+  return {
+    ...turn,
+    ...(input.state ? { state: input.state } : {}),
+    runtime: nextRuntime,
+    items,
   }
 }
 
@@ -111,10 +175,6 @@ function appendTraceDelta(
     sourceID?: string
   },
 ) {
-  if (input.kind === "text") {
-    return clearStreamingItems(items)
-  }
-
   const nextItems = clearStreamingItems(items)
   const existingIndex = input.sourceID
     ? nextItems.findIndex((item) => item.kind === input.kind && item.sourceID === input.sourceID)
@@ -381,6 +441,44 @@ function extractTextParts(parts: unknown[]) {
     .filter(Boolean)
 }
 
+function extractAttachmentNames(parts: unknown[]) {
+  return parts
+    .map((part) => readRecord(part))
+    .filter((part): part is Record<string, unknown> => Boolean(part))
+    .filter((part) => {
+      const type = readString(part.type)
+      return type === "file" || type === "image"
+    })
+    .map((part) => readString(part.filename) || "Attachment")
+}
+
+function summarizeAttachmentNames(attachmentNames: string[]) {
+  if (attachmentNames.length === 0) return ""
+  if (attachmentNames.length === 1) return attachmentNames[0] ?? "Attachment"
+  return compactText(attachmentNames.join(", "), 140)
+}
+
+export function buildUserTurnText(input: {
+  text?: string
+  attachmentNames?: string[]
+}) {
+  const text = readString(input.text).trim()
+  const attachmentNames = (input.attachmentNames ?? []).filter(Boolean)
+
+  if (attachmentNames.length === 0) {
+    return text || "Sent a non-text message."
+  }
+
+  const attachmentSummary = summarizeAttachmentNames(attachmentNames)
+  if (!text) {
+    return attachmentNames.length === 1
+      ? `Sent attachment: ${attachmentSummary}`
+      : `Sent ${attachmentNames.length} attachments: ${attachmentSummary}`
+  }
+
+  return `${text}\n\nAttachments: ${attachmentSummary}`
+}
+
 function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]) {
   const error = readRecord(info.error)
   if (error) return "Backend request failed"
@@ -392,12 +490,30 @@ function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedS
   return "Session history restored"
 }
 
+function resolveAssistantHistoryPhase(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]): AssistantTurnPhase {
+  const error = readRecord(info.error)
+  if (error) return "failed"
+  if (items.some((item) => item.status === "waiting-approval")) return "waiting_approval"
+  if (items.some((item) => item.status === "running" || item.status === "pending")) return "tool_running"
+  if (items.some((item) => item.kind === "text")) return "completed"
+  return "completed"
+}
+
+function resolveAssistantHistoryToolName(items: AssistantTraceItem[]) {
+  return items.find((item) => item.kind === "tool" && (item.status === "running" || item.status === "pending" || item.status === "waiting-approval"))
+    ?.title
+}
+
 function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
   const textParts = extractTextParts(message.parts)
+  const attachmentNames = extractAttachmentNames(message.parts)
   return {
     id: message.info.id || createID("user"),
     kind: "user",
-    text: textParts.join("\n\n") || "Sent a non-text message.",
+    text: buildUserTurnText({
+      text: textParts.join("\n\n"),
+      attachmentNames,
+    }),
     timestamp: readNumber(message.info.created) || Date.now(),
   } satisfies Turn
 }
@@ -432,10 +548,22 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
     ]
   }
 
+  const runtimePhase = resolveAssistantHistoryPhase(items, message.info)
+  const createdAt = readNumber(message.info.created) || Date.now()
+  const completedAt = readNumber(message.info.completed) || createdAt
+
   return {
     id: message.info.id || createID("assistant"),
     kind: "assistant",
-    timestamp: readNumber(message.info.created) || Date.now(),
+    timestamp: createdAt,
+    runtime: createAssistantTurnRuntime({
+      phase: runtimePhase,
+      startedAt: createdAt,
+      updatedAt: completedAt,
+      items,
+      toolName: resolveAssistantHistoryToolName(items),
+      errorMessage: errorMessage || undefined,
+    }),
     state: resolveAssistantHistoryState(items, message.info),
     items,
     isStreaming: false,
@@ -456,23 +584,55 @@ export function buildTurnsFromHistory(messages: LoadedSessionHistoryMessage[]) {
 export function buildStreamingAssistantTurn(prompt: string): AssistantTurn {
   const compactPrompt = compactText(prompt, 72)
   const turnID = createID("assistant")
+  const items = [
+    createTraceItem({
+      kind: "system",
+      label: "Prompt",
+      title: STREAM_PENDING_PREFIX.replace(":", ""),
+      text: `"${compactPrompt}"`,
+      detail: "Waiting for backend response.",
+      status: "pending",
+      sourceID: `${turnID}:prompt`,
+    }),
+  ]
 
   return {
     id: turnID,
     kind: "assistant",
     timestamp: Date.now(),
+    runtime: createAssistantTurnRuntime({
+      phase: "waiting_first_event",
+      items,
+    }),
     state: "Waiting for agent stream",
-    items: [
-      createTraceItem({
-        kind: "system",
-        label: "Prompt",
-        title: STREAM_PENDING_PREFIX.replace(":", ""),
-        text: `"${compactPrompt}"`,
-        detail: "Waiting for backend response.",
-        status: "pending",
-        sourceID: `${turnID}:prompt`,
-      }),
-    ],
+    items,
+    isStreaming: true,
+  }
+}
+
+export function buildSessionStreamingAssistantTurn(detail = "Replaying backend session activity.") : AssistantTurn {
+  const turnID = createID("assistant")
+  const items = [
+    createTraceItem({
+      kind: "system",
+      label: "System",
+      title: "Reconnecting session stream",
+      detail,
+      status: "pending",
+      sourceID: `${turnID}:prompt`,
+    }),
+  ]
+
+  return {
+    id: turnID,
+    kind: "assistant",
+    timestamp: Date.now(),
+    runtime: createAssistantTurnRuntime({
+      phase: "waiting_first_event",
+      items,
+    }),
+    state: "Waiting for agent stream",
+    items,
     isStreaming: true,
   }
 }
@@ -480,42 +640,107 @@ export function buildStreamingAssistantTurn(prompt: string): AssistantTurn {
 export function buildFailureTurn(message: string, existingTurn?: AssistantTurn): AssistantTurn {
   const turnID = existingTurn?.id ?? createID("assistant")
   const baseItems = clearStreamingItems(settleQueuedPrompt(existingTurn?.items ?? [], turnID, "error"))
+  const updatedAt = Date.now()
+  const items = appendTraceItem(
+    baseItems,
+    createTraceItem({
+      kind: "error",
+      label: "Error",
+      title: "Stream request failed",
+      detail: message,
+      status: "error",
+    }),
+  )
 
   return {
     id: turnID,
     kind: "assistant",
-    timestamp: existingTurn?.timestamp ?? Date.now(),
+    timestamp: existingTurn?.timestamp ?? updatedAt,
+    runtime: existingTurn?.runtime
+      ? {
+          ...existingTurn.runtime,
+          phase: "failed",
+          updatedAt,
+          firstVisibleAt: existingTurn.runtime.firstVisibleAt ?? updatedAt,
+          errorMessage: message,
+        }
+      : createAssistantTurnRuntime({
+          phase: "failed",
+          startedAt: updatedAt,
+          updatedAt,
+          items,
+          errorMessage: message,
+        }),
     state: "Backend request failed",
-    items: appendTraceItem(
-      baseItems,
-      createTraceItem({
-        kind: "error",
-        label: "Error",
-        title: "Stream request failed",
-        detail: message,
-        status: "error",
-      }),
-    ),
+    items,
     isStreaming: false,
   }
 }
 
-export function finalizeStreamAssistantTurn(turn: AssistantTurn): AssistantTurn {
+export function finalizeStreamAssistantTurn(
+  turn: AssistantTurn,
+  input?: {
+    status?: string
+  },
+): AssistantTurn {
   const items = clearStreamingItems(settleQueuedPrompt(turn.items, turn.id))
 
-  if (turn.state === "Backend stream failed" || turn.state === "Backend request failed") {
-    return {
-      ...turn,
+  if (turn.runtime.phase === "failed") {
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: false,
+      },
+      {
+        phase: "failed",
+        state: turn.state,
+      },
       items,
-      isStreaming: false,
-    }
+    )
   }
 
-  return {
-    ...turn,
-    isStreaming: false,
-    state: "Backend response received",
-    items: upsertTraceItem(
+  if (input?.status === "blocked" || items.some((item) => item.status === "waiting-approval")) {
+    const nextItems = upsertTraceItem(
+      items,
+      createTraceItem({
+        id: `${turn.id}-blocked`,
+        sourceID: `${turn.id}:blocked`,
+        kind: "system",
+        label: "System",
+        title: "Approval required",
+        detail: "The backend paused this turn until a permission decision is made.",
+        status: "pending",
+      }),
+    )
+    const waitingTool = nextItems.find((item) => item.kind === "tool" && item.status === "waiting-approval")
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: false,
+      },
+      {
+        phase: "waiting_approval",
+        state: "Waiting for permission approval",
+        toolName: waitingTool?.title ?? null,
+      },
+      nextItems,
+    )
+  }
+
+  return updateAssistantTurnLifecycle(
+    {
+      ...turn,
+      isStreaming: false,
+    },
+    {
+      phase: "completed",
+      state: "Backend response received",
+      toolName: null,
+      approvalRequestID: null,
+      errorMessage: null,
+    },
+    upsertTraceItem(
       items,
       createTraceItem({
         id: `${turn.id}-complete`,
@@ -527,7 +752,7 @@ export function finalizeStreamAssistantTurn(turn: AssistantTurn): AssistantTurn 
         status: "completed",
       }),
     ),
-  }
+  )
 }
 
 export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStreamEvent): AssistantTurn {
@@ -535,12 +760,17 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
   const preparedItems = settleQueuedPrompt(turn.items, turn.id)
 
   if (item.event === "started") {
-    return {
-      ...turn,
-      state: "Agent stream connected",
-      items: appendSystemTrace(preparedItems, turn.id, "Agent stream connected", "Renderer subscribed to live backend updates."),
-      isStreaming: true,
-    }
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: true,
+      },
+      {
+        phase: "reasoning",
+        state: "Agent stream connected",
+      },
+      appendSystemTrace(preparedItems, turn.id, "Agent stream connected", "Renderer subscribed to live backend updates."),
+    )
   }
 
   if (item.event === "delta") {
@@ -550,42 +780,81 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     const sourceID = readString(payload?.partID) || undefined
 
     if (kind === "reasoning") {
-      return {
-        ...turn,
-        state: "Agent is reasoning",
-        items: appendTraceDelta(preparedItems, {
+      return updateAssistantTurnLifecycle(
+        {
+          ...turn,
+          isStreaming: true,
+        },
+        {
+          phase: "reasoning",
+          state: "Agent is reasoning",
+        },
+        appendTraceDelta(preparedItems, {
           kind: "reasoning",
           delta,
           fullText: fullText || undefined,
           sourceID,
         }),
-        isStreaming: true,
-      }
+      )
     }
 
-    return {
-      ...turn,
-      state: "Streaming response",
-      items: appendTraceDelta(preparedItems, {
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: true,
+      },
+      {
+        phase: "responding",
+        state: "Streaming response",
+      },
+      appendTraceDelta(preparedItems, {
         kind: "text",
         delta,
         fullText: fullText || undefined,
         sourceID,
       }),
-      isStreaming: true,
-    }
+    )
   }
 
   if (item.event === "part") {
     const nextItem = buildTraceItemFromPart(payload?.part)
     if (!nextItem) return turn
+    const nextItems = upsertTraceItem(clearStreamingItems(preparedItems), nextItem)
+    const partRecord = readRecord(payload?.part)
+    const partState = readRecord(partRecord?.state)
+    const approvalRequestID = readString(partState?.approvalID) || null
 
-    return {
-      ...turn,
-      state: nextItem.kind === "tool" ? "Running tools" : turn.state,
-      items: upsertTraceItem(clearStreamingItems(preparedItems), nextItem),
-      isStreaming: true,
+    if (nextItem.kind === "tool") {
+      const phase = nextItem.status === "waiting-approval"
+        ? "waiting_approval"
+        : nextItem.status === "running" || nextItem.status === "pending"
+          ? "tool_running"
+          : turn.runtime.phase
+      const state = nextItem.status === "waiting-approval" ? "Waiting for permission approval" : "Running tools"
+
+      return updateAssistantTurnLifecycle(
+        {
+          ...turn,
+          isStreaming: true,
+        },
+        {
+          phase,
+          state,
+          toolName: nextItem.title ?? null,
+          approvalRequestID,
+        },
+        nextItems,
+      )
     }
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: true,
+      },
+      {},
+      nextItems,
+    )
   }
 
   if (item.event === "done") {
@@ -597,27 +866,36 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
       ...turn,
       state: "Backend response received",
       items: nextItems,
+    }, {
+      status: readString(payload?.status) || undefined,
     })
   }
 
   if (item.event === "error") {
     const message = readString(payload?.message) || "Unknown backend error"
+    const nextItems = appendTraceItem(
+      clearStreamingItems(preparedItems),
+      createTraceItem({
+        kind: "error",
+        label: "Error",
+        title: "API stream error",
+        detail: message,
+        status: "error",
+      }),
+    )
 
-    return {
-      ...turn,
-      isStreaming: false,
-      state: "Backend stream failed",
-      items: appendTraceItem(
-        clearStreamingItems(preparedItems),
-        createTraceItem({
-          kind: "error",
-          label: "Error",
-          title: "API stream error",
-          detail: message,
-          status: "error",
-        }),
-      ),
-    }
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: false,
+      },
+      {
+        phase: "failed",
+        state: "Backend stream failed",
+        errorMessage: message,
+      },
+      nextItems,
+    )
   }
 
   return turn
@@ -626,51 +904,56 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
 export function buildAgentTurn(prompt: string, session: SessionSummary, workspaceName: string, platform: string): AssistantTurn {
   const compactPrompt = prompt.replace(/\s+/g, " ").trim()
   const focusLine = compactPrompt.length > 56 ? `${compactPrompt.slice(0, 56)}...` : compactPrompt
+  const items = [
+    createTraceItem({
+      kind: "system",
+      label: "Prompt",
+      title: "Prompt captured",
+      text: `"${focusLine}"`,
+      detail: `Working inside ${workspaceName} / ${session.title}.`,
+      status: "completed",
+    }),
+    createTraceItem({
+      kind: "reasoning",
+      label: "Reasoning",
+      text: "Keep the shell hierarchy obvious before wiring real-time state.",
+    }),
+    createTraceItem({
+      kind: "reasoning",
+      label: "Reasoning",
+      text: "Preserve the Anybox-like restraint while making the assistant output read like an operational trace.",
+    }),
+    createTraceItem({
+      kind: "text",
+      label: "Response",
+      text: `I captured "${focusLine}" and will align the ${workspaceName} context around ${session.title} before deciding which pieces belong in the shell versus the agent lane.`,
+    }),
+    createTraceItem({
+      kind: "patch",
+      label: "Patch",
+      title: "UI shell boundary",
+      detail: "Sidebar, thread lane, and composer keep a clear ownership boundary for later backend wiring.",
+      status: "completed",
+    }),
+    createTraceItem({
+      kind: "system",
+      label: "System",
+      title: "Next direction",
+      detail: `Treat ${platform} as the primary runtime so window and density choices stay desktop-first.`,
+      status: "completed",
+    }),
+  ]
 
   return {
     id: createID("assistant"),
     kind: "assistant",
     timestamp: Date.now(),
+    runtime: createAssistantTurnRuntime({
+      phase: "completed",
+      items,
+    }),
     state: "Implementation draft generated",
-    items: [
-      createTraceItem({
-        kind: "system",
-        label: "Prompt",
-        title: "Prompt captured",
-        text: `"${focusLine}"`,
-        detail: `Working inside ${workspaceName} / ${session.title}.`,
-        status: "completed",
-      }),
-      createTraceItem({
-        kind: "reasoning",
-        label: "Reasoning",
-        text: "Keep the shell hierarchy obvious before wiring real-time state.",
-      }),
-      createTraceItem({
-        kind: "reasoning",
-        label: "Reasoning",
-        text: "Preserve the Anybox-like restraint while making the assistant output read like an operational trace.",
-      }),
-      createTraceItem({
-        kind: "text",
-        label: "Response",
-        text: `I captured "${focusLine}" and will align the ${workspaceName} context around ${session.title} before deciding which pieces belong in the shell versus the agent lane.`,
-      }),
-      createTraceItem({
-        kind: "patch",
-        label: "Patch",
-        title: "UI shell boundary",
-        detail: "Sidebar, thread lane, and composer keep a clear ownership boundary for later backend wiring.",
-        status: "completed",
-      }),
-      createTraceItem({
-        kind: "system",
-        label: "System",
-        title: "Next direction",
-        detail: `Treat ${platform} as the primary runtime so window and density choices stay desktop-first.`,
-        status: "completed",
-      }),
-    ],
+    items,
   }
 }
 

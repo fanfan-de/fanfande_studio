@@ -11,6 +11,11 @@ interface DesktopGlobalSkillTreeNode {
   children?: DesktopGlobalSkillTreeNode[]
 }
 
+interface DesktopComposerAttachmentInput {
+  path: string
+  name?: string
+}
+
 declare global {
   interface Window {
     desktop?: {
@@ -114,22 +119,65 @@ declare global {
       detachPtySession?: (input: { id: string }) => Promise<boolean>
       writePtyInput?: (input: { id: string; data: string }) => Promise<void>
       pickProjectDirectory?: () => Promise<string | null>
-      pickComposerAttachments?: () => Promise<string[]>
-      gitCommit?: (input: { directory: string; message: string }) => Promise<{
+      pickComposerAttachments?: (input?: { allowImage?: boolean; allowPdf?: boolean }) => Promise<string[]>
+      gitGetCapabilities?: (input: { projectID: string; directory: string }) => Promise<{
         directory: string
-        root: string
+        root: string | null
         branch: string | null
-        stdout: string
-        stderr: string
-        summary: string
+        defaultBranch: string | null
+        isGitRepo: boolean
+        canCommit: {
+          enabled: boolean
+          reason?: string
+        }
+        canPush: {
+          enabled: boolean
+          reason?: string
+        }
+        canCreatePullRequest: {
+          enabled: boolean
+          reason?: string
+        }
+        canCreateBranch: {
+          enabled: boolean
+          reason?: string
+        }
       }>
-      gitPush?: (input: { directory: string }) => Promise<{
+      gitCommit?: (input: { projectID: string; directory: string; message: string }) => Promise<{
         directory: string
         root: string
         branch: string | null
         stdout: string
         stderr: string
         summary: string
+        url?: string
+      }>
+      gitPush?: (input: { projectID: string; directory: string }) => Promise<{
+        directory: string
+        root: string
+        branch: string | null
+        stdout: string
+        stderr: string
+        summary: string
+        url?: string
+      }>
+      gitCreateBranch?: (input: { projectID: string; directory: string; name: string }) => Promise<{
+        directory: string
+        root: string
+        branch: string | null
+        stdout: string
+        stderr: string
+        summary: string
+        url?: string
+      }>
+      gitCreatePullRequest?: (input: { projectID: string; directory: string }) => Promise<{
+        directory: string
+        root: string
+        branch: string | null
+        stdout: string
+        stderr: string
+        summary: string
+        url?: string
       }>
       listFolderWorkspaces?: () => Promise<
         Array<{
@@ -584,6 +632,39 @@ declare global {
           model?: string
           small_model?: string
         }
+        effectiveModel?: {
+          id: string
+          providerID: string
+          name: string
+          family?: string
+          status: "alpha" | "beta" | "deprecated" | "active"
+          available: boolean
+          capabilities: {
+            temperature: boolean
+            reasoning: boolean
+            attachment: boolean
+            toolcall: boolean
+            input: {
+              text: boolean
+              audio: boolean
+              image: boolean
+              video: boolean
+              pdf: boolean
+            }
+            output: {
+              text: boolean
+              audio: boolean
+              image: boolean
+              video: boolean
+              pdf: boolean
+            }
+          }
+          limit: {
+            context: number
+            input?: number
+            output: number
+          }
+        } | null
       }>
       getProjectSkills?: (input: { projectID: string }) => Promise<
         Array<{
@@ -788,7 +869,8 @@ declare global {
       streamAgentMessage?: (input: {
         streamID: string
         sessionID: string
-        text: string
+        text?: string
+        attachments?: DesktopComposerAttachmentInput[]
         system?: string
         agent?: string
         skills?: string[]
@@ -803,14 +885,24 @@ declare global {
         streamID: string
         requestId?: string
       }>
+      subscribeAgentSessionStream?: (input: { sessionID: string }) => Promise<{
+        sessionID: string
+        lastEventID?: string
+      }>
+      unsubscribeAgentSessionStream?: (input: { sessionID: string }) => Promise<{
+        sessionID: string
+        removed: boolean
+      }>
       sendAgentMessage?: (input: {
         sessionID: string
-        text: string
+        text?: string
+        attachments?: DesktopComposerAttachmentInput[]
         system?: string
         agent?: string
         skills?: string[]
       }) => Promise<{
         events: Array<{
+          id?: string
           event: string
           data: unknown
         }>
@@ -819,6 +911,15 @@ declare global {
       onAgentStreamEvent?: (
         listener: (event: {
           streamID: string
+          id?: string
+          event: string
+          data: unknown
+        }) => void,
+      ) => () => void
+      onAgentSessionStreamEvent?: (
+        listener: (event: {
+          sessionID: string
+          id?: string
           event: string
           data: unknown
         }) => void,

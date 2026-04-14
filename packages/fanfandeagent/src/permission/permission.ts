@@ -11,6 +11,7 @@ import * as Tool from "#tool/tool.ts"
 import * as ToolRegistry from "#tool/registry.ts"
 import * as Agent from "#agent/agent.ts"
 import * as Message from "#session/message.ts"
+import * as Orchestrator from "#session/orchestrator.ts"
 import * as Session from "#session/session.ts"
 import * as Schema from "#permission/schema.ts"
 
@@ -325,6 +326,10 @@ function decisionToScope(decision: Decision): Schema.ApprovalScope | undefined {
     case "deny":
       return undefined
   }
+}
+
+function requestedResolutionScope(resolution: Schema.RequestResolution) {
+  return resolution.scope ?? decisionToScope(resolution.decision)
 }
 
 function legacyApprovalToDecision(approved: boolean, scope?: Schema.ApprovalScope): Decision {
@@ -750,9 +755,79 @@ function createPermissionPart(input: {
   })
 }
 
+function assistantModelRef(assistant: Message.Assistant) {
+  return {
+    providerID: assistant.providerID,
+    modelID: assistant.modelID,
+  }
+}
+
+function readAssistantMessage(messageID: string) {
+  const message = db.findById("messages", Message.MessageInfo, messageID)
+  if (!message || message.role !== "assistant") return undefined
+  return message
+}
+
+function openPermissionTurn(input: {
+  sessionID: string
+  agent?: string
+  model?: {
+    providerID: string
+    modelID: string
+  }
+  userMessageID?: string
+  turn?: Orchestrator.TurnContext
+}) {
+  const active = input.turn ?? Orchestrator.activeTurn(input.sessionID)
+  if (active) {
+    return {
+      turn: active,
+      managed: false,
+    }
+  }
+
+  return {
+    turn: Orchestrator.startTurn({
+      sessionID: input.sessionID,
+      userMessageID: input.userMessageID,
+      agent: input.agent,
+      model: input.model,
+    }),
+    managed: true,
+  }
+}
+
+function finishManagedTurn(
+  handle: ReturnType<typeof openPermissionTurn>,
+  payload: {
+    status: "completed" | "blocked" | "stopped"
+    finishReason?: string
+    message?: Message.MessageInfo
+    parts?: Message.Part[]
+  },
+) {
+  if (!handle.managed) return
+  handle.turn.emit("turn.completed", payload)
+}
+
+function failManagedTurn(
+  handle: ReturnType<typeof openPermissionTurn>,
+  error: unknown,
+  message?: Message.MessageInfo,
+  parts?: Message.Part[],
+) {
+  if (!handle.managed) return
+  handle.turn.emit("turn.failed", {
+    error: normalizeExecutionError(error),
+    message,
+    parts,
+  })
+}
+
 export async function registerApprovalRequest(input: {
   assistant: Message.Assistant
   toolPart: Message.ToolPart
+  turn?: Orchestrator.TurnContext
 }) {
   ensurePermissionTables()
   if (input.toolPart.state.status !== "waiting-approval") {
@@ -836,20 +911,52 @@ export async function registerApprovalRequest(input: {
     createdAt: Date.now(),
   })
 
-  db.insertOneWithSchema("permission_requests", record, Schema.Request)
-  await Session.updatePart(
-    createPermissionPart({
-      sessionID: record.sessionID,
-      messageID: record.messageID,
-      approvalID: record.approvalID,
-      toolCallID: record.toolCallID,
-      tool: record.tool,
-      action: "ask",
-      reason: decision.reason,
-    }),
-  )
+  const part = createPermissionPart({
+    sessionID: record.sessionID,
+    messageID: record.messageID,
+    approvalID: record.approvalID,
+    toolCallID: record.toolCallID,
+    tool: record.tool,
+    action: "ask",
+    reason: decision.reason,
+  })
 
-  return record
+  const handle = openPermissionTurn({
+    sessionID: record.sessionID,
+    userMessageID: input.assistant.parentID || undefined,
+    agent: input.assistant.agent,
+    model: assistantModelRef(input.assistant),
+    turn: input.turn,
+  })
+
+  try {
+    if (handle.managed) {
+      handle.turn.emit("tool.call.waiting_approval", {
+        part: input.toolPart,
+      })
+    }
+
+    handle.turn.emit("permission.requested", {
+      request: record,
+      part,
+    })
+
+    finishManagedTurn(handle, {
+      status: "blocked",
+      finishReason: "tool-approval",
+      message: input.assistant,
+      parts: [input.toolPart, part],
+    })
+
+    return record
+  } catch (error) {
+    failManagedTurn(handle, error, input.assistant, [input.toolPart, part])
+    throw error
+  } finally {
+    if (handle.managed) {
+      Orchestrator.finishTurn(handle.turn)
+    }
+  }
 }
 
 function ensureRequestResolutionRecord(request: Request): Schema.RequestResolutionRecord | undefined {
@@ -861,7 +968,7 @@ function ensureRequestResolutionRecord(request: Request): Schema.RequestResoluti
     decision,
     note: request.resolutionReason,
     approved: decisionToApproved(decision),
-    scope: decisionToScope(decision),
+    scope: request.resolutionScope ?? decisionToScope(decision),
     resolvedAt: request.resolvedAt,
   })
 }
@@ -906,9 +1013,7 @@ function toRequestPromptView(request: Request): Schema.RequestPromptView {
 }
 
 function approvalRuleFromRequest(request: Request, resolution: Schema.RequestResolution): Schema.RuleInput | undefined {
-  if (!decisionToApproved(resolution.decision)) return undefined
-
-  const scope = decisionToScope(resolution.decision)
+  const scope = requestedResolutionScope(resolution)
   if (!scope || scope === "once") return undefined
 
   return Schema.RuleInput.parse({
@@ -921,7 +1026,7 @@ function approvalRuleFromRequest(request: Request, resolution: Schema.RequestRes
     projectID: scope === "project" ? request.projectID : undefined,
     sessionID: scope === "session" ? request.sessionID : undefined,
     agent: scope === "session" ? request.agent : undefined,
-    effect: "allow",
+    effect: decisionToApproved(resolution.decision) ? "allow" : "deny",
     tools: [request.tool],
     toolKinds: request.toolKind ? [request.toolKind] : undefined,
     paths: request.resource?.paths,
@@ -964,7 +1069,10 @@ function toAttachmentPart(
   })
 }
 
-async function completeApprovedRequest(request: Request) {
+async function completeApprovedRequest(
+  request: Request,
+  turn?: Orchestrator.TurnContext,
+) {
   const session = Session.DataBaseRead("sessions", request.sessionID) as Session.SessionInfo | null
   if (!session) {
     throw new Error(`Session '${request.sessionID}' not found.`)
@@ -1017,7 +1125,13 @@ async function completeApprovedRequest(request: Request) {
           },
         })
 
-        await Session.updatePart(completed)
+        if (turn) {
+          turn.emit("tool.call.completed", {
+            part: completed,
+          })
+        } else {
+          await Session.updatePart(completed)
+        }
         return completed
       } catch (error) {
         const failed = Message.ToolPart.parse({
@@ -1034,14 +1148,23 @@ async function completeApprovedRequest(request: Request) {
           },
         })
 
-        await Session.updatePart(failed)
+        if (turn) {
+          turn.emit("tool.call.failed", {
+            part: failed,
+          })
+        } else {
+          await Session.updatePart(failed)
+        }
         return failed
       }
     },
   })
 }
 
-async function denyApprovedRequest(request: Request) {
+async function denyApprovedRequest(
+  request: Request,
+  turn?: Orchestrator.TurnContext,
+) {
   const existing = findToolPart(request.sessionID, request.toolCallID)
   if (!existing || existing.state.status !== "waiting-approval") {
     throw new Error(`Waiting approval tool call '${request.toolCallID}' was not found.`)
@@ -1062,7 +1185,13 @@ async function denyApprovedRequest(request: Request) {
     },
   })
 
-  await Session.updatePart(denied)
+  if (turn) {
+    turn.emit("tool.call.denied", {
+      part: denied,
+    })
+  } else {
+    await Session.updatePart(denied)
+  }
   return denied
 }
 
@@ -1080,9 +1209,9 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
   }
 
   const approved = decisionToApproved(resolution.decision)
-  const scope = decisionToScope(resolution.decision)
+  const scope = requestedResolutionScope(resolution)
 
-  const next = Schema.Request.parse({
+  let next = Schema.Request.parse({
     ...existing,
     status: approved ? "approved" : "denied",
     resolvedAt: Date.now(),
@@ -1097,8 +1226,6 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
     },
   })
 
-  db.updateByIdWithSchema("permission_requests", existing.id, next, Schema.Request)
-
   const part = createPermissionPart({
     sessionID: next.sessionID,
     messageID: next.messageID,
@@ -1109,26 +1236,66 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
     scope,
     reason: resolution.note,
   })
-  await Session.updatePart(part)
 
   const derivedRule = approvalRuleFromRequest(next, resolution)
   const createdRule = derivedRule ? await createRule(derivedRule) : undefined
   if (createdRule) {
-    next.resolution = Schema.RequestResolutionRecord.parse({
-      ...next.resolution,
-      createdRuleID: createdRule.id,
+    next = Schema.Request.parse({
+      ...next,
+      resolution: Schema.RequestResolutionRecord.parse({
+        ...next.resolution,
+        createdRuleID: createdRule.id,
+      }),
     })
-    db.updateByIdWithSchema("permission_requests", existing.id, next, Schema.Request)
   }
 
-  if (approved) {
-    await completeApprovedRequest(next)
-  } else {
-    await denyApprovedRequest(next)
-  }
+  const assistant = readAssistantMessage(next.messageID)
+  const handle = openPermissionTurn({
+    sessionID: next.sessionID,
+    userMessageID: assistant?.parentID || undefined,
+    agent: assistant?.agent ?? next.agent,
+    model: assistant ? assistantModelRef(assistant) : undefined,
+  })
 
-  return {
-    request: next,
-    rule: createdRule,
+  let latestToolPart: Message.ToolPart | undefined
+  try {
+    handle.turn.emit("permission.resolved", {
+      request: next,
+      part,
+      rule: createdRule,
+    })
+
+    if (approved) {
+      const waiting = findToolPart(next.sessionID, next.toolCallID)
+      if (!waiting || waiting.state.status !== "waiting-approval") {
+        throw new Error(`Waiting approval tool call '${next.toolCallID}' was not found.`)
+      }
+
+      handle.turn.emit("tool.call.approved", {
+        part: waiting,
+      })
+      latestToolPart = await completeApprovedRequest(next, handle.turn)
+    } else {
+      latestToolPart = await denyApprovedRequest(next, handle.turn)
+    }
+
+    finishManagedTurn(handle, {
+      status: "completed",
+      finishReason: approved ? "approval-resolved" : "approval-denied",
+      message: assistant,
+      parts: latestToolPart ? [part, latestToolPart] : [part],
+    })
+
+    return {
+      request: next,
+      rule: createdRule,
+    }
+  } catch (error) {
+    failManagedTurn(handle, error, assistant, latestToolPart ? [part, latestToolPart] : [part])
+    throw error
+  } finally {
+    if (handle.managed) {
+      Orchestrator.finishTurn(handle.turn)
+    }
   }
 }

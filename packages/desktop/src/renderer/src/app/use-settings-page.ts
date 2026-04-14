@@ -21,9 +21,19 @@ interface LoadSettingsOptions {
 
 interface UseSettingsPageOptions {
   onMcpUpdated?: () => void | Promise<void>
+  onProviderModelsUpdated?: () => void | Promise<void>
   projectID: string | null
   projectName?: string | null
   projectWorktree?: string | null
+}
+
+type ProviderMutationPayload = {
+  name?: string
+  env?: string[]
+  options?: {
+    apiKey?: string
+    baseURL?: string
+  }
 }
 
 function normalizeSelection(selection?: { model?: string; small_model?: string }): ProjectModelSelection {
@@ -240,11 +250,36 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     void loadSettingsData()
   }, [isOpen, options.projectID])
 
+  function resolveProjectProviderSettingsProjectID() {
+    const projectID = options.projectID?.trim()
+    if (!projectID) return null
+
+    if (
+      window.desktop?.getProjectProviderCatalog &&
+      window.desktop?.getProjectModels &&
+      window.desktop?.updateProjectProvider &&
+      window.desktop?.deleteProjectProvider &&
+      window.desktop?.updateProjectModelSelection
+    ) {
+      return projectID
+    }
+
+    return null
+  }
+
   async function notifyMcpUpdated() {
     try {
       await options.onMcpUpdated?.()
     } catch (error) {
       console.error("[desktop] global MCP sync failed:", error)
+    }
+  }
+
+  async function notifyProviderModelsUpdated() {
+    try {
+      await options.onProviderModelsUpdated?.()
+    } catch (error) {
+      console.error("[desktop] composer model sync failed:", error)
     }
   }
 
@@ -255,7 +290,15 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }, [activeMcpServerID, isOpen, options.projectID])
 
   async function loadSettingsData(optionsArg?: LoadSettingsOptions) {
-    if (!window.desktop?.getGlobalProviderCatalog || !window.desktop?.getGlobalModels || !window.desktop?.getGlobalMcpServers) {
+    const projectID = resolveProjectProviderSettingsProjectID()
+    const loadProviderCatalog = projectID
+      ? () => window.desktop!.getProjectProviderCatalog!({ projectID })
+      : window.desktop?.getGlobalProviderCatalog
+    const loadModels = projectID
+      ? () => window.desktop!.getProjectModels!({ projectID })
+      : window.desktop?.getGlobalModels
+
+    if (!loadProviderCatalog || !loadModels || !window.desktop?.getGlobalMcpServers) {
       setLoadError("Desktop provider settings APIs are unavailable.")
       setCatalog([])
       setModels([])
@@ -275,8 +318,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     try {
       const [nextCatalog, modelPayload, nextMcpServers] = await Promise.all([
-        window.desktop.getGlobalProviderCatalog(),
-        window.desktop.getGlobalModels(),
+        loadProviderCatalog(),
+        loadModels(),
         window.desktop.getGlobalMcpServers(),
       ])
 
@@ -408,7 +451,22 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function saveProvider(providerID: string) {
-    if (!window.desktop?.updateGlobalProvider) return false
+    const projectID = resolveProjectProviderSettingsProjectID()
+    const updateProvider = projectID
+      ? (provider: ProviderMutationPayload) =>
+          window.desktop!.updateProjectProvider!({
+            projectID,
+            providerID,
+            provider,
+          })
+      : window.desktop?.updateGlobalProvider
+        ? (provider: ProviderMutationPayload) =>
+            window.desktop!.updateGlobalProvider!({
+              providerID,
+              provider,
+            })
+        : null
+    if (!updateProvider) return false
 
     const provider = catalog.find((item) => item.id === providerID)
     if (!provider) return false
@@ -459,11 +517,9 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setMessage(null)
 
     try {
-      await window.desktop.updateGlobalProvider({
-        providerID,
-        provider: nextProvider,
-      })
+      await updateProvider(nextProvider)
       await loadSettingsData({ silent: true })
+      await notifyProviderModelsUpdated()
       setMessage({
         tone: "success",
         text: "Provider settings saved.",
@@ -481,16 +537,28 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function deleteProvider(providerID: string) {
-    if (!window.desktop?.deleteGlobalProvider) return
+    const projectID = resolveProjectProviderSettingsProjectID()
+    const removeProvider = projectID
+      ? () =>
+          window.desktop!.deleteProjectProvider!({
+            projectID,
+            providerID,
+          })
+      : window.desktop?.deleteGlobalProvider
+        ? () =>
+            window.desktop!.deleteGlobalProvider!({
+              providerID,
+            })
+        : null
+    if (!removeProvider) return
 
     setDeletingProviderID(providerID)
     setMessage(null)
 
     try {
-      await window.desktop.deleteGlobalProvider({
-        providerID,
-      })
+      await removeProvider()
       await loadSettingsData({ silent: true })
+      await notifyProviderModelsUpdated()
       setMessage({
         tone: "success",
         text: "Provider settings reset.",
@@ -506,17 +574,29 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function saveSelection() {
-    if (!window.desktop?.updateGlobalModelSelection) return
+    const projectID = resolveProjectProviderSettingsProjectID()
+    const updateModelSelection = projectID
+      ? (selection: { model?: string | null; small_model?: string | null }) =>
+          window.desktop!.updateProjectModelSelection!({
+            projectID,
+            ...selection,
+          })
+      : window.desktop?.updateGlobalModelSelection
+        ? (selection: { model?: string | null; small_model?: string | null }) =>
+            window.desktop!.updateGlobalModelSelection!(selection)
+        : null
+    if (!updateModelSelection) return
 
     setIsSavingSelection(true)
     setMessage(null)
 
     try {
-      await window.desktop.updateGlobalModelSelection({
+      await updateModelSelection({
         model: selectionDraft.model,
         small_model: selectionDraft.smallModel,
       })
       setSavedSelection(selectionDraft)
+      await notifyProviderModelsUpdated()
       setMessage({
         tone: "success",
         text: "Model settings saved.",

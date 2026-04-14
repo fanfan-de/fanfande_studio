@@ -27,6 +27,7 @@ import * as db from "#database/Sqlite.ts"
 import type * as Agent from "#agent/agent.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Permission from "#permission/schema.ts"
+import * as Log from "#util/log.ts"
 
 export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
 export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
@@ -49,6 +50,26 @@ export const APIError = NamedError.create(
     }),
 )
 export type APIError = z.infer<typeof APIError.Schema>
+
+const log = Log.create({ service: "session.message" })
+
+function summarizeAttachmentPartForLog(part: FilePart | ImagePart) {
+    return {
+        type: part.type,
+        mime: part.mime,
+        filename: part.filename,
+        urlScheme: part.url.startsWith("data:") ? "data" : "remote",
+    }
+}
+
+function summarizeModelCapabilitiesForLog(model: Provider.Model) {
+    return {
+        attachment: model.capabilities.attachment,
+        imageInput: model.capabilities.input.image,
+        pdfInput: model.capabilities.input.pdf,
+        reasoning: model.capabilities.reasoning,
+    }
+}
 
 const PartBase = z.object({
     id: z.string(),
@@ -641,6 +662,19 @@ export async function toModelMessages(
 ): Promise<ModelMessage[]> {
     const result: ModelMessage[] = []
     const toolRuntimeCache = new Map<string, Promise<any | undefined>>()
+    const modelLabel = `${model.providerID}/${model.id}`
+    const imageCount = input.reduce((count, item) => count + item.parts.filter((part) => part.type === "image").length, 0)
+    const fileCount = input.reduce((count, item) => count + item.parts.filter((part) => part.type === "file").length, 0)
+
+    if (imageCount > 0 || fileCount > 0) {
+        log.info("preparing model messages with attachments", {
+            model: modelLabel,
+            messageCount: input.length,
+            imageCount,
+            fileCount,
+            capabilities: summarizeModelCapabilitiesForLog(model),
+        })
+    }
 
     async function getToolModules() {
         const [toolModule, registryModule] = await Promise.all([
@@ -651,6 +685,41 @@ export async function toModelMessages(
         return {
             Tool: toolModule,
             ToolRegistry: registryModule,
+        }
+    }
+
+    function unsupportedAttachmentMessage(part: FilePart | ImagePart, model: Provider.Model) {
+        if (part.type === "image") {
+            if (!model.capabilities.input.image) {
+                const message = `Model '${modelLabel}' does not support image input. Select a multimodal model before sending images.`
+                log.warn("image attachment rejected by model capabilities", {
+                    model: modelLabel,
+                    part: summarizeAttachmentPartForLog(part),
+                    capabilities: summarizeModelCapabilitiesForLog(model),
+                })
+                return message
+            }
+            return
+        }
+
+        if (!model.capabilities.attachment) {
+            const message = `Model '${modelLabel}' does not support file attachments.`
+            log.warn("file attachment rejected by model capabilities", {
+                model: modelLabel,
+                part: summarizeAttachmentPartForLog(part),
+                capabilities: summarizeModelCapabilitiesForLog(model),
+            })
+            return message
+        }
+
+        if (part.mime.toLowerCase() === "application/pdf" && !model.capabilities.input.pdf) {
+            const message = `Model '${modelLabel}' does not support PDF input. Select a model with PDF support before sending PDFs.`
+            log.warn("pdf attachment rejected by model capabilities", {
+                model: modelLabel,
+                part: summarizeAttachmentPartForLog(part),
+                capabilities: summarizeModelCapabilitiesForLog(model),
+            })
+            return message
         }
     }
 
@@ -669,20 +738,33 @@ export async function toModelMessages(
                     text: part.text,
                 }
             case "file":
-                if (!model.capabilities.attachment) return null
+                {
+                    const message = unsupportedAttachmentMessage(part, model)
+                    if (message) throw new Error(message)
+                }
+                log.info("converting file attachment for model input", {
+                    model: modelLabel,
+                    part: summarizeAttachmentPartForLog(part),
+                })
                 return {
                     type: "file" as const,
-                    mime: part.mime,
-                    url: part.url,
+                    data: part.url,
+                    mediaType: part.mime,
                     filename: part.filename,
                 }
             case "image":
-                if (!model.capabilities.attachment) return null
+                {
+                    const message = unsupportedAttachmentMessage(part, model)
+                    if (message) throw new Error(message)
+                }
+                log.info("converting image attachment for model input", {
+                    model: modelLabel,
+                    part: summarizeAttachmentPartForLog(part),
+                })
                 return {
                     type: "image" as const,
-                    mime: part.mime,
-                    url: part.url,
-                    filename: part.filename,
+                    image: part.url,
+                    mediaType: part.mime,
                 }
             case "tool":
             case "permission":

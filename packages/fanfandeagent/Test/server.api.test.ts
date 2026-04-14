@@ -5,10 +5,13 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServerApp } from "#server/server.ts"
-import { createSessionExecutionStream, emitUpdatedAssistantSessionParts, seedSeenSessionParts } from "#server/routes/session.ts"
+import { createSessionExecutionStream } from "#server/routes/session.ts"
 import * as Identifier from "#id/id.ts"
+import * as EventStore from "#session/event-store.ts"
 import * as Message from "#session/message.ts"
 import * as Session from "#session/session.ts"
+import * as LiveStreamHub from "#session/live-stream-hub.ts"
+import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Env from "#env/env.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {
@@ -62,6 +65,40 @@ type DeleteSessionResponseEnvelope = JsonEnvelope<{
 type DeleteProjectResponseEnvelope = JsonEnvelope<{
   projectID: string
   deletedSessionIDs: string[]
+}>
+
+type GitCapabilitiesEnvelope = JsonEnvelope<{
+  directory: string
+  root: string | null
+  branch: string | null
+  defaultBranch: string | null
+  isGitRepo: boolean
+  canCommit: {
+    enabled: boolean
+    reason?: string
+  }
+  canPush: {
+    enabled: boolean
+    reason?: string
+  }
+  canCreatePullRequest: {
+    enabled: boolean
+    reason?: string
+  }
+  canCreateBranch: {
+    enabled: boolean
+    reason?: string
+  }
+}>
+
+type GitActionEnvelope = JsonEnvelope<{
+  directory: string
+  root: string
+  branch: string | null
+  stdout: string
+  stderr: string
+  summary: string
+  url?: string
 }>
 
 type SessionMessagesResponseEnvelope = JsonEnvelope<
@@ -279,6 +316,17 @@ async function createGitRepo(root: string, seed: string) {
   await $`git commit -m init`.cwd(root).quiet()
 }
 
+async function createBareGitRemote(root: string) {
+  await mkdir(root, { recursive: true })
+  await $`git init --bare`.cwd(root).quiet()
+}
+
+async function attachTrackedRemote(root: string, branch: string, remoteRoot: string) {
+  await $`git branch -M ${branch}`.cwd(root).quiet()
+  await $`git remote add origin ${remoteRoot}`.cwd(root).quiet()
+  await $`git push -u origin ${branch}`.cwd(root).quiet()
+}
+
 function mockModelsDevFetch(
   validationHandler?: (input: { url: string; headers: Headers }) => Response | Promise<Response> | undefined,
 ) {
@@ -370,6 +418,45 @@ async function withTemporaryEnv<T>(
         Env.set(key, value)
       }
     }
+  }
+}
+
+async function readStreamUntil(
+  response: Response,
+  contains: string[],
+  maxReads = 12,
+) {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error("Expected streaming response body")
+  }
+
+  const decoder = new TextDecoder()
+  let raw = ""
+
+  try {
+    for (let index = 0; index < maxReads; index += 1) {
+      const next = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("Timed out while reading stream")), 2000)
+        }),
+      ])
+
+      if (next.done) {
+        break
+      }
+
+      raw += decoder.decode(next.value, { stream: true })
+      if (contains.every((pattern) => raw.includes(pattern))) {
+        break
+      }
+    }
+
+    raw += decoder.decode()
+    return raw
+  } finally {
+    await reader.cancel().catch(() => undefined)
   }
 }
 
@@ -1160,6 +1247,166 @@ describe("server api", () => {
     }
   })
 
+  test("project git routes should report capabilities, commit changes, and create branches", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-project-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "git-project")
+      await writeFile(join(repositoryRoot, "README.md"), "# git-project\nupdated\n")
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const capabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(capabilitiesResponse.status).toBe(200)
+      expect(capabilitiesBody.data).toMatchObject({
+        directory: repositoryRoot,
+        root: repositoryRoot,
+        isGitRepo: true,
+        canCommit: {
+          enabled: true,
+        },
+        canPush: {
+          enabled: false,
+        },
+        canCreateBranch: {
+          enabled: true,
+        },
+        canCreatePullRequest: {
+          enabled: false,
+        },
+      })
+
+      const commitResponse = await app.request(`http://localhost/api/projects/${projectID}/git/commit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          directory: repositoryRoot,
+          message: "chore: update readme",
+        }),
+      })
+      const commitBody = (await commitResponse.json()) as GitActionEnvelope
+
+      expect(commitResponse.status).toBe(200)
+      expect(commitBody.data?.root).toBe(repositoryRoot)
+      expect(commitBody.data?.summary).toContain("Committed")
+
+      const postCommitCapabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const postCommitCapabilitiesBody = (await postCommitCapabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(postCommitCapabilitiesResponse.status).toBe(200)
+      expect(postCommitCapabilitiesBody.data?.canCommit.enabled).toBe(false)
+
+      const branchResponse = await app.request(`http://localhost/api/projects/${projectID}/git/branches`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          directory: repositoryRoot,
+          name: "feature/git-menu",
+        }),
+      })
+      const branchBody = (await branchResponse.json()) as GitActionEnvelope
+
+      expect(branchResponse.status).toBe(200)
+      expect(branchBody.data?.branch).toBe("feature/git-menu")
+      expect(branchBody.data?.summary).toContain("feature/git-menu")
+
+      const branchCapabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const branchCapabilitiesBody = (await branchCapabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(branchCapabilitiesResponse.status).toBe(200)
+      expect(branchCapabilitiesBody.data?.branch).toBe("feature/git-menu")
+      expect(branchCapabilitiesBody.data?.canPush.enabled).toBe(false)
+      expect(branchCapabilitiesBody.data?.canCreatePullRequest.enabled).toBe(false)
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project git capabilities should enable push for a tracked branch with outgoing commits", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-push-project-"))
+    const remoteRoot = await mkdtemp(join(tmpdir(), "fanfande-git-push-remote-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "git-push-project")
+      await createBareGitRemote(remoteRoot)
+      await attachTrackedRemote(repositoryRoot, "main", remoteRoot)
+      await writeFile(join(repositoryRoot, "README.md"), "# git-push-project\nnext\n")
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const commitResponse = await app.request(`http://localhost/api/projects/${projectID}/git/commit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          directory: repositoryRoot,
+          message: "chore: prepare push",
+        }),
+      })
+
+      expect(commitResponse.status).toBe(200)
+
+      const capabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(capabilitiesResponse.status).toBe(200)
+      expect(capabilitiesBody.data?.branch).toBe("main")
+      expect(capabilitiesBody.data?.canPush.enabled).toBe(true)
+
+      const pushResponse = await app.request(`http://localhost/api/projects/${projectID}/git/push`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          directory: repositoryRoot,
+        }),
+      })
+      const pushBody = (await pushResponse.json()) as GitActionEnvelope
+
+      expect(pushResponse.status).toBe(200)
+      expect(pushBody.data?.summary).toContain("Pushed")
+
+      const postPushCapabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const postPushCapabilitiesBody = (await postPushCapabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(postPushCapabilitiesResponse.status).toBe(200)
+      expect(postPushCapabilitiesBody.data?.canPush.enabled).toBe(false)
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+      await rm(remoteRoot, { recursive: true, force: true })
+    }
+  })
+
   test("GET /api/projects/:id/sessions should return sessions for the project", async () => {
     const app = createServerApp()
     const directory = process.cwd()
@@ -1267,52 +1514,31 @@ describe("server api", () => {
     expect(body.data?.[1]?.parts[0]?.text).toBe("history restored")
   })
 
-  test("stream diff only emits assistant parts created after the stream snapshot", async () => {
-    const app = createServerApp()
-    const directory = process.cwd()
-
-    const createResponse = await app.request("http://localhost/api/sessions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ directory }),
+  test("session execution stream maps runtime events to SSE", async () => {
+    const sessionID = "ses_stream_runtime"
+    const turnID = Identifier.ascending("turn")
+    const messageID = Identifier.ascending("message")
+    const partID = Identifier.ascending("part")
+    const timestamps = [101, 102, 103]
+    const factory = RuntimeEvent.createRuntimeEventFactory({
+      sessionID,
+      turnID,
+      timestamp: () => timestamps.shift() ?? 103,
     })
-    const createBody = (await createResponse.json()) as SessionResponseEnvelope
-    const sessionID = createBody.data?.id
 
-    expect(createResponse.status).toBe(201)
-    expect(sessionID).toBeString()
-
-    const historicalUserMessage: Message.User = {
-      id: Identifier.ascending("message"),
-      sessionID: sessionID!,
-      role: "user",
+    const assistantMessage: Message.Assistant = {
+      id: messageID,
+      sessionID,
+      role: "assistant",
       created: Date.now(),
-      agent: "plan",
-      model: {
-        providerID: "test-provider",
-        modelID: "test-model",
-      },
-    }
-    const historicalUserTextPart: Message.TextPart = {
-      id: Identifier.ascending("part"),
-      sessionID: sessionID!,
-      messageID: historicalUserMessage.id,
-      type: "text",
-      text: "old prompt",
-    }
-    const historicalAssistantMessage: Message.Assistant = {
-      id: Identifier.ascending("message"),
-      sessionID: sessionID!,
-      role: "assistant",
-      created: Date.now() + 1,
-      completed: Date.now() + 2,
-      parentID: historicalUserMessage.id,
+      completed: Date.now() + 1,
+      parentID: Identifier.ascending("message"),
       modelID: "test-model",
       providerID: "test-provider",
       agent: "plan",
       path: {
-        cwd: directory,
-        root: directory,
+        cwd: process.cwd(),
+        root: process.cwd(),
       },
       cost: 0,
       tokens: {
@@ -1324,93 +1550,108 @@ describe("server api", () => {
           write: 0,
         },
       },
+      finishReason: "stop",
     }
-    const historicalAssistantTextPart: Message.TextPart = {
-      id: Identifier.ascending("part"),
-      sessionID: sessionID!,
-      messageID: historicalAssistantMessage.id,
-      type: "text",
-      text: "old answer",
-    }
-
-    Session.DataBaseCreate("messages", historicalUserMessage)
-    Session.DataBaseCreate("parts", historicalUserTextPart)
-    Session.DataBaseCreate("messages", historicalAssistantMessage)
-    Session.DataBaseCreate("parts", historicalAssistantTextPart)
-
-    const seenParts = new Map<string, Message.Part>()
-    seedSeenSessionParts(sessionID!, seenParts)
-
-    const nextAssistantMessage: Message.Assistant = {
-      id: Identifier.ascending("message"),
-      sessionID: sessionID!,
-      role: "assistant",
-      created: Date.now() + 3,
-      completed: Date.now() + 4,
-      parentID: historicalUserMessage.id,
-      modelID: "test-model",
-      providerID: "test-provider",
-      agent: "plan",
-      path: {
-        cwd: directory,
-        root: directory,
-      },
-      cost: 0,
-      tokens: {
-        input: 0,
-        output: 0,
-        reasoning: 0,
-        cache: {
-          read: 0,
-          write: 0,
-        },
-      },
-    }
-    const nextAssistantTextPart: Message.TextPart = {
-      id: Identifier.ascending("part"),
-      sessionID: sessionID!,
-      messageID: nextAssistantMessage.id,
+    const textPart: Message.TextPart = {
+      id: partID,
+      sessionID,
+      messageID,
       type: "text",
       text: "new answer",
+      time: {
+        start: Date.now(),
+        end: Date.now() + 1,
+      },
     }
-
-    Session.DataBaseCreate("messages", nextAssistantMessage)
-    Session.DataBaseCreate("parts", nextAssistantTextPart)
-
-    const streamedEvents: Array<{ event: string; data: unknown }> = []
-    emitUpdatedAssistantSessionParts(sessionID!, seenParts, (event, data) => {
-      streamedEvents.push({ event, data })
-    })
-
-    expect(streamedEvents).toHaveLength(1)
-    expect(streamedEvents[0]?.event).toBe("delta")
-    expect(streamedEvents[0]?.data).toMatchObject({
-      sessionID,
-      messageID: nextAssistantMessage.id,
-      partID: nextAssistantTextPart.id,
+    const startedEvent = factory.next("turn.started", {})
+    const deltaEvent = factory.next("text.part.delta", {
+      messageID,
+      partID,
       kind: "text",
       delta: "new answer",
       text: "new answer",
     })
-    expect(streamedEvents.some((item) => {
-      const data = item.data as { partID?: string; text?: string }
-      return data.partID === historicalAssistantTextPart.id || data.text === "old answer"
-    })).toBe(false)
+    const completedEvent = factory.next("turn.completed", {
+      status: "completed",
+      finishReason: "stop",
+      message: assistantMessage,
+      parts: [textPart],
+    })
+
+    const response = createSessionExecutionStream({
+      sessionID,
+      heartbeatIntervalMs: 50,
+      execute: async () => {
+        LiveStreamHub.publish(startedEvent)
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        LiveStreamHub.publish(deltaEvent)
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        LiveStreamHub.publish(completedEvent)
+
+        return {
+          info: assistantMessage,
+          parts: [textPart],
+        }
+      },
+      cancel: () => {},
+    })
+
+    const raw = await response.text()
+    const completedCursor = RuntimeEvent.serializeCursor(RuntimeEvent.cursorOf(completedEvent))
+
+    expect(raw).toContain("event: started")
+    expect(raw).toContain("event: delta")
+    expect(raw).toContain("event: done")
+    expect(raw).toContain(`"cursor":"`)
+    expect(raw).toContain(`id: ${completedCursor}`)
+    expect(raw).toContain(`"turnID":"${turnID}"`)
+    expect(raw).toContain(`"partID":"${partID}"`)
   })
 
-  test("session execution stream emits keepalive comments while waiting for a long response", async () => {
+  test("session execution stream emits keepalive comments while waiting for runtime events", async () => {
+    const sessionID = "ses_keepalive_runtime"
+    const turnID = Identifier.ascending("turn")
+    const messageID = Identifier.ascending("message")
+    const factory = RuntimeEvent.createRuntimeEventFactory({ sessionID, turnID })
+    const assistantMessage: Message.Assistant = {
+      id: messageID,
+      sessionID,
+      role: "assistant",
+      created: Date.now(),
+      completed: Date.now() + 1,
+      parentID: Identifier.ascending("message"),
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "plan",
+      path: {
+        cwd: process.cwd(),
+        root: process.cwd(),
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+    }
+
     const response = createSessionExecutionStream({
-      sessionID: "session_keepalive",
-      pollIntervalMs: 10,
+      sessionID,
       heartbeatIntervalMs: 20,
       execute: async () => {
+        LiveStreamHub.publish(factory.next("turn.started", {}))
         await new Promise((resolve) => setTimeout(resolve, 60))
+        LiveStreamHub.publish(factory.next("turn.completed", {
+          status: "completed",
+          message: assistantMessage,
+          parts: [],
+        }))
         return {
-          info: {
-            id: "message_keepalive",
-            sessionID: "session_keepalive",
-            role: "assistant",
-          } as Message.MessageInfo,
+          info: assistantMessage,
           parts: [],
         }
       },
@@ -1424,6 +1665,129 @@ describe("server api", () => {
     expect(raw).toContain("event: done")
   })
 
+  test("GET /api/sessions/:id/events/stream replays missed session events across detached turns", async () => {
+    const app = createServerApp()
+    const session = await Session.createSession({
+      directory: process.cwd(),
+      projectID: "project_stream_replay",
+      title: "Replay stream",
+    })
+
+    const turn1ID = Identifier.ascending("turn")
+    const turn2ID = Identifier.ascending("turn")
+    const assistantMessageID = Identifier.ascending("message")
+    const toolPartID = Identifier.ascending("part")
+
+    const assistantMessage: Message.Assistant = {
+      id: assistantMessageID,
+      sessionID: session.id,
+      role: "assistant",
+      created: Date.now(),
+      completed: Date.now() + 1,
+      parentID: Identifier.ascending("message"),
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "plan",
+      path: {
+        cwd: process.cwd(),
+        root: process.cwd(),
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+      finishReason: "tool-approval",
+    }
+
+    const waitingToolPart: Message.ToolPart = {
+      id: toolPartID,
+      sessionID: session.id,
+      messageID: assistantMessageID,
+      type: "tool",
+      callID: "toolcall_stream_replay",
+      tool: "read-file",
+      state: {
+        status: "waiting-approval",
+        approvalID: "approval_stream_replay",
+        input: {
+          path: "README.md",
+        },
+        title: "Read File",
+        time: {
+          start: 301,
+        },
+      },
+    }
+
+    const turn1Factory = RuntimeEvent.createRuntimeEventFactory({
+      sessionID: session.id,
+      turnID: turn1ID,
+      timestamp: () => 200,
+    })
+    const turn2Timestamps = [300, 301, 302]
+    const turn2Factory = RuntimeEvent.createRuntimeEventFactory({
+      sessionID: session.id,
+      turnID: turn2ID,
+      timestamp: () => turn2Timestamps.shift() ?? 302,
+    })
+
+    const turn1Started = turn1Factory.next("turn.started", {})
+    const turn1Completed = turn1Factory.next("turn.completed", {
+      status: "completed",
+      finishReason: "stop",
+      message: assistantMessage,
+      parts: [],
+    })
+    const turn2Started = turn2Factory.next("turn.started", {
+      userMessageID: assistantMessage.parentID,
+      agent: assistantMessage.agent,
+      model: {
+        providerID: assistantMessage.providerID,
+        modelID: assistantMessage.modelID,
+      },
+    })
+    const turn2WaitingApproval = turn2Factory.next("tool.call.waiting_approval", {
+      part: waitingToolPart,
+    })
+    const turn2Completed = turn2Factory.next("turn.completed", {
+      status: "blocked",
+      finishReason: "approval-resolved",
+      message: assistantMessage,
+      parts: [waitingToolPart],
+    })
+
+    EventStore.append(turn1Started)
+    EventStore.append(turn1Completed)
+    EventStore.append(turn2Started)
+    EventStore.append(turn2WaitingApproval)
+    EventStore.append(turn2Completed)
+
+    const since = RuntimeEvent.serializeCursor(RuntimeEvent.cursorOf(turn1Completed))
+    const response = await app.request(
+      `http://localhost/api/sessions/${session.id}/events/stream?since=${encodeURIComponent(since)}`,
+    )
+    const raw = await readStreamUntil(response, [
+      `event: done`,
+      `"turnID":"${turn2ID}"`,
+      `"status":"blocked"`,
+    ])
+
+    expect(response.status).toBe(200)
+    expect(raw).toContain("event: started")
+    expect(raw).toContain("event: part")
+    expect(raw).toContain("event: done")
+    expect(raw).toContain(`id: ${RuntimeEvent.serializeCursor(RuntimeEvent.cursorOf(turn2Started))}`)
+    expect(raw).toContain(`"tool":"read-file"`)
+    expect(raw).toContain(`"turnID":"${turn2ID}"`)
+    expect(raw).not.toContain(`"turnID":"${turn1ID}"`)
+  })
+
   test("GET /api/projects/:id/sessions should return 404 for missing project", async () => {
     const app = createServerApp()
     const response = await app.request("http://localhost/api/projects/project_missing/sessions")
@@ -1432,6 +1796,33 @@ describe("server api", () => {
     expect(response.status).toBe(404)
     expect(body.success).toBe(false)
     expect(body.error?.code).toBe("PROJECT_NOT_FOUND")
+  })
+
+  test("GET /api/projects/:id/sessions should return an empty list for a new project with no sessions", async () => {
+    const app = createServerApp()
+    const directory = await mkdtemp(join(tmpdir(), "fanfande-project-empty-"))
+
+    try {
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectBody.success).toBe(true)
+      expect(projectBody.data?.id).toBeString()
+
+      const response = await app.request(`http://localhost/api/projects/${projectBody.data!.id}/sessions`)
+      const body = (await response.json()) as ProjectSessionsResponseEnvelope
+
+      expect(response.status).toBe(200)
+      expect(body.success).toBe(true)
+      expect(body.data).toEqual([])
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   test("POST /api/projects/:id/sessions should create a session for the project", async () => {

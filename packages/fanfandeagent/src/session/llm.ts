@@ -55,6 +55,35 @@ export type StreamInput = {
 
 export type StreamOutput = StreamTextResult<ToolSet, never>
 
+function summarizeModelMessages(messages: ModelMessage[]) {
+  let userMessages = 0
+  let textParts = 0
+  let imageParts = 0
+  let fileParts = 0
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      userMessages += 1
+    }
+
+    const content = Array.isArray(message.content) ? message.content : []
+    for (const part of content) {
+      if (!part || typeof part !== "object" || !("type" in part)) continue
+      const type = (part as { type?: unknown }).type
+      if (type === "text") textParts += 1
+      if (type === "image") imageParts += 1
+      if (type === "file") fileParts += 1
+    }
+  }
+
+  return {
+    userMessages,
+    textParts,
+    imageParts,
+    fileParts,
+  }
+}
+
 export async function stream(input: StreamInput): Promise<StreamOutput> {
   const l = log
     .clone()
@@ -67,6 +96,13 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   l.info("stream", {
     modelID: input.model.id,
     providerID: input.model.providerID,
+    messageSummary: summarizeModelMessages(input.messages),
+    capabilities: {
+      attachment: input.model.capabilities.attachment,
+      imageInput: input.model.capabilities.input.image,
+      pdfInput: input.model.capabilities.input.pdf,
+      toolcall: input.model.capabilities.toolcall,
+    },
   })
 
 
@@ -144,6 +180,15 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   // 准备工具集，并解析最终使用的语言模型。
   const tools: ToolSet = input.tools ?? {}
   const model = await resolveLanguageModel(input.model)
+  l.info("language model resolved", {
+    messageSummary: summarizeModelMessages(input.messages),
+    capabilities: {
+      attachment: input.model.capabilities.attachment,
+      imageInput: input.model.capabilities.input.image,
+      pdfInput: input.model.capabilities.input.pdf,
+      toolcall: input.model.capabilities.toolcall,
+    },
+  })
 
   // LiteLLM and some Anthropic proxies require the tools parameter to be present
   // when message history contains tool calls, even if no tools are being used.

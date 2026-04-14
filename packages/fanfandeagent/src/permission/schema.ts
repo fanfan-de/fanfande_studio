@@ -176,6 +176,7 @@ export type Request = z.infer<typeof Request>
 export const RequestResolution = z
   .object({
     decision: Decision,
+    scope: ApprovalScope.optional(),
     note: z.string().optional(),
   })
   .meta({

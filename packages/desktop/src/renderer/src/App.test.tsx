@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PermissionRequestPrompt, PermissionResolveResult } from "../../shared/permission"
+import type { LoadedFolderWorkspace } from "./app/types"
 import { App } from "./App"
 
 const styles = readFileSync(resolve(process.cwd(), "src/renderer/src/styles.css"), "utf8")
@@ -20,6 +21,10 @@ function createDeferred<T>() {
 
 function getComposerSendButton() {
   return screen.getByRole("button", { name: /^(Send|Sending) task$|^Resolve approval first$/ })
+}
+
+function getCreateSessionProjectSelect() {
+  return screen.getByRole("combobox", { name: "Session project" })
 }
 
 type PermissionRequestPromptOverrides = Omit<Partial<PermissionRequestPrompt>, "prompt" | "resolution"> & {
@@ -183,6 +188,26 @@ describe("App", () => {
       writePtyInput: vi.fn().mockResolvedValue(undefined),
       pickProjectDirectory: vi.fn().mockResolvedValue(null),
       pickComposerAttachments: vi.fn().mockResolvedValue([]),
+      gitGetCapabilities: vi.fn().mockResolvedValue({
+        directory: "C:\\Projects\\Project 2",
+        root: "C:\\Projects\\Project 2",
+        branch: "main",
+        defaultBranch: "main",
+        isGitRepo: true,
+        canCommit: {
+          enabled: true,
+        },
+        canPush: {
+          enabled: true,
+        },
+        canCreatePullRequest: {
+          enabled: false,
+          reason: "Switch to a feature branch before creating a pull request.",
+        },
+        canCreateBranch: {
+          enabled: true,
+        },
+      }),
       gitCommit: vi.fn().mockResolvedValue({
         directory: "C:\\Projects\\Project 2",
         root: "C:\\Projects\\Project 2",
@@ -281,11 +306,53 @@ describe("App", () => {
       sendAgentMessage: vi.fn().mockResolvedValue({
         events: [{ event: "delta", data: { kind: "text", delta: "ok" } }],
       }),
+      subscribeAgentSessionStream: vi.fn().mockResolvedValue({
+        sessionID: "session-default",
+      }),
+      unsubscribeAgentSessionStream: vi.fn().mockResolvedValue({
+        sessionID: "session-default",
+        removed: true,
+      }),
+      onAgentStreamEvent: vi.fn(() => vi.fn()),
+      onAgentSessionStreamEvent: vi.fn(() => vi.fn()),
       showMenu: vi.fn().mockResolvedValue(undefined),
       windowAction: vi.fn().mockResolvedValue(undefined),
       onPtyEvent: vi.fn(() => vi.fn()),
       onWindowStateChange: vi.fn(() => vi.fn()),
     }
+    window.desktop.gitCommit = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Project 2",
+      root: "C:\\Projects\\Project 2",
+      branch: "main",
+      stdout: "",
+      stderr: "",
+      summary: "Committed to main.",
+    })
+    window.desktop.gitPush = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Project 2",
+      root: "C:\\Projects\\Project 2",
+      branch: "main",
+      stdout: "",
+      stderr: "",
+      summary: "Pushed main.",
+    })
+    window.desktop.gitCreateBranch = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Project 2",
+      root: "C:\\Projects\\Project 2",
+      branch: "feature/test",
+      stdout: "",
+      stderr: "",
+      summary: "Created and switched to feature/test.",
+    })
+    window.desktop.gitCreatePullRequest = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Project 2",
+      root: "C:\\Projects\\Project 2",
+      branch: "feature/test",
+      stdout: "https://github.com/example/repo/pull/1",
+      stderr: "",
+      summary: "Created pull request https://github.com/example/repo/pull/1.",
+      url: "https://github.com/example/repo/pull/1",
+    })
   })
 
   it("renders the desktop shell with floating window controls and folder workspace", async () => {
@@ -309,7 +376,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Add session tab" })).toHaveTextContent("+")
-    expect(screen.getByRole("button", { name: "Git" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Git" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Workspace" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Artifacts" })).not.toBeInTheDocument()
@@ -326,7 +393,7 @@ describe("App", () => {
       expect(container.querySelector(".signal-row")).not.toBeInTheDocument()
     })
     expect(screen.getByRole("textbox", { name: "Task draft" }).closest("footer")).toHaveClass("prompt-input-shell")
-    expect(screen.getByRole("button", { name: "Add image or file" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Add attachments" })).toBeDisabled()
     expect(screen.getByRole("button", { name: /^Select model:/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
@@ -516,20 +583,20 @@ describe("App", () => {
       },
     ])
     window.desktop!.gitCommit = vi.fn().mockResolvedValue({
-      directory: "C:\\Projects\\Atlas",
+      directory: "C:\\Projects\\Atlas\\client",
       root: "C:\\Projects\\Atlas",
       branch: "main",
       stdout: "",
       stderr: "",
-      summary: "宸叉彁浜ゅ埌 main",
+      summary: "Committed to main.",
     })
     window.desktop!.gitPush = vi.fn().mockResolvedValue({
-      directory: "C:\\Projects\\Atlas",
+      directory: "C:\\Projects\\Atlas\\client",
       root: "C:\\Projects\\Atlas",
       branch: "main",
       stdout: "",
       stderr: "",
-      summary: "宸叉帹閫?main",
+      summary: "Pushed main.",
     })
 
     render(<App />)
@@ -538,8 +605,15 @@ describe("App", () => {
       expect(window.desktop!.listFolderWorkspaces).toHaveBeenCalledTimes(1)
     })
     await screen.findByRole("button", { name: "Atlas review" })
+    await waitFor(() => {
+      expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
+      })
+    })
 
     fireEvent.click(screen.getByRole("button", { name: "Git" }))
+    fireEvent.click(screen.getByRole("button", { name: /Commit changes/i }))
 
     expect(await screen.findByRole("textbox", { name: "Commit message" })).toBeInTheDocument()
 
@@ -549,26 +623,89 @@ describe("App", () => {
       },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Commit" }))
+    fireEvent.click(screen.getByRole("button", { name: "Run commit" }))
 
     await waitFor(() => {
       expect(window.desktop!.gitCommit).toHaveBeenCalledWith({
-        directory: "C:\\Projects\\Atlas",
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
         message: "chore: wire git quick menu",
       })
     })
 
-    expect(await screen.findByText("宸叉彁浜ゅ埌 main")).toBeInTheDocument()
+    expect(await screen.findByText("Committed to main.")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Push" }))
+    fireEvent.click(screen.getByRole("button", { name: /Push branch/i }))
 
     await waitFor(() => {
       expect(window.desktop!.gitPush).toHaveBeenCalledWith({
-        directory: "C:\\Projects\\Atlas",
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
       })
     })
 
-    expect(await screen.findByText("宸叉帹閫?main")).toBeInTheDocument()
+    expect(await screen.findByText("Pushed main.")).toBeInTheDocument()
+  })
+
+  it("hides the git button when the active workspace is not a git repository", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Plain\\client",
+        directory: "C:\\Projects\\Plain\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-plain",
+          name: "Plain",
+          worktree: "C:\\Projects\\Plain",
+        },
+        sessions: [
+          {
+            id: "session-plain-review",
+            projectID: "project-plain",
+            directory: "C:\\Projects\\Plain\\client",
+            title: "Plain review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitGetCapabilities = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Plain\\client",
+      root: null,
+      branch: null,
+      defaultBranch: null,
+      isGitRepo: false,
+      canCommit: {
+        enabled: false,
+        reason: "Not a git repository.",
+      },
+      canPush: {
+        enabled: false,
+        reason: "Not a git repository.",
+      },
+      canCreatePullRequest: {
+        enabled: false,
+        reason: "Not a git repository.",
+      },
+      canCreateBranch: {
+        enabled: false,
+        reason: "Not a git repository.",
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledWith({
+        projectID: "project-plain",
+        directory: "C:\\Projects\\Plain\\client",
+      })
+    })
+
+    expect(screen.queryByRole("button", { name: "Git" })).not.toBeInTheDocument()
   })
 
   it("loads folder and session lists into the sidebar on startup", async () => {
@@ -1061,7 +1198,186 @@ describe("App", () => {
     expect(screen.getAllByRole("region", { name: "File Changes" })).toHaveLength(1)
   })
 
-  it("keeps file changes hidden until the turn completes, then renders them after the response", async () => {
+  it("replays detached backend turns from the session event stream", async () => {
+    let sessionStreamListener:
+      | ((event: {
+          sessionID: string
+          id?: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    const detachedTurnHistory = [
+      {
+        info: {
+          id: "msg-detached-1",
+          sessionID: "session-atlas-review",
+          role: "assistant",
+          created: 200,
+        },
+        parts: [
+          {
+            id: "tool-detached",
+            type: "tool",
+            tool: "read-file",
+            state: {
+              status: "waiting-approval",
+              title: "Read repo config",
+            },
+          },
+        ],
+      },
+    ]
+    window.desktop!.getSessionHistory = vi
+      .fn()
+      .mockResolvedValue(detachedTurnHistory)
+      .mockResolvedValueOnce([])
+    window.desktop!.getSessionPermissionRequests = vi.fn().mockResolvedValue([])
+    window.desktop!.subscribeAgentSessionStream = vi.fn().mockResolvedValue({
+      sessionID: "session-atlas-review",
+    })
+    window.desktop!.onAgentSessionStreamEvent = vi.fn((listener) => {
+      sessionStreamListener = listener
+      return vi.fn()
+    })
+
+    window.desktop!.gitGetCapabilities = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      defaultBranch: "main",
+      isGitRepo: true,
+      canCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: true,
+      },
+      canCreatePullRequest: {
+        enabled: false,
+        reason: "Switch to a feature branch before creating a pull request.",
+      },
+      canCreateBranch: {
+        enabled: true,
+      },
+    })
+    window.desktop!.gitCommit = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      stdout: "",
+      stderr: "",
+      summary: "Committed to main.",
+    })
+    window.desktop!.gitPush = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      stdout: "",
+      stderr: "",
+      summary: "Pushed main.",
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.subscribeAgentSessionStream).toHaveBeenCalledWith({
+        sessionID: "session-atlas-review",
+      })
+      expect(window.desktop!.onAgentSessionStreamEvent).toHaveBeenCalled()
+    })
+
+    act(() => {
+      sessionStreamListener?.({
+        sessionID: "session-atlas-review",
+        id: "200:turn-detached:1",
+        event: "started",
+        data: {
+          sessionID: "session-atlas-review",
+          turnID: "turn-detached",
+          cursor: "200:turn-detached:1",
+        },
+      })
+      sessionStreamListener?.({
+        sessionID: "session-atlas-review",
+        id: "201:turn-detached:2",
+        event: "part",
+        data: {
+          sessionID: "session-atlas-review",
+          turnID: "turn-detached",
+          cursor: "201:turn-detached:2",
+          part: {
+            id: "tool-detached",
+            type: "tool",
+            tool: "read-file",
+            state: {
+              status: "waiting-approval",
+              title: "Read repo config",
+            },
+          },
+        },
+      })
+      sessionStreamListener?.({
+        sessionID: "session-atlas-review",
+        id: "202:turn-detached:3",
+        event: "done",
+        data: {
+          sessionID: "session-atlas-review",
+          turnID: "turn-detached",
+          cursor: "202:turn-detached:3",
+          status: "blocked",
+          parts: [
+            {
+              id: "tool-detached",
+              type: "tool",
+              tool: "read-file",
+              state: {
+                status: "waiting-approval",
+                title: "Read repo config",
+              },
+            },
+          ],
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.getSessionHistory).toHaveBeenCalledTimes(2)
+    })
+
+    await screen.findByRole("button", { name: /read-file.*waiting approval/i })
+  })
+
+  it("streams the response immediately while keeping file changes hidden until completion", async () => {
     let streamListener:
       | ((event: {
           streamID: string
@@ -1138,7 +1454,7 @@ describe("App", () => {
       })
     })
 
-    expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "Response" })).not.toBeInTheDocument()
+    expect(await screen.findByText("Streaming answer")).toBeInTheDocument()
     expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
 
     act(() => {
@@ -1194,7 +1510,7 @@ describe("App", () => {
     })
 
     expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
-    expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "Response" })).not.toBeInTheDocument()
+    expect(within(assistantTurn as HTMLElement).getByRole("region", { name: "Response" })).toBeInTheDocument()
 
     act(() => {
       streamListener?.({
@@ -1506,7 +1822,7 @@ describe("App", () => {
     })
   })
 
-  it("streams resumed output after approval and clears the waiting tool state first", async () => {
+  it("streams resumed output immediately after approval and clears the waiting tool state first", async () => {
     let streamListener:
       | ((event: {
           streamID: string
@@ -1735,7 +2051,7 @@ describe("App", () => {
 
     expect(await screen.findByText("README loaded")).toBeInTheDocument()
     expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
-    expect(screen.queryByText("Resumed answer")).not.toBeInTheDocument()
+    expect(screen.getByText("Resumed answer")).toBeInTheDocument()
     expect(getComposerSendButton()).toBeDisabled()
 
     act(() => {
@@ -1873,6 +2189,94 @@ describe("App", () => {
     expect(screen.getAllByText("Orion").length).toBeGreaterThan(0)
   })
 
+  it("keeps a newly opened folder when startup folder loading resolves afterwards", async () => {
+    const startupLoad = createDeferred<LoadedFolderWorkspace[]>()
+    window.desktop!.listFolderWorkspaces = vi.fn().mockImplementation(() => startupLoad.promise)
+    window.desktop!.pickProjectDirectory = vi.fn().mockResolvedValue("C:\\Projects\\Orion\\client")
+    window.desktop!.openFolderWorkspace = vi.fn().mockResolvedValue({
+      id: "C:\\Projects\\Orion\\client",
+      directory: "C:\\Projects\\Orion\\client",
+      name: "client",
+      created: 1,
+      updated: 2,
+      project: {
+        id: "project-orion",
+        name: "Orion",
+        worktree: "C:\\Projects\\Orion",
+      },
+      sessions: [],
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }))
+
+    expect(await screen.findByRole("button", { name: "client" })).toBeInTheDocument()
+
+    await act(async () => {
+      startupLoad.resolve([])
+      await startupLoad.promise
+    })
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "client" })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
+  })
+
+  it("waits for the initial workspace load before requesting project-specific composer data", async () => {
+    const startupLoad = createDeferred<LoadedFolderWorkspace[]>()
+    window.desktop!.listFolderWorkspaces = vi.fn().mockImplementation(() => startupLoad.promise)
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.listFolderWorkspaces).toHaveBeenCalledTimes(1)
+    })
+
+    expect(window.desktop!.getProjectModels).not.toHaveBeenCalled()
+    expect(window.desktop!.getProjectSkills).not.toHaveBeenCalled()
+    expect(window.desktop!.getProjectSkillSelection).not.toHaveBeenCalled()
+    expect(window.desktop!.getGlobalMcpServers).not.toHaveBeenCalled()
+    expect(window.desktop!.getProjectMcpSelection).not.toHaveBeenCalled()
+
+    await act(async () => {
+      startupLoad.resolve([
+        {
+          id: "C:\\Projects\\Atlas\\app",
+          directory: "C:\\Projects\\Atlas\\app",
+          name: "app",
+          created: 1,
+          updated: 2,
+          project: {
+            id: "project-atlas",
+            name: "Atlas",
+            worktree: "C:\\Projects\\Atlas",
+          },
+          sessions: [],
+        },
+      ])
+      await startupLoad.promise
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.getProjectModels).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+      })
+      expect(window.desktop!.getProjectSkills).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+      })
+      expect(window.desktop!.getProjectSkillSelection).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+      })
+      expect(window.desktop!.getProjectMcpSelection).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+      })
+    })
+
+    expect(window.desktop!.getGlobalMcpServers).toHaveBeenCalledTimes(1)
+  })
+
   it("shows each newly opened folder and keeps only the latest one selected", async () => {
     window.desktop!.pickProjectDirectory = vi
       .fn()
@@ -1960,7 +2364,7 @@ describe("App", () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
-    await screen.findByText("Open a new session tab")
+    await screen.findByRole("combobox", { name: "Session project" })
 
     expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
 
@@ -1983,36 +2387,52 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close session tab Chat 1" }))
 
-    expect(await screen.findByText("Open a new session tab")).toBeInTheDocument()
+    expect(await screen.findByRole("combobox", { name: "Session project" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
   })
 
-  it("allows multiple create session tabs with independent drafts", async () => {
+  it("allows multiple create session tabs with independent project selections", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
-    await screen.findByText("Open a new session tab")
+    await screen.findByRole("combobox", { name: "Session project" })
+    expect(screen.queryByRole("textbox", { name: "Session title" })).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Session title" }), {
-      target: { value: "First draft" },
+    fireEvent.change(getCreateSessionProjectSelect(), {
+      target: { value: "C:\\Projects\\Project 1\\src" },
     })
+    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
 
     fireEvent.click(screen.getByRole("button", { name: "Add session tab" }))
 
     expect(await screen.findByRole("button", { name: "Switch to create session tab 2" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("textbox", { name: "Session title" })).toHaveValue("")
+    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Session title" }), {
-      target: { value: "Second draft" },
+    fireEvent.change(getCreateSessionProjectSelect(), {
+      target: { value: "C:\\Projects\\Project 2\\app" },
     })
+    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 2\\app")
 
-    fireEvent.click(screen.getByRole("button", { name: "Switch to create session draft First draft" }))
+    fireEvent.click(screen.getByRole("button", { name: "Switch to create session tab" }))
+    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
 
-    expect(screen.getByRole("textbox", { name: "Session title" })).toHaveValue("First draft")
+    fireEvent.click(screen.getByRole("button", { name: "Switch to create session tab 2" }))
+    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 2\\app")
+  })
 
-    fireEvent.click(screen.getByRole("button", { name: "Switch to create session draft Second draft" }))
+  it("shows the session canvas top menu while a create session tab is active", async () => {
+    render(<App />)
 
-    expect(screen.getByRole("textbox", { name: "Session title" })).toHaveValue("Second draft")
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+
+    await screen.findByRole("combobox", { name: "Session project" })
+
+    const topMenu = screen.getByLabelText("Session canvas top menu")
+    expect(topMenu).toBeInTheDocument()
+    expect(within(topMenu).getByText("Create session")).toBeInTheDocument()
+    expect(within(topMenu).getByText("Project 2 / app")).toBeInTheDocument()
+    expect(within(topMenu).getByRole("button", { name: "Select project skills: Skills" })).toBeInTheDocument()
+    expect(within(topMenu).getByRole("button", { name: "Select project MCP servers: MCP" })).toBeInTheDocument()
   })
 
   it("creates a persisted session for the selected folder", async () => {
@@ -2030,9 +2450,13 @@ describe("App", () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
-    const createSessionCard = await screen.findByText("Open a new session tab")
+    expect(await screen.findByRole("combobox", { name: "Session project" })).toBeInTheDocument()
+    expect(screen.queryByRole("textbox", { name: "Session title" })).not.toBeInTheDocument()
 
-    fireEvent.click(within(createSessionCard.closest(".create-session-card")!).getByRole("button", { name: "Create session" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: { value: "Create the backend session" },
+    })
+    fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
       expect(window.desktop!.createFolderSession).toHaveBeenCalledWith({
@@ -2041,9 +2465,6 @@ describe("App", () => {
       })
     })
     expect(await screen.findByRole("button", { name: "Backend chat" })).toBeInTheDocument()
-    await waitFor(() => {
-      expect(document.querySelectorAll(".thread-column .turn")).toHaveLength(0)
-    })
   })
 
   it("creates a session only for the currently selected folder", async () => {
@@ -2067,9 +2488,12 @@ describe("App", () => {
     expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
-    const createSessionCard = await screen.findByText("Open a new session tab")
+    await screen.findByRole("combobox", { name: "Session project" })
 
-    fireEvent.click(within(createSessionCard.closest(".create-session-card")!).getByRole("button", { name: "Create session" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: { value: "Create session for src" },
+    })
+    fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
       expect(window.desktop!.createFolderSession).toHaveBeenCalledTimes(1)
@@ -2098,9 +2522,12 @@ describe("App", () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session for src" }))
-    const createSessionCard = await screen.findByText("Open a new session tab")
+    await screen.findByRole("combobox", { name: "Session project" })
 
-    fireEvent.click(within(createSessionCard.closest(".create-session-card")!).getByRole("button", { name: "Create session" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: { value: "Create scratch session" },
+    })
+    fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
       expect(window.desktop!.createFolderSession).toHaveBeenCalledWith({
@@ -2111,6 +2538,161 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Layout scratch" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "src" }).closest(".project-row")).toHaveClass("is-active")
+  })
+
+  it("keeps the composer visible on the create session canvas and sends after creating the session", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.createFolderSession = vi.fn().mockResolvedValue({
+      session: {
+        id: "session-backend-new",
+        projectID: "project-2",
+        directory: "C:\\Projects\\Project 2\\app",
+        title: "Backend chat",
+        created: 1,
+        updated: 2,
+      },
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    await screen.findByRole("combobox", { name: "Session project" })
+
+    expect(screen.getByRole("textbox", { name: "Task draft" })).toBeInTheDocument()
+    expect(getComposerSendButton()).toBeEnabled()
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: { value: "Ship the first session prompt" },
+    })
+    fireEvent.click(getComposerSendButton())
+
+    await waitFor(() => {
+      expect(window.desktop!.createFolderSession).toHaveBeenCalledWith({
+        projectID: "project-2",
+        directory: "C:\\Projects\\Project 2\\app",
+      })
+    })
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
+        sessionID: "session-backend-new",
+        text: "Ship the first session prompt",
+        skills: [],
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "Backend chat" })).toBeInTheDocument()
+    expect(screen.queryByRole("combobox", { name: "Session project" })).not.toBeInTheDocument()
+  })
+
+  it("renders the first streamed turn immediately after sending from the create session canvas", async () => {
+    let streamListener:
+      | ((event: {
+          streamID: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+    let releaseStream: (() => void) | undefined
+    let activeStreamID = ""
+    let activeSessionID = ""
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.createFolderSession = vi.fn().mockResolvedValue({
+      session: {
+        id: "session-backend-streamed",
+        projectID: "project-2",
+        directory: "C:\\Projects\\Project 2\\app",
+        title: "Streamed backend chat",
+        created: 1,
+        updated: 2,
+      },
+    })
+    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+      streamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+      async (input: {
+        streamID: string
+        sessionID: string
+        text: string
+      }) => {
+        activeStreamID = input.streamID
+        activeSessionID = input.sessionID
+
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve
+        })
+
+        return {
+          streamID: input.streamID,
+        }
+      },
+    )
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    await screen.findByRole("combobox", { name: "Session project" })
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: { value: "Stream the first session prompt" },
+    })
+    await act(async () => {
+      fireEvent.click(getComposerSendButton())
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.streamAgentMessage).toHaveBeenCalledWith({
+        streamID: expect.any(String),
+        sessionID: "session-backend-streamed",
+        text: "Stream the first session prompt",
+        skills: [],
+      })
+    })
+    expect(await screen.findByRole("button", { name: "Streamed backend chat" })).toBeInTheDocument()
+    expect(screen.queryByRole("combobox", { name: "Session project" })).not.toBeInTheDocument()
+    expect(screen.getByText("Thinking...")).toBeInTheDocument()
+
+    await act(async () => {
+      streamListener?.({
+        streamID: activeStreamID,
+        event: "delta",
+        data: {
+          kind: "text",
+          partID: "part-text-1",
+          delta: "First token is visible.",
+          text: "First token is visible.",
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByText("First token is visible.")).toBeInTheDocument()
+
+    await act(async () => {
+      streamListener?.({
+        streamID: activeStreamID,
+        event: "done",
+        data: {
+          sessionID: activeSessionID,
+          parts: [{ id: "part-text-1", type: "text", text: "First token is visible." }],
+        },
+      })
+      releaseStream?.()
+      await Promise.resolve()
+    })
   })
 
   it("opens global provider settings", async () => {
@@ -2794,6 +3376,151 @@ describe("App", () => {
     expect(await screen.findByText("Model settings saved.")).toBeInTheDocument()
   })
 
+  it("uses project provider settings APIs when a workspace is selected", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "config",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.deepseek.com",
+        modelCount: 2,
+      },
+    ])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "deepseek-reasoner",
+          providerID: "deepseek",
+          name: "DeepSeek Reasoner",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: true,
+            attachment: false,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+      ],
+      selection: {
+        model: "deepseek/deepseek-reasoner",
+      },
+    })
+    window.desktop!.getProjectProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "openai",
+        name: "OpenAI",
+        source: "config",
+        env: ["OPENAI_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.openai.com/v1",
+        modelCount: 1,
+      },
+    ])
+    window.desktop!.getProjectModels = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "gpt-4o-mini",
+          providerID: "openai",
+          name: "GPT-4o mini",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: false,
+            attachment: true,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: true,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+      ],
+      selection: {
+        model: "openai/gpt-4o-mini",
+        small_model: "openai/gpt-4o-mini",
+      },
+    })
+    window.desktop!.updateProjectProvider = vi.fn().mockResolvedValue({
+      provider: {
+        id: "openai",
+        name: "OpenAI",
+        available: true,
+        apiKeyConfigured: true,
+      },
+      selection: {},
+    })
+    window.desktop!.deleteProjectProvider = vi.fn().mockResolvedValue({
+      providerID: "openai",
+      selection: {},
+    })
+    window.desktop!.updateProjectModelSelection = vi.fn().mockResolvedValue({
+      model: "openai/gpt-4o-mini",
+      small_model: "openai/gpt-4o-mini",
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+
+    await waitFor(() => {
+      expect(window.desktop!.getProjectProviderCatalog).toHaveBeenCalledWith({
+        projectID: "project-2",
+      })
+      expect(window.desktop!.getProjectModels).toHaveBeenCalledWith({
+        projectID: "project-2",
+      })
+    })
+
+    expect(window.desktop!.getGlobalProviderCatalog).not.toHaveBeenCalled()
+    expect(window.desktop!.getGlobalModels).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: /^Models/ }))
+
+    expect((await screen.findAllByText("GPT-4o mini")).length).toBeGreaterThan(0)
+    expect(screen.queryByText("DeepSeek Reasoner")).not.toBeInTheDocument()
+  })
+
   it("updates the active project model selection from the composer menu", async () => {
     window.desktop!.getProjectModels = vi.fn().mockResolvedValue({
       items: [
@@ -2872,6 +3599,7 @@ describe("App", () => {
 
     render(<App />)
 
+    expect(await screen.findByRole("button", { name: "Add attachments" })).toBeDisabled()
     fireEvent.click(await screen.findByRole("button", { name: "Select model: DeepSeek Reasoner" }))
     fireEvent.click(screen.getByRole("button", { name: "GPT-4o mini" }))
 
@@ -2884,6 +3612,7 @@ describe("App", () => {
     })
 
     expect(await screen.findByRole("button", { name: "Select model: GPT-4o mini" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Add attachments" })).toBeEnabled()
   })
 
   it("renders the project skill selector in the session canvas top menu and still sends selected skills", async () => {
@@ -2912,6 +3641,14 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
     })
+    await waitFor(() => {
+      expect(window.desktop!.getProjectSkills).toHaveBeenCalledWith({
+        projectID: "project-2",
+      })
+      expect(window.desktop!.getProjectSkillSelection).toHaveBeenCalledWith({
+        projectID: "project-2",
+      })
+    })
 
     const skillButton = await screen.findByRole("button", { name: "Select project skills: Skills" })
     expect(skillButton.closest(".session-canvas-top-menu")).not.toBeNull()
@@ -2923,7 +3660,7 @@ describe("App", () => {
     fireEvent.click(skillButton)
 
     const skillMenu = screen.getByRole("dialog", { name: "Project skill selection" })
-    fireEvent.click(within(skillMenu).getByRole("button", { name: /layout-review/i }))
+    fireEvent.click(await within(skillMenu).findByRole("button", { name: /layout-review/i }))
 
     await waitFor(() => {
       expect(window.desktop!.updateProjectSkillSelection).toHaveBeenCalledWith({
@@ -2978,6 +3715,12 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
     })
+    await waitFor(() => {
+      expect(window.desktop!.getGlobalMcpServers).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.getProjectMcpSelection).toHaveBeenCalledWith({
+        projectID: "project-2",
+      })
+    })
 
     const mcpButton = await screen.findByRole("button", { name: "Select project MCP servers: MCP" })
     expect(mcpButton.closest(".session-canvas-top-menu")).not.toBeNull()
@@ -2985,7 +3728,7 @@ describe("App", () => {
     fireEvent.click(mcpButton)
 
     const mcpMenu = screen.getByRole("dialog", { name: "Project MCP server selection" })
-    fireEvent.click(within(mcpMenu).getByRole("button", { name: /Filesystem/i }))
+    fireEvent.click(await within(mcpMenu).findByRole("button", { name: /Filesystem/i }))
 
     await waitFor(() => {
       expect(window.desktop!.updateProjectMcpSelection).toHaveBeenCalledWith({
@@ -3019,6 +3762,73 @@ describe("App", () => {
       ok: true,
       baseURL: "http://127.0.0.1:4096",
     })
+    window.desktop!.getProjectModels = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "gpt-4o-mini",
+          providerID: "openai",
+          name: "GPT-4o mini",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: false,
+            attachment: true,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: true,
+              video: false,
+              pdf: true,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+      ],
+      selection: {},
+      effectiveModel: {
+        id: "gpt-4o-mini",
+        providerID: "openai",
+        name: "GPT-4o mini",
+        status: "active",
+        available: true,
+        capabilities: {
+          temperature: true,
+          reasoning: false,
+          attachment: true,
+          toolcall: true,
+          input: {
+            text: true,
+            audio: false,
+            image: true,
+            video: false,
+            pdf: true,
+          },
+          output: {
+            text: true,
+            audio: false,
+            image: false,
+            video: false,
+            pdf: false,
+          },
+        },
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+      },
+    })
     window.desktop!.pickComposerAttachments = vi.fn().mockResolvedValue([
       "C:\\Refs\\hero.png",
       "C:\\Refs\\brief.pdf",
@@ -3029,8 +3839,14 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
     })
+    await waitFor(() => {
+      expect(window.desktop!.getProjectModels).toHaveBeenCalledWith({
+        projectID: "project-2",
+      })
+      expect(screen.getByRole("button", { name: "Add attachments" })).toBeEnabled()
+    })
 
-    fireEvent.click(screen.getByRole("button", { name: "Add image or file" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add attachments" }))
 
     expect(await screen.findByText("hero.png")).toBeInTheDocument()
     expect(screen.getByText("brief.pdf")).toBeInTheDocument()
@@ -3045,9 +3861,12 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
         sessionID: "session-backend",
+        attachments: [
+          { path: "C:\\Refs\\hero.png", name: "hero.png" },
+          { path: "C:\\Refs\\brief.pdf", name: "brief.pdf" },
+        ],
         skills: [],
-        text:
-          "Use the references to refine the layout\n\nAttached files:\n- hero.png: C:\\Refs\\hero.png\n- brief.pdf: C:\\Refs\\brief.pdf",
+        text: "Use the references to refine the layout",
       })
     })
   })
@@ -3077,6 +3896,116 @@ describe("App", () => {
         sessionID: "session-backend",
         skills: [],
         text: "Audit the toolbar changes",
+      })
+    })
+  })
+
+  it("submits composer prompts with Enter and exposes the shortcut hint", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+    })
+
+    const draftInput = screen.getByRole("textbox", { name: "Task draft" })
+    const sendButton = getComposerSendButton()
+
+    expect(sendButton).toHaveAttribute("title", "Send task. Press Enter to send. Press Shift+Enter for a newline.")
+    expect(sendButton).toHaveAttribute("aria-description", "Press Enter to send. Press Shift+Enter for a newline.")
+    expect(sendButton).toHaveAttribute("aria-keyshortcuts", "Enter")
+    expect(draftInput).toHaveAttribute("aria-description", "Press Enter to send. Press Shift+Enter for a newline.")
+
+    fireEvent.change(draftInput, {
+      target: {
+        value: "Submit from the keyboard",
+      },
+    })
+
+    const enterEvent = createEvent.keyDown(draftInput, { key: "Enter", code: "Enter" })
+    fireEvent(draftInput, enterEvent)
+
+    expect(enterEvent.defaultPrevented).toBe(true)
+
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
+        sessionID: "session-backend",
+        skills: [],
+        text: "Submit from the keyboard",
+      })
+    })
+  })
+
+  it("keeps Shift+Enter available for newline insertion in the composer", () => {
+    render(<App />)
+
+    const draftInput = screen.getByRole("textbox", { name: "Task draft" })
+
+    fireEvent.change(draftInput, {
+      target: {
+        value: "Keep editing this draft",
+      },
+    })
+
+    const shiftEnterEvent = createEvent.keyDown(draftInput, {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true,
+    })
+    fireEvent(draftInput, shiftEnterEvent)
+
+    expect(shiftEnterEvent.defaultPrevented).toBe(false)
+    expect(window.desktop!.sendAgentMessage).not.toHaveBeenCalled()
+  })
+
+  it("does not submit composer prompts while IME composition is active", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+    })
+
+    const draftInput = screen.getByRole("textbox", { name: "Task draft" })
+
+    fireEvent.change(draftInput, {
+      target: {
+        value: "你好",
+      },
+    })
+
+    fireEvent.compositionStart(draftInput)
+
+    const composingEnterEvent = createEvent.keyDown(draftInput, {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 229,
+    })
+    fireEvent(draftInput, composingEnterEvent)
+
+    expect(composingEnterEvent.defaultPrevented).toBe(false)
+    expect(window.desktop!.sendAgentMessage).not.toHaveBeenCalled()
+
+    fireEvent.compositionEnd(draftInput)
+
+    const enterEvent = createEvent.keyDown(draftInput, { key: "Enter", code: "Enter" })
+    fireEvent(draftInput, enterEvent)
+
+    expect(enterEvent.defaultPrevented).toBe(true)
+
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
+        sessionID: "session-backend",
+        skills: [],
+        text: "你好",
       })
     })
   })
@@ -3139,7 +4068,92 @@ describe("App", () => {
     })
   })
 
-  it("renders streamed reasoning before completion and only shows the response after completion", async () => {
+  it("shows a minimal waiting hint before the first visible streamed output arrives", async () => {
+    let streamListener:
+      | ((event: {
+          streamID: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+    let releaseStream: (() => void) | undefined
+    let activeStreamID = ""
+    let activeSessionID = ""
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+      streamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+      async (input: {
+        streamID: string
+        sessionID: string
+        text: string
+      }) => {
+        activeStreamID = input.streamID
+        activeSessionID = input.sessionID
+
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve
+        })
+
+        return {
+          streamID: input.streamID,
+        }
+      },
+    )
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Wait for the first token",
+      },
+    })
+    await act(async () => {
+      fireEvent.click(getComposerSendButton())
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText("Thinking...")).toBeInTheDocument()
+    expect(getComposerSendButton()).toBeDisabled()
+
+    await act(async () => {
+      streamListener?.({
+        streamID: activeStreamID,
+        event: "delta",
+        data: {
+          kind: "text",
+          partID: "part-text-1",
+          delta: "Ready now.",
+          text: "Ready now.",
+        },
+      })
+      streamListener?.({
+        streamID: activeStreamID,
+        event: "done",
+        data: {
+          sessionID: activeSessionID,
+          parts: [{ id: "part-text-1", type: "text", text: "Ready now." }],
+        },
+      })
+      releaseStream?.()
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByText("Ready now.")).toBeInTheDocument()
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument()
+  })
+
+  it("renders streamed reasoning and response before completion", async () => {
     let streamListener:
       | ((event: {
           streamID: string
@@ -3223,7 +4237,7 @@ describe("App", () => {
     expect(reasoningItem).toHaveAttribute("data-kind", "reasoning")
     expect(reasoningItem).not.toBeNull()
     expect(reasoningItem?.querySelector(".trace-item-header")).toBeNull()
-    expect(screen.queryByText("Streaming answer")).not.toBeInTheDocument()
+    expect(screen.getByText("Streaming answer")).toBeInTheDocument()
     expect(screen.queryByRole("heading", { name: "Streaming response" })).not.toBeInTheDocument()
     expect(screen.queryByText("Renderer subscribed to live backend updates.")).not.toBeInTheDocument()
     expect(screen.queryByText("Waiting for backend response.")).not.toBeInTheDocument()
@@ -3396,9 +4410,13 @@ describe("App", () => {
     expect(document.querySelector(".terminal-view-meta")).toBeNull()
 
     const composer = document.querySelector(".composer")
+    const utilityBar = document.querySelector(".composer-utility-bar")
     const terminalPanel = document.querySelector(".terminal-panel")
     expect(composer).not.toBeNull()
+    expect(utilityBar).not.toBeNull()
     expect(terminalPanel).not.toBeNull()
+    expect(composer!.compareDocumentPosition(utilityBar!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(utilityBar!.compareDocumentPosition(terminalPanel!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(composer!.compareDocumentPosition(terminalPanel!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle terminal panel" }))
@@ -3408,6 +4426,185 @@ describe("App", () => {
     })
 
     expect(screen.getByRole("button", { name: "Toggle terminal panel" }).closest(".canvas-terminal-toggle-anchor")).not.toBeNull()
+  })
+
+  it("shows real context pressure from streamed assistant usage against the selected model context window", async () => {
+    let streamListener:
+      | ((event: {
+          streamID: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getProjectModels = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "deepseek-reasoner",
+          providerID: "deepseek",
+          name: "DeepSeek Reasoner",
+          status: "active",
+          available: true,
+          capabilities: {
+            temperature: true,
+            reasoning: true,
+            attachment: false,
+            toolcall: true,
+            input: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+            output: {
+              text: true,
+              audio: false,
+              image: false,
+              video: false,
+              pdf: false,
+            },
+          },
+          limit: {
+            context: 128000,
+            output: 8192,
+          },
+        },
+      ],
+      selection: {},
+      effectiveModel: {
+        id: "deepseek-reasoner",
+        providerID: "deepseek",
+        name: "DeepSeek Reasoner",
+        status: "active",
+        available: true,
+        capabilities: {
+          temperature: true,
+          reasoning: true,
+          attachment: false,
+          toolcall: true,
+          input: {
+            text: true,
+            audio: false,
+            image: false,
+            video: false,
+            pdf: false,
+          },
+          output: {
+            text: true,
+            audio: false,
+            image: false,
+            video: false,
+            pdf: false,
+          },
+        },
+        limit: {
+          context: 128000,
+          output: 8192,
+        },
+      },
+    })
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+      streamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+      async (input: {
+        streamID: string
+        sessionID: string
+        text: string
+      }) => {
+        streamListener?.({
+          streamID: input.streamID,
+          event: "started",
+          data: {
+            sessionID: input.sessionID,
+          },
+        })
+        streamListener?.({
+          streamID: input.streamID,
+          event: "done",
+          data: {
+            sessionID: input.sessionID,
+            message: {
+              id: "message-assistant-1",
+              sessionID: input.sessionID,
+              role: "assistant",
+              created: 100,
+              completed: 120,
+              tokens: {
+                input: 64000,
+                output: 3200,
+                reasoning: 800,
+                cache: {
+                  read: 1600,
+                  write: 0,
+                },
+              },
+            },
+            parts: [{ id: "part-text-1", type: "text", text: "Pressure tracked." }],
+          },
+        })
+
+        return {
+          streamID: input.streamID,
+        }
+      },
+    )
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.listFolderWorkspaces).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.getProjectModels).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+      })
+    })
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Measure current context pressure",
+      },
+    })
+
+    await act(async () => {
+      fireEvent.click(getComposerSendButton())
+      await Promise.resolve()
+    })
+
+    expect(
+      await screen.findByRole("img", {
+        name: "Context pressure 50% (64k / 128k input tokens)",
+      }),
+    ).toBeInTheDocument()
   })
 
   it("appends live terminal output directly into the active terminal view", async () => {
@@ -3810,8 +5007,10 @@ describe("App", () => {
 
   it("keeps session rows aligned with folder labels and gives them the same hover treatment", () => {
     expect(styles).toMatch(/\.session-tree\s*\{[^}]*padding-left:\s*calc\(8px \+ 24px \+ 7px\);/s)
+    expect(styles).toMatch(/\.project-row\s*\{[^}]*border-radius:\s*8px;/s)
+    expect(styles).toMatch(/\.session-row\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(
-      /\.project-row:hover,\s*\.project-row:focus-within,\s*\.session-row:hover,\s*\.session-row:focus-visible\s*\{[^}]*background:\s*rgba\(22,\s*119,\s*200,\s*0\.08\);/s,
+      /\.project-row:hover,\s*\.project-row:focus-within,\s*\.session-row:hover,\s*\.session-row:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.08\);/s,
     )
   })
 

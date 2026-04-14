@@ -25,6 +25,7 @@ import {
   SortIcon,
 } from "./icons"
 import type {
+  AssistantTurn,
   AssistantTraceItem,
   ComposerAttachment,
   ComposerMcpOption,
@@ -1104,6 +1105,7 @@ interface CanvasRegionTopMenuProps {
   activeCreateSessionTabID: string | null
   createSessionTabs: CreateSessionTab[]
   sessions: SessionSummary[]
+  workspaces: WorkspaceGroup[]
   showLeftSidebarToggleButton: boolean
   isRightSidebarCollapsed: boolean
   onAddCreateSessionTab: () => void
@@ -1115,27 +1117,58 @@ interface CanvasRegionTopMenuProps {
   onToggleRightSidebar: () => void
 }
 
-function getCreateSessionTabTitle(tab: CreateSessionTab, _index: number) {
-  const trimmedTitle = tab.title.trim()
-  if (trimmedTitle) return trimmedTitle
-  return "Create session"
+function getCreateSessionWorkspaceLabel(tab: CreateSessionTab, workspaces: WorkspaceGroup[]) {
+  const workspace = workspaces.find((item) => item.id === tab.workspaceID)
+  return workspace ? workspace.name : null
+}
+
+function getCreateSessionTabTitle(tab: CreateSessionTab, index: number, workspaces: WorkspaceGroup[]) {
+  const workspaceLabel = getCreateSessionWorkspaceLabel(tab, workspaces)
+  if (workspaceLabel) {
+    return index === 0 ? `Create · ${workspaceLabel}` : `Create ${index + 1} · ${workspaceLabel}`
+  }
+
+  return index === 0 ? "Create session" : `Create session ${index + 1}`
 }
 
 function getCreateSessionTabSwitchLabel(tab: CreateSessionTab, index: number) {
-  return tab.title.trim() ? `Switch to create session draft ${tab.title.trim()}` : index === 0 ? "Switch to create session tab" : `Switch to create session tab ${index + 1}`
+  return index === 0 ? "Switch to create session tab" : `Switch to create session tab ${index + 1}`
 }
 
 function getCreateSessionTabCloseLabel(tab: CreateSessionTab, index: number) {
-  return tab.title.trim() ? `Close create session draft ${tab.title.trim()}` : index === 0 ? "Close create session tab" : `Close create session tab ${index + 1}`
+  return index === 0 ? "Close create session tab" : `Close create session tab ${index + 1}`
 }
 
-function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
-  const menuRef = useRef<HTMLFormElement | null>(null)
+type GitCapabilityState = {
+  enabled: boolean
+  reason?: string
+}
+
+type GitCapabilitiesState = {
+  directory: string
+  root: string | null
+  branch: string | null
+  defaultBranch: string | null
+  isGitRepo: boolean
+  canCommit: GitCapabilityState
+  canPush: GitCapabilityState
+  canCreatePullRequest: GitCapabilityState
+  canCreateBranch: GitCapabilityState
+}
+
+function GitQuickMenuButton({ projectID, directory }: { projectID: string | null; directory: string | null }) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const commitInputRef = useRef<HTMLInputElement | null>(null)
+  const branchInputRef = useRef<HTMLInputElement | null>(null)
+  const loadRequestRef = useRef(0)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [activeForm, setActiveForm] = useState<"commit" | "branch" | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
-  const [pendingAction, setPendingAction] = useState<"commit" | "push" | null>(null)
+  const [branchName, setBranchName] = useState("")
+  const [capabilities, setCapabilities] = useState<GitCapabilitiesState | null>(null)
+  const [isLoadingCapabilities, setIsLoadingCapabilities] = useState(false)
+  const [pendingAction, setPendingAction] = useState<"commit" | "push" | "pull-request" | "branch" | null>(null)
   const [status, setStatus] = useState<{
     tone: "neutral" | "success" | "error"
     text: string
@@ -1144,26 +1177,82 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
     text: "",
   })
 
+  const gitGetCapabilities = window.desktop?.gitGetCapabilities
   const gitCommit = window.desktop?.gitCommit
   const gitPush = window.desktop?.gitPush
-  const isCommitReady = Boolean(gitDirectory && gitCommit)
-  const isPushReady = Boolean(gitDirectory && gitPush)
+  const gitCreateBranch = window.desktop?.gitCreateBranch
+  const gitCreatePullRequest = window.desktop?.gitCreatePullRequest
+
+  async function refreshCapabilities(reportError = false) {
+    if (!projectID || !directory || !gitGetCapabilities) {
+      setCapabilities(null)
+      setIsLoadingCapabilities(false)
+      return null
+    }
+
+    const requestID = loadRequestRef.current + 1
+    loadRequestRef.current = requestID
+    setIsLoadingCapabilities(true)
+
+    try {
+      const nextCapabilities = await gitGetCapabilities({
+        projectID,
+        directory,
+      })
+
+      if (loadRequestRef.current !== requestID) {
+        return null
+      }
+
+      setCapabilities(nextCapabilities)
+      return nextCapabilities
+    } catch (error) {
+      if (loadRequestRef.current !== requestID) {
+        return null
+      }
+
+      setCapabilities(null)
+      if (reportError) {
+        setStatus({
+          tone: "error",
+          text: error instanceof Error ? error.message : String(error),
+        })
+      }
+      return null
+    } finally {
+      if (loadRequestRef.current === requestID) {
+        setIsLoadingCapabilities(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    setIsMenuOpen(false)
+    setActiveForm(null)
+    setCommitMessage("")
+    setBranchName("")
+    setStatus({
+      tone: "neutral",
+      text: "",
+    })
+    void refreshCapabilities()
+  }, [projectID, directory])
 
   useEffect(() => {
     if (!isMenuOpen) return
-
-    inputRef.current?.focus()
 
     const handlePointerDown = (event: globalThis.PointerEvent) => {
       const target = event.target as Node | null
       if (!target) return
       if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
       setIsMenuOpen(false)
+      setActiveForm(null)
     }
 
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsMenuOpen(false)
+        setActiveForm(null)
       }
     }
 
@@ -1177,13 +1266,17 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
   }, [isMenuOpen])
 
   useEffect(() => {
-    setIsMenuOpen(false)
-    setCommitMessage("")
-    setStatus({
-      tone: "neutral",
-      text: "",
-    })
-  }, [gitDirectory])
+    if (!isMenuOpen) return
+
+    if (activeForm === "commit") {
+      commitInputRef.current?.focus()
+      return
+    }
+
+    if (activeForm === "branch") {
+      branchInputRef.current?.focus()
+    }
+  }, [activeForm, isMenuOpen])
 
   async function handleCommit() {
     const message = commitMessage.trim()
@@ -1196,7 +1289,7 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
       return
     }
 
-    if (!gitDirectory || !gitCommit) {
+    if (!projectID || !directory || !gitCommit) {
       setStatus({
         tone: "error",
         text: "The current workspace is unavailable.",
@@ -1212,14 +1305,17 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
 
     try {
       const result = await gitCommit({
-        directory: gitDirectory,
+        projectID,
+        directory,
         message,
       })
       setCommitMessage("")
+      setActiveForm(null)
       setStatus({
         tone: "success",
         text: result.summary,
       })
+      void refreshCapabilities()
     } catch (error) {
       setStatus({
         tone: "error",
@@ -1231,7 +1327,7 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
   }
 
   async function handlePush() {
-    if (!gitDirectory || !gitPush) {
+    if (!projectID || !directory || !gitPush) {
       setStatus({
         tone: "error",
         text: "The current workspace is unavailable.",
@@ -1240,6 +1336,7 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
     }
 
     setPendingAction("push")
+    setActiveForm(null)
     setStatus({
       tone: "neutral",
       text: "Pushing branch...",
@@ -1247,12 +1344,14 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
 
     try {
       const result = await gitPush({
-        directory: gitDirectory,
+        projectID,
+        directory,
       })
       setStatus({
         tone: "success",
         text: result.summary,
       })
+      void refreshCapabilities()
     } catch (error) {
       setStatus({
         tone: "error",
@@ -1262,6 +1361,99 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
       setPendingAction(null)
     }
   }
+
+  async function handleCreateBranch() {
+    const name = branchName.trim()
+
+    if (!name) {
+      setStatus({
+        tone: "error",
+        text: "Enter a branch name.",
+      })
+      return
+    }
+
+    if (!projectID || !directory || !gitCreateBranch) {
+      setStatus({
+        tone: "error",
+        text: "The current workspace is unavailable.",
+      })
+      return
+    }
+
+    setPendingAction("branch")
+    setStatus({
+      tone: "neutral",
+      text: "Creating branch...",
+    })
+
+    try {
+      const result = await gitCreateBranch({
+        projectID,
+        directory,
+        name,
+      })
+      setBranchName("")
+      setActiveForm(null)
+      setStatus({
+        tone: "success",
+        text: result.summary,
+      })
+      void refreshCapabilities()
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  async function handleCreatePullRequest() {
+    if (!projectID || !directory || !gitCreatePullRequest) {
+      setStatus({
+        tone: "error",
+        text: "The current workspace is unavailable.",
+      })
+      return
+    }
+
+    setPendingAction("pull-request")
+    setActiveForm(null)
+    setStatus({
+      tone: "neutral",
+      text: "Creating pull request...",
+    })
+
+    try {
+      const result = await gitCreatePullRequest({
+        projectID,
+        directory,
+      })
+      setStatus({
+        tone: "success",
+        text: result.summary,
+      })
+      void refreshCapabilities()
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        text: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  if (!projectID || !directory || !gitGetCapabilities || !capabilities?.isGitRepo) {
+    return null
+  }
+
+  const isBusy = pendingAction !== null || isLoadingCapabilities
+  const defaultStatusText = capabilities.branch
+    ? `Current branch: ${capabilities.branch}`
+    : "The current worktree is on a detached HEAD."
 
   return (
     <div className="canvas-top-menu-quick-anchor">
@@ -1280,43 +1472,136 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
       </button>
 
       {isMenuOpen ? (
-        <form
-          ref={menuRef}
-          id="canvas-top-menu-git-menu"
-          className="canvas-top-menu-quick-panel"
-          role="dialog"
-          aria-label="Git quick menu"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void handleCommit()
-          }}
-        >
-          <label className="canvas-top-menu-quick-field">
-            <span>Commit message</span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={commitMessage}
-              placeholder="Enter commit message"
-              onChange={(event: ChangeEvent<HTMLInputElement>) => setCommitMessage(event.target.value)}
-            />
-          </label>
-
-          <div className="canvas-top-menu-quick-actions">
-            <button type="submit" className="primary-button" disabled={!isCommitReady || pendingAction !== null}>
-              {pendingAction === "commit" ? "Committing..." : "Commit"}
-            </button>
+        <div ref={menuRef} id="canvas-top-menu-git-menu" className="canvas-top-menu-quick-panel git-quick-menu-panel" role="dialog" aria-label="Git quick menu">
+          <div className="git-quick-menu-options" role="group" aria-label="Git actions">
             <button
               type="button"
-              className="secondary-button"
-              disabled={!isPushReady || pendingAction !== null}
+              className={activeForm === "commit" ? "composer-menu-option git-quick-menu-option is-selected" : "composer-menu-option git-quick-menu-option"}
+              disabled={!capabilities.canCommit.enabled || isBusy}
+              title={capabilities.canCommit.enabled ? "Commit the current workspace changes." : capabilities.canCommit.reason}
+              onClick={() => {
+                setActiveForm((current) => current === "commit" ? null : "commit")
+              }}
+            >
+              <span className="composer-menu-option-copy">
+                <strong>Commit changes</strong>
+                <small>{capabilities.canCommit.enabled ? "Create a commit from the current workspace changes." : capabilities.canCommit.reason}</small>
+              </span>
+              <span className="composer-menu-option-check">{pendingAction === "commit" ? "Working..." : "Open"}</span>
+            </button>
+
+            <button
+              type="button"
+              className="composer-menu-option git-quick-menu-option"
+              disabled={!capabilities.canPush.enabled || isBusy}
+              title={capabilities.canPush.enabled ? "Push the current branch." : capabilities.canPush.reason}
               onClick={() => {
                 void handlePush()
               }}
             >
-              {pendingAction === "push" ? "Pushing..." : "Push"}
+              <span className="composer-menu-option-copy">
+                <strong>Push branch</strong>
+                <small>{capabilities.canPush.enabled ? "Push the current branch to its tracked remote." : capabilities.canPush.reason}</small>
+              </span>
+              <span className="composer-menu-option-check">{pendingAction === "push" ? "Working..." : "Run"}</span>
+            </button>
+
+            <button
+              type="button"
+              className="composer-menu-option git-quick-menu-option"
+              disabled={!capabilities.canCreatePullRequest.enabled || isBusy}
+              title={capabilities.canCreatePullRequest.enabled ? "Create a pull request for the current branch." : capabilities.canCreatePullRequest.reason}
+              onClick={() => {
+                void handleCreatePullRequest()
+              }}
+            >
+              <span className="composer-menu-option-copy">
+                <strong>Create pull request</strong>
+                <small>
+                  {capabilities.canCreatePullRequest.enabled
+                    ? "Create a pull request from the current branch."
+                    : capabilities.canCreatePullRequest.reason}
+                </small>
+              </span>
+              <span className="composer-menu-option-check">{pendingAction === "pull-request" ? "Working..." : "Run"}</span>
+            </button>
+
+            <button
+              type="button"
+              className={activeForm === "branch" ? "composer-menu-option git-quick-menu-option is-selected" : "composer-menu-option git-quick-menu-option"}
+              disabled={!capabilities.canCreateBranch.enabled || isBusy}
+              title={capabilities.canCreateBranch.enabled ? "Create and switch to a new branch." : capabilities.canCreateBranch.reason}
+              onClick={() => {
+                setActiveForm((current) => current === "branch" ? null : "branch")
+              }}
+            >
+              <span className="composer-menu-option-copy">
+                <strong>Create branch</strong>
+                <small>{capabilities.canCreateBranch.enabled ? "Create and switch to a new branch." : capabilities.canCreateBranch.reason}</small>
+              </span>
+              <span className="composer-menu-option-check">{pendingAction === "branch" ? "Working..." : "Open"}</span>
             </button>
           </div>
+
+          {activeForm === "commit" ? (
+            <div className="git-quick-menu-form">
+              <label className="canvas-top-menu-quick-field">
+                <span>Commit message</span>
+                <input
+                  ref={commitInputRef}
+                  type="text"
+                  value={commitMessage}
+                  placeholder="Enter commit message"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setCommitMessage(event.target.value)}
+                  onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      void handleCommit()
+                    }
+                  }}
+                />
+              </label>
+
+              <div className="canvas-top-menu-quick-actions">
+                <button className="secondary-button" type="button" onClick={() => setActiveForm(null)} disabled={isBusy}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="button" onClick={() => void handleCommit()} disabled={isBusy}>
+                  {pendingAction === "commit" ? "Committing..." : "Run commit"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {activeForm === "branch" ? (
+            <div className="git-quick-menu-form">
+              <label className="canvas-top-menu-quick-field">
+                <span>Branch name</span>
+                <input
+                  ref={branchInputRef}
+                  type="text"
+                  value={branchName}
+                  placeholder="feature/new-branch"
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => setBranchName(event.target.value)}
+                  onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      void handleCreateBranch()
+                    }
+                  }}
+                />
+              </label>
+
+              <div className="canvas-top-menu-quick-actions">
+                <button className="secondary-button" type="button" onClick={() => setActiveForm(null)} disabled={isBusy}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="button" onClick={() => void handleCreateBranch()} disabled={isBusy}>
+                  {pendingAction === "branch" ? "Creating..." : "Create branch"}
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <p
             className={[
@@ -1328,12 +1613,9 @@ function GitQuickMenuButton({ gitDirectory }: { gitDirectory: string | null }) {
               .join(" ")}
             aria-live="polite"
           >
-            {status.text ||
-              (!gitDirectory
-                ? "The current workspace does not have an available Git worktree."
-                : "Commit stages workspace changes with git add -A before creating the commit.")}
+            {status.text || (isLoadingCapabilities ? "Checking Git status..." : defaultStatusText)}
           </p>
-        </form>
+        </div>
       ) : null}
     </div>
   )
@@ -1344,6 +1626,7 @@ export function CanvasRegionTopMenu({
   activeCreateSessionTabID,
   createSessionTabs,
   sessions,
+  workspaces,
   onAddCreateSessionTab,
   showLeftSidebarToggleButton,
   isRightSidebarCollapsed,
@@ -1408,7 +1691,7 @@ export function CanvasRegionTopMenu({
                   type="button"
                   onClick={() => onSelectCreateSessionTab(tab.id)}
                 >
-                  <span className="session-tab-title">{getCreateSessionTabTitle(tab, index)}</span>
+                  <span className="session-tab-title">{getCreateSessionTabTitle(tab, index, workspaces)}</span>
                 </button>
                 {canCloseCreateSessionTab ? (
                   <button
@@ -1471,7 +1754,9 @@ export function CanvasRegionUtilityMenu({
 }
 
 interface SessionCanvasTopMenuProps {
-  activeSession: SessionSummary | null
+  contextLabel: string
+  contextTitle: string
+  gitProjectID: string | null
   gitDirectory: string | null
   mcpOptions: ComposerMcpOption[]
   selectedMcpServerIDs: string[]
@@ -1670,7 +1955,9 @@ function ProjectSkillsMenuButton({
 }
 
 export function SessionCanvasTopMenu({
-  activeSession,
+  contextLabel,
+  contextTitle,
+  gitProjectID,
   gitDirectory,
   mcpOptions,
   selectedMcpServerIDs,
@@ -1684,8 +1971,8 @@ export function SessionCanvasTopMenu({
   return (
     <div className="session-canvas-top-menu panel-toolbar" aria-label="Session canvas top menu">
       <div className="session-canvas-top-menu-copy">
-        <span className="label">Session</span>
-        <strong>{activeSession?.title ?? "No session selected"}</strong>
+        <span className="label">{contextLabel}</span>
+        <strong>{contextTitle}</strong>
       </div>
       <div className="session-canvas-top-menu-actions">
         <ProjectMcpMenuButton
@@ -1700,7 +1987,7 @@ export function SessionCanvasTopMenu({
           selectedSkillLabel={selectedSkillLabel}
           onSkillToggle={onSkillToggle}
         />
-        <GitQuickMenuButton gitDirectory={gitDirectory} />
+        <GitQuickMenuButton projectID={gitProjectID} directory={gitDirectory} />
       </div>
       <WindowControlsSpacer variant="canvas" />
     </div>
@@ -1803,20 +2090,14 @@ export function GlobalSkillsCanvas({
 interface CreateSessionCanvasProps {
   isCreatingSession: boolean
   selectedWorkspaceID: string | null
-  title: string
   workspaces: WorkspaceGroup[]
-  onCreateSession: () => void | Promise<void>
-  onTitleChange: (value: string) => void
   onWorkspaceChange: (workspaceID: string) => void
 }
 
 export function CreateSessionCanvas({
   isCreatingSession,
   selectedWorkspaceID,
-  title,
   workspaces,
-  onCreateSession,
-  onTitleChange,
   onWorkspaceChange,
 }: CreateSessionCanvasProps) {
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceID) ?? null
@@ -1825,13 +2106,10 @@ export function CreateSessionCanvas({
     return (
       <section className="thread-shell create-session-shell">
         <article className="create-session-card">
-          <header className="assistant-header create-session-header">
-            <div>
-              <span className="label">Create Session</span>
-              <h3>No folder workspace available</h3>
-            </div>
-          </header>
-          <p className="create-session-copy">Open a folder workspace from the left sidebar first, then create the session here.</p>
+          <img className="create-session-logo" src="/create-session-logo.svg" alt="Fanfande Studio logo" />
+          <select className="create-session-native-select" aria-label="Session project" disabled value="">
+            <option value="">No project available</option>
+          </select>
         </article>
       </section>
     )
@@ -1839,74 +2117,22 @@ export function CreateSessionCanvas({
 
   return (
     <section className="thread-shell create-session-shell">
-      <form
-        className="create-session-card"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void onCreateSession()
-        }}
-      >
-        <header className="assistant-header create-session-header">
-          <div>
-            <span className="label">Create Session</span>
-            <h3>Open a new session tab</h3>
-          </div>
-        </header>
-
-        <p className="create-session-copy">Choose a folder workspace, optionally name the session, then create it into the canvas.</p>
-
-        <div className="create-session-fields">
-          <label className="create-session-field">
-            <span className="label">Folder Workspace</span>
-            <select
-              aria-label="Session folder workspace"
-              value={selectedWorkspaceID ?? ""}
-              onChange={(event: ChangeEvent<HTMLSelectElement>) => onWorkspaceChange(event.target.value)}
-            >
-              {workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>
-                  {workspace.project.name} / {workspace.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="create-session-field">
-            <span className="label">Session Title</span>
-            <input
-              aria-label="Session title"
-              placeholder="Optional session title"
-              type="text"
-              value={title}
-              onChange={(event: ChangeEvent<HTMLInputElement>) => onTitleChange(event.target.value)}
-            />
-          </label>
-        </div>
-
-        {selectedWorkspace ? (
-          <article className="create-session-workspace-card">
-            <span className="label">Target Folder</span>
-            <strong>
-              {selectedWorkspace.project.name} / {selectedWorkspace.name}
-            </strong>
-            <p>{selectedWorkspace.directory}</p>
-          </article>
-        ) : null}
-
-        <div className="create-session-actions">
-          <button
-            className="secondary-button"
-            disabled={isCreatingSession || title.trim().length === 0}
-            type="button"
-            onClick={() => onTitleChange("")}
-          >
-            Reset title
-          </button>
-          <button className="primary-button" disabled={isCreatingSession || !selectedWorkspaceID} type="submit">
-            {isCreatingSession ? "Creating session..." : "Create session"}
-          </button>
-        </div>
-      </form>
+      <article className="create-session-card">
+        <img className="create-session-logo" src="/create-session-logo.svg" alt="Fanfande Studio logo" />
+        <select
+          className="create-session-native-select"
+          aria-label="Session project"
+          disabled={isCreatingSession}
+          value={selectedWorkspaceID ?? selectedWorkspace?.id ?? ""}
+          onChange={(event: ChangeEvent<HTMLSelectElement>) => onWorkspaceChange(event.target.value)}
+        >
+          {workspaces.map((workspace) => (
+            <option key={workspace.id} value={workspace.id}>
+              {workspace.project.name} / {workspace.name}
+            </option>
+          ))}
+        </select>
+      </article>
     </section>
   )
 }
@@ -1932,7 +2158,8 @@ function buildModelTags(model: ProviderModel) {
 
   if (model.capabilities.reasoning) tags.push("Reasoning")
   if (model.capabilities.toolcall) tags.push("Tools")
-  if (model.capabilities.input.image || model.capabilities.attachment) tags.push("Vision")
+  if (model.capabilities.input.image) tags.push("Vision")
+  if (model.capabilities.attachment && model.capabilities.input.pdf) tags.push("PDF")
 
   return tags
 }
@@ -3608,6 +3835,23 @@ function filterRenderedAssistantTraceItems(items: AssistantTraceItem[], showFile
   return items.filter((item) => traceSectionKeyForItem(item) !== "file-change")
 }
 
+function getAssistantEphemeralHint(turn: AssistantTurn) {
+  switch (turn.runtime.phase) {
+    case "requesting":
+    case "waiting_first_event":
+    case "reasoning":
+      return "Thinking..."
+    case "tool_running":
+      return turn.runtime.toolName ? `Running ${turn.runtime.toolName}...` : "Running tools..."
+    case "waiting_approval":
+      return "Waiting for approval..."
+    case "responding":
+      return "Responding..."
+    default:
+      return null
+  }
+}
+
 function summarizeFileChangeItems(items: AssistantTraceItem[]) {
   const latestPatch = [...items].reverse().find((item) => item.kind === "patch")
   if (latestPatch) return [latestPatch]
@@ -3628,6 +3872,14 @@ function AssistantTraceSection({
   return (
     <section className={`assistant-section is-${sectionKey}`} role="region" aria-label={title}>
       <div className="assistant-section-body">{children}</div>
+    </section>
+  )
+}
+
+function AssistantTurnPlaceholder({ message }: { message: string }) {
+  return (
+    <section className="assistant-section assistant-ephemeral-state" aria-live="polite" aria-label="Assistant status">
+      <p className="assistant-ephemeral-hint">{message}</p>
     </section>
   )
 }
@@ -4026,16 +4278,21 @@ export function ThreadView({
                 ...turn.items.filter((item) => item.kind !== "system" && !isFileChangeTraceItem(item)),
                 ...cycleFileChangeItems,
               ]
-              if (visibleItems.length === 0) return null
+              const ephemeralHint = visibleItems.length === 0 ? getAssistantEphemeralHint(turn) : null
+              if (visibleItems.length === 0 && !ephemeralHint) return null
 
               return (
                 <article key={turn.id} className="turn assistant-turn">
                   <div className={turn.isStreaming ? "assistant-shell is-sectioned is-streaming" : "assistant-shell is-sectioned"}>
-                    <AssistantTurnSections
-                      turnID={turn.id}
-                      items={visibleItems}
-                      showFileChanges={isCycleFinalTurn && !turn.isStreaming}
-                    />
+                    {ephemeralHint ? (
+                      <AssistantTurnPlaceholder message={ephemeralHint} />
+                    ) : (
+                      <AssistantTurnSections
+                        turnID={turn.id}
+                        items={visibleItems}
+                        showFileChanges={isCycleFinalTurn && !turn.isStreaming}
+                      />
+                    )}
                   </div>
                 </article>
               )
@@ -4058,31 +4315,77 @@ export function ThreadView({
 
 interface ComposerProps {
   attachments: ComposerAttachment[]
+  attachmentButtonTitle: string
+  attachmentDisabledReason: string | null
+  attachmentError: string | null
+  canSend: boolean
   draft: string
-  hasActiveSession: boolean
   hasPendingPermissionRequests: boolean
   isSending: boolean
   modelOptions: ComposerModelOption[]
   selectedModel: string | null
   selectedModelLabel: string
+  unsupportedAttachmentPaths: string[]
   onDraftChange: (value: string) => void
   onModelChange: (value: string | null) => void | Promise<void>
   onPickAttachments: () => void | Promise<void>
   onRemoveAttachment: (path: string) => void
-  onSend: () => void | Promise<void>
+  onSend: (draftOverride?: string) => void | Promise<void>
 }
 
 type ComposerMenuKey = "model" | null
 
+function isComposerSubmitKeyEvent(event: KeyboardEvent<HTMLTextAreaElement>, isComposing: boolean) {
+  if (event.key !== "Enter") return false
+  if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return false
+
+  const nativeEvent = event.nativeEvent
+  return !(isComposing || nativeEvent.isComposing || nativeEvent.keyCode === 229)
+}
+
+function getComposerSendButtonDescription({
+  attachmentError,
+  canSend,
+  hasPendingPermissionRequests,
+  isSending,
+}: {
+  attachmentError: string | null
+  canSend: boolean
+  hasPendingPermissionRequests: boolean
+  isSending: boolean
+}) {
+  if (attachmentError) {
+    return `${attachmentError} Press Shift+Enter for a newline.`
+  }
+
+  if (!canSend) {
+    return "Choose a session or workspace before sending. Press Shift+Enter for a newline."
+  }
+
+  if (hasPendingPermissionRequests) {
+    return "Enter is unavailable while approval requests are pending. Press Shift+Enter for a newline."
+  }
+
+  if (isSending) {
+    return "Enter is unavailable while the current request is sending. Press Shift+Enter for a newline."
+  }
+
+  return "Press Enter to send. Press Shift+Enter for a newline."
+}
+
 export function Composer({
   attachments,
+  attachmentButtonTitle,
+  attachmentDisabledReason,
+  attachmentError,
+  canSend,
   draft,
-  hasActiveSession,
   hasPendingPermissionRequests,
   isSending,
   modelOptions,
   selectedModel,
   selectedModelLabel,
+  unsupportedAttachmentPaths,
   onDraftChange,
   onModelChange,
   onPickAttachments,
@@ -4090,7 +4393,9 @@ export function Composer({
   onSend,
 }: ComposerProps) {
   const [openMenu, setOpenMenu] = useState<ComposerMenuKey>(null)
+  const isComposingRef = useRef(false)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
+  const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
 
   useEffect(() => {
     if (!openMenu) return
@@ -4125,14 +4430,38 @@ export function Composer({
     void onModelChange(value)
   }
 
+  function handleDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (!isComposerSubmitKeyEvent(event, isComposingRef.current)) return
+
+    event.preventDefault()
+    void onSend(event.currentTarget.value)
+  }
+
   const sendButtonLabel = isSending ? "Sending task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
+  const sendButtonDescription = getComposerSendButtonDescription({
+    attachmentError,
+    canSend,
+    hasPendingPermissionRequests,
+    isSending,
+  })
+  const sendButtonTitle = `${sendButtonLabel}. ${sendButtonDescription}`
+  const sendShortcut = !isSending && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
 
   return (
     <footer className="composer prompt-input-shell">
       <textarea
         aria-label="Task draft"
+        aria-description={sendButtonDescription}
+        enterKeyHint="send"
         value={draft}
         onChange={(event) => onDraftChange(event.target.value)}
+        onCompositionEnd={() => {
+          isComposingRef.current = false
+        }}
+        onCompositionStart={() => {
+          isComposingRef.current = true
+        }}
+        onKeyDown={handleDraftKeyDown}
         placeholder="Describe the UI, implementation task, or review target for the agent."
         rows={3}
       />
@@ -4140,7 +4469,14 @@ export function Composer({
       {attachments.length > 0 ? (
         <div className="composer-attachment-strip" aria-label="Selected attachments">
           {attachments.map((attachment) => (
-            <div key={attachment.path} className="composer-attachment-chip">
+            <div
+              key={attachment.path}
+              className={
+                unsupportedAttachmentPathSet.has(attachment.path)
+                  ? "composer-attachment-chip is-invalid"
+                  : "composer-attachment-chip"
+              }
+            >
               <span className="composer-attachment-name" title={attachment.path}>
                 {attachment.name}
               </span>
@@ -4157,13 +4493,20 @@ export function Composer({
         </div>
       ) : null}
 
+      {attachmentError ? (
+        <p className="composer-attachment-note" role="alert">
+          {attachmentError}
+        </p>
+      ) : null}
+
       <div ref={toolbarRef} className="composer-toolbar">
         <div className="composer-selectors" aria-label="Composer options">
           <button
-            aria-label="Add image or file"
+            aria-label="Add attachments"
             className="composer-selector-button is-icon-only"
+            disabled={attachmentDisabledReason !== null}
             onClick={() => void onPickAttachments()}
-            title="Add image or file"
+            title={attachmentButtonTitle}
             type="button"
           >
             <PaperclipIcon />
@@ -4213,10 +4556,12 @@ export function Composer({
         <div className="composer-actions">
           <button
             aria-label={sendButtonLabel}
+            aria-description={sendButtonDescription}
+            aria-keyshortcuts={sendShortcut}
             className="primary-button is-icon-only"
-            disabled={isSending || !hasActiveSession || hasPendingPermissionRequests}
+            disabled={isSending || !canSend || hasPendingPermissionRequests || attachmentError !== null}
             onClick={() => void onSend()}
-            title={sendButtonLabel}
+            title={sendButtonTitle}
             type="button"
           >
             <ArrowUpIcon />

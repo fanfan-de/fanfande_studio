@@ -104,7 +104,7 @@
 3. 从后端加载出来的 session 默认映射为 `session.id -> session.id`。
 4. 选中工作区的 `project.id` 会驱动 composer 模型列表；这部分是项目级，而不是全局设置页级。
 5. `createSessionTabs` 可以和普通 session tabs 并存；激活 create-session tab 时，Canvas 会切到创建表单，而不是 thread。
-6. `composerAttachments` 会在真正提交时被附加到 prompt 文本末尾。
+6. `composerAttachments` 会在真正提交时作为独立 `attachments` 字段发送；图片会在 agent server 侧归一化为 `image part`，而不是拼到 prompt 文本末尾。
 7. `composerSelectedSkillIDs` 由 `Session Canvas Top Menu` 右侧的项目级 skills 菜单维护，发送成功后会清空。
 8. 只要存在待审批请求，composer 发送按钮就会禁用。
 
@@ -273,7 +273,7 @@
 6. 如果后端可用：
    - 没有 backend session id 时，先走 `createAgentSession()` 兜底创建。
    - `Review` 模式会附加固定 review system prompt。
-   - 附件会被编码进 prompt 末尾的 `Attached files:` 段落。
+   - 附件会通过 `attachments` 字段发送，由 agent server 读取本地文件并归一化成 `image/file part`；不会再编码进 prompt 文本末尾。
    - 当前项目 skills 菜单里的已选 `skill ids` 会通过 `skills` 字段一并发送。
    - 优先走 `streamAgentMessage()` + `onAgentStreamEvent()`。
    - 若流式接口不可用，再退回 `sendAgentMessage()` 一次性消费事件数组。

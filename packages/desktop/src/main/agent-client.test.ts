@@ -68,4 +68,26 @@ describe("agent SSE parsing", () => {
     ])
     expect(secondChunk.remainder).toBe("")
   })
+
+  it("preserves SSE ids so callers can resume from the last cursor", () => {
+    const events = parseSSE(
+      [
+        "id: 1740000000000:turn-1:2",
+        "event: delta",
+        'data: {"kind":"text","delta":"Recovered chunk"}',
+        "",
+      ].join("\n"),
+    )
+
+    expect(events).toEqual([
+      {
+        id: "1740000000000:turn-1:2",
+        event: "delta",
+        data: {
+          kind: "text",
+          delta: "Recovered chunk",
+        },
+      },
+    ])
+  })
 })

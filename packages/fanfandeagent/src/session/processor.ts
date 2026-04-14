@@ -9,6 +9,8 @@ import { ZodDate } from "zod";
 import { matchedRoutes } from "hono/route";
 import * as Session from "#session/session.ts"
 import { Flag } from "#flag/flag.ts"
+import type { LanguageModelUsage } from "ai"
+import type { TurnContext } from "#session/orchestrator.ts"
 
 const log = Log.create({ service: "session.processor" })
 const STREAM_PART_PERSIST_INTERVAL_MS = 100
@@ -16,7 +18,9 @@ const ENABLE_STREAM_STDOUT_DEBUG = Flag.FanFande_DEBUG_STREAM_STDOUT
 
 type StreamPersistedPart = Message.TextPart | Message.ReasoningPart
 
-function createStreamPartPersister() {
+function createStreamPartPersister(input: {
+    persist: (part: StreamPersistedPart) => Promise<void>
+}) {
     const state = new Map<string, {
         dirty: boolean
         lastPersistedAt: number
@@ -28,7 +32,7 @@ function createStreamPartPersister() {
             return
         }
 
-        await Session.updatePart(part)
+        await input.persist(part)
         current.dirty = false
         current.lastPersistedAt = Date.now()
         state.set(part.id, current)
@@ -83,6 +87,43 @@ function normalizeToolError(error: unknown): string {
 function writeStreamDebug(value: string) {
     if (!ENABLE_STREAM_STDOUT_DEBUG) return
     process.stdout.write(value)
+}
+
+function applyUsageToAssistantMessage(
+    message: Message.Assistant,
+    usage: LanguageModelUsage | undefined,
+    inputMode: "replace" | "peak" | "preserve" = "replace",
+) {
+    if (!usage) {
+        return
+    }
+
+    const measuredInputTokens = usage.inputTokens ?? message.tokens.input
+    let nextInputTokens = measuredInputTokens
+
+    if (inputMode === "peak") {
+        nextInputTokens = Math.max(message.tokens.input, measuredInputTokens)
+    } else if (inputMode === "preserve" && message.tokens.input > 0) {
+        nextInputTokens = message.tokens.input
+    }
+
+    message.tokens = {
+        input: nextInputTokens,
+        output: usage.outputTokens ?? message.tokens.output,
+        reasoning:
+            usage.outputTokenDetails?.reasoningTokens ??
+            usage.reasoningTokens ??
+            message.tokens.reasoning,
+        cache: {
+            read:
+                usage.inputTokenDetails?.cacheReadTokens ??
+                usage.cachedInputTokens ??
+                message.tokens.cache.read,
+            write:
+                usage.inputTokenDetails?.cacheWriteTokens ??
+                message.tokens.cache.write,
+        },
+    }
 }
 
 function toAttachmentPart(
@@ -163,12 +204,21 @@ function extractToolResultState(
 export function create(input: {
     Assistant: Message.Assistant
     abort?: AbortSignal
+    turn?: TurnContext
 }) {
     const toolcalls: Record<string, Message.ToolPart> = {}
     let snapshot: string | undefined
     let blocked = false
     let attempt = 0
     let needsCompaction = false
+    const emitRuntimeEvent = input.turn?.emit.bind(input.turn)
+    const persistPart = async (part: Message.Part) => {
+        if (emitRuntimeEvent) {
+            return
+        }
+
+        await Session.updatePart(part)
+    }
 
     const result = {
         get message() {
@@ -214,7 +264,10 @@ export function create(input: {
                     }
 
                     toolcalls[toolCallID] = failed
-                    await Session.updatePart(failed)
+                    emitRuntimeEvent?.("tool.call.failed", {
+                        part: failed,
+                    })
+                    await persistPart(failed)
                 }
             }
 
@@ -228,7 +281,9 @@ export function create(input: {
             while (true) {
                 try {
                     const stream = await LLM.stream(streamInput)
-                    const streamPartPersister = createStreamPartPersister()
+                    const streamPartPersister = createStreamPartPersister({
+                        persist: persistPart,
+                    })
                     let currentText: Message.TextPart | undefined = undefined
                     // 鏌愪簺妯″瀷锛堝 Claude銆丟emini锛夋敮鎸佸涓苟琛屾帹鐞嗛摼鎴栧祵濂楁帹鐞嗭紝鎸?id 鍒嗗紑璺熻釜
                     let reasoningMap: Record<string, Message.ReasoningPart> = {}
@@ -246,6 +301,13 @@ export function create(input: {
                                     },
                                     metadata: value.providerMetadata,
                                 }
+                                emitRuntimeEvent?.("text.part.started", {
+                                    messageID: currentText.messageID,
+                                    partID: currentText.id,
+                                    kind: "text",
+                                    text: currentText.text,
+                                    metadata: currentText.metadata,
+                                })
                                 writeStreamDebug("text-start:")
                                 break;
                             case "text-end":
@@ -255,6 +317,9 @@ export function create(input: {
                                         currentText.time.end = Date.now()
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
+                                    emitRuntimeEvent?.("text.part.completed", {
+                                        part: currentText,
+                                    })
                                     // 灏?part 鍐欏叆瀛樺偍
                                     await streamPartPersister.persist(currentText, true)
                                     streamPartPersister.clear(currentText.id)
@@ -268,6 +333,14 @@ export function create(input: {
                                     currentText.text += value.text
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
+                                    emitRuntimeEvent?.("text.part.delta", {
+                                        messageID: currentText.messageID,
+                                        partID: currentText.id,
+                                        kind: "text",
+                                        delta: value.text,
+                                        text: currentText.text,
+                                        metadata: currentText.metadata,
+                                    })
 
                                     await streamPartPersister.persist(currentText)
                                     writeStreamDebug(value.text)
@@ -287,6 +360,13 @@ export function create(input: {
                                     metadata: value.providerMetadata,
                                 }
                                 reasoningMap[value.id] = reasoningPart
+                                emitRuntimeEvent?.("reasoning.part.started", {
+                                    messageID: reasoningPart.messageID,
+                                    partID: reasoningPart.id,
+                                    kind: "reasoning",
+                                    text: reasoningPart.text,
+                                    metadata: reasoningPart.metadata,
+                                })
 
                                 writeStreamDebug("reasoning start")
 
@@ -302,6 +382,9 @@ export function create(input: {
                                             end: Date.now(),
                                         }
                                         if (value.providerMetadata) part!.metadata = value.providerMetadata
+                                        emitRuntimeEvent?.("reasoning.part.completed", {
+                                            part: part!,
+                                        })
 
                                         await streamPartPersister.persist(part, true)
                                         streamPartPersister.clear(part.id)
@@ -315,6 +398,14 @@ export function create(input: {
                                     const part = reasoningMap[value.id]
                                     part!.text += value.text
                                     if (value.providerMetadata) part!.metadata = value.providerMetadata
+                                    emitRuntimeEvent?.("reasoning.part.delta", {
+                                        messageID: part!.messageID,
+                                        partID: part!.id,
+                                        kind: "reasoning",
+                                        delta: value.text,
+                                        text: part!.text,
+                                        metadata: part!.metadata,
+                                    })
                                     await streamPartPersister.persist(part!)
                                     writeStreamDebug(value.text)
                                 }
@@ -387,8 +478,11 @@ export function create(input: {
                                     metadata: value.providerMetadata ?? match?.metadata,
                                 }
                                 toolcalls[value.toolCallId] = part
+                                emitRuntimeEvent?.("tool.call.started", {
+                                    part,
+                                })
                                 try {
-                                    await Session.updatePart(part)
+                                    await persistPart(part)
                                 } catch (error) {
                                     log.error("failed to persist tool-call part", {
                                         callID: part.callID,
@@ -430,8 +524,11 @@ export function create(input: {
                                     }
 
                                     toolcalls[value.toolCallId] = match
+                                    emitRuntimeEvent?.("tool.call.completed", {
+                                        part: match,
+                                    })
                                     try {
-                                        await Session.updatePart(match)
+                                        await persistPart(match)
                                     } catch (error) {
                                         log.error("failed to persist tool-result part", {
                                             callID: match.callID,
@@ -464,8 +561,11 @@ export function create(input: {
                                     }
 
                                     toolcalls[value.toolCallId] = match
+                                    emitRuntimeEvent?.("tool.call.failed", {
+                                        part: match,
+                                    })
                                     try {
-                                        await Session.updatePart(match)
+                                        await persistPart(match)
                                     } catch (error) {
                                         log.error("failed to persist tool-error part", {
                                             callID: match.callID,
@@ -512,7 +612,10 @@ export function create(input: {
                                     }
 
                                     toolcalls[value.toolCallId] = match
-                                    await Session.updatePart(match)
+                                    emitRuntimeEvent?.("tool.call.denied", {
+                                        part: match,
+                                    })
+                                    await persistPart(match)
                                 }
                                 break;
                             case "start-step":
@@ -531,6 +634,7 @@ export function create(input: {
                                 // TODO: 鍙戦€佸畬鎴愪簨浠堕€氱煡 UI
                                 // TODO: 鍙兘闇€瑕佽Е鍙戞秷鎭帇缂╋紙compaction锛?
                                 this.message.finishReason = value.finishReason
+                                applyUsageToAssistantMessage(this.message, value.totalUsage, "preserve")
                                 break;
                             case "abort":
 
@@ -549,6 +653,7 @@ export function create(input: {
                             case "finish-step":
                                 // 鎺ユ敹鍒拌繖涓?value锛岃鏄?LLM 鍒ゆ柇缁撴潫 React loop
                                 this.message.finishReason = value.finishReason
+                                applyUsageToAssistantMessage(this.message, value.usage, "peak")
 
 
                                 break;
@@ -593,7 +698,10 @@ export function create(input: {
                                     }
 
                                     toolcalls[approvalToolCallID] = waiting
-                                    await Session.updatePart(waiting)
+                                    emitRuntimeEvent?.("tool.call.waiting_approval", {
+                                        part: waiting,
+                                    })
+                                    await persistPart(waiting)
                                     await Permission.registerApprovalRequest({
                                         assistant: {
                                             ...input.Assistant,
@@ -603,6 +711,7 @@ export function create(input: {
                                             },
                                         },
                                         toolPart: waiting,
+                                        turn: input.turn,
                                     })
                                     blocked = true
                                 }

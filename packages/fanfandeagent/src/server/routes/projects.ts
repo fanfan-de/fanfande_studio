@@ -7,6 +7,7 @@ import * as Config from "#config/config.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
 import * as Mcp from "#mcp/manager.ts"
+import * as Git from "#git/git.ts"
 import { Instance } from "#project/instance.ts"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
@@ -23,6 +24,20 @@ const CreateProjectSessionBody = z.object({
 const UpdateMcpServerBody = Config.McpServerInput
 const UpdateProjectSkillSelectionBody = Config.ProjectSkillSelection
 const UpdateProjectMcpSelectionBody = Config.ProjectMcpSelection
+const GitDirectoryQuery = z.object({
+  directory: z.string().min(1),
+})
+const GitCommitBody = z.object({
+  directory: z.string().min(1),
+  message: z.string().min(1),
+})
+const GitDirectoryBody = z.object({
+  directory: z.string().min(1),
+})
+const GitCreateBranchBody = z.object({
+  directory: z.string().min(1),
+  name: z.string().min(1),
+})
 
 function safeReadProject(projectID: string) {
   const project = Project.get(projectID)
@@ -31,6 +46,22 @@ function safeReadProject(projectID: string) {
   }
 
   return project
+}
+
+async function resolveProjectGitDirectory(projectID: string, rawDirectory: string) {
+  safeReadProject(projectID)
+
+  const directory = rawDirectory.trim()
+  if (!directory) {
+    throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
+  }
+
+  const { project } = await Project.fromDirectory(directory)
+  if (project.id !== projectID) {
+    throw new ApiError(400, "DIRECTORY_NOT_IN_PROJECT", `Directory '${directory}' does not belong to project '${projectID}'`)
+  }
+
+  return directory
 }
 
 function parseModelReference(value: string) {
@@ -78,17 +109,11 @@ export function ProjectRoutes() {
 
   app.get("/:id/sessions", (c) => {
     const id = c.req.param("id")
-    const project = safeReadProject(id)
-
-    const sessions = db
-      .findManyWithSchema("sessions", Session.SessionInfo, {
-        where: [{ column: "projectID", value: id }],
-      })
-      .sort((left, right) => right.time.updated - left.time.updated)
+    safeReadProject(id)
 
     return c.json({
       success: true,
-      data: sessions,
+      data: Session.listByProject(id),
       requestId: c.get("requestId"),
     })
   })
@@ -160,8 +185,20 @@ export function ProjectRoutes() {
     const id = c.req.param("id")
     safeReadProject(id)
 
+    const items = await Provider.listModels(id)
+    let effectiveModel: Provider.PublicModel | null = null
+
+    try {
+      const effectiveRef = await Provider.getDefaultModelRef(id)
+      effectiveModel =
+        items.find((model) => model.providerID === effectiveRef.providerID && model.id === effectiveRef.modelID) ?? null
+    } catch {
+      effectiveModel = null
+    }
+
     const data = {
-      items: await Provider.listModels(id),
+      effectiveModel,
+      items,
       selection: await Provider.getSelection(id),
     }
 
@@ -259,6 +296,86 @@ export function ProjectRoutes() {
         model: selection.model,
         small_model: selection.small_model,
       },
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/:id/git/capabilities", async (c) => {
+    const id = c.req.param("id")
+    const payload = GitDirectoryQuery.safeParse(c.req.query())
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_QUERY", "Query parameter 'directory' must be a non-empty string")
+    }
+
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+
+    return c.json({
+      success: true,
+      data: await Git.getGitCapabilities(directory),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/:id/git/commit", async (c) => {
+    const id = c.req.param("id")
+    const payload = GitCommitBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must include non-empty 'directory' and 'message' fields")
+    }
+
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+
+    return c.json({
+      success: true,
+      data: await Git.commitGitChanges(directory, payload.data.message),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/:id/git/push", async (c) => {
+    const id = c.req.param("id")
+    const payload = GitDirectoryBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
+    }
+
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+
+    return c.json({
+      success: true,
+      data: await Git.pushGitChanges(directory),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/:id/git/branches", async (c) => {
+    const id = c.req.param("id")
+    const payload = GitCreateBranchBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must include non-empty 'directory' and 'name' fields")
+    }
+
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+
+    return c.json({
+      success: true,
+      data: await Git.createGitBranch(directory, payload.data.name),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/:id/git/pull-requests", async (c) => {
+    const id = c.req.param("id")
+    const payload = GitDirectoryBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
+    }
+
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+
+    return c.json({
+      success: true,
+      data: await Git.createGitPullRequest(directory),
       requestId: c.get("requestId"),
     })
   })

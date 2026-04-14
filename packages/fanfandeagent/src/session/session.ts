@@ -7,6 +7,7 @@ import * as Message from "#session/message.ts"
 import * as Installation from "#installation/installation.ts"
 import { fn } from "#util/fn.ts"
 import * as db from "#database/Sqlite.ts"
+import * as EventStore from "#session/event-store.ts"
 
 interface TableRecordMap {
   projects: never
@@ -93,6 +94,33 @@ function DataBaseRead<T extends Exclude<TableName, "projects">>(tableName: T, id
   return TableSchemaMap[tableName].parse(result)
 }
 
+function upsertMessage(message: Message.MessageInfo) {
+  ensureSessionTables()
+  const existing = db.findById("messages", Message.MessageInfo, message.id)
+  if (existing) {
+    db.updateByIdWithSchema("messages", message.id, message, Message.MessageInfo)
+    return
+  }
+
+  db.insertOneWithSchema("messages", message, Message.MessageInfo)
+}
+
+function upsertPart(part: Message.Part) {
+  ensureSessionTables()
+  const existing = db.findById("parts", Message.Part, part.id)
+  if (existing) {
+    db.updateByIdWithSchema("parts", part.id, part, Message.Part)
+    return
+  }
+
+  db.insertOneWithSchema("parts", part, Message.Part)
+}
+
+function deletePart(partID: string) {
+  ensureSessionTables()
+  return db.deleteById("parts", partID)
+}
+
 export const Event = {
   Created: BusEvent.define(
     "session.created",
@@ -167,6 +195,7 @@ function removeSession(sessionID: string): SessionInfo | null {
 
   db.deleteMany("parts", [{ column: "sessionID", value: sessionID }])
   db.deleteMany("messages", [{ column: "sessionID", value: sessionID }])
+  EventStore.deleteSessionEvents(sessionID)
   db.deleteById("sessions", sessionID)
 
   return existing
@@ -181,26 +210,12 @@ function removeProjectSessions(projectID: string): SessionInfo[] {
   return sessions
 }
 
-const updateMessage = fn(Message.MessageInfo, async (msg) => {
-  ensureSessionTables()
-  const existing = db.findById("messages", Message.MessageInfo, msg.id)
-  if (existing) {
-    db.updateByIdWithSchema("messages", msg.id, msg, Message.MessageInfo)
-    return
-  }
-
-  db.insertOneWithSchema("messages", msg, Message.MessageInfo)
+const updateMessage = fn(Message.MessageInfo, (msg) => {
+  upsertMessage(msg)
 })
 
-const updatePart = fn(Message.Part, async (part) => {
-  ensureSessionTables()
-  const existing = db.findById("parts", Message.Part, part.id)
-  if (existing) {
-    db.updateByIdWithSchema("parts", part.id, part, Message.Part)
-    return
-  }
-
-  db.insertOneWithSchema("parts", part, Message.Part)
+const updatePart = fn(Message.Part, (part) => {
+  upsertPart(part)
 })
 
 export {
@@ -210,6 +225,9 @@ export {
   removeProjectSessions,
   DataBaseCreate,
   DataBaseRead,
+  upsertMessage,
+  upsertPart,
+  deletePart,
   updateMessage,
   updatePart,
 }

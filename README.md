@@ -111,6 +111,15 @@ bun run test:tool
 bun run docs
 ```
 
+开发时如果你同时启动 `packages/fanfandeagent` 的 `bun run dev:server` 和 `packages/desktop` 的 `bun run dev`，建议让桌面端显式连接外部 server，避免它再拉起一份自己的 managed agent：
+
+```powershell
+$env:FANFANDE_DISABLE_MANAGED_AGENT="1"
+$env:FANFANDE_AGENT_BASE_URL="http://127.0.0.1:4096"
+cd packages/desktop
+bun run dev
+```
+
 ## 环境变量
 
 | 变量名 | 作用 | 默认值 |

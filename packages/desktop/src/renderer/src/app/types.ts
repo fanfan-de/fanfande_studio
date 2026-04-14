@@ -116,6 +116,16 @@ export interface SessionDiffSummary {
   diffs: SessionDiffFile[]
 }
 
+export interface SessionContextUsage {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  reasoningTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  measuredAt: number
+}
+
 export interface UserTurn {
   id: string
   kind: "user"
@@ -139,6 +149,26 @@ export type AssistantTraceItemKind =
 
 export type AssistantTraceStatus = "pending" | "running" | "completed" | "error" | "waiting-approval" | "denied"
 
+export type AssistantTurnPhase =
+  | "requesting"
+  | "waiting_first_event"
+  | "reasoning"
+  | "tool_running"
+  | "waiting_approval"
+  | "responding"
+  | "completed"
+  | "failed"
+
+export interface AssistantTurnRuntime {
+  phase: AssistantTurnPhase
+  startedAt: number
+  updatedAt: number
+  firstVisibleAt?: number
+  toolName?: string
+  approvalRequestID?: string
+  errorMessage?: string
+}
+
 export interface AssistantTraceItem {
   id: string
   kind: AssistantTraceItemKind
@@ -156,6 +186,7 @@ export interface AssistantTurn {
   id: string
   kind: "assistant"
   timestamp: number
+  runtime: AssistantTurnRuntime
   state: string
   items: AssistantTraceItem[]
   isStreaming?: boolean
@@ -164,6 +195,7 @@ export interface AssistantTurn {
 export type Turn = UserTurn | AssistantTurn
 
 export interface AgentStreamEvent {
+  id?: string
   event: string
   data: unknown
 }
@@ -172,9 +204,15 @@ export interface AgentStreamIPCEvent extends AgentStreamEvent {
   streamID: string
 }
 
+export interface AgentSessionStreamIPCEvent extends AgentStreamEvent {
+  sessionID: string
+}
+
 export interface PendingAgentStream {
   sessionID: string
+  backendSessionID?: string
   assistantTurnID: string
+  backendTurnID?: string
 }
 
 export interface ProviderCatalogItem {

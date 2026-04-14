@@ -132,9 +132,7 @@ function migrateLegacyProjectSessions(legacyProjectIDs: string[], nextProjectID:
   const uniqueLegacyProjectIDs = [...new Set(legacyProjectIDs)].filter((projectID) => projectID && projectID !== nextProjectID)
 
   for (const legacyProjectID of uniqueLegacyProjectIDs) {
-    const legacySessions = db.findManyWithSchema("sessions", Session.SessionInfo, {
-      where: [{ column: "projectID", value: legacyProjectID }],
-    })
+    const legacySessions = Session.listByProject(legacyProjectID)
 
     for (const session of legacySessions) {
       if (!isPathInsideProject(session.directory, worktree)) continue
