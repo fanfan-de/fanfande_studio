@@ -20,6 +20,12 @@ export interface GitCapabilities {
   canCreateBranch: GitCapability
 }
 
+export interface GitBranchSummary {
+  name: string
+  kind: "local" | "remote"
+  current: boolean
+}
+
 export interface GitActionResult {
   directory: string
   root: string
@@ -158,6 +164,28 @@ async function resolveCurrentBranch(directory: string, gitBinary: string) {
   const result = await runCommand(gitBinary, ["rev-parse", "--abbrev-ref", "HEAD"], directory)
   if (result.exitCode !== 0) return null
   return parseBranchName(result.stdout)
+}
+
+function parseBranchList(stdout: string) {
+  return stdout
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function isRemoteHeadReference(name: string) {
+  return /\/HEAD$/.test(name)
+}
+
+function resolveRemoteLocalBranchName(name: string) {
+  const [, ...segments] = name.split("/")
+  return segments.join("/")
+}
+
+function sortGitBranches(left: GitBranchSummary, right: GitBranchSummary) {
+  if (left.current !== right.current) return left.current ? -1 : 1
+  if (left.kind !== right.kind) return left.kind === "local" ? -1 : 1
+  return left.name.localeCompare(right.name)
 }
 
 async function resolveUpstream(directory: string, gitBinary: string) {
@@ -304,6 +332,51 @@ export async function getGitCapabilities(directory: string): Promise<GitCapabili
   }
 }
 
+export async function listGitBranches(directory: string): Promise<GitBranchSummary[]> {
+  const gitBinary = requireGitBinary()
+  const targetDirectory = requireDirectory(directory)
+  const root = await resolveGitRoot(targetDirectory, gitBinary)
+
+  if (!root) {
+    throw new Error("The current workspace is not a Git repository.")
+  }
+
+  const currentBranch = await resolveCurrentBranch(targetDirectory, gitBinary)
+  const localResult = await runCommandOrThrow(
+    gitBinary,
+    ["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+    targetDirectory,
+    "Failed to list local branches.",
+  )
+  const localBranches = parseBranchList(localResult.stdout)
+  const localBranchNames = new Set(localBranches)
+
+  const remoteResult = await runCommandOrThrow(
+    gitBinary,
+    ["for-each-ref", "--format=%(refname:short)", "refs/remotes"],
+    targetDirectory,
+    "Failed to list remote branches.",
+  )
+  const remoteBranches = parseBranchList(remoteResult.stdout).filter((name) => {
+    if (isRemoteHeadReference(name)) return false
+    const localName = resolveRemoteLocalBranchName(name)
+    return localName ? !localBranchNames.has(localName) : true
+  })
+
+  return [
+    ...localBranches.map((name) => ({
+      name,
+      kind: "local" as const,
+      current: name === currentBranch,
+    })),
+    ...remoteBranches.map((name) => ({
+      name,
+      kind: "remote" as const,
+      current: false,
+    })),
+  ].sort(sortGitBranches)
+}
+
 export async function commitGitChanges(directory: string, message: string): Promise<GitActionResult> {
   const gitBinary = requireGitBinary()
   const targetDirectory = requireDirectory(directory)
@@ -403,6 +476,66 @@ export async function createGitBranch(directory: string, name: string): Promise<
     stdout: result.stdout,
     stderr: result.stderr,
     summary: `Created and switched to ${trimmedName}.`,
+  }
+}
+
+export async function checkoutGitBranch(directory: string, name: string): Promise<GitActionResult> {
+  const gitBinary = requireGitBinary()
+  const targetDirectory = requireDirectory(directory)
+  const trimmedName = name.trim()
+
+  if (!trimmedName) {
+    throw new Error("Select a branch.")
+  }
+
+  const root = await resolveGitRoot(targetDirectory, gitBinary)
+  if (!root) {
+    throw new Error("The current workspace is not a Git repository.")
+  }
+
+  const branches = await listGitBranches(targetDirectory)
+  const targetBranch = branches.find((branch) => branch.name === trimmedName)
+  if (!targetBranch) {
+    throw new Error(`Branch '${trimmedName}' was not found.`)
+  }
+
+  if (targetBranch.current) {
+    return {
+      directory: targetDirectory,
+      root,
+      branch: trimmedName,
+      stdout: "",
+      stderr: "",
+      summary: `Already on ${trimmedName}.`,
+    }
+  }
+
+  let result: CommandResult
+  if (targetBranch.kind === "local") {
+    result = await runCommand(gitBinary, ["switch", trimmedName], targetDirectory)
+    if (result.exitCode !== 0) {
+      result = await runCommand(gitBinary, ["checkout", trimmedName], targetDirectory)
+    }
+  } else {
+    result = await runCommand(gitBinary, ["switch", "--track", trimmedName], targetDirectory)
+    if (result.exitCode !== 0) {
+      result = await runCommand(gitBinary, ["checkout", "--track", trimmedName], targetDirectory)
+    }
+  }
+
+  if (result.exitCode !== 0) {
+    throw buildCommandError(result, "Failed to switch branches.")
+  }
+
+  const branch = await resolveCurrentBranch(targetDirectory, gitBinary)
+
+  return {
+    directory: targetDirectory,
+    root,
+    branch,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    summary: branch ? `Switched to ${branch}.` : "Switched branches.",
   }
 }
 

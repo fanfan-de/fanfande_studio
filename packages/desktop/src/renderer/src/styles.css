@@ -3848,6 +3848,143 @@ textarea::placeholder {
   color: #5f7384;
 }
 
+.composer-utility-git-branch-anchor {
+  position: relative;
+}
+
+.composer-utility-git-branch-button {
+  width: auto;
+  max-width: min(280px, calc(100vw - 64px));
+  padding: 0 10px 0 12px;
+  gap: 8px;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.composer-utility-git-branch-button:hover,
+.composer-utility-git-branch-button:focus-visible,
+.composer-utility-git-branch-button.is-active {
+  background: #eef5fb;
+  border-color: rgba(95, 146, 194, 0.7);
+  color: #17344f;
+  box-shadow: 0 10px 20px rgba(46, 81, 118, 0.08);
+  outline: none;
+}
+
+.composer-utility-git-branch-button svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.composer-utility-git-branch-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.composer-utility-git-branch-panel {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 8;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(380px, calc(100dvh - 220px));
+  padding: 8px 8px 10px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(147, 171, 195, 0.52);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 36px rgba(36, 59, 82, 0.14);
+}
+
+.composer-utility-git-branch-list {
+  max-height: min(240px, calc(100dvh - 320px));
+  overflow: auto;
+  scrollbar-gutter: stable;
+  display: grid;
+  gap: 4px;
+}
+
+.composer-utility-git-branch-option {
+  min-height: 46px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.composer-utility-git-branch-option:disabled {
+  background: #f3f6f8;
+  color: #94a3b2;
+  cursor: not-allowed;
+}
+
+.composer-utility-git-branch-option:disabled .composer-menu-option-copy small,
+.composer-utility-git-branch-option:disabled .composer-menu-option-check {
+  color: #94a3b2;
+}
+
+.composer-utility-git-branch-meta {
+  align-items: flex-start;
+}
+
+.composer-utility-git-branch-footer {
+  position: sticky;
+  bottom: 0;
+  padding-top: 4px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #ffffff 24px);
+}
+
+.composer-utility-git-branch-create-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.composer-utility-git-branch-status,
+.git-branch-create-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #607488;
+}
+
+.composer-utility-git-branch-status.is-error,
+.git-branch-create-error {
+  color: #a33d2f;
+}
+
+.git-branch-badge {
+  min-height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #f4f8fc;
+  color: #4b6074;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.composer-utility-git-branch-option .composer-menu-option-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .context-pressure-indicator.is-low {
   color: #2a8357;
 }
@@ -3892,6 +4029,65 @@ textarea::placeholder {
 .context-pressure-ring-core {
   fill: currentColor;
   opacity: 0.88;
+}
+
+.git-branch-create-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 35, 47, 0.18);
+}
+
+.git-branch-create-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(147, 171, 195, 0.52);
+  background: #ffffff;
+  box-shadow: 0 24px 48px rgba(36, 59, 82, 0.16);
+}
+
+.git-branch-create-field {
+  display: grid;
+  gap: 6px;
+}
+
+.git-branch-create-field span {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5f7387;
+}
+
+.git-branch-create-field input {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(169, 189, 212, 0.5);
+  background: #f8fbff;
+  color: #182532;
+}
+
+.git-branch-create-field input::placeholder {
+  color: #8da0b4;
+}
+
+.git-branch-create-field input:focus-visible {
+  border-color: rgba(22, 119, 200, 0.6);
+  box-shadow: 0 0 0 3px rgba(22, 119, 200, 0.12);
+}
+
+.git-branch-create-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.git-branch-create-actions .primary-button,
+.git-branch-create-actions .secondary-button {
+  flex: 1 1 0;
 }
 
 .composer textarea {
@@ -4563,6 +4759,28 @@ body.is-resizing-sidebar * {
     width: 100%;
   }
 
+  .composer-utility-bar {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .composer-utility-git-branch-anchor {
+    width: 100%;
+  }
+
+  .composer-utility-git-branch-button {
+    width: 100%;
+    max-width: none;
+    justify-content: space-between;
+  }
+
+  .composer-utility-git-branch-panel {
+    position: static;
+    width: 100%;
+    max-width: none;
+    margin-top: 8px;
+  }
+
   .composer-toolbar,
   .sidebar-footer {
     flex-direction: column;
@@ -4673,5 +4891,18 @@ body.is-resizing-sidebar * {
 
   .provider-connect-modal {
     padding: 18px 16px;
+  }
+
+  .git-branch-create-overlay {
+    padding: 12px;
+  }
+
+  .git-branch-create-dialog {
+    width: 100%;
+    padding: 18px 16px;
+  }
+
+  .git-branch-create-actions {
+    flex-direction: column;
   }
 }

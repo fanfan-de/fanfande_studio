@@ -125,6 +125,17 @@ function collectLegacyProjects(worktree: string, projectID?: string, sandbox?: s
     }
   }
 
+  if (normalizedWorktree) {
+    const globalProject = db.findById("projects", ProjectInfo, "global")
+    const hasMatchingGlobalSession =
+      globalProject &&
+      Session.listByProject(globalProject.id).some((session) => isPathInsideProject(session.directory, worktree))
+
+    if (globalProject && hasMatchingGlobalSession) {
+      legacyProjects.set(globalProject.id, globalProject)
+    }
+  }
+
   return [...legacyProjects.values()]
 }
 
@@ -164,11 +175,12 @@ function persistProjectRecord(input: {
       updated: now,
       sandboxes: [] as string[],
     }
+  const seedProjectName = isGlobalWorktree(seedProject.worktree) ? undefined : seedProject.name
 
   const sandboxes = uniqueProjectPaths([
     ...(seedProject.sandboxes ?? []),
     ...legacyProjects.flatMap((project) => project.sandboxes ?? []),
-    ...legacyProjects.map((project) => project.worktree),
+    ...legacyProjects.flatMap((project) => (isGlobalWorktree(project.worktree) ? [] : [project.worktree])),
     input.sandbox,
   ]).filter((item) => existsSync(item) && isAdditionalSandboxDirectory(item, input.worktree))
 
@@ -177,7 +189,7 @@ function persistProjectRecord(input: {
     id: input.projectID,
     worktree: input.worktree,
     vcs: input.vcs,
-    name: resolveStoredProjectName(input.worktree, input.vcs, seedProject.name),
+    name: resolveStoredProjectName(input.worktree, input.vcs, seedProjectName),
     updated: now,
     sandboxes,
   }
@@ -338,6 +350,17 @@ async function repairProjects() {
     }
 
     for (const directory of possibleDirectories) {
+      if (!directory || !existsSync(directory)) continue
+      candidates.set(normalizeProjectPath(directory), directory)
+    }
+  }
+
+  // A directory can start as a global/non-git session and later become a git
+  // repo. Project records do not retain those global directory paths, so we
+  // also re-evaluate the directories referenced by persisted sessions.
+  if (db.tableExists("sessions")) {
+    for (const session of db.findManyWithSchema("sessions", Session.SessionInfo)) {
+      const directory = session.directory?.trim()
       if (!directory || !existsSync(directory)) continue
       candidates.set(normalizeProjectPath(directory), directory)
     }

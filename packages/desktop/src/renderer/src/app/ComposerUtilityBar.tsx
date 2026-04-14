@@ -1,7 +1,10 @@
+import { GitBranchSwitcher } from "./GitBranchSwitcher"
 import type { SessionContextUsage } from "./types"
 
 interface ComposerUtilityBarProps {
   contextWindow: number | null
+  gitDirectory: string | null
+  gitProjectID: string | null
   usage: SessionContextUsage | null
 }
 
@@ -25,7 +28,7 @@ function resolvePressureState(ratio: number | null) {
   return "low"
 }
 
-export function ComposerUtilityBar({ contextWindow, usage }: ComposerUtilityBarProps) {
+export function ComposerUtilityBar({ contextWindow, gitDirectory, gitProjectID, usage }: ComposerUtilityBarProps) {
   const rawRatio = contextWindow && usage ? usage.inputTokens / contextWindow : null
   const clampedRatio = rawRatio === null ? 0 : clampRatio(rawRatio)
   const pressureState = resolvePressureState(rawRatio)
@@ -64,6 +67,7 @@ export function ComposerUtilityBar({ contextWindow, usage }: ComposerUtilityBarP
           <circle className="context-pressure-ring-core" cx="14" cy="14" r="2.6" />
         </svg>
       </div>
+      <GitBranchSwitcher projectID={gitProjectID} directory={gitDirectory} />
     </div>
   )
 }

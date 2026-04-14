@@ -1,7 +1,15 @@
 import { BrowserWindow, dialog, ipcMain } from "electron"
 import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
-import { commitGitChanges, createGitBranch, createGitPullRequest, getGitCapabilities, pushGitChanges } from "./git"
+import {
+  checkoutGitBranch,
+  commitGitChanges,
+  createGitBranch,
+  createGitPullRequest,
+  getGitCapabilities,
+  listGitBranches,
+  pushGitChanges,
+} from "./git"
 import type { ApplicationMenus } from "./menu"
 import { PtyProxyManager, PTY_EVENT_CHANNEL } from "./pty-proxy"
 import type {
@@ -427,6 +435,15 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
   ipcMain.handle("desktop:git-create-branch", async (_event, input: { projectID: string; directory: string; name: string }) =>
     createGitBranch(input),
+  )
+
+  ipcMain.handle("desktop:git-list-branches", async (_event, input: { projectID: string; directory: string }) =>
+    listGitBranches(input),
+  )
+
+  ipcMain.handle(
+    "desktop:git-checkout-branch",
+    async (_event, input: { projectID: string; directory: string; name: string }) => checkoutGitBranch(input),
   )
 
   ipcMain.handle("desktop:git-create-pull-request", async (_event, input: { projectID: string; directory: string }) =>

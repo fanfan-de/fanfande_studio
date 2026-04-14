@@ -1,3 +1,4 @@
+import path from "node:path"
 import { Hono } from "hono"
 import z from "zod"
 import * as db from "#database/Sqlite.ts"
@@ -38,6 +39,10 @@ const GitCreateBranchBody = z.object({
   directory: z.string().min(1),
   name: z.string().min(1),
 })
+const GitCheckoutBranchBody = z.object({
+  directory: z.string().min(1),
+  name: z.string().min(1),
+})
 
 function safeReadProject(projectID: string) {
   const project = Project.get(projectID)
@@ -48,16 +53,35 @@ function safeReadProject(projectID: string) {
   return project
 }
 
-async function resolveProjectGitDirectory(projectID: string, rawDirectory: string) {
-  safeReadProject(projectID)
+function normalizeProjectDirectory(input: string) {
+  const resolved = path.resolve(input)
+  const normalized = path.normalize(resolved)
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized
+}
 
+function isDirectoryInsideProjectRoot(directory: string, root: string) {
+  const normalizedRoot = normalizeProjectDirectory(root)
+  const normalizedDirectory = normalizeProjectDirectory(directory)
+  const relative = path.relative(normalizedRoot, normalizedDirectory)
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+}
+
+function projectContainsDirectory(project: Project.ProjectInfo, directory: string) {
+  if (project.worktree !== "/" && isDirectoryInsideProjectRoot(directory, project.worktree)) {
+    return true
+  }
+
+  return (project.sandboxes ?? []).some((sandbox) => isDirectoryInsideProjectRoot(directory, sandbox))
+}
+
+async function resolveProjectGitDirectory(projectID: string, rawDirectory: string) {
+  const project = safeReadProject(projectID)
   const directory = rawDirectory.trim()
   if (!directory) {
     throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
   }
 
-  const { project } = await Project.fromDirectory(directory)
-  if (project.id !== projectID) {
+  if (!projectContainsDirectory(project, directory)) {
     throw new ApiError(400, "DIRECTORY_NOT_IN_PROJECT", `Directory '${directory}' does not belong to project '${projectID}'`)
   }
 
@@ -360,6 +384,38 @@ export function ProjectRoutes() {
     return c.json({
       success: true,
       data: await Git.createGitBranch(directory, payload.data.name),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/:id/git/branches", async (c) => {
+    const id = c.req.param("id")
+    const payload = GitDirectoryQuery.safeParse(c.req.query())
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_QUERY", "Query parameter 'directory' must be a non-empty string")
+    }
+
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+
+    return c.json({
+      success: true,
+      data: await Git.listGitBranches(directory),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/:id/git/checkout", async (c) => {
+    const id = c.req.param("id")
+    const payload = GitCheckoutBranchBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must include non-empty 'directory' and 'name' fields")
+    }
+
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+
+    return c.json({
+      success: true,
+      data: await Git.checkoutGitBranch(directory, payload.data.name),
       requestId: c.get("requestId"),
     })
   })

@@ -370,7 +370,12 @@ export function App() {
                   onRemoveAttachment={handleRemoveComposerAttachment}
                   onSend={handleSend}
                 />
-                <ComposerUtilityBar contextWindow={composerContextWindow} usage={null} />
+                <ComposerUtilityBar
+                  contextWindow={composerContextWindow}
+                  gitDirectory={sessionCanvasWorkspace?.directory ?? null}
+                  gitProjectID={sessionCanvasWorkspace?.project.id ?? null}
+                  usage={null}
+                />
               </div>
             </>
           ) : (
@@ -405,7 +410,12 @@ export function App() {
                   onRemoveAttachment={handleRemoveComposerAttachment}
                   onSend={handleSend}
                 />
-                <ComposerUtilityBar contextWindow={composerContextWindow} usage={activeSessionContextUsage} />
+                <ComposerUtilityBar
+                  contextWindow={composerContextWindow}
+                  gitDirectory={sessionCanvasWorkspace?.directory ?? null}
+                  gitProjectID={sessionCanvasWorkspace?.project.id ?? null}
+                  usage={activeSessionContextUsage}
+                />
               </div>
             </>
           )}

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
+import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
 import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions } from "./constants"
+import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
 import {
   ArrowUpIcon,
   ChevronDownIcon,
@@ -1145,6 +1146,7 @@ type GitCapabilityState = {
 }
 
 type GitCapabilitiesState = {
+  projectID?: string
   directory: string
   root: string | null
   branch: string | null
@@ -1156,12 +1158,16 @@ type GitCapabilitiesState = {
   canCreateBranch: GitCapabilityState
 }
 
+const GIT_QUICK_MENU_REFRESH_INTERVAL_MS = 2000
+
 function GitQuickMenuButton({ projectID, directory }: { projectID: string | null; directory: string | null }) {
   const menuRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const commitInputRef = useRef<HTMLInputElement | null>(null)
   const branchInputRef = useRef<HTMLInputElement | null>(null)
+  const reconciledProjectKeyRef = useRef<string | null>(null)
   const loadRequestRef = useRef(0)
+  const visibleLoadRequestRef = useRef(0)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [activeForm, setActiveForm] = useState<"commit" | "branch" | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
@@ -1183,7 +1189,36 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
   const gitCreateBranch = window.desktop?.gitCreateBranch
   const gitCreatePullRequest = window.desktop?.gitCreatePullRequest
 
-  async function refreshCapabilities(reportError = false) {
+  function reconcileWorkspaceProject(resolvedProjectID?: string) {
+    const nextProjectID = resolvedProjectID?.trim()
+    if (!directory || !nextProjectID || nextProjectID === projectID) {
+      return
+    }
+
+    const reconciliationKey = `${projectID ?? ""}->${nextProjectID}:${directory}`
+    if (reconciledProjectKeyRef.current === reconciliationKey) {
+      return
+    }
+
+    reconciledProjectKeyRef.current = reconciliationKey
+    notifyGitStateChanged({
+      projectID: nextProjectID,
+      directory,
+    })
+  }
+
+  const handleGitStateChanged = useEffectEvent((detail: { projectID: string; directory: string }) => {
+    if (!isMatchingGitStateChangedDetail(detail, projectID, directory)) return
+    void refreshCapabilities()
+  })
+
+  async function refreshCapabilities({
+    reportError = false,
+    silent = false,
+  }: {
+    reportError?: boolean
+    silent?: boolean
+  } = {}) {
     if (!projectID || !directory || !gitGetCapabilities) {
       setCapabilities(null)
       setIsLoadingCapabilities(false)
@@ -1192,7 +1227,11 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
 
     const requestID = loadRequestRef.current + 1
     loadRequestRef.current = requestID
-    setIsLoadingCapabilities(true)
+    const visibleRequestID = silent ? null : visibleLoadRequestRef.current + 1
+    if (visibleRequestID !== null) {
+      visibleLoadRequestRef.current = visibleRequestID
+      setIsLoadingCapabilities(true)
+    }
 
     try {
       const nextCapabilities = await gitGetCapabilities({
@@ -1205,6 +1244,7 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
       }
 
       setCapabilities(nextCapabilities)
+      reconcileWorkspaceProject(nextCapabilities.projectID)
       return nextCapabilities
     } catch (error) {
       if (loadRequestRef.current !== requestID) {
@@ -1220,13 +1260,21 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
       }
       return null
     } finally {
-      if (loadRequestRef.current === requestID) {
+      if (visibleRequestID !== null && visibleLoadRequestRef.current === visibleRequestID) {
         setIsLoadingCapabilities(false)
       }
     }
   }
 
+  const refreshCapabilitiesSilently = useEffectEvent((reportError = false) => {
+    void refreshCapabilities({
+      reportError,
+      silent: true,
+    })
+  })
+
   useEffect(() => {
+    reconciledProjectKeyRef.current = null
     setIsMenuOpen(false)
     setActiveForm(null)
     setCommitMessage("")
@@ -1237,6 +1285,36 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
     })
     void refreshCapabilities()
   }, [projectID, directory])
+
+  useEffect(() => subscribeToGitStateChanged(handleGitStateChanged), [handleGitStateChanged])
+
+  useEffect(() => {
+    if (!isMenuOpen) return
+
+    refreshCapabilitiesSilently(true)
+
+    const refreshVisibleCapabilities = () => {
+      refreshCapabilitiesSilently()
+    }
+
+    const intervalID = window.setInterval(refreshVisibleCapabilities, GIT_QUICK_MENU_REFRESH_INTERVAL_MS)
+    const handleWindowFocus = () => {
+      refreshVisibleCapabilities()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return
+      refreshVisibleCapabilities()
+    }
+
+    window.addEventListener("focus", handleWindowFocus)
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
+    return () => {
+      window.clearInterval(intervalID)
+      window.removeEventListener("focus", handleWindowFocus)
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
+    }
+  }, [isMenuOpen, refreshCapabilitiesSilently])
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -1315,7 +1393,10 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
         tone: "success",
         text: result.summary,
       })
-      void refreshCapabilities()
+      notifyGitStateChanged({
+        projectID: result.projectID?.trim() || projectID,
+        directory,
+      })
     } catch (error) {
       setStatus({
         tone: "error",
@@ -1351,7 +1432,10 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
         tone: "success",
         text: result.summary,
       })
-      void refreshCapabilities()
+      notifyGitStateChanged({
+        projectID: result.projectID?.trim() || projectID,
+        directory,
+      })
     } catch (error) {
       setStatus({
         tone: "error",
@@ -1399,7 +1483,10 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
         tone: "success",
         text: result.summary,
       })
-      void refreshCapabilities()
+      notifyGitStateChanged({
+        projectID: result.projectID?.trim() || projectID,
+        directory,
+      })
     } catch (error) {
       setStatus({
         tone: "error",
@@ -1435,7 +1522,10 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
         tone: "success",
         text: result.summary,
       })
-      void refreshCapabilities()
+      notifyGitStateChanged({
+        projectID: result.projectID?.trim() || projectID,
+        directory,
+      })
     } catch (error) {
       setStatus({
         tone: "error",

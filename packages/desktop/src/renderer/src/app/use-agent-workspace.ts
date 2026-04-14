@@ -55,6 +55,7 @@ import {
   upsertSessionInWorkspace,
   upsertWorkspaceGroup,
 } from "./workspace"
+import { subscribeToGitStateChanged } from "./git-events"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
@@ -327,6 +328,7 @@ export function useAgentWorkspace({
   const historyRequestRef = useRef(0)
   const sessionDiffRequestRef = useRef<Record<string, number>>({})
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
+  const workspaceRefreshRequestRef = useRef<Record<string, number>>({})
   const conversationVersionRef = useRef<Record<string, number>>({})
   const skipNextHistoryLoadRef = useRef<Record<string, boolean>>({})
   const initialFolderWorkspacesLoadedRef = useRef(false)
@@ -501,8 +503,69 @@ export function useAgentWorkspace({
     })
   }
 
+  function syncSessionContextUsageFromHistory(sessionID: string, usage: SessionContextUsage | null) {
+    setContextUsageBySession((prev) => {
+      if (!usage) {
+        return prev
+      }
+
+      const current = prev[sessionID]
+      if (
+        current &&
+        current.inputTokens === usage.inputTokens &&
+        current.outputTokens === usage.outputTokens &&
+        current.totalTokens === usage.totalTokens &&
+        current.reasoningTokens === usage.reasoningTokens &&
+        current.cacheReadTokens === usage.cacheReadTokens &&
+        current.cacheWriteTokens === usage.cacheWriteTokens &&
+        current.measuredAt === usage.measuredAt
+      ) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        [sessionID]: usage,
+      }
+    })
+  }
+
   function bumpConversationVersion(sessionID: string) {
     conversationVersionRef.current[sessionID] = (conversationVersionRef.current[sessionID] ?? 0) + 1
+  }
+
+  async function refreshWorkspaceFromDirectory(directory: string) {
+    const openFolderWorkspace = window.desktop?.openFolderWorkspace
+    const trimmedDirectory = directory.trim()
+    if (!trimmedDirectory || !openFolderWorkspace) return null
+
+    const requestID = (workspaceRefreshRequestRef.current[trimmedDirectory] ?? 0) + 1
+    workspaceRefreshRequestRef.current[trimmedDirectory] = requestID
+
+    try {
+      const loadedWorkspace = await openFolderWorkspace({ directory: trimmedDirectory })
+      if (workspaceRefreshRequestRef.current[trimmedDirectory] !== requestID) return null
+
+      const nextWorkspace = mapLoadedWorkspace(loadedWorkspace)
+      const loadedSessionIDs = loadedWorkspace.sessions.map((session) => session.id)
+      setWorkspaces((prev) => upsertWorkspaceGroup(prev, nextWorkspace))
+      setConversations((prev) => ensureConversationSessions(prev, loadedSessionIDs))
+      setAgentSessions((prev) => ensureAgentSessions(prev, loadedSessionIDs))
+      setCanLoadSessionHistory(true)
+
+      return nextWorkspace
+    } catch (error) {
+      if (workspaceRefreshRequestRef.current[trimmedDirectory] === requestID) {
+        console.error("[desktop] workspace refresh failed:", error)
+      }
+      return null
+    }
+  }
+
+  function refreshWorkspaceForSession(sessionID: string) {
+    const { workspace } = findSession(workspaces, sessionID)
+    if (!workspace) return
+    void refreshWorkspaceFromDirectory(workspace.directory)
   }
 
   function resolveUISessionID(backendSessionID: string) {
@@ -651,6 +714,7 @@ export function useAgentWorkspace({
       }
       delete pendingStreamsRef.current[streamEvent.streamID]
       cleanupTurnTarget(target.backendSessionID, target.backendTurnID)
+      refreshWorkspaceForSession(target.sessionID)
 
       if (canLoadSessionHistory) {
         void reloadSessionHistoryForSession(target.sessionID).catch((error) => {
@@ -681,6 +745,7 @@ export function useAgentWorkspace({
         if (streamEvent.event === "done") {
           updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
         }
+        refreshWorkspaceForSession(uiSessionID)
         void reloadSessionHistoryForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
           console.error("[desktop] session stream history refresh failed:", error)
         })
@@ -703,6 +768,7 @@ export function useAgentWorkspace({
         updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
       }
       cleanupTurnTarget(streamEvent.sessionID, backendTurnID)
+      refreshWorkspaceForSession(uiSessionID)
       if (canLoadSessionHistory) {
         void reloadSessionHistoryForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
           console.error("[desktop] session stream history refresh failed:", error)
@@ -725,7 +791,7 @@ export function useAgentWorkspace({
     const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
     startTransition(() => {
       replaceConversationTurns(sessionID, buildTurnsFromHistory(messages))
-      updateSessionContextUsage(sessionID, nextContextUsage)
+      syncSessionContextUsageFromHistory(sessionID, nextContextUsage)
     })
   }
 
@@ -785,6 +851,20 @@ export function useAgentWorkspace({
     handleSessionStreamEvent(streamEvent)
   })
 
+  const handleGitStateChangedEffect = useEffectEvent((detail: { projectID: string; directory: string }) => {
+    const normalizedDetailDirectory =
+      platform === "win32" ? detail.directory.trim().replace(/\//g, "\\").toLowerCase() : detail.directory.trim()
+    const matchingWorkspace = workspaces.find((workspace) => {
+      const normalizedWorkspaceDirectory =
+        platform === "win32" ? workspace.directory.trim().replace(/\//g, "\\").toLowerCase() : workspace.directory.trim()
+
+      return normalizedWorkspaceDirectory === normalizedDetailDirectory
+    })
+    if (!matchingWorkspace) return
+
+    void refreshWorkspaceFromDirectory(matchingWorkspace.directory)
+  })
+
   useEffect(() => {
     const unsubscribe = window.desktop?.onAgentStreamEvent?.((streamEvent: AgentStreamIPCEvent) => {
       handleRequestStreamEventEffect(streamEvent)
@@ -805,6 +885,8 @@ export function useAgentWorkspace({
       unsubscribe?.()
     }
   }, [])
+
+  useEffect(() => subscribeToGitStateChanged(handleGitStateChangedEffect), [handleGitStateChangedEffect])
 
   useEffect(() => {
     const subscribeSessionStream = window.desktop?.subscribeAgentSessionStream
@@ -1851,6 +1933,7 @@ export function useAgentWorkspace({
       startTransition(() => {
         appendConversationTurns(uiSessionID, [backendTurn])
       })
+      void refreshWorkspaceFromDirectory(workspace.directory)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (streamID) {

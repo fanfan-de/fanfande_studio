@@ -101,6 +101,14 @@ type GitActionEnvelope = JsonEnvelope<{
   url?: string
 }>
 
+type GitBranchesEnvelope = JsonEnvelope<
+  Array<{
+    name: string
+    kind: "local" | "remote"
+    current: boolean
+  }>
+>
+
 type SessionMessagesResponseEnvelope = JsonEnvelope<
   Array<{
     info: {
@@ -570,6 +578,101 @@ describe("server api", () => {
     expect(response.status).toBe(200)
     expect(body.success).toBe(true)
     expect(body.data?.some((project) => project.id === createBody.data?.projectID)).toBe(true)
+  })
+
+  test("GET /api/projects should reclassify a global session directory after git init", async () => {
+    const app = createServerApp()
+    const directory = await mkdtemp(join(tmpdir(), "fanfande-global-to-git-"))
+
+    try {
+      const createResponse = await app.request("http://localhost/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const createBody = (await createResponse.json()) as SessionResponseEnvelope
+
+      expect(createResponse.status).toBe(201)
+      expect(createBody.success).toBe(true)
+      expect(createBody.data?.projectID).toBe("global")
+
+      await createGitRepo(directory, "migrated-repo")
+
+      const response = await app.request("http://localhost/api/projects")
+      const body = (await response.json()) as ProjectsResponseEnvelope
+
+      expect(response.status).toBe(200)
+      expect(body.success).toBe(true)
+
+      const migratedProject = body.data?.find((project) => project.worktree === directory)
+      expect(migratedProject).toBeDefined()
+      expect(migratedProject?.id).not.toBe("global")
+
+      const sessionsResponse = await app.request(`http://localhost/api/projects/${migratedProject!.id}/sessions`)
+      const sessionsBody = (await sessionsResponse.json()) as ProjectSessionsResponseEnvelope
+
+      expect(sessionsResponse.status).toBe(200)
+      expect(sessionsBody.success).toBe(true)
+      expect(
+        sessionsBody.data?.some(
+          (session) => session.id === createBody.data?.id && session.projectID === migratedProject!.id,
+        ),
+      ).toBe(true)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("project git routes should reject a stale global project id after git init", async () => {
+    const app = createServerApp()
+    const directory = await mkdtemp(join(tmpdir(), "fanfande-stale-global-git-"))
+    let sessionID: string | undefined
+
+    try {
+      const createResponse = await app.request("http://localhost/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const createBody = (await createResponse.json()) as SessionResponseEnvelope
+
+      expect(createResponse.status).toBe(201)
+      expect(createBody.success).toBe(true)
+      expect(createBody.data?.projectID).toBe("global")
+      sessionID = createBody.data?.id
+
+      await createGitRepo(directory, "stale-global-project")
+
+      const capabilitiesResponse = await app.request(
+        `http://localhost/api/projects/global/git/capabilities?directory=${encodeURIComponent(directory)}`,
+      )
+      const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(capabilitiesResponse.status).toBe(400)
+      expect(capabilitiesBody.success).toBe(false)
+      expect(capabilitiesBody.error?.code).toBe("DIRECTORY_NOT_IN_PROJECT")
+
+      const branchResponse = await app.request("http://localhost/api/projects/global/git/branches", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          directory,
+          name: "feature/from-stale-global",
+        }),
+      })
+      const branchBody = (await branchResponse.json()) as GitActionEnvelope
+
+      expect(branchResponse.status).toBe(400)
+      expect(branchBody.success).toBe(false)
+      expect(branchBody.error?.code).toBe("DIRECTORY_NOT_IN_PROJECT")
+    } finally {
+      if (sessionID) {
+        await app.request(`http://localhost/api/sessions/${sessionID}`, {
+          method: "DELETE",
+        })
+      }
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   test("POST /api/projects should create a project and expose its session list", async () => {
@@ -1337,6 +1440,141 @@ describe("server api", () => {
       expect(branchCapabilitiesBody.data?.canCreatePullRequest.enabled).toBe(false)
     } finally {
       await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project git routes should list branches and checkout an existing branch", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-branch-list-project-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "git-branch-list-project")
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const capabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
+      const baseBranch = capabilitiesBody.data?.branch
+
+      expect(capabilitiesResponse.status).toBe(200)
+      expect(baseBranch).toBeString()
+
+      await $`git checkout -b feature/branch-switcher`.cwd(repositoryRoot).quiet()
+      await $`git checkout ${baseBranch!}`.cwd(repositoryRoot).quiet()
+
+      const branchesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/branches?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const branchesBody = (await branchesResponse.json()) as GitBranchesEnvelope
+
+      expect(branchesResponse.status).toBe(200)
+      expect(branchesBody.data).toEqual(
+        expect.arrayContaining([
+          {
+            name: baseBranch!,
+            kind: "local",
+            current: true,
+          },
+          {
+            name: "feature/branch-switcher",
+            kind: "local",
+            current: false,
+          },
+        ]),
+      )
+
+      const checkoutResponse = await app.request(`http://localhost/api/projects/${projectID}/git/checkout`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          directory: repositoryRoot,
+          name: "feature/branch-switcher",
+        }),
+      })
+      const checkoutBody = (await checkoutResponse.json()) as GitActionEnvelope
+
+      expect(checkoutResponse.status).toBe(200)
+      expect(checkoutBody.data?.branch).toBe("feature/branch-switcher")
+      expect(checkoutBody.data?.summary).toContain("feature/branch-switcher")
+
+      const postCheckoutBranchesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/branches?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const postCheckoutBranchesBody = (await postCheckoutBranchesResponse.json()) as GitBranchesEnvelope
+
+      expect(postCheckoutBranchesResponse.status).toBe(200)
+      expect(postCheckoutBranchesBody.data).toEqual(
+        expect.arrayContaining([
+          {
+            name: baseBranch!,
+            kind: "local",
+            current: false,
+          },
+          {
+            name: "feature/branch-switcher",
+            kind: "local",
+            current: true,
+          },
+        ]),
+      )
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project git routes should reject directories outside the requested project", async () => {
+    const app = createServerApp()
+    const repositoryRootA = await mkdtemp(join(tmpdir(), "fanfande-git-project-boundary-a-"))
+    const repositoryRootB = await mkdtemp(join(tmpdir(), "fanfande-git-project-boundary-b-"))
+
+    try {
+      await createGitRepo(repositoryRootA, "git-project-boundary-a")
+      await createGitRepo(repositoryRootB, "git-project-boundary-b")
+
+      const projectResponseA = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRootA }),
+      })
+      const projectBodyA = (await projectResponseA.json()) as ProjectResponseEnvelope
+      const projectIDA = projectBodyA.data?.id
+
+      const projectResponseB = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRootB }),
+      })
+      const projectBodyB = (await projectResponseB.json()) as ProjectResponseEnvelope
+      const projectIDB = projectBodyB.data?.id
+
+      expect(projectResponseA.status).toBe(201)
+      expect(projectResponseB.status).toBe(201)
+      expect(projectIDA).toBeString()
+      expect(projectIDB).toBeString()
+      expect(projectIDA).not.toBe(projectIDB)
+
+      const capabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectIDA}/git/capabilities?directory=${encodeURIComponent(repositoryRootB)}`,
+      )
+      const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(capabilitiesResponse.status).toBe(400)
+      expect(capabilitiesBody.success).toBe(false)
+      expect(capabilitiesBody.error?.code).toBe("DIRECTORY_NOT_IN_PROJECT")
+    } finally {
+      await rm(repositoryRootA, { recursive: true, force: true })
+      await rm(repositoryRootB, { recursive: true, force: true })
     }
   })
 

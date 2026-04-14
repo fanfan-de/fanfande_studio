@@ -658,3 +658,12 @@ The PTY module publishes lifecycle events in the existing bus style:
 cd C:\Projects\fanfande_studio\packages\fanfandeagent
 bun test Test/server.pty.test.ts
 ```
+
+## 13. Git Route Ownership
+
+As of 2026-04-15, routes under `/api/projects/:id/git/*` must treat `projectID` as the authoritative resource boundary.
+
+- Read the project by id before running any git command.
+- Treat `directory` only as the active folder/worktree context inside that project.
+- Reject the request with `DIRECTORY_NOT_IN_PROJECT` when the directory is outside the project's `worktree` and outside every configured `sandbox`.
+- Do not silently accept stale project ids for git operations after a directory changes project identity.

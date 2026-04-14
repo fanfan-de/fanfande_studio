@@ -374,3 +374,12 @@ npm run test
 cd C:\Projects\fanfande_studio\packages\fanfandeagent
 bun test Test/server.pty.test.ts
 ```
+
+## 12. Git Route Ownership
+
+As of 2026-04-15, desktop git routes under `/api/projects/:id/git/*` are project-scoped again.
+
+- `projectID` is the resource boundary.
+- `directory` is the active folder/worktree context inside that project.
+- The server must reject git requests when `directory` is outside `project.worktree` and outside every entry in `project.sandboxes`.
+- Desktop should not rely on stale project ids continuing to work after a directory changes project identity.

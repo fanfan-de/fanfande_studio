@@ -121,6 +121,7 @@ declare global {
       pickProjectDirectory?: () => Promise<string | null>
       pickComposerAttachments?: (input?: { allowImage?: boolean; allowPdf?: boolean }) => Promise<string[]>
       gitGetCapabilities?: (input: { projectID: string; directory: string }) => Promise<{
+        projectID?: string
         directory: string
         root: string | null
         branch: string | null
@@ -144,6 +145,7 @@ declare global {
         }
       }>
       gitCommit?: (input: { projectID: string; directory: string; message: string }) => Promise<{
+        projectID?: string
         directory: string
         root: string
         branch: string | null
@@ -153,6 +155,7 @@ declare global {
         url?: string
       }>
       gitPush?: (input: { projectID: string; directory: string }) => Promise<{
+        projectID?: string
         directory: string
         root: string
         branch: string | null
@@ -162,6 +165,24 @@ declare global {
         url?: string
       }>
       gitCreateBranch?: (input: { projectID: string; directory: string; name: string }) => Promise<{
+        projectID?: string
+        directory: string
+        root: string
+        branch: string | null
+        stdout: string
+        stderr: string
+        summary: string
+        url?: string
+      }>
+      gitListBranches?: (input: { projectID: string; directory: string }) => Promise<
+        Array<{
+          name: string
+          kind: "local" | "remote"
+          current: boolean
+        }>
+      >
+      gitCheckoutBranch?: (input: { projectID: string; directory: string; name: string }) => Promise<{
+        projectID?: string
         directory: string
         root: string
         branch: string | null
@@ -171,6 +192,7 @@ declare global {
         url?: string
       }>
       gitCreatePullRequest?: (input: { projectID: string; directory: string }) => Promise<{
+        projectID?: string
         directory: string
         root: string
         branch: string | null

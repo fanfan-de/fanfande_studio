@@ -2,6 +2,20 @@ import type { AgentConfig, AgentEnvelope, AgentSSEEvent } from "./types"
 
 const DEFAULT_AGENT_BASE_URL = "http://127.0.0.1:4096"
 
+export class AgentAPIError extends Error {
+  readonly status: number
+  readonly code?: string
+  readonly requestId?: string
+
+  constructor(input: { message: string; status: number; code?: string; requestId?: string }) {
+    super(input.message)
+    this.name = "AgentAPIError"
+    this.status = input.status
+    this.code = input.code
+    this.requestId = input.requestId
+  }
+}
+
 export function getAgentConfig(): AgentConfig {
   return {
     baseURL: process.env.FANFANDE_AGENT_BASE_URL?.trim() || DEFAULT_AGENT_BASE_URL,
@@ -38,7 +52,12 @@ export async function requestAgentJSON<T>(pathname: string, init?: RequestInit) 
 
   if (!response.ok || !envelope || envelope.success !== true || envelope.data === undefined) {
     const fallback = `Agent API request failed (${response.status})`
-    throw new Error(envelope?.error?.message || fallback)
+    throw new AgentAPIError({
+      message: envelope?.error?.message || fallback,
+      status: response.status,
+      code: envelope?.error?.code,
+      requestId: response.headers.get("x-request-id") ?? undefined,
+    })
   }
 
   return {

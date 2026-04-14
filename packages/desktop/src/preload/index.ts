@@ -76,6 +76,7 @@ type PtyIPCEvent =
       message: string
     }
 type GitActionResult = {
+  projectID?: string
   directory: string
   root: string
   branch: string | null
@@ -89,6 +90,7 @@ type GitCapabilityState = {
   reason?: string
 }
 type GitCapabilities = {
+  projectID?: string
   directory: string
   root: string | null
   branch: string | null
@@ -98,6 +100,11 @@ type GitCapabilities = {
   canPush: GitCapabilityState
   canCreatePullRequest: GitCapabilityState
   canCreateBranch: GitCapabilityState
+}
+type GitBranchSummary = {
+  name: string
+  kind: "local" | "remote"
+  current: boolean
 }
 type SkillInfo = {
   id: string
@@ -236,6 +243,10 @@ try {
       ipcRenderer.invoke("desktop:git-push", input) as Promise<GitActionResult>,
     gitCreateBranch: (input: { projectID: string; directory: string; name: string }) =>
       ipcRenderer.invoke("desktop:git-create-branch", input) as Promise<GitActionResult>,
+    gitListBranches: (input: { projectID: string; directory: string }) =>
+      ipcRenderer.invoke("desktop:git-list-branches", input) as Promise<GitBranchSummary[]>,
+    gitCheckoutBranch: (input: { projectID: string; directory: string; name: string }) =>
+      ipcRenderer.invoke("desktop:git-checkout-branch", input) as Promise<GitActionResult>,
     gitCreatePullRequest: (input: { projectID: string; directory: string }) =>
       ipcRenderer.invoke("desktop:git-create-pull-request", input) as Promise<GitActionResult>,
     listFolderWorkspaces: () =>
