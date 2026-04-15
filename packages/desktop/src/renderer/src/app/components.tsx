@@ -324,11 +324,15 @@ function FolderWorkspaceView({
         {workspaces.map((workspace) => {
           const isActiveWorkspace = workspace.id === selectedFolderID
           const isExpanded = workspace.id === expandedFolderID
+          const isMissingWorkspace = workspace.exists === false
           const showStateIcon = workspace.id === hoveredFolderID
           const leadingIcon = showStateIcon ? (isExpanded ? "expanded" : "collapsed") : "folder"
           const removeLabel = "\u79FB\u9664"
           const removeFolderLabel = `${removeLabel} ${workspace.name}`
           const createSessionLabel = `Create session for ${workspace.name}`
+          const createSessionTitle = isMissingWorkspace
+            ? `${workspace.name} has been deleted and cannot create new sessions.`
+            : createSessionLabel
 
           function handleProjectBlur(event: FocusEvent<HTMLDivElement>) {
             if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
@@ -360,7 +364,12 @@ function FolderWorkspaceView({
                     </span>
                     <span className="project-row-text">
                       <span className="project-row-label">{workspace.name}</span>
-                      <span className="project-row-meta">{workspace.project.name}</span>
+                      <span className="project-row-meta">
+                        <span className="project-row-meta-label">{workspace.project.name}</span>
+                        {isMissingWorkspace ? (
+                          <span className="project-row-status is-missing">{"\u5df2\u5220\u9664"}</span>
+                        ) : null}
+                      </span>
                     </span>
                   </button>
                   <div className="project-row-actions" aria-label={`${workspace.name} actions`}>
@@ -375,8 +384,8 @@ function FolderWorkspaceView({
                     <button
                       className="row-action project-row-action"
                       aria-label={createSessionLabel}
-                      title={createSessionLabel}
-                      disabled={isCreatingSession}
+                      title={createSessionTitle}
+                      disabled={isCreatingSession || isMissingWorkspace}
                       onClick={(event) => void onProjectCreateSession(workspace, event)}
                     >
                       <NewItemIcon />
@@ -1146,13 +1155,13 @@ type GitCapabilityState = {
 }
 
 type GitCapabilitiesState = {
-  projectID?: string
   directory: string
   root: string | null
   branch: string | null
   defaultBranch: string | null
   isGitRepo: boolean
   canCommit: GitCapabilityState
+  canStageAllCommit: GitCapabilityState
   canPush: GitCapabilityState
   canCreatePullRequest: GitCapabilityState
   canCreateBranch: GitCapabilityState
@@ -1165,7 +1174,6 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const commitInputRef = useRef<HTMLInputElement | null>(null)
   const branchInputRef = useRef<HTMLInputElement | null>(null)
-  const reconciledProjectKeyRef = useRef<string | null>(null)
   const loadRequestRef = useRef(0)
   const visibleLoadRequestRef = useRef(0)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -1174,7 +1182,7 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
   const [branchName, setBranchName] = useState("")
   const [capabilities, setCapabilities] = useState<GitCapabilitiesState | null>(null)
   const [isLoadingCapabilities, setIsLoadingCapabilities] = useState(false)
-  const [pendingAction, setPendingAction] = useState<"commit" | "push" | "pull-request" | "branch" | null>(null)
+  const [pendingAction, setPendingAction] = useState<"commit" | "stage-all-commit" | "push" | "pull-request" | "branch" | null>(null)
   const [status, setStatus] = useState<{
     tone: "neutral" | "success" | "error"
     text: string
@@ -1189,26 +1197,8 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
   const gitCreateBranch = window.desktop?.gitCreateBranch
   const gitCreatePullRequest = window.desktop?.gitCreatePullRequest
 
-  function reconcileWorkspaceProject(resolvedProjectID?: string) {
-    const nextProjectID = resolvedProjectID?.trim()
-    if (!directory || !nextProjectID || nextProjectID === projectID) {
-      return
-    }
-
-    const reconciliationKey = `${projectID ?? ""}->${nextProjectID}:${directory}`
-    if (reconciledProjectKeyRef.current === reconciliationKey) {
-      return
-    }
-
-    reconciledProjectKeyRef.current = reconciliationKey
-    notifyGitStateChanged({
-      projectID: nextProjectID,
-      directory,
-    })
-  }
-
-  const handleGitStateChanged = useEffectEvent((detail: { projectID: string; directory: string }) => {
-    if (!isMatchingGitStateChangedDetail(detail, projectID, directory)) return
+  const handleGitStateChanged = useEffectEvent((detail: { directory: string }) => {
+    if (!isMatchingGitStateChangedDetail(detail, directory)) return
     void refreshCapabilities()
   })
 
@@ -1244,7 +1234,6 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
       }
 
       setCapabilities(nextCapabilities)
-      reconcileWorkspaceProject(nextCapabilities.projectID)
       return nextCapabilities
     } catch (error) {
       if (loadRequestRef.current !== requestID) {
@@ -1274,7 +1263,6 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
   })
 
   useEffect(() => {
-    reconciledProjectKeyRef.current = null
     setIsMenuOpen(false)
     setActiveForm(null)
     setCommitMessage("")
@@ -1356,8 +1344,9 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
     }
   }, [activeForm, isMenuOpen])
 
-  async function handleCommit() {
+  async function handleCommit(options?: { stageAll?: boolean }) {
     const message = commitMessage.trim()
+    const stageAll = options?.stageAll === true
 
     if (!message) {
       setStatus({
@@ -1375,10 +1364,10 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
       return
     }
 
-    setPendingAction("commit")
+    setPendingAction(stageAll ? "stage-all-commit" : "commit")
     setStatus({
       tone: "neutral",
-      text: "Committing changes...",
+      text: stageAll ? "Staging all changes and committing..." : "Committing staged changes...",
     })
 
     try {
@@ -1386,6 +1375,7 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
         projectID,
         directory,
         message,
+        ...(stageAll ? { stageAll: true } : {}),
       })
       setCommitMessage("")
       setActiveForm(null)
@@ -1394,7 +1384,6 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
         text: result.summary,
       })
       notifyGitStateChanged({
-        projectID: result.projectID?.trim() || projectID,
         directory,
       })
     } catch (error) {
@@ -1433,7 +1422,6 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
         text: result.summary,
       })
       notifyGitStateChanged({
-        projectID: result.projectID?.trim() || projectID,
         directory,
       })
     } catch (error) {
@@ -1448,6 +1436,14 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
 
   async function handleCreateBranch() {
     const name = branchName.trim()
+
+    if (!capabilities?.canCreateBranch.enabled) {
+      setStatus({
+        tone: "error",
+        text: capabilities?.canCreateBranch.reason ?? "A branch cannot be created right now.",
+      })
+      return
+    }
 
     if (!name) {
       setStatus({
@@ -1484,7 +1480,6 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
         text: result.summary,
       })
       notifyGitStateChanged({
-        projectID: result.projectID?.trim() || projectID,
         directory,
       })
     } catch (error) {
@@ -1523,7 +1518,6 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
         text: result.summary,
       })
       notifyGitStateChanged({
-        projectID: result.projectID?.trim() || projectID,
         directory,
       })
     } catch (error) {
@@ -1544,6 +1538,18 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
   const defaultStatusText = capabilities.branch
     ? `Current branch: ${capabilities.branch}`
     : "The current worktree is on a detached HEAD."
+
+  const canOpenCommitForm = capabilities.canCommit.enabled || capabilities.canStageAllCommit.enabled
+  const commitRowTitle = capabilities.canCommit.enabled
+    ? "Commit the staged changes."
+    : capabilities.canStageAllCommit.enabled
+      ? "Stage all local changes and commit them."
+      : capabilities.canStageAllCommit.reason ?? capabilities.canCommit.reason
+  const commitRowDescription = capabilities.canCommit.enabled
+    ? "Create a commit from the staged changes, or stage everything first."
+    : capabilities.canStageAllCommit.enabled
+      ? "No staged changes yet. Stage all local changes and commit them."
+      : capabilities.canStageAllCommit.reason ?? capabilities.canCommit.reason
 
   return (
     <div className="canvas-top-menu-quick-anchor">
@@ -1567,17 +1573,19 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
             <button
               type="button"
               className={activeForm === "commit" ? "composer-menu-option git-quick-menu-option is-selected" : "composer-menu-option git-quick-menu-option"}
-              disabled={!capabilities.canCommit.enabled || isBusy}
-              title={capabilities.canCommit.enabled ? "Commit the current workspace changes." : capabilities.canCommit.reason}
+              disabled={!canOpenCommitForm || isBusy}
+              title={commitRowTitle}
               onClick={() => {
                 setActiveForm((current) => current === "commit" ? null : "commit")
               }}
             >
               <span className="composer-menu-option-copy">
                 <strong>Commit changes</strong>
-                <small>{capabilities.canCommit.enabled ? "Create a commit from the current workspace changes." : capabilities.canCommit.reason}</small>
+                <small>{commitRowDescription}</small>
               </span>
-              <span className="composer-menu-option-check">{pendingAction === "commit" ? "Working..." : "Open"}</span>
+              <span className="composer-menu-option-check">
+                {pendingAction === "commit" || pendingAction === "stage-all-commit" ? "Working..." : "Open"}
+              </span>
             </button>
 
             <button
@@ -1656,7 +1664,22 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
                 <button className="secondary-button" type="button" onClick={() => setActiveForm(null)} disabled={isBusy}>
                   Cancel
                 </button>
-                <button className="primary-button" type="button" onClick={() => void handleCommit()} disabled={isBusy}>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => void handleCommit({ stageAll: true })}
+                  disabled={!capabilities.canStageAllCommit.enabled || isBusy}
+                  title={capabilities.canStageAllCommit.enabled ? "Stage all local changes and commit them." : capabilities.canStageAllCommit.reason}
+                >
+                  {pendingAction === "stage-all-commit" ? "Staging + committing..." : "Stage all + commit"}
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => void handleCommit()}
+                  disabled={!capabilities.canCommit.enabled || isBusy}
+                  title={capabilities.canCommit.enabled ? "Commit only the staged changes." : capabilities.canCommit.reason}
+                >
                   {pendingAction === "commit" ? "Committing..." : "Run commit"}
                 </button>
               </div>
@@ -1686,7 +1709,13 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
                 <button className="secondary-button" type="button" onClick={() => setActiveForm(null)} disabled={isBusy}>
                   Cancel
                 </button>
-                <button className="primary-button" type="button" onClick={() => void handleCreateBranch()} disabled={isBusy}>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => void handleCreateBranch()}
+                  disabled={!capabilities.canCreateBranch.enabled || isBusy}
+                  title={capabilities.canCreateBranch.enabled ? "Create and switch to a new branch." : capabilities.canCreateBranch.reason}
+                >
                   {pendingAction === "branch" ? "Creating..." : "Create branch"}
                 </button>
               </div>

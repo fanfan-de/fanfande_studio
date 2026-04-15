@@ -1,3 +1,4 @@
+import fs from "node:fs"
 import path from "node:path"
 import type { AgentFolderWorkspace, AgentProjectInfo, AgentProjectWorkspace } from "./types"
 
@@ -12,13 +13,11 @@ function samePath(left: string, right: string) {
 }
 
 function getProjectName(project: { name?: string; worktree: string }) {
-  if (project.worktree === "/") return "Global"
-
   const trimmed = project.name?.trim()
   if (trimmed) return trimmed
 
   const fallback = project.worktree.split(/[\\/]/).filter(Boolean).pop()
-  return fallback || "Global"
+  return fallback || project.worktree
 }
 
 function getFolderName(directory: string) {
@@ -33,17 +32,30 @@ function getSessionsForDirectory(workspace: AgentProjectWorkspace, directory: st
     .sort((left, right) => right.updated - left.updated)
 }
 
+function checkDirectoryExists(directory: string, existsSync: (path: string) => boolean) {
+  try {
+    return existsSync(directory)
+  } catch {
+    return false
+  }
+}
+
 export function buildFolderWorkspaceForDirectory(
   project: AgentProjectInfo,
   workspace: AgentProjectWorkspace,
   directory: string,
+  options?: {
+    existsSync?: (path: string) => boolean
+  },
 ): AgentFolderWorkspace {
   const sessions = getSessionsForDirectory(workspace, directory)
+  const exists = checkDirectoryExists(directory, options?.existsSync ?? fs.existsSync)
 
   return {
     id: directory,
     directory,
     name: getFolderName(directory),
+    exists,
     created: sessions[0]?.created ?? workspace.created,
     updated: sessions[0]?.updated ?? workspace.updated,
     project: {
@@ -55,7 +67,13 @@ export function buildFolderWorkspaceForDirectory(
   }
 }
 
-export function buildFolderWorkspaces(projects: AgentProjectInfo[], workspaces: AgentProjectWorkspace[]) {
+export function buildFolderWorkspaces(
+  projects: AgentProjectInfo[],
+  workspaces: AgentProjectWorkspace[],
+  options?: {
+    existsSync?: (path: string) => boolean
+  },
+) {
   const folderWorkspaces: AgentFolderWorkspace[] = []
 
   for (const [index, workspace] of workspaces.entries()) {
@@ -68,7 +86,7 @@ export function buildFolderWorkspaces(projects: AgentProjectInfo[], workspaces: 
     }
 
     for (const directory of directories.values()) {
-      folderWorkspaces.push(buildFolderWorkspaceForDirectory(project, workspace, directory))
+      folderWorkspaces.push(buildFolderWorkspaceForDirectory(project, workspace, directory, options))
     }
   }
 

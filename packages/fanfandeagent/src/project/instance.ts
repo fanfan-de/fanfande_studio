@@ -69,7 +69,6 @@ const Instance = {
 
   containsPath(filepath: string) {
     if (Filesystem.contains(Instance.directory, filepath)) return true
-    if (Instance.worktree === "/") return false
     return Filesystem.contains(Instance.worktree, filepath)
   },
 

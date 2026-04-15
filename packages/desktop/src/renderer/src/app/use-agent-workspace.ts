@@ -40,6 +40,7 @@ import type {
   SkillInfo,
   SidebarActionKey,
   Turn,
+  WorkspaceFileChangeIPCEvent,
   WorkspaceGroup,
 } from "./types"
 import { createID } from "./utils"
@@ -47,6 +48,7 @@ import {
   findFirstSession,
   findSession,
   findWorkspaceByID,
+  isWorkspaceAvailable,
   mapLoadedSession,
   mapLoadedWorkspace,
   mapLoadedWorkspaces,
@@ -55,7 +57,7 @@ import {
   upsertSessionInWorkspace,
   upsertWorkspaceGroup,
 } from "./workspace"
-import { subscribeToGitStateChanged } from "./git-events"
+import { notifyGitStateChanged } from "./git-events"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
@@ -71,6 +73,8 @@ interface ComposerAttachmentCapabilities {
 type ComposerAttachmentKind = "image" | "pdf" | "unsupported"
 
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"])
+const GIT_REFRESH_SUPPRESSION_MS = 1000
+const WORKSPACE_RELOAD_SUPPRESSION_MS = 1500
 
 function normalizeModelSelection(selection?: { model?: string; small_model?: string }) {
   return {
@@ -97,6 +101,25 @@ function getComposerAttachmentKind(path: string): ComposerAttachmentKind {
   if (IMAGE_ATTACHMENT_EXTENSIONS.has(extension)) return "image"
   if (extension === "pdf") return "pdf"
   return "unsupported"
+}
+
+function normalizeWorkspacePath(value: string, platform: string) {
+  const normalized = value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "")
+  return platform === "win32" ? normalized.toLowerCase() : normalized
+}
+
+function resolveWorkspaceRelativePath(directory: string, target: string, platform: string) {
+  const normalizedDirectory = normalizeWorkspacePath(directory, platform)
+  const normalizedTarget = normalizeWorkspacePath(target, platform)
+  if (!normalizedDirectory || !normalizedTarget) return null
+  if (normalizedTarget === normalizedDirectory) return ""
+  const prefix = `${normalizedDirectory}/`
+  if (!normalizedTarget.startsWith(prefix)) return null
+  return normalizedTarget.slice(prefix.length)
+}
+
+function shouldReloadWorkspaceFromRelativePath(relativePath: string) {
+  return relativePath === ".git" || relativePath === ".git/config"
 }
 
 function resolveComposerEffectiveModel(
@@ -304,12 +327,11 @@ function resolveCreateSessionWorkspaceID(
 
   for (const candidateID of candidateIDs) {
     if (!candidateID) continue
-    if (findWorkspaceByID(workspaces, candidateID)) {
-      return candidateID
-    }
+    const workspace = findWorkspaceByID(workspaces, candidateID)
+    if (workspace && isWorkspaceAvailable(workspace)) return candidateID
   }
 
-  return workspaces[0]?.id ?? null
+  return workspaces.find((workspace) => isWorkspaceAvailable(workspace))?.id ?? workspaces[0]?.id ?? null
 }
 
 const initialCreateSessionTab = initialSelection.session === null
@@ -337,6 +359,9 @@ export function useAgentWorkspace({
   const seenStreamCursorsRef = useRef<Record<string, string[]>>({})
   const turnTargetsRef = useRef<Record<string, { sessionID: string; assistantTurnID: string }>>({})
   const lastFocusedSessionIDRef = useRef<string | null>(initialSelection.session?.id ?? null)
+  const watchedWorkspaceDirectoriesKeyRef = useRef("")
+  const gitRefreshSuppressedUntilRef = useRef<Record<string, number>>({})
+  const workspaceReloadSuppressedUntilRef = useRef<Record<string, number>>({})
   const [workspaces, setWorkspaces] = useState(seedWorkspaces)
   const [selectedFolderID, setSelectedFolderID] = useState<string | null>(initialSelection.workspace?.id ?? null)
   const [activeSessionID, setActiveSessionID] = useState<string | null>(initialSelection.session?.id ?? null)
@@ -851,17 +876,30 @@ export function useAgentWorkspace({
     handleSessionStreamEvent(streamEvent)
   })
 
-  const handleGitStateChangedEffect = useEffectEvent((detail: { projectID: string; directory: string }) => {
-    const normalizedDetailDirectory =
-      platform === "win32" ? detail.directory.trim().replace(/\//g, "\\").toLowerCase() : detail.directory.trim()
-    const matchingWorkspace = workspaces.find((workspace) => {
-      const normalizedWorkspaceDirectory =
-        platform === "win32" ? workspace.directory.trim().replace(/\//g, "\\").toLowerCase() : workspace.directory.trim()
-
-      return normalizedWorkspaceDirectory === normalizedDetailDirectory
-    })
+  const handleWorkspaceFileChangeEffect = useEffectEvent((workspaceEvent: WorkspaceFileChangeIPCEvent) => {
+    const normalizedEventDirectory = normalizeWorkspacePath(workspaceEvent.directory, platform)
+    const matchingWorkspace = workspaces.find(
+      (workspace) => normalizeWorkspacePath(workspace.directory, platform) === normalizedEventDirectory,
+    )
     if (!matchingWorkspace) return
 
+    const now = Date.now()
+    const relativePaths = workspaceEvent.paths
+      .map((changedPath) => resolveWorkspaceRelativePath(matchingWorkspace.directory, changedPath, platform))
+      .filter((value): value is string => value !== null)
+    const requiresWorkspaceReload = relativePaths.some(shouldReloadWorkspaceFromRelativePath)
+
+    if (now >= (gitRefreshSuppressedUntilRef.current[normalizedEventDirectory] ?? 0)) {
+      gitRefreshSuppressedUntilRef.current[normalizedEventDirectory] = now + GIT_REFRESH_SUPPRESSION_MS
+      notifyGitStateChanged({
+        directory: matchingWorkspace.directory,
+      })
+    }
+
+    if (!requiresWorkspaceReload) return
+    if (now < (workspaceReloadSuppressedUntilRef.current[normalizedEventDirectory] ?? 0)) return
+
+    workspaceReloadSuppressedUntilRef.current[normalizedEventDirectory] = now + WORKSPACE_RELOAD_SUPPRESSION_MS
     void refreshWorkspaceFromDirectory(matchingWorkspace.directory)
   })
 
@@ -886,7 +924,15 @@ export function useAgentWorkspace({
     }
   }, [])
 
-  useEffect(() => subscribeToGitStateChanged(handleGitStateChangedEffect), [handleGitStateChangedEffect])
+  useEffect(() => {
+    const unsubscribe = window.desktop?.onWorkspaceFileChange?.((workspaceEvent: WorkspaceFileChangeIPCEvent) => {
+      handleWorkspaceFileChangeEffect(workspaceEvent)
+    })
+
+    return () => {
+      unsubscribe?.()
+    }
+  }, [])
 
   useEffect(() => {
     const subscribeSessionStream = window.desktop?.subscribeAgentSessionStream
@@ -934,6 +980,35 @@ export function useAgentWorkspace({
       subscribedSessionStreamsRef.current = {}
     }
   }, [])
+
+  useEffect(() => {
+    const updateWorkspaceWatchDirectories = window.desktop?.updateWorkspaceWatchDirectories
+    if (!updateWorkspaceWatchDirectories) return
+
+    const uniqueDirectories = [
+      ...new Set(
+        workspaces
+          .filter((workspace) => !seedWorkspaceIDs.has(workspace.id) && isWorkspaceAvailable(workspace))
+          .map((workspace) => workspace.directory.trim())
+          .filter(Boolean),
+      ),
+    ]
+    const normalizedKey = uniqueDirectories
+      .map((directory) =>
+        platform === "win32" ? directory.replace(/\//g, "\\").toLowerCase() : directory.replace(/\\/g, "/"),
+      )
+      .sort()
+      .join("\n")
+
+    if (normalizedKey === watchedWorkspaceDirectoriesKeyRef.current) return
+    watchedWorkspaceDirectoriesKeyRef.current = normalizedKey
+
+    void updateWorkspaceWatchDirectories({
+      directories: uniqueDirectories,
+    }).catch((error) => {
+      console.error("[desktop] updateWorkspaceWatchDirectories failed:", error)
+    })
+  }, [platform, workspaces])
 
   useEffect(() => {
     let mounted = true
@@ -1474,6 +1549,7 @@ export function useAgentWorkspace({
     if (isSelected && isExpanded) {
       setExpandedFolderID(null)
       if (workspace.sessions.length === 0) {
+        if (!isWorkspaceAvailable(workspace)) return
         openCreateSessionTab(workspace.id)
         return
       }
@@ -1487,6 +1563,7 @@ export function useAgentWorkspace({
     setExpandedFolderID(workspace.id)
     const currentSessionInWorkspace = workspace.sessions.some((session) => session.id === activeSessionID)
     if (workspace.sessions.length === 0) {
+      if (!isWorkspaceAvailable(workspace)) return
       openCreateSessionTab(workspace.id)
       return
     }
@@ -1531,6 +1608,7 @@ export function useAgentWorkspace({
 
   async function handleProjectCreateSession(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
+    if (!isWorkspaceAvailable(workspace)) return
     openCreateSessionTab(workspace.id)
   }
 

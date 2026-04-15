@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import "./sqlite.cleanup.ts"
 import { $ } from "bun"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServerApp } from "#server/server.ts"
@@ -74,6 +74,10 @@ type GitCapabilitiesEnvelope = JsonEnvelope<{
   defaultBranch: string | null
   isGitRepo: boolean
   canCommit: {
+    enabled: boolean
+    reason?: string
+  }
+  canStageAllCommit: {
     enabled: boolean
     reason?: string
   }
@@ -335,6 +339,22 @@ async function attachTrackedRemote(root: string, branch: string, remoteRoot: str
   await $`git push -u origin ${branch}`.cwd(root).quiet()
 }
 
+async function createDirectoryLink(linkPath: string, target: string) {
+  await symlink(target, linkPath, process.platform === "win32" ? "junction" : "dir")
+}
+
+async function removeDirectoryLink(linkPath: string) {
+  try {
+    await rm(linkPath, { force: true })
+  } catch (error) {
+    if (process.platform !== "win32") {
+      throw error
+    }
+
+    await $`cmd /c rmdir ${linkPath}`.quiet()
+  }
+}
+
 function mockModelsDevFetch(
   validationHandler?: (input: { url: string; headers: Headers }) => Response | Promise<Response> | undefined,
 ) {
@@ -580,9 +600,9 @@ describe("server api", () => {
     expect(body.data?.some((project) => project.id === createBody.data?.projectID)).toBe(true)
   })
 
-  test("GET /api/projects should reclassify a global session directory after git init", async () => {
+  test("GET /api/projects should keep the same project id when a directory becomes a git repo", async () => {
     const app = createServerApp()
-    const directory = await mkdtemp(join(tmpdir(), "fanfande-global-to-git-"))
+    const directory = await mkdtemp(join(tmpdir(), "fanfande-directory-to-git-"))
 
     try {
       const createResponse = await app.request("http://localhost/api/sessions", {
@@ -594,7 +614,7 @@ describe("server api", () => {
 
       expect(createResponse.status).toBe(201)
       expect(createBody.success).toBe(true)
-      expect(createBody.data?.projectID).toBe("global")
+      expect(createBody.data?.projectID).toMatch(/^prj_/)
 
       await createGitRepo(directory, "migrated-repo")
 
@@ -604,9 +624,9 @@ describe("server api", () => {
       expect(response.status).toBe(200)
       expect(body.success).toBe(true)
 
-      const migratedProject = body.data?.find((project) => project.worktree === directory)
+      const migratedProject = body.data?.find((project) => project.id === createBody.data?.projectID)
       expect(migratedProject).toBeDefined()
-      expect(migratedProject?.id).not.toBe("global")
+      expect(migratedProject?.worktree).toBe(directory)
 
       const sessionsResponse = await app.request(`http://localhost/api/projects/${migratedProject!.id}/sessions`)
       const sessionsBody = (await sessionsResponse.json()) as ProjectSessionsResponseEnvelope
@@ -623,9 +643,9 @@ describe("server api", () => {
     }
   })
 
-  test("project git routes should reject a stale global project id after git init", async () => {
+  test("project git routes should keep working with the original project id after git init", async () => {
     const app = createServerApp()
-    const directory = await mkdtemp(join(tmpdir(), "fanfande-stale-global-git-"))
+    const directory = await mkdtemp(join(tmpdir(), "fanfande-stable-project-git-"))
     let sessionID: string | undefined
 
     try {
@@ -638,33 +658,36 @@ describe("server api", () => {
 
       expect(createResponse.status).toBe(201)
       expect(createBody.success).toBe(true)
-      expect(createBody.data?.projectID).toBe("global")
+      expect(createBody.data?.projectID).toMatch(/^prj_/)
       sessionID = createBody.data?.id
 
-      await createGitRepo(directory, "stale-global-project")
+      await createGitRepo(directory, "stable-project")
 
       const capabilitiesResponse = await app.request(
-        `http://localhost/api/projects/global/git/capabilities?directory=${encodeURIComponent(directory)}`,
+        `http://localhost/api/projects/${createBody.data!.projectID}/git/capabilities?directory=${encodeURIComponent(directory)}`,
       )
       const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
 
-      expect(capabilitiesResponse.status).toBe(400)
-      expect(capabilitiesBody.success).toBe(false)
-      expect(capabilitiesBody.error?.code).toBe("DIRECTORY_NOT_IN_PROJECT")
+      expect(capabilitiesResponse.status).toBe(200)
+      expect(capabilitiesBody.success).toBe(true)
+      expect(capabilitiesBody.data?.isGitRepo).toBe(true)
 
-      const branchResponse = await app.request("http://localhost/api/projects/global/git/branches", {
+      const branchResponse = await app.request(
+        `http://localhost/api/projects/${createBody.data!.projectID}/git/branches`,
+        {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           directory,
-          name: "feature/from-stale-global",
+          name: "feature/stable-project-id",
         }),
-      })
+      },
+      )
       const branchBody = (await branchResponse.json()) as GitActionEnvelope
 
-      expect(branchResponse.status).toBe(400)
-      expect(branchBody.success).toBe(false)
-      expect(branchBody.error?.code).toBe("DIRECTORY_NOT_IN_PROJECT")
+      expect(branchResponse.status).toBe(200)
+      expect(branchBody.success).toBe(true)
+      expect(branchBody.data?.branch).toBe("feature/stable-project-id")
     } finally {
       if (sessionID) {
         await app.request(`http://localhost/api/sessions/${sessionID}`, {
@@ -1350,13 +1373,14 @@ describe("server api", () => {
     }
   })
 
-  test("project git routes should report capabilities, commit changes, and create branches", async () => {
+  test("project git routes should report capabilities, commit staged changes, and create branches", async () => {
     const app = createServerApp()
     const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-project-"))
 
     try {
       await createGitRepo(repositoryRoot, "git-project")
       await writeFile(join(repositoryRoot, "README.md"), "# git-project\nupdated\n")
+      await $`git add README.md`.cwd(repositoryRoot).quiet()
 
       const projectResponse = await app.request("http://localhost/api/projects", {
         method: "POST",
@@ -1380,6 +1404,9 @@ describe("server api", () => {
         root: repositoryRoot,
         isGitRepo: true,
         canCommit: {
+          enabled: true,
+        },
+        canStageAllCommit: {
           enabled: true,
         },
         canPush: {
@@ -1533,6 +1560,54 @@ describe("server api", () => {
     }
   })
 
+  test("project git capabilities should disable branch creation before the first commit", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-unborn-project-"))
+
+    try {
+      await mkdir(repositoryRoot, { recursive: true })
+      await writeFile(join(repositoryRoot, "README.md"), "# unborn\n")
+      await $`git init`.cwd(repositoryRoot).quiet()
+      await $`git config user.email test@example.com`.cwd(repositoryRoot).quiet()
+      await $`git config user.name fanfande-test`.cwd(repositoryRoot).quiet()
+
+      const initialBranch = (await $`git symbolic-ref --quiet --short HEAD`.cwd(repositoryRoot).text()).trim()
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const capabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(capabilitiesResponse.status).toBe(200)
+      expect(capabilitiesBody.data?.branch).toBe(initialBranch)
+      expect(capabilitiesBody.data?.canCreateBranch).toEqual({
+        enabled: false,
+        reason: "Create the first commit before creating a branch.",
+      })
+      expect(capabilitiesBody.data?.canPush).toEqual({
+        enabled: false,
+        reason: "Create the first commit before pushing this branch.",
+      })
+      expect(capabilitiesBody.data?.canCreatePullRequest).toEqual({
+        enabled: false,
+        reason: "Create the first commit before opening a pull request.",
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
   test("project git routes should reject directories outside the requested project", async () => {
     const app = createServerApp()
     const repositoryRootA = await mkdtemp(join(tmpdir(), "fanfande-git-project-boundary-a-"))
@@ -1578,6 +1653,183 @@ describe("server api", () => {
     }
   })
 
+  test("project git routes should reject project-local links that resolve to an external repo", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-project-link-root-"))
+    const externalRepositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-project-link-external-"))
+    const linkedDirectory = join(repositoryRoot, "external-link")
+
+    try {
+      await createGitRepo(repositoryRoot, "git-project-link-root")
+      await createGitRepo(externalRepositoryRoot, "git-project-link-external")
+      await createDirectoryLink(linkedDirectory, externalRepositoryRoot)
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const capabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(linkedDirectory)}`,
+      )
+      const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(capabilitiesResponse.status).toBe(400)
+      expect(capabilitiesBody.success).toBe(false)
+      expect(capabilitiesBody.error?.code).toBe("DIRECTORY_NOT_IN_PROJECT")
+
+      const branchResponse = await app.request(`http://localhost/api/projects/${projectID}/git/branches`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          directory: linkedDirectory,
+          name: "feature/should-not-create",
+        }),
+      })
+      const branchBody = (await branchResponse.json()) as GitActionEnvelope
+
+      expect(branchResponse.status).toBe(400)
+      expect(branchBody.success).toBe(false)
+      expect(branchBody.error?.code).toBe("DIRECTORY_NOT_IN_PROJECT")
+    } finally {
+      await removeDirectoryLink(linkedDirectory)
+      await rm(repositoryRoot, { recursive: true, force: true })
+      await rm(externalRepositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project git routes should only commit staged changes", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-staged-commit-project-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "git-staged-commit-project")
+      await writeFile(join(repositoryRoot, "staged.txt"), "staged\n")
+      await writeFile(join(repositoryRoot, "unstaged.txt"), "unstaged\n")
+      await $`git add staged.txt`.cwd(repositoryRoot).quiet()
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const capabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(capabilitiesResponse.status).toBe(200)
+      expect(capabilitiesBody.data?.canCommit).toEqual({
+        enabled: true,
+      })
+      expect(capabilitiesBody.data?.canStageAllCommit).toEqual({
+        enabled: true,
+      })
+
+      const commitResponse = await app.request(`http://localhost/api/projects/${projectID}/git/commit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          directory: repositoryRoot,
+          message: "chore: commit staged only",
+        }),
+      })
+      const commitBody = (await commitResponse.json()) as GitActionEnvelope
+
+      expect(commitResponse.status).toBe(200)
+      expect(commitBody.data?.summary).toContain("Committed")
+
+      const committedFiles = await $`git show --name-only --format= HEAD`.cwd(repositoryRoot).text()
+      expect(committedFiles).toContain("staged.txt")
+      expect(committedFiles).not.toContain("unstaged.txt")
+
+      const statusOutput = await $`git status --porcelain`.cwd(repositoryRoot).text()
+      expect(statusOutput).toContain("?? unstaged.txt")
+
+      const postCommitCapabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const postCommitCapabilitiesBody = (await postCommitCapabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(postCommitCapabilitiesResponse.status).toBe(200)
+      expect(postCommitCapabilitiesBody.data?.canCommit).toEqual({
+        enabled: false,
+        reason: "Stage changes before committing.",
+      })
+      expect(postCommitCapabilitiesBody.data?.canStageAllCommit).toEqual({
+        enabled: true,
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("project git routes should stage all changes before committing when requested", async () => {
+    const app = createServerApp()
+    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-stage-all-project-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "git-stage-all-project")
+      await writeFile(join(repositoryRoot, "stage-all.txt"), "stage-all\n")
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory: repositoryRoot }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const capabilitiesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/capabilities?directory=${encodeURIComponent(repositoryRoot)}`,
+      )
+      const capabilitiesBody = (await capabilitiesResponse.json()) as GitCapabilitiesEnvelope
+
+      expect(capabilitiesResponse.status).toBe(200)
+      expect(capabilitiesBody.data?.canCommit).toEqual({
+        enabled: false,
+        reason: "Stage changes before committing.",
+      })
+      expect(capabilitiesBody.data?.canStageAllCommit).toEqual({
+        enabled: true,
+      })
+
+      const commitResponse = await app.request(`http://localhost/api/projects/${projectID}/git/commit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          directory: repositoryRoot,
+          message: "chore: stage all and commit",
+          stageAll: true,
+        }),
+      })
+      const commitBody = (await commitResponse.json()) as GitActionEnvelope
+
+      expect(commitResponse.status).toBe(200)
+      expect(commitBody.data?.summary).toContain("Committed")
+
+      const committedFiles = await $`git show --name-only --format= HEAD`.cwd(repositoryRoot).text()
+      expect(committedFiles).toContain("stage-all.txt")
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
   test("project git capabilities should enable push for a tracked branch with outgoing commits", async () => {
     const app = createServerApp()
     const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-push-project-"))
@@ -1588,6 +1840,7 @@ describe("server api", () => {
       await createBareGitRemote(remoteRoot)
       await attachTrackedRemote(repositoryRoot, "main", remoteRoot)
       await writeFile(join(repositoryRoot, "README.md"), "# git-push-project\nnext\n")
+      await $`git add README.md`.cwd(repositoryRoot).quiet()
 
       const projectResponse = await app.request("http://localhost/api/projects", {
         method: "POST",

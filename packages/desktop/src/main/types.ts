@@ -71,6 +71,7 @@ export interface AgentFolderWorkspace {
   id: string
   directory: string
   name: string
+  exists: boolean
   created: number
   updated: number
   project: AgentFolderProjectSummary

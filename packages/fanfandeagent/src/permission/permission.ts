@@ -244,12 +244,9 @@ function resolvePathCandidate(inputPath: string, cwd: string, worktree?: string)
     : path.resolve(cwd, inputPath)
   const normalized = Filesystem.normalizePath(resolved)
 
-  const root = worktree && worktree !== "/" ? worktree : cwd
+  const root = worktree || cwd
   const relative = asPosix(path.relative(root, normalized))
-  const inside =
-    worktree === "/"
-      ? true
-      : Filesystem.contains(root, normalized) || Filesystem.contains(cwd, normalized)
+  const inside = Filesystem.contains(root, normalized) || Filesystem.contains(cwd, normalized)
 
   return {
     absolute: normalized,

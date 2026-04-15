@@ -1,4 +1,5 @@
 import path from "node:path"
+import { realpath } from "node:fs/promises"
 import { Hono } from "hono"
 import z from "zod"
 import * as db from "#database/Sqlite.ts"
@@ -31,6 +32,7 @@ const GitDirectoryQuery = z.object({
 const GitCommitBody = z.object({
   directory: z.string().min(1),
   message: z.string().min(1),
+  stageAll: z.boolean().optional(),
 })
 const GitDirectoryBody = z.object({
   directory: z.string().min(1),
@@ -54,9 +56,18 @@ function safeReadProject(projectID: string) {
 }
 
 function normalizeProjectDirectory(input: string) {
-  const resolved = path.resolve(input)
-  const normalized = path.normalize(resolved)
+  const normalized = path.normalize(input)
   return process.platform === "win32" ? normalized.toLowerCase() : normalized
+}
+
+async function canonicalizeProjectDirectory(input: string) {
+  const resolved = path.resolve(input)
+
+  try {
+    return path.normalize(await realpath(resolved))
+  } catch {
+    return path.normalize(resolved)
+  }
 }
 
 function isDirectoryInsideProjectRoot(directory: string, root: string) {
@@ -66,26 +77,59 @@ function isDirectoryInsideProjectRoot(directory: string, root: string) {
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
-function projectContainsDirectory(project: Project.ProjectInfo, directory: string) {
-  if (project.worktree !== "/" && isDirectoryInsideProjectRoot(directory, project.worktree)) {
-    return true
+async function resolveProjectBoundaryRoots(project: Project.ProjectInfo) {
+  const roots = new Set<string>()
+
+  roots.add(await canonicalizeProjectDirectory(project.worktree))
+
+  for (const sandbox of project.sandboxes ?? []) {
+    roots.add(await canonicalizeProjectDirectory(sandbox))
   }
 
-  return (project.sandboxes ?? []).some((sandbox) => isDirectoryInsideProjectRoot(directory, sandbox))
+  return [...roots]
 }
 
-async function resolveProjectGitDirectory(projectID: string, rawDirectory: string) {
+function projectContainsDirectory(projectRoots: string[], directory: string) {
+  return projectRoots.some((root) => isDirectoryInsideProjectRoot(directory, root))
+}
+
+async function resolveProjectGitDirectory(
+  projectID: string,
+  rawDirectory: string,
+  options?: {
+    verifyRepositoryRoot?: boolean
+  },
+) {
   const project = safeReadProject(projectID)
   const directory = rawDirectory.trim()
   if (!directory) {
     throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
   }
 
-  if (!projectContainsDirectory(project, directory)) {
+  const [projectRoots, canonicalDirectory] = await Promise.all([
+    resolveProjectBoundaryRoots(project),
+    canonicalizeProjectDirectory(directory),
+  ])
+
+  if (!projectContainsDirectory(projectRoots, canonicalDirectory)) {
     throw new ApiError(400, "DIRECTORY_NOT_IN_PROJECT", `Directory '${directory}' does not belong to project '${projectID}'`)
   }
 
-  return directory
+  if (options?.verifyRepositoryRoot) {
+    const repositoryRoot = await Git.resolveGitRepositoryRoot(canonicalDirectory)
+    if (repositoryRoot) {
+      const canonicalRepositoryRoot = await canonicalizeProjectDirectory(repositoryRoot)
+      if (!projectContainsDirectory(projectRoots, canonicalRepositoryRoot)) {
+        throw new ApiError(
+          400,
+          "DIRECTORY_NOT_IN_PROJECT",
+          `Git repository root '${repositoryRoot}' does not belong to project '${projectID}'`,
+        )
+      }
+    }
+  }
+
+  return canonicalDirectory
 }
 
 function parseModelReference(value: string) {
@@ -331,7 +375,7 @@ export function ProjectRoutes() {
       throw new ApiError(400, "INVALID_QUERY", "Query parameter 'directory' must be a non-empty string")
     }
 
-    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory, { verifyRepositoryRoot: true })
 
     return c.json({
       success: true,
@@ -347,11 +391,13 @@ export function ProjectRoutes() {
       throw new ApiError(400, "INVALID_PAYLOAD", "Body must include non-empty 'directory' and 'message' fields")
     }
 
-    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory, { verifyRepositoryRoot: true })
 
     return c.json({
       success: true,
-      data: await Git.commitGitChanges(directory, payload.data.message),
+      data: await Git.commitGitChanges(directory, payload.data.message, {
+        stageAll: payload.data.stageAll,
+      }),
       requestId: c.get("requestId"),
     })
   })
@@ -363,7 +409,7 @@ export function ProjectRoutes() {
       throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
     }
 
-    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory, { verifyRepositoryRoot: true })
 
     return c.json({
       success: true,
@@ -379,7 +425,7 @@ export function ProjectRoutes() {
       throw new ApiError(400, "INVALID_PAYLOAD", "Body must include non-empty 'directory' and 'name' fields")
     }
 
-    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory, { verifyRepositoryRoot: true })
 
     return c.json({
       success: true,
@@ -395,7 +441,7 @@ export function ProjectRoutes() {
       throw new ApiError(400, "INVALID_QUERY", "Query parameter 'directory' must be a non-empty string")
     }
 
-    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory, { verifyRepositoryRoot: true })
 
     return c.json({
       success: true,
@@ -411,7 +457,7 @@ export function ProjectRoutes() {
       throw new ApiError(400, "INVALID_PAYLOAD", "Body must include non-empty 'directory' and 'name' fields")
     }
 
-    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory, { verifyRepositoryRoot: true })
 
     return c.json({
       success: true,
@@ -427,7 +473,7 @@ export function ProjectRoutes() {
       throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
     }
 
-    const directory = await resolveProjectGitDirectory(id, payload.data.directory)
+    const directory = await resolveProjectGitDirectory(id, payload.data.directory, { verifyRepositoryRoot: true })
 
     return c.json({
       success: true,
@@ -587,6 +633,15 @@ export function ProjectRoutes() {
     const deletedSessions = Session.removeProjectSessions(id)
     db.deleteById("projects", id)
     db.deleteById("project_configs", id, "projectID")
+    if (db.tableExists("permission_rules")) {
+      db.deleteMany("permission_rules", [{ column: "projectID", value: id }])
+    }
+    if (db.tableExists("permission_requests")) {
+      db.deleteMany("permission_requests", [{ column: "projectID", value: id }])
+    }
+    if (db.tableExists("permission_audits")) {
+      db.deleteMany("permission_audits", [{ column: "projectID", value: id }])
+    }
 
     return c.json({
       success: true,

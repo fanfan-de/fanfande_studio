@@ -15,6 +15,7 @@ export interface GitCapabilities {
   defaultBranch: string | null
   isGitRepo: boolean
   canCommit: GitCapability
+  canStageAllCommit: GitCapability
   canPush: GitCapability
   canCreatePullRequest: GitCapability
   canCreateBranch: GitCapability
@@ -148,6 +149,7 @@ function emptyCapabilities(directory: string, reason: string): GitCapabilities {
     defaultBranch: null,
     isGitRepo: false,
     canCommit: { enabled: false, reason },
+    canStageAllCommit: { enabled: false, reason },
     canPush: { enabled: false, reason },
     canCreatePullRequest: { enabled: false, reason },
     canCreateBranch: { enabled: false, reason },
@@ -161,9 +163,19 @@ async function resolveGitRoot(directory: string, gitBinary: string) {
 }
 
 async function resolveCurrentBranch(directory: string, gitBinary: string) {
+  const symbolicResult = await runCommand(gitBinary, ["symbolic-ref", "--quiet", "--short", "HEAD"], directory)
+  if (symbolicResult.exitCode === 0 && symbolicResult.stdout) {
+    return parseBranchName(symbolicResult.stdout)
+  }
+
   const result = await runCommand(gitBinary, ["rev-parse", "--abbrev-ref", "HEAD"], directory)
   if (result.exitCode !== 0) return null
   return parseBranchName(result.stdout)
+}
+
+async function resolveHeadCommit(directory: string, gitBinary: string) {
+  const result = await runCommand(gitBinary, ["rev-parse", "--verify", "HEAD"], directory)
+  return result.exitCode === 0 && Boolean(result.stdout)
 }
 
 function parseBranchList(stdout: string) {
@@ -257,6 +269,20 @@ function extractUrl(value: string) {
   return match?.[0] ?? undefined
 }
 
+async function inspectStagedChanges(directory: string, gitBinary: string) {
+  return runCommand(gitBinary, ["diff", "--cached", "--name-only"], directory)
+}
+
+export async function resolveGitRepositoryRoot(directory: string) {
+  const targetDirectory = requireDirectory(directory)
+  const gitBinary = resolveCommandBinary(GIT_BINARY_NAMES)
+  if (!gitBinary) {
+    return null
+  }
+
+  return resolveGitRoot(targetDirectory, gitBinary)
+}
+
 export async function getGitCapabilities(directory: string): Promise<GitCapabilities> {
   const targetDirectory = requireDirectory(directory)
   const gitBinary = resolveCommandBinary(GIT_BINARY_NAMES)
@@ -271,33 +297,59 @@ export async function getGitCapabilities(directory: string): Promise<GitCapabili
   }
 
   const branch = await resolveCurrentBranch(targetDirectory, gitBinary)
+  const hasHeadCommit = await resolveHeadCommit(targetDirectory, gitBinary)
+  const stagedDiff = await inspectStagedChanges(targetDirectory, gitBinary)
+  const hasStagedChanges = stagedDiff.exitCode === 0 && Boolean(stagedDiff.stdout)
   const status = await runCommand(gitBinary, ["status", "--porcelain"], targetDirectory)
-  const hasChanges = status.exitCode === 0 && Boolean(status.stdout)
+  const hasWorktreeChanges = status.exitCode === 0 && Boolean(status.stdout)
   const upstream = await resolveUpstream(targetDirectory, gitBinary)
   const hasUpstream = Boolean(upstream)
   const { ahead } = await resolveAheadBehind(targetDirectory, gitBinary, hasUpstream)
   const remoteName = await resolveRemoteName(targetDirectory, gitBinary, upstream)
   const defaultBranch = await resolveDefaultBranch(targetDirectory, gitBinary, remoteName)
 
-  const canCommit = hasChanges
-    ? { enabled: true }
-    : { enabled: false, reason: "There are no local changes to commit." }
+  let canCommit: GitCapability
+  if (stagedDiff.exitCode !== 0) {
+    canCommit = { enabled: false, reason: "Failed to inspect staged changes." }
+  } else if (hasStagedChanges) {
+    canCommit = { enabled: true }
+  } else {
+    canCommit = { enabled: false, reason: "Stage changes before committing." }
+  }
+
+  let canStageAllCommit: GitCapability
+  if (status.exitCode !== 0) {
+    canStageAllCommit = { enabled: false, reason: "Failed to inspect local changes." }
+  } else if (hasWorktreeChanges) {
+    canStageAllCommit = { enabled: true }
+  } else {
+    canStageAllCommit = { enabled: false, reason: "There are no local changes to stage and commit." }
+  }
 
   const canPush = !branch
     ? { enabled: false, reason: "The current worktree is on a detached HEAD." }
+    : !hasHeadCommit
+      ? { enabled: false, reason: "Create the first commit before pushing this branch." }
     : !hasUpstream
       ? { enabled: false, reason: "The current branch does not track a remote branch." }
       : ahead <= 0
         ? { enabled: false, reason: "The current branch has no commits to push." }
         : { enabled: true }
 
-  const canCreateBranch = {
-    enabled: true,
-  } satisfies GitCapability
+  const canCreateBranch: GitCapability = hasHeadCommit
+    ? {
+        enabled: true,
+      }
+    : {
+        enabled: false,
+        reason: "Create the first commit before creating a branch.",
+      }
 
   let canCreatePullRequest: GitCapability
   if (!branch) {
     canCreatePullRequest = { enabled: false, reason: "The current worktree is on a detached HEAD." }
+  } else if (!hasHeadCommit) {
+    canCreatePullRequest = { enabled: false, reason: "Create the first commit before opening a pull request." }
   } else if (!hasUpstream) {
     canCreatePullRequest = { enabled: false, reason: "Push the current branch before creating a pull request." }
   } else if (defaultBranch && branch === defaultBranch) {
@@ -326,6 +378,7 @@ export async function getGitCapabilities(directory: string): Promise<GitCapabili
     defaultBranch,
     isGitRepo: true,
     canCommit,
+    canStageAllCommit,
     canPush,
     canCreatePullRequest,
     canCreateBranch,
@@ -349,6 +402,9 @@ export async function listGitBranches(directory: string): Promise<GitBranchSumma
     "Failed to list local branches.",
   )
   const localBranches = parseBranchList(localResult.stdout)
+  if (currentBranch && !localBranches.includes(currentBranch)) {
+    localBranches.unshift(currentBranch)
+  }
   const localBranchNames = new Set(localBranches)
 
   const remoteResult = await runCommandOrThrow(
@@ -377,10 +433,17 @@ export async function listGitBranches(directory: string): Promise<GitBranchSumma
   ].sort(sortGitBranches)
 }
 
-export async function commitGitChanges(directory: string, message: string): Promise<GitActionResult> {
+export async function commitGitChanges(
+  directory: string,
+  message: string,
+  options?: {
+    stageAll?: boolean
+  },
+): Promise<GitActionResult> {
   const gitBinary = requireGitBinary()
   const targetDirectory = requireDirectory(directory)
   const trimmedMessage = message.trim()
+  const stageAll = options?.stageAll === true
 
   if (!trimmedMessage) {
     throw new Error("Enter a commit message.")
@@ -391,13 +454,16 @@ export async function commitGitChanges(directory: string, message: string): Prom
     throw new Error("The current workspace is not a Git repository.")
   }
 
-  await runCommandOrThrow(gitBinary, ["add", "-A"], targetDirectory, "Failed to stage changes.")
-  const stagedDiff = await runCommand(gitBinary, ["diff", "--cached", "--name-only"], targetDirectory)
+  if (stageAll) {
+    await runCommandOrThrow(gitBinary, ["add", "-A"], targetDirectory, "Failed to stage changes.")
+  }
+
+  const stagedDiff = await inspectStagedChanges(targetDirectory, gitBinary)
   if (stagedDiff.exitCode !== 0) {
     throw buildCommandError(stagedDiff, "Failed to inspect staged changes.")
   }
   if (!stagedDiff.stdout) {
-    throw new Error("There are no changes to commit.")
+    throw new Error(stageAll ? "There are no local changes to stage and commit." : "There are no staged changes to commit.")
   }
 
   const result = await runCommandOrThrow(gitBinary, ["commit", "-m", trimmedMessage], targetDirectory, "Git commit failed.")
@@ -449,6 +515,9 @@ export async function createGitBranch(directory: string, name: string): Promise<
   const root = await resolveGitRoot(targetDirectory, gitBinary)
   if (!root) {
     throw new Error("The current workspace is not a Git repository.")
+  }
+  if (!await resolveHeadCommit(targetDirectory, gitBinary)) {
+    throw new Error("Create the first commit before creating a branch.")
   }
 
   const isValidBranch = await runCommand(gitBinary, ["check-ref-format", "--branch", trimmedName], targetDirectory)

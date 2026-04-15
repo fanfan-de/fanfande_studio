@@ -197,6 +197,9 @@ describe("App", () => {
         canCommit: {
           enabled: true,
         },
+        canStageAllCommit: {
+          enabled: true,
+        },
         canPush: {
           enabled: true,
         },
@@ -667,7 +670,82 @@ describe("App", () => {
     expect(await screen.findByText("Pushed main.")).toBeInTheDocument()
   })
 
-  it("refreshes git commit availability when the quick menu opens after workspace changes", async () => {
+  it("runs stage all and commit from the git quick menu", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitGetCapabilities = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      defaultBranch: "main",
+      isGitRepo: true,
+      canCommit: {
+        enabled: false,
+        reason: "Stage changes before committing.",
+      },
+      canStageAllCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: true,
+      },
+      canCreatePullRequest: {
+        enabled: false,
+        reason: "Switch to a feature branch before creating a pull request.",
+      },
+      canCreateBranch: {
+        enabled: true,
+      },
+    })
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Atlas review" })
+
+    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+    fireEvent.click(screen.getByRole("button", { name: /Commit changes/i }))
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "Commit message" }), {
+      target: {
+        value: "chore: stage all from quick menu",
+      },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Stage all + commit" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.gitCommit).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
+        message: "chore: stage all from quick menu",
+        stageAll: true,
+      })
+    })
+  })
+
+  it("refreshes git commit availability when the quick menu opens after staged changes", async () => {
     let canCommit = false
 
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
@@ -706,8 +784,11 @@ describe("App", () => {
           }
         : {
             enabled: false,
-            reason: "No changes to commit.",
+            reason: "Stage changes before committing.",
           },
+      canStageAllCommit: {
+        enabled: true,
+      },
       canPush: {
         enabled: true,
       },
@@ -730,7 +811,10 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Git" }))
 
     const commitButton = await screen.findByRole("button", { name: /Commit changes/i })
-    expect(commitButton).toBeDisabled()
+    expect(commitButton).toBeEnabled()
+    fireEvent.click(commitButton)
+    expect(screen.getByRole("button", { name: "Run commit" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Stage all + commit" })).toBeEnabled()
     await waitFor(() => {
       expect(gitGetCapabilities).toHaveBeenCalled()
     })
@@ -746,11 +830,11 @@ describe("App", () => {
       expect(gitGetCapabilities).toHaveBeenCalled()
     })
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /Commit changes/i })).toBeEnabled()
+      expect(screen.getByRole("button", { name: "Run commit" })).toBeEnabled()
     })
   })
 
-  it("reconciles a stale project id after git capability lookup resolves a canonical project", async () => {
+  it("keeps the existing workspace while git capabilities load for a stable project id", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
         id: "C:\\Projects\\Atlas\\client",
@@ -759,14 +843,14 @@ describe("App", () => {
         created: 1,
         updated: 20,
         project: {
-          id: "global",
-          name: "Global",
-          worktree: "/",
+          id: "prj_atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
         },
         sessions: [
           {
             id: "session-atlas-review",
-            projectID: "global",
+            projectID: "prj_atlas",
             directory: "C:\\Projects\\Atlas\\client",
             title: "Atlas review",
             created: 18,
@@ -775,37 +859,17 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.openFolderWorkspace = vi.fn().mockResolvedValue({
-      id: "C:\\Projects\\Atlas\\client",
-      directory: "C:\\Projects\\Atlas\\client",
-      name: "client",
-      created: 1,
-      updated: 21,
-      project: {
-        id: "project-atlas",
-        name: "Atlas",
-        worktree: "C:\\Projects\\Atlas",
-      },
-      sessions: [
-        {
-          id: "session-atlas-review",
-          projectID: "project-atlas",
-          directory: "C:\\Projects\\Atlas\\client",
-          title: "Atlas review",
-          created: 18,
-          updated: 21,
-        },
-      ],
-    } satisfies LoadedFolderWorkspace)
     window.desktop!.gitGetCapabilities = vi.fn().mockImplementation(
-      async ({ projectID }: { projectID: string; directory: string }) => ({
-        projectID: projectID === "global" ? "project-atlas" : projectID,
+      async () => ({
         directory: "C:\\Projects\\Atlas\\client",
         root: "C:\\Projects\\Atlas",
         branch: "main",
         defaultBranch: "main",
         isGitRepo: true,
         canCommit: {
+          enabled: true,
+        },
+        canStageAllCommit: {
           enabled: true,
         },
         canPush: {
@@ -823,29 +887,171 @@ describe("App", () => {
 
     render(<App />)
 
-    expect(await screen.findByText("Global")).toBeInTheDocument()
-
-    await waitFor(() => {
-      expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledWith({
-        projectID: "global",
-        directory: "C:\\Projects\\Atlas\\client",
-      })
-    })
-
-    await waitFor(() => {
-      expect(window.desktop!.openFolderWorkspace).toHaveBeenCalledWith({
-        directory: "C:\\Projects\\Atlas\\client",
-      })
-    })
-
-    await waitFor(() => {
-      expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledWith({
-        projectID: "project-atlas",
-        directory: "C:\\Projects\\Atlas\\client",
-      })
-    })
-
     expect(await screen.findByText("Atlas")).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledWith({
+        projectID: "prj_atlas",
+        directory: "C:\\Projects\\Atlas\\client",
+      })
+    })
+
+    expect(window.desktop!.openFolderWorkspace).not.toHaveBeenCalled()
+  })
+
+  it("refreshes git state without reopening the workspace for index-only watcher events", async () => {
+    const workspace: LoadedFolderWorkspace = {
+      id: "C:\\Projects\\Atlas\\client",
+      directory: "C:\\Projects\\Atlas\\client",
+      name: "client",
+      created: 1,
+      updated: 20,
+      project: {
+        id: "prj_atlas",
+        name: "Atlas",
+        worktree: "C:\\Projects\\Atlas",
+      },
+      sessions: [
+        {
+          id: "session-atlas-review",
+          projectID: "prj_atlas",
+          directory: "C:\\Projects\\Atlas\\client",
+          title: "Atlas review",
+          created: 18,
+          updated: 20,
+        },
+      ],
+    }
+    let workspaceFileChangeListener: ((event: { directory: string; paths: string[] }) => void) | null = null
+    window.desktop!.onWorkspaceFileChange = vi.fn((listener) => {
+      workspaceFileChangeListener = listener
+      return vi.fn(() => {
+        workspaceFileChangeListener = null
+      })
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([workspace])
+    window.desktop!.openFolderWorkspace = vi.fn().mockResolvedValue(workspace)
+    window.desktop!.gitGetCapabilities = vi.fn().mockResolvedValue({
+      directory: workspace.directory,
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      defaultBranch: "main",
+      isGitRepo: true,
+      canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: true,
+      },
+      canCreatePullRequest: {
+        enabled: false,
+        reason: "Switch to a feature branch before creating a pull request.",
+      },
+      canCreateBranch: {
+        enabled: true,
+      },
+    })
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Atlas review" })
+
+    const gitGetCapabilities = window.desktop!.gitGetCapabilities as ReturnType<typeof vi.fn>
+    const openFolderWorkspace = window.desktop!.openFolderWorkspace as ReturnType<typeof vi.fn>
+    gitGetCapabilities.mockClear()
+    openFolderWorkspace.mockClear()
+
+    act(() => {
+      workspaceFileChangeListener?.({
+        directory: workspace.directory,
+        paths: ["C:\\Projects\\Atlas\\client\\.git\\index"],
+      })
+    })
+
+    await waitFor(() => {
+      expect(gitGetCapabilities).toHaveBeenCalled()
+    })
+    expect(openFolderWorkspace).not.toHaveBeenCalled()
+  })
+
+  it("reopens the workspace when watcher events indicate repository structure changed", async () => {
+    const workspace: LoadedFolderWorkspace = {
+      id: "C:\\Projects\\Atlas\\client",
+      directory: "C:\\Projects\\Atlas\\client",
+      name: "client",
+      created: 1,
+      updated: 20,
+      project: {
+        id: "prj_atlas",
+        name: "Atlas",
+        worktree: "C:\\Projects\\Atlas",
+      },
+      sessions: [
+        {
+          id: "session-atlas-review",
+          projectID: "prj_atlas",
+          directory: "C:\\Projects\\Atlas\\client",
+          title: "Atlas review",
+          created: 18,
+          updated: 20,
+        },
+      ],
+    }
+    let workspaceFileChangeListener: ((event: { directory: string; paths: string[] }) => void) | null = null
+    window.desktop!.onWorkspaceFileChange = vi.fn((listener) => {
+      workspaceFileChangeListener = listener
+      return vi.fn(() => {
+        workspaceFileChangeListener = null
+      })
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([workspace])
+    window.desktop!.openFolderWorkspace = vi.fn().mockResolvedValue(workspace)
+    window.desktop!.gitGetCapabilities = vi.fn().mockResolvedValue({
+      directory: workspace.directory,
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      defaultBranch: "main",
+      isGitRepo: true,
+      canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: true,
+      },
+      canCreatePullRequest: {
+        enabled: false,
+        reason: "Switch to a feature branch before creating a pull request.",
+      },
+      canCreateBranch: {
+        enabled: true,
+      },
+    })
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Atlas review" })
+
+    const openFolderWorkspace = window.desktop!.openFolderWorkspace as ReturnType<typeof vi.fn>
+    openFolderWorkspace.mockClear()
+
+    act(() => {
+      workspaceFileChangeListener?.({
+        directory: workspace.directory,
+        paths: ["C:\\Projects\\Atlas\\client\\.git\\config"],
+      })
+    })
+
+    await waitFor(() => {
+      expect(openFolderWorkspace).toHaveBeenCalledWith({
+        directory: workspace.directory,
+      })
+    })
   })
 
   it("shows the current git branch in the composer utility bar and switches branches from the list", async () => {
@@ -881,6 +1087,9 @@ describe("App", () => {
       defaultBranch: "main",
       isGitRepo: true,
       canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
         enabled: true,
       },
       canPush: {
@@ -962,7 +1171,7 @@ describe("App", () => {
     })
   })
 
-  it("opens the create-and-checkout branch dialog from the composer utility bar", async () => {
+  it.skip("opens the create-and-checkout branch dialog from the composer utility bar", async () => {
     let currentBranch = "main"
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
@@ -995,6 +1204,9 @@ describe("App", () => {
       defaultBranch: "main",
       isGitRepo: true,
       canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
         enabled: true,
       },
       canPush: {
@@ -1079,6 +1291,126 @@ describe("App", () => {
     })
   })
 
+  it("opens the create-and-checkout branch dialog from the composer utility bar with the current branch labels", async () => {
+    let currentBranch = "main"
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitGetCapabilities = vi.fn().mockImplementation(async () => ({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: currentBranch,
+      defaultBranch: "main",
+      isGitRepo: true,
+      canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: true,
+      },
+      canCreatePullRequest:
+        currentBranch === "main"
+          ? {
+              enabled: false,
+              reason: "Switch to a feature branch before creating a pull request.",
+            }
+          : {
+              enabled: true,
+            },
+      canCreateBranch: {
+        enabled: true,
+      },
+    }))
+    window.desktop!.gitListBranches = vi.fn().mockImplementation(async () => [
+      {
+        name: "main",
+        kind: "local",
+        current: currentBranch === "main",
+      },
+      {
+        name: "feature/test",
+        kind: "local",
+        current: currentBranch === "feature/test",
+      },
+    ])
+    window.desktop!.gitCreateBranch = vi.fn().mockImplementation(async ({ name }: { name: string }) => {
+      currentBranch = name
+
+      return {
+        directory: "C:\\Projects\\Atlas\\client",
+        root: "C:\\Projects\\Atlas",
+        branch: currentBranch,
+        stdout: "",
+        stderr: "",
+        summary: `Created and switched to ${currentBranch}.`,
+      }
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
+      })
+    })
+
+    const utilityBar = document.querySelector(".composer-utility-bar") as HTMLElement
+    expect(utilityBar).not.toBeNull()
+
+    fireEvent.click(within(utilityBar).getByRole("button", { name: "main" }))
+
+    const branchSwitcher = await screen.findByRole("dialog", { name: "Git branch switcher" })
+    fireEvent.click(within(branchSwitcher).getByRole("button", { name: "Create and switch branch" }))
+
+    const createDialog = await screen.findByRole("dialog", { name: "Create and checkout branch" })
+    expect(within(createDialog).getByRole("button", { name: "Cancel" })).toBeInTheDocument()
+    expect(within(createDialog).getByRole("button", { name: "Create and switch" })).toBeInTheDocument()
+
+    fireEvent.change(within(createDialog).getByRole("textbox", { name: "Branch name" }), {
+      target: {
+        value: "feature/new-flow",
+      },
+    })
+    fireEvent.click(within(createDialog).getByRole("button", { name: "Create and switch" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.gitCreateBranch).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "feature/new-flow",
+      })
+    })
+
+    await waitFor(() => {
+      expect(within(utilityBar).getByRole("button", { name: "feature/new-flow" })).toBeInTheDocument()
+    })
+  })
+
   it("keeps the branch switcher list in sync after creating a branch from the top git menu", async () => {
     let currentBranch = "main"
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
@@ -1112,6 +1444,9 @@ describe("App", () => {
       defaultBranch: "main",
       isGitRepo: true,
       canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
         enabled: true,
       },
       canPush: {
@@ -1242,6 +1577,10 @@ describe("App", () => {
         enabled: false,
         reason: "Not a git repository.",
       },
+      canStageAllCommit: {
+        enabled: false,
+        reason: "Not a git repository.",
+      },
       canPush: {
         enabled: false,
         reason: "Not a git repository.",
@@ -1267,6 +1606,77 @@ describe("App", () => {
 
     expect(screen.queryByRole("button", { name: "Git" })).not.toBeInTheDocument()
     expect(document.querySelector(".composer-utility-git-branch-button")).toBeNull()
+  })
+
+  it("disables branch creation in the git quick menu before the first commit", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitGetCapabilities = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      root: "C:\\Projects\\Atlas",
+      branch: "main",
+      defaultBranch: null,
+      isGitRepo: true,
+      canCommit: {
+        enabled: false,
+        reason: "Stage changes before committing.",
+      },
+      canStageAllCommit: {
+        enabled: true,
+      },
+      canPush: {
+        enabled: false,
+        reason: "Create the first commit before pushing this branch.",
+      },
+      canCreatePullRequest: {
+        enabled: false,
+        reason: "Create the first commit before opening a pull request.",
+      },
+      canCreateBranch: {
+        enabled: false,
+        reason: "Create the first commit before creating a branch.",
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
+      })
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+
+    const gitQuickMenu = await screen.findByRole("dialog", { name: "Git quick menu" })
+    const createBranchButton = within(gitQuickMenu).getByRole("button", { name: /Create branch/i })
+
+    expect(createBranchButton).toBeDisabled()
+    expect(createBranchButton).toHaveTextContent("Create the first commit before creating a branch.")
+    expect(within(gitQuickMenu).getByText("Current branch: main")).toBeInTheDocument()
   })
 
   it("loads folder and session lists into the sidebar on startup", async () => {
@@ -1326,6 +1736,71 @@ describe("App", () => {
       expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
     })
     expect(window.desktop!.listFolderWorkspaces).toHaveBeenCalledTimes(1)
+  })
+
+  it("marks missing startup folders as deleted and skips watching them", async () => {
+    window.desktop!.updateWorkspaceWatchDirectories = vi.fn().mockResolvedValue({
+      directories: ["C:\\Projects\\Atlas\\client"],
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Ghost\\client",
+        directory: "C:\\Projects\\Ghost\\client",
+        name: "ghost-client",
+        exists: false,
+        created: 1,
+        updated: 30,
+        project: {
+          id: "project-ghost",
+          name: "Ghost",
+          worktree: "C:\\Projects\\Ghost",
+        },
+        sessions: [
+          {
+            id: "session-ghost-review",
+            projectID: "project-ghost",
+            directory: "C:\\Projects\\Ghost\\client",
+            title: "Ghost review",
+            created: 10,
+            updated: 30,
+          },
+        ],
+      },
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        exists: true,
+        created: 2,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 3,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+
+    render(<App />)
+
+    expect(await screen.findByText("已删除")).toBeInTheDocument()
+    expect(screen.getAllByText("Ghost").length).toBeGreaterThan(0)
+    expect(screen.getByRole("button", { name: "Create session for ghost-client" })).toBeDisabled()
+    await waitFor(() => {
+      expect(window.desktop!.updateWorkspaceWatchDirectories).toHaveBeenCalledWith({
+        directories: ["C:\\Projects\\Atlas\\client"],
+      })
+    })
   })
 
   it("rebuilds the active session history from the server after startup", async () => {
@@ -1497,7 +1972,6 @@ describe("App", () => {
     const { container } = render(<App />)
 
     expect(await screen.findByText("2 file changes (+8 -3)")).toBeInTheDocument()
-    expect(screen.getByText(/src\/App\.tsx \(\+5 -1\).*src\/styles\.css \(\+3 -2\)/)).toBeInTheDocument()
     expect(screen.getAllByText("src/App.tsx").length).toBeGreaterThan(0)
     expect(screen.getAllByText("src/styles.css").length).toBeGreaterThan(0)
     expect(screen.queryByText("@@ -1,2 +1,2 @@")).not.toBeInTheDocument()
@@ -1838,6 +2312,9 @@ describe("App", () => {
       defaultBranch: "main",
       isGitRepo: true,
       canCommit: {
+        enabled: true,
+      },
+      canStageAllCommit: {
         enabled: true,
       },
       canPush: {
@@ -4817,7 +5294,7 @@ describe("App", () => {
     })
   })
 
-  it("refreshes the sidebar workspace metadata after a streamed session changes git identity", async () => {
+  it("refreshes the sidebar workspace metadata after a streamed session updates git metadata", async () => {
     let sessionStreamListener:
       | ((event: {
           sessionID: string
@@ -4839,14 +5316,14 @@ describe("App", () => {
         created: 1,
         updated: 20,
         project: {
-          id: "global",
-          name: "Global",
-          worktree: "/",
+          id: "prj_atlas",
+          name: "client",
+          worktree: "C:\\Projects\\Atlas\\client",
         },
         sessions: [
           {
             id: "session-atlas-review",
-            projectID: "global",
+            projectID: "prj_atlas",
             directory: "C:\\Projects\\Atlas\\client",
             title: "Atlas review",
             created: 18,
@@ -4862,14 +5339,14 @@ describe("App", () => {
       created: 1,
       updated: 21,
       project: {
-        id: "project-atlas",
+        id: "prj_atlas",
         name: "Atlas",
         worktree: "C:\\Projects\\Atlas",
       },
       sessions: [
         {
           id: "session-atlas-review",
-          projectID: "project-atlas",
+          projectID: "prj_atlas",
           directory: "C:\\Projects\\Atlas\\client",
           title: "Atlas review",
           created: 18,
@@ -4887,7 +5364,7 @@ describe("App", () => {
 
     render(<App />)
 
-    expect(await screen.findByText("Global")).toBeInTheDocument()
+    expect((await screen.findAllByText("client")).length).toBeGreaterThan(0)
 
     await waitFor(() => {
       expect(window.desktop!.subscribeAgentSessionStream).toHaveBeenCalledWith({

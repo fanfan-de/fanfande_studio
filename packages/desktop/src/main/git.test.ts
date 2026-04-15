@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createGitBranch, getGitCapabilities } from "./git"
+import { commitGitChanges, createGitBranch, getGitCapabilities } from "./git"
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -10,43 +10,16 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
-describe("git project reconciliation", () => {
+describe("git api client", () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it("retries git capability lookups against the canonical project when the current project id is stale", async () => {
+  it("requests git capabilities for the provided stable project id", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url)
 
-      if (url.pathname === "/api/projects/global/git/capabilities") {
-        return jsonResponse(
-          {
-            success: false,
-            error: {
-              code: "DIRECTORY_NOT_IN_PROJECT",
-              message: "Directory is no longer part of project 'global'.",
-            },
-          },
-          400,
-        )
-      }
-
-      if (url.pathname === "/api/projects" && url.search === "") {
-        return jsonResponse({
-          success: true,
-          data: {
-            id: "project-atlas",
-            worktree: "C:\\Projects\\Atlas",
-            name: "Atlas",
-            created: 1,
-            updated: 2,
-            sandboxes: [],
-          },
-        })
-      }
-
-      if (url.pathname === "/api/projects/project-atlas/git/capabilities") {
+      if (url.pathname === "/api/projects/prj_project-atlas/git/capabilities") {
         return jsonResponse({
           success: true,
           data: {
@@ -56,6 +29,9 @@ describe("git project reconciliation", () => {
             defaultBranch: "main",
             isGitRepo: true,
             canCommit: {
+              enabled: true,
+            },
+            canStageAllCommit: {
               enabled: true,
             },
             canPush: {
@@ -77,47 +53,19 @@ describe("git project reconciliation", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const result = await getGitCapabilities({
-      projectID: "global",
+      projectID: "prj_project-atlas",
       directory: "C:\\Projects\\Atlas\\client",
     })
 
-    expect(result.projectID).toBe("project-atlas")
     expect(result.root).toBe("C:\\Projects\\Atlas")
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it("retries git write actions against the canonical project when the current project id is stale", async () => {
+  it("posts git branch creation to the provided stable project id", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url)
 
-      if (url.pathname === "/api/projects/global/git/branches") {
-        return jsonResponse(
-          {
-            success: false,
-            error: {
-              code: "DIRECTORY_NOT_IN_PROJECT",
-              message: "Directory is no longer part of project 'global'.",
-            },
-          },
-          400,
-        )
-      }
-
-      if (url.pathname === "/api/projects" && url.search === "") {
-        return jsonResponse({
-          success: true,
-          data: {
-            id: "project-atlas",
-            worktree: "C:\\Projects\\Atlas",
-            name: "Atlas",
-            created: 1,
-            updated: 2,
-            sandboxes: [],
-          },
-        })
-      }
-
-      if (url.pathname === "/api/projects/project-atlas/git/branches") {
+      if (url.pathname === "/api/projects/prj_project-atlas/git/branches") {
         expect(init?.method).toBe("POST")
         return jsonResponse({
           success: true,
@@ -138,13 +86,55 @@ describe("git project reconciliation", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const result = await createGitBranch({
-      projectID: "global",
+      projectID: "prj_project-atlas",
       directory: "C:\\Projects\\Atlas\\client",
       name: "feature/refactor",
     })
 
-    expect(result.projectID).toBe("project-atlas")
     expect(result.branch).toBe("feature/refactor")
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("passes stageAll through git commit requests", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url)
+
+      if (url.pathname === "/api/projects/prj_project-atlas/git/commit") {
+        expect(init?.method).toBe("POST")
+        expect(init?.body).toBe(
+          JSON.stringify({
+            directory: "C:\\Projects\\Atlas\\client",
+            message: "chore: stage all",
+            stageAll: true,
+          }),
+        )
+
+        return jsonResponse({
+          success: true,
+          data: {
+            directory: "C:\\Projects\\Atlas\\client",
+            root: "C:\\Projects\\Atlas",
+            branch: "main",
+            stdout: "",
+            stderr: "",
+            summary: "Committed to main.",
+          },
+        })
+      }
+
+      throw new Error(`Unexpected request: ${url.pathname}${url.search}`)
+    })
+
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await commitGitChanges({
+      projectID: "prj_project-atlas",
+      directory: "C:\\Projects\\Atlas\\client",
+      message: "chore: stage all",
+      stageAll: true,
+    })
+
+    expect(result.summary).toBe("Committed to main.")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

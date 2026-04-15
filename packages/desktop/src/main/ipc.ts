@@ -12,6 +12,7 @@ import {
 } from "./git"
 import type { ApplicationMenus } from "./menu"
 import { PtyProxyManager, PTY_EVENT_CHANNEL } from "./pty-proxy"
+import { WorkspaceWatchManager } from "./workspace-watch"
 import type {
   AgentEnvelope,
   AgentGlobalSkillFileDocument,
@@ -107,6 +108,7 @@ function sessionStreamSubscriptionKey(webContentsID: number, sessionID: string) 
 
 export function registerIpcHandlers(menus: ApplicationMenus) {
   const ptyProxyManager = new PtyProxyManager()
+  const workspaceWatchManager = new WorkspaceWatchManager()
   const sessionStreamSubscriptions = new Map<string, SessionStreamSubscription>()
   const sessionStreamCleanupTargets = new Set<number>()
 
@@ -294,6 +296,9 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
   ipcMain.handle("desktop:list-folder-workspaces", async () => listFolderWorkspaces())
   ipcMain.handle("desktop:list-project-workspaces", async () => listProjectWorkspaces())
+  ipcMain.handle("desktop:update-workspace-watch-directories", async (event, input: { directories: string[] }) => ({
+    directories: workspaceWatchManager.updateDirectories(event.sender, input.directories),
+  }))
 
   ipcMain.handle(
     "desktop:create-pty-session",
@@ -427,7 +432,9 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     getGitCapabilities(input),
   )
 
-  ipcMain.handle("desktop:git-commit", async (_event, input: { projectID: string; directory: string; message: string }) =>
+  ipcMain.handle(
+    "desktop:git-commit",
+    async (_event, input: { projectID: string; directory: string; message: string; stageAll?: boolean }) =>
     commitGitChanges(input),
   )
 

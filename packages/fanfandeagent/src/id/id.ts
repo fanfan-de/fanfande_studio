@@ -3,6 +3,7 @@ import { randomBytes } from "crypto"
 
 
 const prefixes = {
+  project: "prj",
   session: "ses",
   turn: "trn",
   event: "evt",

@@ -47,6 +47,7 @@ export interface WorkspaceGroup {
   id: string
   name: string
   directory: string
+  exists?: boolean
   created: number
   updated: number
   project: {
@@ -70,6 +71,7 @@ export interface LoadedFolderWorkspace {
   id: string
   directory: string
   name: string
+  exists?: boolean
   created: number
   updated: number
   project: {
@@ -206,6 +208,11 @@ export interface AgentStreamIPCEvent extends AgentStreamEvent {
 
 export interface AgentSessionStreamIPCEvent extends AgentStreamEvent {
   sessionID: string
+}
+
+export interface WorkspaceFileChangeIPCEvent {
+  directory: string
+  paths: string[]
 }
 
 export interface PendingAgentStream {

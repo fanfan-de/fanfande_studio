@@ -85,10 +85,7 @@ export class PtyRegistry {
     await assertDirectory(cwd)
 
     const { project, sandbox } = await Project.fromDirectory(cwd)
-    const allowedRoots =
-      project.worktree === "/"
-        ? [sandbox]
-        : [project.worktree, ...(project.sandboxes ?? []), sandbox]
+    const allowedRoots = [project.worktree, ...(project.sandboxes ?? []), sandbox]
 
     if (!allowedRoots.some((root) => isWithinRoot(root, cwd))) {
       throw new Error(`Directory is outside the allowed project roots: ${cwd}`)

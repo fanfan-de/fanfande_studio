@@ -121,13 +121,16 @@ declare global {
       pickProjectDirectory?: () => Promise<string | null>
       pickComposerAttachments?: (input?: { allowImage?: boolean; allowPdf?: boolean }) => Promise<string[]>
       gitGetCapabilities?: (input: { projectID: string; directory: string }) => Promise<{
-        projectID?: string
         directory: string
         root: string | null
         branch: string | null
         defaultBranch: string | null
         isGitRepo: boolean
         canCommit: {
+          enabled: boolean
+          reason?: string
+        }
+        canStageAllCommit: {
           enabled: boolean
           reason?: string
         }
@@ -144,8 +147,7 @@ declare global {
           reason?: string
         }
       }>
-      gitCommit?: (input: { projectID: string; directory: string; message: string }) => Promise<{
-        projectID?: string
+      gitCommit?: (input: { projectID: string; directory: string; message: string; stageAll?: boolean }) => Promise<{
         directory: string
         root: string
         branch: string | null
@@ -155,7 +157,6 @@ declare global {
         url?: string
       }>
       gitPush?: (input: { projectID: string; directory: string }) => Promise<{
-        projectID?: string
         directory: string
         root: string
         branch: string | null
@@ -165,7 +166,6 @@ declare global {
         url?: string
       }>
       gitCreateBranch?: (input: { projectID: string; directory: string; name: string }) => Promise<{
-        projectID?: string
         directory: string
         root: string
         branch: string | null
@@ -182,7 +182,6 @@ declare global {
         }>
       >
       gitCheckoutBranch?: (input: { projectID: string; directory: string; name: string }) => Promise<{
-        projectID?: string
         directory: string
         root: string
         branch: string | null
@@ -192,7 +191,6 @@ declare global {
         url?: string
       }>
       gitCreatePullRequest?: (input: { projectID: string; directory: string }) => Promise<{
-        projectID?: string
         directory: string
         root: string
         branch: string | null
@@ -201,11 +199,15 @@ declare global {
         summary: string
         url?: string
       }>
+      updateWorkspaceWatchDirectories?: (input: { directories: string[] }) => Promise<{
+        directories: string[]
+      }>
       listFolderWorkspaces?: () => Promise<
         Array<{
           id: string
           directory: string
           name: string
+          exists?: boolean
           created: number
           updated: number
           project: {
@@ -244,6 +246,7 @@ declare global {
         id: string
         directory: string
         name: string
+        exists?: boolean
         created: number
         updated: number
         project: {
@@ -944,6 +947,12 @@ declare global {
           id?: string
           event: string
           data: unknown
+        }) => void,
+      ) => () => void
+      onWorkspaceFileChange?: (
+        listener: (event: {
+          directory: string
+          paths: string[]
         }) => void,
       ) => () => void
       onPtyEvent?: (

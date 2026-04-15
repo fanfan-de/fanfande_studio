@@ -1,7 +1,6 @@
 export const GIT_STATE_CHANGED_EVENT = "desktop:git-state-changed"
 
 export interface GitStateChangedDetail {
-  projectID: string
   directory: string
 }
 
@@ -11,10 +10,9 @@ function normalizePath(value: string | null) {
 
 export function isMatchingGitStateChangedDetail(
   detail: GitStateChangedDetail,
-  projectID: string | null,
   directory: string | null,
 ) {
-  return detail.projectID === projectID && normalizePath(detail.directory) === normalizePath(directory)
+  return normalizePath(detail.directory) === normalizePath(directory)
 }
 
 export function notifyGitStateChanged(detail: GitStateChangedDetail) {

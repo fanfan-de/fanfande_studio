@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
 
 describe("folder workspace helpers", () => {
+  const directoryExists = (_path: string) => true
+
   it("builds startup folder workspaces from session directories only", () => {
     const projects = [
       {
@@ -34,11 +36,12 @@ describe("folder workspace helpers", () => {
       },
     ]
 
-    expect(buildFolderWorkspaces(projects, workspaces)).toEqual([
+    expect(buildFolderWorkspaces(projects, workspaces, { existsSync: directoryExists })).toEqual([
       {
         id: "C:\\Projects\\Atlas\\client",
         directory: "C:\\Projects\\Atlas\\client",
         name: "client",
+        exists: true,
         created: 10,
         updated: 20,
         project: {
@@ -79,10 +82,11 @@ describe("folder workspace helpers", () => {
       sessions: [],
     }
 
-    expect(buildFolderWorkspaceForDirectory(project, workspace, "C:\\Projects\\Orion\\client")).toEqual({
+    expect(buildFolderWorkspaceForDirectory(project, workspace, "C:\\Projects\\Orion\\client", { existsSync: directoryExists })).toEqual({
       id: "C:\\Projects\\Orion\\client",
       directory: "C:\\Projects\\Orion\\client",
       name: "client",
+      exists: true,
       created: 1,
       updated: 2,
       project: {
@@ -94,27 +98,25 @@ describe("folder workspace helpers", () => {
     })
   })
 
-  it("forces global folders to display the canonical Global project name", () => {
+  it("falls back to the directory name when a project name is missing", () => {
     const project = {
-      id: "global",
-      worktree: "/",
-      name: "AAA测试项目",
+      id: "prj_clean-room",
+      worktree: "C:\\Users\\demo\\Clean Room",
       created: 1,
       updated: 2,
       sandboxes: [],
     }
 
     const workspace = {
-      id: "global",
-      worktree: "/",
-      name: "AAA测试项目",
+      id: "prj_clean-room",
+      worktree: "C:\\Users\\demo\\Clean Room",
       created: 1,
       updated: 2,
       sessions: [
         {
-          id: "session-global-folder",
-          projectID: "global",
-          directory: "C:\\Users\\demo\\纯净想",
+          id: "session-clean-room",
+          projectID: "prj_clean-room",
+          directory: "C:\\Users\\demo\\Clean Room",
           title: "New chat",
           created: 10,
           updated: 20,
@@ -122,23 +124,24 @@ describe("folder workspace helpers", () => {
       ],
     }
 
-    expect(buildFolderWorkspaces([project], [workspace])).toEqual([
+    expect(buildFolderWorkspaces([project], [workspace], { existsSync: directoryExists })).toEqual([
       {
-        id: "C:\\Users\\demo\\纯净想",
-        directory: "C:\\Users\\demo\\纯净想",
-        name: "纯净想",
+        id: "C:\\Users\\demo\\Clean Room",
+        directory: "C:\\Users\\demo\\Clean Room",
+        name: "Clean Room",
+        exists: true,
         created: 10,
         updated: 20,
         project: {
-          id: "global",
-          name: "Global",
-          worktree: "/",
+          id: "prj_clean-room",
+          name: "Clean Room",
+          worktree: "C:\\Users\\demo\\Clean Room",
         },
         sessions: [
           {
-            id: "session-global-folder",
-            projectID: "global",
-            directory: "C:\\Users\\demo\\纯净想",
+            id: "session-clean-room",
+            projectID: "prj_clean-room",
+            directory: "C:\\Users\\demo\\Clean Room",
             title: "New chat",
             created: 10,
             updated: 20,
@@ -146,5 +149,62 @@ describe("folder workspace helpers", () => {
         ],
       },
     ])
+  })
+
+  it("marks missing directories as deleted while keeping the workspace in the list", () => {
+    const project = {
+      id: "project-missing",
+      worktree: "C:\\Projects\\Ghost",
+      name: "Ghost",
+      created: 1,
+      updated: 2,
+      sandboxes: [],
+    }
+
+    const workspace = {
+      id: "project-missing",
+      worktree: "C:\\Projects\\Ghost",
+      name: "Ghost",
+      created: 1,
+      updated: 2,
+      sessions: [
+        {
+          id: "session-ghost",
+          projectID: "project-missing",
+          directory: "C:\\Projects\\Ghost\\client",
+          title: "Ghost session",
+          created: 3,
+          updated: 4,
+        },
+      ],
+    }
+
+    expect(
+      buildFolderWorkspaceForDirectory(project, workspace, "C:\\Projects\\Ghost\\client", {
+        existsSync: () => false,
+      }),
+    ).toEqual({
+      id: "C:\\Projects\\Ghost\\client",
+      directory: "C:\\Projects\\Ghost\\client",
+      name: "client",
+      exists: false,
+      created: 3,
+      updated: 4,
+      project: {
+        id: "project-missing",
+        name: "Ghost",
+        worktree: "C:\\Projects\\Ghost",
+      },
+      sessions: [
+        {
+          id: "session-ghost",
+          projectID: "project-missing",
+          directory: "C:\\Projects\\Ghost\\client",
+          title: "Ghost session",
+          created: 3,
+          updated: 4,
+        },
+      ],
+    })
   })
 })

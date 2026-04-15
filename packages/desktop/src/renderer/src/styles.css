@@ -727,12 +727,32 @@ select {
 
 .project-row-meta {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   letter-spacing: 0.02em;
   color: #7b8b99;
+}
+
+.project-row-meta-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-row-status {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.project-row-status.is-missing {
+  background: #f6dede;
+  color: #9b2d30;
 }
 
 .project-row:hover .project-row-meta,

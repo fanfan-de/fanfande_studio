@@ -1,5 +1,14 @@
 import type { LoadedFolderWorkspace, LoadedSessionSnapshot, SessionSummary, WorkspaceGroup } from "./types"
 
+export function isWorkspaceAvailable(workspace: Pick<WorkspaceGroup, "exists"> | null | undefined) {
+  return workspace?.exists !== false
+}
+
+function getPreferredWorkspaces(workspaces: WorkspaceGroup[]) {
+  const available = workspaces.filter((workspace) => isWorkspaceAvailable(workspace))
+  return available.length > 0 ? available : workspaces
+}
+
 export function sortWorkspaceGroups(input: WorkspaceGroup[]) {
   const getWorkspaceUpdated = (workspace: WorkspaceGroup) => workspace.sessions[0]?.updated ?? workspace.updated
 
@@ -27,6 +36,7 @@ export function mapLoadedWorkspace(workspace: LoadedFolderWorkspace): WorkspaceG
     id: workspace.id,
     name: workspace.name.trim() || workspace.directory,
     directory: workspace.directory,
+    exists: workspace.exists !== false,
     created: workspace.created,
     updated: workspace.updated,
     project: workspace.project,
@@ -68,7 +78,7 @@ export function upsertSessionInWorkspace(existing: WorkspaceGroup[], workspaceID
 }
 
 export function findFirstSession(workspaces: WorkspaceGroup[]) {
-  for (const workspace of workspaces) {
+  for (const workspace of getPreferredWorkspaces(workspaces)) {
     if (workspace.sessions[0]) {
       return {
         workspace,
@@ -77,8 +87,10 @@ export function findFirstSession(workspaces: WorkspaceGroup[]) {
     }
   }
 
+  const preferredWorkspaces = getPreferredWorkspaces(workspaces)
+
   return {
-    workspace: workspaces[0] ?? null,
+    workspace: preferredWorkspaces[0] ?? null,
     session: null,
   }
 }

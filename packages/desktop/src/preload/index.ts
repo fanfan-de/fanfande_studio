@@ -22,6 +22,10 @@ type AgentStreamIPCEvent = AgentSSEEvent & {
 type AgentSessionStreamIPCEvent = AgentSSEEvent & {
   sessionID: string
 }
+type WorkspaceFileChangeIPCEvent = {
+  directory: string
+  paths: string[]
+}
 type PtySessionInfo = {
   id: string
   title: string
@@ -76,7 +80,6 @@ type PtyIPCEvent =
       message: string
     }
 type GitActionResult = {
-  projectID?: string
   directory: string
   root: string
   branch: string | null
@@ -90,13 +93,13 @@ type GitCapabilityState = {
   reason?: string
 }
 type GitCapabilities = {
-  projectID?: string
   directory: string
   root: string | null
   branch: string | null
   defaultBranch: string | null
   isGitRepo: boolean
   canCommit: GitCapabilityState
+  canStageAllCommit: GitCapabilityState
   canPush: GitCapabilityState
   canCreatePullRequest: GitCapabilityState
   canCreateBranch: GitCapabilityState
@@ -237,7 +240,7 @@ try {
       ipcRenderer.invoke("desktop:pick-composer-attachments", input) as Promise<string[]>,
     gitGetCapabilities: (input: { projectID: string; directory: string }) =>
       ipcRenderer.invoke("desktop:git-get-capabilities", input) as Promise<GitCapabilities>,
-    gitCommit: (input: { projectID: string; directory: string; message: string }) =>
+    gitCommit: (input: { projectID: string; directory: string; message: string; stageAll?: boolean }) =>
       ipcRenderer.invoke("desktop:git-commit", input) as Promise<GitActionResult>,
     gitPush: (input: { projectID: string; directory: string }) =>
       ipcRenderer.invoke("desktop:git-push", input) as Promise<GitActionResult>,
@@ -249,12 +252,17 @@ try {
       ipcRenderer.invoke("desktop:git-checkout-branch", input) as Promise<GitActionResult>,
     gitCreatePullRequest: (input: { projectID: string; directory: string }) =>
       ipcRenderer.invoke("desktop:git-create-pull-request", input) as Promise<GitActionResult>,
+    updateWorkspaceWatchDirectories: (input: { directories: string[] }) =>
+      ipcRenderer.invoke("desktop:update-workspace-watch-directories", input) as Promise<{
+        directories: string[]
+      }>,
     listFolderWorkspaces: () =>
       ipcRenderer.invoke("desktop:list-folder-workspaces") as Promise<
         Array<{
           id: string
           directory: string
           name: string
+          exists?: boolean
           created: number
           updated: number
           project: {
@@ -295,6 +303,7 @@ try {
         id: string
         directory: string
         name: string
+        exists?: boolean
         created: number
         updated: number
         project: {
@@ -744,6 +753,17 @@ try {
 
       return () => {
         ipcRenderer.removeListener("desktop:agent-session-stream-event", wrappedListener)
+      }
+    },
+    onWorkspaceFileChange: (listener: (event: WorkspaceFileChangeIPCEvent) => void) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, workspaceEvent: WorkspaceFileChangeIPCEvent) => {
+        listener(workspaceEvent)
+      }
+
+      ipcRenderer.on("desktop:workspace-file-change", wrappedListener)
+
+      return () => {
+        ipcRenderer.removeListener("desktop:workspace-file-change", wrappedListener)
       }
     },
     onPtyEvent: (listener: (event: PtyIPCEvent) => void) => {

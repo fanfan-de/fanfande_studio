@@ -8,7 +8,6 @@ type GitCapabilityState = {
 }
 
 type GitCapabilitiesState = {
-  projectID?: string
   directory: string
   root: string | null
   branch: string | null
@@ -35,7 +34,6 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   const branchButtonRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
   const branchInputRef = useRef<HTMLInputElement | null>(null)
-  const reconciledProjectKeyRef = useRef<string | null>(null)
   const capabilitiesRequestRef = useRef(0)
   const branchesRequestRef = useRef(0)
   const [capabilities, setCapabilities] = useState<GitCapabilitiesState | null>(null)
@@ -53,24 +51,6 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   const gitCreateBranch = window.desktop?.gitCreateBranch
   const gitGetCapabilities = window.desktop?.gitGetCapabilities
   const gitListBranches = window.desktop?.gitListBranches
-
-  function reconcileWorkspaceProject(resolvedProjectID?: string) {
-    const nextProjectID = resolvedProjectID?.trim()
-    if (!directory || !nextProjectID || nextProjectID === projectID) {
-      return
-    }
-
-    const reconciliationKey = `${projectID ?? ""}->${nextProjectID}:${directory}`
-    if (reconciledProjectKeyRef.current === reconciliationKey) {
-      return
-    }
-
-    reconciledProjectKeyRef.current = reconciliationKey
-    notifyGitStateChanged({
-      projectID: nextProjectID,
-      directory,
-    })
-  }
 
   async function refreshCapabilities(reportError = false) {
     if (!projectID || !directory || !gitGetCapabilities) {
@@ -95,7 +75,6 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
       }
 
       setCapabilities(nextCapabilities)
-      reconcileWorkspaceProject(nextCapabilities.projectID)
       if (!nextCapabilities.isGitRepo) {
         setBranches([])
         setIsPanelOpen(false)
@@ -163,7 +142,6 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   }
 
   useEffect(() => {
-    reconciledProjectKeyRef.current = null
     setBranches([])
     setBranchName("")
     setErrorMessage("")
@@ -172,8 +150,8 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
     void refreshCapabilities()
   }, [projectID, directory])
 
-  const handleGitStateChanged = useEffectEvent((detail: { projectID: string; directory: string }) => {
-    if (!isMatchingGitStateChangedDetail(detail, projectID, directory)) return
+  const handleGitStateChanged = useEffectEvent((detail: { directory: string }) => {
+    if (!isMatchingGitStateChangedDetail(detail, directory)) return
     void refreshCapabilities()
     void refreshBranches()
   })
@@ -229,7 +207,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
 
   async function handleCheckoutBranch(name: string) {
     if (!projectID || !directory || !gitCheckoutBranch) {
-      setErrorMessage("当前工作区不可用。")
+      setErrorMessage("The current workspace is unavailable.")
       return
     }
 
@@ -244,13 +222,11 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
         name,
       })
       setIsPanelOpen(false)
-      setPendingBranchName(null)
       await Promise.all([refreshCapabilities(), refreshBranches()]).catch((error) => {
         console.error("[desktop] git branch switcher refresh failed:", error)
       })
       notifyGitStateChanged({
-        projectID: result.projectID?.trim() || projectID,
-        directory,
+        directory: result.directory,
       })
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error))
@@ -263,13 +239,18 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   async function handleCreateAndCheckoutBranch() {
     const name = branchName.trim()
 
+    if (!capabilities?.canCreateBranch.enabled) {
+      setErrorMessage(capabilities?.canCreateBranch.reason ?? "A branch cannot be created right now.")
+      return
+    }
+
     if (!name) {
-      setErrorMessage("请输入分支名称。")
+      setErrorMessage("Enter a branch name.")
       return
     }
 
     if (!projectID || !directory || !gitCreateBranch) {
-      setErrorMessage("当前工作区不可用。")
+      setErrorMessage("The current workspace is unavailable.")
       return
     }
 
@@ -289,8 +270,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
         console.error("[desktop] git branch switcher refresh failed:", error)
       })
       notifyGitStateChanged({
-        projectID: result.projectID?.trim() || projectID,
-        directory,
+        directory: result.directory,
       })
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error))
@@ -370,15 +350,15 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
                     >
                       <span className="composer-menu-option-copy composer-utility-git-branch-meta">
                         <strong>{branch.name}</strong>
-                        <small>{branch.current ? "当前分支" : branch.kind === "remote" ? "远程分支" : "本地分支"}</small>
+                        <small>{branch.current ? "Current branch" : branch.kind === "remote" ? "Remote branch" : "Local branch"}</small>
                       </span>
                       <span className="composer-menu-option-check">
                         {branch.current ? (
-                          "当前"
+                          "Current"
                         ) : (
                           <>
                             {branch.kind === "remote" ? <span className="git-branch-badge">Remote</span> : null}
-                            {isPending ? "切换中..." : "切换"}
+                            {isPending ? "Switching..." : "Switch"}
                           </>
                         )}
                       </span>
@@ -395,13 +375,14 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
                 type="button"
                 className="secondary-button composer-utility-git-branch-create-button"
                 disabled={isBusy || !capabilities.canCreateBranch.enabled}
+                title={capabilities.canCreateBranch.enabled ? "Create and switch to a new branch." : capabilities.canCreateBranch.reason}
                 onClick={() => {
                   setErrorMessage("")
                   setIsPanelOpen(false)
                   setIsCreateDialogOpen(true)
                 }}
               >
-                创建并检出新分支
+                Create and switch branch
               </button>
             </div>
 
@@ -432,12 +413,12 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
             aria-label="Create and checkout branch"
           >
             <label className="git-branch-create-field">
-              <span>分支名称</span>
+              <span>Branch name</span>
               <input
                 ref={branchInputRef}
                 type="text"
                 value={branchName}
-                placeholder="输入分支名称"
+                placeholder="Enter a branch name"
                 onChange={(event) => setBranchName(event.target.value)}
                 onKeyDown={handleBranchNameKeyDown}
               />
@@ -460,15 +441,16 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
                   setErrorMessage("")
                 }}
               >
-                取消
+                Cancel
               </button>
               <button
                 type="button"
                 className="primary-button"
-                disabled={pendingAction === "create"}
+                disabled={pendingAction === "create" || !capabilities.canCreateBranch.enabled}
+                title={capabilities.canCreateBranch.enabled ? "Create and switch to a new branch." : capabilities.canCreateBranch.reason}
                 onClick={() => void handleCreateAndCheckoutBranch()}
               >
-                {pendingAction === "create" ? "创建中..." : "创建并检出"}
+                {pendingAction === "create" ? "Creating..." : "Create and switch"}
               </button>
             </div>
           </article>

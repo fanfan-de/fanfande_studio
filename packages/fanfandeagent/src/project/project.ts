@@ -5,29 +5,34 @@ import path from "path"
 import { $ } from "bun"
 import * as db from "#database/Sqlite.ts"
 import * as Log from "#util/log.ts"
-import { Flag } from "#flag/flag.ts"
 import { fn } from "#util/fn.ts"
 import * as BusEvent from "#bus/bus-event.ts"
 import { GlobalBus } from "#bus/global.ts"
 import { existsSync } from "fs"
 import * as Session from "#session/session.ts"
+import * as Identifier from "#id/id.ts"
 
 const log = Log.create({ service: "project" })
+const ProjectKind = z.enum(["directory", "git"])
+const ProjectConfigRecord = z.object({
+  projectID: z.string(),
+  config: z.record(z.string(), z.any()),
+})
 let projectTableGeneration = -1
 
 function ensureProjectTable() {
   const generation = db.getDatabaseGeneration()
   if (projectTableGeneration === generation && generation > 0) return
-  if (!db.tableExists("projects")) {
-    db.createTableByZodObject("projects", ProjectInfo)
-  }
+  db.syncTableColumnsWithZodObject("projects", ProjectInfo)
   projectTableGeneration = db.getDatabaseGeneration()
 }
 
 export const ProjectInfo = z
   .object({
     id: z.string(),
+    kind: ProjectKind.optional(),
     worktree: z.string(),
+    gitCommonDir: z.string().optional(),
     vcs: z.literal("git").optional(),
     name: z.string().optional(),
     icon: z
@@ -56,42 +61,48 @@ export const Event = {
   Updated: BusEvent.define("project.updated", ProjectInfo),
 }
 
+type ResolvedProjectIdentity =
+  | {
+      kind: "directory"
+      sandbox: string
+      worktree: string
+      vcs: undefined
+    }
+  | {
+      kind: "git"
+      sandbox: string
+      worktree: string
+      gitCommonDir?: string
+      storedProjectID?: string
+      vcs: "git"
+    }
+
 function normalizeProjectPath(input: string) {
   const resolved = path.resolve(input)
   const normalized = path.normalize(resolved)
   return process.platform === "win32" ? normalized.toLowerCase() : normalized
 }
 
-function isGlobalWorktree(worktree: string) {
-  return worktree === "/"
+function resolveProjectKind(project: Pick<ProjectInfo, "kind" | "vcs">) {
+  return project.kind === "git" || project.vcs === "git" ? "git" : "directory"
 }
 
-function resolveProjectName(worktree: string, vcs: ProjectInfo["vcs"]) {
-  if (vcs === "git") {
-    const folderName = worktree.split(/[\\/]/).filter(Boolean).pop()
-    return folderName || worktree
-  }
-
-  return "Global"
+function resolveProjectName(worktree: string) {
+  const folderName = worktree.split(/[\\/]/).filter(Boolean).pop()
+  return folderName || worktree
 }
 
-function resolveStoredProjectName(worktree: string, vcs: ProjectInfo["vcs"], currentName?: string) {
-  const canonicalName = resolveProjectName(worktree, vcs)
-  if (isGlobalWorktree(worktree)) return canonicalName
-
+function resolveStoredProjectName(worktree: string, currentName?: string) {
   const trimmed = currentName?.trim()
-  return trimmed || canonicalName
+  return trimmed || resolveProjectName(worktree)
 }
 
 function isPathInsideProject(directory: string, worktree: string) {
-  if (isGlobalWorktree(worktree)) return true
-
   const relative = path.relative(normalizeProjectPath(worktree), normalizeProjectPath(directory))
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
 }
 
 function isAdditionalSandboxDirectory(directory: string, worktree: string) {
-  if (isGlobalWorktree(worktree)) return false
   if (normalizeProjectPath(directory) === normalizeProjectPath(worktree)) return false
   return !isPathInsideProject(directory, worktree)
 }
@@ -107,106 +118,197 @@ function uniqueProjectPaths(input: string[]) {
   return [...unique.values()]
 }
 
-function collectLegacyProjects(worktree: string, projectID?: string, sandbox?: string) {
-  const normalizedWorktree = isGlobalWorktree(worktree) ? null : normalizeProjectPath(worktree)
-  const normalizedSandbox = sandbox ? normalizeProjectPath(sandbox) : null
-  const legacyProjects = new Map<string, ProjectInfo>()
-
-  for (const project of db.findManyWithSchema("projects", ProjectInfo)) {
-    const projectWorktree = isGlobalWorktree(project.worktree) ? null : normalizeProjectPath(project.worktree)
-    const projectSandboxes = (project.sandboxes ?? []).map(normalizeProjectPath)
-    const sameIdentity = projectID ? project.id === projectID : false
-    const sameWorktree = normalizedWorktree ? projectWorktree === normalizedWorktree : project.worktree === "/"
-    const legacyFolderProject = normalizedSandbox ? projectWorktree === normalizedSandbox : false
-    const containsSandbox = normalizedSandbox ? projectSandboxes.includes(normalizedSandbox) : false
-
-    if (sameIdentity || sameWorktree || legacyFolderProject || containsSandbox) {
-      legacyProjects.set(project.id, project)
-    }
-  }
-
-  if (normalizedWorktree) {
-    const globalProject = db.findById("projects", ProjectInfo, "global")
-    const hasMatchingGlobalSession =
-      globalProject &&
-      Session.listByProject(globalProject.id).some((session) => isPathInsideProject(session.directory, worktree))
-
-    if (globalProject && hasMatchingGlobalSession) {
-      legacyProjects.set(globalProject.id, globalProject)
-    }
-  }
-
-  return [...legacyProjects.values()]
+function projectRoots(project: ProjectInfo) {
+  return uniqueProjectPaths([project.worktree, ...(project.sandboxes ?? [])])
 }
 
-function migrateLegacyProjectSessions(legacyProjectIDs: string[], nextProjectID: string, worktree: string) {
-  const uniqueLegacyProjectIDs = [...new Set(legacyProjectIDs)].filter((projectID) => projectID && projectID !== nextProjectID)
-
-  for (const legacyProjectID of uniqueLegacyProjectIDs) {
-    const legacySessions = Session.listByProject(legacyProjectID)
-
-    for (const session of legacySessions) {
-      if (!isPathInsideProject(session.directory, worktree)) continue
-
-      db.updateById("sessions", session.id, {
-        projectID: nextProjectID,
-      })
-    }
-  }
+function projectContainsDirectory(project: ProjectInfo, directory: string) {
+  return projectRoots(project).some((root) => isPathInsideProject(directory, root))
 }
 
-function persistProjectRecord(input: {
-  projectID: string
-  worktree: string
-  sandbox: string
-  vcs: ProjectInfo["vcs"]
-}) {
-  const legacyProjects = collectLegacyProjects(input.worktree, input.projectID, input.sandbox)
-  const currentProject = db.findById("projects", ProjectInfo, input.projectID)
-  const now = Date.now()
-  const seedProject =
-    currentProject ??
-    legacyProjects[0] ?? {
-      id: input.projectID,
-      worktree: input.worktree,
-      vcs: input.vcs,
-      name: resolveProjectName(input.worktree, input.vcs),
-      created: now,
-      updated: now,
-      sandboxes: [] as string[],
-    }
-  const seedProjectName = isGlobalWorktree(seedProject.worktree) ? undefined : seedProject.name
+function matchingRootLength(project: ProjectInfo, directory: string) {
+  return projectRoots(project)
+    .filter((root) => isPathInsideProject(directory, root))
+    .map((root) => normalizeProjectPath(root).length)
+    .reduce((max, current) => Math.max(max, current), -1)
+}
 
-  const sandboxes = uniqueProjectPaths([
-    ...(seedProject.sandboxes ?? []),
-    ...legacyProjects.flatMap((project) => project.sandboxes ?? []),
-    ...legacyProjects.flatMap((project) => (isGlobalWorktree(project.worktree) ? [] : [project.worktree])),
-    input.sandbox,
-  ]).filter((item) => existsSync(item) && isAdditionalSandboxDirectory(item, input.worktree))
+function normalizeProjectRecord(project: ProjectInfo): ProjectInfo {
+  const kind = resolveProjectKind(project)
+  const sandboxes =
+    kind === "git"
+      ? uniqueProjectPaths(project.sandboxes ?? []).filter(
+          (item) => existsSync(item) && isAdditionalSandboxDirectory(item, project.worktree),
+        )
+      : []
 
-  const nextProject: ProjectInfo = {
-    ...seedProject,
-    id: input.projectID,
-    worktree: input.worktree,
-    vcs: input.vcs,
-    name: resolveStoredProjectName(input.worktree, input.vcs, seedProjectName),
-    updated: now,
+  return {
+    ...project,
+    kind,
+    gitCommonDir: kind === "git" ? project.gitCommonDir : undefined,
+    vcs: kind === "git" ? "git" : undefined,
+    name: resolveStoredProjectName(project.worktree, project.name),
     sandboxes,
   }
+}
 
-  migrateLegacyProjectSessions(
-    legacyProjects.map((project) => project.id),
-    input.projectID,
-    input.worktree,
-  )
+function listStoredProjects() {
+  return db
+    .findManyWithSchema("projects", ProjectInfo)
+    .map(normalizeProjectRecord)
+    .filter((project) => isGeneratedProjectID(project.id) && project.worktree.trim() !== "/")
+}
 
-  db.deleteById("projects", input.projectID)
-  db.insertOne("projects", nextProject)
+function findProjectByID(projects: ProjectInfo[], projectID: string | undefined) {
+  if (!projectID) return undefined
+  return projects.find((project) => project.id === projectID)
+}
 
-  for (const legacyProject of legacyProjects) {
-    if (legacyProject.id !== input.projectID) {
-      db.deleteById("projects", legacyProject.id)
+function findProjectContainingDirectory(projects: ProjectInfo[], directory: string) {
+  return projects
+    .filter((project) => projectContainsDirectory(project, directory))
+    .sort((left, right) => {
+      const lengthDelta = matchingRootLength(right, directory) - matchingRootLength(left, directory)
+      if (lengthDelta !== 0) return lengthDelta
+      return right.updated - left.updated
+    })[0]
+}
+
+function findProjectByGitCommonDir(projects: ProjectInfo[], gitCommonDir: string | undefined) {
+  if (!gitCommonDir) return undefined
+  const normalizedGitCommonDir = normalizeProjectPath(gitCommonDir)
+  return projects.find((project) => {
+    if (!project.gitCommonDir) return false
+    return normalizeProjectPath(project.gitCommonDir) === normalizedGitCommonDir
+  })
+}
+
+function createProjectID() {
+  return Identifier.descending("project")
+}
+
+function isGeneratedProjectID(value: string | undefined) {
+  return Identifier.schema("project").safeParse(value).success
+}
+
+function findProjectSeed(input: ResolvedProjectIdentity, projects: ProjectInfo[]) {
+  if (input.kind === "git") {
+    const byStoredID = findProjectByID(projects, input.storedProjectID)
+    if (byStoredID) return byStoredID
+
+    const byCommonDir = findProjectByGitCommonDir(projects, input.gitCommonDir)
+    if (byCommonDir) return byCommonDir
+  }
+
+  return findProjectContainingDirectory(projects, input.sandbox)
+}
+
+function collectMergeCandidates(input: ResolvedProjectIdentity, projects: ProjectInfo[], nextProjectID: string) {
+  const candidates = new Map<string, ProjectInfo>()
+  const normalizedWorktree = normalizeProjectPath(input.worktree)
+  const normalizedSandbox = normalizeProjectPath(input.sandbox)
+  const normalizedGitCommonDir = input.kind === "git" && input.gitCommonDir ? normalizeProjectPath(input.gitCommonDir) : null
+
+  for (const project of projects) {
+    if (project.id === nextProjectID) {
+      candidates.set(project.id, project)
+      continue
     }
+
+    const sameWorktree = normalizeProjectPath(project.worktree) === normalizedWorktree
+    const sameSandbox = (project.sandboxes ?? []).some((sandbox) => normalizeProjectPath(sandbox) === normalizedSandbox)
+    const sameStoredID = input.kind === "git" && input.storedProjectID ? project.id === input.storedProjectID : false
+    const sameGitCommonDir =
+      normalizedGitCommonDir !== null &&
+      project.gitCommonDir &&
+      normalizeProjectPath(project.gitCommonDir) === normalizedGitCommonDir
+
+    if (sameWorktree || sameSandbox || sameStoredID || sameGitCommonDir) {
+      candidates.set(project.id, project)
+    }
+  }
+
+  return [...candidates.values()]
+}
+
+function migrateProjectConfigReference(fromProjectID: string, toProjectID: string) {
+  if (!db.tableExists("project_configs")) return
+  if (fromProjectID === toProjectID) return
+
+  const existingTarget = db.findById("project_configs", ProjectConfigRecord, toProjectID, "projectID")
+  if (existingTarget) {
+    db.deleteById("project_configs", fromProjectID, "projectID")
+    return
+  }
+
+  db.updateById("project_configs", fromProjectID, { projectID: toProjectID }, "projectID")
+}
+
+function migrateProjectReferences(fromProjectID: string, toProjectID: string) {
+  if (!fromProjectID || !toProjectID || fromProjectID === toProjectID) return
+
+  if (db.tableExists("sessions")) {
+    db.updateMany("sessions", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
+  }
+
+  migrateProjectConfigReference(fromProjectID, toProjectID)
+
+  if (db.tableExists("permission_rules")) {
+    db.updateMany("permission_rules", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
+  }
+
+  if (db.tableExists("permission_requests")) {
+    db.updateMany("permission_requests", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
+  }
+
+  if (db.tableExists("permission_audits")) {
+    db.updateMany("permission_audits", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
+  }
+}
+
+function buildProjectRecord(input: ResolvedProjectIdentity, seed?: ProjectInfo) {
+  const normalizedSeed = seed ? normalizeProjectRecord(seed) : undefined
+  const id =
+    normalizedSeed?.id ??
+    (input.kind === "git" && isGeneratedProjectID(input.storedProjectID) ? input.storedProjectID : undefined) ??
+    createProjectID()
+  const now = Date.now()
+  const sandboxes =
+    input.kind === "git"
+      ? uniqueProjectPaths([...(normalizedSeed?.sandboxes ?? []), input.sandbox]).filter(
+          (item) => existsSync(item) && isAdditionalSandboxDirectory(item, input.worktree),
+        )
+      : []
+
+  return normalizeProjectRecord({
+    id,
+    kind: input.kind,
+    worktree: input.worktree,
+    gitCommonDir: input.kind === "git" ? input.gitCommonDir : undefined,
+    vcs: input.vcs,
+    name: resolveStoredProjectName(input.worktree, normalizedSeed?.name),
+    icon: normalizedSeed?.icon,
+    commands: normalizedSeed?.commands,
+    created: normalizedSeed?.created ?? now,
+    updated: now,
+    initialized: normalizedSeed?.initialized,
+    sandboxes,
+  })
+}
+
+function persistProjectRecord(input: ResolvedProjectIdentity) {
+  const projects = listStoredProjects()
+  const seed = findProjectSeed(input, projects)
+  const nextProject = buildProjectRecord(input, seed)
+  const mergeCandidates = collectMergeCandidates(input, projects, nextProject.id)
+
+  db.deleteById("projects", nextProject.id)
+  db.insertOneWithSchema("projects", nextProject, ProjectInfo)
+
+  for (const project of mergeCandidates) {
+    if (project.id === nextProject.id) continue
+    migrateProjectReferences(project.id, nextProject.id)
+    db.deleteById("projects", project.id)
   }
 
   return nextProject
@@ -242,55 +344,34 @@ async function resolveGitTopLevel(cwd: string) {
   return path.resolve(cwd, value)
 }
 
-async function resolveGitProjectID(cwd: string, gitCommonDir?: string) {
-  const opencodeFile = gitCommonDir ? path.join(gitCommonDir, "opencode") : undefined
-  const cachedID =
-    (opencodeFile
-      ? await Bun.file(opencodeFile)
-          .text()
-          .then((value) => value.trim())
-          .catch(() => undefined)
-      : undefined) || undefined
+async function readStoredGitProjectID(gitCommonDir?: string) {
+  if (!gitCommonDir) return undefined
 
-  if (cachedID) return cachedID
-  if (!Bun.which("git")) return "global"
+  const cachedID = await Bun.file(path.join(gitCommonDir, "opencode"))
+    .text()
+    .then((value) => value.trim())
+    .catch(() => undefined)
 
-  const rootCommit =
-    (await $`git rev-list --max-parents=0 --all`
-      .quiet()
-      .nothrow()
-      .cwd(cwd)
-      .text()
-      .then((value) =>
-        value
-          .split("\n")
-          .map((item) => item.trim())
-          .filter(Boolean)
-          .toSorted()[0],
-      )
-      .catch(() => undefined)) || "global"
-
-  if (rootCommit !== "global" && opencodeFile) {
-    void Bun.file(opencodeFile).write(rootCommit).catch(() => undefined)
-  }
-
-  return rootCommit
+  return isGeneratedProjectID(cachedID) ? cachedID : undefined
 }
 
-async function resolveProjectIdentity(directory: string) {
+async function writeStoredGitProjectID(gitCommonDir: string | undefined, projectID: string) {
+  if (!gitCommonDir || !isGeneratedProjectID(projectID)) return
+  await Bun.file(path.join(gitCommonDir, "opencode")).write(projectID).catch(() => undefined)
+}
+
+async function resolveProjectIdentity(directory: string): Promise<ResolvedProjectIdentity> {
   const resolvedDirectory = path.resolve(directory)
   const matches = Filesystem.up({ targets: [".git"], start: resolvedDirectory })
   const gitMarker = await matches.next().then((item) => item.value)
   await matches.return()
 
-  const defaultVcs = ProjectInfo.shape.vcs.parse(Flag.FanFande_FAKE_VCS)
-
   if (!gitMarker) {
     return {
-      projectID: "global",
+      kind: "directory",
       sandbox: resolvedDirectory,
-      worktree: "/",
-      vcs: defaultVcs,
+      worktree: resolvedDirectory,
+      vcs: undefined,
     }
   }
 
@@ -298,13 +379,15 @@ async function resolveProjectIdentity(directory: string) {
   const gitCommonDir = await resolveGitCommonDir(gitCwd)
   const sandbox = (await resolveGitTopLevel(gitCwd)) ?? gitCwd
   const worktree = gitCommonDir ? path.resolve(gitCommonDir, "..") : sandbox
-  const projectID = await resolveGitProjectID(gitCwd, gitCommonDir)
+  const storedProjectID = await readStoredGitProjectID(gitCommonDir)
 
   return {
-    projectID,
+    kind: "git",
     sandbox,
     worktree,
-    vcs: "git" as const,
+    gitCommonDir,
+    storedProjectID,
+    vcs: "git",
   }
 }
 
@@ -313,12 +396,10 @@ export async function fromDirectory(directory: string): Promise<{ project: Proje
   log.info("fromDirectory", { directory })
 
   const resolved = await resolveProjectIdentity(directory)
-  const project = persistProjectRecord({
-    projectID: resolved.projectID,
-    worktree: resolved.worktree,
-    sandbox: resolved.sandbox,
-    vcs: resolved.vcs,
-  })
+  const project = persistProjectRecord(resolved)
+  if (resolved.kind === "git") {
+    await writeStoredGitProjectID(resolved.gitCommonDir, project.id)
+  }
 
   GlobalBus.emit("event", {
     payload: {
@@ -343,21 +424,13 @@ export async function setInitialized(projectID: string) {
 async function repairProjects() {
   const candidates = new Map<string, string>()
 
-  for (const project of db.findMany("projects", ProjectInfo)) {
-    const possibleDirectories = [...(project.sandboxes ?? [])]
-    if (!isGlobalWorktree(project.worktree)) {
-      possibleDirectories.push(project.worktree)
-    }
-
-    for (const directory of possibleDirectories) {
+  for (const project of listStoredProjects()) {
+    for (const directory of projectRoots(project)) {
       if (!directory || !existsSync(directory)) continue
       candidates.set(normalizeProjectPath(directory), directory)
     }
   }
 
-  // A directory can start as a global/non-git session and later become a git
-  // repo. Project records do not retain those global directory paths, so we
-  // also re-evaluate the directories referenced by persisted sessions.
   if (db.tableExists("sessions")) {
     for (const session of db.findManyWithSchema("sessions", Session.SessionInfo)) {
       const directory = session.directory?.trim()
@@ -375,20 +448,17 @@ export async function list() {
   ensureProjectTable()
   await repairProjects()
 
-  const projects = db.findMany("projects", ProjectInfo)
+  const projects = listStoredProjects()
   const normalizedProjects = new Map<string, ProjectInfo>()
 
   for (const project of projects) {
     const previous = normalizedProjects.get(project.id)
-    const nextProject: ProjectInfo = {
+    const nextProject = normalizeProjectRecord({
       ...(previous ?? project),
       ...project,
-      name: resolveStoredProjectName(project.worktree, project.vcs, project.name ?? previous?.name),
       updated: Math.max(previous?.updated ?? 0, project.updated),
-      sandboxes: uniqueProjectPaths([...(previous?.sandboxes ?? []), ...(project.sandboxes ?? [])]).filter(
-        (item) => existsSync(item) && isAdditionalSandboxDirectory(item, project.worktree),
-      ),
-    }
+      sandboxes: uniqueProjectPaths([...(previous?.sandboxes ?? []), ...(project.sandboxes ?? [])]),
+    })
 
     normalizedProjects.set(nextProject.id, nextProject)
   }
@@ -399,7 +469,7 @@ export async function list() {
 export function get(id: string): ProjectInfo | undefined {
   ensureProjectTable()
   const row = db.findById("projects", ProjectInfo, id)
-  return row ?? undefined
+  return row ? normalizeProjectRecord(row) : undefined
 }
 
 export const update = fn(
@@ -416,7 +486,7 @@ export const update = fn(
       updated: Date.now(),
     })
 
-    const result = db.findById("projects", ProjectInfo, input.projectID)
+    const result = get(input.projectID)
 
     GlobalBus.emit("event", {
       payload: {
@@ -431,7 +501,7 @@ export const update = fn(
 
 export async function sandboxes(projectID: string) {
   ensureProjectTable()
-  const project = db.findById("projects", ProjectInfo, projectID)
+  const project = get(projectID)
   if (!project?.sandboxes) return []
 
   const valid: string[] = []
@@ -442,4 +512,3 @@ export async function sandboxes(projectID: string) {
 
   return valid
 }
-
