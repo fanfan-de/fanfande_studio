@@ -62,10 +62,11 @@ type TerminalStreamListener = (event: TerminalStreamEvent) => void
 export interface UseTerminalWorkspaceOptions {
   defaultCwd: string
   currentWorkspaceDirectory?: string | null
+  storageKey?: string
 }
 
-export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: UseTerminalWorkspaceOptions) {
-  const [workspace, setWorkspace] = useState(() => loadTerminalWorkspaceState())
+export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, storageKey }: UseTerminalWorkspaceOptions) {
+  const [workspace, setWorkspace] = useState(() => loadTerminalWorkspaceState(storageKey))
   const workspaceRef = useRef(workspace)
   // Keep the hot terminal buffer path outside React state so typing does not trigger
   // a render + diff cycle for every PTY output chunk.
@@ -156,7 +157,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
       const nextState = buildPersistedWorkspaceState(workspaceRef.current)
       const serialized = serializeTerminalWorkspaceState(nextState)
       if (serialized !== persistedSnapshotRef.current) {
-        saveTerminalWorkspaceState(nextState)
+        saveTerminalWorkspaceState(nextState, storageKey)
         persistedSnapshotRef.current = serialized
       }
       persistTimerRef.current = null
@@ -207,13 +208,13 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory }: 
         const nextState = buildPersistedWorkspaceState(workspaceRef.current)
         const serialized = serializeTerminalWorkspaceState(nextState)
         if (serialized !== persistedSnapshotRef.current) {
-          saveTerminalWorkspaceState(nextState)
+          saveTerminalWorkspaceState(nextState, storageKey)
           persistedSnapshotRef.current = serialized
         }
         persistTimerRef.current = null
       }
     }
-  }, [])
+  }, [storageKey])
 
   function updateWorkspace(updater: (current: TerminalWorkspaceState) => TerminalWorkspaceState) {
     startTransition(() => {

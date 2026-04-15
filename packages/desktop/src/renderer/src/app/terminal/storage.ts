@@ -8,6 +8,10 @@ import type {
 const TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v1"
 const DEFAULT_PANEL_HEIGHT = 280
 
+function resolveTerminalStorageKey(storageKey?: string) {
+  return storageKey?.trim() || TERMINAL_STORAGE_KEY
+}
+
 function toStoredSession(session: TerminalSessionRecord): TerminalStorageSessionSnapshot {
   // PTY scrollback is live data owned by the backend. Persist only the
   // structural shell state plus the viewport position so reconnecting or
@@ -46,11 +50,11 @@ export function createEmptyTerminalWorkspaceState(): TerminalWorkspaceState {
   }
 }
 
-export function loadTerminalWorkspaceState(): TerminalWorkspaceState {
+export function loadTerminalWorkspaceState(storageKey?: string): TerminalWorkspaceState {
   if (typeof window === "undefined") return createEmptyTerminalWorkspaceState()
 
   try {
-    const raw = window.localStorage.getItem(TERMINAL_STORAGE_KEY)
+    const raw = window.localStorage.getItem(resolveTerminalStorageKey(storageKey))
     if (!raw) return createEmptyTerminalWorkspaceState()
 
     const parsed = JSON.parse(raw) as TerminalStoragePayload
@@ -74,12 +78,12 @@ export function loadTerminalWorkspaceState(): TerminalWorkspaceState {
   }
 }
 
-export function saveTerminalWorkspaceState(state: TerminalWorkspaceState) {
+export function saveTerminalWorkspaceState(state: TerminalWorkspaceState, storageKey?: string) {
   if (typeof window === "undefined") return
 
   const payload = serializeTerminalWorkspaceState(state)
 
-  window.localStorage.setItem(TERMINAL_STORAGE_KEY, payload)
+  window.localStorage.setItem(resolveTerminalStorageKey(storageKey), payload)
 }
 
 export function serializeTerminalWorkspaceState(state: TerminalWorkspaceState) {
@@ -95,7 +99,7 @@ export function serializeTerminalWorkspaceState(state: TerminalWorkspaceState) {
   return JSON.stringify(payload)
 }
 
-export function clearTerminalWorkspaceState() {
+export function clearTerminalWorkspaceState(storageKey?: string) {
   if (typeof window === "undefined") return
-  window.localStorage.removeItem(TERMINAL_STORAGE_KEY)
+  window.localStorage.removeItem(resolveTerminalStorageKey(storageKey))
 }

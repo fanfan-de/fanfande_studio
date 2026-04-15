@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
+import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
 import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions } from "./constants"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
 import {
@@ -138,22 +138,26 @@ export function SidebarToggleButton({ isSidebarCollapsed, onToggleSidebar, side,
 }
 
 interface ActivityRailProps {
+  bottomSlotRef?: (node: HTMLDivElement | null) => void
   isSidebarCollapsed: boolean
   onToggleSidebar: () => void
   side: SidebarSide
 }
 
-export function ActivityRail({ isSidebarCollapsed, onToggleSidebar, side }: ActivityRailProps) {
+export function ActivityRail({ bottomSlotRef, isSidebarCollapsed, onToggleSidebar, side }: ActivityRailProps) {
   const railClassName = side === "right" ? "activity-rail is-right" : "activity-rail"
 
   return (
     <aside className={railClassName} aria-label={side === "left" ? "Primary navigation rail" : "Inspector rail"}>
-      <SidebarToggleButton
-        isSidebarCollapsed={isSidebarCollapsed}
-        onToggleSidebar={onToggleSidebar}
-        side={side}
-        variant="rail"
-      />
+      <div className="activity-rail-primary">
+        <SidebarToggleButton
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={onToggleSidebar}
+          side={side}
+          variant="rail"
+        />
+      </div>
+      {bottomSlotRef ? <div ref={bottomSlotRef} className="activity-rail-bottom" /> : null}
     </aside>
   )
 }
@@ -247,7 +251,7 @@ function LeftSidebarTopMenu({
   onViewChange,
 }: LeftSidebarTopMenuProps) {
   return (
-    <header className="left-sidebar-top-menu panel-toolbar" aria-label="Left sidebar top menu">
+    <header className="left-sidebar-top-menu panel-toolbar window-drag-region" aria-label="Left sidebar top menu">
       <div className="left-sidebar-top-menu-tabs">
         <TopMenuViewButton active={activeView === "workspace"} label="Workspace" onClick={() => onViewChange("workspace")}>
           <LayoutSidebarLeftIcon />
@@ -1142,7 +1146,7 @@ export function RightSidebar({
 
   return (
     <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
-      <header className="right-sidebar-top-menu panel-toolbar" aria-label="Right sidebar top menu">
+      <header className="right-sidebar-top-menu panel-toolbar window-drag-region" aria-label="Right sidebar top menu">
         <div className="right-sidebar-top-menu-tabs">
           <TopMenuViewButton active={activeView === "changes"} label="Changes" onClick={() => onViewChange("changes")}>
             <LayoutSidebarRightIcon />
@@ -1985,7 +1989,7 @@ export function CanvasRegionTopMenu({
   const canCloseCreateSessionTab = sessions.length > 0 || createSessionTabs.length > 1
 
   return (
-    <nav className="canvas-region-top-menu panel-toolbar" aria-label="Canvas region top menu">
+    <nav className="canvas-region-top-menu panel-toolbar window-drag-region" aria-label="Canvas region top menu">
       <div className="canvas-region-top-menu-leading">
         {showLeftSidebarToggleButton ? (
           <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="top-menu" />
@@ -2067,6 +2071,276 @@ export function CanvasRegionTopMenu({
   )
 }
 
+interface PaneTabBarProps {
+  activeTabKey: string | null
+  draggedTabKey: string | null
+  hasMergePreview: boolean
+  isFocused: boolean
+  isTopRow: boolean
+  leadingAccessory?: ReactNode
+  tabs: Array<
+    | {
+        key: string
+        kind: "session"
+        sessionID: string
+        title: string
+      }
+    | {
+        key: string
+        kind: "create-session"
+        createSessionTabID: string
+        title: string
+      }
+  >
+  onCloseCreateSessionTab: (createSessionTabID: string) => void
+  onCloseSessionTab: (sessionID: string) => void
+  onFocus: () => void
+  onOpenCreateSessionTab: () => void
+  onSelectCreateSessionTab: (createSessionTabID: string) => void
+  onSelectSessionTab: (sessionID: string) => void
+  onTabDragEnd: () => void
+  onTabDragStart: (tabKey: string) => void
+  onTabPointerDragMove: (clientX: number, clientY: number) => void
+  onTabPointerDrop: (clientX: number, clientY: number) => void
+  trailingAccessory?: ReactNode
+}
+
+export function PaneTabBar({
+  activeTabKey,
+  draggedTabKey,
+  hasMergePreview,
+  isFocused,
+  isTopRow,
+  leadingAccessory,
+  tabs,
+  onCloseCreateSessionTab,
+  onCloseSessionTab,
+  onFocus,
+  onOpenCreateSessionTab,
+  onSelectCreateSessionTab,
+  onSelectSessionTab,
+  onTabDragEnd,
+  onTabDragStart,
+  onTabPointerDragMove,
+  onTabPointerDrop,
+  trailingAccessory,
+}: PaneTabBarProps) {
+  const hasWindowControlsClearance = Boolean(trailingAccessory)
+  const pointerDragRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    started: boolean
+    tabKey: string
+  } | null>(null)
+  const suppressClickTabKeyRef = useRef<string | null>(null)
+
+  function handleTabDragStart(event: ReactDragEvent<HTMLElement>, tabKey: string) {
+    const target = event.target
+    if (target instanceof HTMLElement && target.closest(".session-tab-close")) {
+      event.preventDefault()
+      return
+    }
+
+    try {
+      event.dataTransfer?.setData("text/plain", tabKey)
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move"
+      }
+    } catch {
+      // JSDOM and some browser paths can throw when dataTransfer is absent.
+    }
+    onFocus()
+    onTabDragStart(tabKey)
+  }
+
+  function handleTabPointerDown(event: PointerEvent<HTMLElement>, tabKey: string) {
+    if (event.button !== 0) return
+
+    const target = event.target
+    if (target instanceof HTMLElement && target.closest(".session-tab-close")) {
+      return
+    }
+
+    pointerDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      started: false,
+      tabKey,
+    }
+
+    const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
+      const state = pointerDragRef.current
+      if (!state || moveEvent.pointerId !== state.pointerId) return
+
+      if (!state.started) {
+        const distance = Math.hypot(moveEvent.clientX - state.startX, moveEvent.clientY - state.startY)
+        if (distance < 4) return
+
+        state.started = true
+        pointerDragRef.current = state
+        onFocus()
+        onTabDragStart(state.tabKey)
+      }
+
+      onTabPointerDragMove(moveEvent.clientX, moveEvent.clientY)
+      moveEvent.preventDefault()
+    }
+
+    const stopPointerDrag = (nextEvent: globalThis.PointerEvent, shouldDrop: boolean) => {
+      const state = pointerDragRef.current
+      if (!state || nextEvent.pointerId !== state.pointerId) return
+
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
+      window.removeEventListener("pointercancel", handlePointerCancel)
+      pointerDragRef.current = null
+
+      if (!state.started) return
+
+      suppressClickTabKeyRef.current = state.tabKey
+      if (shouldDrop) {
+        onTabPointerDrop(nextEvent.clientX, nextEvent.clientY)
+        return
+      }
+
+      onTabDragEnd()
+    }
+
+    const handlePointerUp = (upEvent: globalThis.PointerEvent) => {
+      stopPointerDrag(upEvent, true)
+    }
+
+    const handlePointerCancel = (cancelEvent: globalThis.PointerEvent) => {
+      stopPointerDrag(cancelEvent, false)
+    }
+
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", handlePointerUp)
+    window.addEventListener("pointercancel", handlePointerCancel)
+  }
+
+  useEffect(() => {
+    return () => {
+      pointerDragRef.current = null
+    }
+  }, [])
+
+  const className = [
+    "pane-tab-bar",
+    "panel-toolbar",
+    isFocused ? "is-focused" : null,
+    hasWindowControlsClearance ? "has-window-controls-clearance" : null,
+    isTopRow ? "window-drag-region" : null,
+  ]
+    .filter(Boolean)
+    .join(" ")
+
+  return (
+    <nav
+      className={className}
+      aria-label="Pane tabs"
+      onPointerDown={() => onFocus()}
+    >
+      {leadingAccessory ? <div className="pane-tab-bar-leading">{leadingAccessory}</div> : null}
+      <div className="pane-tab-bar-tabs" aria-label="Pane tab list">
+        {tabs.map((tab) => {
+          const isActive = tab.key === activeTabKey
+          const createTabIndex =
+            tab.kind === "create-session"
+              ? tabs.slice(0, tabs.indexOf(tab) + 1).filter((item) => item.kind === "create-session").length - 1
+              : -1
+          const tabClassName = tab.kind === "create-session"
+            ? isActive
+              ? "session-tab is-active is-create-tab"
+              : "session-tab is-create-tab"
+            : isActive
+              ? "session-tab is-active"
+              : "session-tab"
+          const switchLabel =
+            tab.kind === "session"
+              ? `Switch to session ${tab.title}`
+              : createTabIndex === 0
+                ? "Switch to create session tab"
+                : `Switch to create session tab ${createTabIndex + 1}`
+          const closeLabel =
+            tab.kind === "session"
+              ? `Close session tab ${tab.title}`
+              : createTabIndex === 0
+                ? "Close create session tab"
+                : `Close create session tab ${createTabIndex + 1}`
+
+          return (
+            <div
+              key={tab.key}
+              className={draggedTabKey === tab.key ? `${tabClassName} is-dragging` : tabClassName}
+              onDragEnd={onTabDragEnd}
+              onDragStart={(event) => handleTabDragStart(event, tab.key)}
+              onPointerDown={(event) => handleTabPointerDown(event, tab.key)}
+            >
+              <button
+                className="session-tab-trigger"
+                aria-label={switchLabel}
+                aria-pressed={isActive}
+                title={switchLabel}
+                type="button"
+                onDragEnd={onTabDragEnd}
+                onDragStart={(event) => handleTabDragStart(event, tab.key)}
+                onClick={() => {
+                  if (suppressClickTabKeyRef.current === tab.key) {
+                    suppressClickTabKeyRef.current = null
+                    return
+                  }
+                  onFocus()
+                  if (tab.kind === "session") {
+                    onSelectSessionTab(tab.sessionID)
+                    return
+                  }
+                  onSelectCreateSessionTab(tab.createSessionTabID)
+                }}
+              >
+                <span className="session-tab-title">{tab.title}</span>
+              </button>
+              <button
+                className="session-tab-close"
+                aria-label={closeLabel}
+                draggable={false}
+                title={closeLabel}
+                type="button"
+                onDragStart={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onClick={() => {
+                  onFocus()
+                  if (tab.kind === "session") {
+                    onCloseSessionTab(tab.sessionID)
+                    return
+                  }
+                  onCloseCreateSessionTab(tab.createSessionTabID)
+                }}
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          )
+        })}
+        {hasMergePreview ? <span className="pane-tab-merge-preview" aria-hidden="true" /> : null}
+        <button className="canvas-region-top-menu-add-button" aria-label="Add session tab" title="Add session tab" type="button" onClick={onOpenCreateSessionTab}>
+          <span className="canvas-region-top-menu-add-glyph" aria-hidden="true">
+            +
+          </span>
+        </button>
+      </div>
+      <div className="pane-tab-bar-actions">
+        {trailingAccessory ? <div className="pane-tab-bar-trailing">{trailingAccessory}</div> : null}
+        {hasWindowControlsClearance ? <WindowControlsSpacer variant="canvas" /> : null}
+      </div>
+    </nav>
+  )
+}
+
 export function CanvasRegionUtilityMenu({
   isRightSidebarCollapsed,
   label,
@@ -2081,7 +2355,7 @@ export function CanvasRegionUtilityMenu({
   showLeftSidebarToggleButton: boolean
 }) {
   return (
-    <nav className="canvas-region-top-menu panel-toolbar" aria-label={`${label} top menu`}>
+    <nav className="canvas-region-top-menu panel-toolbar window-drag-region" aria-label={`${label} top menu`}>
       <div className="canvas-region-top-menu-leading">
         {showLeftSidebarToggleButton ? (
           <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="top-menu" />

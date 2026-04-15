@@ -27,6 +27,46 @@ function getCreateSessionProjectSelect() {
   return screen.getByRole("combobox", { name: "Session project" })
 }
 
+async function createSiblingPaneFromCreateTab() {
+  fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+  await screen.findByRole("combobox", { name: "Session project" })
+
+  const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
+  const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
+
+  fireEvent.dragStart(createTab)
+  fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-right"))
+  fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-right"))
+  fireEvent.drop(within(sourcePane).getByTestId("pane-drop-right"))
+  fireEvent.dragEnd(createTab)
+
+  await waitFor(() => {
+    expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
+  })
+
+  return Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+}
+
+async function createStackedPaneFromCreateTab() {
+  fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+  await screen.findByRole("combobox", { name: "Session project" })
+
+  const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
+  const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
+
+  fireEvent.dragStart(createTab)
+  fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-bottom"))
+  fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-bottom"))
+  fireEvent.drop(within(sourcePane).getByTestId("pane-drop-bottom"))
+  fireEvent.dragEnd(createTab)
+
+  await waitFor(() => {
+    expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
+  })
+
+  return Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+}
+
 type PermissionRequestPromptOverrides = Omit<Partial<PermissionRequestPrompt>, "prompt" | "resolution"> & {
   prompt?: Omit<Partial<PermissionRequestPrompt["prompt"]>, "details"> & {
     details?: Partial<NonNullable<PermissionRequestPrompt["prompt"]["details"]>>
@@ -404,12 +444,13 @@ describe("App", () => {
 
     expect(screen.getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Minimize window" }).closest(".window-controls-floating")).not.toBeNull()
-    expect(container.querySelector(".window-drag-region")).toBeNull()
+    expect(container.querySelector(".pane-tab-bar.window-drag-region")).not.toBeNull()
+    expect(container.querySelector(".session-canvas-top-menu.window-drag-region")).toBeNull()
     expect(screen.queryByRole("button", { name: "File" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu-trailing")).toHaveClass("is-right-sidebar-expanded")
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
@@ -418,7 +459,12 @@ describe("App", () => {
     expect(screen.getAllByText("Project 2").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Add session tab" })).toHaveTextContent("+")
+    const addSessionTabButton = screen.getByRole("button", { name: "Add session tab" })
+    expect(addSessionTabButton).toHaveTextContent("+")
+    expect(addSessionTabButton.closest(".pane-tab-bar-tabs")).not.toBeNull()
+    expect(addSessionTabButton.closest(".pane-tab-bar-tabs")?.lastElementChild).toBe(addSessionTabButton)
+    expect(screen.queryByRole("button", { name: "Split pane" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Switch to session Chat 1" }).closest(".pane-tab-bar")).toHaveClass("window-drag-region")
     expect(await screen.findByRole("button", { name: "Git" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Workspace" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument()
@@ -656,7 +702,7 @@ describe("App", () => {
       })
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Git" }))
     fireEvent.click(screen.getByRole("button", { name: /Commit changes/i }))
 
     expect(await screen.findByRole("textbox", { name: "Commit message" })).toBeInTheDocument()
@@ -745,7 +791,7 @@ describe("App", () => {
 
     await screen.findByRole("button", { name: "Atlas review" })
 
-    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Git" }))
     fireEvent.click(screen.getByRole("button", { name: /Commit changes/i }))
 
     fireEvent.change(await screen.findByRole("textbox", { name: "Commit message" }), {
@@ -829,7 +875,7 @@ describe("App", () => {
     const gitGetCapabilities = window.desktop!.gitGetCapabilities as ReturnType<typeof vi.fn>
     gitGetCapabilities.mockClear()
 
-    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Git" }))
 
     const commitButton = await screen.findByRole("button", { name: /Commit changes/i })
     expect(commitButton).toBeEnabled()
@@ -1613,7 +1659,7 @@ describe("App", () => {
       })
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Git" }))
 
     const gitQuickMenu = await screen.findByRole("dialog", { name: "Git quick menu" })
     fireEvent.click(within(gitQuickMenu).getByRole("button", { name: /Create branch/i }))
@@ -1776,7 +1822,7 @@ describe("App", () => {
       })
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Git" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Git" }))
 
     const gitQuickMenu = await screen.findByRole("dialog", { name: "Git quick menu" })
     const createBranchButton = within(gitQuickMenu).getByRole("button", { name: /Create branch/i })
@@ -3492,7 +3538,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
   })
 
-  it("replaces the focused session tab when selecting a different sidebar session", async () => {
+  it("adds the selected sidebar session to the focused pane and activates it", async () => {
     render(<App />)
 
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toHaveAttribute("aria-pressed", "true")
@@ -3501,12 +3547,12 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chat 2" }))
 
     expect(await screen.findByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.queryByRole("button", { name: "Switch to session Chat 1" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toHaveAttribute("aria-pressed", "false")
     expect(screen.getByRole("button", { name: "Chat 2" }).closest(".session-row")).toHaveClass("is-active")
     expect(screen.getByRole("button", { name: "app" }).closest(".project-row")).toHaveClass("is-active")
   })
 
-  it("reuses open session tabs and replaces the active create tab when selecting from the sidebar", async () => {
+  it("reuses open session tabs while preserving create session tabs in the focused pane", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
@@ -3518,14 +3564,204 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Switch to create session tab" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "false")
 
     fireEvent.click(screen.getByRole("button", { name: "Chat 1" }))
 
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Switch to session Chat 2" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: "Switch to session Chat 1" })).toHaveLength(1)
     expect(screen.getAllByRole("button", { name: "Switch to session Chat 2" })).toHaveLength(1)
+  })
+
+  it("drags a tab out of the focused pane to create a sibling pane", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat 2" }))
+
+    const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
+    const chat2Tab = screen.getByRole("button", { name: "Switch to session Chat 2" })
+    const chat2TabContainer = chat2Tab.closest(".session-tab")
+
+    expect(chat2TabContainer).not.toBeNull()
+    expect(chat2TabContainer).not.toHaveAttribute("draggable")
+    expect(chat2Tab).not.toHaveAttribute("draggable")
+
+    fireEvent.dragStart(chat2Tab)
+    fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-right"))
+    fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-right"))
+    fireEvent.drop(within(sourcePane).getByTestId("pane-drop-right"))
+    fireEvent.dragEnd(chat2Tab)
+
+    await waitFor(() => {
+      expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
+    })
+
+    const panes = Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+    expect(within(panes[0]).getByRole("button", { name: "Switch to session Chat 1" })).toBeInTheDocument()
+    expect(within(panes[1]).getByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("drags a create-session tab out of the focused pane to create a sibling pane", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    await screen.findByRole("combobox", { name: "Session project" })
+
+    const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
+    const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
+    const createTabContainer = createTab.closest(".session-tab")
+
+    expect(createTabContainer).not.toBeNull()
+    expect(createTabContainer).not.toHaveAttribute("draggable")
+    expect(createTab).not.toHaveAttribute("draggable")
+
+    fireEvent.dragStart(createTab)
+    fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-right"))
+    fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-right"))
+    fireEvent.drop(within(sourcePane).getByTestId("pane-drop-right"))
+    fireEvent.dragEnd(createTab)
+
+    await waitFor(() => {
+      expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
+    })
+
+    const panes = Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+    expect(within(panes[1]).getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("shows a layout preview instead of visible split hints while dragging over a pane edge", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    await screen.findByRole("combobox", { name: "Session project" })
+
+    const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
+    const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
+
+    fireEvent.dragStart(createTab)
+    fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-right"))
+    fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-right"))
+
+    expect(sourcePane.querySelector(".pane-drop-preview.is-right")).not.toBeNull()
+    expect(sourcePane.querySelectorAll(".pane-drop-preview-incoming")).toHaveLength(1)
+  })
+
+  it("shows a merge preview block in the target pane tab bar when dragging into pane center", async () => {
+    render(<App />)
+
+    const panes = await createSiblingPaneFromCreateTab()
+    const sourceTab = within(panes[0]).getByRole("button", { name: "Switch to session Chat 1" })
+
+    fireEvent.dragStart(sourceTab)
+    fireEvent.dragEnter(within(panes[1]).getByTestId("pane-drop-center"))
+    fireEvent.dragOver(within(panes[1]).getByTestId("pane-drop-center"))
+
+    const mergePreview = panes[1].querySelector(".pane-tab-merge-preview")
+    const addButton = within(panes[1]).getByRole("button", { name: "Add session tab" })
+
+    expect(mergePreview).not.toBeNull()
+    expect(panes[1].querySelector(".pane-drop-preview")).toBeNull()
+    expect(mergePreview?.nextElementSibling).toBe(addButton)
+  })
+
+  it("drops a create-session tab into a sibling pane via pointer drag", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    await screen.findByRole("combobox", { name: "Session project" })
+
+    const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
+    const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
+
+    Object.defineProperty(sourcePane, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 400,
+        bottom: 300,
+        width: 400,
+        height: 300,
+        toJSON: () => ({}),
+      }),
+    })
+
+    fireEvent.pointerDown(createTab, {
+      button: 0,
+      clientX: 120,
+      clientY: 24,
+      pointerId: 1,
+    })
+    fireEvent.pointerMove(window, {
+      clientX: 360,
+      clientY: 150,
+      pointerId: 1,
+    })
+    fireEvent.pointerUp(window, {
+      clientX: 360,
+      clientY: 150,
+      pointerId: 1,
+    })
+
+    await waitFor(() => {
+      expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
+    })
+  })
+
+  it("drops a tab into another pane and activates it there", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat 2" }))
+    let panes = await createSiblingPaneFromCreateTab()
+    const chat2Tab = within(panes[0]).getByRole("button", { name: "Switch to session Chat 2" })
+
+    fireEvent.dragStart(chat2Tab)
+    fireEvent.dragEnter(within(panes[1]).getByTestId("pane-drop-center"))
+    fireEvent.dragOver(within(panes[1]).getByTestId("pane-drop-center"))
+    fireEvent.drop(within(panes[1]).getByTestId("pane-drop-center"))
+    fireEvent.dragEnd(chat2Tab)
+
+    await waitFor(() => {
+      panes = Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+      expect(within(panes[1]).getByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
+    })
+
+    expect(within(panes[1]).getByRole("button", { name: "Switch to create session tab" })).toBeInTheDocument()
+    expect(within(panes[0]).queryByRole("button", { name: "Switch to session Chat 2" })).toBeNull()
+  })
+
+  it("restores a single workbench pane without leaving the canvas shifted left", async () => {
+    render(<App />)
+
+    const panes = await createSiblingPaneFromCreateTab()
+
+    expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
+    expect(document.querySelector(".workbench-panes")).toHaveClass("has-multiple")
+    expect(document.querySelectorAll(".pane-tab-bar .panel-toolbar-window-controls-spacer.is-canvas")).toHaveLength(1)
+
+    fireEvent.click(within(panes[1]).getByRole("button", { name: "Close create session tab" }))
+
+    await waitFor(() => {
+      expect(document.querySelectorAll(".workbench-pane")).toHaveLength(1)
+    })
+
+    expect(document.querySelector(".workbench-panes")).not.toHaveClass("has-multiple")
+    expect(document.querySelector(".pane-tab-bar")).toHaveClass("has-window-controls-clearance")
+    expect(document.querySelectorAll(".pane-tab-bar .panel-toolbar-window-controls-spacer.is-canvas")).toHaveLength(1)
+  })
+
+  it("limits session canvas tab drag regions to the top row of panes", async () => {
+    render(<App />)
+
+    const panes = await createStackedPaneFromCreateTab()
+    expect(panes).toHaveLength(2)
+
+    expect(panes[0].querySelector(".pane-tab-bar")).toHaveClass("window-drag-region")
+    expect(panes[1].querySelector(".pane-tab-bar")).not.toHaveClass("window-drag-region")
   })
 
   it("falls back to the create session tab when the last session tab closes", async () => {
@@ -3962,7 +4198,7 @@ describe("App", () => {
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
     expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
     expect(screen.queryByText("Search providers")).not.toBeInTheDocument()
-    expect(screen.getByRole("textbox", { name: "Search providers" })).toBeInTheDocument()
+    expect(await screen.findByRole("textbox", { name: "Search providers" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /DeepSeek.*Connected/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
     expect(screen.queryByText("Catalog")).not.toBeInTheDocument()
@@ -4103,7 +4339,7 @@ describe("App", () => {
 
     expect(appShell!.getAttribute("style")).toContain("--sidebar-display-width: 0px")
     expect(screen.getByRole("button", { name: "Expand left sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Expand left sidebar" }).closest(".canvas-region-top-menu")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Expand left sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Expand left sidebar" }))
     expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
@@ -5674,11 +5910,11 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
   })
 
-  it("toggles the terminal panel from the canvas bottom-left anchor and auto-creates the first terminal", async () => {
+  it("toggles the terminal panel from the left rail footer and auto-creates the first terminal", async () => {
     render(<App />)
 
     const collapsedToggle = screen.getByRole("button", { name: "Toggle terminal panel" })
-    expect(collapsedToggle.closest(".canvas-terminal-toggle-anchor")).not.toBeNull()
+    expect(collapsedToggle.closest(".activity-rail-bottom")).not.toBeNull()
 
     fireEvent.click(collapsedToggle)
 
@@ -5714,7 +5950,19 @@ describe("App", () => {
       expect(screen.queryByRole("tablist", { name: "Terminal tabs" })).not.toBeInTheDocument()
     })
 
-    expect(screen.getByRole("button", { name: "Toggle terminal panel" }).closest(".canvas-terminal-toggle-anchor")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Toggle terminal panel" }).closest(".activity-rail-bottom")).not.toBeNull()
+  })
+
+  it("falls back to the canvas anchor for the terminal toggle when the left rail is hidden", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+    fireEvent.click(screen.getByRole("switch", { name: "Show left rail" }))
+
+    const collapsedToggle = screen.getByRole("button", { name: "Toggle terminal panel" })
+    expect(collapsedToggle.closest(".canvas-terminal-toggle-anchor")).not.toBeNull()
   })
 
   it("shows real context pressure from streamed assistant usage against the selected model context window", async () => {
@@ -6134,8 +6382,8 @@ describe("App", () => {
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
     expect(within(rightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu-trailing")).toHaveClass("is-right-sidebar-expanded")
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse right sidebar" }))
 
@@ -6145,8 +6393,8 @@ describe("App", () => {
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     expect(screen.queryByTestId("right-sidebar-resizer")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Expand right sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".canvas-region-top-menu")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".canvas-region-top-menu-trailing")).toHaveClass("is-right-sidebar-collapsed")
+    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Expand right sidebar" }))
 
@@ -6156,8 +6404,8 @@ describe("App", () => {
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
     expect(within(rightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".canvas-region-top-menu-trailing")).toHaveClass("is-right-sidebar-expanded")
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
   })
 
   it("resizes the left sidebar when dragging the divider", async () => {
@@ -6270,6 +6518,66 @@ describe("App", () => {
     })
   })
 
+  it("resizes neighboring workbench panes when dragging their divider", async () => {
+    render(<App />)
+
+    const panes = await createSiblingPaneFromCreateTab()
+    expect(panes).toHaveLength(2)
+
+    Object.defineProperty(panes[0], "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 400,
+        bottom: 800,
+        width: 400,
+        height: 800,
+        toJSON: () => ({}),
+      }),
+    })
+    Object.defineProperty(panes[1], "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 414,
+        y: 0,
+        left: 414,
+        top: 0,
+        right: 814,
+        bottom: 800,
+        width: 400,
+        height: 800,
+        toJSON: () => ({}),
+      }),
+    })
+
+    fireEvent.pointerDown(screen.getByTestId("workbench-pane-resizer-0"), {
+      button: 0,
+      clientX: 400,
+    })
+
+    await waitFor(() => {
+      expect(document.body).toHaveClass("is-resizing-workbench-pane")
+    })
+
+    fireEvent.pointerMove(window, {
+      clientX: 500,
+    })
+
+    await waitFor(() => {
+      expect(Number.parseFloat(panes[0].style.flexGrow)).toBeGreaterThan(0.5)
+      expect(Number.parseFloat(panes[1].style.flexGrow)).toBeLessThan(0.5)
+    })
+
+    fireEvent.pointerUp(window)
+
+    await waitFor(() => {
+      expect(document.body).not.toHaveClass("is-resizing-workbench-pane")
+    })
+  })
+
   it("shows expand/collapse icon only while hovering a folder row", () => {
     render(<App />)
 
@@ -6325,11 +6633,13 @@ describe("App", () => {
   it("keeps the canvas tabs separate from the session top menu", () => {
     expect(styles).toMatch(/\.canvas\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto auto;[^}]*gap:\s*14px;/s)
     expect(styles).toMatch(/\.canvas-top-stack\s*\{[^}]*display:\s*grid;[^}]*gap:\s*6px;/s)
+    expect(styles).toMatch(/\.workbench-pane\s*\{[^}]*flex:\s*1 1 0;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto auto;/s)
     expect(styles).toMatch(/\.window-controls-floating\s*\{[^}]*top:\s*5px;[^}]*gap:\s*10px;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(/\.window-control\s*\{[^}]*width:\s*30px;[^}]*min-width:\s*30px;[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*border-radius:\s*8px;[^}]*color:\s*#5f7384;/s)
     expect(styles).toMatch(/\.window-control svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.window-control:hover,\s*\.window-control:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);[^}]*color:\s*#22303d;[^}]*transform:\s*none;/s)
-    expect(styles).toMatch(/\.panel-toolbar\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*padding:\s*0;/s)
+    expect(styles).toMatch(/\.panel-toolbar\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*padding:\s*0;[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.panel-toolbar\.window-drag-region\s*\{[^}]*-webkit-app-region:\s*drag;/s)
     expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\.is-canvas\s*\{[^}]*width:\s*var\(--window-controls-canvas-clearance\);/s)
     expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\.is-right-sidebar\s*\{[^}]*width:\s*var\(--window-controls-right-sidebar-clearance\);/s)
@@ -6341,6 +6651,18 @@ describe("App", () => {
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-top-menu svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.session-tab-close svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
+    expect(styles).toMatch(/\.pane-tab-bar\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.pane-tab-bar-leading,\s*\.pane-tab-bar-trailing\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.pane-tab-bar\.window-drag-region\s+\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*drag;/s)
+    expect(styles).toMatch(/\.pane-tab-bar-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu,[\s\S]*?\.pane-tab-bar\s+\.canvas-region-top-menu-add-button\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.pane-tab-merge-preview\s*\{[^}]*width:\s*12px;[^}]*height:\s*28px;[^}]*border-radius:\s*8px;[^}]*background:\s*#1677c8;[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.pane-drop-targets\s*\{[^}]*grid-template-columns:\s*120px minmax\(0,\s*1fr\) 120px;[^}]*grid-template-rows:\s*92px minmax\(0,\s*1fr\) 92px;/s)
+    expect(styles).toMatch(/\.pane-drop-target\s*\{[^}]*pointer-events:\s*auto;[^}]*background:\s*transparent;/s)
+    expect(styles).toMatch(/\.pane-drop-preview\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*6;[^}]*pointer-events:\s*none;/s)
+    expect(styles).toMatch(/\.pane-drop-preview-incoming\s*\{[^}]*background:\s*#1677c8;/s)
+    expect(styles).toMatch(/\.pane-drop-preview-current\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.7\);/s)
     expect(styles).toMatch(/\.canvas-top-menu-git-trigger svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
     expect(styles).toMatch(/\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)

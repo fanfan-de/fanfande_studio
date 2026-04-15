@@ -43,6 +43,25 @@ export interface CreateSessionTab {
   title: string
 }
 
+export type WorkbenchTabKind = "session" | "create-session"
+
+export type WorkbenchTabReference =
+  | {
+      kind: "session"
+      sessionID: string
+    }
+  | {
+      kind: "create-session"
+      createSessionTabID: string
+    }
+
+export interface WorkbenchPane {
+  id: string
+  size: number
+  tabs: WorkbenchTabReference[]
+  activeTabKey: string | null
+}
+
 export interface WorkspaceGroup {
   id: string
   name: string

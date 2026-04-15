@@ -41,10 +41,34 @@ import type {
   SkillInfo,
   SidebarActionKey,
   Turn,
+  WorkbenchPane,
+  WorkbenchTabReference,
   WorkspaceFileChangeIPCEvent,
   WorkspaceGroup,
 } from "./types"
 import { createID } from "./utils"
+import {
+  createWorkbenchLayoutFromLegacyPanes,
+  createWorkbenchLayoutWithTab,
+  dockTabAroundGroup,
+  filterLayoutTabs,
+  focusGroup,
+  getFirstGroupId,
+  getGroupIdsInOrder,
+  getGroupNode,
+  getGroupIdForTabId,
+  getReferenceForTabId,
+  getTabIdForReference,
+  moveTabToGroup,
+  normalizeLayoutState,
+  removeTabFromGroup,
+  replaceTabReferenceInGroup,
+  resizeSplitChildren,
+  setGroupActiveTab,
+  splitGroupWithReference,
+  upsertTabReferenceInGroup,
+  type WorkbenchLayoutState,
+} from "./workbench/core"
 import {
   findFirstSession,
   findSession,
@@ -274,6 +298,197 @@ function getNextSessionTabAfterClose(sessionIDs: string[], closedSessionID: stri
   return sessionIDs[index + 1] ?? sessionIDs[index - 1] ?? null
 }
 
+function createSessionWorkbenchTab(sessionID: string): WorkbenchTabReference {
+  return {
+    kind: "session",
+    sessionID,
+  }
+}
+
+function createCreateSessionWorkbenchTab(createSessionTabID: string): WorkbenchTabReference {
+  return {
+    kind: "create-session",
+    createSessionTabID,
+  }
+}
+
+function getWorkbenchTabKey(tab: WorkbenchTabReference) {
+  return tab.kind === "session" ? `session:${tab.sessionID}` : `create-session:${tab.createSessionTabID}`
+}
+
+function getWorkbenchTabReferenceFromKey(tabKey: string): WorkbenchTabReference | null {
+  if (tabKey.startsWith("session:")) {
+    return {
+      kind: "session",
+      sessionID: tabKey.slice("session:".length),
+    }
+  }
+
+  if (tabKey.startsWith("create-session:")) {
+    return {
+      kind: "create-session",
+      createSessionTabID: tabKey.slice("create-session:".length),
+    }
+  }
+
+  return null
+}
+
+function buildLegacyWorkbenchPanesFromLayout(layout: WorkbenchLayoutState): WorkbenchPane[] {
+  return getGroupIdsInOrder(layout).map((groupID) => {
+    const group = getGroupNode(layout, groupID)
+    const tabs = group?.tabs.flatMap((tabID) => {
+      const reference = getReferenceForTabId(layout, tabID)
+      return reference ? [reference] : []
+    }) ?? []
+    const activeReference = group?.activeTabId ? getReferenceForTabId(layout, group.activeTabId) : null
+
+    return {
+      id: groupID,
+      size: 1,
+      tabs,
+      activeTabKey: activeReference ? getWorkbenchTabKey(activeReference) : null,
+    }
+  })
+}
+
+function createWorkbenchPane(tabs: WorkbenchTabReference[], paneID = createID("pane"), size = 1): WorkbenchPane {
+  const nextTabs = tabs.length > 0 ? tabs : []
+  return {
+    id: paneID,
+    size,
+    tabs: nextTabs,
+    activeTabKey: nextTabs[0] ? getWorkbenchTabKey(nextTabs[0]) : null,
+  }
+}
+
+function getPaneActiveTab(pane: WorkbenchPane | null | undefined) {
+  if (!pane) return null
+  return pane.tabs.find((tab) => getWorkbenchTabKey(tab) === pane.activeTabKey) ?? pane.tabs[0] ?? null
+}
+
+function getPaneByID(panes: WorkbenchPane[], paneID: string | null) {
+  if (!paneID) return null
+  return panes.find((pane) => pane.id === paneID) ?? null
+}
+
+function getPaneByTabKey(panes: WorkbenchPane[], tabKey: string) {
+  return panes.find((pane) => pane.tabs.some((tab) => getWorkbenchTabKey(tab) === tabKey)) ?? null
+}
+
+function getPaneBySessionID(panes: WorkbenchPane[], sessionID: string) {
+  return panes.find((pane) => pane.tabs.some((tab) => tab.kind === "session" && tab.sessionID === sessionID)) ?? null
+}
+
+function getPaneTabByKey(pane: WorkbenchPane | null | undefined, tabKey: string) {
+  if (!pane) return null
+  return pane.tabs.find((tab) => getWorkbenchTabKey(tab) === tabKey) ?? null
+}
+
+function updatePaneActiveTab(panes: WorkbenchPane[], paneID: string, tabKey: string | null) {
+  return panes.map((pane) =>
+    pane.id === paneID
+      ? {
+          ...pane,
+          activeTabKey: tabKey,
+        }
+      : pane,
+  )
+}
+
+function upsertPaneTab(panes: WorkbenchPane[], paneID: string, tab: WorkbenchTabReference) {
+  const nextTabKey = getWorkbenchTabKey(tab)
+  return panes.map((pane) => {
+    if (pane.id !== paneID) return pane
+    if (pane.tabs.some((current) => getWorkbenchTabKey(current) === nextTabKey)) {
+      return {
+        ...pane,
+        activeTabKey: nextTabKey,
+      }
+    }
+
+    return {
+      ...pane,
+      tabs: [...pane.tabs, tab],
+      activeTabKey: nextTabKey,
+    }
+  })
+}
+
+function replacePaneTab(
+  panes: WorkbenchPane[],
+  paneID: string,
+  currentTabKey: string,
+  nextTab: WorkbenchTabReference,
+) {
+  const nextTabKey = getWorkbenchTabKey(nextTab)
+  return panes.map((pane) => {
+    if (pane.id !== paneID) return pane
+    const nextTabs = pane.tabs.flatMap((tab) =>
+      getWorkbenchTabKey(tab) === currentTabKey ? [nextTab] : getWorkbenchTabKey(tab) === nextTabKey ? [] : [tab],
+    )
+    return {
+      ...pane,
+      tabs: nextTabs,
+      activeTabKey: nextTabKey,
+    }
+  })
+}
+
+function removePaneTab(panes: WorkbenchPane[], paneID: string, tabKey: string) {
+  const nextPanes = panes
+    .map((pane) => {
+      if (pane.id !== paneID) return pane
+      const nextTabs = pane.tabs.filter((tab) => getWorkbenchTabKey(tab) !== tabKey)
+      const nextActiveTabKey =
+        pane.activeTabKey !== tabKey
+          ? pane.activeTabKey
+          : getNextSessionTabAfterClose(
+              pane.tabs.map((tab) => getWorkbenchTabKey(tab)),
+              tabKey,
+            )
+      return {
+        ...pane,
+        tabs: nextTabs,
+        activeTabKey: nextTabs.some((tab) => getWorkbenchTabKey(tab) === nextActiveTabKey) ? nextActiveTabKey : nextTabs[0] ? getWorkbenchTabKey(nextTabs[0]) : null,
+      }
+    })
+    .filter((pane) => pane.tabs.length > 0)
+
+  return nextPanes
+}
+
+function insertPaneAdjacent(panes: WorkbenchPane[], targetPaneID: string, nextPane: WorkbenchPane, side: "left" | "right") {
+  const targetIndex = panes.findIndex((pane) => pane.id === targetPaneID)
+  if (targetIndex === -1) {
+    return [...panes, nextPane]
+  }
+
+  const targetPane = panes[targetIndex]
+  const targetSize = Math.max(targetPane.size, 0.2)
+  const splitSize = targetSize / 2
+  const resizedTargetPane = {
+    ...targetPane,
+    size: splitSize,
+  }
+  const insertedPane = {
+    ...nextPane,
+    size: splitSize,
+  }
+  const nextPanes = [...panes]
+  nextPanes[targetIndex] = resizedTargetPane
+  nextPanes.splice(side === "left" ? targetIndex : targetIndex + 1, 0, insertedPane)
+  return nextPanes
+}
+
+function getWorkbenchSessionIDs(panes: WorkbenchPane[]) {
+  return getUniqueSessionIDs(
+    panes.flatMap((pane) =>
+      pane.tabs.flatMap((tab) => (tab.kind === "session" ? [tab.sessionID] : [])),
+    ),
+  )
+}
+
 function readStreamString(value: unknown) {
   return typeof value === "string" ? value : ""
 }
@@ -360,6 +575,14 @@ const initialCreateSessionTab = initialSelection.session === null
   ? createCreateSessionTab(initialSelection.workspace?.id ?? null)
   : null
 const seedWorkspaceIDs = new Set(seedWorkspaces.map((workspace) => workspace.id))
+const initialWorkbenchTab =
+  initialSelection.session !== null
+    ? createSessionWorkbenchTab(initialSelection.session.id)
+    : initialCreateSessionTab
+      ? createCreateSessionWorkbenchTab(initialCreateSessionTab.id)
+      : null
+const initialWorkbenchPane = initialWorkbenchTab ? createWorkbenchPane([initialWorkbenchTab]) : null
+const initialWorkbenchLayout = createWorkbenchLayoutFromLegacyPanes(initialWorkbenchPane ? [initialWorkbenchPane] : [])
 
 export function useAgentWorkspace({
   agentConnected,
@@ -386,23 +609,26 @@ export function useAgentWorkspace({
   const workspaceReloadSuppressedUntilRef = useRef<Record<string, number>>({})
   const [workspaces, setWorkspaces] = useState(seedWorkspaces)
   const [selectedFolderID, setSelectedFolderID] = useState<string | null>(initialSelection.workspace?.id ?? null)
-  const [activeSessionID, setActiveSessionID] = useState<string | null>(initialSelection.session?.id ?? null)
-  const [openCanvasSessionIDs, setOpenCanvasSessionIDs] = useState<string[]>(
-    initialSelection.session ? [initialSelection.session.id] : [],
-  )
   const [createSessionTabs, setCreateSessionTabs] = useState<CreateSessionTab[]>(initialCreateSessionTab ? [initialCreateSessionTab] : [])
-  const [activeCreateSessionTabID, setActiveCreateSessionTabID] = useState<string | null>(initialCreateSessionTab?.id ?? null)
+  const [workbenchLayout, setWorkbenchLayout] = useState<WorkbenchLayoutState>(initialWorkbenchLayout)
   const [expandedFolderID, setExpandedFolderID] = useState<string | null>(initialSelection.workspace?.id ?? null)
   const [hoveredFolderID, setHoveredFolderID] = useState<string | null>(null)
   const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("workspace")
   const [rightSidebarView, setRightSidebarView] = useState<RightSidebarView>("changes")
-  const [draft, setDraft] = useState("Help me align the desktop sidebar with the Pencil design.")
+  const [draftByTabKey, setDraftByTabKey] = useState<Record<string, string>>(() =>
+    initialWorkbenchTab
+      ? {
+          [getWorkbenchTabKey(initialWorkbenchTab)]: "Help me align the desktop sidebar with the Pencil design.",
+        }
+      : {},
+  )
   const [conversations, setConversations] = useState(initialConversations)
   const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
   const [sessionDirectoryBySession, setSessionDirectoryBySession] = useState<Record<string, string>>({})
-  const [isSending, setIsSending] = useState(false)
+  const [composerAttachmentsByTabKey, setComposerAttachmentsByTabKey] = useState<Record<string, ComposerAttachment[]>>({})
+  const [isSendingByTabKey, setIsSendingByTabKey] = useState<Record<string, boolean>>({})
+  const [isCreatingSessionByTabKey, setIsCreatingSessionByTabKey] = useState<Record<string, boolean>>({})
   const [isCreatingProject, setIsCreatingProject] = useState(false)
-  const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [deletingSessionID, setDeletingSessionID] = useState<string | null>(null)
   const [canLoadSessionHistory, setCanLoadSessionHistory] = useState(false)
   const [isInitialWorkspaceLoadPending, setIsInitialWorkspaceLoadPending] = useState(() =>
@@ -417,7 +643,7 @@ export function useAgentWorkspace({
   const [contextUsageBySession, setContextUsageBySession] = useState<Record<string, SessionContextUsage>>({})
   const [permissionRequestActionRequestID, setPermissionRequestActionRequestID] = useState<string | null>(null)
   const [permissionRequestActionError, setPermissionRequestActionError] = useState<string | null>(null)
-  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([])
+  const [composerRefreshVersion, setComposerRefreshVersion] = useState(0)
   const [composerModels, setComposerModels] = useState<ProviderModel[]>([])
   const [composerDefaultModel, setComposerDefaultModel] = useState<ProviderModel | null>(null)
   const [composerSelectedModel, setComposerSelectedModel] = useState<string | null>(null)
@@ -447,8 +673,48 @@ export function useAgentWorkspace({
     allowPdf: false,
   })
 
+  function resolveWorkspaceIDForTab(tab: WorkbenchTabReference | null) {
+    if (!tab) return null
+    if (tab.kind === "session") {
+      return findSession(workspaces, tab.sessionID).workspace?.id ?? null
+    }
+    return createSessionTabs.find((item) => item.id === tab.createSessionTabID)?.workspaceID ?? null
+  }
+
+  function resolveWorkbenchGroupID(layout: WorkbenchLayoutState, preferredGroupID?: string | null) {
+    if (preferredGroupID && getGroupNode(layout, preferredGroupID)) return preferredGroupID
+    return getFirstGroupId(layout)
+  }
+
+  function getWorkbenchGroupIDForTabKey(layout: WorkbenchLayoutState, tabKey: string) {
+    const reference = getWorkbenchTabReferenceFromKey(tabKey)
+    return reference ? getGroupIdForTabId(layout, getTabIdForReference(reference)) : null
+  }
+
+  function setFocusedPaneID(nextPaneID: string | null) {
+    setWorkbenchLayout((current) => focusGroup(current, nextPaneID))
+  }
+
+  const orderedWorkbenchGroupIDs = getGroupIdsInOrder(workbenchLayout)
+  const focusedPaneID = workbenchLayout.focusedGroupId ?? orderedWorkbenchGroupIDs[0] ?? null
+  const focusedPane = getGroupNode(workbenchLayout, focusedPaneID)
+  const activeTab = focusedPane?.activeTabId ? getReferenceForTabId(workbenchLayout, focusedPane.activeTabId) : null
+  const activeTabKey = activeTab ? getWorkbenchTabKey(activeTab) : null
+  const activeSessionID = activeTab?.kind === "session" ? activeTab.sessionID : null
+  const activeCreateSessionTabID = activeTab?.kind === "create-session" ? activeTab.createSessionTabID : null
+  const openCanvasSessionIDs = getUniqueSessionIDs(
+    Object.values(workbenchLayout.docs).flatMap((doc) => (doc.type === "session" ? [doc.sessionID] : [])),
+  )
+  const workbenchPanes = buildLegacyWorkbenchPanesFromLayout(workbenchLayout)
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
-  const selectedWorkspace = findWorkspaceByID(workspaces, selectedFolderID) ?? activeWorkspace ?? workspaces[0] ?? null
+  const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
+  const activeTabWorkspaceID = resolveWorkspaceIDForTab(activeTab)
+  const selectedWorkspace =
+    findWorkspaceByID(workspaces, selectedFolderID) ??
+    findWorkspaceByID(workspaces, activeTabWorkspaceID) ??
+    activeWorkspace ??
+    workspaces[0] ??
+    null
   const selectedProjectID =
     isInitialWorkspaceLoadPending && selectedWorkspace && seedWorkspaceIDs.has(selectedWorkspace.id)
       ? null
@@ -462,14 +728,21 @@ export function useAgentWorkspace({
   const activeSessionSelectedDiffFile = activeSession ? selectedDiffFileBySession[activeSession.id] ?? null : null
   const activePendingPermissionRequests = activeSession ? pendingPermissionRequestsBySession[activeSession.id] ?? [] : []
   const activeSessionContextUsage = activeSession ? contextUsageBySession[activeSession.id] ?? null : null
-  const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
   const isCreateSessionTabActive = activeCreateSessionTab !== null
   const createSessionWorkspaceID = activeCreateSessionTab?.workspaceID ?? null
   const createSessionTitle = activeCreateSessionTab?.title ?? ""
-  const canvasSessionTabs = openCanvasSessionIDs.flatMap((sessionID) => {
-    const { session } = findSession(workspaces, sessionID)
-    return session ? [session] : []
-  })
+  const draft = activeTabKey ? draftByTabKey[activeTabKey] ?? "" : ""
+  const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
+  const isSending = activeTabKey ? Boolean(isSendingByTabKey[activeTabKey]) : false
+  const isCreatingSession = activeTabKey ? Boolean(isCreatingSessionByTabKey[activeTabKey]) : false
+  const canvasSessionTabs = focusedPane
+    ? focusedPane.tabs.flatMap((tabID) => {
+        const reference = getReferenceForTabId(workbenchLayout, tabID)
+        if (!reference || reference.kind !== "session") return []
+        const { session } = findSession(workspaces, reference.sessionID)
+        return session ? [session] : []
+      })
+    : []
   const composerModelOptions: ComposerModelOption[] = composerModels
     .filter((model) => model.available)
     .map((model) => ({
@@ -1145,12 +1418,23 @@ export function useAgentWorkspace({
           const nextSelection = findFirstSession(nextWorkspaces)
           const nextFolderID = nextSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null
           const nextCreateSessionTab = nextSelection.session === null ? createCreateSessionTab(nextFolderID) : null
+          const nextInitialTab =
+            nextSelection.session !== null
+              ? createSessionWorkbenchTab(nextSelection.session.id)
+              : nextCreateSessionTab
+                ? createCreateSessionWorkbenchTab(nextCreateSessionTab.id)
+                : null
+          const nextPane = nextInitialTab ? createWorkbenchPane([nextInitialTab]) : null
           setSelectedFolderID(nextFolderID)
           setExpandedFolderID(nextFolderID)
-          setActiveSessionID(nextSelection.session?.id ?? null)
-          setOpenCanvasSessionIDs(nextSelection.session ? [nextSelection.session.id] : [])
           setCreateSessionTabs(nextCreateSessionTab ? [nextCreateSessionTab] : [])
-          setActiveCreateSessionTabID(nextCreateSessionTab?.id ?? null)
+          setWorkbenchLayout(nextInitialTab ? createWorkbenchLayoutWithTab(nextInitialTab) : normalizeLayoutState({
+            rootId: null,
+            nodes: {},
+            tabs: {},
+            docs: {},
+            focusedGroupId: null,
+          }))
           lastFocusedSessionIDRef.current = nextSelection.session?.id ?? null
         }
 
@@ -1249,10 +1533,6 @@ export function useAgentWorkspace({
     }
   }
 
-  useEffect(() => {
-    void refreshComposerModels()
-  }, [selectedProjectID])
-
   async function refreshComposerSkills() {
     const projectID = selectedProjectID
     const getProjectSkills = window.desktop?.getProjectSkills
@@ -1287,10 +1567,6 @@ export function useAgentWorkspace({
       }
     }
   }
-
-  useEffect(() => {
-    void refreshComposerSkills()
-  }, [selectedProjectID])
 
   async function refreshComposerMcp() {
     const projectID = selectedProjectID
@@ -1329,10 +1605,6 @@ export function useAgentWorkspace({
   }
 
   useEffect(() => {
-    void refreshComposerMcp()
-  }, [selectedProjectID])
-
-  useEffect(() => {
     if (!selectedFolderID) return
 
     const projectRow = projectRowRefs.current[selectedFolderID]
@@ -1352,10 +1624,9 @@ export function useAgentWorkspace({
     const validWorkspaceIDs = new Set(workspaces.map((workspace) => workspace.id))
     const validSessionIDs = new Set(workspaces.flatMap((workspace) => workspace.sessions.map((session) => session.id)))
 
-    setOpenCanvasSessionIDs((current) => {
-      const next = current.filter((sessionID) => validSessionIDs.has(sessionID))
-      return next.length === current.length ? current : next
-    })
+    setWorkbenchLayout((current) =>
+      filterLayoutTabs(current, (reference) => reference.kind !== "session" || validSessionIDs.has(reference.sessionID)),
+    )
 
     const fallbackWorkspaceID = resolveCreateSessionWorkspaceID(workspaces, selectedFolderID, activeWorkspace?.id ?? null)
 
@@ -1380,7 +1651,7 @@ export function useAgentWorkspace({
   }, [activeWorkspace?.id, selectedFolderID, workspaces])
 
   useEffect(() => {
-    if (openCanvasSessionIDs.length > 0) return
+    if (workbenchPanes.length > 0) return
 
     const fallbackWorkspaceID = resolveCreateSessionWorkspaceID(
       workspaces,
@@ -1397,41 +1668,59 @@ export function useAgentWorkspace({
       setCreateSessionTabs([fallbackCreateSessionTab])
     }
 
-    setActiveCreateSessionTabID(fallbackCreateSessionTab.id)
-    setActiveSessionID(null)
+    setWorkbenchLayout(createWorkbenchLayoutWithTab(createCreateSessionWorkbenchTab(fallbackCreateSessionTab.id)))
 
     if (fallbackCreateSessionTab.workspaceID !== selectedFolderID) {
       setSelectedFolderID(fallbackCreateSessionTab.workspaceID)
       setExpandedFolderID(fallbackCreateSessionTab.workspaceID)
     }
-  }, [activeCreateSessionTab, createSessionTabs, openCanvasSessionIDs, selectedFolderID, workspaces, activeWorkspace?.id])
+  }, [activeCreateSessionTab, createSessionTabs, selectedFolderID, workspaces, activeWorkspace?.id, workbenchPanes])
 
-  function activateSessionTab(workspaceID: string, sessionID: string) {
+  useEffect(() => {
+    if (focusedPaneID && workbenchPanes.some((pane) => pane.id === focusedPaneID)) return
+    setFocusedPaneID(workbenchPanes[0]?.id ?? null)
+  }, [focusedPaneID, workbenchPanes])
+
+  function activateSessionTab(workspaceID: string, sessionID: string, paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null) {
     lastFocusedSessionIDRef.current = sessionID
     setSelectedFolderID(workspaceID)
     setExpandedFolderID(workspaceID)
-    setActiveSessionID(sessionID)
-    setActiveCreateSessionTabID(null)
+    setWorkbenchLayout((current) =>
+      upsertTabReferenceInGroup(current, resolveWorkbenchGroupID(current, paneID), createSessionWorkbenchTab(sessionID)),
+    )
   }
 
-  function focusSession(workspaceID: string, sessionID: string) {
-    activateSessionTab(workspaceID, sessionID)
-    setOpenCanvasSessionIDs((current) => getUniqueSessionIDs([...current, sessionID]))
+  function focusSession(workspaceID: string, sessionID: string, paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null) {
+    const existingPaneID = getGroupIdForTabId(workbenchLayout, getTabIdForReference(createSessionWorkbenchTab(sessionID)))
+    if (existingPaneID) {
+      activateSessionTab(workspaceID, sessionID, existingPaneID)
+      return
+    }
+
+    activateSessionTab(workspaceID, sessionID, paneID)
   }
 
-  function focusCreateSessionTab(createSessionTabID: string) {
+  function focusCreateSessionTab(
+    createSessionTabID: string,
+    paneID = getPaneByTabKey(workbenchPanes, `create-session:${createSessionTabID}`)?.id ?? focusedPane?.id ?? workbenchPanes[0]?.id ?? null,
+  ) {
     const nextCreateSessionTab = createSessionTabs.find((tab) => tab.id === createSessionTabID)
     if (!nextCreateSessionTab) return
 
-    setActiveCreateSessionTabID(nextCreateSessionTab.id)
-    setActiveSessionID(null)
+    setWorkbenchLayout((current) =>
+      upsertTabReferenceInGroup(current, resolveWorkbenchGroupID(current, paneID), createCreateSessionWorkbenchTab(nextCreateSessionTab.id)),
+    )
     setSelectedFolderID(nextCreateSessionTab.workspaceID)
     setExpandedFolderID(nextCreateSessionTab.workspaceID)
   }
 
-  function openCreateSessionTab(preferredWorkspaceID?: string | null) {
+  function openCreateSessionTab(
+    preferredWorkspaceID?: string | null,
+    paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null,
+    workspaceScope = workspaces,
+  ) {
     const nextWorkspaceID = resolveCreateSessionWorkspaceID(
-      workspaces,
+      workspaceScope,
       preferredWorkspaceID,
       selectedFolderID,
       activeWorkspace?.id ?? null,
@@ -1439,21 +1728,29 @@ export function useAgentWorkspace({
     const nextCreateSessionTab = createCreateSessionTab(nextWorkspaceID)
 
     setCreateSessionTabs((current) => [...current, nextCreateSessionTab])
-    setActiveCreateSessionTabID(nextCreateSessionTab.id)
-    setActiveSessionID(null)
+    setWorkbenchLayout((current) =>
+      upsertTabReferenceInGroup(current, resolveWorkbenchGroupID(current, paneID), createCreateSessionWorkbenchTab(nextCreateSessionTab.id)),
+    )
 
     setSelectedFolderID(nextWorkspaceID)
     setExpandedFolderID(nextWorkspaceID)
   }
 
-  function focusMostRecentCreateSessionTab(preferredWorkspaceID?: string | null) {
-    const nextCreateSessionTabID = activeCreateSessionTabID ?? createSessionTabs[createSessionTabs.length - 1]?.id ?? null
+  function focusMostRecentCreateSessionTab(
+    preferredWorkspaceID?: string | null,
+    paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null,
+  ) {
+    const paneActiveTab = paneID ? getPaneActiveTab(getPaneByID(workbenchPanes, paneID)) : null
+    const nextCreateSessionTabID =
+      (paneActiveTab?.kind === "create-session" ? paneActiveTab.createSessionTabID : null) ??
+      createSessionTabs[createSessionTabs.length - 1]?.id ??
+      null
     if (nextCreateSessionTabID) {
-      focusCreateSessionTab(nextCreateSessionTabID)
+      focusCreateSessionTab(nextCreateSessionTabID, paneID)
       return
     }
 
-    openCreateSessionTab(preferredWorkspaceID)
+    openCreateSessionTab(preferredWorkspaceID, paneID)
   }
 
   function removeWorkspaceSessionState(workspace: WorkspaceGroup) {
@@ -1549,13 +1846,20 @@ export function useAgentWorkspace({
     options?: {
       createSessionTabID?: string | null
       closeCreateTab?: boolean
+      paneID?: string | null
       skipInitialHistoryLoad?: boolean
       title?: string
     },
   ) {
-    if (isCreatingSession || !window.desktop?.createFolderSession) return null
+    const createTabKey = options?.createSessionTabID ? `create-session:${options.createSessionTabID}` : null
+    if ((createTabKey && isCreatingSessionByTabKey[createTabKey]) || !window.desktop?.createFolderSession) return null
 
-    setIsCreatingSession(true)
+    if (createTabKey) {
+      setIsCreatingSessionByTabKey((current) => ({
+        ...current,
+        [createTabKey]: true,
+      }))
+    }
     try {
       const nextTitle = options?.title?.trim()
       const created = await window.desktop.createFolderSession({
@@ -1584,6 +1888,19 @@ export function useAgentWorkspace({
 
       if (options?.closeCreateTab && options.createSessionTabID) {
         setCreateSessionTabs((current) => current.filter((tab) => tab.id !== options.createSessionTabID))
+        setWorkbenchLayout((current) => {
+          const targetPaneID =
+            options.paneID ??
+            getGroupIdForTabId(current, getTabIdForReference(createCreateSessionWorkbenchTab(options.createSessionTabID!))) ??
+            resolveWorkbenchGroupID(current, focusedPane?.id ?? null)
+          if (!targetPaneID) return current
+          return replaceTabReferenceInGroup(
+            current,
+            targetPaneID,
+            getTabIdForReference(createCreateSessionWorkbenchTab(options.createSessionTabID!)),
+            createSessionWorkbenchTab(created.session.id),
+          )
+        })
       } else if (options?.createSessionTabID) {
         setCreateSessionTabs((current) =>
           current.map((tab) =>
@@ -1596,9 +1913,26 @@ export function useAgentWorkspace({
               : tab,
           ),
         )
+        setWorkbenchLayout((current) => {
+          const targetPaneID =
+            options.paneID ??
+            getGroupIdForTabId(current, getTabIdForReference(createCreateSessionWorkbenchTab(options.createSessionTabID!))) ??
+            resolveWorkbenchGroupID(current, focusedPane?.id ?? null)
+          if (!targetPaneID) return current
+          return replaceTabReferenceInGroup(
+            current,
+            targetPaneID,
+            getTabIdForReference(createCreateSessionWorkbenchTab(options.createSessionTabID!)),
+            createSessionWorkbenchTab(created.session.id),
+          )
+        })
+      } else if (options?.paneID) {
+        setWorkbenchLayout((current) =>
+          upsertTabReferenceInGroup(current, resolveWorkbenchGroupID(current, options.paneID), createSessionWorkbenchTab(created.session.id)),
+        )
       }
 
-      focusSession(workspace.id, created.session.id)
+      focusSession(workspace.id, created.session.id, options?.paneID ?? undefined)
       return {
         backendSessionID: created.session.id,
         session: nextSession,
@@ -1608,7 +1942,14 @@ export function useAgentWorkspace({
       console.error("[desktop] createFolderSession failed:", error)
       return null
     } finally {
-      setIsCreatingSession(false)
+      if (createTabKey) {
+        setIsCreatingSessionByTabKey((current) => {
+          if (!(createTabKey in current)) return current
+          const next = { ...current }
+          delete next[createTabKey]
+          return next
+        })
+      }
     }
   }
 
@@ -1639,15 +1980,10 @@ export function useAgentWorkspace({
         setCanLoadSessionHistory(true)
         setExpandedFolderID(createdWorkspace.id)
         setSelectedFolderID(createdWorkspace.id)
-        setActiveSessionID(createdWorkspace.sessions[0]?.id ?? null)
-        setOpenCanvasSessionIDs(createdWorkspace.sessions[0]?.id ? [createdWorkspace.sessions[0].id] : [])
         if (createdWorkspace.sessions[0]) {
-          setCreateSessionTabs([])
-          setActiveCreateSessionTabID(null)
+          focusSession(createdWorkspace.id, createdWorkspace.sessions[0].id)
         } else {
-          const nextCreateSessionTab = createCreateSessionTab(createdWorkspace.id)
-          setCreateSessionTabs([nextCreateSessionTab])
-          setActiveCreateSessionTabID(nextCreateSessionTab.id)
+          openCreateSessionTab(createdWorkspace.id, undefined, [...workspaces, nextWorkspace])
         }
         lastFocusedSessionIDRef.current = createdWorkspace.sessions[0]?.id ?? null
       } catch (error) {
@@ -1706,34 +2042,21 @@ export function useAgentWorkspace({
   }
 
   function handleSessionSelect(workspaceID: string, sessionID: string) {
-    if (openCanvasSessionIDs.includes(sessionID)) {
-      activateSessionTab(workspaceID, sessionID)
+    const existingPaneID = getGroupIdForTabId(workbenchLayout, getTabIdForReference(createSessionWorkbenchTab(sessionID)))
+    if (existingPaneID) {
+      focusSession(workspaceID, sessionID, existingPaneID)
       return
     }
 
-    if (activeSessionID) {
-      activateSessionTab(workspaceID, sessionID)
-      setOpenCanvasSessionIDs((current) => {
-        const activeIndex = current.indexOf(activeSessionID)
-        if (activeIndex === -1) {
-          return getUniqueSessionIDs([...current, sessionID])
-        }
-
-        const nextSessionIDs = [...current]
-        nextSessionIDs[activeIndex] = sessionID
-        return nextSessionIDs
-      })
+    const targetPaneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null
+    if (!targetPaneID) {
+      setWorkbenchLayout(createWorkbenchLayoutWithTab(createSessionWorkbenchTab(sessionID)))
+      setSelectedFolderID(workspaceID)
+      setExpandedFolderID(workspaceID)
       return
     }
 
-    if (activeCreateSessionTabID) {
-      activateSessionTab(workspaceID, sessionID)
-      setCreateSessionTabs((current) => current.filter((tab) => tab.id !== activeCreateSessionTabID))
-      setOpenCanvasSessionIDs((current) => getUniqueSessionIDs([...current, sessionID]))
-      return
-    }
-
-    focusSession(workspaceID, sessionID)
+    focusSession(workspaceID, sessionID, targetPaneID)
   }
 
   async function handleProjectCreateSession(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
@@ -1747,18 +2070,10 @@ export function useAgentWorkspace({
 
     const nextWorkspaces = workspaces.filter((item) => item.id !== workspace.id)
     const removedSessionIDs = new Set(workspace.sessions.map((session) => session.id))
-    const nextOpenCanvasSessionIDs = openCanvasSessionIDs.filter((sessionID) => !removedSessionIDs.has(sessionID))
-    const nextFallbackSessionID =
-      (lastFocusedSessionIDRef.current && nextOpenCanvasSessionIDs.includes(lastFocusedSessionIDRef.current)
-        ? lastFocusedSessionIDRef.current
-        : null) ??
-      nextOpenCanvasSessionIDs[nextOpenCanvasSessionIDs.length - 1] ??
-      null
-    const nextFallbackSelection = nextFallbackSessionID ? findSession(nextWorkspaces, nextFallbackSessionID) : { workspace: null, session: null }
     const nextCreateSessionWorkspaceID = resolveCreateSessionWorkspaceID(
       nextWorkspaces,
       activeCreateSessionTab?.workspaceID === workspace.id ? null : activeCreateSessionTab?.workspaceID ?? null,
-      nextFallbackSelection.workspace?.id ?? selectedFolderID,
+      selectedFolderID,
     )
     const nextCreateSessionTabs = createSessionTabs.map((tab) => {
       const nextWorkspaceID =
@@ -1772,31 +2087,25 @@ export function useAgentWorkspace({
             workspaceID: nextWorkspaceID,
           }
     })
-    const nextActiveCreateSessionTabID =
-      (activeCreateSessionTabID && nextCreateSessionTabs.some((tab) => tab.id === activeCreateSessionTabID) ? activeCreateSessionTabID : null) ??
-      nextCreateSessionTabs[nextCreateSessionTabs.length - 1]?.id ??
-      null
+    const nextWorkbenchLayout = filterLayoutTabs(
+      workbenchLayout,
+      (reference) => reference.kind !== "session" || !removedSessionIDs.has(reference.sessionID),
+    )
+    const nextFocusedPaneID = nextWorkbenchLayout.focusedGroupId
+    const nextFocusedPane = getGroupNode(nextWorkbenchLayout, nextFocusedPaneID)
+    const nextFocusedTab = nextFocusedPane?.activeTabId ? getReferenceForTabId(nextWorkbenchLayout, nextFocusedPane.activeTabId) : null
+    const nextFocusedWorkspaceID =
+      nextFocusedTab?.kind === "session"
+        ? findSession(nextWorkspaces, nextFocusedTab.sessionID).workspace?.id ?? null
+        : nextCreateSessionTabs.find((tab) => tab.id === nextFocusedTab?.createSessionTabID)?.workspaceID ?? null
 
     setWorkspaces(nextWorkspaces)
-    setOpenCanvasSessionIDs(nextOpenCanvasSessionIDs)
+    setWorkbenchLayout(nextWorkbenchLayout)
     removeWorkspaceSessionState(workspace)
     setCreateSessionTabs(nextCreateSessionTabs)
     setHoveredFolderID((current) => (current === workspace.id ? null : current))
-
-    if (isCreateSessionTabActive || nextFallbackSelection.session === null) {
-      const nextActiveCreateSessionTab = nextCreateSessionTabs.find((tab) => tab.id === nextActiveCreateSessionTabID) ?? null
-      setActiveCreateSessionTabID(nextActiveCreateSessionTabID)
-      setSelectedFolderID(nextActiveCreateSessionTab?.workspaceID ?? nextCreateSessionWorkspaceID)
-      setExpandedFolderID(nextActiveCreateSessionTab?.workspaceID ?? nextCreateSessionWorkspaceID)
-      setActiveSessionID(null)
-      return
-    }
-
-    lastFocusedSessionIDRef.current = nextFallbackSelection.session.id
-    setSelectedFolderID(nextFallbackSelection.workspace?.id ?? nextCreateSessionWorkspaceID)
-    setExpandedFolderID(nextFallbackSelection.workspace?.id ?? nextCreateSessionWorkspaceID)
-    setActiveSessionID(nextFallbackSelection.session.id)
-    setActiveCreateSessionTabID(null)
+    setSelectedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID)
+    setExpandedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID)
   }
 
   async function handleSessionDelete(workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) {
@@ -1816,7 +2125,6 @@ export function useAgentWorkspace({
             : item,
         ),
       )
-      const nextOpenCanvasSessionIDs = openCanvasSessionIDs.filter((sessionID) => sessionID !== session.id)
       const nextCreateSessionWorkspaceID = resolveCreateSessionWorkspaceID(
         nextWorkspaces,
         activeCreateSessionTab?.workspaceID ?? createSessionWorkspaceID,
@@ -1829,21 +2137,22 @@ export function useAgentWorkspace({
           ? tab
           : {
               ...tab,
-              workspaceID: nextWorkspaceID,
-            }
+            workspaceID: nextWorkspaceID,
+          }
       })
-      const nextSessionID =
-        getNextSessionTabAfterClose(openCanvasSessionIDs, session.id) &&
-        nextOpenCanvasSessionIDs.includes(getNextSessionTabAfterClose(openCanvasSessionIDs, session.id) ?? "")
-          ? getNextSessionTabAfterClose(openCanvasSessionIDs, session.id)
-          : null
-      const nextSelection =
-        nextSessionID && activeSessionID === session.id
-          ? findSession(nextWorkspaces, nextSessionID)
-          : selectAfterSessionDelete(nextWorkspaces, workspace.id, session.id, activeSessionID)
+      const nextWorkbenchLayout = filterLayoutTabs(
+        workbenchLayout,
+        (reference) => reference.kind !== "session" || reference.sessionID !== session.id,
+      )
+      const nextFocusedPane = getGroupNode(nextWorkbenchLayout, nextWorkbenchLayout.focusedGroupId)
+      const nextFocusedTab = nextFocusedPane?.activeTabId ? getReferenceForTabId(nextWorkbenchLayout, nextFocusedPane.activeTabId) : null
+      const nextFocusedWorkspaceID =
+        nextFocusedTab?.kind === "session"
+          ? findSession(nextWorkspaces, nextFocusedTab.sessionID).workspace?.id ?? null
+          : nextCreateSessionTabs.find((tab) => tab.id === nextFocusedTab?.createSessionTabID)?.workspaceID ?? null
 
       setWorkspaces(nextWorkspaces)
-      setOpenCanvasSessionIDs(nextOpenCanvasSessionIDs)
+      setWorkbenchLayout(nextWorkbenchLayout)
       setCreateSessionTabs(nextCreateSessionTabs)
       setConversations((prev) => removeConversationSession(prev, session.id))
       setAgentSessions((prev) => removeAgentSession(prev, session.id))
@@ -1892,30 +2201,8 @@ export function useAgentWorkspace({
           delete pendingStreamsRef.current[streamID]
         }
       }
-
-      if (nextOpenCanvasSessionIDs.length === 0) {
-        const nextFallbackCreateSessionTab =
-          (activeCreateSessionTabID ? nextCreateSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) : null) ??
-          nextCreateSessionTabs[nextCreateSessionTabs.length - 1] ??
-          createCreateSessionTab(nextCreateSessionWorkspaceID)
-
-        if (nextCreateSessionTabs.length === 0) {
-          setCreateSessionTabs([nextFallbackCreateSessionTab])
-        }
-
-        setActiveCreateSessionTabID(nextFallbackCreateSessionTab.id)
-        setSelectedFolderID(nextFallbackCreateSessionTab.workspaceID)
-        setExpandedFolderID(nextFallbackCreateSessionTab.workspaceID)
-        setActiveSessionID(null)
-      } else {
-        setSelectedFolderID(nextSelection.workspace?.id ?? nextCreateSessionWorkspaceID ?? nextWorkspaces[0]?.id ?? null)
-        setExpandedFolderID(nextSelection.workspace?.id ?? nextCreateSessionWorkspaceID ?? null)
-        setActiveSessionID(nextSelection.session?.id ?? null)
-        setActiveCreateSessionTabID(null)
-        if (nextSelection.session) {
-          lastFocusedSessionIDRef.current = nextSelection.session.id
-        }
-      }
+      setSelectedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID ?? nextWorkspaces[0]?.id ?? null)
+      setExpandedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID ?? null)
     } catch (error) {
       console.error("[desktop] archiveAgentSession failed:", error)
     } finally {
@@ -1923,84 +2210,48 @@ export function useAgentWorkspace({
     }
   }
 
-  function handleCanvasSessionTabSelect(sessionID: string) {
+  function handleCanvasSessionTabSelect(sessionID: string, paneID?: string) {
     const nextSelection = findSession(workspaces, sessionID)
     if (!nextSelection.workspace || !nextSelection.session) return
 
-    focusSession(nextSelection.workspace.id, nextSelection.session.id)
+    focusSession(nextSelection.workspace.id, nextSelection.session.id, paneID)
   }
 
-  function handleCanvasSessionTabClose(sessionID: string) {
-    const nextOpenCanvasSessionIDs = openCanvasSessionIDs.filter((currentSessionID) => currentSessionID !== sessionID)
-    setOpenCanvasSessionIDs(nextOpenCanvasSessionIDs)
+  function handleCanvasSessionTabClose(sessionID: string, paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null) {
+    if (!paneID) return
 
-    if (activeSessionID !== sessionID || isCreateSessionTabActive) {
-      if (nextOpenCanvasSessionIDs.length === 0) {
-        focusMostRecentCreateSessionTab(selectedFolderID)
-      }
-      return
-    }
-
-    const nextSessionID = getNextSessionTabAfterClose(openCanvasSessionIDs, sessionID)
-    if (nextSessionID) {
-      const nextSelection = findSession(workspaces, nextSessionID)
-      if (nextSelection.workspace && nextSelection.session) {
-        focusSession(nextSelection.workspace.id, nextSelection.session.id)
-        return
-      }
-    }
-
-    focusMostRecentCreateSessionTab(selectedFolderID)
+    setWorkbenchLayout((current) =>
+      removeTabFromGroup(current, paneID, getTabIdForReference(createSessionWorkbenchTab(sessionID))),
+    )
   }
 
-  function handleCreateSessionTabSelect(createSessionTabID: string) {
-    focusCreateSessionTab(createSessionTabID)
+  function handleCreateSessionTabSelect(createSessionTabID: string, paneID?: string) {
+    focusCreateSessionTab(createSessionTabID, paneID)
   }
 
-  function handleOpenCreateSessionTab(preferredWorkspaceID?: string | null) {
-    openCreateSessionTab(preferredWorkspaceID)
+  function handleOpenCreateSessionTab(preferredWorkspaceID?: string | null, paneID?: string) {
+    openCreateSessionTab(preferredWorkspaceID, paneID)
   }
 
-  function handleCloseCreateSessionTab(createSessionTabID: string) {
-    if (openCanvasSessionIDs.length === 0 && createSessionTabs.length === 1) {
+  function handleCloseCreateSessionTab(createSessionTabID: string, paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null) {
+    if (!paneID) return
+    if (workbenchPanes.length === 1 && workbenchPanes[0]?.tabs.length === 1) {
       return
     }
 
     const nextCreateSessionTabs = createSessionTabs.filter((tab) => tab.id !== createSessionTabID)
     setCreateSessionTabs(nextCreateSessionTabs)
-
-    if (activeCreateSessionTabID !== createSessionTabID) {
-      return
-    }
-
-    const nextCreateSessionTabID = getNextSessionTabAfterClose(
-      createSessionTabs.map((tab) => tab.id),
-      createSessionTabID,
+    setWorkbenchLayout((current) =>
+      removeTabFromGroup(current, paneID, getTabIdForReference(createCreateSessionWorkbenchTab(createSessionTabID))),
     )
-    if (nextCreateSessionTabID) {
-      focusCreateSessionTab(nextCreateSessionTabID)
-      return
-    }
-
-    const nextSessionID =
-      (lastFocusedSessionIDRef.current && openCanvasSessionIDs.includes(lastFocusedSessionIDRef.current)
-        ? lastFocusedSessionIDRef.current
-        : null) ?? openCanvasSessionIDs[openCanvasSessionIDs.length - 1] ?? null
-
-    if (!nextSessionID) return
-
-    const nextSelection = findSession(workspaces, nextSessionID)
-    if (!nextSelection.workspace || !nextSelection.session) return
-
-    focusSession(nextSelection.workspace.id, nextSelection.session.id)
   }
 
-  function handleCreateSessionWorkspaceChange(workspaceID: string) {
-    if (!activeCreateSessionTabID) return
+  function handleCreateSessionWorkspaceChange(workspaceID: string, createSessionTabID = activeCreateSessionTabID) {
+    if (!createSessionTabID) return
 
     setCreateSessionTabs((current) =>
       current.map((tab) =>
-        tab.id === activeCreateSessionTabID
+        tab.id === createSessionTabID
           ? {
               ...tab,
               workspaceID,
@@ -2012,12 +2263,12 @@ export function useAgentWorkspace({
     setExpandedFolderID(workspaceID)
   }
 
-  function handleCreateSessionTitleChange(value: string) {
-    if (!activeCreateSessionTabID) return
+  function handleCreateSessionTitleChange(value: string, createSessionTabID = activeCreateSessionTabID) {
+    if (!createSessionTabID) return
 
     setCreateSessionTabs((current) =>
       current.map((tab) =>
-        tab.id === activeCreateSessionTabID
+        tab.id === createSessionTabID
           ? {
               ...tab,
               title: value,
@@ -2027,29 +2278,114 @@ export function useAgentWorkspace({
     )
   }
 
-  async function handleCreateSessionSubmit() {
-    if (!activeCreateSessionTab) return
+  async function handleCreateSessionSubmit(createSessionTabID = activeCreateSessionTabID, paneID = focusedPane?.id ?? null) {
+    if (!createSessionTabID) return
+    const currentCreateSessionTab = createSessionTabs.find((tab) => tab.id === createSessionTabID)
+    if (!currentCreateSessionTab) return
 
-    const workspace = findWorkspaceByID(workspaces, activeCreateSessionTab.workspaceID)
+    const workspace = findWorkspaceByID(workspaces, currentCreateSessionTab.workspaceID)
     if (!workspace) return
 
     await createSessionForWorkspace(workspace, {
       closeCreateTab: true,
-      createSessionTabID: activeCreateSessionTab.id,
+      createSessionTabID,
+      paneID,
     })
   }
 
+  function handlePaneFocus(paneID: string) {
+    const pane = getGroupNode(workbenchLayout, paneID)
+    if (!pane) return
+
+    const nextActiveTab = pane.activeTabId ? getReferenceForTabId(workbenchLayout, pane.activeTabId) : null
+    const nextWorkspaceID = resolveWorkspaceIDForTab(nextActiveTab)
+    setFocusedPaneID(paneID)
+    setSelectedFolderID(nextWorkspaceID)
+    setExpandedFolderID(nextWorkspaceID)
+  }
+
+  function handleSplitResize(splitID: string, leftIndex: number, leftSize: number, rightSize: number) {
+    setWorkbenchLayout((current) => resizeSplitChildren(current, splitID, leftIndex, leftSize, rightSize))
+  }
+
+  function handlePaneTabDrop(input: {
+    position: "center" | "left" | "right" | "top" | "bottom"
+    sourcePaneID: string
+    tabKey: string
+    targetPaneID: string
+  }) {
+    const movedTab = getWorkbenchTabReferenceFromKey(input.tabKey)
+    if (!movedTab) return
+
+    if (input.position === "center") {
+      setWorkbenchLayout((current) =>
+        moveTabToGroup(
+          current,
+          getWorkbenchGroupIDForTabKey(current, input.tabKey) ?? input.sourcePaneID,
+          getTabIdForReference(movedTab),
+          input.targetPaneID,
+        ),
+      )
+    } else {
+      setWorkbenchLayout((current) =>
+        dockTabAroundGroup(
+          current,
+          getWorkbenchGroupIDForTabKey(current, input.tabKey) ?? input.sourcePaneID,
+          getTabIdForReference(movedTab),
+          input.targetPaneID,
+          input.position as "left" | "right" | "top" | "bottom",
+        ),
+      )
+    }
+
+    const nextWorkspaceID = resolveWorkspaceIDForTab(movedTab)
+    setSelectedFolderID(nextWorkspaceID)
+    setExpandedFolderID(nextWorkspaceID)
+  }
+
+  function handlePaneSplit(paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null) {
+    if (!paneID) return
+
+    const nextWorkspaceID = resolveCreateSessionWorkspaceID(
+      workspaces,
+      selectedFolderID,
+      selectedFolderID,
+      activeWorkspace?.id ?? null,
+    )
+    const nextCreateSessionTab = createCreateSessionTab(nextWorkspaceID)
+
+    setCreateSessionTabs((current) => [...current, nextCreateSessionTab])
+    setWorkbenchLayout((current) =>
+      splitGroupWithReference(current, paneID, createCreateSessionWorkbenchTab(nextCreateSessionTab.id), "right"),
+    )
+    setSelectedFolderID(nextWorkspaceID)
+    setExpandedFolderID(nextWorkspaceID)
+  }
+
+  function setDraftForTab(tabKey: string, value: string) {
+    setDraftByTabKey((current) => ({
+      ...current,
+      [tabKey]: value,
+    }))
+  }
+
+  function setDraft(value: string) {
+    if (!activeTabKey) return
+    setDraftForTab(activeTabKey, value)
+  }
+
   async function sendPromptToSession(input: {
+    attachments: ComposerAttachment[]
     backendSessionID?: string | null
     session: SessionSummary
+    selectedSkillIDs: string[]
+    tabKey: string
     text: string
     workspace: WorkspaceGroup
   }) {
-    const { session, text, workspace } = input
+    const { attachments, session, selectedSkillIDs, tabKey, text, workspace } = input
     const uiSessionID = session.id
     const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
-    const attachments = composerAttachments
-    const selectedSkillIDs = composerSelectedSkillIDs
     const normalizedText = text.trim()
     const attachmentInputs = attachments.map((attachment) => ({
       path: attachment.path,
@@ -2067,8 +2403,14 @@ export function useAgentWorkspace({
       timestamp: Date.now(),
     }
 
-    setDraft("")
-    setComposerAttachments([])
+    setDraftByTabKey((current) => ({
+      ...current,
+      [tabKey]: "",
+    }))
+    setComposerAttachmentsByTabKey((current) => ({
+      ...current,
+      [tabKey]: [],
+    }))
 
     appendConversationTurns(uiSessionID, [userTurn])
     setWorkspaces((prev) => {
@@ -2097,7 +2439,10 @@ export function useAgentWorkspace({
       return
     }
 
-    setIsSending(true)
+    setIsSendingByTabKey((current) => ({
+      ...current,
+      [tabKey]: true,
+    }))
     let streamingTurnID: string | null = null
     let streamID: string | null = null
 
@@ -2178,42 +2523,75 @@ export function useAgentWorkspace({
         appendConversationTurns(uiSessionID, [buildFailureTurn(message)])
       })
     } finally {
-      setIsSending(false)
+      setIsSendingByTabKey((current) => {
+        if (!(tabKey in current)) return current
+        const next = { ...current }
+        delete next[tabKey]
+        return next
+      })
     }
   }
 
-  async function handleSend(draftOverride?: string) {
-    const text = (draftOverride ?? draft).trim()
-    if ((!text && composerAttachments.length === 0) || isSending || activePendingPermissionRequests.length > 0) return
-    if (pendingModelSelectionRef.current) {
+  async function handleSend(input?: {
+    attachmentError?: string | null
+    createSessionTabID?: string | null
+    draftOverride?: string
+    paneID?: string | null
+    selectedSkillIDs?: string[]
+    sessionID?: string | null
+    tabKey?: string | null
+    waitForPendingModelSelection?: (() => Promise<void>) | null
+  }) {
+    const targetTabKey = input?.tabKey ?? activeTabKey
+    const targetSessionID = input?.sessionID ?? activeSessionID
+    const targetCreateSessionTabID = input?.createSessionTabID ?? activeCreateSessionTabID
+    const attachments = targetTabKey ? composerAttachmentsByTabKey[targetTabKey] ?? [] : []
+    const text = (input?.draftOverride ?? (targetTabKey ? draftByTabKey[targetTabKey] ?? "" : "")).trim()
+    const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
+    if (!targetTabKey || ((!text && attachments.length === 0) || isSendingByTabKey[targetTabKey] || pendingPermissionRequests.length > 0)) return
+    if (input?.waitForPendingModelSelection) {
+      await input.waitForPendingModelSelection().catch(() => undefined)
+    } else if (pendingModelSelectionRef.current) {
       await pendingModelSelectionRef.current.catch(() => undefined)
     }
-    if (composerAttachmentPolicyRef.current.attachmentError) return
+    if (input?.attachmentError) return
 
-    if (activeSession && activeWorkspace) {
+    if (targetSessionID) {
+      const nextSelection = findSession(workspaces, targetSessionID)
+      if (!nextSelection.workspace || !nextSelection.session) return
       await sendPromptToSession({
-        session: activeSession,
+        attachments,
+        selectedSkillIDs: input?.selectedSkillIDs ?? [],
+        session: nextSelection.session,
+        tabKey: targetTabKey,
         text,
-        workspace: activeWorkspace,
+        workspace: nextSelection.workspace,
       })
       return
     }
 
-    if (!activeCreateSessionTab) return
+    if (!targetCreateSessionTabID) return
 
-    const workspace = findWorkspaceByID(workspaces, activeCreateSessionTab.workspaceID)
+    const currentCreateSessionTab = createSessionTabs.find((tab) => tab.id === targetCreateSessionTabID)
+    if (!currentCreateSessionTab) return
+
+    const workspace = findWorkspaceByID(workspaces, currentCreateSessionTab.workspaceID)
     if (!workspace) return
 
     const created = await createSessionForWorkspace(workspace, {
       closeCreateTab: true,
-      createSessionTabID: activeCreateSessionTab.id,
+      createSessionTabID: targetCreateSessionTabID,
+      paneID: input?.paneID,
       skipInitialHistoryLoad: true,
     })
     if (!created) return
 
     await sendPromptToSession({
+      attachments,
       backendSessionID: created.backendSessionID,
+      selectedSkillIDs: input?.selectedSkillIDs ?? [],
       session: created.session,
+      tabKey: targetTabKey,
       text,
       workspace: created.workspace,
     })
@@ -2312,12 +2690,21 @@ export function useAgentWorkspace({
     }
   }
 
-  async function handlePickComposerAttachments() {
+  async function handlePickComposerAttachments(input?: {
+    allowImage: boolean
+    allowPdf: boolean
+    disabledReason?: string | null
+    tabKey?: string | null
+  }) {
     const pickComposerAttachments = window.desktop?.pickComposerAttachments
     if (!pickComposerAttachments) return
 
-    const { allowImage, allowPdf, disabledReason } = composerAttachmentPolicyRef.current
+    const tabKey = input?.tabKey ?? activeTabKey
+    const allowImage = input?.allowImage ?? composerAttachmentPolicyRef.current.allowImage
+    const allowPdf = input?.allowPdf ?? composerAttachmentPolicyRef.current.allowPdf
+    const disabledReason = input ? input.disabledReason ?? null : composerAttachmentPolicyRef.current.disabledReason
     if (disabledReason) return
+    if (!tabKey) return
 
     try {
       const pickedPaths = await pickComposerAttachments({
@@ -2326,9 +2713,10 @@ export function useAgentWorkspace({
       })
       if (!pickedPaths || pickedPaths.length === 0) return
 
-      setComposerAttachments((current) => {
-        const seen = new Set(current.map((attachment) => attachment.path))
-        const nextAttachments = [...current]
+      setComposerAttachmentsByTabKey((current) => {
+        const existingAttachments = current[tabKey] ?? []
+        const seen = new Set(existingAttachments.map((attachment) => attachment.path))
+        const nextAttachments = [...existingAttachments]
         const supportedCapabilities = { image: allowImage, pdf: allowPdf }
 
         for (const path of pickedPaths) {
@@ -2338,15 +2726,22 @@ export function useAgentWorkspace({
           nextAttachments.push(buildComposerAttachment(path))
         }
 
-        return nextAttachments
+        return {
+          ...current,
+          [tabKey]: nextAttachments,
+        }
       })
     } catch (error) {
       console.error("[desktop] pickComposerAttachments failed:", error)
     }
   }
 
-  function handleRemoveComposerAttachment(path: string) {
-    setComposerAttachments((current) => current.filter((attachment) => attachment.path !== path))
+  function handleRemoveComposerAttachment(path: string, tabKey = activeTabKey) {
+    if (!tabKey) return
+    setComposerAttachmentsByTabKey((current) => ({
+      ...current,
+      [tabKey]: (current[tabKey] ?? []).filter((attachment) => attachment.path !== path),
+    }))
   }
 
   async function handleComposerModelChange(value: string | null) {
@@ -2455,20 +2850,117 @@ export function useAgentWorkspace({
     setRightSidebarView(nextView)
   }
 
-  function handleActiveSessionDiffFileSelect(file: string | null) {
-    if (!activeSessionID) return
+  function handleActiveSessionDiffFileSelect(file: string | null, sessionID = activeSessionID) {
+    if (!sessionID) return
 
     setRightSidebarView("changes")
     setSelectedDiffFileBySession((prev) => ({
       ...prev,
-      [activeSessionID]: file,
+      [sessionID]: file,
     }))
   }
 
-  async function handleActiveSessionDiffRefresh() {
-    if (!activeSessionID) return
-    await loadSessionDiffForSession(activeSessionID)
+  async function handleActiveSessionDiffRefresh(sessionID = activeSessionID) {
+    if (!sessionID) return
+    await loadSessionDiffForSession(sessionID)
   }
+
+  const workbenchPaneStates = workbenchPanes.map((pane) => {
+    const currentActiveTab = getPaneActiveTab(pane)
+    const currentActiveTabKey = currentActiveTab ? getWorkbenchTabKey(currentActiveTab) : null
+    const currentActiveSessionID = currentActiveTab?.kind === "session" ? currentActiveTab.sessionID : null
+    const currentActiveCreateSessionTab =
+      currentActiveTab?.kind === "create-session"
+        ? createSessionTabs.find((tab) => tab.id === currentActiveTab.createSessionTabID) ?? null
+        : null
+    const currentSessionSelection = findSession(workspaces, currentActiveSessionID)
+    const currentWorkspace =
+      currentSessionSelection.workspace ??
+      findWorkspaceByID(workspaces, currentActiveCreateSessionTab?.workspaceID ?? null) ??
+      null
+    const currentSession = currentSessionSelection.session
+    const paneTabs: Array<
+      | {
+          key: string
+          kind: "session"
+          sessionID: string
+          title: string
+        }
+      | {
+          key: string
+          kind: "create-session"
+          createSessionTabID: string
+          title: string
+        }
+    > = []
+
+    for (const tab of pane.tabs) {
+      if (tab.kind === "session") {
+        const { session } = findSession(workspaces, tab.sessionID)
+        if (!session) continue
+        paneTabs.push({
+          key: getWorkbenchTabKey(tab),
+          kind: tab.kind,
+          sessionID: tab.sessionID,
+          title: session.title,
+        })
+        continue
+      }
+
+      const createTab = createSessionTabs.find((item) => item.id === tab.createSessionTabID)
+      const workspace = findWorkspaceByID(workspaces, createTab?.workspaceID ?? null)
+      paneTabs.push({
+        key: getWorkbenchTabKey(tab),
+        kind: tab.kind,
+        createSessionTabID: tab.createSessionTabID,
+        title: workspace ? `Create / ${workspace.name}` : "Create session",
+      })
+    }
+
+    return {
+      id: pane.id,
+      isFocused: pane.id === focusedPaneID,
+      activeTabKey: currentActiveTabKey,
+      activeSession: currentSession,
+      activeSessionContextUsage: currentActiveSessionID ? contextUsageBySession[currentActiveSessionID] ?? null : null,
+      activeSessionDiff: currentActiveSessionID ? sessionDiffBySession[currentActiveSessionID] ?? null : null,
+      activeSessionDiffState: currentActiveSessionID
+        ? sessionDiffStateBySession[currentActiveSessionID] ?? DEFAULT_SESSION_DIFF_STATE
+        : DEFAULT_SESSION_DIFF_STATE,
+      activeSessionDirectory: currentActiveSessionID
+        ? sessionDirectoryBySession[currentActiveSessionID] ?? currentWorkspace?.directory ?? null
+        : null,
+      activeSessionSelectedDiffFile: currentActiveSessionID ? selectedDiffFileBySession[currentActiveSessionID] ?? null : null,
+      activeTurns: currentActiveSessionID ? conversations[currentActiveSessionID] ?? [] : [],
+      composerAttachments: currentActiveTabKey ? composerAttachmentsByTabKey[currentActiveTabKey] ?? [] : [],
+      composerProjectID:
+        isInitialWorkspaceLoadPending && currentWorkspace && seedWorkspaceIDs.has(currentWorkspace.id)
+          ? null
+          : currentWorkspace?.project.id ?? null,
+      contextLabel: currentActiveCreateSessionTab ? "Create session" : "Session",
+      contextTitle: currentSession
+        ? currentSession.title
+        : currentWorkspace
+          ? `${currentWorkspace.project.name} / ${currentWorkspace.name}`
+          : "No project selected",
+      createSessionTabID: currentActiveCreateSessionTab?.id ?? null,
+      createSessionWorkspaceID: currentActiveCreateSessionTab?.workspaceID ?? null,
+      draft: currentActiveTabKey ? draftByTabKey[currentActiveTabKey] ?? "" : "",
+      isCreatingSession:
+        currentActiveTabKey && currentActiveCreateSessionTab
+          ? Boolean(isCreatingSessionByTabKey[currentActiveTabKey])
+          : false,
+      isSending: currentActiveTabKey ? Boolean(isSendingByTabKey[currentActiveTabKey]) : false,
+      pendingPermissionRequests: currentActiveSessionID ? pendingPermissionRequestsBySession[currentActiveSessionID] ?? [] : [],
+      projectID: currentWorkspace?.project.id ?? null,
+      size: pane.size,
+      sessionID: currentSession?.id ?? null,
+      tabKey: currentActiveTabKey,
+      tabs: paneTabs,
+      workspace: currentWorkspace,
+    }
+  })
+  const workbenchPaneStateByID = Object.fromEntries(workbenchPaneStates.map((pane) => [pane.id, pane]))
 
   return {
     activeCreateSessionTabID,
@@ -2496,6 +2988,7 @@ export function useAgentWorkspace({
     composerSelectedSkillIDs,
     composerSelectedSkillLabel,
     composerUnsupportedAttachmentPaths: composerUnsupportedAttachments.map((attachment) => attachment.path),
+    composerRefreshVersion,
     createSessionTabs,
     createSessionTitle,
     createSessionWorkspaceID,
@@ -2514,6 +3007,10 @@ export function useAgentWorkspace({
     handleCreateSessionWorkspaceChange,
     handleLeftSidebarViewChange,
     handleOpenCreateSessionTab,
+    handlePaneFocus,
+    handleSplitResize,
+    handlePaneTabDrop,
+    handlePaneSplit,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleActiveSessionDiffFileSelect,
@@ -2527,6 +3024,7 @@ export function useAgentWorkspace({
     handleSessionDelete,
     handleSessionSelect,
     handleSidebarAction,
+    focusedPaneID,
     hoveredFolderID,
     isCreateSessionTabActive,
     isCreatingProject,
@@ -2546,8 +3044,13 @@ export function useAgentWorkspace({
     selectedWorkspace,
     selectedFolderID,
     setDraft,
+    setDraftForTab,
     setHoveredFolderID,
     threadColumnRef,
+    workbenchLayout,
+    workbenchPanes,
+    workbenchPaneStateByID,
+    workbenchPaneStates,
     workspaces,
   }
 }
