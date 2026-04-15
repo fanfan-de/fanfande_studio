@@ -251,6 +251,10 @@ function migrateProjectReferences(fromProjectID: string, toProjectID: string) {
     db.updateMany("sessions", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
   }
 
+  if (db.tableExists("archived_sessions")) {
+    db.updateMany("archived_sessions", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
+  }
+
   migrateProjectConfigReference(fromProjectID, toProjectID)
 
   if (db.tableExists("permission_rules")) {

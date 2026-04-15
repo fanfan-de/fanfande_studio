@@ -317,6 +317,7 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
         ? `${fileCount} file change${fileCount === 1 ? "" : "s"} (+${additions} -${deletions})`
         : "Patch update",
       detail,
+      filePaths: changes.length > 0 ? changes.map((change) => change.file) : files,
       status: "completed",
     })
   }

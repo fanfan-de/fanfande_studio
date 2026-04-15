@@ -1,4 +1,5 @@
 import {
+  Archive,
   ArrowUp,
   ChevronDown,
   ChevronRight,
@@ -53,6 +54,7 @@ export const RightSidebarExpandIcon = createIcon(PanelRightOpen)
 export const ConnectedStatusIcon = createIcon(CircleCheck)
 export const DisconnectedStatusIcon = createIcon(CircleX)
 export const DeleteIcon = createIcon(Trash2)
+export const ArchiveIcon = createIcon(Archive)
 export const MinimizeIcon = createIcon(Minus)
 export const MaximizeIcon = createIcon(Square)
 export const RestoreIcon = createIcon(Copy)

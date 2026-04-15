@@ -67,6 +67,20 @@ export interface LoadedSessionSnapshot {
   updated: number
 }
 
+export interface ArchivedSessionSummary {
+  id: string
+  projectID: string
+  projectName: string | null
+  projectMissing: boolean
+  directory: string
+  title: string
+  created: number
+  updated: number
+  archivedAt: number
+  messageCount: number
+  eventCount: number
+}
+
 export interface LoadedFolderWorkspace {
   id: string
   directory: string
@@ -116,6 +130,15 @@ export interface SessionDiffSummary {
     files: number
   }
   diffs: SessionDiffFile[]
+}
+
+export type SessionDiffStatus = "idle" | "loading" | "refreshing" | "ready" | "empty" | "error"
+
+export interface SessionDiffState {
+  status: SessionDiffStatus
+  errorMessage: string | null
+  updatedAt: number | null
+  isStale: boolean
 }
 
 export interface SessionContextUsage {
@@ -179,6 +202,7 @@ export interface AssistantTraceItem {
   title?: string
   text?: string
   detail?: string
+  filePaths?: string[]
   status?: AssistantTraceStatus
   sourceID?: string
   isStreaming?: boolean

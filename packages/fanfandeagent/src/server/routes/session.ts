@@ -11,6 +11,7 @@ import * as EventStore from "#session/event-store.ts"
 import * as LiveStreamHub from "#session/live-stream-hub.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as StreamMapper from "#session/stream-mapper.ts"
+import * as RunningState from "#session/running-state.ts"
 import { Instance } from "#project/instance.ts"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
@@ -197,6 +198,32 @@ function safeReadSession(sessionID: string): Session.SessionInfo | null {
     return Session.DataBaseRead("sessions", sessionID) as Session.SessionInfo | null
   } catch {
     return null
+  }
+}
+
+function safeReadArchivedSession(sessionID: string): Session.ArchivedSessionRecord | null {
+  try {
+    return Session.readArchivedSession(sessionID)
+  } catch {
+    return null
+  }
+}
+
+function mapArchivedSessionSummary(record: Session.ArchivedSessionRecord) {
+  const project = Project.get(record.projectID)
+
+  return {
+    id: record.sessionID,
+    projectID: record.projectID,
+    projectName: project?.name ?? null,
+    projectMissing: !project,
+    directory: record.directory,
+    title: record.title,
+    created: record.createdAt,
+    updated: record.updatedAt,
+    archivedAt: record.archivedAt,
+    messageCount: record.messageCount,
+    eventCount: record.eventCount,
   }
 }
 
@@ -550,6 +577,94 @@ export function SessionRoutes() {
       },
       201,
     )
+  })
+
+  app.get("/archived", (c) => {
+    return c.json({
+      success: true,
+      data: Session.listArchivedSessions().map(mapArchivedSessionSummary),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/:id/archive", (c) => {
+    const sessionID = c.req.param("id")
+    const session = safeReadSession(sessionID)
+    if (!session) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+    }
+
+    if (RunningState.isRunning(sessionID)) {
+      throw new ApiError(409, "SESSION_RUNNING", `Session '${sessionID}' is currently running and cannot be archived`)
+    }
+
+    if (safeReadArchivedSession(sessionID)) {
+      throw new ApiError(409, "SESSION_ALREADY_ARCHIVED", `Session '${sessionID}' is already archived`)
+    }
+
+    const archived = Session.archiveSession(sessionID)
+    if (!archived) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        sessionID: archived.sessionID,
+        projectID: archived.projectID,
+        directory: archived.directory,
+        archivedAt: archived.archivedAt,
+      },
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/archived/:id/restore", (c) => {
+    const sessionID = c.req.param("id")
+    const archived = safeReadArchivedSession(sessionID)
+    if (!archived) {
+      throw new ApiError(404, "ARCHIVED_SESSION_NOT_FOUND", `Archived session '${sessionID}' not found`)
+    }
+
+    if (safeReadSession(sessionID)) {
+      throw new ApiError(409, "SESSION_ALREADY_EXISTS", `Session '${sessionID}' already exists`)
+    }
+
+    const project = Project.get(archived.projectID)
+    if (!project) {
+      throw new ApiError(
+        409,
+        "PROJECT_NOT_FOUND",
+        `Project '${archived.projectID}' no longer exists, so session '${sessionID}' cannot be restored`,
+      )
+    }
+
+    const restored = Session.restoreArchivedSession(sessionID)
+    if (!restored) {
+      throw new ApiError(404, "ARCHIVED_SESSION_NOT_FOUND", `Archived session '${sessionID}' not found`)
+    }
+
+    return c.json({
+      success: true,
+      data: restored,
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.delete("/archived/:id", (c) => {
+    const sessionID = c.req.param("id")
+    const archived = Session.deleteArchivedSession(sessionID)
+    if (!archived) {
+      throw new ApiError(404, "ARCHIVED_SESSION_NOT_FOUND", `Archived session '${sessionID}' not found`)
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        sessionID: archived.sessionID,
+      },
+      requestId: c.get("requestId"),
+    })
   })
 
   app.get("/:id", (c) => {

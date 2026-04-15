@@ -88,6 +88,31 @@ export interface AgentSessionDeleteResult {
   projectID: string
 }
 
+export interface AgentSessionArchiveResult {
+  sessionID: string
+  projectID: string
+  directory: string
+  archivedAt: number
+}
+
+export interface AgentArchivedSessionSummary {
+  id: string
+  projectID: string
+  projectName: string | null
+  projectMissing: boolean
+  directory: string
+  title: string
+  created: number
+  updated: number
+  archivedAt: number
+  messageCount: number
+  eventCount: number
+}
+
+export interface AgentArchivedSessionDeleteResult {
+  sessionID: string
+}
+
 export interface AgentEnvelope<T> {
   success: boolean
   data?: T

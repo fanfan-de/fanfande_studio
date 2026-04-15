@@ -319,6 +319,43 @@ declare global {
         projectID: string
         requestId?: string
       }>
+      archiveAgentSession?: (input: { sessionID: string }) => Promise<{
+        sessionID: string
+        projectID: string
+        directory: string
+        archivedAt: number
+        requestId?: string
+      }>
+      listArchivedSessions?: () => Promise<
+        Array<{
+          id: string
+          projectID: string
+          projectName: string | null
+          projectMissing: boolean
+          directory: string
+          title: string
+          created: number
+          updated: number
+          archivedAt: number
+          messageCount: number
+          eventCount: number
+        }>
+      >
+      restoreArchivedSession?: (input: { sessionID: string }) => Promise<{
+        session: {
+          id: string
+          projectID: string
+          directory: string
+          title: string
+          created: number
+          updated: number
+        }
+        requestId?: string
+      }>
+      deleteArchivedSession?: (input: { sessionID: string }) => Promise<{
+        sessionID: string
+        requestId?: string
+      }>
       getSessionHistory?: (input: { sessionID: string }) => Promise<
         Array<{
           info: {

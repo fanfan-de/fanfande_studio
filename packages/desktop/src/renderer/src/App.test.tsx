@@ -232,6 +232,26 @@ describe("App", () => {
       createFolderSession: vi.fn(),
       deleteProjectWorkspace: vi.fn(),
       deleteAgentSession: vi.fn(),
+      archiveAgentSession: vi.fn().mockResolvedValue({
+        sessionID: "session-chat-1",
+        projectID: "project-2",
+        directory: "C:\\Projects\\Project 2",
+        archivedAt: 1,
+      }),
+      listArchivedSessions: vi.fn().mockResolvedValue([]),
+      restoreArchivedSession: vi.fn().mockResolvedValue({
+        session: {
+          id: "session-archived-1",
+          projectID: "project-2",
+          directory: "C:\\Projects\\Project 2",
+          title: "Archived session",
+          created: 1,
+          updated: 1,
+        },
+      }),
+      deleteArchivedSession: vi.fn().mockResolvedValue({
+        sessionID: "session-archived-1",
+      }),
       getSessionHistory: vi.fn().mockResolvedValue([]),
       getSessionDiff: vi.fn().mockResolvedValue({
         diffs: [],
@@ -407,7 +427,8 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Console" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument()
     expect(inspector).toBeInTheDocument()
-    expect(within(inspector).getByText("Changed Files")).toBeInTheDocument()
+    expect(within(inspector).getByText("Workspace Diff")).toBeInTheDocument()
+    expect(within(inspector).getByText("Current session snapshot")).toBeInTheDocument()
     expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Workspace")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Runtime")).not.toBeInTheDocument()
@@ -1052,6 +1073,92 @@ describe("App", () => {
         directory: workspace.directory,
       })
     })
+  })
+
+  it("refreshes the workspace diff when files change under the active session directory", async () => {
+    const workspace: LoadedFolderWorkspace = {
+      id: "C:\\Projects\\Atlas\\client",
+      directory: "C:\\Projects\\Atlas\\client",
+      name: "client",
+      created: 1,
+      updated: 20,
+      project: {
+        id: "prj_atlas",
+        name: "Atlas",
+        worktree: "C:\\Projects\\Atlas",
+      },
+      sessions: [
+        {
+          id: "session-atlas-review",
+          projectID: "prj_atlas",
+          directory: "C:\\Projects\\Atlas\\client",
+          title: "Atlas review",
+          created: 18,
+          updated: 20,
+        },
+      ],
+    }
+    let workspaceFileChangeListener: ((event: { directory: string; paths: string[] }) => void) | null = null
+    let diffRequestCount = 0
+    const changedDiff = {
+      title: "1 file change (+3 -1)",
+      stats: {
+        files: 1,
+        additions: 3,
+        deletions: 1,
+      },
+      diffs: [
+        {
+          file: "src/App.tsx",
+          additions: 3,
+          deletions: 1,
+          patch: [
+            "diff --git a/src/App.tsx b/src/App.tsx",
+            "index 1111111..2222222 100644",
+            "--- a/src/App.tsx",
+            "+++ b/src/App.tsx",
+            "@@ -1,2 +1,3 @@",
+            " import { AppShell } from './shell'",
+            "+import { WorkspaceDiff } from './WorkspaceDiff'",
+            " export function App() {",
+          ].join("\n"),
+        },
+      ],
+    }
+
+    window.desktop!.onWorkspaceFileChange = vi.fn((listener) => {
+      workspaceFileChangeListener = listener
+      return vi.fn(() => {
+        workspaceFileChangeListener = null
+      })
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([workspace])
+    window.desktop!.getSessionDiff = vi.fn().mockImplementation(async () => {
+      diffRequestCount += 1
+      return diffRequestCount === 1 ? { diffs: [] } : changedDiff
+    })
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Atlas review" })
+    await waitFor(() => {
+      expect(window.desktop!.getSessionDiff).toHaveBeenCalledWith({
+        sessionID: "session-atlas-review",
+      })
+    })
+    expect(screen.getByText("No workspace changes were detected for this session.")).toBeInTheDocument()
+
+    act(() => {
+      workspaceFileChangeListener?.({
+        directory: workspace.directory,
+        paths: ["C:\\Projects\\Atlas\\client\\src\\App.tsx"],
+      })
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.getSessionDiff).toHaveBeenCalledTimes(2)
+    })
+    expect(await screen.findByText("src/App.tsx")).toBeInTheDocument()
   })
 
   it("shows the current git branch in the composer utility bar and switches branches from the list", async () => {
@@ -1971,13 +2078,14 @@ describe("App", () => {
 
     const { container } = render(<App />)
 
-    expect(await screen.findByText("2 file changes (+8 -3)")).toBeInTheDocument()
+    expect(await screen.findByText("Ship the toolbar update")).toBeInTheDocument()
+    expect((await screen.findAllByText("2 file changes (+8 -3)")).length).toBeGreaterThan(0)
     expect(screen.getAllByText("src/App.tsx").length).toBeGreaterThan(0)
     expect(screen.getAllByText("src/styles.css").length).toBeGreaterThan(0)
     expect(screen.queryByText("@@ -1,2 +1,2 @@")).not.toBeInTheDocument()
     expect(screen.queryByText("diff --git a/src/App.tsx b/src/App.tsx")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Toggle diff for src/App.tsx" }))
+    fireEvent.click(screen.getByRole("button", { name: "src/App.tsx" }))
 
     expect(screen.queryByText("@@ -1,2 +1,2 @@")).not.toBeInTheDocument()
     expect(screen.getByText('import { OldToolbar } from "./toolbar"')).toBeInTheDocument()
@@ -3625,6 +3733,45 @@ describe("App", () => {
     expect(screen.queryByRole("combobox", { name: "Session project" })).not.toBeInTheDocument()
   })
 
+  it("creates a backend session in the active workspace directory for local sessions", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.createAgentSession = vi.fn().mockResolvedValue({
+      session: {
+        id: "session-backend-local",
+        projectID: "project-2",
+        directory: "C:\\Projects\\Project 2\\app",
+        title: "Seed backend session",
+      },
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: { value: "Inspect the seeded workspace" },
+    })
+    fireEvent.click(getComposerSendButton())
+
+    await waitFor(() => {
+      expect(window.desktop!.createAgentSession).toHaveBeenCalledWith({
+        directory: "C:\\Projects\\Project 2\\app",
+      })
+    })
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
+        sessionID: "session-backend-local",
+        text: "Inspect the seeded workspace",
+        skills: [],
+      })
+    })
+  })
+
   it("renders the first streamed turn immediately after sending from the create session canvas", async () => {
     let streamListener:
       | ((event: {
@@ -3807,9 +3954,10 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Close settings" })).toBeInTheDocument()
     expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
-    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(4)
+    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(5)
     expect(screen.getByRole("button", { name: /^Provider/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Models/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Archived Sessions/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Appearance/ })).toBeInTheDocument()
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
     expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
@@ -5048,18 +5196,20 @@ describe("App", () => {
     })
   })
 
-  it("deletes a session from the sidebar", async () => {
-    window.desktop!.deleteAgentSession = vi.fn().mockResolvedValue({
+  it("archives a session from the sidebar", async () => {
+    window.desktop!.archiveAgentSession = vi.fn().mockResolvedValue({
       sessionID: "session-chat-1",
       projectID: "project-2",
+      directory: "C:\\Projects\\Project 2",
+      archivedAt: 1,
     })
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete session Chat 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Archive session Chat 1" }))
 
     await waitFor(() => {
-      expect(window.desktop!.deleteAgentSession).toHaveBeenCalledWith({
+      expect(window.desktop!.archiveAgentSession).toHaveBeenCalledWith({
         sessionID: "session-chat-1",
       })
     })

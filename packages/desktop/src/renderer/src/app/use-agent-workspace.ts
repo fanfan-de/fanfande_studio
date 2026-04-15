@@ -35,6 +35,7 @@ import type {
   ProviderModel,
   RightSidebarView,
   SessionContextUsage,
+  SessionDiffState,
   SessionDiffSummary,
   SessionSummary,
   SkillInfo,
@@ -75,6 +76,27 @@ type ComposerAttachmentKind = "image" | "pdf" | "unsupported"
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"])
 const GIT_REFRESH_SUPPRESSION_MS = 1000
 const WORKSPACE_RELOAD_SUPPRESSION_MS = 1500
+const DEFAULT_SESSION_DIFF_STATE: SessionDiffState = {
+  status: "idle",
+  errorMessage: null,
+  updatedAt: null,
+  isStale: false,
+}
+
+function collectSessionDirectoryMap(
+  workspaces: Array<{
+    sessions: Array<{
+      id: string
+      directory: string
+    }>
+  }>,
+) {
+  return Object.fromEntries(
+    workspaces.flatMap((workspace) =>
+      workspace.sessions.map((session) => [session.id, session.directory] as const),
+    ),
+  )
+}
 
 function normalizeModelSelection(selection?: { model?: string; small_model?: string }) {
   return {
@@ -377,6 +399,7 @@ export function useAgentWorkspace({
   const [draft, setDraft] = useState("Help me align the desktop sidebar with the Pencil design.")
   const [conversations, setConversations] = useState(initialConversations)
   const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
+  const [sessionDirectoryBySession, setSessionDirectoryBySession] = useState<Record<string, string>>({})
   const [isSending, setIsSending] = useState(false)
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [isCreatingSession, setIsCreatingSession] = useState(false)
@@ -389,6 +412,8 @@ export function useAgentWorkspace({
     Record<string, PermissionRequest[]>
   >({})
   const [sessionDiffBySession, setSessionDiffBySession] = useState<Record<string, SessionDiffSummary>>({})
+  const [sessionDiffStateBySession, setSessionDiffStateBySession] = useState<Record<string, SessionDiffState>>({})
+  const [selectedDiffFileBySession, setSelectedDiffFileBySession] = useState<Record<string, string | null>>({})
   const [contextUsageBySession, setContextUsageBySession] = useState<Record<string, SessionContextUsage>>({})
   const [permissionRequestActionRequestID, setPermissionRequestActionRequestID] = useState<string | null>(null)
   const [permissionRequestActionError, setPermissionRequestActionError] = useState<string | null>(null)
@@ -430,6 +455,11 @@ export function useAgentWorkspace({
       : selectedWorkspace?.project.id ?? null
   const activeTurns = activeSession ? conversations[activeSession.id] ?? [] : []
   const activeSessionDiff = activeSession ? sessionDiffBySession[activeSession.id] ?? null : null
+  const activeSessionDiffState = activeSession ? sessionDiffStateBySession[activeSession.id] ?? DEFAULT_SESSION_DIFF_STATE : DEFAULT_SESSION_DIFF_STATE
+  const activeSessionDirectory = activeSession
+    ? sessionDirectoryBySession[activeSession.id] ?? activeWorkspace?.directory ?? null
+    : null
+  const activeSessionSelectedDiffFile = activeSession ? selectedDiffFileBySession[activeSession.id] ?? null : null
   const activePendingPermissionRequests = activeSession ? pendingPermissionRequestsBySession[activeSession.id] ?? [] : []
   const activeSessionContextUsage = activeSession ? contextUsageBySession[activeSession.id] ?? null : null
   const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
@@ -559,6 +589,20 @@ export function useAgentWorkspace({
     conversationVersionRef.current[sessionID] = (conversationVersionRef.current[sessionID] ?? 0) + 1
   }
 
+  function setSessionDiffRequestState(sessionID: string, hasExistingSummary: boolean) {
+    setSessionDiffStateBySession((prev) => {
+      const current = prev[sessionID] ?? DEFAULT_SESSION_DIFF_STATE
+      return {
+        ...prev,
+        [sessionID]: {
+          ...current,
+          status: hasExistingSummary ? "refreshing" : "loading",
+          errorMessage: null,
+        },
+      }
+    })
+  }
+
   async function refreshWorkspaceFromDirectory(directory: string) {
     const openFolderWorkspace = window.desktop?.openFolderWorkspace
     const trimmedDirectory = directory.trim()
@@ -576,6 +620,10 @@ export function useAgentWorkspace({
       setWorkspaces((prev) => upsertWorkspaceGroup(prev, nextWorkspace))
       setConversations((prev) => ensureConversationSessions(prev, loadedSessionIDs))
       setAgentSessions((prev) => ensureAgentSessions(prev, loadedSessionIDs))
+      setSessionDirectoryBySession((prev) => ({
+        ...prev,
+        ...collectSessionDirectoryMap([loadedWorkspace]),
+      }))
       setCanLoadSessionHistory(true)
 
       return nextWorkspace
@@ -829,6 +877,8 @@ export function useAgentWorkspace({
 
     const requestID = (sessionDiffRequestRef.current[sessionID] ?? 0) + 1
     sessionDiffRequestRef.current[sessionID] = requestID
+    const hasExistingSummary = Boolean(sessionDiffBySession[sessionID])
+    setSessionDiffRequestState(sessionID, hasExistingSummary)
 
     try {
       const nextDiff = await getSessionDiff({ sessionID: backendSessionID })
@@ -838,8 +888,30 @@ export function useAgentWorkspace({
         ...prev,
         [sessionID]: nextDiff,
       }))
+      setSessionDiffStateBySession((prev) => ({
+        ...prev,
+        [sessionID]: {
+          status: nextDiff.diffs.length > 0 ? "ready" : "empty",
+          errorMessage: null,
+          updatedAt: Date.now(),
+          isStale: false,
+        },
+      }))
     } catch (error) {
       if (sessionDiffRequestRef.current[sessionID] !== requestID) return
+      const message = error instanceof Error ? error.message : String(error)
+      setSessionDiffStateBySession((prev) => {
+        const current = prev[sessionID] ?? DEFAULT_SESSION_DIFF_STATE
+        return {
+          ...prev,
+          [sessionID]: {
+            ...current,
+            status: "error",
+            errorMessage: message,
+            isStale: hasExistingSummary || current.isStale,
+          },
+        }
+      })
       console.error("[desktop] getSessionDiff failed:", error)
     }
   }
@@ -878,12 +950,32 @@ export function useAgentWorkspace({
 
   const handleWorkspaceFileChangeEffect = useEffectEvent((workspaceEvent: WorkspaceFileChangeIPCEvent) => {
     const normalizedEventDirectory = normalizeWorkspacePath(workspaceEvent.directory, platform)
+    const normalizedActiveSessionDirectory = activeSessionDirectory
+      ? normalizeWorkspacePath(activeSessionDirectory, platform)
+      : null
+    const now = Date.now()
+
+    if (activeSessionID && normalizedActiveSessionDirectory === normalizedEventDirectory) {
+      setSessionDiffStateBySession((prev) => {
+        const current = prev[activeSessionID] ?? DEFAULT_SESSION_DIFF_STATE
+        return {
+          ...prev,
+          [activeSessionID]: {
+            ...current,
+            isStale: true,
+          },
+        }
+      })
+      void loadSessionDiffForSession(activeSessionID).catch((error) => {
+        console.error("[desktop] workspace diff refresh failed:", error)
+      })
+    }
+
     const matchingWorkspace = workspaces.find(
       (workspace) => normalizeWorkspacePath(workspace.directory, platform) === normalizedEventDirectory,
     )
     if (!matchingWorkspace) return
 
-    const now = Date.now()
     const relativePaths = workspaceEvent.paths
       .map((changedPath) => resolveWorkspaceRelativePath(matchingWorkspace.directory, changedPath, platform))
       .filter((value): value is string => value !== null)
@@ -987,10 +1079,12 @@ export function useAgentWorkspace({
 
     const uniqueDirectories = [
       ...new Set(
-        workspaces
-          .filter((workspace) => !seedWorkspaceIDs.has(workspace.id) && isWorkspaceAvailable(workspace))
-          .map((workspace) => workspace.directory.trim())
-          .filter(Boolean),
+        [
+          ...workspaces
+            .filter((workspace) => !seedWorkspaceIDs.has(workspace.id) && isWorkspaceAvailable(workspace))
+            .map((workspace) => workspace.directory.trim()),
+          activeSessionDirectory?.trim() ?? "",
+        ].filter(Boolean),
       ),
     ]
     const normalizedKey = uniqueDirectories
@@ -1008,7 +1102,7 @@ export function useAgentWorkspace({
     }).catch((error) => {
       console.error("[desktop] updateWorkspaceWatchDirectories failed:", error)
     })
-  }, [platform, workspaces])
+  }, [activeSessionDirectory, platform, workspaces])
 
   useEffect(() => {
     let mounted = true
@@ -1041,6 +1135,10 @@ export function useAgentWorkspace({
         })
         setConversations((prev) => ensureConversationSessions(prev, loadedSessionIDs))
         setAgentSessions((prev) => ensureAgentSessions(prev, loadedSessionIDs))
+        setSessionDirectoryBySession((prev) => ({
+          ...prev,
+          ...collectSessionDirectoryMap(loadedWorkspaces),
+        }))
         setCanLoadSessionHistory(true)
 
         if (!preserveLocalWorkspaceState) {
@@ -1393,6 +1491,30 @@ export function useAgentWorkspace({
       return next
     })
 
+    setSessionDiffStateBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
+    setSelectedDiffFileBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
+    setSessionDirectoryBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
     setContextUsageBySession((prev) => {
       const next = { ...prev }
       for (const sessionID of sessionIDs) {
@@ -1451,6 +1573,10 @@ export function useAgentWorkspace({
         ...prev,
         [created.session.id]: created.session.id,
       }))
+      setSessionDirectoryBySession((prev) => ({
+        ...prev,
+        [created.session.id]: created.session.directory,
+      }))
       setCanLoadSessionHistory(true)
       if (options?.skipInitialHistoryLoad) {
         skipNextHistoryLoadRef.current[created.session.id] = true
@@ -1506,6 +1632,10 @@ export function useAgentWorkspace({
         setWorkspaces((prev) => upsertWorkspaceGroup(prev, nextWorkspace))
         setConversations((prev) => ensureConversationSessions(prev, createdSessionIDs))
         setAgentSessions((prev) => ensureAgentSessions(prev, createdSessionIDs))
+        setSessionDirectoryBySession((prev) => ({
+          ...prev,
+          ...collectSessionDirectoryMap([createdWorkspace]),
+        }))
         setCanLoadSessionHistory(true)
         setExpandedFolderID(createdWorkspace.id)
         setSelectedFolderID(createdWorkspace.id)
@@ -1671,11 +1801,11 @@ export function useAgentWorkspace({
 
   async function handleSessionDelete(workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
-    if (deletingSessionID || !window.desktop?.deleteAgentSession) return
+    if (deletingSessionID || !window.desktop?.archiveAgentSession) return
 
     setDeletingSessionID(session.id)
     try {
-      await window.desktop.deleteAgentSession({ sessionID: session.id })
+      await window.desktop.archiveAgentSession({ sessionID: session.id })
       const nextWorkspaces = sortWorkspaceGroups(
         workspaces.map((item) =>
           item.id === workspace.id
@@ -1727,6 +1857,21 @@ export function useAgentWorkspace({
         delete next[session.id]
         return next
       })
+      setSessionDiffStateBySession((prev) => {
+        const next = { ...prev }
+        delete next[session.id]
+        return next
+      })
+      setSelectedDiffFileBySession((prev) => {
+        const next = { ...prev }
+        delete next[session.id]
+        return next
+      })
+      setSessionDirectoryBySession((prev) => {
+        const next = { ...prev }
+        delete next[session.id]
+        return next
+      })
       setContextUsageBySession((prev) => {
         const next = { ...prev }
         delete next[session.id]
@@ -1772,7 +1917,7 @@ export function useAgentWorkspace({
         }
       }
     } catch (error) {
-      console.error("[desktop] deleteAgentSession failed:", error)
+      console.error("[desktop] archiveAgentSession failed:", error)
     } finally {
       setDeletingSessionID(null)
     }
@@ -1959,13 +2104,18 @@ export function useAgentWorkspace({
     try {
       let backendSessionID = input.backendSessionID ?? agentSessions[uiSessionID]
       if (!backendSessionID) {
+        const requestedSessionDirectory = sessionDirectoryBySession[uiSessionID] ?? workspace.directory
         const created = await window.desktop.createAgentSession({
-          directory: agentDefaultDirectory || undefined,
+          directory: requestedSessionDirectory || agentDefaultDirectory || undefined,
         })
         backendSessionID = created.session.id
         setAgentSessions((prev) => ({
           ...prev,
           [uiSessionID]: backendSessionID!,
+        }))
+        setSessionDirectoryBySession((prev) => ({
+          ...prev,
+          [uiSessionID]: created.session.directory,
         }))
       }
 
@@ -2305,12 +2455,30 @@ export function useAgentWorkspace({
     setRightSidebarView(nextView)
   }
 
+  function handleActiveSessionDiffFileSelect(file: string | null) {
+    if (!activeSessionID) return
+
+    setRightSidebarView("changes")
+    setSelectedDiffFileBySession((prev) => ({
+      ...prev,
+      [activeSessionID]: file,
+    }))
+  }
+
+  async function handleActiveSessionDiffRefresh() {
+    if (!activeSessionID) return
+    await loadSessionDiffForSession(activeSessionID)
+  }
+
   return {
     activeCreateSessionTabID,
     activeSession,
+    activeSessionDirectory,
     activeSessionContextUsage,
     activeSessionDiff,
+    activeSessionDiffState,
     activePendingPermissionRequests,
+    activeSessionSelectedDiffFile,
     activeTurns,
     canvasSessionTabs,
     composerAttachments,
@@ -2348,6 +2516,8 @@ export function useAgentWorkspace({
     handleOpenCreateSessionTab,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
+    handleActiveSessionDiffFileSelect,
+    handleActiveSessionDiffRefresh,
     handleProjectCreateSession,
     handleProjectClick,
     handleProjectRemove,
@@ -2370,6 +2540,7 @@ export function useAgentWorkspace({
     refreshComposerMcp,
     refreshComposerModels,
     refreshComposerSkills,
+    refreshWorkspaceFromDirectory,
     rightSidebarView,
     selectedProjectID,
     selectedWorkspace,

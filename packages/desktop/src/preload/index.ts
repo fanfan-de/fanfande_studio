@@ -382,6 +382,47 @@ try {
         projectID: string
         requestId?: string
       }>,
+    archiveAgentSession: (input: { sessionID: string }) =>
+      ipcRenderer.invoke("desktop:archive-agent-session", input) as Promise<{
+        sessionID: string
+        projectID: string
+        directory: string
+        archivedAt: number
+        requestId?: string
+      }>,
+    listArchivedSessions: () =>
+      ipcRenderer.invoke("desktop:list-archived-sessions") as Promise<
+        Array<{
+          id: string
+          projectID: string
+          projectName: string | null
+          projectMissing: boolean
+          directory: string
+          title: string
+          created: number
+          updated: number
+          archivedAt: number
+          messageCount: number
+          eventCount: number
+        }>
+      >,
+    restoreArchivedSession: (input: { sessionID: string }) =>
+      ipcRenderer.invoke("desktop:restore-archived-session", input) as Promise<{
+        session: {
+          id: string
+          projectID: string
+          directory: string
+          title: string
+          created: number
+          updated: number
+        }
+        requestId?: string
+      }>,
+    deleteArchivedSession: (input: { sessionID: string }) =>
+      ipcRenderer.invoke("desktop:delete-archived-session", input) as Promise<{
+        sessionID: string
+        requestId?: string
+      }>,
     getSessionHistory: (input: { sessionID: string }) =>
       ipcRenderer.invoke("desktop:get-session-history", input) as Promise<
         Array<{

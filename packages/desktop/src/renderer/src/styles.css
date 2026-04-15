@@ -1287,6 +1287,82 @@ select {
   align-items: center;
 }
 
+.right-sidebar-panel-header,
+.right-sidebar-panel-actions,
+.right-sidebar-status-row,
+.right-sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.right-sidebar-panel-header,
+.right-sidebar-toolbar {
+  justify-content: space-between;
+}
+
+.right-sidebar-panel-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.right-sidebar-panel-copy h3 {
+  margin: 0;
+  color: #182532;
+  letter-spacing: -0.03em;
+}
+
+.right-sidebar-scope {
+  margin: 0;
+  color: #5b6f82;
+  word-break: break-word;
+}
+
+.right-sidebar-scope code {
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  color: #233241;
+}
+
+.right-sidebar-refresh-button {
+  white-space: nowrap;
+}
+
+.right-sidebar-status-row {
+  flex-wrap: wrap;
+}
+
+.right-sidebar-status-badge.is-loading,
+.right-sidebar-status-badge.is-refreshing {
+  color: #1669af;
+}
+
+.right-sidebar-status-badge.is-ready,
+.right-sidebar-status-badge.is-empty {
+  color: #2a8357;
+}
+
+.right-sidebar-status-badge.is-error {
+  color: #b14537;
+}
+
+.right-sidebar-status-copy,
+.right-sidebar-status-summary,
+.right-sidebar-status-error {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.right-sidebar-status-copy,
+.right-sidebar-status-summary {
+  color: #5b6f82;
+}
+
+.right-sidebar-status-error {
+  color: #b14537;
+}
+
 .right-sidebar-meta-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1316,6 +1392,51 @@ select {
 .right-sidebar-change-list {
   display: grid;
   gap: 8px;
+}
+
+.right-sidebar-toolbar {
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.right-sidebar-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.right-sidebar-filter-chip {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(166, 186, 208, 0.36);
+  background: rgba(248, 251, 255, 0.9);
+  color: #546a80;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.right-sidebar-filter-chip.is-active {
+  border-color: rgba(95, 146, 194, 0.7);
+  background: #ffffff;
+  color: #174262;
+}
+
+.right-sidebar-search-field {
+  min-width: min(100%, 180px);
+  display: grid;
+  gap: 6px;
+}
+
+.right-sidebar-search-field input {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid rgba(166, 186, 208, 0.36);
+  background: #ffffff;
+  color: #182532;
 }
 
 .right-sidebar-change-row {
@@ -1369,9 +1490,39 @@ select {
   gap: 4px;
 }
 
+.right-sidebar-change-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .right-sidebar-change-copy strong {
   color: #17232f;
   word-break: break-word;
+}
+
+.right-sidebar-change-type {
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.right-sidebar-change-type.is-added {
+  color: #2a8357;
+}
+
+.right-sidebar-change-type.is-modified {
+  color: #1669af;
+}
+
+.right-sidebar-change-type.is-deleted {
+  color: #b14537;
+}
+
+.right-sidebar-change-type.is-renamed {
+  color: #8d5b17;
 }
 
 .right-sidebar-change-stat {
@@ -2105,7 +2256,8 @@ textarea::placeholder {
 .settings-service-list-panel,
 .settings-service-detail-panel,
 .settings-default-layout,
-.settings-appearance-layout {
+.settings-appearance-layout,
+.settings-archive-layout {
   min-height: 0;
   display: grid;
   align-content: start;
@@ -2547,6 +2699,57 @@ textarea::placeholder {
   border-color: rgba(95, 146, 194, 0.7);
   background: #e7f2fb;
   color: #1a3d5e;
+}
+
+.settings-badge.is-warning {
+  border-color: rgba(184, 134, 11, 0.35);
+  background: #fff7df;
+  color: #8a5a00;
+}
+
+.settings-archive-list {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-archive-item {
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 14px 34px rgba(46, 81, 118, 0.06);
+  padding: 16px 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.settings-archive-copy {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.settings-archive-heading,
+.settings-archive-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-archive-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: #5b6f82;
+  line-height: 1.5;
+}
+
+.settings-archive-meta span {
+  min-width: 0;
+}
+
+.settings-archive-badge {
+  flex: 0 0 auto;
 }
 
 .provider-connect-overlay {
@@ -3597,6 +3800,36 @@ textarea::placeholder {
   font-size: 14px;
 }
 
+.trace-item-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.trace-item-file-chip {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(166, 186, 208, 0.36);
+  background: rgba(248, 251, 255, 0.92);
+  color: #214562;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.trace-item-file-chip:hover,
+.trace-item-file-chip:focus-visible {
+  border-color: rgba(95, 146, 194, 0.7);
+  background: #ffffff;
+  color: #0f67aa;
+  outline: none;
+}
+
 .trace-kind-error {
   background: #fff5f3;
   border-left-color: rgba(197, 97, 78, 0.72);
@@ -4588,6 +4821,11 @@ body.is-resizing-terminal-panel * {
 .secondary-button {
   background: #eef2f5;
   color: #314353;
+}
+
+.secondary-button.is-danger {
+  background: #fff2ef;
+  color: #9a3326;
 }
 
 body.is-resizing-sidebar,

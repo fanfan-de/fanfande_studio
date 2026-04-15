@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dis
 import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions } from "./constants"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
 import {
+  ArchiveIcon,
   ArrowUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -45,6 +46,8 @@ import type {
   ProviderDraftState,
   ProviderModel,
   RightSidebarView,
+  ArchivedSessionSummary,
+  SessionDiffState,
   SessionDiffSummary,
   SessionSummary,
   SidebarActionKey,
@@ -409,12 +412,12 @@ function FolderWorkspaceView({
                         </button>
                         <button
                           className="row-action"
-                          aria-label={`Delete session ${session.title}`}
-                          title={`Delete session ${session.title}`}
+                          aria-label={`Archive session ${session.title}`}
+                          title={`Archive session ${session.title}`}
                           disabled={deletingSessionID === session.id}
                           onClick={(event) => onSessionDelete(workspace, session, event)}
                         >
-                          <DeleteIcon />
+                          <ArchiveIcon />
                         </button>
                       </div>
                     )
@@ -852,13 +855,19 @@ export function Sidebar({
 }
 
 interface RightSidebarProps {
+  activeSessionDirectory: string | null
   activeSession: SessionSummary | null
   activeSessionDiff: SessionDiffSummary | null
+  activeSessionDiffState?: SessionDiffState
+  selectedDiffFile: string | null
   activeView: RightSidebarView
+  onDiffFileSelect: (file: string | null) => void
+  onRefresh: () => void | Promise<void>
   onViewChange: (view: RightSidebarView) => void
 }
 
 type DiffPreviewLineTone = "add" | "remove" | "context"
+type DiffFilterKey = "all" | "added" | "modified" | "deleted" | "renamed"
 
 interface ParsedDiffRow {
   content: string
@@ -873,6 +882,96 @@ interface ParsedDiffHunk {
 }
 
 const DIFF_HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: ?(.*))?$/
+const RIGHT_SIDEBAR_IDLE_STATE: SessionDiffState = {
+  status: "idle",
+  errorMessage: null,
+  updatedAt: null,
+  isStale: false,
+}
+const DIFF_FILTER_OPTIONS: Array<{ key: DiffFilterKey; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "added", label: "Added" },
+  { key: "modified", label: "Modified" },
+  { key: "deleted", label: "Deleted" },
+  { key: "renamed", label: "Renamed" },
+]
+
+function getDiffChangeType(diff: SessionDiffSummary["diffs"][number]): Exclude<DiffFilterKey, "all"> {
+  const patch = diff.patch ?? ""
+
+  if (/^rename from /m.test(patch) || /^rename to /m.test(patch)) return "renamed"
+  if (/^new file mode /m.test(patch)) return "added"
+  if (/^deleted file mode /m.test(patch)) return "deleted"
+  if (diff.additions > 0 && diff.deletions === 0) return "added"
+  if (diff.deletions > 0 && diff.additions === 0) return "deleted"
+  return "modified"
+}
+
+function formatDiffChangeTypeLabel(type: Exclude<DiffFilterKey, "all">) {
+  switch (type) {
+    case "added":
+      return "Added"
+    case "deleted":
+      return "Deleted"
+    case "renamed":
+      return "Renamed"
+    default:
+      return "Modified"
+  }
+}
+
+function formatDiffStateLabel(status: SessionDiffState["status"]) {
+  switch (status) {
+    case "loading":
+      return "Loading"
+    case "refreshing":
+      return "Refreshing"
+    case "ready":
+      return "Up to date"
+    case "empty":
+      return "Clean"
+    case "error":
+      return "Refresh failed"
+    default:
+      return "Idle"
+  }
+}
+
+function buildDiffStatusDescription(input: {
+  activeSession: SessionSummary | null
+  diffState: SessionDiffState
+  diffSummary: SessionDiffSummary | null
+}) {
+  if (!input.activeSession) {
+    return "Select a session to inspect its current workspace diff."
+  }
+
+  if (input.diffState.status === "loading") {
+    return "Loading the current workspace diff for this session."
+  }
+
+  if (input.diffState.status === "refreshing") {
+    return input.diffState.updatedAt
+      ? `Refreshing the workspace diff. Last synced at ${formatTime(input.diffState.updatedAt)}.`
+      : "Refreshing the workspace diff."
+  }
+
+  if (input.diffState.status === "error") {
+    return input.diffState.updatedAt
+      ? `The latest refresh failed. Showing the most recent snapshot from ${formatTime(input.diffState.updatedAt)}.`
+      : "The workspace diff could not be loaded."
+  }
+
+  if (input.diffState.updatedAt) {
+    return `Last synced at ${formatTime(input.diffState.updatedAt)}.`
+  }
+
+  if (input.diffSummary?.body) {
+    return input.diffSummary.body
+  }
+
+  return "Inspect the current workspace snapshot for this session."
+}
 
 function formatDiffRange(start: number, count: number) {
   if (count <= 0) return `line ${start}`
@@ -997,17 +1096,49 @@ function DiffPreview({ file, patch }: { file: string; patch?: string }) {
 }
 
 export function RightSidebar({
+  activeSessionDirectory,
   activeSession,
   activeSessionDiff,
+  activeSessionDiffState,
+  selectedDiffFile,
   activeView,
+  onDiffFileSelect,
+  onRefresh,
   onViewChange,
 }: RightSidebarProps) {
-  const [expandedDiffFile, setExpandedDiffFile] = useState<string | null>(null)
+  const [diffFilter, setDiffFilter] = useState<DiffFilterKey>("all")
+  const [diffQuery, setDiffQuery] = useState("")
+  const diffState = activeSessionDiffState ?? RIGHT_SIDEBAR_IDLE_STATE
   const changedFilesCount = activeSessionDiff?.stats?.files ?? activeSessionDiff?.diffs.length ?? 0
+  const additionsCount = activeSessionDiff?.stats?.additions ?? 0
+  const deletionsCount = activeSessionDiff?.stats?.deletions ?? 0
+  const hasWorkspaceChanges = Boolean(activeSessionDiff && activeSessionDiff.diffs.length > 0)
+  const normalizedQuery = diffQuery.trim().toLowerCase()
+  const filteredDiffs = (activeSessionDiff?.diffs ?? []).filter((diff) => {
+    const diffType = getDiffChangeType(diff)
+    if (diffFilter !== "all" && diffType !== diffFilter) return false
+    if (!normalizedQuery) return true
+    return diff.file.toLowerCase().includes(normalizedQuery)
+  })
 
   useEffect(() => {
-    setExpandedDiffFile(null)
-  }, [activeSession?.id, activeSessionDiff?.title])
+    setDiffFilter("all")
+    setDiffQuery("")
+  }, [activeSession?.id])
+
+  useEffect(() => {
+    if (!selectedDiffFile || !activeSessionDiff?.diffs.some((diff) => diff.file === selectedDiffFile)) {
+      if (selectedDiffFile !== null) {
+        onDiffFileSelect(null)
+      }
+    }
+  }, [activeSessionDiff, onDiffFileSelect, selectedDiffFile])
+
+  const statusDescription = buildDiffStatusDescription({
+    activeSession,
+    diffState,
+    diffSummary: activeSessionDiff,
+  })
 
   return (
     <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
@@ -1023,50 +1154,145 @@ export function RightSidebar({
       <div className="right-sidebar-view-host">
         {activeView === "changes" ? (
           <section className="right-sidebar-section">
-            <div className="right-sidebar-section-header">
-              <span className="label">Changed Files</span>
-              {activeSession ? <span className="settings-badge">{String(changedFilesCount)} files</span> : null}
+            <div className="right-sidebar-panel-header">
+              <div className="right-sidebar-panel-copy">
+                <span className="label">Workspace Diff</span>
+                <h3>Current session snapshot</h3>
+                {activeSessionDirectory ? (
+                  <p className="right-sidebar-scope">
+                    Scope:
+                    {" "}
+                    <code>{activeSessionDirectory}</code>
+                  </p>
+                ) : null}
+              </div>
+              <div className="right-sidebar-panel-actions">
+                <button
+                  type="button"
+                  className="secondary-button right-sidebar-refresh-button"
+                  aria-label="Refresh workspace diff"
+                  disabled={!activeSession || diffState.status === "loading" || diffState.status === "refreshing"}
+                  onClick={() => void onRefresh()}
+                >
+                  {diffState.status === "loading" || diffState.status === "refreshing" ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
             </div>
+
+            <div className="right-sidebar-status-row">
+              <span className={`settings-badge right-sidebar-status-badge is-${diffState.status}`}>{formatDiffStateLabel(diffState.status)}</span>
+              {activeSession ? <span className="settings-badge">{String(changedFilesCount)} files</span> : null}
+              {diffState.isStale ? <span className="settings-badge">Stale</span> : null}
+            </div>
+
+            <p className="right-sidebar-status-copy">{statusDescription}</p>
+            {activeSessionDiff?.title && activeSessionDiff.title !== activeSessionDiff.body ? (
+              <p className="right-sidebar-status-summary">{activeSessionDiff.title}</p>
+            ) : null}
+            {diffState.errorMessage ? (
+              <p className="right-sidebar-status-error" role="alert">{diffState.errorMessage}</p>
+            ) : null}
+
             {activeSession ? (
-              activeSessionDiff && activeSessionDiff.diffs.length > 0 ? (
-                <div className="right-sidebar-stack">
-                  {activeSessionDiff.title ? <p>{activeSessionDiff.title}</p> : null}
-                  <div className="right-sidebar-change-list">
-                    {activeSessionDiff.diffs.map((diff) => (
-                      <div key={diff.file} className="right-sidebar-change-row">
-                        <button
-                          type="button"
-                          className="right-sidebar-change-toggle"
-                          aria-expanded={expandedDiffFile === diff.file}
-                          aria-label={`Toggle diff for ${diff.file}`}
-                          onClick={() => setExpandedDiffFile((current) => (current === diff.file ? null : diff.file))}
-                        >
-                          <span className="right-sidebar-change-icon" aria-hidden="true">
-                            {expandedDiffFile === diff.file ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                          </span>
-                          <div className="right-sidebar-change-copy">
-                            <strong>{diff.file}</strong>
-                            <span className="right-sidebar-change-action">
-                              {expandedDiffFile === diff.file ? "Hide diff" : "Show diff"}
-                            </span>
-                          </div>
-                          <span className="right-sidebar-change-stat">
-                            +{diff.additions} -{diff.deletions}
-                          </span>
-                        </button>
-                        {expandedDiffFile === diff.file ? <DiffPreview file={diff.file} patch={diff.patch} /> : null}
-                      </div>
-                    ))}
+              <>
+                <div className="right-sidebar-meta-grid">
+                  <div className="right-sidebar-metric">
+                    <span className="right-sidebar-metric-label">Files</span>
+                    <strong>{String(changedFilesCount)}</strong>
+                  </div>
+                  <div className="right-sidebar-metric">
+                    <span className="right-sidebar-metric-label">Net</span>
+                    <strong>+{additionsCount} -{deletionsCount}</strong>
                   </div>
                 </div>
-              ) : (
-                <div className="right-sidebar-empty">
-                  <p>No tracked workspace changes for this session yet.</p>
-                </div>
-              )
+
+                {hasWorkspaceChanges ? (
+                  <>
+                    <div className="right-sidebar-toolbar">
+                      <div className="right-sidebar-filter-group" role="group" aria-label="Workspace diff filters">
+                        {DIFF_FILTER_OPTIONS.map((option) => (
+                          <button
+                            key={option.key}
+                            type="button"
+                            className={diffFilter === option.key ? "right-sidebar-filter-chip is-active" : "right-sidebar-filter-chip"}
+                            aria-pressed={diffFilter === option.key}
+                            onClick={() => setDiffFilter(option.key)}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                      <label className="right-sidebar-search-field">
+                        <span className="label">Search</span>
+                        <input
+                          aria-label="Search workspace diff files"
+                          type="search"
+                          value={diffQuery}
+                          placeholder="Filter files"
+                          onChange={(event: ChangeEvent<HTMLInputElement>) => setDiffQuery(event.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                    {filteredDiffs.length > 0 ? (
+                      <div className="right-sidebar-change-list">
+                        {filteredDiffs.map((diff) => {
+                          const diffType = getDiffChangeType(diff)
+                          const isExpanded = selectedDiffFile === diff.file
+
+                          return (
+                            <div key={diff.file} className="right-sidebar-change-row">
+                              <button
+                                type="button"
+                                className="right-sidebar-change-toggle"
+                                aria-expanded={isExpanded}
+                                aria-label={`Toggle diff for ${diff.file}`}
+                                onClick={() => onDiffFileSelect(isExpanded ? null : diff.file)}
+                              >
+                                <span className="right-sidebar-change-icon" aria-hidden="true">
+                                  {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                                </span>
+                                <div className="right-sidebar-change-copy">
+                                  <strong>{diff.file}</strong>
+                                  <span className="right-sidebar-change-meta">
+                                    <span className={`right-sidebar-change-type is-${diffType}`}>{formatDiffChangeTypeLabel(diffType)}</span>
+                                    <span className="right-sidebar-change-action">
+                                      {isExpanded ? "Hide diff" : "Show diff"}
+                                    </span>
+                                  </span>
+                                </div>
+                                <span className="right-sidebar-change-stat">
+                                  +{diff.additions} -{diff.deletions}
+                                </span>
+                              </button>
+                              {isExpanded ? <DiffPreview file={diff.file} patch={diff.patch} /> : null}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="right-sidebar-empty">
+                        <p>No files match the current diff filters.</p>
+                      </div>
+                    )}
+                  </>
+                ) : diffState.status === "loading" ? (
+                  <div className="right-sidebar-empty">
+                    <p>Loading workspace diff for this session.</p>
+                  </div>
+                ) : diffState.status === "error" ? (
+                  <div className="right-sidebar-empty">
+                    <p>Couldn't refresh the current workspace diff.</p>
+                  </div>
+                ) : (
+                  <div className="right-sidebar-empty">
+                    <p>No workspace changes were detected for this session.</p>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="right-sidebar-empty">
-                <p>Select a session to inspect its file changes.</p>
+                <p>Select a session to inspect its workspace diff.</p>
               </div>
             )}
           </section>
@@ -2400,11 +2626,15 @@ function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServ
 interface SettingsPageProps {
   activeMcpServerID: string | null
   activeMcpServerDiagnostic: McpServerDiagnostic | null
+  archivedSessions: ArchivedSessionSummary[]
+  archivedSessionsError: string | null
   catalog: ProviderCatalogItem[]
+  deletingArchivedSessionID: string | null
   deletingMcpServerID: string | null
   deletingProviderID: string | null
   isActivityRailVisible: boolean
   isLoading: boolean
+  isLoadingArchivedSessions: boolean
   isOpen: boolean
   isSavingSelection: boolean
   loadError: string | null
@@ -2419,17 +2649,20 @@ interface SettingsPageProps {
   projectName: string | null
   projectWorktree: string | null
   providerDrafts: Record<string, ProviderDraftState>
+  restoringArchivedSessionID: string | null
   savedSelection: ProjectModelSelection
   savingMcpServerID: string | null
   savingProviderID: string | null
   selectionDraft: ProjectModelSelection
   onActivityRailVisibilityChange: (value: boolean) => void
   onClose: () => void
+  onDeleteArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
   onDeleteProvider: (providerID: string) => void | Promise<void>
   onMcpServerDraftChange: (field: keyof McpServerDraftState, value: string | boolean) => void
   onMcpServerSelect: (serverID: string) => void
   onProviderDraftChange: (providerID: string, field: keyof ProviderDraftState, value: string) => void
+  onRestoreArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onSaveMcpServer: () => boolean | Promise<boolean>
   onSaveProvider: (providerID: string) => boolean | Promise<boolean>
   onSaveSelection: () => void | Promise<void>
@@ -2440,11 +2673,15 @@ interface SettingsPageProps {
 export function SettingsPage({
   activeMcpServerID,
   activeMcpServerDiagnostic,
+  archivedSessions,
+  archivedSessionsError,
   catalog,
+  deletingArchivedSessionID,
   deletingMcpServerID,
   deletingProviderID,
   isActivityRailVisible,
   isLoading,
+  isLoadingArchivedSessions,
   isOpen,
   isSavingSelection,
   loadError,
@@ -2456,17 +2693,20 @@ export function SettingsPage({
   projectName,
   projectWorktree,
   providerDrafts,
+  restoringArchivedSessionID,
   savedSelection,
   savingMcpServerID,
   savingProviderID,
   selectionDraft,
   onActivityRailVisibilityChange,
   onClose,
+  onDeleteArchivedSession,
   onDeleteMcpServer,
   onDeleteProvider,
   onMcpServerDraftChange,
   onMcpServerSelect,
   onProviderDraftChange,
+  onRestoreArchivedSession,
   onSaveMcpServer,
   onSaveProvider,
   onSaveSelection,
@@ -2474,7 +2714,7 @@ export function SettingsPage({
   onStartNewMcpServer,
 }: SettingsPageProps) {
   {
-    const [activeSection, setActiveSection] = useState<"services" | "defaults" | "mcp" | "appearance">("services")
+    const [activeSection, setActiveSection] = useState<"services" | "defaults" | "mcp" | "appearance" | "archive">("services")
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
     const serviceDetailPanelRef = useRef<HTMLDivElement | null>(null)
@@ -2522,6 +2762,7 @@ export function SettingsPage({
             : null
     const mcpServerCanSave = !mcpServerValidationError
     const showLoadedState = !isLoading && !loadError
+    const showProviderSections = activeSection === "services" || activeSection === "defaults" || activeSection === "mcp"
     useEffect(() => {
       if (!isOpen) {
         setActiveSection("services")
@@ -2587,6 +2828,12 @@ export function SettingsPage({
         meta: `${mcpServers.length} servers`,
         Icon: FolderIcon,
       },
+      {
+        key: "archive" as const,
+        label: "Archived Sessions",
+        meta: `${archivedSessions.length} sessions`,
+        Icon: ArchiveIcon,
+      },
       { key: "appearance" as const, label: "Appearance", meta: "1 option", Icon: LayoutSidebarLeftIcon },
     ]
 
@@ -2629,13 +2876,25 @@ export function SettingsPage({
                 <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>{message.text}</div>
               ) : null}
 
-              {loadError && activeSection !== "appearance" ? <div className="settings-banner is-error">{loadError}</div> : null}
+              {loadError && showProviderSections ? <div className="settings-banner is-error">{loadError}</div> : null}
 
-              {isLoading && activeSection !== "appearance" ? (
+              {archivedSessionsError && activeSection === "archive" ? (
+                <div className="settings-banner is-error">{archivedSessionsError}</div>
+              ) : null}
+
+              {isLoading && showProviderSections ? (
                 <article className="settings-empty-state">
                   <span className="label">Loading</span>
                   <h3>Fetching provider catalog</h3>
                   <p>Reading provider availability, model visibility, and saved model preferences.</p>
+                </article>
+              ) : null}
+
+              {isLoadingArchivedSessions && activeSection === "archive" ? (
+                <article className="settings-empty-state">
+                  <span className="label">Loading</span>
+                  <h3>Fetching archived sessions</h3>
+                  <p>Reading archived session snapshots so you can restore or permanently delete them.</p>
                 </article>
               ) : null}
 
@@ -2706,6 +2965,76 @@ export function SettingsPage({
                     </div>
                   </section>
                 </div>
+              ) : activeSection === "archive" ? (
+                isLoadingArchivedSessions ? null : (
+                <div className="settings-archive-layout">
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Archive</span>
+                        <h3>Archived Sessions</h3>
+                      </div>
+                      <p>Archived sessions stay out of normal startup loading until you restore them.</p>
+                    </div>
+
+                    {archivedSessions.length === 0 ? (
+                      <article className="settings-empty-state">
+                        <span className="label">Empty</span>
+                        <h3>No archived sessions</h3>
+                        <p>Archive a session from the workspace sidebar to manage it here.</p>
+                      </article>
+                    ) : (
+                      <div className="settings-archive-list" role="list" aria-label="Archived sessions">
+                        {archivedSessions.map((session) => {
+                          const isRestoring = restoringArchivedSessionID === session.id
+                          const isDeleting = deletingArchivedSessionID === session.id
+                          const projectLabel = session.projectName ?? session.projectID
+
+                          return (
+                            <article key={session.id} className="settings-archive-item" role="listitem">
+                              <div className="settings-archive-copy">
+                                <div className="settings-archive-heading">
+                                  <strong>{session.title}</strong>
+                                  {session.projectMissing ? (
+                                    <span className="settings-badge settings-archive-badge is-warning">Project missing</span>
+                                  ) : null}
+                                </div>
+                                <div className="settings-archive-meta">
+                                  <span>{projectLabel}</span>
+                                  <span>{session.directory}</span>
+                                  <span>Updated {formatTime(session.updated)}</span>
+                                  <span>Archived {formatTime(session.archivedAt)}</span>
+                                  <span>{session.messageCount} messages</span>
+                                  <span>{session.eventCount} events</span>
+                                </div>
+                              </div>
+
+                              <div className="settings-inline-actions settings-archive-actions">
+                                <button
+                                  className="secondary-button"
+                                  disabled={isRestoring || isDeleting}
+                                  type="button"
+                                  onClick={() => void onRestoreArchivedSession(session.id)}
+                                >
+                                  {isRestoring ? "Restoring..." : "Restore"}
+                                </button>
+                                <button
+                                  className="secondary-button is-danger"
+                                  disabled={isRestoring || isDeleting}
+                                  type="button"
+                                  onClick={() => void onDeleteArchivedSession(session.id)}
+                                >
+                                  {isDeleting ? "Deleting..." : "Delete"}
+                                </button>
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </section>
+                </div>
+                )
               ) : showLoadedState ? (
                 activeSection === "services" ? (
                   <section className="settings-services-layout" aria-label="Provider layout">
@@ -3830,6 +4159,7 @@ interface ThreadViewProps {
   activeSession: SessionSummary | null
   activeTurns: Turn[]
   isResolvingPermissionRequest: boolean
+  onFileChangeSelect?: (file: string) => void
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
@@ -4005,10 +4335,12 @@ function AssistantTurnPlaceholder({ message }: { message: string }) {
 
 function AssistantTurnSections({
   items,
+  onFileChangeSelect,
   showFileChanges,
   turnID,
 }: {
   items: AssistantTraceItem[]
+  onFileChangeSelect: ((file: string) => void) | undefined
   showFileChanges: boolean
   turnID: string
 }) {
@@ -4035,7 +4367,7 @@ function AssistantTurnSections({
               }
             >
               {renderedItems.map((item) => (
-                <TraceItemView key={item.id} item={item} />
+                <TraceItemView key={item.id} item={item} onFileChangeSelect={onFileChangeSelect} />
               ))}
             </div>
           </AssistantTraceSection>
@@ -4064,7 +4396,13 @@ function formatTraceStatusText(status?: AssistantTraceItem["status"]) {
   }
 }
 
-function TraceItemView({ item }: { item: AssistantTraceItem }) {
+function TraceItemView({
+  item,
+  onFileChangeSelect,
+}: {
+  item: AssistantTraceItem
+  onFileChangeSelect?: (file: string) => void
+}) {
   const [isExpanded, setIsExpanded] = useState(false)
   const className = [
     "trace-item",
@@ -4075,6 +4413,7 @@ function TraceItemView({ item }: { item: AssistantTraceItem }) {
   ]
     .filter(Boolean)
     .join(" ")
+  const selectableFilePaths = item.kind === "patch" ? item.filePaths?.filter(Boolean) ?? [] : []
 
   if (item.kind === "reasoning") {
     return (
@@ -4137,6 +4476,20 @@ function TraceItemView({ item }: { item: AssistantTraceItem }) {
       </div>
       {item.text ? <p className="trace-item-text">{item.text}</p> : null}
       {item.detail ? <p className="trace-item-detail">{item.detail}</p> : null}
+      {selectableFilePaths.length > 0 && onFileChangeSelect ? (
+        <div className="trace-item-file-actions">
+          {selectableFilePaths.map((filePath) => (
+            <button
+              key={`${item.id}-${filePath}`}
+              type="button"
+              className="trace-item-file-chip"
+              onClick={() => onFileChangeSelect(filePath)}
+            >
+              {filePath}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </article>
   )
 }
@@ -4339,6 +4692,7 @@ export function ThreadView({
   activeSession,
   activeTurns,
   isResolvingPermissionRequest,
+  onFileChangeSelect,
   pendingPermissionRequests,
   permissionRequestActionError,
   permissionRequestActionRequestID,
@@ -4409,6 +4763,7 @@ export function ThreadView({
                       <AssistantTurnSections
                         turnID={turn.id}
                         items={visibleItems}
+                        onFileChangeSelect={onFileChangeSelect}
                         showFileChanges={isCycleFinalTurn && !turn.isStreaming}
                       />
                     )}

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import type {
+  ArchivedSessionSummary,
   McpAllowedTools,
   McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
+  LoadedSessionSnapshot,
   ProjectModelSelection,
   ProviderCatalogItem,
   ProviderDraftState,
@@ -20,6 +22,7 @@ interface LoadSettingsOptions {
 }
 
 interface UseSettingsPageOptions {
+  onArchivedSessionRestored?: (session: LoadedSessionSnapshot) => void | Promise<void>
   onMcpUpdated?: () => void | Promise<void>
   onProviderModelsUpdated?: () => void | Promise<void>
   projectID: string | null
@@ -233,21 +236,28 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [mcpDiagnostics, setMcpDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
   const [activeMcpServerID, setActiveMcpServerID] = useState<string | null>(null)
   const [mcpServerDraft, setMcpServerDraft] = useState<McpServerDraftState>(() => toMcpDraft())
+  const [archivedSessions, setArchivedSessions] = useState<ArchivedSessionSummary[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingArchivedSessions, setIsLoadingArchivedSessions] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [archivedSessionsError, setArchivedSessionsError] = useState<string | null>(null)
   const [message, setMessage] = useState<SettingsMessage | null>(null)
   const [savingProviderID, setSavingProviderID] = useState<string | null>(null)
   const [deletingProviderID, setDeletingProviderID] = useState<string | null>(null)
   const [isSavingSelection, setIsSavingSelection] = useState(false)
   const [savingMcpServerID, setSavingMcpServerID] = useState<string | null>(null)
   const [deletingMcpServerID, setDeletingMcpServerID] = useState<string | null>(null)
+  const [restoringArchivedSessionID, setRestoringArchivedSessionID] = useState<string | null>(null)
+  const [deletingArchivedSessionID, setDeletingArchivedSessionID] = useState<string | null>(null)
   const requestIDRef = useRef(0)
+  const archivedSessionsRequestIDRef = useRef(0)
   const mcpDiagnosticRequestIDRef = useRef<Record<string, number>>({})
 
   useEffect(() => {
     if (!isOpen) return
 
     void loadSettingsData()
+    void loadArchivedSessions()
   }, [isOpen, options.projectID])
 
   function resolveProjectProviderSettingsProjectID() {
@@ -283,11 +293,48 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function notifyArchivedSessionRestored(session: LoadedSessionSnapshot) {
+    try {
+      await options.onArchivedSessionRestored?.(session)
+    } catch (error) {
+      console.error("[desktop] archived session restore sync failed:", error)
+    }
+  }
+
   useEffect(() => {
     if (!isOpen || !options.projectID || !activeMcpServerID) return
 
     void loadMcpServerDiagnostic(options.projectID, activeMcpServerID)
   }, [activeMcpServerID, isOpen, options.projectID])
+
+  async function loadArchivedSessions(optionsArg?: LoadSettingsOptions) {
+    const listArchivedSessions = window.desktop?.listArchivedSessions
+    if (!listArchivedSessions) {
+      setArchivedSessions([])
+      setArchivedSessionsError("Desktop archived session APIs are unavailable.")
+      return
+    }
+
+    const requestID = ++archivedSessionsRequestIDRef.current
+    if (!optionsArg?.silent) {
+      setIsLoadingArchivedSessions(true)
+    }
+    setArchivedSessionsError(null)
+
+    try {
+      const nextArchivedSessions = await listArchivedSessions()
+      if (archivedSessionsRequestIDRef.current !== requestID) return
+      setArchivedSessions(nextArchivedSessions)
+    } catch (error) {
+      if (archivedSessionsRequestIDRef.current !== requestID) return
+      setArchivedSessions([])
+      setArchivedSessionsError(getErrorMessage(error))
+    } finally {
+      if (archivedSessionsRequestIDRef.current === requestID) {
+        setIsLoadingArchivedSessions(false)
+      }
+    }
+  }
 
   async function loadSettingsData(optionsArg?: LoadSettingsOptions) {
     const projectID = resolveProjectProviderSettingsProjectID()
@@ -707,16 +754,74 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function restoreArchivedSession(sessionID: string) {
+    const restoreArchivedSessionApi = window.desktop?.restoreArchivedSession
+    if (!restoreArchivedSessionApi) return false
+
+    setRestoringArchivedSessionID(sessionID)
+    setMessage(null)
+
+    try {
+      const result = await restoreArchivedSessionApi({ sessionID })
+      await loadArchivedSessions({ silent: true })
+      await notifyArchivedSessionRestored(result.session)
+      setMessage({
+        tone: "success",
+        text: "Archived session restored.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setRestoringArchivedSessionID(null)
+    }
+  }
+
+  async function deleteArchivedSession(sessionID: string) {
+    const deleteArchivedSessionApi = window.desktop?.deleteArchivedSession
+    if (!deleteArchivedSessionApi) return false
+
+    setDeletingArchivedSessionID(sessionID)
+    setMessage(null)
+
+    try {
+      await deleteArchivedSessionApi({ sessionID })
+      await loadArchivedSessions({ silent: true })
+      setMessage({
+        tone: "success",
+        text: "Archived session deleted.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setDeletingArchivedSessionID(null)
+    }
+  }
+
   return {
     activeMcpServerID,
     activeMcpServerDiagnostic: activeMcpServerID ? mcpDiagnostics[activeMcpServerID] ?? null : null,
+    archivedSessions,
+    archivedSessionsError,
     catalog,
     closeSettings,
+    deleteArchivedSession,
     deleteMcpServer,
     deleteProvider,
+    deletingArchivedSessionID,
     deletingMcpServerID,
     deletingProviderID,
     isLoading,
+    isLoadingArchivedSessions,
     isOpen,
     isSavingSelection,
     loadError,
@@ -729,6 +834,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     projectName: options.projectName ?? null,
     projectWorktree: options.projectWorktree ?? null,
     providerDrafts,
+    restoringArchivedSessionID,
     savedSelection,
     saveMcpServer,
     saveProvider,
@@ -741,5 +847,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setProviderDraftValue,
     setSelectionDraftValue,
     startNewMcpServer,
+    restoreArchivedSession,
   }
 }

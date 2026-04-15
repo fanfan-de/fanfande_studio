@@ -15,6 +15,7 @@ import * as Snapshot  from "#snapshot/snapshot.ts"
 import * as SessionDiff from "#session/diff.ts"
 import { Flag } from "#flag/flag.ts"
 import * as Orchestrator from "#session/orchestrator.ts"
+import * as RunningState from "#session/running-state.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
@@ -23,14 +24,6 @@ import { resolveTools } from "./resolve-tools.ts";
 const log = Log.create({ service: "session.prompt" });
 const DEFAULT_PROMPT_LOOP_LIMIT = Flag.FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT ?? 16
 
-type RunningSession = {
-    abort: AbortController;
-   // lastAgent: string | undefined;
-    //lastModel: any | undefined;
-};
-
-const runningSessions: Record<string, RunningSession> = Object.create(null);
-
 // ====================
 // 业务模块：运行态控制
 // ====================
@@ -38,7 +31,7 @@ const runningSessions: Record<string, RunningSession> = Object.create(null);
 // 历史会话状态统一以数据库为准，运行态只负责并发保护和取消信号。
 export function state() {
     // 这里只跟踪当前正在运行的 prompt loop。
-    return runningSessions;
+    return RunningState.state();
 }
 
 // ====================
@@ -130,17 +123,11 @@ export type PromptInput = z.infer<typeof PromptInput>;
 // }
 
 function finish(sessionID: string, controller?: AbortController) {
-    const running = state();
-    const current = running[sessionID];
-    if (!current) return;
-    if (controller && current.abort !== controller) return;
-    delete running[sessionID];
+    RunningState.finish(sessionID, controller);
 }
 
 async function waitForStop(sessionID: string) {
-    while (state()[sessionID]) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-    }
+    await RunningState.waitForStop(sessionID);
 }
 
 async function persistMessageRecord(
@@ -175,13 +162,7 @@ async function removePartRecord(
 
 export function cancel(sessionID: string) {
     // 主动中断某个正在运行的 loop，并从运行态注册表中移除。
-    const running = state();
-    const current = running[sessionID];
-    if (!current) return false;
-
-    current.abort.abort();
-    delete running[sessionID];
-    return true;
+    return RunningState.cancel(sessionID);
 }
 
 type RunLoopResult = {
@@ -398,11 +379,7 @@ export const prompt = fn(PromptInput, async (input) => {
     }
     //
     const controller = new AbortController();
-    state()[input.sessionID] = {
-        abort: controller,
-        //lastAgent: input.agent,
-        //lastModel: input.model,
-    };
+    RunningState.register(input.sessionID, controller);
 
     const baselineSnapshot = await Snapshot.track().catch((error) => {
         log.warn("failed to capture pre-turn snapshot", {
@@ -548,10 +525,7 @@ export const resume = fn(ResumeInput, async (input) => {
         throw new Error(`Session '${input.sessionID}' is already running.`);
 
     const controller = new AbortController();
-    running[input.sessionID] = {
-        abort: controller,
-
-    };
+    RunningState.register(input.sessionID, controller);
     const latestUser = SessionDiff.findLatestUserMessageWithSnapshot(input.sessionID)
     let turn: Orchestrator.TurnContext | undefined
 

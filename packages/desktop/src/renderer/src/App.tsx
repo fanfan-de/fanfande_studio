@@ -51,10 +51,13 @@ export function App() {
 
   const {
     activeSession,
+    activeSessionDirectory,
     activeSessionContextUsage,
     activeCreateSessionTabID,
     activeSessionDiff,
+    activeSessionDiffState,
     activePendingPermissionRequests,
+    activeSessionSelectedDiffFile,
     activeTurns,
     canvasSessionTabs,
     composerAttachments,
@@ -80,6 +83,8 @@ export function App() {
     handleCanvasSessionTabClose,
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
+    handleActiveSessionDiffFileSelect,
+    handleActiveSessionDiffRefresh,
     handleComposerMcpToggle,
     handleComposerModelChange,
     handleComposerSkillToggle,
@@ -112,6 +117,7 @@ export function App() {
     refreshComposerMcp,
     refreshComposerModels,
     refreshComposerSkills,
+    refreshWorkspaceFromDirectory,
     rightSidebarView,
     selectedWorkspace,
     selectedFolderID,
@@ -164,13 +170,18 @@ export function App() {
   const {
     activeMcpServerID,
     activeMcpServerDiagnostic,
+    archivedSessions,
+    archivedSessionsError,
     catalog,
     closeSettings,
+    deleteArchivedSession,
     deleteMcpServer,
     deleteProvider,
+    deletingArchivedSessionID,
     deletingMcpServerID,
     deletingProviderID,
     isLoading,
+    isLoadingArchivedSessions,
     isOpen,
     isSavingSelection,
     loadError,
@@ -183,7 +194,9 @@ export function App() {
     projectName,
     projectWorktree,
     providerDrafts,
+    restoringArchivedSessionID,
     savedSelection,
+    restoreArchivedSession,
     saveMcpServer,
     saveProvider,
     saveSelection,
@@ -196,6 +209,9 @@ export function App() {
     setSelectionDraftValue,
     startNewMcpServer,
   } = useSettingsPage({
+    onArchivedSessionRestored: async (session) => {
+      await refreshWorkspaceFromDirectory(session.directory)
+    },
     onMcpUpdated: refreshComposerMcp,
     onProviderModelsUpdated: refreshComposerModels,
     projectID: selectedWorkspace?.project.id ?? null,
@@ -212,6 +228,13 @@ export function App() {
     : activeCreateSessionWorkspace
       ? `${activeCreateSessionWorkspace.project.name} / ${activeCreateSessionWorkspace.name}`
       : "No project selected"
+
+  function handleInspectFileInSidebar(file: string | null) {
+    if (isRightSidebarCollapsed) {
+      handleRightSidebarToggle()
+    }
+    handleActiveSessionDiffFileSelect(file)
+  }
 
   return (
     <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
@@ -388,6 +411,7 @@ export function App() {
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
                 activeTurns={activeTurns}
                 threadColumnRef={threadColumnRef}
+                onFileChangeSelect={handleInspectFileInSidebar}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
               />
               <div className="composer-stack">
@@ -436,9 +460,14 @@ export function App() {
             />
 
             <RightSidebar
+              activeSessionDirectory={leftSidebarView === "skills" ? null : activeSessionDirectory}
               activeSession={leftSidebarView === "skills" ? null : activeSession}
               activeSessionDiff={leftSidebarView === "skills" ? null : activeSessionDiff}
+              activeSessionDiffState={leftSidebarView === "skills" ? undefined : activeSessionDiffState}
+              selectedDiffFile={leftSidebarView === "skills" ? null : activeSessionSelectedDiffFile}
               activeView={rightSidebarView}
+              onDiffFileSelect={handleActiveSessionDiffFileSelect}
+              onRefresh={handleActiveSessionDiffRefresh}
               onViewChange={handleRightSidebarViewChange}
             />
           </>
@@ -447,11 +476,15 @@ export function App() {
         <SettingsPage
           activeMcpServerID={activeMcpServerID}
           activeMcpServerDiagnostic={activeMcpServerDiagnostic}
+          archivedSessions={archivedSessions}
+          archivedSessionsError={archivedSessionsError}
           catalog={catalog}
+          deletingArchivedSessionID={deletingArchivedSessionID}
           deletingMcpServerID={deletingMcpServerID}
           deletingProviderID={deletingProviderID}
           isActivityRailVisible={isActivityRailVisible}
           isLoading={isLoading}
+          isLoadingArchivedSessions={isLoadingArchivedSessions}
           isOpen={isOpen}
           isSavingSelection={isSavingSelection}
           loadError={loadError}
@@ -463,17 +496,20 @@ export function App() {
           projectName={projectName}
           projectWorktree={projectWorktree}
           providerDrafts={providerDrafts}
+          restoringArchivedSessionID={restoringArchivedSessionID}
           savedSelection={savedSelection}
           savingMcpServerID={savingMcpServerID}
           savingProviderID={savingProviderID}
           selectionDraft={selectionDraft}
           onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
           onClose={closeSettings}
+          onDeleteArchivedSession={deleteArchivedSession}
           onDeleteMcpServer={deleteMcpServer}
           onDeleteProvider={deleteProvider}
           onMcpServerDraftChange={setMcpServerDraftValue}
           onMcpServerSelect={selectMcpServer}
           onProviderDraftChange={setProviderDraftValue}
+          onRestoreArchivedSession={restoreArchivedSession}
           onSaveMcpServer={saveMcpServer}
           onSaveProvider={saveProvider}
           onSaveSelection={saveSelection}

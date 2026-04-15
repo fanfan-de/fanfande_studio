@@ -10,6 +10,7 @@ import {
   listGitBranches,
   pushGitChanges,
 } from "./git"
+import { getWorkspaceGitDiff } from "./workspace-diff"
 import type { ApplicationMenus } from "./menu"
 import { PtyProxyManager, PTY_EVENT_CHANNEL } from "./pty-proxy"
 import { WorkspaceWatchManager } from "./workspace-watch"
@@ -38,7 +39,10 @@ import type {
   AgentSessionStreamIPCEvent,
   AgentStreamIPCEvent,
   AgentSessionInfo,
+  AgentSessionArchiveResult,
   AgentSessionDeleteResult,
+  AgentArchivedSessionDeleteResult,
+  AgentArchivedSessionSummary,
   MenuAnchor,
   MenuKey,
   WindowAction,
@@ -574,6 +578,53 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
+  ipcMain.handle("desktop:archive-agent-session", async (_event, input: { sessionID: string }) => {
+    const sessionID = input.sessionID.trim()
+    const result = await requestAgentJSON<AgentSessionArchiveResult>(
+      `/api/sessions/${encodeURIComponent(sessionID)}/archive`,
+      {
+        method: "POST",
+      },
+    )
+
+    return {
+      ...result.data,
+      requestId: result.requestId,
+    }
+  })
+
+  ipcMain.handle("desktop:list-archived-sessions", async () => {
+    const result = await requestAgentJSON<AgentArchivedSessionSummary[]>("/api/sessions/archived")
+    return result.data
+  })
+
+  ipcMain.handle("desktop:restore-archived-session", async (_event, input: { sessionID: string }) => {
+    const sessionID = input.sessionID.trim()
+    const result = await requestAgentJSON<AgentSessionInfo>(`/api/sessions/archived/${encodeURIComponent(sessionID)}/restore`, {
+      method: "POST",
+    })
+
+    return {
+      session: mapSessionInfo(result.data),
+      requestId: result.requestId,
+    }
+  })
+
+  ipcMain.handle("desktop:delete-archived-session", async (_event, input: { sessionID: string }) => {
+    const sessionID = input.sessionID.trim()
+    const result = await requestAgentJSON<AgentArchivedSessionDeleteResult>(
+      `/api/sessions/archived/${encodeURIComponent(sessionID)}`,
+      {
+        method: "DELETE",
+      },
+    )
+
+    return {
+      ...result.data,
+      requestId: result.requestId,
+    }
+  })
+
   ipcMain.handle("desktop:get-session-history", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
     const result = await requestAgentJSON<AgentSessionHistoryMessage[]>(
@@ -585,10 +636,14 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
   ipcMain.handle("desktop:get-session-diff", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
-    const result = await requestAgentJSON<AgentSessionDiffSummary>(
-      `/api/sessions/${encodeURIComponent(sessionID)}/diff`,
-    )
+    const sessionResult = await requestAgentJSON<AgentSessionInfo>(`/api/sessions/${encodeURIComponent(sessionID)}`)
+    const workspaceDiff = await getWorkspaceGitDiff(sessionResult.data.directory).catch((error) => {
+      console.warn("[desktop] getWorkspaceGitDiff failed:", error)
+      return null
+    })
+    if (workspaceDiff) return workspaceDiff
 
+    const result = await requestAgentJSON<AgentSessionDiffSummary>(`/api/sessions/${encodeURIComponent(sessionID)}/diff`)
     return result.data
   })
 
