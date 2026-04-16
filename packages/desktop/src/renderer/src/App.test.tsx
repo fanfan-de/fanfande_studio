@@ -3644,8 +3644,15 @@ describe("App", () => {
     fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-right"))
     fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-right"))
 
+    const liveRegion = sourcePane.querySelector(".workbench-pane-live-region.pane-drop-preview-current") as HTMLElement | null
+    const incomingPreview = sourcePane.querySelector(".workbench-pane-incoming-preview.pane-drop-preview-incoming") as HTMLElement | null
+
     expect(sourcePane.querySelector(".pane-drop-preview.is-right")).not.toBeNull()
-    expect(sourcePane.querySelectorAll(".pane-drop-preview-incoming")).toHaveLength(1)
+    expect(liveRegion).not.toBeNull()
+    expect(liveRegion?.style.left).toBe("12px")
+    expect(liveRegion?.style.width).toBe("calc(50% - 18px)")
+    expect(incomingPreview).not.toBeNull()
+    expect(incomingPreview?.style.left).toBe("calc(50% + 6px)")
   })
 
   it("shows a merge preview block in the target pane tab bar when dragging into pane center", async () => {
@@ -3712,6 +3719,68 @@ describe("App", () => {
     })
   })
 
+  it("treats the workbench top edge as the top split target for top-row panes during pointer drag", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    await screen.findByRole("combobox", { name: "Session project" })
+
+    const workbench = document.querySelector(".workbench-panes") as HTMLElement
+    const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
+    const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
+
+    Object.defineProperty(workbench, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 400,
+        bottom: 320,
+        width: 400,
+        height: 320,
+        toJSON: () => ({}),
+      }),
+    })
+
+    Object.defineProperty(sourcePane, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 32,
+        left: 0,
+        top: 32,
+        right: 400,
+        bottom: 320,
+        width: 400,
+        height: 288,
+        toJSON: () => ({}),
+      }),
+    })
+
+    fireEvent.pointerDown(createTab, {
+      button: 0,
+      clientX: 120,
+      clientY: 56,
+      pointerId: 1,
+    })
+    fireEvent.pointerMove(window, {
+      clientX: 200,
+      clientY: 8,
+      pointerId: 1,
+    })
+    fireEvent.pointerUp(window, {
+      clientX: 200,
+      clientY: 8,
+      pointerId: 1,
+    })
+
+    await waitFor(() => {
+      expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
+    })
+  })
+
   it("drops a tab into another pane and activates it there", async () => {
     render(<App />)
 
@@ -3762,6 +3831,31 @@ describe("App", () => {
 
     expect(panes[0].querySelector(".pane-tab-bar")).toHaveClass("window-drag-region")
     expect(panes[1].querySelector(".pane-tab-bar")).not.toHaveClass("window-drag-region")
+  })
+
+  it("keeps the right sidebar toggle in the top-right pane when panes are stacked", async () => {
+    render(<App />)
+
+    const panes = await createStackedPaneFromCreateTab()
+    expect(panes).toHaveLength(2)
+
+    expect(within(panes[0]).getByRole("button", { name: "Collapse right sidebar" })).toBeInTheDocument()
+    expect(within(panes[1]).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
+  })
+
+  it("temporarily disables the top-row pane drag region while dragging a tab", () => {
+    render(<App />)
+
+    const tab = screen.getByRole("button", { name: "Switch to session Chat 1" })
+    const tabBar = tab.closest(".pane-tab-bar")
+
+    expect(tabBar).toHaveClass("window-drag-region")
+
+    fireEvent.dragStart(tab)
+    expect(tabBar).not.toHaveClass("window-drag-region")
+
+    fireEvent.dragEnd(tab)
+    expect(tabBar).toHaveClass("window-drag-region")
   })
 
   it("falls back to the create session tab when the last session tab closes", async () => {
@@ -6633,7 +6727,11 @@ describe("App", () => {
   it("keeps the canvas tabs separate from the session top menu", () => {
     expect(styles).toMatch(/\.canvas\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto auto;[^}]*gap:\s*14px;/s)
     expect(styles).toMatch(/\.canvas-top-stack\s*\{[^}]*display:\s*grid;[^}]*gap:\s*6px;/s)
-    expect(styles).toMatch(/\.workbench-pane\s*\{[^}]*flex:\s*1 1 0;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto auto;/s)
+    expect(styles).toMatch(/\.workbench-pane\s*\{[^}]*flex:\s*1 1 0;[^}]*position:\s*relative;[^}]*overflow:\s*hidden;/s)
+    expect(styles).toMatch(/@property --pane-drop-preview-sheen-x\s*\{[^}]*syntax:\s*"&lt;percentage&gt;"|@property --pane-drop-preview-sheen-x\s*\{[^}]*syntax:\s*"<percentage>";/s)
+    expect(styles).toMatch(/@property --pane-drop-preview-sheen-y\s*\{[^}]*initial-value:\s*50%;/s)
+    expect(styles).toMatch(/\.workbench-pane-stage\s*\{[^}]*--pane-drop-preview-motion-duration:\s*220ms;[^}]*--pane-drop-preview-fade-duration:\s*180ms;[^}]*--pane-drop-preview-motion-curve:\s*cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\);[^}]*--pane-drop-preview-sheen-x:\s*50%;[^}]*--pane-drop-preview-sheen-y:\s*50%;/s)
+    expect(styles).toMatch(/\.workbench-pane-live-region\s*\{[^}]*position:\s*absolute;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto auto;/s)
     expect(styles).toMatch(/\.window-controls-floating\s*\{[^}]*top:\s*5px;[^}]*gap:\s*10px;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(/\.window-control\s*\{[^}]*width:\s*30px;[^}]*min-width:\s*30px;[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*border-radius:\s*8px;[^}]*color:\s*#5f7384;/s)
     expect(styles).toMatch(/\.window-control svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
@@ -6657,12 +6755,16 @@ describe("App", () => {
     expect(styles).toMatch(/\.pane-tab-bar\.window-drag-region\s+\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu,[\s\S]*?\.pane-tab-bar\s+\.canvas-region-top-menu-add-button\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
-    expect(styles).toMatch(/\.pane-tab-merge-preview\s*\{[^}]*width:\s*12px;[^}]*height:\s*28px;[^}]*border-radius:\s*8px;[^}]*background:\s*#1677c8;[^}]*-webkit-app-region:\s*no-drag;/s)
-    expect(styles).toMatch(/\.pane-drop-targets\s*\{[^}]*grid-template-columns:\s*120px minmax\(0,\s*1fr\) 120px;[^}]*grid-template-rows:\s*92px minmax\(0,\s*1fr\) 92px;/s)
+    expect(styles).toMatch(/\.pane-tab-merge-preview\s*\{[^}]*width:\s*12px;[^}]*height:\s*28px;[^}]*border-radius:\s*8px;[^}]*background:\s*[\s\S]*radial-gradient\([\s\S]*linear-gradient\([\s\S]*rgba\(201,\s*236,\s*255,\s*0\.98\)[\s\S]*rgba\(104,\s*180,\s*232,\s*0\.96\)[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.pane-drop-targets\s*\{[^}]*grid-template-columns:\s*144px minmax\(0,\s*1fr\) 144px;[^}]*grid-template-rows:\s*10px minmax\(0,\s*1fr\) 108px;[^}]*grid-template-areas:\s*[\s\S]*"\.\s+top\s+\."[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
+    expect(styles).toMatch(/\.pane-drop-targets\.is-top-row\s*\{[^}]*grid-template-areas:\s*[\s\S]*"top top top"[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
     expect(styles).toMatch(/\.pane-drop-target\s*\{[^}]*pointer-events:\s*auto;[^}]*background:\s*transparent;/s)
-    expect(styles).toMatch(/\.pane-drop-preview\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*6;[^}]*pointer-events:\s*none;/s)
-    expect(styles).toMatch(/\.pane-drop-preview-incoming\s*\{[^}]*background:\s*#1677c8;/s)
-    expect(styles).toMatch(/\.pane-drop-preview-current\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.7\);/s)
+    expect(styles).toMatch(/\.pane-drop-preview\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*z-index:\s*6;[^}]*pointer-events:\s*none;/s)
+    expect(styles).toMatch(/\.pane-drop-preview\.is-left\s*\{[^}]*--pane-drop-preview-sheen-x:\s*18%;[^}]*--pane-drop-preview-sheen-y:\s*50%;/s)
+    expect(styles).toMatch(/\.pane-drop-preview\.is-top\s*\{[^}]*--pane-drop-preview-sheen-x:\s*50%;[^}]*--pane-drop-preview-sheen-y:\s*18%;/s)
+    expect(styles).toMatch(/\.pane-drop-preview-current,\s*\.pane-drop-preview-incoming\s*\{[^}]*position:\s*absolute;[^}]*transition:[^}]*top var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)[^}]*left var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)[^}]*width var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)[^}]*height var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)/s)
+    expect(styles).toMatch(/\.pane-drop-preview-incoming\s*\{[^}]*background:\s*[\s\S]*radial-gradient\([\s\S]*var\(--pane-drop-preview-sheen-x\)[\s\S]*var\(--pane-drop-preview-sheen-y\)[\s\S]*linear-gradient\([\s\S]*rgba\(201,\s*236,\s*255,\s*0\.98\)[\s\S]*rgba\(134,\s*203,\s*245,\s*0\.95\)/s)
+    expect(styles).toMatch(/\.pane-drop-preview-current\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.72\);/s)
     expect(styles).toMatch(/\.canvas-top-menu-git-trigger svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
     expect(styles).toMatch(/\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)

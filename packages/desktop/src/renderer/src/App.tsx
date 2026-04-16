@@ -30,6 +30,9 @@ import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
 
 const MIN_WORKBENCH_PANE_WIDTH = 320
 const MIN_WORKBENCH_PANE_HEIGHT = 240
+const WORKBENCH_PANE_DROP_TOP_THRESHOLD = 10
+const WORKBENCH_PANE_DROP_BOTTOM_THRESHOLD = 108
+const WORKBENCH_PANE_DROP_SIDE_THRESHOLD = 144
 const WORKBENCH_TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v3:workbench"
 
 type PaneDropPosition = "center" | "left" | "right" | "top" | "bottom"
@@ -51,6 +54,90 @@ interface ActivePaneResize {
   leftIndex: number
   splitID: string
   totalSize: number
+}
+
+const PANE_DROP_PREVIEW_INSET = 12
+const PANE_DROP_PREVIEW_GAP = 12
+const PANE_DROP_PREVIEW_HALF_SPAN = `calc(50% - ${PANE_DROP_PREVIEW_INSET + PANE_DROP_PREVIEW_GAP / 2}px)`
+const PANE_DROP_PREVIEW_FULL_SPAN = `calc(100% - ${PANE_DROP_PREVIEW_INSET * 2}px)`
+const PANE_DROP_PREVIEW_TRAILING_OFFSET = `calc(50% + ${PANE_DROP_PREVIEW_GAP / 2}px)`
+
+function getPaneDropPreviewStyles(position: PaneDropPosition): { current: CSSProperties; incoming: CSSProperties } {
+  switch (position) {
+    case "left":
+      return {
+        current: {
+          top: `${PANE_DROP_PREVIEW_INSET}px`,
+          left: PANE_DROP_PREVIEW_TRAILING_OFFSET,
+          width: PANE_DROP_PREVIEW_HALF_SPAN,
+          height: PANE_DROP_PREVIEW_FULL_SPAN,
+        },
+        incoming: {
+          top: `${PANE_DROP_PREVIEW_INSET}px`,
+          left: `${PANE_DROP_PREVIEW_INSET}px`,
+          width: PANE_DROP_PREVIEW_HALF_SPAN,
+          height: PANE_DROP_PREVIEW_FULL_SPAN,
+        },
+      }
+    case "right":
+      return {
+        current: {
+          top: `${PANE_DROP_PREVIEW_INSET}px`,
+          left: `${PANE_DROP_PREVIEW_INSET}px`,
+          width: PANE_DROP_PREVIEW_HALF_SPAN,
+          height: PANE_DROP_PREVIEW_FULL_SPAN,
+        },
+        incoming: {
+          top: `${PANE_DROP_PREVIEW_INSET}px`,
+          left: PANE_DROP_PREVIEW_TRAILING_OFFSET,
+          width: PANE_DROP_PREVIEW_HALF_SPAN,
+          height: PANE_DROP_PREVIEW_FULL_SPAN,
+        },
+      }
+    case "top":
+      return {
+        current: {
+          top: PANE_DROP_PREVIEW_TRAILING_OFFSET,
+          left: `${PANE_DROP_PREVIEW_INSET}px`,
+          width: PANE_DROP_PREVIEW_FULL_SPAN,
+          height: PANE_DROP_PREVIEW_HALF_SPAN,
+        },
+        incoming: {
+          top: `${PANE_DROP_PREVIEW_INSET}px`,
+          left: `${PANE_DROP_PREVIEW_INSET}px`,
+          width: PANE_DROP_PREVIEW_FULL_SPAN,
+          height: PANE_DROP_PREVIEW_HALF_SPAN,
+        },
+      }
+    case "bottom":
+      return {
+        current: {
+          top: `${PANE_DROP_PREVIEW_INSET}px`,
+          left: `${PANE_DROP_PREVIEW_INSET}px`,
+          width: PANE_DROP_PREVIEW_FULL_SPAN,
+          height: PANE_DROP_PREVIEW_HALF_SPAN,
+        },
+        incoming: {
+          top: PANE_DROP_PREVIEW_TRAILING_OFFSET,
+          left: `${PANE_DROP_PREVIEW_INSET}px`,
+          width: PANE_DROP_PREVIEW_FULL_SPAN,
+          height: PANE_DROP_PREVIEW_HALF_SPAN,
+        },
+      }
+    case "center":
+      return {
+        current: {
+          inset: 0,
+        },
+        incoming: {
+          top: "50%",
+          left: "50%",
+          width: 0,
+          height: 0,
+          opacity: 0,
+        },
+      }
+  }
 }
 
 export function App() {
@@ -229,6 +316,7 @@ export function App() {
 
   const isCreatingSession = workbenchPaneStates.some((pane) => pane.isCreatingSession)
   const paneRefs = useRef<Record<string, HTMLElement | null>>({})
+  const workbenchPanesRef = useRef<HTMLDivElement | null>(null)
   const draggedPaneTabRef = useRef<DraggedPaneTab | null>(null)
   const [draggedPaneTab, setDraggedPaneTab] = useState<DraggedPaneTab | null>(null)
   const [paneDropTarget, setPaneDropTarget] = useState<PaneDropTarget | null>(null)
@@ -342,10 +430,45 @@ export function App() {
   }
 
   function getPaneDropTargetFromPoint(clientX: number, clientY: number): PaneDropTarget | null {
-    for (const [paneID, paneElement] of Object.entries(paneRefs.current)) {
-      if (!paneElement) continue
+    const paneRects = Object.entries(paneRefs.current).flatMap(([paneID, paneElement]) => {
+      if (!paneElement) return []
 
-      const rect = paneElement.getBoundingClientRect()
+      return [{
+        paneElement,
+        paneID,
+        rect: paneElement.getBoundingClientRect(),
+      }]
+    })
+
+    const workbenchRect = workbenchPanesRef.current?.getBoundingClientRect()
+    if (workbenchRect) {
+      const topRowPanes = paneRects.filter(({ paneElement }) => paneElement.dataset.isTopRow === "true")
+      const topBandBottom = workbenchRect.top + WORKBENCH_PANE_DROP_TOP_THRESHOLD
+      if (
+        topRowPanes.length > 0 &&
+        clientX >= workbenchRect.left &&
+        clientX <= workbenchRect.right &&
+        clientY >= workbenchRect.top &&
+        clientY <= topBandBottom
+      ) {
+        const topPane = topRowPanes
+          .map(({ paneID, rect }) => ({
+            distance:
+              clientX < rect.left
+                ? rect.left - clientX
+                : clientX > rect.right
+                  ? clientX - rect.right
+                  : 0,
+            paneID,
+          }))
+          .sort((left, right) => left.distance - right.distance)[0]
+        if (topPane) {
+          return { paneID: topPane.paneID, position: "top" }
+        }
+      }
+    }
+
+    for (const { paneID, rect } of paneRects) {
       if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
         continue
       }
@@ -354,9 +477,9 @@ export function App() {
       const height = Math.max(rect.height, 1)
       const offsetX = clientX - rect.left
       const offsetY = clientY - rect.top
-      const topThreshold = Math.min(72, height / 2)
-      const bottomThreshold = Math.min(72, height / 2)
-      const sideThreshold = Math.min(92, width / 2)
+      const topThreshold = Math.min(WORKBENCH_PANE_DROP_TOP_THRESHOLD, height / 2)
+      const bottomThreshold = Math.min(WORKBENCH_PANE_DROP_BOTTOM_THRESHOLD, height / 2)
+      const sideThreshold = Math.min(WORKBENCH_PANE_DROP_SIDE_THRESHOLD, width / 2)
       const position: PaneDropPosition =
         offsetY <= topThreshold
           ? "top"
@@ -546,6 +669,7 @@ export function App() {
                 layout={workbenchLayout}
                 paneDropTarget={paneDropTarget}
                 paneRefs={paneRefs}
+                workbenchPanesRef={workbenchPanesRef}
                 paneStateByID={workbenchPaneStateByID}
                 permissionRequestActionError={permissionRequestActionError}
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
@@ -675,6 +799,28 @@ type PaneTabDescriptor =
       title: string
     }
 
+function getTopRowRightmostPaneID(layout: WorkbenchLayout): string | null {
+  function visit(nodeId: string | null): string | null {
+    if (!nodeId) return null
+
+    const node = layout.nodes[nodeId]
+    if (!node) return null
+    if (node.kind === "group") return node.id
+
+    if (node.axis === "horizontal") {
+      for (let index = node.children.length - 1; index >= 0; index -= 1) {
+        const match = visit(node.children[index] ?? null)
+        if (match) return match
+      }
+      return null
+    }
+
+    return visit(node.children[0] ?? null)
+  }
+
+  return visit(layout.rootId)
+}
+
 interface WorkbenchTreeProps {
   composerRefreshVersion: number
   draggedTabKey: string | null
@@ -687,6 +833,7 @@ interface WorkbenchTreeProps {
   layout: WorkbenchLayout
   paneDropTarget: PaneDropTarget | null
   paneRefs: { current: Record<string, HTMLElement | null> }
+  workbenchPanesRef: { current: HTMLDivElement | null }
   paneStateByID: WorkbenchPaneStateByID
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
@@ -719,14 +866,15 @@ interface WorkbenchTreeProps {
 
 function WorkbenchTree(props: WorkbenchTreeProps) {
   if (!props.layout.rootId) {
-    return <div className="workbench-panes" />
+    return <div ref={props.workbenchPanesRef} className="workbench-panes" />
   }
 
   const hasMultiplePanes = props.firstPaneID !== null && props.lastPaneID !== null && props.firstPaneID !== props.lastPaneID
+  const topRowRightmostPaneID = getTopRowRightmostPaneID(props.layout) ?? props.lastPaneID
 
   return (
-    <div className={hasMultiplePanes ? "workbench-panes has-multiple" : "workbench-panes"}>
-      <WorkbenchNodeView {...props} nodeId={props.layout.rootId} />
+    <div ref={props.workbenchPanesRef} className={hasMultiplePanes ? "workbench-panes has-multiple" : "workbench-panes"}>
+      <WorkbenchNodeView {...props} lastPaneID={topRowRightmostPaneID} nodeId={props.layout.rootId} />
     </div>
   )
 }
@@ -839,26 +987,6 @@ function WorkbenchNodeView({
   )
 }
 
-function PaneDropPreview({ position }: { position: PaneDropPosition }) {
-  if (position === "center") {
-    return (
-      <div className="pane-drop-preview is-center" aria-hidden="true">
-        <div className="pane-drop-preview-current" />
-        <div className="pane-drop-preview-incoming" />
-      </div>
-    )
-  }
-
-  const isIncomingFirst = position === "left" || position === "top"
-
-  return (
-    <div className={`pane-drop-preview is-${position}`} aria-hidden="true">
-      {isIncomingFirst ? <div className="pane-drop-preview-incoming" /> : <div className="pane-drop-preview-current" />}
-      {isIncomingFirst ? <div className="pane-drop-preview-current" /> : <div className="pane-drop-preview-incoming" />}
-    </div>
-  )
-}
-
 interface PaneSurfaceProps {
   composerRefreshVersion: number
   draggedTabKey: string | null
@@ -931,6 +1059,8 @@ const PaneSurface = memo(function PaneSurface({
   onSetDraft,
 }: PaneSurfaceProps) {
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
+  const splitPreviewPosition = draggedTabKey && dropTargetPosition && dropTargetPosition !== "center" ? dropTargetPosition : null
+  const splitPreviewStyles = splitPreviewPosition ? getPaneDropPreviewStyles(splitPreviewPosition) : null
 
   useEffect(() => {
     const threadColumn = threadColumnRef.current
@@ -948,152 +1078,157 @@ const PaneSurface = memo(function PaneSurface({
     <section
       ref={(node) => onRegisterPane(pane.id, node)}
       className={pane.isFocused ? "workbench-pane is-focused" : "workbench-pane"}
+      data-is-top-row={isTopRow ? "true" : "false"}
       data-pane-id={pane.id}
       style={style}
       onPointerDownCapture={() => onFocusPane(pane.id)}
     >
-      <PaneTabBar
-        activeTabKey={pane.activeTabKey}
-        draggedTabKey={draggedTabKey}
-        hasMergePreview={draggedTabKey !== null && dropTargetPosition === "center"}
-        isFocused={pane.isFocused}
-        isTopRow={isTopRow}
-        leadingAccessory={leadingAccessory}
-        tabs={pane.tabs as PaneTabDescriptor[]}
-        onCloseCreateSessionTab={(createSessionTabID) => onCloseCreateSessionTab(createSessionTabID, pane.id)}
-        onCloseSessionTab={(sessionID) => onCloseSessionTab(sessionID, pane.id)}
-        onFocus={() => onFocusPane(pane.id)}
-        onOpenCreateSessionTab={() => onOpenCreateSessionTab(pane.workspace?.id ?? null, pane.id)}
-        onTabDragEnd={onPaneTabDragEnd}
-        onTabDragStart={(tabKey) => onPaneTabDragStart(pane.id, tabKey)}
-        onTabPointerDragMove={onPaneTabPointerDragMove}
-        onTabPointerDrop={onPaneTabPointerDrop}
-        onSelectCreateSessionTab={(createSessionTabID) => onSelectCreateSessionTab(createSessionTabID, pane.id)}
-        onSelectSessionTab={(sessionID) => onSelectSessionTab(sessionID, pane.id)}
-        trailingAccessory={trailingAccessory}
-      />
-      <SessionCanvasTopMenu
-        contextLabel={pane.contextLabel}
-        contextTitle={pane.contextTitle}
-        gitProjectID={pane.projectID}
-        gitDirectory={pane.workspace?.directory ?? null}
-        mcpOptions={composer.mcpOptions}
-        selectedMcpServerIDs={composer.selectedMcpServerIDs}
-        selectedMcpServerLabel={composer.selectedMcpLabel}
-        onMcpServerToggle={composer.handleMcpToggle}
-        skillOptions={composer.skillOptions}
-        selectedSkillIDs={composer.selectedSkillIDs}
-        selectedSkillLabel={composer.selectedSkillLabel}
-        onSkillToggle={composer.handleSkillToggle}
-      />
-      {pane.createSessionTabID ? (
-        <>
-          <CreateSessionCanvas
-            isCreatingSession={pane.isCreatingSession}
-            selectedWorkspaceID={pane.createSessionWorkspaceID}
-            workspaces={workspaces}
-            onWorkspaceChange={(workspaceID) => onCreateSessionWorkspaceChange(workspaceID, pane.createSessionTabID)}
+      <div className={splitPreviewPosition ? `workbench-pane-stage pane-drop-preview is-${splitPreviewPosition}` : "workbench-pane-stage"}>
+        <div className={splitPreviewPosition ? "workbench-pane-live-region pane-drop-preview-current" : "workbench-pane-live-region"} style={splitPreviewStyles?.current}>
+          <PaneTabBar
+            activeTabKey={pane.activeTabKey}
+            draggedTabKey={draggedTabKey}
+            hasMergePreview={draggedTabKey !== null && dropTargetPosition === "center"}
+            isFocused={pane.isFocused}
+            isTopRow={isTopRow}
+            leadingAccessory={leadingAccessory}
+            tabs={pane.tabs as PaneTabDescriptor[]}
+            onCloseCreateSessionTab={(createSessionTabID) => onCloseCreateSessionTab(createSessionTabID, pane.id)}
+            onCloseSessionTab={(sessionID) => onCloseSessionTab(sessionID, pane.id)}
+            onFocus={() => onFocusPane(pane.id)}
+            onOpenCreateSessionTab={() => onOpenCreateSessionTab(pane.workspace?.id ?? null, pane.id)}
+            onTabDragEnd={onPaneTabDragEnd}
+            onTabDragStart={(tabKey) => onPaneTabDragStart(pane.id, tabKey)}
+            onTabPointerDragMove={onPaneTabPointerDragMove}
+            onTabPointerDrop={onPaneTabPointerDrop}
+            onSelectCreateSessionTab={(createSessionTabID) => onSelectCreateSessionTab(createSessionTabID, pane.id)}
+            onSelectSessionTab={(sessionID) => onSelectSessionTab(sessionID, pane.id)}
+            trailingAccessory={trailingAccessory}
           />
-          <div className="composer-stack">
-            <Composer
-              attachments={pane.composerAttachments}
-              attachmentButtonTitle={composer.attachmentButtonTitle}
-              attachmentDisabledReason={composer.attachmentDisabledReason}
-              attachmentError={composer.attachmentError}
-              canSend={Boolean(pane.createSessionWorkspaceID)}
-              draft={pane.draft}
-              hasPendingPermissionRequests={false}
-              isSending={pane.isSending || pane.isCreatingSession}
-              modelOptions={composer.modelOptions}
-              selectedModel={composer.selectedModel}
-              selectedModelLabel={composer.selectedModelLabel}
-              unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-              onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
-              onModelChange={composer.handleModelChange}
-              onPickAttachments={() =>
-                onPickComposerAttachments({
-                  allowImage: composer.attachmentCapabilities.image,
-                  allowPdf: composer.attachmentCapabilities.pdf,
-                  disabledReason: composer.attachmentDisabledReason,
-                  tabKey: pane.tabKey,
-                })
-              }
-              onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
-              onSend={() =>
-                void onSend({
-                  attachmentError: composer.attachmentError,
-                  createSessionTabID: pane.createSessionTabID,
-                  paneID: pane.id,
-                  selectedSkillIDs: composer.selectedSkillIDs,
-                  tabKey: pane.tabKey,
-                  waitForPendingModelSelection: composer.awaitPendingModelSelection,
-                })
-              }
-            />
-            <ComposerUtilityBar contextWindow={composer.contextWindow} gitDirectory={pane.workspace?.directory ?? null} gitProjectID={pane.projectID} usage={null} />
-          </div>
-        </>
-      ) : (
-        <>
-          <ThreadView
-            activeSession={pane.activeSession}
-            isResolvingPermissionRequest={isResolvingPermissionRequest}
-            pendingPermissionRequests={pane.pendingPermissionRequests}
-            permissionRequestActionError={permissionRequestActionError}
-            permissionRequestActionRequestID={permissionRequestActionRequestID}
-            activeTurns={pane.activeTurns}
-            threadColumnRef={threadColumnRef}
-            onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
-            onPermissionRequestResponse={onPermissionRequestResponse}
+          <SessionCanvasTopMenu
+            contextLabel={pane.contextLabel}
+            contextTitle={pane.contextTitle}
+            gitProjectID={pane.projectID}
+            gitDirectory={pane.workspace?.directory ?? null}
+            mcpOptions={composer.mcpOptions}
+            selectedMcpServerIDs={composer.selectedMcpServerIDs}
+            selectedMcpServerLabel={composer.selectedMcpLabel}
+            onMcpServerToggle={composer.handleMcpToggle}
+            skillOptions={composer.skillOptions}
+            selectedSkillIDs={composer.selectedSkillIDs}
+            selectedSkillLabel={composer.selectedSkillLabel}
+            onSkillToggle={composer.handleSkillToggle}
           />
-          <div className="composer-stack">
-            <Composer
-              attachments={pane.composerAttachments}
-              attachmentButtonTitle={composer.attachmentButtonTitle}
-              attachmentDisabledReason={composer.attachmentDisabledReason}
-              attachmentError={composer.attachmentError}
-              canSend={Boolean(pane.activeSession)}
-              draft={pane.draft}
-              hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
-              isSending={pane.isSending}
-              modelOptions={composer.modelOptions}
-              selectedModel={composer.selectedModel}
-              selectedModelLabel={composer.selectedModelLabel}
-              unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-              onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
-              onModelChange={composer.handleModelChange}
-              onPickAttachments={() =>
-                onPickComposerAttachments({
-                  allowImage: composer.attachmentCapabilities.image,
-                  allowPdf: composer.attachmentCapabilities.pdf,
-                  disabledReason: composer.attachmentDisabledReason,
-                  tabKey: pane.tabKey,
-                })
-              }
-              onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
-              onSend={() =>
-                void onSend({
-                  attachmentError: composer.attachmentError,
-                  paneID: pane.id,
-                  selectedSkillIDs: composer.selectedSkillIDs,
-                  sessionID: pane.sessionID,
-                  tabKey: pane.tabKey,
-                  waitForPendingModelSelection: composer.awaitPendingModelSelection,
-                })
-              }
-            />
-            <ComposerUtilityBar
-              contextWindow={composer.contextWindow}
-              gitDirectory={pane.workspace?.directory ?? null}
-              gitProjectID={pane.projectID}
-              usage={pane.activeSessionContextUsage}
-            />
-          </div>
-        </>
-      )}
-      {draggedTabKey && dropTargetPosition && dropTargetPosition !== "center" ? <PaneDropPreview position={dropTargetPosition} /> : null}
+          {pane.createSessionTabID ? (
+            <>
+              <CreateSessionCanvas
+                isCreatingSession={pane.isCreatingSession}
+                selectedWorkspaceID={pane.createSessionWorkspaceID}
+                workspaces={workspaces}
+                onWorkspaceChange={(workspaceID) => onCreateSessionWorkspaceChange(workspaceID, pane.createSessionTabID)}
+              />
+              <div className="composer-stack">
+                <Composer
+                  attachments={pane.composerAttachments}
+                  attachmentButtonTitle={composer.attachmentButtonTitle}
+                  attachmentDisabledReason={composer.attachmentDisabledReason}
+                  attachmentError={composer.attachmentError}
+                  canSend={Boolean(pane.createSessionWorkspaceID)}
+                  draft={pane.draft}
+                  hasPendingPermissionRequests={false}
+                  isSending={pane.isSending || pane.isCreatingSession}
+                  modelOptions={composer.modelOptions}
+                  selectedModel={composer.selectedModel}
+                  selectedModelLabel={composer.selectedModelLabel}
+                  unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
+                  onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                  onModelChange={composer.handleModelChange}
+                  onPickAttachments={() =>
+                    onPickComposerAttachments({
+                      allowImage: composer.attachmentCapabilities.image,
+                      allowPdf: composer.attachmentCapabilities.pdf,
+                      disabledReason: composer.attachmentDisabledReason,
+                      tabKey: pane.tabKey,
+                    })
+                  }
+                  onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
+                  onSend={() =>
+                    void onSend({
+                      attachmentError: composer.attachmentError,
+                      createSessionTabID: pane.createSessionTabID,
+                      paneID: pane.id,
+                      selectedSkillIDs: composer.selectedSkillIDs,
+                      tabKey: pane.tabKey,
+                      waitForPendingModelSelection: composer.awaitPendingModelSelection,
+                    })
+                  }
+                />
+                <ComposerUtilityBar contextWindow={composer.contextWindow} gitDirectory={pane.workspace?.directory ?? null} gitProjectID={pane.projectID} usage={null} />
+              </div>
+            </>
+          ) : (
+            <>
+              <ThreadView
+                activeSession={pane.activeSession}
+                isResolvingPermissionRequest={isResolvingPermissionRequest}
+                pendingPermissionRequests={pane.pendingPermissionRequests}
+                permissionRequestActionError={permissionRequestActionError}
+                permissionRequestActionRequestID={permissionRequestActionRequestID}
+                activeTurns={pane.activeTurns}
+                threadColumnRef={threadColumnRef}
+                onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
+                onPermissionRequestResponse={onPermissionRequestResponse}
+              />
+              <div className="composer-stack">
+                <Composer
+                  attachments={pane.composerAttachments}
+                  attachmentButtonTitle={composer.attachmentButtonTitle}
+                  attachmentDisabledReason={composer.attachmentDisabledReason}
+                  attachmentError={composer.attachmentError}
+                  canSend={Boolean(pane.activeSession)}
+                  draft={pane.draft}
+                  hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+                  isSending={pane.isSending}
+                  modelOptions={composer.modelOptions}
+                  selectedModel={composer.selectedModel}
+                  selectedModelLabel={composer.selectedModelLabel}
+                  unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
+                  onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                  onModelChange={composer.handleModelChange}
+                  onPickAttachments={() =>
+                    onPickComposerAttachments({
+                      allowImage: composer.attachmentCapabilities.image,
+                      allowPdf: composer.attachmentCapabilities.pdf,
+                      disabledReason: composer.attachmentDisabledReason,
+                      tabKey: pane.tabKey,
+                    })
+                  }
+                  onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
+                  onSend={() =>
+                    void onSend({
+                      attachmentError: composer.attachmentError,
+                      paneID: pane.id,
+                      selectedSkillIDs: composer.selectedSkillIDs,
+                      sessionID: pane.sessionID,
+                      tabKey: pane.tabKey,
+                      waitForPendingModelSelection: composer.awaitPendingModelSelection,
+                    })
+                  }
+                />
+                <ComposerUtilityBar
+                  contextWindow={composer.contextWindow}
+                  gitDirectory={pane.workspace?.directory ?? null}
+                  gitProjectID={pane.projectID}
+                  usage={pane.activeSessionContextUsage}
+                />
+              </div>
+            </>
+          )}
+        </div>
+        {splitPreviewStyles ? <div className="workbench-pane-incoming-preview pane-drop-preview-incoming" style={splitPreviewStyles.incoming} aria-hidden="true" /> : null}
+      </div>
       {draggedTabKey ? (
-        <div className="pane-drop-targets" aria-hidden="true">
+        <div className={isTopRow ? "pane-drop-targets is-top-row" : "pane-drop-targets"} aria-hidden="true">
           {(
             [
               ["top", "Drop tab to split above"],

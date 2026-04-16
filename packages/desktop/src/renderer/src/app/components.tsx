@@ -2232,7 +2232,7 @@ export function PaneTabBar({
     "panel-toolbar",
     isFocused ? "is-focused" : null,
     hasWindowControlsClearance ? "has-window-controls-clearance" : null,
-    isTopRow ? "window-drag-region" : null,
+    isTopRow && draggedTabKey === null ? "window-drag-region" : null,
   ]
     .filter(Boolean)
     .join(" ")

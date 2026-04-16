@@ -1169,6 +1169,7 @@ select {
   min-height: var(--section-toolbar-pill-height);
   padding: 0 6px 0 10px;
   gap: 6px;
+  cursor: default;
   text-align: left;
   justify-content: space-between;
 }
@@ -1183,7 +1184,7 @@ select {
   display: inline-flex;
   align-items: center;
   text-align: left;
-  cursor: pointer;
+  cursor: inherit;
   transition:
     background 160ms ease,
     color 160ms ease;
@@ -1713,10 +1714,6 @@ select {
   position: relative;
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-  gap: 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1727,6 +1724,56 @@ select {
 .workbench-pane.is-focused {
   border-color: transparent;
   box-shadow: none;
+}
+
+@property --pane-drop-preview-sheen-x {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 50%;
+}
+
+@property --pane-drop-preview-sheen-y {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 50%;
+}
+
+.workbench-pane-stage {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  --pane-drop-preview-motion-duration: 220ms;
+  --pane-drop-preview-fade-duration: 180ms;
+  --pane-drop-preview-motion-curve: cubic-bezier(0.22, 1, 0.36, 1);
+  --pane-drop-preview-sheen-x: 50%;
+  --pane-drop-preview-sheen-y: 50%;
+}
+
+.workbench-pane-live-region {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition:
+    top var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    left var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    width var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    height var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    border-radius var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    box-shadow var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    background var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    transform var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve);
 }
 
 .workbench-pane-resizer {
@@ -1848,8 +1895,26 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   display: inline-block;
   align-self: center;
   border-radius: 8px;
-  background: #1677c8;
-  box-shadow: 0 10px 24px rgba(22, 119, 200, 0.22);
+  background:
+    radial-gradient(
+      circle at 32% 20%,
+      rgba(255, 255, 255, 0.28) 0%,
+      rgba(255, 255, 255, 0.12) 24%,
+      rgba(255, 255, 255, 0) 62%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(201, 236, 255, 0.98) 0%,
+      rgba(171, 221, 252, 0.96) 32%,
+      rgba(134, 203, 245, 0.95) 68%,
+      rgba(104, 180, 232, 0.96) 100%
+    );
+  box-shadow: 0 10px 24px rgba(99, 175, 230, 0.2);
+  transition:
+    opacity var(--pane-drop-preview-fade-duration) var(--pane-drop-preview-motion-curve),
+    transform var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    box-shadow var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    background var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve);
   -webkit-app-region: no-drag;
 }
 
@@ -1879,15 +1944,22 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .pane-drop-targets {
   position: absolute;
   inset: 0;
-  z-index: 5;
+  z-index: 8;
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr) 120px;
-  grid-template-rows: 92px minmax(0, 1fr) 92px;
+  grid-template-columns: 144px minmax(0, 1fr) 144px;
+  grid-template-rows: 10px minmax(0, 1fr) 108px;
   grid-template-areas:
     ". top ."
     "left center right"
     ". bottom .";
   pointer-events: none;
+}
+
+.pane-drop-targets.is-top-row {
+  grid-template-areas:
+    "top top top"
+    "left center right"
+    ". bottom .";
 }
 
 .pane-drop-target {
@@ -1930,41 +2002,77 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .pane-drop-preview {
   position: absolute;
-  inset: 12px;
+  inset: 0;
   z-index: 6;
-  display: grid;
-  gap: 12px;
   pointer-events: none;
 }
 
-.pane-drop-preview.is-left,
-.pane-drop-preview.is-right {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
+.pane-drop-preview.is-left {
+  --pane-drop-preview-sheen-x: 18%;
+  --pane-drop-preview-sheen-y: 50%;
 }
 
-.pane-drop-preview.is-top,
+.pane-drop-preview.is-right {
+  --pane-drop-preview-sheen-x: 82%;
+  --pane-drop-preview-sheen-y: 50%;
+}
+
+.pane-drop-preview.is-top {
+  --pane-drop-preview-sheen-x: 50%;
+  --pane-drop-preview-sheen-y: 18%;
+}
+
 .pane-drop-preview.is-bottom {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  --pane-drop-preview-sheen-x: 50%;
+  --pane-drop-preview-sheen-y: 82%;
 }
 
 .pane-drop-preview-current,
 .pane-drop-preview-incoming {
+  position: absolute;
   min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
   border-radius: 8px;
+  transition:
+    top var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    left var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    width var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    height var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    opacity var(--pane-drop-preview-fade-duration) var(--pane-drop-preview-motion-curve),
+    transform var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    box-shadow var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
+    background var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve);
 }
 
 .pane-drop-preview-current {
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(22, 119, 200, 0.2);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.08),
+    inset 0 0 0 1px rgba(104, 180, 232, 0.2);
 }
 
 .pane-drop-preview-incoming {
-  background: #1677c8;
-  box-shadow: 0 16px 36px rgba(22, 119, 200, 0.24);
+  background:
+    radial-gradient(
+      circle at var(--pane-drop-preview-sheen-x) var(--pane-drop-preview-sheen-y),
+      rgba(255, 255, 255, 0.28) 0%,
+      rgba(255, 255, 255, 0.16) 16%,
+      rgba(255, 255, 255, 0.05) 34%,
+      rgba(255, 255, 255, 0) 58%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(201, 236, 255, 0.98) 0%,
+      rgba(171, 221, 252, 0.96) 26%,
+      rgba(134, 203, 245, 0.95) 58%,
+      rgba(104, 180, 232, 0.96) 100%
+    );
+  box-shadow: 0 16px 36px rgba(99, 175, 230, 0.22);
+}
+
+.workbench-pane-incoming-preview {
+  position: absolute;
 }
 
 .workbench-panes.has-multiple .session-canvas-top-menu {
