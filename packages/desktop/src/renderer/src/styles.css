@@ -132,6 +132,7 @@ select {
   --section-toolbar-height: 40px;
   --section-toolbar-offset: 14px;
   --section-toolbar-control-size: 36px;
+  --icon-button-size: var(--section-toolbar-control-size);
   --section-toolbar-icon-size: 18px;
   --section-toolbar-aux-icon-size: 12px;
   --sidebar-toggle-icon-size: 27.5px;
@@ -156,22 +157,9 @@ select {
     var(--right-sidebar-display-width);
   gap: 0;
   border: 0;
-  border-top: 1px solid rgba(138, 164, 189, 0.36);
   border-radius: 0;
   background: #ffffff;
   box-shadow: 0 18px 40px rgba(40, 69, 96, 0.06);
-}
-
-.app-shell::after {
-  content: "";
-  position: absolute;
-  top: var(--section-toolbar-baseline);
-  left: var(--activity-rail-display-width);
-  right: 0;
-  height: 1px;
-  background: rgba(138, 164, 189, 0.38);
-  pointer-events: none;
-  z-index: 3;
 }
 
 .activity-rail {
@@ -1125,8 +1113,7 @@ select {
   color: #123a5a;
 }
 
-.left-sidebar-top-menu,
-.right-sidebar-top-menu,
+.shell-top-menu,
 .right-sidebar-section-header,
 .right-sidebar-list-row {
   display: flex;
@@ -1134,12 +1121,35 @@ select {
   gap: 12px;
 }
 
-.left-sidebar-top-menu,
-.right-sidebar-top-menu {
+.shell-top-menu {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
+}
+
+.shell-top-menu.is-three-column {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.shell-top-menu-leading,
+.shell-top-menu-content,
+.shell-top-menu-trailing {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.shell-top-menu-leading {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.shell-top-menu-trailing {
+  margin-left: auto;
+  justify-self: end;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .right-sidebar-top-menu {
@@ -1153,19 +1163,8 @@ select {
 }
 
 .left-sidebar-top-menu-tabs,
-.left-sidebar-top-menu-actions,
-.right-sidebar-top-menu-tabs,
-.right-sidebar-top-menu-actions {
-  display: flex;
-  align-items: center;
+.right-sidebar-top-menu-tabs {
   gap: 10px;
-  min-width: 0;
-}
-
-.left-sidebar-top-menu-actions,
-.right-sidebar-top-menu-actions {
-  margin-left: auto;
-  justify-self: end;
 }
 
 .session-tab {
@@ -3207,16 +3206,10 @@ textarea::placeholder {
   --canvas-region-tab-cap-radius: 8px;
   --canvas-region-tab-height: 34px;
   position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
   padding-right: var(--window-controls-canvas-clearance);
   padding-bottom: 0;
 }
 
-.canvas-region-top-menu-leading,
-.canvas-region-top-menu-trailing,
 .canvas-region-top-menu-tabs-shell,
 .canvas-region-top-menu-tabs {
   display: flex;
@@ -3427,18 +3420,7 @@ textarea::placeholder {
 }
 
 .session-canvas-top-menu {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
   padding-right: calc(var(--window-controls-canvas-clearance) + 8px);
-}
-
-.session-canvas-top-menu-copy,
-.session-canvas-top-menu-actions {
-  min-width: 0;
-  display: flex;
-  align-items: center;
 }
 
 .session-canvas-top-menu-copy {
@@ -3459,9 +3441,7 @@ textarea::placeholder {
 }
 
 .session-canvas-top-menu-actions {
-  justify-self: end;
   gap: 10px;
-  flex-wrap: wrap;
 }
 
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu,
@@ -5294,10 +5274,6 @@ body.is-resizing-sidebar * {
 }
 
 @media (max-width: 1100px) {
-  .app-shell::after {
-    display: none;
-  }
-
   .app-shell {
     grid-template-columns: var(--activity-rail-display-width) minmax(0, 1fr);
   }
@@ -5415,22 +5391,17 @@ body.is-resizing-sidebar * {
     bottom: 16px;
   }
 
-  .left-sidebar-top-menu,
-  .canvas-region-top-menu,
-  .session-canvas-top-menu,
-  .right-sidebar-top-menu {
+  .shell-top-menu {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
 
   .panel-toolbar-actions,
   .sidebar-actions-buttons,
-  .left-sidebar-top-menu-actions,
-  .right-sidebar-top-menu-actions,
+  .shell-top-menu-trailing,
   .canvas-region-top-menu-tabs-shell,
   .canvas-region-top-menu-tabs,
-  .canvas-region-top-menu-trailing,
-  .session-canvas-top-menu-actions {
+  .canvas-region-top-menu-trailing {
     justify-content: flex-start;
     justify-self: start;
   }
@@ -5598,4 +5569,1953 @@ body.is-resizing-sidebar * {
   .git-branch-create-actions {
     flex-direction: column;
   }
+}
+
+/* Visual refresh: paper workspace + graphite chrome */
+:root {
+  --ui-bg: #f2ede6;
+  --ui-bg-highlight: #faf7f2;
+  --ui-panel: rgba(255, 255, 255, 0.76);
+  --ui-panel-strong: rgba(255, 255, 255, 0.92);
+  --ui-panel-subtle: rgba(243, 246, 250, 0.88);
+  --ui-border: rgba(29, 41, 57, 0.1);
+  --ui-border-strong: rgba(29, 41, 57, 0.16);
+  --ui-divider: rgba(29, 41, 57, 0.08);
+  --ui-text-1: #18212d;
+  --ui-text-2: #5d6978;
+  --ui-text-3: #8694a3;
+  --ui-accent: #1d6eff;
+  --ui-accent-strong: #1458d6;
+  --ui-accent-soft: rgba(29, 110, 255, 0.12);
+  --ui-accent-soft-strong: rgba(29, 110, 255, 0.18);
+  --ui-success: #1f7a4f;
+  --ui-warning: #a66b1a;
+  --ui-danger: #b64a37;
+  --ui-shadow-sm: 0 14px 30px rgba(22, 31, 45, 0.07);
+  --ui-shadow-md: 0 20px 46px rgba(22, 31, 45, 0.1);
+  --ui-shadow-lg: 0 28px 68px rgba(22, 31, 45, 0.14);
+  --ui-radius-xs: 12px;
+  --ui-radius-sm: 16px;
+  --ui-radius-md: 20px;
+  --ui-radius-lg: 28px;
+  --ui-radius-pill: 999px;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 32%),
+    linear-gradient(180deg, #f7f2eb 0%, #efebe4 100%);
+  color: var(--ui-text-1);
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button,
+input,
+textarea,
+select {
+  border-radius: var(--ui-radius-xs);
+}
+
+input,
+textarea,
+select {
+  color: inherit;
+}
+
+::selection {
+  background: rgba(29, 110, 255, 0.16);
+  color: var(--ui-text-1);
+}
+
+.window-shell {
+  padding: 18px 18px 16px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0) 30%),
+    linear-gradient(180deg, #f4efe8 0%, #ece7df 100%);
+}
+
+.window-shell.is-maximized {
+  padding: 0;
+}
+
+.window-shell.is-maximized .window-controls-floating {
+  top: 8px;
+  right: 12px;
+}
+
+.window-controls-floating {
+  top: 16px;
+  right: 18px;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: var(--ui-radius-pill);
+  background: rgba(247, 249, 252, 0.72);
+  box-shadow: 0 14px 28px rgba(24, 34, 48, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.window-control {
+  border-radius: var(--ui-radius-pill);
+  color: var(--ui-text-2);
+}
+
+.window-control:hover,
+.window-control:focus-visible {
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ui-text-1);
+  box-shadow: inset 0 0 0 1px rgba(29, 41, 57, 0.08);
+}
+
+.window-control.is-close:hover,
+.window-control.is-close:focus-visible {
+  background: rgba(182, 74, 55, 0.12);
+  color: var(--ui-danger);
+}
+
+.app-shell {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-top: 0;
+  border-radius: var(--ui-radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76) 0%, rgba(248, 250, 252, 0.9) 100%);
+  box-shadow: var(--ui-shadow-lg);
+  backdrop-filter: blur(14px);
+}
+
+.activity-rail {
+  padding: 8px 9px 16px;
+  background: linear-gradient(180deg, rgba(225, 231, 238, 0.92) 0%, rgba(235, 240, 246, 0.92) 100%);
+  border-right: 1px solid var(--ui-divider);
+}
+
+.sidebar,
+.sidebar.is-right {
+  padding-top: 10px;
+  background: linear-gradient(180deg, rgba(234, 239, 245, 0.92) 0%, rgba(243, 246, 249, 0.9) 100%);
+}
+
+.sidebar.is-right {
+  background: linear-gradient(180deg, rgba(238, 242, 247, 0.94) 0%, rgba(246, 248, 251, 0.92) 100%);
+}
+
+.sidebar-resizer::before,
+.workbench-pane-resizer::before,
+.terminal-panel-resizer::after {
+  background: rgba(95, 111, 130, 0.22);
+}
+
+.sidebar-resizer:hover::before,
+.sidebar-resizer:focus-visible::before,
+.sidebar-resizer.is-active::before,
+.workbench-pane-resizer:hover::before,
+.workbench-pane-resizer:focus-visible::before,
+body.is-resizing-workbench-pane .workbench-pane-resizer::before,
+.terminal-panel-resizer.is-active::after,
+.terminal-panel-resizer:hover::after {
+  background: var(--ui-accent);
+  box-shadow: 0 0 0 3px rgba(29, 110, 255, 0.12);
+}
+
+.panel-toolbar-copy strong,
+.workspace-group-header strong,
+.assistant-header h3,
+.right-sidebar-panel-copy h3,
+.session-canvas-top-menu-copy strong {
+  color: var(--ui-text-1);
+}
+
+.label,
+.turn-meta,
+.trace-item-label,
+.trace-item-status,
+.assistant-section-label,
+.assistant-header time,
+.workspace-group-header,
+.project-row-meta,
+.settings-helper-text {
+  color: var(--ui-text-3);
+}
+
+.sidebar-action,
+.sidebar-toggle-button.is-sidebar,
+.sidebar-toggle-button.is-top-menu,
+.top-menu-view-button,
+.canvas-top-menu-button,
+.sidebar-settings,
+.row-action,
+.composer-utility-chip,
+.composer-selector-button,
+.terminal-panel-toggle-button,
+.terminal-tab-close,
+.terminal-panel-create,
+.settings-page-close-button {
+  border-radius: var(--ui-radius-xs);
+}
+
+.sidebar-toggle-button,
+.sidebar-action,
+.sidebar-toggle-button.is-sidebar,
+.sidebar-settings,
+.row-action,
+.top-menu-view-button,
+.terminal-panel-toggle-button,
+.terminal-tab-close,
+.terminal-panel-create {
+  color: var(--ui-text-2);
+}
+
+.sidebar-toggle-button.is-rail,
+.activity-rail-bottom .terminal-panel-toggle-button,
+.top-menu-view-button,
+.sidebar-action,
+.sidebar-toggle-button.is-sidebar,
+.sidebar-settings,
+.row-action {
+  background: rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.sidebar-toggle-button.is-rail:hover,
+.sidebar-toggle-button.is-rail:focus-visible,
+.sidebar-toggle-button.is-rail.is-active,
+.top-menu-view-button:hover,
+.top-menu-view-button:focus-visible,
+.sidebar-action:hover,
+.sidebar-toggle-button.is-sidebar:hover,
+.sidebar-toggle-button.is-sidebar:focus-visible,
+.sidebar-toggle-button.is-sidebar.is-active,
+.sidebar-settings:hover,
+.row-action:hover,
+.activity-rail-bottom .terminal-panel-toggle-button:hover,
+.activity-rail-bottom .terminal-panel-toggle-button:focus-visible,
+.activity-rail-bottom .terminal-panel-toggle-button.is-active {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ui-text-1);
+  box-shadow:
+    inset 0 0 0 1px rgba(29, 41, 57, 0.06),
+    0 8px 16px rgba(24, 34, 48, 0.06);
+}
+
+.sidebar-toggle-button.is-top-menu,
+.session-tab,
+.canvas-top-menu-button,
+.right-sidebar-filter-chip,
+.settings-badge,
+.git-branch-badge,
+.trace-item-status {
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-pill);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ui-text-2);
+  box-shadow: none;
+}
+
+.sidebar-toggle-button.is-top-menu:hover,
+.sidebar-toggle-button.is-top-menu:focus-visible,
+.session-tab:hover,
+.session-tab:focus-visible,
+.session-tab.is-active,
+.canvas-top-menu-button:hover,
+.canvas-top-menu-button:focus-visible,
+.canvas-top-menu-button.is-active,
+.right-sidebar-filter-chip:hover,
+.right-sidebar-filter-chip:focus-visible,
+.right-sidebar-filter-chip.is-active {
+  border-color: rgba(29, 110, 255, 0.24);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ui-text-1);
+  box-shadow: 0 8px 18px rgba(24, 34, 48, 0.06);
+}
+
+.session-tab.is-active,
+.canvas-top-menu-button.is-active,
+.right-sidebar-filter-chip.is-active,
+.settings-badge.is-highlight {
+  background: rgba(29, 110, 255, 0.12);
+  color: var(--ui-accent-strong);
+}
+
+.project-row,
+.session-row {
+  border-radius: var(--ui-radius-sm);
+}
+
+.project-row:hover,
+.project-row:focus-within,
+.session-row:hover,
+.session-row:focus-visible {
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--ui-text-1);
+  box-shadow: inset 0 0 0 1px rgba(29, 41, 57, 0.06);
+}
+
+.project-row.is-active {
+  background: linear-gradient(180deg, rgba(29, 110, 255, 0.14) 0%, rgba(29, 110, 255, 0.08) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(29, 110, 255, 0.16),
+    0 10px 22px rgba(24, 34, 48, 0.06);
+}
+
+.project-row.is-active .project-row-leading,
+.session-row.is-active .session-row-label,
+.project-row.is-active .project-row-label {
+  color: var(--ui-text-1);
+}
+
+.project-row.is-active .project-row-leading {
+  color: var(--ui-accent);
+}
+
+.session-row.is-active {
+  background: rgba(29, 110, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(29, 110, 255, 0.14);
+}
+
+.canvas {
+  background: linear-gradient(180deg, rgba(251, 249, 245, 0.84) 0%, rgba(248, 246, 242, 0.92) 100%);
+}
+
+.canvas.is-workbench {
+  background: linear-gradient(180deg, rgba(248, 246, 242, 0.4) 0%, rgba(248, 246, 242, 0.88) 100%);
+}
+
+.canvas-top-stack {
+  padding-top: 14px;
+}
+
+.canvas-region-top-menu,
+.session-canvas-top-menu {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.workbench-panes {
+  padding: 14px 14px 0;
+}
+
+.workbench-pane-live-region {
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 248, 250, 0.94) 100%);
+  box-shadow: var(--ui-shadow-md);
+}
+
+.workbench-pane.is-focused .workbench-pane-live-region {
+  border-color: rgba(29, 110, 255, 0.18);
+  box-shadow:
+    0 20px 48px rgba(24, 34, 48, 0.12),
+    0 0 0 1px rgba(29, 110, 255, 0.06);
+}
+
+.pane-tab-bar {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ui-divider);
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.92) 0%, rgba(255, 255, 255, 0.86) 100%);
+}
+
+.pane-tab-bar .sidebar-toggle-button.is-top-menu,
+.pane-tab-bar .canvas-region-top-menu-add-button {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--ui-border);
+}
+
+.pane-tab-bar .sidebar-toggle-button.is-top-menu:hover,
+.pane-tab-bar .canvas-region-top-menu-add-button:hover {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.thread-column {
+  width: min(100%, 840px);
+  padding: 18px 6px 8px 0;
+  gap: 24px;
+}
+
+.turn {
+  gap: 10px;
+}
+
+.user-bubble {
+  max-width: min(100%, 520px);
+  padding: 16px 18px;
+  border: 0;
+  border-radius: 22px 22px 8px 22px;
+  background: linear-gradient(180deg, #1d3956 0%, #274465 100%);
+  color: #f8fbff;
+  box-shadow: 0 18px 38px rgba(20, 36, 55, 0.18);
+}
+
+.assistant-shell,
+.empty-state,
+.settings-page,
+.settings-panel,
+.provider-card,
+.settings-empty-state,
+.settings-summary-card,
+.provider-row,
+.model-row,
+.provider-connect-modal,
+.settings-archive-item,
+.settings-service-item,
+.settings-detail-hero,
+.settings-detail-meta-card,
+.composer-menu-panel,
+.composer-utility-git-branch-panel,
+.git-branch-create-dialog,
+.right-sidebar-section,
+.right-sidebar-change-row,
+.right-sidebar-metric,
+.right-sidebar-diff-hunk,
+.terminal-surface {
+  border-radius: var(--ui-radius-md);
+}
+
+.assistant-shell {
+  border-color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--ui-shadow-md);
+}
+
+.assistant-section {
+  border-radius: var(--ui-radius-md);
+  border: 1px solid rgba(29, 41, 57, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.assistant-section.is-response {
+  padding: 18px 20px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.assistant-section.is-reasoning,
+.assistant-section.is-tools,
+.assistant-section.is-file-change {
+  padding: 14px 16px;
+  background: rgba(245, 247, 250, 0.82);
+}
+
+.assistant-section.is-response .trace-item {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.assistant-section.is-response .trace-item-text {
+  color: var(--ui-text-1);
+  font-size: 15.5px;
+  line-height: 1.78;
+}
+
+.assistant-section.is-response .trace-item-detail {
+  color: var(--ui-text-2);
+}
+
+.assistant-ephemeral-state {
+  border-radius: var(--ui-radius-sm);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.trace-item {
+  border-left: 0;
+  padding: 14px 16px;
+  border-radius: var(--ui-radius-sm);
+  background: rgba(243, 246, 250, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(29, 41, 57, 0.06);
+}
+
+.trace-item::before {
+  display: none;
+}
+
+.trace-kind-system,
+.trace-kind-tool,
+.trace-kind-reasoning,
+.trace-kind-error {
+  border-left: 0;
+  box-shadow: inset 0 0 0 1px rgba(29, 41, 57, 0.06);
+}
+
+.trace-kind-system {
+  background: rgba(245, 247, 249, 0.88);
+}
+
+.trace-kind-tool {
+  background: rgba(247, 249, 252, 0.88);
+}
+
+.trace-kind-reasoning {
+  background: rgba(241, 244, 248, 0.9);
+}
+
+.trace-kind-error {
+  background: rgba(255, 244, 242, 0.9);
+}
+
+.trace-item-title,
+.trace-item-inline-title,
+.trace-item-toggle-line {
+  color: var(--ui-text-1);
+}
+
+.trace-item-text,
+.trace-item-detail,
+.trace-item-plain-text,
+.trace-item-plain-detail {
+  color: var(--ui-text-2);
+}
+
+.trace-item-file-chip {
+  border-radius: var(--ui-radius-pill);
+  border-color: rgba(29, 110, 255, 0.12);
+  background: rgba(29, 110, 255, 0.08);
+  color: var(--ui-accent-strong);
+}
+
+.right-sidebar-section {
+  border-color: rgba(255, 255, 255, 0.82);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86) 0%, rgba(247, 249, 252, 0.9) 100%);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.right-sidebar-metric,
+.right-sidebar-change-row,
+.right-sidebar-diff-hunk {
+  border-color: rgba(29, 41, 57, 0.08);
+  background: rgba(249, 250, 252, 0.88);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.right-sidebar-search-field input,
+.settings-field input,
+.settings-field select,
+.settings-field textarea,
+.git-branch-create-field input {
+  border: 1px solid rgba(29, 41, 57, 0.1);
+  border-radius: var(--ui-radius-xs);
+  background: rgba(250, 251, 253, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.right-sidebar-search-field input:focus-visible,
+.settings-field input:focus-visible,
+.settings-field select:focus-visible,
+.settings-field textarea:focus-visible,
+.git-branch-create-field input:focus-visible {
+  border-color: rgba(29, 110, 255, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 0 0 3px rgba(29, 110, 255, 0.12);
+  outline: none;
+}
+
+.right-sidebar-change-toggle:hover,
+.right-sidebar-change-toggle:focus-visible {
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.right-sidebar-change-type.is-added,
+.right-sidebar-status-badge.is-ready,
+.right-sidebar-status-badge.is-empty,
+.context-pressure-indicator.is-low {
+  color: var(--ui-success);
+}
+
+.right-sidebar-change-type.is-modified,
+.right-sidebar-status-badge.is-loading,
+.right-sidebar-status-badge.is-refreshing {
+  color: var(--ui-accent-strong);
+}
+
+.right-sidebar-change-type.is-renamed,
+.settings-badge.is-warning,
+.context-pressure-indicator.is-medium {
+  color: var(--ui-warning);
+}
+
+.right-sidebar-change-type.is-deleted,
+.right-sidebar-status-badge.is-error,
+.right-sidebar-status-error,
+.context-pressure-indicator.is-high {
+  color: var(--ui-danger);
+}
+
+.right-sidebar-diff-preview {
+  border-top-color: var(--ui-divider);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.right-sidebar-diff-hunk-header {
+  border-bottom-color: var(--ui-divider);
+  background: linear-gradient(180deg, rgba(241, 245, 250, 0.96) 0%, rgba(247, 250, 255, 0.96) 100%);
+  color: var(--ui-text-2);
+}
+
+.composer-utility-bar {
+  width: min(100%, 820px);
+  padding: 0 4px;
+}
+
+.composer-utility-chip,
+.composer-utility-git-branch-button,
+.composer-selector-button,
+.composer-attachment-chip,
+.composer-menu-option,
+.terminal-tab {
+  border-radius: var(--ui-radius-pill);
+}
+
+.composer {
+  width: min(100%, 820px);
+  padding: 20px 22px;
+  border-radius: var(--ui-radius-lg);
+  border-color: rgba(255, 255, 255, 0.86);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.94) 100%);
+  box-shadow: var(--ui-shadow-lg);
+}
+
+.composer textarea {
+  min-height: 84px;
+  color: var(--ui-text-1);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.composer textarea::placeholder {
+  color: var(--ui-text-3);
+}
+
+.composer-toolbar,
+.sidebar-footer {
+  gap: 12px;
+}
+
+.composer-utility-chip,
+.composer-selector-button,
+.composer-attachment-chip {
+  border: 1px solid var(--ui-border);
+  background: rgba(245, 248, 251, 0.94);
+  color: var(--ui-text-2);
+}
+
+.composer-utility-git-branch-button:hover,
+.composer-utility-git-branch-button:focus-visible,
+.composer-utility-git-branch-button.is-active,
+.composer-selector-button:hover,
+.composer-selector-button:focus-visible,
+.composer-menu-option:hover,
+.composer-menu-option:focus-visible,
+.composer-menu-option.is-selected {
+  border-color: rgba(29, 110, 255, 0.24);
+  background: rgba(29, 110, 255, 0.1);
+  color: var(--ui-accent-strong);
+  box-shadow: none;
+}
+
+.composer-menu-panel,
+.composer-utility-git-branch-panel,
+.git-branch-create-dialog {
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  background: rgba(253, 253, 253, 0.96);
+  box-shadow: var(--ui-shadow-lg);
+  backdrop-filter: blur(18px);
+}
+
+.composer-actions .primary-button.is-icon-only,
+.composer-selector-button.is-icon-only {
+  border-radius: var(--ui-radius-pill);
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 42px;
+  border-radius: var(--ui-radius-pill);
+  border: 1px solid transparent;
+}
+
+.primary-button {
+  background: linear-gradient(180deg, var(--ui-accent) 0%, var(--ui-accent-strong) 100%);
+  box-shadow: 0 12px 26px rgba(29, 110, 255, 0.24);
+}
+
+.primary-button:hover,
+.primary-button:focus-visible {
+  background: linear-gradient(180deg, #2b78ff 0%, #185ee0 100%);
+}
+
+.secondary-button {
+  border-color: var(--ui-border);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ui-text-2);
+}
+
+.secondary-button:hover,
+.secondary-button:focus-visible {
+  background: rgba(255, 255, 255, 0.98);
+  color: var(--ui-text-1);
+}
+
+.secondary-button.is-danger {
+  border-color: rgba(182, 74, 55, 0.18);
+  background: rgba(255, 244, 242, 0.92);
+  color: var(--ui-danger);
+}
+
+.terminal-panel {
+  margin-top: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 24px 24px 0 0;
+  background: linear-gradient(180deg, rgba(245, 248, 252, 0.98) 0%, rgba(255, 255, 255, 0.96) 100%);
+  box-shadow: 0 -8px 26px rgba(24, 34, 48, 0.06);
+}
+
+.terminal-tabs {
+  min-height: 48px;
+  padding: 0 14px;
+}
+
+.terminal-tab {
+  padding: 0 2px;
+}
+
+.terminal-tab.is-active {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ui-text-1);
+  box-shadow:
+    inset 0 0 0 1px rgba(29, 41, 57, 0.08),
+    0 6px 16px rgba(24, 34, 48, 0.05);
+}
+
+.terminal-surface {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, #111d2b 0%, #0e1824 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.canvas-terminal-toggle-anchor {
+  left: 22px;
+  bottom: 22px;
+}
+
+.settings-page-overlay,
+.provider-connect-overlay,
+.git-branch-create-overlay {
+  background: rgba(16, 24, 35, 0.26);
+  backdrop-filter: blur(18px);
+}
+
+.settings-page {
+  border-color: rgba(255, 255, 255, 0.88);
+  border-radius: 30px;
+  background: linear-gradient(180deg, rgba(245, 248, 252, 0.98) 0%, rgba(250, 247, 242, 0.98) 100%);
+  box-shadow: var(--ui-shadow-lg);
+}
+
+.settings-page-nav,
+.settings-page-primary-nav {
+  background: linear-gradient(180deg, rgba(231, 236, 243, 0.88) 0%, rgba(242, 245, 249, 0.92) 100%);
+  border-right-color: var(--ui-divider);
+}
+
+.settings-panel,
+.provider-card,
+.settings-empty-state,
+.settings-summary-card,
+.provider-row,
+.model-row,
+.provider-connect-modal,
+.settings-archive-item,
+.settings-service-item,
+.settings-detail-hero,
+.settings-detail-meta-card {
+  border-color: rgba(255, 255, 255, 0.84);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.settings-service-item:hover,
+.settings-toggle-card:hover,
+.settings-page-close-button:hover {
+  transform: translateY(-1px);
+}
+
+.settings-primary-nav-item {
+  border-radius: var(--ui-radius-sm);
+}
+
+.settings-primary-nav-item::before {
+  width: 3px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-accent);
+}
+
+.settings-toggle-card {
+  border-radius: var(--ui-radius-md);
+  border-color: var(--ui-border);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: var(--ui-shadow-sm);
+}
+
+.settings-toggle-card.is-active {
+  border-color: rgba(29, 110, 255, 0.18);
+  background: rgba(29, 110, 255, 0.08);
+}
+
+.settings-toggle-control {
+  border-radius: var(--ui-radius-pill);
+  border-color: rgba(29, 41, 57, 0.1);
+  background: rgba(210, 219, 230, 0.9);
+}
+
+.settings-toggle-thumb {
+  border-radius: var(--ui-radius-pill);
+}
+
+.settings-toggle-card.is-active .settings-toggle-control {
+  background: var(--ui-accent);
+  border-color: rgba(29, 110, 255, 0.24);
+}
+
+.settings-page-header h2,
+.assistant-header h3,
+.right-sidebar-panel-copy h3 {
+  text-wrap: balance;
+}
+
+@media (max-width: 1100px) {
+  .window-shell {
+    padding: 0;
+  }
+
+  .app-shell {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .workbench-panes {
+    padding: 12px 12px 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .window-shell {
+    padding: 0;
+  }
+
+  .window-controls-floating {
+    top: 10px;
+    right: 10px;
+  }
+
+  .canvas-region-top-menu,
+  .session-canvas-top-menu {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .workbench-panes {
+    padding: 10px 10px 0;
+  }
+
+  .thread-column,
+  .composer,
+  .composer-utility-bar {
+    width: 100%;
+  }
+
+  .composer {
+    padding: 18px 16px;
+    border-radius: 22px;
+  }
+
+  .terminal-panel {
+    margin-top: 10px;
+    border-radius: 20px 20px 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .trace-item.is-streaming .trace-item-text::after {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Segmented workbench pass: flatter, denser, Obsidian-like grouping */
+:root {
+  color-scheme: light;
+  --seg-bg: #eef1f5;
+  --seg-shell: #f6f7f9;
+  --seg-panel: #fbfcfd;
+  --seg-panel-muted: #f1f4f7;
+  --seg-sidebar: #f2f4f7;
+  --seg-sidebar-strong: #eceff3;
+  --seg-border: #d5dbe3;
+  --seg-border-strong: #c4ccd7;
+  --seg-divider: rgba(32, 41, 54, 0.08);
+  --seg-text-1: #1f2733;
+  --seg-text-2: #566170;
+  --seg-text-3: #7b8797;
+  --seg-accent: #4f74c8;
+  --seg-accent-soft: rgba(79, 116, 200, 0.1);
+  --seg-accent-strong: #395aa9;
+  --seg-success: #2f7a57;
+  --seg-warning: #94611c;
+  --seg-danger: #a64b3c;
+  --seg-radius-xs: 4px;
+  --seg-radius-sm: 6px;
+  --seg-radius-md: 8px;
+}
+
+body {
+  background: var(--seg-bg);
+  color: var(--seg-text-1);
+}
+
+button,
+input,
+textarea,
+select {
+  border-radius: var(--seg-radius-xs);
+}
+
+.window-shell,
+.window-shell.is-maximized {
+  padding: 0;
+  background: #e9edf2;
+}
+
+.window-controls-floating {
+  top: 8px;
+  right: 10px;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: rgba(246, 247, 249, 0.96);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.window-control {
+  border-radius: var(--seg-radius-xs);
+  color: var(--seg-text-2);
+}
+
+.window-control:hover,
+.window-control:focus-visible {
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  box-shadow: inset 0 0 0 1px var(--seg-border);
+}
+
+.window-control.is-close:hover,
+.window-control.is-close:focus-visible {
+  background: rgba(166, 75, 60, 0.1);
+  color: var(--seg-danger);
+}
+
+.app-shell {
+  border: 0;
+  border-top: 1px solid var(--seg-border);
+  border-radius: 0;
+  background: var(--seg-shell);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.activity-rail {
+  padding: 8px 8px 14px;
+  background: var(--seg-sidebar-strong);
+  border-right: 1px solid var(--seg-border);
+}
+
+.sidebar,
+.sidebar.is-right {
+  padding-top: 8px;
+  background: var(--seg-sidebar);
+}
+
+.sidebar.is-right {
+  background: #f4f6f8;
+  border-left: 1px solid var(--seg-divider);
+}
+
+.sidebar-resizer::before,
+.workbench-pane-resizer::before,
+.terminal-panel-resizer::after {
+  background: var(--seg-border-strong);
+  box-shadow: none;
+}
+
+.sidebar-resizer:hover::before,
+.sidebar-resizer:focus-visible::before,
+.sidebar-resizer.is-active::before,
+.workbench-pane-resizer:hover::before,
+.workbench-pane-resizer:focus-visible::before,
+body.is-resizing-workbench-pane .workbench-pane-resizer::before,
+.terminal-panel-resizer.is-active::after,
+.terminal-panel-resizer:hover::after {
+  background: var(--seg-accent);
+  box-shadow: none;
+}
+
+.panel-toolbar-copy strong,
+.workspace-group-header strong,
+.assistant-header h3,
+.right-sidebar-panel-copy h3,
+.session-canvas-top-menu-copy strong,
+.settings-page-header h2,
+.settings-section-header h3,
+.provider-row h4,
+.model-row h4,
+.provider-connect-header h3 {
+  color: var(--seg-text-1);
+}
+
+.label,
+.turn-meta,
+.trace-item-label,
+.trace-item-status,
+.assistant-section-label,
+.assistant-header time,
+.workspace-group-header,
+.project-row-meta,
+.settings-helper-text,
+.settings-page-copy,
+.settings-section-header p,
+.provider-row-copy,
+.model-row-copy,
+.right-sidebar-status-copy,
+.right-sidebar-status-summary,
+.right-sidebar-metric-label,
+.right-sidebar-section p {
+  color: var(--seg-text-3);
+}
+
+.sidebar-toggle-button.is-rail,
+.activity-rail-bottom .terminal-panel-toggle-button,
+.top-menu-view-button,
+.sidebar-action,
+.sidebar-toggle-button.is-sidebar,
+.sidebar-settings,
+.row-action,
+.terminal-tab-close,
+.terminal-panel-create,
+.terminal-panel-toggle-button,
+.settings-page-close-button {
+  border: 1px solid transparent;
+  border-radius: var(--seg-radius-xs);
+  background: transparent;
+  box-shadow: none;
+  color: var(--seg-text-2);
+}
+
+.sidebar-toggle-button.is-rail:hover,
+.sidebar-toggle-button.is-rail:focus-visible,
+.sidebar-toggle-button.is-rail.is-active,
+.top-menu-view-button:hover,
+.top-menu-view-button:focus-visible,
+.sidebar-action:hover,
+.sidebar-toggle-button.is-sidebar:hover,
+.sidebar-toggle-button.is-sidebar:focus-visible,
+.sidebar-toggle-button.is-sidebar.is-active,
+.sidebar-settings:hover,
+.row-action:hover,
+.terminal-panel-toggle-button:hover,
+.terminal-panel-toggle-button:focus-visible,
+.terminal-panel-toggle-button.is-active,
+.terminal-tab-close:hover,
+.terminal-tab-close:focus-visible,
+.terminal-panel-create:hover,
+.terminal-panel-create:focus-visible,
+.activity-rail-bottom .terminal-panel-toggle-button:hover,
+.activity-rail-bottom .terminal-panel-toggle-button:focus-visible,
+.activity-rail-bottom .terminal-panel-toggle-button.is-active {
+  border-color: var(--seg-border);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  box-shadow: none;
+}
+
+.sidebar-toggle-button.is-top-menu,
+.session-tab,
+.canvas-top-menu-button,
+.right-sidebar-filter-chip,
+.settings-badge,
+.git-branch-badge,
+.trace-item-status,
+.composer-utility-chip,
+.composer-selector-button,
+.composer-attachment-chip,
+.composer-menu-option,
+.terminal-tab,
+.settings-service-item,
+.settings-summary-card,
+.settings-detail-meta-card,
+.right-sidebar-metric,
+.right-sidebar-change-row,
+.right-sidebar-diff-hunk {
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-panel);
+  color: var(--seg-text-2);
+  box-shadow: none;
+}
+
+.sidebar-toggle-button.is-top-menu:hover,
+.sidebar-toggle-button.is-top-menu:focus-visible,
+.session-tab:hover,
+.session-tab:focus-visible,
+.canvas-top-menu-button:hover,
+.canvas-top-menu-button:focus-visible,
+.right-sidebar-filter-chip:hover,
+.right-sidebar-filter-chip:focus-visible,
+.composer-selector-button:hover,
+.composer-selector-button:focus-visible,
+.composer-menu-option:hover,
+.composer-menu-option:focus-visible,
+.settings-service-item:hover {
+  border-color: var(--seg-border-strong);
+  background: #ffffff;
+  color: var(--seg-text-1);
+  box-shadow: none;
+}
+
+.session-tab.is-active,
+.canvas-top-menu-button.is-active,
+.right-sidebar-filter-chip.is-active,
+.settings-badge.is-highlight,
+.composer-menu-option.is-selected,
+.terminal-tab.is-active {
+  border-color: rgba(79, 116, 200, 0.22);
+  background: var(--seg-accent-soft);
+  color: var(--seg-accent-strong);
+}
+
+.project-row,
+.session-row {
+  border: 1px solid transparent;
+  border-radius: var(--seg-radius-xs);
+}
+
+.project-row:hover,
+.project-row:focus-within,
+.session-row:hover,
+.session-row:focus-visible {
+  border-color: var(--seg-border);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  box-shadow: none;
+}
+
+.project-row.is-active,
+.session-row.is-active {
+  border-color: rgba(79, 116, 200, 0.18);
+  background: var(--seg-accent-soft);
+  color: var(--seg-text-1);
+  box-shadow: none;
+}
+
+.project-row.is-active .project-row-leading {
+  color: var(--seg-accent);
+}
+
+.canvas {
+  background: #f8f9fb;
+}
+
+.canvas.is-workbench {
+  background: #f6f7f9;
+}
+
+.canvas-top-stack {
+  padding-top: 8px;
+}
+
+.canvas-region-top-menu,
+.session-canvas-top-menu {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.workbench-panes {
+  padding: 10px 10px 0;
+}
+
+.workbench-pane-live-region {
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel);
+  box-shadow: none;
+}
+
+.workbench-pane.is-focused .workbench-pane-live-region {
+  border-color: var(--seg-border-strong);
+  box-shadow: none;
+}
+
+.pane-tab-bar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--seg-border);
+  background: var(--seg-panel-muted);
+}
+
+.window-shell.debug-line-colors {
+  --debug-line-pane-divider: #1fbc7b;
+}
+
+.window-shell.debug-line-colors .pane-tab-bar {
+  border-bottom-color: var(--debug-line-pane-divider);
+}
+
+.pane-tab-bar .sidebar-toggle-button.is-top-menu,
+.pane-tab-bar .canvas-region-top-menu-add-button {
+  border: 1px solid var(--seg-border);
+  background: var(--seg-panel);
+}
+
+.pane-tab-bar .sidebar-toggle-button.is-top-menu:hover,
+.pane-tab-bar .canvas-region-top-menu-add-button:hover {
+  background: #ffffff;
+}
+
+.thread-column {
+  width: min(100%, 820px);
+  padding: 14px 6px 8px 0;
+  gap: 18px;
+}
+
+.turn {
+  gap: 8px;
+}
+
+.user-bubble {
+  max-width: min(100%, 520px);
+  padding: 15px 16px;
+  border: 1px solid #bdc8d7;
+  border-radius: var(--seg-radius-sm);
+  background: #eef2f7;
+  color: var(--seg-text-1);
+  box-shadow: none;
+}
+
+.assistant-shell,
+.assistant-section,
+.empty-state,
+.settings-panel,
+.provider-card,
+.settings-empty-state,
+.provider-row,
+.model-row,
+.provider-connect-modal,
+.settings-archive-item,
+.settings-detail-hero,
+.composer-menu-panel,
+.composer-utility-git-branch-panel,
+.git-branch-create-dialog,
+.right-sidebar-section {
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel);
+  box-shadow: none;
+}
+
+.assistant-shell {
+  padding: 16px;
+}
+
+.assistant-section {
+  padding: 12px 14px;
+}
+
+.assistant-section.is-response,
+.assistant-section.is-reasoning,
+.assistant-section.is-tools,
+.assistant-section.is-file-change {
+  padding: 12px 14px;
+  background: var(--seg-panel);
+}
+
+.assistant-ephemeral-state {
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-panel-muted);
+}
+
+.trace-item {
+  border: 1px solid var(--seg-border);
+  border-left: 3px solid #c5ccd6;
+  border-radius: 0;
+  padding: 10px 12px;
+  background: var(--seg-panel-muted);
+  box-shadow: none;
+}
+
+.trace-item::before {
+  display: none;
+}
+
+.trace-kind-system {
+  border-left-color: #b9c2ce;
+}
+
+.trace-kind-reasoning {
+  border-left-color: #94a4ba;
+}
+
+.trace-kind-tool {
+  border-left-color: var(--seg-accent);
+}
+
+.trace-kind-error {
+  border-left-color: var(--seg-danger);
+  background: #fff5f3;
+}
+
+.trace-kind-reasoning,
+.trace-kind-tool {
+  background: var(--seg-panel-muted);
+}
+
+.trace-item-title,
+.trace-item-inline-title,
+.trace-item-toggle-line,
+.trace-item-text,
+.assistant-section.is-response .trace-item-text {
+  color: var(--seg-text-1);
+}
+
+.trace-item-detail,
+.trace-item-plain-text,
+.trace-item-plain-detail,
+.assistant-section.is-response .trace-item-detail {
+  color: var(--seg-text-2);
+}
+
+.trace-item-file-chip {
+  border-radius: var(--seg-radius-xs);
+  border-color: rgba(79, 116, 200, 0.18);
+  background: rgba(79, 116, 200, 0.08);
+  color: var(--seg-accent-strong);
+}
+
+.right-sidebar-section {
+  background: var(--seg-panel);
+}
+
+.right-sidebar-metric,
+.right-sidebar-change-row,
+.right-sidebar-diff-hunk {
+  border-color: var(--seg-border);
+  background: var(--seg-panel-muted);
+}
+
+.right-sidebar-search-field input,
+.settings-field input,
+.settings-field select,
+.settings-field textarea,
+.git-branch-create-field input {
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.right-sidebar-search-field input:focus-visible,
+.settings-field input:focus-visible,
+.settings-field select:focus-visible,
+.settings-field textarea:focus-visible,
+.git-branch-create-field input:focus-visible {
+  border-color: rgba(79, 116, 200, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(79, 116, 200, 0.12);
+  outline: none;
+}
+
+.right-sidebar-change-toggle:hover,
+.right-sidebar-change-toggle:focus-visible {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.right-sidebar-change-type.is-added,
+.right-sidebar-status-badge.is-ready,
+.right-sidebar-status-badge.is-empty,
+.context-pressure-indicator.is-low {
+  color: var(--seg-success);
+}
+
+.right-sidebar-change-type.is-modified,
+.right-sidebar-status-badge.is-loading,
+.right-sidebar-status-badge.is-refreshing {
+  color: var(--seg-accent-strong);
+}
+
+.right-sidebar-change-type.is-renamed,
+.settings-badge.is-warning,
+.context-pressure-indicator.is-medium {
+  color: var(--seg-warning);
+}
+
+.right-sidebar-change-type.is-deleted,
+.right-sidebar-status-badge.is-error,
+.right-sidebar-status-error,
+.context-pressure-indicator.is-high {
+  color: var(--seg-danger);
+}
+
+.right-sidebar-diff-preview {
+  border-top-color: var(--seg-border);
+  background: #ffffff;
+}
+
+.right-sidebar-diff-hunk-header {
+  border-bottom-color: var(--seg-border);
+  background: #eef2f6;
+  color: var(--seg-text-2);
+}
+
+.composer-utility-bar {
+  width: min(100%, 820px);
+  padding: 0;
+}
+
+.composer {
+  width: min(100%, 820px);
+  padding: 16px;
+  border: 1px solid var(--seg-border-strong);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel);
+  box-shadow: none;
+}
+
+.prompt-input-shell {
+  border-radius: var(--seg-radius-sm);
+}
+
+.composer textarea {
+  min-height: 84px;
+  color: var(--seg-text-1);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.composer textarea::placeholder {
+  color: var(--seg-text-3);
+}
+
+.composer-utility-chip,
+.composer-utility-git-branch-button,
+.composer-selector-button,
+.composer-attachment-chip {
+  background: var(--seg-panel-muted);
+}
+
+.composer-utility-git-branch-button:hover,
+.composer-utility-git-branch-button:focus-visible,
+.composer-utility-git-branch-button.is-active,
+.composer-selector-button:hover,
+.composer-selector-button:focus-visible,
+.composer-menu-option:hover,
+.composer-menu-option:focus-visible,
+.composer-menu-option.is-selected {
+  background: var(--seg-panel);
+  border-color: var(--seg-border-strong);
+  color: var(--seg-text-1);
+}
+
+.composer-menu-panel,
+.composer-utility-git-branch-panel,
+.git-branch-create-dialog {
+  border-color: var(--seg-border-strong);
+  background: #fbfcfd;
+}
+
+.composer-actions .primary-button.is-icon-only,
+.composer-selector-button.is-icon-only {
+  border-radius: var(--seg-radius-xs);
+}
+
+.primary-button,
+.secondary-button {
+  min-height: 38px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  box-shadow: none;
+}
+
+.primary-button {
+  background: #e8edf7;
+  border-color: #b7c4da;
+  color: #2d436c;
+}
+
+.primary-button:hover,
+.primary-button:focus-visible {
+  background: #dfe7f5;
+  color: #203453;
+}
+
+.secondary-button {
+  background: var(--seg-panel);
+  color: var(--seg-text-2);
+}
+
+.secondary-button:hover,
+.secondary-button:focus-visible {
+  background: #ffffff;
+  color: var(--seg-text-1);
+}
+
+.secondary-button.is-danger {
+  border-color: rgba(166, 75, 60, 0.22);
+  background: #fff4f2;
+  color: var(--seg-danger);
+}
+
+.terminal-panel {
+  margin-top: 10px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm) var(--seg-radius-sm) 0 0;
+  background: #f5f7fa;
+  box-shadow: none;
+}
+
+.terminal-tabs {
+  min-height: 42px;
+  padding: 0 12px;
+  background: #eef1f5;
+  border-bottom: 1px solid var(--seg-border);
+}
+
+.terminal-tab.is-active {
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  box-shadow: none;
+}
+
+.terminal-surface {
+  border: 1px solid #17202c;
+  border-radius: var(--seg-radius-xs);
+  background: #111923;
+  box-shadow: none;
+}
+
+.canvas-terminal-toggle-anchor {
+  left: 18px;
+  bottom: 18px;
+}
+
+.settings-page-overlay,
+.provider-connect-overlay,
+.git-branch-create-overlay {
+  background: rgba(20, 28, 38, 0.18);
+  backdrop-filter: none;
+}
+
+.settings-page {
+  border: 1px solid var(--seg-border-strong);
+  border-radius: var(--seg-radius-md);
+  background: var(--seg-shell);
+  box-shadow: none;
+}
+
+.settings-page-nav,
+.settings-page-primary-nav {
+  background: #edf0f4;
+  border-right-color: var(--seg-border);
+}
+
+.settings-panel,
+.provider-card,
+.settings-empty-state,
+.settings-summary-card,
+.provider-row,
+.model-row,
+.provider-connect-modal,
+.settings-archive-item,
+.settings-service-item,
+.settings-detail-hero,
+.settings-detail-meta-card {
+  border-color: var(--seg-border);
+  background: var(--seg-panel);
+  box-shadow: none;
+}
+
+.settings-primary-nav-item {
+  border-radius: var(--seg-radius-xs);
+}
+
+.settings-primary-nav-item::before {
+  width: 2px;
+  border-radius: 0;
+  background: var(--seg-accent);
+}
+
+.settings-toggle-card {
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel);
+  box-shadow: none;
+}
+
+.settings-toggle-card.is-active {
+  border-color: rgba(79, 116, 200, 0.22);
+  background: var(--seg-accent-soft);
+}
+
+.settings-toggle-control {
+  border: 1px solid var(--seg-border-strong);
+  border-radius: 999px;
+  background: #d7dde6;
+}
+
+.settings-toggle-thumb {
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.settings-toggle-card.is-active .settings-toggle-control {
+  border-color: rgba(79, 116, 200, 0.26);
+  background: var(--seg-accent);
+}
+
+@media (max-width: 1100px) {
+  .app-shell {
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+
+  .workbench-panes {
+    padding: 8px 8px 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .window-controls-floating {
+    top: 6px;
+    right: 6px;
+  }
+
+  .canvas-region-top-menu,
+  .session-canvas-top-menu {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .workbench-panes {
+    padding: 8px 8px 0;
+  }
+
+  .thread-column,
+  .composer,
+  .composer-utility-bar {
+    width: 100%;
+  }
+
+  .composer {
+    padding: 14px;
+    border-radius: var(--seg-radius-sm);
+  }
+
+  .terminal-panel {
+    margin-top: 8px;
+  }
+}
+
+/* Canvas integration pass: make the center region part of the shell, not a floating page */
+.canvas.is-workbench {
+  background: var(--seg-shell);
+}
+
+.workbench-panes {
+  padding: 0;
+}
+
+.workbench-pane-live-region {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.workbench-pane.is-focused .workbench-pane-live-region {
+  border-color: transparent;
+}
+
+.pane-tab-bar {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--seg-border);
+  background: #eef1f5;
+}
+
+.workbench-pane-live-region {
+  --pane-content-max-width: 880px;
+  --pane-content-gutter: clamp(16px, 2.4vw, 32px);
+  --pane-terminal-gutter: clamp(12px, 1.8vw, 18px);
+}
+
+.thread-shell {
+  justify-content: stretch;
+  padding: 0 var(--pane-content-gutter);
+}
+
+.thread-column {
+  width: 100%;
+  max-width: var(--pane-content-max-width);
+  margin: 0 auto;
+  padding: 14px 0 8px;
+  gap: 14px;
+}
+
+.assistant-shell {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.assistant-shell.is-streaming,
+.assistant-shell.is-sectioned.is-streaming {
+  border: 0;
+  box-shadow: none;
+}
+
+.assistant-section {
+  border-radius: var(--seg-radius-xs);
+}
+
+.assistant-section.is-response,
+.assistant-section.is-reasoning,
+.assistant-section.is-tools,
+.assistant-section.is-file-change {
+  border-color: transparent;
+  background: transparent;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.assistant-section.is-response {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.assistant-section.is-response .trace-item {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.assistant-section.is-response .trace-item-text {
+  font-size: 14px;
+  line-height: 1.72;
+}
+
+.assistant-section.is-tools .trace-item,
+.assistant-section.is-reasoning .trace-item,
+.assistant-section.is-file-change .trace-item {
+  border-radius: var(--seg-radius-xs);
+}
+
+.composer-utility-bar {
+  width: 100%;
+  max-width: var(--pane-content-max-width);
+  margin: 0 auto;
+  padding: 0;
+}
+
+.composer {
+  width: 100%;
+  max-width: var(--pane-content-max-width);
+  margin: 0 auto;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--seg-border);
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: #f7f9fb;
+}
+
+.composer-stack {
+  gap: 10px;
+  padding: 0 var(--pane-content-gutter);
+}
+
+.composer-toolbar {
+  margin-top: 4px;
+}
+
+.composer textarea {
+  min-height: 72px;
+}
+
+.terminal-panel {
+  margin: 0 var(--pane-terminal-gutter);
+  border-top: 1px solid var(--seg-border);
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: #f5f7fa;
+}
+
+.terminal-tabs {
+  padding: 0 14px;
+}
+
+.canvas-terminal-toggle-anchor {
+  left: var(--pane-terminal-gutter);
+  bottom: 14px;
+}
+
+@media (max-width: 1100px) {
+  .workbench-pane-live-region {
+    --pane-content-gutter: 12px;
+    --pane-terminal-gutter: 10px;
+  }
+
+  .composer {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  .workbench-pane-live-region {
+    --pane-content-gutter: 10px;
+    --pane-terminal-gutter: 10px;
+  }
+
+  .thread-column {
+    padding-top: 10px;
+  }
+
+  .composer {
+    padding: 10px;
+  }
+
+  .pane-tab-bar,
+  .terminal-tabs {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}
+
+/* Debug UI regions: matches the desktop UI structure doc mapping */
+.window-shell.debug-ui-regions {
+  --debug-region-activity-rail: #f8b4b4;
+  --debug-region-left-sidebar: #fbd38d;
+  --debug-region-canvas-top-menu: #faf089;
+  --debug-region-session-top-menu: #9ae6b4;
+  --debug-region-global-skills: #81e6d9;
+  --debug-region-create-session: #90cdf4;
+  --debug-region-thread-shell: #bee3f8;
+  --debug-region-composer: #d6bcfa;
+  --debug-region-composer-utility: #c6f6d5;
+  --debug-region-terminal: #cbd5e0;
+  --debug-region-right-sidebar: #fbb6ce;
+  --debug-region-settings-overlay: rgba(15, 23, 42, 0.4);
+  --debug-region-settings-page: #f7fafc;
+}
+
+.window-shell.debug-ui-regions .activity-rail {
+  background: var(--debug-region-activity-rail);
+}
+
+.window-shell.debug-ui-regions .sidebar:not(.is-right),
+.window-shell.debug-ui-regions .left-sidebar-top-menu,
+.window-shell.debug-ui-regions .sidebar-view-host {
+  background: var(--debug-region-left-sidebar);
+}
+
+.window-shell.debug-ui-regions .pane-tab-bar,
+.window-shell.debug-ui-regions .canvas-region-top-menu {
+  background: var(--debug-region-canvas-top-menu);
+}
+
+.window-shell.debug-ui-regions .session-canvas-top-menu {
+  background: var(--debug-region-session-top-menu);
+}
+
+.window-shell.debug-ui-regions .global-skills-canvas,
+.window-shell.debug-ui-regions .global-skills-toolbar,
+.window-shell.debug-ui-regions .global-skills-editor-shell {
+  background: var(--debug-region-global-skills);
+}
+
+.window-shell.debug-ui-regions .thread-shell,
+.window-shell.debug-ui-regions .thread-column {
+  background: var(--debug-region-thread-shell);
+}
+
+.window-shell.debug-ui-regions .create-session-shell,
+.window-shell.debug-ui-regions .create-session-card {
+  background: var(--debug-region-create-session);
+}
+
+.window-shell.debug-ui-regions .composer {
+  background: var(--debug-region-composer);
+}
+
+.window-shell.debug-ui-regions .composer-utility-bar {
+  background: var(--debug-region-composer-utility);
+}
+
+.window-shell.debug-ui-regions .terminal-panel,
+.window-shell.debug-ui-regions .terminal-tabs {
+  background: var(--debug-region-terminal);
+}
+
+.window-shell.debug-ui-regions .sidebar.is-right,
+.window-shell.debug-ui-regions .right-sidebar-top-menu,
+.window-shell.debug-ui-regions .right-sidebar-view-host,
+.window-shell.debug-ui-regions .right-sidebar-section {
+  background: var(--debug-region-right-sidebar);
+}
+
+.window-shell.debug-ui-regions .settings-page-overlay {
+  background: var(--debug-region-settings-overlay);
+}
+
+.window-shell.debug-ui-regions .settings-page,
+.window-shell.debug-ui-regions .settings-page-shell,
+.window-shell.debug-ui-regions .settings-page-primary-nav,
+.window-shell.debug-ui-regions .settings-page-main {
+  background: var(--debug-region-settings-page);
+}
+
+/* Keep standalone icon buttons aligned to the sidebar toggle footprint. */
+.sidebar-action,
+.sidebar-toggle-button.is-sidebar,
+.sidebar-toggle-button.is-top-menu,
+.top-menu-view-button,
+.sidebar-settings,
+.row-action,
+.project-row-action,
+.skill-tree-row-action,
+.canvas-region-top-menu-add-button,
+.terminal-panel-toggle-button,
+.terminal-panel-create,
+.settings-page-close-button,
+.composer-selector-button.is-icon-only,
+.composer-actions .primary-button.is-icon-only {
+  width: var(--icon-button-size);
+  min-width: var(--icon-button-size);
+  height: var(--icon-button-size);
+  min-height: var(--icon-button-size);
+  padding: 0;
 }

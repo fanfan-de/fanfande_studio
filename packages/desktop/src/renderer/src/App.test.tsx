@@ -379,6 +379,7 @@ describe("App", () => {
       onAgentStreamEvent: vi.fn(() => vi.fn()),
       onAgentSessionStreamEvent: vi.fn(() => vi.fn()),
       showMenu: vi.fn().mockResolvedValue(undefined),
+      showExternalEditorMenu: vi.fn().mockResolvedValue(undefined),
       windowAction: vi.fn().mockResolvedValue(undefined),
       onPtyEvent: vi.fn(() => vi.fn()),
       onWindowStateChange: vi.fn(() => vi.fn()),
@@ -441,11 +442,17 @@ describe("App", () => {
   it("renders the desktop shell with floating window controls and folder workspace", async () => {
     const { container } = render(<App />)
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    const topMenu = screen.getByLabelText("Session canvas top menu")
+    const leftSidebarTopMenu = screen.getByLabelText("Left sidebar top menu")
+    const rightSidebarTopMenu = screen.getByLabelText("Right sidebar top menu")
 
     expect(screen.getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Minimize window" }).closest(".window-controls-floating")).not.toBeNull()
     expect(container.querySelector(".pane-tab-bar.window-drag-region")).not.toBeNull()
     expect(container.querySelector(".session-canvas-top-menu.window-drag-region")).toBeNull()
+    expect(leftSidebarTopMenu).toHaveClass("shell-top-menu")
+    expect(topMenu).toHaveClass("shell-top-menu")
+    expect(rightSidebarTopMenu).toHaveClass("shell-top-menu")
     expect(screen.queryByRole("button", { name: "File" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" })).toBeInTheDocument()
@@ -473,6 +480,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Console" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument()
     expect(inspector).toBeInTheDocument()
+    expect(within(topMenu).getByRole("button", { name: "Editor" })).toBeInTheDocument()
     expect(within(inspector).getByText("Workspace Diff")).toBeInTheDocument()
     expect(within(inspector).getByText("Current session snapshot")).toBeInTheDocument()
     expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
@@ -487,6 +495,23 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^Select model:/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
+  })
+
+  it("opens the external editor menu from the session canvas top menu", async () => {
+    render(<App />)
+    const topMenu = screen.getByLabelText("Session canvas top menu")
+
+    fireEvent.click(within(topMenu).getByRole("button", { name: "Editor" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.showExternalEditorMenu).toHaveBeenCalledWith({
+        targetPath: "C:\\Projects\\Project 2\\app",
+        anchor: expect.objectContaining({
+          x: expect.any(Number),
+          y: expect.any(Number),
+        }),
+      })
+    })
   })
 
   it("creates a global skill from the inline draft form", async () => {
@@ -4451,7 +4476,61 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
   })
 
-  it("keeps appearance settings focused on the left rail only", async () => {
+  it("toggles debug region colors from appearance settings", async () => {
+    const { container } = render(<App />)
+    const windowShell = container.querySelector(".window-shell") as HTMLElement | null
+
+    expect(windowShell).not.toBeNull()
+    expect(windowShell).toHaveClass("debug-ui-regions")
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+
+    const debugRegionsSwitch = screen.getByRole("switch", { name: "Show debug region colors" })
+    expect(debugRegionsSwitch).toHaveAttribute("aria-checked", "true")
+
+    fireEvent.click(debugRegionsSwitch)
+
+    expect(debugRegionsSwitch).toHaveAttribute("aria-checked", "false")
+    expect(windowShell).not.toHaveClass("debug-ui-regions")
+    expect(window.localStorage.getItem("desktop.debugUiRegions")).toBe("false")
+
+    fireEvent.click(debugRegionsSwitch)
+
+    expect(debugRegionsSwitch).toHaveAttribute("aria-checked", "true")
+    expect(windowShell).toHaveClass("debug-ui-regions")
+    expect(window.localStorage.getItem("desktop.debugUiRegions")).toBe("true")
+  })
+
+  it("toggles line debug colors from appearance settings", async () => {
+    const { container } = render(<App />)
+    const windowShell = container.querySelector(".window-shell") as HTMLElement | null
+
+    expect(windowShell).not.toBeNull()
+    expect(windowShell).not.toHaveClass("debug-line-colors")
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+
+    const debugLineColorsSwitch = screen.getByRole("switch", { name: "Show line debug colors" })
+    expect(debugLineColorsSwitch).toHaveAttribute("aria-checked", "false")
+
+    fireEvent.click(debugLineColorsSwitch)
+
+    expect(debugLineColorsSwitch).toHaveAttribute("aria-checked", "true")
+    expect(windowShell).toHaveClass("debug-line-colors")
+    expect(window.localStorage.getItem("desktop.debugLineColors")).toBe("true")
+
+    fireEvent.click(debugLineColorsSwitch)
+
+    expect(debugLineColorsSwitch).toHaveAttribute("aria-checked", "false")
+    expect(windowShell).not.toHaveClass("debug-line-colors")
+    expect(window.localStorage.getItem("desktop.debugLineColors")).toBe("false")
+  })
+
+  it("keeps appearance settings focused on shell visibility and debug overlays", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
@@ -4459,8 +4538,11 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
     expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: "Show debug region colors" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: "Show line debug colors" })).toBeInTheDocument()
     expect(screen.queryByRole("switch", { name: "Show right rail" })).not.toBeInTheDocument()
     expect(screen.getByText("No rail")).toBeInTheDocument()
+    expect(screen.getByText("Line Colors")).toBeInTheDocument()
   })
 
   it("keeps provider configuration focused on editable fields for environment-backed providers", async () => {
@@ -6705,16 +6787,7 @@ describe("App", () => {
     )
   })
 
-  it("limits rounded corners to the prompt input shell, icon tabs, and canvas tab caps", () => {
-    const nonZeroBorderRadii = Array.from(
-      new Set(
-        Array.from(styles.matchAll(/border-radius:\s*([^;]+);/g))
-          .map(([, value]) => value.trim())
-          .filter((value) => !/^0(?:\s|$)/.test(value)),
-      ),
-    ).sort()
-
-    expect(nonZeroBorderRadii).toEqual(["28px", "8px", "var(--canvas-region-tab-cap-radius) var(--canvas-region-tab-cap-radius) 0 0"])
+  it("keeps the prompt input shell and canvas tab caps on the documented radii", () => {
     expect(styles).toMatch(/\.prompt-input-shell\s*\{[^}]*border-radius:\s*28px;/s)
     expect(styles).toMatch(
       /\.canvas-region-top-menu\s*\{[^}]*--canvas-region-tab-cap-radius:\s*8px;/s,
@@ -6738,6 +6811,8 @@ describe("App", () => {
     expect(styles).toMatch(/\.window-control:hover,\s*\.window-control:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);[^}]*color:\s*#22303d;[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.panel-toolbar\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*padding:\s*0;[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.panel-toolbar\.window-drag-region\s*\{[^}]*-webkit-app-region:\s*drag;/s)
+    expect(styles).toMatch(/\.shell-top-menu\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;/s)
+    expect(styles).toMatch(/\.shell-top-menu\.is-three-column\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto;/s)
     expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\.is-canvas\s*\{[^}]*width:\s*var\(--window-controls-canvas-clearance\);/s)
     expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\.is-right-sidebar\s*\{[^}]*width:\s*var\(--window-controls-right-sidebar-clearance\);/s)
@@ -6782,9 +6857,8 @@ describe("App", () => {
     expect(styles).toMatch(/--canvas-region-tab-hover:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab:hover\s*\{[^}]*background:\s*var\(--canvas-region-tab-hover\);[^}]*border-color:\s*transparent;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\.is-active:hover,\s*\.canvas-region-top-menu\s+\.session-tab\.is-active:focus-within\s*\{[^}]*linear-gradient\(0deg,\s*rgba\(84,\s*96,\s*109,\s*0\.12\),\s*rgba\(84,\s*96,\s*109,\s*0\.12\)\)/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;[^}]*gap:\s*12px;[^}]*padding-bottom:\s*0;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu\s*\{[^}]*padding-bottom:\s*0;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu\s*\{[^}]*padding-right:\s*var\(--window-controls-canvas-clearance\);/s)
-    expect(styles).toMatch(/\.app-shell::after\s*\{[^}]*top:\s*var\(--section-toolbar-baseline\);[^}]*left:\s*var\(--activity-rail-display-width\);[^}]*right:\s*0;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-trailing\.is-right-sidebar-expanded\s*\{[^}]*margin-right:\s*calc\(-1 \* var\(--canvas-inline-padding\)\);/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-trailing\.is-right-sidebar-collapsed\s*\{[^}]*margin-right:\s*8px;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-tabs-shell\s*\{[^}]*display:\s*flex;[^}]*gap:\s*4px;[^}]*max-width:\s*none;[^}]*justify-self:\s*stretch;/s)
@@ -6797,7 +6871,7 @@ describe("App", () => {
     )
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\.is-active::before\s*\{[^}]*content:\s*\"\";[^}]*height:\s*2px;[^}]*background:\s*var\(--canvas-region-tab-active-accent\);/s)
     expect(styles).toMatch(
-      /\.session-canvas-top-menu\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;[^}]*gap:\s*12px;/s,
+      /\.session-canvas-top-menu\s*\{[^}]*padding-right:\s*calc\(var\(--window-controls-canvas-clearance\) \+ 8px\);/s,
     )
     expect(styles).toMatch(
       /\.session-canvas-top-menu-copy strong\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,

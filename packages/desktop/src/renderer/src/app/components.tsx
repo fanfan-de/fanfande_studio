@@ -19,6 +19,8 @@ import {
   MaximizeIcon,
   MinimizeIcon,
   NewItemIcon,
+  OpenInEditorIcon,
+  PaletteIcon,
   PaperclipIcon,
   RestoreIcon,
   RightSidebarCollapseIcon,
@@ -65,6 +67,70 @@ interface WindowChromeProps {
 
 function WindowControlsSpacer({ variant }: { variant: "canvas" | "right-sidebar" }) {
   return <div className={`panel-toolbar-window-controls-spacer is-${variant}`} aria-hidden="true" />
+}
+
+function joinClassNames(...tokens: Array<string | null | undefined | false>) {
+  return tokens.filter(Boolean).join(" ")
+}
+
+interface ShellTopMenuProps {
+  ariaLabel: string
+  as?: "div" | "header" | "nav"
+  className?: string
+  content: ReactNode
+  contentClassName?: string
+  controlsSpacerVariant?: "canvas" | "right-sidebar"
+  dragRegion?: boolean
+  layout?: "split" | "three-column"
+  leading?: ReactNode
+  leadingClassName?: string
+  trailing?: ReactNode
+  trailingClassName?: string
+}
+
+function ShellTopMenu({
+  ariaLabel,
+  as = "div",
+  className,
+  content,
+  contentClassName,
+  controlsSpacerVariant,
+  dragRegion = false,
+  layout = "split",
+  leading,
+  leadingClassName,
+  trailing,
+  trailingClassName,
+}: ShellTopMenuProps) {
+  const Component = as
+
+  return (
+    <Component
+      className={joinClassNames(
+        "shell-top-menu",
+        layout === "three-column" ? "is-three-column" : null,
+        "panel-toolbar",
+        dragRegion ? "window-drag-region" : null,
+        className,
+      )}
+      aria-label={ariaLabel}
+    >
+      {leading !== undefined ? (
+        <div className={joinClassNames("shell-top-menu-leading", leadingClassName)}>
+          {leading}
+        </div>
+      ) : null}
+      <div className={joinClassNames("shell-top-menu-content", contentClassName)}>
+        {content}
+      </div>
+      {trailing !== undefined ? (
+        <div className={joinClassNames("shell-top-menu-trailing", trailingClassName)}>
+          {trailing}
+        </div>
+      ) : null}
+      {controlsSpacerVariant ? <WindowControlsSpacer variant={controlsSpacerVariant} /> : null}
+    </Component>
+  )
 }
 
 export function WindowChrome({ controlsRef, isWindowMaximized, onWindowAction }: WindowChromeProps) {
@@ -251,21 +317,27 @@ function LeftSidebarTopMenu({
   onViewChange,
 }: LeftSidebarTopMenuProps) {
   return (
-    <header className="left-sidebar-top-menu panel-toolbar window-drag-region" aria-label="Left sidebar top menu">
-      <div className="left-sidebar-top-menu-tabs">
-        <TopMenuViewButton active={activeView === "workspace"} label="Workspace" onClick={() => onViewChange("workspace")}>
-          <LayoutSidebarLeftIcon />
-        </TopMenuViewButton>
-        <TopMenuViewButton active={activeView === "skills"} label="Skills" onClick={() => onViewChange("skills")}>
-          <FileTextIcon />
-        </TopMenuViewButton>
-      </div>
-      <div className="left-sidebar-top-menu-actions">
-        {showSidebarToggleButton ? (
-          <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="left" variant="top-menu" />
-        ) : null}
-      </div>
-    </header>
+    <ShellTopMenu
+      as="header"
+      ariaLabel="Left sidebar top menu"
+      className="left-sidebar-top-menu"
+      contentClassName="left-sidebar-top-menu-tabs"
+      content={(
+        <>
+          <TopMenuViewButton active={activeView === "workspace"} label="Workspace" onClick={() => onViewChange("workspace")}>
+            <LayoutSidebarLeftIcon />
+          </TopMenuViewButton>
+          <TopMenuViewButton active={activeView === "skills"} label="Skills" onClick={() => onViewChange("skills")}>
+            <FileTextIcon />
+          </TopMenuViewButton>
+        </>
+      )}
+      dragRegion
+      trailing={showSidebarToggleButton ? (
+        <SidebarToggleButton isSidebarCollapsed={false} onToggleSidebar={onToggleSidebar} side="left" variant="top-menu" />
+      ) : null}
+      trailingClassName="left-sidebar-top-menu-actions"
+    />
   )
 }
 
@@ -1146,14 +1218,19 @@ export function RightSidebar({
 
   return (
     <aside id="app-sidebar-right" className="sidebar is-right" aria-label="Inspector sidebar">
-      <header className="right-sidebar-top-menu panel-toolbar window-drag-region" aria-label="Right sidebar top menu">
-        <div className="right-sidebar-top-menu-tabs">
+      <ShellTopMenu
+        as="header"
+        ariaLabel="Right sidebar top menu"
+        className="right-sidebar-top-menu"
+        contentClassName="right-sidebar-top-menu-tabs"
+        content={(
           <TopMenuViewButton active={activeView === "changes"} label="Changes" onClick={() => onViewChange("changes")}>
             <LayoutSidebarRightIcon />
           </TopMenuViewButton>
-        </div>
-        <WindowControlsSpacer variant="right-sidebar" />
-      </header>
+        )}
+        controlsSpacerVariant="right-sidebar"
+        dragRegion
+      />
 
       <div className="right-sidebar-view-host">
         {activeView === "changes" ? (
@@ -1989,85 +2066,96 @@ export function CanvasRegionTopMenu({
   const canCloseCreateSessionTab = sessions.length > 0 || createSessionTabs.length > 1
 
   return (
-    <nav className="canvas-region-top-menu panel-toolbar window-drag-region" aria-label="Canvas region top menu">
-      <div className="canvas-region-top-menu-leading">
-        {showLeftSidebarToggleButton ? (
-          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="top-menu" />
-        ) : null}
-      </div>
-      <div className="canvas-region-top-menu-tabs-shell">
-        <div className="canvas-region-top-menu-tabs" aria-label="Session tabs">
-          {sessions.map((session) => {
-            const isActive = activeCreateSessionTabID === null && session.id === activeSessionID
+    <ShellTopMenu
+      as="nav"
+      ariaLabel="Canvas region top menu"
+      className="canvas-region-top-menu"
+      contentClassName="canvas-region-top-menu-tabs-shell"
+      content={(
+        <>
+          <div className="canvas-region-top-menu-tabs" aria-label="Session tabs">
+            {sessions.map((session) => {
+              const isActive = activeCreateSessionTabID === null && session.id === activeSessionID
 
-            return (
-              <div key={session.id} className={isActive ? "session-tab is-active" : "session-tab"}>
-                <button
-                  className="session-tab-trigger"
-                  aria-label={`Switch to session ${session.title}`}
-                  aria-pressed={isActive}
-                  title={`Switch to session ${session.title}`}
-                  type="button"
-                  onClick={() => onSessionSelect(session.id)}
-                >
-                  <span className="session-tab-title">{session.title}</span>
-                </button>
-                <button
-                  className="session-tab-close"
-                  aria-label={`Close session tab ${session.title}`}
-                  title={`Close session tab ${session.title}`}
-                  type="button"
-                  onClick={() => onSessionClose(session.id)}
-                >
-                  <CloseIcon />
-                </button>
-              </div>
-            )
-          })}
-
-          {createSessionTabs.map((tab, index) => {
-            const isActive = activeCreateSessionTabID === tab.id
-            const switchLabel = getCreateSessionTabSwitchLabel(tab, index)
-            const closeLabel = getCreateSessionTabCloseLabel(tab, index)
-
-            return (
-              <div key={tab.id} className={isActive ? "session-tab is-active is-create-tab" : "session-tab is-create-tab"}>
-                <button
-                  className="session-tab-trigger"
-                  aria-label={switchLabel}
-                  aria-pressed={isActive}
-                  title={switchLabel}
-                  type="button"
-                  onClick={() => onSelectCreateSessionTab(tab.id)}
-                >
-                  <span className="session-tab-title">{getCreateSessionTabTitle(tab, index, workspaces)}</span>
-                </button>
-                {canCloseCreateSessionTab ? (
+              return (
+                <div key={session.id} className={isActive ? "session-tab is-active" : "session-tab"}>
+                  <button
+                    className="session-tab-trigger"
+                    aria-label={`Switch to session ${session.title}`}
+                    aria-pressed={isActive}
+                    title={`Switch to session ${session.title}`}
+                    type="button"
+                    onClick={() => onSessionSelect(session.id)}
+                  >
+                    <span className="session-tab-title">{session.title}</span>
+                  </button>
                   <button
                     className="session-tab-close"
-                    aria-label={closeLabel}
-                    title={closeLabel}
+                    aria-label={`Close session tab ${session.title}`}
+                    title={`Close session tab ${session.title}`}
                     type="button"
-                    onClick={() => onCloseCreateSessionTab(tab.id)}
+                    onClick={() => onSessionClose(session.id)}
                   >
                     <CloseIcon />
                   </button>
-                ) : null}
-              </div>
-            )
-          })}
-        </div>
-        <button className="canvas-region-top-menu-add-button" aria-label="Add session tab" title="Add session tab" type="button" onClick={onAddCreateSessionTab}>
-          <span className="canvas-region-top-menu-add-glyph" aria-hidden="true">
-            +
-          </span>
-        </button>
-      </div>
-      <div className={isRightSidebarCollapsed ? "canvas-region-top-menu-trailing is-right-sidebar-collapsed" : "canvas-region-top-menu-trailing is-right-sidebar-expanded"}>
+                </div>
+              )
+            })}
+
+            {createSessionTabs.map((tab, index) => {
+              const isActive = activeCreateSessionTabID === tab.id
+              const switchLabel = getCreateSessionTabSwitchLabel(tab, index)
+              const closeLabel = getCreateSessionTabCloseLabel(tab, index)
+
+              return (
+                <div key={tab.id} className={isActive ? "session-tab is-active is-create-tab" : "session-tab is-create-tab"}>
+                  <button
+                    className="session-tab-trigger"
+                    aria-label={switchLabel}
+                    aria-pressed={isActive}
+                    title={switchLabel}
+                    type="button"
+                    onClick={() => onSelectCreateSessionTab(tab.id)}
+                  >
+                    <span className="session-tab-title">{getCreateSessionTabTitle(tab, index, workspaces)}</span>
+                  </button>
+                  {canCloseCreateSessionTab ? (
+                    <button
+                      className="session-tab-close"
+                      aria-label={closeLabel}
+                      title={closeLabel}
+                      type="button"
+                      onClick={() => onCloseCreateSessionTab(tab.id)}
+                    >
+                      <CloseIcon />
+                    </button>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+          <button className="canvas-region-top-menu-add-button" aria-label="Add session tab" title="Add session tab" type="button" onClick={onAddCreateSessionTab}>
+            <span className="canvas-region-top-menu-add-glyph" aria-hidden="true">
+              +
+            </span>
+          </button>
+        </>
+      )}
+      controlsSpacerVariant="canvas"
+      dragRegion
+      layout="three-column"
+      leading={showLeftSidebarToggleButton ? (
+        <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="top-menu" />
+      ) : null}
+      leadingClassName="canvas-region-top-menu-leading"
+      trailing={(
         <SidebarToggleButton isSidebarCollapsed={isRightSidebarCollapsed} onToggleSidebar={onToggleRightSidebar} side="right" variant="top-menu" />
-      </div>
-      <WindowControlsSpacer variant="canvas" />
-    </nav>
+      )}
+      trailingClassName={joinClassNames(
+        "canvas-region-top-menu-trailing",
+        isRightSidebarCollapsed ? "is-right-sidebar-collapsed" : "is-right-sidebar-expanded",
+      )}
+    />
   )
 }
 
@@ -2355,20 +2443,27 @@ export function CanvasRegionUtilityMenu({
   showLeftSidebarToggleButton: boolean
 }) {
   return (
-    <nav className="canvas-region-top-menu panel-toolbar window-drag-region" aria-label={`${label} top menu`}>
-      <div className="canvas-region-top-menu-leading">
-        {showLeftSidebarToggleButton ? (
-          <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="top-menu" />
-        ) : null}
-      </div>
-      <div className="canvas-region-top-menu-tabs-shell">
-        <div className="canvas-region-top-menu-empty">{label}</div>
-      </div>
-      <div className={isRightSidebarCollapsed ? "canvas-region-top-menu-trailing is-right-sidebar-collapsed" : "canvas-region-top-menu-trailing is-right-sidebar-expanded"}>
+    <ShellTopMenu
+      as="nav"
+      ariaLabel={`${label} top menu`}
+      className="canvas-region-top-menu"
+      contentClassName="canvas-region-top-menu-tabs-shell"
+      content={<div className="canvas-region-top-menu-empty">{label}</div>}
+      controlsSpacerVariant="canvas"
+      dragRegion
+      layout="three-column"
+      leading={showLeftSidebarToggleButton ? (
+        <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={onToggleLeftSidebar} side="left" variant="top-menu" />
+      ) : null}
+      leadingClassName="canvas-region-top-menu-leading"
+      trailing={(
         <SidebarToggleButton isSidebarCollapsed={isRightSidebarCollapsed} onToggleSidebar={onToggleRightSidebar} side="right" variant="top-menu" />
-      </div>
-      <WindowControlsSpacer variant="canvas" />
-    </nav>
+      )}
+      trailingClassName={joinClassNames(
+        "canvas-region-top-menu-trailing",
+        isRightSidebarCollapsed ? "is-right-sidebar-collapsed" : "is-right-sidebar-expanded",
+      )}
+    />
   )
 }
 
@@ -2573,6 +2668,49 @@ function ProjectSkillsMenuButton({
   )
 }
 
+function ExternalEditorMenuButton({ directory }: { directory: string | null }) {
+  const showExternalEditorMenu = window.desktop?.showExternalEditorMenu
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+
+  if (!directory || !showExternalEditorMenu) {
+    return null
+  }
+
+  const targetPath = directory
+  const openExternalEditorMenu = showExternalEditorMenu
+
+  function handleClick() {
+    const bounds = buttonRef.current?.getBoundingClientRect()
+
+    void openExternalEditorMenu({
+      targetPath,
+      anchor: bounds
+        ? {
+            x: Math.round(bounds.left),
+            y: Math.round(bounds.bottom),
+          }
+        : undefined,
+    }).catch((error) => {
+      console.error("[desktop] showExternalEditorMenu failed:", error)
+    })
+  }
+
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      className="canvas-top-menu-button canvas-top-menu-editor-trigger"
+      aria-label="Editor"
+      title="Open current project"
+      onClick={handleClick}
+    >
+      <OpenInEditorIcon />
+      <span>Editor</span>
+      <ChevronDownIcon />
+    </button>
+  )
+}
+
 export function SessionCanvasTopMenu({
   contextLabel,
   contextTitle,
@@ -2588,28 +2726,38 @@ export function SessionCanvasTopMenu({
   onSkillToggle,
 }: SessionCanvasTopMenuProps) {
   return (
-    <div className="session-canvas-top-menu panel-toolbar" aria-label="Session canvas top menu">
-      <div className="session-canvas-top-menu-copy">
-        <span className="label">{contextLabel}</span>
-        <strong>{contextTitle}</strong>
-      </div>
-      <div className="session-canvas-top-menu-actions">
-        <ProjectMcpMenuButton
-          mcpOptions={mcpOptions}
-          selectedMcpServerIDs={selectedMcpServerIDs}
-          selectedMcpServerLabel={selectedMcpServerLabel}
-          onMcpServerToggle={onMcpServerToggle}
-        />
-        <ProjectSkillsMenuButton
-          skillOptions={skillOptions}
-          selectedSkillIDs={selectedSkillIDs}
-          selectedSkillLabel={selectedSkillLabel}
-          onSkillToggle={onSkillToggle}
-        />
-        <GitQuickMenuButton projectID={gitProjectID} directory={gitDirectory} />
-      </div>
-      <WindowControlsSpacer variant="canvas" />
-    </div>
+    <ShellTopMenu
+      ariaLabel="Session canvas top menu"
+      as="div"
+      className="session-canvas-top-menu"
+      contentClassName="panel-toolbar-copy session-canvas-top-menu-copy"
+      content={(
+        <>
+          <span className="label">{contextLabel}</span>
+          <strong>{contextTitle}</strong>
+        </>
+      )}
+      controlsSpacerVariant="canvas"
+      trailing={(
+        <>
+          <ExternalEditorMenuButton directory={gitDirectory} />
+          <ProjectMcpMenuButton
+            mcpOptions={mcpOptions}
+            selectedMcpServerIDs={selectedMcpServerIDs}
+            selectedMcpServerLabel={selectedMcpServerLabel}
+            onMcpServerToggle={onMcpServerToggle}
+          />
+          <ProjectSkillsMenuButton
+            skillOptions={skillOptions}
+            selectedSkillIDs={selectedSkillIDs}
+            selectedSkillLabel={selectedSkillLabel}
+            onSkillToggle={onSkillToggle}
+          />
+          <GitQuickMenuButton projectID={gitProjectID} directory={gitDirectory} />
+        </>
+      )}
+      trailingClassName="session-canvas-top-menu-actions"
+    />
   )
 }
 
@@ -2907,6 +3055,8 @@ interface SettingsPageProps {
   deletingMcpServerID: string | null
   deletingProviderID: string | null
   isActivityRailVisible: boolean
+  isDebugLineColorsEnabled: boolean
+  isDebugUiRegionsEnabled: boolean
   isLoading: boolean
   isLoadingArchivedSessions: boolean
   isOpen: boolean
@@ -2929,6 +3079,8 @@ interface SettingsPageProps {
   savingProviderID: string | null
   selectionDraft: ProjectModelSelection
   onActivityRailVisibilityChange: (value: boolean) => void
+  onDebugLineColorsChange: (value: boolean) => void
+  onDebugUiRegionsChange: (value: boolean) => void
   onClose: () => void
   onDeleteArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
@@ -2954,6 +3106,8 @@ export function SettingsPage({
   deletingMcpServerID,
   deletingProviderID,
   isActivityRailVisible,
+  isDebugLineColorsEnabled,
+  isDebugUiRegionsEnabled,
   isLoading,
   isLoadingArchivedSessions,
   isOpen,
@@ -2973,6 +3127,8 @@ export function SettingsPage({
   savingProviderID,
   selectionDraft,
   onActivityRailVisibilityChange,
+  onDebugLineColorsChange,
+  onDebugUiRegionsChange,
   onClose,
   onDeleteArchivedSession,
   onDeleteMcpServer,
@@ -3108,7 +3264,7 @@ export function SettingsPage({
         meta: `${archivedSessions.length} sessions`,
         Icon: ArchiveIcon,
       },
-      { key: "appearance" as const, label: "Appearance", meta: "1 option", Icon: LayoutSidebarLeftIcon },
+      { key: "appearance" as const, label: "Appearance", meta: "3 options", Icon: LayoutSidebarLeftIcon },
     ]
 
     return (
@@ -3213,10 +3369,82 @@ export function SettingsPage({
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>
-                        <span className="label">Current</span>
-                        <h3>Toggle Placement</h3>
+                        <span className="label">Development</span>
+                        <h3>Debug Region Colors</h3>
                       </div>
-                      <p>The left rail is optional. The right inspector always keeps its toggle on the active surface.</p>
+                      <p>Toggle the temporary region background colors used during UI structure discussions and layout iteration.</p>
+                    </div>
+
+                    <button
+                      className={isDebugUiRegionsEnabled ? "settings-toggle-card is-active" : "settings-toggle-card"}
+                      role="switch"
+                      aria-checked={isDebugUiRegionsEnabled}
+                      aria-label="Show debug region colors"
+                      type="button"
+                      onClick={() => onDebugUiRegionsChange(!isDebugUiRegionsEnabled)}
+                    >
+                      <span className="settings-toggle-copy">
+                        <strong className="settings-toggle-title">
+                          <span className="settings-toggle-icon" aria-hidden="true">
+                            <PaletteIcon />
+                          </span>
+                          <span>Show debug region colors</span>
+                        </strong>
+                        <small>Fill major UI regions with temporary colors so layout discussions can refer to them directly.</small>
+                      </span>
+                      <span className="settings-toggle-control" aria-hidden="true">
+                        <span className="settings-toggle-thumb" />
+                      </span>
+                    </button>
+
+                    <p className="settings-helper-text">
+                      This development overlay follows the color mapping documented in the desktop UI structure guide and can be disabled once the layout is agreed.
+                    </p>
+                  </section>
+
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Development</span>
+                        <h3>Debug Line Colors</h3>
+                      </div>
+                      <p>Color the remaining top-region dividers differently so it is obvious which line comes from the shell edge and which comes from the pane tabs.</p>
+                    </div>
+
+                    <button
+                      className={isDebugLineColorsEnabled ? "settings-toggle-card is-active" : "settings-toggle-card"}
+                      role="switch"
+                      aria-checked={isDebugLineColorsEnabled}
+                      aria-label="Show line debug colors"
+                      type="button"
+                      onClick={() => onDebugLineColorsChange(!isDebugLineColorsEnabled)}
+                    >
+                      <span className="settings-toggle-copy">
+                        <strong className="settings-toggle-title">
+                          <span className="settings-toggle-icon" aria-hidden="true">
+                            <MinimizeIcon />
+                          </span>
+                          <span>Show line debug colors</span>
+                        </strong>
+                        <small>Use separate highlight colors for the shell top border and the pane tab divider.</small>
+                      </span>
+                      <span className="settings-toggle-control" aria-hidden="true">
+                        <span className="settings-toggle-thumb" />
+                      </span>
+                    </button>
+
+                    <p className="settings-helper-text">
+                      This keeps the normal theme untouched until you need to inspect which remaining thin line is actually being painted in the top region.
+                    </p>
+                  </section>
+
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Current</span>
+                        <h3>Appearance State</h3>
+                      </div>
+                      <p>The left rail is optional. Region and line debug colors are development-only overlays. The right inspector always keeps its toggle on the active surface.</p>
                     </div>
 
                     <div className="settings-section-summary">
@@ -3227,6 +3455,24 @@ export function SettingsPage({
                           {isActivityRailVisible
                             ? "The narrow rail is visible and always contains the sidebar toggle."
                             : "The rail is hidden, and the toggle appears in the sidebar header or canvas top menu depending on the current layout."}
+                        </p>
+                      </article>
+                      <article className="settings-summary-card">
+                        <span className="label">Debug Regions</span>
+                        <strong>{isDebugUiRegionsEnabled ? "Shown" : "Hidden"}</strong>
+                        <p>
+                          {isDebugUiRegionsEnabled
+                            ? "Major interface regions use temporary background colors to make layout discussions faster."
+                            : "Region debug colors are disabled, so the interface shows only the current visual theme."}
+                        </p>
+                      </article>
+                      <article className="settings-summary-card">
+                        <span className="label">Line Colors</span>
+                        <strong>{isDebugLineColorsEnabled ? "Shown" : "Hidden"}</strong>
+                        <p>
+                          {isDebugLineColorsEnabled
+                            ? "The remaining top-region dividers use separate colors so the shell border and pane divider can be distinguished immediately."
+                            : "Top divider lines use the current theme colors, so they blend back into the regular interface."}
                         </p>
                       </article>
                       <article className="settings-summary-card">

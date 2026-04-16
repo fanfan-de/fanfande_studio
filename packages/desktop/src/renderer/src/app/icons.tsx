@@ -12,6 +12,7 @@ import {
   Folder,
   LayoutPanelLeft,
   Minus,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRight,
@@ -40,6 +41,7 @@ export const PaperclipIcon = createIcon(Paperclip)
 export const ChevronDownIcon = createIcon(ChevronDown)
 export const ChevronRightIcon = createIcon(ChevronRight)
 export const ExpandIcon = createIcon(Expand)
+export const OpenInEditorIcon = createIcon(Expand)
 export const FileTextIcon = createIcon(FileText)
 export const SortIcon = createIcon(SortAsc)
 export const NewItemIcon = createIcon(FilePlus2)
@@ -61,3 +63,4 @@ export const RestoreIcon = createIcon(Copy)
 export const CloseIcon = createIcon(X)
 export const TerminalIcon = createIcon(Terminal)
 export const ArrowUpIcon = createIcon(ArrowUp)
+export const PaletteIcon = createIcon(Palette)

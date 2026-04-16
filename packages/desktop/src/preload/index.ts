@@ -11,6 +11,11 @@ type MenuAnchor = {
   x: number
   y: number
 }
+type ExternalEditorSummary = {
+  id: string
+  label: string
+  executablePath: string
+}
 type AgentSSEEvent = {
   id?: string
   event: string
@@ -208,6 +213,14 @@ try {
         isMaximized: boolean
       }>,
     showMenu: (menuKey: MenuKey, anchor?: MenuAnchor) => ipcRenderer.invoke("desktop:show-menu", { menuKey, anchor }),
+    showExternalEditorMenu: (input: { targetPath: string; anchor?: MenuAnchor }) =>
+      ipcRenderer.invoke("desktop:show-external-editor-menu", input) as Promise<void>,
+    openInExternalEditor: (input: { targetPath: string; editorID?: string }) =>
+      ipcRenderer.invoke("desktop:open-in-external-editor", input) as Promise<{
+        ok: true
+        editor: ExternalEditorSummary
+        targetPath: string
+      }>,
     windowAction: (action: WindowAction) => ipcRenderer.invoke("desktop:window-action", action),
     getAgentConfig: () =>
       ipcRenderer.invoke("desktop:get-agent-config") as Promise<{

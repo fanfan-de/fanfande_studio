@@ -147,6 +147,8 @@ export function App() {
     appShellRef,
     appShellStyle,
     handleActivityRailVisibilityChange,
+    handleDebugLineColorsChange,
+    handleDebugUiRegionsChange,
     handleRightSidebarResizerKeyDown,
     handleRightSidebarResizerPointerDown,
     handleRightSidebarToggle,
@@ -155,6 +157,8 @@ export function App() {
     handleSidebarToggle,
     handleWindowAction,
     isActivityRailVisible,
+    isDebugLineColorsEnabled,
+    isDebugUiRegionsEnabled,
     isRightSidebarCollapsed,
     isRightSidebarResizing,
     isSidebarCollapsed,
@@ -554,8 +558,17 @@ export function App() {
     })
   }
 
+  const windowShellClassName = [
+    "window-shell",
+    isDebugLineColorsEnabled ? "debug-line-colors" : "",
+    isDebugUiRegionsEnabled ? "debug-ui-regions" : "",
+    isWindowMaximized ? "is-maximized" : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+
   return (
-    <div className={isWindowMaximized ? "window-shell is-maximized" : "window-shell"}>
+    <div className={windowShellClassName}>
       <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
 
       <main ref={appShellRef} className="app-shell" style={appShellStyle}>
@@ -743,6 +756,8 @@ export function App() {
           deletingMcpServerID={deletingMcpServerID}
           deletingProviderID={deletingProviderID}
           isActivityRailVisible={isActivityRailVisible}
+          isDebugLineColorsEnabled={isDebugLineColorsEnabled}
+          isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
           isLoading={isLoading}
           isLoadingArchivedSessions={isLoadingArchivedSessions}
           isOpen={isOpen}
@@ -762,6 +777,8 @@ export function App() {
           savingProviderID={savingProviderID}
           selectionDraft={selectionDraft}
           onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
+          onDebugLineColorsChange={handleDebugLineColorsChange}
+          onDebugUiRegionsChange={handleDebugUiRegionsChange}
           onClose={closeSettings}
           onDeleteArchivedSession={deleteArchivedSession}
           onDeleteMcpServer={deleteMcpServer}

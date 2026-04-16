@@ -4,25 +4,35 @@ import type { WindowAction } from "./types"
 import { clamp, resolveSidebarWidthBounds } from "./utils"
 
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
+const DEBUG_UI_REGIONS_STORAGE_KEY = "desktop.debugUiRegions"
+const DEBUG_LINE_COLORS_STORAGE_KEY = "desktop.debugLineColors"
 const WINDOW_CONTROLS_CLEARANCE_FALLBACK = 124
 const WINDOW_CONTROLS_CLEARANCE_PADDING = 24
 
 type SidebarResizerSide = "left" | "right"
 
-function readRailVisibilityPreference(key: string) {
-  if (typeof window === "undefined") return true
+function readBooleanPreference(key: string, fallback: boolean) {
+  if (typeof window === "undefined") return fallback
 
   try {
     const storedValue = window.localStorage.getItem(key)
-    if (storedValue === null) return true
+    if (storedValue === null) return fallback
     return storedValue !== "false"
   } catch {
-    return true
+    return fallback
   }
 }
 
 function readActivityRailVisibilityPreference() {
-  return readRailVisibilityPreference(ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY)
+  return readBooleanPreference(ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY, true)
+}
+
+function readDebugUiRegionsPreference() {
+  return readBooleanPreference(DEBUG_UI_REGIONS_STORAGE_KEY, true)
+}
+
+function readDebugLineColorsPreference() {
+  return readBooleanPreference(DEBUG_LINE_COLORS_STORAGE_KEY, false)
 }
 
 export function useDesktopShell() {
@@ -34,6 +44,8 @@ export function useDesktopShell() {
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
+  const [isDebugUiRegionsEnabled, setIsDebugUiRegionsEnabled] = useState(readDebugUiRegionsPreference)
+  const [isDebugLineColorsEnabled, setIsDebugLineColorsEnabled] = useState(readDebugLineColorsPreference)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false)
   const [activeSidebarResizer, setActiveSidebarResizer] = useState<SidebarResizerSide | null>(null)
@@ -168,6 +180,22 @@ export function useDesktopShell() {
       return
     }
   }, [isActivityRailVisible])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DEBUG_UI_REGIONS_STORAGE_KEY, String(isDebugUiRegionsEnabled))
+    } catch {
+      return
+    }
+  }, [isDebugUiRegionsEnabled])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DEBUG_LINE_COLORS_STORAGE_KEY, String(isDebugLineColorsEnabled))
+    } catch {
+      return
+    }
+  }, [isDebugLineColorsEnabled])
 
   useEffect(() => {
     function syncSidebarWidthToViewport() {
@@ -390,6 +418,14 @@ export function useDesktopShell() {
     setIsActivityRailVisible(nextVisible)
   }
 
+  function handleDebugUiRegionsChange(nextEnabled: boolean) {
+    setIsDebugUiRegionsEnabled(nextEnabled)
+  }
+
+  function handleDebugLineColorsChange(nextEnabled: boolean) {
+    setIsDebugLineColorsEnabled(nextEnabled)
+  }
+
   function handleWindowAction(action: WindowAction) {
     if (!window.desktop?.windowAction) {
       console.warn("[desktop] windowAction is unavailable. preload may not be loaded.")
@@ -420,6 +456,8 @@ export function useDesktopShell() {
     appShellRef,
     appShellStyle,
     handleActivityRailVisibilityChange,
+    handleDebugLineColorsChange,
+    handleDebugUiRegionsChange,
     handleSidebarResizerKeyDown,
     handleSidebarResizerPointerDown,
     handleSidebarToggle,
@@ -428,6 +466,8 @@ export function useDesktopShell() {
     handleRightSidebarToggle,
     handleWindowAction,
     isActivityRailVisible,
+    isDebugLineColorsEnabled,
+    isDebugUiRegionsEnabled,
     isSidebarCollapsed,
     isSidebarResizing,
     isRightSidebarCollapsed,

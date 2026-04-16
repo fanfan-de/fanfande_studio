@@ -34,6 +34,22 @@ declare global {
         menuKey: "file" | "edit" | "view" | "window" | "help",
         anchor?: { x: number; y: number },
       ) => Promise<void>
+      showExternalEditorMenu?: (input: {
+        targetPath: string
+        anchor?: {
+          x: number
+          y: number
+        }
+      }) => Promise<void>
+      openInExternalEditor?: (input: { targetPath: string; editorID?: string }) => Promise<{
+        ok: true
+        editor: {
+          id: string
+          label: string
+          executablePath: string
+        }
+        targetPath: string
+      }>
       windowAction?: (action: "minimize" | "toggle-maximize" | "close") => Promise<void>
       getAgentConfig?: () => Promise<{
         baseURL: string

@@ -1,5 +1,6 @@
-import { BrowserWindow, dialog, ipcMain } from "electron"
+import { BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions } from "electron"
 import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
+import { listAvailableExternalEditors, openInExternalEditor } from "./external-editors"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
 import {
   checkoutGitBranch,
@@ -276,6 +277,53 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         : {}),
     })
   })
+
+  ipcMain.handle("desktop:show-external-editor-menu", (event, input: { targetPath: string; anchor?: MenuAnchor }) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+
+    const targetPath = input.targetPath.trim()
+    if (!targetPath) {
+      throw new Error("A workspace directory is required.")
+    }
+
+    const availableEditors = listAvailableExternalEditors()
+    const menuItems: MenuItemConstructorOptions[] =
+      availableEditors.length > 0
+        ? availableEditors.map((editor) => ({
+            id: editor.id,
+            label: editor.label,
+            click: () => {
+              void Promise.resolve(openInExternalEditor({ editorID: editor.id, targetPath })).catch((error) => {
+                void dialog.showMessageBox(win, {
+                  type: "error",
+                  title: "Unable to Open Editor",
+                  message: error instanceof Error ? error.message : String(error),
+                })
+              })
+            },
+          }))
+        : [
+            {
+              label: "No supported editors found",
+              enabled: false,
+            },
+          ]
+
+    Menu.buildFromTemplate(menuItems).popup({
+      window: win,
+      ...(input.anchor
+        ? {
+            x: Math.round(input.anchor.x),
+            y: Math.round(input.anchor.y),
+          }
+        : {}),
+    })
+  })
+
+  ipcMain.handle("desktop:open-in-external-editor", async (_event, input: { editorID?: string; targetPath: string }) =>
+    openInExternalEditor(input),
+  )
 
   ipcMain.handle("desktop:get-agent-config", () => getAgentConfig())
 

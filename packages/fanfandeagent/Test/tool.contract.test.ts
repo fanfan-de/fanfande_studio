@@ -454,6 +454,92 @@ describe("tool contract", () => {
     })
   })
 
+  it("does not replay assistant reasoning parts into subsequent model context", async () => {
+    const model = {
+      capabilities: {
+        reasoning: true,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "assistant-reasoning-history",
+            sessionID: "session-reasoning-history",
+            role: "assistant",
+            created: Date.now(),
+            parentID: "user-reasoning-history",
+            modelID: "test-model",
+            providerID: "test-provider",
+            agent: "plan",
+            path: {
+              cwd: ".",
+              root: ".",
+            },
+            cost: 0,
+            tokens: {
+              input: 0,
+              output: 0,
+              reasoning: 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            },
+          } as Message.Assistant,
+          parts: [
+            {
+              id: "assistant-reasoning-text",
+              sessionID: "session-reasoning-history",
+              messageID: "assistant-reasoning-history",
+              type: "text",
+              text: "Final answer",
+            } as Message.TextPart,
+            {
+              id: "assistant-reasoning-part",
+              sessionID: "session-reasoning-history",
+              messageID: "assistant-reasoning-history",
+              type: "reasoning",
+              text: "Hidden chain-of-thought",
+              time: {
+                start: Date.now(),
+              },
+            } as Message.ReasoningPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      content: [
+        {
+          type: "text",
+          text: "Final answer",
+        },
+      ],
+    })
+    expect((messages[0] as any).content).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "reasoning",
+        }),
+      ]),
+    )
+  })
+
   it("fails fast with a clear error when the model does not support image input", async () => {
     const model = {
       id: "deepseek-chat",

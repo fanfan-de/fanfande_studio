@@ -732,11 +732,9 @@ export async function toModelMessages(
                     text: part.text,
                 }
             case "reasoning":
-                if (!model.capabilities.reasoning) return null
-                return {
-                    type: "reasoning" as const,
-                    text: part.text,
-                }
+                // Keep reasoning parts available for local UI/debugging, but do not
+                // feed prior chain-of-thought back into subsequent model turns.
+                return null
             case "file":
                 {
                     const message = unsupportedAttachmentMessage(part, model)
