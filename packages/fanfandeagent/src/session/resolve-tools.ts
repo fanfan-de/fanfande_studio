@@ -9,6 +9,7 @@ export type ResolveToolsInput = {
   agent: Agent.AgentInfo
   sessionID: string
   messageID: string
+  permissionMode?: "default" | "full-access"
   abort: AbortSignal
 }
 
@@ -37,6 +38,7 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
         agent: input.agent.name,
         cwd: Instance.directory,
         worktree: Instance.worktree,
+        permissionMode: input.permissionMode ?? "default",
         tool: {
           id: item.id,
           kind: item.capabilities?.kind ?? "other",

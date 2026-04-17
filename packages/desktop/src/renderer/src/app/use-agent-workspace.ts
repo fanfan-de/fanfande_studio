@@ -22,6 +22,7 @@ import type {
   AgentStreamIPCEvent,
   AgentSessionStreamIPCEvent,
   ComposerAttachment,
+  ComposerPermissionMode,
   ComposerMcpOption,
   ComposerModelOption,
   ComposerSkillOption,
@@ -626,6 +627,16 @@ export function useAgentWorkspace({
   const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
   const [sessionDirectoryBySession, setSessionDirectoryBySession] = useState<Record<string, string>>({})
   const [composerAttachmentsByTabKey, setComposerAttachmentsByTabKey] = useState<Record<string, ComposerAttachment[]>>({})
+  const [composerPermissionModeByTabKey, setComposerPermissionModeByTabKey] = useState<
+    Record<string, ComposerPermissionMode>
+  >(
+    () =>
+      initialWorkbenchTab
+        ? {
+            [getWorkbenchTabKey(initialWorkbenchTab)]: "default",
+          }
+        : {},
+  )
   const [isSendingByTabKey, setIsSendingByTabKey] = useState<Record<string, boolean>>({})
   const [isCreatingSessionByTabKey, setIsCreatingSessionByTabKey] = useState<Record<string, boolean>>({})
   const [isCreatingProject, setIsCreatingProject] = useState(false)
@@ -733,6 +744,7 @@ export function useAgentWorkspace({
   const createSessionTitle = activeCreateSessionTab?.title ?? ""
   const draft = activeTabKey ? draftByTabKey[activeTabKey] ?? "" : ""
   const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
+  const composerPermissionMode = activeTabKey ? composerPermissionModeByTabKey[activeTabKey] ?? "default" : "default"
   const isSending = activeTabKey ? Boolean(isSendingByTabKey[activeTabKey]) : false
   const isCreatingSession = activeTabKey ? Boolean(isCreatingSessionByTabKey[activeTabKey]) : false
   const canvasSessionTabs = focusedPane
@@ -1881,6 +1893,15 @@ export function useAgentWorkspace({
         ...prev,
         [created.session.id]: created.session.directory,
       }))
+      if (createTabKey) {
+        const nextSessionTabKey = getWorkbenchTabKey(createSessionWorkbenchTab(created.session.id))
+        setComposerPermissionModeByTabKey((current) => {
+          const next = { ...current }
+          next[nextSessionTabKey] = current[createTabKey] ?? "default"
+          delete next[createTabKey]
+          return next
+        })
+      }
       setCanLoadSessionHistory(true)
       if (options?.skipInitialHistoryLoad) {
         skipNextHistoryLoadRef.current[created.session.id] = true
@@ -2377,13 +2398,14 @@ export function useAgentWorkspace({
   async function sendPromptToSession(input: {
     attachments: ComposerAttachment[]
     backendSessionID?: string | null
+    permissionMode: ComposerPermissionMode
     session: SessionSummary
     selectedSkillIDs: string[]
     tabKey: string
     text: string
     workspace: WorkspaceGroup
   }) {
-    const { attachments, session, selectedSkillIDs, tabKey, text, workspace } = input
+    const { attachments, permissionMode, session, selectedSkillIDs, tabKey, text, workspace } = input
     const uiSessionID = session.id
     const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
     const normalizedText = text.trim()
@@ -2485,6 +2507,7 @@ export function useAgentWorkspace({
           sessionID: backendSessionID,
           ...(normalizedText ? { text: normalizedText } : {}),
           ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
+          permissionMode,
           skills: selectedSkillIDs,
         })
 
@@ -2495,6 +2518,7 @@ export function useAgentWorkspace({
         sessionID: backendSessionID,
         ...(normalizedText ? { text: normalizedText } : {}),
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
+        permissionMode,
         skills: selectedSkillIDs,
       })
 
@@ -2546,6 +2570,7 @@ export function useAgentWorkspace({
     const targetSessionID = input?.sessionID ?? activeSessionID
     const targetCreateSessionTabID = input?.createSessionTabID ?? activeCreateSessionTabID
     const attachments = targetTabKey ? composerAttachmentsByTabKey[targetTabKey] ?? [] : []
+    const permissionMode = targetTabKey ? composerPermissionModeByTabKey[targetTabKey] ?? "default" : "default"
     const text = (input?.draftOverride ?? (targetTabKey ? draftByTabKey[targetTabKey] ?? "" : "")).trim()
     const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
     if (!targetTabKey || ((!text && attachments.length === 0) || isSendingByTabKey[targetTabKey] || pendingPermissionRequests.length > 0)) return
@@ -2561,6 +2586,7 @@ export function useAgentWorkspace({
       if (!nextSelection.workspace || !nextSelection.session) return
       await sendPromptToSession({
         attachments,
+        permissionMode,
         selectedSkillIDs: input?.selectedSkillIDs ?? [],
         session: nextSelection.session,
         tabKey: targetTabKey,
@@ -2589,6 +2615,7 @@ export function useAgentWorkspace({
     await sendPromptToSession({
       attachments,
       backendSessionID: created.backendSessionID,
+      permissionMode,
       selectedSkillIDs: input?.selectedSkillIDs ?? [],
       session: created.session,
       tabKey: targetTabKey,
@@ -2741,6 +2768,14 @@ export function useAgentWorkspace({
     setComposerAttachmentsByTabKey((current) => ({
       ...current,
       [tabKey]: (current[tabKey] ?? []).filter((attachment) => attachment.path !== path),
+    }))
+  }
+
+  function handleComposerPermissionModeToggle(tabKey = activeTabKey) {
+    if (!tabKey) return
+    setComposerPermissionModeByTabKey((current) => ({
+      ...current,
+      [tabKey]: current[tabKey] === "full-access" ? "default" : "full-access",
     }))
   }
 
@@ -2933,6 +2968,7 @@ export function useAgentWorkspace({
       activeSessionSelectedDiffFile: currentActiveSessionID ? selectedDiffFileBySession[currentActiveSessionID] ?? null : null,
       activeTurns: currentActiveSessionID ? conversations[currentActiveSessionID] ?? [] : [],
       composerAttachments: currentActiveTabKey ? composerAttachmentsByTabKey[currentActiveTabKey] ?? [] : [],
+      composerPermissionMode: currentActiveTabKey ? composerPermissionModeByTabKey[currentActiveTabKey] ?? "default" : "default",
       composerProjectID:
         isInitialWorkspaceLoadPending && currentWorkspace && seedWorkspaceIDs.has(currentWorkspace.id)
           ? null
@@ -2977,6 +3013,7 @@ export function useAgentWorkspace({
     composerAttachmentButtonTitle,
     composerAttachmentDisabledReason,
     composerAttachmentError,
+    composerPermissionMode,
     composerMcpOptions,
     composerModelOptions,
     composerContextWindow,
@@ -2999,6 +3036,7 @@ export function useAgentWorkspace({
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
     handleComposerModelChange,
+    handleComposerPermissionModeToggle,
     handleComposerMcpToggle,
     handleComposerSkillToggle,
     handleCloseCreateSessionTab,

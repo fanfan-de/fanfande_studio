@@ -4530,6 +4530,27 @@ describe("App", () => {
     expect(window.localStorage.getItem("desktop.debugLineColors")).toBe("false")
   })
 
+  it("toggles agent debug trace from appearance settings", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+
+    const agentDebugTraceSwitch = screen.getByRole("switch", { name: "Show agent debug trace" })
+    expect(agentDebugTraceSwitch).toHaveAttribute("aria-checked", "false")
+
+    fireEvent.click(agentDebugTraceSwitch)
+
+    expect(agentDebugTraceSwitch).toHaveAttribute("aria-checked", "true")
+    expect(window.localStorage.getItem("desktop.agentDebugTrace")).toBe("true")
+
+    fireEvent.click(agentDebugTraceSwitch)
+
+    expect(agentDebugTraceSwitch).toHaveAttribute("aria-checked", "false")
+    expect(window.localStorage.getItem("desktop.agentDebugTrace")).toBe("false")
+  })
+
   it("keeps appearance settings focused on shell visibility and debug overlays", async () => {
     render(<App />)
 
@@ -4540,9 +4561,109 @@ describe("App", () => {
     expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show debug region colors" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show line debug colors" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: "Show agent debug trace" })).toBeInTheDocument()
     expect(screen.queryByRole("switch", { name: "Show right rail" })).not.toBeInTheDocument()
     expect(screen.getByText("No rail")).toBeInTheDocument()
     expect(screen.getByText("Line Colors")).toBeInTheDocument()
+  })
+
+  it("reveals backend-only thread trace entries when agent debug trace is enabled", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-1",
+          sessionID: "session-atlas-review",
+          role: "user",
+          created: 10,
+        },
+        parts: [
+          {
+            id: "part-user-1",
+            sessionID: "session-atlas-review",
+            messageID: "msg-user-1",
+            type: "text",
+            text: "Inspect the permission flow",
+          },
+        ],
+      },
+      {
+        info: {
+          id: "msg-assistant-1",
+          sessionID: "session-atlas-review",
+          role: "assistant",
+          created: 11,
+          completed: 12,
+        },
+        parts: [
+          {
+            id: "part-permission-1",
+            sessionID: "session-atlas-review",
+            messageID: "msg-assistant-1",
+            type: "permission",
+            approvalID: "approval-atlas-1",
+            toolCallID: "toolcall-atlas-1",
+            tool: "read-file",
+            action: "ask",
+            created: 12,
+          },
+          {
+            id: "part-step-start-1",
+            sessionID: "session-atlas-review",
+            messageID: "msg-assistant-1",
+            type: "step-start",
+          },
+          {
+            id: "part-text-1",
+            sessionID: "session-atlas-review",
+            messageID: "msg-assistant-1",
+            type: "text",
+            text: "Done.",
+          },
+        ],
+      },
+    ])
+
+    render(<App />)
+
+    expect(await screen.findByRole("button", { name: "Atlas review" })).toBeInTheDocument()
+    expect(await screen.findByText("Done.")).toBeInTheDocument()
+    expect(screen.queryByText("Permission requested")).not.toBeInTheDocument()
+    expect(screen.queryByText("Reasoning step started")).not.toBeInTheDocument()
+    expect(screen.queryByText("approval.id")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+    fireEvent.click(screen.getByRole("switch", { name: "Show agent debug trace" }))
+
+    expect(await screen.findByText("Permission requested")).toBeInTheDocument()
+    expect(screen.getByText("Reasoning step started")).toBeInTheDocument()
+    expect(screen.getByText("approval.id")).toBeInTheDocument()
+    expect(screen.getAllByText("part.id").length).toBeGreaterThan(0)
   })
 
   it("keeps provider configuration focused on editable fields for environment-backed providers", async () => {

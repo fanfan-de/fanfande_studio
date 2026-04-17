@@ -147,6 +147,7 @@ export function App() {
     appShellRef,
     appShellStyle,
     handleActivityRailVisibilityChange,
+    handleAgentDebugTraceChange,
     handleDebugLineColorsChange,
     handleDebugUiRegionsChange,
     handleRightSidebarResizerKeyDown,
@@ -157,6 +158,7 @@ export function App() {
     handleSidebarToggle,
     handleWindowAction,
     isActivityRailVisible,
+    isAgentDebugTraceEnabled,
     isDebugLineColorsEnabled,
     isDebugUiRegionsEnabled,
     isRightSidebarCollapsed,
@@ -179,6 +181,7 @@ export function App() {
     composerRefreshVersion,
     deletingSessionID,
     expandedFolderID,
+    handleComposerPermissionModeToggle,
     handleCanvasSessionTabClose,
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
@@ -675,6 +678,7 @@ export function App() {
                 draggedTabKey={draggedPaneTab?.tabKey ?? null}
                 firstPaneID={firstPaneID}
                 isActivityRailVisible={isActivityRailVisible}
+                isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
                 isResolvingPermissionRequest={isResolvingPermissionRequest}
                 isRightSidebarCollapsed={isRightSidebarCollapsed}
                 isSidebarCollapsed={isSidebarCollapsed}
@@ -703,6 +707,7 @@ export function App() {
                 onPaneTabDrop={handlePaneTabDrop}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
                 onPickComposerAttachments={handlePickComposerAttachments}
+                onToggleComposerPermissionMode={handleComposerPermissionModeToggle}
                 onRegisterPane={handleRegisterPane}
                 onRemoveComposerAttachment={handleRemoveComposerAttachment}
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}
@@ -756,6 +761,7 @@ export function App() {
           deletingMcpServerID={deletingMcpServerID}
           deletingProviderID={deletingProviderID}
           isActivityRailVisible={isActivityRailVisible}
+          isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
           isDebugLineColorsEnabled={isDebugLineColorsEnabled}
           isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
           isLoading={isLoading}
@@ -777,6 +783,7 @@ export function App() {
           savingProviderID={savingProviderID}
           selectionDraft={selectionDraft}
           onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
+          onAgentDebugTraceChange={handleAgentDebugTraceChange}
           onDebugLineColorsChange={handleDebugLineColorsChange}
           onDebugUiRegionsChange={handleDebugUiRegionsChange}
           onClose={closeSettings}
@@ -843,6 +850,7 @@ interface WorkbenchTreeProps {
   draggedTabKey: string | null
   firstPaneID: string | null
   isActivityRailVisible: boolean
+  isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
   isRightSidebarCollapsed: boolean
   isSidebarCollapsed: boolean
@@ -871,6 +879,7 @@ interface WorkbenchTreeProps {
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
+  onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
@@ -928,6 +937,7 @@ function WorkbenchNodeView({
         draggedTabKey={props.draggedTabKey}
         dropTargetPosition={props.paneDropTarget?.paneID === pane.id ? props.paneDropTarget.position : null}
         isResolvingPermissionRequest={props.isResolvingPermissionRequest}
+        isAgentDebugTraceEnabled={props.isAgentDebugTraceEnabled}
         isTopRow={isTopRow}
         leadingAccessory={
           node.id === props.firstPaneID && !props.isActivityRailVisible && props.isSidebarCollapsed ? (
@@ -964,6 +974,7 @@ function WorkbenchNodeView({
         onPaneTabDrop={props.onPaneTabDrop}
         onPermissionRequestResponse={props.onPermissionRequestResponse}
         onPickComposerAttachments={props.onPickComposerAttachments}
+        onToggleComposerPermissionMode={props.onToggleComposerPermissionMode}
         onRegisterPane={props.onRegisterPane}
         onRemoveComposerAttachment={props.onRemoveComposerAttachment}
         onSelectCreateSessionTab={props.onSelectCreateSessionTab}
@@ -1009,6 +1020,7 @@ interface PaneSurfaceProps {
   draggedTabKey: string | null
   dropTargetPosition: PaneDropPosition | null
   isResolvingPermissionRequest: boolean
+  isAgentDebugTraceEnabled: boolean
   isTopRow: boolean
   leadingAccessory: ReactNode
   pane: WorkbenchPaneState
@@ -1032,6 +1044,7 @@ interface PaneSurfaceProps {
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
+  onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
@@ -1045,6 +1058,7 @@ const PaneSurface = memo(function PaneSurface({
   draggedTabKey,
   dropTargetPosition,
   isResolvingPermissionRequest,
+  isAgentDebugTraceEnabled,
   isTopRow,
   leadingAccessory,
   pane,
@@ -1068,6 +1082,7 @@ const PaneSurface = memo(function PaneSurface({
   onPaneTabDrop,
   onPermissionRequestResponse,
   onPickComposerAttachments,
+  onToggleComposerPermissionMode,
   onRegisterPane,
   onRemoveComposerAttachment,
   onSelectCreateSessionTab,
@@ -1180,7 +1195,14 @@ const PaneSurface = memo(function PaneSurface({
                     })
                   }
                 />
-                <ComposerUtilityBar contextWindow={composer.contextWindow} gitDirectory={pane.workspace?.directory ?? null} gitProjectID={pane.projectID} usage={null} />
+                <ComposerUtilityBar
+                  contextWindow={composer.contextWindow}
+                  gitDirectory={pane.workspace?.directory ?? null}
+                  gitProjectID={pane.projectID}
+                  permissionMode={pane.composerPermissionMode}
+                  onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
+                  usage={null}
+                />
               </div>
             </>
           ) : (
@@ -1188,6 +1210,7 @@ const PaneSurface = memo(function PaneSurface({
               <ThreadView
                 activeSession={pane.activeSession}
                 isResolvingPermissionRequest={isResolvingPermissionRequest}
+                isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
                 pendingPermissionRequests={pane.pendingPermissionRequests}
                 permissionRequestActionError={permissionRequestActionError}
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
@@ -1236,6 +1259,8 @@ const PaneSurface = memo(function PaneSurface({
                   contextWindow={composer.contextWindow}
                   gitDirectory={pane.workspace?.directory ?? null}
                   gitProjectID={pane.projectID}
+                  permissionMode={pane.composerPermissionMode}
+                  onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
                   usage={pane.activeSessionContextUsage}
                 />
               </div>

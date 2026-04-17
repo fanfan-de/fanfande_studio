@@ -3055,6 +3055,7 @@ interface SettingsPageProps {
   deletingMcpServerID: string | null
   deletingProviderID: string | null
   isActivityRailVisible: boolean
+  isAgentDebugTraceEnabled: boolean
   isDebugLineColorsEnabled: boolean
   isDebugUiRegionsEnabled: boolean
   isLoading: boolean
@@ -3079,6 +3080,7 @@ interface SettingsPageProps {
   savingProviderID: string | null
   selectionDraft: ProjectModelSelection
   onActivityRailVisibilityChange: (value: boolean) => void
+  onAgentDebugTraceChange: (value: boolean) => void
   onDebugLineColorsChange: (value: boolean) => void
   onDebugUiRegionsChange: (value: boolean) => void
   onClose: () => void
@@ -3106,6 +3108,7 @@ export function SettingsPage({
   deletingMcpServerID,
   deletingProviderID,
   isActivityRailVisible,
+  isAgentDebugTraceEnabled,
   isDebugLineColorsEnabled,
   isDebugUiRegionsEnabled,
   isLoading,
@@ -3127,6 +3130,7 @@ export function SettingsPage({
   savingProviderID,
   selectionDraft,
   onActivityRailVisibilityChange,
+  onAgentDebugTraceChange,
   onDebugLineColorsChange,
   onDebugUiRegionsChange,
   onClose,
@@ -3264,7 +3268,7 @@ export function SettingsPage({
         meta: `${archivedSessions.length} sessions`,
         Icon: ArchiveIcon,
       },
-      { key: "appearance" as const, label: "Appearance", meta: "3 options", Icon: LayoutSidebarLeftIcon },
+      { key: "appearance" as const, label: "Appearance", meta: "4 options", Icon: LayoutSidebarLeftIcon },
     ]
 
     return (
@@ -3441,10 +3445,46 @@ export function SettingsPage({
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>
+                        <span className="label">Development</span>
+                        <h3>Agent Debug Trace</h3>
+                      </div>
+                      <p>Reveal the extra backend runtime metadata that is normally hidden from the thread so agent flow testing is easier to inspect.</p>
+                    </div>
+
+                    <button
+                      className={isAgentDebugTraceEnabled ? "settings-toggle-card is-active" : "settings-toggle-card"}
+                      role="switch"
+                      aria-checked={isAgentDebugTraceEnabled}
+                      aria-label="Show agent debug trace"
+                      type="button"
+                      onClick={() => onAgentDebugTraceChange(!isAgentDebugTraceEnabled)}
+                    >
+                      <span className="settings-toggle-copy">
+                        <strong className="settings-toggle-title">
+                          <span className="settings-toggle-icon" aria-hidden="true">
+                            <FileTextIcon />
+                          </span>
+                          <span>Show agent debug trace</span>
+                        </strong>
+                        <small>Expose backend trace metadata, hidden system events, and runtime identifiers directly inside the thread.</small>
+                      </span>
+                      <span className="settings-toggle-control" aria-hidden="true">
+                        <span className="settings-toggle-thumb" />
+                      </span>
+                    </button>
+
+                    <p className="settings-helper-text">
+                      Use this when validating stream order, permission lifecycle, tool payloads, token accounting, or other backend-only details without changing the normal conversation presentation.
+                    </p>
+                  </section>
+
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
                         <span className="label">Current</span>
                         <h3>Appearance State</h3>
                       </div>
-                      <p>The left rail is optional. Region and line debug colors are development-only overlays. The right inspector always keeps its toggle on the active surface.</p>
+                      <p>The left rail is optional. Region, line, and agent trace debug modes are development-only overlays. The right inspector always keeps its toggle on the active surface.</p>
                     </div>
 
                     <div className="settings-section-summary">
@@ -3473,6 +3513,15 @@ export function SettingsPage({
                           {isDebugLineColorsEnabled
                             ? "The remaining top-region dividers use separate colors so the shell border and pane divider can be distinguished immediately."
                             : "Top divider lines use the current theme colors, so they blend back into the regular interface."}
+                        </p>
+                      </article>
+                      <article className="settings-summary-card">
+                        <span className="label">Agent Trace</span>
+                        <strong>{isAgentDebugTraceEnabled ? "Shown" : "Hidden"}</strong>
+                        <p>
+                          {isAgentDebugTraceEnabled
+                            ? "Thread turns reveal backend runtime metadata, hidden system events, and per-part trace identifiers for debugging."
+                            : "Thread turns keep backend-only metadata hidden so the conversation stays focused on user-visible output."}
                         </p>
                       </article>
                       <article className="settings-summary-card">
@@ -4678,6 +4727,7 @@ export function SettingsPage({
 interface ThreadViewProps {
   activeSession: SessionSummary | null
   activeTurns: Turn[]
+  isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
   onFileChangeSelect?: (file: string) => void
   pendingPermissionRequests: PermissionRequest[]
@@ -4719,7 +4769,7 @@ function isPersistentAllowDecision(decision: PermissionDecision) {
   return decision === "allow-session" || decision === "allow-project" || decision === "allow-forever"
 }
 
-type AssistantTraceSectionKey = "reasoning" | "tools" | "response" | "file-change"
+type AssistantTraceSectionKey = "reasoning" | "tools" | "response" | "file-change" | "debug"
 
 function isResponseTraceItem(item: AssistantTraceItem) {
   return item.kind === "text"
@@ -4734,6 +4784,7 @@ function isFileChangeTraceItem(item: AssistantTraceItem) {
 }
 
 function traceSectionKeyForItem(item: AssistantTraceItem): AssistantTraceSectionKey {
+  if (item.kind === "system") return "debug"
   if (isResponseTraceItem(item)) return "response"
   if (isFileChangeTraceItem(item)) return "file-change"
   if (isToolTraceItem(item)) return "tools"
@@ -4748,6 +4799,8 @@ function traceSectionTitle(sectionKey: AssistantTraceSectionKey) {
       return "Response"
     case "file-change":
       return "File Changes"
+    case "debug":
+      return "Debug"
     default:
       return "Reasoning"
   }
@@ -4798,10 +4851,13 @@ function buildAssistantTraceBlocks(items: AssistantTraceItem[]) {
   )
 }
 
-function filterRenderedAssistantTraceItems(items: AssistantTraceItem[], showFileChanges: boolean) {
-  if (showFileChanges) return items
-
-  return items.filter((item) => traceSectionKeyForItem(item) !== "file-change")
+function filterRenderedAssistantTraceItems(items: AssistantTraceItem[], showFileChanges: boolean, showDebugInfo: boolean) {
+  return items.filter((item) => {
+    const sectionKey = traceSectionKeyForItem(item)
+    if (!showFileChanges && sectionKey === "file-change") return false
+    if (!showDebugInfo && sectionKey === "debug") return false
+    return true
+  })
 }
 
 function getAssistantEphemeralHint(turn: AssistantTurn) {
@@ -4857,14 +4913,16 @@ function AssistantTurnSections({
   items,
   onFileChangeSelect,
   showFileChanges,
+  showDebugInfo,
   turnID,
 }: {
   items: AssistantTraceItem[]
   onFileChangeSelect: ((file: string) => void) | undefined
   showFileChanges: boolean
+  showDebugInfo: boolean
   turnID: string
 }) {
-  const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges))
+  const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges, showDebugInfo))
 
   return (
     <>
@@ -4887,7 +4945,7 @@ function AssistantTurnSections({
               }
             >
               {renderedItems.map((item) => (
-                <TraceItemView key={item.id} item={item} onFileChangeSelect={onFileChangeSelect} />
+                <TraceItemView key={item.id} item={item} onFileChangeSelect={onFileChangeSelect} showDebugInfo={showDebugInfo} />
               ))}
             </div>
           </AssistantTraceSection>
@@ -4919,9 +4977,11 @@ function formatTraceStatusText(status?: AssistantTraceItem["status"]) {
 function TraceItemView({
   item,
   onFileChangeSelect,
+  showDebugInfo,
 }: {
   item: AssistantTraceItem
   onFileChangeSelect?: (file: string) => void
+  showDebugInfo: boolean
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const className = [
@@ -4934,12 +4994,30 @@ function TraceItemView({
     .filter(Boolean)
     .join(" ")
   const selectableFilePaths = item.kind === "patch" ? item.filePaths?.filter(Boolean) ?? [] : []
+  const debugEntries = showDebugInfo ? item.debugEntries ?? [] : []
+  const hasDebugEntries = debugEntries.length > 0
+
+  function renderDebugEntries() {
+    if (!hasDebugEntries) return null
+
+    return (
+      <div className="trace-item-debug">
+        {debugEntries.map((entry) => (
+          <div key={`${item.id}-${entry.label}`} className="trace-item-debug-row">
+            <span className="trace-item-debug-label">{entry.label}</span>
+            <span className="trace-item-debug-value">{entry.value}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   if (item.kind === "reasoning") {
     return (
       <article className={className} data-kind={item.kind}>
         {item.text ? <p className="trace-item-text trace-item-plain-text">{item.text}</p> : null}
         {item.detail ? <p className="trace-item-detail trace-item-plain-detail">{item.detail}</p> : null}
+        {renderDebugEntries()}
       </article>
     )
   }
@@ -4983,6 +5061,7 @@ function TraceItemView({
             {item.detail ? <p className="trace-item-detail">{item.detail}</p> : null}
           </div>
         ) : null}
+        {renderDebugEntries()}
       </article>
     )
   }
@@ -5010,6 +5089,7 @@ function TraceItemView({
           ))}
         </div>
       ) : null}
+      {renderDebugEntries()}
     </article>
   )
 }
@@ -5211,6 +5291,7 @@ function collectAssistantCycleFileChangeItems(turns: Turn[], startIndex: number,
 export function ThreadView({
   activeSession,
   activeTurns,
+  isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
   onFileChangeSelect,
   pendingPermissionRequests,
@@ -5243,6 +5324,7 @@ export function ThreadView({
                     detail: "Load a folder from the sidebar or create a new session to begin.",
                     status: "completed",
                   }}
+                  showDebugInfo={false}
                 />
               </div>
             </div>
@@ -5268,7 +5350,7 @@ export function ThreadView({
                 ? collectAssistantCycleFileChangeItems(activeTurns, startIndex, endIndex)
                 : []
               const visibleItems = [
-                ...turn.items.filter((item) => item.kind !== "system" && !isFileChangeTraceItem(item)),
+                ...turn.items.filter((item) => (isAgentDebugTraceEnabled || item.kind !== "system") && !isFileChangeTraceItem(item)),
                 ...cycleFileChangeItems,
               ]
               const ephemeralHint = visibleItems.length === 0 ? getAssistantEphemeralHint(turn) : null
@@ -5285,6 +5367,7 @@ export function ThreadView({
                         items={visibleItems}
                         onFileChangeSelect={onFileChangeSelect}
                         showFileChanges={isCycleFinalTurn && !turn.isStreaming}
+                        showDebugInfo={isAgentDebugTraceEnabled}
                       />
                     )}
                   </div>

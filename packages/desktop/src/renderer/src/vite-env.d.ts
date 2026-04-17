@@ -16,6 +16,8 @@ interface DesktopComposerAttachmentInput {
   name?: string
 }
 
+type DesktopComposerPermissionMode = "default" | "full-access"
+
 declare global {
   interface Window {
     desktop?: {
@@ -949,6 +951,7 @@ declare global {
         sessionID: string
         text?: string
         attachments?: DesktopComposerAttachmentInput[]
+        permissionMode?: DesktopComposerPermissionMode
         system?: string
         agent?: string
         skills?: string[]
@@ -975,6 +978,7 @@ declare global {
         sessionID: string
         text?: string
         attachments?: DesktopComposerAttachmentInput[]
+        permissionMode?: DesktopComposerPermissionMode
         system?: string
         agent?: string
         skills?: string[]

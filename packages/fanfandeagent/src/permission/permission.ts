@@ -77,6 +77,7 @@ export type EvaluationInput = {
   agent: string
   cwd?: string
   worktree?: string
+  permissionMode?: "default" | "full-access"
   tool: ToolDescriptor
   input: Record<string, unknown>
 }
@@ -550,6 +551,7 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
   const command = typeof input.input.command === "string" ? input.input.command.trim() : undefined
   const cwd = input.cwd ?? Instance.directory
   const worktree = input.worktree ?? Instance.worktree
+  const permissionMode = input.permissionMode ?? "default"
   const derivedPaths = extractPaths(input.input, cwd, worktree)
   const derived = {
     paths: derivedPaths.relativePaths,
@@ -607,6 +609,18 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
   }
 
   const risk = deriveRisk(input, derived.paths, command)
+  if (permissionMode === "full-access") {
+    const result: EvaluationResult = {
+      action: "allow",
+      reason: "Full access mode allows tool execution by default.",
+      risk,
+      rememberable: false,
+      derived,
+    }
+    await audit(input, result)
+    return result
+  }
+
   const { rules, defaults, autoApproveSafeRead } = await loadRuleSet(input.projectID)
   const matches = rules.filter((rule) => ruleMatches(rule, input, derived, risk))
   const matched = chooseMatchingRule(matches)

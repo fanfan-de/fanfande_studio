@@ -105,9 +105,12 @@ export function toRendererStreamEvents(event: RuntimeEvent.RuntimeEvent): Render
     case "tool.call.denied":
     case "tool.call.completed":
     case "tool.call.failed":
+    case "text.part.completed":
+    case "reasoning.part.completed":
     case "permission.requested":
     case "permission.resolved":
     case "patch.generated":
+    case "snapshot.captured":
       return [
         {
           event: "part",

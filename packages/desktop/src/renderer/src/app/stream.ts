@@ -1,6 +1,7 @@
 import { STREAM_PENDING_PREFIX } from "./constants"
 import type {
   AgentStreamEvent,
+  AssistantTraceDebugEntry,
   AssistantTraceItem,
   AssistantTraceStatus,
   AssistantTurn,
@@ -51,6 +52,197 @@ function createTraceItem(
     timestamp: input.timestamp ?? Date.now(),
     ...input,
   }
+}
+
+function formatDebugTimestamp(value: number) {
+  return new Date(value).toISOString()
+}
+
+function stringifyDebugValue(value: unknown, maxLength = 240) {
+  if (typeof value === "string") {
+    return compactText(value, maxLength)
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value)
+  }
+
+  if (value == null) return ""
+
+  try {
+    const serialized = JSON.stringify(value)
+    return compactText(serialized, maxLength)
+  } catch {
+    return compactText(String(value), maxLength)
+  }
+}
+
+function appendDebugEntry(entries: AssistantTraceDebugEntry[], label: string, value: unknown, maxLength = 240) {
+  const normalized = stringifyDebugValue(value, maxLength)
+  if (!normalized) return
+
+  entries.push({
+    label,
+    value: normalized,
+  })
+}
+
+function mergeDebugEntries(
+  existing?: AssistantTraceDebugEntry[],
+  next?: AssistantTraceDebugEntry[],
+) {
+  if ((!existing || existing.length === 0) && (!next || next.length === 0)) {
+    return undefined
+  }
+
+  if (!existing || existing.length === 0) return next
+  if (!next || next.length === 0) return existing
+
+  const merged = [...existing]
+  const indexByLabel = new Map(existing.map((entry, index) => [entry.label, index]))
+
+  for (const entry of next) {
+    const existingIndex = indexByLabel.get(entry.label)
+    if (existingIndex === undefined) {
+      indexByLabel.set(entry.label, merged.length)
+      merged.push(entry)
+      continue
+    }
+
+    merged[existingIndex] = entry
+  }
+
+  return merged
+}
+
+function formatDebugTimeRange(value: unknown) {
+  const range = readRecord(value)
+  if (!range) return ""
+
+  const start = typeof range.start === "number" ? formatDebugTimestamp(range.start) : ""
+  const end = typeof range.end === "number" ? formatDebugTimestamp(range.end) : ""
+  const compacted = typeof range.compacted === "number" ? formatDebugTimestamp(range.compacted) : ""
+
+  if (start && end && compacted) {
+    return `${start} -> ${end} (compacted ${compacted})`
+  }
+
+  if (start && end) {
+    return `${start} -> ${end}`
+  }
+
+  return start || end || compacted
+}
+
+function buildPartDebugEntries(input: unknown) {
+  const part = readRecord(input)
+  if (!part) return undefined
+
+  const entries: AssistantTraceDebugEntry[] = []
+  const type = readString(part.type)
+
+  appendDebugEntry(entries, "part.id", readString(part.id))
+  appendDebugEntry(entries, "message.id", readString(part.messageID))
+
+  if (type === "text" || type === "reasoning") {
+    appendDebugEntry(entries, "part.time", formatDebugTimeRange(part.time))
+    appendDebugEntry(entries, "part.metadata", part.metadata, 320)
+  }
+
+  if (type === "tool") {
+    const state = readRecord(part.state)
+    appendDebugEntry(entries, "tool.call", readString(part.callID))
+    appendDebugEntry(entries, "tool.status", readString(state?.status))
+    appendDebugEntry(entries, "tool.input", state?.input, 320)
+    appendDebugEntry(entries, "tool.metadata", state?.metadata ?? part.metadata, 320)
+    appendDebugEntry(entries, "tool.time", formatDebugTimeRange(state?.time))
+    if (typeof part.providerExecuted === "boolean") {
+      appendDebugEntry(entries, "tool.providerExecuted", part.providerExecuted)
+    }
+  }
+
+  if (type === "patch") {
+    appendDebugEntry(entries, "patch.hash", readString(part.hash))
+  }
+
+  if (type === "snapshot") {
+    const snapshot = readString(part.snapshot)
+    appendDebugEntry(entries, "snapshot.size", snapshot ? `${snapshot.length} chars` : "")
+  }
+
+  if (type === "permission") {
+    appendDebugEntry(entries, "approval.id", readString(part.approvalID))
+    appendDebugEntry(entries, "tool.call", readString(part.toolCallID))
+    appendDebugEntry(entries, "approval.scope", readString(part.scope))
+    if (typeof part.created === "number") {
+      appendDebugEntry(entries, "approval.created", formatDebugTimestamp(part.created))
+    }
+  }
+
+  if (type === "subtask") {
+    const model = readRecord(part.model)
+    appendDebugEntry(entries, "subtask.agent", readString(part.agent))
+    appendDebugEntry(entries, "subtask.model", model ? `${readString(model.providerID)}/${readString(model.modelID)}` : "")
+    appendDebugEntry(entries, "subtask.command", readString(part.command))
+  }
+
+  if (type === "step-start") {
+    const snapshot = readString(part.snapshot)
+    appendDebugEntry(entries, "snapshot.size", snapshot ? `${snapshot.length} chars` : "")
+  }
+
+  if (type === "step-finish") {
+    const tokens = readRecord(part.tokens)
+    const cache = readRecord(tokens?.cache)
+    appendDebugEntry(entries, "step.cost", part.cost)
+    appendDebugEntry(entries, "tokens.input", tokens?.input)
+    appendDebugEntry(entries, "tokens.output", tokens?.output)
+    appendDebugEntry(entries, "tokens.reasoning", tokens?.reasoning)
+    appendDebugEntry(entries, "tokens.cache.read", cache?.read)
+    appendDebugEntry(entries, "tokens.cache.write", cache?.write)
+  }
+
+  if (type === "retry") {
+    const time = readRecord(part.time)
+    if (typeof time?.created === "number") {
+      appendDebugEntry(entries, "retry.created", formatDebugTimestamp(time.created))
+    }
+  }
+
+  if (type === "agent") {
+    appendDebugEntry(entries, "agent.name", readString(part.name))
+  }
+
+  if (type === "compaction") {
+    appendDebugEntry(entries, "compaction.auto", Boolean(part.auto))
+  }
+
+  return entries.length > 0 ? entries : undefined
+}
+
+function buildStreamEventDebugEntries(
+  eventName: string,
+  payload: Record<string, unknown> | null,
+  extra?: Record<string, unknown>,
+) {
+  const entries: AssistantTraceDebugEntry[] = []
+  appendDebugEntry(entries, "stream.event", eventName)
+  appendDebugEntry(entries, "stream.eventID", readString(payload?.eventID))
+  appendDebugEntry(entries, "stream.cursor", readString(payload?.cursor))
+
+  if (typeof payload?.seq === "number") {
+    appendDebugEntry(entries, "stream.seq", payload.seq)
+  }
+
+  if (typeof payload?.timestamp === "number") {
+    appendDebugEntry(entries, "stream.at", formatDebugTimestamp(payload.timestamp))
+  }
+
+  for (const [label, value] of Object.entries(extra ?? {})) {
+    appendDebugEntry(entries, label, value, 320)
+  }
+
+  return entries.length > 0 ? entries : undefined
 }
 
 function isVisibleAssistantTraceItem(item: AssistantTraceItem) {
@@ -155,6 +347,7 @@ function upsertTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceIt
     ...nextItem,
     id: existing.id,
     timestamp: existing.timestamp,
+    debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
   }
 
   const duplicateIndices = new Set(matchingIndices.slice(1))
@@ -173,6 +366,7 @@ function appendTraceDelta(
     delta: string
     fullText?: string
     sourceID?: string
+    debugEntries?: AssistantTraceDebugEntry[]
   },
 ) {
   const nextItems = clearStreamingItems(items)
@@ -194,6 +388,7 @@ function appendTraceDelta(
             ...existing,
             text: nextText,
             isStreaming: true,
+            debugEntries: mergeDebugEntries(existing?.debugEntries, input.debugEntries),
           }
         : item,
     )
@@ -207,16 +402,23 @@ function appendTraceDelta(
       text: input.fullText || input.delta,
       sourceID: input.sourceID,
       isStreaming: true,
+      debugEntries: input.debugEntries,
     }),
   )
 }
 
-function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
+function buildTraceItemFromPart(
+  input: unknown,
+  options?: {
+    debugEntries?: AssistantTraceDebugEntry[]
+  },
+): AssistantTraceItem | null {
   const part = readRecord(input)
   if (!part) return null
 
   const sourceID = readString(part.id) || createID("trace")
   const type = readString(part.type)
+  const debugEntries = mergeDebugEntries(buildPartDebugEntries(part), options?.debugEntries)
 
   if (type === "reasoning" || type === "text") {
     return createTraceItem({
@@ -226,6 +428,7 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
       label: type === "reasoning" ? "Reasoning" : "Response",
       text: readString(part.text),
       isStreaming: false,
+      debugEntries,
     })
   }
 
@@ -265,6 +468,7 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
       detail,
       status,
       isStreaming: status === "running" || status === "pending",
+      debugEntries,
     })
   }
 
@@ -277,6 +481,7 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
       title: readString(part.filename) || "Attachment",
       detail: readString(part.mime) || describeStructuredValue(part.url, "Attachment returned from the agent."),
       status: "completed",
+      debugEntries,
     })
   }
 
@@ -319,6 +524,41 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
       detail,
       filePaths: changes.length > 0 ? changes.map((change) => change.file) : files,
       status: "completed",
+      debugEntries,
+    })
+  }
+
+  if (type === "permission") {
+    const action = readString(part.action)
+    const scope = readString(part.scope)
+    const reason = readString(part.reason)
+    const status: AssistantTraceStatus = action === "deny" ? "denied" : action === "ask" ? "pending" : "completed"
+    const title =
+      action === "deny"
+        ? "Permission denied"
+        : action === "allow"
+          ? "Permission allowed"
+          : "Permission requested"
+    const detail = compactText(
+      [
+        readString(part.tool),
+        scope ? `scope=${scope}` : null,
+        reason || null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      220,
+    ) || "The backend recorded a permission lifecycle update."
+
+    return createTraceItem({
+      id: sourceID,
+      sourceID,
+      kind: "system",
+      label: "Permission",
+      title,
+      detail,
+      status,
+      debugEntries,
     })
   }
 
@@ -331,6 +571,20 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
       title: readString(part.description) || readString(part.agent) || "Delegated task",
       detail: compactText(readString(part.prompt), 220) || "The assistant delegated part of the request.",
       status: "completed",
+      debugEntries,
+    })
+  }
+
+  if (type === "step-start") {
+    return createTraceItem({
+      id: sourceID,
+      sourceID,
+      kind: "system",
+      label: "Step",
+      title: "Reasoning step started",
+      detail: "The backend opened a new reasoning step.",
+      status: "pending",
+      debugEntries,
     })
   }
 
@@ -343,6 +597,7 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
       title: "Reasoning step finished",
       detail: readString(part.reason) || "The backend completed one reasoning step.",
       status: "completed",
+      debugEntries,
     })
   }
 
@@ -355,6 +610,7 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
       title: "Retry scheduled",
       detail: `Attempt ${String(part.attempt ?? "?")}`,
       status: "pending",
+      debugEntries,
     })
   }
 
@@ -367,6 +623,35 @@ function buildTraceItemFromPart(input: unknown): AssistantTraceItem | null {
       title: "Workspace snapshot",
       detail: "The backend captured a workspace snapshot during the run.",
       status: "completed",
+      debugEntries,
+    })
+  }
+
+  if (type === "agent") {
+    return createTraceItem({
+      id: sourceID,
+      sourceID,
+      kind: "system",
+      label: "Agent",
+      title: readString(part.name) || "Agent update",
+      detail: "The backend recorded the active agent for this turn.",
+      status: "completed",
+      debugEntries,
+    })
+  }
+
+  if (type === "compaction") {
+    return createTraceItem({
+      id: sourceID,
+      sourceID,
+      kind: "system",
+      label: "Compaction",
+      title: part.auto ? "Automatic compaction" : "Compaction recorded",
+      detail: part.auto
+        ? "The backend compacted the conversation context automatically."
+        : "The backend recorded a compaction event for this turn.",
+      status: "completed",
+      debugEntries,
     })
   }
 
@@ -419,7 +704,14 @@ function alignAnonymousTraceItemsWithParts(items: AssistantTraceItem[], parts: u
   return nextItems
 }
 
-function appendSystemTrace(items: AssistantTraceItem[], turnID: string, title: string, detail: string, status: AssistantTraceStatus = "completed") {
+function appendSystemTrace(
+  items: AssistantTraceItem[],
+  turnID: string,
+  title: string,
+  detail: string,
+  status: AssistantTraceStatus = "completed",
+  debugEntries?: AssistantTraceDebugEntry[],
+) {
   const nextItems = clearStreamingItems(settleQueuedPrompt(items, turnID))
   return appendTraceItem(
     nextItems,
@@ -429,6 +721,7 @@ function appendSystemTrace(items: AssistantTraceItem[], turnID: string, title: s
       title,
       detail,
       status,
+      debugEntries,
     }),
   )
 }
@@ -638,7 +931,11 @@ export function buildSessionStreamingAssistantTurn(detail = "Replaying backend s
   }
 }
 
-export function buildFailureTurn(message: string, existingTurn?: AssistantTurn): AssistantTurn {
+export function buildFailureTurn(
+  message: string,
+  existingTurn?: AssistantTurn,
+  debugEntries?: AssistantTraceDebugEntry[],
+): AssistantTurn {
   const turnID = existingTurn?.id ?? createID("assistant")
   const baseItems = clearStreamingItems(settleQueuedPrompt(existingTurn?.items ?? [], turnID, "error"))
   const updatedAt = Date.now()
@@ -650,6 +947,7 @@ export function buildFailureTurn(message: string, existingTurn?: AssistantTurn):
       title: "Stream request failed",
       detail: message,
       status: "error",
+      debugEntries,
     }),
   )
 
@@ -682,6 +980,7 @@ export function finalizeStreamAssistantTurn(
   turn: AssistantTurn,
   input?: {
     status?: string
+    debugEntries?: AssistantTraceDebugEntry[]
   },
 ): AssistantTurn {
   const items = clearStreamingItems(settleQueuedPrompt(turn.items, turn.id))
@@ -711,6 +1010,7 @@ export function finalizeStreamAssistantTurn(
         title: "Approval required",
         detail: "The backend paused this turn until a permission decision is made.",
         status: "pending",
+        debugEntries: input?.debugEntries,
       }),
     )
     const waitingTool = nextItems.find((item) => item.kind === "tool" && item.status === "waiting-approval")
@@ -751,6 +1051,7 @@ export function finalizeStreamAssistantTurn(
         title: "Response complete",
         detail: "Backend finished streaming this turn.",
         status: "completed",
+        debugEntries: input?.debugEntries,
       }),
     ),
   )
@@ -761,6 +1062,8 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
   const preparedItems = settleQueuedPrompt(turn.items, turn.id)
 
   if (item.event === "started") {
+    const debugEntries = buildStreamEventDebugEntries("started", payload)
+
     return updateAssistantTurnLifecycle(
       {
         ...turn,
@@ -770,7 +1073,14 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
         phase: "reasoning",
         state: "Agent stream connected",
       },
-      appendSystemTrace(preparedItems, turn.id, "Agent stream connected", "Renderer subscribed to live backend updates."),
+      appendSystemTrace(
+        preparedItems,
+        turn.id,
+        "Agent stream connected",
+        "Renderer subscribed to live backend updates.",
+        "completed",
+        debugEntries,
+      ),
     )
   }
 
@@ -779,6 +1089,10 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     const fullText = readString(payload?.text)
     const kind = readString(payload?.kind) || "text"
     const sourceID = readString(payload?.partID) || undefined
+    const debugEntries = buildStreamEventDebugEntries("delta", payload, {
+      "message.id": readString(payload?.messageID),
+      "part.id": sourceID ?? "",
+    })
 
     if (kind === "reasoning") {
       return updateAssistantTurnLifecycle(
@@ -795,6 +1109,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
           delta,
           fullText: fullText || undefined,
           sourceID,
+          debugEntries,
         }),
       )
     }
@@ -813,12 +1128,15 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
         delta,
         fullText: fullText || undefined,
         sourceID,
+        debugEntries,
       }),
     )
   }
 
   if (item.event === "part") {
-    const nextItem = buildTraceItemFromPart(payload?.part)
+    const nextItem = buildTraceItemFromPart(payload?.part, {
+      debugEntries: buildStreamEventDebugEntries("part", payload),
+    })
     if (!nextItem) return turn
     const nextItems = upsertTraceItem(clearStreamingItems(preparedItems), nextItem)
     const partRecord = readRecord(payload?.part)
@@ -862,6 +1180,10 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     const parts = Array.isArray(payload?.parts) ? payload.parts : []
     const finalizedItems = alignAnonymousTraceItemsWithParts(clearStreamingItems(preparedItems), parts)
     const nextItems = mergeTraceParts(finalizedItems, parts)
+    const debugEntries = buildStreamEventDebugEntries("done", payload, {
+      status: readString(payload?.status),
+      finishReason: readString(payload?.finishReason),
+    })
 
     return finalizeStreamAssistantTurn({
       ...turn,
@@ -869,11 +1191,13 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
       items: nextItems,
     }, {
       status: readString(payload?.status) || undefined,
+      debugEntries,
     })
   }
 
   if (item.event === "error") {
     const message = readString(payload?.message) || "Unknown backend error"
+    const debugEntries = buildStreamEventDebugEntries("error", payload)
     const nextItems = appendTraceItem(
       clearStreamingItems(preparedItems),
       createTraceItem({
@@ -882,6 +1206,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
         title: "API stream error",
         detail: message,
         status: "error",
+        debugEntries,
       }),
     )
 

@@ -6,6 +6,7 @@ import { clamp, resolveSidebarWidthBounds } from "./utils"
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
 const DEBUG_UI_REGIONS_STORAGE_KEY = "desktop.debugUiRegions"
 const DEBUG_LINE_COLORS_STORAGE_KEY = "desktop.debugLineColors"
+const AGENT_DEBUG_TRACE_STORAGE_KEY = "desktop.agentDebugTrace"
 const WINDOW_CONTROLS_CLEARANCE_FALLBACK = 124
 const WINDOW_CONTROLS_CLEARANCE_PADDING = 24
 
@@ -35,6 +36,10 @@ function readDebugLineColorsPreference() {
   return readBooleanPreference(DEBUG_LINE_COLORS_STORAGE_KEY, false)
 }
 
+function readAgentDebugTracePreference() {
+  return readBooleanPreference(AGENT_DEBUG_TRACE_STORAGE_KEY, false)
+}
+
 export function useDesktopShell() {
   const appShellRef = useRef<HTMLElement | null>(null)
   const windowControlsRef = useRef<HTMLDivElement | null>(null)
@@ -46,6 +51,7 @@ export function useDesktopShell() {
   const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
   const [isDebugUiRegionsEnabled, setIsDebugUiRegionsEnabled] = useState(readDebugUiRegionsPreference)
   const [isDebugLineColorsEnabled, setIsDebugLineColorsEnabled] = useState(readDebugLineColorsPreference)
+  const [isAgentDebugTraceEnabled, setIsAgentDebugTraceEnabled] = useState(readAgentDebugTracePreference)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false)
   const [activeSidebarResizer, setActiveSidebarResizer] = useState<SidebarResizerSide | null>(null)
@@ -196,6 +202,14 @@ export function useDesktopShell() {
       return
     }
   }, [isDebugLineColorsEnabled])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AGENT_DEBUG_TRACE_STORAGE_KEY, String(isAgentDebugTraceEnabled))
+    } catch {
+      return
+    }
+  }, [isAgentDebugTraceEnabled])
 
   useEffect(() => {
     function syncSidebarWidthToViewport() {
@@ -426,6 +440,10 @@ export function useDesktopShell() {
     setIsDebugLineColorsEnabled(nextEnabled)
   }
 
+  function handleAgentDebugTraceChange(nextEnabled: boolean) {
+    setIsAgentDebugTraceEnabled(nextEnabled)
+  }
+
   function handleWindowAction(action: WindowAction) {
     if (!window.desktop?.windowAction) {
       console.warn("[desktop] windowAction is unavailable. preload may not be loaded.")
@@ -456,6 +474,7 @@ export function useDesktopShell() {
     appShellRef,
     appShellStyle,
     handleActivityRailVisibilityChange,
+    handleAgentDebugTraceChange,
     handleDebugLineColorsChange,
     handleDebugUiRegionsChange,
     handleSidebarResizerKeyDown,
@@ -466,6 +485,7 @@ export function useDesktopShell() {
     handleRightSidebarToggle,
     handleWindowAction,
     isActivityRailVisible,
+    isAgentDebugTraceEnabled,
     isDebugLineColorsEnabled,
     isDebugUiRegionsEnabled,
     isSidebarCollapsed,

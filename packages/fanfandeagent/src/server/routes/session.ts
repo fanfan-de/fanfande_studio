@@ -32,6 +32,7 @@ const StreamSessionMessageBody = z.object({
   system: z.string().optional(),
   agent: z.string().optional(),
   skills: z.array(z.string()).optional(),
+  permissionMode: z.enum(["default", "full-access"]).optional(),
   model: z
     .object({
       providerID: z.string(),
@@ -784,6 +785,7 @@ export function SessionRoutes() {
       textLength: normalizedText?.length ?? 0,
       attachmentCount: payload.data.attachments?.length ?? 0,
       attachments: (payload.data.attachments ?? []).map((attachment) => summarizeAttachmentInput(attachment)),
+      permissionMode: payload.data.permissionMode ?? "default",
       model: payload.data.model ? `${payload.data.model.providerID}/${payload.data.model.modelID}` : "default",
       skillCount: payload.data.skills?.length ?? 0,
     })
@@ -804,6 +806,7 @@ export function SessionRoutes() {
               system: payload.data.system,
               agent: payload.data.agent,
               skills: payload.data.skills,
+              permissionMode: payload.data.permissionMode,
               model: payload.data.model,
             })
           },

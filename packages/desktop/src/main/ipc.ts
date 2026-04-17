@@ -1189,6 +1189,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           path: string
           name?: string
         }>
+        permissionMode?: "default" | "full-access"
         system?: string
         agent?: string
         skills?: string[]
@@ -1204,6 +1205,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         body: JSON.stringify({
           text: input.text,
           attachments: input.attachments,
+          permissionMode: input.permissionMode,
           system: input.system,
           agent: input.agent,
           skills: input.skills,
@@ -1352,6 +1354,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           path: string
           name?: string
         }>
+        permissionMode?: "default" | "full-access"
         system?: string
         agent?: string
         skills?: string[]
@@ -1366,6 +1369,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         body: JSON.stringify({
           text: input.text,
           attachments: input.attachments,
+          permissionMode: input.permissionMode,
           system: input.system,
           agent: input.agent,
           skills: input.skills,

@@ -16,6 +16,7 @@ import * as SessionDiff from "#session/diff.ts"
 import { Flag } from "#flag/flag.ts"
 import * as Orchestrator from "#session/orchestrator.ts"
 import * as RunningState from "#session/running-state.ts"
+import * as ContextWindow from "#session/context-window.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
@@ -51,6 +52,7 @@ export const PromptInput = z.object({
     system: z.string().optional(),
     skills: z.array(z.string()).optional(),
     variant: z.string().optional(),
+    permissionMode: Message.PermissionMode.optional(),
     parts: z.array(
         z.discriminatedUnion("type", [
             Message.TextPart.omit({
@@ -266,6 +268,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 agent,
                 sessionID,
                 messageID: assistantMessage.id,
+                permissionMode: lastUser.permissionMode ?? "default",
                 abort,
             });
 
@@ -278,7 +281,12 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 ...(lastUser.system ? [lastUser.system] : []),
             ]
 
-
+            const promptContext = await ContextWindow.preparePromptContext({
+                sessionID,
+                model,
+                system,
+                messages,
+            })
 
             const processor = Processor.create({
                 Assistant: assistantMessage,
@@ -294,9 +302,9 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     messageID: assistantMessage.id,
                     model,
                     agent,
-                    system: system,
+                    system: promptContext.system,
                     abort,
-                    messages: await Message.toModelMessages(messages, model, {
+                    messages: await Message.toModelMessages(promptContext.messages, model, {
                         agent,
                     }),
                     tools,
@@ -873,6 +881,7 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         model: input.model ?? await Provider.getDefaultModelRef(Instance.project.id),
         system: input.system,
         skills: input.skills,
+        permissionMode: input.permissionMode ?? "default",
     };
 
     const parts = input.parts.map((part) =>

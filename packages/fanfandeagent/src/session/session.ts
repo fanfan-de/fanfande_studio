@@ -9,6 +9,7 @@ import { fn } from "#util/fn.ts"
 import * as db from "#database/Sqlite.ts"
 import * as EventStore from "#session/event-store.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
+import * as SessionMemory from "#session/memory-store.ts"
 
 interface TableRecordMap {
   projects: never
@@ -66,6 +67,7 @@ export const ArchivedSessionSnapshot = z
     messages: z.array(Message.MessageInfo),
     parts: z.array(Message.Part),
     events: z.array(RuntimeEvent.RuntimeEvent),
+    memory: SessionMemory.SessionMemoryRecord.optional(),
   })
   .meta({
     ref: "ArchivedSessionSnapshot",
@@ -203,6 +205,7 @@ function buildArchivedSessionRecord(session: SessionInfo): ArchivedSessionRecord
   const messages = loadSessionMessages(session.id)
   const parts = loadSessionParts(session.id)
   const events = EventStore.listSessionEvents({ sessionID: session.id })
+  const memory = SessionMemory.readSessionMemory(session.id) ?? undefined
   const archivedAt = Date.now()
 
   return {
@@ -221,6 +224,7 @@ function buildArchivedSessionRecord(session: SessionInfo): ArchivedSessionRecord
       messages,
       parts,
       events,
+      memory,
     },
   }
 }
@@ -314,6 +318,7 @@ function removeSession(sessionID: string): SessionInfo | null {
   db.deleteMany("parts", [{ column: "sessionID", value: sessionID }])
   db.deleteMany("messages", [{ column: "sessionID", value: sessionID }])
   EventStore.deleteSessionEvents(sessionID)
+  SessionMemory.deleteSessionMemory(sessionID)
   db.deleteById("sessions", sessionID)
 
   return existing
@@ -330,6 +335,7 @@ function archiveSession(sessionID: string): ArchivedSessionRecord | null {
     db.deleteMany("parts", [{ column: "sessionID", value: record.sessionID }])
     db.deleteMany("messages", [{ column: "sessionID", value: record.sessionID }])
     EventStore.deleteSessionEvents(record.sessionID)
+    SessionMemory.deleteSessionMemory(record.sessionID)
     db.deleteById("sessions", record.sessionID)
   })
 
@@ -363,6 +369,10 @@ function restoreArchivedSession(sessionID: string): SessionInfo | null {
 
     for (const event of record.snapshot.events) {
       EventStore.append(event)
+    }
+
+    if (record.snapshot.memory) {
+      SessionMemory.upsertSessionMemory(record.snapshot.memory)
     }
 
     db.deleteById("archived_sessions", record.sessionID, "sessionID")

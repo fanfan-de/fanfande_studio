@@ -213,6 +213,11 @@ export interface AssistantTurnRuntime {
   errorMessage?: string
 }
 
+export interface AssistantTraceDebugEntry {
+  label: string
+  value: string
+}
+
 export interface AssistantTraceItem {
   id: string
   kind: AssistantTraceItemKind
@@ -225,6 +230,7 @@ export interface AssistantTraceItem {
   status?: AssistantTraceStatus
   sourceID?: string
   isStreaming?: boolean
+  debugEntries?: AssistantTraceDebugEntry[]
 }
 
 export interface AssistantTurn {
@@ -326,6 +332,8 @@ export interface ComposerAttachment {
   path: string
   name: string
 }
+
+export type ComposerPermissionMode = "default" | "full-access"
 
 export interface ComposerModelOption {
   value: string

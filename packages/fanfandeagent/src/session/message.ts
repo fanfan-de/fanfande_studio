@@ -469,6 +469,10 @@ const Base = z.object({
     id: z.string(),
     sessionID: z.string(),
 })
+export const PermissionMode = z.enum(["default", "full-access"]).meta({
+    ref: "PermissionMode",
+})
+export type PermissionMode = z.infer<typeof PermissionMode>
 export const User = Base.extend({
     role: z.literal("user"),
     created: z.number(),
@@ -495,6 +499,7 @@ export const User = Base.extend({
     skills: z.array(z.string()).optional(),
     tools: z.record(z.string(), z.boolean()).optional(),
     variant: z.string().optional(),
+    permissionMode: PermissionMode.optional(),
 }).meta({
     ref: "UserMessage",
 })

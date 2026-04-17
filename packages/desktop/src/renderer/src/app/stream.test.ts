@@ -315,6 +315,58 @@ describe("stream trace reducer", () => {
     expect(turns[1]?.kind === "assistant" ? turns[1].items.map((item) => item.kind) : []).toEqual(["reasoning", "text"])
   })
 
+  it("keeps backend-only history parts as hidden system trace items with debug metadata", () => {
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "msg-assistant-debug",
+          sessionID: "session-1",
+          role: "assistant",
+          created: 30,
+          completed: 31,
+        },
+        parts: [
+          {
+            id: "part-permission-1",
+            sessionID: "session-1",
+            messageID: "msg-assistant-debug",
+            type: "permission",
+            approvalID: "approval-1",
+            toolCallID: "toolcall-1",
+            tool: "read-file",
+            action: "ask",
+            created: 30,
+          },
+          {
+            id: "part-text-1",
+            sessionID: "session-1",
+            messageID: "msg-assistant-debug",
+            type: "text",
+            text: "History is back.",
+          },
+        ],
+      },
+    ])
+
+    expect(turns).toHaveLength(1)
+    expect(turns[0]?.kind === "assistant" ? turns[0].items.map((item) => item.kind) : []).toEqual(["system", "text"])
+
+    const permissionItem = turns[0]?.kind === "assistant"
+      ? turns[0].items.find((item) => item.title === "Permission requested")
+      : null
+    const responseItem = turns[0]?.kind === "assistant"
+      ? turns[0].items.find((item) => item.kind === "text")
+      : null
+
+    expect(permissionItem).toMatchObject({
+      kind: "system",
+      label: "Permission",
+      status: "pending",
+    })
+    expect(permissionItem?.debugEntries?.some((entry) => entry.label === "approval.id" && entry.value === "approval-1")).toBe(true)
+    expect(responseItem?.debugEntries?.some((entry) => entry.label === "part.id" && entry.value === "part-text-1")).toBe(true)
+  })
+
   it("summarizes user attachments when the persisted turn has no text content", () => {
     const turns = buildTurnsFromHistory([
       {

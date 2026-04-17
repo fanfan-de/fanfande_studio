@@ -139,6 +139,7 @@ type ComposerAttachmentInput = {
   path: string
   name?: string
 }
+type ComposerPermissionMode = "default" | "full-access"
 type McpAllowedTools =
   | string[]
   | {
@@ -752,6 +753,7 @@ try {
       sessionID: string
       text?: string
       attachments?: ComposerAttachmentInput[]
+      permissionMode?: ComposerPermissionMode
       system?: string
       agent?: string
       skills?: string[]
@@ -779,6 +781,7 @@ try {
       sessionID: string
       text?: string
       attachments?: ComposerAttachmentInput[]
+      permissionMode?: ComposerPermissionMode
       system?: string
       agent?: string
       skills?: string[]

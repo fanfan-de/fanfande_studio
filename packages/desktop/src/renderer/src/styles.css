@@ -3853,6 +3853,10 @@ textarea::placeholder {
   background: #fcfdff;
 }
 
+.assistant-section.is-debug {
+  background: #f7fafc;
+}
+
 .assistant-section-header {
   display: flex;
   align-items: center;
@@ -3973,6 +3977,31 @@ textarea::placeholder {
 
 .trace-item-detail {
   color: #607386;
+}
+
+.trace-item-debug {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(166, 186, 208, 0.42);
+}
+
+.trace-item-debug-row {
+  display: grid;
+  gap: 2px;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.trace-item-debug-label {
+  color: #526375;
+}
+
+.trace-item-debug-value {
+  color: #6b7d90;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .trace-item-plain-text,
@@ -4497,7 +4526,8 @@ textarea::placeholder {
   position: relative;
 }
 
-.composer-utility-git-branch-button {
+.composer-utility-git-branch-button,
+.composer-utility-permission-toggle {
   width: auto;
   max-width: min(280px, calc(100vw - 64px));
   padding: 0 10px 0 12px;
@@ -4512,7 +4542,10 @@ textarea::placeholder {
 
 .composer-utility-git-branch-button:hover,
 .composer-utility-git-branch-button:focus-visible,
-.composer-utility-git-branch-button.is-active {
+.composer-utility-git-branch-button.is-active,
+.composer-utility-permission-toggle:hover,
+.composer-utility-permission-toggle:focus-visible,
+.composer-utility-permission-toggle.is-active {
   background: #eef5fb;
   border-color: rgba(95, 146, 194, 0.7);
   color: #17344f;
@@ -4520,7 +4553,8 @@ textarea::placeholder {
   outline: none;
 }
 
-.composer-utility-git-branch-button svg {
+.composer-utility-git-branch-button svg,
+.composer-utility-permission-toggle svg {
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
@@ -4538,6 +4572,16 @@ textarea::placeholder {
   white-space: nowrap;
   font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
   font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.composer-utility-permission-toggle-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
   letter-spacing: 0.01em;
 }
 
@@ -6205,6 +6249,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 .composer-utility-git-branch-button:hover,
 .composer-utility-git-branch-button:focus-visible,
 .composer-utility-git-branch-button.is-active,
+.composer-utility-permission-toggle:hover,
+.composer-utility-permission-toggle:focus-visible,
+.composer-utility-permission-toggle.is-active,
 .composer-selector-button:hover,
 .composer-selector-button:focus-visible,
 .composer-menu-option:hover,
@@ -7027,6 +7074,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 .composer-utility-git-branch-button:hover,
 .composer-utility-git-branch-button:focus-visible,
 .composer-utility-git-branch-button.is-active,
+.composer-utility-permission-toggle:hover,
+.composer-utility-permission-toggle:focus-visible,
+.composer-utility-permission-toggle.is-active,
 .composer-selector-button:hover,
 .composer-selector-button:focus-visible,
 .composer-menu-option:hover,

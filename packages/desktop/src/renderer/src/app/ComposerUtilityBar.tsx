@@ -1,11 +1,22 @@
 import { GitBranchSwitcher } from "./GitBranchSwitcher"
-import type { SessionContextUsage } from "./types"
+import type { ComposerPermissionMode, SessionContextUsage } from "./types"
 
 interface ComposerUtilityBarProps {
   contextWindow: number | null
   gitDirectory: string | null
   gitProjectID: string | null
+  permissionMode: ComposerPermissionMode
+  onPermissionModeToggle: () => void
   usage: SessionContextUsage | null
+}
+
+function PermissionModeIcon({ mode }: { mode: ComposerPermissionMode }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d={mode === "full-access" ? "M9.5 10V8a3.5 3.5 0 0 1 6.8-1.3" : "M8.5 10V7.75a3.5 3.5 0 0 1 7 0V10"} />
+      <rect x="6" y="10" width="12" height="8" rx="2" />
+    </svg>
+  )
 }
 
 function clampRatio(value: number) {
@@ -28,7 +39,14 @@ function resolvePressureState(ratio: number | null) {
   return "low"
 }
 
-export function ComposerUtilityBar({ contextWindow, gitDirectory, gitProjectID, usage }: ComposerUtilityBarProps) {
+export function ComposerUtilityBar({
+  contextWindow,
+  gitDirectory,
+  gitProjectID,
+  permissionMode,
+  onPermissionModeToggle,
+  usage,
+}: ComposerUtilityBarProps) {
   const rawRatio = contextWindow && usage ? usage.inputTokens / contextWindow : null
   const clampedRatio = rawRatio === null ? 0 : clampRatio(rawRatio)
   const pressureState = resolvePressureState(rawRatio)
@@ -45,6 +63,11 @@ export function ComposerUtilityBar({ contextWindow, gitDirectory, gitProjectID, 
       : contextWindow
         ? `Context pressure unavailable until a response records usage (${formatContextValue(contextWindow)} context window)`
         : "Context pressure unavailable until a model is available"
+  const permissionLabel = permissionMode === "full-access" ? "Permissions · Full access" : "Permissions · Default"
+  const permissionTitle =
+    permissionMode === "full-access"
+      ? "Full access allows tool calls by default for this composer. Click to switch back to built-in approval defaults."
+      : "Default permissions use the built-in tool approval policy. Click to switch to full access."
 
   return (
     <div className="composer-utility-bar" aria-label="Composer utility bar">
@@ -67,6 +90,17 @@ export function ComposerUtilityBar({ contextWindow, gitDirectory, gitProjectID, 
           <circle className="context-pressure-ring-core" cx="14" cy="14" r="2.6" />
         </svg>
       </div>
+      <button
+        type="button"
+        className={`composer-utility-chip composer-utility-permission-toggle${permissionMode === "full-access" ? " is-active is-full-access" : ""}`}
+        aria-label={permissionLabel}
+        aria-pressed={permissionMode === "full-access"}
+        title={permissionTitle}
+        onClick={onPermissionModeToggle}
+      >
+        <PermissionModeIcon mode={permissionMode} />
+        <span className="composer-utility-permission-toggle-label">{permissionLabel}</span>
+      </button>
       <GitBranchSwitcher projectID={gitProjectID} directory={gitDirectory} />
     </div>
   )
