@@ -1,6 +1,6 @@
 import z from "zod"
 import * as Tool from "#tool/tool.ts"
-import { resolveToolPath, toDisplayPath, writeTextFile } from "#tool/shared.ts"
+import { prepareWriteTextFile, resolveToolPath, toDisplayPath, writeTextFile } from "#tool/shared.ts"
 
 export const WriteFileTool = Tool.define(
   "write-file",
@@ -12,11 +12,14 @@ export const WriteFileTool = Tool.define(
         path: z.string().min(1).describe("Absolute or project-relative file path."),
         content: z.string().describe("Full file contents to write."),
       }),
-      describeApproval: (parameters, ctx) => {
+      describeApproval: async (parameters, ctx) => {
+        const target = await prepareWriteTextFile(parameters.path)
         const resolved = resolveToolPath(parameters.path)
         return {
           title: `Write ${toDisplayPath(resolved)}`,
-          summary: `Overwrite ${toDisplayPath(resolved)} with new file contents.`,
+          summary: target.exists
+            ? `Overwrite ${toDisplayPath(resolved)} with new file contents.`
+            : `Create ${toDisplayPath(resolved)} with new file contents.`,
           details: {
             paths: [toDisplayPath(resolved)],
             workdir: ctx.cwd,

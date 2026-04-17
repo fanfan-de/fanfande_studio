@@ -71,6 +71,35 @@ function summarizeModelCapabilitiesForLog(model: Provider.Model) {
     }
 }
 
+function summarizeQuestionAnswerForModel(part: TextPart) {
+    const metadata = part.metadata
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+        return part.text
+    }
+
+    if (metadata.kind !== "question-answer") {
+        return part.text
+    }
+
+    const questionID = typeof metadata.questionID === "string" ? metadata.questionID : ""
+    const selectedOptions = Array.isArray(metadata.selectedOptions)
+        ? metadata.selectedOptions.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        : []
+    const freeformText = typeof metadata.freeformText === "string" ? metadata.freeformText.trim() : ""
+    const answerText = part.text.trim()
+
+    const lines = [
+        "<question-answer>",
+        questionID ? `question_id: ${questionID}` : "",
+        selectedOptions.length > 0 ? `selected_options: ${selectedOptions.join(", ")}` : "",
+        freeformText ? `freeform_answer: ${freeformText}` : "",
+        `answer: ${answerText || freeformText || selectedOptions.join(", ")}`,
+        "</question-answer>",
+    ].filter(Boolean)
+
+    return lines.join("\n")
+}
+
 const PartBase = z.object({
     id: z.string(),
     sessionID: z.string(),
@@ -764,7 +793,7 @@ export async function toModelMessages(
                 if (part.ignored) return null
                 return {
                     type: "text" as const,
-                    text: part.text,
+                    text: summarizeQuestionAnswerForModel(part),
                 }
             case "reasoning":
                 // Keep reasoning parts available for local UI/debugging, but do not

@@ -397,3 +397,46 @@
 
 - 多数工具只返回 `text` / `title`，结构化 `metadata` / `data` 的约定还不统一；后续可以补稳定的 machine-readable 输出。
 - `list-directory` / `search-files` 的输出顺序与截断信息还不够稳定；后续可补排序策略与结构化统计。
+## 10. Addendum: `web_fetch`
+
+`web_fetch` is a built-in read-only tool implemented in `src/tool/web-fetch.ts` and registered from `registry.ts`.
+
+### 10.1 Purpose
+
+- Fetch public `http` or `https` URLs for model consumption.
+- Normalize HTML, JSON, and plain-text responses into a stable content shape.
+- Keep ordinary page reads out of `exec_command`.
+
+### 10.2 Parameters
+
+- `url` (required): absolute `http` or `https` URL
+- `method?`: `GET` or `HEAD`, default `GET`
+- `output?`: `auto`, `text`, `markdown`, `html`, or `json`
+- `timeoutMs?`: request timeout, default `10000`
+- `maxBytes?`: maximum response bytes to read, default `250000`
+- `maxContentChars?`: maximum normalized content characters to keep, default `12000`
+- `maxLinks?`: maximum extracted HTML links, default `20`
+- `followRedirects?`: whether redirects are followed manually, default `true`
+
+### 10.3 Safety constraints
+
+- Only `http` and `https` are allowed.
+- Embedded credentials in URLs are rejected.
+- `localhost`, `.localhost`, `.local`, loopback IPs, RFC1918 private IPv4 ranges, link-local ranges, and private IPv6 ranges are blocked.
+- Redirects are followed manually and each hop is revalidated before the next request.
+- Unsupported binary content-types are rejected.
+- Response bodies are capped by `maxBytes`, and normalized content is capped separately by `maxContentChars`.
+
+### 10.4 Output contract
+
+`web_fetch` returns standard `ToolOutput` text plus structured metadata that includes:
+
+- request URL and final URL
+- HTTP status and status text
+- normalized content type and content format
+- normalized content text
+- truncation flag and byte count
+- extracted HTML metadata such as title, description, site name, language, and published time when available
+- extracted links and redirect chain
+
+`toModelOutput()` serializes that metadata as JSON so completed tool history can be replayed without reparsing the raw text transcript.

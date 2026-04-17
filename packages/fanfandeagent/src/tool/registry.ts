@@ -1,5 +1,6 @@
 import { Instance } from "#project/instance.ts"
 import * as Tool from "#tool/tool.ts"
+import { AskUserQuestionTool } from "#tool/ask-user-question.ts"
 import { ApplyPatchTool } from "#tool/apply-patch.ts"
 import { ExecCommandTool } from "#tool/exec-command.ts"
 import { GlobTool } from "#tool/glob.ts"
@@ -12,6 +13,7 @@ import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { SearchFilesTool } from "#tool/search-files.ts"
 import { WriteFileTool } from "#tool/write-file.ts"
+import { WebFetchTool } from "#tool/web-fetch.ts"
 import * as Mcp from "#mcp/manager.ts"
 
 function exposedNames(tool: Tool.ToolInfo): string[] {
@@ -43,6 +45,7 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
   const custom = await state().then((x) => x.custom)
   const mcpTools = await Mcp.tools()
   const result = [
+    AskUserQuestionTool,
     ReadFileTool,
     LoadSkillTool,
     ReadSkillResourceTool,
@@ -53,6 +56,7 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
     GrepTool,
     ListDirectoryTool,
     SearchFilesTool,
+    WebFetchTool,
     LspDefinitionTool,
     LspReferencesTool,
     LspHoverTool,

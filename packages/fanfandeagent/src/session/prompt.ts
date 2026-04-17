@@ -180,6 +180,22 @@ function summarizeRuntimeTool(part: Message.ToolPart) {
     }
 }
 
+function isAskUserQuestionPart(part: Message.Part): part is Message.ToolPart & {
+    state: Message.ToolStateCompleted
+} {
+    if (part.type !== "tool" || part.state.status !== "completed") {
+        return false
+    }
+
+    const metadata = part.state.metadata
+    return Boolean(
+        metadata &&
+        typeof metadata === "object" &&
+        !Array.isArray(metadata) &&
+        metadata.kind === "ask-user-question",
+    )
+}
+
 function inferFailurePhase(parts: Message.Part[]): RuntimeEvent.TurnRuntimePhase | undefined {
     const toolParts = parts.filter((part): part is Message.ToolPart => part.type === "tool")
 
@@ -309,14 +325,19 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 );
             }
 
-            const outstandingTool = findOutstandingToolAfterUser(messages, lastUser.id);
-            if (outstandingTool) {
-                log.warn("stopping prompt loop because the latest user turn still has an unresolved tool", {
+            const blockingInteraction = findBlockingAssistantInteractionAfterUser(messages, lastUser.id);
+            if (blockingInteraction) {
+                log.warn("stopping prompt loop because the latest user turn is waiting on a blocking assistant interaction", {
                     sessionID,
-                    assistantID: outstandingTool.assistant.id,
-                    toolCallID: outstandingTool.toolPart.callID,
-                    tool: outstandingTool.toolPart.tool,
-                    status: outstandingTool.toolPart.state.status,
+                    assistantID: blockingInteraction.assistant.id,
+                    toolCallID: blockingInteraction.toolPart.callID,
+                    tool: blockingInteraction.toolPart.tool,
+                    status: blockingInteraction.toolPart.state.status,
+                    interaction: blockingInteraction.kind,
+                    questionID:
+                        blockingInteraction.kind === "question"
+                            ? blockingInteraction.questionID
+                            : undefined,
                 });
                 break;
             }
@@ -431,10 +452,11 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             (part): part is Message.ToolPart =>
                 part.type === "tool" && part.state.status === "waiting-approval",
         )
+        const blockedByQuestion = latest.parts.some(isAskUserQuestionPart)
 
         return {
             latest,
-            status: blockedByApproval
+            status: blockedByApproval || blockedByQuestion
                 ? "blocked"
                 : isFinalFinishReason(finishReason)
                     ? "completed"
@@ -775,7 +797,7 @@ function loadMessagesWithParts(sessionID: string): Message.WithParts[] {
     }));
 }
 
-function findOutstandingToolAfterUser(
+function findBlockingAssistantInteractionAfterUser(
     messages: Message.WithParts[],
     userMessageID: string,
 ) {
@@ -801,9 +823,21 @@ function findOutstandingToolAfterUser(
 
         if (toolPart) {
             return {
+                kind: "tool" as const,
                 assistant: message.info as Message.Assistant,
                 toolPart,
             };
+        }
+
+        const questionPart = message.parts.find(isAskUserQuestionPart)
+        if (questionPart) {
+            const metadata = questionPart.state.metadata as Record<string, unknown>
+            return {
+                kind: "question" as const,
+                assistant: message.info as Message.Assistant,
+                toolPart: questionPart,
+                questionID: typeof metadata.questionID === "string" ? metadata.questionID : undefined,
+            }
         }
     }
 }

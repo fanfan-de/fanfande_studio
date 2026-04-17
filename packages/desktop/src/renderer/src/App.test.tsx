@@ -3056,6 +3056,181 @@ describe("App", () => {
     })
   })
 
+  it("renders AskUserQuestion cards and sends quick replies without clearing the composer", async () => {
+    const attachmentCapableModel = {
+      id: "gpt-4o-mini",
+      providerID: "openai",
+      name: "GPT-4o mini",
+      status: "active",
+      available: true,
+      capabilities: {
+        temperature: true,
+        reasoning: false,
+        attachment: true,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: true,
+          video: false,
+          pdf: true,
+        },
+        output: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+      },
+      limit: {
+        context: 128000,
+        output: 8192,
+      },
+    }
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getProjectModels = vi.fn().mockResolvedValue({
+      items: [attachmentCapableModel],
+      selection: {},
+      effectiveModel: attachmentCapableModel,
+    })
+    window.desktop!.pickComposerAttachments = vi.fn().mockResolvedValue(["C:\\Refs\\brief.pdf"])
+    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-1",
+          sessionID: "session-atlas-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-1", type: "text", text: "Deploy the app" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-1",
+          sessionID: "session-atlas-review",
+          role: "assistant",
+          created: 101,
+        },
+        parts: [
+          {
+            id: "tool-question-1",
+            type: "tool",
+            tool: "AskUserQuestion",
+            state: {
+              status: "completed",
+              output: "{\"status\":\"asked\"}",
+              metadata: {
+                kind: "ask-user-question",
+                version: 1,
+                questionID: "que_deploy_target",
+                header: "Deployment target",
+                question: "Where should I deploy this app?",
+                options: [
+                  {
+                    label: "Vercel",
+                    value: "vercel",
+                    description: "Best fit for the current setup.",
+                  },
+                  {
+                    label: "Cloudflare",
+                    value: "cloudflare",
+                  },
+                ],
+                allowFreeform: true,
+                multiple: false,
+                required: true,
+              },
+            },
+          },
+        ],
+      },
+    ])
+
+    render(<App />)
+
+    const questionCard = await screen.findByRole("region", { name: "Deployment target" })
+    expect(within(questionCard).getByText("Where should I deploy this app?")).toBeInTheDocument()
+    expect(within(questionCard).getByRole("button", { name: "Vercel" })).toBeInTheDocument()
+    expect(within(questionCard).getByRole("button", { name: "Cloudflare" })).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(window.desktop!.getProjectModels).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+      })
+      expect(screen.getByRole("button", { name: "Add attachments" })).toBeEnabled()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Add attachments" }))
+
+    expect(await screen.findByText("brief.pdf")).toBeInTheDocument()
+
+    const draftInput = screen.getByRole("textbox", { name: "Task draft" })
+    fireEvent.change(draftInput, {
+      target: {
+        value: "keep this draft",
+      },
+    })
+    expect(draftInput).toHaveValue("keep this draft")
+
+    fireEvent.click(within(questionCard).getByRole("button", { name: "Vercel" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalled()
+    })
+
+    const sendAgentMessage = window.desktop!.sendAgentMessage
+    expect(sendAgentMessage).toBeDefined()
+    if (!sendAgentMessage) throw new Error("Expected sendAgentMessage mock")
+
+    const sendInput = vi.mocked(sendAgentMessage).mock.calls.at(-1)?.[0]
+    expect(sendInput).toBeDefined()
+    if (!sendInput) throw new Error("Expected sendAgentMessage payload")
+
+    expect(sendInput).toEqual(expect.objectContaining({
+      sessionID: "session-atlas-review",
+      skills: [],
+      text: "vercel",
+      questionAnswer: {
+        questionID: "que_deploy_target",
+        selectedOptions: ["vercel"],
+      },
+    }))
+    expect(sendInput).not.toHaveProperty("attachments")
+    expect(screen.getByText("brief.pdf")).toBeInTheDocument()
+    expect(draftInput).toHaveValue("keep this draft")
+    expect(await screen.findByText("vercel")).toBeInTheDocument()
+    expect(within(questionCard).getByText("Answered.")).toBeInTheDocument()
+  })
+
   it("shows pending permission requests for the active session and blocks sending until resolved", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
@@ -4482,11 +4657,12 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Close settings" })).toBeInTheDocument()
     expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
-    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(5)
+    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(6)
     expect(screen.getByRole("button", { name: /^Provider/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Models/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Archived Sessions/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /^Appearance/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Developer Mode/ })).toBeInTheDocument()
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
     expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
     expect(screen.queryByText("Search providers")).not.toBeInTheDocument()
@@ -4762,7 +4938,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
   })
 
-  it("toggles debug region colors from appearance settings", async () => {
+  it("toggles debug region colors from developer mode settings", async () => {
     const { container } = render(<App />)
     const windowShell = container.querySelector(".window-shell") as HTMLElement | null
 
@@ -4771,7 +4947,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
-    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
 
     const debugRegionsSwitch = screen.getByRole("switch", { name: "Show debug region colors" })
     expect(debugRegionsSwitch).toHaveAttribute("aria-checked", "true")
@@ -4789,7 +4965,7 @@ describe("App", () => {
     expect(window.localStorage.getItem("desktop.debugUiRegions")).toBe("true")
   })
 
-  it("toggles line debug colors from appearance settings", async () => {
+  it("toggles line debug colors from developer mode settings", async () => {
     const { container } = render(<App />)
     const windowShell = container.querySelector(".window-shell") as HTMLElement | null
 
@@ -4798,7 +4974,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
-    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
 
     const debugLineColorsSwitch = screen.getByRole("switch", { name: "Show line debug colors" })
     expect(debugLineColorsSwitch).toHaveAttribute("aria-checked", "false")
@@ -4816,12 +4992,12 @@ describe("App", () => {
     expect(window.localStorage.getItem("desktop.debugLineColors")).toBe("false")
   })
 
-  it("toggles trace debug metadata from appearance settings", async () => {
+  it("toggles trace debug metadata from developer mode settings", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
-    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
 
     const debugMetadataSwitch = screen.getByRole("switch", { name: "Show trace debug metadata" })
     expect(debugMetadataSwitch).toHaveAttribute("aria-checked", "false")
@@ -4837,7 +5013,7 @@ describe("App", () => {
     expect(window.localStorage.getItem("desktop.agentDebugTrace")).toBe("false")
   })
 
-  it("keeps appearance settings focused on shell visibility and debug overlays", async () => {
+  it("keeps appearance settings focused on shell visibility only", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
@@ -4845,14 +5021,31 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
     expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
+    expect(screen.queryByRole("switch", { name: "Show debug region colors" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("switch", { name: "Show line debug colors" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("switch", { name: "Show trace tool calls" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("switch", { name: "Show trace sources" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("switch", { name: "Show trace approvals" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("switch", { name: "Show trace debug metadata" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("switch", { name: "Show right rail" })).not.toBeInTheDocument()
+    expect(screen.getByText("No rail")).toBeInTheDocument()
+    expect(screen.queryByText("Line Colors")).not.toBeInTheDocument()
+  })
+
+  it("groups debug overlays and trace visibility under developer mode", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
+
     expect(screen.getByRole("switch", { name: "Show debug region colors" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show line debug colors" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show trace tool calls" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show trace sources" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show trace approvals" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show trace debug metadata" })).toBeInTheDocument()
-    expect(screen.queryByRole("switch", { name: "Show right rail" })).not.toBeInTheDocument()
-    expect(screen.getByText("No rail")).toBeInTheDocument()
+    expect(screen.getByText("Developer State")).toBeInTheDocument()
     expect(screen.getByText("Line Colors")).toBeInTheDocument()
   })
 
@@ -4946,7 +5139,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
-    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
     fireEvent.click(screen.getByRole("switch", { name: "Show trace workflow events" }))
     fireEvent.click(screen.getByRole("switch", { name: "Show trace debug metadata" }))
 

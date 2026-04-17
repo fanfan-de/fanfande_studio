@@ -1231,12 +1231,32 @@ const PaneSurface = memo(function PaneSurface({
                 activeSession={pane.activeSession}
                 assistantTraceVisibility={assistantTraceVisibility}
                 isResolvingPermissionRequest={isResolvingPermissionRequest}
+                isSendingQuestionAnswer={pane.isSending}
                 isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
                 pendingPermissionRequests={pane.pendingPermissionRequests}
                 permissionRequestActionError={permissionRequestActionError}
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
                 activeTurns={pane.activeTurns}
                 threadColumnRef={threadColumnRef}
+                onAskUserQuestionAnswer={(answer) =>
+                  void onSend({
+                    attachmentsOverride: [],
+                    draftOverride: answer.text,
+                    paneID: pane.id,
+                    preserveComposerState: true,
+                    questionAnswer: answer.questionID
+                      ? {
+                          questionID: answer.questionID,
+                          selectedOptions: answer.selectedOptions,
+                          freeformText: answer.freeformText,
+                        }
+                      : undefined,
+                    selectedSkillIDs: composer.selectedSkillIDs,
+                    sessionID: pane.sessionID,
+                    tabKey: pane.tabKey,
+                    waitForPendingModelSelection: composer.awaitPendingModelSelection,
+                  })
+                }
                 onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
                 onPermissionRequestResponse={onPermissionRequestResponse}
               />

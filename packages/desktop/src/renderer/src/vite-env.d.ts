@@ -979,6 +979,11 @@ declare global {
         sessionID: string
         text?: string
         attachments?: DesktopComposerAttachmentInput[]
+        questionAnswer?: {
+          questionID: string
+          selectedOptions?: string[]
+          freeformText?: string
+        }
         permissionMode?: DesktopComposerPermissionMode
         system?: string
         agent?: string
@@ -1006,6 +1011,11 @@ declare global {
         sessionID: string
         text?: string
         attachments?: DesktopComposerAttachmentInput[]
+        questionAnswer?: {
+          questionID: string
+          selectedOptions?: string[]
+          freeformText?: string
+        }
         permissionMode?: DesktopComposerPermissionMode
         system?: string
         agent?: string

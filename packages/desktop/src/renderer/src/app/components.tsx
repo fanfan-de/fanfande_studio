@@ -27,6 +27,7 @@ import {
   RightSidebarExpandIcon,
   SettingsIcon,
   SortIcon,
+  TerminalIcon,
 } from "./icons"
 import type {
   AssistantTraceSectionKey,
@@ -3456,7 +3457,9 @@ export function SettingsPage({
   onStartNewMcpServer,
 }: SettingsPageProps) {
   {
-    const [activeSection, setActiveSection] = useState<"services" | "defaults" | "mcp" | "appearance" | "archive">("services")
+    const [activeSection, setActiveSection] = useState<"services" | "defaults" | "mcp" | "appearance" | "developer" | "archive">(
+      "services",
+    )
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
     const serviceDetailPanelRef = useRef<HTMLDivElement | null>(null)
@@ -3573,13 +3576,14 @@ export function SettingsPage({
         meta: `${mcpServers.length} servers`,
         Icon: FolderIcon,
       },
+      { key: "appearance" as const, label: "Appearance", meta: "1 option", Icon: LayoutSidebarLeftIcon },
+      { key: "developer" as const, label: "Developer Mode", meta: "3 groups", Icon: TerminalIcon },
       {
         key: "archive" as const,
         label: "Archived Sessions",
         meta: `${archivedSessions.length} sessions`,
         Icon: ArchiveIcon,
       },
-      { key: "appearance" as const, label: "Appearance", meta: "4 options", Icon: LayoutSidebarLeftIcon },
     ]
 
     return (
@@ -3681,6 +3685,37 @@ export function SettingsPage({
                     </p>
                   </section>
 
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Current</span>
+                        <h3>Appearance State</h3>
+                      </div>
+                      <p>The left rail is optional. The right inspector stays toggle-only and does not use a dedicated rail.</p>
+                    </div>
+
+                    <div className="settings-section-summary">
+                      <article className="settings-summary-card">
+                        <span className="label">Left</span>
+                        <strong>{isActivityRailVisible ? "Shown" : "Hidden"}</strong>
+                        <p>
+                          {isActivityRailVisible
+                            ? "The narrow rail is visible and always contains the sidebar toggle."
+                            : "The rail is hidden, and the toggle appears in the sidebar header or canvas top menu depending on the current layout."}
+                        </p>
+                      </article>
+                      <article className="settings-summary-card">
+                        <span className="label">Right</span>
+                        <strong>No rail</strong>
+                        <p>
+                          The inspector toggle lives in the right sidebar header while the sidebar is open, and moves to the canvas top menu when the inspector is collapsed.
+                        </p>
+                      </article>
+                    </div>
+                  </section>
+                </div>
+              ) : activeSection === "developer" ? (
+                <div className="settings-developer-layout">
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>
@@ -3802,21 +3837,12 @@ export function SettingsPage({
                     <div className="settings-section-header">
                       <div>
                         <span className="label">Current</span>
-                        <h3>Appearance State</h3>
+                        <h3>Developer State</h3>
                       </div>
-                      <p>The left rail is optional. Region and line colors are development overlays, while the trace controls decide how much backend execution detail appears inside the main thread.</p>
+                      <p>Region and line colors are development overlays, while the trace controls decide how much backend execution detail appears inside the main thread.</p>
                     </div>
 
                     <div className="settings-section-summary">
-                      <article className="settings-summary-card">
-                        <span className="label">Left</span>
-                        <strong>{isActivityRailVisible ? "Shown" : "Hidden"}</strong>
-                        <p>
-                          {isActivityRailVisible
-                            ? "The narrow rail is visible and always contains the sidebar toggle."
-                            : "The rail is hidden, and the toggle appears in the sidebar header or canvas top menu depending on the current layout."}
-                        </p>
-                      </article>
                       <article className="settings-summary-card">
                         <span className="label">Debug Regions</span>
                         <strong>{isDebugUiRegionsEnabled ? "Shown" : "Hidden"}</strong>
@@ -3842,13 +3868,6 @@ export function SettingsPage({
                           {assistantTraceVisibility.debugMetadata
                             ? "The main trace is showing backend metadata in addition to the enabled response, tool, approval, file, and workflow categories."
                             : "The main trace is showing the enabled user-facing categories while backend metadata stays collapsed."}
-                        </p>
-                      </article>
-                      <article className="settings-summary-card">
-                        <span className="label">Right</span>
-                        <strong>No rail</strong>
-                        <p>
-                          The inspector toggle lives in the right sidebar header while the sidebar is open, and moves to the canvas top menu when the inspector is collapsed.
                         </p>
                       </article>
                     </div>
@@ -5065,11 +5084,13 @@ interface ThreadViewProps {
   assistantTraceVisibility: AssistantTraceVisibility
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
+  isSendingQuestionAnswer: boolean
   onFileChangeSelect?: (file: string) => void
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
   threadColumnRef: RefObject<HTMLDivElement | null>
+  onAskUserQuestionAnswer: QuestionAnswerHandler
   onPermissionRequestResponse: PermissionRequestResponseHandler
 }
 
@@ -5078,6 +5099,13 @@ type PermissionRequestResponseHandler = (input: {
   request: PermissionRequest
   decision: PermissionDecision
   note?: string
+}) => void | Promise<void>
+
+type QuestionAnswerHandler = (input: {
+  text: string
+  questionID?: string
+  selectedOptions?: string[]
+  freeformText?: string
 }) => void | Promise<void>
 
 const primaryPermissionDecisions: PermissionDecision[] = ["deny", "allow-once"]
@@ -5106,7 +5134,7 @@ function isPersistentAllowDecision(decision: PermissionDecision) {
 }
 
 function isResponseTraceItem(item: AssistantTraceItem) {
-  return item.kind === "text"
+  return item.kind === "text" || item.kind === "question"
 }
 
 function isToolTraceItem(item: AssistantTraceItem) {
@@ -5294,13 +5322,19 @@ function AssistantTurnPlaceholder({ message }: { message: string }) {
 }
 
 function AssistantTurnSections({
+  answeredQuestionIDs,
+  isQuestionAnswerDisabled = false,
   items,
+  onAskUserQuestionAnswer,
   onFileChangeSelect,
   showFileChanges,
   traceVisibility,
   turnID,
 }: {
+  answeredQuestionIDs: Set<string>
+  isQuestionAnswerDisabled?: boolean
   items: AssistantTraceItem[]
+  onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect: ((file: string) => void) | undefined
   showFileChanges: boolean
   traceVisibility: AssistantTraceVisibility
@@ -5331,7 +5365,10 @@ function AssistantTurnSections({
               {renderedItems.map((item) => (
                 <TraceItemView
                   key={item.id}
+                  answeredQuestionIDs={answeredQuestionIDs}
                   item={item}
+                  isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+                  onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                   onFileChangeSelect={onFileChangeSelect}
                   traceVisibility={traceVisibility}
                 />
@@ -5364,15 +5401,23 @@ function formatTraceStatusText(status?: AssistantTraceItem["status"]) {
 }
 
 function TraceItemView({
+  answeredQuestionIDs,
   item,
+  isQuestionAnswerDisabled = false,
+  onAskUserQuestionAnswer,
   onFileChangeSelect,
   traceVisibility,
 }: {
+  answeredQuestionIDs?: Set<string>
   item: AssistantTraceItem
+  isQuestionAnswerDisabled?: boolean
+  onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect?: (file: string) => void
   traceVisibility: AssistantTraceVisibility
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [freeformAnswer, setFreeformAnswer] = useState("")
+  const [selectedQuestionOptions, setSelectedQuestionOptions] = useState<string[]>([])
   const className = [
     "trace-item",
     `trace-kind-${item.kind}`,
@@ -5406,6 +5451,147 @@ function TraceItemView({
       <article className={className} data-kind={item.kind}>
         {item.text ? <p className="trace-item-text trace-item-plain-text">{item.text}</p> : null}
         {item.detail ? <p className="trace-item-detail trace-item-plain-detail">{item.detail}</p> : null}
+        {renderDebugEntries()}
+      </article>
+    )
+  }
+
+  if (item.kind === "question" && item.questionPrompt) {
+    const prompt = item.questionPrompt
+    const isQuestionAnswered = Boolean(prompt.questionID && answeredQuestionIDs?.has(prompt.questionID))
+    const isAnswerDisabled = isQuestionAnswerDisabled || isQuestionAnswered
+    const canSubmitAnswer = Boolean(onAskUserQuestionAnswer)
+    const canUseOptionButtons = prompt.options.length > 0 && !prompt.multiple && canSubmitAnswer
+    const canUseMultipleSelection = prompt.options.length > 0 && prompt.multiple && canSubmitAnswer
+    const trimmedFreeformAnswer = freeformAnswer.trim()
+    const hasSelectedOptions = selectedQuestionOptions.length > 0
+    const canSubmitStructuredAnswer = canSubmitAnswer && !isAnswerDisabled && (hasSelectedOptions || Boolean(trimmedFreeformAnswer))
+    const note = isQuestionAnswered
+      ? "Answered."
+      : isQuestionAnswerDisabled
+      ? "Wait for the current request to finish before answering."
+      : canUseMultipleSelection && prompt.allowFreeform
+        ? "Select one or more options or add a custom answer."
+        : canUseMultipleSelection
+          ? "Select one or more options and submit."
+      : prompt.multiple
+        ? prompt.allowFreeform
+          ? "Reply in the composer below with one or more selections."
+          : "Reply in the composer below to continue."
+        : prompt.allowFreeform
+          ? canSubmitAnswer
+            ? "Choose an option or send a custom answer here."
+            : "You can also reply in the composer below."
+          : null
+
+    function handleQuestionOptionToggle(optionValue: string) {
+      setSelectedQuestionOptions((current) =>
+        current.includes(optionValue)
+          ? current.filter((value) => value !== optionValue)
+          : [...current, optionValue],
+      )
+    }
+
+    function handleStructuredAnswerSubmit(event: FormEvent<HTMLFormElement>) {
+      event.preventDefault()
+      if (!onAskUserQuestionAnswer || isAnswerDisabled) return
+
+      const selectedOptions = selectedQuestionOptions.map((value) => value.trim()).filter(Boolean)
+      const nextFreeformAnswer = freeformAnswer.trim()
+      const answerText = nextFreeformAnswer || selectedOptions.join(", ")
+      if (!answerText) return
+
+      void onAskUserQuestionAnswer({
+        text: answerText,
+        questionID: prompt.questionID,
+        ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
+        ...(nextFreeformAnswer ? { freeformText: nextFreeformAnswer } : {}),
+      })
+
+      setFreeformAnswer("")
+      setSelectedQuestionOptions([])
+    }
+
+    return (
+      <article className={`${className} ask-user-question-card`} data-kind={item.kind} role="region" aria-label={item.title || "Agent question"}>
+        <header className="ask-user-question-header">
+          <div>
+            <span className="label">Agent Question</span>
+            <h3>{item.title || "Question for you"}</h3>
+          </div>
+        </header>
+
+        <div className="ask-user-question-body">
+          <p className="ask-user-question-text">{prompt.question}</p>
+
+          {prompt.options.length > 0 ? (
+            <div className="ask-user-question-options">
+              {prompt.options.map((option, index) => (
+                <div key={`${item.id}-${option.value}-${index}`} className="ask-user-question-option">
+                  {canUseOptionButtons ? (
+                    <button
+                      className={index === 0 ? "primary-button" : "secondary-button"}
+                      disabled={isAnswerDisabled}
+                      onClick={() =>
+                        void onAskUserQuestionAnswer?.({
+                          text: option.value,
+                          questionID: prompt.questionID,
+                          selectedOptions: [option.value],
+                        })}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ) : canUseMultipleSelection ? (
+                    <label className="ask-user-question-option-choice">
+                      <input
+                        checked={selectedQuestionOptions.includes(option.value)}
+                        className="ask-user-question-option-checkbox"
+                        disabled={isAnswerDisabled}
+                        onChange={() => handleQuestionOptionToggle(option.value)}
+                        type="checkbox"
+                      />
+                      <span className="ask-user-question-option-label">{option.label}</span>
+                    </label>
+                  ) : (
+                    <div className="ask-user-question-option-label">{option.label}</div>
+                  )}
+                  {option.description ? (
+                    <p className="ask-user-question-option-description">{option.description}</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {canUseMultipleSelection || (prompt.allowFreeform && canSubmitAnswer) ? (
+            <form className="ask-user-question-response-form" onSubmit={handleStructuredAnswerSubmit}>
+              {prompt.allowFreeform ? (
+                <input
+                  aria-label="Custom answer"
+                  className="ask-user-question-freeform-input"
+                  disabled={isAnswerDisabled}
+                  onChange={(event) => setFreeformAnswer(event.target.value)}
+                  placeholder={prompt.placeholder || "Type your answer"}
+                  type="text"
+                  value={freeformAnswer}
+                />
+              ) : null}
+
+              <div className="ask-user-question-actions">
+                <button
+                  className="secondary-button"
+                  disabled={!canSubmitStructuredAnswer}
+                  type="submit"
+                >
+                  Submit answer
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {note ? <p className="ask-user-question-note">{note}</p> : null}
+        </div>
         {renderDebugEntries()}
       </article>
     )
@@ -5798,19 +5984,37 @@ function collectAssistantCycleFileChangeItems(turns: Turn[], startIndex: number,
   return items
 }
 
+function collectAnsweredQuestionIDs(turns: Turn[]) {
+  const answeredQuestionIDs = new Set<string>()
+
+  for (const turn of turns) {
+    if (turn.kind !== "user") continue
+
+    const questionID = turn.questionAnswer?.questionID
+    if (!questionID) continue
+    answeredQuestionIDs.add(questionID)
+  }
+
+  return answeredQuestionIDs
+}
+
 export function ThreadView({
   activeSession,
   activeTurns,
   assistantTraceVisibility,
   isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
+  isSendingQuestionAnswer,
   onFileChangeSelect,
+  onAskUserQuestionAnswer,
   pendingPermissionRequests,
   permissionRequestActionError,
   permissionRequestActionRequestID,
   threadColumnRef,
   onPermissionRequestResponse,
 }: ThreadViewProps) {
+  const answeredQuestionIDs = collectAnsweredQuestionIDs(activeTurns)
+
   return (
     <section className="thread-shell">
       <div ref={threadColumnRef} className="thread-column">
@@ -5879,8 +6083,11 @@ export function ThreadView({
                       <AssistantTurnPlaceholder message={ephemeralHint} />
                     ) : (
                       <AssistantTurnSections
+                        answeredQuestionIDs={answeredQuestionIDs}
+                        isQuestionAnswerDisabled={isSendingQuestionAnswer || isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
                         turnID={turn.id}
                         items={traceItems}
+                        onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                         onFileChangeSelect={onFileChangeSelect}
                         showFileChanges={isCycleFinalTurn && !turn.isStreaming}
                         traceVisibility={assistantTraceVisibility}

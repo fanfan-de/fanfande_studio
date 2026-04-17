@@ -784,6 +784,11 @@ try {
       sessionID: string
       text?: string
       attachments?: ComposerAttachmentInput[]
+      questionAnswer?: {
+        questionID: string
+        selectedOptions?: string[]
+        freeformText?: string
+      }
       permissionMode?: ComposerPermissionMode
       system?: string
       agent?: string
@@ -812,6 +817,11 @@ try {
       sessionID: string
       text?: string
       attachments?: ComposerAttachmentInput[]
+      questionAnswer?: {
+        questionID: string
+        selectedOptions?: string[]
+        freeformText?: string
+      }
       permissionMode?: ComposerPermissionMode
       system?: string
       agent?: string

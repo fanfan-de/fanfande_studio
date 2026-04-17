@@ -555,6 +555,19 @@ function readLatestSessionContextUsageFromHistory(messages: LoadedSessionHistory
   return null
 }
 
+function normalizeQuestionAnswerText(input?: {
+  selectedOptions?: string[]
+  freeformText?: string
+}) {
+  const freeformText = input?.freeformText?.trim()
+  if (freeformText) return freeformText
+
+  const selectedOptions = (input?.selectedOptions ?? []).map((value) => value.trim()).filter(Boolean)
+  if (selectedOptions.length > 0) return selectedOptions.join(", ")
+
+  return ""
+}
+
 function createCreateSessionTab(workspaceID: string | null): CreateSessionTab {
   return {
     id: createID("create-session-tab"),
@@ -2566,16 +2579,22 @@ export function useAgentWorkspace({
     attachments: ComposerAttachment[]
     backendSessionID?: string | null
     permissionMode: ComposerPermissionMode
+    preserveComposerState?: boolean
+    questionAnswer?: {
+      questionID: string
+      selectedOptions?: string[]
+      freeformText?: string
+    }
     session: SessionSummary
     selectedSkillIDs: string[]
     tabKey: string
     text: string
     workspace: WorkspaceGroup
   }) {
-    const { attachments, permissionMode, session, selectedSkillIDs, tabKey, text, workspace } = input
+    const { attachments, permissionMode, preserveComposerState, questionAnswer, session, selectedSkillIDs, tabKey, text, workspace } = input
     const uiSessionID = session.id
     const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
-    const normalizedText = text.trim()
+    const normalizedText = text.trim() || normalizeQuestionAnswerText(questionAnswer)
     const attachmentInputs = attachments.map((attachment) => ({
       path: attachment.path,
       name: attachment.name,
@@ -2589,17 +2608,20 @@ export function useAgentWorkspace({
       id: createID("user"),
       kind: "user",
       text: userTurnText,
+      ...(questionAnswer ? { questionAnswer } : {}),
       timestamp: Date.now(),
     }
 
-    setDraftByTabKey((current) => ({
-      ...current,
-      [tabKey]: "",
-    }))
-    setComposerAttachmentsByTabKey((current) => ({
-      ...current,
-      [tabKey]: [],
-    }))
+    if (!preserveComposerState) {
+      setDraftByTabKey((current) => ({
+        ...current,
+        [tabKey]: "",
+      }))
+      setComposerAttachmentsByTabKey((current) => ({
+        ...current,
+        [tabKey]: [],
+      }))
+    }
 
     appendConversationTurns(uiSessionID, [userTurn])
     setWorkspaces((prev) => {
@@ -2674,6 +2696,7 @@ export function useAgentWorkspace({
           sessionID: backendSessionID,
           ...(normalizedText ? { text: normalizedText } : {}),
           ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
+          ...(questionAnswer ? { questionAnswer } : {}),
           permissionMode,
           skills: selectedSkillIDs,
         })
@@ -2685,6 +2708,7 @@ export function useAgentWorkspace({
         sessionID: backendSessionID,
         ...(normalizedText ? { text: normalizedText } : {}),
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
+        ...(questionAnswer ? { questionAnswer } : {}),
         permissionMode,
         skills: selectedSkillIDs,
       })
@@ -2725,9 +2749,16 @@ export function useAgentWorkspace({
 
   async function handleSend(input?: {
     attachmentError?: string | null
+    attachmentsOverride?: ComposerAttachment[]
     createSessionTabID?: string | null
     draftOverride?: string
     paneID?: string | null
+    preserveComposerState?: boolean
+    questionAnswer?: {
+      questionID: string
+      selectedOptions?: string[]
+      freeformText?: string
+    }
     selectedSkillIDs?: string[]
     sessionID?: string | null
     tabKey?: string | null
@@ -2736,11 +2767,13 @@ export function useAgentWorkspace({
     const targetTabKey = input?.tabKey ?? activeTabKey
     const targetSessionID = input?.sessionID ?? activeSessionID
     const targetCreateSessionTabID = input?.createSessionTabID ?? activeCreateSessionTabID
-    const attachments = targetTabKey ? composerAttachmentsByTabKey[targetTabKey] ?? [] : []
+    const attachments = input?.attachmentsOverride ?? (targetTabKey ? composerAttachmentsByTabKey[targetTabKey] ?? [] : [])
     const permissionMode = targetTabKey ? composerPermissionModeByTabKey[targetTabKey] ?? "default" : "default"
     const text = (input?.draftOverride ?? (targetTabKey ? draftByTabKey[targetTabKey] ?? "" : "")).trim()
+    const normalizedQuestionAnswerText = normalizeQuestionAnswerText(input?.questionAnswer)
+    const effectiveText = text || normalizedQuestionAnswerText
     const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
-    if (!targetTabKey || ((!text && attachments.length === 0) || isSendingByTabKey[targetTabKey] || pendingPermissionRequests.length > 0)) return
+    if (!targetTabKey || ((!effectiveText && attachments.length === 0) || isSendingByTabKey[targetTabKey] || pendingPermissionRequests.length > 0)) return
     if (input?.waitForPendingModelSelection) {
       await input.waitForPendingModelSelection().catch(() => undefined)
     } else if (pendingModelSelectionRef.current) {
@@ -2754,10 +2787,12 @@ export function useAgentWorkspace({
       await sendPromptToSession({
         attachments,
         permissionMode,
+        preserveComposerState: input?.preserveComposerState,
+        questionAnswer: input?.questionAnswer,
         selectedSkillIDs: input?.selectedSkillIDs ?? [],
         session: nextSelection.session,
         tabKey: targetTabKey,
-        text,
+        text: effectiveText,
         workspace: nextSelection.workspace,
       })
       return
@@ -2783,10 +2818,12 @@ export function useAgentWorkspace({
       attachments,
       backendSessionID: created.backendSessionID,
       permissionMode,
+      preserveComposerState: input?.preserveComposerState,
+      questionAnswer: input?.questionAnswer,
       selectedSkillIDs: input?.selectedSkillIDs ?? [],
       session: created.session,
       tabKey: targetTabKey,
-      text,
+      text: effectiveText,
       workspace: created.workspace,
     })
   }

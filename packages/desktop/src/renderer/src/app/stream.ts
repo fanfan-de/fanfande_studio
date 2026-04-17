@@ -1,6 +1,7 @@
 import { STREAM_PENDING_PREFIX } from "./constants"
 import type {
   AgentStreamEvent,
+  AssistantQuestionPrompt,
   AssistantTraceDebugEntry,
   AssistantTraceItem,
   AssistantTraceSectionKey,
@@ -54,6 +55,10 @@ function createTraceItem(
     timestamp: input.timestamp ?? Date.now(),
     ...input,
   }
+}
+
+function readBoolean(value: unknown) {
+  return value === true
 }
 
 function formatDebugTimestamp(value: number) {
@@ -374,6 +379,61 @@ function createToolTraceText(status: AssistantTraceStatus, state: Record<string,
   return ""
 }
 
+function readAskUserQuestionPrompt(value: unknown): AssistantQuestionPrompt | null {
+  const metadata = readRecord(value)
+  if (!metadata || readString(metadata.kind) !== "ask-user-question") return null
+
+  const question = readString(metadata.question)
+  if (!question) return null
+
+  const options = Array.isArray(metadata.options)
+    ? metadata.options
+        .map((option) => readRecord(option))
+        .filter((option): option is Record<string, unknown> => Boolean(option))
+        .map((option) => {
+          const label = readString(option.label)
+          const value = readString(option.value) || label
+          const description = readString(option.description) || undefined
+          if (!label || !value) return null
+          return {
+            label,
+            value,
+            description,
+          }
+        })
+        .filter((option): option is NonNullable<typeof option> => Boolean(option))
+    : []
+
+  return {
+    questionID: readString(metadata.questionID) || undefined,
+    header: readString(metadata.header) || undefined,
+    question,
+    options,
+    allowFreeform: readBoolean(metadata.allowFreeform),
+    placeholder: readString(metadata.placeholder) || undefined,
+    multiple: readBoolean(metadata.multiple),
+    required: metadata.required !== false,
+  }
+}
+
+function createAskUserQuestionTraceDetail(prompt: AssistantQuestionPrompt) {
+  if (prompt.multiple) {
+    return prompt.allowFreeform
+      ? "Select one or more options, or reply in the composer to continue."
+      : "Reply in the composer with one or more selections to continue."
+  }
+
+  if (prompt.options.length > 0 && prompt.allowFreeform) {
+    return "Choose an option or reply in the composer to continue."
+  }
+
+  if (prompt.options.length > 0) {
+    return "Choose an option to continue."
+  }
+
+  return "Reply in the composer to continue."
+}
+
 function buildToolAttachmentTraceItems(
   sourceID: string,
   state: Record<string, unknown> | null,
@@ -608,6 +668,24 @@ function buildTraceItemFromPart(
                 ? "denied"
                 : "running"
     const toolName = readString(part.tool) || "Tool"
+    const questionPrompt = status === "completed" ? readAskUserQuestionPrompt(state?.metadata) : null
+
+    if (questionPrompt) {
+      return [createTraceItem({
+        id: sourceID,
+        sourceID,
+        kind: "question",
+        label: "Question",
+        title: questionPrompt.header || "Question for you",
+        text: questionPrompt.question,
+        detail: createAskUserQuestionTraceDetail(questionPrompt),
+        status: "completed",
+        section: "response",
+        visibilityKey: "response",
+        debugEntries,
+        questionPrompt,
+      })]
+    }
 
     return [
       createTraceItem({
@@ -957,6 +1035,34 @@ function extractAttachmentNames(parts: unknown[]) {
     .map((part) => readString(part.filename) || "Attachment")
 }
 
+function extractQuestionAnswer(parts: unknown[]) {
+  for (const input of parts) {
+    const part = readRecord(input)
+    if (!part || readString(part.type) !== "text") continue
+
+    const metadata = readRecord(part.metadata)
+    if (!metadata || readString(metadata.kind) !== "question-answer") continue
+
+    const questionID = readString(metadata.questionID)
+    if (!questionID) continue
+
+    const selectedOptions = Array.isArray(metadata.selectedOptions)
+      ? metadata.selectedOptions
+          .map((value) => readString(value).trim())
+          .filter(Boolean)
+      : []
+    const freeformText = readString(metadata.freeformText).trim()
+
+    return {
+      questionID,
+      ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
+      ...(freeformText ? { freeformText } : {}),
+    }
+  }
+
+  return undefined
+}
+
 function summarizeAttachmentNames(attachmentNames: string[]) {
   if (attachmentNames.length === 0) return ""
   if (attachmentNames.length === 1) return attachmentNames[0] ?? "Attachment"
@@ -987,6 +1093,7 @@ export function buildUserTurnText(input: {
 function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]) {
   const error = readRecord(info.error)
   if (error) return "Backend request failed"
+  if (items.some((item) => item.kind === "question")) return "Waiting for your answer"
   if (items.some((item) => item.status === "waiting-approval")) return "Waiting for permission approval"
   if (items.some((item) => item.status === "denied")) return "Tool execution denied"
   if (items.some((item) => item.status === "running" || item.status === "pending")) return "Backend response in progress"
@@ -1012,6 +1119,7 @@ function resolveAssistantHistoryToolName(items: AssistantTraceItem[]) {
 function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
   const textParts = extractTextParts(message.parts)
   const attachmentNames = extractAttachmentNames(message.parts)
+  const questionAnswer = extractQuestionAnswer(message.parts)
   return {
     id: message.info.id || createID("user"),
     kind: "user",
@@ -1019,6 +1127,7 @@ function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
       text: textParts.join("\n\n"),
       attachmentNames,
     }),
+    ...(questionAnswer ? { questionAnswer } : {}),
     timestamp: readNumber(message.info.created) || Date.now(),
   } satisfies Turn
 }
@@ -1215,6 +1324,7 @@ export function finalizeStreamAssistantTurn(
   },
 ): AssistantTurn {
   const items = clearStreamingItems(settleQueuedPrompt(turn.items, turn.id))
+  const waitingQuestion = items.find((item) => item.kind === "question")
 
   if (turn.runtime.phase === "failed") {
     return updateAssistantTurnLifecycle(
@@ -1225,6 +1335,23 @@ export function finalizeStreamAssistantTurn(
       {
         phase: "failed",
         state: turn.state,
+      },
+      items,
+    )
+  }
+
+  if (waitingQuestion) {
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: false,
+      },
+      {
+        phase: "completed",
+        state: "Waiting for your answer",
+        toolName: null,
+        approvalRequestID: null,
+        errorMessage: null,
       },
       items,
     )

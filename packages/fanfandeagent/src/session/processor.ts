@@ -362,6 +362,12 @@ function extractToolResultState(
     }
 }
 
+function isAskUserQuestionToolResult(
+    metadata: Record<string, unknown> | undefined,
+) {
+    return Boolean(metadata && metadata.kind === "ask-user-question")
+}
+
 type FinalToolResultCandidate = {
     toolCallId: string
     toolName?: string
@@ -1063,6 +1069,10 @@ export function create(input: {
                                             error: normalizeToolError(error),
                                         })
                                         throw error
+                                    }
+
+                                    if (isAskUserQuestionToolResult(normalized.metadata)) {
+                                        blocked = true
                                     }
                                 }
                                 break;

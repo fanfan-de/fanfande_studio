@@ -6,12 +6,14 @@ import path from "node:path"
 import z from "zod"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/message.ts"
+import { AskUserQuestionTool } from "#tool/ask-user-question.ts"
 import { ExecCommandTool, resolveExecCommandBashExecutable } from "#tool/exec-command.ts"
 import { GlobTool } from "#tool/glob.ts"
 import { GrepTool } from "#tool/grep.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import * as Tool from "#tool/tool.ts"
+import { WebFetchTool } from "#tool/web-fetch.ts"
 import { WriteFileTool } from "#tool/write-file.ts"
 
 async function createGitRepo(root: string, seed: string) {
@@ -140,6 +142,152 @@ describe("tool contract", () => {
     ).resolves.toEqual({
       text: "plain-result",
     })
+  })
+
+  it("shapes AskUserQuestion output for the user and the model", async () => {
+    const runtime = await AskUserQuestionTool.init()
+    const output = Tool.normalizeToolOutput(
+      await runtime.execute(
+        {
+          header: "Deployment target",
+          question: "Where should I deploy this app?",
+          options: [
+            {
+              label: "Vercel",
+              description: "Best fit for the current setup.",
+            },
+            {
+              label: "Cloudflare",
+              value: "cloudflare",
+            },
+          ],
+          allowFreeform: true,
+        },
+        {
+          sessionID: "session-ask-question",
+          messageID: "message-ask-question",
+          toolCallID: "tool-call-ask-1",
+        },
+      ),
+    )
+
+    expect(output.title).toBe("Deployment target")
+    expect(output.text).toContain("Question: Where should I deploy this app?")
+    expect(output.text).toContain("The question has been shown to the user.")
+    expect(output.metadata).toMatchObject({
+      kind: "ask-user-question",
+      version: 1,
+      questionID: expect.stringMatching(/^que_/),
+      toolCallID: "tool-call-ask-1",
+      header: "Deployment target",
+      question: "Where should I deploy this app?",
+      options: [
+        {
+          label: "Vercel",
+          value: "Vercel",
+          description: "Best fit for the current setup.",
+        },
+        {
+          label: "Cloudflare",
+          value: "cloudflare",
+          description: undefined,
+        },
+      ],
+      allowFreeform: true,
+      placeholder: undefined,
+      multiple: false,
+      required: true,
+    })
+
+    const modelOutput = Tool.normalizeToolModelOutput(await runtime.toModelOutput?.(output)!)
+    expect(modelOutput.type).toBe("json")
+    if (modelOutput.type !== "json") {
+      throw new Error(`Expected json model output, received ${modelOutput.type}`)
+    }
+    expect(modelOutput.value).toMatchObject({
+      kind: "ask-user-question",
+      shownToUser: true,
+      toolCallID: "tool-call-ask-1",
+      header: "Deployment target",
+      question: "Where should I deploy this app?",
+      options: [
+        {
+          label: "Vercel",
+          value: "Vercel",
+          description: "Best fit for the current setup.",
+        },
+        {
+          label: "Cloudflare",
+          value: "cloudflare",
+          description: undefined,
+        },
+      ],
+      allowFreeform: true,
+      multiple: false,
+      required: true,
+      instruction: "Stop after this tool call and wait for the user's response before taking any further action.",
+    })
+  })
+
+  it("replays structured question answers into model context", async () => {
+    const model = {
+      capabilities: {
+        reasoning: false,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "user-question-answer",
+            sessionID: "session-question-answer",
+            role: "user",
+            created: Date.now(),
+            agent: "plan",
+            model: {
+              providerID: "test-provider",
+              modelID: "test-model",
+            },
+          } as Message.User,
+          parts: [
+            {
+              id: "part-question-answer",
+              sessionID: "session-question-answer",
+              messageID: "user-question-answer",
+              type: "text",
+              text: "vercel",
+              metadata: {
+                kind: "question-answer",
+                questionID: "que_deploy_target",
+                selectedOptions: ["vercel"],
+              },
+            } as Message.TextPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: "user",
+    })
+    const serializedMessage = JSON.stringify(messages[0])
+    expect(serializedMessage).toContain("\"type\":\"text\"")
+    expect(serializedMessage).toContain("<question-answer>")
+    expect(serializedMessage).toContain("question_id: que_deploy_target")
+    expect(serializedMessage).toContain("selected_options: vercel")
+    expect(serializedMessage).toContain("answer: vercel")
   })
 
   it("exposes exec_command runtime hooks with structured behavior", async () => {
@@ -863,10 +1011,10 @@ describe("tool contract", () => {
             messageID: "message-write-file-create",
           }
 
-          await expect(runtime.describeApproval?.({
+          expect(await runtime.describeApproval?.({
             path: "generated/from-tool.txt",
             content: "hello",
-          }, ctx)).resolves.toMatchObject({
+          }, ctx)).toMatchObject({
             title: `Write ${displayPath}`,
             summary: `Create ${displayPath} with new file contents.`,
           })
@@ -905,10 +1053,10 @@ describe("tool contract", () => {
             messageID: "message-write-file-overwrite",
           }
 
-          await expect(runtime.describeApproval?.({
+          expect(await runtime.describeApproval?.({
             path: "notes.txt",
             content: "new text",
-          }, ctx)).resolves.toMatchObject({
+          }, ctx)).toMatchObject({
             title: "Write notes.txt",
             summary: "Overwrite notes.txt with new file contents.",
           })
@@ -1178,6 +1326,148 @@ describe("tool contract", () => {
           expect(result.title).toBe("Grep Alpha\\s*=\\s*\\d")
           expect(result.text).toContain(`${path.join("src", "one.ts")}:1:7: const Alpha = 1`)
           expect(result.text).not.toContain("notes.txt")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("fetches HTML pages with validated redirects and returns structured metadata", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-web-fetch-"))
+    const originalFetch = globalThis.fetch
+
+    try {
+      await createGitRepo(repositoryRoot, "web-fetch")
+
+      let fetchCalls = 0
+      globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+        fetchCalls += 1
+        const requestedUrl = String(input)
+
+        expect(init?.method).toBe("GET")
+        expect(init?.redirect).toBe("manual")
+
+        if (fetchCalls === 1) {
+          expect(requestedUrl).toBe("https://example.com/start")
+          return new Response(null, {
+            status: 302,
+            headers: {
+              location: "/article",
+            },
+          })
+        }
+
+        expect(requestedUrl).toBe("https://example.com/article")
+        return new Response(
+          [
+            "<html lang=\"en\">",
+            "<head>",
+            "<title>Example Article</title>",
+            "<meta name=\"description\" content=\"A compact HTML fixture.\" />",
+            "<meta property=\"og:site_name\" content=\"Example Site\" />",
+            "</head>",
+            "<body>",
+            "<main>",
+            "<h1>Example Article</h1>",
+            "<p>Hello <strong>world</strong>.</p>",
+            "<p><a href=\"/docs\">Docs</a></p>",
+            "</main>",
+            "</body>",
+            "</html>",
+          ].join(""),
+          {
+            status: 200,
+            statusText: "OK",
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+            },
+          },
+        )
+      }) as typeof fetch
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await WebFetchTool.init()
+          const ctx = {
+            sessionID: "session-web-fetch",
+            messageID: "message-web-fetch",
+          }
+
+          const result = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              url: "https://example.com/start",
+              maxContentChars: 500,
+              maxLinks: 5,
+            },
+            ctx,
+          ))
+
+          expect(result.title).toBe("Fetched https://example.com/article")
+          expect(result.text).toContain("Status: 200 OK")
+          expect(result.text).toContain("Final URL: https://example.com/article")
+          expect(result.text).toContain("# Example Article")
+          expect(result.text).toContain("[Docs](https://example.com/docs)")
+
+          expect(result.metadata).toMatchObject({
+            url: "https://example.com/start",
+            finalUrl: "https://example.com/article",
+            status: 200,
+            contentType: "text/html",
+            contentFormat: "markdown",
+            title: "Example Article",
+            description: "A compact HTML fixture.",
+            siteName: "Example Site",
+            language: "en",
+            redirects: ["https://example.com/article"],
+            links: [
+              {
+                text: "Docs",
+                url: "https://example.com/docs",
+              },
+            ],
+          })
+
+          const modelOutput = await runtime.toModelOutput?.(result as any)
+          expect(Tool.normalizeToolModelOutput(modelOutput!)).toEqual({
+            type: "json",
+            value: expect.objectContaining({
+              finalUrl: "https://example.com/article",
+              contentFormat: "markdown",
+              content: expect.stringContaining("# Example Article"),
+            }),
+          })
+        },
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("blocks loopback targets in web_fetch before issuing a network request", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-web-fetch-blocked-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "web-fetch-blocked")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await WebFetchTool.init()
+
+          await expect(
+            runtime.execute(
+              {
+                url: "http://localhost:3000/private",
+              },
+              {
+                sessionID: "session-web-fetch-blocked",
+                messageID: "message-web-fetch-blocked",
+              },
+            ),
+          ).rejects.toThrow("loopback or local network host")
         },
       })
     } finally {

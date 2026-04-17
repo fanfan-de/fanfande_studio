@@ -1231,6 +1231,11 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           path: string
           name?: string
         }>
+        questionAnswer?: {
+          questionID: string
+          selectedOptions?: string[]
+          freeformText?: string
+        }
         permissionMode?: "default" | "full-access"
         system?: string
         agent?: string
@@ -1247,6 +1252,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         body: JSON.stringify({
           text: input.text,
           attachments: input.attachments,
+          questionAnswer: input.questionAnswer,
           permissionMode: input.permissionMode,
           system: input.system,
           agent: input.agent,
@@ -1396,6 +1402,11 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           path: string
           name?: string
         }>
+        questionAnswer?: {
+          questionID: string
+          selectedOptions?: string[]
+          freeformText?: string
+        }
         permissionMode?: "default" | "full-access"
         system?: string
         agent?: string
@@ -1411,6 +1422,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         body: JSON.stringify({
           text: input.text,
           attachments: input.attachments,
+          questionAnswer: input.questionAnswer,
           permissionMode: input.permissionMode,
           system: input.system,
           agent: input.agent,

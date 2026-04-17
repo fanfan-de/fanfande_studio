@@ -26,9 +26,16 @@ const StreamSessionAttachmentBody = z.object({
   name: z.string().optional(),
 })
 
+const StreamSessionQuestionAnswerBody = z.object({
+  questionID: z.string().min(1),
+  selectedOptions: z.array(z.string().min(1)).optional(),
+  freeformText: z.string().optional(),
+})
+
 const StreamSessionMessageBody = z.object({
   text: z.string().optional(),
   attachments: z.array(StreamSessionAttachmentBody).optional(),
+  questionAnswer: StreamSessionQuestionAnswerBody.optional(),
   system: z.string().optional(),
   agent: z.string().optional(),
   skills: z.array(z.string()).optional(),
@@ -41,12 +48,14 @@ const StreamSessionMessageBody = z.object({
     .optional(),
 }).superRefine((value, ctx) => {
   const hasText = typeof value.text === "string" && value.text.trim().length > 0
+  const derivedQuestionText = normalizeQuestionAnswerText(value.questionAnswer)
+  const hasQuestionAnswerText = typeof derivedQuestionText === "string" && derivedQuestionText.length > 0
   const hasAttachments = Array.isArray(value.attachments) && value.attachments.length > 0
 
-  if (!hasText && !hasAttachments) {
+  if (!hasText && !hasQuestionAnswerText && !hasAttachments) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "Body must include a non-empty 'text' or at least one attachment",
+      message: "Body must include a non-empty 'text', a structured question answer, or at least one attachment",
       path: ["text"],
     })
   }
@@ -81,6 +90,25 @@ const log = Log.create({ service: "server.session" })
 function normalizePromptText(text: string | undefined) {
   const trimmed = text?.trim()
   return trimmed ? trimmed : undefined
+}
+
+function normalizeQuestionAnswerText(
+  answer: z.infer<typeof StreamSessionQuestionAnswerBody> | undefined,
+) {
+  if (!answer) return undefined
+
+  const freeformText = normalizePromptText(answer.freeformText)
+  if (freeformText) return freeformText
+
+  const selectedOptions = Array.isArray(answer.selectedOptions)
+    ? answer.selectedOptions.map((option) => option.trim()).filter(Boolean)
+    : []
+
+  if (selectedOptions.length > 0) {
+    return selectedOptions.join(", ")
+  }
+
+  return undefined
 }
 
 function buildDataURL(mime: string, buffer: Buffer) {
@@ -172,12 +200,22 @@ async function resolveAttachmentPart(
 
 async function resolvePromptPartsFromStreamPayload(payload: z.infer<typeof StreamSessionMessageBody>) {
   const parts: z.infer<typeof Prompt.PromptInput>["parts"] = []
-  const normalizedText = normalizePromptText(payload.text)
+  const normalizedText = normalizePromptText(payload.text) ?? normalizeQuestionAnswerText(payload.questionAnswer)
 
   if (normalizedText) {
     parts.push({
       type: "text",
       text: normalizedText,
+      ...(payload.questionAnswer
+        ? {
+            metadata: {
+              kind: "question-answer",
+              questionID: payload.questionAnswer.questionID,
+              selectedOptions: payload.questionAnswer.selectedOptions ?? [],
+              freeformText: payload.questionAnswer.freeformText,
+            },
+          }
+        : {}),
     })
   }
 
@@ -783,6 +821,8 @@ export function SessionRoutes() {
       requestId: c.get("requestId"),
       directory: session.directory,
       textLength: normalizedText?.length ?? 0,
+      questionAnswerID: payload.data.questionAnswer?.questionID,
+      questionAnswerOptions: payload.data.questionAnswer?.selectedOptions?.length ?? 0,
       attachmentCount: payload.data.attachments?.length ?? 0,
       attachments: (payload.data.attachments ?? []).map((attachment) => summarizeAttachmentInput(attachment)),
       permissionMode: payload.data.permissionMode ?? "default",

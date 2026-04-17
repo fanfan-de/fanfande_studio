@@ -347,6 +347,11 @@ export interface UserTurn {
   id: string
   kind: "user"
   text: string
+  questionAnswer?: {
+    questionID: string
+    selectedOptions?: string[]
+    freeformText?: string
+  }
   timestamp: number
 }
 
@@ -354,6 +359,7 @@ export type AssistantTraceItemKind =
   | "system"
   | "reasoning"
   | "text"
+  | "question"
   | "tool"
   | "source"
   | "file"
@@ -440,6 +446,23 @@ export interface AssistantTraceDebugEntry {
   value: string
 }
 
+export interface AssistantQuestionOption {
+  label: string
+  value: string
+  description?: string
+}
+
+export interface AssistantQuestionPrompt {
+  questionID?: string
+  header?: string
+  question: string
+  options: AssistantQuestionOption[]
+  allowFreeform: boolean
+  placeholder?: string
+  multiple: boolean
+  required: boolean
+}
+
 export interface AssistantTraceItem {
   id: string
   kind: AssistantTraceItemKind
@@ -455,6 +478,7 @@ export interface AssistantTraceItem {
   visibilityKey?: AssistantTraceVisibilityKey
   isStreaming?: boolean
   debugEntries?: AssistantTraceDebugEntry[]
+  questionPrompt?: AssistantQuestionPrompt
 }
 
 export interface AssistantTurn {
