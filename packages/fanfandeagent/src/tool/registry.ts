@@ -5,6 +5,7 @@ import { ExecCommandTool } from "#tool/exec-command.ts"
 import { GlobTool } from "#tool/glob.ts"
 import { GrepTool } from "#tool/grep.ts"
 import { ListDirectoryTool } from "#tool/list-directory.ts"
+import { LspDefinitionTool, LspHoverTool, LspReferencesTool, LspWorkspaceSymbolsTool } from "#tool/lsp.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
 import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
@@ -52,6 +53,10 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
     GrepTool,
     ListDirectoryTool,
     SearchFilesTool,
+    LspDefinitionTool,
+    LspReferencesTool,
+    LspHoverTool,
+    LspWorkspaceSymbolsTool,
     ExecCommandTool,
     ...mcpTools,
     ...custom,
