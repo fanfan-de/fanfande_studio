@@ -1,6 +1,6 @@
 import z from "zod"
 import * as Tool from "#tool/tool.ts"
-import { formatLineRange, readTextFile, resolveToolPath, toDisplayPath } from "#tool/shared.ts"
+import { readTextFileRange, resolveToolPath, toDisplayPath } from "#tool/shared.ts"
 
 export const ReadFileTool = Tool.define(
   "read-file",
@@ -39,11 +39,10 @@ export const ReadFileTool = Tool.define(
       },
       execute: async (parameters) => {
         const resolved = resolveToolPath(parameters.path)
-        const text = await readTextFile(parameters.path)
         const maxLines = parameters.maxLines ?? 250
         const startLine = parameters.startLine ?? 1
         const endLine = parameters.endLine ?? (parameters.startLine ? parameters.startLine + maxLines - 1 : maxLines)
-        const excerpt = formatLineRange(text, startLine, endLine)
+        const excerpt = await readTextFileRange(parameters.path, startLine, endLine)
         const truncated = excerpt.totalLines > excerpt.endLine
 
         return {

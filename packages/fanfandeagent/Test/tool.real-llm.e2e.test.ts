@@ -159,7 +159,7 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
       setup: async (directory) => {
         await fs.writeFile(path.join(directory, "edit.txt"), "alpha beta alpha", "utf8")
       },
-      prompt: "Replace alpha with omega in edit.txt using the replace-text tool.",
+      prompt: "Replace all occurrences of alpha with omega in edit.txt using the replace-text tool.",
       verify: async (directory, _assistant, toolPart) => {
         const updated = await fs.readFile(path.join(directory, "edit.txt"), "utf8")
         expect(updated).toBe("omega beta omega")

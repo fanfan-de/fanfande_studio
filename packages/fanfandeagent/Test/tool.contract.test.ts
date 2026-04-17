@@ -1,13 +1,16 @@
 import { describe, expect, it } from "bun:test"
 import { $ } from "bun"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import z from "zod"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/message.ts"
 import { ExecCommandTool, resolveExecCommandBashExecutable } from "#tool/exec-command.ts"
+import { ReadFileTool } from "#tool/read-file.ts"
+import { ReplaceTextTool } from "#tool/replace-text.ts"
 import * as Tool from "#tool/tool.ts"
+import { WriteFileTool } from "#tool/write-file.ts"
 
 async function createGitRepo(root: string, seed: string) {
   await mkdir(root, { recursive: true })
@@ -770,5 +773,368 @@ describe("tool contract", () => {
     ])
 
     expect(messages.find((item) => item.role === "tool")).toBeUndefined()
+  })
+
+  it("reads line ranges from large text files", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-read-file-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "read-file")
+
+      const bigFile = path.join(repositoryRoot, "large.txt")
+      const lines = Array.from({ length: 25_000 }, (_, index) =>
+        `line ${String(index + 1).padStart(5, "0")} ${"x".repeat(48)}`,
+      ).join("\n")
+      await writeFile(bigFile, lines)
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await ReadFileTool.init()
+          const result = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              path: "large.txt",
+              startLine: 12_500,
+              endLine: 12_502,
+            },
+            {
+              sessionID: "session-read-file",
+              messageID: "message-read-file",
+            },
+          ))
+
+          expect(result.title).toBe("Read large.txt")
+          expect(result.text).toContain("Lines: 12500-12502 of 25000")
+          expect(result.text).toContain("12500 | line 12500")
+          expect(result.text).toContain("12502 | line 12502")
+          expect(result.text).not.toContain("12503 |")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  }, 120000)
+
+  it("rejects binary files for text reads", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-read-binary-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "read-binary")
+      await writeFile(path.join(repositoryRoot, "image.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await ReadFileTool.init()
+
+          await expect(
+            runtime.execute(
+              {
+                path: "image.png",
+              },
+              {
+                sessionID: "session-read-binary",
+                messageID: "message-read-binary",
+              },
+            ),
+          ).rejects.toThrow("appears to be a binary file")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("creates new files with write-file and uses create wording in approval", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-write-file-create-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "write-file-create")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await WriteFileTool.init()
+          const displayPath = path.join("generated", "from-tool.txt")
+          const ctx = {
+            sessionID: "session-write-file-create",
+            messageID: "message-write-file-create",
+          }
+
+          await expect(runtime.describeApproval?.({
+            path: "generated/from-tool.txt",
+            content: "hello",
+          }, ctx)).resolves.toMatchObject({
+            title: `Write ${displayPath}`,
+            summary: `Create ${displayPath} with new file contents.`,
+          })
+
+          const result = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              path: "generated/from-tool.txt",
+              content: "hello",
+            },
+            ctx,
+          ))
+
+          expect(await readFile(path.join(repositoryRoot, "generated", "from-tool.txt"), "utf8")).toBe("hello")
+          expect(result.title).toBe(`Wrote ${displayPath}`)
+          expect(result.text).toBe(`Wrote 5 bytes to ${displayPath}.`)
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("overwrites existing text files with write-file and keeps overwrite wording", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-write-file-overwrite-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "write-file-overwrite")
+      await writeFile(path.join(repositoryRoot, "notes.txt"), "old", "utf8")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await WriteFileTool.init()
+          const ctx = {
+            sessionID: "session-write-file-overwrite",
+            messageID: "message-write-file-overwrite",
+          }
+
+          await expect(runtime.describeApproval?.({
+            path: "notes.txt",
+            content: "new text",
+          }, ctx)).resolves.toMatchObject({
+            title: "Write notes.txt",
+            summary: "Overwrite notes.txt with new file contents.",
+          })
+
+          await runtime.execute(
+            {
+              path: "notes.txt",
+              content: "new text",
+            },
+            ctx,
+          )
+
+          expect(await readFile(path.join(repositoryRoot, "notes.txt"), "utf8")).toBe("new text")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("rejects binary files for write-file updates", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-write-file-binary-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "write-file-binary")
+      await writeFile(path.join(repositoryRoot, "image.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await WriteFileTool.init()
+
+          await expect(
+            runtime.execute(
+              {
+                path: "image.png",
+                content: "not-a-png",
+              },
+              {
+                sessionID: "session-write-file-binary",
+                messageID: "message-write-file-binary",
+              },
+            ),
+          ).rejects.toThrow("Cannot write image.png because it appears to be a binary file.")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("rejects directory targets for write-file with a clear error", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-write-file-directory-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "write-file-directory")
+      await mkdir(path.join(repositoryRoot, "nested"))
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await WriteFileTool.init()
+
+          await expect(
+            runtime.execute(
+              {
+                path: "nested",
+                content: "hello",
+              },
+              {
+                sessionID: "session-write-file-directory",
+                messageID: "message-write-file-directory",
+              },
+            ),
+          ).rejects.toThrow("Cannot write nested because it is a directory.")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("creates new files with Claude-style replace-text arguments", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-replace-text-create-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "replace-text-create")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await ReplaceTextTool.init()
+          const displayPath = path.join("generated", "from-tool.txt")
+          const ctx = {
+            sessionID: "session-replace-text-create",
+            messageID: "message-replace-text-create",
+          }
+
+          await expect(runtime.describeApproval?.({
+            file_path: "generated/from-tool.txt",
+            old_string: "",
+            new_string: "hello",
+          }, ctx)).resolves.toMatchObject({
+            title: `Create ${displayPath}`,
+            summary: `Create ${displayPath} with new file contents.`,
+          })
+
+          const result = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              file_path: "generated/from-tool.txt",
+              old_string: "",
+              new_string: "hello",
+            },
+            ctx,
+          ))
+
+          expect(await readFile(path.join(repositoryRoot, "generated", "from-tool.txt"), "utf8")).toBe("hello")
+          expect(result.title).toBe(`Created ${displayPath}`)
+          expect(result.text).toBe(`Created ${displayPath} with 5 bytes.`)
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("rejects ambiguous replace-text edits unless replace_all is true", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-replace-text-ambiguous-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "replace-text-ambiguous")
+      await writeFile(path.join(repositoryRoot, "notes.txt"), "alpha beta alpha", "utf8")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await ReplaceTextTool.init()
+
+          await expect(
+            runtime.execute(
+              {
+                file_path: "notes.txt",
+                old_string: "alpha",
+                new_string: "omega",
+              },
+              {
+                sessionID: "session-replace-text-ambiguous",
+                messageID: "message-replace-text-ambiguous",
+              },
+            ),
+          ).rejects.toThrow("Found 2 matches in notes.txt, but replace_all is false.")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps backwards-compatible replace-text aliases and preserves CRLF replacements", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-replace-text-alias-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "replace-text-alias")
+      await writeFile(path.join(repositoryRoot, "notes.txt"), "alpha\r\nbeta\r\n", "utf8")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await ReplaceTextTool.init()
+          const result = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              path: "notes.txt",
+              search: "alpha\nbeta",
+              replace: "omega\ngamma",
+              all: true,
+            },
+            {
+              sessionID: "session-replace-text-alias",
+              messageID: "message-replace-text-alias",
+            },
+          ))
+
+          expect(await readFile(path.join(repositoryRoot, "notes.txt"), "utf8")).toBe("omega\r\ngamma\r\n")
+          expect(result.title).toBe("Updated notes.txt")
+          expect(result.text).toBe("Replaced 1 occurrence(s) in notes.txt.")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("rejects symlinked paths that resolve outside the project boundary", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-read-symlink-"))
+    const outsideRoot = await mkdtemp(path.join(tmpdir(), "fanfande-read-symlink-target-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "read-symlink")
+      await writeFile(path.join(outsideRoot, "secret.txt"), "outside project\n")
+
+      const linkedDirectory = path.join(repositoryRoot, "linked")
+      await symlink(
+        outsideRoot,
+        linkedDirectory,
+        process.platform === "win32" ? "junction" : "dir",
+      )
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await ReadFileTool.init()
+
+          await expect(
+            runtime.execute(
+              {
+                path: "linked/secret.txt",
+              },
+              {
+                sessionID: "session-read-symlink",
+                messageID: "message-read-symlink",
+              },
+            ),
+          ).rejects.toThrow("outside the active project boundary")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+      await rm(outsideRoot, { recursive: true, force: true })
+    }
   })
 })
