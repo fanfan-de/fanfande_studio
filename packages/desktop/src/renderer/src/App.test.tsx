@@ -439,11 +439,14 @@ describe("App", () => {
       getSessionPermissionRequests: vi.fn().mockResolvedValue([]),
       respondPermissionRequest: vi.fn().mockResolvedValue(createPermissionResolveResult()),
       getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
+      refreshGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
       getGlobalModels: vi.fn().mockResolvedValue({
         items: [],
         selection: {},
       }),
       getGlobalMcpServers: vi.fn().mockResolvedValue([]),
+      getProjectProviderCatalog: vi.fn().mockResolvedValue([]),
+      refreshProjectProviderCatalog: vi.fn().mockResolvedValue([]),
       getProjectModels: vi.fn().mockResolvedValue({
         items: [],
         selection: {},
@@ -4487,6 +4490,7 @@ describe("App", () => {
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
     expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
     expect(screen.queryByText("Search providers")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Refresh provider catalog" })).toBeInTheDocument()
     expect(await screen.findByRole("textbox", { name: "Search providers" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /DeepSeek.*Connected/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
@@ -4522,6 +4526,118 @@ describe("App", () => {
       expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalledTimes(1)
       expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it("refreshes the global provider catalog from settings", async () => {
+    const refreshCatalog = createDeferred<
+      {
+        id: string
+        name: string
+        source: string
+        env: string[]
+        configured: boolean
+        available: boolean
+        apiKeyConfigured: boolean
+        baseURL: string
+        modelCount: number
+      }[]
+    >()
+
+    window.desktop!.getGlobalProviderCatalog = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "deepseek",
+          name: "DeepSeek",
+          source: "api",
+          env: ["DEEPSEEK_API_KEY"],
+          configured: false,
+          available: false,
+          apiKeyConfigured: false,
+          baseURL: "https://api.deepseek.com",
+          modelCount: 1,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "api",
+          env: ["OPENAI_API_KEY"],
+          configured: false,
+          available: false,
+          apiKeyConfigured: false,
+          baseURL: "https://api.openai.com/v1",
+          modelCount: 2,
+        },
+        {
+          id: "deepseek",
+          name: "DeepSeek",
+          source: "api",
+          env: ["DEEPSEEK_API_KEY"],
+          configured: false,
+          available: false,
+          apiKeyConfigured: false,
+          baseURL: "https://api.deepseek.com",
+          modelCount: 1,
+        },
+      ])
+    window.desktop!.getGlobalModels = vi
+      .fn()
+      .mockResolvedValueOnce({
+        items: [],
+        selection: {},
+      })
+      .mockResolvedValueOnce({
+        items: [],
+        selection: {},
+      })
+    window.desktop!.refreshGlobalProviderCatalog = vi.fn().mockImplementation(() => refreshCatalog.promise)
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+
+    const refreshButton = screen.getByRole("button", { name: "Refresh provider catalog" })
+    fireEvent.click(refreshButton)
+
+    expect(refreshButton).toBeDisabled()
+    expect(refreshButton).toHaveTextContent("Refreshing...")
+
+    refreshCatalog.resolve([
+      {
+        id: "openai",
+        name: "OpenAI",
+        source: "api",
+        env: ["OPENAI_API_KEY"],
+        configured: false,
+        available: false,
+        apiKeyConfigured: false,
+        baseURL: "https://api.openai.com/v1",
+        modelCount: 2,
+      },
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "api",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: false,
+        available: false,
+        apiKeyConfigured: false,
+        baseURL: "https://api.deepseek.com",
+        modelCount: 1,
+      },
+    ])
+
+    await waitFor(() => {
+      expect(window.desktop!.refreshGlobalProviderCatalog).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalledTimes(2)
+      expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(2)
+    })
+
+    expect(await screen.findByText("Provider catalog refreshed.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
   })
 
   it("edits global MCP servers from settings and keeps diagnostics project-aware", async () => {
@@ -5389,6 +5505,19 @@ describe("App", () => {
       model: "openai/gpt-4o-mini",
       small_model: "openai/gpt-4o-mini",
     })
+    window.desktop!.refreshProjectProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "openai",
+        name: "OpenAI",
+        source: "config",
+        env: ["OPENAI_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.openai.com/v1",
+        modelCount: 1,
+      },
+    ])
 
     render(<App />)
 
@@ -5406,6 +5535,14 @@ describe("App", () => {
 
     expect(window.desktop!.getGlobalProviderCatalog).not.toHaveBeenCalled()
     expect(window.desktop!.getGlobalModels).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh provider catalog" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.refreshProjectProviderCatalog).toHaveBeenCalledWith({
+        projectID: "project-2",
+      })
+    })
 
     fireEvent.click(screen.getByRole("button", { name: /^Models/ }))
 

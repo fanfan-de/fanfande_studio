@@ -195,14 +195,16 @@ async function get(): Promise<Record<string, DevProvider>> {
 }
 
 // 强制从远端刷新 catalog；刷新成功后清掉进程内缓存，下次 get() 会拿到新数据。
-async function refresh() {
-    const result = await fetchRemote().catch((error) => {
+async function refresh(): Promise<DevCatalog> {
+    try {
+        const result = await fetchRemote()
+        DevData.reset()
+        return result
+    } catch (error) {
         log.error("Failed to fetch models.dev", {
             error,
         })
-    })
-    if (result) {
-        DevData.reset()
+        throw error
     }
 }
 

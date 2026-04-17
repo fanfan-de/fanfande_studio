@@ -244,6 +244,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [message, setMessage] = useState<SettingsMessage | null>(null)
   const [savingProviderID, setSavingProviderID] = useState<string | null>(null)
   const [deletingProviderID, setDeletingProviderID] = useState<string | null>(null)
+  const [isRefreshingProviderCatalog, setIsRefreshingProviderCatalog] = useState(false)
   const [isSavingSelection, setIsSavingSelection] = useState(false)
   const [savingMcpServerID, setSavingMcpServerID] = useState<string | null>(null)
   const [deletingMcpServerID, setDeletingMcpServerID] = useState<string | null>(null)
@@ -583,6 +584,49 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function refreshProviderCatalog() {
+    const projectID = resolveProjectProviderSettingsProjectID()
+    const refreshProviderCatalogApi = projectID
+      ? window.desktop?.refreshProjectProviderCatalog
+        ? () => window.desktop!.refreshProjectProviderCatalog!({ projectID })
+        : window.desktop?.refreshGlobalProviderCatalog
+          ? () => window.desktop!.refreshGlobalProviderCatalog!()
+          : null
+      : window.desktop?.refreshGlobalProviderCatalog
+        ? () => window.desktop!.refreshGlobalProviderCatalog!()
+        : null
+
+    if (!refreshProviderCatalogApi) {
+      setMessage({
+        tone: "error",
+        text: "Desktop provider refresh API is unavailable.",
+      })
+      return false
+    }
+
+    setIsRefreshingProviderCatalog(true)
+    setMessage(null)
+
+    try {
+      await refreshProviderCatalogApi()
+      await loadSettingsData({ silent: true })
+      await notifyProviderModelsUpdated()
+      setMessage({
+        tone: "success",
+        text: "Provider catalog refreshed.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsRefreshingProviderCatalog(false)
+    }
+  }
+
   async function deleteProvider(providerID: string) {
     const projectID = resolveProjectProviderSettingsProjectID()
     const removeProvider = projectID
@@ -823,6 +867,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     isLoading,
     isLoadingArchivedSessions,
     isOpen,
+    isRefreshingProviderCatalog,
     isSavingSelection,
     loadError,
     mcpServerDraft,
@@ -834,6 +879,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     projectName: options.projectName ?? null,
     projectWorktree: options.projectWorktree ?? null,
     providerDrafts,
+    refreshProviderCatalog,
     restoringArchivedSessionID,
     savedSelection,
     saveMcpServer,

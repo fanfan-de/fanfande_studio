@@ -6,6 +6,7 @@ import * as db from "#database/Sqlite.ts"
 import * as Project from "#project/project.ts"
 import * as Session from "#session/session.ts"
 import * as Config from "#config/config.ts"
+import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
 import * as Mcp from "#mcp/manager.ts"
@@ -398,6 +399,29 @@ export function ProjectRoutes() {
       data: await Git.commitGitChanges(directory, payload.data.message, {
         stageAll: payload.data.stageAll,
       }),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/:id/providers/catalog/refresh", async (c) => {
+    const id = c.req.param("id")
+    safeReadProject(id)
+
+    try {
+      await ModelsDev.refresh()
+    } catch (error) {
+      throw new ApiError(
+        502,
+        "PROVIDER_CATALOG_REFRESH_FAILED",
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+
+    const catalog = await Provider.catalog(id)
+
+    return c.json({
+      success: true,
+      data: catalog,
       requestId: c.get("requestId"),
     })
   })

@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import z from "zod"
 import * as Config from "#config/config.ts"
+import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
 import * as SkillManager from "#skill/manage.ts"
@@ -58,6 +59,26 @@ export function SettingsRoutes() {
   }
 
   app.get("/providers/catalog", async (c) => {
+    const catalog = await Provider.catalog()
+
+    return c.json({
+      success: true,
+      data: catalog,
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/providers/catalog/refresh", async (c) => {
+    try {
+      await ModelsDev.refresh()
+    } catch (error) {
+      throw new ApiError(
+        502,
+        "PROVIDER_CATALOG_REFRESH_FAILED",
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+
     const catalog = await Provider.catalog()
 
     return c.json({

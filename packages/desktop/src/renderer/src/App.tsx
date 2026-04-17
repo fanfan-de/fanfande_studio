@@ -291,6 +291,7 @@ export function App() {
     isLoading,
     isLoadingArchivedSessions,
     isOpen,
+    isRefreshingProviderCatalog,
     isSavingSelection,
     loadError,
     mcpServerDraft,
@@ -302,6 +303,7 @@ export function App() {
     projectName,
     projectWorktree,
     providerDrafts,
+    refreshProviderCatalog,
     restoringArchivedSessionID,
     savedSelection,
     restoreArchivedSession,
@@ -778,6 +780,7 @@ export function App() {
           isLoading={isLoading}
           isLoadingArchivedSessions={isLoadingArchivedSessions}
           isOpen={isOpen}
+          isRefreshingProviderCatalog={isRefreshingProviderCatalog}
           isSavingSelection={isSavingSelection}
           loadError={loadError}
           mcpServerDraft={mcpServerDraft}
@@ -805,6 +808,7 @@ export function App() {
           onMcpServerDraftChange={setMcpServerDraftValue}
           onMcpServerSelect={selectMcpServer}
           onProviderDraftChange={setProviderDraftValue}
+          onRefreshProviderCatalog={refreshProviderCatalog}
           onRestoreArchivedSession={restoreArchivedSession}
           onSaveMcpServer={saveMcpServer}
           onSaveProvider={saveProvider}

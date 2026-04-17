@@ -481,6 +481,20 @@ try {
           modelCount: number
         }>
       >,
+    refreshGlobalProviderCatalog: () =>
+      ipcRenderer.invoke("desktop:refresh-global-provider-catalog") as Promise<
+        Array<{
+          id: string
+          name: string
+          source: "env" | "config" | "custom" | "api"
+          env: string[]
+          configured: boolean
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+          modelCount: number
+        }>
+      >,
     getGlobalModels: () =>
       ipcRenderer.invoke("desktop:get-global-models") as Promise<{
         items: Array<{
@@ -599,6 +613,20 @@ try {
       }>,
     getProjectProviderCatalog: (input: { projectID: string }) =>
       ipcRenderer.invoke("desktop:get-project-provider-catalog", input) as Promise<
+        Array<{
+          id: string
+          name: string
+          source: "env" | "config" | "custom" | "api"
+          env: string[]
+          configured: boolean
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+          modelCount: number
+        }>
+      >,
+    refreshProjectProviderCatalog: (input: { projectID: string }) =>
+      ipcRenderer.invoke("desktop:refresh-project-provider-catalog", input) as Promise<
         Array<{
           id: string
           name: string

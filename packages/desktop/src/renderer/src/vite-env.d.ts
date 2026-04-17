@@ -425,6 +425,19 @@ declare global {
           modelCount: number
         }>
       >
+      refreshGlobalProviderCatalog?: () => Promise<
+        Array<{
+          id: string
+          name: string
+          source: "env" | "config" | "custom" | "api"
+          env: string[]
+          configured: boolean
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+          modelCount: number
+        }>
+      >
       getGlobalModels?: () => Promise<{
         items: Array<{
           id: string
@@ -664,6 +677,19 @@ declare global {
         removed: boolean
       }>
       getProjectProviderCatalog?: (input: { projectID: string }) => Promise<
+        Array<{
+          id: string
+          name: string
+          source: "env" | "config" | "custom" | "api"
+          env: string[]
+          configured: boolean
+          available: boolean
+          apiKeyConfigured: boolean
+          baseURL?: string
+          modelCount: number
+        }>
+      >
+      refreshProjectProviderCatalog?: (input: { projectID: string }) => Promise<
         Array<{
           id: string
           name: string

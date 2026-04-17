@@ -3362,6 +3362,7 @@ interface SettingsPageProps {
   isLoading: boolean
   isLoadingArchivedSessions: boolean
   isOpen: boolean
+  isRefreshingProviderCatalog: boolean
   isSavingSelection: boolean
   loadError: string | null
   mcpServerDraft: McpServerDraftState
@@ -3392,6 +3393,7 @@ interface SettingsPageProps {
   onMcpServerDraftChange: (field: keyof McpServerDraftState, value: string | boolean) => void
   onMcpServerSelect: (serverID: string) => void
   onProviderDraftChange: (providerID: string, field: keyof ProviderDraftState, value: string) => void
+  onRefreshProviderCatalog: () => boolean | Promise<boolean>
   onRestoreArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onSaveMcpServer: () => boolean | Promise<boolean>
   onSaveProvider: (providerID: string) => boolean | Promise<boolean>
@@ -3417,6 +3419,7 @@ export function SettingsPage({
   isLoading,
   isLoadingArchivedSessions,
   isOpen,
+  isRefreshingProviderCatalog,
   isSavingSelection,
   loadError,
   mcpServerDraft,
@@ -3444,6 +3447,7 @@ export function SettingsPage({
   onMcpServerDraftChange,
   onMcpServerSelect,
   onProviderDraftChange,
+  onRefreshProviderCatalog,
   onRestoreArchivedSession,
   onSaveMcpServer,
   onSaveProvider,
@@ -3924,6 +3928,21 @@ export function SettingsPage({
                 activeSection === "services" ? (
                   <section className="settings-services-layout" aria-label="Provider layout">
                     <div className="settings-service-list-panel">
+                      <div className="settings-actions-row">
+                        <span className="settings-helper-text">Fetch the latest provider catalog and model metadata.</span>
+                        <div className="settings-inline-actions">
+                          <button
+                            className="secondary-button"
+                            aria-label="Refresh provider catalog"
+                            type="button"
+                            disabled={isRefreshingProviderCatalog}
+                            onClick={() => void onRefreshProviderCatalog()}
+                          >
+                            {isRefreshingProviderCatalog ? "Refreshing..." : "Refresh"}
+                          </button>
+                        </div>
+                      </div>
+
                       <div className="settings-field settings-search-field">
                         <input
                           aria-label="Search providers"

@@ -875,6 +875,17 @@ describe("server api", () => {
           expect(catalogBody.data?.some((provider) => provider.id === "deepseek" && provider.modelCount > 0)).toBe(true)
           expect(catalogBody.data?.some((provider) => provider.id === "openai" && provider.configured === false)).toBe(true)
 
+          const refreshedCatalogResponse = await app.request("http://localhost/api/providers/catalog/refresh", {
+            method: "POST",
+          })
+          const refreshedCatalogBody = (await refreshedCatalogResponse.json()) as ProviderCatalogEnvelope
+
+          expect(refreshedCatalogResponse.status).toBe(200)
+          expect(refreshedCatalogBody.success).toBe(true)
+          expect(refreshedCatalogBody.data?.some((provider) => provider.id === "deepseek" && provider.modelCount > 0)).toBe(
+            true,
+          )
+
           const configureResponse = await app.request("http://localhost/api/providers/deepseek", {
             method: "PUT",
             headers: { "content-type": "application/json" },
@@ -957,6 +968,18 @@ describe("server api", () => {
 
           expect(projectResponse.status).toBe(201)
           expect(projectID).toBeString()
+
+          const projectCatalogRefreshResponse = await app.request(
+            `http://localhost/api/projects/${projectID}/providers/catalog/refresh`,
+            {
+              method: "POST",
+            },
+          )
+          const projectCatalogRefreshBody = (await projectCatalogRefreshResponse.json()) as ProviderCatalogEnvelope
+
+          expect(projectCatalogRefreshResponse.status).toBe(200)
+          expect(projectCatalogRefreshBody.success).toBe(true)
+          expect(projectCatalogRefreshBody.data?.some((provider) => provider.id === "openai")).toBe(true)
 
           const compatibilityResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
           const compatibilityBody = (await compatibilityResponse.json()) as ProjectModelsEnvelope

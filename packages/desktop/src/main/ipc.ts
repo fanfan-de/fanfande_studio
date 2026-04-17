@@ -763,6 +763,14 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
+  ipcMain.handle("desktop:refresh-global-provider-catalog", async () => {
+    const result = await requestAgentJSON<AgentProviderCatalogItem[]>("/api/providers/catalog/refresh", {
+      method: "POST",
+    })
+
+    return result.data
+  })
+
   ipcMain.handle("desktop:get-global-models", async () => {
     const result = await requestAgentJSON<{
       items: AgentProviderModel[]
@@ -968,6 +976,18 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentProviderCatalogItem[]>(
       `/api/projects/${encodeURIComponent(projectID)}/providers/catalog`,
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:refresh-project-provider-catalog", async (_event, input: { projectID: string }) => {
+    const projectID = input.projectID.trim()
+    const result = await requestAgentJSON<AgentProviderCatalogItem[]>(
+      `/api/projects/${encodeURIComponent(projectID)}/providers/catalog/refresh`,
+      {
+        method: "POST",
+      },
     )
 
     return result.data
