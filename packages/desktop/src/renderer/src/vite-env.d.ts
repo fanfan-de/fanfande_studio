@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { PermissionRequestPrompt, PermissionResolveInput, PermissionResolveResult } from "../../shared/permission"
+import type { SessionRuntimeDebugSnapshot } from "./app/types"
 
 export {}
 
@@ -406,6 +407,7 @@ declare global {
           patch?: string
         }>
       }>
+      getSessionRuntimeDebug?: (input: { sessionID: string; limit?: number; turns?: number }) => Promise<SessionRuntimeDebugSnapshot>
       getSessionPermissionRequests?: (input: { sessionID: string }) => Promise<
         PermissionRequestPrompt[]
       >

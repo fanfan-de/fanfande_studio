@@ -177,6 +177,8 @@ export function App() {
     activeSessionDirectory,
     activeSessionDiff,
     activeSessionDiffState,
+    activeSessionRuntimeDebug,
+    activeSessionRuntimeDebugState,
     activeSessionSelectedDiffFile,
     composerRefreshVersion,
     deletingSessionID,
@@ -187,6 +189,7 @@ export function App() {
     handleCreateSessionTabSelect,
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffRefresh,
+    handleActiveSessionRuntimeDebugRefresh,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
     handleCreateSessionWorkspaceChange,
@@ -742,10 +745,13 @@ export function App() {
               activeSession={leftSidebarView === "skills" ? null : activeSession}
               activeSessionDiff={leftSidebarView === "skills" ? null : activeSessionDiff}
               activeSessionDiffState={leftSidebarView === "skills" ? undefined : activeSessionDiffState}
+              activeSessionRuntimeDebug={leftSidebarView === "skills" ? null : activeSessionRuntimeDebug}
+              activeSessionRuntimeDebugState={leftSidebarView === "skills" ? undefined : activeSessionRuntimeDebugState}
               selectedDiffFile={leftSidebarView === "skills" ? null : activeSessionSelectedDiffFile}
               activeView={rightSidebarView}
               onDiffFileSelect={handleActiveSessionDiffFileSelect}
-              onRefresh={handleActiveSessionDiffRefresh}
+              onDiffRefresh={handleActiveSessionDiffRefresh}
+              onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
               onViewChange={handleRightSidebarViewChange}
             />
           </>

@@ -17,13 +17,15 @@ import { Flag } from "#flag/flag.ts"
 import * as Orchestrator from "#session/orchestrator.ts"
 import * as RunningState from "#session/running-state.ts"
 import * as ContextWindow from "#session/context-window.ts"
+import * as RuntimeEvent from "#session/runtime-event.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
 //import type { string } from "yargs";
 
 const log = Log.create({ service: "session.prompt" });
-const DEFAULT_PROMPT_LOOP_LIMIT = Flag.FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT ?? 16
+const DEFAULT_PROMPT_LOOP_LIMIT = 64
+const HARD_PROMPT_LOOP_LIMIT = Flag.FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT
 
 // ====================
 // 业务模块：运行态控制
@@ -162,6 +164,81 @@ async function removePartRecord(
     Session.deletePart(partID)
 }
 
+function normalizePromptErrorMessage(error: unknown) {
+    if (error instanceof Error && error.message) {
+        return error.message
+    }
+
+    return String(error)
+}
+
+function summarizeRuntimeTool(part: Message.ToolPart) {
+    return {
+        callID: part.callID,
+        tool: part.tool,
+        status: part.state.status,
+    }
+}
+
+function inferFailurePhase(parts: Message.Part[]): RuntimeEvent.TurnRuntimePhase | undefined {
+    const toolParts = parts.filter((part): part is Message.ToolPart => part.type === "tool")
+
+    if (toolParts.some((part) => part.state.status === "waiting-approval")) {
+        return "waiting_approval"
+    }
+
+    if (toolParts.some((part) => part.state.status === "running" || part.state.status === "pending")) {
+        return "executing_tool"
+    }
+
+    if (parts.some((part) => part.type === "text")) {
+        return "responding"
+    }
+
+    if (parts.some((part) => part.type === "reasoning")) {
+        return "reasoning"
+    }
+
+    return undefined
+}
+
+function emitTurnFailureContext(input: {
+    turn: Orchestrator.TurnContext
+    error: unknown
+    assistant?: Message.Assistant
+    parts: Message.Part[]
+}) {
+    const toolParts = input.parts.filter((part): part is Message.ToolPart => part.type === "tool")
+    const activeTools = toolParts
+        .filter((part) =>
+            part.state.status === "pending" ||
+            part.state.status === "running" ||
+            part.state.status === "waiting-approval",
+        )
+        .map(summarizeRuntimeTool)
+    const latestTool = toolParts.length > 0 ? summarizeRuntimeTool(toolParts[toolParts.length - 1]!) : undefined
+    const errorMessage = normalizePromptErrorMessage(input.error)
+
+    input.turn.emit("turn.error.context", {
+        phase: inferFailurePhase(input.parts),
+        messageID: input.assistant?.id,
+        agent: input.assistant?.agent,
+        model: input.assistant
+            ? {
+                providerID: input.assistant.providerID,
+                modelID: input.assistant.modelID,
+            }
+            : undefined,
+        error: {
+            name: input.error instanceof Error ? input.error.name : undefined,
+            message: errorMessage,
+            retryable: Boolean((input.error as { isRetryable?: unknown } | null | undefined)?.isRetryable === true),
+        },
+        activeTools,
+        latestTool,
+    })
+}
+
 export function cancel(sessionID: string) {
     // 主动中断某个正在运行的 loop，并从运行态注册表中移除。
     return RunningState.cancel(sessionID);
@@ -217,7 +294,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             }
 
             const agent = (await Agent.get(lastUser.agent)) ?? Agent.planAgent;
-            const maxLoopIterations = Math.min(agent.steps ?? DEFAULT_PROMPT_LOOP_LIMIT, DEFAULT_PROMPT_LOOP_LIMIT);
+            const maxLoopIterations = resolvePromptLoopLimit(agent);
             iteration += 1;
             if (iteration > maxLoopIterations) {
                 log.error("prompt loop exceeded maximum iterations", {
@@ -227,7 +304,8 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     maxLoopIterations,
                 });
                 throw new Error(
-                    `Prompt loop exceeded ${maxLoopIterations} iterations without reaching a final response.`,
+                    `Prompt loop exceeded ${maxLoopIterations} iterations without reaching a final response. ` +
+                    `If this task legitimately needs more tool steps, increase FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT.`,
                 );
             }
 
@@ -431,6 +509,12 @@ export const prompt = fn(PromptInput, async (input) => {
             model: userMessage.messageinfo.model,
         })
 
+        turn.emit("turn.state.changed", {
+            phase: "preparing",
+            reason: "User turn recorded and prompt loop is preparing the next model call.",
+            messageID: userMessage.messageinfo.id,
+        })
+
         turn.emit("message.recorded", {
             message: userMessage.messageinfo,
         })
@@ -469,6 +553,12 @@ export const prompt = fn(PromptInput, async (input) => {
             })
         })
 
+        turn.emit("turn.state.changed", {
+            phase: result.status === "blocked" ? "blocked" : "completed",
+            reason: result.finishReason,
+            messageID: result.latest.info.id,
+        })
+
         turn.emit("turn.completed", {
             status: result.status,
             finishReason: result.finishReason,
@@ -496,8 +586,19 @@ export const prompt = fn(PromptInput, async (input) => {
         })
 
         if (turn) {
+            emitTurnFailureContext({
+                turn,
+                error,
+                assistant: latestAssistant?.info.role === "assistant" ? latestAssistant.info : undefined,
+                parts: latestAssistant?.parts ?? [],
+            })
+            turn.emit("turn.state.changed", {
+                phase: "failed",
+                reason: normalizePromptErrorMessage(error),
+                messageID: latestAssistant?.info.id,
+            })
             turn.emit("turn.failed", {
-                error: error instanceof Error ? error.message : String(error),
+                error: normalizePromptErrorMessage(error),
                 message: latestAssistant?.info,
                 parts: latestAssistant?.parts,
             })
@@ -550,6 +651,12 @@ export const resume = fn(ResumeInput, async (input) => {
             resume: true,
         })
 
+        turn.emit("turn.state.changed", {
+            phase: "preparing",
+            reason: "Resume requested and the prompt loop is preparing the next model call.",
+            messageID: latestUser?.message.id,
+        })
+
         const result = await runLoop({
             sessionID: input.sessionID,
             abort: controller.signal,
@@ -568,6 +675,12 @@ export const resume = fn(ResumeInput, async (input) => {
                 sessionID: input.sessionID,
                 error: error instanceof Error ? error.message : String(error),
             })
+        })
+
+        turn.emit("turn.state.changed", {
+            phase: result.status === "blocked" ? "blocked" : "completed",
+            reason: result.finishReason,
+            messageID: result.latest.info.id,
         })
 
         turn.emit("turn.completed", {
@@ -597,8 +710,19 @@ export const resume = fn(ResumeInput, async (input) => {
         })
 
         if (turn) {
+            emitTurnFailureContext({
+                turn,
+                error,
+                assistant: latestAssistant?.info.role === "assistant" ? latestAssistant.info : undefined,
+                parts: latestAssistant?.parts ?? [],
+            })
+            turn.emit("turn.state.changed", {
+                phase: "failed",
+                reason: normalizePromptErrorMessage(error),
+                messageID: latestAssistant?.info.id,
+            })
             turn.emit("turn.failed", {
-                error: error instanceof Error ? error.message : String(error),
+                error: normalizePromptErrorMessage(error),
                 message: latestAssistant?.info,
                 parts: latestAssistant?.parts,
             })
@@ -682,6 +806,17 @@ function findOutstandingToolAfterUser(
             };
         }
     }
+}
+
+function resolvePromptLoopLimit(agent: Agent.AgentInfo) {
+    const requestedLimit =
+        agent.steps === undefined || !Number.isFinite(agent.steps)
+            ? DEFAULT_PROMPT_LOOP_LIMIT
+            : agent.steps
+
+    return HARD_PROMPT_LOOP_LIMIT
+        ? Math.min(requestedLimit, HARD_PROMPT_LOOP_LIMIT)
+        : requestedLimit
 }
 
 function isFinalFinishReason(finishReason?: string) {

@@ -159,6 +159,188 @@ export interface AgentSessionDiffSummary {
   diffs: AgentSessionDiffFile[]
 }
 
+export interface AgentSessionRuntimeEventSummary {
+  eventID: string
+  type: string
+  sessionID: string
+  turnID: string
+  seq: number
+  timestamp: number
+  cursor: string
+  title: string
+  detail?: string
+  tone: "info" | "success" | "warning" | "error"
+  summary?: Record<string, unknown>
+}
+
+export interface AgentSessionRuntimeToolSummary {
+  callID: string
+  tool: string
+  title?: string
+  status: string
+  startedAt?: number
+  endedAt?: number
+  durationMs?: number
+  approvalID?: string
+  inputPreview?: string
+  outputPreview?: string
+  error?: string
+}
+
+export interface AgentSessionRuntimeLlmCallSummary {
+  id: string
+  messageID: string
+  providerID: string
+  modelID: string
+  agent?: string
+  iteration?: number
+  status: "running" | "completed" | "failed"
+  startedAt: number
+  endedAt?: number
+  durationMs?: number
+  messageCount: number
+  toolCount?: number
+  hasAttachments?: boolean
+  finishReason?: string
+  usage?: {
+    inputTokens?: number
+    outputTokens?: number
+    reasoningTokens?: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+  }
+  error?: string
+  retryable?: boolean
+}
+
+export interface AgentSessionRuntimeErrorContext {
+  phase?:
+    | "preparing"
+    | "waiting_llm"
+    | "reasoning"
+    | "executing_tool"
+    | "waiting_approval"
+    | "responding"
+    | "retrying"
+    | "blocked"
+    | "completed"
+    | "failed"
+  messageID?: string
+  agent?: string
+  model?: string
+  iteration?: number
+  error: {
+    name?: string
+    message: string
+    code?: string
+    retryable?: boolean
+  }
+  activeTools: Array<{
+    callID: string
+    tool: string
+    status: string
+  }>
+  latestTool?: {
+    callID: string
+    tool: string
+    status: string
+  }
+}
+
+export interface AgentSessionRuntimeTurnSummary {
+  turnID: string
+  startedAt?: number
+  endedAt?: number
+  durationMs?: number
+  lastEventAt?: number
+  status: "running" | "completed" | "blocked" | "stopped" | "failed"
+  phase?:
+    | "preparing"
+    | "waiting_llm"
+    | "reasoning"
+    | "executing_tool"
+    | "waiting_approval"
+    | "responding"
+    | "retrying"
+    | "blocked"
+    | "completed"
+    | "failed"
+  phaseReason?: string
+  phaseUpdatedAt?: number
+  userMessageID?: string
+  agent?: string
+  model?: string
+  resume: boolean
+  finishReason?: string
+  message?: {
+    messageID?: string
+    role?: string
+    created?: number
+    completed?: number
+    finishReason?: string
+    providerID?: string
+    modelID?: string
+    agent?: string
+    error?: string
+  } | null
+  llmCalls: AgentSessionRuntimeLlmCallSummary[]
+  tools: AgentSessionRuntimeToolSummary[]
+  error?: {
+    message: string
+    messageID?: string
+    providerID?: string
+    modelID?: string
+    agent?: string
+  } | null
+  errorContext?: AgentSessionRuntimeErrorContext | null
+  recentEvents: AgentSessionRuntimeEventSummary[]
+}
+
+export interface AgentSessionRuntimeDebugSnapshot {
+  generatedAt: number
+  logging: Record<string, unknown>
+  session: {
+    id: string
+    projectID?: string
+    directory?: string
+    title?: string
+    created?: number
+    updated?: number
+    missing: boolean
+  }
+  status: {
+    type: "busy" | "idle"
+    phase?:
+      | "preparing"
+      | "waiting_llm"
+      | "reasoning"
+      | "executing_tool"
+      | "waiting_approval"
+      | "responding"
+      | "retrying"
+      | "blocked"
+      | "completed"
+      | "failed"
+  }
+  running: {
+    sessionID: string
+    startedAt: number | null
+    activeForMs: number
+    reason?: string
+  }
+  activeTurnID: string | null
+  latestTurn: AgentSessionRuntimeTurnSummary | null
+  turns: AgentSessionRuntimeTurnSummary[]
+  recentEvents: AgentSessionRuntimeEventSummary[]
+  diagnostics: {
+    blockedOnApproval: boolean
+    activeToolCount: number
+    failedToolCount: number
+    llmFailureCount: number
+    lastErrorMessage?: string
+  }
+}
+
 export type {
   AgentPermissionDecision,
   AgentPermissionPromptSnapshot,

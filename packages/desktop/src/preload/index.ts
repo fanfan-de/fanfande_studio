@@ -4,6 +4,7 @@ import type {
   PermissionResolveInput,
   PermissionResolveResult,
 } from "../shared/permission"
+import type { AgentSessionRuntimeDebugSnapshot } from "../main/types"
 
 type MenuKey = "file" | "edit" | "view" | "window" | "help"
 type WindowAction = "minimize" | "toggle-maximize" | "close"
@@ -460,6 +461,8 @@ try {
           patch?: string
         }>
       }>,
+    getSessionRuntimeDebug: (input: { sessionID: string; limit?: number; turns?: number }) =>
+      ipcRenderer.invoke("desktop:get-session-runtime-debug", input) as Promise<AgentSessionRuntimeDebugSnapshot>,
     getSessionPermissionRequests: (input: { sessionID: string }) =>
       ipcRenderer.invoke("desktop:get-session-permission-requests", input) as Promise<PermissionRequestPrompt[]>,
     respondPermissionRequest: (input: PermissionResolveInput) =>

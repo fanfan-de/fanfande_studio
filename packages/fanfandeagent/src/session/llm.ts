@@ -33,6 +33,8 @@ import * as db from "#database/Sqlite.ts"
 
 
 const log = Log.create({ service: "llm" })
+const DEFAULT_LLM_TOTAL_TIMEOUT_MS = 15 * 60 * 1000
+const DEFAULT_LLM_STEP_TIMEOUT_MS = 10 * 60 * 1000
 
 //export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
 
@@ -180,6 +182,11 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   // 准备工具集，并解析最终使用的语言模型。
   const tools: ToolSet = input.tools ?? {}
   const model = await resolveLanguageModel(input.model)
+  const totalTimeoutMs =
+    Flag.FanFande_EXPERIMENTAL_LLM_TOTAL_TIMEOUT_MS ?? DEFAULT_LLM_TOTAL_TIMEOUT_MS
+  const configuredStepTimeoutMs =
+    Flag.FanFande_EXPERIMENTAL_LLM_STEP_TIMEOUT_MS ?? DEFAULT_LLM_STEP_TIMEOUT_MS
+  const stepTimeoutMs = Math.min(configuredStepTimeoutMs, totalTimeoutMs)
   l.info("language model resolved", {
     messageSummary: summarizeModelMessages(input.messages),
     capabilities: {
@@ -187,6 +194,10 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
       imageInput: input.model.capabilities.input.image,
       pdfInput: input.model.capabilities.input.pdf,
       toolcall: input.model.capabilities.toolcall,
+    },
+    timeouts: {
+      totalMs: totalTimeoutMs,
+      stepMs: stepTimeoutMs,
     },
   })
 
@@ -226,7 +237,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
       //console.log("流式请求中止：streamText.onAbort")
     },
     // ------- 基础生成参数 ----------------
-    timeout: { totalMs: 60000, stepMs: 10000 },// 总超时与单步超时
+    timeout: { totalMs: totalTimeoutMs, stepMs: stepTimeoutMs },// 总超时与单步超时
     abortSignal: input.abort,// 取消信号
     maxRetries: input.retries ?? 0,// 最大重试次数
     //headers:       //Additional HTTP headers to be sent with the request. Only applicable for HTTP-based providers.

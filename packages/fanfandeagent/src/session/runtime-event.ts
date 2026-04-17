@@ -116,6 +116,79 @@ const RetryScheduledPayload = z.object({
   reason: z.string().optional(),
 })
 
+export const TurnRuntimePhase = z.enum([
+  "preparing",
+  "waiting_llm",
+  "reasoning",
+  "executing_tool",
+  "waiting_approval",
+  "responding",
+  "retrying",
+  "blocked",
+  "completed",
+  "failed",
+])
+
+const TurnStateChangedPayload = z.object({
+  phase: TurnRuntimePhase,
+  reason: z.string().optional(),
+  messageID: z.string().optional(),
+  toolCallID: z.string().optional(),
+  toolName: z.string().optional(),
+  iteration: z.number().int().positive().optional(),
+})
+
+const LlmUsagePayload = z.object({
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+  reasoningTokens: z.number().int().nonnegative().optional(),
+  cacheReadTokens: z.number().int().nonnegative().optional(),
+  cacheWriteTokens: z.number().int().nonnegative().optional(),
+})
+
+const LlmCallStartedPayload = z.object({
+  messageID: z.string(),
+  providerID: z.string(),
+  modelID: z.string(),
+  agent: z.string().optional(),
+  iteration: z.number().int().positive().optional(),
+  messageCount: z.number().int().nonnegative(),
+  toolCount: z.number().int().nonnegative().optional(),
+  hasAttachments: z.boolean().optional(),
+})
+
+const LlmCallCompletedPayload = LlmCallStartedPayload.extend({
+  finishReason: z.string().optional(),
+  usage: LlmUsagePayload.optional(),
+})
+
+const LlmCallFailedPayload = LlmCallStartedPayload.extend({
+  error: z.string(),
+  retryable: z.boolean().optional(),
+})
+
+const ErrorContextToolSummary = z.object({
+  callID: z.string(),
+  tool: z.string(),
+  status: z.string(),
+})
+
+const TurnErrorContextPayload = z.object({
+  phase: TurnRuntimePhase.optional(),
+  messageID: z.string().optional(),
+  agent: z.string().optional(),
+  model: ModelRef.optional(),
+  iteration: z.number().int().positive().optional(),
+  error: z.object({
+    name: z.string().optional(),
+    message: z.string(),
+    code: z.string().optional(),
+    retryable: z.boolean().optional(),
+  }),
+  activeTools: ErrorContextToolSummary.array().optional(),
+  latestTool: ErrorContextToolSummary.optional(),
+})
+
 export const TurnStartedEvent = RuntimeEventBase.extend({
   type: z.literal("turn.started"),
   payload: TurnStartedPayload,
@@ -231,15 +304,45 @@ export const RetryScheduledEvent = RuntimeEventBase.extend({
   payload: RetryScheduledPayload,
 })
 
+export const TurnStateChangedEvent = RuntimeEventBase.extend({
+  type: z.literal("turn.state.changed"),
+  payload: TurnStateChangedPayload,
+})
+
+export const LlmCallStartedEvent = RuntimeEventBase.extend({
+  type: z.literal("llm.call.started"),
+  payload: LlmCallStartedPayload,
+})
+
+export const LlmCallCompletedEvent = RuntimeEventBase.extend({
+  type: z.literal("llm.call.completed"),
+  payload: LlmCallCompletedPayload,
+})
+
+export const LlmCallFailedEvent = RuntimeEventBase.extend({
+  type: z.literal("llm.call.failed"),
+  payload: LlmCallFailedPayload,
+})
+
+export const TurnErrorContextEvent = RuntimeEventBase.extend({
+  type: z.literal("turn.error.context"),
+  payload: TurnErrorContextPayload,
+})
+
 export const RuntimeEvent = z.discriminatedUnion("type", [
   TurnStartedEvent,
+  TurnStateChangedEvent,
   MessageRecordedEvent,
   PartRecordedEvent,
   PartRemovedEvent,
   PermissionRequestedEvent,
   PermissionResolvedEvent,
+  LlmCallStartedEvent,
+  LlmCallCompletedEvent,
+  LlmCallFailedEvent,
   TurnCompletedEvent,
   TurnFailedEvent,
+  TurnErrorContextEvent,
   TextPartStartedEvent,
   TextPartDeltaEvent,
   TextPartCompletedEvent,
@@ -260,16 +363,22 @@ export const RuntimeEvent = z.discriminatedUnion("type", [
 export type RuntimeEvent = z.infer<typeof RuntimeEvent>
 export type RuntimeEventType = RuntimeEvent["type"]
 export type RuntimeEventCursor = z.infer<typeof RuntimeEventCursor>
+export type TurnRuntimePhase = z.infer<typeof TurnRuntimePhase>
 
 export type RuntimeEventPayloadByType = {
   "turn.started": z.infer<typeof TurnStartedPayload>
+  "turn.state.changed": z.infer<typeof TurnStateChangedPayload>
   "message.recorded": z.infer<typeof MessageRecordedPayload>
   "part.recorded": z.infer<typeof PartRecordedPayload>
   "part.removed": z.infer<typeof PartRemovedPayload>
   "permission.requested": z.infer<typeof PermissionRequestedPayload>
   "permission.resolved": z.infer<typeof PermissionResolvedPayload>
+  "llm.call.started": z.infer<typeof LlmCallStartedPayload>
+  "llm.call.completed": z.infer<typeof LlmCallCompletedPayload>
+  "llm.call.failed": z.infer<typeof LlmCallFailedPayload>
   "turn.completed": z.infer<typeof TurnCompletedPayload>
   "turn.failed": z.infer<typeof TurnFailedPayload>
+  "turn.error.context": z.infer<typeof TurnErrorContextPayload>
   "text.part.started": z.infer<typeof TextPartStartedPayload>
   "text.part.delta": z.infer<typeof TextPartDeltaPayload>
   "text.part.completed": z.infer<typeof TextPartCompletedPayload>

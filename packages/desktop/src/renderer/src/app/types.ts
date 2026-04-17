@@ -23,7 +23,7 @@ export type {
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project" | "sort" | "new"
 export type LeftSidebarView = "workspace" | "skills"
-export type RightSidebarView = "changes"
+export type RightSidebarView = "changes" | "runtime"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
 
@@ -158,6 +158,179 @@ export interface SessionDiffState {
   errorMessage: string | null
   updatedAt: number | null
   isStale: boolean
+}
+
+export type RuntimeDebugLoadStatus = "idle" | "loading" | "refreshing" | "ready" | "error"
+
+export interface SessionRuntimeDebugState {
+  status: RuntimeDebugLoadStatus
+  errorMessage: string | null
+  updatedAt: number | null
+  isStale: boolean
+}
+
+export type RuntimePhase =
+  | "preparing"
+  | "waiting_llm"
+  | "reasoning"
+  | "executing_tool"
+  | "waiting_approval"
+  | "responding"
+  | "retrying"
+  | "blocked"
+  | "completed"
+  | "failed"
+
+export interface SessionRuntimeEventSummary {
+  eventID: string
+  type: string
+  sessionID: string
+  turnID: string
+  seq: number
+  timestamp: number
+  cursor: string
+  title: string
+  detail?: string
+  tone: "info" | "success" | "warning" | "error"
+  summary?: Record<string, unknown>
+}
+
+export interface SessionRuntimeToolSummary {
+  callID: string
+  tool: string
+  title?: string
+  status: string
+  startedAt?: number
+  endedAt?: number
+  durationMs?: number
+  approvalID?: string
+  inputPreview?: string
+  outputPreview?: string
+  error?: string
+}
+
+export interface SessionRuntimeLlmCallSummary {
+  id: string
+  messageID: string
+  providerID: string
+  modelID: string
+  agent?: string
+  iteration?: number
+  status: "running" | "completed" | "failed"
+  startedAt: number
+  endedAt?: number
+  durationMs?: number
+  messageCount: number
+  toolCount?: number
+  hasAttachments?: boolean
+  finishReason?: string
+  usage?: {
+    inputTokens?: number
+    outputTokens?: number
+    reasoningTokens?: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+  }
+  error?: string
+  retryable?: boolean
+}
+
+export interface SessionRuntimeErrorContext {
+  phase?: RuntimePhase
+  messageID?: string
+  agent?: string
+  model?: string
+  iteration?: number
+  error: {
+    name?: string
+    message: string
+    code?: string
+    retryable?: boolean
+  }
+  activeTools: Array<{
+    callID: string
+    tool: string
+    status: string
+  }>
+  latestTool?: {
+    callID: string
+    tool: string
+    status: string
+  }
+}
+
+export interface SessionRuntimeTurnSummary {
+  turnID: string
+  startedAt?: number
+  endedAt?: number
+  durationMs?: number
+  lastEventAt?: number
+  status: "running" | "completed" | "blocked" | "stopped" | "failed"
+  phase?: RuntimePhase
+  phaseReason?: string
+  phaseUpdatedAt?: number
+  userMessageID?: string
+  agent?: string
+  model?: string
+  resume: boolean
+  finishReason?: string
+  message?: {
+    messageID?: string
+    role?: string
+    created?: number
+    completed?: number
+    finishReason?: string
+    providerID?: string
+    modelID?: string
+    agent?: string
+    error?: string
+  } | null
+  llmCalls: SessionRuntimeLlmCallSummary[]
+  tools: SessionRuntimeToolSummary[]
+  error?: {
+    message: string
+    messageID?: string
+    providerID?: string
+    modelID?: string
+    agent?: string
+  } | null
+  errorContext?: SessionRuntimeErrorContext | null
+  recentEvents: SessionRuntimeEventSummary[]
+}
+
+export interface SessionRuntimeDebugSnapshot {
+  generatedAt: number
+  logging: Record<string, unknown>
+  session: {
+    id: string
+    projectID?: string
+    directory?: string
+    title?: string
+    created?: number
+    updated?: number
+    missing: boolean
+  }
+  status: {
+    type: "busy" | "idle"
+    phase?: RuntimePhase
+  }
+  running: {
+    sessionID: string
+    startedAt: number | null
+    activeForMs: number
+    reason?: string
+  }
+  activeTurnID: string | null
+  latestTurn: SessionRuntimeTurnSummary | null
+  turns: SessionRuntimeTurnSummary[]
+  recentEvents: SessionRuntimeEventSummary[]
+  diagnostics: {
+    blockedOnApproval: boolean
+    activeToolCount: number
+    failedToolCount: number
+    llmFailureCount: number
+    lastErrorMessage?: string
+  }
 }
 
 export interface SessionContextUsage {

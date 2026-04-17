@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PermissionRequestPrompt, PermissionResolveResult } from "../../shared/permission"
-import type { LoadedFolderWorkspace } from "./app/types"
+import type { LoadedFolderWorkspace, SessionRuntimeDebugSnapshot } from "./app/types"
 import { App } from "./App"
 
 const styles = readFileSync(resolve(process.cwd(), "src/renderer/src/styles.css"), "utf8")
@@ -156,6 +156,131 @@ function createPermissionResolveResult(overrides: PermissionRequestPromptOverrid
   }
 }
 
+function createSessionRuntimeDebugSnapshot(): SessionRuntimeDebugSnapshot {
+  return {
+    generatedAt: 1,
+    logging: {},
+    session: {
+      id: "session-chat-1",
+      directory: "C:\\Projects\\Project 2",
+      title: "Chat 1",
+      created: 1,
+      updated: 1,
+      missing: false,
+    },
+    status: {
+      type: "busy",
+      phase: "executing_tool",
+    },
+    running: {
+      sessionID: "session-chat-1",
+      startedAt: 1,
+      activeForMs: 4200,
+      reason: "streaming",
+    },
+    activeTurnID: "turn-1",
+    latestTurn: {
+      turnID: "turn-1",
+      startedAt: 1,
+      lastEventAt: 4200,
+      durationMs: 4200,
+      status: "running",
+      phase: "executing_tool",
+      phaseUpdatedAt: 4000,
+      agent: "plan",
+      model: "openai/gpt-5.4",
+      resume: false,
+      llmCalls: [
+        {
+          id: "llm-1",
+          messageID: "msg-1",
+          providerID: "openai",
+          modelID: "gpt-5.4",
+          status: "completed",
+          startedAt: 1,
+          endedAt: 1200,
+          durationMs: 1199,
+          messageCount: 3,
+          finishReason: "tool-calls",
+        },
+      ],
+      tools: [
+        {
+          callID: "tool-1",
+          tool: "shell",
+          title: "Inspect repo",
+          status: "running",
+          startedAt: 1300,
+          durationMs: 2900,
+          inputPreview: "Get-ChildItem",
+        },
+      ],
+      error: null,
+      errorContext: null,
+      message: null,
+      recentEvents: [
+        {
+          eventID: "evt-1",
+          type: "llm.call.completed",
+          sessionID: "session-chat-1",
+          turnID: "turn-1",
+          seq: 1,
+          timestamp: 1200,
+          cursor: "1:1200",
+          title: "LLM request completed",
+          detail: "openai/gpt-5.4",
+          tone: "success",
+        },
+        {
+          eventID: "evt-2",
+          type: "tool.call.started",
+          sessionID: "session-chat-1",
+          turnID: "turn-1",
+          seq: 2,
+          timestamp: 1300,
+          cursor: "2:1300",
+          title: "Tool started: shell",
+          detail: "Inspect repo",
+          tone: "info",
+        },
+      ],
+    },
+    turns: [],
+    recentEvents: [
+      {
+        eventID: "evt-1",
+        type: "llm.call.completed",
+        sessionID: "session-chat-1",
+        turnID: "turn-1",
+        seq: 1,
+        timestamp: 1200,
+        cursor: "1:1200",
+        title: "LLM request completed",
+        detail: "openai/gpt-5.4",
+        tone: "success",
+      },
+      {
+        eventID: "evt-2",
+        type: "tool.call.started",
+        sessionID: "session-chat-1",
+        turnID: "turn-1",
+        seq: 2,
+        timestamp: 1300,
+        cursor: "2:1300",
+        title: "Tool started: shell",
+        detail: "Inspect repo",
+        tone: "info",
+      },
+    ],
+    diagnostics: {
+      blockedOnApproval: false,
+      activeToolCount: 1,
+      failedToolCount: 0,
+      llmFailureCount: 0,
+    },
+  }
+}
+
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -296,6 +421,7 @@ describe("App", () => {
       getSessionDiff: vi.fn().mockResolvedValue({
         diffs: [],
       }),
+      getSessionRuntimeDebug: vi.fn().mockResolvedValue(createSessionRuntimeDebugSnapshot()),
       getGlobalSkills: vi.fn().mockResolvedValue([]),
       getProjectSkills: vi.fn().mockResolvedValue([]),
       getProjectSkillSelection: vi.fn().mockResolvedValue({
@@ -477,6 +603,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Artifacts" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Runtime" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Console" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument()
     expect(inspector).toBeInTheDocument()
@@ -485,7 +612,7 @@ describe("App", () => {
     expect(within(inspector).getByText("Current session snapshot")).toBeInTheDocument()
     expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Workspace")).not.toBeInTheDocument()
-    expect(within(inspector).queryByText("Runtime")).not.toBeInTheDocument()
+    expect(within(inspector).queryByText("Current execution state")).not.toBeInTheDocument()
     await waitFor(() => {
       expect(container.querySelector(".canvas-header")).not.toBeInTheDocument()
       expect(container.querySelector(".signal-row")).not.toBeInTheDocument()
@@ -495,6 +622,49 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^Select model:/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
+  })
+
+  it("shows the runtime inspector when the runtime tab is selected", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "workspace-runtime",
+        directory: "C:\\Projects\\Project 2\\app",
+        name: "app",
+        created: 1,
+        updated: 1,
+        project: {
+          id: "project-2",
+          name: "Project 2",
+          worktree: "C:\\Projects\\Project 2",
+        },
+        sessions: [
+          {
+            id: "session-chat-1",
+            projectID: "project-2",
+            directory: "C:\\Projects\\Project 2\\app",
+            title: "Chat 1",
+            created: 1,
+            updated: 1,
+          },
+        ],
+      },
+    ])
+    render(<App />)
+    await waitFor(() => {
+      expect(window.desktop?.getSessionRuntimeDebug).toHaveBeenCalled()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Runtime" }))
+
+    expect(await screen.findByText("Agent Runtime")).toBeInTheDocument()
+    expect(screen.getByText("Current execution state")).toBeInTheDocument()
+    expect(screen.getByText("Busy")).toBeInTheDocument()
+    expect(screen.getAllByText("Running Tool").length).toBeGreaterThan(0)
+    expect(screen.getByText("Latest tool calls")).toBeInTheDocument()
+    expect(screen.getAllByText("Inspect repo").length).toBeGreaterThan(0)
+    expect(screen.getByText("Execution timeline")).toBeInTheDocument()
+    expect(screen.getByText("LLM request completed")).toBeInTheDocument()
+    expect(window.desktop?.getSessionRuntimeDebug).toHaveBeenCalled()
   })
 
   it("opens the external editor menu from the session canvas top menu", async () => {
@@ -6951,6 +7121,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.pane-tab-bar\.window-drag-region\s+\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu,[\s\S]*?\.pane-tab-bar\s+\.canvas-region-top-menu-add-button\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.right-sidebar-view-host\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;[^}]*padding-right:\s*2px;/s)
     expect(styles).toMatch(/\.pane-tab-merge-preview\s*\{[^}]*width:\s*12px;[^}]*height:\s*28px;[^}]*border-radius:\s*8px;[^}]*background:\s*rgba\(221,\s*236,\s*245,\s*0\.96\);[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.pane-drop-targets\s*\{[^}]*grid-template-columns:\s*144px minmax\(0,\s*1fr\) 144px;[^}]*grid-template-rows:\s*10px minmax\(0,\s*1fr\) 108px;[^}]*grid-template-areas:\s*[\s\S]*"\.\s+top\s+\."[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
     expect(styles).toMatch(/\.pane-drop-targets\.is-top-row\s*\{[^}]*grid-template-areas:\s*[\s\S]*"top top top"[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)

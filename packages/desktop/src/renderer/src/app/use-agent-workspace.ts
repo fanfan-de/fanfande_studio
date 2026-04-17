@@ -38,6 +38,8 @@ import type {
   SessionContextUsage,
   SessionDiffState,
   SessionDiffSummary,
+  SessionRuntimeDebugSnapshot,
+  SessionRuntimeDebugState,
   SessionSummary,
   SkillInfo,
   SidebarActionKey,
@@ -102,6 +104,12 @@ const IMAGE_ATTACHMENT_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"
 const GIT_REFRESH_SUPPRESSION_MS = 1000
 const WORKSPACE_RELOAD_SUPPRESSION_MS = 1500
 const DEFAULT_SESSION_DIFF_STATE: SessionDiffState = {
+  status: "idle",
+  errorMessage: null,
+  updatedAt: null,
+  isStale: false,
+}
+const DEFAULT_SESSION_RUNTIME_DEBUG_STATE: SessionRuntimeDebugState = {
   status: "idle",
   errorMessage: null,
   updatedAt: null,
@@ -595,6 +603,8 @@ export function useAgentWorkspace({
   const pendingStreamsRef = useRef<Record<string, PendingAgentStream>>({})
   const historyRequestRef = useRef(0)
   const sessionDiffRequestRef = useRef<Record<string, number>>({})
+  const runtimeDebugRequestRef = useRef<Record<string, number>>({})
+  const runtimeDebugRefreshTimerRef = useRef<Record<string, number>>({})
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
   const workspaceRefreshRequestRef = useRef<Record<string, number>>({})
   const conversationVersionRef = useRef<Record<string, number>>({})
@@ -650,6 +660,12 @@ export function useAgentWorkspace({
   >({})
   const [sessionDiffBySession, setSessionDiffBySession] = useState<Record<string, SessionDiffSummary>>({})
   const [sessionDiffStateBySession, setSessionDiffStateBySession] = useState<Record<string, SessionDiffState>>({})
+  const [sessionRuntimeDebugBySession, setSessionRuntimeDebugBySession] = useState<
+    Record<string, SessionRuntimeDebugSnapshot>
+  >({})
+  const [sessionRuntimeDebugStateBySession, setSessionRuntimeDebugStateBySession] = useState<
+    Record<string, SessionRuntimeDebugState>
+  >({})
   const [selectedDiffFileBySession, setSelectedDiffFileBySession] = useState<Record<string, string | null>>({})
   const [contextUsageBySession, setContextUsageBySession] = useState<Record<string, SessionContextUsage>>({})
   const [permissionRequestActionRequestID, setPermissionRequestActionRequestID] = useState<string | null>(null)
@@ -733,6 +749,10 @@ export function useAgentWorkspace({
   const activeTurns = activeSession ? conversations[activeSession.id] ?? [] : []
   const activeSessionDiff = activeSession ? sessionDiffBySession[activeSession.id] ?? null : null
   const activeSessionDiffState = activeSession ? sessionDiffStateBySession[activeSession.id] ?? DEFAULT_SESSION_DIFF_STATE : DEFAULT_SESSION_DIFF_STATE
+  const activeSessionRuntimeDebug = activeSession ? sessionRuntimeDebugBySession[activeSession.id] ?? null : null
+  const activeSessionRuntimeDebugState = activeSession
+    ? sessionRuntimeDebugStateBySession[activeSession.id] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
+    : DEFAULT_SESSION_RUNTIME_DEBUG_STATE
   const activeSessionDirectory = activeSession
     ? sessionDirectoryBySession[activeSession.id] ?? activeWorkspace?.directory ?? null
     : null
@@ -882,6 +902,27 @@ export function useAgentWorkspace({
         [sessionID]: {
           ...current,
           status: hasExistingSummary ? "refreshing" : "loading",
+          errorMessage: null,
+        },
+      }
+    })
+  }
+
+  function clearRuntimeDebugRefreshTimer(sessionID: string) {
+    const timerID = runtimeDebugRefreshTimerRef.current[sessionID]
+    if (timerID === undefined) return
+    window.clearTimeout(timerID)
+    delete runtimeDebugRefreshTimerRef.current[sessionID]
+  }
+
+  function setSessionRuntimeDebugRequestState(sessionID: string, hasExistingSnapshot: boolean) {
+    setSessionRuntimeDebugStateBySession((prev) => {
+      const current = prev[sessionID] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
+      return {
+        ...prev,
+        [sessionID]: {
+          ...current,
+          status: hasExistingSnapshot ? "refreshing" : "loading",
           errorMessage: null,
         },
       }
@@ -1066,6 +1107,11 @@ export function useAgentWorkspace({
       )
     })
 
+    scheduleRuntimeDebugRefresh(
+      target.sessionID,
+      target.backendSessionID ?? resolveBackendSessionID(target.sessionID),
+    )
+
     if (streamEvent.event === "done" || streamEvent.event === "error") {
       if (streamEvent.event === "done") {
         updateSessionContextUsage(target.sessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
@@ -1104,6 +1150,7 @@ export function useAgentWorkspace({
           updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
         }
         refreshWorkspaceForSession(uiSessionID)
+        scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)
         void reloadSessionHistoryForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
           console.error("[desktop] session stream history refresh failed:", error)
         })
@@ -1120,6 +1167,8 @@ export function useAgentWorkspace({
     startTransition(() => {
       updateAssistantConversationTurn(uiSessionID, assistantTurnID, (turn) => applyAgentStreamEventToTurn(turn, streamEvent))
     })
+
+    scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)
 
     if (streamEvent.event === "done" || streamEvent.event === "error") {
       if (streamEvent.event === "done") {
@@ -1199,6 +1248,80 @@ export function useAgentWorkspace({
       })
       console.error("[desktop] getSessionDiff failed:", error)
     }
+  }
+
+  async function loadSessionRuntimeDebugForSession(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+    options?: {
+      limit?: number
+      turns?: number
+    },
+  ) {
+    const getSessionRuntimeDebug = window.desktop?.getSessionRuntimeDebug
+    if (!getSessionRuntimeDebug) return
+
+    clearRuntimeDebugRefreshTimer(sessionID)
+
+    const requestID = (runtimeDebugRequestRef.current[sessionID] ?? 0) + 1
+    runtimeDebugRequestRef.current[sessionID] = requestID
+    const hasExistingSnapshot = Boolean(sessionRuntimeDebugBySession[sessionID])
+    setSessionRuntimeDebugRequestState(sessionID, hasExistingSnapshot)
+
+    try {
+      const nextRuntimeDebug = await getSessionRuntimeDebug({
+        sessionID: backendSessionID,
+        limit: options?.limit,
+        turns: options?.turns,
+      })
+      if (runtimeDebugRequestRef.current[sessionID] !== requestID) return
+
+      setSessionRuntimeDebugBySession((prev) => ({
+        ...prev,
+        [sessionID]: nextRuntimeDebug,
+      }))
+      setSessionRuntimeDebugStateBySession((prev) => ({
+        ...prev,
+        [sessionID]: {
+          status: "ready",
+          errorMessage: null,
+          updatedAt: Date.now(),
+          isStale: false,
+        },
+      }))
+    } catch (error) {
+      if (runtimeDebugRequestRef.current[sessionID] !== requestID) return
+      const message = error instanceof Error ? error.message : String(error)
+      setSessionRuntimeDebugStateBySession((prev) => {
+        const current = prev[sessionID] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
+        return {
+          ...prev,
+          [sessionID]: {
+            ...current,
+            status: "error",
+            errorMessage: message,
+            isStale: hasExistingSnapshot || current.isStale,
+          },
+        }
+      })
+      console.error("[desktop] getSessionRuntimeDebug failed:", error)
+    }
+  }
+
+  function scheduleRuntimeDebugRefresh(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+    delayMs = 160,
+  ) {
+    if (!window.desktop?.getSessionRuntimeDebug) return
+
+    clearRuntimeDebugRefreshTimer(sessionID)
+    runtimeDebugRefreshTimerRef.current[sessionID] = window.setTimeout(() => {
+      delete runtimeDebugRefreshTimerRef.current[sessionID]
+      void loadSessionRuntimeDebugForSession(sessionID, backendSessionID).catch((error) => {
+        console.error("[desktop] session runtime debug refresh failed:", error)
+      })
+    }, delayMs)
   }
 
   async function loadPendingPermissionRequestsForSession(
@@ -1505,8 +1628,22 @@ export function useAgentWorkspace({
   useEffect(() => {
     if (!canLoadSessionHistory || !activeSessionID) return
 
+    void loadSessionRuntimeDebugForSession(activeSessionID)
+  }, [activeSessionID, canLoadSessionHistory, agentSessions])
+
+  useEffect(() => {
+    if (!canLoadSessionHistory || !activeSessionID) return
+
     void loadPendingPermissionRequestsForSession(activeSessionID)
   }, [activeSessionID, canLoadSessionHistory, agentSessions])
+
+  useEffect(() => {
+    return () => {
+      for (const sessionID of Object.keys(runtimeDebugRefreshTimerRef.current)) {
+        clearRuntimeDebugRefreshTimer(sessionID)
+      }
+    }
+  }, [])
 
   async function refreshComposerModels() {
     const projectID = selectedProjectID
@@ -1808,6 +1945,22 @@ export function useAgentWorkspace({
       return next
     })
 
+    setSessionRuntimeDebugBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
+    setSessionRuntimeDebugStateBySession((prev) => {
+      const next = { ...prev }
+      for (const sessionID of sessionIDs) {
+        delete next[sessionID]
+      }
+      return next
+    })
+
     setSelectedDiffFileBySession((prev) => {
       const next = { ...prev }
       for (const sessionID of sessionIDs) {
@@ -1836,6 +1989,8 @@ export function useAgentWorkspace({
       delete conversationVersionRef.current[sessionID]
       delete permissionRequestsRequestRef.current[sessionID]
       delete sessionDiffRequestRef.current[sessionID]
+      delete runtimeDebugRequestRef.current[sessionID]
+      clearRuntimeDebugRefreshTimer(sessionID)
       delete seenStreamCursorsRef.current[sessionID]
       delete subscribedSessionStreamsRef.current[sessionID]
     }
@@ -2192,6 +2347,16 @@ export function useAgentWorkspace({
         delete next[session.id]
         return next
       })
+      setSessionRuntimeDebugBySession((prev) => {
+        const next = { ...prev }
+        delete next[session.id]
+        return next
+      })
+      setSessionRuntimeDebugStateBySession((prev) => {
+        const next = { ...prev }
+        delete next[session.id]
+        return next
+      })
       setSelectedDiffFileBySession((prev) => {
         const next = { ...prev }
         delete next[session.id]
@@ -2210,6 +2375,8 @@ export function useAgentWorkspace({
       delete conversationVersionRef.current[session.id]
       delete permissionRequestsRequestRef.current[session.id]
       delete sessionDiffRequestRef.current[session.id]
+      delete runtimeDebugRequestRef.current[session.id]
+      clearRuntimeDebugRefreshTimer(session.id)
       delete seenStreamCursorsRef.current[session.id]
       delete subscribedSessionStreamsRef.current[session.id]
       for (const [turnKey, target] of Object.entries(turnTargetsRef.current)) {
@@ -2663,6 +2830,9 @@ export function useAgentWorkspace({
       await loadSessionDiffForSession(input.sessionID, input.request.sessionID).catch((error) => {
         console.error("[desktop] permission diff refresh failed:", error)
       })
+      await loadSessionRuntimeDebugForSession(input.sessionID, input.request.sessionID).catch((error) => {
+        console.error("[desktop] permission runtime refresh failed:", error)
+      })
       await loadPendingPermissionRequestsForSession(input.sessionID, input.request.sessionID).catch((error) => {
         console.error("[desktop] permission request refresh failed:", error)
       })
@@ -2900,6 +3070,11 @@ export function useAgentWorkspace({
     await loadSessionDiffForSession(sessionID)
   }
 
+  async function handleActiveSessionRuntimeDebugRefresh(sessionID = activeSessionID) {
+    if (!sessionID) return
+    await loadSessionRuntimeDebugForSession(sessionID)
+  }
+
   const workbenchPaneStates = workbenchPanes.map((pane) => {
     const currentActiveTab = getPaneActiveTab(pane)
     const currentActiveTabKey = currentActiveTab ? getWorkbenchTabKey(currentActiveTab) : null
@@ -2962,6 +3137,10 @@ export function useAgentWorkspace({
       activeSessionDiffState: currentActiveSessionID
         ? sessionDiffStateBySession[currentActiveSessionID] ?? DEFAULT_SESSION_DIFF_STATE
         : DEFAULT_SESSION_DIFF_STATE,
+      activeSessionRuntimeDebug: currentActiveSessionID ? sessionRuntimeDebugBySession[currentActiveSessionID] ?? null : null,
+      activeSessionRuntimeDebugState: currentActiveSessionID
+        ? sessionRuntimeDebugStateBySession[currentActiveSessionID] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
+        : DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
       activeSessionDirectory: currentActiveSessionID
         ? sessionDirectoryBySession[currentActiveSessionID] ?? currentWorkspace?.directory ?? null
         : null,
@@ -3005,6 +3184,8 @@ export function useAgentWorkspace({
     activeSessionContextUsage,
     activeSessionDiff,
     activeSessionDiffState,
+    activeSessionRuntimeDebug,
+    activeSessionRuntimeDebugState,
     activePendingPermissionRequests,
     activeSessionSelectedDiffFile,
     activeTurns,
@@ -3053,6 +3234,7 @@ export function useAgentWorkspace({
     handlePickComposerAttachments,
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffRefresh,
+    handleActiveSessionRuntimeDebugRefresh,
     handleProjectCreateSession,
     handleProjectClick,
     handleProjectRemove,

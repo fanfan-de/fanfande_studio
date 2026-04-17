@@ -126,6 +126,42 @@ function applyUsageToAssistantMessage(
     }
 }
 
+function summarizeLlmUsage(usage: LanguageModelUsage | undefined) {
+    if (!usage) {
+        return undefined
+    }
+
+    return {
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        reasoningTokens:
+            usage.outputTokenDetails?.reasoningTokens ??
+            usage.reasoningTokens,
+        cacheReadTokens:
+            usage.inputTokenDetails?.cacheReadTokens ??
+            usage.cachedInputTokens,
+        cacheWriteTokens: usage.inputTokenDetails?.cacheWriteTokens,
+    }
+}
+
+function summarizeLlmCallInput(streamInput: LLM.StreamInput) {
+    let hasAttachments = false
+
+    for (const message of streamInput.messages) {
+        if (!Array.isArray(message.content)) continue
+        if (message.content.some((part) => part.type === "image" || part.type === "file")) {
+            hasAttachments = true
+            break
+        }
+    }
+
+    return {
+        messageCount: streamInput.messages.length,
+        toolCount: Object.keys(streamInput.tools ?? {}).filter((toolName) => toolName !== "invalid").length,
+        hasAttachments,
+    }
+}
+
 function toAttachmentPart(
     value: unknown,
     toolPart: Message.ToolPart,
@@ -195,6 +231,118 @@ function extractToolResultState(
     }
 }
 
+type FinalToolResultCandidate = {
+    toolCallId: string
+    toolName?: string
+    input?: Record<string, unknown>
+    output?: unknown
+    result?: unknown
+    title?: string
+    providerMetadata?: Record<string, unknown>
+    providerExecuted?: boolean
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function toToolResultCandidate(
+    value: unknown,
+    options?: {
+        unwrapOutput?: boolean
+    },
+): FinalToolResultCandidate | undefined {
+    if (!isRecord(value) || value.type !== "tool-result" || typeof value.toolCallId !== "string") {
+        return undefined
+    }
+
+    const output =
+        options?.unwrapOutput === true
+            ? unwrapFinalToolOutput(value.output)
+            : value.output
+
+    const input = isRecord(value.input) ? value.input : undefined
+    const providerMetadata = isRecord(value.providerMetadata) ? value.providerMetadata : undefined
+
+    return {
+        toolCallId: value.toolCallId,
+        toolName: typeof value.toolName === "string" ? value.toolName : undefined,
+        input,
+        output,
+        result: value.result,
+        title: typeof value.title === "string" ? value.title : undefined,
+        providerMetadata,
+        providerExecuted: value.providerExecuted === true ? true : undefined,
+    }
+}
+
+function unwrapFinalToolOutput(output: unknown): unknown {
+    if (!isRecord(output) || typeof output.type !== "string") {
+        return output
+    }
+
+    if (
+        output.type === "json" ||
+        output.type === "error-json" ||
+        output.type === "text" ||
+        output.type === "error-text"
+    ) {
+        return "value" in output ? output.value : output
+    }
+
+    if (output.type === "execution-denied") {
+        return {
+            reason: typeof output.reason === "string" ? output.reason : "Tool execution was denied.",
+        }
+    }
+
+    return output
+}
+
+function collectStepToolResultCandidates(steps: unknown): FinalToolResultCandidate[] {
+    if (!Array.isArray(steps)) {
+        return []
+    }
+
+    const results: FinalToolResultCandidate[] = []
+    for (const step of steps) {
+        if (!isRecord(step) || !Array.isArray(step.content)) {
+            continue
+        }
+
+        for (const item of step.content) {
+            const candidate = toToolResultCandidate(item)
+            if (candidate) {
+                results.push(candidate)
+            }
+        }
+    }
+
+    return results
+}
+
+function collectResponseToolResultCandidates(response: unknown): FinalToolResultCandidate[] {
+    if (!isRecord(response) || !Array.isArray(response.messages)) {
+        return []
+    }
+
+    const results: FinalToolResultCandidate[] = []
+    for (const message of response.messages) {
+        if (!isRecord(message) || !Array.isArray(message.content)) {
+            continue
+        }
+
+        for (const item of message.content) {
+            const candidate = toToolResultCandidate(item, { unwrapOutput: true })
+            if (candidate) {
+                results.push(candidate)
+            }
+        }
+    }
+
+    return results
+}
+
 /**
  * create a  processor锛坔andle single LLM prompt锛宯ot loop锛?
  * 涓嶄粎浠呮槸LLM绔殑stream杈撳嚭杩囩▼锛岃繕鍖呮嫭宸ュ叿鐨勬墽琛岃繃绋?
@@ -212,12 +360,37 @@ export function create(input: {
     let attempt = 0
     let needsCompaction = false
     const emitRuntimeEvent = input.turn?.emit.bind(input.turn)
+    let currentPhase: string | undefined
     const persistPart = async (part: Message.Part) => {
         if (emitRuntimeEvent) {
             return
         }
 
         await Session.updatePart(part)
+    }
+
+    const emitRuntimePhase = (
+        phase: "waiting_llm" | "reasoning" | "executing_tool" | "waiting_approval" | "responding" | "retrying",
+        payload?: {
+            reason?: string
+            toolCallID?: string
+            toolName?: string
+            iteration?: number
+        },
+    ) => {
+        if (!emitRuntimeEvent || currentPhase === phase) {
+            return
+        }
+
+        currentPhase = phase
+        emitRuntimeEvent("turn.state.changed", {
+            phase,
+            reason: payload?.reason,
+            messageID: input.Assistant.id,
+            toolCallID: payload?.toolCallID,
+            toolName: payload?.toolName,
+            iteration: payload?.iteration,
+        })
     }
 
     const result = {
@@ -278,8 +451,177 @@ export function create(input: {
                         part.state.status === "running",
                 )
 
-            while (true) {
+            const describeOpenToolCallFailure = (
+                activeToolCalls: Message.ToolPart[],
+                streamAbortReason?: string,
+            ) => {
+                if (!streamAbortReason) {
+                    return "Tool call did not complete before the model response finished."
+                }
+
+                const pending = activeToolCalls.find((part) => part.state.status === "pending")
+                const rawLength =
+                    pending?.state.status === "pending"
+                        ? pending.state.raw.length
+                        : undefined
+
+                const detail = rawLength && rawLength > 0
+                    ? ` Buffered tool input size: ${rawLength} characters.`
+                    : ""
+
+                return [
+                    `Model stream aborted before the tool call finished: ${streamAbortReason}`,
+                    detail.trim(),
+                    "Increase FanFande_EXPERIMENTAL_LLM_TOTAL_TIMEOUT_MS or FanFande_EXPERIMENTAL_LLM_STEP_TIMEOUT_MS if this tool needs more time to stream large arguments.",
+                ]
+                    .filter((item) => item.length > 0)
+                    .join(" ")
+            }
+
+            const reconcileOpenToolCalls = async (stream: LLM.StreamOutput) => {
+                const activeToolCalls = listActiveToolCalls()
+                if (activeToolCalls.length === 0) {
+                    return 0
+                }
+
+                const candidates = new Map<string, FinalToolResultCandidate>()
+                const remember = (candidate: FinalToolResultCandidate | undefined) => {
+                    if (!candidate) {
+                        return
+                    }
+
+                    candidates.set(candidate.toolCallId, candidate)
+                }
+
                 try {
+                    const settled = await Promise.allSettled([
+                        stream.toolResults,
+                        stream.steps,
+                        stream.response,
+                    ])
+
+                    const [toolResultsResult, stepsResult, responseResult] = settled
+
+                    if (toolResultsResult?.status === "fulfilled" && Array.isArray(toolResultsResult.value)) {
+                        for (const item of toolResultsResult.value) {
+                            remember(toToolResultCandidate(item))
+                        }
+                    }
+
+                    if (stepsResult?.status === "fulfilled") {
+                        for (const candidate of collectStepToolResultCandidates(stepsResult.value)) {
+                            remember(candidate)
+                        }
+                    }
+
+                    if (responseResult?.status === "fulfilled") {
+                        for (const candidate of collectResponseToolResultCandidates(responseResult.value)) {
+                            remember(candidate)
+                        }
+                    }
+
+                    let reconciled = 0
+                    for (const current of activeToolCalls) {
+                        const candidate = candidates.get(current.callID)
+                        if (!candidate) {
+                            continue
+                        }
+
+                        const rawToolOutput = candidate.output ?? candidate.result
+                        const fallbackTitle =
+                            candidate.title ??
+                            (current.state.status === "running"
+                                ? current.state.title
+                                : undefined)
+                        const fallbackMetadata =
+                            candidate.providerMetadata ??
+                            (
+                                current.state.status === "running"
+                                    ? current.state.metadata
+                                    : current.metadata
+                            ) ??
+                            {}
+                        const normalized = extractToolResultState(
+                            rawToolOutput,
+                            fallbackTitle,
+                            fallbackMetadata,
+                            current,
+                        )
+                        const match: Message.ToolPart = {
+                            ...current,
+                            tool: candidate.toolName ?? current.tool,
+                            providerExecuted:
+                                candidate.providerExecuted === true
+                                    ? true
+                                    : current.providerExecuted,
+                            state: {
+                                status: "completed",
+                                input: candidate.input ?? current.state.input,
+                                output: normalized.output,
+                                modelOutput: rawToolOutput,
+                                metadata: normalized.metadata,
+                                title: normalized.title,
+                                time: {
+                                    start:
+                                        current.state.status === "running"
+                                            ? current.state.time.start
+                                            : Date.now(),
+                                    end: Date.now(),
+                                },
+                                attachments: normalized.attachments,
+                            },
+                            metadata: candidate.providerMetadata ?? current.metadata,
+                        }
+
+                        toolcalls[current.callID] = match
+                        emitRuntimeEvent?.("tool.call.completed", {
+                            part: match,
+                        })
+                        await persistPart(match)
+                        reconciled += 1
+                    }
+
+                    if (reconciled > 0) {
+                        log.warn("reconciled tool results after the stream ended", {
+                            reconciled,
+                            activeToolCalls: activeToolCalls.map((part) => ({
+                                callID: part.callID,
+                                tool: part.tool,
+                                status: part.state.status,
+                            })),
+                        })
+                    }
+
+                    return reconciled
+                } catch (error) {
+                    log.warn("failed to reconcile tool results after the stream ended", {
+                        error: normalizeToolError(error),
+                    })
+                    return 0
+                }
+            }
+
+            while (true) {
+                let llmSummary = summarizeLlmCallInput(streamInput)
+                let llmCallSettled = false
+                let streamAbortReason: string | undefined
+                try {
+                    attempt += 1
+                    emitRuntimePhase("waiting_llm", {
+                        reason: "Awaiting the next model stream.",
+                        iteration: attempt,
+                    })
+                    emitRuntimeEvent?.("llm.call.started", {
+                        messageID: input.Assistant.id,
+                        providerID: streamInput.model.providerID,
+                        modelID: streamInput.model.id,
+                        agent: streamInput.agent.name,
+                        iteration: attempt,
+                        messageCount: llmSummary.messageCount,
+                        toolCount: llmSummary.toolCount,
+                        hasAttachments: llmSummary.hasAttachments,
+                    })
+
                     const stream = await LLM.stream(streamInput)
                     const streamPartPersister = createStreamPartPersister({
                         persist: persistPart,
@@ -290,6 +632,10 @@ export function create(input: {
                     for await (const value of stream.fullStream) {
                         switch (value.type) {
                             case "text-start":
+                                emitRuntimePhase("responding", {
+                                    reason: "The model started streaming a visible response.",
+                                    iteration: attempt,
+                                })
                                 currentText = {
                                     id: Identifier.ascending("part"),
                                     sessionID: input.Assistant.sessionID,
@@ -347,6 +693,10 @@ export function create(input: {
                                 }
                                 break;
                             case "reasoning-start":
+                                emitRuntimePhase("reasoning", {
+                                    reason: "The model started streaming reasoning output.",
+                                    iteration: attempt,
+                                })
                                 if (value.id in reasoningMap)
                                     continue
 
@@ -449,6 +799,12 @@ export function create(input: {
                             case "file":
                                 break;
                             case 'tool-call':
+                                emitRuntimePhase("executing_tool", {
+                                    reason: "The model issued a tool call.",
+                                    toolCallID: value.toolCallId,
+                                    toolName: value.toolName,
+                                    iteration: attempt,
+                                })
                                 // value.toolCallId 宸ュ叿璋冪敤 ID
                                 // value.toolName 宸ュ叿鍚嶇О
                                 // value.args 宸ュ叿鍙傛暟
@@ -635,9 +991,25 @@ export function create(input: {
                                 // TODO: 鍙兘闇€瑕佽Е鍙戞秷鎭帇缂╋紙compaction锛?
                                 this.message.finishReason = value.finishReason
                                 applyUsageToAssistantMessage(this.message, value.totalUsage, "preserve")
+                                emitRuntimeEvent?.("llm.call.completed", {
+                                    messageID: input.Assistant.id,
+                                    providerID: streamInput.model.providerID,
+                                    modelID: streamInput.model.id,
+                                    agent: streamInput.agent.name,
+                                    iteration: attempt,
+                                    messageCount: llmSummary.messageCount,
+                                    toolCount: llmSummary.toolCount,
+                                    hasAttachments: llmSummary.hasAttachments,
+                                    finishReason: value.finishReason,
+                                    usage: summarizeLlmUsage(value.totalUsage),
+                                })
+                                llmCallSettled = true
                                 break;
                             case "abort":
-
+                                streamAbortReason =
+                                    typeof value.reason === "string" && value.reason.length > 0
+                                        ? value.reason
+                                        : "The model stream aborted."
                                 break;
                             case "raw":
                                 break;
@@ -661,6 +1033,12 @@ export function create(input: {
                                 const approvalToolCallID =
                                     value.toolCall?.toolCallId ??
                                     (value as { toolCallId?: string }).toolCallId
+                                emitRuntimePhase("waiting_approval", {
+                                    reason: "Waiting for an approval decision before continuing the tool.",
+                                    toolCallID: approvalToolCallID,
+                                    toolName: approvalToolCallID ? toolcalls[approvalToolCallID]?.tool : undefined,
+                                    iteration: attempt,
+                                })
                                 if (!approvalToolCallID) {
                                     log.warn("tool approval request arrived without a tool call id", {
                                         approvalId: value.approvalId,
@@ -731,11 +1109,30 @@ export function create(input: {
                         await streamPartPersister.flush(part)
                     }
 
+                    if (!llmCallSettled && streamAbortReason) {
+                        emitRuntimeEvent?.("llm.call.failed", {
+                            messageID: input.Assistant.id,
+                            providerID: streamInput.model.providerID,
+                            modelID: streamInput.model.id,
+                            agent: streamInput.agent.name,
+                            iteration: attempt,
+                            messageCount: llmSummary.messageCount,
+                            toolCount: llmSummary.toolCount,
+                            hasAttachments: llmSummary.hasAttachments,
+                            error: streamAbortReason,
+                            retryable: false,
+                        })
+                        llmCallSettled = true
+                    }
+
+                    await reconcileOpenToolCalls(stream)
+
                     const activeToolCalls = listActiveToolCalls()
                     if (activeToolCalls.length > 0) {
-                        const reason = "Tool call did not complete before the model response finished."
+                        const reason = describeOpenToolCallFailure(activeToolCalls, streamAbortReason)
                         await failOpenToolCalls(reason)
                         log.warn("stopping processor because tool calls were left unresolved", {
+                            reason,
                             activeToolCalls: activeToolCalls.map((part) => ({
                                 callID: part.callID,
                                 tool: part.tool,
@@ -746,6 +1143,20 @@ export function create(input: {
                     }
                 }
                 catch (e: any) {
+                    if (!llmCallSettled) {
+                        emitRuntimeEvent?.("llm.call.failed", {
+                            messageID: input.Assistant.id,
+                            providerID: streamInput.model.providerID,
+                            modelID: streamInput.model.id,
+                            agent: streamInput.agent.name,
+                            iteration: attempt,
+                            messageCount: llmSummary.messageCount,
+                            toolCount: llmSummary.toolCount,
+                            hasAttachments: llmSummary.hasAttachments,
+                            error: normalizeToolError(e),
+                            retryable: Boolean(e?.isRetryable === true),
+                        })
+                    }
                     await failOpenToolCalls(normalizeToolError(e))
                     log.error("processor failure", { error: e.message, stack: e.stack })
                     throw e  // 閲嶆柊鎶涘嚭閿欒

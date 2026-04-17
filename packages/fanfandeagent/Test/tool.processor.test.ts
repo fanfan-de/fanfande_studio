@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
+import "./sqlite.cleanup.ts"
 import { Instance } from "#project/instance.ts"
 
 function createTurnRecorder(sessionID: string) {
@@ -28,6 +29,20 @@ function createTurnRecorder(sessionID: string) {
       close() {},
     } as any,
   }
+}
+
+function createStreamInput() {
+  return {
+    messages: [],
+    tools: {},
+    model: {
+      providerID: "test-provider",
+      id: "test-model",
+    },
+    agent: {
+      name: "plan",
+    },
+  } as any
 }
 
 describe("processor tool persistence", () => {
@@ -155,7 +170,7 @@ describe("processor tool persistence", () => {
         turn: recorded.turn,
       })
 
-      expect(await processor.process({} as never)).toBe("continue")
+      expect(await processor.process(createStreamInput())).toBe("continue")
 
       const textUpdates = recorded.events.filter((event) => event.type === "text.part.delta")
       expect(textUpdates).toHaveLength(3)
@@ -266,7 +281,7 @@ describe("processor tool persistence", () => {
       turn: recorded.turn,
     })
 
-    expect(await processor.process({} as never)).toBe("continue")
+    expect(await processor.process(createStreamInput())).toBe("continue")
 
     const running = recorded.events.find(
       (event) =>
@@ -373,7 +388,7 @@ describe("processor tool persistence", () => {
           turn: recorded.turn,
         })
 
-        expect(await processor.process({} as never)).toBe("stop")
+        expect(await processor.process(createStreamInput())).toBe("stop")
         expect(processor.partFromToolCall("tool-approval")?.state.status).toBe("waiting-approval")
       },
     })
@@ -452,7 +467,7 @@ describe("processor tool persistence", () => {
       turn: recorded.turn,
     })
 
-    expect(await processor.process({} as never)).toBe("stop")
+    expect(await processor.process(createStreamInput())).toBe("stop")
 
     const failed = recorded.events.find(
       (event) =>
@@ -465,5 +480,178 @@ describe("processor tool persistence", () => {
     expect(failed).toBeDefined()
     expect(failed?.payload.part.state.error).toContain("did not complete")
     expect(processor.partFromToolCall("tool-stuck")?.state.status).toBe("error")
+  })
+
+  it("surfaces stream timeout aborts when tool input never becomes a tool call", async () => {
+    mock.module("#session/llm.ts", () => ({
+      stream: async () => ({
+        fullStream: (async function* () {
+          yield { type: "start" }
+          yield {
+            type: "tool-input-start",
+            id: "tool-timeout",
+            toolName: "write-file",
+          }
+          yield {
+            type: "tool-input-delta",
+            id: "tool-timeout",
+            delta: "{\"path\":\"big.txt\",\"content\":\"AAAA",
+          }
+          yield {
+            type: "abort",
+            reason: "The operation timed out.",
+          }
+        })(),
+        toolResults: Promise.reject(new Error("timed out")),
+        steps: Promise.reject(new Error("timed out")),
+        response: Promise.reject(new Error("timed out")),
+      }),
+    }))
+
+    const Processor = await import("#session/processor.ts")
+    const recorded = createTurnRecorder("session-timeout")
+
+    const assistant = {
+      id: "assistant-timeout",
+      sessionID: "session-timeout",
+      role: "assistant",
+      created: Date.now(),
+      parentID: "user-timeout",
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "plan",
+      path: {
+        cwd: ".",
+        root: ".",
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+    } as any
+
+    const processor = Processor.create({
+      Assistant: assistant,
+      turn: recorded.turn,
+    })
+
+    expect(await processor.process(createStreamInput())).toBe("stop")
+
+    const llmFailed = recorded.events.find(
+      (event) => event.type === "llm.call.failed" && event.payload.error === "The operation timed out.",
+    )
+    expect(llmFailed).toBeDefined()
+
+    const failed = recorded.events.find(
+      (event) =>
+        event.type === "tool.call.failed" &&
+        event.payload.part.type === "tool" &&
+        event.payload.part.callID === "tool-timeout" &&
+        event.payload.part.state?.status === "error",
+    )
+
+    expect(failed).toBeDefined()
+    expect(failed?.payload.part.state.error).toContain("The operation timed out.")
+    expect(failed?.payload.part.state.error).toContain("FanFande_EXPERIMENTAL_LLM_TOTAL_TIMEOUT_MS")
+    expect(processor.partFromToolCall("tool-timeout")?.state.status).toBe("error")
+  })
+
+  it("reconciles dangling tool calls from final stream metadata when fullStream misses tool-result", async () => {
+    mock.module("#session/llm.ts", () => ({
+      stream: async () => ({
+        fullStream: (async function* () {
+          yield { type: "start" }
+          yield {
+            type: "tool-input-start",
+            id: "tool-reconciled",
+            toolName: "write-file",
+          }
+          yield {
+            type: "tool-call",
+            toolCallId: "tool-reconciled",
+            toolName: "write-file",
+            input: { path: "a.txt", content: "alpha" },
+            title: "Write File",
+          }
+          yield {
+            type: "finish",
+            finishReason: "tool-calls",
+          }
+        })(),
+        toolResults: Promise.resolve([
+          {
+            type: "tool-result",
+            toolCallId: "tool-reconciled",
+            toolName: "write-file",
+            input: { path: "a.txt", content: "alpha" },
+            output: {
+              text: "wrote a.txt",
+              title: "Wrote a.txt",
+              metadata: { source: "toolResults" },
+            },
+          },
+        ]),
+        steps: Promise.resolve([]),
+        response: Promise.resolve({
+          messages: [],
+        }),
+      }),
+    }))
+
+    const Processor = await import("#session/processor.ts")
+    const recorded = createTurnRecorder("session-reconciled")
+
+    const assistant = {
+      id: "assistant-reconciled",
+      sessionID: "session-reconciled",
+      role: "assistant",
+      created: Date.now(),
+      parentID: "user-reconciled",
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "plan",
+      path: {
+        cwd: ".",
+        root: ".",
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+    } as any
+
+    const processor = Processor.create({
+      Assistant: assistant,
+      turn: recorded.turn,
+    })
+
+    expect(await processor.process(createStreamInput())).toBe("continue")
+
+    const completed = recorded.events.find(
+      (event) =>
+        event.type === "tool.call.completed" &&
+        event.payload.part.type === "tool" &&
+        event.payload.part.callID === "tool-reconciled" &&
+        event.payload.part.state?.status === "completed",
+    )
+
+    expect(completed).toBeDefined()
+    expect(completed?.payload.part.state.output).toBe("wrote a.txt")
+    expect(completed?.payload.part.state.title).toBe("Wrote a.txt")
+    expect(completed?.payload.part.state.metadata).toEqual({ source: "toolResults" })
+    expect(recorded.events.some((event) => event.type === "tool.call.failed")).toBe(false)
+    expect(processor.partFromToolCall("tool-reconciled")?.state.status).toBe("completed")
   })
 })

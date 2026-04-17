@@ -37,6 +37,7 @@ import type {
   AgentProjectWorkspace,
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
+  AgentSessionRuntimeDebugSnapshot,
   AgentSessionStreamIPCEvent,
   AgentStreamIPCEvent,
   AgentSessionInfo,
@@ -694,6 +695,27 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     const result = await requestAgentJSON<AgentSessionDiffSummary>(`/api/sessions/${encodeURIComponent(sessionID)}/diff`)
     return result.data
   })
+
+  ipcMain.handle(
+    "desktop:get-session-runtime-debug",
+    async (_event, input: { sessionID: string; limit?: number; turns?: number }) => {
+      const sessionID = input.sessionID.trim()
+      const search = new URLSearchParams()
+      if (typeof input.limit === "number" && Number.isFinite(input.limit) && input.limit > 0) {
+        search.set("limit", String(Math.floor(input.limit)))
+      }
+      if (typeof input.turns === "number" && Number.isFinite(input.turns) && input.turns > 0) {
+        search.set("turns", String(Math.floor(input.turns)))
+      }
+
+      const suffix = search.size > 0 ? `?${search.toString()}` : ""
+      const result = await requestAgentJSON<AgentSessionRuntimeDebugSnapshot>(
+        `/api/debug/sessions/${encodeURIComponent(sessionID)}/runtime${suffix}`,
+      )
+
+      return result.data
+    },
+  )
 
   ipcMain.handle("desktop:get-session-permission-requests", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()

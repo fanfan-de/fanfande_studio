@@ -97,6 +97,11 @@ function projectTerminalState(
 export function project(event: RuntimeEvent.RuntimeEvent) {
   switch (event.type) {
     case "turn.started":
+    case "turn.state.changed":
+    case "llm.call.started":
+    case "llm.call.completed":
+    case "llm.call.failed":
+    case "turn.error.context":
     case "retry.scheduled":
       return
     case "message.recorded":
