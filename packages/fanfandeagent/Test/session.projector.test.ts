@@ -91,6 +91,24 @@ test("runtime events project messages and parts into the session read model", as
         hash: "snapshot-hash",
         files: ["README.md"],
       })
+      const sourcePart = Message.SourceUrlPart.parse({
+        id: Identifier.ascending("part"),
+        sessionID: session.id,
+        messageID: assistantMessage.id,
+        type: "source-url",
+        sourceID: "source-projector",
+        url: "https://example.com/spec",
+        title: "Spec reference",
+      })
+      const generatedFilePart = Message.FilePart.parse({
+        id: Identifier.ascending("part"),
+        sessionID: session.id,
+        messageID: assistantMessage.id,
+        type: "file",
+        mime: "application/json",
+        filename: "report.json",
+        url: "data:application/json;base64,e30=",
+      })
 
       const approvalID = "approval-projector"
       const permissionAsk = Message.PermissionPart.parse({
@@ -182,6 +200,12 @@ test("runtime events project messages and parts into the session read model", as
         turn.emit("patch.generated", {
           part: patchPart,
         })
+        turn.emit("source.recorded", {
+          part: sourcePart,
+        })
+        turn.emit("file.generated", {
+          part: generatedFilePart,
+        })
         turn.emit("permission.requested", {
           request: permissionRequest,
           part: permissionAsk,
@@ -225,6 +249,18 @@ test("runtime events project messages and parts into the session read model", as
         id: streamedTextID,
         type: "text",
         text: "world",
+      })
+      const persistedSource = db.findById("parts", Message.Part, sourcePart.id)
+      expect(persistedSource).toMatchObject({
+        id: sourcePart.id,
+        type: "source-url",
+        title: "Spec reference",
+      })
+      const persistedGeneratedFile = db.findById("parts", Message.Part, generatedFilePart.id)
+      expect(persistedGeneratedFile).toMatchObject({
+        id: generatedFilePart.id,
+        type: "file",
+        filename: "report.json",
       })
 
       const projectedPermissionRequest = db.findById("permission_requests", Permission.Request, permissionRequest.id)

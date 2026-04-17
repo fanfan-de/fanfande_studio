@@ -184,6 +184,29 @@ export const FilePartSource = z.discriminatedUnion("type", [FileSource, SymbolSo
     ref: "FilePartSource",
 })
 
+export const SourceUrlPart = PartBase.extend({
+    type: z.literal("source-url"),
+    sourceID: z.string(),
+    url: z.string(),
+    title: z.string().optional(),
+    providerMetadata: z.record(z.string(), z.any()).optional(),
+}).meta({
+    ref: "SourceUrlPart",
+})
+export type SourceUrlPart = z.infer<typeof SourceUrlPart>
+
+export const SourceDocumentPart = PartBase.extend({
+    type: z.literal("source-document"),
+    sourceID: z.string(),
+    mediaType: z.string(),
+    title: z.string(),
+    filename: z.string().optional(),
+    providerMetadata: z.record(z.string(), z.any()).optional(),
+}).meta({
+    ref: "SourceDocumentPart",
+})
+export type SourceDocumentPart = z.infer<typeof SourceDocumentPart>
+
 export const FilePart = PartBase.extend({
     type: z.literal("file"),
     mime: z.string(),
@@ -244,6 +267,7 @@ export const ToolStateRunning = z
     .object({
         status: z.literal("running"),
         input: z.record(z.string(), z.any()),
+        raw: z.string().optional(),
         title: z.string().optional(),
         metadata: z.record(z.string(), z.any()).optional(),
         time: z.object({
@@ -259,6 +283,7 @@ export const ToolStateCompleted = z
     .object({
         status: z.literal("completed"),
         input: z.record(z.string(), z.any()),
+        raw: z.string().optional(),
         output: z.preprocess((value) => normalizeToolOutputText(value), z.string()),
         modelOutput: z.any().optional(),
         title: z.string(),
@@ -280,6 +305,7 @@ export const ToolStateWaitingApproval = z
         status: z.literal("waiting-approval"),
         approvalID: z.string(),
         input: z.record(z.string(), z.any()),
+        raw: z.string().optional(),
         title: z.string().optional(),
         metadata: z.record(z.string(), z.any()).optional(),
         time: z.object({
@@ -296,6 +322,7 @@ export const ToolStateDenied = z
         status: z.literal("denied"),
         approvalID: z.string().optional(),
         input: z.record(z.string(), z.any()),
+        raw: z.string().optional(),
         reason: z.string(),
         metadata: z.record(z.string(), z.any()).optional(),
         time: z.object({
@@ -312,6 +339,7 @@ export const ToolStateError = z
     .object({
         status: z.literal("error"),
         input: z.record(z.string(), z.any()),
+        raw: z.string().optional(),
         error: z.string(),
         metadata: z.record(z.string(), z.any()).optional(),
         time: z.object({
@@ -445,6 +473,8 @@ export const Part = z
         TextPart,
         SubtaskPart,
         ReasoningPart,
+        SourceUrlPart,
+        SourceDocumentPart,
         FilePart,
         ToolPart,
         PermissionPart,

@@ -132,12 +132,15 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
     case "reasoning.part.completed":
       Session.upsertPart(event.payload.part)
       return
+    case "tool.call.pending":
     case "tool.call.started":
     case "tool.call.waiting_approval":
     case "tool.call.approved":
     case "tool.call.denied":
     case "tool.call.completed":
     case "tool.call.failed":
+    case "source.recorded":
+    case "file.generated":
     case "patch.generated":
     case "snapshot.captured":
       Session.upsertPart(event.payload.part)

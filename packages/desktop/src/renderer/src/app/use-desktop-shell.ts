@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react"
 import { DEFAULT_SIDEBAR_WIDTH, SIDEBAR_KEYBOARD_STEP } from "./constants"
-import type { WindowAction } from "./types"
+import {
+  DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+  type AssistantTraceVisibility,
+  type AssistantTraceVisibilityKey,
+  type WindowAction,
+} from "./types"
 import { clamp, resolveSidebarWidthBounds } from "./utils"
 
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
 const DEBUG_UI_REGIONS_STORAGE_KEY = "desktop.debugUiRegions"
 const DEBUG_LINE_COLORS_STORAGE_KEY = "desktop.debugLineColors"
 const AGENT_DEBUG_TRACE_STORAGE_KEY = "desktop.agentDebugTrace"
+const ASSISTANT_TRACE_VISIBILITY_STORAGE_KEY = "desktop.assistantTraceVisibility.v1"
 const WINDOW_CONTROLS_CLEARANCE_FALLBACK = 124
 const WINDOW_CONTROLS_CLEARANCE_PADDING = 24
 
@@ -40,6 +46,41 @@ function readAgentDebugTracePreference() {
   return readBooleanPreference(AGENT_DEBUG_TRACE_STORAGE_KEY, false)
 }
 
+function mergeAssistantTraceVisibilityPreference(value: unknown): AssistantTraceVisibility {
+  const merged = { ...DEFAULT_ASSISTANT_TRACE_VISIBILITY }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return merged
+  }
+
+  for (const key of Object.keys(DEFAULT_ASSISTANT_TRACE_VISIBILITY) as AssistantTraceVisibilityKey[]) {
+    if (typeof (value as Record<string, unknown>)[key] === "boolean") {
+      merged[key] = (value as Record<string, boolean>)[key]
+    }
+  }
+
+  return merged
+}
+
+function readAssistantTraceVisibilityPreference() {
+  if (typeof window === "undefined") {
+    return { ...DEFAULT_ASSISTANT_TRACE_VISIBILITY }
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(ASSISTANT_TRACE_VISIBILITY_STORAGE_KEY)
+    if (storedValue) {
+      return mergeAssistantTraceVisibilityPreference(JSON.parse(storedValue))
+    }
+  } catch {
+    // Ignore and fall back to defaults.
+  }
+
+  return {
+    ...DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+    debugMetadata: readAgentDebugTracePreference(),
+  }
+}
+
 export function useDesktopShell() {
   const appShellRef = useRef<HTMLElement | null>(null)
   const windowControlsRef = useRef<HTMLDivElement | null>(null)
@@ -51,7 +92,7 @@ export function useDesktopShell() {
   const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
   const [isDebugUiRegionsEnabled, setIsDebugUiRegionsEnabled] = useState(readDebugUiRegionsPreference)
   const [isDebugLineColorsEnabled, setIsDebugLineColorsEnabled] = useState(readDebugLineColorsPreference)
-  const [isAgentDebugTraceEnabled, setIsAgentDebugTraceEnabled] = useState(readAgentDebugTracePreference)
+  const [assistantTraceVisibility, setAssistantTraceVisibility] = useState(readAssistantTraceVisibilityPreference)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false)
   const [activeSidebarResizer, setActiveSidebarResizer] = useState<SidebarResizerSide | null>(null)
@@ -61,6 +102,7 @@ export function useDesktopShell() {
   const lastExpandedRightSidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH)
   const isSidebarResizing = activeSidebarResizer === "left"
   const isRightSidebarResizing = activeSidebarResizer === "right"
+  const isAgentDebugTraceEnabled = assistantTraceVisibility.debugMetadata
 
   function getLeftRailDisplayWidth() {
     return isActivityRailVisible ? 54 : 0
@@ -205,11 +247,15 @@ export function useDesktopShell() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(AGENT_DEBUG_TRACE_STORAGE_KEY, String(isAgentDebugTraceEnabled))
+      window.localStorage.setItem(
+        ASSISTANT_TRACE_VISIBILITY_STORAGE_KEY,
+        JSON.stringify(assistantTraceVisibility),
+      )
+      window.localStorage.setItem(AGENT_DEBUG_TRACE_STORAGE_KEY, String(assistantTraceVisibility.debugMetadata))
     } catch {
       return
     }
-  }, [isAgentDebugTraceEnabled])
+  }, [assistantTraceVisibility])
 
   useEffect(() => {
     function syncSidebarWidthToViewport() {
@@ -440,8 +486,18 @@ export function useDesktopShell() {
     setIsDebugLineColorsEnabled(nextEnabled)
   }
 
+  function handleAssistantTraceVisibilityChange(key: AssistantTraceVisibilityKey, nextEnabled: boolean) {
+    setAssistantTraceVisibility((current) => {
+      if (current[key] === nextEnabled) return current
+      return {
+        ...current,
+        [key]: nextEnabled,
+      }
+    })
+  }
+
   function handleAgentDebugTraceChange(nextEnabled: boolean) {
-    setIsAgentDebugTraceEnabled(nextEnabled)
+    handleAssistantTraceVisibilityChange("debugMetadata", nextEnabled)
   }
 
   function handleWindowAction(action: WindowAction) {
@@ -471,9 +527,11 @@ export function useDesktopShell() {
   return {
     agentConnected,
     agentDefaultDirectory,
+    assistantTraceVisibility,
     appShellRef,
     appShellStyle,
     handleActivityRailVisibilityChange,
+    handleAssistantTraceVisibilityChange,
     handleAgentDebugTraceChange,
     handleDebugLineColorsChange,
     handleDebugUiRegionsChange,

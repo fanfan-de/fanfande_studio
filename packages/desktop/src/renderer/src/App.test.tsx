@@ -4700,24 +4700,24 @@ describe("App", () => {
     expect(window.localStorage.getItem("desktop.debugLineColors")).toBe("false")
   })
 
-  it("toggles agent debug trace from appearance settings", async () => {
+  it("toggles trace debug metadata from appearance settings", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
-    const agentDebugTraceSwitch = screen.getByRole("switch", { name: "Show agent debug trace" })
-    expect(agentDebugTraceSwitch).toHaveAttribute("aria-checked", "false")
+    const debugMetadataSwitch = screen.getByRole("switch", { name: "Show trace debug metadata" })
+    expect(debugMetadataSwitch).toHaveAttribute("aria-checked", "false")
 
-    fireEvent.click(agentDebugTraceSwitch)
+    fireEvent.click(debugMetadataSwitch)
 
-    expect(agentDebugTraceSwitch).toHaveAttribute("aria-checked", "true")
+    expect(debugMetadataSwitch).toHaveAttribute("aria-checked", "true")
     expect(window.localStorage.getItem("desktop.agentDebugTrace")).toBe("true")
 
-    fireEvent.click(agentDebugTraceSwitch)
+    fireEvent.click(debugMetadataSwitch)
 
-    expect(agentDebugTraceSwitch).toHaveAttribute("aria-checked", "false")
+    expect(debugMetadataSwitch).toHaveAttribute("aria-checked", "false")
     expect(window.localStorage.getItem("desktop.agentDebugTrace")).toBe("false")
   })
 
@@ -4731,13 +4731,16 @@ describe("App", () => {
     expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show debug region colors" })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show line debug colors" })).toBeInTheDocument()
-    expect(screen.getByRole("switch", { name: "Show agent debug trace" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: "Show trace tool calls" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: "Show trace sources" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: "Show trace approvals" })).toBeInTheDocument()
+    expect(screen.getByRole("switch", { name: "Show trace debug metadata" })).toBeInTheDocument()
     expect(screen.queryByRole("switch", { name: "Show right rail" })).not.toBeInTheDocument()
     expect(screen.getByText("No rail")).toBeInTheDocument()
     expect(screen.getByText("Line Colors")).toBeInTheDocument()
   })
 
-  it("reveals backend-only thread trace entries when agent debug trace is enabled", async () => {
+  it("reveals backend-only thread trace entries when workflow and debug metadata are enabled", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
         id: "C:\\Projects\\Atlas\\client",
@@ -4821,16 +4824,16 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Atlas review" })).toBeInTheDocument()
     expect(await screen.findByText("Done.")).toBeInTheDocument()
-    expect(screen.queryByText("Permission requested")).not.toBeInTheDocument()
+    expect(screen.getByText("Permission requested")).toBeInTheDocument()
     expect(screen.queryByText("Reasoning step started")).not.toBeInTheDocument()
     expect(screen.queryByText("approval.id")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
-    fireEvent.click(screen.getByRole("switch", { name: "Show agent debug trace" }))
+    fireEvent.click(screen.getByRole("switch", { name: "Show trace workflow events" }))
+    fireEvent.click(screen.getByRole("switch", { name: "Show trace debug metadata" }))
 
-    expect(await screen.findByText("Permission requested")).toBeInTheDocument()
     expect(screen.getByText("Reasoning step started")).toBeInTheDocument()
     expect(screen.getByText("approval.id")).toBeInTheDocument()
     expect(screen.getAllByText("part.id").length).toBeGreaterThan(0)

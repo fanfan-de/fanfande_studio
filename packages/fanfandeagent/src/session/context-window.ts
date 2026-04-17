@@ -435,6 +435,10 @@ function renderPartForSummary(part: Message.Part) {
   switch (part.type) {
     case "text":
       return `- text: ${truncateInline(part.text, 800)}`
+    case "source-url":
+      return `- source: ${part.title ?? part.url}`
+    case "source-document":
+      return `- source document: ${part.title}${part.filename ? ` (${part.filename})` : ""}`
     case "file":
       return `- file: ${part.filename ?? part.url} (${part.mime})`
     case "image":
@@ -557,6 +561,10 @@ function estimatePartTokens(part: Message.Part): number {
       return estimateStringTokens(part.text) + 4
     case "reasoning":
       return 0
+    case "source-url":
+      return estimateStringTokens(part.title ?? part.url) + 12
+    case "source-document":
+      return estimateStringTokens(part.title) + estimateStringTokens(part.filename ?? "") + 14
     case "file":
       return 700
     case "image":

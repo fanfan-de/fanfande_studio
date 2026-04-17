@@ -144,6 +144,24 @@ function summarizeLlmUsage(usage: LanguageModelUsage | undefined) {
     }
 }
 
+function readToolRaw(state: Message.ToolPart["state"] | undefined) {
+    return state && typeof (state as { raw?: unknown }).raw === "string"
+        ? (state as { raw: string }).raw
+        : ""
+}
+
+function buildStepTokens(usage: LanguageModelUsage | undefined) {
+    return {
+        input: usage?.inputTokens ?? 0,
+        output: usage?.outputTokens ?? 0,
+        reasoning: usage?.outputTokenDetails?.reasoningTokens ?? usage?.reasoningTokens ?? 0,
+        cache: {
+            read: usage?.inputTokenDetails?.cacheReadTokens ?? usage?.cachedInputTokens ?? 0,
+            write: usage?.inputTokenDetails?.cacheWriteTokens ?? 0,
+        },
+    }
+}
+
 function summarizeLlmCallInput(streamInput: LLM.StreamInput) {
     let hasAttachments = false
 
@@ -184,6 +202,119 @@ function toAttachmentPart(
         mime: candidate.mime,
         filename: typeof candidate.filename === "string" ? candidate.filename : undefined,
     }
+}
+
+function toGeneratedFilePart(
+    value: unknown,
+    assistant: Message.Assistant,
+): Message.FilePart | Message.ImagePart | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return undefined
+    }
+
+    const candidate = value as Record<string, unknown>
+    const mime =
+        typeof candidate.mediaType === "string"
+            ? candidate.mediaType
+            : typeof candidate.mime === "string"
+                ? candidate.mime
+                : ""
+    const url = typeof candidate.url === "string" ? candidate.url : ""
+
+    if (!mime || !url) {
+        return undefined
+    }
+
+    const base = {
+        id: Identifier.ascending("part"),
+        sessionID: assistant.sessionID,
+        messageID: assistant.id,
+        mime,
+        url,
+        filename: typeof candidate.filename === "string" ? candidate.filename : undefined,
+    }
+
+    if (mime.startsWith("image/")) {
+        return {
+            ...base,
+            type: "image",
+        }
+    }
+
+    return {
+        ...base,
+        type: "file",
+    }
+}
+
+function toSourcePart(
+    value: unknown,
+    assistant: Message.Assistant,
+): Message.SourceUrlPart | Message.SourceDocumentPart | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return undefined
+    }
+
+    const candidate = value as Record<string, unknown>
+    const sourceID =
+        typeof candidate.sourceId === "string"
+            ? candidate.sourceId
+            : typeof candidate.id === "string"
+                ? candidate.id
+                : ""
+    const providerMetadata =
+        candidate.providerMetadata && typeof candidate.providerMetadata === "object" && !Array.isArray(candidate.providerMetadata)
+            ? candidate.providerMetadata as Record<string, unknown>
+            : undefined
+
+    if (!sourceID) {
+        return undefined
+    }
+
+    if (
+        candidate.type === "source-url" ||
+        candidate.sourceType === "url" ||
+        typeof candidate.url === "string"
+    ) {
+        if (typeof candidate.url !== "string") {
+            return undefined
+        }
+
+        return {
+            id: Identifier.ascending("part"),
+            sessionID: assistant.sessionID,
+            messageID: assistant.id,
+            type: "source-url",
+            sourceID,
+            url: candidate.url,
+            title: typeof candidate.title === "string" ? candidate.title : undefined,
+            providerMetadata,
+        }
+    }
+
+    if (
+        candidate.type === "source-document" ||
+        candidate.sourceType === "document" ||
+        typeof candidate.mediaType === "string"
+    ) {
+        if (typeof candidate.mediaType !== "string" || typeof candidate.title !== "string") {
+            return undefined
+        }
+
+        return {
+            id: Identifier.ascending("part"),
+            sessionID: assistant.sessionID,
+            messageID: assistant.id,
+            type: "source-document",
+            sourceID,
+            mediaType: candidate.mediaType,
+            title: candidate.title,
+            filename: typeof candidate.filename === "string" ? candidate.filename : undefined,
+            providerMetadata,
+        }
+    }
+
+    return undefined
 }
 
 function extractToolResultState(
@@ -777,6 +908,9 @@ export function create(input: {
                                     metadata: value.providerMetadata,
                                 }
                                 toolcalls[value.id] = pendingPart
+                                emitRuntimeEvent?.("tool.call.pending", {
+                                    part: pendingPart,
+                                })
 
                                 //杩欎釜闃舵鏃犻渶钀界洏锛屽彧闇€缁存姢鍐呭瓨鐘舵€?
                                 // try {
@@ -790,14 +924,49 @@ export function create(input: {
                                 break;
                             case "tool-input-delta":
                                 if (value.id in toolcalls) {
-                                    if (Message.ToolStatePending.safeParse(toolcalls[value.id]?.state))
-                                        (toolcalls[value.id]?.state as Message.ToolStatePending).raw += value.delta
+                                    const current = toolcalls[value.id]
+                                    const pendingState = Message.ToolStatePending.safeParse(current?.state)
+                                    if (current && pendingState.success) {
+                                        const pendingPart: Message.ToolPart = {
+                                            ...current,
+                                            state: {
+                                                ...pendingState.data,
+                                                raw: pendingState.data.raw + value.delta,
+                                            },
+                                        }
+                                        toolcalls[value.id] = pendingPart
+                                        emitRuntimeEvent?.("tool.call.pending", {
+                                            part: pendingPart,
+                                        })
+                                    }
                                 }
                                 break;
                             case "source":
-                                break;
-                            case "file":
-                                break;
+                            case "source-url":
+                            case "source-document": {
+                                const sourcePart = toSourcePart(value, input.Assistant)
+                                if (!sourcePart) {
+                                    break
+                                }
+
+                                emitRuntimeEvent?.("source.recorded", {
+                                    part: sourcePart,
+                                })
+                                await persistPart(sourcePart)
+                                break
+                            }
+                            case "file": {
+                                const filePart = toGeneratedFilePart(value, input.Assistant)
+                                if (!filePart) {
+                                    break
+                                }
+
+                                emitRuntimeEvent?.("file.generated", {
+                                    part: filePart,
+                                })
+                                await persistPart(filePart)
+                                break
+                            }
                             case 'tool-call':
                                 emitRuntimePhase("executing_tool", {
                                     reason: "The model issued a tool call.",
@@ -822,6 +991,7 @@ export function create(input: {
                                     state: {
                                         status: "running",
                                         input: value.input,
+                                        raw: readToolRaw(match?.state),
                                         title: value.title,
                                         metadata: value.providerMetadata,
                                         time: {
@@ -867,6 +1037,7 @@ export function create(input: {
                                         state: {
                                             status: "completed",
                                             input: value.input,
+                                            raw: readToolRaw(toolcalls[value.toolCallId]!.state),
                                             output: normalized.output,
                                             modelOutput: rawToolOutput,
                                             metadata: normalized.metadata,
@@ -907,6 +1078,7 @@ export function create(input: {
                                         state: {
                                             status: "error",
                                             input: value.input,
+                                            raw: readToolRaw(toolcalls[value.toolCallId]!.state),
                                             error: normalizeToolError(value.error),
                                             metadata: value.providerMetadata ?? {},
                                             time: {
@@ -955,6 +1127,7 @@ export function create(input: {
                                                     ? current.state.approvalID
                                                     : undefined,
                                             input: current.state.input,
+                                            raw: readToolRaw(current.state),
                                             reason: "Tool execution was denied.",
                                             metadata:
                                                 current.state.status === "waiting-approval"
@@ -975,6 +1148,20 @@ export function create(input: {
                                 }
                                 break;
                             case "start-step":
+                                const stepStartPart: Message.StepStartPart = {
+                                    id: Identifier.ascending("part"),
+                                    sessionID: input.Assistant.sessionID,
+                                    messageID: input.Assistant.id,
+                                    type: "step-start",
+                                    snapshot:
+                                        typeof (value as { snapshot?: unknown }).snapshot === "string"
+                                            ? (value as { snapshot: string }).snapshot
+                                            : undefined,
+                                }
+                                emitRuntimeEvent?.("part.recorded", {
+                                    part: stepStartPart,
+                                })
+                                await persistPart(stepStartPart)
                                 break;
                             case "start":
                                 //SessionStatus.set(input.sessionID, { type: "busy" })
@@ -1026,7 +1213,26 @@ export function create(input: {
                                 // 鎺ユ敹鍒拌繖涓?value锛岃鏄?LLM 鍒ゆ柇缁撴潫 React loop
                                 this.message.finishReason = value.finishReason
                                 applyUsageToAssistantMessage(this.message, value.usage, "peak")
-
+                                const stepFinishPart: Message.StepFinishPart = {
+                                    id: Identifier.ascending("part"),
+                                    sessionID: input.Assistant.sessionID,
+                                    messageID: input.Assistant.id,
+                                    type: "step-finish",
+                                    reason:
+                                        typeof value.finishReason === "string" && value.finishReason.length > 0
+                                            ? value.finishReason
+                                            : "Reasoning step completed.",
+                                    snapshot:
+                                        typeof (value as { snapshot?: unknown }).snapshot === "string"
+                                            ? (value as { snapshot: string }).snapshot
+                                            : undefined,
+                                    cost: 0,
+                                    tokens: buildStepTokens(value.usage),
+                                }
+                                emitRuntimeEvent?.("part.recorded", {
+                                    part: stepFinishPart,
+                                })
+                                await persistPart(stepFinishPart)
 
                                 break;
                             case "tool-approval-request":
@@ -1059,6 +1265,7 @@ export function create(input: {
                                             status: "waiting-approval",
                                             approvalID: value.approvalId,
                                             input: current.state.input,
+                                            raw: readToolRaw(current.state),
                                             title:
                                                 current.state.status === "running"
                                                     ? current.state.title

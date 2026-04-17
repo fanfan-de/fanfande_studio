@@ -26,6 +26,7 @@ import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useProjectComposer } from "./app/use-project-composer"
 import { useSettingsPage } from "./app/use-settings-page"
+import type { AssistantTraceVisibility } from "./app/types"
 import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
 
 const MIN_WORKBENCH_PANE_WIDTH = 320
@@ -144,9 +145,11 @@ export function App() {
   const {
     agentConnected,
     agentDefaultDirectory,
+    assistantTraceVisibility,
     appShellRef,
     appShellStyle,
     handleActivityRailVisibilityChange,
+    handleAssistantTraceVisibilityChange,
     handleAgentDebugTraceChange,
     handleDebugLineColorsChange,
     handleDebugUiRegionsChange,
@@ -680,6 +683,7 @@ export function App() {
                 composerRefreshVersion={composerRefreshVersion}
                 draggedTabKey={draggedPaneTab?.tabKey ?? null}
                 firstPaneID={firstPaneID}
+                assistantTraceVisibility={assistantTraceVisibility}
                 isActivityRailVisible={isActivityRailVisible}
                 isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
                 isResolvingPermissionRequest={isResolvingPermissionRequest}
@@ -766,6 +770,7 @@ export function App() {
           deletingArchivedSessionID={deletingArchivedSessionID}
           deletingMcpServerID={deletingMcpServerID}
           deletingProviderID={deletingProviderID}
+          assistantTraceVisibility={assistantTraceVisibility}
           isActivityRailVisible={isActivityRailVisible}
           isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
           isDebugLineColorsEnabled={isDebugLineColorsEnabled}
@@ -789,6 +794,7 @@ export function App() {
           savingProviderID={savingProviderID}
           selectionDraft={selectionDraft}
           onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
+          onAssistantTraceVisibilityChange={handleAssistantTraceVisibilityChange}
           onAgentDebugTraceChange={handleAgentDebugTraceChange}
           onDebugLineColorsChange={handleDebugLineColorsChange}
           onDebugUiRegionsChange={handleDebugUiRegionsChange}
@@ -852,6 +858,7 @@ function getTopRowRightmostPaneID(layout: WorkbenchLayout): string | null {
 }
 
 interface WorkbenchTreeProps {
+  assistantTraceVisibility: AssistantTraceVisibility
   composerRefreshVersion: number
   draggedTabKey: string | null
   firstPaneID: string | null
@@ -939,6 +946,7 @@ function WorkbenchNodeView({
 
     return (
       <PaneSurface
+        assistantTraceVisibility={props.assistantTraceVisibility}
         composerRefreshVersion={props.composerRefreshVersion}
         draggedTabKey={props.draggedTabKey}
         dropTargetPosition={props.paneDropTarget?.paneID === pane.id ? props.paneDropTarget.position : null}
@@ -1022,6 +1030,7 @@ function WorkbenchNodeView({
 }
 
 interface PaneSurfaceProps {
+  assistantTraceVisibility: AssistantTraceVisibility
   composerRefreshVersion: number
   draggedTabKey: string | null
   dropTargetPosition: PaneDropPosition | null
@@ -1060,6 +1069,7 @@ interface PaneSurfaceProps {
 }
 
 const PaneSurface = memo(function PaneSurface({
+  assistantTraceVisibility,
   composerRefreshVersion,
   draggedTabKey,
   dropTargetPosition,
@@ -1215,6 +1225,7 @@ const PaneSurface = memo(function PaneSurface({
             <>
               <ThreadView
                 activeSession={pane.activeSession}
+                assistantTraceVisibility={assistantTraceVisibility}
                 isResolvingPermissionRequest={isResolvingPermissionRequest}
                 isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
                 pendingPermissionRequests={pane.pendingPermissionRequests}

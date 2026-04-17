@@ -29,8 +29,11 @@ import {
   SortIcon,
 } from "./icons"
 import type {
+  AssistantTraceSectionKey,
   AssistantTurn,
   AssistantTraceItem,
+  AssistantTraceVisibility,
+  AssistantTraceVisibilityKey,
   ComposerAttachment,
   ComposerMcpOption,
   ComposerModelOption,
@@ -74,6 +77,63 @@ function WindowControlsSpacer({ variant }: { variant: "canvas" | "right-sidebar"
 function joinClassNames(...tokens: Array<string | null | undefined | false>) {
   return tokens.filter(Boolean).join(" ")
 }
+
+const assistantTraceVisibilityOptions: Array<{
+  key: AssistantTraceVisibilityKey
+  title: string
+  description: string
+}> = [
+  {
+    key: "response",
+    title: "Response",
+    description: "Show the assistant's user-facing response text inside the main trace.",
+  },
+  {
+    key: "reasoning",
+    title: "Reasoning",
+    description: "Show captured reasoning text segments when the model streams them.",
+  },
+  {
+    key: "toolCalls",
+    title: "Tool calls",
+    description: "Show tool lifecycle entries such as running, waiting for approval, and completed calls.",
+  },
+  {
+    key: "toolInputs",
+    title: "Tool inputs",
+    description: "Reveal streamed tool arguments and structured input payloads inside tool entries.",
+  },
+  {
+    key: "toolOutputs",
+    title: "Tool outputs",
+    description: "Reveal completed tool results, failure messages, and denied reasons inside tool entries.",
+  },
+  {
+    key: "sources",
+    title: "Sources",
+    description: "Show cited URLs and document references that the model used during this turn.",
+  },
+  {
+    key: "files",
+    title: "Files and attachments",
+    description: "Show generated files, images, and patch summaries in the main trace.",
+  },
+  {
+    key: "approvals",
+    title: "Approvals",
+    description: "Show permission requests, approval pauses, and related tool approval events.",
+  },
+  {
+    key: "workflow",
+    title: "Workflow events",
+    description: "Show step boundaries, completion summaries, stream lifecycle, and other execution events.",
+  },
+  {
+    key: "debugMetadata",
+    title: "Debug metadata",
+    description: "Show backend identifiers, payload previews, timing, and token metadata for each trace item.",
+  },
+]
 
 interface ShellTopMenuProps {
   ariaLabel: string
@@ -3288,6 +3348,7 @@ function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServ
 interface SettingsPageProps {
   activeMcpServerID: string | null
   activeMcpServerDiagnostic: McpServerDiagnostic | null
+  assistantTraceVisibility: AssistantTraceVisibility
   archivedSessions: ArchivedSessionSummary[]
   archivedSessionsError: string | null
   catalog: ProviderCatalogItem[]
@@ -3320,6 +3381,7 @@ interface SettingsPageProps {
   savingProviderID: string | null
   selectionDraft: ProjectModelSelection
   onActivityRailVisibilityChange: (value: boolean) => void
+  onAssistantTraceVisibilityChange: (key: AssistantTraceVisibilityKey, value: boolean) => void
   onAgentDebugTraceChange: (value: boolean) => void
   onDebugLineColorsChange: (value: boolean) => void
   onDebugUiRegionsChange: (value: boolean) => void
@@ -3341,6 +3403,7 @@ interface SettingsPageProps {
 export function SettingsPage({
   activeMcpServerID,
   activeMcpServerDiagnostic,
+  assistantTraceVisibility,
   archivedSessions,
   archivedSessionsError,
   catalog,
@@ -3370,6 +3433,7 @@ export function SettingsPage({
   savingProviderID,
   selectionDraft,
   onActivityRailVisibilityChange,
+  onAssistantTraceVisibilityChange,
   onAgentDebugTraceChange,
   onDebugLineColorsChange,
   onDebugUiRegionsChange,
@@ -3392,6 +3456,9 @@ export function SettingsPage({
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
     const serviceDetailPanelRef = useRef<HTMLDivElement | null>(null)
+    const enabledTraceVisibilityCount = assistantTraceVisibilityOptions.filter(
+      (option) => assistantTraceVisibility[option.key],
+    ).length
 
     const modelGroups = models.reduce<Record<string, ProviderModel[]>>((result, model) => {
       result[model.providerID] = [...(result[model.providerID] ?? []), model]
@@ -3685,36 +3752,45 @@ export function SettingsPage({
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>
-                        <span className="label">Development</span>
-                        <h3>Agent Debug Trace</h3>
+                        <span className="label">Agent</span>
+                        <h3>Trace Visibility</h3>
                       </div>
-                      <p>Reveal the extra backend runtime metadata that is normally hidden from the thread so agent flow testing is easier to inspect.</p>
+                      <p>Decide which trace categories get a seat in the main thread, from user-facing response text down to workflow markers and backend metadata.</p>
                     </div>
 
-                    <button
-                      className={isAgentDebugTraceEnabled ? "settings-toggle-card is-active" : "settings-toggle-card"}
-                      role="switch"
-                      aria-checked={isAgentDebugTraceEnabled}
-                      aria-label="Show agent debug trace"
-                      type="button"
-                      onClick={() => onAgentDebugTraceChange(!isAgentDebugTraceEnabled)}
-                    >
-                      <span className="settings-toggle-copy">
-                        <strong className="settings-toggle-title">
-                          <span className="settings-toggle-icon" aria-hidden="true">
-                            <FileTextIcon />
-                          </span>
-                          <span>Show agent debug trace</span>
-                        </strong>
-                        <small>Expose backend trace metadata, hidden system events, and runtime identifiers directly inside the thread.</small>
-                      </span>
-                      <span className="settings-toggle-control" aria-hidden="true">
-                        <span className="settings-toggle-thumb" />
-                      </span>
-                    </button>
+                    <div className="settings-section-summary">
+                      {assistantTraceVisibilityOptions.map((option) => {
+                        const enabled = assistantTraceVisibility[option.key]
+
+                        return (
+                          <button
+                            key={option.key}
+                            className={enabled ? "settings-toggle-card is-active" : "settings-toggle-card"}
+                            role="switch"
+                            aria-checked={enabled}
+                            aria-label={`Show trace ${option.title.toLowerCase()}`}
+                            type="button"
+                            onClick={() => onAssistantTraceVisibilityChange(option.key, !enabled)}
+                          >
+                            <span className="settings-toggle-copy">
+                              <strong className="settings-toggle-title">
+                                <span className="settings-toggle-icon" aria-hidden="true">
+                                  <FileTextIcon />
+                                </span>
+                                <span>{option.title}</span>
+                              </strong>
+                              <small>{option.description}</small>
+                            </span>
+                            <span className="settings-toggle-control" aria-hidden="true">
+                              <span className="settings-toggle-thumb" />
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
 
                     <p className="settings-helper-text">
-                      Use this when validating stream order, permission lifecycle, tool payloads, token accounting, or other backend-only details without changing the normal conversation presentation.
+                      Tool calls stay visible through the main trace. The tool input and output switches control whether each tool entry reveals the streamed payloads behind that lifecycle item, while debug metadata adds backend-only identifiers and timing details to every entry.
                     </p>
                   </section>
 
@@ -3724,7 +3800,7 @@ export function SettingsPage({
                         <span className="label">Current</span>
                         <h3>Appearance State</h3>
                       </div>
-                      <p>The left rail is optional. Region, line, and agent trace debug modes are development-only overlays. The right inspector always keeps its toggle on the active surface.</p>
+                      <p>The left rail is optional. Region and line colors are development overlays, while the trace controls decide how much backend execution detail appears inside the main thread.</p>
                     </div>
 
                     <div className="settings-section-summary">
@@ -3757,11 +3833,11 @@ export function SettingsPage({
                       </article>
                       <article className="settings-summary-card">
                         <span className="label">Agent Trace</span>
-                        <strong>{isAgentDebugTraceEnabled ? "Shown" : "Hidden"}</strong>
+                        <strong>{enabledTraceVisibilityCount}/{assistantTraceVisibilityOptions.length} enabled</strong>
                         <p>
-                          {isAgentDebugTraceEnabled
-                            ? "Thread turns reveal backend runtime metadata, hidden system events, and per-part trace identifiers for debugging."
-                            : "Thread turns keep backend-only metadata hidden so the conversation stays focused on user-visible output."}
+                          {assistantTraceVisibility.debugMetadata
+                            ? "The main trace is showing backend metadata in addition to the enabled response, tool, approval, file, and workflow categories."
+                            : "The main trace is showing the enabled user-facing categories while backend metadata stays collapsed."}
                         </p>
                       </article>
                       <article className="settings-summary-card">
@@ -4967,6 +5043,7 @@ export function SettingsPage({
 interface ThreadViewProps {
   activeSession: SessionSummary | null
   activeTurns: Turn[]
+  assistantTraceVisibility: AssistantTraceVisibility
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
   onFileChangeSelect?: (file: string) => void
@@ -5009,8 +5086,6 @@ function isPersistentAllowDecision(decision: PermissionDecision) {
   return decision === "allow-session" || decision === "allow-project" || decision === "allow-forever"
 }
 
-type AssistantTraceSectionKey = "reasoning" | "tools" | "response" | "file-change" | "debug"
-
 function isResponseTraceItem(item: AssistantTraceItem) {
   return item.kind === "text"
 }
@@ -5019,22 +5094,66 @@ function isToolTraceItem(item: AssistantTraceItem) {
   return item.kind === "tool"
 }
 
+function isSourceTraceItem(item: AssistantTraceItem) {
+  return item.section === "sources" || item.kind === "source"
+}
+
 function isFileChangeTraceItem(item: AssistantTraceItem) {
-  return item.kind === "patch" || item.kind === "file" || item.kind === "image"
+  return item.section === "file-change" || item.kind === "patch" || item.kind === "file" || item.kind === "image"
+}
+
+function defaultTraceSectionKeyForItem(item: AssistantTraceItem): AssistantTraceSectionKey {
+  if (isResponseTraceItem(item)) return "response"
+  if (isSourceTraceItem(item)) return "sources"
+  if (isFileChangeTraceItem(item)) return "file-change"
+  if (isToolTraceItem(item)) return "tools"
+  if (item.kind === "reasoning") return "reasoning"
+  if (item.kind === "step" || item.kind === "retry" || item.kind === "snapshot" || item.kind === "subtask") {
+    return "workflow"
+  }
+  if (item.kind === "system") return "debug"
+  return "workflow"
+}
+
+function traceVisibilityKeyForItem(item: AssistantTraceItem): AssistantTraceVisibilityKey | null {
+  if (item.kind === "error") return null
+  if (item.visibilityKey) return item.visibilityKey
+
+  const sectionKey = traceSectionKeyForItem(item)
+  switch (sectionKey) {
+    case "response":
+      return "response"
+    case "reasoning":
+      return "reasoning"
+    case "tools":
+      return "toolCalls"
+    case "sources":
+      return "sources"
+    case "approvals":
+      return "approvals"
+    case "file-change":
+      return "files"
+    case "debug":
+      return "debugMetadata"
+    default:
+      return "workflow"
+  }
 }
 
 function traceSectionKeyForItem(item: AssistantTraceItem): AssistantTraceSectionKey {
-  if (item.kind === "system") return "debug"
-  if (isResponseTraceItem(item)) return "response"
-  if (isFileChangeTraceItem(item)) return "file-change"
-  if (isToolTraceItem(item)) return "tools"
-  return "reasoning"
+  return item.section ?? defaultTraceSectionKeyForItem(item)
 }
 
 function traceSectionTitle(sectionKey: AssistantTraceSectionKey) {
   switch (sectionKey) {
     case "tools":
       return "Tools"
+    case "sources":
+      return "Sources"
+    case "approvals":
+      return "Approvals"
+    case "workflow":
+      return "Workflow"
     case "response":
       return "Response"
     case "file-change":
@@ -5091,11 +5210,17 @@ function buildAssistantTraceBlocks(items: AssistantTraceItem[]) {
   )
 }
 
-function filterRenderedAssistantTraceItems(items: AssistantTraceItem[], showFileChanges: boolean, showDebugInfo: boolean) {
+function filterRenderedAssistantTraceItems(
+  items: AssistantTraceItem[],
+  showFileChanges: boolean,
+  traceVisibility: AssistantTraceVisibility,
+) {
   return items.filter((item) => {
     const sectionKey = traceSectionKeyForItem(item)
     if (!showFileChanges && sectionKey === "file-change") return false
-    if (!showDebugInfo && sectionKey === "debug") return false
+    const visibilityKey = traceVisibilityKeyForItem(item)
+    if (visibilityKey === null) return true
+    if (!traceVisibility[visibilityKey]) return false
     return true
   })
 }
@@ -5153,16 +5278,16 @@ function AssistantTurnSections({
   items,
   onFileChangeSelect,
   showFileChanges,
-  showDebugInfo,
+  traceVisibility,
   turnID,
 }: {
   items: AssistantTraceItem[]
   onFileChangeSelect: ((file: string) => void) | undefined
   showFileChanges: boolean
-  showDebugInfo: boolean
+  traceVisibility: AssistantTraceVisibility
   turnID: string
 }) {
-  const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges, showDebugInfo))
+  const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges, traceVisibility))
 
   return (
     <>
@@ -5185,7 +5310,12 @@ function AssistantTurnSections({
               }
             >
               {renderedItems.map((item) => (
-                <TraceItemView key={item.id} item={item} onFileChangeSelect={onFileChangeSelect} showDebugInfo={showDebugInfo} />
+                <TraceItemView
+                  key={item.id}
+                  item={item}
+                  onFileChangeSelect={onFileChangeSelect}
+                  traceVisibility={traceVisibility}
+                />
               ))}
             </div>
           </AssistantTraceSection>
@@ -5217,11 +5347,11 @@ function formatTraceStatusText(status?: AssistantTraceItem["status"]) {
 function TraceItemView({
   item,
   onFileChangeSelect,
-  showDebugInfo,
+  traceVisibility,
 }: {
   item: AssistantTraceItem
   onFileChangeSelect?: (file: string) => void
-  showDebugInfo: boolean
+  traceVisibility: AssistantTraceVisibility
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
   const className = [
@@ -5234,7 +5364,7 @@ function TraceItemView({
     .filter(Boolean)
     .join(" ")
   const selectableFilePaths = item.kind === "patch" ? item.filePaths?.filter(Boolean) ?? [] : []
-  const debugEntries = showDebugInfo ? item.debugEntries ?? [] : []
+  const debugEntries = traceVisibility.debugMetadata ? item.debugEntries ?? [] : []
   const hasDebugEntries = debugEntries.length > 0
 
   function renderDebugEntries() {
@@ -5265,7 +5395,11 @@ function TraceItemView({
   if (item.kind === "tool") {
     const statusText = formatTraceStatusText(item.status)
     const summaryTitle = item.title || item.label
-    const hasDisclosureContent = Boolean(item.text || item.detail)
+    const showsToolInputs = item.status === "pending" || item.status === "running" || item.status === "waiting-approval"
+    const visibleToolText = showsToolInputs
+      ? (traceVisibility.toolInputs ? item.text : undefined)
+      : (traceVisibility.toolOutputs ? item.text : undefined)
+    const hasDisclosureContent = Boolean(visibleToolText || item.detail)
     const disclosureID = `trace-item-disclosure-${item.id}`
 
     return (
@@ -5297,7 +5431,7 @@ function TraceItemView({
 
         {hasDisclosureContent && isExpanded ? (
           <div id={disclosureID} className="trace-item-disclosure">
-            {item.text ? <p className="trace-item-text">{item.text}</p> : null}
+            {visibleToolText ? <p className="trace-item-text">{visibleToolText}</p> : null}
             {item.detail ? <p className="trace-item-detail">{item.detail}</p> : null}
           </div>
         ) : null}
@@ -5648,6 +5782,7 @@ function collectAssistantCycleFileChangeItems(turns: Turn[], startIndex: number,
 export function ThreadView({
   activeSession,
   activeTurns,
+  assistantTraceVisibility,
   isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
   onFileChangeSelect,
@@ -5681,7 +5816,7 @@ export function ThreadView({
                     detail: "Load a folder from the sidebar or create a new session to begin.",
                     status: "completed",
                   }}
-                  showDebugInfo={false}
+                  traceVisibility={assistantTraceVisibility}
                 />
               </div>
             </div>
@@ -5706,12 +5841,17 @@ export function ThreadView({
               const cycleFileChangeItems = isCycleFinalTurn
                 ? collectAssistantCycleFileChangeItems(activeTurns, startIndex, endIndex)
                 : []
-              const visibleItems = [
-                ...turn.items.filter((item) => (isAgentDebugTraceEnabled || item.kind !== "system") && !isFileChangeTraceItem(item)),
+              const traceItems = [
+                ...turn.items.filter((item) => !isFileChangeTraceItem(item)),
                 ...cycleFileChangeItems,
               ]
-              const ephemeralHint = visibleItems.length === 0 ? getAssistantEphemeralHint(turn) : null
-              if (visibleItems.length === 0 && !ephemeralHint) return null
+              const renderedItems = filterRenderedAssistantTraceItems(
+                traceItems,
+                isCycleFinalTurn && !turn.isStreaming,
+                assistantTraceVisibility,
+              )
+              const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
+              if (renderedItems.length === 0 && !ephemeralHint) return null
 
               return (
                 <article key={turn.id} className="turn assistant-turn">
@@ -5721,10 +5861,10 @@ export function ThreadView({
                     ) : (
                       <AssistantTurnSections
                         turnID={turn.id}
-                        items={visibleItems}
+                        items={traceItems}
                         onFileChangeSelect={onFileChangeSelect}
                         showFileChanges={isCycleFinalTurn && !turn.isStreaming}
-                        showDebugInfo={isAgentDebugTraceEnabled}
+                        traceVisibility={assistantTraceVisibility}
                       />
                     )}
                   </div>

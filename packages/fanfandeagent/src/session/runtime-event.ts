@@ -102,6 +102,14 @@ const ToolCallPayload = z.object({
   part: Message.ToolPart,
 })
 
+const SourceRecordedPayload = z.object({
+  part: z.union([Message.SourceUrlPart, Message.SourceDocumentPart]),
+})
+
+const FileGeneratedPayload = z.object({
+  part: z.union([Message.FilePart, Message.ImagePart]),
+})
+
 const PatchGeneratedPayload = z.object({
   part: Message.PatchPart,
 })
@@ -264,6 +272,11 @@ export const ToolCallStartedEvent = RuntimeEventBase.extend({
   payload: ToolCallPayload,
 })
 
+export const ToolCallPendingEvent = RuntimeEventBase.extend({
+  type: z.literal("tool.call.pending"),
+  payload: ToolCallPayload,
+})
+
 export const ToolCallWaitingApprovalEvent = RuntimeEventBase.extend({
   type: z.literal("tool.call.waiting_approval"),
   payload: ToolCallPayload,
@@ -287,6 +300,16 @@ export const ToolCallCompletedEvent = RuntimeEventBase.extend({
 export const ToolCallFailedEvent = RuntimeEventBase.extend({
   type: z.literal("tool.call.failed"),
   payload: ToolCallPayload,
+})
+
+export const SourceRecordedEvent = RuntimeEventBase.extend({
+  type: z.literal("source.recorded"),
+  payload: SourceRecordedPayload,
+})
+
+export const FileGeneratedEvent = RuntimeEventBase.extend({
+  type: z.literal("file.generated"),
+  payload: FileGeneratedPayload,
 })
 
 export const PatchGeneratedEvent = RuntimeEventBase.extend({
@@ -349,12 +372,15 @@ export const RuntimeEvent = z.discriminatedUnion("type", [
   ReasoningPartStartedEvent,
   ReasoningPartDeltaEvent,
   ReasoningPartCompletedEvent,
+  ToolCallPendingEvent,
   ToolCallStartedEvent,
   ToolCallWaitingApprovalEvent,
   ToolCallApprovedEvent,
   ToolCallDeniedEvent,
   ToolCallCompletedEvent,
   ToolCallFailedEvent,
+  SourceRecordedEvent,
+  FileGeneratedEvent,
   PatchGeneratedEvent,
   SnapshotCapturedEvent,
   RetryScheduledEvent,
@@ -385,12 +411,15 @@ export type RuntimeEventPayloadByType = {
   "reasoning.part.started": z.infer<typeof ReasoningPartStartedPayload>
   "reasoning.part.delta": z.infer<typeof ReasoningPartDeltaPayload>
   "reasoning.part.completed": z.infer<typeof ReasoningPartCompletedPayload>
+  "tool.call.pending": z.infer<typeof ToolCallPayload>
   "tool.call.started": z.infer<typeof ToolCallPayload>
   "tool.call.waiting_approval": z.infer<typeof ToolCallPayload>
   "tool.call.approved": z.infer<typeof ToolCallPayload>
   "tool.call.denied": z.infer<typeof ToolCallPayload>
   "tool.call.completed": z.infer<typeof ToolCallPayload>
   "tool.call.failed": z.infer<typeof ToolCallPayload>
+  "source.recorded": z.infer<typeof SourceRecordedPayload>
+  "file.generated": z.infer<typeof FileGeneratedPayload>
   "patch.generated": z.infer<typeof PatchGeneratedPayload>
   "snapshot.captured": z.infer<typeof SnapshotCapturedPayload>
   "retry.scheduled": z.infer<typeof RetryScheduledPayload>

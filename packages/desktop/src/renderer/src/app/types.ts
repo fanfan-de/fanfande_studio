@@ -355,6 +355,7 @@ export type AssistantTraceItemKind =
   | "reasoning"
   | "text"
   | "tool"
+  | "source"
   | "file"
   | "image"
   | "patch"
@@ -363,6 +364,54 @@ export type AssistantTraceItemKind =
   | "retry"
   | "snapshot"
   | "error"
+
+export type AssistantTraceSectionKey =
+  | "reasoning"
+  | "tools"
+  | "sources"
+  | "response"
+  | "approvals"
+  | "workflow"
+  | "file-change"
+  | "debug"
+
+export type AssistantTraceVisibilityKey =
+  | "response"
+  | "reasoning"
+  | "toolCalls"
+  | "toolInputs"
+  | "toolOutputs"
+  | "sources"
+  | "files"
+  | "approvals"
+  | "workflow"
+  | "debugMetadata"
+
+export interface AssistantTraceVisibility {
+  response: boolean
+  reasoning: boolean
+  toolCalls: boolean
+  toolInputs: boolean
+  toolOutputs: boolean
+  sources: boolean
+  files: boolean
+  approvals: boolean
+  workflow: boolean
+  debugMetadata: boolean
+}
+
+export const DEFAULT_ASSISTANT_TRACE_VISIBILITY: AssistantTraceVisibility = {
+  response: true,
+  reasoning: true,
+  toolCalls: true,
+  toolInputs: false,
+  toolOutputs: true,
+  sources: true,
+  files: true,
+  approvals: true,
+  workflow: false,
+  debugMetadata: false,
+}
 
 export type AssistantTraceStatus = "pending" | "running" | "completed" | "error" | "waiting-approval" | "denied"
 
@@ -402,6 +451,8 @@ export interface AssistantTraceItem {
   filePaths?: string[]
   status?: AssistantTraceStatus
   sourceID?: string
+  section?: AssistantTraceSectionKey
+  visibilityKey?: AssistantTraceVisibilityKey
   isStreaming?: boolean
   debugEntries?: AssistantTraceDebugEntry[]
 }

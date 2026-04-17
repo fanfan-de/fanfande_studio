@@ -3,7 +3,9 @@ import type {
   AgentStreamEvent,
   AssistantTraceDebugEntry,
   AssistantTraceItem,
+  AssistantTraceSectionKey,
   AssistantTraceStatus,
+  AssistantTraceVisibilityKey,
   AssistantTurn,
   AssistantTurnPhase,
   AssistantTurnRuntime,
@@ -153,12 +155,32 @@ function buildPartDebugEntries(input: unknown) {
     const state = readRecord(part.state)
     appendDebugEntry(entries, "tool.call", readString(part.callID))
     appendDebugEntry(entries, "tool.status", readString(state?.status))
+    appendDebugEntry(entries, "tool.raw", state?.raw, 320)
     appendDebugEntry(entries, "tool.input", state?.input, 320)
     appendDebugEntry(entries, "tool.metadata", state?.metadata ?? part.metadata, 320)
     appendDebugEntry(entries, "tool.time", formatDebugTimeRange(state?.time))
     if (typeof part.providerExecuted === "boolean") {
       appendDebugEntry(entries, "tool.providerExecuted", part.providerExecuted)
     }
+  }
+
+  if (type === "source-url") {
+    appendDebugEntry(entries, "source.id", readString(part.sourceID))
+    appendDebugEntry(entries, "source.url", readString(part.url), 320)
+    appendDebugEntry(entries, "source.metadata", part.providerMetadata, 320)
+  }
+
+  if (type === "source-document") {
+    appendDebugEntry(entries, "source.id", readString(part.sourceID))
+    appendDebugEntry(entries, "source.mediaType", readString(part.mediaType))
+    appendDebugEntry(entries, "source.filename", readString(part.filename))
+    appendDebugEntry(entries, "source.metadata", part.providerMetadata, 320)
+  }
+
+  if (type === "file" || type === "image") {
+    appendDebugEntry(entries, "attachment.mime", readString(part.mime))
+    appendDebugEntry(entries, "attachment.filename", readString(part.filename))
+    appendDebugEntry(entries, "attachment.url", readString(part.url), 320)
   }
 
   if (type === "patch") {
@@ -246,7 +268,139 @@ function buildStreamEventDebugEntries(
 }
 
 function isVisibleAssistantTraceItem(item: AssistantTraceItem) {
-  return item.kind !== "system"
+  if (item.kind === "error") return true
+  if (item.visibilityKey === "debugMetadata" || item.section === "debug") return false
+  return item.kind !== "system" || Boolean(item.section)
+}
+
+function formatTokenCount(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? String(value) : ""
+}
+
+function buildUsageSummary(value: unknown) {
+  const tokens = readRecord(value)
+  if (!tokens) return ""
+
+  const cache = readRecord(tokens.cache)
+  const parts = [
+    formatTokenCount(tokens.input) ? `in ${formatTokenCount(tokens.input)}` : "",
+    formatTokenCount(tokens.output) ? `out ${formatTokenCount(tokens.output)}` : "",
+    formatTokenCount(tokens.reasoning) ? `reason ${formatTokenCount(tokens.reasoning)}` : "",
+    formatTokenCount(cache?.read) ? `cache read ${formatTokenCount(cache?.read)}` : "",
+    formatTokenCount(cache?.write) ? `cache write ${formatTokenCount(cache?.write)}` : "",
+  ].filter(Boolean)
+
+  return parts.length > 0 ? `Tokens: ${parts.join(", ")}` : ""
+}
+
+function buildCompletionDetail(input: {
+  finishReason?: unknown
+  message?: unknown
+}) {
+  const finishReason = readString(input.finishReason) || readString(readRecord(input.message)?.finishReason)
+  const usageSummary = buildUsageSummary(readRecord(input.message)?.tokens)
+  const parts = [
+    finishReason ? `Finish reason: ${finishReason}` : "",
+    usageSummary,
+  ].filter(Boolean)
+
+  return parts.length > 0 ? parts.join(" | ") : "Backend finished streaming this turn."
+}
+
+function buildCompletionTraceItem(input: {
+  id: string
+  sourceID: string
+  finishReason?: unknown
+  message?: unknown
+  status?: AssistantTraceStatus
+  debugEntries?: AssistantTraceDebugEntry[]
+}) {
+  return createTraceItem({
+    id: input.id,
+    sourceID: input.sourceID,
+    kind: "system",
+    label: "Workflow",
+    title: input.status === "pending" ? "Approval required" : "Response complete",
+    detail: input.status === "pending"
+      ? "The backend paused this turn until a permission decision is made."
+      : buildCompletionDetail({
+          finishReason: input.finishReason,
+          message: input.message,
+        }),
+    status: input.status ?? "completed",
+    section: input.status === "pending" ? "approvals" : "workflow",
+    visibilityKey: input.status === "pending" ? "approvals" : "workflow",
+    debugEntries: input.debugEntries,
+  })
+}
+
+function createToolTraceDetail(status: AssistantTraceStatus, state: Record<string, unknown> | null) {
+  if (status === "completed") {
+    return readString(state?.title) || "Tool completed."
+  }
+
+  if (status === "error") {
+    return "Tool failed."
+  }
+
+  if (status === "denied") {
+    return "Tool execution was denied."
+  }
+
+  if (status === "waiting-approval") {
+    return "Waiting for permission approval before the tool can continue."
+  }
+
+  return readString(state?.title) || "Preparing tool call."
+}
+
+function createToolTraceText(status: AssistantTraceStatus, state: Record<string, unknown> | null) {
+  if (status === "completed") {
+    return describeStructuredValue(state?.output ?? state?.modelOutput, "Tool completed.")
+  }
+
+  if (status === "error") {
+    return readString(state?.error) || "Tool failed."
+  }
+
+  if (status === "denied") {
+    return readString(state?.reason) || "Tool execution was denied."
+  }
+
+  if (status === "waiting-approval" || status === "running" || status === "pending") {
+    return compactText(readString(state?.raw), 320) || describeStructuredValue(state?.input, "Tool update received.")
+  }
+
+  return ""
+}
+
+function buildToolAttachmentTraceItems(
+  sourceID: string,
+  state: Record<string, unknown> | null,
+  debugEntries?: AssistantTraceDebugEntry[],
+) {
+  const attachments = Array.isArray(state?.attachments) ? state.attachments : []
+
+  return attachments
+    .map((attachment) => readRecord(attachment))
+    .filter((attachment): attachment is Record<string, unknown> => Boolean(attachment))
+    .map((attachment, index) => {
+      const mime = readString(attachment.mime)
+      const kind = mime.startsWith("image/") ? "image" : "file"
+
+      return createTraceItem({
+        id: `${sourceID}:attachment:${index}`,
+        sourceID: `${sourceID}:attachment:${index}`,
+        kind,
+        label: kind === "image" ? "Image" : "File",
+        title: readString(attachment.filename) || `Tool attachment ${index + 1}`,
+        detail: mime || "Attachment returned from the tool.",
+        status: "completed",
+        section: "file-change",
+        visibilityKey: "files",
+        debugEntries,
+      })
+    })
 }
 
 function createAssistantTurnRuntime(input: {
@@ -325,6 +479,10 @@ function settleQueuedPrompt(items: AssistantTraceItem[], turnID: string, status:
 
 function appendTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {
   return [...items, nextItem]
+}
+
+function upsertTraceItems(items: AssistantTraceItem[], nextItems: AssistantTraceItem[]) {
+  return nextItems.reduce((result, nextItem) => upsertTraceItem(result, nextItem), items)
 }
 
 function upsertTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {
@@ -412,24 +570,26 @@ function buildTraceItemFromPart(
   options?: {
     debugEntries?: AssistantTraceDebugEntry[]
   },
-): AssistantTraceItem | null {
+): AssistantTraceItem[] {
   const part = readRecord(input)
-  if (!part) return null
+  if (!part) return []
 
   const sourceID = readString(part.id) || createID("trace")
   const type = readString(part.type)
   const debugEntries = mergeDebugEntries(buildPartDebugEntries(part), options?.debugEntries)
 
   if (type === "reasoning" || type === "text") {
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: type,
       label: type === "reasoning" ? "Reasoning" : "Response",
       text: readString(part.text),
+      section: type === "reasoning" ? "reasoning" : "response",
+      visibilityKey: type === "reasoning" ? "reasoning" : "response",
       isStreaming: false,
       debugEntries,
-    })
+    })]
   }
 
   if (type === "tool") {
@@ -448,32 +608,59 @@ function buildTraceItemFromPart(
                 ? "denied"
                 : "running"
     const toolName = readString(part.tool) || "Tool"
-    const detail =
-      status === "completed"
-        ? describeStructuredValue(state?.output, "Tool completed.")
-        : status === "error"
-          ? readString(state?.error) || "Tool failed."
-          : status === "denied"
-            ? readString(state?.reason) || "Tool execution was denied."
-            : status === "waiting-approval"
-              ? "Waiting for permission approval before the tool can continue."
-          : readString(state?.title) || describeStructuredValue(state?.input, "Tool update received.")
 
-    return createTraceItem({
+    return [
+      createTraceItem({
       id: sourceID,
       sourceID,
       kind: "tool",
       label: "Tool",
       title: toolName,
-      detail,
+      text: createToolTraceText(status, state) || undefined,
+      detail: createToolTraceDetail(status, state),
       status,
+      section: "tools",
+      visibilityKey: "toolCalls",
       isStreaming: status === "running" || status === "pending",
       debugEntries,
-    })
+    }),
+      ...buildToolAttachmentTraceItems(sourceID, state, debugEntries),
+    ]
+  }
+
+  if (type === "source-url") {
+    return [createTraceItem({
+      id: sourceID,
+      sourceID,
+      kind: "source",
+      label: "Source",
+      title: readString(part.title) || "Referenced URL",
+      detail: readString(part.url) || "The model cited a URL source.",
+      status: "completed",
+      section: "sources",
+      visibilityKey: "sources",
+      debugEntries,
+    })]
+  }
+
+  if (type === "source-document") {
+    const detail = [readString(part.filename), readString(part.mediaType)].filter(Boolean).join(" | ")
+    return [createTraceItem({
+      id: sourceID,
+      sourceID,
+      kind: "source",
+      label: "Source",
+      title: readString(part.title) || "Referenced document",
+      detail: detail || "The model cited a document source.",
+      status: "completed",
+      section: "sources",
+      visibilityKey: "sources",
+      debugEntries,
+    })]
   }
 
   if (type === "file" || type === "image") {
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: type,
@@ -481,8 +668,10 @@ function buildTraceItemFromPart(
       title: readString(part.filename) || "Attachment",
       detail: readString(part.mime) || describeStructuredValue(part.url, "Attachment returned from the agent."),
       status: "completed",
+      section: "file-change",
+      visibilityKey: "files",
       debugEntries,
-    })
+    })]
   }
 
   if (type === "patch") {
@@ -513,7 +702,7 @@ function buildTraceItemFromPart(
         ? compactText(files.join(", "), 220)
         : "Patch metadata received from the backend."
 
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: "patch",
@@ -524,8 +713,10 @@ function buildTraceItemFromPart(
       detail,
       filePaths: changes.length > 0 ? changes.map((change) => change.file) : files,
       status: "completed",
+      section: "file-change",
+      visibilityKey: "files",
       debugEntries,
-    })
+    })]
   }
 
   if (type === "permission") {
@@ -550,7 +741,7 @@ function buildTraceItemFromPart(
       220,
     ) || "The backend recorded a permission lifecycle update."
 
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: "system",
@@ -558,12 +749,14 @@ function buildTraceItemFromPart(
       title,
       detail,
       status,
+      section: "approvals",
+      visibilityKey: "approvals",
       debugEntries,
-    })
+    })]
   }
 
   if (type === "subtask") {
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: "subtask",
@@ -571,25 +764,29 @@ function buildTraceItemFromPart(
       title: readString(part.description) || readString(part.agent) || "Delegated task",
       detail: compactText(readString(part.prompt), 220) || "The assistant delegated part of the request.",
       status: "completed",
+      section: "workflow",
+      visibilityKey: "workflow",
       debugEntries,
-    })
+    })]
   }
 
   if (type === "step-start") {
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
-      kind: "system",
+      kind: "step",
       label: "Step",
       title: "Reasoning step started",
       detail: "The backend opened a new reasoning step.",
       status: "pending",
+      section: "workflow",
+      visibilityKey: "workflow",
       debugEntries,
-    })
+    })]
   }
 
   if (type === "step-finish") {
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: "step",
@@ -597,12 +794,14 @@ function buildTraceItemFromPart(
       title: "Reasoning step finished",
       detail: readString(part.reason) || "The backend completed one reasoning step.",
       status: "completed",
+      section: "workflow",
+      visibilityKey: "workflow",
       debugEntries,
-    })
+    })]
   }
 
   if (type === "retry") {
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: "retry",
@@ -610,12 +809,14 @@ function buildTraceItemFromPart(
       title: "Retry scheduled",
       detail: `Attempt ${String(part.attempt ?? "?")}`,
       status: "pending",
+      section: "workflow",
+      visibilityKey: "workflow",
       debugEntries,
-    })
+    })]
   }
 
   if (type === "snapshot") {
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: "snapshot",
@@ -623,12 +824,14 @@ function buildTraceItemFromPart(
       title: "Workspace snapshot",
       detail: "The backend captured a workspace snapshot during the run.",
       status: "completed",
+      section: "workflow",
+      visibilityKey: "workflow",
       debugEntries,
-    })
+    })]
   }
 
   if (type === "agent") {
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: "system",
@@ -636,12 +839,14 @@ function buildTraceItemFromPart(
       title: readString(part.name) || "Agent update",
       detail: "The backend recorded the active agent for this turn.",
       status: "completed",
+      section: "workflow",
+      visibilityKey: "workflow",
       debugEntries,
-    })
+    })]
   }
 
   if (type === "compaction") {
-    return createTraceItem({
+    return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: "system",
@@ -651,17 +856,19 @@ function buildTraceItemFromPart(
         ? "The backend compacted the conversation context automatically."
         : "The backend recorded a compaction event for this turn.",
       status: "completed",
+      section: "workflow",
+      visibilityKey: "workflow",
       debugEntries,
-    })
+    })]
   }
 
-  return null
+  return []
 }
 
 function mergeTraceParts(items: AssistantTraceItem[], parts: unknown[]) {
   return parts.reduce<AssistantTraceItem[]>((result, part) => {
-    const nextItem = buildTraceItemFromPart(part)
-    return nextItem ? upsertTraceItem(result, nextItem) : result
+    const nextItems = buildTraceItemFromPart(part)
+    return nextItems.length > 0 ? upsertTraceItems(result, nextItems) : result
   }, items)
 }
 
@@ -679,7 +886,7 @@ function alignAnonymousTraceItemsWithParts(items: AssistantTraceItem[], parts: u
   })
 
   for (const part of parts) {
-    const nextItem = buildTraceItemFromPart(part)
+    const nextItem = buildTraceItemFromPart(part)[0]
     if (!nextItem || (nextItem.kind !== "reasoning" && nextItem.kind !== "text") || !nextItem.sourceID) {
       continue
     }
@@ -711,6 +918,8 @@ function appendSystemTrace(
   detail: string,
   status: AssistantTraceStatus = "completed",
   debugEntries?: AssistantTraceDebugEntry[],
+  section: AssistantTraceSectionKey = "workflow",
+  visibilityKey: AssistantTraceVisibilityKey = "workflow",
 ) {
   const nextItems = clearStreamingItems(settleQueuedPrompt(items, turnID))
   return appendTraceItem(
@@ -721,6 +930,8 @@ function appendSystemTrace(
       title,
       detail,
       status,
+      section,
+      visibilityKey,
       debugEntries,
     }),
   )
@@ -830,6 +1041,18 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
     )
   }
 
+  if (!errorMessage && readNumber(message.info.completed) > 0) {
+    items = upsertTraceItem(
+      items,
+      buildCompletionTraceItem({
+        id: `${message.info.id}-complete`,
+        sourceID: `${message.info.id}:complete`,
+        finishReason: message.info.finishReason,
+        message: message.info,
+      }),
+    )
+  }
+
   if (items.length === 0) {
     items = [
       createTraceItem({
@@ -838,6 +1061,8 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
         title: "No visible output",
         detail: "The backend stored this assistant turn without replayable trace items.",
         status: "completed",
+        section: "response",
+        visibilityKey: "response",
       }),
     ]
   }
@@ -887,6 +1112,8 @@ export function buildStreamingAssistantTurn(prompt: string): AssistantTurn {
       detail: "Waiting for backend response.",
       status: "pending",
       sourceID: `${turnID}:prompt`,
+      section: "workflow",
+      visibilityKey: "workflow",
     }),
   ]
 
@@ -914,6 +1141,8 @@ export function buildSessionStreamingAssistantTurn(detail = "Replaying backend s
       detail,
       status: "pending",
       sourceID: `${turnID}:prompt`,
+      section: "workflow",
+      visibilityKey: "workflow",
     }),
   ]
 
@@ -980,6 +1209,8 @@ export function finalizeStreamAssistantTurn(
   turn: AssistantTurn,
   input?: {
     status?: string
+    finishReason?: string
+    message?: unknown
     debugEntries?: AssistantTraceDebugEntry[]
   },
 ): AssistantTurn {
@@ -1002,13 +1233,9 @@ export function finalizeStreamAssistantTurn(
   if (input?.status === "blocked" || items.some((item) => item.status === "waiting-approval")) {
     const nextItems = upsertTraceItem(
       items,
-      createTraceItem({
+      buildCompletionTraceItem({
         id: `${turn.id}-blocked`,
         sourceID: `${turn.id}:blocked`,
-        kind: "system",
-        label: "System",
-        title: "Approval required",
-        detail: "The backend paused this turn until a permission decision is made.",
         status: "pending",
         debugEntries: input?.debugEntries,
       }),
@@ -1043,14 +1270,11 @@ export function finalizeStreamAssistantTurn(
     },
     upsertTraceItem(
       items,
-      createTraceItem({
+      buildCompletionTraceItem({
         id: `${turn.id}-complete`,
         sourceID: `${turn.id}:complete`,
-        kind: "system",
-        label: "System",
-        title: "Response complete",
-        detail: "Backend finished streaming this turn.",
-        status: "completed",
+        finishReason: input?.finishReason,
+        message: input?.message,
         debugEntries: input?.debugEntries,
       }),
     ),
@@ -1134,22 +1358,23 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
   }
 
   if (item.event === "part") {
-    const nextItem = buildTraceItemFromPart(payload?.part, {
+    const traceItems = buildTraceItemFromPart(payload?.part, {
       debugEntries: buildStreamEventDebugEntries("part", payload),
     })
-    if (!nextItem) return turn
-    const nextItems = upsertTraceItem(clearStreamingItems(preparedItems), nextItem)
+    if (traceItems.length === 0) return turn
+    const nextItems = upsertTraceItems(clearStreamingItems(preparedItems), traceItems)
+    const primaryItem = traceItems[0]
     const partRecord = readRecord(payload?.part)
     const partState = readRecord(partRecord?.state)
     const approvalRequestID = readString(partState?.approvalID) || null
 
-    if (nextItem.kind === "tool") {
-      const phase = nextItem.status === "waiting-approval"
+    if (primaryItem?.kind === "tool") {
+      const phase = primaryItem.status === "waiting-approval"
         ? "waiting_approval"
-        : nextItem.status === "running" || nextItem.status === "pending"
+        : primaryItem.status === "running" || primaryItem.status === "pending"
           ? "tool_running"
           : turn.runtime.phase
-      const state = nextItem.status === "waiting-approval" ? "Waiting for permission approval" : "Running tools"
+      const state = primaryItem.status === "waiting-approval" ? "Waiting for permission approval" : "Running tools"
 
       return updateAssistantTurnLifecycle(
         {
@@ -1159,7 +1384,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
         {
           phase,
           state,
-          toolName: nextItem.title ?? null,
+          toolName: primaryItem.title ?? null,
           approvalRequestID,
         },
         nextItems,
@@ -1191,6 +1416,8 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
       items: nextItems,
     }, {
       status: readString(payload?.status) || undefined,
+      finishReason: readString(payload?.finishReason) || undefined,
+      message: payload?.message,
       debugEntries,
     })
   }

@@ -462,6 +462,20 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
         detail: `length=${event.payload.part.text.length} chars`,
         tone: "success",
       }
+    case "tool.call.pending": {
+      const summary = summarizeToolState({
+        callID: event.payload.part.callID,
+        tool: event.payload.part.tool,
+        state: readRecord(event.payload.part.state) ?? {},
+      })
+      return {
+        ...base,
+        title: `Tool input streaming: ${summary.tool}`,
+        detail: summary.inputPreview,
+        tone: "info",
+        summary,
+      }
+    }
     case "tool.call.started": {
       const summary = summarizeToolState({
         callID: event.payload.part.callID,
@@ -539,6 +553,41 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
         summary,
       }
     }
+    case "source.recorded":
+      return {
+        ...base,
+        title: event.payload.part.type === "source-url" ? "Source recorded" : "Document source recorded",
+        detail:
+          event.payload.part.type === "source-url"
+            ? event.payload.part.title ?? event.payload.part.url
+            : event.payload.part.title,
+        tone: "info",
+        summary:
+          event.payload.part.type === "source-url"
+            ? {
+                sourceID: event.payload.part.sourceID,
+                url: event.payload.part.url,
+                title: event.payload.part.title,
+              }
+            : {
+                sourceID: event.payload.part.sourceID,
+                mediaType: event.payload.part.mediaType,
+                title: event.payload.part.title,
+                filename: event.payload.part.filename,
+              },
+      }
+    case "file.generated":
+      return {
+        ...base,
+        title: event.payload.part.type === "image" ? "Image generated" : "File generated",
+        detail: event.payload.part.filename ?? event.payload.part.mime,
+        tone: "success",
+        summary: {
+          type: event.payload.part.type,
+          mime: event.payload.part.mime,
+          filename: event.payload.part.filename,
+        },
+      }
     case "patch.generated":
       return {
         ...base,
@@ -743,6 +792,7 @@ function updateTurnFromEvent(turn: MutableTurnSummary, event: RuntimeEvent.Runti
       })
       return
     }
+    case "tool.call.pending":
     case "tool.call.started":
     case "tool.call.waiting_approval":
     case "tool.call.approved":

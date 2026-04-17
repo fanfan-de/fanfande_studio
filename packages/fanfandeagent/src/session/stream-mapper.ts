@@ -83,6 +83,30 @@ export function toRendererStreamEvents(event: RuntimeEvent.RuntimeEvent): Render
           }),
         },
       ]
+    case "part.recorded": {
+      const part = event.payload.part
+      if (
+        part.type !== "step-start" &&
+        part.type !== "step-finish" &&
+        part.type !== "retry" &&
+        part.type !== "subtask" &&
+        part.type !== "agent" &&
+        part.type !== "compaction"
+      ) {
+        return []
+      }
+
+      return [
+        {
+          event: "part",
+          data: withMeta(event, {
+            sessionID: event.sessionID,
+            turnID: event.turnID,
+            part,
+          }),
+        },
+      ]
+    }
     case "text.part.delta":
     case "reasoning.part.delta":
       return [
@@ -99,12 +123,15 @@ export function toRendererStreamEvents(event: RuntimeEvent.RuntimeEvent): Render
           }),
         },
       ]
+    case "tool.call.pending":
     case "tool.call.started":
     case "tool.call.waiting_approval":
     case "tool.call.approved":
     case "tool.call.denied":
     case "tool.call.completed":
     case "tool.call.failed":
+    case "source.recorded":
+    case "file.generated":
     case "text.part.completed":
     case "reasoning.part.completed":
     case "permission.requested":

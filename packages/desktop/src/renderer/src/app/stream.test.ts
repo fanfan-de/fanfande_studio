@@ -84,7 +84,58 @@ describe("stream trace reducer", () => {
     const toolItems = turn.items.filter((item) => item.kind === "tool")
     expect(toolItems).toHaveLength(1)
     expect(toolItems[0]?.status).toBe("completed")
-    expect(toolItems[0]?.detail).toContain("\"fixed\":3")
+    expect(toolItems[0]?.text).toContain("\"fixed\":3")
+  })
+
+  it("derives source and attachment trace items from assistant parts", () => {
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "msg-assistant-assets",
+          sessionID: "session-1",
+          role: "assistant",
+          created: 40,
+          completed: 41,
+        },
+        parts: [
+          {
+            id: "part-source-1",
+            type: "source-url",
+            sourceID: "src-1",
+            title: "API reference",
+            url: "https://example.com/api",
+          },
+          {
+            id: "part-tool-1",
+            type: "tool",
+            tool: "generate-report",
+            state: {
+              status: "completed",
+              output: { ok: true },
+              attachments: [
+                {
+                  mime: "image/png",
+                  filename: "preview.png",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ])
+
+    const assistantItems = turns[0]?.kind === "assistant" ? turns[0].items : []
+    expect(assistantItems.map((item) => item.kind)).toEqual(["source", "tool", "image", "system"])
+    expect(assistantItems[0]).toMatchObject({
+      kind: "source",
+      title: "API reference",
+      section: "sources",
+    })
+    expect(assistantItems[2]).toMatchObject({
+      kind: "image",
+      title: "preview.png",
+      section: "file-change",
+    })
   })
 
   it("keeps non-contiguous reasoning segments separate around tool events", () => {
@@ -312,7 +363,7 @@ describe("stream trace reducer", () => {
       state: "Backend response received",
     })
     expect(turns[1]?.kind === "assistant" ? turns[1].runtime.phase : null).toBe("completed")
-    expect(turns[1]?.kind === "assistant" ? turns[1].items.map((item) => item.kind) : []).toEqual(["reasoning", "text"])
+    expect(turns[1]?.kind === "assistant" ? turns[1].items.map((item) => item.kind) : []).toEqual(["reasoning", "text", "system"])
   })
 
   it("keeps backend-only history parts as hidden system trace items with debug metadata", () => {
@@ -349,7 +400,7 @@ describe("stream trace reducer", () => {
     ])
 
     expect(turns).toHaveLength(1)
-    expect(turns[0]?.kind === "assistant" ? turns[0].items.map((item) => item.kind) : []).toEqual(["system", "text"])
+    expect(turns[0]?.kind === "assistant" ? turns[0].items.map((item) => item.kind) : []).toEqual(["system", "text", "system"])
 
     const permissionItem = turns[0]?.kind === "assistant"
       ? turns[0].items.find((item) => item.title === "Permission requested")
