@@ -9,6 +9,8 @@ import { createSessionExecutionStream } from "#server/routes/session.ts"
 import * as Identifier from "#id/id.ts"
 import * as EventStore from "#session/event-store.ts"
 import * as Message from "#session/message.ts"
+import * as Orchestrator from "#session/orchestrator.ts"
+import * as RunningState from "#session/running-state.ts"
 import * as Session from "#session/session.ts"
 import * as LiveStreamHub from "#session/live-stream-hub.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
@@ -499,6 +501,133 @@ describe("server api", () => {
     expect(body.success).toBe(true)
     expect(body.data?.ok).toBe(true)
     expect(body.requestId).toBeString()
+  })
+
+  test("GET /api/debug runtime routes should expose running session state and recent events", async () => {
+    const app = createServerApp()
+    const session = await Session.createSession({
+      directory: process.cwd(),
+      projectID: "project_debug_runtime",
+      title: "Debug runtime",
+    })
+    const controller = new AbortController()
+    const assistantMessageID = Identifier.ascending("message")
+    const toolPart: Message.ToolPart = {
+      id: Identifier.ascending("part"),
+      sessionID: session.id,
+      messageID: assistantMessageID,
+      type: "tool",
+      callID: "toolcall_debug_runtime",
+      tool: "read-file",
+      state: {
+        status: "waiting-approval",
+        approvalID: "approval_debug_runtime",
+        input: {
+          path: "README.md",
+        },
+        title: "Read File",
+        time: {
+          start: Date.now(),
+        },
+      },
+    }
+
+    RunningState.register(session.id, controller, {
+      startedAt: 123,
+      reason: "prompt",
+    })
+
+    const turn = Orchestrator.startTurn({
+      sessionID: session.id,
+      userMessageID: Identifier.ascending("message"),
+      agent: "default",
+      model: {
+        providerID: "test-provider",
+        modelID: "test-model",
+      },
+    })
+
+    try {
+      turn.emit("tool.call.waiting_approval", {
+        part: toolPart,
+      })
+
+      const globalResponse = await app.request("http://localhost/api/debug/runtime?limit=3")
+      const globalBody = (await globalResponse.json()) as JsonEnvelope<{
+        logging: {
+          print: boolean
+          file: boolean
+          path: string | null
+        }
+        runningSessions: Array<{
+          session: {
+            id: string
+            title: string
+          }
+          running: {
+            sessionID: string
+            activeForMs: number
+            reason?: string
+          }
+          turn: {
+            id: string
+          } | null
+          recentEvents: Array<{
+            type: string
+          }>
+        }>
+      }>
+
+      expect(globalResponse.status).toBe(200)
+      expect(globalBody.success).toBe(true)
+      expect(typeof globalBody.data?.logging.print).toBe("boolean")
+      expect(globalBody.data?.runningSessions).toHaveLength(1)
+      expect(globalBody.data?.runningSessions[0]?.session.id).toBe(session.id)
+      expect(globalBody.data?.runningSessions[0]?.session.title).toBe("Debug runtime")
+      expect(globalBody.data?.runningSessions[0]?.running.sessionID).toBe(session.id)
+      expect(globalBody.data?.runningSessions[0]?.running.reason).toBe("prompt")
+      expect(globalBody.data?.runningSessions[0]?.turn?.id).toBe(turn.turnID)
+      expect(globalBody.data?.runningSessions[0]?.recentEvents.some((event) => event.type === "turn.started")).toBe(true)
+      expect(
+        globalBody.data?.runningSessions[0]?.recentEvents.some((event) => event.type === "tool.call.waiting_approval"),
+      ).toBe(true)
+
+      const detailResponse = await app.request(`http://localhost/api/debug/sessions/${session.id}/runtime?limit=5`)
+      const detailBody = (await detailResponse.json()) as JsonEnvelope<{
+        session: {
+          id: string
+          directory: string
+        }
+        running: {
+          sessionID: string
+          activeForMs: number
+          reason?: string
+        }
+        turn: {
+          id: string
+        } | null
+        recentEvents: Array<{
+          type: string
+          summary?: Record<string, unknown>
+        }>
+      }>
+
+      expect(detailResponse.status).toBe(200)
+      expect(detailBody.success).toBe(true)
+      expect(detailBody.data?.session.id).toBe(session.id)
+      expect(detailBody.data?.session.directory).toBe(process.cwd())
+      expect(detailBody.data?.running.sessionID).toBe(session.id)
+      expect(detailBody.data?.turn?.id).toBe(turn.turnID)
+      const detailEvents = detailBody.data?.recentEvents ?? []
+      const latestEvent = detailEvents[detailEvents.length - 1]
+      expect(latestEvent?.type).toBe("tool.call.waiting_approval")
+      expect(latestEvent?.summary?.["tool"]).toBe("read-file")
+      expect(latestEvent?.summary?.["status"]).toBe("waiting-approval")
+    } finally {
+      Orchestrator.finishTurn(turn)
+      RunningState.finish(session.id, controller)
+      Session.removeSession(session.id)
+    }
   })
 
   test("POST /api/sessions should validate payload", async () => {

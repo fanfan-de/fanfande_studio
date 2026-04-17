@@ -6,6 +6,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { ProjectRoutes } from "#server/routes/projects.ts"
 import { PermissionsRoutes } from "#server/routes/permissions.ts"
 import { PtyRoutes } from "#server/routes/pty.ts"
+import { DebugRoutes } from "#server/routes/debug.ts"
 import { SettingsRoutes } from "#server/routes/settings.ts"
 import { SessionRoutes } from "#server/routes/session.ts"
 import { isApiError } from "#server/error.ts"
@@ -111,6 +112,7 @@ export function createServerRuntime(options: Pick<ServerOptions, "corsWhitelist"
   )
 
   app.route("/api", SettingsRoutes())
+  app.route("/api/debug", DebugRoutes())
   app.route("/api/permissions", PermissionsRoutes())
   app.route("/api/pty", PtyRoutes({ registry: ptyRegistry, upgradeWebSocket }))
   app.route("/api/projects", ProjectRoutes())

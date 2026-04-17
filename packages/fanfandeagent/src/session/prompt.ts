@@ -387,7 +387,9 @@ export const prompt = fn(PromptInput, async (input) => {
     }
     //
     const controller = new AbortController();
-    RunningState.register(input.sessionID, controller);
+    RunningState.register(input.sessionID, controller, {
+        reason: "prompt",
+    });
 
     const baselineSnapshot = await Snapshot.track().catch((error) => {
         log.warn("failed to capture pre-turn snapshot", {
@@ -533,7 +535,9 @@ export const resume = fn(ResumeInput, async (input) => {
         throw new Error(`Session '${input.sessionID}' is already running.`);
 
     const controller = new AbortController();
-    RunningState.register(input.sessionID, controller);
+    RunningState.register(input.sessionID, controller, {
+        reason: "resume",
+    });
     const latestUser = SessionDiff.findLatestUserMessageWithSnapshot(input.sessionID)
     let turn: Orchestrator.TurnContext | undefined
 

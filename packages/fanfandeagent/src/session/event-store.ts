@@ -137,6 +137,26 @@ export function listSessionEvents(input: {
   return rows.map((row) => fromStoredRecord(SessionEventRecord.parse(row)))
 }
 
+export function listRecentSessionEvents(input: {
+  sessionID: string
+  limit?: number
+}) {
+  ensureEventStoreTables()
+
+  const limit = Math.max(1, Math.min(input.limit ?? 20, 100))
+  const rows = db.db.prepare(`
+    SELECT "eventID", "sessionID", "turnID", "seq", "type", "payload", "timestamp"
+    FROM "session_events"
+    WHERE "sessionID" = ?
+    ORDER BY "timestamp" DESC, "turnID" DESC, "seq" DESC
+    LIMIT ?
+  `).all(input.sessionID, limit)
+
+  return rows
+    .map((row) => fromStoredRecord(SessionEventRecord.parse(row)))
+    .reverse()
+}
+
 export function deleteSessionEvents(sessionID: string) {
   ensureEventStoreTables()
   return db.deleteMany("session_events", [{ column: "sessionID", value: sessionID }])

@@ -54,6 +54,7 @@ export const Default = create({ service: "default" })
 
 export interface Options {
   print: boolean
+  file?: boolean
   dev?: boolean
   level?: Level
 }
@@ -62,30 +63,68 @@ let logpath = ""
 export function file() {
   return logpath
 }
-let write = (msg: any) => {
+type Writer = (msg: any) => void
+
+const defaultWriter: Writer = (msg) => {
   process.stderr.write(msg)
-  return msg.length
 }
+
+let writers: Writer[] = [defaultWriter]
+let loggerStatus = {
+  level: level as Level,
+  print: true,
+  file: false,
+}
+
+function write(msg: any) {
+  for (const current of writers) {
+    current(msg)
+  }
+}
+
+export function status() {
+  return {
+    level: loggerStatus.level,
+    print: loggerStatus.print,
+    file: loggerStatus.file,
+    path: logpath || null,
+  }
+}
+
 //初始化log系统
 export async function init(options: Options) {
   // 设置全局级别
   if (options.level) level = options.level
-  cleanup(Global.Path.log)// 清理旧日志
-  // 如果 options.print 为 true，直接返回，保持默认的 console 输出
-  if (options.print) return
-  logpath = path.join(
-    Global.Path.log,
-    options.dev ? "dev.log" : new Date().toISOString().split(".")[0]!.replace(/:/g, "") + ".log",
-  )
-  // 核心：使用 Bun 的高性能文件 API
-  const logfile = Bun.file(logpath)
-  await fs.truncate(logpath).catch(() => { })
-  const writer = logfile.writer()
-  // 策略替换：重写 write 函数，改为写入文件并刷新
-  write = async (msg: any) => {
-    const num = writer.write(msg)
-    writer.flush()
-    return num
+  const enableFile = options.file ?? !options.print
+  const enablePrint = options.print || !enableFile
+
+  const nextWriters: Writer[] = []
+  if (enablePrint) {
+    nextWriters.push(defaultWriter)
+  }
+
+  logpath = ""
+  if (enableFile) {
+    await cleanup(Global.Path.log)// 清理旧日志
+    logpath = path.join(
+      Global.Path.log,
+      options.dev ? "dev.log" : new Date().toISOString().split(".")[0]!.replace(/:/g, "") + ".log",
+    )
+    // 核心：使用 Bun 的高性能文件 API
+    const logfile = Bun.file(logpath)
+    await fs.truncate(logpath).catch(() => { })
+    const writer = logfile.writer()
+    nextWriters.push((msg: any) => {
+      writer.write(msg)
+      writer.flush()
+    })
+  }
+
+  writers = nextWriters.length > 0 ? nextWriters : [defaultWriter]
+  loggerStatus = {
+    level,
+    print: enablePrint,
+    file: enableFile,
   }
 }
 //`cleanup` 函数负责维护日志目录的清洁，防止磁盘被日志填满。
