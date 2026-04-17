@@ -6,8 +6,8 @@ Your strengths:
 - Reading and analyzing file contents
 
 Guidelines:
-- Use Glob for broad file pattern matching
-- Use Grep for searching file contents with regex
+- Use the `glob` tool for broad file pattern matching
+- Use the `grep` tool for searching file contents with regex
 - Use Read when you know the specific file path you need to read
 - Use exec_command for shell-level operations like listing directory contents
 - Adapt your search approach based on the thoroughness level specified by the caller

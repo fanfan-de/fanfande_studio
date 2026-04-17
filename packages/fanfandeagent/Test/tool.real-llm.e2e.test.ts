@@ -127,6 +127,22 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
       },
     },
     {
+      name: "glob",
+      toolName: "glob",
+      setup: async (directory) => {
+        await fs.mkdir(path.join(directory, "src", "nested"), { recursive: true })
+        await fs.writeFile(path.join(directory, "src", "index.ts"), "export const index = true\n", "utf8")
+        await fs.writeFile(path.join(directory, "src", "nested", "child.ts"), "export const child = true\n", "utf8")
+        await fs.writeFile(path.join(directory, "notes.txt"), "notes", "utf8")
+      },
+      prompt: "Find the TypeScript files under src with the glob tool and mention index.ts and child.ts.",
+      verify: async (_directory, _assistant, toolPart) => {
+        const completed = toolPart.state as Message.ToolStateCompleted
+        expect(String(completed.output)).toContain("index.ts")
+        expect(String(completed.output)).toContain("child.ts")
+      },
+    },
+    {
       name: "search-files",
       toolName: "search-files",
       setup: async (directory) => {
@@ -139,6 +155,21 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
         const completed = toolPart.state as Message.ToolStateCompleted
         expect(String(completed.output)).toContain("needle")
         expect(String(completed.output)).toContain("one.txt")
+      },
+    },
+    {
+      name: "grep",
+      toolName: "grep",
+      setup: async (directory) => {
+        await fs.mkdir(path.join(directory, "grep"), { recursive: true })
+        await fs.writeFile(path.join(directory, "grep", "one.ts"), "const needle = 'value'\n", "utf8")
+        await fs.writeFile(path.join(directory, "grep", "two.ts"), "const haystack = true\n", "utf8")
+      },
+      prompt: "Use the grep tool to search the current directory for needle and mention one.ts.",
+      verify: async (_directory, _assistant, toolPart) => {
+        const completed = toolPart.state as Message.ToolStateCompleted
+        expect(String(completed.output)).toContain("needle")
+        expect(String(completed.output)).toContain("one.ts")
       },
     },
     {

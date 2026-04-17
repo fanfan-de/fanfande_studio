@@ -1,6 +1,6 @@
 import path from "node:path"
 import { createReadStream, realpathSync } from "node:fs"
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises"
 import { Instance } from "#project/instance.ts"
 import * as Filesystem from "#util/filesystem.ts"
 
@@ -66,7 +66,20 @@ const BINARY_EXTENSIONS = new Set([
   ".zip",
 ])
 
+const DEFAULT_SKIPPED_DIRECTORY_NAMES = new Set([
+  ".git",
+  "node_modules",
+])
+
 type TextFileAction = "read" | "write"
+export type ProjectEntryKind = "file" | "directory"
+
+export interface ProjectEntry {
+  path: string
+  relativePath: string
+  displayPath: string
+  kind: ProjectEntryKind
+}
 
 export interface WriteTextFileTarget {
   path: string
@@ -139,6 +152,60 @@ export function resolveToolPath(inputPath: string): string {
 export function toDisplayPath(resolvedPath: string): string {
   const relative = path.relative(Instance.directory, resolvedPath)
   return relative ? relative : "."
+}
+
+export async function walkProjectEntries(
+  root: string,
+  options: {
+    includeHidden?: boolean
+    visit: (entry: ProjectEntry) => boolean | void | Promise<boolean | void>
+  },
+) {
+  const info = await stat(root)
+  if (!info.isDirectory()) return
+
+  let stopped = false
+
+  const walk = async (current: string): Promise<void> => {
+    if (stopped) return
+
+    const items = await readdir(current, { withFileTypes: true })
+    items.sort((left, right) => left.name.localeCompare(right.name))
+
+    for (const item of items) {
+      if (stopped) return
+      if (!options.includeHidden && item.name.startsWith(".")) continue
+      if (item.isSymbolicLink()) continue
+
+      const fullPath = path.join(current, item.name)
+      const kind = item.isDirectory()
+        ? "directory"
+        : item.isFile()
+          ? "file"
+          : undefined
+
+      if (!kind) continue
+      if (kind === "directory" && DEFAULT_SKIPPED_DIRECTORY_NAMES.has(item.name)) continue
+
+      const entry: ProjectEntry = {
+        path: fullPath,
+        relativePath: path.relative(root, fullPath) || item.name,
+        displayPath: toDisplayPath(fullPath),
+        kind,
+      }
+
+      if (await options.visit(entry) === false) {
+        stopped = true
+        return
+      }
+
+      if (kind === "directory") {
+        await walk(fullPath)
+      }
+    }
+  }
+
+  await walk(root)
 }
 
 function formatTextFileAccessError(
@@ -232,6 +299,28 @@ export async function readTextFile(inputPath: string): Promise<string> {
   const resolved = resolveToolPath(inputPath)
   await assertReadableTextFile(resolved)
   return await readFile(resolved, "utf8")
+}
+
+export async function readSearchableTextFile(resolvedPath: string): Promise<string | undefined> {
+  try {
+    await assertReadableTextFile(resolvedPath)
+    return await readFile(resolvedPath, "utf8")
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ""
+    const code = (error as NodeJS.ErrnoException | undefined)?.code
+
+    if (
+      code === "ENOENT" ||
+      message.includes("binary file") ||
+      message.includes("it is a directory") ||
+      message.includes("it is not a regular file") ||
+      message.includes("blocked device path")
+    ) {
+      return undefined
+    }
+
+    throw error
+  }
 }
 
 export async function prepareWriteTextFile(inputPath: string): Promise<WriteTextFileTarget> {

@@ -7,6 +7,8 @@ import z from "zod"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/message.ts"
 import { ExecCommandTool, resolveExecCommandBashExecutable } from "#tool/exec-command.ts"
+import { GlobTool } from "#tool/glob.ts"
+import { GrepTool } from "#tool/grep.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import * as Tool from "#tool/tool.ts"
@@ -1092,6 +1094,90 @@ describe("tool contract", () => {
           expect(await readFile(path.join(repositoryRoot, "notes.txt"), "utf8")).toBe("omega\r\ngamma\r\n")
           expect(result.title).toBe("Updated notes.txt")
           expect(result.text).toBe("Replaced 1 occurrence(s) in notes.txt.")
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("matches files and directories with glob", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-glob-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "glob")
+      await mkdir(path.join(repositoryRoot, "src", "utils"), { recursive: true })
+      await mkdir(path.join(repositoryRoot, "docs"), { recursive: true })
+      await writeFile(path.join(repositoryRoot, "src", "app.ts"), "export const app = true\n", "utf8")
+      await writeFile(path.join(repositoryRoot, "src", "utils", "helper.ts"), "export const helper = true\n", "utf8")
+      await writeFile(path.join(repositoryRoot, "docs", "guide.md"), "# docs\n", "utf8")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await GlobTool.init()
+          const ctx = {
+            sessionID: "session-glob",
+            messageID: "message-glob",
+          }
+
+          const fileResult = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              pattern: "**/*.ts",
+              path: "src",
+            },
+            ctx,
+          ))
+
+          expect(fileResult.title).toBe("Glob **/*.ts")
+          expect(fileResult.text).toContain(`[file] ${path.join("src", "app.ts")}`)
+          expect(fileResult.text).toContain(`[file] ${path.join("src", "utils", "helper.ts")}`)
+          expect(fileResult.text).not.toContain("guide.md")
+
+          const dirResult = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              pattern: "**/utils",
+              type: "dirs",
+            },
+            ctx,
+          ))
+
+          expect(dirResult.text).toContain(`[dir] ${path.join("src", "utils")}`)
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("searches file contents with grep and respects glob filters", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-grep-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "grep")
+      await mkdir(path.join(repositoryRoot, "src"), { recursive: true })
+      await writeFile(path.join(repositoryRoot, "src", "one.ts"), "const Alpha = 1\nconst beta = Alpha + 1\n", "utf8")
+      await writeFile(path.join(repositoryRoot, "src", "two.ts"), "const beta = 2\n", "utf8")
+      await writeFile(path.join(repositoryRoot, "notes.txt"), "Alpha outside src\n", "utf8")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await GrepTool.init()
+          const result = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              pattern: "Alpha\\s*=\\s*\\d",
+              glob: "src/**/*.ts",
+            },
+            {
+              sessionID: "session-grep",
+              messageID: "message-grep",
+            },
+          ))
+
+          expect(result.title).toBe("Grep Alpha\\s*=\\s*\\d")
+          expect(result.text).toContain(`${path.join("src", "one.ts")}:1:7: const Alpha = 1`)
+          expect(result.text).not.toContain("notes.txt")
         },
       })
     } finally {

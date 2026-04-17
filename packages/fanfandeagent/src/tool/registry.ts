@@ -2,6 +2,8 @@ import { Instance } from "#project/instance.ts"
 import * as Tool from "#tool/tool.ts"
 import { ApplyPatchTool } from "#tool/apply-patch.ts"
 import { ExecCommandTool } from "#tool/exec-command.ts"
+import { GlobTool } from "#tool/glob.ts"
+import { GrepTool } from "#tool/grep.ts"
 import { ListDirectoryTool } from "#tool/list-directory.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
@@ -46,6 +48,8 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
     WriteFileTool,
     ReplaceTextTool,
     ApplyPatchTool,
+    GlobTool,
+    GrepTool,
     ListDirectoryTool,
     SearchFilesTool,
     ExecCommandTool,
