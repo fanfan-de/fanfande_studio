@@ -96,6 +96,7 @@ export const RequestResource = z
     paths: z.array(z.string()).optional(),
     command: z.string().optional(),
     workdir: z.string().optional(),
+    body: z.string().optional(),
   })
   .meta({
     ref: "PermissionRequestResource",

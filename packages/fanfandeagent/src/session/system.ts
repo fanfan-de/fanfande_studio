@@ -13,8 +13,10 @@ import PROMPT_KIMI from "./prompt/kimi.txt"
 
 import PROMPT_CODEX from "./prompt/codex.txt"
 import PROMPT_TRINITY from "./prompt/trinity.txt"
+import PROMPT_PLAN from "./prompt/plan.txt"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
+import type * as Session from "#session/session.ts"
 //import type { Agent } from "@/agent/agent"
 //import { Permission } from "@/permission"
 //import { Skill } from "@/skill"
@@ -38,9 +40,33 @@ export function provider(model: Provider.Model): string[] {
     return [PROMPT_DEFAULT]
 }
 
-export function defaultPrompt ()
+export function defaultPrompt(input?: {
+    agent?: {
+        name?: string
+    }
+    session?: Session.SessionInfo | null
+})
 {
-    return [PROMPT_DEFAULT]
+    const prompts = [PROMPT_DEFAULT]
+    if (input?.agent?.name === "plan") {
+        prompts.push(PROMPT_PLAN)
+    }
+
+    const workflow = input?.session?.workflow
+    const approvedPlan = workflow?.mode === "execution"
+        ? workflow.plan.approvedMarkdown?.trim()
+        : undefined
+
+    if (approvedPlan) {
+        prompts.push([
+            "<approved-plan>",
+            "A plan has already been approved for this session. Unless the user changes scope, execute according to it.",
+            approvedPlan,
+            "</approved-plan>",
+        ].join("\n"))
+    }
+
+    return prompts
 }
 
 export async function environment(model: Provider.Model) {

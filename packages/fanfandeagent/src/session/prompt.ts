@@ -309,7 +309,15 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 throw new Error("No user message found in stream. This should never happen.");
             }
 
-            const agent = (await Agent.get(lastUser.agent)) ?? Agent.planAgent;
+            const activeSession = Session.DataBaseRead("sessions", sessionID) as Session.SessionInfo | null;
+            if (!activeSession) {
+                throw new Error(`Session '${sessionID}' was not found.`);
+            }
+
+            const requestedAgentName = lastUser.agent ?? "default";
+            const workflow = Session.normalizeWorkflowState(activeSession.workflow);
+            const effectiveAgentName = workflow.mode === "planning" ? "plan" : requestedAgentName;
+            const agent = (await Agent.get(effectiveAgentName)) ?? Agent.planAgent;
             const maxLoopIterations = resolvePromptLoopLimit(agent);
             iteration += 1;
             if (iteration > maxLoopIterations) {
@@ -358,7 +366,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 Instance.project.id,
             );
 
-            const assistantMessage = createAssistantMessage(sessionID, lastUser, model);
+            const assistantMessage = createAssistantMessage(sessionID, lastUser, model, agent.name);
             currentAssistant = assistantMessage;
             await persistMessageRecord(assistantMessage, turn);
 
@@ -374,7 +382,10 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             //组装 静态系统提示词,(base + 项目环境)
             const system = [
                 //SystemPrompt.provider(model),//每一个模型对应一个system prompt，我觉得不是很必要
-                ...SystemPrompt.defaultPrompt(),
+                ...SystemPrompt.defaultPrompt({
+                    agent,
+                    session: activeSession,
+                }),
                 ...await SystemPrompt.environment(model),
                 ...await SystemPrompt.skills(sessionID, lastUser.skills ?? []),
                 ...(lastUser.system ? [lastUser.system] : []),
@@ -959,6 +970,7 @@ function createAssistantMessage(
     sessionID: string,
     lastUser: Message.User,
     model: Provider.Model,
+    agentName: string,
 ): Message.Assistant {
     return {
         id: Identifier.ascending("message"),
@@ -968,7 +980,7 @@ function createAssistantMessage(
         parentID: "",
         modelID: model.id,
         providerID: model.providerID,
-        agent: lastUser.agent,
+        agent: agentName,
         path: {
             cwd: Instance.directory,
             root: Instance.worktree,

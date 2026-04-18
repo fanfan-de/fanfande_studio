@@ -40,6 +40,7 @@ export interface ToolApprovalDetails {
   command?: string
   paths?: string[]
   workdir?: string
+  body?: string
 }
 
 export interface ToolApprovalDescriptor {

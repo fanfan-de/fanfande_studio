@@ -13,6 +13,7 @@ const prefixes = {
   user: "usr",
   part: "prt",
   pty: "pty",
+  task: "tsk",
   tool: "tool",
 } as const
 

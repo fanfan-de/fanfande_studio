@@ -5,6 +5,8 @@ import z from "zod"
 import * as Tool from "#tool/tool.ts"
 import { Flag } from "#flag/flag.ts"
 import { Instance } from "#project/instance.ts"
+import { getShellTaskRegistry } from "#shell/task-registry.ts"
+import { terminateProcessTree } from "#shell/terminate.ts"
 import { resolveToolPath, toDisplayPath } from "#tool/shared.ts"
 import { which } from "#util/which.ts"
 
@@ -29,6 +31,8 @@ const ExecCommandParameters = z.object({
   maxOutputChars: z.number().int().positive().max(200_000).optional().describe("Maximum chars kept for stdout and stderr."),
   allowUnsafe: z.boolean().optional().describe("Allow known dangerous command patterns."),
   description: z.string().optional().describe("Short description for the command intent."),
+  runInBackground: z.boolean().optional().describe("Start the command as a background task instead of waiting for it."),
+  run_in_background: z.boolean().optional().describe("Alias for runInBackground."),
 })
 
 interface ExecCommandMetadata extends Record<string, unknown> {
@@ -45,10 +49,29 @@ interface ExecCommandMetadata extends Record<string, unknown> {
   stderrTruncated: boolean
   stdout: string
   stderr: string
+  runInBackground: boolean
+  backgroundTaskId: string | null
 }
 
 async function isExistingFile(filePath: string) {
   return await stat(filePath).then((fileStat) => fileStat.isFile()).catch(() => false)
+}
+
+function shouldRunInBackground(parameters: z.infer<typeof ExecCommandParameters>) {
+  return parameters.runInBackground ?? parameters.run_in_background ?? false
+}
+
+export function waitForProcessExit(proc: {
+  once(event: "error", listener: (error: Error) => void): unknown
+  once(
+    event: "exit",
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): unknown
+}) {
+  return new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    proc.once("error", reject)
+    proc.once("exit", (code, signal) => resolve({ code, signal }))
+  })
 }
 
 export async function resolveExecCommandBashExecutable(options?: {
@@ -189,6 +212,47 @@ export const ExecCommandTool = Tool.define(
         const timeoutMs = parameters.timeoutMs ?? DEFAULT_TIMEOUT_MS
         const maxOutputChars = parameters.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS
         const bash = await resolveExecCommandBashExecutable()
+        const runInBackground = shouldRunInBackground(parameters)
+        const displayCwd = toDisplayPath(cwd)
+
+        if (runInBackground) {
+          const task = getShellTaskRegistry().start({
+            title: parameters.description?.trim(),
+            command,
+            cwd,
+            shell: bash,
+          })
+
+          return {
+            title: parameters.description?.trim() || `exec_command: ${command}`,
+            text: [
+              `Command: ${command}`,
+              `Workdir: ${displayCwd}`,
+              `Shell: ${bash}`,
+              `Background Task ID: ${task.id}`,
+              "Status: started in background",
+              "",
+              "Use read_background_task to inspect output and stop_background_task to terminate it.",
+            ].join("\n"),
+            metadata: {
+              command,
+              shell: bash,
+              cwd,
+              displayCwd,
+              timeoutMs,
+              exitCode: null,
+              signal: null,
+              timedOut: false,
+              aborted: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdout: "",
+              stderr: "",
+              runInBackground: true,
+              backgroundTaskId: task.id,
+            },
+          }
+        }
 
         const proc = spawn(bash, ["-lc", command], {
           cwd,
@@ -238,19 +302,16 @@ export const ExecCommandTool = Tool.define(
 
         const timer = setTimeout(() => {
           timedOut = true
-          proc.kill()
+          terminateProcessTree(proc)
         }, timeoutMs)
 
         const onAbort = () => {
           aborted = true
-          proc.kill()
+          terminateProcessTree(proc)
         }
         ctx.abort?.addEventListener("abort", onAbort, { once: true })
 
-        const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
-          proc.once("error", reject)
-          proc.once("close", (code, signal) => resolve({ code, signal }))
-        }).finally(() => {
+        const exit = await waitForProcessExit(proc).finally(() => {
           clearTimeout(timer)
           ctx.abort?.removeEventListener("abort", onAbort)
         })
@@ -265,7 +326,6 @@ export const ExecCommandTool = Tool.define(
           notes.push("Output was truncated. Increase maxOutputChars to inspect more.")
         }
 
-        const displayCwd = toDisplayPath(cwd)
         const normalizedStdout = stdout.trimEnd()
         const normalizedStderr = stderr.trimEnd()
 
@@ -298,6 +358,8 @@ export const ExecCommandTool = Tool.define(
             stderrTruncated,
             stdout: normalizedStdout,
             stderr: normalizedStderr,
+            runInBackground: false,
+            backgroundTaskId: null,
           },
         }
       },
@@ -322,13 +384,17 @@ export const ExecCommandTool = Tool.define(
             timedOut: metadata.timedOut,
             aborted: metadata.aborted,
             status:
-              metadata.timedOut
-                ? "timed_out"
-                : metadata.aborted
-                  ? "aborted"
-                  : metadata.exitCode === 0
-                    ? "ok"
-                    : "failed",
+              metadata.runInBackground
+                ? "background_started"
+                : metadata.timedOut
+                  ? "timed_out"
+                  : metadata.aborted
+                    ? "aborted"
+                    : metadata.exitCode === 0
+                      ? "ok"
+                      : "failed",
+            backgroundTaskId: metadata.backgroundTaskId,
+            runInBackground: metadata.runInBackground,
             stdoutTruncated: metadata.stdoutTruncated,
             stderrTruncated: metadata.stderrTruncated,
             stdout: metadata.stdout,

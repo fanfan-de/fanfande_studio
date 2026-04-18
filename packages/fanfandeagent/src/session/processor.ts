@@ -368,6 +368,12 @@ function isAskUserQuestionToolResult(
     return Boolean(metadata && metadata.kind === "ask-user-question")
 }
 
+function isWorkflowControlToolResult(
+    metadata: Record<string, unknown> | undefined,
+) {
+    return Boolean(metadata && metadata.kind === "workflow-control" && metadata.restartLoop === true)
+}
+
 type FinalToolResultCandidate = {
     toolCallId: string
     toolName?: string
@@ -494,6 +500,7 @@ export function create(input: {
     const toolcalls: Record<string, Message.ToolPart> = {}
     let snapshot: string | undefined
     let blocked = false
+    let restartLoop = false
     let attempt = 0
     let needsCompaction = false
     const emitRuntimeEvent = input.turn?.emit.bind(input.turn)
@@ -1074,6 +1081,9 @@ export function create(input: {
                                     if (isAskUserQuestionToolResult(normalized.metadata)) {
                                         blocked = true
                                     }
+                                    if (isWorkflowControlToolResult(normalized.metadata)) {
+                                        restartLoop = true
+                                    }
                                 }
                                 break;
 
@@ -1379,6 +1389,10 @@ export function create(input: {
                     throw e  // 閲嶆柊鎶涘嚭閿欒
                 }
                 if (needsCompaction) return "compact"
+                if (restartLoop) {
+                    input.Assistant.finishReason = "tool-calls"
+                    return "restart"
+                }
                 if (blocked) return "stop"
                 if (input.Assistant.error) return "stop"
                 return "continue"

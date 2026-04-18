@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { $ } from "bun"
+import { EventEmitter } from "node:events"
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -7,11 +8,13 @@ import z from "zod"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/message.ts"
 import { AskUserQuestionTool } from "#tool/ask-user-question.ts"
-import { ExecCommandTool, resolveExecCommandBashExecutable } from "#tool/exec-command.ts"
+import { ExecCommandTool, resolveExecCommandBashExecutable, waitForProcessExit } from "#tool/exec-command.ts"
 import { GlobTool } from "#tool/glob.ts"
 import { GrepTool } from "#tool/grep.ts"
+import { ReadBackgroundTaskTool } from "#tool/read-background-task.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
+import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
 import * as Tool from "#tool/tool.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
 import { WriteFileTool } from "#tool/write-file.ts"
@@ -388,6 +391,96 @@ describe("tool contract", () => {
     } finally {
       await rm(repositoryRoot, { recursive: true, force: true })
     }
+  }, 120000)
+
+  it("waits for process exit without depending on stream close", async () => {
+    const proc = new EventEmitter() as EventEmitter & {
+      once(event: "error", listener: (error: Error) => void): unknown
+      once(event: "exit", listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown
+    }
+
+    const pending = waitForProcessExit(proc)
+    proc.emit("exit", 0, null)
+
+    await expect(pending).resolves.toEqual({
+      code: 0,
+      signal: null,
+    })
+  })
+
+  it("starts background shell tasks and lets companion tools read and stop them", async () => {
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const execRuntime = await ExecCommandTool.init()
+        const readRuntime = await ReadBackgroundTaskTool.init()
+        const stopRuntime = await StopBackgroundTaskTool.init()
+        const ctx = {
+          sessionID: "session-background-task",
+          messageID: "message-background-task",
+        }
+
+        const started = Tool.normalizeToolOutput(await execRuntime.execute(
+          {
+            command: "printf hello && exec sleep 30",
+            run_in_background: true,
+          },
+          ctx,
+        ))
+
+        const backgroundTaskId = String((started.metadata as any)?.backgroundTaskId)
+        const modelOutput = await execRuntime.toModelOutput?.(started as any)
+        expect(started.text).toContain("Status: started in background")
+        expect(started.metadata).toMatchObject({
+          runInBackground: true,
+          backgroundTaskId: expect.stringMatching(/^tsk_/),
+        })
+
+        const normalizedModelOutput = Tool.normalizeToolModelOutput(modelOutput!)
+        expect(normalizedModelOutput.type).toBe("json")
+        if (normalizedModelOutput.type !== "json") {
+          throw new Error(`Expected json model output, received ${normalizedModelOutput.type}`)
+        }
+        expect((normalizedModelOutput.value as any).status).toBe("background_started")
+        expect(String((normalizedModelOutput.value as any).backgroundTaskId)).toStartWith("tsk_")
+        expect((normalizedModelOutput.value as any).runInBackground).toBe(true)
+
+        let snapshot = Tool.normalizeToolOutput(await readRuntime.execute(
+          {
+            id: backgroundTaskId,
+          },
+          ctx,
+        ))
+        const deadline = Date.now() + 5_000
+        while (!String((snapshot.metadata as any)?.output ?? "").includes("hello") && Date.now() < deadline) {
+          await Bun.sleep(25)
+          snapshot = Tool.normalizeToolOutput(await readRuntime.execute(
+            {
+              id: backgroundTaskId,
+            },
+            ctx,
+          ))
+        }
+
+        expect(snapshot.text).toContain("OUTPUT:")
+        expect(String((snapshot.metadata as any)?.output ?? "")).toContain("hello")
+        expect((snapshot.metadata as any)?.status).toBe("running")
+
+        const stopped = Tool.normalizeToolOutput(await stopRuntime.execute(
+          {
+            id: backgroundTaskId,
+          },
+          ctx,
+        ))
+
+        expect(stopped.metadata).toMatchObject({
+          id: backgroundTaskId,
+          status: "deleted",
+        })
+
+        await Bun.sleep(150)
+      },
+    })
   }, 120000)
 
   it("prefers Git Bash before a generic PATH bash on Windows", async () => {

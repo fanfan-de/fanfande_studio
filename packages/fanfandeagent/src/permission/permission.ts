@@ -93,6 +93,7 @@ export type EvaluationResult = {
     paths: string[]
     command?: string
     workdir?: string
+    body?: string
   }
 }
 
@@ -135,6 +136,22 @@ const SENSITIVE_PATH_PATTERNS = [
   ".git/**",
   "node_modules/**",
 ]
+
+function normalizeToolName(toolID: string) {
+  return toolID.trim().toLowerCase().replaceAll("_", "").replaceAll("-", "")
+}
+
+function isEnterPlanModeTool(toolID: string) {
+  return normalizeToolName(toolID) === "enterplanmode"
+}
+
+function isExitPlanModeTool(toolID: string) {
+  return normalizeToolName(toolID) === "exitplanmode"
+}
+
+function isAskUserQuestionTool(toolID: string) {
+  return normalizeToolName(toolID) === "askuserquestion"
+}
 
 function asPosix(value: string) {
   return value.replaceAll("\\", "/")
@@ -356,6 +373,7 @@ function allowedDecisionsFor(decision: EvaluationResult): Decision[] {
 
 function summarizeDerivedTarget(derived: EvaluationResult["derived"]) {
   if (derived.command) return `Run ${derived.command}`
+  if (derived.body) return "the proposed implementation plan"
   if (derived.paths.length === 1) return derived.paths[0]!
   if (derived.paths.length > 1) return `${derived.paths.length} project paths`
   return "project resources"
@@ -374,6 +392,7 @@ function buildFallbackApprovalDescriptor(input: {
       command: input.derived.command,
       paths: input.derived.paths.length > 0 ? input.derived.paths : undefined,
       workdir: input.derived.workdir,
+      body: input.derived.body,
     },
   }
 }
@@ -390,9 +409,15 @@ function buildPromptSnapshot(input: {
     command: input.derived.command,
     paths: input.derived.paths.length > 0 ? input.derived.paths : undefined,
     workdir: input.derived.workdir,
+    body: input.derived.body,
   }
 
-  const hasDetails = Boolean(details.command || details.workdir || (details.paths?.length ?? 0) > 0)
+  const hasDetails = Boolean(
+    details.command ||
+    details.workdir ||
+    details.body ||
+    (details.paths?.length ?? 0) > 0,
+  )
   const recommended = input.allowedDecisions.includes(input.recommendedDecision ?? "allow-once")
     ? (input.recommendedDecision ?? "allow-once")
     : (input.allowedDecisions.find((decision) => decision !== "deny") ?? "deny")
@@ -423,8 +448,53 @@ function buildRuntimeSnapshot(input: {
       paths: input.derived.paths.length > 0 ? input.derived.paths : undefined,
       command: input.derived.command,
       workdir: input.derived.workdir,
+      body: input.derived.body,
     },
   })
+}
+
+function extractRequestBody(request: Pick<Request, "prompt" | "resource" | "runtime">) {
+  const body =
+    request.prompt?.details?.body ??
+    request.runtime?.resource?.body ??
+    request.resource?.body
+
+  return typeof body === "string" && body.trim().length > 0
+    ? body.trim()
+    : undefined
+}
+
+function updatePlanWorkflowForPendingRequest(request: Request) {
+  if (!isExitPlanModeTool(request.tool)) return
+
+  const draftMarkdown = extractRequestBody(request)
+  Session.updateSessionWorkflow(request.sessionID, (workflow) => ({
+    mode: "planning",
+    plan: {
+      status: "pending-approval",
+      draftMarkdown: draftMarkdown ?? workflow.plan.draftMarkdown,
+      pendingRequestID: request.id,
+      approvedMarkdown: undefined,
+      updatedAt: Date.now(),
+    },
+  }))
+}
+
+function updatePlanWorkflowForDeniedRequest(request: Request) {
+  if (!isExitPlanModeTool(request.tool)) return
+
+  const draftMarkdown = extractRequestBody(request)
+  Session.updateSessionWorkflow(request.sessionID, (workflow) => ({
+    mode: "planning",
+    plan: {
+      status: "draft",
+      draftMarkdown: draftMarkdown ?? workflow.plan.draftMarkdown,
+      pendingRequestID: undefined,
+      approvedMarkdown: workflow.plan.approvedMarkdown,
+      approvedAt: workflow.plan.approvedAt,
+      updatedAt: Date.now(),
+    },
+  }))
 }
 
 async function findStoredRequestForToolCall(toolCallID: string | undefined) {
@@ -549,6 +619,7 @@ async function audit(input: EvaluationInput, decision: EvaluationResult) {
 export async function evaluate(input: EvaluationInput): Promise<EvaluationResult> {
   ensurePermissionTables()
   const command = typeof input.input.command === "string" ? input.input.command.trim() : undefined
+  const body = typeof input.input.body === "string" ? input.input.body.trim() : undefined
   const cwd = input.cwd ?? Instance.directory
   const worktree = input.worktree ?? Instance.worktree
   const permissionMode = input.permissionMode ?? "default"
@@ -557,7 +628,11 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
     paths: derivedPaths.relativePaths,
     command,
     workdir: cwd,
+    body: body || undefined,
   }
+  const workflow = Session.normalizeWorkflowState(
+    (Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null)?.workflow,
+  )
 
   if (isPermissionDisabled()) {
     const result: EvaluationResult = {
@@ -608,7 +683,76 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
     return result
   }
 
+  if (isEnterPlanModeTool(input.tool.id)) {
+    const result: EvaluationResult = {
+      action: "allow",
+      reason: "Entering planning mode is allowed without approval.",
+      risk: "low",
+      rememberable: false,
+      derived,
+    }
+    await audit(input, result)
+    return result
+  }
+
+  if (isExitPlanModeTool(input.tool.id) && workflow.mode !== "planning") {
+    const result: EvaluationResult = {
+      action: "deny",
+      reason: "ExitPlanMode can only be used while the session is already in planning mode.",
+      risk: "medium",
+      rememberable: false,
+      derived,
+    }
+    await audit(input, result)
+    return result
+  }
+
   const risk = deriveRisk(input, derived.paths, command)
+  if (workflow.mode === "planning") {
+    let result: EvaluationResult
+
+    if (isEnterPlanModeTool(input.tool.id)) {
+      result = {
+        action: "allow",
+        reason: "The session can enter planning mode immediately.",
+        risk: "low",
+        rememberable: false,
+        derived,
+      }
+    } else if (isExitPlanModeTool(input.tool.id)) {
+      result = {
+        action: "ask",
+        reason: "Submitting a plan requires approval before execution can resume.",
+        risk: "medium",
+        rememberable: false,
+        derived,
+      }
+    } else if (
+      input.tool.kind === "read" ||
+      input.tool.kind === "search" ||
+      isAskUserQuestionTool(input.tool.id)
+    ) {
+      result = {
+        action: "allow",
+        reason: "Planning mode only allows read-only research tools and direct user questions.",
+        risk,
+        rememberable: false,
+        derived,
+      }
+    } else {
+      result = {
+        action: "deny",
+        reason: "Planning mode blocks edits, command execution, and other side effects until a plan is approved.",
+        risk: risk === "critical" ? "critical" : "high",
+        rememberable: false,
+        derived,
+      }
+    }
+
+    await audit(input, result)
+    return result
+  }
+
   if (permissionMode === "full-access") {
     const result: EvaluationResult = {
       action: "allow",
@@ -916,6 +1060,7 @@ export async function registerApprovalRequest(input: {
       paths: decision.derived.paths.length > 0 ? decision.derived.paths : undefined,
       command: decision.derived.command,
       workdir: decision.derived.workdir,
+      body: runtimeSnapshot.resource?.body ?? extractRequestBody({ prompt, runtime: runtimeSnapshot }),
     },
     prompt,
     runtime: runtimeSnapshot,
@@ -931,6 +1076,8 @@ export async function registerApprovalRequest(input: {
     action: "ask",
     reason: decision.reason,
   })
+
+  updatePlanWorkflowForPendingRequest(record)
 
   const handle = openPermissionTurn({
     sessionID: record.sessionID,
@@ -991,6 +1138,7 @@ function ensureRequestPrompt(request: Request): Schema.RequestPrompt {
     paths: request.runtime?.resource?.paths ?? request.resource?.paths ?? [],
     command: request.runtime?.resource?.command ?? request.resource?.command,
     workdir: request.runtime?.resource?.workdir ?? request.resource?.workdir,
+    body: request.runtime?.resource?.body ?? request.resource?.body,
   }
 
   return buildPromptSnapshot({
@@ -1258,6 +1406,10 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
         createdRuleID: createdRule.id,
       }),
     })
+  }
+
+  if (!approved) {
+    updatePlanWorkflowForDeniedRequest(next)
   }
 
   const assistant = readAssistantMessage(next.messageID)

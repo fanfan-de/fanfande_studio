@@ -7,6 +7,7 @@ export interface PermissionPromptDetails {
   paths?: string[]
   command?: string
   workdir?: string
+  body?: string
 }
 
 export interface PermissionPromptSnapshot {

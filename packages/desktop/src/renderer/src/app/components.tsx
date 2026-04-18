@@ -5805,6 +5805,7 @@ function PermissionRequestCard({
 }) {
   const title = request.prompt.title.trim()
   const rememberDecisions = request.prompt.allowedDecisions.filter((decision) => isPersistentAllowDecision(decision))
+  const detailBody = request.prompt.details?.body?.trim()
   const detailLines = [
     request.prompt.details?.workdir ? { label: "Workdir", value: request.prompt.details.workdir } : null,
     request.prompt.details?.command ? { label: "Command", value: request.prompt.details.command } : null,
@@ -5872,7 +5873,7 @@ function PermissionRequestCard({
         </details>
       ) : null}
 
-      {request.prompt.detailsAvailable && detailLines.length > 0 ? (
+      {request.prompt.detailsAvailable && (detailLines.length > 0 || detailBody) ? (
         <details className="permission-request-disclosure">
           <summary>View details</summary>
           <div className="permission-request-grid permission-request-grid-compact">
@@ -5889,6 +5890,12 @@ function PermissionRequestCard({
                 <strong>{item.value}</strong>
               </div>
             ))}
+            {detailBody ? (
+              <div className="permission-request-meta permission-request-meta-wide">
+                <span className="permission-request-meta-label">Body</span>
+                <pre className="permission-request-body">{detailBody}</pre>
+              </div>
+            ) : null}
           </div>
         </details>
       ) : null}

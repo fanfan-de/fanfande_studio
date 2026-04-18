@@ -41,6 +41,19 @@ export const SessionInfo = z
       .optional(),
     title: z.string(),
     version: z.string(),
+    workflow: z
+      .object({
+        mode: z.enum(["execution", "planning"]),
+        plan: z.object({
+          status: z.enum(["idle", "draft", "pending-approval", "approved"]),
+          draftMarkdown: z.string().optional(),
+          pendingRequestID: Identifier.schema("permission").optional(),
+          approvedMarkdown: z.string().optional(),
+          updatedAt: z.number(),
+          approvedAt: z.number().optional(),
+        }),
+      })
+      .optional(),
     time: z.object({
       created: z.number(),
       updated: z.number(),
@@ -60,6 +73,35 @@ export const SessionInfo = z
     ref: "Session",
   })
 export type SessionInfo = z.output<typeof SessionInfo>
+
+export type SessionWorkflowState = NonNullable<SessionInfo["workflow"]>
+
+export function defaultWorkflowState(now = Date.now()): SessionWorkflowState {
+  return {
+    mode: "execution",
+    plan: {
+      status: "idle",
+      updatedAt: now,
+    },
+  }
+}
+
+export function normalizeWorkflowState(
+  workflow: SessionInfo["workflow"] | undefined,
+  now = Date.now(),
+): SessionWorkflowState {
+  return {
+    mode: workflow?.mode === "planning" ? "planning" : "execution",
+    plan: {
+      status: workflow?.plan.status ?? "idle",
+      draftMarkdown: workflow?.plan.draftMarkdown,
+      pendingRequestID: workflow?.plan.pendingRequestID,
+      approvedMarkdown: workflow?.plan.approvedMarkdown,
+      updatedAt: workflow?.plan.updatedAt ?? now,
+      approvedAt: workflow?.plan.approvedAt,
+    },
+  }
+}
 
 export const ArchivedSessionSnapshot = z
   .object({
@@ -142,6 +184,11 @@ function ensureSessionTables() {
 function DataBaseCreate<T extends Exclude<TableName, "projects">>(tableName: T, tableRecord: TableRecordMap[T]): void {
   ensureSessionTables()
   db.insertOneWithSchema(tableName, tableRecord, TableSchemaMap[tableName])
+}
+
+function updateSessionRecord(session: SessionInfo) {
+  ensureSessionTables()
+  db.updateByIdWithSchema("sessions", session.id, session, SessionInfo)
 }
 
 function DataBaseRead<T extends Exclude<TableName, "projects">>(
@@ -276,6 +323,7 @@ async function createSession(input: {
     directory: input.directory,
     title: input.title?.trim() || "New chat",
     version: Installation.VERSION,
+    workflow: defaultWorkflowState(now),
     time: {
       created: now,
       updated: now,
@@ -408,6 +456,28 @@ const updatePart = fn(Message.Part, (part) => {
   upsertPart(part)
 })
 
+function updateSessionWorkflow(
+  sessionID: string,
+  updater: (workflow: SessionWorkflowState) => SessionWorkflowState,
+): SessionInfo | null {
+  const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
+  if (!existing) return null
+
+  const now = Date.now()
+  const nextWorkflow = normalizeWorkflowState(updater(normalizeWorkflowState(existing.workflow, now)), now)
+  const next: SessionInfo = {
+    ...existing,
+    workflow: nextWorkflow,
+    time: {
+      ...existing.time,
+      updated: now,
+    },
+  }
+
+  updateSessionRecord(next)
+  return next
+}
+
 export {
   archiveSession,
   createSession,
@@ -421,6 +491,7 @@ export {
   removeProjectSessions,
   removeSession,
   restoreArchivedSession,
+  updateSessionWorkflow,
   updateMessage,
   updatePart,
   upsertMessage,

@@ -3,15 +3,19 @@ import * as Tool from "#tool/tool.ts"
 import { AskUserQuestionTool } from "#tool/ask-user-question.ts"
 import { ApplyPatchTool } from "#tool/apply-patch.ts"
 import { ExecCommandTool } from "#tool/exec-command.ts"
+import { EnterPlanModeTool } from "#tool/enter-plan-mode.ts"
+import { ExitPlanModeTool } from "#tool/exit-plan-mode.ts"
 import { GlobTool } from "#tool/glob.ts"
 import { GrepTool } from "#tool/grep.ts"
 import { ListDirectoryTool } from "#tool/list-directory.ts"
 import { LspDefinitionTool, LspHoverTool, LspReferencesTool, LspWorkspaceSymbolsTool } from "#tool/lsp.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
+import { ReadBackgroundTaskTool } from "#tool/read-background-task.ts"
 import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { SearchFilesTool } from "#tool/search-files.ts"
+import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
 import { WriteFileTool } from "#tool/write-file.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
 import * as Mcp from "#mcp/manager.ts"
@@ -46,7 +50,10 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
   const mcpTools = await Mcp.tools()
   const result = [
     AskUserQuestionTool,
+    EnterPlanModeTool,
+    ExitPlanModeTool,
     ReadFileTool,
+    ReadBackgroundTaskTool,
     LoadSkillTool,
     ReadSkillResourceTool,
     WriteFileTool,
@@ -57,6 +64,7 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
     ListDirectoryTool,
     SearchFilesTool,
     WebFetchTool,
+    StopBackgroundTaskTool,
     LspDefinitionTool,
     LspReferencesTool,
     LspHoverTool,
