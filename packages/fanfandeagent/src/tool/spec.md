@@ -440,3 +440,37 @@
 - extracted links and redirect chain
 
 `toModelOutput()` serializes that metadata as JSON so completed tool history can be replayed without reparsing the raw text transcript.
+
+## 11. Subagent task tools
+
+As of the current implementation, the tool module also exposes a minimal child-agent control plane built on top of the existing session prompt loop.
+
+### 11.1 Registered tools
+
+- `spawn_subagent` / `spawn-subagent`
+- `read_subagent` / `read-subagent`
+- `cancel_subagent` / `cancel-subagent`
+
+### 11.2 Runtime model
+
+- These tools do not create a second execution engine.
+- `spawn_subagent` creates a child session plus a persisted `subtasks` record, then runs the child by calling the normal `prompt()` flow in that child session.
+- `read_subagent` reads the latest persisted status plus a summarized assistant response from the child session.
+- `cancel_subagent` aborts the child session through the normal session cancellation path and marks the task as `cancelled`.
+- Background subtasks attempt to notify the parent session automatically after they finish. The notification is injected as a synthetic user text part with `metadata.kind = "subtask-notification"` and then processed by the normal parent-session prompt loop.
+- Parent notifications are best-effort. They are skipped when the parent session no longer exists, has advanced to a newer user turn, or is currently blocked on approval / explicit user input.
+- Tool availability for a subagent is still resolved through the normal registry, but `session/resolve-tools.ts` now filters the final tool set against `agent.tools` when a profile declares an allowlist or denylist.
+
+### 11.3 Output contract
+
+All three tools return standard `ToolOutput` text plus JSON metadata with:
+
+- `kind: "subagent"`
+- `action: "spawn" | "read" | "cancel"`
+- `id` and `childSessionID`
+- `title`, `agent`, `model`
+- `status`, `active`, `runInBackground`
+- optional `finishReason`, `summary`, `error`
+- optional `parentNotification` with `status`, `updatedAt`, and optional `reason`
+
+`toModelOutput()` for these tools always returns structured JSON so the parent agent can reason about child-task state without reparsing raw prose.

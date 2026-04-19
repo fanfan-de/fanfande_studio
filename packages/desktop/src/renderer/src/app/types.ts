@@ -482,6 +482,8 @@ export interface AssistantTraceItem {
   title?: string
   text?: string
   detail?: string
+  toolInputText?: string
+  toolOutputText?: string
   filePaths?: string[]
   status?: AssistantTraceStatus
   sourceID?: string

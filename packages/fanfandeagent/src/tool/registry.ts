@@ -2,6 +2,7 @@ import { Instance } from "#project/instance.ts"
 import * as Tool from "#tool/tool.ts"
 import { AskUserQuestionTool } from "#tool/ask-user-question.ts"
 import { ApplyPatchTool } from "#tool/apply-patch.ts"
+import { CancelSubagentTool } from "#tool/cancel-subagent.ts"
 import { ExecCommandTool } from "#tool/exec-command.ts"
 import { EnterPlanModeTool } from "#tool/enter-plan-mode.ts"
 import { ExitPlanModeTool } from "#tool/exit-plan-mode.ts"
@@ -10,11 +11,13 @@ import { GrepTool } from "#tool/grep.ts"
 import { ListDirectoryTool } from "#tool/list-directory.ts"
 import { LspDefinitionTool, LspHoverTool, LspReferencesTool, LspWorkspaceSymbolsTool } from "#tool/lsp.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
-import { ReadFileTool } from "#tool/read-file.ts"
 import { ReadBackgroundTaskTool } from "#tool/read-background-task.ts"
+import { ReadFileTool } from "#tool/read-file.ts"
+import { ReadSubagentTool } from "#tool/read-subagent.ts"
 import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { SearchFilesTool } from "#tool/search-files.ts"
+import { SpawnSubagentTool } from "#tool/spawn-subagent.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
 import { WriteFileTool } from "#tool/write-file.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
@@ -54,6 +57,7 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
     ExitPlanModeTool,
     ReadFileTool,
     ReadBackgroundTaskTool,
+    ReadSubagentTool,
     LoadSkillTool,
     ReadSkillResourceTool,
     WriteFileTool,
@@ -64,6 +68,8 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
     ListDirectoryTool,
     SearchFilesTool,
     WebFetchTool,
+    SpawnSubagentTool,
+    CancelSubagentTool,
     StopBackgroundTaskTool,
     LspDefinitionTool,
     LspReferencesTool,

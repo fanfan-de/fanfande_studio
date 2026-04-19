@@ -3674,6 +3674,10 @@ describe("App", () => {
     fireEvent.click(toolTraceToggle)
 
     expect(toolTraceToggle).toHaveAttribute("aria-expanded", "true")
+    expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /read-file input/i }))
+
     expect(await screen.findByText("Waiting for permission approval before the tool can continue.")).toBeInTheDocument()
 
     const approvalPanel = await screen.findByRole("region", { name: "Tool approval request" })
@@ -3689,6 +3693,7 @@ describe("App", () => {
       expect(window.desktop!.resumeAgentMessageStream).toHaveBeenCalledTimes(1)
     })
 
+    fireEvent.click(await screen.findByRole("button", { name: /read-file output/i }))
     expect(await screen.findByText("README loaded")).toBeInTheDocument()
     expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
     expect(screen.getByText("Resumed answer")).toBeInTheDocument()
@@ -5223,6 +5228,105 @@ describe("App", () => {
     expect(screen.getByText("Reasoning step started")).toBeInTheDocument()
     expect(screen.getByText("approval.id")).toBeInTheDocument()
     expect(screen.getAllByText("part.id").length).toBeGreaterThan(0)
+  })
+
+  it("keeps long completed tool output collapsed until the user expands it", async () => {
+    const tailMarker = "tail-marker-visible-after-expand"
+    const inputMarker = "input-marker-visible-after-enabling-tool-inputs"
+    const longOutput = `${"tool output line\n".repeat(80)}${tailMarker}`
+
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-1",
+          sessionID: "session-atlas-review",
+          role: "user",
+          created: 10,
+        },
+        parts: [
+          {
+            id: "part-user-1",
+            sessionID: "session-atlas-review",
+            messageID: "msg-user-1",
+            type: "text",
+            text: "Show me the full tool output",
+          },
+        ],
+      },
+      {
+        info: {
+          id: "msg-assistant-1",
+          sessionID: "session-atlas-review",
+          role: "assistant",
+          created: 11,
+          completed: 12,
+        },
+        parts: [
+          {
+            id: "part-tool-1",
+            sessionID: "session-atlas-review",
+            messageID: "msg-assistant-1",
+            type: "tool",
+            tool: "capture-long-output",
+            state: {
+              status: "completed",
+              input: {
+                path: "PROJECT_ANALYSIS.md",
+                content: inputMarker,
+              },
+              output: longOutput,
+            },
+          },
+        ],
+      },
+    ])
+
+    render(<App />)
+
+    expect(await screen.findByRole("button", { name: "Atlas review" })).toBeInTheDocument()
+    const toolToggle = await screen.findByRole("button", { name: /capture-long-output/i })
+
+    expect(screen.queryByText(new RegExp(tailMarker))).not.toBeInTheDocument()
+    expect(screen.queryByText(new RegExp(inputMarker))).not.toBeInTheDocument()
+
+    fireEvent.click(toolToggle)
+
+    expect(screen.queryByText(new RegExp(tailMarker))).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /capture-long-output output/i }))
+    expect(await screen.findByText(new RegExp(tailMarker))).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
+    fireEvent.click(screen.getByRole("switch", { name: "Show trace tool inputs" }))
+
+    expect(screen.queryByText(new RegExp(inputMarker))).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /capture-long-output input/i }))
+    expect(await screen.findByText(new RegExp(inputMarker))).toBeInTheDocument()
   })
 
   it("keeps provider configuration focused on editable fields for environment-backed providers", async () => {

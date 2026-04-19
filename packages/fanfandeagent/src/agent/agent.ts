@@ -23,10 +23,32 @@ export const AgentInfo = z
     prompt: z.string().optional(),
     options: z.record(z.string(), z.any()),
     steps: z.number().int().positive().optional(),
+    tools: z.record(z.string(), z.boolean()).optional(),
   })
   .meta({ ref: "AgentInfo", description: "Information about the agent" })
 
 export type AgentInfo = z.infer<typeof AgentInfo>
+
+const PLAN_AGENT_TOOL_POLICY: Record<string, boolean> = {
+  AskUserQuestion: true,
+  ExitPlanMode: true,
+  "read-file": true,
+  "read_background_task": true,
+  "read_subagent": true,
+  "load-skill": true,
+  "read_skill_resource": true,
+  "glob": true,
+  "grep": true,
+  "list-directory": true,
+  "search-files": true,
+  "web_fetch": true,
+  "lsp_definition": true,
+  "lsp_references": true,
+  "lsp_hover": true,
+  "lsp_workspace_symbols": true,
+}
+
+const COMPACTION_AGENT_TOOL_POLICY: Record<string, boolean> = {}
 
 
 const state = Instance.state(async () => {
@@ -45,12 +67,14 @@ const state = Instance.state(async () => {
       native: true,
       options: {},
       steps: Infinity,
+      tools: PLAN_AGENT_TOOL_POLICY,
     },
     compaction:{
       name: "compaction",
       mode: "subagent",
       native:true,
       options:{},
+      tools: COMPACTION_AGENT_TOOL_POLICY,
     }
   }
 
@@ -102,7 +126,8 @@ export const planAgent: AgentInfo = {
   mode: "primary",
   native: true,
   options: {},
-  steps: Infinity
+  steps: Infinity,
+  tools: PLAN_AGENT_TOOL_POLICY,
 }
 
 

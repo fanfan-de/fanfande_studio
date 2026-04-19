@@ -29,19 +29,38 @@ function readRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>
 }
 
-function describeStructuredValue(value: unknown, fallback: string) {
+function describeOptionalStructuredValue(
+  value: unknown,
+  options?: {
+    maxLength?: number
+    pretty?: boolean
+  },
+) {
   if (typeof value === "string") {
-    return compactText(value) || fallback
+    const normalized = options?.maxLength ? compactText(value, options.maxLength) : value
+    return normalized || undefined
   }
 
-  if (value == null) return fallback
+  if (value == null) return undefined
 
   try {
-    const serialized = JSON.stringify(value)
-    return compactText(serialized, 220) || fallback
+    const serialized = JSON.stringify(value, null, options?.pretty ? 2 : undefined)
+    const normalized = options?.maxLength ? compactText(serialized, options.maxLength) : serialized
+    return normalized || undefined
   } catch {
-    return fallback
+    return undefined
   }
+}
+
+function describeStructuredValue(
+  value: unknown,
+  fallback: string,
+  options?: {
+    maxLength?: number
+    pretty?: boolean
+  },
+) {
+  return describeOptionalStructuredValue(value, options) || fallback
 }
 
 function createTraceItem(
@@ -359,9 +378,27 @@ function createToolTraceDetail(status: AssistantTraceStatus, state: Record<strin
   return readString(state?.title) || "Preparing tool call."
 }
 
-function createToolTraceText(status: AssistantTraceStatus, state: Record<string, unknown> | null) {
+function createToolTraceInputText(status: AssistantTraceStatus, state: Record<string, unknown> | null) {
+  if (status === "completed" || status === "error" || status === "denied") {
+    return describeOptionalStructuredValue(state?.input, {
+      pretty: true,
+    })
+  }
+
+  if (status === "waiting-approval" || status === "running" || status === "pending") {
+    return compactText(readString(state?.raw), 320) || describeOptionalStructuredValue(state?.input, {
+      pretty: true,
+    })
+  }
+
+  return undefined
+}
+
+function createToolTraceOutputText(status: AssistantTraceStatus, state: Record<string, unknown> | null) {
   if (status === "completed") {
-    return describeStructuredValue(state?.output ?? state?.modelOutput, "Tool completed.")
+    return describeStructuredValue(state?.output ?? state?.modelOutput, "Tool completed.", {
+      pretty: true,
+    })
   }
 
   if (status === "error") {
@@ -372,11 +409,7 @@ function createToolTraceText(status: AssistantTraceStatus, state: Record<string,
     return readString(state?.reason) || "Tool execution was denied."
   }
 
-  if (status === "waiting-approval" || status === "running" || status === "pending") {
-    return compactText(readString(state?.raw), 320) || describeStructuredValue(state?.input, "Tool update received.")
-  }
-
-  return ""
+  return undefined
 }
 
 function readAskUserQuestionPrompt(value: unknown): AssistantQuestionPrompt | null {
@@ -668,6 +701,8 @@ function buildTraceItemFromPart(
                 ? "denied"
                 : "running"
     const toolName = readString(part.tool) || "Tool"
+    const toolInputText = createToolTraceInputText(status, state)
+    const toolOutputText = createToolTraceOutputText(status, state)
     const questionPrompt = status === "completed" ? readAskUserQuestionPrompt(state?.metadata) : null
 
     if (questionPrompt) {
@@ -694,8 +729,10 @@ function buildTraceItemFromPart(
       kind: "tool",
       label: "Tool",
       title: toolName,
-      text: createToolTraceText(status, state) || undefined,
+      text: toolOutputText ?? toolInputText,
       detail: createToolTraceDetail(status, state),
+      toolInputText,
+      toolOutputText,
       status,
       section: "tools",
       visibilityKey: "toolCalls",

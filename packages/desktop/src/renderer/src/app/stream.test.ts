@@ -84,7 +84,67 @@ describe("stream trace reducer", () => {
     const toolItems = turn.items.filter((item) => item.kind === "tool")
     expect(toolItems).toHaveLength(1)
     expect(toolItems[0]?.status).toBe("completed")
-    expect(toolItems[0]?.text).toContain("\"fixed\":3")
+    expect(toolItems[0]?.toolOutputText).toContain("\"fixed\": 3")
+    expect(toolItems[0]?.text).toContain("\"fixed\": 3")
+  })
+
+  it("preserves the full completed tool output for disclosure views", () => {
+    const longOutput = `${"tool output line ".repeat(24)}tail-marker`
+
+    let turn = buildStreamingAssistantTurn("Inspect long tool output")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "part",
+      data: {
+        part: {
+          id: "tool-long-output",
+          type: "tool",
+          tool: "shell",
+          state: {
+            status: "completed",
+            output: longOutput,
+          },
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(toolItems[0]?.toolOutputText).toBe(longOutput)
+    expect(toolItems[0]?.text).toBe(longOutput)
+    expect(toolItems[0]?.toolOutputText).toContain("tail-marker")
+    expect(toolItems[0]?.toolOutputText?.endsWith("...")).toBe(false)
+  })
+
+  it("captures completed tool inputs separately from outputs", () => {
+    let turn = buildStreamingAssistantTurn("Inspect tool payloads")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "part",
+      data: {
+        part: {
+          id: "tool-with-inputs",
+          type: "tool",
+          tool: "write-file",
+          state: {
+            status: "completed",
+            input: {
+              path: "notes.txt",
+              content: "input-marker",
+            },
+            output: "output-marker",
+            title: "Wrote notes.txt",
+          },
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(toolItems[0]?.toolInputText).toContain("\"path\": \"notes.txt\"")
+    expect(toolItems[0]?.toolInputText).toContain("\"content\": \"input-marker\"")
+    expect(toolItems[0]?.toolOutputText).toBe("output-marker")
+    expect(toolItems[0]?.detail).toBe("Wrote notes.txt")
   })
 
   it("derives source and attachment trace items from assistant parts", () => {

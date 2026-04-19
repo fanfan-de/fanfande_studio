@@ -317,3 +317,34 @@ if (abort?.aborted) throw new Error("Prompt aborted")
 后续如果继续演进这个模块，建议每次都用同一套方式更新这份文档：先写“真实新增了什么执行分支”，再写“哪些字段从占位变成了真的持久化”，最后写“哪些东西仍然只是 schema 已有但 loop 未接通”。
 
 这样 `spec.md` 才会一直保持成“当前实现说明书”，而不是再次漂移成理想设计稿。
+## Update 2026-04-19: Subtask execution is now wired up
+
+The older note above that said `subtask` was only a schema placeholder is no longer true.
+
+### What is implemented now
+
+- `src/session/subtask.ts` defines a persisted `subtasks` table with parent session, parent message, child session, delegated prompt, agent/model selection, run mode, status, summary, finish reason, and error fields.
+- `spawn_subagent` creates a child session and a `subtasks` record, then runs the child through the normal `prompt()` entrypoint.
+- Child execution still uses the same session loop and `llm.ts` / `processor.ts` chain as every other turn. There is no second model runtime.
+- `read_subagent` and `cancel_subagent` operate on the persisted `subtasks` record plus the child session state.
+- Background subtasks now attempt to notify the parent session automatically after they finish. The completion is injected back into the parent as a synthetic `text` part with `metadata.kind = "subtask-notification"` and then processed through the normal `prompt()` entrypoint.
+- `resolve-tools.ts` now applies `agent.tools` as a per-agent policy layer. Profiles can declare an allowlist or denylist, and built-in agents such as `plan` / `compaction` can expose a narrower tool surface than the default agent.
+
+### Current status model
+
+`subtasks.status` can currently be:
+
+- `running`
+- `completed`
+- `blocked`
+- `stopped`
+- `failed`
+- `cancelled`
+
+`blocked` is inferred from the child assistant state when the child is waiting on approval or a structured user question.
+
+### Current limitations
+
+- The current implementation exposes child session ids and summaries, but not a full mailbox or teammate-style long-lived communication model.
+- Parent notification is best-effort. It is skipped when the parent session no longer exists, has already advanced to a newer user turn, or is blocked on approval / explicit user interaction.
+- The current implementation supports per-agent tool policies, but only through static `agent.tools` configuration. There is not yet a richer capability model such as inheritance, composition, or dynamic policy negotiation.

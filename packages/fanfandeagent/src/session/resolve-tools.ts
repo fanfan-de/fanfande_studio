@@ -13,12 +13,42 @@ export type ResolveToolsInput = {
   abort: AbortSignal
 }
 
+function isToolAllowedForAgent(tool: Tool.ToolInfo, agent: Agent.AgentInfo) {
+  const policy = agent.tools
+  if (!policy) return true
+
+  const names = [tool.id, ...(tool.aliases ?? [])]
+  const matches = names
+    .map((name) => policy[name])
+    .filter((value): value is boolean => typeof value === "boolean")
+
+  if (matches.includes(false)) {
+    return false
+  }
+
+  const values = Object.values(policy)
+  const hasAllowlistEntries = values.some((value) => value === true)
+  if (hasAllowlistEntries) {
+    return matches.includes(true)
+  }
+
+  if (values.length === 0) {
+    return false
+  }
+
+  return true
+}
+
 export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
   // Load registered tools and build the ToolSet expected by the AI SDK.
   const registry = await ToolRegistry.tools()
   const tools: ToolSet = {}
 
   for (const item of registry) {
+    if (!isToolAllowedForAgent(item, input.agent)) {
+      continue
+    }
+
     // Initialize the tool runtime for the current agent.
     const runtime = await item.init({ agent: input.agent })
     const title = runtime.title ?? item.title ?? item.id

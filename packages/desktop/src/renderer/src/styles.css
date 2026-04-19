@@ -4078,6 +4078,63 @@ textarea::placeholder {
   gap: 4px;
 }
 
+.trace-item-subsection {
+  display: grid;
+  gap: 6px;
+}
+
+.trace-item-subsection-toggle {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.trace-item-subsection-toggle-icon {
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  color: #6b7d90;
+  flex: 0 0 auto;
+}
+
+.trace-item-subsection-toggle-icon svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trace-item-subsection-toggle-line {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.trace-item-subsection-body {
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.trace-item-subsection-label {
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6b7d90;
+}
+
 .trace-item-status {
   padding: 3px 8px;
   border: 1px solid rgba(160, 178, 196, 0.45);
@@ -7889,4 +7946,95 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
   height: var(--icon-button-size);
   min-height: var(--icon-button-size);
   padding: 0;
+}
+
+/* Thread trace refinements: flatter cards and stronger content hierarchy. */
+.trace-item,
+.assistant-ephemeral-state,
+.ask-user-question-card,
+.permission-request-card {
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.trace-item,
+.assistant-ephemeral-state {
+  border-left-width: 2px;
+}
+
+.permission-request-card,
+.ask-user-question-card {
+  border-left-width: 2px;
+}
+
+.permission-request-card {
+  border-left-color: var(--seg-border);
+}
+
+.ask-user-question-card {
+  border-left-color: var(--seg-accent);
+}
+
+.assistant-section.is-reasoning .trace-item-inline-title,
+.assistant-section.is-reasoning .trace-item-text,
+.assistant-section.is-reasoning .trace-item-plain-text,
+.assistant-section.is-tools .trace-item-inline-title,
+.assistant-section.is-tools .trace-item-text,
+.assistant-section.is-tools .trace-item-toggle-line {
+  color: var(--seg-text-2);
+}
+
+.assistant-section.is-reasoning .trace-item-inline-status,
+.assistant-section.is-reasoning .trace-item-detail,
+.assistant-section.is-reasoning .trace-item-plain-detail,
+.assistant-section.is-tools .trace-item-inline-status,
+.assistant-section.is-tools .trace-item-detail,
+.assistant-section.is-tools .trace-item-subsection-label {
+  color: var(--seg-text-3);
+}
+
+.assistant-section.is-response .trace-item-text {
+  color: var(--seg-text-1);
+  font-size: 16px;
+  line-height: 1.82;
+}
+
+.assistant-section.is-response .trace-item-detail {
+  color: var(--seg-text-2);
+  font-size: 14px;
+  line-height: 1.72;
+}
+
+.thread-column {
+  gap: 10px;
+}
+
+.turn {
+  gap: 6px;
+}
+
+.assistant-shell.is-sectioned {
+  gap: 3px;
+}
+
+.assistant-section.is-reasoning,
+.assistant-section.is-tools {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.assistant-section.is-file-change {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.trace-item {
+  padding: 8px 10px;
+}
+
+.assistant-section.is-reasoning .trace-item,
+.assistant-section.is-tools .trace-item {
+  padding-top: 4px;
+  padding-bottom: 4px;
 }

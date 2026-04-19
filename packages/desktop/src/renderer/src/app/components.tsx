@@ -5459,6 +5459,8 @@ function TraceItemView({
   traceVisibility: AssistantTraceVisibility
 }) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [isInputExpanded, setIsInputExpanded] = useState(false)
+  const [isOutputExpanded, setIsOutputExpanded] = useState(false)
   const [freeformAnswer, setFreeformAnswer] = useState("")
   const [selectedQuestionOptions, setSelectedQuestionOptions] = useState<string[]>([])
   const className = [
@@ -5644,11 +5646,26 @@ function TraceItemView({
     const statusText = formatTraceStatusText(item.status)
     const summaryTitle = item.title || item.label
     const showsToolInputs = item.status === "pending" || item.status === "running" || item.status === "waiting-approval"
-    const visibleToolText = showsToolInputs
-      ? (traceVisibility.toolInputs ? item.text : undefined)
-      : (traceVisibility.toolOutputs ? item.text : undefined)
-    const hasDisclosureContent = Boolean(visibleToolText || item.detail)
+    const visibleToolInputText = traceVisibility.toolInputs ? item.toolInputText : undefined
+    const visibleToolOutputText = traceVisibility.toolOutputs ? item.toolOutputText : undefined
+    const inputSectionDetail = showsToolInputs ? item.detail : undefined
+    const outputSectionDetail = !showsToolInputs && traceVisibility.toolOutputs ? item.detail : undefined
+    const hasInputDisclosureContent = Boolean(visibleToolInputText || inputSectionDetail)
+    const hasOutputDisclosureContent = Boolean(visibleToolOutputText || outputSectionDetail)
+    const hasDisclosureContent = Boolean(hasInputDisclosureContent || hasOutputDisclosureContent)
     const disclosureID = `trace-item-disclosure-${item.id}`
+    const inputDisclosureID = `trace-item-disclosure-input-${item.id}`
+    const outputDisclosureID = `trace-item-disclosure-output-${item.id}`
+
+    function handleToolToggle() {
+      setIsExpanded((current) => {
+        if (current) {
+          setIsInputExpanded(false)
+          setIsOutputExpanded(false)
+        }
+        return !current
+      })
+    }
 
     return (
       <article className={className} data-kind={item.kind}>
@@ -5658,7 +5675,7 @@ function TraceItemView({
             type="button"
             aria-expanded={isExpanded}
             aria-controls={disclosureID}
-            onClick={() => setIsExpanded((current) => !current)}
+            onClick={handleToolToggle}
           >
             <span className="trace-item-toggle-summary">
               <span className="trace-item-toggle-icon" aria-hidden="true">
@@ -5679,8 +5696,56 @@ function TraceItemView({
 
         {hasDisclosureContent && isExpanded ? (
           <div id={disclosureID} className="trace-item-disclosure">
-            {visibleToolText ? <p className="trace-item-text">{visibleToolText}</p> : null}
-            {item.detail ? <p className="trace-item-detail">{item.detail}</p> : null}
+            {hasInputDisclosureContent ? (
+              <div className="trace-item-subsection">
+                <button
+                  className="trace-item-subsection-toggle"
+                  type="button"
+                  aria-expanded={isInputExpanded}
+                  aria-controls={inputDisclosureID}
+                  aria-label={`${summaryTitle} input`}
+                  onClick={() => setIsInputExpanded((current) => !current)}
+                >
+                  <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
+                    {isInputExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                  </span>
+                  <span className="trace-item-subsection-toggle-line">
+                    <span className="trace-item-subsection-label">Input</span>
+                  </span>
+                </button>
+                {isInputExpanded ? (
+                  <div id={inputDisclosureID} className="trace-item-subsection-body">
+                    {visibleToolInputText ? <p className="trace-item-text">{visibleToolInputText}</p> : null}
+                    {inputSectionDetail ? <p className="trace-item-detail">{inputSectionDetail}</p> : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {hasOutputDisclosureContent ? (
+              <div className="trace-item-subsection">
+                <button
+                  className="trace-item-subsection-toggle"
+                  type="button"
+                  aria-expanded={isOutputExpanded}
+                  aria-controls={outputDisclosureID}
+                  aria-label={`${summaryTitle} output`}
+                  onClick={() => setIsOutputExpanded((current) => !current)}
+                >
+                  <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
+                    {isOutputExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                  </span>
+                  <span className="trace-item-subsection-toggle-line">
+                    <span className="trace-item-subsection-label">Output</span>
+                  </span>
+                </button>
+                {isOutputExpanded ? (
+                  <div id={outputDisclosureID} className="trace-item-subsection-body">
+                    {visibleToolOutputText ? <p className="trace-item-text">{visibleToolOutputText}</p> : null}
+                    {outputSectionDetail ? <p className="trace-item-detail">{outputSectionDetail}</p> : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {renderDebugEntries()}
