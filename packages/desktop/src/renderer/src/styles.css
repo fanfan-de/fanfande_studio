@@ -143,7 +143,7 @@ select {
   --sidebar-width: 236px;
   --right-sidebar-display-width: var(--right-sidebar-width);
   --right-sidebar-resizer-width: 10px;
-  --right-sidebar-width: 236px;
+  --right-sidebar-width: 480px;
   position: relative;
   min-height: 0;
   overflow: hidden;
@@ -279,6 +279,7 @@ select {
   grid-column: 6;
   border-left: 0;
   background: #f7fbff;
+  container-type: inline-size;
 }
 
 .sidebar-resizer {
@@ -608,19 +609,23 @@ select {
 }
 
 .session-row-shell {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
 }
 
 .project-row-shell {
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
 }
 
 .project-row,
 .session-row {
-  width: auto;
-  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   text-align: left;
   background: transparent;
   color: #617181;
@@ -631,7 +636,7 @@ select {
 }
 
 .project-row:hover,
-.project-row:focus-within,
+.project-row:focus-visible,
 .session-row:hover,
 .session-row:focus-visible {
   background: rgba(84, 96, 109, 0.08);
@@ -641,31 +646,11 @@ select {
 
 .project-row {
   min-height: 36px;
-  padding: 0 4px 0 8px;
+  padding: 0 8px;
   border-radius: 8px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  cursor: default;
-}
-
-.project-row-trigger {
-  min-width: 0;
-  min-height: 32px;
-  flex: 1 1 auto;
-  padding: 0;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  text-align: left;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-
-.project-row-trigger:focus-visible {
-  outline: none;
+  gap: 8px;
 }
 
 .project-row-actions {
@@ -773,7 +758,7 @@ select {
 }
 
 .project-row:hover .project-row-meta,
-.project-row:focus-within .project-row-meta {
+.project-row:focus-visible .project-row-meta {
   color: #567086;
 }
 
@@ -802,7 +787,7 @@ select {
 
 .session-row {
   min-height: 32px;
-  padding: 0 8px 0 0;
+  padding: 0 8px;
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
@@ -1394,7 +1379,7 @@ select {
 
 .right-sidebar-meta-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 8px;
 }
 
@@ -1455,7 +1440,7 @@ select {
 }
 
 .right-sidebar-search-field {
-  min-width: min(100%, 180px);
+  min-width: min(100%, 220px);
   display: grid;
   gap: 6px;
 }
@@ -7306,7 +7291,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 
 .right-sidebar-runtime-card-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 8px;
 }
 
@@ -7946,6 +7931,54 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
   height: var(--icon-button-size);
   min-height: var(--icon-button-size);
   padding: 0;
+}
+
+/* Keep workspace tree hover/selection aligned with the simpler skills tree affordance. */
+.project-row-shell,
+.session-row-shell,
+.skill-tree-row-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.project-row,
+.session-row,
+.skill-tree-row {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.project-row:hover,
+.project-row:focus-visible,
+.session-row:hover,
+.session-row:focus-visible {
+  border-color: transparent;
+  background: rgba(84, 96, 109, 0.08);
+  color: #20303e;
+  box-shadow: none;
+  outline: none;
+}
+
+.project-row.is-active,
+.session-row.is-active {
+  border-color: transparent;
+  background: rgba(22, 119, 200, 0.1);
+  color: #17344f;
+  box-shadow: none;
+}
+
+.project-row.is-active .project-row-label,
+.session-row.is-active .session-row-label {
+  color: inherit;
+}
+
+.project-row.is-active .project-row-leading {
+  color: #1677c8;
 }
 
 /* Thread trace refinements: flatter cards and stronger content hierarchy. */

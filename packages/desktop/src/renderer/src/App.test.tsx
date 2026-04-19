@@ -3,6 +3,15 @@ import { resolve } from "node:path"
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PermissionRequestPrompt, PermissionResolveResult } from "../../shared/permission"
+import {
+  DEFAULT_RIGHT_SIDEBAR_WIDTH,
+  DEFAULT_SIDEBAR_WIDTH,
+  MAX_RIGHT_SIDEBAR_WIDTH,
+  MAX_SIDEBAR_WIDTH,
+  MIN_RIGHT_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO,
+} from "./app/constants"
 import type { LoadedFolderWorkspace, SessionRuntimeDebugSnapshot } from "./app/types"
 import { App } from "./App"
 
@@ -7346,7 +7355,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Expand left sidebar" }))
 
-    expect(appShell!.getAttribute("style")).toContain("--sidebar-display-width: 236px")
+    expect(appShell!.getAttribute("style")).toContain(`--sidebar-display-width: ${DEFAULT_SIDEBAR_WIDTH}px`)
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByTestId("sidebar-resizer")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
@@ -7379,7 +7388,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Expand right sidebar" }))
 
-    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-display-width: 236px")
+    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-display-width: ${DEFAULT_RIGHT_SIDEBAR_WIDTH}px`)
     expect(appShell!.getAttribute("style")).toContain("--window-controls-right-sidebar-clearance: 124px")
     expect(appShell!.getAttribute("style")).toContain("--window-controls-canvas-clearance: 0px")
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
@@ -7411,7 +7420,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse right sidebar" }))
 
-    expect(appShell!.getAttribute("style")).toContain("--sidebar-width: 236px")
+    expect(appShell!.getAttribute("style")).toContain(`--sidebar-width: ${DEFAULT_SIDEBAR_WIDTH}px`)
 
     fireEvent.pointerDown(screen.getByTestId("sidebar-resizer"), {
       button: 0,
@@ -7430,12 +7439,12 @@ describe("App", () => {
     fireEvent.pointerMove(window, {
       clientX: 640,
     })
-    expect(appShell!.getAttribute("style")).toContain("--sidebar-width: 420px")
+    expect(appShell!.getAttribute("style")).toContain(`--sidebar-width: ${MAX_SIDEBAR_WIDTH}px`)
 
     fireEvent.pointerMove(window, {
       clientX: 120,
     })
-    expect(appShell!.getAttribute("style")).toContain("--sidebar-width: 192px")
+    expect(appShell!.getAttribute("style")).toContain(`--sidebar-width: ${MIN_SIDEBAR_WIDTH}px`)
 
     fireEvent.pointerUp(window)
 
@@ -7447,6 +7456,10 @@ describe("App", () => {
   it("resizes the right sidebar when dragging the divider", async () => {
     const { container } = render(<App />)
     const appShell = container.querySelector(".app-shell") as HTMLElement | null
+    const expectedRightSidebarMaxWidth = Math.min(
+      MAX_RIGHT_SIDEBAR_WIDTH,
+      Math.round(1200 * (1 - RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO)),
+    )
 
     expect(appShell).not.toBeNull()
     Object.defineProperty(appShell!, "getBoundingClientRect", {
@@ -7466,11 +7479,11 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse left sidebar" }))
 
-    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 236px")
+    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${DEFAULT_RIGHT_SIDEBAR_WIDTH}px`)
 
     fireEvent.pointerDown(screen.getByTestId("right-sidebar-resizer"), {
       button: 0,
-      clientX: 964,
+      clientX: 720,
     })
 
     await waitFor(() => {
@@ -7478,19 +7491,66 @@ describe("App", () => {
     })
 
     fireEvent.pointerMove(window, {
-      clientX: 880,
+      clientX: 760,
     })
-    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 320px")
+    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 440px")
 
     fireEvent.pointerMove(window, {
-      clientX: 640,
+      clientX: 400,
     })
-    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 420px")
+    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${expectedRightSidebarMaxWidth}px`)
 
     fireEvent.pointerMove(window, {
       clientX: 1100,
     })
-    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 192px")
+    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${MIN_RIGHT_SIDEBAR_WIDTH}px`)
+
+    fireEvent.pointerUp(window)
+
+    await waitFor(() => {
+      expect(document.body).not.toHaveClass("is-resizing-sidebar")
+    })
+  })
+
+  it("limits the right sidebar to two thirds of the app width even when the left sidebar is expanded", async () => {
+    const { container } = render(<App />)
+    const appShell = container.querySelector(".app-shell") as HTMLElement | null
+    const expectedRightSidebarMaxWidth = Math.min(
+      MAX_RIGHT_SIDEBAR_WIDTH,
+      Math.round(1200 * (1 - RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO)),
+    )
+
+    expect(appShell).not.toBeNull()
+    Object.defineProperty(appShell!, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 1200,
+        bottom: 800,
+        width: 1200,
+        height: 800,
+        toJSON: () => ({}),
+      }),
+    })
+
+    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${DEFAULT_RIGHT_SIDEBAR_WIDTH}px`)
+
+    fireEvent.pointerDown(screen.getByTestId("right-sidebar-resizer"), {
+      button: 0,
+      clientX: 720,
+    })
+
+    await waitFor(() => {
+      expect(document.body).toHaveClass("is-resizing-sidebar")
+    })
+
+    fireEvent.pointerMove(window, {
+      clientX: 300,
+    })
+    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${expectedRightSidebarMaxWidth}px`)
 
     fireEvent.pointerUp(window)
 
@@ -7588,7 +7648,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.project-row\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(/\.session-row\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(
-      /\.project-row:hover,\s*\.project-row:focus-within,\s*\.session-row:hover,\s*\.session-row:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.08\);/s,
+      /\.project-row:hover,\s*\.project-row:focus-visible,\s*\.session-row:hover,\s*\.session-row:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.08\);/s,
     )
   })
 

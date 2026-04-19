@@ -144,6 +144,7 @@ const TableSchemaMap = {
 
 const log = Log.create({ service: "session" })
 let sessionTablesGeneration = -1
+const DEFAULT_SESSION_TITLE = "New chat"
 
 function ensureSessionTables() {
   const generation = db.getDatabaseGeneration()
@@ -321,7 +322,7 @@ async function createSession(input: {
     id: Identifier.descending("session"),
     projectID: input.projectID,
     directory: input.directory,
-    title: input.title?.trim() || "New chat",
+    title: normalizeSessionTitle(input.title),
     version: Installation.VERSION,
     workflow: defaultWorkflowState(now),
     time: {
@@ -333,6 +334,47 @@ async function createSession(input: {
   log.info("create", result)
   DataBaseCreate("sessions", result)
   return result
+}
+
+function normalizeSessionTitle(title: string | undefined) {
+  const trimmed = title?.trim()
+  return trimmed ? trimmed : DEFAULT_SESSION_TITLE
+}
+
+function isDefaultSessionTitle(title: string | undefined) {
+  return normalizeSessionTitle(title) === DEFAULT_SESSION_TITLE
+}
+
+function updateSessionTitle(
+  sessionID: string,
+  title: string,
+  options?: {
+    ifCurrentTitle?: string
+  },
+): SessionInfo | null {
+  const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
+  if (!existing) return null
+
+  if (options?.ifCurrentTitle && existing.title !== options.ifCurrentTitle) {
+    return existing
+  }
+
+  const nextTitle = title.trim()
+  if (!nextTitle) return existing
+  if (existing.title === nextTitle) return existing
+
+  const now = Date.now()
+  const next: SessionInfo = {
+    ...existing,
+    title: nextTitle,
+    time: {
+      ...existing.time,
+      updated: now,
+    },
+  }
+
+  updateSessionRecord(next)
+  return next
 }
 
 function listByProject(projectID: string): SessionInfo[] {
@@ -487,10 +529,13 @@ export {
   deletePart,
   listArchivedSessions,
   listByProject,
+  DEFAULT_SESSION_TITLE,
+  isDefaultSessionTitle,
   readArchivedSession,
   removeProjectSessions,
   removeSession,
   restoreArchivedSession,
+  updateSessionTitle,
   updateSessionWorkflow,
   updateMessage,
   updatePart,

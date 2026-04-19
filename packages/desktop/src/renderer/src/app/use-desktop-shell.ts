@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react"
-import { DEFAULT_SIDEBAR_WIDTH, SIDEBAR_KEYBOARD_STEP } from "./constants"
+import {
+  DEFAULT_RIGHT_SIDEBAR_WIDTH,
+  DEFAULT_SIDEBAR_WIDTH,
+  RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO,
+  SIDEBAR_KEYBOARD_STEP,
+} from "./constants"
 import {
   DEFAULT_ASSISTANT_TRACE_VISIBILITY,
   type AssistantTraceVisibility,
   type AssistantTraceVisibilityKey,
   type WindowAction,
 } from "./types"
-import { clamp, resolveSidebarWidthBounds } from "./utils"
+import { clamp, resolveRightSidebarWidthBounds, resolveSidebarWidthBounds } from "./utils"
 
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
 const DEBUG_UI_REGIONS_STORAGE_KEY = "desktop.debugUiRegions"
@@ -88,7 +93,7 @@ export function useDesktopShell() {
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
   const [windowControlsClearance, setWindowControlsClearance] = useState(WINDOW_CONTROLS_CLEARANCE_FALLBACK)
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
-  const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_RIGHT_SIDEBAR_WIDTH)
   const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
   const [isDebugUiRegionsEnabled, setIsDebugUiRegionsEnabled] = useState(readDebugUiRegionsPreference)
   const [isDebugLineColorsEnabled, setIsDebugLineColorsEnabled] = useState(readDebugLineColorsPreference)
@@ -99,7 +104,7 @@ export function useDesktopShell() {
   const [agentDefaultDirectory, setAgentDefaultDirectory] = useState("")
   const [agentConnected, setAgentConnected] = useState(false)
   const lastExpandedSidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH)
-  const lastExpandedRightSidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH)
+  const lastExpandedRightSidebarWidthRef = useRef(DEFAULT_RIGHT_SIDEBAR_WIDTH)
   const isSidebarResizing = activeSidebarResizer === "left"
   const isRightSidebarResizing = activeSidebarResizer === "right"
   const isAgentDebugTraceEnabled = assistantTraceVisibility.debugMetadata
@@ -120,12 +125,10 @@ export function useDesktopShell() {
 
   function resolveRightSidebarBounds(containerWidth?: number) {
     if (!containerWidth || containerWidth <= 0) {
-      return resolveSidebarWidthBounds(containerWidth)
+      return resolveRightSidebarWidthBounds(containerWidth, RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO)
     }
 
-    const fixedWidth = 10 + getLeftRailDisplayWidth() + (isSidebarCollapsed ? 0 : sidebarWidth + 10)
-
-    return resolveSidebarWidthBounds(containerWidth - fixedWidth)
+    return resolveRightSidebarWidthBounds(containerWidth, RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO)
   }
 
   useEffect(() => {
@@ -524,6 +527,10 @@ export function useDesktopShell() {
     "--right-sidebar-width": `${rightSidebarWidth}px`,
   } as CSSProperties
 
+  const currentAppShellWidth = appShellRef.current?.getBoundingClientRect().width
+  const sidebarWidthBounds = resolveLeftSidebarBounds(currentAppShellWidth)
+  const rightSidebarWidthBounds = resolveRightSidebarBounds(currentAppShellWidth)
+
   return {
     agentConnected,
     agentDefaultDirectory,
@@ -552,7 +559,9 @@ export function useDesktopShell() {
     isRightSidebarResizing,
     isWindowMaximized,
     platform,
+    rightSidebarWidthBounds,
     rightSidebarWidth,
+    sidebarWidthBounds,
     sidebarWidth,
     windowControlsRef,
   }

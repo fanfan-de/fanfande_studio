@@ -14,6 +14,7 @@ describe("prompt loop concurrency", () => {
         providerID: "test-provider",
         modelID: "test-model",
       }),
+      getSelection: async () => ({}),
       getModel: async () => ({
         id: "test-model",
         providerID: "test-provider",
@@ -23,6 +24,7 @@ describe("prompt loop concurrency", () => {
           toolcall: true,
         },
       }),
+      getLanguage: async (model: Record<string, unknown>) => model,
     }))
 
     mock.module("#session/llm.ts", () => ({

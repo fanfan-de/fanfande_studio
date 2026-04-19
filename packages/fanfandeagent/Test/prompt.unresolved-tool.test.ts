@@ -12,9 +12,11 @@ describe("prompt loop unresolved tool guard", () => {
         providerID: "test-provider",
         modelID: "test-model",
       }),
+      getSelection: async () => ({}),
       getModel: async () => {
         throw new Error("getModel should not be called while an unresolved tool is blocking the loop")
       },
+      getLanguage: async (model: Record<string, unknown>) => model,
     }))
 
     mock.module("#session/llm.ts", () => ({

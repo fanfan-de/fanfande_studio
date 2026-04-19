@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
-import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, sidebarActions } from "./constants"
+import { sidebarActions } from "./constants"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
 import {
   ArchiveIcon,
@@ -506,56 +506,54 @@ function FolderWorkspaceView({
 
           return (
             <section key={workspace.id} className="project-block">
-              <div className="project-row-shell">
-                <div
+              <div
+                className="project-row-shell"
+                onMouseEnter={() => onHoveredFolderChange(workspace.id)}
+                onMouseLeave={() => onHoveredFolderChange((current) => (current === workspace.id ? null : current))}
+                onFocus={() => onHoveredFolderChange(workspace.id)}
+                onBlur={handleProjectBlur}
+              >
+                <button
+                  ref={(node) => {
+                    projectRowRefs.current[workspace.id] = node
+                  }}
                   className={isActiveWorkspace ? "project-row is-active" : "project-row"}
-                  onMouseEnter={() => onHoveredFolderChange(workspace.id)}
-                  onMouseLeave={() => onHoveredFolderChange((current) => (current === workspace.id ? null : current))}
-                  onFocus={() => onHoveredFolderChange(workspace.id)}
-                  onBlur={handleProjectBlur}
+                  aria-label={workspace.name}
+                  aria-expanded={isExpanded}
+                  data-folder-id={workspace.id}
+                  onClick={() => onProjectClick(workspace)}
                 >
+                  <span className="project-row-leading" data-icon={leadingIcon} data-testid={`project-leading-${workspace.id}`} aria-hidden="true">
+                    {showStateIcon ? isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon /> : <FolderIcon />}
+                  </span>
+                  <span className="project-row-text">
+                    <span className="project-row-label">{workspace.name}</span>
+                    <span className="project-row-meta">
+                      <span className="project-row-meta-label">{workspace.project.name}</span>
+                      {isMissingWorkspace ? (
+                        <span className="project-row-status is-missing">{"\u5df2\u5220\u9664"}</span>
+                      ) : null}
+                    </span>
+                  </span>
+                </button>
+                <div className="project-row-actions" aria-label={`${workspace.name} actions`}>
                   <button
-                    ref={(node) => {
-                      projectRowRefs.current[workspace.id] = node
-                    }}
-                    className="project-row-trigger"
-                    aria-label={workspace.name}
-                    aria-expanded={isExpanded}
-                    data-folder-id={workspace.id}
-                    onClick={() => onProjectClick(workspace)}
+                    className="row-action project-row-action"
+                    aria-label={removeFolderLabel}
+                    title={removeFolderLabel}
+                    onClick={(event) => onProjectRemove(workspace, event)}
                   >
-                    <span className="project-row-leading" data-icon={leadingIcon} data-testid={`project-leading-${workspace.id}`} aria-hidden="true">
-                      {showStateIcon ? isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon /> : <FolderIcon />}
-                    </span>
-                    <span className="project-row-text">
-                      <span className="project-row-label">{workspace.name}</span>
-                      <span className="project-row-meta">
-                        <span className="project-row-meta-label">{workspace.project.name}</span>
-                        {isMissingWorkspace ? (
-                          <span className="project-row-status is-missing">{"\u5df2\u5220\u9664"}</span>
-                        ) : null}
-                      </span>
-                    </span>
+                    <DeleteIcon />
                   </button>
-                  <div className="project-row-actions" aria-label={`${workspace.name} actions`}>
-                    <button
-                      className="row-action project-row-action"
-                      aria-label={removeFolderLabel}
-                      title={removeFolderLabel}
-                      onClick={(event) => onProjectRemove(workspace, event)}
-                    >
-                      <DeleteIcon />
-                    </button>
-                    <button
-                      className="row-action project-row-action"
-                      aria-label={createSessionLabel}
-                      title={createSessionTitle}
-                      disabled={isCreatingSession || isMissingWorkspace}
-                      onClick={(event) => void onProjectCreateSession(workspace, event)}
-                    >
-                      <NewItemIcon />
-                    </button>
-                  </div>
+                  <button
+                    className="row-action project-row-action"
+                    aria-label={createSessionLabel}
+                    title={createSessionTitle}
+                    disabled={isCreatingSession || isMissingWorkspace}
+                    onClick={(event) => void onProjectCreateSession(workspace, event)}
+                  >
+                    <NewItemIcon />
+                  </button>
                 </div>
               </div>
 
@@ -1713,13 +1711,23 @@ export function RightSidebar({
 
 interface SidebarResizerProps {
   isSidebarResizing: boolean
+  maxWidth: number
+  minWidth: number
   side: SidebarSide
   sidebarWidth: number
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
   onPointerDown: (event: PointerEvent<HTMLDivElement>) => void
 }
 
-export function SidebarResizer({ isSidebarResizing, side, sidebarWidth, onKeyDown, onPointerDown }: SidebarResizerProps) {
+export function SidebarResizer({
+  isSidebarResizing,
+  maxWidth,
+  minWidth,
+  side,
+  sidebarWidth,
+  onKeyDown,
+  onPointerDown,
+}: SidebarResizerProps) {
   const resizerClassName = side === "right"
     ? isSidebarResizing ? "sidebar-resizer is-right is-active" : "sidebar-resizer is-right"
     : isSidebarResizing ? "sidebar-resizer is-active" : "sidebar-resizer"
@@ -1734,8 +1742,8 @@ export function SidebarResizer({ isSidebarResizing, side, sidebarWidth, onKeyDow
       aria-label={ariaLabel}
       aria-controls={controlsID}
       aria-orientation="vertical"
-      aria-valuemin={MIN_SIDEBAR_WIDTH}
-      aria-valuemax={MAX_SIDEBAR_WIDTH}
+      aria-valuemin={Math.round(minWidth)}
+      aria-valuemax={Math.round(maxWidth)}
       aria-valuenow={sidebarWidth}
       data-testid={testID}
       tabIndex={0}

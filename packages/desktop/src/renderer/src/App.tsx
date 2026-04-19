@@ -170,7 +170,9 @@ export function App() {
     isSidebarResizing,
     isWindowMaximized,
     platform,
+    rightSidebarWidthBounds,
     rightSidebarWidth,
+    sidebarWidthBounds,
     sidebarWidth,
     windowControlsRef,
   } = useDesktopShell()
@@ -644,6 +646,8 @@ export function App() {
 
             <SidebarResizer
               isSidebarResizing={isSidebarResizing}
+              maxWidth={sidebarWidthBounds.max}
+              minWidth={sidebarWidthBounds.min}
               side="left"
               sidebarWidth={sidebarWidth}
               onKeyDown={handleSidebarResizerKeyDown}
@@ -740,6 +744,8 @@ export function App() {
           <>
             <SidebarResizer
               isSidebarResizing={isRightSidebarResizing}
+              maxWidth={rightSidebarWidthBounds.max}
+              minWidth={rightSidebarWidthBounds.min}
               side="right"
               sidebarWidth={rightSidebarWidth}
               onKeyDown={handleRightSidebarResizerKeyDown}

@@ -18,6 +18,7 @@ import * as Orchestrator from "#session/orchestrator.ts"
 import * as RunningState from "#session/running-state.ts"
 import * as ContextWindow from "#session/context-window.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
+import * as SessionTitle from "#session/title.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
@@ -487,12 +488,17 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
 // 1. 校验目标 session 存在
 // 2. 先落库用户消息，再启动推理循环
 export const prompt = fn(PromptInput, async (input) => {
+    const existingMessages = loadMessagesWithParts(input.sessionID)
     const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
     if (!session) {
         throw new Error(`Session '${input.sessionID}' was not found.`);
     }
 
     //已有 loop 正在运行。
+    const shouldAutoGenerateTitle =
+        Session.isDefaultSessionTitle(session.title) &&
+        existingMessages.length === 0
+
     if (state()[input.sessionID]) {
         throw new Error(`Session '${input.sessionID}' is already running.`);
     }
@@ -520,6 +526,7 @@ export const prompt = fn(PromptInput, async (input) => {
 
     let userMessage: Awaited<ReturnType<typeof createUserMessage>>
     let turn: Orchestrator.TurnContext | undefined
+    let sessionTitlePromise: Promise<void> | undefined
 
 
     try {
@@ -528,6 +535,14 @@ export const prompt = fn(PromptInput, async (input) => {
         userMessage = await createUserMessage(nextInput, {
             snapshot: baselineSnapshot,
         });
+        if (shouldAutoGenerateTitle) {
+            sessionTitlePromise = autoGenerateSessionTitle({
+                sessionID: input.sessionID,
+                projectID: session.projectID,
+                model: userMessage.messageinfo.model,
+                parts: userMessage.parts,
+            })
+        }
     } catch (error) {
         finish(input.sessionID, controller);
         Status.set(input.sessionID, { type: "idle" });
@@ -585,6 +600,7 @@ export const prompt = fn(PromptInput, async (input) => {
                 error: error instanceof Error ? error.message : String(error),
             })
         })
+        await sessionTitlePromise
 
         turn.emit("turn.state.changed", {
             phase: result.status === "blocked" ? "blocked" : "completed",
@@ -617,6 +633,7 @@ export const prompt = fn(PromptInput, async (input) => {
                 error: persistError instanceof Error ? persistError.message : String(persistError),
             })
         })
+        await sessionTitlePromise
 
         if (turn) {
             emitTurnFailureContext({
@@ -1100,8 +1117,46 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         });
     });
 
-    return {
-        messageinfo,
-        parts,
-    };
+      return {
+          messageinfo,
+          parts,
+      };
+  }
+
+function isSessionTitleSourcePart(part: Message.Part) {
+    return part.type === "text" || part.type === "file" || part.type === "image"
+}
+
+async function autoGenerateSessionTitle(input: {
+    sessionID: string
+    projectID: string
+    model: Provider.ModelReference
+    parts: Message.Part[]
+}) {
+    const titleSourceParts = input.parts.filter(isSessionTitleSourcePart)
+    if (titleSourceParts.length === 0) return
+
+    try {
+        const fallbackModel = await Provider.getModel(
+            input.model.providerID,
+            input.model.modelID,
+            input.projectID,
+        )
+        const title = await SessionTitle.generateSessionTitle({
+            projectID: input.projectID,
+            fallbackModel,
+            parts: titleSourceParts,
+        })
+        if (!title) return
+
+        Session.updateSessionTitle(input.sessionID, title, {
+            ifCurrentTitle: Session.DEFAULT_SESSION_TITLE,
+        })
+    } catch (error) {
+        log.warn("automatic session title generation failed", {
+            sessionID: input.sessionID,
+            projectID: input.projectID,
+            error: error instanceof Error ? error.message : String(error),
+        })
+    }
 }

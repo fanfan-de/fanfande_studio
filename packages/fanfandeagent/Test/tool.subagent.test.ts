@@ -26,6 +26,7 @@ mock.module("#provider/provider.ts", () => ({
     providerID: "test-provider",
     modelID: "test-model",
   }),
+  getSelection: async () => ({}),
   getModel: async () => ({
     id: "test-model",
     providerID: "test-provider",
@@ -42,6 +43,7 @@ mock.module("#provider/provider.ts", () => ({
       },
     },
   }),
+  getLanguage: async (model: Record<string, unknown>) => model,
 }))
 
 mock.module("#session/llm.ts", () => ({

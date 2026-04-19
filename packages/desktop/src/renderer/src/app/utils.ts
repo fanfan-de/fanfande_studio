@@ -1,21 +1,49 @@
-import { MAX_SIDEBAR_WIDTH, MIN_CANVAS_WIDTH, MIN_SIDEBAR_WIDTH } from "./constants"
+import {
+  MAX_RIGHT_SIDEBAR_WIDTH,
+  MAX_SIDEBAR_WIDTH,
+  MIN_CANVAS_WIDTH,
+  MIN_RIGHT_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO,
+} from "./constants"
 
 export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-export function resolveSidebarWidthBounds(containerWidth?: number) {
+function resolveWidthBounds(
+  containerWidth: number | undefined,
+  minWidth: number,
+  maxWidth: number,
+  minContentWidth: number,
+) {
   if (!containerWidth || containerWidth <= 0) {
     return {
-      min: MIN_SIDEBAR_WIDTH,
-      max: MAX_SIDEBAR_WIDTH,
+      min: minWidth,
+      max: maxWidth,
     }
   }
 
   return {
-    min: MIN_SIDEBAR_WIDTH,
-    max: Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, containerWidth - MIN_CANVAS_WIDTH)),
+    min: minWidth,
+    max: Math.min(maxWidth, Math.max(minWidth, containerWidth - minContentWidth)),
   }
+}
+
+export function resolveSidebarWidthBounds(containerWidth?: number) {
+  return resolveWidthBounds(containerWidth, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_CANVAS_WIDTH)
+}
+
+export function resolveRightSidebarWidthBounds(
+  containerWidth?: number,
+  minLeftEdgeRatio = RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO,
+) {
+  return resolveWidthBounds(
+    containerWidth,
+    MIN_RIGHT_SIDEBAR_WIDTH,
+    MAX_RIGHT_SIDEBAR_WIDTH,
+    containerWidth && containerWidth > 0 ? Math.max(0, containerWidth * minLeftEdgeRatio) : 0,
+  )
 }
 
 export function createID(prefix: string) {
