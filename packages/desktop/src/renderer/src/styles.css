@@ -4441,6 +4441,61 @@ textarea::placeholder {
   font-size: 12px;
 }
 
+.session-row-copy,
+.session-tab-copy {
+  min-width: 0;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-workflow-badge {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.session-workflow-badge.is-compact {
+  min-height: 18px;
+  padding: 0 7px;
+  font-size: 10px;
+}
+
+.session-workflow-badge.is-planning {
+  background: rgba(180, 92, 32, 0.12);
+  color: #9a4d12;
+}
+
+.session-workflow-badge.is-pending {
+  background: rgba(162, 92, 18, 0.14);
+  color: #87500f;
+}
+
+.session-workflow-badge.is-approved {
+  background: rgba(26, 117, 88, 0.14);
+  color: #1f6c52;
+}
+
+.session-canvas-top-menu-copy {
+  align-content: start;
+}
+
+.session-canvas-top-menu-copy .session-workflow-badge {
+  justify-self: start;
+  margin-top: 2px;
+}
+
 .permission-request-controls {
   display: grid;
   gap: 10px;

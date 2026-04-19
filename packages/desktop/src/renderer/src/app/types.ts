@@ -27,6 +27,15 @@ export type RightSidebarView = "changes" | "runtime"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
 
+export interface SessionWorkflowSummary {
+  mode: "execution" | "planning"
+  plan: {
+    status: "idle" | "draft" | "pending-approval" | "approved"
+    updatedAt: number
+    approvedAt?: number
+  }
+}
+
 export interface SessionSummary {
   id: string
   title: string
@@ -35,6 +44,7 @@ export interface SessionSummary {
   updated: number
   focus: string
   summary: string
+  workflow?: SessionWorkflowSummary
 }
 
 export interface CreateSessionTab {
@@ -84,6 +94,7 @@ export interface LoadedSessionSnapshot {
   title: string
   created: number
   updated: number
+  workflow?: SessionWorkflowSummary
 }
 
 export interface ArchivedSessionSummary {

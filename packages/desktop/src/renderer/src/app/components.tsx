@@ -63,6 +63,7 @@ import type {
   WindowAction,
   WorkspaceGroup,
 } from "./types"
+import { getSessionWorkflowBadge } from "./session-workflow"
 import { formatTime } from "./utils"
 
 interface WindowChromeProps {
@@ -77,6 +78,28 @@ function WindowControlsSpacer({ variant }: { variant: "canvas" | "right-sidebar"
 
 function joinClassNames(...tokens: Array<string | null | undefined | false>) {
   return tokens.filter(Boolean).join(" ")
+}
+
+function SessionWorkflowBadge({
+  compact = false,
+  workflow,
+}: {
+  compact?: boolean
+  workflow: ReturnType<typeof getSessionWorkflowBadge>
+}) {
+  if (!workflow) return null
+
+  return (
+    <span
+      className={compact
+        ? `session-workflow-badge is-${workflow.tone} is-compact`
+        : `session-workflow-badge is-${workflow.tone}`
+      }
+      title={workflow.description}
+    >
+      {compact ? workflow.shortLabel : workflow.label}
+    </span>
+  )
 }
 
 const assistantTraceVisibilityOptions: Array<{
@@ -538,17 +561,21 @@ function FolderWorkspaceView({
 
               {isExpanded ? (
                 <div className="session-tree">
-                  {workspace.sessions.map((session) => {
-                    const active = session.id === activeSessionID
+            {workspace.sessions.map((session) => {
+              const active = session.id === activeSessionID
+              const workflowBadge = getSessionWorkflowBadge(session.workflow)
 
-                    return (
-                      <div key={session.id} className="session-row-shell">
-                        <button
-                          className={active ? "session-row is-active" : "session-row"}
-                          onClick={() => onSessionSelect(workspace.id, session.id)}
-                        >
-                          <span className="session-row-label">{session.title}</span>
-                        </button>
+              return (
+                <div key={session.id} className="session-row-shell">
+                  <button
+                    className={active ? "session-row is-active" : "session-row"}
+                    onClick={() => onSessionSelect(workspace.id, session.id)}
+                  >
+                    <span className="session-row-copy">
+                      <span className="session-row-label">{session.title}</span>
+                      <SessionWorkflowBadge compact workflow={workflowBadge} />
+                    </span>
+                  </button>
                         <button
                           className="row-action"
                           aria-label={`Archive session ${session.title}`}
@@ -2377,6 +2404,7 @@ export function CanvasRegionTopMenu({
           <div className="canvas-region-top-menu-tabs" aria-label="Session tabs">
             {sessions.map((session) => {
               const isActive = activeCreateSessionTabID === null && session.id === activeSessionID
+              const workflowBadge = getSessionWorkflowBadge(session.workflow)
 
               return (
                 <div key={session.id} className={isActive ? "session-tab is-active" : "session-tab"}>
@@ -2388,7 +2416,10 @@ export function CanvasRegionTopMenu({
                     type="button"
                     onClick={() => onSessionSelect(session.id)}
                   >
-                    <span className="session-tab-title">{session.title}</span>
+                    <span className="session-tab-copy">
+                      <span className="session-tab-title">{session.title}</span>
+                      <SessionWorkflowBadge compact workflow={workflowBadge} />
+                    </span>
                   </button>
                   <button
                     className="session-tab-close"
@@ -2473,6 +2504,7 @@ interface PaneTabBarProps {
         kind: "session"
         sessionID: string
         title: string
+        workflow?: SessionSummary["workflow"]
       }
     | {
         key: string
@@ -2636,6 +2668,7 @@ export function PaneTabBar({
       <div className="pane-tab-bar-tabs" aria-label="Pane tab list">
         {tabs.map((tab) => {
           const isActive = tab.key === activeTabKey
+          const workflowBadge = tab.kind === "session" ? getSessionWorkflowBadge(tab.workflow) : null
           const createTabIndex =
             tab.kind === "create-session"
               ? tabs.slice(0, tabs.indexOf(tab) + 1).filter((item) => item.kind === "create-session").length - 1
@@ -2689,7 +2722,10 @@ export function PaneTabBar({
                   onSelectCreateSessionTab(tab.createSessionTabID)
                 }}
               >
-                <span className="session-tab-title">{tab.title}</span>
+                <span className="session-tab-copy">
+                  <span className="session-tab-title">{tab.title}</span>
+                  <SessionWorkflowBadge compact workflow={workflowBadge} />
+                </span>
               </button>
               <button
                 className="session-tab-close"
@@ -2769,11 +2805,13 @@ export function CanvasRegionUtilityMenu({
 }
 
 interface SessionCanvasTopMenuProps {
+  activeSession: SessionSummary | null
   contextLabel: string
   contextTitle: string
   gitProjectID: string | null
   gitDirectory: string | null
   mcpOptions: ComposerMcpOption[]
+  pendingPermissionRequests: PermissionRequest[]
   selectedMcpServerIDs: string[]
   selectedMcpServerLabel: string
   onMcpServerToggle: (value: string) => void | Promise<void>
@@ -3013,11 +3051,13 @@ function ExternalEditorMenuButton({ directory }: { directory: string | null }) {
 }
 
 export function SessionCanvasTopMenu({
+  activeSession,
   contextLabel,
   contextTitle,
   gitProjectID,
   gitDirectory,
   mcpOptions,
+  pendingPermissionRequests,
   selectedMcpServerIDs,
   selectedMcpServerLabel,
   onMcpServerToggle,
@@ -3026,6 +3066,8 @@ export function SessionCanvasTopMenu({
   selectedSkillLabel,
   onSkillToggle,
 }: SessionCanvasTopMenuProps) {
+  const workflowBadge = getSessionWorkflowBadge(activeSession?.workflow, pendingPermissionRequests)
+
   return (
     <ShellTopMenu
       ariaLabel="Session canvas top menu"
@@ -3036,6 +3078,7 @@ export function SessionCanvasTopMenu({
         <>
           <span className="label">{contextLabel}</span>
           <strong>{contextTitle}</strong>
+          <SessionWorkflowBadge workflow={workflowBadge} />
         </>
       )}
       controlsSpacerVariant="canvas"

@@ -831,6 +831,7 @@ type PaneTabDescriptor =
       kind: "session"
       sessionID: string
       title: string
+      workflow?: NonNullable<WorkbenchPaneState["activeSession"]>["workflow"]
     }
   | {
       key: string
@@ -1158,11 +1159,13 @@ const PaneSurface = memo(function PaneSurface({
             trailingAccessory={trailingAccessory}
           />
           <SessionCanvasTopMenu
+            activeSession={pane.activeSession}
             contextLabel={pane.contextLabel}
             contextTitle={pane.contextTitle}
             gitProjectID={pane.projectID}
             gitDirectory={pane.workspace?.directory ?? null}
             mcpOptions={composer.mcpOptions}
+            pendingPermissionRequests={pane.pendingPermissionRequests}
             selectedMcpServerIDs={composer.selectedMcpServerIDs}
             selectedMcpServerLabel={composer.selectedMcpLabel}
             onMcpServerToggle={composer.handleMcpToggle}

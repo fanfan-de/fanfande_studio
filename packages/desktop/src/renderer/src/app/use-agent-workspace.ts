@@ -138,6 +138,21 @@ function normalizeModelSelection(selection?: { model?: string; small_model?: str
   }
 }
 
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value : undefined
+}
+
+function isPermissionRequestStreamEvent(streamEvent: { event: string; data: unknown }) {
+  if (streamEvent.event !== "part") return false
+  const data = readRecord(streamEvent.data)
+  const part = readRecord(data?.part)
+  return readString(part?.type) === "permission" && readString(part?.action) === "ask"
+}
+
 function getComposerAttachmentName(path: string) {
   const segments = path.split(/[\\/]/).filter(Boolean)
   return segments[segments.length - 1] ?? path
@@ -1120,6 +1135,13 @@ export function useAgentWorkspace({
       )
     })
 
+    if (isPermissionRequestStreamEvent(streamEvent)) {
+      refreshWorkspaceForSession(target.sessionID)
+      void loadPendingPermissionRequestsForSession(target.sessionID).catch((error) => {
+        console.error("[desktop] stream permission request refresh failed:", error)
+      })
+    }
+
     scheduleRuntimeDebugRefresh(
       target.sessionID,
       target.backendSessionID ?? resolveBackendSessionID(target.sessionID),
@@ -1180,6 +1202,13 @@ export function useAgentWorkspace({
     startTransition(() => {
       updateAssistantConversationTurn(uiSessionID, assistantTurnID, (turn) => applyAgentStreamEventToTurn(turn, streamEvent))
     })
+
+    if (isPermissionRequestStreamEvent(streamEvent)) {
+      refreshWorkspaceForSession(uiSessionID)
+      void loadPendingPermissionRequestsForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
+        console.error("[desktop] session stream permission request refresh failed:", error)
+      })
+    }
 
     scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)
 
@@ -2873,6 +2902,7 @@ export function useAgentWorkspace({
       await loadPendingPermissionRequestsForSession(input.sessionID, input.request.sessionID).catch((error) => {
         console.error("[desktop] permission request refresh failed:", error)
       })
+      refreshWorkspaceForSession(input.sessionID)
 
       if (resumeAgentMessageStream) {
         const streamID = createID("stream")
@@ -3132,6 +3162,7 @@ export function useAgentWorkspace({
           kind: "session"
           sessionID: string
           title: string
+          workflow?: SessionSummary["workflow"]
         }
       | {
           key: string
@@ -3150,6 +3181,7 @@ export function useAgentWorkspace({
           kind: tab.kind,
           sessionID: tab.sessionID,
           title: session.title,
+          workflow: session.workflow,
         })
         continue
       }

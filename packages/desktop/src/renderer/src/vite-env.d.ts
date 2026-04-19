@@ -280,6 +280,14 @@ declare global {
           title: string
           created: number
           updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }>
       }>
       createProjectWorkspace?: (input: { directory: string }) => Promise<{
@@ -295,6 +303,14 @@ declare global {
           title: string
           created: number
           updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }>
       }>
       createAgentSession?: (input?: { directory?: string }) => Promise<{
@@ -303,6 +319,16 @@ declare global {
           projectID: string
           directory: string
           title: string
+          created: number
+          updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }
         requestId?: string
       }>
@@ -314,6 +340,14 @@ declare global {
           title: string
           created: number
           updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }
         requestId?: string
       }>
@@ -325,6 +359,14 @@ declare global {
           title: string
           created: number
           updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }
         requestId?: string
       }>
@@ -368,6 +410,14 @@ declare global {
           title: string
           created: number
           updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }
         requestId?: string
       }>

@@ -493,6 +493,8 @@ describe("App", () => {
           projectID: "project-backend",
           directory: "C:\\Projects\\fanfande_studio",
           title: "Backend session",
+          created: 1,
+          updated: 1,
         },
       }),
       sendAgentMessage: vi.fn().mockResolvedValue({
@@ -668,6 +670,79 @@ describe("App", () => {
     expect(screen.getByText("Execution timeline")).toBeInTheDocument()
     expect(screen.getByText("LLM request completed")).toBeInTheDocument()
     expect(window.desktop?.getSessionRuntimeDebug).toHaveBeenCalled()
+  })
+
+  it("renders session workflow badges in the sidebar, tabs, and active session header", async () => {
+    const workspace: LoadedFolderWorkspace = {
+      id: "workspace-plan",
+      directory: "C:\\Projects\\Planner\\app",
+      name: "app",
+      created: 1,
+      updated: 30,
+      project: {
+        id: "project-plan",
+        name: "Planner",
+        worktree: "C:\\Projects\\Planner",
+      },
+      sessions: [
+        {
+          id: "session-plan-pending",
+          projectID: "project-plan",
+          directory: "C:\\Projects\\Planner\\app",
+          title: "Plan review",
+          created: 5,
+          updated: 30,
+          workflow: {
+            mode: "planning",
+            plan: {
+              status: "pending-approval",
+              updatedAt: 30,
+            },
+          },
+        },
+        {
+          id: "session-plan-draft",
+          projectID: "project-plan",
+          directory: "C:\\Projects\\Planner\\app",
+          title: "Research",
+          created: 4,
+          updated: 20,
+          workflow: {
+            mode: "planning",
+            plan: {
+              status: "draft",
+              updatedAt: 20,
+            },
+          },
+        },
+        {
+          id: "session-plan-approved",
+          projectID: "project-plan",
+          directory: "C:\\Projects\\Planner\\app",
+          title: "Execute",
+          created: 3,
+          updated: 10,
+          workflow: {
+            mode: "execution",
+            plan: {
+              status: "approved",
+              updatedAt: 10,
+              approvedAt: 9,
+            },
+          },
+        },
+      ],
+    }
+
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([workspace])
+
+    render(<App />)
+
+    const topMenu = await screen.findByLabelText("Session canvas top menu")
+    expect(within(topMenu).getByText("Plan Pending Approval")).toBeInTheDocument()
+    expect(screen.getAllByText("Pending").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Planning").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("Approved plan").length).toBeGreaterThan(0)
   })
 
   it("opens the external editor menu from the session canvas top menu", async () => {
@@ -4447,6 +4522,8 @@ describe("App", () => {
         projectID: "project-2",
         directory: "C:\\Projects\\Project 2\\app",
         title: "Seed backend session",
+        created: 1,
+        updated: 1,
       },
     })
 

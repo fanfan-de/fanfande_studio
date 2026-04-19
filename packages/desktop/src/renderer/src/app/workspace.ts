@@ -28,6 +28,7 @@ export function mapLoadedSession(session: LoadedSessionSnapshot, sessionIndex: n
     updated: session.updated,
     focus: "Backend",
     summary: `Loaded from ${session.directory}`,
+    workflow: session.workflow,
   }
 }
 

@@ -31,12 +31,22 @@ export interface AgentProjectInfo {
   sandboxes: string[]
 }
 
+export interface AgentSessionWorkflowSummary {
+  mode: "execution" | "planning"
+  plan: {
+    status: "idle" | "draft" | "pending-approval" | "approved"
+    updatedAt: number
+    approvedAt?: number
+  }
+}
+
 export interface AgentSessionInfo {
   id: string
   projectID: string
   directory: string
   title: string
   version?: string
+  workflow?: AgentSessionWorkflowSummary
   time: {
     created: number
     updated: number
@@ -50,6 +60,7 @@ export interface AgentWorkspaceSession {
   title: string
   created: number
   updated: number
+  workflow?: AgentSessionWorkflowSummary
 }
 
 export interface AgentProjectWorkspace {

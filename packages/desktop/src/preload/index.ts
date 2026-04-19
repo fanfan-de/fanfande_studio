@@ -292,6 +292,14 @@ try {
             title: string
             created: number
             updated: number
+            workflow?: {
+              mode: "execution" | "planning"
+              plan: {
+                status: "idle" | "draft" | "pending-approval" | "approved"
+                updatedAt: number
+                approvedAt?: number
+              }
+            }
           }>
         }>
       >,
@@ -310,6 +318,14 @@ try {
             title: string
             created: number
             updated: number
+            workflow?: {
+              mode: "execution" | "planning"
+              plan: {
+                status: "idle" | "draft" | "pending-approval" | "approved"
+                updatedAt: number
+                approvedAt?: number
+              }
+            }
           }>
         }>
       >,
@@ -358,6 +374,16 @@ try {
           projectID: string
           directory: string
           title: string
+          created: number
+          updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }
         requestId?: string
       }>,
@@ -370,6 +396,14 @@ try {
           title: string
           created: number
           updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }
         requestId?: string
       }>,
@@ -382,6 +416,14 @@ try {
           title: string
           created: number
           updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }
         requestId?: string
       }>,
@@ -430,6 +472,14 @@ try {
           title: string
           created: number
           updated: number
+          workflow?: {
+            mode: "execution" | "planning"
+            plan: {
+              status: "idle" | "draft" | "pending-approval" | "approved"
+              updatedAt: number
+              approvedAt?: number
+            }
+          }
         }
         requestId?: string
       }>,

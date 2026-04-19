@@ -70,6 +70,7 @@ function mapSessionInfo(session: AgentSessionInfo) {
     title: session.title,
     created: session.time.created,
     updated: session.time.updated,
+    workflow: session.workflow,
   }
 }
 
@@ -539,12 +540,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   ipcMain.handle("desktop:agent-create-session", async (_event, input?: { directory?: string }) => {
     const config = getAgentConfig()
     const directory = input?.directory?.trim() || config.defaultDirectory
-    const result = await requestAgentJSON<{
-      id: string
-      projectID: string
-      directory: string
-      title: string
-    }>("/api/sessions", {
+    const result = await requestAgentJSON<AgentSessionInfo>("/api/sessions", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -553,7 +549,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     })
 
     return {
-      session: result.data,
+      session: mapSessionInfo(result.data),
       requestId: result.requestId,
     }
   })
