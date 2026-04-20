@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useEffectEvent, useRef, useState, type MouseEvent } from "react"
+import { startTransition, useDeferredValue, useEffect, useEffectEvent, useRef, useState, type MouseEvent } from "react"
 import {
   appendConversationTurns as appendConversationTurnsToMap,
   ensureAgentSessions,
@@ -33,6 +33,8 @@ import type {
   PermissionDecision,
   PermissionRequest,
   PendingAgentStream,
+  PreviewComment,
+  PreviewMode,
   ProviderModel,
   RightSidebarView,
   SessionContextUsage,
@@ -46,9 +48,15 @@ import type {
   Turn,
   WorkbenchPane,
   WorkbenchTabReference,
+  WorkspacePreviewState,
   WorkspaceFileChangeIPCEvent,
+  WorkspaceFileComment,
+  WorkspaceFilePendingComment,
+  WorkspaceFileReviewState,
+  WorkspaceFileSearchResult,
   WorkspaceGroup,
 } from "./types"
+import { buildPreviewCommentDraft, normalizePreviewUrlInput } from "./preview/utils"
 import { createID } from "./utils"
 import {
   createWorkbenchLayoutFromLegacyPanes,
@@ -114,6 +122,54 @@ const DEFAULT_SESSION_RUNTIME_DEBUG_STATE: SessionRuntimeDebugState = {
   errorMessage: null,
   updatedAt: null,
   isStale: false,
+}
+const PREVIEW_FALLBACK_SCOPE_ID = "__preview_global__"
+const DEFAULT_WORKSPACE_PREVIEW_STATE: WorkspacePreviewState = {
+  draftUrl: "http://localhost:3000",
+  committedUrl: null,
+  mode: "browse",
+  reloadToken: 0,
+  errorMessage: null,
+  comments: [],
+}
+const DEFAULT_WORKSPACE_FILE_REVIEW_STATE: WorkspaceFileReviewState = {
+  scopeDirectory: null,
+  query: "",
+  results: [],
+  selectedFilePath: null,
+  selectedFileContent: null,
+  selectedFileKind: null,
+  selectedFileExtension: null,
+  status: "idle",
+  errorMessage: null,
+  comments: [],
+  pendingComment: null,
+}
+
+function resolvePreviewScopeID(workspaceID: string | null | undefined) {
+  return workspaceID ?? PREVIEW_FALLBACK_SCOPE_ID
+}
+
+function getWorkspaceFileCommentKey(
+  directory: string | null | undefined,
+  filePath: string | null | undefined,
+  platform: string,
+) {
+  if (!directory || !filePath) return null
+  return `${normalizeWorkspacePath(directory, platform)}::${filePath.replace(/\\/g, "/")}`
+}
+
+function resolveWorkspaceFileReviewStatus(
+  state: Pick<
+    WorkspaceFileReviewState,
+    "errorMessage" | "query" | "results" | "selectedFileContent" | "selectedFileKind" | "selectedFilePath"
+  >,
+): WorkspaceFileReviewState["status"] {
+  if (state.errorMessage) return "error"
+  if (state.selectedFileKind === "unsupported") return "unsupported"
+  if (state.selectedFilePath && state.selectedFileKind === "text" && state.selectedFileContent !== null) return "ready"
+  if (state.query.trim() && state.results.length === 0) return "empty"
+  return "idle"
 }
 
 function collectSessionDirectoryMap(
@@ -633,6 +689,8 @@ export function useAgentWorkspace({
   const sessionDiffRequestRef = useRef<Record<string, number>>({})
   const runtimeDebugRequestRef = useRef<Record<string, number>>({})
   const runtimeDebugRefreshTimerRef = useRef<Record<string, number>>({})
+  const workspaceFileSearchRequestRef = useRef(0)
+  const workspaceFileReadRequestRef = useRef(0)
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
   const workspaceRefreshRequestRef = useRef<Record<string, number>>({})
   const conversationVersionRef = useRef<Record<string, number>>({})
@@ -654,6 +712,11 @@ export function useAgentWorkspace({
   const [hoveredFolderID, setHoveredFolderID] = useState<string | null>(null)
   const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("workspace")
   const [rightSidebarView, setRightSidebarView] = useState<RightSidebarView>("changes")
+  const [previewByWorkspaceID, setPreviewByWorkspaceID] = useState<Record<string, WorkspacePreviewState>>({})
+  const [workspaceFileCommentsByTarget, setWorkspaceFileCommentsByTarget] = useState<Record<string, WorkspaceFileComment[]>>({})
+  const [workspaceFileReviewState, setWorkspaceFileReviewState] = useState<WorkspaceFileReviewState>(
+    DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+  )
   const [draftByTabKey, setDraftByTabKey] = useState<Record<string, string>>(() =>
     initialWorkbenchTab
       ? {
@@ -763,6 +826,10 @@ export function useAgentWorkspace({
   const workbenchPanes = buildLegacyWorkbenchPanesFromLayout(workbenchLayout)
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
   const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
+  const focusedPaneCreateSessionTab =
+    activeTab?.kind === "create-session"
+      ? createSessionTabs.find((tab) => tab.id === activeTab.createSessionTabID) ?? null
+      : null
   const activeTabWorkspaceID = resolveWorkspaceIDForTab(activeTab)
   const selectedWorkspace =
     findWorkspaceByID(workspaces, selectedFolderID) ??
@@ -770,6 +837,28 @@ export function useAgentWorkspace({
     activeWorkspace ??
     workspaces[0] ??
     null
+  const focusedPaneWorkspace =
+    activeWorkspace ??
+    findWorkspaceByID(workspaces, focusedPaneCreateSessionTab?.workspaceID ?? null) ??
+    null
+  const activePreviewScopeID = resolvePreviewScopeID(selectedWorkspace?.id ?? null)
+  const activeWorkspaceFileScopeDirectory = focusedPaneWorkspace?.directory ?? selectedWorkspace?.directory ?? null
+  const activeWorkspaceFileScopeName = focusedPaneWorkspace?.name ?? selectedWorkspace?.name ?? null
+  const activeWorkspaceFileCommentKey = getWorkspaceFileCommentKey(
+    activeWorkspaceFileScopeDirectory,
+    workspaceFileReviewState.selectedFilePath,
+    platform,
+  )
+  const activeWorkspaceFileState: WorkspaceFileReviewState =
+    activeWorkspaceFileCommentKey
+      ? {
+          ...workspaceFileReviewState,
+          comments: workspaceFileCommentsByTarget[activeWorkspaceFileCommentKey] ?? [],
+        }
+      : {
+          ...workspaceFileReviewState,
+          comments: [],
+        }
   const selectedProjectID =
     isInitialWorkspaceLoadPending && selectedWorkspace && seedWorkspaceIDs.has(selectedWorkspace.id)
       ? null
@@ -791,6 +880,9 @@ export function useAgentWorkspace({
   const createSessionWorkspaceID = activeCreateSessionTab?.workspaceID ?? null
   const createSessionTitle = activeCreateSessionTab?.title ?? ""
   const draft = activeTabKey ? draftByTabKey[activeTabKey] ?? "" : ""
+  const activePreviewState = previewByWorkspaceID[activePreviewScopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+  const deferredWorkspaceFileQuery = useDeferredValue(workspaceFileReviewState.query)
+  const canInsertPreviewCommentsIntoDraft = Boolean(activeTabKey)
   const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
   const composerPermissionMode = activeTabKey ? composerPermissionModeByTabKey[activeTabKey] ?? "default" : "default"
   const isSending = activeTabKey ? Boolean(isSendingByTabKey[activeTabKey]) : false
@@ -967,6 +1059,7 @@ export function useAgentWorkspace({
 
     try {
       const loadedWorkspace = await openFolderWorkspace({ directory: trimmedDirectory })
+      if (!loadedWorkspace) return null
       if (workspaceRefreshRequestRef.current[trimmedDirectory] !== requestID) return null
 
       const nextWorkspace = mapLoadedWorkspace(loadedWorkspace)
@@ -2604,6 +2697,409 @@ export function useAgentWorkspace({
     setDraftForTab(activeTabKey, value)
   }
 
+  function updatePreviewState(
+    updater: (current: WorkspacePreviewState) => WorkspacePreviewState,
+    workspaceID = selectedWorkspace?.id ?? null,
+  ) {
+    const scopeID = resolvePreviewScopeID(workspaceID)
+    setPreviewByWorkspaceID((current) => {
+      const previousState = current[scopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+      const nextState = updater(previousState)
+      if (nextState === previousState) return current
+      return {
+        ...current,
+        [scopeID]: nextState,
+      }
+    })
+  }
+
+  function handlePreviewDraftUrlChange(value: string, workspaceID = selectedWorkspace?.id ?? null) {
+    updatePreviewState(
+      (current) => ({
+        ...current,
+        draftUrl: value,
+        errorMessage: null,
+      }),
+      workspaceID,
+    )
+  }
+
+  function handlePreviewOpen(workspaceID = selectedWorkspace?.id ?? null) {
+    setRightSidebarView("preview")
+    updatePreviewState((current) => {
+      const { errorMessage, normalizedUrl } = normalizePreviewUrlInput(current.draftUrl || current.committedUrl || "")
+      if (!normalizedUrl) {
+        return {
+          ...current,
+          errorMessage,
+        }
+      }
+
+      return {
+        ...current,
+        draftUrl: normalizedUrl,
+        committedUrl: normalizedUrl,
+        errorMessage: null,
+        reloadToken: current.committedUrl === normalizedUrl ? current.reloadToken + 1 : current.reloadToken,
+      }
+    }, workspaceID)
+  }
+
+  function handlePreviewReload(workspaceID = selectedWorkspace?.id ?? null) {
+    setRightSidebarView("preview")
+    updatePreviewState(
+      (current) => current.committedUrl
+        ? {
+            ...current,
+            errorMessage: null,
+            reloadToken: current.reloadToken + 1,
+          }
+        : current,
+      workspaceID,
+    )
+  }
+
+  function handlePreviewModeChange(mode: PreviewMode, workspaceID = selectedWorkspace?.id ?? null) {
+    setRightSidebarView("preview")
+    updatePreviewState(
+      (current) => ({
+        ...current,
+        mode,
+      }),
+      workspaceID,
+    )
+  }
+
+  function handlePreviewAddComment(
+    input: {
+      x: number
+      y: number
+      text: string
+      anchor?: PreviewComment["anchor"]
+    },
+    workspaceID = selectedWorkspace?.id ?? null,
+  ) {
+    setRightSidebarView("preview")
+    updatePreviewState((current) => {
+      const trimmedText = input.text.trim()
+      if (!current.committedUrl || !trimmedText) return current
+
+      const nextComment: PreviewComment = {
+        id: createID("preview-comment"),
+        url: current.committedUrl,
+        x: input.x,
+        y: input.y,
+        text: trimmedText,
+        createdAt: Date.now(),
+        anchor: input.anchor,
+      }
+
+      return {
+        ...current,
+        comments: [...current.comments, nextComment],
+        errorMessage: null,
+      }
+    }, workspaceID)
+  }
+
+  function handlePreviewDeleteComment(commentID: string, workspaceID = selectedWorkspace?.id ?? null) {
+    updatePreviewState(
+      (current) => ({
+        ...current,
+        comments: current.comments.filter((comment) => comment.id !== commentID),
+      }),
+      workspaceID,
+    )
+  }
+
+  function handlePreviewInsertCommentsIntoDraft(workspaceID = selectedWorkspace?.id ?? null) {
+    if (!activeTabKey) return
+
+    const previewState = previewByWorkspaceID[resolvePreviewScopeID(workspaceID)] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    if (!previewState.committedUrl) return
+
+    const relevantComments = previewState.comments.filter((comment) => comment.url === previewState.committedUrl)
+    const commentDraft = buildPreviewCommentDraft(previewState.committedUrl, relevantComments)
+    if (!commentDraft) return
+
+    setDraftByTabKey((current) => {
+      const existingDraft = current[activeTabKey]?.trimEnd() ?? ""
+      return {
+        ...current,
+        [activeTabKey]: existingDraft ? `${existingDraft}\n\n${commentDraft}` : commentDraft,
+      }
+    })
+  }
+
+  async function handlePreviewOpenExternal(workspaceID = selectedWorkspace?.id ?? null) {
+    const openExternalUrl = window.desktop?.openExternalUrl
+    if (!openExternalUrl) return
+
+    const scopeID = resolvePreviewScopeID(workspaceID)
+    const previewState = previewByWorkspaceID[scopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    const { errorMessage, normalizedUrl } = normalizePreviewUrlInput(previewState.committedUrl ?? previewState.draftUrl)
+
+    if (!normalizedUrl) {
+      updatePreviewState(
+        (current) => ({
+          ...current,
+          errorMessage,
+        }),
+        workspaceID,
+      )
+      return
+    }
+
+    try {
+      await openExternalUrl({ url: normalizedUrl })
+      updatePreviewState(
+        (current) => ({
+          ...current,
+          draftUrl: normalizedUrl,
+          errorMessage: null,
+        }),
+        workspaceID,
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      updatePreviewState(
+        (current) => ({
+          ...current,
+          errorMessage: message,
+        }),
+        workspaceID,
+      )
+    }
+  }
+
+  function handleWorkspaceFileQueryChange(value: string) {
+    setRightSidebarView("files")
+    setWorkspaceFileReviewState((current) => {
+      const nextErrorMessage = current.selectedFileKind === "unsupported" ? current.errorMessage : null
+      const nextState = {
+        ...current,
+        query: value,
+        results: value.trim() ? current.results : [],
+        errorMessage: nextErrorMessage,
+        pendingComment: null,
+      }
+
+      return {
+        ...nextState,
+        status: value.trim() ? current.status : resolveWorkspaceFileReviewStatus(nextState),
+      }
+    })
+  }
+
+  async function handleWorkspaceFileSelect(path: string) {
+    const readWorkspaceFile = window.desktop?.readWorkspaceFile
+    const scopeDirectory = activeWorkspaceFileScopeDirectory
+    const trimmedPath = path.trim()
+    if (!readWorkspaceFile || !scopeDirectory || !trimmedPath) return
+
+    const requestID = workspaceFileReadRequestRef.current + 1
+    workspaceFileReadRequestRef.current = requestID
+    setRightSidebarView("files")
+    setWorkspaceFileReviewState((current) => ({
+      ...current,
+      selectedFilePath: trimmedPath,
+      selectedFileContent: null,
+      selectedFileKind: null,
+      selectedFileExtension: null,
+      comments: [],
+      pendingComment: null,
+      errorMessage: null,
+      status: "reading",
+    }))
+
+    try {
+      const nextFile = await readWorkspaceFile({
+        directory: scopeDirectory,
+        path: trimmedPath,
+      })
+      if (workspaceFileReadRequestRef.current !== requestID) return
+
+      const commentKey = getWorkspaceFileCommentKey(scopeDirectory, nextFile.path, platform)
+      const nextComments = commentKey ? workspaceFileCommentsByTarget[commentKey] ?? [] : []
+      const nextErrorMessage = nextFile.kind === "unsupported" ? nextFile.unsupportedReason ?? null : null
+
+      setWorkspaceFileReviewState((current) => ({
+        ...current,
+        selectedFilePath: nextFile.path,
+        selectedFileContent: nextFile.kind === "text" ? nextFile.content ?? "" : null,
+        selectedFileKind: nextFile.kind,
+        selectedFileExtension: nextFile.extension,
+        comments: nextComments,
+        pendingComment: null,
+        errorMessage: nextErrorMessage,
+        status: nextFile.kind === "text" ? "ready" : "unsupported",
+      }))
+    } catch (error) {
+      if (workspaceFileReadRequestRef.current !== requestID) return
+      const message = error instanceof Error ? error.message : String(error)
+
+      setWorkspaceFileReviewState((current) => ({
+        ...current,
+        selectedFilePath: trimmedPath,
+        selectedFileContent: null,
+        selectedFileKind: null,
+        selectedFileExtension: null,
+        comments: [],
+        pendingComment: null,
+        errorMessage: message,
+        status: "error",
+      }))
+      console.error("[desktop] readWorkspaceFile failed:", error)
+    }
+  }
+
+  function handleWorkspaceFileCommentStart(lineNumber: number) {
+    if (!workspaceFileReviewState.selectedFilePath) return
+    setRightSidebarView("files")
+    setWorkspaceFileReviewState((current) => ({
+      ...current,
+      pendingComment: {
+        lineNumber,
+        text: current.pendingComment?.lineNumber === lineNumber ? current.pendingComment.text : "",
+      },
+    }))
+  }
+
+  function handleWorkspaceFileCommentChange(text: string) {
+    setWorkspaceFileReviewState((current) =>
+      current.pendingComment
+        ? {
+            ...current,
+            pendingComment: {
+              ...current.pendingComment,
+              text,
+            },
+          }
+        : current,
+    )
+  }
+
+  function handleWorkspaceFileCommentCancel() {
+    setWorkspaceFileReviewState((current) => ({
+      ...current,
+      pendingComment: null,
+    }))
+  }
+
+  function handleWorkspaceFileCommentSubmit() {
+    const scopeDirectory = activeWorkspaceFileScopeDirectory
+    const selectedFilePath = workspaceFileReviewState.selectedFilePath
+    const pendingComment = workspaceFileReviewState.pendingComment
+    if (!scopeDirectory || !selectedFilePath || !pendingComment) return
+
+    const trimmedText = pendingComment.text.trim()
+    const commentKey = getWorkspaceFileCommentKey(scopeDirectory, selectedFilePath, platform)
+    if (!trimmedText || !commentKey) return
+
+    const nextComment: WorkspaceFileComment = {
+      id: createID("file-comment"),
+      filePath: selectedFilePath,
+      lineNumber: pendingComment.lineNumber,
+      text: trimmedText,
+      createdAt: Date.now(),
+    }
+
+    setWorkspaceFileCommentsByTarget((current) => ({
+      ...current,
+      [commentKey]: [...(current[commentKey] ?? []), nextComment],
+    }))
+    setWorkspaceFileReviewState((current) => ({
+      ...current,
+      comments: [...current.comments, nextComment],
+      pendingComment: null,
+      errorMessage: current.selectedFileKind === "unsupported" ? current.errorMessage : null,
+      status: current.selectedFileKind === "unsupported" ? "unsupported" : "ready",
+    }))
+  }
+
+  useEffect(() => {
+    const nextScopeKey = activeWorkspaceFileScopeDirectory
+      ? normalizeWorkspacePath(activeWorkspaceFileScopeDirectory, platform)
+      : null
+
+    setWorkspaceFileReviewState((current) => {
+      const currentScopeKey = current.scopeDirectory ? normalizeWorkspacePath(current.scopeDirectory, platform) : null
+      if (currentScopeKey === nextScopeKey) return current
+
+      workspaceFileSearchRequestRef.current += 1
+      workspaceFileReadRequestRef.current += 1
+      return {
+        ...DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+        scopeDirectory: activeWorkspaceFileScopeDirectory,
+      }
+    })
+  }, [activeWorkspaceFileScopeDirectory, platform])
+
+  useEffect(() => {
+    const searchWorkspaceFiles = window.desktop?.searchWorkspaceFiles
+    const scopeDirectory = workspaceFileReviewState.scopeDirectory
+    const query = deferredWorkspaceFileQuery.trim()
+    if (!searchWorkspaceFiles || !scopeDirectory) return
+
+    if (!query) {
+      setWorkspaceFileReviewState((current) => {
+        const nextErrorMessage = current.selectedFileKind === "unsupported" ? current.errorMessage : null
+        const nextState = {
+          ...current,
+          results: [],
+          errorMessage: nextErrorMessage,
+        }
+
+        return {
+          ...nextState,
+          status: resolveWorkspaceFileReviewStatus(nextState),
+        }
+      })
+      return
+    }
+
+    const requestID = workspaceFileSearchRequestRef.current + 1
+    workspaceFileSearchRequestRef.current = requestID
+    setWorkspaceFileReviewState((current) => ({
+      ...current,
+      errorMessage: current.selectedFileKind === "unsupported" ? current.errorMessage : null,
+      status: "searching",
+    }))
+
+    searchWorkspaceFiles({
+      directory: scopeDirectory,
+      query,
+    })
+      .then((results) => {
+        if (workspaceFileSearchRequestRef.current !== requestID) return
+
+        setWorkspaceFileReviewState((current) => {
+          const nextState = {
+            ...current,
+            results,
+            errorMessage: current.selectedFileKind === "unsupported" ? current.errorMessage : null,
+          }
+
+          return {
+            ...nextState,
+            status: resolveWorkspaceFileReviewStatus(nextState),
+          }
+        })
+      })
+      .catch((error) => {
+        if (workspaceFileSearchRequestRef.current !== requestID) return
+        const message = error instanceof Error ? error.message : String(error)
+
+        setWorkspaceFileReviewState((current) => ({
+          ...current,
+          results: [],
+          errorMessage: message,
+          status: "error",
+        }))
+        console.error("[desktop] searchWorkspaceFiles failed:", error)
+      })
+  }, [deferredWorkspaceFileQuery, platform, workspaceFileReviewState.scopeDirectory])
+
   async function sendPromptToSession(input: {
     attachments: ComposerAttachment[]
     backendSessionID?: string | null
@@ -2726,7 +3222,7 @@ export function useAgentWorkspace({
           ...(normalizedText ? { text: normalizedText } : {}),
           ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
           ...(questionAnswer ? { questionAnswer } : {}),
-          permissionMode,
+          ...(permissionMode !== "default" ? { permissionMode } : {}),
           skills: selectedSkillIDs,
         })
 
@@ -2738,7 +3234,7 @@ export function useAgentWorkspace({
         ...(normalizedText ? { text: normalizedText } : {}),
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         ...(questionAnswer ? { questionAnswer } : {}),
-        permissionMode,
+        ...(permissionMode !== "default" ? { permissionMode } : {}),
         skills: selectedSkillIDs,
       })
 
@@ -3248,6 +3744,7 @@ export function useAgentWorkspace({
 
   return {
     activeCreateSessionTabID,
+    activePreviewState,
     activeSession,
     activeSessionDirectory,
     activeSessionContextUsage,
@@ -3257,8 +3754,12 @@ export function useAgentWorkspace({
     activeSessionRuntimeDebugState,
     activePendingPermissionRequests,
     activeSessionSelectedDiffFile,
+    activeWorkspaceFileScopeDirectory,
+    activeWorkspaceFileScopeName,
+    activeWorkspaceFileState,
     activeTurns,
     canvasSessionTabs,
+    canInsertPreviewCommentsIntoDraft,
     composerAttachments,
     composerAttachmentButtonTitle,
     composerAttachmentDisabledReason,
@@ -3304,6 +3805,20 @@ export function useAgentWorkspace({
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
+    handlePreviewAddComment,
+    handlePreviewDeleteComment,
+    handlePreviewDraftUrlChange,
+    handlePreviewInsertCommentsIntoDraft,
+    handlePreviewModeChange,
+    handlePreviewOpen,
+    handlePreviewOpenExternal,
+    handlePreviewReload,
+    handleWorkspaceFileCommentCancel,
+    handleWorkspaceFileCommentChange,
+    handleWorkspaceFileCommentStart,
+    handleWorkspaceFileCommentSubmit,
+    handleWorkspaceFileQueryChange,
+    handleWorkspaceFileSelect,
     handleProjectCreateSession,
     handleProjectClick,
     handleProjectRemove,

@@ -170,6 +170,21 @@ export interface AgentSessionDiffSummary {
   diffs: AgentSessionDiffFile[]
 }
 
+export interface AgentWorkspaceFileSearchResult {
+  path: string
+  name: string
+  extension: string | null
+}
+
+export interface AgentWorkspaceFileDocument {
+  path: string
+  name: string
+  extension: string | null
+  kind: "text" | "unsupported"
+  content?: string
+  unsupportedReason?: string
+}
+
 export interface AgentSessionRuntimeEventSummary {
   eventID: string
   type: string

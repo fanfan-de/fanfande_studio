@@ -178,13 +178,18 @@ export function App() {
   } = useDesktopShell()
 
   const {
+    activePreviewState,
     activeSession,
     activeSessionDirectory,
     activeSessionDiff,
     activeSessionDiffState,
+    activeWorkspaceFileScopeDirectory,
+    activeWorkspaceFileScopeName,
+    activeWorkspaceFileState,
     activeSessionRuntimeDebug,
     activeSessionRuntimeDebugState,
     activeSessionSelectedDiffFile,
+    canInsertPreviewCommentsIntoDraft,
     composerRefreshVersion,
     deletingSessionID,
     expandedFolderID,
@@ -205,6 +210,20 @@ export function App() {
     handlePaneTabDrop: handleWorkbenchTabDrop,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
+    handlePreviewAddComment,
+    handlePreviewDeleteComment,
+    handlePreviewDraftUrlChange,
+    handlePreviewInsertCommentsIntoDraft,
+    handlePreviewModeChange,
+    handlePreviewOpen,
+    handlePreviewOpenExternal,
+    handlePreviewReload,
+    handleWorkspaceFileCommentCancel,
+    handleWorkspaceFileCommentChange,
+    handleWorkspaceFileCommentStart,
+    handleWorkspaceFileCommentSubmit,
+    handleWorkspaceFileQueryChange,
+    handleWorkspaceFileSelect,
     handleProjectCreateSession,
     handleProjectClick,
     handleProjectRemove,
@@ -753,16 +772,37 @@ export function App() {
             />
 
             <RightSidebar
+              activeWorkspaceFileScopeDirectory={activeWorkspaceFileScopeDirectory}
+              activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
+              activeWorkspaceFileState={activeWorkspaceFileState}
               activeSessionDirectory={leftSidebarView === "skills" ? null : activeSessionDirectory}
+              activePreviewState={activePreviewState}
               activeSession={leftSidebarView === "skills" ? null : activeSession}
               activeSessionDiff={leftSidebarView === "skills" ? null : activeSessionDiff}
               activeSessionDiffState={leftSidebarView === "skills" ? undefined : activeSessionDiffState}
               activeSessionRuntimeDebug={leftSidebarView === "skills" ? null : activeSessionRuntimeDebug}
               activeSessionRuntimeDebugState={leftSidebarView === "skills" ? undefined : activeSessionRuntimeDebugState}
+              canInsertPreviewCommentsIntoDraft={canInsertPreviewCommentsIntoDraft}
+              previewWorkspaceDirectory={selectedWorkspace?.directory ?? null}
+              previewWorkspaceName={selectedWorkspace?.name ?? null}
               selectedDiffFile={leftSidebarView === "skills" ? null : activeSessionSelectedDiffFile}
               activeView={rightSidebarView}
               onDiffFileSelect={handleActiveSessionDiffFileSelect}
               onDiffRefresh={handleActiveSessionDiffRefresh}
+              onPreviewAddComment={handlePreviewAddComment}
+              onPreviewDeleteComment={handlePreviewDeleteComment}
+              onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
+              onPreviewInsertCommentsIntoDraft={handlePreviewInsertCommentsIntoDraft}
+              onPreviewModeChange={handlePreviewModeChange}
+              onPreviewOpen={handlePreviewOpen}
+              onPreviewOpenExternal={handlePreviewOpenExternal}
+              onPreviewReload={handlePreviewReload}
+              onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
+              onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
+              onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
+              onWorkspaceFileCommentSubmit={handleWorkspaceFileCommentSubmit}
+              onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
+              onWorkspaceFileSelect={handleWorkspaceFileSelect}
               onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
               onViewChange={handleRightSidebarViewChange}
             />

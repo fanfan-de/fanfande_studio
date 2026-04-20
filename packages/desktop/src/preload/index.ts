@@ -1,3 +1,6 @@
+import fs from "node:fs"
+import path from "node:path"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { contextBridge, ipcRenderer } from "electron"
 import type {
   PermissionRequestPrompt,
@@ -136,6 +139,19 @@ type GlobalSkillFileDocument = {
   path: string
   content: string
 }
+type WorkspaceFileSearchResult = {
+  path: string
+  name: string
+  extension: string | null
+}
+type WorkspaceFileDocument = {
+  path: string
+  name: string
+  extension: string | null
+  kind: "text" | "unsupported"
+  content?: string
+  unsupportedReason?: string
+}
 type ComposerAttachmentInput = {
   path: string
   name?: string
@@ -198,10 +214,27 @@ type ProjectMcpSelection = {
 }
 
 const safeProcess = typeof process !== "undefined" ? process : undefined
+const preloadDirPath = path.dirname(fileURLToPath(import.meta.url))
+
+function resolvePreviewGuestPreloadPath() {
+  const candidatePaths = [
+    path.join(preloadDirPath, "preview-webview.mjs"),
+    path.join(preloadDirPath, "preview-webview.js"),
+  ]
+
+  const resolved = candidatePaths.find((candidate) => fs.existsSync(candidate))
+  if (!resolved) {
+    console.error("[desktop] preview webview preload not found, candidates:", candidatePaths)
+    return undefined
+  }
+
+  return pathToFileURL(resolved).toString()
+}
 
 try {
   contextBridge.exposeInMainWorld("desktop", {
     platform: safeProcess?.platform ?? "unknown",
+    previewGuestPreloadPath: resolvePreviewGuestPreloadPath(),
     versions: safeProcess?.versions ?? {},
     getInfo: () =>
       ipcRenderer.invoke("desktop:get-info") as Promise<{
@@ -222,6 +255,11 @@ try {
         ok: true
         editor: ExternalEditorSummary
         targetPath: string
+      }>,
+    openExternalUrl: (input: { url: string }) =>
+      ipcRenderer.invoke("desktop:open-external-url", input) as Promise<{
+        ok: true
+        url: string
       }>,
     windowAction: (action: WindowAction) => ipcRenderer.invoke("desktop:window-action", action),
     getAgentConfig: () =>
@@ -643,6 +681,10 @@ try {
       ipcRenderer.invoke("desktop:get-global-skills-tree") as Promise<GlobalSkillTree>,
     readGlobalSkillFile: (input: { path: string }) =>
       ipcRenderer.invoke("desktop:read-global-skill-file", input) as Promise<GlobalSkillFileDocument>,
+    searchWorkspaceFiles: (input: { directory: string; query: string }) =>
+      ipcRenderer.invoke("desktop:search-workspace-files", input) as Promise<WorkspaceFileSearchResult[]>,
+    readWorkspaceFile: (input: { directory: string; path: string }) =>
+      ipcRenderer.invoke("desktop:read-workspace-file", input) as Promise<WorkspaceFileDocument>,
     updateGlobalSkillFile: (input: { path: string; content: string }) =>
       ipcRenderer.invoke("desktop:update-global-skill-file", input) as Promise<GlobalSkillFileDocument>,
     createGlobalSkill: (input: { name: string }) =>

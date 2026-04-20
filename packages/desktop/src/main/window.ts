@@ -56,6 +56,7 @@ export function createWindow(mainDir: string) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      webviewTag: true,
     },
   })
 

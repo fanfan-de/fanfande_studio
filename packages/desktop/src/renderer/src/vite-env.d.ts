@@ -2,6 +2,7 @@
 
 import type { PermissionRequestPrompt, PermissionResolveInput, PermissionResolveResult } from "../../shared/permission"
 import type { SessionRuntimeDebugSnapshot } from "./app/types"
+import type { DetailedHTMLProps, HTMLAttributes } from "react"
 
 export {}
 
@@ -20,9 +21,21 @@ interface DesktopComposerAttachmentInput {
 type DesktopComposerPermissionMode = "default" | "full-access"
 
 declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      webview: DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement> & {
+        allowpopups?: string
+        partition?: string
+        preload?: string
+        src?: string
+      }
+    }
+  }
+
   interface Window {
     desktop?: {
       platform: string
+      previewGuestPreloadPath?: string
       versions: NodeJS.ProcessVersions
       getInfo: () => Promise<{
         platform: string
@@ -52,6 +65,10 @@ declare global {
           executablePath: string
         }
         targetPath: string
+      }>
+      openExternalUrl?: (input: { url: string }) => Promise<{
+        ok: true
+        url: string
       }>
       windowAction?: (action: "minimize" | "toggle-maximize" | "close") => Promise<void>
       getAgentConfig?: () => Promise<{
@@ -705,6 +722,21 @@ declare global {
       readGlobalSkillFile?: (input: { path: string }) => Promise<{
         path: string
         content: string
+      }>
+      searchWorkspaceFiles?: (input: { directory: string; query: string }) => Promise<
+        Array<{
+          path: string
+          name: string
+          extension: string | null
+        }>
+      >
+      readWorkspaceFile?: (input: { directory: string; path: string }) => Promise<{
+        path: string
+        name: string
+        extension: string | null
+        kind: "text" | "unsupported"
+        content?: string
+        unsupportedReason?: string
       }>
       updateGlobalSkillFile?: (input: { path: string; content: string }) => Promise<{
         path: string

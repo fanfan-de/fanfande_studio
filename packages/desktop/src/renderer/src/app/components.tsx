@@ -1,6 +1,8 @@
 import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
 import { sidebarActions } from "./constants"
+import { WorkspaceFilesPanel } from "./files/WorkspaceFilesPanel"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
+import { PreviewPanel } from "./preview/PreviewPanel"
 import {
   ArchiveIcon,
   ArrowUpIcon,
@@ -47,6 +49,8 @@ import type {
   McpServerSummary,
   PermissionDecision,
   PermissionRequest,
+  PreviewComment,
+  PreviewMode,
   ProjectModelSelection,
   ProviderCatalogItem,
   ProviderDraftState,
@@ -61,6 +65,8 @@ import type {
   SidebarActionKey,
   Turn,
   WindowAction,
+  WorkspaceFileReviewState,
+  WorkspacePreviewState,
   WorkspaceGroup,
 } from "./types"
 import { getSessionWorkflowBadge } from "./session-workflow"
@@ -1019,16 +1025,37 @@ export function Sidebar({
 }
 
 interface RightSidebarProps {
+  activeWorkspaceFileScopeDirectory: string | null
+  activeWorkspaceFileScopeName: string | null
+  activeWorkspaceFileState: WorkspaceFileReviewState
   activeSessionDirectory: string | null
   activeSession: SessionSummary | null
   activeSessionDiff: SessionDiffSummary | null
   activeSessionDiffState?: SessionDiffState
   activeSessionRuntimeDebug?: SessionRuntimeDebugSnapshot | null
   activeSessionRuntimeDebugState?: SessionRuntimeDebugState
+  activePreviewState: WorkspacePreviewState
+  canInsertPreviewCommentsIntoDraft: boolean
+  previewWorkspaceDirectory: string | null
+  previewWorkspaceName: string | null
   selectedDiffFile: string | null
   activeView: RightSidebarView
   onDiffFileSelect: (file: string | null) => void
   onDiffRefresh: () => void | Promise<void>
+  onPreviewAddComment: (input: { x: number; y: number; text: string; anchor?: PreviewComment["anchor"] }) => void
+  onPreviewDeleteComment: (commentID: string) => void
+  onPreviewDraftUrlChange: (value: string) => void
+  onPreviewInsertCommentsIntoDraft: () => void
+  onPreviewModeChange: (mode: PreviewMode) => void
+  onPreviewOpen: () => void
+  onPreviewOpenExternal: () => void | Promise<void>
+  onPreviewReload: () => void
+  onWorkspaceFileCommentCancel: () => void
+  onWorkspaceFileCommentChange: (text: string) => void
+  onWorkspaceFileCommentStart: (lineNumber: number) => void
+  onWorkspaceFileCommentSubmit: () => void
+  onWorkspaceFileQueryChange: (value: string) => void
+  onWorkspaceFileSelect: (path: string) => void
   onRuntimeRefresh: () => void | Promise<void>
   onViewChange: (view: RightSidebarView) => void
 }
@@ -1269,16 +1296,37 @@ function DiffPreview({ file, patch }: { file: string; patch?: string }) {
 }
 
 export function RightSidebar({
+  activeWorkspaceFileScopeDirectory,
+  activeWorkspaceFileScopeName,
+  activeWorkspaceFileState,
   activeSessionDirectory,
   activeSession,
   activeSessionDiff,
   activeSessionDiffState,
   activeSessionRuntimeDebug,
   activeSessionRuntimeDebugState,
+  activePreviewState,
+  canInsertPreviewCommentsIntoDraft,
+  previewWorkspaceDirectory,
+  previewWorkspaceName,
   selectedDiffFile,
   activeView,
   onDiffFileSelect,
   onDiffRefresh,
+  onPreviewAddComment,
+  onPreviewDeleteComment,
+  onPreviewDraftUrlChange,
+  onPreviewInsertCommentsIntoDraft,
+  onPreviewModeChange,
+  onPreviewOpen,
+  onPreviewOpenExternal,
+  onPreviewReload,
+  onWorkspaceFileCommentCancel,
+  onWorkspaceFileCommentChange,
+  onWorkspaceFileCommentStart,
+  onWorkspaceFileCommentSubmit,
+  onWorkspaceFileQueryChange,
+  onWorkspaceFileSelect,
   onRuntimeRefresh,
   onViewChange,
 }: RightSidebarProps) {
@@ -1339,13 +1387,19 @@ export function RightSidebar({
             <TopMenuViewButton active={activeView === "runtime"} label="Runtime" onClick={() => onViewChange("runtime")}>
               <ConnectedStatusIcon />
             </TopMenuViewButton>
+            <TopMenuViewButton active={activeView === "preview"} label="Preview" onClick={() => onViewChange("preview")}>
+              <OpenInEditorIcon />
+            </TopMenuViewButton>
+            <TopMenuViewButton active={activeView === "files"} label="Files" onClick={() => onViewChange("files")}>
+              <FileTextIcon />
+            </TopMenuViewButton>
           </>
         )}
         controlsSpacerVariant="right-sidebar"
         dragRegion
       />
 
-      <div className="right-sidebar-view-host">
+      <div className={activeView === "preview" ? "right-sidebar-view-host is-preview" : "right-sidebar-view-host"}>
         {activeView === "changes" ? (
           <section className="right-sidebar-section">
             <div className="right-sidebar-panel-header">
@@ -1703,6 +1757,37 @@ export function RightSidebar({
               </div>
             )}
           </section>
+        ) : null}
+
+        {activeView === "preview" ? (
+          <PreviewPanel
+            canInsertCommentsIntoDraft={canInsertPreviewCommentsIntoDraft}
+            state={activePreviewState}
+            workspaceDirectory={previewWorkspaceDirectory}
+            workspaceName={previewWorkspaceName}
+            onAddComment={onPreviewAddComment}
+            onDeleteComment={onPreviewDeleteComment}
+            onDraftUrlChange={onPreviewDraftUrlChange}
+            onInsertCommentsIntoDraft={onPreviewInsertCommentsIntoDraft}
+            onModeChange={onPreviewModeChange}
+            onOpen={onPreviewOpen}
+            onOpenExternal={onPreviewOpenExternal}
+            onReload={onPreviewReload}
+          />
+        ) : null}
+
+        {activeView === "files" ? (
+          <WorkspaceFilesPanel
+            scopeDirectory={activeWorkspaceFileScopeDirectory}
+            scopeName={activeWorkspaceFileScopeName}
+            state={activeWorkspaceFileState}
+            onPendingCommentCancel={onWorkspaceFileCommentCancel}
+            onPendingCommentChange={onWorkspaceFileCommentChange}
+            onPendingCommentStart={onWorkspaceFileCommentStart}
+            onPendingCommentSubmit={onWorkspaceFileCommentSubmit}
+            onQueryChange={onWorkspaceFileQueryChange}
+            onSelectFile={onWorkspaceFileSelect}
+          />
         ) : null}
       </div>
     </aside>

@@ -23,9 +23,10 @@ export type {
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project" | "sort" | "new"
 export type LeftSidebarView = "workspace" | "skills"
-export type RightSidebarView = "changes" | "runtime"
+export type RightSidebarView = "changes" | "runtime" | "preview" | "files"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
+export type PreviewMode = "browse" | "comment"
 
 export interface SessionWorkflowSummary {
   mode: "execution" | "planning"
@@ -169,6 +170,66 @@ export interface SessionDiffState {
   errorMessage: string | null
   updatedAt: number | null
   isStale: boolean
+}
+
+export interface PreviewComment {
+  id: string
+  url: string
+  x: number
+  y: number
+  text: string
+  createdAt: number
+  anchor?: {
+    type: "coordinate" | "element"
+    label?: string
+    selector?: string
+    tagName?: string
+    text?: string
+  }
+}
+
+export interface WorkspacePreviewState {
+  draftUrl: string
+  committedUrl: string | null
+  mode: PreviewMode
+  reloadToken: number
+  errorMessage: string | null
+  comments: PreviewComment[]
+}
+
+export interface WorkspaceFileSearchResult {
+  path: string
+  name: string
+  extension: string | null
+}
+
+export interface WorkspaceFileComment {
+  id: string
+  filePath: string
+  lineNumber: number
+  text: string
+  createdAt: number
+}
+
+export interface WorkspaceFilePendingComment {
+  lineNumber: number
+  text: string
+}
+
+export type WorkspaceFileReviewStatus = "idle" | "searching" | "reading" | "ready" | "empty" | "unsupported" | "error"
+
+export interface WorkspaceFileReviewState {
+  scopeDirectory: string | null
+  query: string
+  results: WorkspaceFileSearchResult[]
+  selectedFilePath: string | null
+  selectedFileContent: string | null
+  selectedFileKind: "text" | "unsupported" | null
+  selectedFileExtension: string | null
+  status: WorkspaceFileReviewStatus
+  errorMessage: string | null
+  comments: WorkspaceFileComment[]
+  pendingComment: WorkspaceFilePendingComment | null
 }
 
 export type RuntimeDebugLoadStatus = "idle" | "loading" | "refreshing" | "ready" | "error"

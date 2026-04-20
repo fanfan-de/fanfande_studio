@@ -407,6 +407,11 @@ select {
   padding-right: 2px;
 }
 
+.right-sidebar-view-host.is-preview {
+  overflow: hidden;
+  padding-right: 0;
+}
+
 .sidebar-view {
   min-height: 0;
   flex: 1 1 auto;
@@ -1403,9 +1408,256 @@ select {
   gap: 8px;
 }
 
+.preview-panel-section {
+  min-height: 100%;
+  height: 100%;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+  gap: 14px;
+}
+
+.preview-panel-main,
+.preview-panel-controls,
+.preview-panel-preview-stack,
+.preview-panel-notes {
+  display: grid;
+  gap: 14px;
+}
+
+.preview-panel-main {
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.preview-panel-preview-stack {
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.preview-panel-notes {
+  max-height: min(34vh, 300px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.preview-toolbar,
+.preview-toolbar-label,
+.preview-comment-label,
+.preview-comment-list,
+.preview-comment-list-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.preview-toolbar-input,
+.preview-comment-label textarea {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid rgba(166, 186, 208, 0.36);
+  background: #ffffff;
+  color: #182532;
+}
+
+.preview-comment-label textarea {
+  min-height: 88px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.preview-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid rgba(166, 186, 208, 0.24);
+  background: #f8fbff;
+  width: fit-content;
+}
+
+.preview-mode-button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #5a7186;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.preview-mode-button.is-active {
+  border-color: rgba(95, 146, 194, 0.32);
+  background: #ffffff;
+  color: #174262;
+}
+
+.preview-helper-copy,
+.preview-page-meta,
+.preview-comments-empty p,
+.preview-empty-state p,
+.preview-comment-list-item p,
+.preview-comment-list-copy span {
+  margin: 0;
+  color: #5b6f82;
+  line-height: 1.55;
+}
+
+.preview-empty-state,
+.preview-comments-empty,
+.preview-comment-list-item {
+  border: 1px solid rgba(166, 186, 208, 0.26);
+  background: #f8fbff;
+  padding: 12px;
+}
+
+.preview-empty-state {
+  display: grid;
+  min-height: 0;
+  align-content: center;
+}
+
+.preview-empty-state h3 {
+  margin: 0 0 6px;
+  color: #17232f;
+}
+
+.preview-empty-state code {
+  color: #174262;
+}
+
+.preview-canvas {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  border: 1px solid rgba(166, 186, 208, 0.26);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: #ffffff;
+}
+
+.preview-webview {
+  display: flex;
+}
+
+.preview-comment-overlay,
+.preview-markers-layer,
+.preview-loading-scrim {
+  position: absolute;
+  inset: 0;
+}
+
+.preview-comment-overlay {
+  pointer-events: none;
+}
+
+.preview-comment-overlay.is-active {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.preview-comment-overlay.is-active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(60, 108, 149, 0.08) 100%);
+}
+
+.preview-markers-layer {
+  pointer-events: none;
+}
+
+.preview-comment-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #174262;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 8px 20px rgba(23, 66, 98, 0.24);
+}
+
+.preview-comment-card {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, calc(-100% - 12px));
+  width: min(260px, calc(100% - 24px));
+  padding: 12px;
+  border: 1px solid rgba(166, 186, 208, 0.28);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 32px rgba(26, 44, 60, 0.18);
+}
+
+.preview-comment-composer {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(166, 186, 208, 0.26);
+  background: #f8fbff;
+}
+
+.preview-comment-selection {
+  display: grid;
+  gap: 4px;
+}
+
+.preview-comment-selection strong,
+.preview-comment-selector {
+  color: #17232f;
+}
+
+.preview-comment-selection span,
+.preview-comment-selector {
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.preview-comment-selector {
+  margin: 0;
+  color: #4f677c;
+  word-break: break-all;
+}
+
+.preview-loading-scrim {
+  display: grid;
+  place-items: center;
+  background: rgba(248, 251, 255, 0.8);
+  color: #39556f;
+  font-size: 13px;
+  backdrop-filter: blur(2px);
+}
+
 .right-sidebar-change-list {
   display: grid;
   gap: 8px;
+}
+
+.preview-comment-list-item {
+  display: grid;
+  gap: 10px;
+}
+
+.preview-comment-list-copy strong {
+  color: #17232f;
 }
 
 .right-sidebar-toolbar {
@@ -1637,6 +1889,234 @@ select {
   padding: 10px 12px;
   border: 1px dashed rgba(166, 186, 208, 0.5);
   background: rgba(248, 251, 255, 0.8);
+}
+
+.workspace-files-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(140px, 180px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.workspace-files-search-field {
+  min-width: 100%;
+}
+
+.workspace-files-results-panel,
+.workspace-files-reader {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(166, 186, 208, 0.24);
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.96) 0%, #ffffff 100%);
+}
+
+.workspace-files-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspace-files-panel-header strong {
+  color: #17232f;
+}
+
+.workspace-files-reader-title {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-files-reader-title strong {
+  word-break: break-word;
+}
+
+.workspace-files-results-list {
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+
+.workspace-files-result-row {
+  width: 100%;
+  border: 1px solid rgba(166, 186, 208, 0.26);
+  background: #ffffff;
+  color: inherit;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.workspace-files-result-row:hover,
+.workspace-files-result-row:focus-visible {
+  border-color: rgba(95, 146, 194, 0.45);
+  background: #f7fbff;
+  outline: none;
+}
+
+.workspace-files-result-row.is-active {
+  border-color: rgba(95, 146, 194, 0.62);
+  background: #f2f8ff;
+  box-shadow: inset 0 0 0 1px rgba(95, 146, 194, 0.18);
+}
+
+.workspace-files-result-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-files-result-copy strong {
+  color: #17232f;
+  word-break: break-word;
+}
+
+.workspace-files-result-copy span {
+  color: #5c7185;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.workspace-files-result-extension {
+  color: #60778d;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.workspace-files-code {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid rgba(166, 186, 208, 0.2);
+  background: #ffffff;
+}
+
+.workspace-files-code-block + .workspace-files-code-block {
+  border-top: 1px solid rgba(166, 186, 208, 0.12);
+}
+
+.workspace-files-line {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  min-width: max-content;
+  background: #ffffff;
+}
+
+.workspace-files-line.is-hovered {
+  background: #f7fbff;
+}
+
+.workspace-files-line-gutter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-right: 1px solid rgba(166, 186, 208, 0.14);
+  background: #f6f9fc;
+}
+
+.workspace-files-line-number {
+  color: #8ca0b2;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  text-align: right;
+  user-select: none;
+}
+
+.workspace-files-line-comment-button {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(95, 146, 194, 0.34);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #226ba1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.workspace-files-line-comment-button:hover,
+.workspace-files-line-comment-button:focus-visible {
+  background: #edf6ff;
+  outline: none;
+}
+
+.workspace-files-line-comment-button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.workspace-files-line-content {
+  margin: 0;
+  padding: 0 12px;
+  color: #233241;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre;
+}
+
+.workspace-files-line-content code {
+  font-family: inherit;
+}
+
+.workspace-files-comment-composer,
+.workspace-files-line-comments {
+  margin-left: 84px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(166, 186, 208, 0.12);
+  background: #fbfdff;
+}
+
+.workspace-files-comment-composer {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-files-line-comments {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-files-line-comment {
+  padding: 10px 12px;
+  border: 1px solid rgba(166, 186, 208, 0.24);
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(46, 81, 118, 0.06);
+}
+
+.workspace-files-line-comment p {
+  margin: 8px 0 0;
+  color: #22303e;
+}
+
+.workspace-files-line-comment-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #60778d;
+  font-size: 12px;
+}
+
+.workspace-files-reader-empty {
+  align-self: start;
 }
 
 .assistant-shell,

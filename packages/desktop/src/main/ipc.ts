@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions } from "electron"
+import { BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions } from "electron"
 import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { listAvailableExternalEditors, openInExternalEditor } from "./external-editors"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
@@ -12,11 +12,14 @@ import {
   pushGitChanges,
 } from "./git"
 import { getWorkspaceGitDiff } from "./workspace-diff"
+import { readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
 import type { ApplicationMenus } from "./menu"
 import { PtyProxyManager, PTY_EVENT_CHANNEL } from "./pty-proxy"
 import { WorkspaceWatchManager } from "./workspace-watch"
 import type {
   AgentEnvelope,
+  AgentWorkspaceFileDocument,
+  AgentWorkspaceFileSearchResult,
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
@@ -261,6 +264,20 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       sendWindowState(win)
     }
     if (action === "close") win.close()
+  })
+
+  ipcMain.handle("desktop:open-external-url", async (_event, input: { url: string }) => {
+    const url = input.url.trim()
+    if (!url) {
+      throw new Error("A URL is required.")
+    }
+
+    await shell.openExternal(url)
+
+    return {
+      ok: true as const,
+      url,
+    }
   })
 
   ipcMain.handle("desktop:show-menu", (event, input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }) => {
@@ -909,6 +926,18 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
     return result.data
   })
+
+  ipcMain.handle(
+    "desktop:search-workspace-files",
+    async (_event, input: { directory: string; query: string }): Promise<AgentWorkspaceFileSearchResult[]> =>
+      searchWorkspaceFiles(input.directory, input.query),
+  )
+
+  ipcMain.handle(
+    "desktop:read-workspace-file",
+    async (_event, input: { directory: string; path: string }): Promise<AgentWorkspaceFileDocument> =>
+      readWorkspaceFile(input.directory, input.path),
+  )
 
   ipcMain.handle("desktop:update-global-skill-file", async (_event, input: { path: string; content: string }) => {
     const result = await requestAgentJSON<AgentGlobalSkillFileDocument>("/api/skills/file", {

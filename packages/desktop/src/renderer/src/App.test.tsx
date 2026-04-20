@@ -290,6 +290,64 @@ function createSessionRuntimeDebugSnapshot(): SessionRuntimeDebugSnapshot {
   }
 }
 
+const FRONTEND_WORKSPACE_DIRECTORY = "C:\\Projects\\Atlas\\frontend"
+const BACKEND_WORKSPACE_DIRECTORY = "C:\\Projects\\Atlas\\backend"
+const WORKSPACE_FILE_PATH = "src/focus-files.tsx"
+const WORKSPACE_FILE_CONTENT = [
+  "export const focusValue = 1",
+  "const nextValue = focusValue + 1",
+  "export const summary = nextValue",
+].join("\n")
+
+function createWorkspaceFileReviewWorkspaces(): LoadedFolderWorkspace[] {
+  return [
+    {
+      id: FRONTEND_WORKSPACE_DIRECTORY,
+      directory: FRONTEND_WORKSPACE_DIRECTORY,
+      name: "frontend",
+      created: 1,
+      updated: 30,
+      project: {
+        id: "project-atlas",
+        name: "Atlas",
+        worktree: "C:\\Projects\\Atlas",
+      },
+      sessions: [
+        {
+          id: "session-frontend-review",
+          projectID: "project-atlas",
+          directory: FRONTEND_WORKSPACE_DIRECTORY,
+          title: "Frontend review",
+          created: 1,
+          updated: 30,
+        },
+      ],
+    },
+    {
+      id: BACKEND_WORKSPACE_DIRECTORY,
+      directory: BACKEND_WORKSPACE_DIRECTORY,
+      name: "backend",
+      created: 2,
+      updated: 20,
+      project: {
+        id: "project-atlas",
+        name: "Atlas",
+        worktree: "C:\\Projects\\Atlas",
+      },
+      sessions: [
+        {
+          id: "session-backend-review",
+          projectID: "project-atlas",
+          directory: BACKEND_WORKSPACE_DIRECTORY,
+          title: "Backend review",
+          created: 2,
+          updated: 20,
+        },
+      ],
+    },
+  ]
+}
+
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -441,6 +499,14 @@ describe("App", () => {
         items: [],
       }),
       readGlobalSkillFile: vi.fn(),
+      searchWorkspaceFiles: vi.fn().mockResolvedValue([]),
+      readWorkspaceFile: vi.fn().mockResolvedValue({
+        path: WORKSPACE_FILE_PATH,
+        name: "focus-files.tsx",
+        extension: "tsx",
+        kind: "text",
+        content: WORKSPACE_FILE_CONTENT,
+      }),
       updateGlobalSkillFile: vi.fn(),
       createGlobalSkill: vi.fn(),
       renameGlobalSkill: vi.fn(),
@@ -520,6 +586,10 @@ describe("App", () => {
       onAgentSessionStreamEvent: vi.fn(() => vi.fn()),
       showMenu: vi.fn().mockResolvedValue(undefined),
       showExternalEditorMenu: vi.fn().mockResolvedValue(undefined),
+      openExternalUrl: vi.fn().mockResolvedValue({
+        ok: true,
+        url: "http://localhost:3000/",
+      }),
       windowAction: vi.fn().mockResolvedValue(undefined),
       onPtyEvent: vi.fn(() => vi.fn()),
       onWindowStateChange: vi.fn(() => vi.fn()),
@@ -618,6 +688,8 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Artifacts" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Runtime" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Files" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Console" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument()
     expect(inspector).toBeInTheDocument()
@@ -679,6 +751,188 @@ describe("App", () => {
     expect(screen.getByText("Execution timeline")).toBeInTheDocument()
     expect(screen.getByText("LLM request completed")).toBeInTheDocument()
     expect(window.desktop?.getSessionRuntimeDebug).toHaveBeenCalled()
+  })
+
+  it("opens a local preview, captures comments, and inserts them into the draft", async () => {
+    render(<App />)
+
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(within(inspector).getByRole("button", { name: "Preview" }))
+
+    fireEvent.change(within(inspector).getByRole("textbox", { name: "Preview URL" }), {
+      target: { value: "localhost:3000" },
+    })
+    fireEvent.click(within(inspector).getByRole("button", { name: "Open" }))
+
+    expect(await within(inspector).findByTitle("Preview of http://localhost:3000/")).toBeInTheDocument()
+
+    fireEvent.click(within(inspector).getByRole("button", { name: "Comment" }))
+
+    const overlay = within(inspector).getByTestId("preview-comment-overlay")
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: 300,
+        height: 300,
+        left: 0,
+        right: 400,
+        top: 0,
+        width: 400,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+    fireEvent.click(overlay, { clientX: 200, clientY: 150 })
+
+    fireEvent.change(within(inspector).getByRole("textbox", { name: "Preview comment" }), {
+      target: { value: "Tighten hero spacing" },
+    })
+    fireEvent.click(within(inspector).getByRole("button", { name: "Save" }))
+
+    expect(within(inspector).getByText("Comment 1")).toBeInTheDocument()
+
+    fireEvent.click(within(inspector).getByRole("button", { name: "Use in chat" }))
+    await waitFor(() => {
+      expect((screen.getByRole("textbox", { name: "Task draft" }) as HTMLTextAreaElement).value).toContain("Tighten hero spacing")
+    })
+
+    fireEvent.click(within(inspector).getByRole("button", { name: "Open External" }))
+    await waitFor(() => {
+      expect(window.desktop!.openExternalUrl).toHaveBeenCalledWith({
+        url: "http://localhost:3000/",
+      })
+    })
+  })
+
+  it("searches files in the focused workspace and loads text content in the files inspector", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.searchWorkspaceFiles = vi.fn().mockResolvedValue([
+      {
+        path: WORKSPACE_FILE_PATH,
+        name: "focus-files.tsx",
+        extension: "tsx",
+      },
+    ])
+    window.desktop!.readWorkspaceFile = vi.fn().mockResolvedValue({
+      path: WORKSPACE_FILE_PATH,
+      name: "focus-files.tsx",
+      extension: "tsx",
+      kind: "text",
+      content: WORKSPACE_FILE_CONTENT,
+    })
+
+    render(<App />)
+
+    expect(await screen.findByRole("button", { name: "Files" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Files" }))
+    fireEvent.change(screen.getByLabelText("Search workspace files"), {
+      target: { value: "focus" },
+    })
+
+    await waitFor(() => {
+      expect(window.desktop!.searchWorkspaceFiles).toHaveBeenCalledWith({
+        directory: FRONTEND_WORKSPACE_DIRECTORY,
+        query: "focus",
+      })
+    })
+
+    fireEvent.click(await screen.findByRole("button", { name: /focus-files\.tsx/i }))
+
+    await waitFor(() => {
+      expect(window.desktop!.readWorkspaceFile).toHaveBeenCalledWith({
+        directory: FRONTEND_WORKSPACE_DIRECTORY,
+        path: WORKSPACE_FILE_PATH,
+      })
+    })
+    expect(await screen.findByText("export const focusValue = 1")).toBeInTheDocument()
+    expect(screen.getByText("const nextValue = focusValue + 1")).toBeInTheDocument()
+  })
+
+  it("shows line comments on hover, saves a comment, and discards a canceled draft", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.searchWorkspaceFiles = vi.fn().mockResolvedValue([
+      {
+        path: WORKSPACE_FILE_PATH,
+        name: "focus-files.tsx",
+        extension: "tsx",
+      },
+    ])
+    window.desktop!.readWorkspaceFile = vi.fn().mockResolvedValue({
+      path: WORKSPACE_FILE_PATH,
+      name: "focus-files.tsx",
+      extension: "tsx",
+      kind: "text",
+      content: WORKSPACE_FILE_CONTENT,
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }))
+    fireEvent.change(screen.getByLabelText("Search workspace files"), {
+      target: { value: "focus" },
+    })
+    fireEvent.click(await screen.findByRole("button", { name: /focus-files\.tsx/i }))
+    expect(await screen.findByText("const nextValue = focusValue + 1")).toBeInTheDocument()
+
+    const secondLine = screen.getByTestId("workspace-file-line-2")
+    expect(screen.queryByRole("button", { name: "Add comment on line 2" })).not.toBeInTheDocument()
+
+    fireEvent.mouseEnter(secondLine)
+    fireEvent.click(screen.getByRole("button", { name: "Add comment on line 2" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "File comment on line 2" }), {
+      target: { value: "Check the increment logic." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Annotate" }))
+
+    expect(screen.getByText("Check the increment logic.")).toBeInTheDocument()
+
+    const thirdLine = screen.getByTestId("workspace-file-line-3")
+    fireEvent.mouseEnter(thirdLine)
+    fireEvent.click(screen.getByRole("button", { name: "Add comment on line 3" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "File comment on line 3" }), {
+      target: { value: "Drop this note." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+
+    expect(screen.queryByText("Drop this note.")).not.toBeInTheDocument()
+    expect(screen.queryByRole("textbox", { name: "File comment on line 3" })).not.toBeInTheDocument()
+  })
+
+  it("resets file review state when the focused workspace changes", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.searchWorkspaceFiles = vi.fn().mockResolvedValue([
+      {
+        path: WORKSPACE_FILE_PATH,
+        name: "focus-files.tsx",
+        extension: "tsx",
+      },
+    ])
+    window.desktop!.readWorkspaceFile = vi.fn().mockResolvedValue({
+      path: WORKSPACE_FILE_PATH,
+      name: "focus-files.tsx",
+      extension: "tsx",
+      kind: "text",
+      content: WORKSPACE_FILE_CONTENT,
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }))
+    fireEvent.change(screen.getByLabelText("Search workspace files"), {
+      target: { value: "focus" },
+    })
+    fireEvent.click(await screen.findByRole("button", { name: /focus-files\.tsx/i }))
+    expect(await screen.findByText("export const focusValue = 1")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "backend" }))
+
+    await waitFor(() => {
+      expect(screen.queryByText("export const focusValue = 1")).not.toBeInTheDocument()
+    })
+    expect(screen.queryByRole("button", { name: /focus-files\.tsx/i })).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Search workspace files")).toHaveValue("")
   })
 
   it("renders session workflow badges in the sidebar, tabs, and active session header", async () => {
