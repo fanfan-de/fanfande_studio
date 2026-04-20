@@ -190,6 +190,7 @@ export function App() {
     activeSessionRuntimeDebugState,
     activeSessionSelectedDiffFile,
     canInsertPreviewCommentsIntoDraft,
+    canInsertWorkspaceFileCommentsIntoDraft,
     composerRefreshVersion,
     deletingSessionID,
     expandedFolderID,
@@ -220,6 +221,7 @@ export function App() {
     handlePreviewReload,
     handleWorkspaceFileCommentCancel,
     handleWorkspaceFileCommentChange,
+    handleWorkspaceFileCommentConfirm,
     handleWorkspaceFileCommentStart,
     handleWorkspaceFileCommentSubmit,
     handleWorkspaceFileQueryChange,
@@ -228,6 +230,7 @@ export function App() {
     handleProjectClick,
     handleProjectRemove,
     handleRemoveComposerAttachment,
+    handleRemoveComposerCommentReference,
     handleRightSidebarViewChange,
     handleSend,
     handleSessionDelete,
@@ -742,6 +745,7 @@ export function App() {
                 onToggleComposerPermissionMode={handleComposerPermissionModeToggle}
                 onRegisterPane={handleRegisterPane}
                 onRemoveComposerAttachment={handleRemoveComposerAttachment}
+                onRemoveComposerCommentReference={handleRemoveComposerCommentReference}
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}
                 onSelectSessionTab={handleCanvasSessionTabSelect}
                 onSend={handleSend}
@@ -783,6 +787,7 @@ export function App() {
               activeSessionRuntimeDebug={leftSidebarView === "skills" ? null : activeSessionRuntimeDebug}
               activeSessionRuntimeDebugState={leftSidebarView === "skills" ? undefined : activeSessionRuntimeDebugState}
               canInsertPreviewCommentsIntoDraft={canInsertPreviewCommentsIntoDraft}
+              canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
               previewWorkspaceDirectory={selectedWorkspace?.directory ?? null}
               previewWorkspaceName={selectedWorkspace?.name ?? null}
               selectedDiffFile={leftSidebarView === "skills" ? null : activeSessionSelectedDiffFile}
@@ -799,6 +804,7 @@ export function App() {
               onPreviewReload={handlePreviewReload}
               onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
               onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
+              onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
               onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
               onWorkspaceFileCommentSubmit={handleWorkspaceFileCommentSubmit}
               onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
@@ -946,6 +952,7 @@ interface WorkbenchTreeProps {
   onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
+  onRemoveComposerCommentReference: (referenceID: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onSend: AgentWorkspaceState["handleSend"]
@@ -1042,6 +1049,7 @@ function WorkbenchNodeView({
         onToggleComposerPermissionMode={props.onToggleComposerPermissionMode}
         onRegisterPane={props.onRegisterPane}
         onRemoveComposerAttachment={props.onRemoveComposerAttachment}
+        onRemoveComposerCommentReference={props.onRemoveComposerCommentReference}
         onSelectCreateSessionTab={props.onSelectCreateSessionTab}
         onSelectSessionTab={props.onSelectSessionTab}
         onSend={props.onSend}
@@ -1113,6 +1121,7 @@ interface PaneSurfaceProps {
   onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
+  onRemoveComposerCommentReference: (referenceID: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onSend: AgentWorkspaceState["handleSend"]
@@ -1152,6 +1161,7 @@ const PaneSurface = memo(function PaneSurface({
   onToggleComposerPermissionMode,
   onRegisterPane,
   onRemoveComposerAttachment,
+  onRemoveComposerCommentReference,
   onSelectCreateSessionTab,
   onSelectSessionTab,
   onSend,
@@ -1231,6 +1241,7 @@ const PaneSurface = memo(function PaneSurface({
               <div className="composer-stack">
                 <Composer
                   attachments={pane.composerAttachments}
+                  commentReferences={pane.composerCommentReferences}
                   attachmentButtonTitle={composer.attachmentButtonTitle}
                   attachmentDisabledReason={composer.attachmentDisabledReason}
                   attachmentError={composer.attachmentError}
@@ -1253,6 +1264,7 @@ const PaneSurface = memo(function PaneSurface({
                     })
                   }
                   onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
+                  onRemoveCommentReference={(referenceID) => onRemoveComposerCommentReference(referenceID, pane.tabKey)}
                   onSend={() =>
                     void onSend({
                       attachmentError: composer.attachmentError,
@@ -1290,6 +1302,7 @@ const PaneSurface = memo(function PaneSurface({
                 onAskUserQuestionAnswer={(answer) =>
                   void onSend({
                     attachmentsOverride: [],
+                    commentReferencesOverride: [],
                     draftOverride: answer.text,
                     paneID: pane.id,
                     preserveComposerState: true,
@@ -1312,6 +1325,7 @@ const PaneSurface = memo(function PaneSurface({
               <div className="composer-stack">
                 <Composer
                   attachments={pane.composerAttachments}
+                  commentReferences={pane.composerCommentReferences}
                   attachmentButtonTitle={composer.attachmentButtonTitle}
                   attachmentDisabledReason={composer.attachmentDisabledReason}
                   attachmentError={composer.attachmentError}
@@ -1334,6 +1348,7 @@ const PaneSurface = memo(function PaneSurface({
                     })
                   }
                   onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
+                  onRemoveCommentReference={(referenceID) => onRemoveComposerCommentReference(referenceID, pane.tabKey)}
                   onSend={() =>
                     void onSend({
                       attachmentError: composer.attachmentError,

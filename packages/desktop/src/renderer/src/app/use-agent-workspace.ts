@@ -22,6 +22,7 @@ import type {
   AgentStreamIPCEvent,
   AgentSessionStreamIPCEvent,
   ComposerAttachment,
+  ComposerCommentReference,
   ComposerPermissionMode,
   ComposerMcpOption,
   ComposerModelOption,
@@ -57,6 +58,12 @@ import type {
   WorkspaceGroup,
 } from "./types"
 import { buildPreviewCommentDraft, normalizePreviewUrlInput } from "./preview/utils"
+import {
+  buildWorkspaceFileCommentDraft,
+  buildWorkspaceFileCommentReferenceLabel,
+  formatWorkspaceFileLineRangeLabel,
+  normalizeWorkspaceFileLineRange,
+} from "./files/utils"
 import { createID } from "./utils"
 import {
   createWorkbenchLayoutFromLegacyPanes,
@@ -219,6 +226,22 @@ function buildComposerAttachment(path: string): ComposerAttachment {
     path,
     name: getComposerAttachmentName(path),
   }
+}
+
+function buildComposerCommentReferencesPrompt(references: ComposerCommentReference[]) {
+  return references
+    .map((reference) => reference.prompt.trim())
+    .filter(Boolean)
+    .join("\n\n")
+}
+
+function buildComposerRequestText(draft: string, references: ComposerCommentReference[]) {
+  const trimmedDraft = draft.trim()
+  const referencesPrompt = buildComposerCommentReferencesPrompt(references)
+
+  if (!trimmedDraft) return referencesPrompt
+  if (!referencesPrompt) return trimmedDraft
+  return `${trimmedDraft}\n\n${referencesPrompt}`
 }
 
 function getComposerAttachmentKind(path: string): ComposerAttachmentKind {
@@ -728,6 +751,9 @@ export function useAgentWorkspace({
   const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
   const [sessionDirectoryBySession, setSessionDirectoryBySession] = useState<Record<string, string>>({})
   const [composerAttachmentsByTabKey, setComposerAttachmentsByTabKey] = useState<Record<string, ComposerAttachment[]>>({})
+  const [composerCommentReferencesByTabKey, setComposerCommentReferencesByTabKey] = useState<
+    Record<string, ComposerCommentReference[]>
+  >({})
   const [composerPermissionModeByTabKey, setComposerPermissionModeByTabKey] = useState<
     Record<string, ComposerPermissionMode>
   >(
@@ -883,7 +909,9 @@ export function useAgentWorkspace({
   const activePreviewState = previewByWorkspaceID[activePreviewScopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
   const deferredWorkspaceFileQuery = useDeferredValue(workspaceFileReviewState.query)
   const canInsertPreviewCommentsIntoDraft = Boolean(activeTabKey)
+  const canInsertWorkspaceFileCommentsIntoDraft = Boolean(activeTabKey)
   const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
+  const composerCommentReferences = activeTabKey ? composerCommentReferencesByTabKey[activeTabKey] ?? [] : []
   const composerPermissionMode = activeTabKey ? composerPermissionModeByTabKey[activeTabKey] ?? "default" : "default"
   const isSending = activeTabKey ? Boolean(isSendingByTabKey[activeTabKey]) : false
   const isCreatingSession = activeTabKey ? Boolean(isCreatingSessionByTabKey[activeTabKey]) : false
@@ -2697,6 +2725,19 @@ export function useAgentWorkspace({
     setDraftForTab(activeTabKey, value)
   }
 
+  function appendDraftForTab(tabKey: string, value: string) {
+    const trimmedValue = value.trim()
+    if (!trimmedValue) return
+
+    setDraftByTabKey((current) => {
+      const existingDraft = current[tabKey]?.trimEnd() ?? ""
+      return {
+        ...current,
+        [tabKey]: existingDraft ? `${existingDraft}\n\n${trimmedValue}` : trimmedValue,
+      }
+    })
+  }
+
   function updatePreviewState(
     updater: (current: WorkspacePreviewState) => WorkspacePreviewState,
     workspaceID = selectedWorkspace?.id ?? null,
@@ -2822,13 +2863,7 @@ export function useAgentWorkspace({
     const commentDraft = buildPreviewCommentDraft(previewState.committedUrl, relevantComments)
     if (!commentDraft) return
 
-    setDraftByTabKey((current) => {
-      const existingDraft = current[activeTabKey]?.trimEnd() ?? ""
-      return {
-        ...current,
-        [activeTabKey]: existingDraft ? `${existingDraft}\n\n${commentDraft}` : commentDraft,
-      }
-    })
+    appendDraftForTab(activeTabKey, commentDraft)
   }
 
   async function handlePreviewOpenExternal(workspaceID = selectedWorkspace?.id ?? null) {
@@ -2953,14 +2988,20 @@ export function useAgentWorkspace({
     }
   }
 
-  function handleWorkspaceFileCommentStart(lineNumber: number) {
+  function handleWorkspaceFileCommentStart(startLineNumber: number, endLineNumber = startLineNumber) {
     if (!workspaceFileReviewState.selectedFilePath) return
+    const nextRange = normalizeWorkspaceFileLineRange(startLineNumber, endLineNumber)
     setRightSidebarView("files")
     setWorkspaceFileReviewState((current) => ({
       ...current,
       pendingComment: {
-        lineNumber,
-        text: current.pendingComment?.lineNumber === lineNumber ? current.pendingComment.text : "",
+        ...nextRange,
+        text:
+          current.pendingComment &&
+          current.pendingComment.startLineNumber === nextRange.startLineNumber &&
+          current.pendingComment.endLineNumber === nextRange.endLineNumber
+            ? current.pendingComment.text
+            : "",
       },
     }))
   }
@@ -2986,9 +3027,11 @@ export function useAgentWorkspace({
     }))
   }
 
-  function handleWorkspaceFileCommentSubmit() {
+  function commitWorkspaceFileComment(insertIntoComposer: boolean) {
     const scopeDirectory = activeWorkspaceFileScopeDirectory
     const selectedFilePath = workspaceFileReviewState.selectedFilePath
+    const selectedFileContent = workspaceFileReviewState.selectedFileContent
+    const selectedFileExtension = workspaceFileReviewState.selectedFileExtension
     const pendingComment = workspaceFileReviewState.pendingComment
     if (!scopeDirectory || !selectedFilePath || !pendingComment) return
 
@@ -2999,7 +3042,8 @@ export function useAgentWorkspace({
     const nextComment: WorkspaceFileComment = {
       id: createID("file-comment"),
       filePath: selectedFilePath,
-      lineNumber: pendingComment.lineNumber,
+      startLineNumber: pendingComment.startLineNumber,
+      endLineNumber: pendingComment.endLineNumber,
       text: trimmedText,
       createdAt: Date.now(),
     }
@@ -3015,6 +3059,46 @@ export function useAgentWorkspace({
       errorMessage: current.selectedFileKind === "unsupported" ? current.errorMessage : null,
       status: current.selectedFileKind === "unsupported" ? "unsupported" : "ready",
     }))
+
+    if (insertIntoComposer && activeTabKey && selectedFileContent !== null) {
+      const prompt = buildWorkspaceFileCommentDraft({
+        content: selectedFileContent,
+        extension: selectedFileExtension,
+        filePath: selectedFilePath,
+        comment: nextComment,
+      })
+
+      if (!prompt) return
+
+      const label = buildWorkspaceFileCommentReferenceLabel(
+        selectedFilePath,
+        nextComment.startLineNumber,
+        nextComment.endLineNumber,
+      )
+
+      const nextReference: ComposerCommentReference = {
+        id: createID("composer-comment-reference"),
+        filePath: selectedFilePath,
+        startLineNumber: nextComment.startLineNumber,
+        endLineNumber: nextComment.endLineNumber,
+        label,
+        title: `${selectedFilePath} (${formatWorkspaceFileLineRangeLabel(nextComment.startLineNumber, nextComment.endLineNumber)})`,
+        prompt,
+      }
+
+      setComposerCommentReferencesByTabKey((current) => ({
+        ...current,
+        [activeTabKey]: [...(current[activeTabKey] ?? []), nextReference],
+      }))
+    }
+  }
+
+  function handleWorkspaceFileCommentSubmit() {
+    commitWorkspaceFileComment(false)
+  }
+
+  function handleWorkspaceFileCommentConfirm() {
+    commitWorkspaceFileComment(true)
   }
 
   useEffect(() => {
@@ -3103,6 +3187,7 @@ export function useAgentWorkspace({
   async function sendPromptToSession(input: {
     attachments: ComposerAttachment[]
     backendSessionID?: string | null
+    displayText?: string
     permissionMode: ComposerPermissionMode
     preserveComposerState?: boolean
     questionAnswer?: {
@@ -3110,13 +3195,14 @@ export function useAgentWorkspace({
       selectedOptions?: string[]
       freeformText?: string
     }
+    referenceLabels?: string[]
     session: SessionSummary
     selectedSkillIDs: string[]
     tabKey: string
     text: string
     workspace: WorkspaceGroup
   }) {
-    const { attachments, permissionMode, preserveComposerState, questionAnswer, session, selectedSkillIDs, tabKey, text, workspace } = input
+    const { attachments, displayText, permissionMode, preserveComposerState, questionAnswer, referenceLabels, session, selectedSkillIDs, tabKey, text, workspace } = input
     const uiSessionID = session.id
     const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
     const normalizedText = text.trim() || normalizeQuestionAnswerText(questionAnswer)
@@ -3125,8 +3211,9 @@ export function useAgentWorkspace({
       name: attachment.name,
     }))
     const userTurnText = buildUserTurnText({
-      text: normalizedText,
+      text: displayText ?? normalizedText,
       attachmentNames: attachments.map((attachment) => attachment.name),
+      referenceLabels,
     })
 
     const userTurn: Turn = {
@@ -3141,6 +3228,10 @@ export function useAgentWorkspace({
       setDraftByTabKey((current) => ({
         ...current,
         [tabKey]: "",
+      }))
+      setComposerCommentReferencesByTabKey((current) => ({
+        ...current,
+        [tabKey]: [],
       }))
       setComposerAttachmentsByTabKey((current) => ({
         ...current,
@@ -3275,6 +3366,7 @@ export function useAgentWorkspace({
   async function handleSend(input?: {
     attachmentError?: string | null
     attachmentsOverride?: ComposerAttachment[]
+    commentReferencesOverride?: ComposerCommentReference[]
     createSessionTabID?: string | null
     draftOverride?: string
     paneID?: string | null
@@ -3293,8 +3385,10 @@ export function useAgentWorkspace({
     const targetSessionID = input?.sessionID ?? activeSessionID
     const targetCreateSessionTabID = input?.createSessionTabID ?? activeCreateSessionTabID
     const attachments = input?.attachmentsOverride ?? (targetTabKey ? composerAttachmentsByTabKey[targetTabKey] ?? [] : [])
+    const commentReferences = input?.commentReferencesOverride ?? (targetTabKey ? composerCommentReferencesByTabKey[targetTabKey] ?? [] : [])
     const permissionMode = targetTabKey ? composerPermissionModeByTabKey[targetTabKey] ?? "default" : "default"
-    const text = (input?.draftOverride ?? (targetTabKey ? draftByTabKey[targetTabKey] ?? "" : "")).trim()
+    const displayText = (input?.draftOverride ?? (targetTabKey ? draftByTabKey[targetTabKey] ?? "" : "")).trim()
+    const text = buildComposerRequestText(displayText, commentReferences)
     const normalizedQuestionAnswerText = normalizeQuestionAnswerText(input?.questionAnswer)
     const effectiveText = text || normalizedQuestionAnswerText
     const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
@@ -3311,9 +3405,11 @@ export function useAgentWorkspace({
       if (!nextSelection.workspace || !nextSelection.session) return
       await sendPromptToSession({
         attachments,
+        displayText,
         permissionMode,
         preserveComposerState: input?.preserveComposerState,
         questionAnswer: input?.questionAnswer,
+        referenceLabels: commentReferences.map((reference) => reference.label),
         selectedSkillIDs: input?.selectedSkillIDs ?? [],
         session: nextSelection.session,
         tabKey: targetTabKey,
@@ -3342,9 +3438,11 @@ export function useAgentWorkspace({
     await sendPromptToSession({
       attachments,
       backendSessionID: created.backendSessionID,
+      displayText,
       permissionMode,
       preserveComposerState: input?.preserveComposerState,
       questionAnswer: input?.questionAnswer,
+      referenceLabels: commentReferences.map((reference) => reference.label),
       selectedSkillIDs: input?.selectedSkillIDs ?? [],
       session: created.session,
       tabKey: targetTabKey,
@@ -3501,6 +3599,14 @@ export function useAgentWorkspace({
     setComposerAttachmentsByTabKey((current) => ({
       ...current,
       [tabKey]: (current[tabKey] ?? []).filter((attachment) => attachment.path !== path),
+    }))
+  }
+
+  function handleRemoveComposerCommentReference(referenceID: string, tabKey = activeTabKey) {
+    if (!tabKey) return
+    setComposerCommentReferencesByTabKey((current) => ({
+      ...current,
+      [tabKey]: (current[tabKey] ?? []).filter((reference) => reference.id !== referenceID),
     }))
   }
 
@@ -3712,6 +3818,7 @@ export function useAgentWorkspace({
       activeSessionSelectedDiffFile: currentActiveSessionID ? selectedDiffFileBySession[currentActiveSessionID] ?? null : null,
       activeTurns: currentActiveSessionID ? conversations[currentActiveSessionID] ?? [] : [],
       composerAttachments: currentActiveTabKey ? composerAttachmentsByTabKey[currentActiveTabKey] ?? [] : [],
+      composerCommentReferences: currentActiveTabKey ? composerCommentReferencesByTabKey[currentActiveTabKey] ?? [] : [],
       composerPermissionMode: currentActiveTabKey ? composerPermissionModeByTabKey[currentActiveTabKey] ?? "default" : "default",
       composerProjectID:
         isInitialWorkspaceLoadPending && currentWorkspace && seedWorkspaceIDs.has(currentWorkspace.id)
@@ -3760,7 +3867,9 @@ export function useAgentWorkspace({
     activeTurns,
     canvasSessionTabs,
     canInsertPreviewCommentsIntoDraft,
+    canInsertWorkspaceFileCommentsIntoDraft,
     composerAttachments,
+    composerCommentReferences,
     composerAttachmentButtonTitle,
     composerAttachmentDisabledReason,
     composerAttachmentError,
@@ -3802,6 +3911,7 @@ export function useAgentWorkspace({
     handlePaneSplit,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
+    handleRemoveComposerCommentReference,
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
@@ -3815,6 +3925,7 @@ export function useAgentWorkspace({
     handlePreviewReload,
     handleWorkspaceFileCommentCancel,
     handleWorkspaceFileCommentChange,
+    handleWorkspaceFileCommentConfirm,
     handleWorkspaceFileCommentStart,
     handleWorkspaceFileCommentSubmit,
     handleWorkspaceFileQueryChange,

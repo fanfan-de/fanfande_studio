@@ -2020,6 +2020,10 @@ select {
   background: #f7fbff;
 }
 
+.workspace-files-line.is-selected {
+  background: #eef6ff;
+}
+
 .workspace-files-line-gutter {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2028,6 +2032,12 @@ select {
   padding: 0 10px;
   border-right: 1px solid rgba(166, 186, 208, 0.14);
   background: #f6f9fc;
+  cursor: default;
+  user-select: none;
+}
+
+.workspace-files-line.is-selected .workspace-files-line-gutter {
+  background: #e8f2ff;
 }
 
 .workspace-files-line-number {
@@ -2076,6 +2086,10 @@ select {
   font-family: inherit;
 }
 
+.workspace-files-line.is-selected .workspace-files-line-content {
+  background: #f7fbff;
+}
+
 .workspace-files-comment-composer,
 .workspace-files-line-comments {
   margin-left: 84px;
@@ -2087,6 +2101,20 @@ select {
 .workspace-files-comment-composer {
   display: grid;
   gap: 10px;
+}
+
+.workspace-files-comment-range {
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-files-comment-range strong {
+  color: #123a5a;
+}
+
+.workspace-files-comment-range span {
+  color: #60778d;
+  font-size: 12px;
 }
 
 .workspace-files-line-comments {
@@ -5489,14 +5517,16 @@ textarea::placeholder {
   margin-top: 12px;
 }
 
-.composer-attachment-strip {
+.composer-attachment-strip,
+.composer-reference-strip {
   margin-top: 12px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.composer-attachment-chip {
+.composer-attachment-chip,
+.composer-reference-chip {
   min-height: 32px;
   padding: 0 4px 0 10px;
   display: inline-flex;
@@ -5513,7 +5543,14 @@ textarea::placeholder {
   color: #7d1f1f;
 }
 
-.composer-attachment-name {
+.composer-reference-chip {
+  border-color: rgba(111, 148, 187, 0.34);
+  background: #eef5fb;
+  color: #123a5a;
+}
+
+.composer-attachment-name,
+.composer-reference-name {
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5522,7 +5559,8 @@ textarea::placeholder {
   font-size: 12px;
 }
 
-.composer-attachment-remove {
+.composer-attachment-remove,
+.composer-reference-remove {
   width: 24px;
   height: 24px;
   display: inline-flex;
@@ -5535,12 +5573,15 @@ textarea::placeholder {
 }
 
 .composer-attachment-remove:hover,
-.composer-attachment-remove:focus-visible {
+.composer-attachment-remove:focus-visible,
+.composer-reference-remove:hover,
+.composer-reference-remove:focus-visible {
   background: rgba(22, 119, 200, 0.08);
   color: #123a5a;
 }
 
 .composer-attachment-remove svg,
+.composer-reference-remove svg,
 .composer-selector-button svg {
   width: 14px;
   height: 14px;
@@ -6911,6 +6952,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 .composer-utility-git-branch-button,
 .composer-selector-button,
 .composer-attachment-chip,
+.composer-reference-chip,
 .composer-menu-option,
 .terminal-tab {
   border-radius: var(--ui-radius-pill);

@@ -1106,25 +1106,55 @@ function summarizeAttachmentNames(attachmentNames: string[]) {
   return compactText(attachmentNames.join(", "), 140)
 }
 
+function summarizeReferenceLabels(referenceLabels: string[]) {
+  if (referenceLabels.length === 0) return ""
+  if (referenceLabels.length === 1) return referenceLabels[0] ?? "Reference"
+  return compactText(referenceLabels.join(", "), 140)
+}
+
 export function buildUserTurnText(input: {
   text?: string
   attachmentNames?: string[]
+  referenceLabels?: string[]
 }) {
   const text = readString(input.text).trim()
   const attachmentNames = (input.attachmentNames ?? []).filter(Boolean)
+  const referenceLabels = (input.referenceLabels ?? []).filter(Boolean)
 
-  if (attachmentNames.length === 0) {
+  if (attachmentNames.length === 0 && referenceLabels.length === 0) {
     return text || "Sent a non-text message."
   }
 
   const attachmentSummary = summarizeAttachmentNames(attachmentNames)
-  if (!text) {
+  const referenceSummary = summarizeReferenceLabels(referenceLabels)
+  if (!text && referenceLabels.length > 0 && attachmentNames.length === 0) {
+    return referenceLabels.length === 1
+      ? `Sent reference: ${referenceSummary}`
+      : `Sent ${referenceLabels.length} references: ${referenceSummary}`
+  }
+
+  if (!text && attachmentNames.length > 0 && referenceLabels.length === 0) {
     return attachmentNames.length === 1
       ? `Sent attachment: ${attachmentSummary}`
       : `Sent ${attachmentNames.length} attachments: ${attachmentSummary}`
   }
 
-  return `${text}\n\nAttachments: ${attachmentSummary}`
+  if (!text) {
+    return [
+      referenceLabels.length === 1 ? `Reference: ${referenceSummary}` : `References: ${referenceSummary}`,
+      attachmentNames.length === 1 ? `Attachment: ${attachmentSummary}` : `Attachments: ${attachmentSummary}`,
+    ].join("\n")
+  }
+
+  const sections = [text]
+  if (referenceLabels.length > 0) {
+    sections.push(`References: ${referenceSummary}`)
+  }
+  if (attachmentNames.length > 0) {
+    sections.push(`Attachments: ${attachmentSummary}`)
+  }
+
+  return sections.join("\n\n")
 }
 
 function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]) {

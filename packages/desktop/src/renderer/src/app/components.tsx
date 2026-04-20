@@ -38,6 +38,7 @@ import type {
   AssistantTraceVisibility,
   AssistantTraceVisibilityKey,
   ComposerAttachment,
+  ComposerCommentReference,
   ComposerMcpOption,
   ComposerModelOption,
   ComposerSkillOption,
@@ -1036,6 +1037,7 @@ interface RightSidebarProps {
   activeSessionRuntimeDebugState?: SessionRuntimeDebugState
   activePreviewState: WorkspacePreviewState
   canInsertPreviewCommentsIntoDraft: boolean
+  canInsertWorkspaceFileCommentsIntoDraft: boolean
   previewWorkspaceDirectory: string | null
   previewWorkspaceName: string | null
   selectedDiffFile: string | null
@@ -1052,7 +1054,8 @@ interface RightSidebarProps {
   onPreviewReload: () => void
   onWorkspaceFileCommentCancel: () => void
   onWorkspaceFileCommentChange: (text: string) => void
-  onWorkspaceFileCommentStart: (lineNumber: number) => void
+  onWorkspaceFileCommentConfirm: () => void
+  onWorkspaceFileCommentStart: (startLineNumber: number, endLineNumber?: number) => void
   onWorkspaceFileCommentSubmit: () => void
   onWorkspaceFileQueryChange: (value: string) => void
   onWorkspaceFileSelect: (path: string) => void
@@ -1307,6 +1310,7 @@ export function RightSidebar({
   activeSessionRuntimeDebugState,
   activePreviewState,
   canInsertPreviewCommentsIntoDraft,
+  canInsertWorkspaceFileCommentsIntoDraft,
   previewWorkspaceDirectory,
   previewWorkspaceName,
   selectedDiffFile,
@@ -1323,6 +1327,7 @@ export function RightSidebar({
   onPreviewReload,
   onWorkspaceFileCommentCancel,
   onWorkspaceFileCommentChange,
+  onWorkspaceFileCommentConfirm,
   onWorkspaceFileCommentStart,
   onWorkspaceFileCommentSubmit,
   onWorkspaceFileQueryChange,
@@ -1778,11 +1783,13 @@ export function RightSidebar({
 
         {activeView === "files" ? (
           <WorkspaceFilesPanel
+            canInsertCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
             scopeDirectory={activeWorkspaceFileScopeDirectory}
             scopeName={activeWorkspaceFileScopeName}
             state={activeWorkspaceFileState}
             onPendingCommentCancel={onWorkspaceFileCommentCancel}
             onPendingCommentChange={onWorkspaceFileCommentChange}
+            onPendingCommentConfirm={onWorkspaceFileCommentConfirm}
             onPendingCommentStart={onWorkspaceFileCommentStart}
             onPendingCommentSubmit={onWorkspaceFileCommentSubmit}
             onQueryChange={onWorkspaceFileQueryChange}
@@ -6323,6 +6330,7 @@ export function ThreadView({
 
 interface ComposerProps {
   attachments: ComposerAttachment[]
+  commentReferences: ComposerCommentReference[]
   attachmentButtonTitle: string
   attachmentDisabledReason: string | null
   attachmentError: string | null
@@ -6338,6 +6346,7 @@ interface ComposerProps {
   onModelChange: (value: string | null) => void | Promise<void>
   onPickAttachments: () => void | Promise<void>
   onRemoveAttachment: (path: string) => void
+  onRemoveCommentReference: (referenceID: string) => void
   onSend: (draftOverride?: string) => void | Promise<void>
 }
 
@@ -6383,6 +6392,7 @@ function getComposerSendButtonDescription({
 
 export function Composer({
   attachments,
+  commentReferences,
   attachmentButtonTitle,
   attachmentDisabledReason,
   attachmentError,
@@ -6398,6 +6408,7 @@ export function Composer({
   onModelChange,
   onPickAttachments,
   onRemoveAttachment,
+  onRemoveCommentReference,
   onSend,
 }: ComposerProps) {
   const [openMenu, setOpenMenu] = useState<ComposerMenuKey>(null)
@@ -6473,6 +6484,26 @@ export function Composer({
         placeholder="Describe the UI, implementation task, or review target for the agent."
         rows={3}
       />
+
+      {commentReferences.length > 0 ? (
+        <div className="composer-reference-strip" aria-label="Selected comment references">
+          {commentReferences.map((reference) => (
+            <div key={reference.id} className="composer-reference-chip">
+              <span className="composer-reference-name" title={reference.title}>
+                {reference.label}
+              </span>
+              <button
+                aria-label={`Remove ${reference.label}`}
+                className="composer-reference-remove"
+                onClick={() => onRemoveCommentReference(reference.id)}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {attachments.length > 0 ? (
         <div className="composer-attachment-strip" aria-label="Selected attachments">

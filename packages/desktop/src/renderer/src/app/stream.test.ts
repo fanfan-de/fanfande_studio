@@ -512,6 +512,14 @@ describe("stream trace reducer", () => {
     ).toBe("Review these references\n\nAttachments: hero.png, brief.pdf")
   })
 
+  it("summarizes structured references without expanding their prompt text", () => {
+    expect(
+      buildUserTurnText({
+        referenceLabels: ["focus-files.tsx:L2-L3"],
+      }),
+    ).toBe("Sent reference: focus-files.tsx:L2-L3")
+  })
+
   it("adds an error trace when the persisted assistant turn failed", () => {
     const turns = buildTurnsFromHistory([
       {

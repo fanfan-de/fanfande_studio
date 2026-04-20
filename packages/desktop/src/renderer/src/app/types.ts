@@ -203,16 +203,19 @@ export interface WorkspaceFileSearchResult {
   extension: string | null
 }
 
-export interface WorkspaceFileComment {
+export interface WorkspaceFileLineRange {
+  startLineNumber: number
+  endLineNumber: number
+}
+
+export interface WorkspaceFileComment extends WorkspaceFileLineRange {
   id: string
   filePath: string
-  lineNumber: number
   text: string
   createdAt: number
 }
 
-export interface WorkspaceFilePendingComment {
-  lineNumber: number
+export interface WorkspaceFilePendingComment extends WorkspaceFileLineRange {
   text: string
 }
 
@@ -653,6 +656,16 @@ export interface ProjectMcpSelection {
 export interface ComposerAttachment {
   path: string
   name: string
+}
+
+export interface ComposerCommentReference {
+  id: string
+  filePath: string
+  startLineNumber: number
+  endLineNumber: number
+  label: string
+  title: string
+  prompt: string
 }
 
 export type ComposerPermissionMode = "default" | "full-access"

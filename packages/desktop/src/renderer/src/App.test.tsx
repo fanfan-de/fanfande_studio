@@ -900,6 +900,74 @@ describe("App", () => {
     expect(screen.queryByRole("textbox", { name: "File comment on line 3" })).not.toBeInTheDocument()
   })
 
+  it("confirms a multi-line file comment into a composer reference chip and sends its compiled context", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.searchWorkspaceFiles = vi.fn().mockResolvedValue([
+      {
+        path: WORKSPACE_FILE_PATH,
+        name: "focus-files.tsx",
+        extension: "tsx",
+      },
+    ])
+    window.desktop!.readWorkspaceFile = vi.fn().mockResolvedValue({
+      path: WORKSPACE_FILE_PATH,
+      name: "focus-files.tsx",
+      extension: "tsx",
+      kind: "text",
+      content: WORKSPACE_FILE_CONTENT,
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }))
+    fireEvent.change(screen.getByLabelText("Search workspace files"), {
+      target: { value: "focus" },
+    })
+    fireEvent.click(await screen.findByRole("button", { name: /focus-files\.tsx/i }))
+    expect(await screen.findByText("const nextValue = focusValue + 1")).toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByTestId("workspace-file-line-gutter-2"), { button: 0 })
+    fireEvent.mouseOver(screen.getByTestId("workspace-file-line-gutter-3"))
+    fireEvent.mouseUp(screen.getByTestId("workspace-file-line-gutter-3"))
+
+    const commentBox = await screen.findByRole("textbox", { name: "File comment on lines 2-3" })
+    fireEvent.change(commentBox, {
+      target: { value: "Check how these values flow through the summary." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }))
+
+    await screen.findByText("focus-files.tsx:L2-L3")
+    expect((screen.getByRole("textbox", { name: "Task draft" }) as HTMLTextAreaElement).value).toBe("")
+    expect(screen.getByText("Check how these values flow through the summary.")).toBeInTheDocument()
+
+    fireEvent.click(getComposerSendButton())
+
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalled()
+    })
+
+    const sendAgentMessage = window.desktop!.sendAgentMessage
+    expect(sendAgentMessage).toBeDefined()
+    if (!sendAgentMessage) throw new Error("Expected sendAgentMessage mock")
+
+    const sendInput = vi.mocked(sendAgentMessage).mock.calls.at(-1)?.[0]
+    expect(sendInput).toBeDefined()
+    if (!sendInput) throw new Error("Expected sendAgentMessage payload")
+
+    expect(sendInput.text).toContain("File feedback for src/focus-files.tsx (Lines 2-3)")
+    expect(sendInput.text).toContain("2 | const nextValue = focusValue + 1")
+    expect(sendInput.text).toContain("3 | export const summary = nextValue")
+    expect(sendInput.text).toContain("Check how these values flow through the summary.")
+
+    await waitFor(() => {
+      expect(screen.queryByText("focus-files.tsx:L2-L3")).not.toBeInTheDocument()
+    })
+  })
+
   it("resets file review state when the focused workspace changes", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
     window.desktop!.searchWorkspaceFiles = vi.fn().mockResolvedValue([

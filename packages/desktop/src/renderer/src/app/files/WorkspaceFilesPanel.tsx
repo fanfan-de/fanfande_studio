@@ -1,15 +1,18 @@
-import { useEffect, useState, type ChangeEvent } from "react"
+import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent as ReactMouseEvent } from "react"
 import { PlusIcon } from "../icons"
-import type { WorkspaceFileReviewState } from "../types"
+import type { WorkspaceFileLineRange, WorkspaceFileReviewState } from "../types"
 import { formatTime } from "../utils"
+import { formatWorkspaceFileLineRangeLabel, normalizeWorkspaceFileLineRange } from "./utils"
 
 interface WorkspaceFilesPanelProps {
+  canInsertCommentsIntoDraft: boolean
   scopeDirectory: string | null
   scopeName: string | null
   state: WorkspaceFileReviewState
   onPendingCommentCancel: () => void
   onPendingCommentChange: (text: string) => void
-  onPendingCommentStart: (lineNumber: number) => void
+  onPendingCommentConfirm: () => void
+  onPendingCommentStart: (startLineNumber: number, endLineNumber?: number) => void
   onPendingCommentSubmit: () => void
   onQueryChange: (value: string) => void
   onSelectFile: (path: string) => void
@@ -25,29 +28,98 @@ function getReaderEmptyStateCopy(state: WorkspaceFileReviewState, scopeDirectory
   return "Pick a result to preview the file here."
 }
 
+function isLineWithinRange(range: WorkspaceFileLineRange | null, lineNumber: number) {
+  if (!range) return false
+  return lineNumber >= range.startLineNumber && lineNumber <= range.endLineNumber
+}
+
 export function WorkspaceFilesPanel({
+  canInsertCommentsIntoDraft,
   scopeDirectory,
   scopeName,
   state,
   onPendingCommentCancel,
   onPendingCommentChange,
+  onPendingCommentConfirm,
   onPendingCommentStart,
   onPendingCommentSubmit,
   onQueryChange,
   onSelectFile,
 }: WorkspaceFilesPanelProps) {
   const [hoveredLineNumber, setHoveredLineNumber] = useState<number | null>(null)
+  const [dragSelection, setDragSelection] = useState<WorkspaceFileLineRange | null>(null)
+  const dragSelectionRef = useRef<WorkspaceFileLineRange | null>(null)
   const fileLines = state.selectedFileContent?.split(/\r?\n/) ?? []
-  const commentsByLine = new Map<number, typeof state.comments>()
+  const commentsByEndLine = new Map<number, typeof state.comments>()
+  const pendingRange = state.pendingComment
+    ? normalizeWorkspaceFileLineRange(state.pendingComment.startLineNumber, state.pendingComment.endLineNumber)
+    : null
+  const highlightedRange = dragSelection ?? pendingRange
 
   for (const comment of state.comments) {
-    const currentComments = commentsByLine.get(comment.lineNumber) ?? []
-    commentsByLine.set(comment.lineNumber, [...currentComments, comment])
+    const currentComments = commentsByEndLine.get(comment.endLineNumber) ?? []
+    commentsByEndLine.set(comment.endLineNumber, [...currentComments, comment])
   }
 
   useEffect(() => {
     setHoveredLineNumber(null)
-  }, [state.selectedFilePath, state.pendingComment?.lineNumber])
+    dragSelectionRef.current = null
+    setDragSelection(null)
+  }, [state.selectedFilePath, state.pendingComment?.startLineNumber, state.pendingComment?.endLineNumber])
+
+  useEffect(() => {
+    function finalizeDragSelection() {
+      const selection = dragSelectionRef.current
+      if (!selection) return
+
+      const nextRange = normalizeWorkspaceFileLineRange(selection.startLineNumber, selection.endLineNumber)
+      dragSelectionRef.current = null
+      setDragSelection(null)
+      if (nextRange.startLineNumber === nextRange.endLineNumber) return
+      onPendingCommentStart(nextRange.startLineNumber, nextRange.endLineNumber)
+    }
+
+    window.addEventListener("mouseup", finalizeDragSelection)
+    window.addEventListener("pointerup", finalizeDragSelection)
+    return () => {
+      window.removeEventListener("mouseup", finalizeDragSelection)
+      window.removeEventListener("pointerup", finalizeDragSelection)
+    }
+  }, [onPendingCommentStart])
+
+  function handleLineSelectionStart(lineNumber: number, event: ReactMouseEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const nextSelection = {
+      startLineNumber: lineNumber,
+      endLineNumber: lineNumber,
+    }
+    dragSelectionRef.current = nextSelection
+    setDragSelection(nextSelection)
+  }
+
+  function handleLineSelectionMove(lineNumber: number) {
+    const currentSelection = dragSelectionRef.current
+    if (!currentSelection) return
+
+    const nextSelection = {
+      ...currentSelection,
+      endLineNumber: lineNumber,
+    }
+    dragSelectionRef.current = nextSelection
+    setDragSelection(nextSelection)
+  }
+
+  function handleLineSelectionEnd() {
+    const selection = dragSelectionRef.current
+    if (!selection) return
+
+    const nextRange = normalizeWorkspaceFileLineRange(selection.startLineNumber, selection.endLineNumber)
+    dragSelectionRef.current = null
+    setDragSelection(null)
+    if (nextRange.startLineNumber === nextRange.endLineNumber) return
+    onPendingCommentStart(nextRange.startLineNumber, nextRange.endLineNumber)
+  }
 
   return (
     <section className="right-sidebar-section workspace-files-panel">
@@ -138,25 +210,43 @@ export function WorkspaceFilesPanel({
           <div className="workspace-files-code" role="presentation">
             {fileLines.map((line, index) => {
               const lineNumber = index + 1
-              const isCommenting = state.pendingComment?.lineNumber === lineNumber
-              const lineComments = commentsByLine.get(lineNumber) ?? []
-              const showCommentAction = hoveredLineNumber === lineNumber || isCommenting
+              const isCommenting = isLineWithinRange(pendingRange, lineNumber)
+              const lineComments = commentsByEndLine.get(lineNumber) ?? []
+              const showCommentAction =
+                dragSelection === null &&
+                (hoveredLineNumber === lineNumber ||
+                  (pendingRange?.startLineNumber === lineNumber && pendingRange.endLineNumber === lineNumber))
+              const lineLabel = pendingRange && isCommenting
+                ? formatWorkspaceFileLineRangeLabel(pendingRange.startLineNumber, pendingRange.endLineNumber)
+                : formatWorkspaceFileLineRangeLabel(lineNumber)
+              const isSelectionHighlighted = isLineWithinRange(highlightedRange, lineNumber)
 
               return (
                 <div key={`${state.selectedFilePath}:${lineNumber}`} className="workspace-files-code-block">
                   <div
-                    className={showCommentAction ? "workspace-files-line is-hovered" : "workspace-files-line"}
+                    className={[
+                      "workspace-files-line",
+                      showCommentAction ? "is-hovered" : "",
+                      isSelectionHighlighted ? "is-selected" : "",
+                    ].filter(Boolean).join(" ")}
                     data-testid={`workspace-file-line-${lineNumber}`}
                     onMouseEnter={() => setHoveredLineNumber(lineNumber)}
                     onMouseLeave={() => setHoveredLineNumber((current) => (current === lineNumber ? null : current))}
                   >
-                    <div className="workspace-files-line-gutter">
+                    <div
+                      className="workspace-files-line-gutter"
+                      data-testid={`workspace-file-line-gutter-${lineNumber}`}
+                      onMouseDown={(event) => handleLineSelectionStart(lineNumber, event)}
+                      onMouseOver={() => handleLineSelectionMove(lineNumber)}
+                      onMouseUp={() => handleLineSelectionEnd()}
+                    >
                       <span className="workspace-files-line-number">{String(lineNumber)}</span>
                       {showCommentAction ? (
                         <button
                           type="button"
                           className="workspace-files-line-comment-button"
                           aria-label={`Add comment on line ${String(lineNumber)}`}
+                          onMouseDown={(event) => event.stopPropagation()}
                           onClick={() => onPendingCommentStart(lineNumber)}
                         >
                           <PlusIcon />
@@ -168,19 +258,33 @@ export function WorkspaceFilesPanel({
                     </pre>
                   </div>
 
-                  {isCommenting ? (
+                  {pendingRange?.endLineNumber === lineNumber ? (
                     <div className="workspace-files-comment-composer">
+                      <div className="workspace-files-comment-range">
+                        <strong>{lineLabel}</strong>
+                        {pendingRange.startLineNumber !== pendingRange.endLineNumber ? (
+                          <span>Drag line numbers to review a range at once.</span>
+                        ) : null}
+                      </div>
                       <label className="preview-comment-label">
                         <span className="label">Comment</span>
                         <textarea
-                          aria-label={`File comment on line ${String(lineNumber)}`}
+                          aria-label={`File comment on ${lineLabel.toLowerCase()}`}
                           rows={3}
-                          placeholder={`Leave feedback for line ${String(lineNumber)}`}
+                          placeholder={`Leave feedback for ${lineLabel.toLowerCase()}`}
                           value={state.pendingComment?.text ?? ""}
                           onChange={(event) => onPendingCommentChange(event.target.value)}
                         />
                       </label>
                       <div className="right-sidebar-toolbar">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={!state.pendingComment?.text.trim() || !canInsertCommentsIntoDraft}
+                          onClick={() => onPendingCommentConfirm()}
+                        >
+                          Confirm
+                        </button>
                         <button
                           type="button"
                           className="secondary-button"
@@ -201,7 +305,7 @@ export function WorkspaceFilesPanel({
                       {lineComments.map((comment) => (
                         <article key={comment.id} className="workspace-files-line-comment">
                           <div className="workspace-files-line-comment-meta">
-                            <strong>Line {String(comment.lineNumber)}</strong>
+                            <strong>{formatWorkspaceFileLineRangeLabel(comment.startLineNumber, comment.endLineNumber)}</strong>
                             <time>{formatTime(comment.createdAt)}</time>
                           </div>
                           <p>{comment.text}</p>
