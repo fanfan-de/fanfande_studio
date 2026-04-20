@@ -47,6 +47,7 @@ import type {
   SkillInfo,
   SidebarActionKey,
   Turn,
+  UserTurn,
   WorkbenchPane,
   WorkbenchTabReference,
   WorkspacePreviewState,
@@ -1182,6 +1183,42 @@ export function useAgentWorkspace({
     setConversations((prev) => updateAssistantTurnInMap(prev, sessionID, turnID, updater))
   }
 
+  function mergeUserTurnPresentationState(previousTurns: Turn[], nextTurns: Turn[]) {
+    const previousUserTurns = previousTurns.filter((turn): turn is UserTurn => turn.kind === "user")
+    let previousUserTurnIndex = 0
+
+    return nextTurns.map((turn) => {
+      if (turn.kind !== "user") return turn
+
+      const previousTurn = previousUserTurns[previousUserTurnIndex++]
+      if (!previousTurn) return turn
+
+      const mergedDisplayText = previousTurn.displayText ?? turn.displayText
+      const mergedAttachments = previousTurn.attachments?.length ? previousTurn.attachments : turn.attachments
+      const mergedReferences = previousTurn.references?.length ? previousTurn.references : turn.references
+
+      return {
+        ...turn,
+        text: buildUserTurnText({
+          text: mergedDisplayText ?? turn.displayText ?? turn.text,
+          attachmentNames: mergedAttachments?.map((attachment) => attachment.name),
+          referenceLabels: mergedReferences?.map((reference) => reference.label),
+        }),
+        ...(mergedDisplayText ? { displayText: mergedDisplayText } : {}),
+        ...(mergedAttachments?.length ? { attachments: mergedAttachments } : {}),
+        ...(mergedReferences?.length ? { references: mergedReferences } : {}),
+      }
+    })
+  }
+
+  function replaceConversationTurnsFromHistory(sessionID: string, nextTurns: Turn[]) {
+    bumpConversationVersion(sessionID)
+    setConversations((prev) => ({
+      ...prev,
+      [sessionID]: mergeUserTurnPresentationState(prev[sessionID] ?? [], nextTurns),
+    }))
+  }
+
   function resolveStreamCursor(event: { id?: string; data: unknown }) {
     const payload = readStreamRecord(event.data)
     return readStreamString(payload?.cursor) || event.id || ""
@@ -1360,7 +1397,7 @@ export function useAgentWorkspace({
     const messages = await getSessionHistory({ sessionID: backendSessionID })
     const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
     startTransition(() => {
-      replaceConversationTurns(sessionID, buildTurnsFromHistory(messages))
+      replaceConversationTurnsFromHistory(sessionID, buildTurnsFromHistory(messages))
       syncSessionContextUsageFromHistory(sessionID, nextContextUsage)
     })
   }
@@ -1769,7 +1806,7 @@ export function useAgentWorkspace({
         const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
 
         startTransition(() => {
-          replaceConversationTurns(sessionID, buildTurnsFromHistory(messages))
+          replaceConversationTurnsFromHistory(sessionID, buildTurnsFromHistory(messages))
           updateSessionContextUsage(sessionID, nextContextUsage)
         })
       })
@@ -3187,6 +3224,7 @@ export function useAgentWorkspace({
   async function sendPromptToSession(input: {
     attachments: ComposerAttachment[]
     backendSessionID?: string | null
+    commentReferences?: ComposerCommentReference[]
     displayText?: string
     permissionMode: ComposerPermissionMode
     preserveComposerState?: boolean
@@ -3195,14 +3233,25 @@ export function useAgentWorkspace({
       selectedOptions?: string[]
       freeformText?: string
     }
-    referenceLabels?: string[]
     session: SessionSummary
     selectedSkillIDs: string[]
     tabKey: string
     text: string
     workspace: WorkspaceGroup
   }) {
-    const { attachments, displayText, permissionMode, preserveComposerState, questionAnswer, referenceLabels, session, selectedSkillIDs, tabKey, text, workspace } = input
+    const {
+      attachments,
+      commentReferences = [],
+      displayText,
+      permissionMode,
+      preserveComposerState,
+      questionAnswer,
+      session,
+      selectedSkillIDs,
+      tabKey,
+      text,
+      workspace,
+    } = input
     const uiSessionID = session.id
     const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
     const normalizedText = text.trim() || normalizeQuestionAnswerText(questionAnswer)
@@ -3210,16 +3259,28 @@ export function useAgentWorkspace({
       path: attachment.path,
       name: attachment.name,
     }))
+    const userTurnDisplayText = displayText?.trim() || normalizeQuestionAnswerText(questionAnswer) || undefined
     const userTurnText = buildUserTurnText({
-      text: displayText ?? normalizedText,
+      text: userTurnDisplayText ?? normalizedText,
       attachmentNames: attachments.map((attachment) => attachment.name),
-      referenceLabels,
+      referenceLabels: commentReferences.map((reference) => reference.label),
     })
 
     const userTurn: Turn = {
       id: createID("user"),
       kind: "user",
       text: userTurnText,
+      ...(userTurnDisplayText ? { displayText: userTurnDisplayText } : {}),
+      ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
+      ...(commentReferences.length > 0
+        ? {
+            references: commentReferences.map((reference) => ({
+              id: reference.id,
+              label: reference.label,
+              title: reference.title,
+            })),
+          }
+        : {}),
       ...(questionAnswer ? { questionAnswer } : {}),
       timestamp: Date.now(),
     }
@@ -3405,11 +3466,11 @@ export function useAgentWorkspace({
       if (!nextSelection.workspace || !nextSelection.session) return
       await sendPromptToSession({
         attachments,
+        commentReferences,
         displayText,
         permissionMode,
         preserveComposerState: input?.preserveComposerState,
         questionAnswer: input?.questionAnswer,
-        referenceLabels: commentReferences.map((reference) => reference.label),
         selectedSkillIDs: input?.selectedSkillIDs ?? [],
         session: nextSelection.session,
         tabKey: targetTabKey,
@@ -3438,11 +3499,11 @@ export function useAgentWorkspace({
     await sendPromptToSession({
       attachments,
       backendSessionID: created.backendSessionID,
+      commentReferences,
       displayText,
       permissionMode,
       preserveComposerState: input?.preserveComposerState,
       questionAnswer: input?.questionAnswer,
-      referenceLabels: commentReferences.map((reference) => reference.label),
       selectedSkillIDs: input?.selectedSkillIDs ?? [],
       session: created.session,
       tabKey: targetTabKey,

@@ -422,12 +422,26 @@ export interface UserTurn {
   id: string
   kind: "user"
   text: string
+  displayText?: string
+  attachments?: UserTurnAttachment[]
+  references?: UserTurnReference[]
   questionAnswer?: {
     questionID: string
     selectedOptions?: string[]
     freeformText?: string
   }
   timestamp: number
+}
+
+export interface UserTurnAttachment {
+  name: string
+  path?: string
+}
+
+export interface UserTurnReference {
+  id: string
+  label: string
+  title?: string
 }
 
 export type AssistantTraceItemKind =

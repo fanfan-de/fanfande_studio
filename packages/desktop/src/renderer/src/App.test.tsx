@@ -964,8 +964,149 @@ describe("App", () => {
     expect(sendInput.text).toContain("Check how these values flow through the summary.")
 
     await waitFor(() => {
-      expect(screen.queryByText("focus-files.tsx:L2-L3")).not.toBeInTheDocument()
+      expect(screen.queryByLabelText("Selected comment references")).not.toBeInTheDocument()
     })
+
+    const threadReferenceChip = screen.getByText("focus-files.tsx:L2-L3")
+    expect(threadReferenceChip.closest(".user-bubble-reference-chip")).not.toBeNull()
+    expect(screen.getByText("Check how these values flow through the summary.")).toBeInTheDocument()
+    expect(screen.queryByText("File feedback for src/focus-files.tsx (Lines 2-3)")).not.toBeInTheDocument()
+  })
+
+  it("keeps user reference chips after streamed history refresh replaces the conversation", async () => {
+    let streamListener:
+      | ((event: {
+          streamID: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+    let activeStreamID = ""
+    let historyPhase: "initial" | "after-send" = "initial"
+
+    const compiledReferencePrompt = [
+      "File feedback for src/focus-files.tsx (Lines 2-3)",
+      "",
+      "```tsx",
+      "2 | const nextValue = focusValue + 1",
+      "3 | export const summary = nextValue",
+      "```",
+      "",
+      "Comment:",
+      "Check how these values flow through the summary.",
+    ].join("\n")
+
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.searchWorkspaceFiles = vi.fn().mockResolvedValue([
+      {
+        path: WORKSPACE_FILE_PATH,
+        name: "focus-files.tsx",
+        extension: "tsx",
+      },
+    ])
+    window.desktop!.readWorkspaceFile = vi.fn().mockResolvedValue({
+      path: WORKSPACE_FILE_PATH,
+      name: "focus-files.tsx",
+      extension: "tsx",
+      kind: "text",
+      content: WORKSPACE_FILE_CONTENT,
+    })
+    window.desktop!.getSessionHistory = vi.fn().mockImplementation(async ({ sessionID }: { sessionID: string }) => {
+      if (sessionID !== "session-frontend-review" || historyPhase !== "after-send") return []
+
+      return [
+        {
+          info: {
+            id: "msg-user-history",
+            sessionID,
+            role: "user",
+            created: 10,
+          },
+          parts: [{ id: "part-user-history", type: "text", text: compiledReferencePrompt }],
+        },
+        {
+          info: {
+            id: "msg-assistant-history",
+            sessionID,
+            role: "assistant",
+            created: 11,
+            completed: 12,
+          },
+          parts: [{ id: "part-assistant-history", type: "text", text: "History refresh complete." }],
+        },
+      ]
+    })
+    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+      streamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(async (input: { streamID: string }) => {
+      activeStreamID = input.streamID
+      return {
+        streamID: input.streamID,
+      }
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }))
+    fireEvent.change(screen.getByLabelText("Search workspace files"), {
+      target: { value: "focus" },
+    })
+    fireEvent.click(await screen.findByRole("button", { name: /focus-files\.tsx/i }))
+    expect(await screen.findByText("const nextValue = focusValue + 1")).toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByTestId("workspace-file-line-gutter-2"), { button: 0 })
+    fireEvent.mouseOver(screen.getByTestId("workspace-file-line-gutter-3"))
+    fireEvent.mouseUp(screen.getByTestId("workspace-file-line-gutter-3"))
+
+    const commentBox = await screen.findByRole("textbox", { name: "File comment on lines 2-3" })
+    fireEvent.change(commentBox, {
+      target: { value: "Check how these values flow through the summary." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }))
+
+    fireEvent.click(getComposerSendButton())
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Selected comment references")).not.toBeInTheDocument()
+    })
+
+    const initialReferenceChip = await screen.findByText("focus-files.tsx:L2-L3")
+    expect(initialReferenceChip.closest(".user-bubble-reference-chip")).not.toBeNull()
+
+    await act(async () => {
+      historyPhase = "after-send"
+      streamListener?.({
+        streamID: activeStreamID,
+        event: "done",
+        data: {
+          sessionID: "session-frontend-review",
+          parts: [{ id: "part-assistant-history", type: "text", text: "History refresh complete." }],
+        },
+      })
+      await Promise.resolve()
+    })
+
+    const getSessionHistory = window.desktop!.getSessionHistory as ReturnType<typeof vi.fn>
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(getSessionHistory).mock.calls.some(
+          ([input]) => input?.sessionID === "session-frontend-review",
+        ),
+      ).toBe(true)
+    })
+
+    const referenceChipAfterRefresh = await screen.findByText("focus-files.tsx:L2-L3")
+    expect(referenceChipAfterRefresh.closest(".user-bubble-reference-chip")).not.toBeNull()
+    expect(screen.getByText("Check how these values flow through the summary.")).toBeInTheDocument()
+    expect(screen.getByText("History refresh complete.")).toBeInTheDocument()
+    expect(screen.queryByText("File feedback for src/focus-files.tsx (Lines 2-3)")).not.toBeInTheDocument()
   })
 
   it("resets file review state when the focused workspace changes", async () => {

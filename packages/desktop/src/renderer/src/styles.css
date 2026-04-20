@@ -4287,6 +4287,71 @@ textarea::placeholder {
   box-shadow: 0 14px 34px rgba(41, 79, 115, 0.06);
 }
 
+.user-bubble-content {
+  display: grid;
+  gap: 10px;
+}
+
+.user-bubble-text {
+  white-space: pre-wrap;
+}
+
+.thread-inline-link {
+  color: var(--seg-accent-strong);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
+
+.thread-inline-link:hover {
+  color: var(--seg-accent);
+}
+
+.thread-inline-link:focus-visible {
+  outline: 2px solid var(--seg-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.user-bubble-chip-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.user-bubble-chip {
+  min-height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #f5f8fb;
+  color: #314353;
+}
+
+.user-bubble-reference-chip {
+  border-color: rgba(111, 148, 187, 0.34);
+  background: #eef5fb;
+  color: #123a5a;
+}
+
+.user-bubble-chip svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.user-bubble-chip-label {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+}
+
 .assistant-turn {
   justify-items: stretch;
 }

@@ -3,6 +3,7 @@ import { sidebarActions } from "./constants"
 import { WorkspaceFilesPanel } from "./files/WorkspaceFilesPanel"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
 import { PreviewPanel } from "./preview/PreviewPanel"
+import { ThreadRichText } from "./thread-rich-text"
 import {
   ArchiveIcon,
   ArrowUpIcon,
@@ -65,6 +66,7 @@ import type {
   SessionSummary,
   SidebarActionKey,
   Turn,
+  UserTurn,
   WindowAction,
   WorkspaceFileReviewState,
   WorkspacePreviewState,
@@ -5251,6 +5253,58 @@ type QuestionAnswerHandler = (input: {
   freeformText?: string
 }) => void | Promise<void>
 
+function UserTurnBubble({ turn }: { turn: UserTurn }) {
+  const displayText = turn.displayText?.trim() || ""
+  const references = turn.references ?? []
+  const attachments = turn.attachments ?? []
+  const hasStructuredContent = Boolean(displayText) || references.length > 0 || attachments.length > 0
+
+  if (!hasStructuredContent) {
+    return (
+      <div className="user-bubble">
+        <ThreadRichText as="div" className="user-bubble-text" text={turn.text} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="user-bubble">
+      <div className="user-bubble-content">
+        {displayText ? <ThreadRichText as="div" className="user-bubble-text" text={displayText} /> : null}
+
+        {references.length > 0 ? (
+          <div className="user-bubble-chip-strip" aria-label="Sent references">
+            {references.map((reference) => (
+              <div key={reference.id} className="user-bubble-chip user-bubble-reference-chip">
+                <FileTextIcon />
+                <span className="user-bubble-chip-label" title={reference.title ?? reference.label}>
+                  {reference.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {attachments.length > 0 ? (
+          <div className="user-bubble-chip-strip" aria-label="Sent attachments">
+            {attachments.map((attachment, index) => (
+              <div
+                key={`${attachment.path ?? attachment.name}:${index}`}
+                className="user-bubble-chip user-bubble-attachment-chip"
+              >
+                <PaperclipIcon />
+                <span className="user-bubble-chip-label" title={attachment.path ?? attachment.name}>
+                  {attachment.name}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 const primaryPermissionDecisions: PermissionDecision[] = ["deny", "allow-once"]
 
 function formatPermissionRiskLabel(risk: PermissionRequest["prompt"]["risk"]) {
@@ -5594,8 +5648,8 @@ function TraceItemView({
   if (item.kind === "reasoning") {
     return (
       <article className={className} data-kind={item.kind}>
-        {item.text ? <p className="trace-item-text trace-item-plain-text">{item.text}</p> : null}
-        {item.detail ? <p className="trace-item-detail trace-item-plain-detail">{item.detail}</p> : null}
+        {item.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={item.text} /> : null}
+        {item.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={item.detail} /> : null}
         {renderDebugEntries()}
       </article>
     )
@@ -5667,7 +5721,7 @@ function TraceItemView({
         </header>
 
         <div className="ask-user-question-body">
-          <p className="ask-user-question-text">{prompt.question}</p>
+          <ThreadRichText className="ask-user-question-text" text={prompt.question} />
 
           {prompt.options.length > 0 ? (
             <div className="ask-user-question-options">
@@ -5701,9 +5755,7 @@ function TraceItemView({
                   ) : (
                     <div className="ask-user-question-option-label">{option.label}</div>
                   )}
-                  {option.description ? (
-                    <p className="ask-user-question-option-description">{option.description}</p>
-                  ) : null}
+                  {option.description ? <ThreadRichText className="ask-user-question-option-description" text={option.description} /> : null}
                 </div>
               ))}
             </div>
@@ -5815,8 +5867,8 @@ function TraceItemView({
                 </button>
                 {isInputExpanded ? (
                   <div id={inputDisclosureID} className="trace-item-subsection-body">
-                    {visibleToolInputText ? <p className="trace-item-text">{visibleToolInputText}</p> : null}
-                    {inputSectionDetail ? <p className="trace-item-detail">{inputSectionDetail}</p> : null}
+                    {visibleToolInputText ? <ThreadRichText className="trace-item-text" text={visibleToolInputText} /> : null}
+                    {inputSectionDetail ? <ThreadRichText className="trace-item-detail" text={inputSectionDetail} /> : null}
                   </div>
                 ) : null}
               </div>
@@ -5840,8 +5892,8 @@ function TraceItemView({
                 </button>
                 {isOutputExpanded ? (
                   <div id={outputDisclosureID} className="trace-item-subsection-body">
-                    {visibleToolOutputText ? <p className="trace-item-text">{visibleToolOutputText}</p> : null}
-                    {outputSectionDetail ? <p className="trace-item-detail">{outputSectionDetail}</p> : null}
+                    {visibleToolOutputText ? <ThreadRichText className="trace-item-text" text={visibleToolOutputText} /> : null}
+                    {outputSectionDetail ? <ThreadRichText className="trace-item-detail" text={outputSectionDetail} /> : null}
                   </div>
                 ) : null}
               </div>
@@ -5860,8 +5912,8 @@ function TraceItemView({
         {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
         {item.status ? <span className={`trace-item-status is-${item.status}`}>{item.status}</span> : null}
       </div>
-      {item.text ? <p className="trace-item-text">{item.text}</p> : null}
-      {item.detail ? <p className="trace-item-detail">{item.detail}</p> : null}
+      {item.text ? <ThreadRichText className="trace-item-text" text={item.text} /> : null}
+      {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
       {selectableFilePaths.length > 0 && onFileChangeSelect ? (
         <div className="trace-item-file-actions">
           {selectableFilePaths.map((filePath) => (
@@ -6269,7 +6321,7 @@ export function ThreadView({
                       <span>You</span>
                       <time>{formatTime(turn.timestamp)}</time>
                     </div>
-                    <div className="user-bubble">{turn.text}</div>
+                    <UserTurnBubble turn={turn} />
                   </article>
                 )
               }

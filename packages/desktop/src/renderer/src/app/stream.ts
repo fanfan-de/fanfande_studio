@@ -1186,14 +1186,18 @@ function resolveAssistantHistoryToolName(items: AssistantTraceItem[]) {
 function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
   const textParts = extractTextParts(message.parts)
   const attachmentNames = extractAttachmentNames(message.parts)
+  const displayText = textParts.join("\n\n").trim()
+  const attachments = attachmentNames.map((name) => ({ name }))
   const questionAnswer = extractQuestionAnswer(message.parts)
   return {
     id: message.info.id || createID("user"),
     kind: "user",
     text: buildUserTurnText({
-      text: textParts.join("\n\n"),
+      text: displayText,
       attachmentNames,
     }),
+    ...(displayText ? { displayText } : {}),
+    ...(attachments.length > 0 ? { attachments } : {}),
     ...(questionAnswer ? { questionAnswer } : {}),
     timestamp: readNumber(message.info.created) || Date.now(),
   } satisfies Turn

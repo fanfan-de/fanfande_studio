@@ -413,6 +413,7 @@ describe("stream trace reducer", () => {
     expect(turns[0]).toMatchObject({
       id: "msg-user-1",
       kind: "user",
+      displayText: "Reload this session",
       text: "Reload this session",
       timestamp: 10,
     })
@@ -501,6 +502,10 @@ describe("stream trace reducer", () => {
       text: "Sent 2 attachments: hero.png, brief.pdf",
       timestamp: 15,
     })
+    expect(turns[0]?.kind === "user" ? turns[0].attachments : null).toEqual([
+      { name: "hero.png" },
+      { name: "brief.pdf" },
+    ])
   })
 
   it("includes attachment names when optimistic user text is built locally", () => {
