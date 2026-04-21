@@ -2845,6 +2845,12 @@ export function PaneTabBar({
               onDragStart={(event) => handleTabDragStart(event, tab.key)}
               onPointerDown={(event) => handleTabPointerDown(event, tab.key)}
             >
+              {isActive ? (
+                <>
+                  <span className="session-tab-active-curve session-tab-active-curve-start" aria-hidden="true" />
+                  <span className="session-tab-active-curve session-tab-active-curve-end" aria-hidden="true" />
+                </>
+              ) : null}
               <button
                 className="session-tab-trigger"
                 aria-label={switchLabel}

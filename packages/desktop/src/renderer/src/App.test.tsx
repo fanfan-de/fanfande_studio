@@ -4930,6 +4930,15 @@ describe("App", () => {
     expect(tabBar).toHaveClass("window-drag-region")
   })
 
+  it("renders decorative curves on the active pane tab only", () => {
+    render(<App />)
+
+    const tabBar = screen.getByRole("navigation", { name: "Pane tabs" })
+
+    expect(tabBar.querySelectorAll(".session-tab.is-active .session-tab-active-curve")).toHaveLength(2)
+    expect(tabBar.querySelectorAll(".session-tab:not(.is-active) .session-tab-active-curve")).toHaveLength(0)
+  })
+
   it("falls back to the create session tab when the last session tab closes", async () => {
     render(<App />)
 
@@ -8299,6 +8308,9 @@ describe("App", () => {
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-top-menu svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.session-tab-close svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.pane-tab-bar\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(
+      /\.pane-tab-bar::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--pane-tab-border\);/s,
+    )
     expect(styles).toMatch(/\.pane-tab-bar-leading,\s*\.pane-tab-bar-trailing\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar\.window-drag-region\s+\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*drag;/s)
@@ -8337,6 +8349,15 @@ describe("App", () => {
     )
     expect(styles).toMatch(
       /\.pane-tab-bar\s+\.session-tab\.is-active::before\s*\{[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--pane-tab-active-bg\);/s,
+    )
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.session-tab-active-curve\s*\{[^}]*width:\s*calc\(var\(--pane-tab-curve\) \* 2\);[^}]*height:\s*calc\(var\(--pane-tab-curve\) \* 2\);[^}]*box-shadow:\s*inset 0 0 0 1px var\(--pane-tab-border\),\s*0 0 0 calc\(var\(--pane-tab-curve\) \* 4\) var\(--pane-tab-active-bg\);/s,
+    )
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.session-tab-active-curve-start\s*\{[^}]*left:\s*calc\(var\(--pane-tab-curve\) \* -2\);[^}]*clip-path:\s*inset\(50% calc\(var\(--pane-tab-curve\) \* -1\) 0 50%\);/s,
+    )
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.session-tab-active-curve-end\s*\{[^}]*right:\s*calc\(var\(--pane-tab-curve\) \* -2\);[^}]*clip-path:\s*inset\(50% 50% 0 calc\(var\(--pane-tab-curve\) \* -1\)\);/s,
     )
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab:hover\s*\{[^}]*background:\s*var\(--canvas-region-tab-hover\);[^}]*border-color:\s*transparent;/s)
     expect(styles).toMatch(

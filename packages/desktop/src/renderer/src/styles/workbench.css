@@ -424,12 +424,14 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .pane-tab-bar {
   --pane-tab-border: var(--seg-border);
+  --pane-tab-curve: 6px;
   --pane-tab-divider: rgba(32, 41, 54, 0.08);
   --pane-tab-radius: 8px;
   --pane-tab-active-bg: var(--seg-panel);
   --pane-tab-inactive-bg: color-mix(in srgb, var(--seg-shell) 82%, #eef2f7 18%);
   --pane-tab-hover-bg: color-mix(in srgb, var(--seg-shell) 62%, #ffffff 38%);
   min-width: 0;
+  position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -439,6 +441,19 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   background: color-mix(in srgb, var(--seg-shell) 92%, #ffffff 8%);
   -webkit-app-region: no-drag;
   user-select: none;
+  isolation: isolate;
+}
+
+.pane-tab-bar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--pane-tab-border);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .pane-tab-bar.has-window-controls-clearance {
@@ -447,6 +462,8 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .pane-tab-bar-leading,
 .pane-tab-bar-trailing {
+  position: relative;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -457,6 +474,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .pane-tab-bar-tabs {
   min-width: 0;
   flex: 1 1 auto;
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 0;
@@ -475,6 +493,8 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .pane-tab-bar-actions {
+  position: relative;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -547,6 +567,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   box-shadow: none;
   color: var(--seg-text-2);
   gap: 6px;
+  overflow: visible;
   cursor: default;
   transition:
     background 140ms ease,
@@ -611,6 +632,28 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   bottom: -1px;
   height: 2px;
   background: var(--pane-tab-active-bg);
+}
+
+.pane-tab-bar .session-tab-active-curve {
+  position: absolute;
+  bottom: 0;
+  width: calc(var(--pane-tab-curve) * 2);
+  height: calc(var(--pane-tab-curve) * 2);
+  border-radius: 100%;
+  pointer-events: none;
+  box-shadow:
+    inset 0 0 0 1px var(--pane-tab-border),
+    0 0 0 calc(var(--pane-tab-curve) * 4) var(--pane-tab-active-bg);
+}
+
+.pane-tab-bar .session-tab-active-curve-start {
+  left: calc(var(--pane-tab-curve) * -2);
+  clip-path: inset(50% calc(var(--pane-tab-curve) * -1) 0 50%);
+}
+
+.pane-tab-bar .session-tab-active-curve-end {
+  right: calc(var(--pane-tab-curve) * -2);
+  clip-path: inset(50% 50% 0 calc(var(--pane-tab-curve) * -1));
 }
 
 .pane-tab-bar .session-tab.is-active .session-tab-trigger {
