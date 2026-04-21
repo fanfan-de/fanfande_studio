@@ -24,7 +24,7 @@
 
   --focus-outline-width: 2px;
   --focus-outline-offset: 2px;
-  --focus-outline-color: var(--color-accent);
+  --focus-outline-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
 
   --radius-control: 4px;
   --radius-chip: 6px;

@@ -90,9 +90,9 @@
 }
 
 .settings-page-close-button:focus-visible {
-  outline: 2px solid rgba(15, 103, 170, 0.28);
-  outline-offset: 2px;
-  color: #0f67aa;
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+  color: var(--color-accent-strong);
 }
 
 .settings-page-header h2,
@@ -1000,6 +1000,7 @@
   width: min(100%, 560px);
   max-height: min(100%, 520px);
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: 22px;
   border-radius: var(--seg-radius-sm);
   display: grid;

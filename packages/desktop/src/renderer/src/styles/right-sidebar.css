@@ -79,8 +79,8 @@
 
 .left-sidebar-top-menu .sidebar-toggle-button.is-top-menu:focus-visible,
 .right-sidebar-top-menu .sidebar-toggle-button.is-top-menu:focus-visible {
-  outline: 2px solid rgba(22, 119, 200, 0.18);
-  outline-offset: 2px;
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
 }
 
 .right-sidebar-section-header,
@@ -246,6 +246,7 @@
 .preview-panel-notes {
   max-height: min(34vh, 300px);
   overflow: auto;
+  scrollbar-gutter: stable;
   padding-right: 2px;
 }
 
@@ -610,6 +611,7 @@
   border-top: 1px solid var(--seg-border);
   background: #ffffff;
   overflow: auto;
+  scrollbar-gutter: stable;
   max-height: 320px;
 }
 
@@ -747,6 +749,7 @@
   display: grid;
   gap: 8px;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .workspace-files-result-row {

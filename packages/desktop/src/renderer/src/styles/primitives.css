@@ -33,8 +33,8 @@
 }
 
 .top-menu-view-button:focus-visible {
-  outline: 2px solid rgba(22, 119, 200, 0.18);
-  outline-offset: 2px;
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
 }
 
 .top-menu-view-button.is-active {
@@ -103,6 +103,7 @@
 .workspace-list {
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   gap: 12px;

@@ -67,8 +67,8 @@
 }
 
 .sidebar-toggle-button.is-rail:focus-visible {
-  outline: 2px solid rgba(22, 119, 200, 0.18);
-  outline-offset: 2px;
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
 }
 
 .sidebar {
@@ -200,6 +200,7 @@
 .sidebar-projects {
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -432,6 +433,7 @@
   display: grid;
   gap: 4px;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding-right: 4px;
 }
 
@@ -617,8 +619,8 @@
 }
 
 .sidebar-toggle-button.is-top-menu:focus-visible {
-  outline: 2px solid rgba(22, 119, 200, 0.18);
-  outline-offset: 2px;
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
 }
 
 /* Keep workspace tree hover/selection aligned with the simpler skills tree affordance. */
