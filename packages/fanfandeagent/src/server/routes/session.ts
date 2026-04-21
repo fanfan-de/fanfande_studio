@@ -21,6 +21,10 @@ const CreateSessionBody = z.object({
   directory: z.string().min(1),
 })
 
+const CreateSideChatBody = z.object({
+  anchorMessageID: z.string().min(1),
+})
+
 const StreamSessionAttachmentBody = z.object({
   path: z.string().min(1),
   name: z.string().optional(),
@@ -248,8 +252,31 @@ function safeReadArchivedSession(sessionID: string): Session.ArchivedSessionReco
   }
 }
 
+function mapSessionSummary(session: Session.SessionInfo) {
+  const normalized = Session.normalizeSessionInfo(session)
+  return {
+    ...normalized,
+    origin: Session.getSessionOrigin(normalized.id),
+  }
+}
+
+function mapSideChatLink(link: Session.SideChatLink) {
+  const activeSession = safeReadSession(link.sessionID)
+  const archivedSession = safeReadArchivedSession(link.sessionID)
+  return {
+    ...link,
+    session: activeSession
+      ? mapSessionSummary(activeSession)
+      : archivedSession
+        ? mapSessionSummary(Session.normalizeSessionInfo(archivedSession.snapshot.session))
+        : undefined,
+    archived: !activeSession && Boolean(archivedSession),
+  }
+}
+
 function mapArchivedSessionSummary(record: Session.ArchivedSessionRecord) {
   const project = Project.get(record.projectID)
+  const normalized = Session.normalizeSessionInfo(record.snapshot.session)
 
   return {
     id: record.sessionID,
@@ -263,6 +290,9 @@ function mapArchivedSessionSummary(record: Session.ArchivedSessionRecord) {
     archivedAt: record.archivedAt,
     messageCount: record.messageCount,
     eventCount: record.eventCount,
+    kind: normalized.kind,
+    policy: normalized.policy,
+    origin: Session.getSessionOrigin(record.sessionID),
   }
 }
 
@@ -611,7 +641,7 @@ export function SessionRoutes() {
     return c.json(
       {
         success: true,
-        data: session,
+        data: mapSessionSummary(session),
         requestId: c.get("requestId"),
       },
       201,
@@ -685,7 +715,7 @@ export function SessionRoutes() {
 
     return c.json({
       success: true,
-      data: restored,
+      data: mapSessionSummary(restored),
       requestId: c.get("requestId"),
     })
   })
@@ -706,6 +736,97 @@ export function SessionRoutes() {
     })
   })
 
+  app.post("/:id/side-chats", async (c) => {
+    const parentSessionID = c.req.param("id")
+    const parentSession = safeReadSession(parentSessionID)
+    if (!parentSession) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${parentSessionID}' not found`)
+    }
+
+    if (Session.isSideChatSession(parentSession)) {
+      throw new ApiError(409, "INVALID_PARENT_SESSION", "Side chats can only be created from main sessions")
+    }
+
+    const payload = CreateSideChatBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'anchorMessageID'")
+    }
+
+    try {
+      const sideChat = await Session.createSideChat({
+        parentSessionID,
+        anchorMessageID: payload.data.anchorMessageID,
+      })
+
+      return c.json(
+        {
+          success: true,
+          data: mapSessionSummary(sideChat),
+          requestId: c.get("requestId"),
+        },
+        201,
+      )
+    } catch (error) {
+      throw new ApiError(
+        400,
+        "SIDE_CHAT_CREATE_FAILED",
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+  })
+
+  app.get("/:id/side-chats", (c) => {
+    const parentSessionID = c.req.param("id")
+    const parentSession = safeReadSession(parentSessionID) ?? safeReadArchivedSession(parentSessionID)?.snapshot.session
+    if (!parentSession) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${parentSessionID}' not found`)
+    }
+
+    if (Session.isSideChatSession(parentSession)) {
+      throw new ApiError(409, "INVALID_PARENT_SESSION", "Side chats can only be listed from main sessions")
+    }
+
+    const anchorMessageID = c.req.query("anchorMessageID")?.trim() || undefined
+
+    return c.json({
+      success: true,
+      data: Session.listSideChats(parentSessionID, anchorMessageID).map(mapSideChatLink),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/:id/side-chat-link", (c) => {
+    const sessionID = c.req.param("id")
+    const link = Session.getSideChatLink(sessionID)
+    if (!link) {
+      throw new ApiError(404, "SIDE_CHAT_NOT_FOUND", `Side chat '${sessionID}' not found`)
+    }
+
+    return c.json({
+      success: true,
+      data: mapSideChatLink(link),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/:id/side-chat-context", (c) => {
+    const sessionID = c.req.param("id")
+    const context = Session.getSideChatContext(sessionID)
+    if (!context) {
+      throw new ApiError(404, "SIDE_CHAT_NOT_FOUND", `Side chat '${sessionID}' not found`)
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        session: mapSessionSummary(context.session),
+        link: mapSideChatLink(context.link),
+        messages: context.messages,
+      },
+      requestId: c.get("requestId"),
+    })
+  })
+
   app.get("/:id", (c) => {
     const id = c.req.param("id")
     const session = safeReadSession(id)
@@ -715,7 +836,7 @@ export function SessionRoutes() {
 
     return c.json({
       success: true,
-      data: session,
+      data: mapSessionSummary(session),
       requestId: c.get("requestId"),
     })
   })

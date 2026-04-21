@@ -65,9 +65,13 @@ export async function preparePromptContext(input: {
   system: string[]
   messages: Message.WithParts[]
   generateSummary?: SummaryGenerator
+  disableCompaction?: boolean
 }): Promise<PreparedPromptContext> {
-  const autoCompact = await isAutoCompactionEnabled()
+  const autoCompact = input.disableCompaction ? false : await isAutoCompactionEnabled()
   let memory = SessionMemory.readSessionMemory(input.sessionID) ?? null
+  if (input.disableCompaction) {
+    memory = null
+  }
   const summaryGenerator = input.generateSummary ?? generateCompactionSummary
 
   for (let attempt = 0; autoCompact && attempt < MAX_COMPACTION_ATTEMPTS; attempt += 1) {

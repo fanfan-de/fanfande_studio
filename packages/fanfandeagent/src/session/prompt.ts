@@ -173,6 +173,53 @@ function normalizePromptErrorMessage(error: unknown) {
     return String(error)
 }
 
+function effectivePermissionMode(
+    session: Session.SessionInfo,
+    permissionMode: PromptInput["permissionMode"],
+) {
+    if (Session.normalizeSessionInfo(session).policy?.ignoreFullAccess) {
+        return "default" as const
+    }
+
+    return permissionMode ?? "default"
+}
+
+function buildSideChatSystemPrompt(link: Session.SideChatLink) {
+    const lines = [
+        "<side_chat_context>",
+        "This session is a side chat anchored to a single assistant reply from another session.",
+        "Use only the snapshot below as the parent-session context. Do not assume any other main-session history exists.",
+        "This side chat is strictly read-only. Do not attempt edits, command execution, git writes, or any other side effects.",
+    ]
+
+    if (link.snapshot.userText?.trim()) {
+        lines.push("", "Anchoring user question:", link.snapshot.userText.trim())
+    }
+
+    lines.push("", "Anchoring assistant reply:", link.snapshot.assistantText.trim())
+
+    if ((link.snapshot.sources?.length ?? 0) > 0) {
+        lines.push("", "Anchoring sources:")
+        for (const source of link.snapshot.sources ?? []) {
+            lines.push(`- ${source.kind}: ${source.title}${source.url ? ` (${source.url})` : ""}`)
+        }
+    }
+
+    if ((link.snapshot.toolSummaries?.length ?? 0) > 0) {
+        lines.push("", "Anchoring tool outcomes:")
+        for (const summary of link.snapshot.toolSummaries ?? []) {
+            lines.push(`- ${summary.tool} [${summary.status}]: ${summary.summary}`)
+        }
+    }
+
+    if ((link.snapshot.filePaths?.length ?? 0) > 0) {
+        lines.push("", "Anchoring files:", ...link.snapshot.filePaths.map((filePath) => `- ${filePath}`))
+    }
+
+    lines.push("</side_chat_context>")
+    return lines.join("\n")
+}
+
 function summarizeRuntimeTool(part: Message.ToolPart) {
     return {
         callID: part.callID,
@@ -273,6 +320,9 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
     if (!session) {
         throw new Error(`Session '${sessionID}' was not found.`);
     }
+    const sideChatLink = Session.isSideChatSession(session)
+        ? Session.getSideChatLink(sessionID)
+        : null
 
     let currentAssistant: Message.Assistant | undefined;
     let iteration = 0;
@@ -376,7 +426,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 agent,
                 sessionID,
                 messageID: assistantMessage.id,
-                permissionMode: lastUser.permissionMode ?? "default",
+                permissionMode: effectivePermissionMode(activeSession, lastUser.permissionMode),
                 abort,
             });
 
@@ -387,6 +437,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     agent,
                     session: activeSession,
                 }),
+                ...(sideChatLink ? [buildSideChatSystemPrompt(sideChatLink)] : []),
                 ...await SystemPrompt.environment(model),
                 ...await SystemPrompt.skills(sessionID, lastUser.skills ?? []),
                 ...(lastUser.system ? [lastUser.system] : []),
@@ -397,6 +448,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 model,
                 system,
                 messages,
+                disableCompaction: Session.isSideChatSession(activeSession),
             })
 
             const processor = Processor.create({
@@ -517,6 +569,7 @@ export const prompt = fn(PromptInput, async (input) => {
     })
     const nextInput: PromptInput = {
         ...input,
+        permissionMode: effectivePermissionMode(session, input.permissionMode),
         skills: await Skill.resolveTurnSkillIDs({
             projectID: session.projectID,
             projectRoot: Instance.worktree,

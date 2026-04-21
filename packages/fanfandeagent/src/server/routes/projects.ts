@@ -146,6 +146,14 @@ function parseModelReference(value: string) {
   }
 }
 
+function mapSessionSummary(session: Session.SessionInfo) {
+  const normalized = Session.normalizeSessionInfo(session)
+  return {
+    ...normalized,
+    origin: Session.getSessionOrigin(normalized.id),
+  }
+}
+
 export function ProjectRoutes() {
   const app = new Hono<AppEnv>()
 
@@ -182,7 +190,7 @@ export function ProjectRoutes() {
 
     return c.json({
       success: true,
-      data: Session.listByProject(id),
+      data: Session.listByProject(id).map(mapSessionSummary),
       requestId: c.get("requestId"),
     })
   })
@@ -214,7 +222,7 @@ export function ProjectRoutes() {
     return c.json(
       {
         success: true,
-        data: session,
+        data: mapSessionSummary(session),
         requestId: c.get("requestId"),
       },
       201,

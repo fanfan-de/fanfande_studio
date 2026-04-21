@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs wc *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm --version)",
+      "Bash(echo \"npm: $\\(npm --version 2>/dev/null\\)\")",
+      "Read(//c/Users/19128/AppData/Local/pnpm/**)",
+      "Read(//c/Users/19128/AppData/Roaming/npm/**)",
+      "Bash(where.exe pnpm *)",
+      "Bash(corepack pnpm *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

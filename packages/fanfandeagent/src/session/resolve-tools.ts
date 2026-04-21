@@ -1,5 +1,6 @@
 import { tool, type ToolSet } from "ai"
 import * as Agent from "#agent/agent.ts"
+import * as Session from "#session/session.ts"
 import { Instance } from "#project/instance.ts"
 import * as Permission from "#permission/permission.ts"
 import * as Tool from "#tool/tool.ts"
@@ -42,10 +43,15 @@ function isToolAllowedForAgent(tool: Tool.ToolInfo, agent: Agent.AgentInfo) {
 export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
   // Load registered tools and build the ToolSet expected by the AI SDK.
   const registry = await ToolRegistry.tools()
+  const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null
+  const sideChatReadOnly = Session.isSideChatSession(session)
   const tools: ToolSet = {}
 
   for (const item of registry) {
     if (!isToolAllowedForAgent(item, input.agent)) {
+      continue
+    }
+    if (sideChatReadOnly && item.capabilities?.readOnly !== true) {
       continue
     }
 

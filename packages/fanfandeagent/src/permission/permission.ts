@@ -623,6 +623,7 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
   const cwd = input.cwd ?? Instance.directory
   const worktree = input.worktree ?? Instance.worktree
   const permissionMode = input.permissionMode ?? "default"
+  const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null
   const derivedPaths = extractPaths(input.input, cwd, worktree)
   const derived = {
     paths: derivedPaths.relativePaths,
@@ -630,15 +631,26 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
     workdir: cwd,
     body: body || undefined,
   }
-  const workflow = Session.normalizeWorkflowState(
-    (Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null)?.workflow,
-  )
+  const workflow = Session.normalizeWorkflowState(session?.workflow)
+  const risk = deriveRisk(input, derived.paths, command)
+
+  if (Session.isSideChatSession(session) && input.tool.readOnly !== true) {
+    const result: EvaluationResult = {
+      action: "deny",
+      reason: "Side chat sessions are read-only and block tools with side effects, even in full access mode.",
+      risk: risk === "low" ? "medium" : risk,
+      rememberable: false,
+      derived,
+    }
+    await audit(input, result)
+    return result
+  }
 
   if (isPermissionDisabled()) {
     const result: EvaluationResult = {
       action: "allow",
       reason: "Permission checks are disabled by FanFande_PERMISSION.",
-      risk: deriveRisk(input, derived.paths, command),
+      risk,
       rememberable: false,
       derived,
     }
@@ -707,7 +719,6 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
     return result
   }
 
-  const risk = deriveRisk(input, derived.paths, command)
   if (workflow.mode === "planning") {
     let result: EvaluationResult
 
