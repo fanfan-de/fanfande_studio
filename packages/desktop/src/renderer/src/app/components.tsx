@@ -2345,7 +2345,7 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
           <div className="git-quick-menu-options" role="group" aria-label="Git actions">
             <button
               type="button"
-              className={activeForm === "commit" ? "composer-menu-option git-quick-menu-option is-selected" : "composer-menu-option git-quick-menu-option"}
+              className={activeForm === "commit" ? "composer-menu-option git-quick-menu-option canvas-top-menu-segmented-option is-selected" : "composer-menu-option git-quick-menu-option canvas-top-menu-segmented-option"}
               disabled={!canOpenCommitForm || isBusy}
               title={commitRowTitle}
               onClick={() => {
@@ -2363,7 +2363,7 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
 
             <button
               type="button"
-              className="composer-menu-option git-quick-menu-option"
+              className="composer-menu-option git-quick-menu-option canvas-top-menu-segmented-option"
               disabled={!capabilities.canPush.enabled || isBusy}
               title={capabilities.canPush.enabled ? "Push the current branch." : capabilities.canPush.reason}
               onClick={() => {
@@ -2379,7 +2379,7 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
 
             <button
               type="button"
-              className="composer-menu-option git-quick-menu-option"
+              className="composer-menu-option git-quick-menu-option canvas-top-menu-segmented-option"
               disabled={!capabilities.canCreatePullRequest.enabled || isBusy}
               title={capabilities.canCreatePullRequest.enabled ? "Create a pull request for the current branch." : capabilities.canCreatePullRequest.reason}
               onClick={() => {
@@ -2399,7 +2399,7 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
 
             <button
               type="button"
-              className={activeForm === "branch" ? "composer-menu-option git-quick-menu-option is-selected" : "composer-menu-option git-quick-menu-option"}
+              className={activeForm === "branch" ? "composer-menu-option git-quick-menu-option canvas-top-menu-segmented-option is-selected" : "composer-menu-option git-quick-menu-option canvas-top-menu-segmented-option"}
               disabled={!capabilities.canCreateBranch.enabled || isBusy}
               title={capabilities.canCreateBranch.enabled ? "Create and switch to a new branch." : capabilities.canCreateBranch.reason}
               onClick={() => {
@@ -3074,7 +3074,7 @@ function ProjectMcpMenuButton({
         <div
           ref={menuRef}
           id="canvas-top-menu-mcp-menu"
-          className="canvas-top-menu-selector-panel"
+          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel"
           role="dialog"
           aria-label="Project MCP server selection"
         >
@@ -3085,7 +3085,7 @@ function ProjectMcpMenuButton({
               return (
                 <button
                   key={option.value}
-                  className={isSelected ? "composer-menu-option is-selected" : "composer-menu-option"}
+                  className={isSelected ? "composer-menu-option canvas-top-menu-segmented-option is-selected" : "composer-menu-option canvas-top-menu-segmented-option"}
                   onClick={() => void onMcpServerToggle(option.value)}
                   type="button"
                 >
@@ -3167,7 +3167,7 @@ function ProjectSkillsMenuButton({
         <div
           ref={menuRef}
           id="canvas-top-menu-skill-menu"
-          className="canvas-top-menu-selector-panel"
+          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel"
           role="dialog"
           aria-label="Project skill selection"
         >
@@ -3178,7 +3178,7 @@ function ProjectSkillsMenuButton({
               return (
                 <button
                   key={option.value}
-                  className={isSelected ? "composer-menu-option is-selected" : "composer-menu-option"}
+                  className={isSelected ? "composer-menu-option canvas-top-menu-segmented-option is-selected" : "composer-menu-option canvas-top-menu-segmented-option"}
                   onClick={() => onSkillToggle(option.value)}
                   type="button"
                 >
