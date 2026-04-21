@@ -519,6 +519,126 @@
   gap: 2px;
 }
 
+.external-editor-menu-option {
+  min-height: 34px;
+  padding: 0 12px;
+  justify-content: flex-start;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0 !important;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.external-editor-menu-option-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.external-editor-menu-option .composer-menu-option-copy {
+  display: block;
+}
+
+.external-editor-menu-option-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.external-editor-menu-option-icon-image,
+.external-editor-menu-option-icon-fallback {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+
+.external-editor-menu-option-icon-image {
+  object-fit: contain;
+}
+
+.external-editor-menu-option-icon-fallback {
+  background: #eef3f8;
+  color: #35506a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.external-editor-menu-option-icon-fallback[data-editor-kind="vscode"],
+.external-editor-toolbar-icon-fallback[data-editor-kind="vscode"] {
+  background: #e8f3ff;
+  color: #1d70f5;
+}
+
+.external-editor-menu-option-icon-fallback[data-editor-kind="visualstudio"],
+.external-editor-toolbar-icon-fallback[data-editor-kind="visualstudio"] {
+  background: #f1e9ff;
+  color: #6d3ed1;
+}
+
+.external-editor-menu-option-icon-fallback[data-editor-kind="cursor"],
+.external-editor-toolbar-icon-fallback[data-editor-kind="cursor"] {
+  background: #eef1f4;
+  color: #1b2430;
+}
+
+.external-editor-menu-option-icon-fallback[data-editor-kind="windsurf"],
+.external-editor-toolbar-icon-fallback[data-editor-kind="windsurf"] {
+  background: #e8f7f5;
+  color: #12746a;
+}
+
+.external-editor-menu-option-icon-fallback[data-editor-kind="githubDesktop"],
+.external-editor-toolbar-icon-fallback[data-editor-kind="githubDesktop"] {
+  background: #f4ecff;
+  color: #7f4cc9;
+}
+
+.external-editor-menu-option-icon-fallback[data-editor-kind="explorer"],
+.external-editor-toolbar-icon-fallback[data-editor-kind="explorer"] {
+  background: #fff3da;
+  color: #9f6a00;
+}
+
+.external-editor-menu-option-icon-fallback[data-editor-kind="terminal"],
+.external-editor-toolbar-icon-fallback[data-editor-kind="terminal"] {
+  background: #eaedf1;
+  color: #2c3848;
+}
+
+.external-editor-menu-option-icon-fallback[data-editor-kind="wsl"],
+.external-editor-toolbar-icon-fallback[data-editor-kind="wsl"] {
+  background: #e8f4ff;
+  color: #2263b5;
+}
+
+.external-editor-menu-option .composer-menu-option-copy strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.external-editor-menu-panel {
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 64px));
+  padding: 10px 6px;
+  gap: 2px;
+}
+
 .composer-menu-option-copy strong {
   color: currentColor;
   font-size: 13px;
@@ -566,6 +686,15 @@
   background: var(--seg-panel);
   border-color: var(--seg-border-strong);
   color: var(--seg-text-1);
+}
+
+.external-editor-menu-panel .external-editor-menu-option:hover,
+.external-editor-menu-panel .external-editor-menu-option:focus-visible,
+.external-editor-menu-panel .external-editor-menu-option.is-selected {
+  background: #e5ebf3;
+  border-color: transparent;
+  color: #1d2a35;
+  box-shadow: none;
 }
 
 .composer-menu-panel,

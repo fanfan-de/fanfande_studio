@@ -618,6 +618,29 @@ describe("App", () => {
       onAgentSessionStreamEvent: vi.fn(() => vi.fn()),
       showMenu: vi.fn().mockResolvedValue(undefined),
       showExternalEditorMenu: vi.fn().mockResolvedValue(undefined),
+      listExternalEditorsForTarget: vi.fn().mockResolvedValue([
+        {
+          id: "vscode",
+          label: "VS Code",
+          executablePath: "C:\\Users\\demo\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd",
+          iconDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8l7kQAAAAASUVORK5CYII=",
+        },
+        {
+          id: "explorer",
+          label: "File Explorer",
+          executablePath: "C:\\Windows\\explorer.exe",
+          iconDataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO8l7kQAAAAASUVORK5CYII=",
+        },
+      ]),
+      openInExternalEditor: vi.fn().mockResolvedValue({
+        ok: true,
+        editor: {
+          id: "vscode",
+          label: "VS Code",
+          executablePath: "C:\\Users\\demo\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code.cmd",
+        },
+        targetPath: "C:\\Projects\\Project 2\\app",
+      }),
       openExternalUrl: vi.fn().mockResolvedValue({
         ok: true,
         url: "http://localhost:3000/",
@@ -1364,19 +1387,48 @@ describe("App", () => {
     expect(screen.getAllByText("Approved plan").length).toBeGreaterThan(0)
   })
 
-  it("opens the external editor menu from the session canvas top menu", async () => {
+  it("opens the external editor selector from the session canvas top menu", async () => {
     render(<App />)
     const topMenu = screen.getByLabelText("Session canvas top menu")
 
-    fireEvent.click(within(topMenu).getByRole("button", { name: "Editor" }))
+    await waitFor(() => {
+      expect(window.desktop!.listExternalEditorsForTarget).toHaveBeenCalledWith({
+        targetPath: "C:\\Projects\\Project 2\\app",
+      })
+    })
+
+    fireEvent.click(within(topMenu).getByRole("button", { name: "Choose editor for current project" }))
+
+    const editorMenu = await screen.findByRole("dialog", { name: "Open current project" })
+    expect(editorMenu.querySelector(".external-editor-menu-option-icon-image")).not.toBeNull()
+    fireEvent.click(within(editorMenu).getByRole("button", { name: /VS Code/i }))
 
     await waitFor(() => {
-      expect(window.desktop!.showExternalEditorMenu).toHaveBeenCalledWith({
+      expect(window.desktop!.openInExternalEditor).toHaveBeenCalledWith({
         targetPath: "C:\\Projects\\Project 2\\app",
-        anchor: expect.objectContaining({
-          x: expect.any(Number),
-          y: expect.any(Number),
-        }),
+        editorID: "vscode",
+      })
+    })
+    expect(window.localStorage.getItem("desktop.externalEditor.lastUsed.v1")).toBe("vscode")
+  })
+
+  it("opens the remembered external editor from the primary split button", async () => {
+    window.localStorage.setItem("desktop.externalEditor.lastUsed.v1", "explorer")
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.listExternalEditorsForTarget).toHaveBeenCalledWith({
+        targetPath: "C:\\Projects\\Project 2\\app",
+      })
+    })
+
+    const topMenu = screen.getByLabelText("Session canvas top menu")
+    fireEvent.click(await within(topMenu).findByRole("button", { name: "Open current project in File Explorer" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.openInExternalEditor).toHaveBeenCalledWith({
+        targetPath: "C:\\Projects\\Project 2\\app",
+        editorID: "explorer",
       })
     })
   })

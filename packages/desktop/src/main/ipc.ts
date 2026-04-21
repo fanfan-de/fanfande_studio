@@ -1,6 +1,6 @@
-import { BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions, type NativeImage } from "electron"
 import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
-import { listAvailableExternalEditors, openInExternalEditor } from "./external-editors"
+import { filterAvailableExternalEditorsForTarget, listAvailableExternalEditors, openInExternalEditor } from "./external-editors"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
 import {
   checkoutGitBranch,
@@ -123,6 +123,67 @@ function sessionStreamSubscriptionKey(webContentsID: number, sessionID: string) 
 export function registerIpcHandlers(menus: ApplicationMenus) {
   const ptyProxyManager = new PtyProxyManager()
   const workspaceWatchManager = new WorkspaceWatchManager()
+  const externalEditorMenuResolvedIconCache = new Map<string, NativeImage | undefined>()
+  const externalEditorMenuIconLoadCache = new Map<string, Promise<NativeImage | undefined>>()
+  let cachedAvailableExternalEditors: ReturnType<typeof listAvailableExternalEditors> | null = null
+
+  function getCachedAvailableExternalEditors() {
+    if (!cachedAvailableExternalEditors) {
+      cachedAvailableExternalEditors = listAvailableExternalEditors()
+    }
+
+    return cachedAvailableExternalEditors
+  }
+
+  function normalizeExternalEditorIconCacheKey(iconPath: string) {
+    const cacheKey = iconPath.trim().toLowerCase()
+    return cacheKey || null
+  }
+
+  function loadExternalEditorMenuIcon(iconPath: string) {
+    const cacheKey = normalizeExternalEditorIconCacheKey(iconPath)
+    if (!cacheKey) return Promise.resolve(undefined)
+
+    if (externalEditorMenuResolvedIconCache.has(cacheKey)) {
+      return Promise.resolve(externalEditorMenuResolvedIconCache.get(cacheKey))
+    }
+
+    const cached = externalEditorMenuIconLoadCache.get(cacheKey)
+    if (cached) return cached
+
+    const nextIconLoad = app
+      .getFileIcon(iconPath)
+      .then((icon) => {
+        const resolvedIcon = icon.isEmpty() ? undefined : icon
+        externalEditorMenuResolvedIconCache.set(cacheKey, resolvedIcon)
+        return resolvedIcon
+      })
+      .catch(() => {
+        externalEditorMenuResolvedIconCache.set(cacheKey, undefined)
+        return undefined
+      })
+      .finally(() => {
+        externalEditorMenuIconLoadCache.delete(cacheKey)
+      })
+    externalEditorMenuIconLoadCache.set(cacheKey, nextIconLoad)
+    return nextIconLoad
+  }
+
+  function primeExternalEditorMenuIcon(iconPath: string) {
+    void loadExternalEditorMenuIcon(iconPath)
+  }
+
+  function peekExternalEditorMenuIcon(iconPath: string) {
+    const cacheKey = normalizeExternalEditorIconCacheKey(iconPath)
+    if (!cacheKey) return undefined
+
+    return externalEditorMenuResolvedIconCache.get(cacheKey)
+  }
+
+  function peekExternalEditorMenuIconDataUrl(iconPath: string) {
+    const icon = peekExternalEditorMenuIcon(iconPath)
+    return icon ? icon.toDataURL() : undefined
+  }
   const sessionStreamSubscriptions = new Map<string, SessionStreamSubscription>()
   const sessionStreamCleanupTargets = new Set<number>()
 
@@ -301,7 +362,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     })
   })
 
-  ipcMain.handle("desktop:show-external-editor-menu", (event, input: { targetPath: string; anchor?: MenuAnchor }) => {
+  ipcMain.handle("desktop:show-external-editor-menu", async (event, input: { targetPath: string; anchor?: MenuAnchor }) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
 
@@ -310,22 +371,28 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       throw new Error("A workspace directory is required.")
     }
 
-    const availableEditors = listAvailableExternalEditors()
+    const availableEditors = filterAvailableExternalEditorsForTarget(getCachedAvailableExternalEditors(), targetPath)
     const menuItems: MenuItemConstructorOptions[] =
       availableEditors.length > 0
-        ? availableEditors.map((editor) => ({
-            id: editor.id,
-            label: editor.label,
-            click: () => {
-              void Promise.resolve(openInExternalEditor({ editorID: editor.id, targetPath })).catch((error) => {
-                void dialog.showMessageBox(win, {
-                  type: "error",
-                  title: "Unable to Open Editor",
-                  message: error instanceof Error ? error.message : String(error),
+        ? availableEditors.map((editor) => {
+            const iconPath = editor.iconPath ?? editor.executablePath
+            primeExternalEditorMenuIcon(iconPath)
+
+            return {
+              id: editor.id,
+              label: editor.label,
+              icon: peekExternalEditorMenuIcon(iconPath),
+              click: () => {
+                void Promise.resolve(openInExternalEditor({ editorID: editor.id, targetPath }, { openPath: shell.openPath })).catch((error) => {
+                  void dialog.showMessageBox(win, {
+                    type: "error",
+                    title: "Unable to Open Editor",
+                    message: error instanceof Error ? error.message : String(error),
+                  })
                 })
-              })
-            },
-          }))
+              },
+            }
+          })
         : [
             {
               label: "No supported editors found",
@@ -344,8 +411,28 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     })
   })
 
+  ipcMain.handle("desktop:list-external-editors-for-target", (_event, input: { targetPath: string }) => {
+    const targetPath = input.targetPath.trim()
+    if (!targetPath) {
+      throw new Error("A workspace directory is required.")
+    }
+
+    return filterAvailableExternalEditorsForTarget(getCachedAvailableExternalEditors(), targetPath).map((editor) => {
+      const iconPath = editor.iconPath ?? editor.executablePath
+      primeExternalEditorMenuIcon(iconPath)
+
+      const iconDataUrl = peekExternalEditorMenuIconDataUrl(iconPath)
+      return iconDataUrl
+        ? {
+            ...editor,
+            iconDataUrl,
+          }
+        : editor
+    })
+  })
+
   ipcMain.handle("desktop:open-in-external-editor", async (_event, input: { editorID?: string; targetPath: string }) =>
-    openInExternalEditor(input),
+    openInExternalEditor(input, { openPath: shell.openPath }),
   )
 
   ipcMain.handle("desktop:get-agent-config", () => getAgentConfig())

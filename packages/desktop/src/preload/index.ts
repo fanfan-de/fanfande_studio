@@ -26,6 +26,8 @@ type ExternalEditorSummary = {
   id: string
   label: string
   executablePath: string
+  iconPath?: string
+  iconDataUrl?: string
 }
 type AgentSSEEvent = {
   id?: string
@@ -258,6 +260,8 @@ try {
     showMenu: (menuKey: MenuKey, anchor?: MenuAnchor) => ipcRenderer.invoke("desktop:show-menu", { menuKey, anchor }),
     showExternalEditorMenu: (input: { targetPath: string; anchor?: MenuAnchor }) =>
       ipcRenderer.invoke("desktop:show-external-editor-menu", input) as Promise<void>,
+    listExternalEditorsForTarget: (input: { targetPath: string }) =>
+      ipcRenderer.invoke("desktop:list-external-editors-for-target", input) as Promise<ExternalEditorSummary[]>,
     openInExternalEditor: (input: { targetPath: string; editorID?: string }) =>
       ipcRenderer.invoke("desktop:open-in-external-editor", input) as Promise<{
         ok: true

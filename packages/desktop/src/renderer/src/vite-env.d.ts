@@ -64,12 +64,23 @@ declare global {
           y: number
         }
       }) => Promise<void>
+      listExternalEditorsForTarget?: (input: { targetPath: string }) => Promise<
+        Array<{
+          id: string
+          label: string
+          executablePath: string
+          iconPath?: string
+          iconDataUrl?: string
+        }>
+      >
       openInExternalEditor?: (input: { targetPath: string; editorID?: string }) => Promise<{
         ok: true
         editor: {
           id: string
           label: string
           executablePath: string
+          iconPath?: string
+          iconDataUrl?: string
         }
         targetPath: string
       }>
