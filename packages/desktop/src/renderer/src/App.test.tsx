@@ -8343,9 +8343,9 @@ describe("App", () => {
     expect(styles).toMatch(/\.canvas-region-top-menu \.sidebar-toggle-button\.is-top-menu:hover,\s*\.canvas-region-top-menu-add-button:hover\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.08\);/s)
     expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*82%,\s*#eef2f7\s*18%\);/s)
     expect(styles).toMatch(/--canvas-region-tab-hover:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*62%,\s*#ffffff\s*38%\);/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*background:\s*var\(--pane-tab-inactive-bg\);[^}]*color:\s*var\(--seg-text-2\);/s)
+    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*background:\s*var\(--pane-tab-inactive-bg\);[^}]*color:\s*var\(--seg-text-2\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*background:\s*var\(--pane-tab-active-bg\);[^}]*border:\s*1px solid var\(--pane-tab-border\);[^}]*border-bottom-color:\s*transparent;/s,
+      /\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*34px;[^}]*margin-top:\s*6px;[^}]*background:\s*var\(--pane-tab-active-bg\);[^}]*border:\s*0;[^}]*transform:\s*none;[^}]*box-shadow:\s*inset 0 0 0 1px var\(--pane-tab-border\),\s*0 10px 18px rgba\(15,\s*23,\s*42,\s*0\.04\);/s,
     )
     expect(styles).toMatch(
       /\.pane-tab-bar\s+\.session-tab\.is-active::before\s*\{[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--pane-tab-active-bg\);/s,
