@@ -10,7 +10,13 @@
       "Bash(where.exe pnpm *)",
       "Bash(corepack pnpm *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git checkout *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --base master --head feat/color-mode-dark-theme --title 'Add color mode picker with dark theme support' --body ' *)",
+      "Read(//c/Program Files/GitHub CLI/**)",
+      "Bash(command -v gh.exe)",
+      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue)"
     ]
   }
 }
