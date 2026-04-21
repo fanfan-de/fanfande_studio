@@ -423,14 +423,20 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .pane-tab-bar {
+  --pane-tab-border: var(--seg-border);
+  --pane-tab-divider: rgba(32, 41, 54, 0.08);
+  --pane-tab-radius: 8px;
+  --pane-tab-active-bg: var(--seg-panel);
+  --pane-tab-inactive-bg: color-mix(in srgb, var(--seg-shell) 82%, #eef2f7 18%);
+  --pane-tab-hover-bg: color-mix(in srgb, var(--seg-shell) 62%, #ffffff 38%);
   min-width: 0;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 8px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--seg-border);
-  background: color-mix(in srgb, var(--seg-shell) 88%, #ffffff 12%);
+  border-bottom: 0;
+  background: color-mix(in srgb, var(--seg-shell) 92%, #ffffff 8%);
   -webkit-app-region: no-drag;
   user-select: none;
 }
@@ -531,48 +537,52 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   position: relative;
   align-self: flex-end;
   max-width: min(240px, 30vw);
-  min-height: 36px;
+  min-height: 34px;
   margin-bottom: -1px;
-  margin-top: 4px;
+  margin-top: 6px;
   padding: 0 8px 0 12px;
-  border: 1px solid transparent;
-  border-bottom-color: transparent;
-  border-radius: 8px 8px 0 0;
-  background: transparent;
+  border: 0;
+  border-radius: var(--pane-tab-radius) var(--pane-tab-radius) 0 0;
+  background: var(--pane-tab-inactive-bg);
   box-shadow: none;
-  color: var(--seg-text-3);
+  color: var(--seg-text-2);
   gap: 6px;
   cursor: default;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .pane-tab-bar .session-tab::after {
   content: "";
   position: absolute;
-  top: 11px;
+  top: 8px;
   right: -1px;
-  bottom: 11px;
+  bottom: 8px;
   width: 1px;
-  background: rgba(32, 41, 54, 0.1);
+  background: var(--pane-tab-divider);
   transition: opacity 140ms ease;
 }
 
 .pane-tab-bar .session-tab-trigger {
-  min-height: 35px;
+  min-height: 34px;
   padding: 0 6px;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: -0.01em;
+  color: inherit;
   cursor: default;
 }
 
 .pane-tab-bar .session-tab:hover {
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--pane-tab-hover-bg);
   color: var(--seg-text-1);
 }
 
 .pane-tab-bar .session-tab:focus-within {
-  background: rgba(255, 255, 255, 0.72);
-  border-color: rgba(32, 41, 54, 0.08);
+  background: var(--pane-tab-hover-bg);
   color: var(--seg-text-1);
 }
 
@@ -583,16 +593,14 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .pane-tab-bar .session-tab.is-active {
-  min-height: 40px;
-  margin-top: 0;
-  background: #ffffff;
-  border-color: var(--seg-border);
+  min-height: 39px;
+  margin-top: 1px;
+  background: var(--pane-tab-active-bg);
+  border: 1px solid var(--pane-tab-border);
   border-bottom-color: transparent;
   color: var(--seg-text-1);
   z-index: 2;
-  box-shadow:
-    0 1px 0 #ffffff,
-    0 -1px 0 rgba(255, 255, 255, 0.72);
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.04);
 }
 
 .pane-tab-bar .session-tab.is-active::before {
@@ -602,7 +610,11 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   right: 1px;
   bottom: -1px;
   height: 2px;
-  background: #ffffff;
+  background: var(--pane-tab-active-bg);
+}
+
+.pane-tab-bar .session-tab.is-active .session-tab-trigger {
+  font-weight: 600;
 }
 
 .pane-tab-bar .session-tab-close {
@@ -759,9 +771,10 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .canvas-region-top-menu {
   --canvas-region-tab-border: var(--seg-border);
   --canvas-region-tab-divider: rgba(32, 41, 54, 0.08);
-  --canvas-region-tab-hover: rgba(84, 96, 109, 0.08);
-  --canvas-region-tab-focus: rgba(84, 96, 109, 0.12);
-  --canvas-region-tab-active-accent: rgba(79, 116, 200, 0.52);
+  --canvas-region-tab-active-bg: var(--seg-panel);
+  --canvas-region-tab-inactive-bg: color-mix(in srgb, var(--seg-shell) 82%, #eef2f7 18%);
+  --canvas-region-tab-hover: color-mix(in srgb, var(--seg-shell) 62%, #ffffff 38%);
+  --canvas-region-tab-focus: color-mix(in srgb, var(--seg-shell) 56%, #ffffff 44%);
   --canvas-region-tab-cap-radius: 8px;
   --canvas-region-tab-height: 32px;
   position: relative;
@@ -853,13 +866,13 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   max-width: min(220px, 28vw);
   min-height: var(--canvas-region-tab-height);
   margin-bottom: -1px;
+  margin-top: 6px;
   padding: 0 8px 0 10px;
-  border: 1px solid transparent;
-  border-bottom-color: transparent;
+  border: 0;
   border-radius: var(--canvas-region-tab-cap-radius) var(--canvas-region-tab-cap-radius) 0 0;
-  background: transparent;
+  background: var(--canvas-region-tab-inactive-bg);
   box-shadow: none;
-  color: var(--seg-text-3);
+  color: var(--seg-text-2);
   cursor: default;
   gap: 6px;
   transform: none;
@@ -873,7 +886,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .canvas-region-top-menu .session-tab::after {
   content: "";
   position: absolute;
-  top: 9px;
+  top: 8px;
   right: 0;
   bottom: 8px;
   width: 1px;
@@ -891,8 +904,8 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .canvas-region-top-menu .session-tab:focus-within {
   transform: none;
-  background: rgba(84, 96, 109, 0.1);
-  border-color: rgba(32, 41, 54, 0.08);
+  background: var(--canvas-region-tab-focus);
+  border-color: transparent;
   color: var(--seg-text-1);
   box-shadow: none;
 }
@@ -904,20 +917,32 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .canvas-region-top-menu .session-tab.is-active {
-  background: var(--seg-panel);
-  border-color: var(--canvas-region-tab-border);
-  border-bottom-color: var(--seg-panel);
+  min-height: calc(var(--canvas-region-tab-height) + 4px);
+  margin-top: 2px;
+  background: var(--canvas-region-tab-active-bg);
+  border: 1px solid var(--canvas-region-tab-border);
+  border-bottom-color: var(--canvas-region-tab-active-bg);
   color: var(--seg-text-1);
-  z-index: 1;
+  z-index: 2;
   box-shadow: none;
 }
 
 .canvas-region-top-menu .session-tab.is-active:hover,
 .canvas-region-top-menu .session-tab.is-active:focus-within {
-  background: var(--seg-panel);
+  background: var(--canvas-region-tab-active-bg);
   border-color: var(--canvas-region-tab-border);
-  border-bottom-color: var(--seg-panel);
+  border-bottom-color: var(--canvas-region-tab-active-bg);
   color: var(--seg-text-1);
+}
+
+.canvas-region-top-menu .session-tab.is-active::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--canvas-region-tab-active-bg);
 }
 
 .canvas-region-top-menu .session-tab.is-create-tab {
@@ -928,13 +953,18 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   min-height: calc(var(--canvas-region-tab-height) - 1px);
   padding: 0 6px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.01em;
+  color: inherit;
   cursor: default;
 }
 
 .canvas-region-top-menu .session-tab-title {
   letter-spacing: -0.01em;
+}
+
+.canvas-region-top-menu .session-tab.is-active .session-tab-trigger {
+  font-weight: 600;
 }
 
 .canvas-region-top-menu .session-tab-close {
@@ -972,12 +1002,12 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .session-canvas-top-menu {
-  min-height: 30px;
+  min-height: 28px;
   padding-left: 12px;
   padding-right: 12px;
   padding-right: calc(var(--window-controls-canvas-clearance) + 8px);
-  padding-top: 4px;
-  padding-bottom: 2px;
+  padding-top: 2px;
+  padding-bottom: 0;
   background: transparent;
   border-bottom: 0;
 }
@@ -1005,9 +1035,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .session-canvas-top-menu-copy .label {
   font-family: var(--font-sans);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
   color: var(--seg-text-3);
 }
 

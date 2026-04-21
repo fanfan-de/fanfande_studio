@@ -8329,9 +8329,19 @@ describe("App", () => {
     expect(styles).toMatch(/\.session-tab-trigger,\s*\.session-tab-close,[\s\S]*?\.canvas-region-top-menu-add-button\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(/\.session-tab-close:hover,\s*\.session-tab-close:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*color:\s*#22303d;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu \.sidebar-toggle-button\.is-top-menu:hover,\s*\.canvas-region-top-menu-add-button:hover\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.08\);/s)
-    expect(styles).toMatch(/--canvas-region-tab-hover:\s*rgba\(84,\s*96,\s*109,\s*0\.08\);/s)
+    expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*82%,\s*#eef2f7\s*18%\);/s)
+    expect(styles).toMatch(/--canvas-region-tab-hover:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*62%,\s*#ffffff\s*38%\);/s)
+    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*background:\s*var\(--pane-tab-inactive-bg\);[^}]*color:\s*var\(--seg-text-2\);/s)
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*background:\s*var\(--pane-tab-active-bg\);[^}]*border:\s*1px solid var\(--pane-tab-border\);[^}]*border-bottom-color:\s*transparent;/s,
+    )
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.session-tab\.is-active::before\s*\{[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--pane-tab-active-bg\);/s,
+    )
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab:hover\s*\{[^}]*background:\s*var\(--canvas-region-tab-hover\);[^}]*border-color:\s*transparent;/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\.is-active:hover,\s*\.canvas-region-top-menu\s+\.session-tab\.is-active:focus-within\s*\{[^}]*background:\s*var\(--seg-panel\);/s)
+    expect(styles).toMatch(
+      /\.canvas-region-top-menu\s+\.session-tab\.is-active:hover,\s*\.canvas-region-top-menu\s+\.session-tab\.is-active:focus-within\s*\{[^}]*background:\s*var\(--canvas-region-tab-active-bg\);/s,
+    )
     expect(styles).toMatch(/\.canvas-region-top-menu\s*\{[^}]*padding-bottom:\s*0;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu\s*\{[^}]*padding-right:\s*var\(--window-controls-canvas-clearance\);/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-trailing\.is-right-sidebar-expanded\s*\{[^}]*margin-right:\s*calc\(-1 \* var\(--canvas-inline-padding\)\);/s)
@@ -8340,15 +8350,21 @@ describe("App", () => {
     expect(styles).toMatch(/\.canvas-region-top-menu-tabs\s*\{[^}]*flex:\s*0 1 auto;[^}]*align-items:\s*center;[^}]*overflow-x:\s*auto;[^}]*padding-top:\s*0;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-add-button\s*\{[^}]*width:\s*28px;[^}]*min-width:\s*28px;[^}]*min-height:\s*28px;/s)
     expect(styles).toMatch(/\.canvas-region-top-menu-add-glyph\s*\{[^}]*font-size:\s*22px;[^}]*line-height:\s*1;/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\s*\{[^}]*min-height:\s*var\(--canvas-region-tab-height\);[^}]*padding:\s*0 8px 0 10px;/s)
+    expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab\s*\{[^}]*min-height:\s*var\(--canvas-region-tab-height\);[^}]*margin-top:\s*6px;[^}]*padding:\s*0 8px 0 10px;/s)
     expect(styles).toMatch(
-      /\.canvas-region-top-menu\s+\.session-tab\.is-active\s*\{[^}]*background:\s*var\(--seg-panel\);[^}]*border-color:\s*var\(--canvas-region-tab-border\);[^}]*box-shadow:\s*none;/s,
+      /\.canvas-region-top-menu\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*calc\(var\(--canvas-region-tab-height\) \+ 4px\);[^}]*background:\s*var\(--canvas-region-tab-active-bg\);[^}]*border:\s*1px solid var\(--canvas-region-tab-border\);[^}]*border-bottom-color:\s*var\(--canvas-region-tab-active-bg\);[^}]*z-index:\s*2;[^}]*box-shadow:\s*none;/s,
+    )
+    expect(styles).toMatch(
+      /\.canvas-region-top-menu\s+\.session-tab\.is-active::before\s*\{[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--canvas-region-tab-active-bg\);/s,
     )
     expect(styles).toMatch(
       /\.session-canvas-top-menu\s*\{[^}]*padding-right:\s*calc\(var\(--window-controls-canvas-clearance\) \+ 8px\);[^}]*background:\s*transparent;[^}]*border-bottom:\s*0;/s,
     )
     expect(styles).toMatch(
       /\.session-canvas-top-menu-copy-main\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*gap:\s*8px;/s,
+    )
+    expect(styles).toMatch(
+      /\.session-canvas-top-menu-copy\s+\.label\s*\{[^}]*font-weight:\s*500;[^}]*text-transform:\s*none;/s,
     )
     expect(styles).toMatch(
       /\.canvas-top-menu-mcp-trigger,\s*\.canvas-top-menu-skill-trigger\s*\{[^}]*gap:\s*4px;[^}]*max-width:\s*min\(128px,\s*22vw\);/s,
