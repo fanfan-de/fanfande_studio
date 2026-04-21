@@ -424,7 +424,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .pane-tab-bar {
   --pane-tab-border: var(--seg-border);
-  --pane-tab-curve: 6px;
+  --pane-tab-curve: 8px;
   --pane-tab-divider: rgba(32, 41, 54, 0.08);
   --pane-tab-radius: 8px;
   --pane-tab-active-bg: var(--seg-panel);
@@ -619,21 +619,24 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .pane-tab-bar .session-tab.is-active {
   min-height: 34px;
   margin-top: 6px;
-  background: var(--pane-tab-active-bg);
+  background:
+    linear-gradient(var(--pane-tab-border), var(--pane-tab-border)) left top / 1px calc(100% - var(--pane-tab-curve)) no-repeat,
+    linear-gradient(var(--pane-tab-border), var(--pane-tab-border)) right top / 1px calc(100% - var(--pane-tab-curve)) no-repeat,
+    var(--pane-tab-active-bg);
   border: 0;
   color: var(--seg-text-1);
   z-index: 2;
   transform: none;
   box-shadow:
-    inset 0 0 0 1px var(--pane-tab-border),
+    inset 0 1px 0 var(--pane-tab-border),
     0 10px 18px rgba(15, 23, 42, 0.04);
 }
 
 .pane-tab-bar .session-tab.is-active::before {
   content: "";
   position: absolute;
-  left: 1px;
-  right: 1px;
+  left: calc(var(--pane-tab-curve) - 1px);
+  right: calc(var(--pane-tab-curve) - 1px);
   bottom: -1px;
   height: 2px;
   background: var(--pane-tab-active-bg);
@@ -641,24 +644,43 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .pane-tab-bar .session-tab-active-curve {
   position: absolute;
-  bottom: 0;
-  width: calc(var(--pane-tab-curve) * 2);
-  height: calc(var(--pane-tab-curve) * 2);
-  border-radius: 100%;
+  bottom: -1px;
+  width: calc(var(--pane-tab-curve) + 1px);
+  height: calc(var(--pane-tab-curve) + 1px);
   pointer-events: none;
-  box-shadow:
-    inset 0 0 0 1px var(--pane-tab-border),
-    0 0 0 calc(var(--pane-tab-curve) * 4) var(--pane-tab-active-bg);
+}
+
+.pane-tab-bar .session-tab-active-curve-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
 .pane-tab-bar .session-tab-active-curve-start {
-  left: calc(var(--pane-tab-curve) * -2);
-  clip-path: inset(50% calc(var(--pane-tab-curve) * -1) 0 50%);
+  left: calc(var(--pane-tab-curve) * -1);
 }
 
 .pane-tab-bar .session-tab-active-curve-end {
-  right: calc(var(--pane-tab-curve) * -2);
-  clip-path: inset(50% 50% 0 calc(var(--pane-tab-curve) * -1));
+  right: calc(var(--pane-tab-curve) * -1);
+}
+
+.pane-tab-bar .session-tab-active-curve-end .session-tab-active-curve-svg {
+  transform: scaleX(-1);
+  transform-origin: center;
+}
+
+.pane-tab-bar .session-tab-active-curve-fill {
+  fill: var(--pane-tab-active-bg);
+}
+
+.pane-tab-bar .session-tab-active-curve-stroke {
+  fill: none;
+  stroke: var(--pane-tab-border);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  shape-rendering: geometricPrecision;
+  vector-effect: non-scaling-stroke;
 }
 
 .pane-tab-bar .session-tab.is-active .session-tab-trigger {
@@ -1050,12 +1072,12 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .session-canvas-top-menu {
-  min-height: 28px;
+  min-height: 34px;
   padding-left: 12px;
   padding-right: 12px;
   padding-right: calc(var(--window-controls-canvas-clearance) + 8px);
-  padding-top: 2px;
-  padding-bottom: 0;
+  padding-top: 4px;
+  padding-bottom: 2px;
   background: transparent;
   border-bottom: 0;
 }
@@ -1179,8 +1201,8 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .session-canvas-top-menu .canvas-top-menu-button {
-  min-height: 24px;
-  padding: 0 7px;
+  min-height: 28px;
+  padding: 0 9px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;

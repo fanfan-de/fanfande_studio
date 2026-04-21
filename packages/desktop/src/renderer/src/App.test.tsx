@@ -4936,6 +4936,7 @@ describe("App", () => {
     const tabBar = screen.getByRole("navigation", { name: "Pane tabs" })
 
     expect(tabBar.querySelectorAll(".session-tab.is-active .session-tab-active-curve")).toHaveLength(2)
+    expect(tabBar.querySelectorAll(".session-tab.is-active .session-tab-active-curve-svg")).toHaveLength(2)
     expect(tabBar.querySelectorAll(".session-tab:not(.is-active) .session-tab-active-curve")).toHaveLength(0)
   })
 
@@ -4946,6 +4947,23 @@ describe("App", () => {
 
     expect(await screen.findByRole("combobox", { name: "Session project" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("focuses the existing create session tab when the pane tab bar add button is clicked", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    await screen.findByRole("combobox", { name: "Session project" })
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to session Chat 1" }))
+
+    const pane = document.querySelector(".workbench-pane") as HTMLElement
+    const paneTabBar = within(pane).getByRole("navigation", { name: "Pane tabs" })
+
+    fireEvent.click(within(paneTabBar).getByRole("button", { name: "Add session tab" }))
+
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
   })
 
   it("allows multiple create session tabs with independent project selections", async () => {
@@ -4960,7 +4978,7 @@ describe("App", () => {
     })
     expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
 
-    fireEvent.click(screen.getByRole("button", { name: "Add session tab" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
 
     expect(await screen.findByRole("button", { name: "Switch to create session tab 2" })).toHaveAttribute("aria-pressed", "true")
     expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
@@ -8345,19 +8363,31 @@ describe("App", () => {
     expect(styles).toMatch(/--canvas-region-tab-hover:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*62%,\s*#ffffff\s*38%\);/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*background:\s*var\(--pane-tab-inactive-bg\);[^}]*color:\s*var\(--seg-text-2\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*34px;[^}]*margin-top:\s*6px;[^}]*background:\s*var\(--pane-tab-active-bg\);[^}]*border:\s*0;[^}]*transform:\s*none;[^}]*box-shadow:\s*inset 0 0 0 1px var\(--pane-tab-border\),\s*0 10px 18px rgba\(15,\s*23,\s*42,\s*0\.04\);/s,
+      /\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*34px;[^}]*margin-top:\s*6px;[^}]*background:\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*left top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*right top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*var\(--pane-tab-active-bg\);[^}]*border:\s*0;[^}]*transform:\s*none;[^}]*box-shadow:\s*inset 0 1px 0 var\(--pane-tab-border\),\s*0 10px 18px rgba\(15,\s*23,\s*42,\s*0\.04\);/s,
     )
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab\.is-active::before\s*\{[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--pane-tab-active-bg\);/s,
+      /\.pane-tab-bar\s+\.session-tab\.is-active::before\s*\{[^}]*left:\s*calc\(var\(--pane-tab-curve\) - 1px\);[^}]*right:\s*calc\(var\(--pane-tab-curve\) - 1px\);[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--pane-tab-active-bg\);/s,
     )
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve\s*\{[^}]*width:\s*calc\(var\(--pane-tab-curve\) \* 2\);[^}]*height:\s*calc\(var\(--pane-tab-curve\) \* 2\);[^}]*box-shadow:\s*inset 0 0 0 1px var\(--pane-tab-border\),\s*0 0 0 calc\(var\(--pane-tab-curve\) \* 4\) var\(--pane-tab-active-bg\);/s,
+      /\.pane-tab-bar\s+\.session-tab-active-curve\s*\{[^}]*bottom:\s*-1px;[^}]*width:\s*calc\(var\(--pane-tab-curve\) \+ 1px\);[^}]*height:\s*calc\(var\(--pane-tab-curve\) \+ 1px\);[^}]*pointer-events:\s*none;/s,
     )
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve-start\s*\{[^}]*left:\s*calc\(var\(--pane-tab-curve\) \* -2\);[^}]*clip-path:\s*inset\(50% calc\(var\(--pane-tab-curve\) \* -1\) 0 50%\);/s,
+      /\.pane-tab-bar\s+\.session-tab-active-curve-svg\s*\{[^}]*display:\s*block;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*overflow:\s*visible;/s,
     )
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve-end\s*\{[^}]*right:\s*calc\(var\(--pane-tab-curve\) \* -2\);[^}]*clip-path:\s*inset\(50% 50% 0 calc\(var\(--pane-tab-curve\) \* -1\)\);/s,
+      /\.pane-tab-bar\s+\.session-tab-active-curve-start\s*\{[^}]*left:\s*calc\(var\(--pane-tab-curve\) \* -1\);/s,
+    )
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.session-tab-active-curve-end\s*\{[^}]*right:\s*calc\(var\(--pane-tab-curve\) \* -1\);/s,
+    )
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.session-tab-active-curve-end\s+\.session-tab-active-curve-svg\s*\{[^}]*transform:\s*scaleX\(-1\);[^}]*transform-origin:\s*center;/s,
+    )
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.session-tab-active-curve-fill\s*\{[^}]*fill:\s*var\(--pane-tab-active-bg\);/s,
+    )
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.session-tab-active-curve-stroke\s*\{[^}]*fill:\s*none;[^}]*stroke:\s*var\(--pane-tab-border\);[^}]*stroke-width:\s*1\.25;[^}]*stroke-linecap:\s*round;[^}]*shape-rendering:\s*geometricPrecision;[^}]*vector-effect:\s*non-scaling-stroke;/s,
     )
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab:hover\s*\{[^}]*background:\s*var\(--canvas-region-tab-hover\);[^}]*border-color:\s*transparent;/s)
     expect(styles).toMatch(

@@ -2666,6 +2666,30 @@ interface PaneTabBarProps {
   trailingAccessory?: ReactNode
 }
 
+type PaneTabBarTab = PaneTabBarProps["tabs"][number]
+type CreateSessionPaneTab = Extract<PaneTabBarTab, { kind: "create-session" }>
+
+const ACTIVE_TAB_CURVE_FILL_PATH = "M16 0L16 16L0 16C8.84 16 16 8.84 16 0Z"
+const ACTIVE_TAB_CURVE_STROKE_PATH = "M0 16C8.84 16 16 8.84 16 0"
+
+function PaneTabActiveCurve({ side }: { side: "start" | "end" }) {
+  return (
+    <span
+      className={
+        side === "start"
+          ? "session-tab-active-curve session-tab-active-curve-start"
+          : "session-tab-active-curve session-tab-active-curve-end"
+      }
+      aria-hidden="true"
+    >
+      <svg className="session-tab-active-curve-svg" viewBox="0 0 16 16" focusable="false">
+        <path className="session-tab-active-curve-fill" d={ACTIVE_TAB_CURVE_FILL_PATH} />
+        <path className="session-tab-active-curve-stroke" d={ACTIVE_TAB_CURVE_STROKE_PATH} />
+      </svg>
+    </span>
+  )
+}
+
 export function PaneTabBar({
   activeTabKey,
   draggedTabKey,
@@ -2695,6 +2719,15 @@ export function PaneTabBar({
     tabKey: string
   } | null>(null)
   const suppressClickTabKeyRef = useRef<string | null>(null)
+  const activeCreateSessionTab =
+    activeTabKey === null
+      ? null
+      : (tabs.find(
+          (tab): tab is CreateSessionPaneTab => tab.key === activeTabKey && tab.kind === "create-session",
+        ) ?? null)
+  const existingCreateSessionTab =
+    activeCreateSessionTab ??
+    ([...tabs].reverse().find((tab): tab is CreateSessionPaneTab => tab.kind === "create-session") ?? null)
 
   function handleTabDragStart(event: ReactDragEvent<HTMLElement>, tabKey: string) {
     const target = event.target
@@ -2788,6 +2821,15 @@ export function PaneTabBar({
     }
   }, [])
 
+  function handleAddCreateSessionTab() {
+    onFocus()
+    if (existingCreateSessionTab) {
+      onSelectCreateSessionTab(existingCreateSessionTab.createSessionTabID)
+      return
+    }
+    onOpenCreateSessionTab()
+  }
+
   const className = [
     "pane-tab-bar",
     "panel-toolbar",
@@ -2847,8 +2889,8 @@ export function PaneTabBar({
             >
               {isActive ? (
                 <>
-                  <span className="session-tab-active-curve session-tab-active-curve-start" aria-hidden="true" />
-                  <span className="session-tab-active-curve session-tab-active-curve-end" aria-hidden="true" />
+                  <PaneTabActiveCurve side="start" />
+                  <PaneTabActiveCurve side="end" />
                 </>
               ) : null}
               <button
@@ -2903,7 +2945,7 @@ export function PaneTabBar({
           )
         })}
         {hasMergePreview ? <span className="pane-tab-merge-preview" aria-hidden="true" /> : null}
-        <button className="canvas-region-top-menu-add-button" aria-label="Add session tab" title="Add session tab" type="button" onClick={onOpenCreateSessionTab}>
+        <button className="canvas-region-top-menu-add-button" aria-label="Add session tab" title="Add session tab" type="button" onClick={handleAddCreateSessionTab}>
           <span className="canvas-region-top-menu-add-glyph" aria-hidden="true">
             +
           </span>
