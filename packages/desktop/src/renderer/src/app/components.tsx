@@ -3221,12 +3221,18 @@ export function SessionCanvasTopMenu({
       className="session-canvas-top-menu"
       contentClassName="panel-toolbar-copy session-canvas-top-menu-copy"
       content={(
-        <>
+        <div className="session-canvas-top-menu-copy-main">
           <span className="label">{contextLabel}</span>
-          <strong>{contextTitle}</strong>
-          {readOnlySideChat ? <SideChatBadge /> : null}
-          <SessionWorkflowBadge workflow={workflowBadge} />
-        </>
+          <div className="session-canvas-top-menu-copy-title-row">
+            <strong>{contextTitle}</strong>
+            {readOnlySideChat || workflowBadge ? (
+              <div className="session-canvas-top-menu-copy-status">
+                {readOnlySideChat ? <SideChatBadge /> : null}
+                <SessionWorkflowBadge workflow={workflowBadge} />
+              </div>
+            ) : null}
+          </div>
+        </div>
       )}
       controlsSpacerVariant="canvas"
       trailing={(
