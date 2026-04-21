@@ -53,7 +53,7 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
   padding: 14px 0 8px;
-  gap: 10px;
+  gap: 12px;
 }
 
 .thread-column::-webkit-scrollbar {
@@ -131,7 +131,7 @@
   border: 1px solid rgba(166, 186, 208, 0.42);
   border-radius: var(--seg-radius-xs);
   background: #ffffff;
-  padding: 14px 16px;
+  padding: 16px;
   display: grid;
   gap: 12px;
 }
