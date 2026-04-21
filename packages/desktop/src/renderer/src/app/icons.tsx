@@ -11,6 +11,7 @@ import {
   FilePlus2,
   Folder,
   LayoutPanelLeft,
+  MessageSquare,
   Minus,
   Palette,
   PanelLeftClose,
@@ -49,6 +50,7 @@ export const PlusIcon = createIcon(Plus)
 export const SettingsIcon = createIcon(Settings)
 export const LayoutSidebarLeftIcon = createIcon(LayoutPanelLeft)
 export const LayoutSidebarRightIcon = createIcon(PanelRight)
+export const SideChatIcon = createIcon(MessageSquare)
 export const LeftSidebarCollapseIcon = createIcon(PanelLeftClose)
 export const LeftSidebarExpandIcon = createIcon(PanelLeftOpen)
 export const RightSidebarCollapseIcon = createIcon(PanelRightClose)

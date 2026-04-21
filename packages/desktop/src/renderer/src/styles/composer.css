@@ -1,0 +1,623 @@
+/* Generated from legacy styles.css: composer, utility bar, and branch/model menus. */
+
+
+
+.assistant-shell,
+.composer,
+.empty-state {
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  box-shadow: 0 14px 34px rgba(46, 81, 118, 0.06);
+}
+
+.workbench-panes.has-multiple .thread-column,
+.workbench-panes.has-multiple .composer,
+.workbench-panes.has-multiple .composer-utility-bar {
+  width: 100%;
+}
+
+.brand-line,
+.workspace-group-header,
+.session-card-top,
+.turn-meta,
+.assistant-header,
+.section-header,
+.composer-toolbar,
+.mode-switch,
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.thread-shell,
+.thread-column,
+.composer-selectors,
+.composer-actions,
+.trace-item-header {
+  display: flex;
+  gap: 12px;
+}
+
+.git-quick-menu-option:disabled .composer-menu-option-copy small,
+.git-quick-menu-option:disabled .composer-menu-option-check {
+  color: #94a3b2;
+}
+
+.prompt-input-shell {
+  border-radius: 28px;
+  border-radius: var(--seg-radius-sm);
+}
+
+.composer-stack {
+  display: grid;
+  gap: 10px;
+  padding: 0 var(--pane-content-gutter);
+}
+
+.composer-utility-chip {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: rgba(245, 248, 251, 0.94);
+  color: #5f7384;
+}
+
+.composer-utility-git-branch-anchor {
+  position: relative;
+}
+
+.composer-utility-git-branch-button,
+.composer-utility-permission-toggle {
+  width: auto;
+  max-width: min(280px, calc(100vw - 64px));
+  padding: 0 10px 0 12px;
+  gap: 8px;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.composer-utility-git-branch-button:hover,
+.composer-utility-git-branch-button:focus-visible,
+.composer-utility-git-branch-button.is-active,
+.composer-utility-permission-toggle:hover,
+.composer-utility-permission-toggle:focus-visible,
+.composer-utility-permission-toggle.is-active {
+  background: #eef5fb;
+  border-color: rgba(95, 146, 194, 0.7);
+  color: #17344f;
+  box-shadow: 0 10px 20px rgba(46, 81, 118, 0.08);
+  outline: none;
+}
+
+.composer-utility-git-branch-button svg,
+.composer-utility-permission-toggle svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.composer-utility-git-branch-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.composer-utility-permission-toggle-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.composer-utility-git-branch-panel {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 8;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(380px, calc(100dvh - 220px));
+  padding: 8px 8px 10px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(147, 171, 195, 0.52);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 36px rgba(36, 59, 82, 0.14);
+}
+
+.composer-utility-git-branch-list {
+  max-height: min(240px, calc(100dvh - 320px));
+  overflow: auto;
+  scrollbar-gutter: stable;
+  display: grid;
+  gap: 4px;
+}
+
+.composer-utility-git-branch-option {
+  min-height: 46px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.composer-utility-git-branch-option:disabled {
+  background: #f3f6f8;
+  color: #94a3b2;
+  cursor: not-allowed;
+}
+
+.composer-utility-git-branch-option:disabled .composer-menu-option-copy small,
+.composer-utility-git-branch-option:disabled .composer-menu-option-check {
+  color: #94a3b2;
+}
+
+.composer-utility-git-branch-meta {
+  align-items: flex-start;
+}
+
+.composer-utility-git-branch-footer {
+  position: sticky;
+  bottom: 0;
+  padding-top: 4px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #ffffff 24px);
+}
+
+.composer-utility-git-branch-create-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.composer-utility-git-branch-status,
+.git-branch-create-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #607488;
+}
+
+.composer-utility-git-branch-status.is-error,
+.git-branch-create-error {
+  color: #a33d2f;
+}
+
+.git-branch-badge {
+  min-height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #f4f8fc;
+  color: #4b6074;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.composer-utility-git-branch-option .composer-menu-option-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.context-pressure-indicator.is-low {
+  color: #2a8357;
+}
+
+.context-pressure-indicator.is-medium {
+  color: #9a6a18;
+}
+
+.context-pressure-indicator.is-high {
+  color: #b14537;
+}
+
+.context-pressure-ring {
+  width: 28px;
+  height: 28px;
+  overflow: visible;
+}
+
+.context-pressure-ring-track,
+.context-pressure-ring-progress,
+.context-pressure-ring-core {
+  fill: none;
+}
+
+.context-pressure-ring-track,
+.context-pressure-ring-progress {
+  stroke-width: 2.5;
+}
+
+.context-pressure-ring-track {
+  stroke: rgba(116, 143, 169, 0.22);
+}
+
+.context-pressure-ring-progress {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 14px 14px;
+  transition: stroke-dashoffset 180ms ease, stroke 180ms ease;
+}
+
+.context-pressure-ring-core {
+  fill: currentColor;
+  opacity: 0.88;
+}
+
+.git-branch-create-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 35, 47, 0.18);
+}
+
+.git-branch-create-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(147, 171, 195, 0.52);
+  background: #ffffff;
+  box-shadow: 0 24px 48px rgba(36, 59, 82, 0.16);
+}
+
+.git-branch-create-field {
+  display: grid;
+  gap: 6px;
+}
+
+.git-branch-create-field span {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5f7387;
+}
+
+.git-branch-create-field input {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid rgba(169, 189, 212, 0.5);
+  background: #f8fbff;
+  color: #182532;
+}
+
+.git-branch-create-field input::placeholder {
+  color: #8da0b4;
+}
+
+.git-branch-create-field input:focus-visible {
+  border-color: rgba(22, 119, 200, 0.6);
+  box-shadow: 0 0 0 3px rgba(22, 119, 200, 0.12);
+}
+
+.git-branch-create-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.git-branch-create-actions .primary-button,
+.git-branch-create-actions .secondary-button {
+  flex: 1 1 0;
+}
+
+.composer textarea {
+  width: 100%;
+  resize: none;
+  min-height: 72px;
+  color: var(--seg-text-1);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.composer-toolbar {
+  margin-top: 4px;
+}
+
+.composer-attachment-strip,
+.composer-reference-strip {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.composer-attachment-chip,
+.composer-reference-chip {
+  min-height: 32px;
+  padding: 0 4px 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #f5f8fb;
+  color: #314353;
+}
+
+.composer-attachment-chip.is-invalid {
+  border-color: rgba(187, 63, 63, 0.32);
+  background: #fff4f4;
+  color: #7d1f1f;
+}
+
+.composer-reference-chip {
+  border-color: rgba(111, 148, 187, 0.34);
+  background: #eef5fb;
+  color: #123a5a;
+}
+
+.composer-attachment-name,
+.composer-reference-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+}
+
+.composer-attachment-remove,
+.composer-reference-remove {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0;
+  background: transparent;
+  color: #5f7387;
+  cursor: pointer;
+}
+
+.composer-attachment-remove:hover,
+.composer-attachment-remove:focus-visible,
+.composer-reference-remove:hover,
+.composer-reference-remove:focus-visible {
+  background: rgba(22, 119, 200, 0.08);
+  color: #123a5a;
+}
+
+.composer-attachment-remove svg,
+.composer-reference-remove svg,
+.composer-selector-button svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+}
+
+.composer-selectors {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.composer-menu-anchor {
+  position: relative;
+}
+
+.composer-selector-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #f5f8fb;
+  color: #314353;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.composer-selector-button.is-icon-only,
+.composer-actions .primary-button.is-icon-only {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+.composer-selector-button:hover,
+.composer-selector-button:focus-visible {
+  background: #eef5fb;
+  border-color: rgba(22, 119, 200, 0.28);
+  color: #123a5a;
+}
+
+.composer-selector-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.composer-attachment-note {
+  margin: 12px 0 0;
+  color: #9b2c2c;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.composer-menu-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 3;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 64px));
+  max-height: min(320px, calc(100dvh - 180px));
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(46, 81, 118, 0.12);
+}
+
+.composer-menu-option {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  background: transparent;
+  color: #314353;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.composer-menu-option:hover,
+.composer-menu-option:focus-visible,
+.composer-menu-option.is-selected {
+  background: #eef5fb;
+  color: #123a5a;
+}
+
+.composer-menu-empty {
+  margin: 0;
+  padding: 6px 10px;
+  color: #607488;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.composer-menu-option-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.composer-menu-option-copy strong {
+  color: currentColor;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.composer-menu-option-copy small,
+.composer-menu-option-check {
+  color: #607488;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.composer-menu-option-check {
+  flex: 0 0 auto;
+}
+
+.composer-actions {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.composer textarea::placeholder {
+  color: var(--seg-text-3);
+}
+
+.composer-utility-chip,
+.composer-utility-git-branch-button,
+.composer-selector-button,
+.composer-attachment-chip {
+  background: var(--seg-panel-muted);
+}
+
+.composer-utility-git-branch-button:hover,
+.composer-utility-git-branch-button:focus-visible,
+.composer-utility-git-branch-button.is-active,
+.composer-utility-permission-toggle:hover,
+.composer-utility-permission-toggle:focus-visible,
+.composer-utility-permission-toggle.is-active,
+.composer-selector-button:hover,
+.composer-selector-button:focus-visible,
+.composer-menu-option:hover,
+.composer-menu-option:focus-visible,
+.composer-menu-option.is-selected {
+  background: var(--seg-panel);
+  border-color: var(--seg-border-strong);
+  color: var(--seg-text-1);
+}
+
+.composer-menu-panel,
+.composer-utility-git-branch-panel,
+.git-branch-create-dialog {
+  border-color: var(--seg-border-strong);
+  background: #fbfcfd;
+}
+
+.composer-actions .primary-button.is-icon-only,
+.composer-selector-button.is-icon-only {
+  border-radius: var(--seg-radius-xs);
+}
+
+.composer-utility-bar {
+  width: 100%;
+  max-width: var(--pane-content-max-width);
+  margin: 0 auto;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+}
+
+.composer {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: var(--pane-content-max-width);
+  margin: 0 auto;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--seg-border);
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: #f7f9fb;
+  animation: rise-in 560ms ease;
+}
+
+.inline-side-chat-thread .composer {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  background: transparent;
+  box-shadow: none;
+}
+
+.inline-side-chat-thread .composer textarea {
+  min-height: 96px;
+}

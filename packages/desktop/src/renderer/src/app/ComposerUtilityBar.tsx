@@ -7,6 +7,8 @@ interface ComposerUtilityBarProps {
   gitProjectID: string | null
   permissionMode: ComposerPermissionMode
   onPermissionModeToggle: () => void
+  showGitControls?: boolean
+  showPermissionToggle?: boolean
   usage: SessionContextUsage | null
 }
 
@@ -45,6 +47,8 @@ export function ComposerUtilityBar({
   gitProjectID,
   permissionMode,
   onPermissionModeToggle,
+  showGitControls = true,
+  showPermissionToggle = true,
   usage,
 }: ComposerUtilityBarProps) {
   const rawRatio = contextWindow && usage ? usage.inputTokens / contextWindow : null
@@ -90,18 +94,20 @@ export function ComposerUtilityBar({
           <circle className="context-pressure-ring-core" cx="14" cy="14" r="2.6" />
         </svg>
       </div>
-      <button
-        type="button"
-        className={`composer-utility-chip composer-utility-permission-toggle${permissionMode === "full-access" ? " is-active is-full-access" : ""}`}
-        aria-label={permissionLabel}
-        aria-pressed={permissionMode === "full-access"}
-        title={permissionTitle}
-        onClick={onPermissionModeToggle}
-      >
-        <PermissionModeIcon mode={permissionMode} />
-        <span className="composer-utility-permission-toggle-label">{permissionLabel}</span>
-      </button>
-      <GitBranchSwitcher projectID={gitProjectID} directory={gitDirectory} />
+      {showPermissionToggle ? (
+        <button
+          type="button"
+          className={`composer-utility-chip composer-utility-permission-toggle${permissionMode === "full-access" ? " is-active is-full-access" : ""}`}
+          aria-label={permissionLabel}
+          aria-pressed={permissionMode === "full-access"}
+          title={permissionTitle}
+          onClick={onPermissionModeToggle}
+        >
+          <PermissionModeIcon mode={permissionMode} />
+          <span className="composer-utility-permission-toggle-label">{permissionLabel}</span>
+        </button>
+      ) : null}
+      {showGitControls ? <GitBranchSwitcher projectID={gitProjectID} directory={gitDirectory} /> : null}
     </div>
   )
 }

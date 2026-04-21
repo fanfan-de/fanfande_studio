@@ -28,6 +28,7 @@ import { useProjectComposer } from "./app/use-project-composer"
 import { useSettingsPage } from "./app/use-settings-page"
 import type { AssistantTraceVisibility } from "./app/types"
 import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
+import { isSideChatSession } from "./app/workspace"
 
 const MIN_WORKBENCH_PANE_WIDTH = 320
 const MIN_WORKBENCH_PANE_HEIGHT = 240
@@ -205,6 +206,7 @@ export function App() {
     handleCreateSessionSubmit,
     handleCreateSessionWorkspaceChange,
     handleLeftSidebarViewChange,
+    handleOpenSideChat,
     handleOpenCreateSessionTab,
     handlePaneFocus,
     handleSplitResize: handleWorkbenchPaneResize,
@@ -733,6 +735,7 @@ export function App() {
                 onFocusPane={handlePaneFocus}
                 onInspectFileInSidebar={handleInspectFileInSidebar}
                 onOpenCreateSessionTab={handleOpenCreateSessionTab}
+                onOpenSideChat={handleOpenSideChat}
                 onPaneDropTargetChange={handlePaneDropTargetChange}
                 onPaneResizerPointerDown={handleWorkbenchPaneResizerPointerDown}
                 onPaneTabDragEnd={handlePaneTabDragEnd}
@@ -883,6 +886,7 @@ type PaneTabDescriptor =
       kind: "session"
       sessionID: string
       title: string
+      sessionKind?: NonNullable<WorkbenchPaneState["activeSession"]>["kind"]
       workflow?: NonNullable<WorkbenchPaneState["activeSession"]>["workflow"]
     }
   | {
@@ -940,6 +944,7 @@ interface WorkbenchTreeProps {
   onFocusPane: (paneID: string) => void
   onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
   onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
+  onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
   onPaneDropTargetChange: (paneID: string, position: PaneDropPosition | null) => void
   onPaneResizerPointerDown: (event: ReactPointerEvent<HTMLDivElement>, splitID: string, leftIndex: number) => void
   onPaneTabDragEnd: () => void
@@ -1038,6 +1043,7 @@ function WorkbenchNodeView({
         onFocusPane={props.onFocusPane}
         onInspectFileInSidebar={props.onInspectFileInSidebar}
         onOpenCreateSessionTab={props.onOpenCreateSessionTab}
+        onOpenSideChat={props.onOpenSideChat}
         onPaneDropTargetChange={props.onPaneDropTargetChange}
         onPaneTabDragEnd={props.onPaneTabDragEnd}
         onPaneTabDragStart={props.onPaneTabDragStart}
@@ -1110,6 +1116,7 @@ interface PaneSurfaceProps {
   onFocusPane: (paneID: string) => void
   onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
   onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
+  onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
   onPaneDropTargetChange: (paneID: string, position: PaneDropPosition | null) => void
   onPaneTabDragEnd: () => void
   onPaneTabDragStart: (paneID: string, tabKey: string) => void
@@ -1150,6 +1157,7 @@ const PaneSurface = memo(function PaneSurface({
   onFocusPane,
   onInspectFileInSidebar,
   onOpenCreateSessionTab,
+  onOpenSideChat,
   onPaneDropTargetChange,
   onPaneTabDragEnd,
   onPaneTabDragStart,
@@ -1182,6 +1190,7 @@ const PaneSurface = memo(function PaneSurface({
     projectID: pane.composerProjectID,
     refreshToken: composerRefreshVersion,
   })
+  const readOnlySideChat = isSideChatSession(pane.activeSession)
 
   return (
     <section
@@ -1252,6 +1261,7 @@ const PaneSurface = memo(function PaneSurface({
                   modelOptions={composer.modelOptions}
                   selectedModel={composer.selectedModel}
                   selectedModelLabel={composer.selectedModelLabel}
+                  showModelSelector
                   unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
                   onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
                   onModelChange={composer.handleModelChange}
@@ -1282,6 +1292,8 @@ const PaneSurface = memo(function PaneSurface({
                   gitProjectID={pane.projectID}
                   permissionMode={pane.composerPermissionMode}
                   onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
+                  showGitControls
+                  showPermissionToggle
                   usage={null}
                 />
               </div>
@@ -1289,8 +1301,10 @@ const PaneSurface = memo(function PaneSurface({
           ) : (
             <>
               <ThreadView
+                activeProjectID={pane.projectID}
                 activeSession={pane.activeSession}
                 assistantTraceVisibility={assistantTraceVisibility}
+                composerRefreshVersion={composerRefreshVersion}
                 isResolvingPermissionRequest={isResolvingPermissionRequest}
                 isSendingQuestionAnswer={pane.isSending}
                 isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
@@ -1298,6 +1312,16 @@ const PaneSurface = memo(function PaneSurface({
                 permissionRequestActionError={permissionRequestActionError}
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
                 activeTurns={pane.activeTurns}
+                sideChatAttachments={pane.activeSideChatAttachments}
+                sideChatCommentReferences={pane.activeSideChatCommentReferences}
+                sideChatCountsByAnchorMessageID={pane.sideChatCountsByAnchorMessageID}
+                sideChatDraft={pane.activeSideChatDraft}
+                sideChatIsSending={pane.activeSideChatIsSending}
+                sideChatPendingPermissionRequests={pane.activeSideChatPendingPermissionRequests}
+                sideChatPermissionRequestActionError={permissionRequestActionError}
+                sideChatPermissionRequestActionRequestID={permissionRequestActionRequestID}
+                sideChatSession={pane.activeSideChatSession}
+                sideChatTurns={pane.activeSideChatTurns}
                 threadColumnRef={threadColumnRef}
                 onAskUserQuestionAnswer={(answer) =>
                   void onSend({
@@ -1320,6 +1344,42 @@ const PaneSurface = memo(function PaneSurface({
                   })
                 }
                 onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
+                onOpenSideChat={(anchorMessageID) =>
+                  void onOpenSideChat(anchorMessageID, {
+                    paneID: pane.id,
+                    parentSessionID: pane.sessionID,
+                  })
+                }
+                onSideChatDraftChange={(value) => {
+                  if (pane.activeSideChatTabKey) {
+                    onSetDraft(pane.activeSideChatTabKey, value)
+                  }
+                }}
+                onSideChatPickAttachments={({ allowImage, allowPdf, disabledReason }) =>
+                  onPickComposerAttachments({
+                    allowImage,
+                    allowPdf,
+                    disabledReason,
+                    tabKey: pane.activeSideChatTabKey,
+                  })
+                }
+                onSideChatRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.activeSideChatTabKey)}
+                onSideChatRemoveCommentReference={(referenceID) =>
+                  onRemoveComposerCommentReference(referenceID, pane.activeSideChatTabKey)
+                }
+                onSideChatSend={(input) =>
+                  void onSend({
+                    attachmentError: input.attachmentError,
+                    draftOverride: input.draftOverride,
+                    paneID: pane.id,
+                    preserveComposerState: true,
+                    questionAnswer: input.questionAnswer,
+                    selectedSkillIDs: input.selectedSkillIDs,
+                    sessionID: pane.activeSideChatSession?.id,
+                    tabKey: pane.activeSideChatTabKey,
+                    waitForPendingModelSelection: input.waitForPendingModelSelection,
+                  })
+                }
                 onPermissionRequestResponse={onPermissionRequestResponse}
               />
               <div className="composer-stack">
@@ -1336,6 +1396,7 @@ const PaneSurface = memo(function PaneSurface({
                   modelOptions={composer.modelOptions}
                   selectedModel={composer.selectedModel}
                   selectedModelLabel={composer.selectedModelLabel}
+                  showModelSelector={!readOnlySideChat}
                   unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
                   onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
                   onModelChange={composer.handleModelChange}
@@ -1366,6 +1427,8 @@ const PaneSurface = memo(function PaneSurface({
                   gitProjectID={pane.projectID}
                   permissionMode={pane.composerPermissionMode}
                   onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
+                  showGitControls={!readOnlySideChat}
+                  showPermissionToggle={!readOnlySideChat}
                   usage={pane.activeSessionContextUsage}
                 />
               </div>

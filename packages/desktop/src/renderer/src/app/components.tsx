@@ -3,7 +3,9 @@ import { sidebarActions } from "./constants"
 import { WorkspaceFilesPanel } from "./files/WorkspaceFilesPanel"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
 import { PreviewPanel } from "./preview/PreviewPanel"
+import { buildTurnsFromHistory } from "./stream"
 import { ThreadRichText } from "./thread-rich-text"
+import { useProjectComposer } from "./use-project-composer"
 import {
   ArchiveIcon,
   ArrowUpIcon,
@@ -74,6 +76,7 @@ import type {
 } from "./types"
 import { getSessionWorkflowBadge } from "./session-workflow"
 import { formatTime } from "./utils"
+import { isSideChatSession } from "./workspace"
 
 interface WindowChromeProps {
   controlsRef: RefObject<HTMLDivElement | null>
@@ -87,6 +90,35 @@ function WindowControlsSpacer({ variant }: { variant: "canvas" | "right-sidebar"
 
 function joinClassNames(...tokens: Array<string | null | undefined | false>) {
   return tokens.filter(Boolean).join(" ")
+}
+
+async function writeTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "true")
+  textarea.style.position = "fixed"
+  textarea.style.opacity = "0"
+  textarea.style.pointerEvents = "none"
+
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  const didCopy = document.execCommand("copy")
+  document.body.removeChild(textarea)
+
+  if (!didCopy) {
+    throw new Error("Clipboard copy command failed.")
+  }
+}
+
+function SideChatBadge({ compact = false }: { compact?: boolean }) {
+  return <span className={compact ? "side-chat-badge is-compact" : "side-chat-badge"}>Side chat</span>
 }
 
 function SessionWorkflowBadge({
@@ -568,7 +600,7 @@ function FolderWorkspaceView({
 
               {isExpanded ? (
                 <div className="session-tree">
-            {workspace.sessions.map((session) => {
+            {workspace.sessions.filter((session) => !isSideChatSession(session)).map((session) => {
               const active = session.id === activeSessionID
               const workflowBadge = getSessionWorkflowBadge(session.workflow)
 
@@ -2504,7 +2536,7 @@ export function CanvasRegionTopMenu({
       content={(
         <>
           <div className="canvas-region-top-menu-tabs" aria-label="Session tabs">
-            {sessions.map((session) => {
+            {sessions.filter((session) => !isSideChatSession(session)).map((session) => {
               const isActive = activeCreateSessionTabID === null && session.id === activeSessionID
               const workflowBadge = getSessionWorkflowBadge(session.workflow)
 
@@ -2520,6 +2552,7 @@ export function CanvasRegionTopMenu({
                   >
                     <span className="session-tab-copy">
                       <span className="session-tab-title">{session.title}</span>
+                      {isSideChatSession(session) ? <SideChatBadge compact /> : null}
                       <SessionWorkflowBadge compact workflow={workflowBadge} />
                     </span>
                   </button>
@@ -2605,6 +2638,7 @@ interface PaneTabBarProps {
         key: string
         kind: "session"
         sessionID: string
+        sessionKind?: SessionSummary["kind"]
         title: string
         workflow?: SessionSummary["workflow"]
       }
@@ -2795,6 +2829,10 @@ export function PaneTabBar({
                 ? "Close create session tab"
                 : `Close create session tab ${createTabIndex + 1}`
 
+          if (tab.kind === "session" && tab.sessionKind === "side-chat") {
+            return null
+          }
+
           return (
             <div
               key={tab.key}
@@ -2826,6 +2864,7 @@ export function PaneTabBar({
               >
                 <span className="session-tab-copy">
                   <span className="session-tab-title">{tab.title}</span>
+                  {tab.kind === "session" && tab.sessionKind === "side-chat" ? <SideChatBadge compact /> : null}
                   <SessionWorkflowBadge compact workflow={workflowBadge} />
                 </span>
               </button>
@@ -3169,6 +3208,7 @@ export function SessionCanvasTopMenu({
   onSkillToggle,
 }: SessionCanvasTopMenuProps) {
   const workflowBadge = getSessionWorkflowBadge(activeSession?.workflow, pendingPermissionRequests)
+  const readOnlySideChat = isSideChatSession(activeSession)
 
   return (
     <ShellTopMenu
@@ -3180,6 +3220,7 @@ export function SessionCanvasTopMenu({
         <>
           <span className="label">{contextLabel}</span>
           <strong>{contextTitle}</strong>
+          {readOnlySideChat ? <SideChatBadge /> : null}
           <SessionWorkflowBadge workflow={workflowBadge} />
         </>
       )}
@@ -3187,19 +3228,23 @@ export function SessionCanvasTopMenu({
       trailing={(
         <>
           <ExternalEditorMenuButton directory={gitDirectory} />
-          <ProjectMcpMenuButton
-            mcpOptions={mcpOptions}
-            selectedMcpServerIDs={selectedMcpServerIDs}
-            selectedMcpServerLabel={selectedMcpServerLabel}
-            onMcpServerToggle={onMcpServerToggle}
-          />
-          <ProjectSkillsMenuButton
-            skillOptions={skillOptions}
-            selectedSkillIDs={selectedSkillIDs}
-            selectedSkillLabel={selectedSkillLabel}
-            onSkillToggle={onSkillToggle}
-          />
-          <GitQuickMenuButton projectID={gitProjectID} directory={gitDirectory} />
+          {!readOnlySideChat ? (
+            <>
+              <ProjectMcpMenuButton
+                mcpOptions={mcpOptions}
+                selectedMcpServerIDs={selectedMcpServerIDs}
+                selectedMcpServerLabel={selectedMcpServerLabel}
+                onMcpServerToggle={onMcpServerToggle}
+              />
+              <ProjectSkillsMenuButton
+                skillOptions={skillOptions}
+                selectedSkillIDs={selectedSkillIDs}
+                selectedSkillLabel={selectedSkillLabel}
+                onSkillToggle={onSkillToggle}
+              />
+              <GitQuickMenuButton projectID={gitProjectID} directory={gitDirectory} />
+            </>
+          ) : null}
         </>
       )}
       trailingClassName="session-canvas-top-menu-actions"
@@ -5224,18 +5269,51 @@ export function SettingsPage({
 */
 
 interface ThreadViewProps {
+  activeProjectID?: string | null
   activeSession: SessionSummary | null
   activeTurns: Turn[]
   assistantTraceVisibility: AssistantTraceVisibility
+  composerRefreshVersion?: number
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
   isSendingQuestionAnswer: boolean
+  showSessionBanner?: boolean
   onFileChangeSelect?: (file: string) => void
+  onOpenSideChat?: (anchorMessageID: string) => void | Promise<void>
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
+  sideChatAttachments?: ComposerAttachment[]
+  sideChatCommentReferences?: ComposerCommentReference[]
+  sideChatCountsByAnchorMessageID: Record<string, number>
+  sideChatDraft?: string
+  sideChatIsSending?: boolean
+  sideChatPendingPermissionRequests?: PermissionRequest[]
+  sideChatPermissionRequestActionError?: string | null
+  sideChatPermissionRequestActionRequestID?: string | null
+  sideChatSession?: SessionSummary | null
+  sideChatTurns?: Turn[]
   threadColumnRef: RefObject<HTMLDivElement | null>
   onAskUserQuestionAnswer: QuestionAnswerHandler
+  onSideChatDraftChange?: (value: string) => void
+  onSideChatPickAttachments?: (input: {
+    allowImage: boolean
+    allowPdf: boolean
+    disabledReason: string | null
+  }) => void | Promise<void>
+  onSideChatRemoveAttachment?: (path: string) => void
+  onSideChatRemoveCommentReference?: (referenceID: string) => void
+  onSideChatSend?: (input: {
+    attachmentError?: string | null
+    draftOverride?: string
+    questionAnswer?: {
+      questionID: string
+      selectedOptions?: string[]
+      freeformText?: string
+    }
+    selectedSkillIDs: string[]
+    waitForPendingModelSelection: () => Promise<void>
+  }) => void | Promise<void>
   onPermissionRequestResponse: PermissionRequestResponseHandler
 }
 
@@ -5469,6 +5547,24 @@ function filterRenderedAssistantTraceItems(
   })
 }
 
+function hasResponseTraceItems(items: AssistantTraceItem[]) {
+  return items.some((item) => traceSectionKeyForItem(item) === "response")
+}
+
+function buildAssistantResponseCopyText(items: AssistantTraceItem[]) {
+  return items
+    .map((item) => {
+      const segments = [item.title, item.text, item.detail]
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value))
+
+      return segments.join("\n\n")
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .trim()
+}
+
 function getAssistantEphemeralHint(turn: AssistantTurn) {
   switch (turn.runtime.phase) {
     case "requesting":
@@ -5524,6 +5620,7 @@ function AssistantTurnSections({
   items,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
+  renderAfterSection,
   showFileChanges,
   traceVisibility,
   turnID,
@@ -5533,6 +5630,11 @@ function AssistantTurnSections({
   items: AssistantTraceItem[]
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect: ((file: string) => void) | undefined
+  renderAfterSection?: (input: {
+    items: AssistantTraceItem[]
+    sectionKey: AssistantTraceSectionKey
+    title: string
+  }) => ReactNode
   showFileChanges: boolean
   traceVisibility: AssistantTraceVisibility
   turnID: string
@@ -5570,11 +5672,201 @@ function AssistantTurnSections({
                   traceVisibility={traceVisibility}
                 />
               ))}
+              {renderAfterSection
+                ? renderAfterSection({
+                    items: renderedItems,
+                    sectionKey: block.sectionKey,
+                    title: block.title,
+                  })
+                : null}
             </div>
           </AssistantTraceSection>
         )
       })}
     </>
+  )
+}
+
+interface InlineSideChatThreadProps {
+  activeProjectID: string | null
+  attachments: ComposerAttachment[]
+  assistantTraceVisibility: AssistantTraceVisibility
+  commentReferences: ComposerCommentReference[]
+  composerRefreshVersion: number
+  draft: string
+  isAgentDebugTraceEnabled: boolean
+  isResolvingPermissionRequest: boolean
+  isSending: boolean
+  pendingPermissionRequests: PermissionRequest[]
+  permissionRequestActionError: string | null
+  permissionRequestActionRequestID: string | null
+  session: SessionSummary
+  turns: Turn[]
+  onDraftChange: (value: string) => void
+  onHide: () => void
+  onPermissionRequestResponse: PermissionRequestResponseHandler
+  onPickAttachments: (input: {
+    allowImage: boolean
+    allowPdf: boolean
+    disabledReason: string | null
+  }) => void | Promise<void>
+  onRemoveAttachment: (path: string) => void
+  onRemoveCommentReference: (referenceID: string) => void
+  onSend: (input: {
+    attachmentError?: string | null
+    draftOverride?: string
+    questionAnswer?: {
+      questionID: string
+      selectedOptions?: string[]
+      freeformText?: string
+    }
+    selectedSkillIDs: string[]
+    waitForPendingModelSelection: () => Promise<void>
+  }) => void | Promise<void>
+}
+
+function InlineSideChatThread({
+  activeProjectID,
+  attachments,
+  assistantTraceVisibility,
+  commentReferences,
+  composerRefreshVersion,
+  draft,
+  isAgentDebugTraceEnabled,
+  isResolvingPermissionRequest,
+  isSending,
+  pendingPermissionRequests,
+  permissionRequestActionError,
+  permissionRequestActionRequestID,
+  session,
+  turns,
+  onDraftChange,
+  onHide,
+  onPermissionRequestResponse,
+  onPickAttachments,
+  onRemoveAttachment,
+  onRemoveCommentReference,
+  onSend,
+}: InlineSideChatThreadProps) {
+  const composer = useProjectComposer({
+    attachmentPaths: attachments.map((attachment) => attachment.path),
+    projectID: activeProjectID,
+    refreshToken: composerRefreshVersion,
+  })
+  const [hydratedTurns, setHydratedTurns] = useState<Turn[]>(turns)
+  const threadColumnRef = useRef<HTMLDivElement | null>(null)
+  const effectiveTurns = turns.length > 0 ? turns : hydratedTurns
+
+  useEffect(() => {
+    if (turns.length > 0) {
+      setHydratedTurns(turns)
+      return
+    }
+
+    const getSessionHistory = window.desktop?.getSessionHistory
+    if (!getSessionHistory) {
+      setHydratedTurns([])
+      return
+    }
+
+    let isCancelled = false
+    setHydratedTurns([])
+
+    void getSessionHistory({ sessionID: session.id })
+      .then((messages) => {
+        if (isCancelled) return
+        setHydratedTurns(buildTurnsFromHistory(messages))
+      })
+      .catch((error) => {
+        if (isCancelled) return
+        console.error("[desktop] getSessionHistory failed for inline side chat:", error)
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [session.id, turns])
+
+  return (
+    <section className="inline-side-chat-thread" aria-label="Nested side chat">
+      <header className="inline-side-chat-header">
+        <div className="inline-side-chat-copy">
+          <span className="label">Side chat</span>
+          <strong>{session.origin?.anchorPreview || session.title}</strong>
+        </div>
+        <button className="secondary-button inline-side-chat-close" type="button" onClick={onHide}>
+          Hide
+        </button>
+      </header>
+
+      <ThreadView
+        activeProjectID={activeProjectID}
+        activeSession={session}
+        activeTurns={effectiveTurns}
+        assistantTraceVisibility={assistantTraceVisibility}
+        composerRefreshVersion={composerRefreshVersion}
+        isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+        isResolvingPermissionRequest={isResolvingPermissionRequest}
+        isSendingQuestionAnswer={isSending}
+        pendingPermissionRequests={pendingPermissionRequests}
+        permissionRequestActionError={permissionRequestActionError}
+        permissionRequestActionRequestID={permissionRequestActionRequestID}
+        showSessionBanner={false}
+        sideChatCountsByAnchorMessageID={{}}
+        threadColumnRef={threadColumnRef}
+        onAskUserQuestionAnswer={(answer) =>
+          void onSend({
+            draftOverride: answer.text,
+            questionAnswer: answer.questionID
+              ? {
+                  questionID: answer.questionID,
+                  selectedOptions: answer.selectedOptions,
+                  freeformText: answer.freeformText,
+                }
+              : undefined,
+            selectedSkillIDs: composer.selectedSkillIDs,
+            waitForPendingModelSelection: composer.awaitPendingModelSelection,
+          })
+        }
+        onPermissionRequestResponse={onPermissionRequestResponse}
+      />
+
+      <Composer
+        attachments={attachments}
+        commentReferences={commentReferences}
+        attachmentButtonTitle={composer.attachmentButtonTitle}
+        attachmentDisabledReason={composer.attachmentDisabledReason}
+        attachmentError={composer.attachmentError}
+        canSend
+        draft={draft}
+        hasPendingPermissionRequests={pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+        isSending={isSending}
+        modelOptions={composer.modelOptions}
+        selectedModel={composer.selectedModel}
+        selectedModelLabel={composer.selectedModelLabel}
+        showModelSelector={false}
+        unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
+        onDraftChange={onDraftChange}
+        onModelChange={composer.handleModelChange}
+        onPickAttachments={() =>
+          onPickAttachments({
+            allowImage: composer.attachmentCapabilities.image,
+            allowPdf: composer.attachmentCapabilities.pdf,
+            disabledReason: composer.attachmentDisabledReason,
+          })
+        }
+        onRemoveAttachment={onRemoveAttachment}
+        onRemoveCommentReference={onRemoveCommentReference}
+        onSend={(draftOverride) =>
+          void onSend({
+            attachmentError: composer.attachmentError,
+            draftOverride,
+            selectedSkillIDs: composer.selectedSkillIDs,
+            waitForPendingModelSelection: composer.awaitPendingModelSelection,
+          })
+        }
+      />
+    </section>
   )
 }
 
@@ -6266,21 +6558,69 @@ function collectAnsweredQuestionIDs(turns: Turn[]) {
 }
 
 export function ThreadView({
+  activeProjectID = null,
   activeSession,
   activeTurns,
   assistantTraceVisibility,
+  composerRefreshVersion = 0,
   isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
   isSendingQuestionAnswer,
+  showSessionBanner = true,
   onFileChangeSelect,
+  onOpenSideChat,
   onAskUserQuestionAnswer,
   pendingPermissionRequests,
   permissionRequestActionError,
   permissionRequestActionRequestID,
+  sideChatAttachments = [],
+  sideChatCommentReferences = [],
+  sideChatCountsByAnchorMessageID,
+  sideChatDraft = "",
+  sideChatIsSending = false,
+  sideChatPendingPermissionRequests = [],
+  sideChatPermissionRequestActionError = null,
+  sideChatPermissionRequestActionRequestID = null,
+  sideChatSession = null,
+  sideChatTurns = [],
   threadColumnRef,
+  onSideChatDraftChange,
+  onSideChatPickAttachments,
+  onSideChatRemoveAttachment,
+  onSideChatRemoveCommentReference,
+  onSideChatSend,
   onPermissionRequestResponse,
 }: ThreadViewProps) {
   const answeredQuestionIDs = collectAnsweredQuestionIDs(activeTurns)
+  const readOnlySideChat = isSideChatSession(activeSession)
+  const [copiedResponseTurnID, setCopiedResponseTurnID] = useState<string | null>(null)
+  const copiedResponseTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copiedResponseTimeoutRef.current !== null) {
+        window.clearTimeout(copiedResponseTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const handleCopyAssistantResponse = useEffectEvent(async (turnID: string, text: string) => {
+    try {
+      await writeTextToClipboard(text)
+      setCopiedResponseTurnID(turnID)
+
+      if (copiedResponseTimeoutRef.current !== null) {
+        window.clearTimeout(copiedResponseTimeoutRef.current)
+      }
+
+      copiedResponseTimeoutRef.current = window.setTimeout(() => {
+        setCopiedResponseTurnID((current) => (current === turnID ? null : current))
+        copiedResponseTimeoutRef.current = null
+      }, 1600)
+    } catch (error) {
+      console.error("[desktop] Failed to copy assistant response:", error)
+    }
+  })
 
   return (
     <section className="thread-shell">
@@ -6313,6 +6653,16 @@ export function ThreadView({
           </article>
         ) : (
           <>
+            {showSessionBanner && readOnlySideChat ? (
+              <article className="thread-session-banner">
+                <div className="thread-session-banner-copy">
+                  <span className="label">Side chat</span>
+                  <strong>{activeSession.origin?.anchorPreview || "Anchored reply snapshot"}</strong>
+                  <p>Scoped discussion linked to one assistant reply. It stays out of the main session context.</p>
+                </div>
+                <span className="thread-session-banner-pill">Isolated</span>
+              </article>
+            ) : null}
             {activeTurns.map((turn, turnIndex) => {
               if (turn.kind === "user") {
                 return (
@@ -6342,6 +6692,9 @@ export function ThreadView({
               )
               const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
               if (renderedItems.length === 0 && !ephemeralHint) return null
+              const existingSideChatCount = sideChatCountsByAnchorMessageID[turn.id] ?? 0
+              const canOpenSideChat = !readOnlySideChat && !turn.isStreaming && hasResponseTraceItems(traceItems) && Boolean(onOpenSideChat)
+              const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === turn.id ? sideChatSession : null
 
               return (
                 <article key={turn.id} className="turn assistant-turn">
@@ -6356,6 +6709,82 @@ export function ThreadView({
                         items={traceItems}
                         onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                         onFileChangeSelect={onFileChangeSelect}
+                        renderAfterSection={({ items, sectionKey }) => {
+                          if (sectionKey !== "response") return null
+
+                          const responseCopyText = buildAssistantResponseCopyText(items)
+                          if (!responseCopyText && !canOpenSideChat) return null
+
+                          return (
+                            <div className="assistant-response-side-chat">
+                              <div className="assistant-response-actions">
+                                {responseCopyText ? (
+                                  <button
+                                    className={joinClassNames(
+                                      "assistant-response-action-button",
+                                      copiedResponseTurnID === turn.id && "is-active",
+                                    )}
+                                    type="button"
+                                    onClick={() => void handleCopyAssistantResponse(turn.id, responseCopyText)}
+                                  >
+                                    {copiedResponseTurnID === turn.id ? "已复制" : "复制"}
+                                  </button>
+                                ) : null}
+                                {canOpenSideChat ? (
+                                  <button
+                                    className={joinClassNames(
+                                      "assistant-response-action-button",
+                                      activeInlineSideChat && "is-active",
+                                    )}
+                                    type="button"
+                                    aria-pressed={Boolean(activeInlineSideChat)}
+                                    title={
+                                      activeInlineSideChat
+                                        ? "Hide this side chat"
+                                        : existingSideChatCount > 0
+                                          ? `${existingSideChatCount} side chat thread${existingSideChatCount === 1 ? "" : "s"}`
+                                          : "Open a side chat for this reply"
+                                    }
+                                    onClick={() => void onOpenSideChat?.(turn.id)}
+                                  >
+                                    Sidechat
+                                  </button>
+                                ) : null}
+                              </div>
+
+                              {activeInlineSideChat &&
+                              onSideChatDraftChange &&
+                              onSideChatPickAttachments &&
+                              onSideChatRemoveAttachment &&
+                              onSideChatRemoveCommentReference &&
+                              onSideChatSend ? (
+                                <InlineSideChatThread
+                                  activeProjectID={activeProjectID}
+                                  attachments={sideChatAttachments}
+                                  assistantTraceVisibility={assistantTraceVisibility}
+                                  commentReferences={sideChatCommentReferences}
+                                  composerRefreshVersion={composerRefreshVersion}
+                                  draft={sideChatDraft}
+                                  isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+                                  isResolvingPermissionRequest={isResolvingPermissionRequest}
+                                  isSending={sideChatIsSending}
+                                  pendingPermissionRequests={sideChatPendingPermissionRequests}
+                                  permissionRequestActionError={sideChatPermissionRequestActionError}
+                                  permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}
+                                  session={activeInlineSideChat}
+                                  turns={sideChatTurns}
+                                  onDraftChange={onSideChatDraftChange}
+                                  onHide={() => void onOpenSideChat?.(turn.id)}
+                                  onPermissionRequestResponse={onPermissionRequestResponse}
+                                  onPickAttachments={onSideChatPickAttachments}
+                                  onRemoveAttachment={onSideChatRemoveAttachment}
+                                  onRemoveCommentReference={onSideChatRemoveCommentReference}
+                                  onSend={onSideChatSend}
+                                />
+                              ) : null}
+                            </div>
+                          )
+                        }}
                         showFileChanges={isCycleFinalTurn && !turn.isStreaming}
                         traceVisibility={assistantTraceVisibility}
                       />
@@ -6393,6 +6822,7 @@ interface ComposerProps {
   modelOptions: ComposerModelOption[]
   selectedModel: string | null
   selectedModelLabel: string
+  showModelSelector?: boolean
   unsupportedAttachmentPaths: string[]
   onDraftChange: (value: string) => void
   onModelChange: (value: string | null) => void | Promise<void>
@@ -6455,6 +6885,7 @@ export function Composer({
   modelOptions,
   selectedModel,
   selectedModelLabel,
+  showModelSelector = true,
   unsupportedAttachmentPaths,
   onDraftChange,
   onModelChange,
@@ -6603,45 +7034,47 @@ export function Composer({
             <PaperclipIcon />
           </button>
 
-          <div className="composer-menu-anchor">
-            <button
-              aria-expanded={openMenu === "model"}
-              aria-haspopup="dialog"
-              aria-label={`Select model: ${selectedModelLabel}`}
-              className="composer-selector-button"
-              onClick={() => toggleMenu("model")}
-              type="button"
-            >
-              <span>{selectedModelLabel}</span>
-              <ChevronDownIcon />
-            </button>
+          {showModelSelector ? (
+            <div className="composer-menu-anchor">
+              <button
+                aria-expanded={openMenu === "model"}
+                aria-haspopup="dialog"
+                aria-label={`Select model: ${selectedModelLabel}`}
+                className="composer-selector-button"
+                onClick={() => toggleMenu("model")}
+                type="button"
+              >
+                <span>{selectedModelLabel}</span>
+                <ChevronDownIcon />
+              </button>
 
-            {openMenu === "model" ? (
-              <div className="composer-menu-panel" role="dialog" aria-label="Model selection">
-                <button
-                  className={selectedModel === null ? "composer-menu-option is-selected" : "composer-menu-option"}
-                  onClick={() => handleModelSelect(null)}
-                  type="button"
-                >
-                  <span>Use server default</span>
-                </button>
-                {modelOptions.length > 0 ? (
-                  modelOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
-                      onClick={() => handleModelSelect(option.value)}
-                      type="button"
-                    >
-                      <span>{option.label}</span>
-                    </button>
-                  ))
-                ) : (
-                  <p className="composer-menu-empty">No visible models are available for this project yet.</p>
-                )}
-              </div>
-            ) : null}
-          </div>
+              {openMenu === "model" ? (
+                <div className="composer-menu-panel" role="dialog" aria-label="Model selection">
+                  <button
+                    className={selectedModel === null ? "composer-menu-option is-selected" : "composer-menu-option"}
+                    onClick={() => handleModelSelect(null)}
+                    type="button"
+                  >
+                    <span>Use server default</span>
+                  </button>
+                  {modelOptions.length > 0 ? (
+                    modelOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
+                        onClick={() => handleModelSelect(option.value)}
+                        type="button"
+                      >
+                        <span>{option.label}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="composer-menu-empty">No visible models are available for this project yet.</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="composer-actions">

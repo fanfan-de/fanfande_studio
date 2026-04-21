@@ -1,7 +1,13 @@
 /// <reference types="vite/client" />
 
 import type { PermissionRequestPrompt, PermissionResolveInput, PermissionResolveResult } from "../../shared/permission"
-import type { SessionRuntimeDebugSnapshot } from "./app/types"
+import type {
+  ArchivedSessionSummary,
+  LoadedFolderWorkspace,
+  LoadedSessionSnapshot,
+  SessionRuntimeDebugSnapshot,
+  SideChatLink,
+} from "./app/types"
 import type { DetailedHTMLProps, HTMLAttributes } from "react"
 
 export {}
@@ -19,6 +25,7 @@ interface DesktopComposerAttachmentInput {
 }
 
 type DesktopComposerPermissionMode = "default" | "full-access"
+type DesktopSessionSummary = LoadedSessionSnapshot
 
 declare global {
   namespace JSX {
@@ -238,29 +245,7 @@ declare global {
       updateWorkspaceWatchDirectories?: (input: { directories: string[] }) => Promise<{
         directories: string[]
       }>
-      listFolderWorkspaces?: () => Promise<
-        Array<{
-          id: string
-          directory: string
-          name: string
-          exists?: boolean
-          created: number
-          updated: number
-          project: {
-            id: string
-            name: string
-            worktree: string
-          }
-          sessions: Array<{
-            id: string
-            projectID: string
-            directory: string
-            title: string
-            created: number
-            updated: number
-          }>
-        }>
-      >
+      listFolderWorkspaces?: () => Promise<LoadedFolderWorkspace[]>
       listProjectWorkspaces?: () => Promise<
         Array<{
           id: string
@@ -268,125 +253,36 @@ declare global {
           name?: string
           created: number
           updated: number
-          sessions: Array<{
-            id: string
-            projectID: string
-            directory: string
-            title: string
-            created: number
-            updated: number
-          }>
+          sessions: DesktopSessionSummary[]
         }>
       >
-      openFolderWorkspace?: (input: { directory: string }) => Promise<{
-        id: string
-        directory: string
-        name: string
-        exists?: boolean
-        created: number
-        updated: number
-        project: {
-          id: string
-          name: string
-          worktree: string
-        }
-        sessions: Array<{
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }>
-      }>
+      openFolderWorkspace?: (input: { directory: string }) => Promise<LoadedFolderWorkspace>
       createProjectWorkspace?: (input: { directory: string }) => Promise<{
         id: string
         worktree: string
         name?: string
         created: number
         updated: number
-        sessions: Array<{
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }>
+        sessions: DesktopSessionSummary[]
       }>
       createAgentSession?: (input?: { directory?: string }) => Promise<{
-        session: {
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }
+        session: DesktopSessionSummary
         requestId?: string
       }>
       createFolderSession?: (input: { projectID: string; directory: string; title?: string }) => Promise<{
-        session: {
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }
+        session: DesktopSessionSummary
         requestId?: string
       }>
       createProjectSession?: (input: { projectID: string; title?: string; directory?: string }) => Promise<{
-        session: {
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }
+        session: DesktopSessionSummary
         requestId?: string
       }>
+      createSideChat?: (input: { parentSessionID: string; anchorMessageID: string }) => Promise<{
+        session: DesktopSessionSummary
+        requestId?: string
+      }>
+      listSideChats?: (input: { parentSessionID: string; anchorMessageID?: string }) => Promise<SideChatLink[]>
+      getSideChatLink?: (input: { sessionID: string }) => Promise<SideChatLink>
       deleteProjectWorkspace?: (input: { projectID: string }) => Promise<{
         projectID: string
         deletedSessionIDs: string[]
@@ -404,38 +300,9 @@ declare global {
         archivedAt: number
         requestId?: string
       }>
-      listArchivedSessions?: () => Promise<
-        Array<{
-          id: string
-          projectID: string
-          projectName: string | null
-          projectMissing: boolean
-          directory: string
-          title: string
-          created: number
-          updated: number
-          archivedAt: number
-          messageCount: number
-          eventCount: number
-        }>
-      >
+      listArchivedSessions?: () => Promise<ArchivedSessionSummary[]>
       restoreArchivedSession?: (input: { sessionID: string }) => Promise<{
-        session: {
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }
+        session: DesktopSessionSummary
         requestId?: string
       }>
       deleteArchivedSession?: (input: { sessionID: string }) => Promise<{

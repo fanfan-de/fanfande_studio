@@ -1,0 +1,318 @@
+/* Responsive overrides grouped by breakpoint.
+   This file keeps the final cascade result from the legacy monolith,
+   but removes duplicate breakpoint blocks introduced by successive passes. */
+
+@media (max-width: 1100px) {
+  .window-shell {
+    padding: 0;
+  }
+
+  .app-shell {
+    grid-template-columns: var(--activity-rail-display-width) minmax(0, 1fr);
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+
+  .activity-rail {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+  }
+
+  .sidebar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    border-top: 1px solid #e2e9f2;
+    border-right: 0;
+  }
+
+  .sidebar.is-right {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .canvas {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .sidebar-resizer {
+    display: none;
+  }
+
+  .panel-toolbar {
+    padding: 0;
+    border-bottom: 1px solid rgba(138, 164, 189, 0.36);
+  }
+
+  .workbench-panes {
+    padding: 8px 8px 0;
+  }
+
+  .workbench-pane-live-region {
+    --pane-content-gutter: 12px;
+    --pane-terminal-gutter: 10px;
+  }
+
+  .composer {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .settings-page-body,
+  .settings-page-shell,
+  .settings-services-layout,
+  .settings-detail-meta-grid,
+  .provider-grid,
+  .right-sidebar-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-page-nav,
+  .settings-page-primary-nav {
+    border-right: 0;
+    border-bottom: 1px solid rgba(138, 164, 189, 0.26);
+  }
+
+  .provider-row,
+  .provider-row-heading,
+  .provider-row-actions,
+  .model-row-heading,
+  .provider-connect-header,
+  .settings-service-item-header,
+  .settings-detail-hero,
+  .right-sidebar-section-header,
+  .right-sidebar-list-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .right-sidebar-top-menu {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .right-sidebar-top-menu-actions {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 900px) {
+  .assistant-response-actions,
+  .inline-side-chat-header,
+  .thread-session-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inline-side-chat-thread {
+    margin-left: 0;
+  }
+
+  .thread-session-banner-pill {
+    align-self: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  body {
+    overflow: auto;
+  }
+
+  .window-shell {
+    --window-controls-clearance: 112px;
+    padding: 0;
+  }
+
+  .window-controls-floating {
+    top: 6px;
+    right: 6px;
+    gap: 10px;
+    padding: 0;
+  }
+
+  .window-control {
+    width: 30px;
+    height: 30px;
+  }
+
+  .activity-rail {
+    padding-top: 0;
+    padding-bottom: 12px;
+  }
+
+  .sidebar {
+    padding: 0 12px 12px;
+  }
+
+  .canvas {
+    --canvas-inline-padding: 16px;
+    padding: 0 var(--canvas-inline-padding) 16px;
+    border-radius: 0;
+  }
+
+  .workbench-panes {
+    padding: 8px 8px 0;
+  }
+
+  .workbench-pane-live-region {
+    --pane-content-gutter: 10px;
+    --pane-terminal-gutter: 10px;
+  }
+
+  .canvas-terminal-toggle-anchor {
+    left: 16px;
+    bottom: 16px;
+  }
+
+  .shell-top-menu {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .panel-toolbar-actions,
+  .sidebar-actions-buttons,
+  .shell-top-menu-trailing,
+  .canvas-region-top-menu-tabs-shell,
+  .canvas-region-top-menu-tabs,
+  .canvas-region-top-menu-trailing {
+    justify-content: flex-start;
+    justify-self: start;
+  }
+
+  .canvas-region-top-menu,
+  .session-canvas-top-menu,
+  .pane-tab-bar,
+  .terminal-tabs {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .canvas-region-top-menu-trailing.is-right-sidebar-expanded,
+  .canvas-region-top-menu-trailing.is-right-sidebar-collapsed {
+    margin-right: 0;
+  }
+
+  .canvas-region-top-menu-tabs-shell {
+    max-width: none;
+  }
+
+  .thread-column,
+  .composer,
+  .composer-utility-bar {
+    width: 100%;
+  }
+
+  .thread-column {
+    padding-top: 10px;
+  }
+
+  .composer {
+    padding: 10px;
+    border-radius: var(--seg-radius-sm);
+  }
+
+  .composer-utility-bar {
+    flex-wrap: wrap;
+  }
+
+  .composer-utility-git-branch-anchor,
+  .composer-menu-anchor,
+  .canvas-top-menu-selector-anchor {
+    width: 100%;
+  }
+
+  .composer-utility-git-branch-button,
+  .canvas-top-menu-mcp-trigger,
+  .canvas-top-menu-skill-trigger,
+  .composer-selector-button,
+  .composer-actions .primary-button {
+    width: 100%;
+    max-width: none;
+    justify-content: space-between;
+  }
+
+  .composer-utility-git-branch-panel,
+  .composer-menu-panel,
+  .canvas-top-menu-selector-panel {
+    position: static;
+    width: 100%;
+    max-width: none;
+    margin-top: 8px;
+  }
+
+  .composer-toolbar,
+  .sidebar-footer,
+  .settings-actions-row,
+  .permission-request-inline-header,
+  .permission-request-header,
+  .permission-request-footer,
+  .ask-user-question-header,
+  .git-branch-create-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .composer-actions,
+  .settings-inline-actions {
+    margin-left: 0;
+  }
+
+  .composer-selector-button.is-icon-only,
+  .composer-actions .primary-button.is-icon-only {
+    justify-content: center;
+  }
+
+  .composer-selector-button.is-icon-only {
+    width: 34px;
+    min-width: 34px;
+  }
+
+  .composer-actions .primary-button.is-icon-only {
+    width: 40px;
+    min-width: 40px;
+  }
+
+  .terminal-panel {
+    margin-top: 8px;
+    border-radius: 20px 20px 0 0;
+  }
+
+  .settings-page-overlay,
+  .provider-connect-overlay,
+  .git-branch-create-overlay {
+    padding: 12px;
+  }
+
+  .settings-page-header,
+  .settings-page-content,
+  .settings-page-main,
+  .settings-page-nav,
+  .settings-page-primary-nav {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .settings-page-header {
+    padding-top: 12px;
+    align-items: flex-end;
+  }
+
+  .settings-field-grid,
+  .permission-request-grid,
+  .permission-request-grid-compact,
+  .permission-scope-switch {
+    grid-template-columns: 1fr;
+  }
+
+  .permission-request-inline,
+  .ask-user-question-card {
+    padding: 16px;
+  }
+
+  .provider-connect-modal,
+  .git-branch-create-dialog {
+    width: 100%;
+    padding: 18px 16px;
+  }
+}

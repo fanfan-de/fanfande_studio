@@ -48,6 +48,7 @@ import type {
   AgentSessionDeleteResult,
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
+  AgentSideChatLink,
   MenuAnchor,
   MenuKey,
   WindowAction,
@@ -71,6 +72,9 @@ function mapSessionInfo(session: AgentSessionInfo) {
     projectID: session.projectID,
     directory: session.directory,
     title: session.title,
+    kind: session.kind,
+    policy: session.policy,
+    origin: session.origin,
     created: session.time.created,
     updated: session.time.updated,
     workflow: session.workflow,
@@ -615,6 +619,54 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       }
     },
   )
+
+  ipcMain.handle(
+    "desktop:create-side-chat",
+    async (_event, input: { parentSessionID: string; anchorMessageID: string }) => {
+      const parentSessionID = input.parentSessionID.trim()
+      const anchorMessageID = input.anchorMessageID.trim()
+      const result = await requestAgentJSON<AgentSessionInfo>(
+        `/api/sessions/${encodeURIComponent(parentSessionID)}/side-chats`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            anchorMessageID,
+          }),
+        },
+      )
+
+      return {
+        session: mapSessionInfo(result.data),
+        requestId: result.requestId,
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:list-side-chats",
+    async (_event, input: { parentSessionID: string; anchorMessageID?: string }) => {
+      const parentSessionID = input.parentSessionID.trim()
+      const anchorMessageID = input.anchorMessageID?.trim()
+      const search = anchorMessageID ? `?anchorMessageID=${encodeURIComponent(anchorMessageID)}` : ""
+      const result = await requestAgentJSON<AgentSideChatLink[]>(
+        `/api/sessions/${encodeURIComponent(parentSessionID)}/side-chats${search}`,
+      )
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:get-side-chat-link", async (_event, input: { sessionID: string }) => {
+    const sessionID = input.sessionID.trim()
+    const result = await requestAgentJSON<AgentSideChatLink>(
+      `/api/sessions/${encodeURIComponent(sessionID)}/side-chat-link`,
+    )
+
+    return result.data
+  })
 
   ipcMain.handle("desktop:delete-project-workspace", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()

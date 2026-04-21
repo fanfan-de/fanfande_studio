@@ -1,0 +1,95 @@
+/* Generated from legacy styles.css: debug visualization modes. */
+
+
+
+.window-shell.debug-line-colors {
+  --debug-line-pane-divider: #1fbc7b;
+}
+
+.window-shell.debug-line-colors .pane-tab-bar {
+  border-bottom-color: var(--debug-line-pane-divider);
+}
+
+/* Debug UI regions: matches the desktop UI structure doc mapping */
+
+.window-shell.debug-ui-regions {
+  --debug-region-activity-rail: #f8b4b4;
+  --debug-region-left-sidebar: #fbd38d;
+  --debug-region-canvas-top-menu: #faf089;
+  --debug-region-session-top-menu: #9ae6b4;
+  --debug-region-global-skills: #81e6d9;
+  --debug-region-create-session: #90cdf4;
+  --debug-region-thread-shell: #bee3f8;
+  --debug-region-composer: #d6bcfa;
+  --debug-region-composer-utility: #c6f6d5;
+  --debug-region-terminal: #cbd5e0;
+  --debug-region-right-sidebar: #fbb6ce;
+  --debug-region-settings-overlay: rgba(15, 23, 42, 0.4);
+  --debug-region-settings-page: #f7fafc;
+}
+
+.window-shell.debug-ui-regions .activity-rail {
+  background: var(--debug-region-activity-rail);
+}
+
+.window-shell.debug-ui-regions .sidebar:not(.is-right),
+.window-shell.debug-ui-regions .left-sidebar-top-menu,
+.window-shell.debug-ui-regions .sidebar-view-host {
+  background: var(--debug-region-left-sidebar);
+}
+
+.window-shell.debug-ui-regions .pane-tab-bar,
+.window-shell.debug-ui-regions .canvas-region-top-menu {
+  background: var(--debug-region-canvas-top-menu);
+}
+
+.window-shell.debug-ui-regions .session-canvas-top-menu {
+  background: var(--debug-region-session-top-menu);
+}
+
+.window-shell.debug-ui-regions .global-skills-canvas,
+.window-shell.debug-ui-regions .global-skills-toolbar,
+.window-shell.debug-ui-regions .global-skills-editor-shell {
+  background: var(--debug-region-global-skills);
+}
+
+.window-shell.debug-ui-regions .thread-shell,
+.window-shell.debug-ui-regions .thread-column {
+  background: var(--debug-region-thread-shell);
+}
+
+.window-shell.debug-ui-regions .create-session-shell,
+.window-shell.debug-ui-regions .create-session-card {
+  background: var(--debug-region-create-session);
+}
+
+.window-shell.debug-ui-regions .composer {
+  background: var(--debug-region-composer);
+}
+
+.window-shell.debug-ui-regions .composer-utility-bar {
+  background: var(--debug-region-composer-utility);
+}
+
+.window-shell.debug-ui-regions .terminal-panel,
+.window-shell.debug-ui-regions .terminal-tabs {
+  background: var(--debug-region-terminal);
+}
+
+.window-shell.debug-ui-regions .sidebar.is-right,
+.window-shell.debug-ui-regions .right-sidebar-top-menu,
+.window-shell.debug-ui-regions .right-sidebar-view-host,
+.window-shell.debug-ui-regions .right-sidebar-section {
+  background: var(--debug-region-right-sidebar);
+}
+
+.window-shell.debug-ui-regions .settings-page-overlay {
+  background: var(--debug-region-settings-overlay);
+}
+
+.window-shell.debug-ui-regions .settings-page,
+.window-shell.debug-ui-regions .settings-page-shell,
+.window-shell.debug-ui-regions .settings-page-primary-nav,
+.window-shell.debug-ui-regions .settings-page-main {
+  background: var(--debug-region-settings-page);
+}

@@ -7,7 +7,14 @@ import type {
   PermissionResolveInput,
   PermissionResolveResult,
 } from "../shared/permission"
-import type { AgentSessionRuntimeDebugSnapshot } from "../main/types"
+import type {
+  AgentArchivedSessionSummary,
+  AgentFolderWorkspace,
+  AgentProjectWorkspace,
+  AgentSessionRuntimeDebugSnapshot,
+  AgentSideChatLink,
+  AgentWorkspaceSession,
+} from "../main/types"
 
 type MenuKey = "file" | "edit" | "view" | "window" | "help"
 type WindowAction = "minimize" | "toggle-maximize" | "close"
@@ -212,6 +219,7 @@ type ProjectSkillSelection = {
 type ProjectMcpSelection = {
   serverIDs: string[]
 }
+type AgentSessionSummary = AgentWorkspaceSession
 
 const safeProcess = typeof process !== "undefined" ? process : undefined
 const preloadDirPath = path.dirname(fileURLToPath(import.meta.url))
@@ -310,161 +318,37 @@ try {
         directories: string[]
       }>,
     listFolderWorkspaces: () =>
-      ipcRenderer.invoke("desktop:list-folder-workspaces") as Promise<
-        Array<{
-          id: string
-          directory: string
-          name: string
-          exists?: boolean
-          created: number
-          updated: number
-          project: {
-            id: string
-            name: string
-            worktree: string
-          }
-          sessions: Array<{
-            id: string
-            projectID: string
-            directory: string
-            title: string
-            created: number
-            updated: number
-            workflow?: {
-              mode: "execution" | "planning"
-              plan: {
-                status: "idle" | "draft" | "pending-approval" | "approved"
-                updatedAt: number
-                approvedAt?: number
-              }
-            }
-          }>
-        }>
-      >,
+      ipcRenderer.invoke("desktop:list-folder-workspaces") as Promise<AgentFolderWorkspace[]>,
     listProjectWorkspaces: () =>
-      ipcRenderer.invoke("desktop:list-project-workspaces") as Promise<
-        Array<{
-          id: string
-          worktree: string
-          name?: string
-          created: number
-          updated: number
-          sessions: Array<{
-            id: string
-            projectID: string
-            directory: string
-            title: string
-            created: number
-            updated: number
-            workflow?: {
-              mode: "execution" | "planning"
-              plan: {
-                status: "idle" | "draft" | "pending-approval" | "approved"
-                updatedAt: number
-                approvedAt?: number
-              }
-            }
-          }>
-        }>
-      >,
+      ipcRenderer.invoke("desktop:list-project-workspaces") as Promise<AgentProjectWorkspace[]>,
     openFolderWorkspace: (input: { directory: string }) =>
-      ipcRenderer.invoke("desktop:open-folder-workspace", input) as Promise<{
-        id: string
-        directory: string
-        name: string
-        exists?: boolean
-        created: number
-        updated: number
-        project: {
-          id: string
-          name: string
-          worktree: string
-        }
-        sessions: Array<{
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-        }>
-      }>,
+      ipcRenderer.invoke("desktop:open-folder-workspace", input) as Promise<AgentFolderWorkspace>,
     createProjectWorkspace: (input: { directory: string }) =>
-      ipcRenderer.invoke("desktop:create-project-workspace", input) as Promise<{
-        id: string
-        worktree: string
-        name?: string
-        created: number
-        updated: number
-        sessions: Array<{
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-        }>
-      }>,
+      ipcRenderer.invoke("desktop:create-project-workspace", input) as Promise<AgentProjectWorkspace>,
     createAgentSession: (input?: { directory?: string }) =>
       ipcRenderer.invoke("desktop:agent-create-session", input) as Promise<{
-        session: {
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }
+        session: AgentSessionSummary
         requestId?: string
       }>,
     createFolderSession: (input: { projectID: string; directory: string; title?: string }) =>
       ipcRenderer.invoke("desktop:create-folder-session", input) as Promise<{
-        session: {
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }
+        session: AgentSessionSummary
         requestId?: string
       }>,
     createProjectSession: (input: { projectID: string; title?: string; directory?: string }) =>
       ipcRenderer.invoke("desktop:create-project-session", input) as Promise<{
-        session: {
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }
+        session: AgentSessionSummary
         requestId?: string
       }>,
+    createSideChat: (input: { parentSessionID: string; anchorMessageID: string }) =>
+      ipcRenderer.invoke("desktop:create-side-chat", input) as Promise<{
+        session: AgentSessionSummary
+        requestId?: string
+      }>,
+    listSideChats: (input: { parentSessionID: string; anchorMessageID?: string }) =>
+      ipcRenderer.invoke("desktop:list-side-chats", input) as Promise<AgentSideChatLink[]>,
+    getSideChatLink: (input: { sessionID: string }) =>
+      ipcRenderer.invoke("desktop:get-side-chat-link", input) as Promise<AgentSideChatLink>,
     deleteProjectWorkspace: (input: { projectID: string }) =>
       ipcRenderer.invoke("desktop:delete-project-workspace", input) as Promise<{
         projectID: string
@@ -486,39 +370,10 @@ try {
         requestId?: string
       }>,
     listArchivedSessions: () =>
-      ipcRenderer.invoke("desktop:list-archived-sessions") as Promise<
-        Array<{
-          id: string
-          projectID: string
-          projectName: string | null
-          projectMissing: boolean
-          directory: string
-          title: string
-          created: number
-          updated: number
-          archivedAt: number
-          messageCount: number
-          eventCount: number
-        }>
-      >,
+      ipcRenderer.invoke("desktop:list-archived-sessions") as Promise<AgentArchivedSessionSummary[]>,
     restoreArchivedSession: (input: { sessionID: string }) =>
       ipcRenderer.invoke("desktop:restore-archived-session", input) as Promise<{
-        session: {
-          id: string
-          projectID: string
-          directory: string
-          title: string
-          created: number
-          updated: number
-          workflow?: {
-            mode: "execution" | "planning"
-            plan: {
-              status: "idle" | "draft" | "pending-approval" | "approved"
-              updatedAt: number
-              approvedAt?: number
-            }
-          }
-        }
+        session: AgentSessionSummary
         requestId?: string
       }>,
     deleteArchivedSession: (input: { sessionID: string }) =>

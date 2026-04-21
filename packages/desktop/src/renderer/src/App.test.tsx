@@ -15,7 +15,17 @@ import {
 import type { LoadedFolderWorkspace, SessionRuntimeDebugSnapshot } from "./app/types"
 import { App } from "./App"
 
-const styles = readFileSync(resolve(process.cwd(), "src/renderer/src/styles.css"), "utf8")
+function readBundledStyles() {
+  const stylesRoot = resolve(process.cwd(), "src/renderer/src")
+  const entry = readFileSync(resolve(stylesRoot, "styles/index.css"), "utf8")
+  const imports = Array.from(entry.matchAll(/@import\s+"(.+?)";/g), (match) => match[1])
+
+  return imports
+    .map((relativePath) => readFileSync(resolve(stylesRoot, "styles", relativePath.replace("./", "")), "utf8"))
+    .join("\n")
+}
+
+const styles = readBundledStyles()
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -351,6 +361,12 @@ function createWorkspaceFileReviewWorkspaces(): LoadedFolderWorkspace[] {
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear()
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    })
     window.desktop = {
       platform: "win32",
       versions: {
@@ -572,6 +588,22 @@ describe("App", () => {
           updated: 1,
         },
       }),
+      createSideChat: vi.fn().mockResolvedValue({
+        session: {
+          id: "session-side-chat-1",
+          projectID: "project-2",
+          directory: "C:\\Projects\\Project 2",
+          title: "Chat 1 / Side chat",
+          kind: "side-chat",
+          origin: {
+            parentSessionID: "session-chat-1",
+            anchorMessageID: "chat-agent-1",
+            anchorPreview: "Anchored reply snapshot",
+          },
+          created: 1,
+          updated: 1,
+        },
+      }),
       sendAgentMessage: vi.fn().mockResolvedValue({
         events: [{ event: "delta", data: { kind: "text", delta: "ok" } }],
       }),
@@ -751,6 +783,121 @@ describe("App", () => {
     expect(screen.getByText("Execution timeline")).toBeInTheDocument()
     expect(screen.getByText("LLM request completed")).toBeInTheDocument()
     expect(window.desktop?.getSessionRuntimeDebug).toHaveBeenCalled()
+  })
+
+  it("opens side chat inline under the assistant response without replacing the current session tab", async () => {
+    render(<App />)
+
+    const threadSideChatButton = await screen.findByRole("button", { name: "Sidechat" })
+    const currentSessionTab = screen.getByRole("button", { name: "Switch to session Chat 1" })
+
+    expect(currentSessionTab).toHaveAttribute("aria-pressed", "true")
+
+    fireEvent.click(threadSideChatButton)
+
+    await waitFor(() => {
+      expect(window.desktop?.createSideChat).toHaveBeenCalledWith({
+        parentSessionID: "session-chat-1",
+        anchorMessageID: "chat-agent-1",
+      })
+    })
+
+    expect(currentSessionTab).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByRole("button", { name: "Switch to session Chat 1 / Side chat" })).not.toBeInTheDocument()
+    expect(screen.getByText("Anchored reply snapshot")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Hide" })).toBeInTheDocument()
+    expect(screen.getAllByRole("textbox", { name: "Task draft" }).length).toBeGreaterThan(1)
+  })
+
+  it("copies the response content from the response action row", async () => {
+    render(<App />)
+
+    const responseText =
+      "I am collapsing the information-heavy workspace cards into a project tree so the rail behaves like navigation, not like a second content surface."
+    const assistantTurn = (await screen.findByText(responseText)).closest(".assistant-turn") as HTMLElement | null
+
+    expect(assistantTurn).not.toBeNull()
+
+    fireEvent.click(within(assistantTurn as HTMLElement).getByRole("button", { name: "复制" }))
+
+    await waitFor(() => {
+      expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(responseText)
+    })
+
+    expect(within(assistantTurn as HTMLElement).getByRole("button", { name: "已复制" })).toBeInTheDocument()
+  })
+
+  it("renders full assistant sections inside inline side chat", async () => {
+    window.desktop!.getSessionHistory = vi.fn().mockImplementation(async ({ sessionID }: { sessionID: string }) => {
+      if (sessionID !== "session-side-chat-1") return []
+
+      return [
+        {
+          info: {
+            id: "msg-user-side-1",
+            sessionID,
+            role: "user",
+            created: 200,
+          },
+          parts: [{ id: "part-user-side-1", type: "text", text: "Follow up on the failing config step" }],
+        },
+        {
+          info: {
+            id: "msg-assistant-side-1",
+            sessionID,
+            role: "assistant",
+            created: 201,
+            completed: 202,
+          },
+          parts: [
+            { id: "side-reasoning-1", type: "reasoning", text: "Inspecting the failing config step." },
+            {
+              id: "side-tool-1",
+              type: "tool",
+              tool: "read-file",
+              state: {
+                status: "completed",
+                output: "config loaded",
+              },
+            },
+            {
+              id: "side-patch-1",
+              type: "patch",
+              summary: {
+                files: 1,
+                additions: 2,
+                deletions: 0,
+              },
+              changes: [
+                {
+                  file: "src/config.ts",
+                  additions: 2,
+                  deletions: 0,
+                },
+              ],
+            },
+            { id: "side-text-1", type: "text", text: "I found the root cause in the config parser." },
+          ],
+        },
+      ]
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sidechat" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.getSessionHistory).toHaveBeenCalledWith({
+        sessionID: "session-side-chat-1",
+      })
+    })
+
+    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
+    expect(await within(nestedSideChat).findByText("I found the root cause in the config parser.")).toBeInTheDocument()
+
+    expect(within(nestedSideChat).getByRole("region", { name: "Reasoning" })).toBeInTheDocument()
+    expect(within(nestedSideChat).getByRole("button", { name: /read-file/i })).toBeInTheDocument()
+    expect(within(nestedSideChat).getByRole("region", { name: "File Changes" })).toBeInTheDocument()
   })
 
   it("opens a local preview, captures comments, and inserts them into the draft", async () => {
@@ -5220,7 +5367,7 @@ describe("App", () => {
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
     expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
     expect(screen.queryByText("Search providers")).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Refresh provider catalog" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Refresh provider catalog" })).toBeInTheDocument()
     expect(await screen.findByRole("textbox", { name: "Search providers" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /DeepSeek.*Connected/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()

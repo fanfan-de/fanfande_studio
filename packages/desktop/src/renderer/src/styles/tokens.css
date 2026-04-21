@@ -1,0 +1,110 @@
+/* Token source of truth for the desktop renderer.
+   Keep new visual work on semantic tokens and preserve legacy aliases
+   while the feature styles are migrated away from --ui-* / --seg-*. */
+
+:root {
+  color-scheme: light;
+  font-family: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1f2733;
+  background: #eef1f5;
+
+  --font-sans: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --radius-control: 4px;
+  --radius-chip: 6px;
+  --radius-panel: 8px;
+  --radius-overlay: 12px;
+  --radius-window: 20px;
+  --radius-window-lg: 28px;
+  --radius-pill: 999px;
+
+  --motion-fast: 140ms;
+  --motion-base: 180ms;
+  --motion-slow: 220ms;
+  --motion-xslow: 320ms;
+  --ease-standard: ease;
+
+  --shadow-sm: 0 14px 30px rgba(22, 31, 45, 0.07);
+  --shadow-md: 0 20px 46px rgba(22, 31, 45, 0.1);
+  --shadow-lg: 0 28px 68px rgba(22, 31, 45, 0.14);
+
+  --color-surface-app: #eef1f5;
+  --color-surface-shell: #f6f7f9;
+  --color-surface-panel: #fbfcfd;
+  --color-surface-panel-muted: #f1f4f7;
+  --color-surface-sidebar: #f2f4f7;
+  --color-surface-sidebar-strong: #eceff3;
+  --color-border-subtle: rgba(32, 41, 54, 0.08);
+  --color-border-default: #d5dbe3;
+  --color-border-strong: #c4ccd7;
+  --color-text-primary: #1f2733;
+  --color-text-secondary: #566170;
+  --color-text-tertiary: #7b8797;
+  --color-accent: #4f74c8;
+  --color-accent-strong: #395aa9;
+  --color-accent-soft: rgba(79, 116, 200, 0.1);
+  --color-success: #2f7a57;
+  --color-warning: #94611c;
+  --color-danger: #a64b3c;
+  --selection-background: rgba(29, 110, 255, 0.16);
+
+  /* Warm glass aliases from the earlier visual refresh pass. */
+  --ui-bg: #f2ede6;
+  --ui-bg-highlight: #faf7f2;
+  --ui-panel: rgba(255, 255, 255, 0.76);
+  --ui-panel-strong: rgba(255, 255, 255, 0.92);
+  --ui-panel-subtle: rgba(243, 246, 250, 0.88);
+  --ui-border: rgba(29, 41, 57, 0.1);
+  --ui-border-strong: rgba(29, 41, 57, 0.16);
+  --ui-divider: rgba(29, 41, 57, 0.08);
+  --ui-text-1: #18212d;
+  --ui-text-2: #5d6978;
+  --ui-text-3: #8694a3;
+  --ui-accent: #1d6eff;
+  --ui-accent-strong: #1458d6;
+  --ui-accent-soft: rgba(29, 110, 255, 0.12);
+  --ui-accent-soft-strong: rgba(29, 110, 255, 0.18);
+  --ui-success: #1f7a4f;
+  --ui-warning: #a66b1a;
+  --ui-danger: #b64a37;
+  --ui-shadow-sm: var(--shadow-sm);
+  --ui-shadow-md: var(--shadow-md);
+  --ui-shadow-lg: var(--shadow-lg);
+  --ui-radius-xs: 12px;
+  --ui-radius-sm: 16px;
+  --ui-radius-md: 20px;
+  --ui-radius-lg: 28px;
+  --ui-radius-pill: var(--radius-pill);
+
+  /* Segmented workbench aliases used by the latest layout pass. */
+  --seg-bg: var(--color-surface-app);
+  --seg-shell: var(--color-surface-shell);
+  --seg-panel: var(--color-surface-panel);
+  --seg-panel-muted: var(--color-surface-panel-muted);
+  --seg-sidebar: var(--color-surface-sidebar);
+  --seg-sidebar-strong: var(--color-surface-sidebar-strong);
+  --seg-border: var(--color-border-default);
+  --seg-border-strong: var(--color-border-strong);
+  --seg-divider: var(--color-border-subtle);
+  --seg-text-1: var(--color-text-primary);
+  --seg-text-2: var(--color-text-secondary);
+  --seg-text-3: var(--color-text-tertiary);
+  --seg-accent: var(--color-accent);
+  --seg-accent-soft: var(--color-accent-soft);
+  --seg-accent-strong: var(--color-accent-strong);
+  --seg-success: var(--color-success);
+  --seg-warning: var(--color-warning);
+  --seg-danger: var(--color-danger);
+  --seg-radius-xs: var(--radius-control);
+  --seg-radius-sm: var(--radius-chip);
+  --seg-radius-md: var(--radius-panel);
+}

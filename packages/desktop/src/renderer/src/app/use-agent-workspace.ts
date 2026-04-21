@@ -92,6 +92,8 @@ import {
   findFirstSession,
   findSession,
   findWorkspaceByID,
+  getPrimaryWorkspaceSessions,
+  isSideChatSession,
   isWorkspaceAvailable,
   mapLoadedSession,
   mapLoadedWorkspace,
@@ -380,6 +382,52 @@ function resolveComposerMcpLabel(selectedServerIDs: string[], servers: McpServer
     return servers.find((server) => server.id === selectedServerIDs[0])?.name ?? "1 server"
   }
   return `${selectedServerIDs.length} servers`
+}
+
+function resolveComposerPermissionModeForSession(
+  session: Pick<SessionSummary, "kind"> | null | undefined,
+  permissionMode: ComposerPermissionMode,
+) {
+  return isSideChatSession(session) ? "default" : permissionMode
+}
+
+function resolveComposerSkillSelectionForSession(
+  session: Pick<SessionSummary, "kind"> | null | undefined,
+  selectedSkillIDs: string[],
+) {
+  return isSideChatSession(session) ? [] : selectedSkillIDs
+}
+
+function collectSideChatCountsForParentSession(workspaces: WorkspaceGroup[], parentSessionID: string) {
+  const counts: Record<string, number> = {}
+
+  for (const workspace of workspaces) {
+    for (const session of workspace.sessions) {
+      if (!isSideChatSession(session)) continue
+      if (session.origin?.parentSessionID !== parentSessionID) continue
+      const anchorMessageID = session.origin.anchorMessageID
+      counts[anchorMessageID] = (counts[anchorMessageID] ?? 0) + 1
+    }
+  }
+
+  return counts
+}
+
+function findLatestSideChatForAnchor(workspaces: WorkspaceGroup[], parentSessionID: string, anchorMessageID: string) {
+  let match: { workspace: WorkspaceGroup; session: SessionSummary } | null = null
+
+  for (const workspace of workspaces) {
+    for (const session of workspace.sessions) {
+      if (!isSideChatSession(session)) continue
+      if (session.origin?.parentSessionID !== parentSessionID) continue
+      if (session.origin.anchorMessageID !== anchorMessageID) continue
+      if (!match || session.updated > match.session.updated) {
+        match = { workspace, session }
+      }
+    }
+  }
+
+  return match
 }
 
 function getUniqueSessionIDs(sessionIDs: string[]) {
@@ -736,6 +784,7 @@ export function useAgentWorkspace({
   const [hoveredFolderID, setHoveredFolderID] = useState<string | null>(null)
   const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("workspace")
   const [rightSidebarView, setRightSidebarView] = useState<RightSidebarView>("changes")
+  const [activeSideChatSessionIDByParentSessionID, setActiveSideChatSessionIDByParentSessionID] = useState<Record<string, string>>({})
   const [previewByWorkspaceID, setPreviewByWorkspaceID] = useState<Record<string, WorkspacePreviewState>>({})
   const [workspaceFileCommentsByTarget, setWorkspaceFileCommentsByTarget] = useState<Record<string, WorkspaceFileComment[]>>({})
   const [workspaceFileReviewState, setWorkspaceFileReviewState] = useState<WorkspaceFileReviewState>(
@@ -903,6 +952,29 @@ export function useAgentWorkspace({
   const activeSessionSelectedDiffFile = activeSession ? selectedDiffFileBySession[activeSession.id] ?? null : null
   const activePendingPermissionRequests = activeSession ? pendingPermissionRequestsBySession[activeSession.id] ?? [] : []
   const activeSessionContextUsage = activeSession ? contextUsageBySession[activeSession.id] ?? null : null
+  const activeSessionIsSideChat = isSideChatSession(activeSession)
+  const activeSideChatSessionID =
+    activeSession && !activeSessionIsSideChat
+      ? activeSideChatSessionIDByParentSessionID[activeSession.id] ?? null
+      : null
+  const activeSideChatSelection = findSession(workspaces, activeSideChatSessionID)
+  const activeSideChatSession =
+    activeSession &&
+    !activeSessionIsSideChat &&
+    activeSideChatSelection.session?.origin?.parentSessionID === activeSession.id
+      ? activeSideChatSelection.session
+      : null
+  const activeSideChatTabKey = activeSideChatSession ? getWorkbenchTabKey(createSessionWorkbenchTab(activeSideChatSession.id)) : null
+  const activeSideChatTurns = activeSideChatSession ? conversations[activeSideChatSession.id] ?? [] : []
+  const activeSideChatPendingPermissionRequests =
+    activeSideChatSession ? pendingPermissionRequestsBySession[activeSideChatSession.id] ?? [] : []
+  const activeSideChatDraft = activeSideChatTabKey ? draftByTabKey[activeSideChatTabKey] ?? "" : ""
+  const activeSideChatAttachments = activeSideChatTabKey ? composerAttachmentsByTabKey[activeSideChatTabKey] ?? [] : []
+  const activeSideChatCommentReferences =
+    activeSideChatTabKey ? composerCommentReferencesByTabKey[activeSideChatTabKey] ?? [] : []
+  const activeSideChatIsSending = activeSideChatTabKey ? Boolean(isSendingByTabKey[activeSideChatTabKey]) : false
+  const activeSideChatCountsByAnchorMessageID =
+    activeSession && !activeSessionIsSideChat ? collectSideChatCountsForParentSession(workspaces, activeSession.id) : {}
   const isCreateSessionTabActive = activeCreateSessionTab !== null
   const createSessionWorkspaceID = activeCreateSessionTab?.workspaceID ?? null
   const createSessionTitle = activeCreateSessionTab?.title ?? ""
@@ -913,7 +985,9 @@ export function useAgentWorkspace({
   const canInsertWorkspaceFileCommentsIntoDraft = Boolean(activeTabKey)
   const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
   const composerCommentReferences = activeTabKey ? composerCommentReferencesByTabKey[activeTabKey] ?? [] : []
-  const composerPermissionMode = activeTabKey ? composerPermissionModeByTabKey[activeTabKey] ?? "default" : "default"
+  const composerPermissionMode = activeTabKey
+    ? resolveComposerPermissionModeForSession(activeSession, composerPermissionModeByTabKey[activeTabKey] ?? "default")
+    : "default"
   const isSending = activeTabKey ? Boolean(isSendingByTabKey[activeTabKey]) : false
   const isCreatingSession = activeTabKey ? Boolean(isCreatingSessionByTabKey[activeTabKey]) : false
   const canvasSessionTabs = focusedPane
@@ -1187,7 +1261,7 @@ export function useAgentWorkspace({
     const previousUserTurns = previousTurns.filter((turn): turn is UserTurn => turn.kind === "user")
     let previousUserTurnIndex = 0
 
-    return nextTurns.map((turn) => {
+    const mergedTurns = nextTurns.map((turn) => {
       if (turn.kind !== "user") return turn
 
       const previousTurn = previousUserTurns[previousUserTurnIndex++]
@@ -1209,6 +1283,30 @@ export function useAgentWorkspace({
         ...(mergedReferences?.length ? { references: mergedReferences } : {}),
       }
     })
+
+    if (mergedTurns.length === 0) {
+      return previousTurns.length > 0 ? previousTurns : mergedTurns
+    }
+
+    if (mergedTurns.length >= previousTurns.length) {
+      return mergedTurns
+    }
+
+    const hasMatchingPrefix = mergedTurns.every((turn, index) => {
+      const previousTurn = previousTurns[index]
+      if (!previousTurn || previousTurn.kind !== turn.kind) return false
+
+      if (previousTurn.id === turn.id) return true
+
+      if (previousTurn.kind === "user" && turn.kind === "user") {
+        return previousTurn.text === turn.text &&
+          (previousTurn.questionAnswer?.questionID ?? "") === (turn.questionAnswer?.questionID ?? "")
+      }
+
+      return previousTurn.state === turn.state && previousTurn.items.length === turn.items.length
+    })
+
+    return hasMatchingPrefix ? [...mergedTurns, ...previousTurns.slice(mergedTurns.length)] : mergedTurns
   }
 
   function replaceConversationTurnsFromHistory(sessionID: string, nextTurns: Turn[]) {
@@ -2356,12 +2454,13 @@ export function useAgentWorkspace({
         setCanLoadSessionHistory(true)
         setExpandedFolderID(createdWorkspace.id)
         setSelectedFolderID(createdWorkspace.id)
-        if (createdWorkspace.sessions[0]) {
-          focusSession(createdWorkspace.id, createdWorkspace.sessions[0].id)
+        const [initialWorkspaceSession] = getPrimaryWorkspaceSessions(nextWorkspace.sessions)
+        if (initialWorkspaceSession) {
+          focusSession(createdWorkspace.id, initialWorkspaceSession.id)
         } else {
           openCreateSessionTab(createdWorkspace.id, undefined, [...workspaces, nextWorkspace])
         }
-        lastFocusedSessionIDRef.current = createdWorkspace.sessions[0]?.id ?? null
+        lastFocusedSessionIDRef.current = initialWorkspaceSession?.id ?? null
       } catch (error) {
         console.error("[desktop] openFolderWorkspace failed:", error)
       } finally {
@@ -2390,21 +2489,23 @@ export function useAgentWorkspace({
 
     if (isSelected && isExpanded) {
       setExpandedFolderID(null)
-      if (workspace.sessions.length === 0) {
+      const primarySessions = getPrimaryWorkspaceSessions(workspace.sessions)
+      if (primarySessions.length === 0) {
         if (!isWorkspaceAvailable(workspace)) return
         openCreateSessionTab(workspace.id)
         return
       }
 
       if (isCreateSessionTabActive || !workspace.sessions.some((session) => session.id === activeSessionID)) {
-        focusSession(workspace.id, workspace.sessions[0].id)
+        focusSession(workspace.id, primarySessions[0]!.id)
       }
       return
     }
 
     setExpandedFolderID(workspace.id)
     const currentSessionInWorkspace = workspace.sessions.some((session) => session.id === activeSessionID)
-    if (workspace.sessions.length === 0) {
+    const primarySessions = getPrimaryWorkspaceSessions(workspace.sessions)
+    if (primarySessions.length === 0) {
       if (!isWorkspaceAvailable(workspace)) return
       openCreateSessionTab(workspace.id)
       return
@@ -2414,7 +2515,7 @@ export function useAgentWorkspace({
       return
     }
 
-    focusSession(workspace.id, workspace.sessions[0].id)
+    focusSession(workspace.id, primarySessions[0]!.id)
   }
 
   function handleSessionSelect(workspaceID: string, sessionID: string) {
@@ -2433,6 +2534,97 @@ export function useAgentWorkspace({
     }
 
     focusSession(workspaceID, sessionID, targetPaneID)
+  }
+
+  function handleOpenSideChatInTab(sessionID: string, paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null) {
+    const selection = findSession(workspaces, sessionID)
+    if (!selection.workspace || !selection.session) return
+    focusSession(selection.workspace.id, selection.session.id, paneID)
+  }
+
+  function closeActiveSideChat(parentSessionID: string) {
+    setActiveSideChatSessionIDByParentSessionID((current) => {
+      if (!(parentSessionID in current)) return current
+      const next = { ...current }
+      delete next[parentSessionID]
+      return next
+    })
+  }
+
+  async function activateSideChatThread(parentSessionID: string, sessionID: string, workspaceID: string) {
+    setSelectedFolderID(workspaceID)
+    setExpandedFolderID(workspaceID)
+    setActiveSideChatSessionIDByParentSessionID((current) => ({
+      ...current,
+      [parentSessionID]: sessionID,
+    }))
+
+    await Promise.allSettled([
+      reloadSessionHistoryForSession(sessionID),
+      loadPendingPermissionRequestsForSession(sessionID),
+    ])
+  }
+
+  async function handleOpenSideChat(anchorMessageID: string, input?: { parentSessionID?: string | null; paneID?: string | null }) {
+    const createSideChat = window.desktop?.createSideChat
+    const parentSessionID = input?.parentSessionID ?? activeSessionID
+    if (!parentSessionID) return
+
+    const parentSelection = findSession(workspaces, parentSessionID)
+    if (!parentSelection.workspace || !parentSelection.session || isSideChatSession(parentSelection.session)) {
+      return
+    }
+
+    const activeInlineSideChatID = activeSideChatSessionIDByParentSessionID[parentSessionID] ?? null
+    const activeInlineSideChatSelection = findSession(workspaces, activeInlineSideChatID)
+    if (
+      activeInlineSideChatSelection.session?.origin?.parentSessionID === parentSessionID &&
+      activeInlineSideChatSelection.session.origin.anchorMessageID === anchorMessageID
+    ) {
+      closeActiveSideChat(parentSessionID)
+      return
+    }
+
+    const existing = findLatestSideChatForAnchor(workspaces, parentSessionID, anchorMessageID)
+    if (existing) {
+      await activateSideChatThread(parentSessionID, existing.session.id, existing.workspace.id)
+      return
+    }
+
+    if (!createSideChat) {
+      return
+    }
+
+    try {
+      const created = await createSideChat({
+        parentSessionID,
+        anchorMessageID,
+      })
+      const nextSession = mapLoadedSession(created.session, parentSelection.workspace.sessions.length)
+      const nextTabKey = getWorkbenchTabKey(createSessionWorkbenchTab(created.session.id))
+
+      setWorkspaces((prev) => upsertSessionInWorkspace(prev, parentSelection.workspace!.id, nextSession))
+      setConversations((prev) => ({
+        ...prev,
+        [created.session.id]: prev[created.session.id] ?? [],
+      }))
+      setAgentSessions((prev) => ({
+        ...prev,
+        [created.session.id]: created.session.id,
+      }))
+      setSessionDirectoryBySession((prev) => ({
+        ...prev,
+        [created.session.id]: created.session.directory,
+      }))
+      setComposerPermissionModeByTabKey((current) => ({
+        ...current,
+        [nextTabKey]: "default",
+      }))
+      setCanLoadSessionHistory(true)
+      await activateSideChatThread(parentSessionID, created.session.id, parentSelection.workspace.id)
+    } catch (error) {
+      console.error("[desktop] createSideChat failed:", error)
+    }
   }
 
   async function handleProjectCreateSession(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
@@ -2571,6 +2763,14 @@ export function useAgentWorkspace({
         const next = { ...prev }
         delete next[session.id]
         return next
+      })
+      setActiveSideChatSessionIDByParentSessionID((prev) => {
+        const next = Object.fromEntries(
+          Object.entries(prev).filter(([parentSessionID, sideChatSessionID]) =>
+            parentSessionID !== session.id && sideChatSessionID !== session.id
+          ),
+        )
+        return Object.keys(next).length === Object.keys(prev).length ? prev : next
       })
       delete conversationVersionRef.current[session.id]
       delete permissionRequestsRequestRef.current[session.id]
@@ -3259,6 +3459,8 @@ export function useAgentWorkspace({
       path: attachment.path,
       name: attachment.name,
     }))
+    const effectivePermissionMode = resolveComposerPermissionModeForSession(session, permissionMode)
+    const effectiveSelectedSkillIDs = resolveComposerSkillSelectionForSession(session, selectedSkillIDs)
     const userTurnDisplayText = displayText?.trim() || normalizeQuestionAnswerText(questionAnswer) || undefined
     const userTurnText = buildUserTurnText({
       text: userTurnDisplayText ?? normalizedText,
@@ -3374,8 +3576,8 @@ export function useAgentWorkspace({
           ...(normalizedText ? { text: normalizedText } : {}),
           ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
           ...(questionAnswer ? { questionAnswer } : {}),
-          ...(permissionMode !== "default" ? { permissionMode } : {}),
-          skills: selectedSkillIDs,
+          ...(effectivePermissionMode !== "default" ? { permissionMode: effectivePermissionMode } : {}),
+          skills: effectiveSelectedSkillIDs,
         })
 
         return
@@ -3386,8 +3588,8 @@ export function useAgentWorkspace({
         ...(normalizedText ? { text: normalizedText } : {}),
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         ...(questionAnswer ? { questionAnswer } : {}),
-        ...(permissionMode !== "default" ? { permissionMode } : {}),
-        skills: selectedSkillIDs,
+        ...(effectivePermissionMode !== "default" ? { permissionMode: effectivePermissionMode } : {}),
+        skills: effectiveSelectedSkillIDs,
       })
 
       if (!result) {
@@ -3397,6 +3599,9 @@ export function useAgentWorkspace({
       const backendTurn = buildAgentTurnFromEvents(result.events, userTurnText)
       startTransition(() => {
         appendConversationTurns(uiSessionID, [backendTurn])
+      })
+      void reloadSessionHistoryForSession(uiSessionID, backendSessionID).catch((error) => {
+        console.error("[desktop] session history refresh failed after send:", error)
       })
       void refreshWorkspaceFromDirectory(workspace.directory)
     } catch (error) {
@@ -3673,6 +3878,10 @@ export function useAgentWorkspace({
 
   function handleComposerPermissionModeToggle(tabKey = activeTabKey) {
     if (!tabKey) return
+    const tabReference = getWorkbenchTabReferenceFromKey(tabKey)
+    if (tabReference?.kind === "session" && isSideChatSession(findSession(workspaces, tabReference.sessionID).session)) {
+      return
+    }
     setComposerPermissionModeByTabKey((current) => ({
       ...current,
       [tabKey]: current[tabKey] === "full-access" ? "default" : "full-access",
@@ -3680,6 +3889,9 @@ export function useAgentWorkspace({
   }
 
   async function handleComposerModelChange(value: string | null) {
+    if (activeSessionIsSideChat) {
+      return
+    }
     const projectID = selectedProjectID
     const updateProjectModelSelection = window.desktop?.updateProjectModelSelection
     const previousSelection = composerSelectedModel
@@ -3716,6 +3928,9 @@ export function useAgentWorkspace({
   }
 
   async function handleComposerSkillToggle(value: string) {
+    if (activeSessionIsSideChat) {
+      return
+    }
     const projectID = selectedProjectID
     const updateProjectSkillSelection = window.desktop?.updateProjectSkillSelection
     if (!projectID || !updateProjectSkillSelection) {
@@ -3747,6 +3962,9 @@ export function useAgentWorkspace({
   }
 
   async function handleComposerMcpToggle(value: string) {
+    if (activeSessionIsSideChat) {
+      return
+    }
     const projectID = selectedProjectID
     const updateProjectMcpSelection = window.desktop?.updateProjectMcpSelection
     if (!projectID || !updateProjectMcpSelection) {
@@ -3819,12 +4037,26 @@ export function useAgentWorkspace({
       findWorkspaceByID(workspaces, currentActiveCreateSessionTab?.workspaceID ?? null) ??
       null
     const currentSession = currentSessionSelection.session
+    const currentSessionIsSideChat = isSideChatSession(currentSession)
+    const paneActiveSideChatSessionID =
+      currentSession && !currentSessionIsSideChat ? activeSideChatSessionIDByParentSessionID[currentSession.id] ?? null : null
+    const paneActiveSideChatSelection = findSession(workspaces, paneActiveSideChatSessionID)
+    const paneActiveSideChatSession =
+      currentSession &&
+      !currentSessionIsSideChat &&
+      paneActiveSideChatSelection.session?.origin?.parentSessionID === currentSession.id
+        ? paneActiveSideChatSelection.session
+        : null
+    const paneActiveSideChatTabKey = paneActiveSideChatSession
+      ? getWorkbenchTabKey(createSessionWorkbenchTab(paneActiveSideChatSession.id))
+      : null
     const paneTabs: Array<
       | {
           key: string
           kind: "session"
           sessionID: string
           title: string
+          sessionKind?: SessionSummary["kind"]
           workflow?: SessionSummary["workflow"]
         }
       | {
@@ -3844,6 +4076,7 @@ export function useAgentWorkspace({
           kind: tab.kind,
           sessionID: tab.sessionID,
           title: session.title,
+          sessionKind: session.kind,
           workflow: session.workflow,
         })
         continue
@@ -3873,6 +4106,18 @@ export function useAgentWorkspace({
       activeSessionRuntimeDebugState: currentActiveSessionID
         ? sessionRuntimeDebugStateBySession[currentActiveSessionID] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
         : DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
+      activeSideChatAttachments: paneActiveSideChatTabKey ? composerAttachmentsByTabKey[paneActiveSideChatTabKey] ?? [] : [],
+      activeSideChatCommentReferences: paneActiveSideChatTabKey
+        ? composerCommentReferencesByTabKey[paneActiveSideChatTabKey] ?? []
+        : [],
+      activeSideChatDraft: paneActiveSideChatTabKey ? draftByTabKey[paneActiveSideChatTabKey] ?? "" : "",
+      activeSideChatIsSending: paneActiveSideChatTabKey ? Boolean(isSendingByTabKey[paneActiveSideChatTabKey]) : false,
+      activeSideChatPendingPermissionRequests: paneActiveSideChatSession
+        ? pendingPermissionRequestsBySession[paneActiveSideChatSession.id] ?? []
+        : [],
+      activeSideChatSession: paneActiveSideChatSession,
+      activeSideChatTabKey: paneActiveSideChatTabKey,
+      activeSideChatTurns: paneActiveSideChatSession ? conversations[paneActiveSideChatSession.id] ?? [] : [],
       activeSessionDirectory: currentActiveSessionID
         ? sessionDirectoryBySession[currentActiveSessionID] ?? currentWorkspace?.directory ?? null
         : null,
@@ -3880,12 +4125,17 @@ export function useAgentWorkspace({
       activeTurns: currentActiveSessionID ? conversations[currentActiveSessionID] ?? [] : [],
       composerAttachments: currentActiveTabKey ? composerAttachmentsByTabKey[currentActiveTabKey] ?? [] : [],
       composerCommentReferences: currentActiveTabKey ? composerCommentReferencesByTabKey[currentActiveTabKey] ?? [] : [],
-      composerPermissionMode: currentActiveTabKey ? composerPermissionModeByTabKey[currentActiveTabKey] ?? "default" : "default",
+      composerPermissionMode: currentActiveTabKey
+        ? resolveComposerPermissionModeForSession(
+            currentSession,
+            composerPermissionModeByTabKey[currentActiveTabKey] ?? "default",
+          )
+        : "default",
       composerProjectID:
         isInitialWorkspaceLoadPending && currentWorkspace && seedWorkspaceIDs.has(currentWorkspace.id)
           ? null
           : currentWorkspace?.project.id ?? null,
-      contextLabel: currentActiveCreateSessionTab ? "Create session" : "Session",
+      contextLabel: currentActiveCreateSessionTab ? "Create session" : currentSessionIsSideChat ? "Side chat" : "Session",
       contextTitle: currentSession
         ? currentSession.title
         : currentWorkspace
@@ -3903,6 +4153,10 @@ export function useAgentWorkspace({
       projectID: currentWorkspace?.project.id ?? null,
       size: pane.size,
       sessionID: currentSession?.id ?? null,
+      sideChatCountsByAnchorMessageID:
+        currentSession && !currentSessionIsSideChat
+          ? collectSideChatCountsForParentSession(workspaces, currentSession.id)
+          : {},
       tabKey: currentActiveTabKey,
       tabs: paneTabs,
       workspace: currentWorkspace,
@@ -3921,7 +4175,17 @@ export function useAgentWorkspace({
     activeSessionRuntimeDebug,
     activeSessionRuntimeDebugState,
     activePendingPermissionRequests,
+    activeSideChatAttachments,
+    activeSideChatCommentReferences,
     activeSessionSelectedDiffFile,
+    activeSideChatDraft,
+    activeSideChatIsSending,
+    activeSessionIsSideChat,
+    activeSideChatCountsByAnchorMessageID,
+    activeSideChatPendingPermissionRequests,
+    activeSideChatSession,
+    activeSideChatTabKey,
+    activeSideChatTurns,
     activeWorkspaceFileScopeDirectory,
     activeWorkspaceFileScopeName,
     activeWorkspaceFileState,
@@ -3965,6 +4229,8 @@ export function useAgentWorkspace({
     handleCreateSessionTitleChange,
     handleCreateSessionWorkspaceChange,
     handleLeftSidebarViewChange,
+    handleOpenSideChat,
+    handleOpenSideChatInTab,
     handleOpenCreateSessionTab,
     handlePaneFocus,
     handleSplitResize,

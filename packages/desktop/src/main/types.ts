@@ -40,12 +40,29 @@ export interface AgentSessionWorkflowSummary {
   }
 }
 
+export type AgentSessionKind = "main" | "side-chat"
+export type AgentSessionToolPolicy = "default" | "read-only"
+
+export interface AgentSessionPolicy {
+  toolPolicy: AgentSessionToolPolicy
+  ignoreFullAccess?: boolean
+}
+
+export interface AgentSessionOrigin {
+  parentSessionID: string
+  anchorMessageID: string
+  anchorPreview: string
+}
+
 export interface AgentSessionInfo {
   id: string
   projectID: string
   directory: string
   title: string
   version?: string
+  kind?: AgentSessionKind
+  policy?: AgentSessionPolicy
+  origin?: AgentSessionOrigin
   workflow?: AgentSessionWorkflowSummary
   time: {
     created: number
@@ -58,6 +75,9 @@ export interface AgentWorkspaceSession {
   projectID: string
   directory: string
   title: string
+  kind?: AgentSessionKind
+  policy?: AgentSessionPolicy
+  origin?: AgentSessionOrigin
   created: number
   updated: number
   workflow?: AgentSessionWorkflowSummary
@@ -113,11 +133,47 @@ export interface AgentArchivedSessionSummary {
   projectMissing: boolean
   directory: string
   title: string
+  kind?: AgentSessionKind
+  policy?: AgentSessionPolicy
+  origin?: AgentSessionOrigin
   created: number
   updated: number
   archivedAt: number
   messageCount: number
   eventCount: number
+}
+
+export interface AgentSideChatSource {
+  kind: "url" | "document"
+  title: string
+  url?: string
+}
+
+export interface AgentSideChatToolSummary {
+  tool: string
+  status: "completed" | "error" | "denied"
+  summary: string
+}
+
+export interface AgentSideChatSnapshot {
+  userText?: string
+  assistantText: string
+  sources?: AgentSideChatSource[]
+  toolSummaries?: AgentSideChatToolSummary[]
+  filePaths?: string[]
+}
+
+export interface AgentSideChatLink {
+  sessionID: string
+  parentSessionID: string
+  anchorMessageID: string
+  anchorUserMessageID?: string
+  createdAt: number
+  anchorPreview: string
+  snapshotVersion: 1
+  snapshot: AgentSideChatSnapshot
+  session?: AgentSessionInfo
+  archived?: boolean
 }
 
 export interface AgentArchivedSessionDeleteResult {

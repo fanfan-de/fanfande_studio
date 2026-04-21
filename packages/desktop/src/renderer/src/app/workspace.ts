@@ -4,6 +4,15 @@ export function isWorkspaceAvailable(workspace: Pick<WorkspaceGroup, "exists"> |
   return workspace?.exists !== false
 }
 
+export function isSideChatSession(session: Pick<SessionSummary, "kind"> | null | undefined) {
+  return session?.kind === "side-chat"
+}
+
+export function getPrimaryWorkspaceSessions<T extends Pick<SessionSummary, "kind">>(sessions: T[]) {
+  const visibleSessions = sessions.filter((session) => !isSideChatSession(session))
+  return visibleSessions.length > 0 ? visibleSessions : sessions
+}
+
 function getPreferredWorkspaces(workspaces: WorkspaceGroup[]) {
   const available = workspaces.filter((workspace) => isWorkspaceAvailable(workspace))
   return available.length > 0 ? available : workspaces
@@ -20,14 +29,20 @@ export function sortWorkspaceGroups(input: WorkspaceGroup[]) {
 }
 
 export function mapLoadedSession(session: LoadedSessionSnapshot, sessionIndex: number): SessionSummary {
+  const sideChat = isSideChatSession(session)
   return {
     id: session.id,
     title: session.title.trim() || `Session ${sessionIndex + 1}`,
     branch: session.directory,
     status: "Ready",
     updated: session.updated,
-    focus: "Backend",
-    summary: `Loaded from ${session.directory}`,
+    focus: sideChat ? "Side chat" : "Backend",
+    summary: sideChat
+      ? session.origin?.anchorPreview || "Read-only side chat"
+      : `Loaded from ${session.directory}`,
+    kind: session.kind,
+    policy: session.policy,
+    origin: session.origin,
     workflow: session.workflow,
   }
 }
@@ -80,10 +95,11 @@ export function upsertSessionInWorkspace(existing: WorkspaceGroup[], workspaceID
 
 export function findFirstSession(workspaces: WorkspaceGroup[]) {
   for (const workspace of getPreferredWorkspaces(workspaces)) {
-    if (workspace.sessions[0]) {
+    const [session] = getPrimaryWorkspaceSessions(workspace.sessions)
+    if (session) {
       return {
         workspace,
-        session: workspace.sessions[0],
+        session,
       }
     }
   }
@@ -135,9 +151,10 @@ export function selectAfterSessionDelete(
 
   const sameWorkspace = workspaces.find((workspace) => workspace.id === workspaceID) ?? null
   if (sameWorkspace) {
+    const [session] = getPrimaryWorkspaceSessions(sameWorkspace.sessions)
     return {
       workspace: sameWorkspace,
-      session: sameWorkspace.sessions[0] ?? null,
+      session: session ?? null,
     }
   }
 

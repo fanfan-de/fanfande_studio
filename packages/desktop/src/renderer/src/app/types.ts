@@ -37,6 +37,53 @@ export interface SessionWorkflowSummary {
   }
 }
 
+export type SessionKind = "main" | "side-chat"
+export type SessionToolPolicy = "default" | "read-only"
+
+export interface SessionPolicy {
+  toolPolicy: SessionToolPolicy
+  ignoreFullAccess?: boolean
+}
+
+export interface SessionOrigin {
+  parentSessionID: string
+  anchorMessageID: string
+  anchorPreview: string
+}
+
+export interface SideChatSource {
+  kind: "url" | "document"
+  title: string
+  url?: string
+}
+
+export interface SideChatToolSummary {
+  tool: string
+  status: "completed" | "error" | "denied"
+  summary: string
+}
+
+export interface SideChatSnapshot {
+  userText?: string
+  assistantText: string
+  sources?: SideChatSource[]
+  toolSummaries?: SideChatToolSummary[]
+  filePaths?: string[]
+}
+
+export interface SideChatLink {
+  sessionID: string
+  parentSessionID: string
+  anchorMessageID: string
+  anchorUserMessageID?: string
+  createdAt: number
+  anchorPreview: string
+  snapshotVersion: 1
+  snapshot: SideChatSnapshot
+  session?: LoadedSessionSnapshot
+  archived?: boolean
+}
+
 export interface SessionSummary {
   id: string
   title: string
@@ -45,6 +92,9 @@ export interface SessionSummary {
   updated: number
   focus: string
   summary: string
+  kind?: SessionKind
+  policy?: SessionPolicy
+  origin?: SessionOrigin
   workflow?: SessionWorkflowSummary
 }
 
@@ -93,6 +143,9 @@ export interface LoadedSessionSnapshot {
   projectID: string
   directory: string
   title: string
+  kind?: SessionKind
+  policy?: SessionPolicy
+  origin?: SessionOrigin
   created: number
   updated: number
   workflow?: SessionWorkflowSummary
@@ -105,6 +158,9 @@ export interface ArchivedSessionSummary {
   projectMissing: boolean
   directory: string
   title: string
+  kind?: SessionKind
+  policy?: SessionPolicy
+  origin?: SessionOrigin
   created: number
   updated: number
   archivedAt: number
