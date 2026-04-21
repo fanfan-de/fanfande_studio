@@ -48,15 +48,15 @@ button:not(:disabled) {
 .search-field input {
   min-height: 48px;
   padding: 0 14px;
-  border: 1px solid rgba(169, 189, 212, 0.5);
+  border: 1px solid var(--color-border-default);
   border-radius: var(--ui-radius-xs);
-  background: #ffffff;
-  color: #182532;
+  background: var(--color-surface-panel);
+  color: var(--color-text-primary);
 }
 
 .search-field input::placeholder,
 textarea::placeholder {
-  color: #8da0b4;
+  color: var(--color-text-tertiary);
 }
 
 body.is-resizing-terminal-panel,

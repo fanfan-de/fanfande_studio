@@ -3,7 +3,7 @@
    while the feature styles are migrated away from --ui-* / --seg-*. */
 
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   font-family: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: #1f2733;
   background: #eef1f5;
@@ -49,13 +49,13 @@
   --color-text-primary: #1f2733;
   --color-text-secondary: #566170;
   --color-text-tertiary: #7b8797;
-  --color-accent: #4f74c8;
-  --color-accent-strong: #395aa9;
-  --color-accent-soft: rgba(79, 116, 200, 0.1);
+  --color-accent: #d97706;
+  --color-accent-strong: #b45309;
+  --color-accent-soft: rgba(217, 119, 6, 0.12);
   --color-success: #2f7a57;
   --color-warning: #94611c;
   --color-danger: #a64b3c;
-  --selection-background: rgba(29, 110, 255, 0.16);
+  --selection-background: rgba(217, 119, 6, 0.18);
 
   /* Warm glass aliases from the earlier visual refresh pass. */
   --ui-bg: #f2ede6;
@@ -107,4 +107,102 @@
   --seg-radius-xs: var(--radius-control);
   --seg-radius-sm: var(--radius-chip);
   --seg-radius-md: var(--radius-panel);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color: #e2e6ec;
+    background: #0d0f12;
+
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+    --color-surface-app:           #0d0f12;
+    --color-surface-shell:         #13161b;
+    --color-surface-panel:         #1a1e25;
+    --color-surface-panel-muted:   #161920;
+    --color-surface-sidebar:       #13161b;
+    --color-surface-sidebar-strong:#0f1216;
+    --color-border-subtle:         rgba(255, 255, 255, 0.05);
+    --color-border-default:        rgba(255, 255, 255, 0.09);
+    --color-border-strong:         rgba(255, 255, 255, 0.14);
+    --color-text-primary:          #e2e6ec;
+    --color-text-secondary:        #8b95a3;
+    --color-text-tertiary:         #525d6b;
+    --color-accent:                #e08c1a;
+    --color-accent-strong:         #f5a623;
+    --color-accent-soft:           rgba(224, 140, 26, 0.14);
+    --color-success:               #34a36e;
+    --color-warning:               #c8883a;
+    --color-danger:                #d4614e;
+    --selection-background:        rgba(224, 140, 26, 0.22);
+
+    --ui-bg:                #0d0f12;
+    --ui-bg-highlight:      #1a1e25;
+    --ui-panel:             rgba(26, 30, 37, 0.92);
+    --ui-panel-strong:      rgba(32, 37, 46, 0.96);
+    --ui-panel-subtle:      rgba(19, 22, 27, 0.88);
+    --ui-border:            rgba(255, 255, 255, 0.07);
+    --ui-border-strong:     rgba(255, 255, 255, 0.12);
+    --ui-divider:           rgba(255, 255, 255, 0.05);
+    --ui-text-1:            #e2e6ec;
+    --ui-text-2:            #8b95a3;
+    --ui-text-3:            #525d6b;
+    --ui-accent:            #e08c1a;
+    --ui-accent-strong:     #f5a623;
+    --ui-accent-soft:       rgba(224, 140, 26, 0.14);
+    --ui-accent-soft-strong:rgba(224, 140, 26, 0.22);
+    --ui-success:           #34a36e;
+    --ui-warning:           #c8883a;
+    --ui-danger:            #d4614e;
+  }
+}
+
+:root[data-theme="dark"] {
+  color: #e2e6ec;
+  background: #0d0f12;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+  --color-surface-app:           #0d0f12;
+  --color-surface-shell:         #13161b;
+  --color-surface-panel:         #1a1e25;
+  --color-surface-panel-muted:   #161920;
+  --color-surface-sidebar:       #13161b;
+  --color-surface-sidebar-strong:#0f1216;
+  --color-border-subtle:         rgba(255, 255, 255, 0.05);
+  --color-border-default:        rgba(255, 255, 255, 0.09);
+  --color-border-strong:         rgba(255, 255, 255, 0.14);
+  --color-text-primary:          #e2e6ec;
+  --color-text-secondary:        #8b95a3;
+  --color-text-tertiary:         #525d6b;
+  --color-accent:                #e08c1a;
+  --color-accent-strong:         #f5a623;
+  --color-accent-soft:           rgba(224, 140, 26, 0.14);
+  --color-success:               #34a36e;
+  --color-warning:               #c8883a;
+  --color-danger:                #d4614e;
+  --selection-background:        rgba(224, 140, 26, 0.22);
+
+  --ui-bg:                #0d0f12;
+  --ui-bg-highlight:      #1a1e25;
+  --ui-panel:             rgba(26, 30, 37, 0.92);
+  --ui-panel-strong:      rgba(32, 37, 46, 0.96);
+  --ui-panel-subtle:      rgba(19, 22, 27, 0.88);
+  --ui-border:            rgba(255, 255, 255, 0.07);
+  --ui-border-strong:     rgba(255, 255, 255, 0.12);
+  --ui-divider:           rgba(255, 255, 255, 0.05);
+  --ui-text-1:            #e2e6ec;
+  --ui-text-2:            #8b95a3;
+  --ui-text-3:            #525d6b;
+  --ui-accent:            #e08c1a;
+  --ui-accent-strong:     #f5a623;
+  --ui-accent-soft:       rgba(224, 140, 26, 0.14);
+  --ui-accent-soft-strong:rgba(224, 140, 26, 0.22);
+  --ui-success:           #34a36e;
+  --ui-warning:           #c8883a;
+  --ui-danger:            #d4614e;
 }

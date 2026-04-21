@@ -161,6 +161,8 @@ export function App() {
     handleSidebarResizerPointerDown,
     handleSidebarToggle,
     handleWindowAction,
+    colorMode,
+    handleColorModeChange,
     isActivityRailVisible,
     isAgentDebugTraceEnabled,
     isDebugLineColorsEnabled,
@@ -828,6 +830,7 @@ export function App() {
           deletingMcpServerID={deletingMcpServerID}
           deletingProviderID={deletingProviderID}
           assistantTraceVisibility={assistantTraceVisibility}
+          colorMode={colorMode}
           isActivityRailVisible={isActivityRailVisible}
           isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
           isDebugLineColorsEnabled={isDebugLineColorsEnabled}
@@ -851,6 +854,7 @@ export function App() {
           savingMcpServerID={savingMcpServerID}
           savingProviderID={savingProviderID}
           selectionDraft={selectionDraft}
+          onColorModeChange={handleColorModeChange}
           onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
           onAssistantTraceVisibilityChange={handleAssistantTraceVisibilityChange}
           onAgentDebugTraceChange={handleAgentDebugTraceChange}

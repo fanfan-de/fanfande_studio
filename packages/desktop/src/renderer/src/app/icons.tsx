@@ -13,8 +13,11 @@ import {
   LayoutPanelLeft,
   MessageSquare,
   Minus,
+  Moon,
+  Monitor,
   Palette,
   PanelLeftClose,
+  Sun,
   PanelLeftOpen,
   PanelRight,
   PanelRightClose,
@@ -66,3 +69,6 @@ export const CloseIcon = createIcon(X)
 export const TerminalIcon = createIcon(Terminal)
 export const ArrowUpIcon = createIcon(ArrowUp)
 export const PaletteIcon = createIcon(Palette)
+export const SunIcon = createIcon(Sun)
+export const MoonIcon = createIcon(Moon)
+export const MonitorIcon = createIcon(Monitor)

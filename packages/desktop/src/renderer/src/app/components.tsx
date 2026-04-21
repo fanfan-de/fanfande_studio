@@ -25,9 +25,12 @@ import {
   MinimizeIcon,
   NewItemIcon,
   OpenInEditorIcon,
+  MoonIcon,
+  MonitorIcon,
   PaletteIcon,
   PaperclipIcon,
   RestoreIcon,
+  SunIcon,
   RightSidebarCollapseIcon,
   RightSidebarExpandIcon,
   SettingsIcon,
@@ -36,6 +39,7 @@ import {
 } from "./icons"
 import type {
   AssistantTraceSectionKey,
+  ColorMode,
   AssistantTurn,
   AssistantTraceItem,
   AssistantTraceVisibility,
@@ -3546,6 +3550,7 @@ interface SettingsPageProps {
   deletingArchivedSessionID: string | null
   deletingMcpServerID: string | null
   deletingProviderID: string | null
+  colorMode: ColorMode
   isActivityRailVisible: boolean
   isAgentDebugTraceEnabled: boolean
   isDebugLineColorsEnabled: boolean
@@ -3572,6 +3577,7 @@ interface SettingsPageProps {
   savingMcpServerID: string | null
   savingProviderID: string | null
   selectionDraft: ProjectModelSelection
+  onColorModeChange: (mode: ColorMode) => void
   onActivityRailVisibilityChange: (value: boolean) => void
   onAssistantTraceVisibilityChange: (key: AssistantTraceVisibilityKey, value: boolean) => void
   onAgentDebugTraceChange: (value: boolean) => void
@@ -3603,6 +3609,7 @@ export function SettingsPage({
   deletingArchivedSessionID,
   deletingMcpServerID,
   deletingProviderID,
+  colorMode,
   isActivityRailVisible,
   isAgentDebugTraceEnabled,
   isDebugLineColorsEnabled,
@@ -3626,6 +3633,7 @@ export function SettingsPage({
   savingMcpServerID,
   savingProviderID,
   selectionDraft,
+  onColorModeChange,
   onActivityRailVisibilityChange,
   onAssistantTraceVisibilityChange,
   onAgentDebugTraceChange,
@@ -3766,7 +3774,7 @@ export function SettingsPage({
         meta: `${mcpServers.length} servers`,
         Icon: FolderIcon,
       },
-      { key: "appearance" as const, label: "Appearance", meta: "1 option", Icon: LayoutSidebarLeftIcon },
+      { key: "appearance" as const, label: "Appearance", meta: "2 options", Icon: LayoutSidebarLeftIcon },
       { key: "developer" as const, label: "Developer Mode", meta: "3 groups", Icon: TerminalIcon },
       {
         key: "archive" as const,
@@ -3839,6 +3847,33 @@ export function SettingsPage({
 
               {activeSection === "appearance" ? (
                 <div className="settings-appearance-layout">
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Theme</span>
+                        <h3>Color Mode</h3>
+                      </div>
+                      <p>Choose between light, dark, or system-matched color scheme.</p>
+                    </div>
+                    <div className="settings-color-mode-group" role="group" aria-label="Color mode">
+                      {(["system", "light", "dark"] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          className={colorMode === mode ? "settings-color-mode-option is-active" : "settings-color-mode-option"}
+                          role="radio"
+                          aria-checked={colorMode === mode}
+                          type="button"
+                          onClick={() => onColorModeChange(mode)}
+                        >
+                          <span className="settings-color-mode-icon" aria-hidden="true">
+                            {mode === "light" ? <SunIcon size={16} /> : mode === "dark" ? <MoonIcon size={16} /> : <MonitorIcon size={16} />}
+                          </span>
+                          <span>{mode === "system" ? "System" : mode === "light" ? "Light" : "Dark"}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>

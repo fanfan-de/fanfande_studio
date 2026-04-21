@@ -9,11 +9,13 @@ import {
   DEFAULT_ASSISTANT_TRACE_VISIBILITY,
   type AssistantTraceVisibility,
   type AssistantTraceVisibilityKey,
+  type ColorMode,
   type WindowAction,
 } from "./types"
 import { clamp, resolveRightSidebarWidthBounds, resolveSidebarWidthBounds } from "./utils"
 
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
+const COLOR_MODE_STORAGE_KEY = "desktop.colorMode"
 const DEBUG_UI_REGIONS_STORAGE_KEY = "desktop.debugUiRegions"
 const DEBUG_LINE_COLORS_STORAGE_KEY = "desktop.debugLineColors"
 const AGENT_DEBUG_TRACE_STORAGE_KEY = "desktop.agentDebugTrace"
@@ -37,6 +39,17 @@ function readBooleanPreference(key: string, fallback: boolean) {
 
 function readActivityRailVisibilityPreference() {
   return readBooleanPreference(ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY, true)
+}
+
+function readColorModePreference(): ColorMode {
+  if (typeof window === "undefined") return "system"
+  try {
+    const stored = window.localStorage.getItem(COLOR_MODE_STORAGE_KEY)
+    if (stored === "light" || stored === "dark" || stored === "system") return stored
+    return "system"
+  } catch {
+    return "system"
+  }
 }
 
 function readDebugUiRegionsPreference() {
@@ -95,6 +108,7 @@ export function useDesktopShell() {
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_RIGHT_SIDEBAR_WIDTH)
   const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
+  const [colorMode, setColorMode] = useState<ColorMode>(readColorModePreference)
   const [isDebugUiRegionsEnabled, setIsDebugUiRegionsEnabled] = useState(readDebugUiRegionsPreference)
   const [isDebugLineColorsEnabled, setIsDebugLineColorsEnabled] = useState(readDebugLineColorsPreference)
   const [assistantTraceVisibility, setAssistantTraceVisibility] = useState(readAssistantTraceVisibilityPreference)
@@ -231,6 +245,19 @@ export function useDesktopShell() {
       return
     }
   }, [isActivityRailVisible])
+
+  useEffect(() => {
+    if (colorMode === "system") {
+      document.documentElement.removeAttribute("data-theme")
+    } else {
+      document.documentElement.setAttribute("data-theme", colorMode)
+    }
+    try {
+      window.localStorage.setItem(COLOR_MODE_STORAGE_KEY, colorMode)
+    } catch {
+      return
+    }
+  }, [colorMode])
 
   useEffect(() => {
     try {
@@ -537,6 +564,8 @@ export function useDesktopShell() {
     assistantTraceVisibility,
     appShellRef,
     appShellStyle,
+    colorMode,
+    handleColorModeChange: setColorMode,
     handleActivityRailVisibilityChange,
     handleAssistantTraceVisibilityChange,
     handleAgentDebugTraceChange,

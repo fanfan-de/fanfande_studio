@@ -738,6 +738,8 @@ export interface ComposerCommentReference {
   prompt: string
 }
 
+export type ColorMode = "system" | "light" | "dark"
+
 export type ComposerPermissionMode = "default" | "full-access"
 
 export interface ComposerModelOption {
