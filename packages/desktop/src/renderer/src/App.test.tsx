@@ -4978,7 +4978,6 @@ describe("App", () => {
     const topMenu = screen.getByLabelText("Session canvas top menu")
     expect(topMenu).toBeInTheDocument()
     expect(within(topMenu).getByText("Create session")).toBeInTheDocument()
-    expect(within(topMenu).getByText("Project 2 / app")).toBeInTheDocument()
     expect(within(topMenu).getByRole("button", { name: "Select project skills: Skills" })).toBeInTheDocument()
     expect(within(topMenu).getByRole("button", { name: "Select project MCP servers: MCP" })).toBeInTheDocument()
   })
@@ -8346,10 +8345,10 @@ describe("App", () => {
       /\.canvas-region-top-menu\s+\.session-tab\.is-active\s*\{[^}]*background:\s*var\(--seg-panel\);[^}]*border-color:\s*var\(--canvas-region-tab-border\);[^}]*box-shadow:\s*none;/s,
     )
     expect(styles).toMatch(
-      /\.session-canvas-top-menu\s*\{[^}]*padding-right:\s*calc\(var\(--window-controls-canvas-clearance\) \+ 8px\);/s,
+      /\.session-canvas-top-menu\s*\{[^}]*padding-right:\s*calc\(var\(--window-controls-canvas-clearance\) \+ 8px\);[^}]*background:\s*transparent;[^}]*border-bottom:\s*0;/s,
     )
     expect(styles).toMatch(
-      /\.session-canvas-top-menu-copy strong\s*\{[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
+      /\.session-canvas-top-menu-copy-main\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*gap:\s*8px;/s,
     )
     expect(styles).toMatch(
       /\.canvas-top-menu-mcp-trigger,\s*\.canvas-top-menu-skill-trigger\s*\{[^}]*gap:\s*4px;[^}]*max-width:\s*min\(128px,\s*22vw\);/s,

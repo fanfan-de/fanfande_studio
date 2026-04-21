@@ -531,8 +531,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   position: relative;
   align-self: flex-end;
   max-width: min(240px, 30vw);
-  min-height: 40px;
+  min-height: 36px;
   margin-bottom: -1px;
+  margin-top: 4px;
   padding: 0 8px 0 12px;
   border: 1px solid transparent;
   border-bottom-color: transparent;
@@ -556,7 +557,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .pane-tab-bar .session-tab-trigger {
-  min-height: 39px;
+  min-height: 35px;
   padding: 0 6px;
   font-size: 13px;
   font-weight: 500;
@@ -582,11 +583,26 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .pane-tab-bar .session-tab.is-active {
+  min-height: 40px;
+  margin-top: 0;
   background: #ffffff;
   border-color: var(--seg-border);
-  border-bottom-color: #ffffff;
+  border-bottom-color: transparent;
   color: var(--seg-text-1);
-  box-shadow: 0 1px 0 #ffffff;
+  z-index: 2;
+  box-shadow:
+    0 1px 0 #ffffff,
+    0 -1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.pane-tab-bar .session-tab.is-active::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: -1px;
+  height: 2px;
+  background: #ffffff;
 }
 
 .pane-tab-bar .session-tab-close {
@@ -956,14 +972,14 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .session-canvas-top-menu {
-  min-height: 44px;
+  min-height: 30px;
   padding-left: 12px;
   padding-right: 12px;
   padding-right: calc(var(--window-controls-canvas-clearance) + 8px);
-  padding-top: 7px;
-  padding-bottom: 7px;
-  background: var(--seg-panel);
-  border-bottom: 1px solid var(--seg-border);
+  padding-top: 4px;
+  padding-bottom: 2px;
+  background: transparent;
+  border-bottom: 0;
 }
 
 .session-canvas-top-menu .shell-top-menu-content,
@@ -974,23 +990,16 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .session-canvas-top-menu-copy {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
 }
 
 .session-canvas-top-menu-copy-main {
   min-width: 0;
-  display: grid;
-  gap: 2px;
-  flex: 1 1 auto;
-}
-
-.session-canvas-top-menu-copy-title-row {
-  min-width: 0;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: nowrap;
+  gap: 8px;
+  flex: 1 1 auto;
 }
 
 .session-canvas-top-menu-copy .label {
@@ -1002,24 +1011,10 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   color: var(--seg-text-3);
 }
 
-.session-canvas-top-menu-copy strong {
-  flex: 0 1 auto;
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--seg-text-1);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-}
-
 .session-canvas-top-menu-copy-status {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex: 0 0 auto;
   flex-wrap: nowrap;
   white-space: nowrap;
