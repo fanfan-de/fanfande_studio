@@ -1303,7 +1303,11 @@ export function useAgentWorkspace({
           (previousTurn.questionAnswer?.questionID ?? "") === (turn.questionAnswer?.questionID ?? "")
       }
 
-      return previousTurn.state === turn.state && previousTurn.items.length === turn.items.length
+      if (previousTurn.kind === "assistant" && turn.kind === "assistant") {
+        return previousTurn.state === turn.state && previousTurn.items.length === turn.items.length
+      }
+
+      return false
     })
 
     return hasMatchingPrefix ? [...mergedTurns, ...previousTurns.slice(mergedTurns.length)] : mergedTurns

@@ -312,6 +312,7 @@ export function App() {
     closeSettings,
     deleteArchivedSession,
     deleteMcpServer,
+    deleteProviderAuthSession,
     deleteProvider,
     deletingArchivedSessionID,
     deletingMcpServerID,
@@ -336,16 +337,20 @@ export function App() {
     savedSelection,
     restoreArchivedSession,
     saveMcpServer,
+    saveProviderApiKey,
     saveProvider,
     saveSelection,
     savingMcpServerID,
     savingProviderID,
+    setProviderAuthMethod,
     selectMcpServer,
     selectionDraft,
     setMcpServerDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
+    startProviderAuthFlow,
     startNewMcpServer,
+    cancelProviderAuthFlow,
   } = useSettingsPage({
     onArchivedSessionRestored: async (session) => {
       await refreshWorkspaceFromDirectory(session.directory)
@@ -863,17 +868,22 @@ export function App() {
           onClose={closeSettings}
           onDeleteArchivedSession={deleteArchivedSession}
           onDeleteMcpServer={deleteMcpServer}
+          onDeleteProviderAuthSession={deleteProviderAuthSession}
           onDeleteProvider={deleteProvider}
           onMcpServerDraftChange={setMcpServerDraftValue}
           onMcpServerSelect={selectMcpServer}
+          onProviderAuthMethodChange={setProviderAuthMethod}
           onProviderDraftChange={setProviderDraftValue}
           onRefreshProviderCatalog={refreshProviderCatalog}
           onRestoreArchivedSession={restoreArchivedSession}
           onSaveMcpServer={saveMcpServer}
+          onSaveProviderApiKey={saveProviderApiKey}
           onSaveProvider={saveProvider}
           onSaveSelection={saveSelection}
           onSelectionChange={setSelectionDraftValue}
+          onStartProviderAuthFlow={startProviderAuthFlow}
           onStartNewMcpServer={startNewMcpServer}
+          onCancelProviderAuthFlow={cancelProviderAuthFlow}
         />
       </main>
     </div>

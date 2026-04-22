@@ -7,6 +7,7 @@ import * as Skill from "#skill/skill.ts"
 import * as SkillManager from "#skill/manage.ts"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
+import * as ProviderAuth from "#auth/provider-auth.ts"
 
 function parseModelReference(value: string) {
   const [providerID, ...rest] = value.split("/")
@@ -41,6 +42,12 @@ export function SettingsRoutes() {
     directory: z.string().min(1),
   })
   const UpdateMcpServerBody = Config.McpServerInput
+  const ProviderAuthFlowBody = z.object({
+    method: z.string().min(1),
+  })
+  const ProviderAuthApiKeyBody = z.object({
+    apiKey: z.string().nullable().optional(),
+  })
 
   function toSkillApiError(error: unknown) {
     if (error instanceof SkillManager.SkillManagerError) {
@@ -56,6 +63,18 @@ export function SettingsRoutes() {
     }
 
     return error
+  }
+
+  function resolveServerBaseURL(c: { req: { url: string } }) {
+    const requestURL = new URL(c.req.url)
+    return `${requestURL.protocol}//${requestURL.host}`
+  }
+
+  async function readProviderAuthState(providerID: string) {
+    const catalog = await Provider.catalog()
+    const item = catalog.find((entry) => entry.id === providerID)
+    if (item?.authState) return item.authState
+    return ProviderAuth.createDisconnectedProviderAuthState(providerID)
   }
 
   app.get("/providers/catalog", async (c) => {
@@ -191,6 +210,113 @@ export function SettingsRoutes() {
         model: selection.model,
         small_model: selection.small_model,
       },
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/providers/:providerID/auth", async (c) => {
+    const providerID = c.req.param("providerID")
+
+    return c.json({
+      success: true,
+      data: await readProviderAuthState(providerID),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.post("/providers/:providerID/auth/flows", async (c) => {
+    const providerID = c.req.param("providerID")
+    const payload = ProviderAuthFlowBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must contain a non-empty 'method' field.")
+    }
+
+    try {
+      const flow = await ProviderAuth.startProviderAuthFlow({
+        providerID,
+        method: payload.data.method,
+        serverBaseURL: resolveServerBaseURL(c),
+      })
+      return c.json({
+        success: true,
+        data: flow,
+        requestId: c.get("requestId"),
+      })
+    } catch (error) {
+      throw new ApiError(400, "PROVIDER_AUTH_FLOW_FAILED", error instanceof Error ? error.message : String(error))
+    }
+  })
+
+  app.get("/providers/:providerID/auth/flows/:flowID", async (c) => {
+    const providerID = c.req.param("providerID")
+    const flowID = c.req.param("flowID")
+    const flow = await ProviderAuth.getProviderFlow(providerID, flowID)
+    if (!flow) {
+      throw new ApiError(404, "PROVIDER_AUTH_FLOW_NOT_FOUND", `Auth flow '${flowID}' was not found`)
+    }
+
+    return c.json({
+      success: true,
+      data: flow,
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.delete("/providers/:providerID/auth/flows/:flowID", async (c) => {
+    const providerID = c.req.param("providerID")
+    const flowID = c.req.param("flowID")
+    const flow = await ProviderAuth.cancelProviderAuthFlow(providerID, flowID)
+    if (!flow) {
+      throw new ApiError(404, "PROVIDER_AUTH_FLOW_NOT_FOUND", `Auth flow '${flowID}' was not found`)
+    }
+
+    return c.json({
+      success: true,
+      data: flow,
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/providers/:providerID/auth/callback", async (c) => {
+    const providerID = c.req.param("providerID")
+    const result = await ProviderAuth.completeProviderBrowserCallback({
+      providerID,
+      url: new URL(c.req.url),
+    })
+
+    return c.html(
+      ProviderAuth.renderProviderAuthCallbackPage({
+        ok: result.ok,
+        title: result.title,
+        message: result.message,
+      }),
+      result.status as 200 | 400 | 500,
+    )
+  })
+
+  app.put("/providers/:providerID/auth/api-key", async (c) => {
+    const providerID = c.req.param("providerID")
+    const payload = ProviderAuthApiKeyBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must contain an optional nullable 'apiKey' field.")
+    }
+
+    await ProviderAuth.saveProviderApiKey(providerID, payload.data.apiKey)
+
+    return c.json({
+      success: true,
+      data: await readProviderAuthState(providerID),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.delete("/providers/:providerID/auth/session", async (c) => {
+    const providerID = c.req.param("providerID")
+    await ProviderAuth.deleteProviderSession(providerID)
+
+    return c.json({
+      success: true,
+      data: await readProviderAuthState(providerID),
       requestId: c.get("requestId"),
     })
   })
