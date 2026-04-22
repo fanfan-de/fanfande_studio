@@ -18,7 +18,9 @@
       "Bash(command -v gh.exe)",
       "PowerShell(Get-Command gh -ErrorAction SilentlyContinue)",
       "Bash(curl -sSfI http://localhost:5173/ --max-time 3)",
-      "Bash(curl -sSfI http://localhost:5173/ --max-time 5)"
+      "Bash(curl -sSfI http://localhost:5173/ --max-time 5)",
+      "Bash(npx tsc *)",
+      "Bash(npx vitest *)"
     ]
   }
 }

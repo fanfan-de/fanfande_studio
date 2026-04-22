@@ -171,6 +171,7 @@ type ComposerAttachmentInput = {
   name?: string
 }
 type ComposerPermissionMode = "default" | "full-access"
+type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
 type McpAllowedTools =
   | string[]
   | {
@@ -675,6 +676,7 @@ try {
         freeformText?: string
       }
       permissionMode?: ComposerPermissionMode
+      reasoningEffort?: OpenAIReasoningEffort
       system?: string
       agent?: string
       skills?: string[]
@@ -708,6 +710,7 @@ try {
         freeformText?: string
       }
       permissionMode?: ComposerPermissionMode
+      reasoningEffort?: OpenAIReasoningEffort
       system?: string
       agent?: string
       skills?: string[]

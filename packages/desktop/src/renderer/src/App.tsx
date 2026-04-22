@@ -1272,12 +1272,16 @@ const PaneSurface = memo(function PaneSurface({
                   hasPendingPermissionRequests={false}
                   isSending={pane.isSending || pane.isCreatingSession}
                   modelOptions={composer.modelOptions}
+                  reasoningEffortOptions={composer.reasoningEffortOptions}
                   selectedModel={composer.selectedModel}
                   selectedModelLabel={composer.selectedModelLabel}
+                  selectedReasoningEffort={composer.selectedReasoningEffort}
+                  selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
                   showModelSelector
                   unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
                   onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
                   onModelChange={composer.handleModelChange}
+                  onReasoningEffortChange={composer.handleReasoningEffortChange}
                   onPickAttachments={() =>
                     onPickComposerAttachments({
                       allowImage: composer.attachmentCapabilities.image,
@@ -1293,6 +1297,7 @@ const PaneSurface = memo(function PaneSurface({
                       attachmentError: composer.attachmentError,
                       createSessionTabID: pane.createSessionTabID,
                       paneID: pane.id,
+                      selectedReasoningEffort: composer.selectedReasoningEffort,
                       selectedSkillIDs: composer.selectedSkillIDs,
                       tabKey: pane.tabKey,
                       waitForPendingModelSelection: composer.awaitPendingModelSelection,
@@ -1350,6 +1355,7 @@ const PaneSurface = memo(function PaneSurface({
                           freeformText: answer.freeformText,
                         }
                       : undefined,
+                    selectedReasoningEffort: composer.selectedReasoningEffort,
                     selectedSkillIDs: composer.selectedSkillIDs,
                     sessionID: pane.sessionID,
                     tabKey: pane.tabKey,
@@ -1387,6 +1393,7 @@ const PaneSurface = memo(function PaneSurface({
                     paneID: pane.id,
                     preserveComposerState: true,
                     questionAnswer: input.questionAnswer,
+                    selectedReasoningEffort: input.selectedReasoningEffort,
                     selectedSkillIDs: input.selectedSkillIDs,
                     sessionID: pane.activeSideChatSession?.id,
                     tabKey: pane.activeSideChatTabKey,
@@ -1407,12 +1414,16 @@ const PaneSurface = memo(function PaneSurface({
                   hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
                   isSending={pane.isSending}
                   modelOptions={composer.modelOptions}
+                  reasoningEffortOptions={composer.reasoningEffortOptions}
                   selectedModel={composer.selectedModel}
                   selectedModelLabel={composer.selectedModelLabel}
+                  selectedReasoningEffort={composer.selectedReasoningEffort}
+                  selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
                   showModelSelector={!readOnlySideChat}
                   unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
                   onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
                   onModelChange={composer.handleModelChange}
+                  onReasoningEffortChange={composer.handleReasoningEffortChange}
                   onPickAttachments={() =>
                     onPickComposerAttachments({
                       allowImage: composer.attachmentCapabilities.image,
@@ -1427,6 +1438,7 @@ const PaneSurface = memo(function PaneSurface({
                     void onSend({
                       attachmentError: composer.attachmentError,
                       paneID: pane.id,
+                      selectedReasoningEffort: composer.selectedReasoningEffort,
                       selectedSkillIDs: composer.selectedSkillIDs,
                       sessionID: pane.sessionID,
                       tabKey: pane.tabKey,

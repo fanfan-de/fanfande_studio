@@ -31,6 +31,7 @@ import type {
   LeftSidebarView,
   LoadedSessionHistoryMessage,
   McpServerSummary,
+  OpenAIReasoningEffort,
   PermissionDecision,
   PermissionRequest,
   PendingAgentStream,
@@ -3425,7 +3426,7 @@ export function useAgentWorkspace({
       })
   }, [deferredWorkspaceFileQuery, platform, workspaceFileReviewState.scopeDirectory])
 
-  async function sendPromptToSession(input: {
+async function sendPromptToSession(input: {
     attachments: ComposerAttachment[]
     backendSessionID?: string | null
     commentReferences?: ComposerCommentReference[]
@@ -3437,6 +3438,7 @@ export function useAgentWorkspace({
       selectedOptions?: string[]
       freeformText?: string
     }
+    reasoningEffort?: OpenAIReasoningEffort | null
     session: SessionSummary
     selectedSkillIDs: string[]
     tabKey: string
@@ -3450,6 +3452,7 @@ export function useAgentWorkspace({
       permissionMode,
       preserveComposerState,
       questionAnswer,
+      reasoningEffort,
       session,
       selectedSkillIDs,
       tabKey,
@@ -3581,6 +3584,7 @@ export function useAgentWorkspace({
           ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
           ...(questionAnswer ? { questionAnswer } : {}),
           ...(effectivePermissionMode !== "default" ? { permissionMode: effectivePermissionMode } : {}),
+          ...(reasoningEffort ? { reasoningEffort } : {}),
           skills: effectiveSelectedSkillIDs,
         })
 
@@ -3593,6 +3597,7 @@ export function useAgentWorkspace({
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         ...(questionAnswer ? { questionAnswer } : {}),
         ...(effectivePermissionMode !== "default" ? { permissionMode: effectivePermissionMode } : {}),
+        ...(reasoningEffort ? { reasoningEffort } : {}),
         skills: effectiveSelectedSkillIDs,
       })
 
@@ -3646,6 +3651,7 @@ export function useAgentWorkspace({
       selectedOptions?: string[]
       freeformText?: string
     }
+    selectedReasoningEffort?: OpenAIReasoningEffort | null
     selectedSkillIDs?: string[]
     sessionID?: string | null
     tabKey?: string | null
@@ -3680,6 +3686,7 @@ export function useAgentWorkspace({
         permissionMode,
         preserveComposerState: input?.preserveComposerState,
         questionAnswer: input?.questionAnswer,
+        reasoningEffort: input?.selectedReasoningEffort,
         selectedSkillIDs: input?.selectedSkillIDs ?? [],
         session: nextSelection.session,
         tabKey: targetTabKey,
@@ -3713,6 +3720,7 @@ export function useAgentWorkspace({
       permissionMode,
       preserveComposerState: input?.preserveComposerState,
       questionAnswer: input?.questionAnswer,
+      reasoningEffort: input?.selectedReasoningEffort,
       selectedSkillIDs: input?.selectedSkillIDs ?? [],
       session: created.session,
       tabKey: targetTabKey,

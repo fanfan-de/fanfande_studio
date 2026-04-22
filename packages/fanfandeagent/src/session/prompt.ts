@@ -56,6 +56,7 @@ export const PromptInput = z.object({
     skills: z.array(z.string()).optional(),
     variant: z.string().optional(),
     permissionMode: Message.PermissionMode.optional(),
+    reasoningEffort: Message.OpenAIReasoningEffort.optional(),
     parts: z.array(
         z.discriminatedUnion("type", [
             Message.TextPart.omit({
@@ -213,7 +214,7 @@ function buildSideChatSystemPrompt(link: Session.SideChatLink) {
     }
 
     if ((link.snapshot.filePaths?.length ?? 0) > 0) {
-        lines.push("", "Anchoring files:", ...link.snapshot.filePaths.map((filePath) => `- ${filePath}`))
+        lines.push("", "Anchoring files:", ...(link.snapshot.filePaths ?? []).map((filePath) => `- ${filePath}`))
     }
 
     lines.push("</side_chat_context>")
@@ -467,6 +468,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     agent,
                     system: promptContext.system,
                     abort,
+                    reasoningEffort: lastUser.reasoningEffort,
                     messages: await Message.toModelMessages(promptContext.messages, model, {
                         agent,
                     }),
@@ -1137,6 +1139,7 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         system: input.system,
         skills: input.skills,
         permissionMode: input.permissionMode ?? "default",
+        reasoningEffort: input.reasoningEffort,
     };
 
     const parts = input.parts.map((part) =>

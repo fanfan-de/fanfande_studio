@@ -29,6 +29,7 @@ interface DesktopComposerAttachmentInput {
 }
 
 type DesktopComposerPermissionMode = "default" | "full-access"
+type DesktopOpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
 type DesktopSessionSummary = LoadedSessionSnapshot
 
 declare global {
@@ -875,6 +876,7 @@ declare global {
           freeformText?: string
         }
         permissionMode?: DesktopComposerPermissionMode
+        reasoningEffort?: DesktopOpenAIReasoningEffort
         system?: string
         agent?: string
         skills?: string[]
@@ -907,6 +909,7 @@ declare global {
           freeformText?: string
         }
         permissionMode?: DesktopComposerPermissionMode
+        reasoningEffort?: DesktopOpenAIReasoningEffort
         system?: string
         agent?: string
         skills?: string[]

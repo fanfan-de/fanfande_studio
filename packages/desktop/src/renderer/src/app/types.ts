@@ -810,10 +810,17 @@ export interface ComposerCommentReference {
 export type ColorMode = "system" | "light" | "dark"
 
 export type ComposerPermissionMode = "default" | "full-access"
+export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
 
 export interface ComposerModelOption {
   value: string
   label: string
+}
+
+export interface ComposerReasoningEffortOption {
+  value: OpenAIReasoningEffort
+  label: string
+  description: string
 }
 
 export interface ComposerSkillOption {

@@ -6709,6 +6709,76 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Add attachments" })).toBeEnabled()
   })
 
+  it("includes the selected OpenAI reasoning effort in composer sends", async () => {
+    const gpt54Model = {
+      id: "gpt-5.4",
+      providerID: "openai",
+      name: "GPT-5.4",
+      status: "active",
+      available: true,
+      capabilities: {
+        temperature: false,
+        reasoning: true,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+        output: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+      },
+      limit: {
+        context: 272000,
+        output: 8192,
+      },
+    }
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.getProjectModels = vi.fn().mockResolvedValue({
+      items: [gpt54Model],
+      selection: {
+        model: "openai/gpt-5.4",
+        small_model: "openai/gpt-5.4",
+      },
+      effectiveModel: gpt54Model,
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Select model: GPT-5.4" }))
+    fireEvent.click(screen.getByRole("button", { name: /^High/ }))
+
+    expect(await screen.findByRole("button", { name: "Select model: GPT-5.4. Reasoning effort: High" })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
+      target: {
+        value: "Trace the new toolbar flow",
+      },
+    })
+    fireEvent.click(getComposerSendButton())
+
+    await waitFor(() => {
+      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
+        sessionID: "session-backend",
+        skills: [],
+        text: "Trace the new toolbar flow",
+        reasoningEffort: "high",
+      })
+    })
+  })
+
   it("renders the project skill selector in the session canvas top menu and still sends selected skills", async () => {
     window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
       ok: true,

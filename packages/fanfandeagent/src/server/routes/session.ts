@@ -44,6 +44,7 @@ const StreamSessionMessageBody = z.object({
   agent: z.string().optional(),
   skills: z.array(z.string()).optional(),
   permissionMode: z.enum(["default", "full-access"]).optional(),
+  reasoningEffort: Message.OpenAIReasoningEffort.optional(),
   model: z
     .object({
       providerID: z.string(),
@@ -947,6 +948,7 @@ export function SessionRoutes() {
       attachmentCount: payload.data.attachments?.length ?? 0,
       attachments: (payload.data.attachments ?? []).map((attachment) => summarizeAttachmentInput(attachment)),
       permissionMode: payload.data.permissionMode ?? "default",
+      reasoningEffort: payload.data.reasoningEffort ?? "default",
       model: payload.data.model ? `${payload.data.model.providerID}/${payload.data.model.modelID}` : "default",
       skillCount: payload.data.skills?.length ?? 0,
     })
@@ -968,6 +970,7 @@ export function SessionRoutes() {
               agent: payload.data.agent,
               skills: payload.data.skills,
               permissionMode: payload.data.permissionMode,
+              reasoningEffort: payload.data.reasoningEffort,
               model: payload.data.model,
             })
           },

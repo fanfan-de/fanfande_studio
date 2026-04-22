@@ -532,6 +532,10 @@ export const PermissionMode = z.enum(["default", "full-access"]).meta({
     ref: "PermissionMode",
 })
 export type PermissionMode = z.infer<typeof PermissionMode>
+export const OpenAIReasoningEffort = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).meta({
+    ref: "OpenAIReasoningEffort",
+})
+export type OpenAIReasoningEffort = z.infer<typeof OpenAIReasoningEffort>
 export const User = Base.extend({
     role: z.literal("user"),
     created: z.number(),
@@ -559,6 +563,7 @@ export const User = Base.extend({
     tools: z.record(z.string(), z.boolean()).optional(),
     variant: z.string().optional(),
     permissionMode: PermissionMode.optional(),
+    reasoningEffort: OpenAIReasoningEffort.optional(),
 }).meta({
     ref: "UserMessage",
 })

@@ -37,6 +37,7 @@ const DEFAULT_LLM_TOTAL_TIMEOUT_MS = 15 * 60 * 1000
 const DEFAULT_LLM_STEP_TIMEOUT_MS = 10 * 60 * 1000
 const OPENAI_PROVIDER_ID = "openai"
 const OPENAI_CODEX_API_SEGMENT = "/backend-api/codex"
+const DEFAULT_OPENAI_REASONING_EFFORTS: Message.OpenAIReasoningEffort[] = ["low", "medium", "high"]
 
 //export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
 
@@ -46,12 +47,13 @@ const OPENAI_CODEX_API_SEGMENT = "/backend-api/codex"
 export type StreamInput = {
   user: Message.User,
   sessionID: string,
-  messageID: string,
+  messageID?: string,
   model: Provider.Model,
   agent: Agent.AgentInfo,
   system: string[],
   abort: AbortSignal,
   messages: ModelMessage[],
+  reasoningEffort?: Message.OpenAIReasoningEffort,
   small?: boolean,
   tools?: ToolSet,
   retries?: number,
@@ -96,6 +98,65 @@ function isOpenAICodexModel(model: Provider.Model) {
   return model.providerID === OPENAI_PROVIDER_ID && model.api.url.includes(OPENAI_CODEX_API_SEGMENT)
 }
 
+function isOpenAIReasoningModel(model: Provider.Model) {
+  return model.providerID === OPENAI_PROVIDER_ID && model.capabilities.reasoning
+}
+
+function getSupportedOpenAIReasoningEfforts(modelID: string): Message.OpenAIReasoningEffort[] {
+  const normalized = modelID.trim().toLowerCase()
+  if (!normalized) return DEFAULT_OPENAI_REASONING_EFFORTS
+
+  if (normalized.startsWith("gpt-5-pro")) {
+    return ["high"]
+  }
+
+  if (normalized.startsWith("gpt-5.4-pro") || normalized.startsWith("gpt-5.2-pro")) {
+    return ["medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.4") || normalized.startsWith("gpt-5.2")) {
+    return ["none", "low", "medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.3-codex")) {
+    return ["low", "medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.1-codex-max")) {
+    return ["none", "medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.1")) {
+    return ["none", "low", "medium", "high"]
+  }
+
+  if (normalized.startsWith("gpt-5")) {
+    return ["minimal", "low", "medium", "high"]
+  }
+
+  return DEFAULT_OPENAI_REASONING_EFFORTS
+}
+
+function normalizeOpenAIReasoningEffort(
+  model: Provider.Model,
+  reasoningEffort?: Message.OpenAIReasoningEffort,
+) {
+  if (!reasoningEffort || !isOpenAIReasoningModel(model)) return undefined
+
+  const supported = getSupportedOpenAIReasoningEfforts(model.id)
+  if (supported.includes(reasoningEffort)) {
+    return reasoningEffort
+  }
+
+  log.warn("ignoring unsupported OpenAI reasoning effort", {
+    modelID: model.id,
+    providerID: model.providerID,
+    reasoningEffort,
+    supported,
+  })
+  return undefined
+}
+
 export async function stream(input: StreamInput): Promise<StreamOutput> {
   const l = log
     .clone()
@@ -121,6 +182,8 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   // 组装 system prompt
   const systemPrompt = buildSystemPrompt(input.system)
   const isOpenAICodex = isOpenAICodexModel(input.model)
+  const isOpenAIReasoning = isOpenAIReasoningModel(input.model)
+  const openAIReasoningEffort = normalizeOpenAIReasoningEffort(input.model, input.reasoningEffort)
 
   // const variant =
   //   !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
@@ -201,11 +264,33 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
       pdfInput: input.model.capabilities.input.pdf,
       toolcall: input.model.capabilities.toolcall,
     },
+    reasoningEffort: openAIReasoningEffort,
     timeouts: {
       totalMs: totalTimeoutMs,
       stepMs: stepTimeoutMs,
     },
   })
+
+  const openAIProviderOptions =
+    input.model.providerID === OPENAI_PROVIDER_ID
+      ? {
+          ...(isOpenAICodex
+            ? {
+                store: false,
+                ...(systemPrompt
+                  ? {
+                      instructions: systemPrompt,
+                    }
+                  : {}),
+              }
+            : {}),
+          ...(openAIReasoningEffort
+            ? {
+                reasoningEffort: openAIReasoningEffort,
+              }
+            : {}),
+        }
+      : undefined
 
   // LiteLLM and some Anthropic proxies require the tools parameter to be present
   // when message history contains tool calls, even if no tools are being used.
@@ -250,27 +335,20 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //----------- 输出与采样参数 --------------------
     output: Output.text(),// 输出纯文本
     ///temperature: params.temperature,
-    temperature: isOpenAICodex ? undefined : 1,
+    temperature: isOpenAICodex || isOpenAIReasoning ? undefined : 1,
     ///topP: params.topP,
     ///topK: params.topK,
     //maxOutputTokens : maxOutputTokens ,
-    presencePenalty: isOpenAICodex ? undefined : 0,// 降低重复提及已出现主题的倾向
-    frequencyPenalty: isOpenAICodex ? undefined : 0,// 降低重复使用相同词语或短语的倾向
+    presencePenalty: isOpenAICodex || isOpenAIReasoning ? undefined : 0,// 降低重复提及已出现主题的倾向
+    frequencyPenalty: isOpenAICodex || isOpenAIReasoning ? undefined : 0,// 降低重复使用相同词语或短语的倾向
     ///providerOptions: ProviderTransform.providerOptions(input.model, params.options),// 如需透传 provider 专有参数，可在这里扩展
     // OpenAI、Claude、Gemini 等模型支持的 providerOptions 并不完全一致。
     // 如果后续需要细粒度控制，可以在这里按 provider 组装额外参数。
     // providerOptions 会原样透传给底层 SDK，用于覆盖各家模型的专有配置。
     providerOptions:
-      isOpenAICodex
+      openAIProviderOptions && Object.keys(openAIProviderOptions).length > 0
         ? {
-            openai: {
-              store: false,
-              ...(systemPrompt
-                ? {
-                    instructions: systemPrompt,
-                  }
-                : {}),
-            },
+            openai: openAIProviderOptions,
           }
         : undefined,
     activeTools: Object.keys(tools).filter((x) => x !== "invalid"),// 过滤掉兜底的 invalid 工具

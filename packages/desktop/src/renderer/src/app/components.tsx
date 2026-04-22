@@ -1,4 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
+import { ChangesPanel } from "./changes/ChangesPanel"
 import { sidebarActions } from "./constants"
 import { WorkspaceFilesPanel } from "./files/WorkspaceFilesPanel"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
@@ -48,6 +49,7 @@ import type {
   ComposerCommentReference,
   ComposerMcpOption,
   ComposerModelOption,
+  ComposerReasoningEffortOption,
   ComposerSkillOption,
   CreateSessionTab,
   GlobalSkillTreeNode,
@@ -55,6 +57,7 @@ import type {
   McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
+  OpenAIReasoningEffort,
   PermissionDecision,
   PermissionRequest,
   PreviewComment,
@@ -1101,239 +1104,11 @@ interface RightSidebarProps {
   onViewChange: (view: RightSidebarView) => void
 }
 
-type DiffPreviewLineTone = "add" | "remove" | "context"
-type DiffFilterKey = "all" | "added" | "modified" | "deleted" | "renamed"
-
-interface ParsedDiffRow {
-  content: string
-  newLineNumber: number | null
-  oldLineNumber: number | null
-  tone: DiffPreviewLineTone
-}
-
-interface ParsedDiffHunk {
-  header: string
-  rows: ParsedDiffRow[]
-}
-
-const DIFF_HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: ?(.*))?$/
-const RIGHT_SIDEBAR_IDLE_STATE: SessionDiffState = {
-  status: "idle",
-  errorMessage: null,
-  updatedAt: null,
-  isStale: false,
-}
 const RIGHT_SIDEBAR_RUNTIME_IDLE_STATE: SessionRuntimeDebugState = {
   status: "idle",
   errorMessage: null,
   updatedAt: null,
   isStale: false,
-}
-const DIFF_FILTER_OPTIONS: Array<{ key: DiffFilterKey; label: string }> = [
-  { key: "all", label: "All" },
-  { key: "added", label: "Added" },
-  { key: "modified", label: "Modified" },
-  { key: "deleted", label: "Deleted" },
-  { key: "renamed", label: "Renamed" },
-]
-
-function getDiffChangeType(diff: SessionDiffSummary["diffs"][number]): Exclude<DiffFilterKey, "all"> {
-  const patch = diff.patch ?? ""
-
-  if (/^rename from /m.test(patch) || /^rename to /m.test(patch)) return "renamed"
-  if (/^new file mode /m.test(patch)) return "added"
-  if (/^deleted file mode /m.test(patch)) return "deleted"
-  if (diff.additions > 0 && diff.deletions === 0) return "added"
-  if (diff.deletions > 0 && diff.additions === 0) return "deleted"
-  return "modified"
-}
-
-function formatDiffChangeTypeLabel(type: Exclude<DiffFilterKey, "all">) {
-  switch (type) {
-    case "added":
-      return "Added"
-    case "deleted":
-      return "Deleted"
-    case "renamed":
-      return "Renamed"
-    default:
-      return "Modified"
-  }
-}
-
-function formatDiffStateLabel(status: SessionDiffState["status"]) {
-  switch (status) {
-    case "loading":
-      return "Loading"
-    case "refreshing":
-      return "Refreshing"
-    case "ready":
-      return "Up to date"
-    case "empty":
-      return "Clean"
-    case "error":
-      return "Refresh failed"
-    default:
-      return "Idle"
-  }
-}
-
-function buildDiffStatusDescription(input: {
-  activeSession: SessionSummary | null
-  diffState: SessionDiffState
-  diffSummary: SessionDiffSummary | null
-}) {
-  if (!input.activeSession) {
-    return "Select a session to inspect its current workspace diff."
-  }
-
-  if (input.diffState.status === "loading") {
-    return "Loading the current workspace diff for this session."
-  }
-
-  if (input.diffState.status === "refreshing") {
-    return input.diffState.updatedAt
-      ? `Refreshing the workspace diff. Last synced at ${formatTime(input.diffState.updatedAt)}.`
-      : "Refreshing the workspace diff."
-  }
-
-  if (input.diffState.status === "error") {
-    return input.diffState.updatedAt
-      ? `The latest refresh failed. Showing the most recent snapshot from ${formatTime(input.diffState.updatedAt)}.`
-      : "The workspace diff could not be loaded."
-  }
-
-  if (input.diffState.updatedAt) {
-    return `Last synced at ${formatTime(input.diffState.updatedAt)}.`
-  }
-
-  if (input.diffSummary?.body) {
-    return input.diffSummary.body
-  }
-
-  return "Inspect the current workspace snapshot for this session."
-}
-
-function formatDiffRange(start: number, count: number) {
-  if (count <= 0) return `line ${start}`
-  if (count === 1) return `line ${start}`
-  return `lines ${start}-${start + count - 1}`
-}
-
-function parsePatchHunks(patch?: string): ParsedDiffHunk[] {
-  if (!patch?.trim()) return []
-
-  const hunks: ParsedDiffHunk[] = []
-  let activeHunk: ParsedDiffHunk | null = null
-  let oldLineNumber = 0
-  let newLineNumber = 0
-
-  for (const rawLine of patch.split(/\r?\n/)) {
-    const hunkMatch = rawLine.match(DIFF_HUNK_HEADER_PATTERN)
-    if (hunkMatch) {
-      const oldStart = Number(hunkMatch[1] ?? "0")
-      const oldCount = Number(hunkMatch[2] ?? "1")
-      const newStart = Number(hunkMatch[3] ?? "0")
-      const newCount = Number(hunkMatch[4] ?? "1")
-      const context = hunkMatch[5]?.trim()
-      const header = context
-        ? `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)} 路 ${context}`
-        : `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)}`
-
-      activeHunk = {
-        header,
-        rows: [],
-      }
-      hunks.push(activeHunk)
-      oldLineNumber = oldStart
-      newLineNumber = newStart
-      continue
-    }
-
-    if (!activeHunk) continue
-    if (!rawLine || rawLine === "\\ No newline at end of file") continue
-
-    const prefix = rawLine[0]
-    const content = rawLine.slice(1)
-
-    if (prefix === " ") {
-      activeHunk.rows.push({
-        content,
-        oldLineNumber,
-        newLineNumber,
-        tone: "context",
-      })
-      oldLineNumber += 1
-      newLineNumber += 1
-      continue
-    }
-
-    if (prefix === "-") {
-      activeHunk.rows.push({
-        content,
-        oldLineNumber,
-        newLineNumber: null,
-        tone: "remove",
-      })
-      oldLineNumber += 1
-      continue
-    }
-
-    if (prefix === "+") {
-      activeHunk.rows.push({
-        content,
-        oldLineNumber: null,
-        newLineNumber,
-        tone: "add",
-      })
-      newLineNumber += 1
-    }
-  }
-
-  return hunks.filter((hunk) => hunk.rows.length > 0)
-}
-
-function DiffPreview({ file, patch }: { file: string; patch?: string }) {
-  if (!patch?.trim()) {
-    return (
-      <div className="right-sidebar-diff-empty">
-        <p>No line-by-line diff preview is available for {file}.</p>
-      </div>
-    )
-  }
-
-  const hunks = parsePatchHunks(patch)
-
-  if (hunks.length === 0) {
-    return (
-      <div className="right-sidebar-diff-empty">
-        <p>No line-by-line diff preview is available for {file}.</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="right-sidebar-diff-preview" role="region" aria-label={`Diff preview for ${file}`}>
-      <div className="right-sidebar-diff-code">
-        {hunks.map((hunk, hunkIndex) => (
-          <section key={`${file}-hunk-${hunkIndex}`} className="right-sidebar-diff-hunk" aria-label={hunk.header}>
-            <div className="right-sidebar-diff-hunk-header">{hunk.header}</div>
-            {hunk.rows.map((row, rowIndex) => (
-              <div key={`${file}-${hunkIndex}-${rowIndex}`} className={`right-sidebar-diff-row is-${row.tone}`}>
-                <span className="right-sidebar-diff-line-number" aria-hidden="true">
-                  {row.oldLineNumber ?? ""}
-                </span>
-                <span className="right-sidebar-diff-line-number" aria-hidden="true">
-                  {row.newLineNumber ?? ""}
-                </span>
-                <span className="right-sidebar-diff-content">{row.content || " "}</span>
-              </div>
-            ))}
-          </section>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 export function RightSidebar({
@@ -1373,46 +1148,13 @@ export function RightSidebar({
   onRuntimeRefresh,
   onViewChange,
 }: RightSidebarProps) {
-  const [diffFilter, setDiffFilter] = useState<DiffFilterKey>("all")
-  const [diffQuery, setDiffQuery] = useState("")
-  const diffState = activeSessionDiffState ?? RIGHT_SIDEBAR_IDLE_STATE
   const runtimeState = activeSessionRuntimeDebugState ?? RIGHT_SIDEBAR_RUNTIME_IDLE_STATE
-  const changedFilesCount = activeSessionDiff?.stats?.files ?? activeSessionDiff?.diffs.length ?? 0
-  const additionsCount = activeSessionDiff?.stats?.additions ?? 0
-  const deletionsCount = activeSessionDiff?.stats?.deletions ?? 0
-  const hasWorkspaceChanges = Boolean(activeSessionDiff && activeSessionDiff.diffs.length > 0)
   const latestRuntimeTurn = activeSessionRuntimeDebug?.latestTurn ?? null
   const latestRuntimePhase = activeSessionRuntimeDebug?.status.phase ?? latestRuntimeTurn?.phase
   const runtimeStatusDescription = buildRuntimeStatusDescription({
     activeSession,
     runtimeState,
     runtimeSnapshot: activeSessionRuntimeDebug ?? null,
-  })
-  const normalizedQuery = diffQuery.trim().toLowerCase()
-  const filteredDiffs = (activeSessionDiff?.diffs ?? []).filter((diff) => {
-    const diffType = getDiffChangeType(diff)
-    if (diffFilter !== "all" && diffType !== diffFilter) return false
-    if (!normalizedQuery) return true
-    return diff.file.toLowerCase().includes(normalizedQuery)
-  })
-
-  useEffect(() => {
-    setDiffFilter("all")
-    setDiffQuery("")
-  }, [activeSession?.id])
-
-  useEffect(() => {
-    if (!selectedDiffFile || !activeSessionDiff?.diffs.some((diff) => diff.file === selectedDiffFile)) {
-      if (selectedDiffFile !== null) {
-        onDiffFileSelect(null)
-      }
-    }
-  }, [activeSessionDiff, onDiffFileSelect, selectedDiffFile])
-
-  const statusDescription = buildDiffStatusDescription({
-    activeSession,
-    diffState,
-    diffSummary: activeSessionDiff,
   })
 
   return (
@@ -1444,149 +1186,15 @@ export function RightSidebar({
 
       <div className={activeView === "preview" ? "right-sidebar-view-host is-preview" : "right-sidebar-view-host"}>
         {activeView === "changes" ? (
-          <section className="right-sidebar-section">
-            <div className="right-sidebar-panel-header">
-              <div className="right-sidebar-panel-copy">
-                <span className="label">Workspace Diff</span>
-                <h3>Current session snapshot</h3>
-                {activeSessionDirectory ? (
-                  <p className="right-sidebar-scope">
-                    Scope:
-                    {" "}
-                    <code>{activeSessionDirectory}</code>
-                  </p>
-                ) : null}
-              </div>
-              <div className="right-sidebar-panel-actions">
-                <button
-                  type="button"
-                  className="secondary-button right-sidebar-refresh-button"
-                  aria-label="Refresh workspace diff"
-                  disabled={!activeSession || diffState.status === "loading" || diffState.status === "refreshing"}
-                  onClick={() => void onDiffRefresh()}
-                >
-                  {diffState.status === "loading" || diffState.status === "refreshing" ? "Refreshing..." : "Refresh"}
-                </button>
-              </div>
-            </div>
-
-            <div className="right-sidebar-status-row">
-              <span className={`settings-badge right-sidebar-status-badge is-${diffState.status}`}>{formatDiffStateLabel(diffState.status)}</span>
-              {activeSession ? <span className="settings-badge">{String(changedFilesCount)} files</span> : null}
-              {diffState.isStale ? <span className="settings-badge">Stale</span> : null}
-            </div>
-
-            <p className="right-sidebar-status-copy">{statusDescription}</p>
-            {activeSessionDiff?.title && activeSessionDiff.title !== activeSessionDiff.body ? (
-              <p className="right-sidebar-status-summary">{activeSessionDiff.title}</p>
-            ) : null}
-            {diffState.errorMessage ? (
-              <p className="right-sidebar-status-error" role="alert">{diffState.errorMessage}</p>
-            ) : null}
-
-            {activeSession ? (
-              <>
-                <div className="right-sidebar-meta-grid">
-                  <div className="right-sidebar-metric">
-                    <span className="right-sidebar-metric-label">Files</span>
-                    <strong>{String(changedFilesCount)}</strong>
-                  </div>
-                  <div className="right-sidebar-metric">
-                    <span className="right-sidebar-metric-label">Net</span>
-                    <strong>+{additionsCount} -{deletionsCount}</strong>
-                  </div>
-                </div>
-
-                {hasWorkspaceChanges ? (
-                  <>
-                    <div className="right-sidebar-toolbar">
-                      <div className="right-sidebar-filter-group" role="group" aria-label="Workspace diff filters">
-                        {DIFF_FILTER_OPTIONS.map((option) => (
-                          <button
-                            key={option.key}
-                            type="button"
-                            className={diffFilter === option.key ? "right-sidebar-filter-chip is-active" : "right-sidebar-filter-chip"}
-                            aria-pressed={diffFilter === option.key}
-                            onClick={() => setDiffFilter(option.key)}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-                      <label className="right-sidebar-search-field">
-                        <span className="label">Search</span>
-                        <input
-                          aria-label="Search workspace diff files"
-                          type="search"
-                          value={diffQuery}
-                          placeholder="Filter files"
-                          onChange={(event: ChangeEvent<HTMLInputElement>) => setDiffQuery(event.target.value)}
-                        />
-                      </label>
-                    </div>
-
-                    {filteredDiffs.length > 0 ? (
-                      <div className="right-sidebar-change-list">
-                        {filteredDiffs.map((diff) => {
-                          const diffType = getDiffChangeType(diff)
-                          const isExpanded = selectedDiffFile === diff.file
-
-                          return (
-                            <div key={diff.file} className="right-sidebar-change-row">
-                              <button
-                                type="button"
-                                className="right-sidebar-change-toggle"
-                                aria-expanded={isExpanded}
-                                aria-label={`Toggle diff for ${diff.file}`}
-                                onClick={() => onDiffFileSelect(isExpanded ? null : diff.file)}
-                              >
-                                <span className="right-sidebar-change-icon" aria-hidden="true">
-                                  {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                                </span>
-                                <div className="right-sidebar-change-copy">
-                                  <strong>{diff.file}</strong>
-                                  <span className="right-sidebar-change-meta">
-                                    <span className={`right-sidebar-change-type is-${diffType}`}>{formatDiffChangeTypeLabel(diffType)}</span>
-                                    <span className="right-sidebar-change-action">
-                                      {isExpanded ? "Hide diff" : "Show diff"}
-                                    </span>
-                                  </span>
-                                </div>
-                                <span className="right-sidebar-change-stat">
-                                  +{diff.additions} -{diff.deletions}
-                                </span>
-                              </button>
-                              {isExpanded ? <DiffPreview file={diff.file} patch={diff.patch} /> : null}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <div className="right-sidebar-empty">
-                        <p>No files match the current diff filters.</p>
-                      </div>
-                    )}
-                  </>
-                ) : diffState.status === "loading" ? (
-                  <div className="right-sidebar-empty">
-                    <p>Loading workspace diff for this session.</p>
-                  </div>
-                ) : diffState.status === "error" ? (
-                  <div className="right-sidebar-empty">
-                    <p>Couldn't refresh the current workspace diff.</p>
-                  </div>
-                ) : (
-                  <div className="right-sidebar-empty">
-                    <p>No workspace changes were detected for this session.</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="right-sidebar-empty">
-                <p>Select a session to inspect its workspace diff.</p>
-              </div>
-            )}
-          </section>
+          <ChangesPanel
+            activeSession={activeSession}
+            activeSessionDirectory={activeSessionDirectory}
+            activeSessionDiff={activeSessionDiff}
+            activeSessionDiffState={activeSessionDiffState}
+            selectedDiffFile={selectedDiffFile}
+            onDiffFileSelect={onDiffFileSelect}
+            onDiffRefresh={onDiffRefresh}
+          />
         ) : null}
 
         {activeView === "runtime" ? (
@@ -5991,6 +5599,7 @@ interface ThreadViewProps {
       selectedOptions?: string[]
       freeformText?: string
     }
+    selectedReasoningEffort?: OpenAIReasoningEffort | null
     selectedSkillIDs: string[]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
@@ -6400,6 +6009,7 @@ interface InlineSideChatThreadProps {
       selectedOptions?: string[]
       freeformText?: string
     }
+    selectedReasoningEffort?: OpenAIReasoningEffort | null
     selectedSkillIDs: string[]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
@@ -6504,6 +6114,7 @@ function InlineSideChatThread({
                   freeformText: answer.freeformText,
                 }
               : undefined,
+            selectedReasoningEffort: composer.selectedReasoningEffort,
             selectedSkillIDs: composer.selectedSkillIDs,
             waitForPendingModelSelection: composer.awaitPendingModelSelection,
           })
@@ -6522,12 +6133,16 @@ function InlineSideChatThread({
         hasPendingPermissionRequests={pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
         isSending={isSending}
         modelOptions={composer.modelOptions}
+        reasoningEffortOptions={composer.reasoningEffortOptions}
         selectedModel={composer.selectedModel}
         selectedModelLabel={composer.selectedModelLabel}
+        selectedReasoningEffort={composer.selectedReasoningEffort}
+        selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
         showModelSelector={false}
         unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
         onDraftChange={onDraftChange}
         onModelChange={composer.handleModelChange}
+        onReasoningEffortChange={composer.handleReasoningEffortChange}
         onPickAttachments={() =>
           onPickAttachments({
             allowImage: composer.attachmentCapabilities.image,
@@ -6541,6 +6156,7 @@ function InlineSideChatThread({
           void onSend({
             attachmentError: composer.attachmentError,
             draftOverride,
+            selectedReasoningEffort: composer.selectedReasoningEffort,
             selectedSkillIDs: composer.selectedSkillIDs,
             waitForPendingModelSelection: composer.awaitPendingModelSelection,
           })
@@ -7500,12 +7116,16 @@ interface ComposerProps {
   hasPendingPermissionRequests: boolean
   isSending: boolean
   modelOptions: ComposerModelOption[]
+  reasoningEffortOptions: ComposerReasoningEffortOption[]
   selectedModel: string | null
   selectedModelLabel: string
+  selectedReasoningEffort: OpenAIReasoningEffort | null
+  selectedReasoningEffortLabel: string
   showModelSelector?: boolean
   unsupportedAttachmentPaths: string[]
   onDraftChange: (value: string) => void
   onModelChange: (value: string | null) => void | Promise<void>
+  onReasoningEffortChange: (value: OpenAIReasoningEffort | null) => void
   onPickAttachments: () => void | Promise<void>
   onRemoveAttachment: (path: string) => void
   onRemoveCommentReference: (referenceID: string) => void
@@ -7563,12 +7183,16 @@ export function Composer({
   hasPendingPermissionRequests,
   isSending,
   modelOptions,
+  reasoningEffortOptions,
   selectedModel,
   selectedModelLabel,
+  selectedReasoningEffort,
+  selectedReasoningEffortLabel,
   showModelSelector = true,
   unsupportedAttachmentPaths,
   onDraftChange,
   onModelChange,
+  onReasoningEffortChange,
   onPickAttachments,
   onRemoveAttachment,
   onRemoveCommentReference,
@@ -7612,6 +7236,11 @@ export function Composer({
     void onModelChange(value)
   }
 
+  function handleReasoningEffortSelect(value: OpenAIReasoningEffort | null) {
+    setOpenMenu(null)
+    onReasoningEffortChange(value)
+  }
+
   function handleDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (!isComposerSubmitKeyEvent(event, isComposingRef.current)) return
 
@@ -7628,6 +7257,10 @@ export function Composer({
   })
   const sendButtonTitle = `${sendButtonLabel}. ${sendButtonDescription}`
   const sendShortcut = !isSending && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
+  const showReasoningEffortSelector = showModelSelector && reasoningEffortOptions.length > 0
+  const selectedModelButtonLabel = selectedReasoningEffort
+    ? `${selectedModelLabel} · ${selectedReasoningEffortLabel}`
+    : selectedModelLabel
 
   return (
     <footer className="composer prompt-input-shell">
@@ -7719,12 +7352,16 @@ export function Composer({
               <button
                 aria-expanded={openMenu === "model"}
                 aria-haspopup="dialog"
-                aria-label={`Select model: ${selectedModelLabel}`}
+                aria-label={
+                  selectedReasoningEffort
+                    ? `Select model: ${selectedModelLabel}. Reasoning effort: ${selectedReasoningEffortLabel}`
+                    : `Select model: ${selectedModelLabel}`
+                }
                 className="composer-selector-button"
                 onClick={() => toggleMenu("model")}
                 type="button"
               >
-                <span>{selectedModelLabel}</span>
+                <span>{selectedModelButtonLabel}</span>
                 <ChevronDownIcon />
               </button>
 
@@ -7751,6 +7388,39 @@ export function Composer({
                   ) : (
                     <p className="composer-menu-empty">No visible models are available for this project yet.</p>
                   )}
+                  {showReasoningEffortSelector ? (
+                    <>
+                      <div className="composer-menu-divider" aria-hidden="true" />
+                      <p className="composer-menu-section-label">Reasoning effort</p>
+                      <button
+                        className={selectedReasoningEffort === null ? "composer-menu-option is-selected" : "composer-menu-option"}
+                        onClick={() => handleReasoningEffortSelect(null)}
+                        type="button"
+                      >
+                        <span className="composer-menu-option-copy">
+                          <strong>Model default</strong>
+                          <small>Use the default reasoning level for the current OpenAI model.</small>
+                        </span>
+                      </button>
+                      {reasoningEffortOptions.map((option) => (
+                        <button
+                          key={option.value}
+                          className={
+                            selectedReasoningEffort === option.value
+                              ? "composer-menu-option is-selected"
+                              : "composer-menu-option"
+                          }
+                          onClick={() => handleReasoningEffortSelect(option.value)}
+                          type="button"
+                        >
+                          <span className="composer-menu-option-copy">
+                            <strong>{option.label}</strong>
+                            <small>{option.description}</small>
+                          </span>
+                        </button>
+                      ))}
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </div>

@@ -1487,6 +1487,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           freeformText?: string
         }
         permissionMode?: "default" | "full-access"
+        reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
         system?: string
         agent?: string
         skills?: string[]
@@ -1504,6 +1505,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           attachments: input.attachments,
           questionAnswer: input.questionAnswer,
           permissionMode: input.permissionMode,
+          reasoningEffort: input.reasoningEffort,
           system: input.system,
           agent: input.agent,
           skills: input.skills,
@@ -1658,6 +1660,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           freeformText?: string
         }
         permissionMode?: "default" | "full-access"
+        reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
         system?: string
         agent?: string
         skills?: string[]
@@ -1674,6 +1677,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           attachments: input.attachments,
           questionAnswer: input.questionAnswer,
           permissionMode: input.permissionMode,
+          reasoningEffort: input.reasoningEffort,
           system: input.system,
           agent: input.agent,
           skills: input.skills,

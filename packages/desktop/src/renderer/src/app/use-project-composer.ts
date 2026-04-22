@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react"
 import type {
   ComposerMcpOption,
   ComposerModelOption,
+  ComposerReasoningEffortOption,
   ComposerSkillOption,
   McpServerSummary,
+  OpenAIReasoningEffort,
   ProviderModel,
   SkillInfo,
 } from "./types"
@@ -16,6 +18,39 @@ interface ComposerAttachmentCapabilities {
 type ComposerAttachmentKind = "image" | "pdf" | "unsupported"
 
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"])
+const DEFAULT_OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ["low", "medium", "high"]
+const OPENAI_REASONING_EFFORT_COPY: Record<
+  OpenAIReasoningEffort,
+  {
+    label: string
+    description: string
+  }
+> = {
+  none: {
+    label: "None",
+    description: "Skip deliberate reasoning for the fastest compatible response.",
+  },
+  minimal: {
+    label: "Minimal",
+    description: "Use a very shallow reasoning pass to reduce latency and reasoning tokens.",
+  },
+  low: {
+    label: "Low",
+    description: "Keep reasoning light for routine implementation and review tasks.",
+  },
+  medium: {
+    label: "Medium",
+    description: "Balance speed and depth for most coding work.",
+  },
+  high: {
+    label: "High",
+    description: "Spend more compute on harder or more ambiguous tasks.",
+  },
+  xhigh: {
+    label: "X-High",
+    description: "Use the deepest supported reasoning setting for long-horizon work.",
+  },
+}
 
 function getComposerAttachmentKind(path: string): ComposerAttachmentKind {
   const normalizedPath = path.trim().toLowerCase()
@@ -31,6 +66,55 @@ function toComposerModelValue(model: ProviderModel) {
 
 function toComposerModelLabel(model: ProviderModel) {
   return model.name
+}
+
+function isOpenAIReasoningModel(model: ProviderModel | null): model is ProviderModel {
+  return Boolean(model && model.providerID === "openai" && model.capabilities.reasoning)
+}
+
+function getSupportedOpenAIReasoningEfforts(modelID: string): OpenAIReasoningEffort[] {
+  const normalized = modelID.trim().toLowerCase()
+  if (!normalized) return DEFAULT_OPENAI_REASONING_EFFORTS
+
+  if (normalized.startsWith("gpt-5-pro")) {
+    return ["high"]
+  }
+
+  if (normalized.startsWith("gpt-5.4-pro") || normalized.startsWith("gpt-5.2-pro")) {
+    return ["medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.4") || normalized.startsWith("gpt-5.2")) {
+    return ["none", "low", "medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.3-codex")) {
+    return ["low", "medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.1-codex-max")) {
+    return ["none", "medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.1")) {
+    return ["none", "low", "medium", "high"]
+  }
+
+  if (normalized.startsWith("gpt-5")) {
+    return ["minimal", "low", "medium", "high"]
+  }
+
+  return DEFAULT_OPENAI_REASONING_EFFORTS
+}
+
+function resolveComposerReasoningEffortOptions(model: ProviderModel | null): ComposerReasoningEffortOption[] {
+  if (!isOpenAIReasoningModel(model)) return []
+
+  return getSupportedOpenAIReasoningEfforts(model.id).map((value) => ({
+    value,
+    label: OPENAI_REASONING_EFFORT_COPY[value].label,
+    description: OPENAI_REASONING_EFFORT_COPY[value].description,
+  }))
 }
 
 function resolveComposerEffectiveModel(
@@ -135,6 +219,14 @@ function resolveComposerMcpLabel(selectedServerIDs: string[], servers: McpServer
   return `${selectedServerIDs.length} servers`
 }
 
+function resolveComposerReasoningEffortLabel(
+  selectedReasoningEffort: OpenAIReasoningEffort | null,
+  options: ComposerReasoningEffortOption[],
+) {
+  if (!selectedReasoningEffort) return "Model default"
+  return options.find((option) => option.value === selectedReasoningEffort)?.label ?? OPENAI_REASONING_EFFORT_COPY[selectedReasoningEffort].label
+}
+
 export interface UseProjectComposerOptions {
   attachmentPaths: string[]
   projectID: string | null
@@ -146,6 +238,7 @@ export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 
   const [defaultModel, setDefaultModel] = useState<ProviderModel | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [smallModel, setSmallModel] = useState<string | null>(null)
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<OpenAIReasoningEffort | null>(null)
   const [isLoadingModels, setIsLoadingModels] = useState(false)
 
   const [skills, setSkills] = useState<SkillInfo[]>([])
@@ -297,6 +390,17 @@ export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 
   const selectedSkillLabel = resolveComposerSkillLabel(selectedSkillIDs, skills, isLoadingSkills)
   const selectedMcpLabel = resolveComposerMcpLabel(selectedMcpServerIDs, mcpServers, isLoadingMcp)
   const contextWindow = effectiveModel?.limit.context ?? null
+  const reasoningEffortOptions = resolveComposerReasoningEffortOptions(effectiveModel)
+  const selectedReasoningEffortLabel = resolveComposerReasoningEffortLabel(
+    selectedReasoningEffort,
+    reasoningEffortOptions,
+  )
+
+  useEffect(() => {
+    if (!selectedReasoningEffort) return
+    if (reasoningEffortOptions.some((option) => option.value === selectedReasoningEffort)) return
+    setSelectedReasoningEffort(null)
+  }, [reasoningEffortOptions, selectedReasoningEffort])
 
   async function awaitPendingModelSelection() {
     await pendingModelSelectionRef.current?.catch(() => undefined)
@@ -393,6 +497,10 @@ export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 
     }
   }
 
+  function handleReasoningEffortChange(value: OpenAIReasoningEffort | null) {
+    setSelectedReasoningEffort(value)
+  }
+
   return {
     attachmentCapabilities,
     attachmentButtonTitle,
@@ -402,13 +510,17 @@ export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 
     contextWindow,
     handleMcpToggle,
     handleModelChange,
+    handleReasoningEffortChange,
     handleSkillToggle,
     mcpOptions,
     modelOptions,
+    reasoningEffortOptions,
     selectedMcpLabel,
     selectedMcpServerIDs,
     selectedModel,
     selectedModelLabel,
+    selectedReasoningEffort,
+    selectedReasoningEffortLabel,
     selectedSkillIDs,
     selectedSkillLabel,
     skillOptions,
