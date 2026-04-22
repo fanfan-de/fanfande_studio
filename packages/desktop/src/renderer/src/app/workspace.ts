@@ -9,8 +9,7 @@ export function isSideChatSession(session: Pick<SessionSummary, "kind"> | null |
 }
 
 export function getPrimaryWorkspaceSessions<T extends Pick<SessionSummary, "kind">>(sessions: T[]) {
-  const visibleSessions = sessions.filter((session) => !isSideChatSession(session))
-  return visibleSessions.length > 0 ? visibleSessions : sessions
+  return sessions.filter((session) => !isSideChatSession(session))
 }
 
 function getPreferredWorkspaces(workspaces: WorkspaceGroup[]) {

@@ -1758,32 +1758,7 @@ describe("App", () => {
 
   it("refreshes git commit availability when the quick menu opens after staged changes", async () => {
     let canCommit = false
-
-    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
-      {
-        id: "C:\\Projects\\Atlas\\client",
-        directory: "C:\\Projects\\Atlas\\client",
-        name: "client",
-        created: 1,
-        updated: 20,
-        project: {
-          id: "project-atlas",
-          name: "Atlas",
-          worktree: "C:\\Projects\\Atlas",
-        },
-        sessions: [
-          {
-            id: "session-atlas-review",
-            projectID: "project-atlas",
-            directory: "C:\\Projects\\Atlas\\client",
-            title: "Atlas review",
-            created: 18,
-            updated: 20,
-          },
-        ],
-      },
-    ])
-    window.desktop!.gitGetCapabilities = vi.fn().mockImplementation(async () => ({
+    const getCapabilities = () => ({
       directory: "C:\\Projects\\Atlas\\client",
       root: "C:\\Projects\\Atlas",
       branch: "main",
@@ -1810,14 +1785,44 @@ describe("App", () => {
       canCreateBranch: {
         enabled: true,
       },
-    }))
+    })
+
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 18,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.gitGetCapabilities = vi.fn().mockImplementation(async () => getCapabilities())
 
     render(<App />)
 
     await screen.findByRole("button", { name: "Atlas review" })
 
     const gitGetCapabilities = window.desktop!.gitGetCapabilities as ReturnType<typeof vi.fn>
-    gitGetCapabilities.mockClear()
+    const menuRefresh = createDeferred(getCapabilities())
+    const unexpectedRefresh = createDeferred(getCapabilities())
+    gitGetCapabilities.mockReset()
+    gitGetCapabilities.mockImplementationOnce(() => menuRefresh.promise)
+    gitGetCapabilities.mockImplementation(() => unexpectedRefresh.promise)
 
     fireEvent.click(await screen.findByRole("button", { name: "Git" }))
 
@@ -1827,18 +1832,26 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Run commit" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Stage all + commit" })).toBeEnabled()
     await waitFor(() => {
-      expect(gitGetCapabilities).toHaveBeenCalled()
+      expect(gitGetCapabilities).toHaveBeenCalledTimes(1)
     })
 
-    gitGetCapabilities.mockClear()
+    await act(async () => {
+      menuRefresh.resolve(getCapabilities())
+      await menuRefresh.promise
+    })
+
+    expect(gitGetCapabilities).toHaveBeenCalledTimes(1)
+
+    gitGetCapabilities.mockReset()
     canCommit = true
+    gitGetCapabilities.mockResolvedValue(getCapabilities())
 
     act(() => {
       window.dispatchEvent(new Event("focus"))
     })
 
     await waitFor(() => {
-      expect(gitGetCapabilities).toHaveBeenCalled()
+      expect(gitGetCapabilities).toHaveBeenCalledTimes(1)
     })
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Run commit" })).toBeEnabled()
@@ -4505,6 +4518,41 @@ describe("App", () => {
     expect(screen.getAllByText("Orion").length).toBeGreaterThan(0)
   })
 
+  it("reuses the existing create session tab when opening a folder without sessions", async () => {
+    window.desktop!.pickProjectDirectory = vi.fn().mockResolvedValue("C:\\Projects\\Orion\\client")
+    window.desktop!.openFolderWorkspace = vi.fn().mockResolvedValue({
+      id: "C:\\Projects\\Orion\\client",
+      directory: "C:\\Projects\\Orion\\client",
+      name: "client",
+      created: 1,
+      updated: 2,
+      project: {
+        id: "project-orion",
+        name: "Orion",
+        worktree: "C:\\Projects\\Orion",
+      },
+      sessions: [],
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session" }))
+    expect(await screen.findByRole("combobox", { name: "Session project" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Open folder" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.openFolderWorkspace).toHaveBeenCalledWith({
+        directory: "C:\\Projects\\Orion\\client",
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "client" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
+    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Orion\\client")
+  })
+
   it("keeps a newly opened folder when startup folder loading resolves afterwards", async () => {
     const startupLoad = createDeferred<LoadedFolderWorkspace[]>()
     window.desktop!.listFolderWorkspaces = vi.fn().mockImplementation(() => startupLoad.promise)
@@ -5018,6 +5066,22 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
   })
 
+  it("focuses the existing create session tab in another pane when the folder row action is clicked", async () => {
+    render(<App />)
+
+    const panes = await createSiblingPaneFromCreateTab()
+
+    fireEvent.click(within(panes[0]).getByRole("button", { name: "Switch to session Chat 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create session for src" }))
+
+    const updatedPanes = Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+
+    expect(within(updatedPanes[1]).getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+    expect(within(updatedPanes[0]).queryByRole("button", { name: "Switch to create session tab" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
+    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
+  })
+
   it("allows multiple create session tabs with independent project selections", async () => {
     render(<App />)
 
@@ -5131,6 +5195,19 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Layout follow-up" })).toBeInTheDocument()
     expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
+  })
+
+  it("does not open a create session tab when selecting an empty folder row", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "src" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "src" }).closest(".project-row")).toHaveClass("is-active")
+      expect(screen.getByRole("button", { name: "src" })).toHaveAttribute("aria-expanded", "true")
+      expect(screen.queryByRole("button", { name: "Switch to create session tab" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("combobox", { name: "Session project" })).not.toBeInTheDocument()
+    })
   })
 
   it("creates a session from the folder row action", async () => {
@@ -7192,6 +7269,34 @@ describe("App", () => {
       })
     })
     expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
+  })
+
+  it("removes inline side chats when archiving a parent session cascade", async () => {
+    window.desktop!.archiveAgentSession = vi.fn().mockResolvedValue({
+      sessionID: "session-chat-1",
+      projectID: "project-2",
+      directory: "C:\\Projects\\Project 2",
+      archivedAt: 1,
+      archivedSessionIDs: ["session-chat-1", "session-side-chat-1"],
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sidechat" }))
+    expect(await screen.findByRole("region", { name: "Nested side chat" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive session Chat 1" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.archiveAgentSession).toHaveBeenCalledWith({
+        sessionID: "session-chat-1",
+      })
+    })
+    await waitFor(() => {
+      expect(screen.queryByRole("region", { name: "Nested side chat" })).not.toBeInTheDocument()
+      expect(screen.queryByText("Anchored reply snapshot")).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
+    })
   })
 
   it("removes a folder from the sidebar without deleting it from the backend", () => {

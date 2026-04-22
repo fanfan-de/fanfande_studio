@@ -2205,6 +2205,17 @@ export function useAgentWorkspace({
     openCreateSessionTab(preferredWorkspaceID, paneID)
   }
 
+  function focusExistingCreateSessionTabAcrossPanes(preferredWorkspaceID?: string | null) {
+    const nextCreateSessionTabID = createSessionTabs[createSessionTabs.length - 1]?.id ?? null
+    if (!nextCreateSessionTabID) return false
+
+    focusCreateSessionTab(nextCreateSessionTabID)
+    if (preferredWorkspaceID) {
+      handleCreateSessionWorkspaceChange(preferredWorkspaceID, nextCreateSessionTabID)
+    }
+    return true
+  }
+
   function removeWorkspaceSessionState(workspace: WorkspaceGroup) {
     const sessionIDs = new Set(workspace.sessions.map((session) => session.id))
 
@@ -2462,7 +2473,7 @@ export function useAgentWorkspace({
         const [initialWorkspaceSession] = getPrimaryWorkspaceSessions(nextWorkspace.sessions)
         if (initialWorkspaceSession) {
           focusSession(createdWorkspace.id, initialWorkspaceSession.id)
-        } else {
+        } else if (!focusExistingCreateSessionTabAcrossPanes(createdWorkspace.id)) {
           openCreateSessionTab(createdWorkspace.id, undefined, [...workspaces, nextWorkspace])
         }
         lastFocusedSessionIDRef.current = initialWorkspaceSession?.id ?? null
@@ -2496,8 +2507,6 @@ export function useAgentWorkspace({
       setExpandedFolderID(null)
       const primarySessions = getPrimaryWorkspaceSessions(workspace.sessions)
       if (primarySessions.length === 0) {
-        if (!isWorkspaceAvailable(workspace)) return
-        openCreateSessionTab(workspace.id)
         return
       }
 
@@ -2511,8 +2520,6 @@ export function useAgentWorkspace({
     const currentSessionInWorkspace = workspace.sessions.some((session) => session.id === activeSessionID)
     const primarySessions = getPrimaryWorkspaceSessions(workspace.sessions)
     if (primarySessions.length === 0) {
-      if (!isWorkspaceAvailable(workspace)) return
-      openCreateSessionTab(workspace.id)
       return
     }
 
@@ -2635,6 +2642,7 @@ export function useAgentWorkspace({
   async function handleProjectCreateSession(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
     if (!isWorkspaceAvailable(workspace)) return
+    if (focusExistingCreateSessionTabAcrossPanes(workspace.id)) return
     openCreateSessionTab(workspace.id)
   }
 
@@ -2687,16 +2695,13 @@ export function useAgentWorkspace({
 
     setDeletingSessionID(session.id)
     try {
-      await window.desktop.archiveAgentSession({ sessionID: session.id })
+      const archiveResult = await window.desktop.archiveAgentSession({ sessionID: session.id })
+      const archivedSessionIDs = new Set(archiveResult.archivedSessionIDs?.filter(Boolean) ?? [session.id])
       const nextWorkspaces = sortWorkspaceGroups(
-        workspaces.map((item) =>
-          item.id === workspace.id
-            ? {
-                ...item,
-                sessions: item.sessions.filter((existing) => existing.id !== session.id),
-              }
-            : item,
-        ),
+        workspaces.map((item) => ({
+          ...item,
+          sessions: item.sessions.filter((existing) => !archivedSessionIDs.has(existing.id)),
+        })),
       )
       const nextCreateSessionWorkspaceID = resolveCreateSessionWorkspaceID(
         nextWorkspaces,
@@ -2715,7 +2720,7 @@ export function useAgentWorkspace({
       })
       const nextWorkbenchLayout = filterLayoutTabs(
         workbenchLayout,
-        (reference) => reference.kind !== "session" || reference.sessionID !== session.id,
+        (reference) => reference.kind !== "session" || !archivedSessionIDs.has(reference.sessionID),
       )
       const nextFocusedPane = getGroupNode(nextWorkbenchLayout, nextWorkbenchLayout.focusedGroupId)
       const nextFocusedTab = nextFocusedPane?.activeTabId ? getReferenceForTabId(nextWorkbenchLayout, nextFocusedPane.activeTabId) : null
@@ -2727,70 +2732,100 @@ export function useAgentWorkspace({
       setWorkspaces(nextWorkspaces)
       setWorkbenchLayout(nextWorkbenchLayout)
       setCreateSessionTabs(nextCreateSessionTabs)
-      setConversations((prev) => removeConversationSession(prev, session.id))
-      setAgentSessions((prev) => removeAgentSession(prev, session.id))
+      setConversations((prev) => {
+        let next = prev
+        for (const archivedSessionID of archivedSessionIDs) {
+          next = removeConversationSession(next, archivedSessionID)
+        }
+        return next
+      })
+      setAgentSessions((prev) => {
+        let next = prev
+        for (const archivedSessionID of archivedSessionIDs) {
+          next = removeAgentSession(next, archivedSessionID)
+        }
+        return next
+      })
       setPendingPermissionRequestsBySession((prev) => {
         const next = { ...prev }
-        delete next[session.id]
+        for (const archivedSessionID of archivedSessionIDs) {
+          delete next[archivedSessionID]
+        }
         return next
       })
       setSessionDiffBySession((prev) => {
         const next = { ...prev }
-        delete next[session.id]
+        for (const archivedSessionID of archivedSessionIDs) {
+          delete next[archivedSessionID]
+        }
         return next
       })
       setSessionDiffStateBySession((prev) => {
         const next = { ...prev }
-        delete next[session.id]
+        for (const archivedSessionID of archivedSessionIDs) {
+          delete next[archivedSessionID]
+        }
         return next
       })
       setSessionRuntimeDebugBySession((prev) => {
         const next = { ...prev }
-        delete next[session.id]
+        for (const archivedSessionID of archivedSessionIDs) {
+          delete next[archivedSessionID]
+        }
         return next
       })
       setSessionRuntimeDebugStateBySession((prev) => {
         const next = { ...prev }
-        delete next[session.id]
+        for (const archivedSessionID of archivedSessionIDs) {
+          delete next[archivedSessionID]
+        }
         return next
       })
       setSelectedDiffFileBySession((prev) => {
         const next = { ...prev }
-        delete next[session.id]
+        for (const archivedSessionID of archivedSessionIDs) {
+          delete next[archivedSessionID]
+        }
         return next
       })
       setSessionDirectoryBySession((prev) => {
         const next = { ...prev }
-        delete next[session.id]
+        for (const archivedSessionID of archivedSessionIDs) {
+          delete next[archivedSessionID]
+        }
         return next
       })
       setContextUsageBySession((prev) => {
         const next = { ...prev }
-        delete next[session.id]
+        for (const archivedSessionID of archivedSessionIDs) {
+          delete next[archivedSessionID]
+        }
         return next
       })
       setActiveSideChatSessionIDByParentSessionID((prev) => {
         const next = Object.fromEntries(
           Object.entries(prev).filter(([parentSessionID, sideChatSessionID]) =>
-            parentSessionID !== session.id && sideChatSessionID !== session.id
+            !archivedSessionIDs.has(parentSessionID) && !archivedSessionIDs.has(sideChatSessionID)
           ),
         )
         return Object.keys(next).length === Object.keys(prev).length ? prev : next
       })
-      delete conversationVersionRef.current[session.id]
-      delete permissionRequestsRequestRef.current[session.id]
-      delete sessionDiffRequestRef.current[session.id]
-      delete runtimeDebugRequestRef.current[session.id]
-      clearRuntimeDebugRefreshTimer(session.id)
-      delete seenStreamCursorsRef.current[session.id]
-      delete subscribedSessionStreamsRef.current[session.id]
+      for (const archivedSessionID of archivedSessionIDs) {
+        delete conversationVersionRef.current[archivedSessionID]
+        delete permissionRequestsRequestRef.current[archivedSessionID]
+        delete sessionDiffRequestRef.current[archivedSessionID]
+        delete runtimeDebugRequestRef.current[archivedSessionID]
+        clearRuntimeDebugRefreshTimer(archivedSessionID)
+        delete seenStreamCursorsRef.current[archivedSessionID]
+        delete subscribedSessionStreamsRef.current[archivedSessionID]
+      }
       for (const [turnKey, target] of Object.entries(turnTargetsRef.current)) {
-        if (target.sessionID === session.id) {
+        if (archivedSessionIDs.has(target.sessionID)) {
           delete turnTargetsRef.current[turnKey]
         }
       }
       for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
-        if (target.sessionID === session.id) {
+        if (archivedSessionIDs.has(target.sessionID)) {
           delete pendingStreamsRef.current[streamID]
         }
       }

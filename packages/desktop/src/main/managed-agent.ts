@@ -6,6 +6,7 @@ import net from "node:net"
 import path from "node:path"
 import type { Readable } from "node:stream"
 import { setTimeout as delay } from "node:timers/promises"
+import { createSourceRuntimeSnapshot, shouldRestartForSourceRuntimeChange, type SourceRuntimeSnapshot } from "./source-runtime-watch"
 
 const MANAGED_AGENT_BASE_URL_ENV = "FANFANDE_AGENT_BASE_URL"
 const MANAGED_AGENT_WORKDIR_ENV = "FANFANDE_AGENT_WORKDIR"
@@ -34,6 +35,7 @@ let managedAgent: ManagedAgentProcess | undefined
 let sourceRuntimeWatcher: fs.FSWatcher | undefined
 let sourceRuntimeRestartTimer: ReturnType<typeof setTimeout> | undefined
 let sourceRuntimeRestartPromise: Promise<void> | undefined
+let sourceRuntimeSnapshot: SourceRuntimeSnapshot | undefined
 
 function log(message: string, ...details: unknown[]) {
   console.log("[desktop][agent]", message, ...details)
@@ -203,13 +205,14 @@ function resolveSourceWatchRoot() {
   return fs.existsSync(watchRoot) ? watchRoot : undefined
 }
 
-function ensureSourceRuntimeWatcher() {
+async function ensureSourceRuntimeWatcher() {
   if (app.isPackaged || sourceRuntimeWatcher) return
 
   const watchRoot = resolveSourceWatchRoot()
   if (!watchRoot) return
 
   try {
+    sourceRuntimeSnapshot = await createSourceRuntimeSnapshot(watchRoot)
     sourceRuntimeWatcher = fs.watch(watchRoot, { recursive: true }, (_eventType, filename) => {
       if (!managedAgent?.sourceRuntime) return
 
@@ -217,7 +220,24 @@ function ensureSourceRuntimeWatcher() {
       clearSourceRuntimeRestartTimer()
       sourceRuntimeRestartTimer = setTimeout(() => {
         sourceRuntimeRestartTimer = undefined
-        void restartManagedAgent(`source changed (${changedPath})`)
+        void (async () => {
+          if (!sourceRuntimeSnapshot) {
+            await restartManagedAgent(`source changed (${changedPath})`)
+            return
+          }
+
+          // Windows can emit recursive watch events when prompt files are first read.
+          const shouldRestart = await shouldRestartForSourceRuntimeChange({
+            watchRoot,
+            snapshot: sourceRuntimeSnapshot,
+            changedPath,
+          })
+          if (!shouldRestart) return
+
+          await restartManagedAgent(`source changed (${changedPath})`)
+        })().catch((error) => {
+          logError(`failed to process source runtime watch event (${changedPath})`, error)
+        })
       }, 150)
     })
     log(`watching source runtime for changes at ${watchRoot}`)
@@ -333,7 +353,7 @@ export async function ensureManagedAgentRunning() {
         process.env[MANAGED_AGENT_WORKDIR_ENV] = app.getPath("home")
       }
       if (spec.sourceRuntime) {
-        ensureSourceRuntimeWatcher()
+        await ensureSourceRuntimeWatcher()
       }
       log(`managed agent ready at ${baseURL} via ${spec.label}`)
       return baseURL

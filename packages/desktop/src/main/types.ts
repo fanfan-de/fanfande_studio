@@ -124,6 +124,7 @@ export interface AgentSessionArchiveResult {
   projectID: string
   directory: string
   archivedAt: number
+  archivedSessionIDs?: string[]
 }
 
 export interface AgentArchivedSessionSummary {

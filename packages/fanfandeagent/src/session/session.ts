@@ -778,6 +778,30 @@ function listArchivedSessions(): ArchivedSessionRecord[] {
   })
 }
 
+function listArchivableSessions(sessionID: string): SessionInfo[] {
+  ensureSessionTables()
+  const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
+  if (!existing) return []
+
+  if (isSideChatSession(existing)) {
+    return [existing]
+  }
+
+  const sessions = [existing]
+  const seenSessionIDs = new Set([existing.id])
+
+  for (const link of loadSideChatLinks({ parentSessionID: sessionID })) {
+    if (seenSessionIDs.has(link.sessionID)) continue
+    const sideChatSession = DataBaseRead("sessions", link.sessionID) as SessionInfo | null
+    if (!sideChatSession) continue
+
+    sessions.push(sideChatSession)
+    seenSessionIDs.add(sideChatSession.id)
+  }
+
+  return sessions
+}
+
 function removeSession(sessionID: string): SessionInfo | null {
   ensureSessionTables()
   const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
@@ -794,22 +818,31 @@ function removeSession(sessionID: string): SessionInfo | null {
 }
 
 function archiveSession(sessionID: string): ArchivedSessionRecord | null {
-  ensureSessionTables()
-  const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
-  if (!existing) return null
+  return archiveSessionCascade(sessionID)[0] ?? null
+}
 
-  const archivedRecord = buildArchivedSessionRecord(existing)
-  const commitArchive = db.db.transaction((record: ArchivedSessionRecord) => {
-    db.insertOneWithSchema("archived_sessions", record, ArchivedSessionRecord)
-    db.deleteMany("parts", [{ column: "sessionID", value: record.sessionID }])
-    db.deleteMany("messages", [{ column: "sessionID", value: record.sessionID }])
-    EventStore.deleteSessionEvents(record.sessionID)
-    SessionMemory.deleteSessionMemory(record.sessionID)
-    db.deleteById("sessions", record.sessionID)
+function archiveSessionCascade(sessionID: string): ArchivedSessionRecord[] {
+  ensureSessionTables()
+  const sessions = listArchivableSessions(sessionID)
+  if (sessions.length === 0) return []
+
+  const archivedRecords = sessions.map((session) => buildArchivedSessionRecord(session))
+  const commitArchive = db.db.transaction((records: ArchivedSessionRecord[]) => {
+    for (const record of records) {
+      db.insertOneWithSchema("archived_sessions", record, ArchivedSessionRecord)
+    }
+
+    for (const record of records) {
+      db.deleteMany("parts", [{ column: "sessionID", value: record.sessionID }])
+      db.deleteMany("messages", [{ column: "sessionID", value: record.sessionID }])
+      EventStore.deleteSessionEvents(record.sessionID)
+      SessionMemory.deleteSessionMemory(record.sessionID)
+      db.deleteById("sessions", record.sessionID)
+    }
   })
 
-  commitArchive(archivedRecord)
-  return archivedRecord
+  commitArchive(archivedRecords)
+  return archivedRecords
 }
 
 function restoreArchivedSession(sessionID: string): SessionInfo | null {
@@ -956,6 +989,7 @@ function updateSessionWorkflow(
 
 export {
   archiveSession,
+  archiveSessionCascade,
   createSession,
   createSideChat,
   deleteArchivedSession,
@@ -970,6 +1004,7 @@ export {
   getSessionOrigin,
   getSideChatContext,
   getSideChatLink,
+  listArchivableSessions,
   readArchivedSession,
   removeProjectSessions,
   removeSession,

@@ -672,7 +672,14 @@ export function SessionRoutes() {
       throw new ApiError(409, "SESSION_ALREADY_ARCHIVED", `Session '${sessionID}' is already archived`)
     }
 
-    const archived = Session.archiveSession(sessionID)
+    const sessionsToArchive = Session.listArchivableSessions(sessionID)
+    const runningSession = sessionsToArchive.find((candidate) => RunningState.isRunning(candidate.id))
+    if (runningSession) {
+      throw new ApiError(409, "SESSION_RUNNING", `Session '${runningSession.id}' is currently running and cannot be archived`)
+    }
+
+    const archivedRecords = Session.archiveSessionCascade(sessionID)
+    const archived = archivedRecords[0]
     if (!archived) {
       throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
     }
@@ -684,6 +691,7 @@ export function SessionRoutes() {
         projectID: archived.projectID,
         directory: archived.directory,
         archivedAt: archived.archivedAt,
+        archivedSessionIDs: archivedRecords.map((record) => record.sessionID),
       },
       requestId: c.get("requestId"),
     })

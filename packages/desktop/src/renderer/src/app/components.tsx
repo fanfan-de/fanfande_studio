@@ -1683,7 +1683,7 @@ function GitQuickMenuButton({ projectID, directory }: { projectID: string | null
       window.removeEventListener("focus", handleWindowFocus)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [isMenuOpen, refreshCapabilitiesSilently])
+  }, [isMenuOpen])
 
   useEffect(() => {
     if (!isMenuOpen) return

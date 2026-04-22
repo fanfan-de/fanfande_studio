@@ -314,6 +314,7 @@ declare global {
         projectID: string
         directory: string
         archivedAt: number
+        archivedSessionIDs?: string[]
         requestId?: string
       }>
       listArchivedSessions?: () => Promise<ArchivedSessionSummary[]>
