@@ -107,6 +107,7 @@
 
   .inline-side-chat-thread {
     margin-left: 0;
+    padding: 12px;
   }
 
   .thread-session-banner-pill {

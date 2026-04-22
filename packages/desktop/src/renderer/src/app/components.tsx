@@ -6081,87 +6081,93 @@ function InlineSideChatThread({
     <section className="inline-side-chat-thread" aria-label="Nested side chat">
       <header className="inline-side-chat-header">
         <div className="inline-side-chat-copy">
-          <span className="label">Side chat</span>
-          <strong>{session.origin?.anchorPreview || session.title}</strong>
+          <div className="inline-side-chat-header-row">
+            <span className="label">Side chat</span>
+            <span className="inline-side-chat-pill">Scoped</span>
+          </div>
+          <strong title={session.origin?.anchorPreview || session.title}>{session.origin?.anchorPreview || session.title}</strong>
+          <p>Focused on this reply only. Messages here stay outside the main thread context.</p>
         </div>
         <button className="secondary-button inline-side-chat-close" type="button" onClick={onHide}>
           Hide
         </button>
       </header>
 
-      <ThreadView
-        activeProjectID={activeProjectID}
-        activeSession={session}
-        activeTurns={effectiveTurns}
-        assistantTraceVisibility={assistantTraceVisibility}
-        composerRefreshVersion={composerRefreshVersion}
-        isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-        isResolvingPermissionRequest={isResolvingPermissionRequest}
-        isSendingQuestionAnswer={isSending}
-        pendingPermissionRequests={pendingPermissionRequests}
-        permissionRequestActionError={permissionRequestActionError}
-        permissionRequestActionRequestID={permissionRequestActionRequestID}
-        showSessionBanner={false}
-        sideChatCountsByAnchorMessageID={{}}
-        threadColumnRef={threadColumnRef}
-        onAskUserQuestionAnswer={(answer) =>
-          void onSend({
-            draftOverride: answer.text,
-            questionAnswer: answer.questionID
-              ? {
-                  questionID: answer.questionID,
-                  selectedOptions: answer.selectedOptions,
-                  freeformText: answer.freeformText,
-                }
-              : undefined,
-            selectedReasoningEffort: composer.selectedReasoningEffort,
-            selectedSkillIDs: composer.selectedSkillIDs,
-            waitForPendingModelSelection: composer.awaitPendingModelSelection,
-          })
-        }
-        onPermissionRequestResponse={onPermissionRequestResponse}
-      />
+      <div className="inline-side-chat-body">
+        <ThreadView
+          activeProjectID={activeProjectID}
+          activeSession={session}
+          activeTurns={effectiveTurns}
+          assistantTraceVisibility={assistantTraceVisibility}
+          composerRefreshVersion={composerRefreshVersion}
+          isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+          isResolvingPermissionRequest={isResolvingPermissionRequest}
+          isSendingQuestionAnswer={isSending}
+          pendingPermissionRequests={pendingPermissionRequests}
+          permissionRequestActionError={permissionRequestActionError}
+          permissionRequestActionRequestID={permissionRequestActionRequestID}
+          showSessionBanner={false}
+          sideChatCountsByAnchorMessageID={{}}
+          threadColumnRef={threadColumnRef}
+          onAskUserQuestionAnswer={(answer) =>
+            void onSend({
+              draftOverride: answer.text,
+              questionAnswer: answer.questionID
+                ? {
+                    questionID: answer.questionID,
+                    selectedOptions: answer.selectedOptions,
+                    freeformText: answer.freeformText,
+                  }
+                : undefined,
+              selectedReasoningEffort: composer.selectedReasoningEffort,
+              selectedSkillIDs: composer.selectedSkillIDs,
+              waitForPendingModelSelection: composer.awaitPendingModelSelection,
+            })
+          }
+          onPermissionRequestResponse={onPermissionRequestResponse}
+        />
 
-      <Composer
-        attachments={attachments}
-        commentReferences={commentReferences}
-        attachmentButtonTitle={composer.attachmentButtonTitle}
-        attachmentDisabledReason={composer.attachmentDisabledReason}
-        attachmentError={composer.attachmentError}
-        canSend
-        draft={draft}
-        hasPendingPermissionRequests={pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
-        isSending={isSending}
-        modelOptions={composer.modelOptions}
-        reasoningEffortOptions={composer.reasoningEffortOptions}
-        selectedModel={composer.selectedModel}
-        selectedModelLabel={composer.selectedModelLabel}
-        selectedReasoningEffort={composer.selectedReasoningEffort}
-        selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
-        showModelSelector={false}
-        unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-        onDraftChange={onDraftChange}
-        onModelChange={composer.handleModelChange}
-        onReasoningEffortChange={composer.handleReasoningEffortChange}
-        onPickAttachments={() =>
-          onPickAttachments({
-            allowImage: composer.attachmentCapabilities.image,
-            allowPdf: composer.attachmentCapabilities.pdf,
-            disabledReason: composer.attachmentDisabledReason,
-          })
-        }
-        onRemoveAttachment={onRemoveAttachment}
-        onRemoveCommentReference={onRemoveCommentReference}
-        onSend={(draftOverride) =>
-          void onSend({
-            attachmentError: composer.attachmentError,
-            draftOverride,
-            selectedReasoningEffort: composer.selectedReasoningEffort,
-            selectedSkillIDs: composer.selectedSkillIDs,
-            waitForPendingModelSelection: composer.awaitPendingModelSelection,
-          })
-        }
-      />
+        <Composer
+          attachments={attachments}
+          commentReferences={commentReferences}
+          attachmentButtonTitle={composer.attachmentButtonTitle}
+          attachmentDisabledReason={composer.attachmentDisabledReason}
+          attachmentError={composer.attachmentError}
+          canSend
+          draft={draft}
+          hasPendingPermissionRequests={pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+          isSending={isSending}
+          modelOptions={composer.modelOptions}
+          reasoningEffortOptions={composer.reasoningEffortOptions}
+          selectedModel={composer.selectedModel}
+          selectedModelLabel={composer.selectedModelLabel}
+          selectedReasoningEffort={composer.selectedReasoningEffort}
+          selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
+          showModelSelector={false}
+          unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
+          onDraftChange={onDraftChange}
+          onModelChange={composer.handleModelChange}
+          onReasoningEffortChange={composer.handleReasoningEffortChange}
+          onPickAttachments={() =>
+            onPickAttachments({
+              allowImage: composer.attachmentCapabilities.image,
+              allowPdf: composer.attachmentCapabilities.pdf,
+              disabledReason: composer.attachmentDisabledReason,
+            })
+          }
+          onRemoveAttachment={onRemoveAttachment}
+          onRemoveCommentReference={onRemoveCommentReference}
+          onSend={(draftOverride) =>
+            void onSend({
+              attachmentError: composer.attachmentError,
+              draftOverride,
+              selectedReasoningEffort: composer.selectedReasoningEffort,
+              selectedSkillIDs: composer.selectedSkillIDs,
+              waitForPendingModelSelection: composer.awaitPendingModelSelection,
+            })
+          }
+        />
+      </div>
     </section>
   )
 }

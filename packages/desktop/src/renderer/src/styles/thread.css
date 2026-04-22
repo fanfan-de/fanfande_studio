@@ -1012,8 +1012,8 @@
 
 .assistant-response-side-chat {
   display: grid;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .assistant-response-actions {
@@ -1046,38 +1046,91 @@
 }
 
 .inline-side-chat-thread {
+  position: relative;
   display: grid;
-  gap: 10px;
-  margin-left: 8px;
-  padding: 10px 0 0 14px;
-  border: 0;
-  border-left: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 0;
-  background: transparent;
+  gap: 14px;
+  margin: 4px 0 2px 10px;
+  padding: 14px 16px 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--seg-border) 86%, var(--seg-accent-soft) 14%);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--seg-panel-muted) 92%, var(--seg-accent-soft) 8%);
+  box-shadow: 0 12px 28px rgba(22, 31, 45, 0.06);
+  animation: rise-in 220ms ease;
+}
+
+.inline-side-chat-thread::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: -1px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--seg-accent-strong) 88%, white 12%) 0%,
+    color-mix(in srgb, var(--seg-accent) 72%, transparent 28%) 100%
+  );
 }
 
 .inline-side-chat-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 
 .inline-side-chat-copy {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 6px;
+}
+
+.inline-side-chat-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inline-side-chat-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
+  color: var(--seg-accent-strong, #174b76);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .inline-side-chat-copy strong {
   color: var(--seg-text-1, #0f172a);
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.inline-side-chat-copy p {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--seg-text-2, #475569);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .inline-side-chat-close.secondary-button {
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 30px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.inline-side-chat-body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
 .inline-side-chat-thread .thread-shell {
@@ -1089,11 +1142,16 @@
   max-width: none;
   margin: 0;
   padding: 0;
-  gap: 10px;
+  gap: 12px;
 }
 
 .inline-side-chat-thread .turn {
   margin: 0;
+}
+
+.inline-side-chat-thread .user-bubble {
+  background: color-mix(in srgb, var(--seg-panel) 76%, var(--seg-panel-muted) 24%);
+  border-color: color-mix(in srgb, var(--seg-border) 88%, white 12%);
 }
 
 .thread-session-banner {

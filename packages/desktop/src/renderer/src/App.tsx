@@ -1391,7 +1391,7 @@ const PaneSurface = memo(function PaneSurface({
                     attachmentError: input.attachmentError,
                     draftOverride: input.draftOverride,
                     paneID: pane.id,
-                    preserveComposerState: true,
+                    preserveComposerState: Boolean(input.questionAnswer),
                     questionAnswer: input.questionAnswer,
                     selectedReasoningEffort: input.selectedReasoningEffort,
                     selectedSkillIDs: input.selectedSkillIDs,

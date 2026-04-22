@@ -828,6 +828,8 @@ describe("App", () => {
     expect(currentSessionTab).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to session Chat 1 / Side chat" })).not.toBeInTheDocument()
     expect(screen.getByText("Anchored reply snapshot")).toBeInTheDocument()
+    expect(screen.getByText("Scoped")).toBeInTheDocument()
+    expect(screen.getByText("Focused on this reply only. Messages here stay outside the main thread context.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Hide" })).toBeInTheDocument()
     expect(screen.getAllByRole("textbox", { name: "Task draft" }).length).toBeGreaterThan(1)
   })
@@ -918,9 +920,34 @@ describe("App", () => {
     const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
     expect(await within(nestedSideChat).findByText("I found the root cause in the config parser.")).toBeInTheDocument()
 
+    expect(within(nestedSideChat).getByText("Scoped")).toBeInTheDocument()
+    expect(
+      within(nestedSideChat).getByText("Focused on this reply only. Messages here stay outside the main thread context."),
+    ).toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("region", { name: "Reasoning" })).toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("button", { name: /read-file/i })).toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("region", { name: "File Changes" })).toBeInTheDocument()
+  })
+
+  it("clears the inline side chat draft after sending a prompt", async () => {
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sidechat" }))
+
+    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
+    const sideChatDraft = within(nestedSideChat).getByRole("textbox", { name: "Task draft" })
+
+    fireEvent.change(sideChatDraft, {
+      target: {
+        value: "Drill into the parser failure from this reply",
+      },
+    })
+    fireEvent.click(within(nestedSideChat).getByRole("button", { name: "Send task" }))
+
+    await waitFor(() => {
+      expect(within(nestedSideChat).getAllByText("Drill into the parser failure from this reply").length).toBeGreaterThan(0)
+      expect(within(nestedSideChat).getByRole("textbox", { name: "Task draft" })).toHaveValue("")
+    })
   })
 
   it("opens a local preview, captures comments, and inserts them into the draft", async () => {

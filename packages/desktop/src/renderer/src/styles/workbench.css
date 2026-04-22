@@ -555,6 +555,10 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .pane-tab-bar .session-tab {
   position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
   align-self: flex-end;
   max-width: min(240px, 30vw);
   min-height: 34px;
@@ -589,6 +593,11 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .pane-tab-bar .session-tab-trigger {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
   min-height: 34px;
   padding: 0 6px;
   font-size: 13px;
@@ -688,6 +697,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .pane-tab-bar .session-tab-close {
+  flex: 0 0 auto;
   width: 18px;
   height: 18px;
   min-width: 18px;
