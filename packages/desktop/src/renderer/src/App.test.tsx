@@ -749,8 +749,8 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument()
     expect(inspector).toBeInTheDocument()
     expect(within(topMenu).getByRole("group", { name: "Open current project" })).toBeInTheDocument()
-    expect(within(inspector).getByText("Workspace Diff")).toBeInTheDocument()
-    expect(within(inspector).getByText("Current session snapshot")).toBeInTheDocument()
+    expect(within(inspector).getByText("Changes")).toBeInTheDocument()
+    expect(within(inspector).getByText("Workspace diff")).toBeInTheDocument()
     expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Workspace")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Current execution state")).not.toBeInTheDocument()
@@ -1818,8 +1818,8 @@ describe("App", () => {
     await screen.findByRole("button", { name: "Atlas review" })
 
     const gitGetCapabilities = window.desktop!.gitGetCapabilities as ReturnType<typeof vi.fn>
-    const menuRefresh = createDeferred(getCapabilities())
-    const unexpectedRefresh = createDeferred(getCapabilities())
+    const menuRefresh = createDeferred<ReturnType<typeof getCapabilities>>()
+    const unexpectedRefresh = createDeferred<ReturnType<typeof getCapabilities>>()
     gitGetCapabilities.mockReset()
     gitGetCapabilities.mockImplementationOnce(() => menuRefresh.promise)
     gitGetCapabilities.mockImplementation(() => unexpectedRefresh.promise)
@@ -2149,7 +2149,7 @@ describe("App", () => {
         sessionID: "session-atlas-review",
       })
     })
-    expect(screen.getByText("No workspace changes were detected for this session.")).toBeInTheDocument()
+    expect(screen.getByText("No changes in this session.")).toBeInTheDocument()
 
     act(() => {
       workspaceFileChangeListener?.({

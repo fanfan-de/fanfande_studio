@@ -82,34 +82,34 @@ function buildDiffStatusDescription(input: {
   diffSummary: SessionDiffSummary | null
 }) {
   if (!input.activeSession) {
-    return "Select a session to inspect its current workspace diff."
+    return "Select a session to inspect changes."
   }
 
   if (input.diffState.status === "loading") {
-    return "Loading the current workspace diff for this session."
+    return "Loading current workspace changes."
   }
 
   if (input.diffState.status === "refreshing") {
     return input.diffState.updatedAt
-      ? `Refreshing the workspace diff. Last synced at ${formatTime(input.diffState.updatedAt)}.`
-      : "Refreshing the workspace diff."
+      ? `Refreshing. Last synced at ${formatTime(input.diffState.updatedAt)}.`
+      : "Refreshing current workspace changes."
   }
 
   if (input.diffState.status === "error") {
     return input.diffState.updatedAt
-      ? `The latest refresh failed. Showing the most recent snapshot from ${formatTime(input.diffState.updatedAt)}.`
-      : "The workspace diff could not be loaded."
+      ? `Refresh failed. Showing the snapshot from ${formatTime(input.diffState.updatedAt)}.`
+      : "Couldn't load the workspace diff."
   }
 
   if (input.diffState.updatedAt) {
-    return `Last synced at ${formatTime(input.diffState.updatedAt)}.`
+    return `Synced at ${formatTime(input.diffState.updatedAt)}.`
   }
 
   if (input.diffSummary?.body) {
     return input.diffSummary.body
   }
 
-  return "Inspect the current workspace snapshot for this session."
+  return "Inspect the current workspace changes for this session."
 }
 
 function formatDiffRange(start: number, count: number) {
@@ -135,7 +135,7 @@ function parsePatchHunks(patch?: string): ParsedDiffHunk[] {
       const newCount = Number(hunkMatch[4] ?? "1")
       const context = hunkMatch[5]?.trim()
       const header = context
-        ? `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)} 路 ${context}`
+        ? `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)} | ${context}`
         : `${formatDiffRange(oldStart, oldCount)} -> ${formatDiffRange(newStart, newCount)}`
 
       activeHunk = {
@@ -204,7 +204,7 @@ function DiffPreview({ file, patch, isFullHeight, onToggleFullHeight }: DiffPrev
   if (!patch?.trim() || hunks.length === 0) {
     return (
       <div className="right-sidebar-diff-empty">
-        <p>No line-by-line diff preview is available for {file}.</p>
+        <p>No line-by-line preview is available.</p>
       </div>
     )
   }
@@ -389,15 +389,13 @@ export function ChangesPanel({
   }
 
   return (
-    <section className="right-sidebar-section" onKeyDown={handleSectionKeyDown}>
+    <section className="right-sidebar-section right-sidebar-changes-panel" onKeyDown={handleSectionKeyDown}>
       <div className="right-sidebar-panel-header">
         <div className="right-sidebar-panel-copy">
-          <span className="label">Workspace Diff</span>
-          <h3>Current session snapshot</h3>
+          <span className="label">Changes</span>
+          <h3>Workspace diff</h3>
           {activeSessionDirectory ? (
             <p className="right-sidebar-scope">
-              Scope:
-              {" "}
               <code>{activeSessionDirectory}</code>
             </p>
           ) : null}
@@ -417,7 +415,11 @@ export function ChangesPanel({
 
       <div className="right-sidebar-status-row">
         <span className={`settings-badge right-sidebar-status-badge is-${diffState.status}`}>{formatDiffStateLabel(diffState.status)}</span>
-        {activeSession ? <span className="settings-badge">{String(changedFilesCount)} files</span> : null}
+        {activeSession ? (
+          <span className="right-sidebar-status-summary-inline">
+            {String(changedFilesCount)} files | +{additionsCount} -{deletionsCount}
+          </span>
+        ) : null}
         {diffState.isStale ? <span className="settings-badge">Stale</span> : null}
       </div>
 
@@ -431,20 +433,19 @@ export function ChangesPanel({
 
       {activeSession ? (
         <>
-          <div className="right-sidebar-meta-grid">
-            <div className="right-sidebar-metric">
-              <span className="right-sidebar-metric-label">Files</span>
-              <strong>{String(changedFilesCount)}</strong>
-            </div>
-            <div className="right-sidebar-metric">
-              <span className="right-sidebar-metric-label">Net</span>
-              <strong>+{additionsCount} -{deletionsCount}</strong>
-            </div>
-          </div>
-
           {hasWorkspaceChanges ? (
             <>
-              <div className="right-sidebar-toolbar">
+              <div className="right-sidebar-toolbar right-sidebar-changes-toolbar">
+                <label className="right-sidebar-search-field">
+                  <input
+                    ref={searchInputRef}
+                    aria-label="Search workspace diff files"
+                    type="search"
+                    value={diffQuery}
+                    placeholder="Filter files"
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setDiffQuery(event.target.value)}
+                  />
+                </label>
                 <div className="right-sidebar-filter-group" role="group" aria-label="Workspace diff filters">
                   {DIFF_FILTER_OPTIONS.map((option) => (
                     <button
@@ -458,17 +459,6 @@ export function ChangesPanel({
                     </button>
                   ))}
                 </div>
-                <label className="right-sidebar-search-field">
-                  <span className="label">Search</span>
-                  <input
-                    ref={searchInputRef}
-                    aria-label="Search workspace diff files"
-                    type="search"
-                    value={diffQuery}
-                    placeholder="Filter files (press / to focus)"
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => setDiffQuery(event.target.value)}
-                  />
-                </label>
               </div>
 
               {filteredDiffs.length > 0 ? (
@@ -478,7 +468,11 @@ export function ChangesPanel({
                     const isExpanded = selectedDiffFile === diff.file
 
                     return (
-                      <div key={diff.file} className="right-sidebar-change-row" role="listitem">
+                      <div
+                        key={diff.file}
+                        className={isExpanded ? "right-sidebar-change-row is-expanded" : "right-sidebar-change-row"}
+                        role="listitem"
+                      >
                         <button
                           ref={registerRowRef(diff.file)}
                           type="button"
@@ -492,12 +486,11 @@ export function ChangesPanel({
                             {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
                           </span>
                           <div className="right-sidebar-change-copy">
-                            <strong>{diff.file}</strong>
+                            <div className="right-sidebar-change-title-row">
+                              <strong>{diff.file}</strong>
+                            </div>
                             <span className="right-sidebar-change-meta">
                               <span className={`right-sidebar-change-type is-${diffType}`}>{formatDiffChangeTypeLabel(diffType)}</span>
-                              <span className="right-sidebar-change-action">
-                                {isExpanded ? "Hide diff" : "Show diff"}
-                              </span>
                             </span>
                           </div>
                           <span className="right-sidebar-change-stat">
@@ -518,27 +511,27 @@ export function ChangesPanel({
                 </div>
               ) : (
                 <div className="right-sidebar-empty">
-                  <p>No files match the current diff filters.</p>
+                  <p>No files match the current filters.</p>
                 </div>
               )}
             </>
           ) : diffState.status === "loading" ? (
             <div className="right-sidebar-empty">
-              <p>Loading workspace diff for this session.</p>
+              <p>Loading workspace diff.</p>
             </div>
           ) : diffState.status === "error" ? (
             <div className="right-sidebar-empty">
-              <p>Couldn't refresh the current workspace diff.</p>
+              <p>Couldn't load workspace diff.</p>
             </div>
           ) : (
             <div className="right-sidebar-empty">
-              <p>No workspace changes were detected for this session.</p>
+              <p>No changes in this session.</p>
             </div>
           )}
         </>
       ) : (
         <div className="right-sidebar-empty">
-          <p>Select a session to inspect its workspace diff.</p>
+          <p>Select a session to inspect changes.</p>
         </div>
       )}
     </section>
