@@ -27,6 +27,8 @@ import type {
   AgentProjectModelsResult,
   AgentProjectSkillSelection,
   AgentProjectModelSelection,
+  AgentProviderAuthFlow,
+  AgentProviderAuthState,
   AgentPtySessionInfo,
   AgentProviderCatalogItem,
   AgentProviderModel,
@@ -920,6 +922,90 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       method: "POST",
     })
 
+    return result.data
+  })
+
+  ipcMain.handle("desktop:get-global-provider-auth", async (_event, input: { providerID: string }) => {
+    const providerID = input.providerID.trim()
+    const result = await requestAgentJSON<AgentProviderAuthState>(`/api/providers/${encodeURIComponent(providerID)}/auth`)
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:start-global-provider-auth-flow",
+    async (_event, input: { providerID: string; method: string }) => {
+      const providerID = input.providerID.trim()
+      const result = await requestAgentJSON<AgentProviderAuthFlow>(
+        `/api/providers/${encodeURIComponent(providerID)}/auth/flows`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            method: input.method,
+          }),
+        },
+      )
+      return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:get-global-provider-auth-flow",
+    async (_event, input: { providerID: string; flowID: string }) => {
+      const providerID = input.providerID.trim()
+      const flowID = input.flowID.trim()
+      const result = await requestAgentJSON<AgentProviderAuthFlow>(
+        `/api/providers/${encodeURIComponent(providerID)}/auth/flows/${encodeURIComponent(flowID)}`,
+      )
+      return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:cancel-global-provider-auth-flow",
+    async (_event, input: { providerID: string; flowID: string }) => {
+      const providerID = input.providerID.trim()
+      const flowID = input.flowID.trim()
+      const result = await requestAgentJSON<AgentProviderAuthFlow>(
+        `/api/providers/${encodeURIComponent(providerID)}/auth/flows/${encodeURIComponent(flowID)}`,
+        {
+          method: "DELETE",
+        },
+      )
+      return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:save-global-provider-api-key",
+    async (_event, input: { providerID: string; apiKey?: string | null }) => {
+      const providerID = input.providerID.trim()
+      const result = await requestAgentJSON<AgentProviderAuthState>(
+        `/api/providers/${encodeURIComponent(providerID)}/auth/api-key`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            apiKey: input.apiKey ?? null,
+          }),
+        },
+      )
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:delete-global-provider-auth-session", async (_event, input: { providerID: string }) => {
+    const providerID = input.providerID.trim()
+    const result = await requestAgentJSON<AgentProviderAuthState>(
+      `/api/providers/${encodeURIComponent(providerID)}/auth/session`,
+      {
+        method: "DELETE",
+      },
+    )
     return result.data
   })
 

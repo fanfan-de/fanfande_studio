@@ -3755,13 +3755,62 @@ function toModelOptionLabel(model: ProviderModel, providers: ProviderCatalogItem
 }
 
 function getProviderConnectionLabel(provider: ProviderCatalogItem) {
-  if (provider.available) return "Connected"
-  if (provider.apiKeyConfigured) return "Configured"
-  return "Not connected"
+  const label = provider.connectionLabel ?? provider.authState.connectionLabel
+
+  switch (provider.authState.status) {
+    case "connected":
+      return label ?? "Connected"
+    case "pending":
+      return label ?? "Pending"
+    case "expired":
+      return label ?? "Expired"
+    case "error":
+      return label ?? "Error"
+    case "not_connected":
+      if (provider.apiKeyConfigured) return "Configured"
+      return label ?? "Not connected"
+  }
+}
+
+function isProviderConnected(provider: ProviderCatalogItem) {
+  return provider.authState.status === "connected"
+}
+
+function getProviderCredentialSummary(provider: ProviderCatalogItem) {
+  const activeCredential =
+    provider.authState.credentials.find((credential) => credential.method === provider.authState.activeMethod) ??
+    provider.authState.credentials[0]
+
+  if (!activeCredential?.configured) return null
+  if (activeCredential.label) return activeCredential.label
+  if (activeCredential.email) return activeCredential.email
+  if (activeCredential.kind === "api_key") {
+    return activeCredential.source === "environment" ? "Configured from environment" : "Stored API key"
+  }
+  if (activeCredential.source === "external_cache") {
+    return "Using shared Codex login"
+  }
+
+  return "Stored session"
+}
+
+function getProviderAuthCapability(provider: ProviderCatalogItem, method: string | null | undefined) {
+  if (!method) return null
+  return provider.authCapabilities.find((capability) => capability.method === method) ?? null
+}
+
+function isProviderFlowTerminal(status?: string | null) {
+  return !status || ["connected", "error", "expired", "cancelled"].includes(status)
+}
+
+function formatProviderAuthTimestamp(value?: number) {
+  if (!value) return null
+  return new Date(value).toLocaleString()
 }
 
 function getProviderKeyPlaceholder(provider: ProviderCatalogItem) {
-  if (provider.apiKeyConfigured) {
+  const apiKeyCredential = provider.authState.credentials.find((credential) => credential.kind === "api_key")
+  if (apiKeyCredential?.configured || provider.apiKeyConfigured) {
     return "Stored key detected. Leave blank to keep it."
   }
 
@@ -3909,17 +3958,22 @@ interface SettingsPageProps {
   onClose: () => void
   onDeleteArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
+  onDeleteProviderAuthSession: (providerID: string) => boolean | Promise<boolean>
   onDeleteProvider: (providerID: string) => void | Promise<void>
   onMcpServerDraftChange: (field: keyof McpServerDraftState, value: string | boolean) => void
   onMcpServerSelect: (serverID: string) => void
-  onProviderDraftChange: (providerID: string, field: keyof ProviderDraftState, value: string) => void
+  onProviderAuthMethodChange: (providerID: string, method: string) => void
+  onProviderDraftChange: (providerID: string, field: "apiKey" | "baseURL", value: string) => void
   onRefreshProviderCatalog: () => boolean | Promise<boolean>
   onRestoreArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onSaveMcpServer: () => boolean | Promise<boolean>
+  onSaveProviderApiKey: (providerID: string, apiKey?: string | null) => boolean | Promise<boolean>
   onSaveProvider: (providerID: string) => boolean | Promise<boolean>
   onSaveSelection: () => void | Promise<void>
   onSelectionChange: (field: keyof ProjectModelSelection, value: string | null) => void
+  onStartProviderAuthFlow: (providerID: string) => boolean | Promise<boolean>
   onStartNewMcpServer: () => void
+  onCancelProviderAuthFlow: (providerID: string) => boolean | Promise<boolean>
 }
 
 export function SettingsPage({
@@ -3965,17 +4019,22 @@ export function SettingsPage({
   onClose,
   onDeleteArchivedSession,
   onDeleteMcpServer,
+  onDeleteProviderAuthSession,
   onDeleteProvider,
   onMcpServerDraftChange,
   onMcpServerSelect,
+  onProviderAuthMethodChange,
   onProviderDraftChange,
   onRefreshProviderCatalog,
   onRestoreArchivedSession,
   onSaveMcpServer,
+  onSaveProviderApiKey,
   onSaveProvider,
   onSaveSelection,
   onSelectionChange,
+  onStartProviderAuthFlow,
   onStartNewMcpServer,
+  onCancelProviderAuthFlow,
 }: SettingsPageProps) {
   {
     const [activeSection, setActiveSection] = useState<"services" | "defaults" | "mcp" | "appearance" | "developer" | "archive">(
@@ -4000,14 +4059,31 @@ export function SettingsPage({
       ? (providerDrafts[activeProvider.id] ?? {
           apiKey: "",
           baseURL: activeProvider.baseURL ?? "",
+          selectedAuthMethod: activeProvider.authState.activeMethod ?? activeProvider.authCapabilities[0]?.method ?? null,
+          activeFlow: activeProvider.authState.flow ?? null,
         })
       : null
     const activeProviderModels = activeProvider ? modelGroups[activeProvider.id] ?? [] : []
     const activeProviderBusy = activeProvider ? savingProviderID === activeProvider.id || deletingProviderID === activeProvider.id : false
-    const activeProviderDirty = activeProvider
-      ? (activeProviderDraft?.apiKey.trim().length ?? 0) > 0 || (activeProviderDraft?.baseURL.trim() ?? "") !== (activeProvider.baseURL ?? "")
+    const activeProviderSelectedMethod =
+      activeProviderDraft?.selectedAuthMethod ?? activeProvider?.authState.activeMethod ?? activeProvider?.authCapabilities[0]?.method ?? null
+    const activeProviderSelectedCapability = activeProvider
+      ? getProviderAuthCapability(activeProvider, activeProviderSelectedMethod)
+      : null
+    const activeProviderFlow = activeProviderDraft?.activeFlow ?? activeProvider?.authState.flow ?? null
+    const activeProviderConfigDirty = activeProvider
+      ? (activeProviderDraft?.baseURL.trim() ?? "") !== (activeProvider.baseURL ?? "")
       : false
+    const activeProviderApiKeyDirty =
+      activeProviderSelectedCapability?.kind === "api_key" ? (activeProviderDraft?.apiKey.trim().length ?? 0) > 0 : false
     const activeProviderCanReset = activeProvider?.source === "config"
+    const activeProviderCredentialSummary = activeProvider ? getProviderCredentialSummary(activeProvider) : null
+    const activeProviderAccountSummary =
+      activeProvider?.authState.account?.label ??
+      activeProvider?.authState.account?.email ??
+      activeProvider?.authState.account?.workspaceName ??
+      null
+    const activeProviderExpiresAt = activeProvider?.authState.expiresAt ?? activeProviderFlow?.expiresAt
     const selectionUnchanged =
       savedSelection.model === selectionDraft.model && savedSelection.smallModel === selectionDraft.smallModel
     const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
@@ -4540,14 +4616,14 @@ export function SettingsPage({
                                     <strong>{provider.name}</strong>
                                     <span
                                       className={
-                                        provider.available
+                                        isProviderConnected(provider)
                                           ? "settings-status-indicator is-connected"
                                           : "settings-status-indicator is-disconnected"
                                       }
                                       aria-hidden="true"
                                       title={connectionLabel}
                                     >
-                                      {provider.available ? <ConnectedStatusIcon /> : <DisconnectedStatusIcon />}
+                                      {isProviderConnected(provider) ? <ConnectedStatusIcon /> : <DisconnectedStatusIcon />}
                                     </span>
                                   </div>
                                   {sourceLabel !== "Catalog" ? <span className="settings-service-item-copy">{sourceLabel}</span> : null}
@@ -4570,12 +4646,20 @@ export function SettingsPage({
                         <>
                           <div className="settings-detail-hero">
                             <div>
+                              <span className="label">{providerSourceLabel(activeProvider)}</span>
                               <h3>{activeProvider.name}</h3>
+                              <p>
+                                {projectID
+                                  ? `Shared connection credentials are available across the app. Only non-secret overrides below are stored for ${projectName ?? "this project"}.`
+                                  : "Shared connection credentials are available across the app. Provider overrides below only store non-secret settings."}
+                              </p>
                             </div>
 
                             <div className="provider-row-statuses">
                               <span className="settings-badge">{getProviderConnectionLabel(activeProvider)}</span>
-                              {activeProvider.apiKeyConfigured ? <span className="settings-badge">Key ready</span> : null}
+                              {activeProviderSelectedCapability ? (
+                                <span className="settings-badge">{activeProviderSelectedCapability.label}</span>
+                              ) : null}
                               <span className="settings-badge">{activeProvider.modelCount} models</span>
                             </div>
                           </div>
@@ -4583,23 +4667,254 @@ export function SettingsPage({
                           <div className="settings-panel">
                             <div className="settings-section-header">
                               <div>
-                                <span className="label">Connection</span>
-                                <h3>Provider Configuration</h3>
+                                <span className="label">Shared Connection</span>
+                                <h3>Shared across the app</h3>
                               </div>
+                              <p>
+                                {projectID
+                                  ? "Sign in once or store one API key for the whole app. The current project only reads this shared connection."
+                                  : "Sign in once or store one API key for the whole app."}
+                              </p>
                             </div>
 
                             <div className="settings-field-grid">
                               <label className="settings-field">
-                                <span className="settings-field-label">API key</span>
+                                <span className="settings-field-label">Connection status</span>
+                                <input aria-label={`${activeProvider.name} connection status`} type="text" readOnly value={getProviderConnectionLabel(activeProvider)} />
+                              </label>
+
+                              <label className="settings-field">
+                                <span className="settings-field-label">Sign-in method</span>
+                                <select
+                                  aria-label={`Authentication method for ${activeProvider.name}`}
+                                  value={activeProviderSelectedMethod ?? ""}
+                                  onChange={(event) => onProviderAuthMethodChange(activeProvider.id, event.target.value)}
+                                >
+                                  {activeProvider.authCapabilities.map((capability) => (
+                                    <option key={capability.method} value={capability.method}>
+                                      {capability.recommended ? `${capability.label} (Recommended)` : capability.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <label className="settings-field">
+                                <span className="settings-field-label">Connection summary</span>
                                 <input
-                                  aria-label={`API key for ${activeProvider.name}`}
-                                  type="password"
-                                  value={activeProviderDraft.apiKey}
-                                  placeholder={getProviderKeyPlaceholder(activeProvider)}
-                                  onChange={(event) => onProviderDraftChange(activeProvider.id, "apiKey", event.target.value)}
+                                  aria-label={`${activeProvider.name} connection summary`}
+                                  type="text"
+                                  readOnly
+                                  value={activeProviderCredentialSummary ?? activeProvider.lastAuthError ?? "No shared credential stored"}
                                 />
                               </label>
 
+                              <label className="settings-field">
+                                <span className="settings-field-label">{activeProviderAccountSummary ? "Account" : "Expires"}</span>
+                                <input
+                                  aria-label={`${activeProvider.name} account summary`}
+                                  type="text"
+                                  readOnly
+                                  value={
+                                    activeProviderAccountSummary ??
+                                    formatProviderAuthTimestamp(activeProviderExpiresAt) ??
+                                    "Not available"
+                                  }
+                                />
+                              </label>
+                            </div>
+
+                            {activeProviderSelectedCapability?.description ? (
+                              <div className="settings-actions-row">
+                                <span className="settings-helper-text">{activeProviderSelectedCapability.description}</span>
+                              </div>
+                            ) : null}
+
+                            {activeProviderSelectedCapability?.kind === "browser_oauth" ? (
+                              <div className="settings-actions-row">
+                                <span className="settings-helper-text">
+                                  {activeProviderFlow && !isProviderFlowTerminal(activeProviderFlow.status)
+                                    ? activeProviderFlow.errorMessage ?? "Waiting for the browser sign-in to complete."
+                                    : activeProvider.lastAuthError ?? "Use your ChatGPT subscription to unlock Codex models for this app."}
+                                </span>
+                                <div className="settings-inline-actions">
+                                  {activeProvider.authState.status !== "not_connected" ? (
+                                    <button
+                                      className="secondary-button"
+                                      disabled={activeProviderBusy}
+                                      onClick={() => void onDeleteProviderAuthSession(activeProvider.id)}
+                                    >
+                                      Disconnect
+                                    </button>
+                                  ) : null}
+                                  {activeProviderFlow && !isProviderFlowTerminal(activeProviderFlow.status) ? (
+                                    <button
+                                      className="secondary-button"
+                                      disabled={activeProviderBusy}
+                                      onClick={() => void onCancelProviderAuthFlow(activeProvider.id)}
+                                    >
+                                      Cancel
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    className="primary-button"
+                                    disabled={activeProviderBusy}
+                                    onClick={() => void onStartProviderAuthFlow(activeProvider.id)}
+                                  >
+                                    {activeProvider.authState.status === "connected" ? "Reconnect in browser" : "Continue in browser"}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {activeProviderSelectedCapability?.kind === "device_code" ? (
+                              <>
+                                <div className="settings-field-grid">
+                                  <label className="settings-field">
+                                    <span className="settings-field-label">Verification URL</span>
+                                    <input
+                                      aria-label={`${activeProvider.name} verification URL`}
+                                      type="text"
+                                      readOnly
+                                      value={activeProviderFlow?.verificationURI ?? ""}
+                                      placeholder="Start the device flow to generate a verification link"
+                                    />
+                                  </label>
+
+                                  <label className="settings-field">
+                                    <span className="settings-field-label">One-time code</span>
+                                    <input
+                                      aria-label={`${activeProvider.name} device code`}
+                                      type="text"
+                                      readOnly
+                                      value={activeProviderFlow?.userCode ?? ""}
+                                      placeholder="Start the device flow to generate a code"
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="settings-actions-row">
+                                  <span className="settings-helper-text">
+                                    {activeProviderFlow && !isProviderFlowTerminal(activeProviderFlow.status)
+                                      ? activeProviderFlow.errorMessage ?? "Enter the code in your browser and keep this window open while the app polls for completion."
+                                      : activeProvider.lastAuthError ?? "Use the device code flow when the sign-in browser cannot complete inside the current environment."}
+                                  </span>
+                                  <div className="settings-inline-actions">
+                                    {activeProviderFlow?.verificationURI ? (
+                                      <button
+                                        className="secondary-button"
+                                        onClick={() =>
+                                          void window.desktop?.openExternalUrl?.({
+                                            url: activeProviderFlow.verificationURI!,
+                                          })
+                                        }
+                                      >
+                                        Open link
+                                      </button>
+                                    ) : null}
+                                    {activeProviderFlow?.verificationURI ? (
+                                      <button
+                                        className="secondary-button"
+                                        onClick={() => void writeTextToClipboard(activeProviderFlow.verificationURI!)}
+                                      >
+                                        Copy link
+                                      </button>
+                                    ) : null}
+                                    {activeProviderFlow?.userCode ? (
+                                      <button
+                                        className="secondary-button"
+                                        onClick={() => void writeTextToClipboard(activeProviderFlow.userCode!)}
+                                      >
+                                        Copy code
+                                      </button>
+                                    ) : null}
+                                    {activeProvider.authState.status !== "not_connected" ? (
+                                      <button
+                                        className="secondary-button"
+                                        disabled={activeProviderBusy}
+                                        onClick={() => void onDeleteProviderAuthSession(activeProvider.id)}
+                                      >
+                                        Disconnect
+                                      </button>
+                                    ) : null}
+                                    {activeProviderFlow && !isProviderFlowTerminal(activeProviderFlow.status) ? (
+                                      <button
+                                        className="secondary-button"
+                                        disabled={activeProviderBusy}
+                                        onClick={() => void onCancelProviderAuthFlow(activeProvider.id)}
+                                      >
+                                        Cancel
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      className="primary-button"
+                                      disabled={activeProviderBusy}
+                                      onClick={() => void onStartProviderAuthFlow(activeProvider.id)}
+                                    >
+                                      {activeProviderFlow && !isProviderFlowTerminal(activeProviderFlow.status) ? "Restart flow" : "Start device flow"}
+                                    </button>
+                                  </div>
+                                </div>
+                              </>
+                            ) : null}
+
+                            {activeProviderSelectedCapability?.kind === "api_key" ? (
+                              <>
+                                <div className="settings-field-grid">
+                                  <label className="settings-field">
+                                    <span className="settings-field-label">API key</span>
+                                    <input
+                                      aria-label={`API key for ${activeProvider.name}`}
+                                      type="password"
+                                      value={activeProviderDraft.apiKey}
+                                      placeholder={getProviderKeyPlaceholder(activeProvider)}
+                                      onChange={(event) => onProviderDraftChange(activeProvider.id, "apiKey", event.target.value)}
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="settings-actions-row">
+                                  <span className="settings-helper-text">
+                                    {activeProvider.env.length > 0
+                                      ? `Environment fallback: ${activeProvider.env.join(", ")}`
+                                      : activeProviderCredentialSummary ?? "API keys are stored in the shared credential store and are not written into provider config."}
+                                  </span>
+                                  <div className="settings-inline-actions">
+                                    {activeProvider.apiKeyConfigured ? (
+                                      <button
+                                        className="secondary-button"
+                                        disabled={activeProviderBusy}
+                                        onClick={() => void onSaveProviderApiKey(activeProvider.id, null)}
+                                      >
+                                        Clear key
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      className="primary-button"
+                                      disabled={activeProviderBusy || !activeProviderApiKeyDirty}
+                                      onClick={() => void onSaveProviderApiKey(activeProvider.id)}
+                                    >
+                                      {savingProviderID === activeProvider.id ? "Saving..." : "Save key"}
+                                    </button>
+                                  </div>
+                                </div>
+                              </>
+                            ) : null}
+                          </div>
+
+                          <div className="settings-panel">
+                            <div className="settings-section-header">
+                              <div>
+                                <span className="label">{projectID ? "Project Overrides" : "Provider Overrides"}</span>
+                                <h3>{projectID ? (projectName ?? "Current project") : "Non-secret settings"}</h3>
+                              </div>
+                              <p>
+                                {projectID
+                                  ? "Only non-secret settings are stored with this project. Shared connection state above remains global."
+                                  : "Store non-secret provider settings such as a custom base URL without mixing them with credentials."}
+                              </p>
+                            </div>
+
+                            <div className="settings-field-grid">
                               <label className="settings-field">
                                 <span className="settings-field-label">Base URL</span>
                                 <input
@@ -4613,6 +4928,13 @@ export function SettingsPage({
                             </div>
 
                             <div className="settings-actions-row">
+                              <span className="settings-helper-text">
+                                {activeProviderCanReset
+                                  ? "Reset removes the saved override and falls back to the catalog or environment defaults."
+                                  : projectID
+                                    ? "This project currently inherits the provider defaults."
+                                    : "No saved override yet."}
+                              </span>
                               <div className="settings-inline-actions">
                                 {activeProviderCanReset ? (
                                   <button
@@ -4627,7 +4949,7 @@ export function SettingsPage({
                                 <button
                                   className="primary-button"
                                   aria-label={`Save ${activeProvider.name} settings`}
-                                  disabled={activeProviderBusy || !activeProviderDirty}
+                                  disabled={activeProviderBusy || !activeProviderConfigDirty}
                                   onClick={() => void onSaveProvider(activeProvider.id)}
                                 >
                                   {savingProviderID === activeProvider.id ? "Saving..." : "Save"}
@@ -4651,7 +4973,7 @@ export function SettingsPage({
                               <article className="settings-empty-state">
                                 <span className="label">No Models</span>
                                 <h3>No models are visible for this provider yet</h3>
-                                <p>Save the provider configuration, then refresh the catalog to populate its models.</p>
+                                <p>Connect a shared sign-in method or store an API key, then refresh the catalog to populate visible models.</p>
                               </article>
                             )}
                           </div>

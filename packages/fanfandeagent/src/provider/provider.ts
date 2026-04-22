@@ -9,11 +9,14 @@ import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Config from "#config/config.ts"
 import * as Env from "#env/env.ts"
 import * as Log from "#util/log.ts"
+import * as ProviderAuth from "#auth/provider-auth.ts"
 
 const OPENAI_SDK_PACKAGE = "@ai-sdk/openai"
 const OPENAI_COMPATIBLE_SDK_PACKAGE = "@ai-sdk/openai-compatible"
 const DEEPSEEK_SDK_PACKAGE = "@ai-sdk/deepseek"
 const PROVIDER_VALIDATION_TIMEOUT_MS = 10_000
+const OPENAI_PROVIDER_ID = "openai"
+const OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 const log = Log.create({ service: "provider" })
 
 // -----------------------------------------------------------------------------
@@ -110,6 +113,13 @@ export const ProviderInfo = z
     key: z.string().optional(),
     options: z.record(z.string(), z.any()),
     models: z.record(z.string(), Model),
+    displayBaseURL: z.string().optional(),
+    runtimeBaseURL: z.string().optional(),
+    runtimeHeaders: z.record(z.string(), z.string()).optional(),
+    credentialKind: z.enum(["api_key", "oauth_session"]).optional(),
+    credentialSource: z.enum(["credential_store", "legacy_config", "environment"]).optional(),
+    authCapabilities: z.array(ProviderAuth.ProviderAuthCapability).optional(),
+    authState: ProviderAuth.ProviderAuthState.optional(),
   })
   .meta({
     ref: "Provider",
@@ -134,6 +144,12 @@ export const PublicProvider = z
     apiKeyConfigured: z.boolean(),
     baseURL: z.string().optional(),
     modelCount: z.number(),
+    authCapabilities: z.array(ProviderAuth.ProviderAuthCapability),
+    authState: ProviderAuth.ProviderAuthState,
+    authScope: z.literal("global"),
+    activeAuthMethod: z.string().optional(),
+    connectionLabel: z.string().optional(),
+    lastAuthError: z.string().optional(),
     models: z.array(PublicModel),
   })
   .meta({
@@ -152,6 +168,12 @@ export const ProviderCatalogItem = z
     apiKeyConfigured: z.boolean(),
     baseURL: z.string().optional(),
     modelCount: z.number(),
+    authCapabilities: z.array(ProviderAuth.ProviderAuthCapability),
+    authState: ProviderAuth.ProviderAuthState,
+    authScope: z.literal("global"),
+    activeAuthMethod: z.string().optional(),
+    connectionLabel: z.string().optional(),
+    lastAuthError: z.string().optional(),
   })
   .meta({
     ref: "ProviderCatalogItem",
@@ -250,7 +272,7 @@ function isProviderAllowed(config: Config.Info, providerID: string) {
   return true
 }
 
-function resolveProviderApiKey(
+function resolveProviderLegacyApiKey(
   provider: ProviderInfo,
   providerConfig: Config.Provider | undefined,
   env: Record<string, string | undefined>,
@@ -267,12 +289,20 @@ function sanitizeProviderOptions(options: Config.Provider["options"]) {
   return rest
 }
 
-function hasApiKey(provider: ProviderInfo) {
+function hasRuntimeCredential(provider: ProviderInfo) {
   return Boolean(firstNonEmptyString(provider.key))
 }
 
+function hasApiKeyCredential(provider: ProviderInfo) {
+  if (provider.credentialKind === "api_key") return true
+  return false
+}
+
 function isAvailable(provider: ProviderInfo) {
-  return hasApiKey(provider) || provider.env.length === 0
+  if (provider.authState && provider.env.length > 0) {
+    return provider.authState.status === "connected"
+  }
+  return hasRuntimeCredential(provider) || provider.env.length === 0
 }
 
 function parseModelReference(input: string | undefined) {
@@ -307,6 +337,18 @@ function suggestMatches(input: string, candidates: string[]) {
 
 // 当 provider 只存在于项目配置里、不存在于 models.dev catalog 里时，
 // 先构造一个最小可用的 provider 骨架，后续再叠加配置与模型信息。
+function getCapabilitiesFallback(providerID: string) {
+  return ProviderAuth.getProviderAuthCapabilities(providerID)
+}
+
+function createFallbackAuthState(providerID: string) {
+  return ProviderAuth.createDisconnectedProviderAuthState(providerID)
+}
+
+function isOpenAIChatGPTMethod(method: string) {
+  return method === "chatgpt-browser" || method === "chatgpt-headless"
+}
+
 function createConfigOnlyProvider(providerID: string, providerConfig: Config.Provider | undefined): ProviderInfo {
   return {
     id: providerID,
@@ -316,6 +358,89 @@ function createConfigOnlyProvider(providerID: string, providerConfig: Config.Pro
     options: {},
     models: {},
   }
+}
+
+function createStaticModel(
+  providerID: string,
+  input: {
+    id: string
+    name: string
+    family?: string
+    reasoning?: boolean
+    context?: number
+    output?: number
+  },
+): Model {
+  return {
+    id: input.id,
+    providerID,
+    api: {
+      id: input.id,
+      url: OPENAI_CODEX_BASE_URL,
+      npm: OPENAI_SDK_PACKAGE,
+    },
+    name: input.name,
+    family: input.family,
+    capabilities: {
+      temperature: true,
+      reasoning: input.reasoning ?? true,
+      attachment: true,
+      toolcall: true,
+      input: {
+        text: true,
+        audio: false,
+        image: true,
+        video: false,
+        pdf: true,
+      },
+      output: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+      interleaved: false,
+    },
+    cost: {
+      input: 0,
+      output: 0,
+      cache: {
+        read: 0,
+        write: 0,
+      },
+    },
+    limit: {
+      context: input.context ?? 200_000,
+      output: input.output ?? 32_768,
+    },
+    status: "active",
+    options: {},
+    headers: {},
+    release_date: "2026-04-22",
+    variants: {},
+  }
+}
+
+function openAICodexModels() {
+  return {
+    "gpt-5.4": createStaticModel(OPENAI_PROVIDER_ID, {
+      id: "gpt-5.4",
+      name: "GPT-5.4",
+      family: "gpt-5",
+    }),
+    "gpt-5.4-mini": createStaticModel(OPENAI_PROVIDER_ID, {
+      id: "gpt-5.4-mini",
+      name: "GPT-5.4 Mini",
+      family: "gpt-5",
+      output: 16_384,
+    }),
+    "gpt-5.3-codex": createStaticModel(OPENAI_PROVIDER_ID, {
+      id: "gpt-5.3-codex",
+      name: "GPT-5.3 Codex",
+      family: "gpt-5-codex",
+    }),
+  } satisfies Record<string, Model>
 }
 
 // -----------------------------------------------------------------------------
@@ -524,7 +649,12 @@ function filterProviderModels(models: Record<string, Model>, providerConfig: Con
 }
 
 // 把 catalog 里的 provider、项目配置、当前实例环境变量三份信息合成最终 ProviderInfo。
-function applyProviderConfig(
+function displayBaseURL(baseProvider: ProviderInfo | undefined, providerConfig: Config.Provider | undefined) {
+  const catalogModel = baseProvider ? Object.values(baseProvider.models)[0] : undefined
+  return firstNonEmptyString(providerConfig?.options?.baseURL, providerConfig?.api, catalogModel?.api.url)
+}
+
+async function applyProviderConfig(
   providerID: string,
   baseProvider: ProviderInfo | undefined,
   providerConfig: Config.Provider | undefined,
@@ -536,15 +666,29 @@ function applyProviderConfig(
     ? structuredClone(baseProvider)
     : createConfigOnlyProvider(providerID, providerConfig)
 
-  const configured = Boolean(providerConfig) || Boolean(resolveProviderApiKey(provider, providerConfig, env))
+  const runtimeAuth = await ProviderAuth.resolveProviderRuntimeAuth(providerID, {
+    configApiKey: providerConfig?.options?.apiKey,
+    envApiKey: firstNonEmptyString(...provider.env.map((item) => env[item])),
+  })
+
+  const configured = Boolean(providerConfig) || Boolean(runtimeAuth.apiKey) || runtimeAuth.authState.status !== "not_connected"
   if (!configured) return undefined
 
   provider.name = providerConfig?.name ?? provider.name
   provider.env = providerConfig?.env ?? provider.env
-  provider.source = providerConfig ? "config" : "env"
-  provider.key = resolveProviderApiKey(provider, providerConfig, env)
+  provider.source = providerConfig ? "config" : runtimeAuth.credentialSource === "environment" ? "env" : provider.source
+  provider.key = runtimeAuth.apiKey
   provider.options = sanitizeProviderOptions(providerConfig?.options)
-  provider.models = filterProviderModels(mergeProviderModels(providerID, provider.models, providerConfig), providerConfig)
+  provider.displayBaseURL = displayBaseURL(baseProvider, providerConfig)
+  provider.runtimeBaseURL = runtimeAuth.runtimeBaseURL
+  provider.runtimeHeaders = runtimeAuth.runtimeHeaders
+  provider.credentialKind = runtimeAuth.credentialKind
+  provider.credentialSource = runtimeAuth.credentialSource
+  provider.authCapabilities = runtimeAuth.authCapabilities
+  provider.authState = runtimeAuth.authState
+
+  const baseModels = runtimeAuth.authMode === "codex" && providerID === OPENAI_PROVIDER_ID ? openAICodexModels() : provider.models
+  provider.models = filterProviderModels(mergeProviderModels(providerID, baseModels, providerConfig), providerConfig)
   return provider
 }
 
@@ -598,7 +742,7 @@ async function resolveProjectProviders(configID = resolveConfigID()) {
     // - catalog 提供默认骨架
     // - project config 提供覆盖和追加
     // - env 提供 API Key 等敏感信息
-    const provider = applyProviderConfig(providerID, catalog[providerID], providerConfig, env)
+    const provider = await applyProviderConfig(providerID, catalog[providerID], providerConfig, env)
 
     // 返回 undefined 说明这个 provider 虽然在候选集合里，
     // 但在当前上下文中并没有形成一个“已配置完成”的结果。
@@ -611,6 +755,8 @@ async function resolveProjectProviders(configID = resolveConfigID()) {
   // 同时返回原始 catalog 和当前项目已生效的 provider 视图。
   return {
     catalog,
+    config,
+    env,
     providers: configuredProviders,
   }
 }
@@ -633,8 +779,7 @@ function sortModels<T extends { name: string; id: string; providerID?: string }>
 }
 
 function modelBaseURL(provider: ProviderInfo) {
-  const firstModel = Object.values(provider.models)[0]
-  return firstNonEmptyString(provider.options.baseURL, firstModel?.api.url)
+  return firstNonEmptyString(provider.displayBaseURL, provider.options.baseURL)
 }
 
 function normalizeBaseURL(baseURL: string) {
@@ -713,14 +858,24 @@ function toPublicProvider(provider: ProviderInfo): PublicProvider {
     env: provider.env,
     configured: true,
     available: isAvailable(provider),
-    apiKeyConfigured: hasApiKey(provider),
+    apiKeyConfigured: hasApiKeyCredential(provider),
     baseURL: modelBaseURL(provider),
     modelCount: models.length,
+    authCapabilities: provider.authCapabilities ?? getCapabilitiesFallback(provider.id),
+    authState: provider.authState ?? createFallbackAuthState(provider.id),
+    authScope: "global",
+    activeAuthMethod: provider.authState?.activeMethod,
+    connectionLabel: provider.authState?.connectionLabel,
+    lastAuthError: provider.authState?.lastError,
     models,
   }
 }
 
-function toCatalogItem(baseProvider: ProviderInfo, configuredProvider: ProviderInfo | undefined): ProviderCatalogItem {
+function toCatalogItem(
+  baseProvider: ProviderInfo,
+  configuredProvider: ProviderInfo | undefined,
+  authState: ProviderAuth.ProviderAuthState,
+): ProviderCatalogItem {
   return {
     id: baseProvider.id,
     name: baseProvider.name,
@@ -728,9 +883,15 @@ function toCatalogItem(baseProvider: ProviderInfo, configuredProvider: ProviderI
     env: baseProvider.env,
     configured: Boolean(configuredProvider),
     available: configuredProvider ? isAvailable(configuredProvider) : baseProvider.env.length === 0,
-    apiKeyConfigured: configuredProvider ? hasApiKey(configuredProvider) : false,
-    baseURL: modelBaseURL(configuredProvider ?? baseProvider),
+    apiKeyConfigured: configuredProvider ? hasApiKeyCredential(configuredProvider) : false,
+    baseURL: configuredProvider ? modelBaseURL(configuredProvider) : modelBaseURL(baseProvider),
     modelCount: Object.keys((configuredProvider ?? baseProvider).models).length,
+    authCapabilities: configuredProvider?.authCapabilities ?? authState.capabilities,
+    authState,
+    authScope: "global",
+    activeAuthMethod: authState.activeMethod,
+    connectionLabel: authState.connectionLabel,
+    lastAuthError: authState.lastError,
   }
 }
 
@@ -742,8 +903,11 @@ function runtimeKey(provider: ProviderInfo, model: Model) {
     providerID: provider.id,
     modelID: model.id,
     apiKey: provider.key ?? "",
-    baseURL: firstNonEmptyString(provider.options.baseURL, model.api.url) ?? "",
-    headers: model.headers,
+    baseURL: firstNonEmptyString(provider.runtimeBaseURL, provider.options.baseURL, model.api.url) ?? "",
+    headers: {
+      ...provider.runtimeHeaders,
+      ...model.headers,
+    },
   })
 }
 
@@ -758,15 +922,25 @@ async function requireRuntimeProvider(providerID: string, configID = resolveConf
 
 export async function catalog(configID = resolveConfigID()) {
   const state = await resolveProjectProviders(configID)
-  return sortProviders(
-    Object.values(state.catalog).map((provider) => toCatalogItem(provider, state.providers[provider.id])),
+  const items = await Promise.all(
+    Object.values(state.catalog).map(async (provider) => {
+      const configuredProvider = state.providers[provider.id]
+      const authState =
+        configuredProvider?.authState ??
+        (await ProviderAuth.getProviderAuthState(provider.id, {
+          configApiKey: state.config.provider?.[provider.id]?.options?.apiKey,
+          envApiKey: firstNonEmptyString(...(configuredProvider?.env ?? provider.env).map((item) => state.env[item])),
+        }))
+      return toCatalogItem(provider, configuredProvider, authState)
+    }),
   )
+  return sortProviders(items)
 }
 
 export async function validateProviderConfig(providerID: string, providerConfig: Config.Provider, configID = Config.GLOBAL_CONFIG_ID) {
   const [catalog, config] = await Promise.all([catalogMap(), Config.get(configID)])
   const mergedProviderConfig = Config.mergeProviderConfig(config.provider?.[providerID], providerConfig)
-  const provider = applyProviderConfig(providerID, catalog[providerID], mergedProviderConfig, Env.all())
+  const provider = await applyProviderConfig(providerID, catalog[providerID], mergedProviderConfig, Env.all())
 
   if (!provider) {
     throw new Error(`Provider '${providerID}' could not be resolved from the catalog`)
@@ -776,8 +950,12 @@ export async function validateProviderConfig(providerID: string, providerConfig:
     return
   }
 
+  if (provider.authState?.activeMethod && isOpenAIChatGPTMethod(provider.authState.activeMethod)) {
+    return
+  }
+
   const model = pickValidationModel(provider)
-  const baseURL = firstNonEmptyString(provider.options.baseURL, model?.api.url)
+  const baseURL = firstNonEmptyString(provider.runtimeBaseURL, provider.options.baseURL, model?.api.url)
   if (!baseURL) {
     return
   }
@@ -788,6 +966,10 @@ export async function validateProviderConfig(providerID: string, providerConfig:
 
   if (provider.key) {
     headers.set("authorization", `Bearer ${provider.key}`)
+  }
+
+  for (const [key, value] of Object.entries(provider.runtimeHeaders ?? {})) {
+    headers.set(key, value)
   }
 
   for (const [key, value] of Object.entries(model?.headers ?? {})) {
@@ -965,8 +1147,12 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
   const cached = cache.get(key)
   if (cached) return cached
 
-  const baseURL = firstNonEmptyString(provider.options.baseURL, model.api.url)
-  const headers = Object.keys(model.headers).length > 0 ? model.headers : undefined
+  const baseURL = firstNonEmptyString(provider.runtimeBaseURL, provider.options.baseURL, model.api.url)
+  const combinedHeaders = {
+    ...(provider.runtimeHeaders ?? {}),
+    ...model.headers,
+  }
+  const headers = Object.keys(combinedHeaders).length > 0 ? combinedHeaders : undefined
   const loaded = await loadSDKFactory(model.api.npm)
   log.info("initializing sdk provider", {
     providerID: model.providerID,

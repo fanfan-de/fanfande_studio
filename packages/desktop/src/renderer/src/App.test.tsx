@@ -748,7 +748,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Console" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument()
     expect(inspector).toBeInTheDocument()
-    expect(within(topMenu).getByRole("button", { name: "Editor" })).toBeInTheDocument()
+    expect(within(topMenu).getByRole("group", { name: "Open current project" })).toBeInTheDocument()
     expect(within(inspector).getByText("Workspace Diff")).toBeInTheDocument()
     expect(within(inspector).getByText("Current session snapshot")).toBeInTheDocument()
     expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
@@ -5452,10 +5452,11 @@ describe("App", () => {
     expect(screen.queryByText("Catalog")).not.toBeInTheDocument()
     expect(screen.queryByText("No known models yet")).not.toBeInTheDocument()
     expect(screen.queryByText("1 known models")).not.toBeInTheDocument()
-    expect(await screen.findByRole("heading", { name: "Provider Configuration" })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "Shared across the app" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Project 2" })).toBeInTheDocument()
     const detailHero = settingsDialog.querySelector(".settings-detail-hero")
     expect(detailHero).not.toBeNull()
-    expect(within(detailHero as HTMLElement).queryByText("Saved config")).not.toBeInTheDocument()
+    expect(within(detailHero as HTMLElement).getByText("Saved config")).toBeInTheDocument()
     expect(screen.queryByText("Provider ID")).not.toBeInTheDocument()
     expect(screen.queryByText("Environment")).not.toBeInTheDocument()
     expect(screen.queryByText("Save shared credentials and endpoint overrides for this provider.")).not.toBeInTheDocument()
@@ -6050,7 +6051,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
 
     const settingsDialog = await screen.findByRole("dialog", { name: "Settings" })
-    await screen.findByRole("heading", { name: "Provider Configuration" })
+    await screen.findByRole("heading", { name: "Shared across the app" })
 
     const detailPanel = settingsDialog.querySelector(".settings-service-detail-panel")
     expect(detailPanel).not.toBeNull()
@@ -6058,7 +6059,7 @@ describe("App", () => {
 
     const detailHero = (detailPanel as HTMLElement).querySelector(".settings-detail-hero")
     expect(detailHero).not.toBeNull()
-    expect(within(detailHero as HTMLElement).queryByText("Environment")).not.toBeInTheDocument()
+    expect(within(detailHero as HTMLElement).getByText("Environment")).toBeInTheDocument()
     expect(
       within(detailPanel as HTMLElement).queryByText(
         "Edit the shared credentials and endpoint the app should use when routing to DeepSeek.",
@@ -6198,13 +6199,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
-    await screen.findByRole("heading", { name: "Provider Configuration" })
-
-    fireEvent.change(screen.getByLabelText("API key for DeepSeek"), {
-      target: {
-        value: "sk-deepseek-test",
-      },
-    })
+    await screen.findByRole("heading", { name: "Shared across the app" })
     fireEvent.change(screen.getByLabelText("Base URL for DeepSeek"), {
       target: {
         value: "https://proxy.deepseek.test/v1",
@@ -6219,7 +6214,6 @@ describe("App", () => {
           name: "DeepSeek",
           env: ["DEEPSEEK_API_KEY"],
           options: {
-            apiKey: "sk-deepseek-test",
             baseURL: "https://proxy.deepseek.test/v1",
           },
         },
@@ -6231,7 +6225,7 @@ describe("App", () => {
       expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(2)
     })
 
-    expect(screen.getByRole("heading", { name: "Provider Configuration" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Shared across the app" })).toBeInTheDocument()
     expect(screen.queryByText("Fetching provider catalog")).not.toBeInTheDocument()
 
     refreshedCatalog.resolve([

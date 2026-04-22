@@ -676,6 +676,75 @@ export interface ProviderCatalogItem {
   apiKeyConfigured: boolean
   baseURL?: string
   modelCount: number
+  authCapabilities: ProviderAuthCapability[]
+  authState: ProviderAuthState
+  authScope: "global"
+  activeAuthMethod?: string
+  connectionLabel?: string
+  lastAuthError?: string
+}
+
+export interface ProviderAuthCapability {
+  method: string
+  label: string
+  description?: string
+  kind: "browser_oauth" | "device_code" | "api_key"
+  recommended?: boolean
+  supportsPolling?: boolean
+  supportsRefresh?: boolean
+  supportsDisconnect?: boolean
+}
+
+export interface ProviderAuthAccountSummary {
+  accountID?: string
+  userID?: string
+  email?: string
+  planType?: string
+  workspaceID?: string
+  workspaceName?: string
+  label?: string
+}
+
+export interface ProviderAuthFlow {
+  id: string
+  providerID: string
+  method: string
+  kind: "browser_oauth" | "device_code" | "api_key"
+  status: "pending" | "waiting_user" | "authorizing" | "connected" | "error" | "expired" | "cancelled"
+  startedAt: number
+  updatedAt: number
+  expiresAt?: number
+  authorizationURL?: string
+  verificationURI?: string
+  userCode?: string
+  errorMessage?: string
+  connectionLabel?: string
+  account?: ProviderAuthAccountSummary
+}
+
+export interface ProviderAuthState {
+  providerID: string
+  scope: "global"
+  activeMethod?: string
+  status: "connected" | "pending" | "expired" | "error" | "not_connected"
+  connectionLabel?: string
+  lastError?: string
+  expiresAt?: number
+  account?: ProviderAuthAccountSummary
+  capabilities: ProviderAuthCapability[]
+  credentials: Array<{
+    method: string
+    kind: "api_key" | "oauth_session"
+    source: "credential_store" | "legacy_config" | "environment" | "external_cache"
+    configured: boolean
+    expiresAt?: number
+    label?: string
+    email?: string
+    planType?: string
+    workspaceID?: string
+    workspaceName?: string
+  }>
+  flow?: ProviderAuthFlow
 }
 
 export interface ProviderModelCapabilitiesModalities {
@@ -762,6 +831,8 @@ export interface ComposerMcpOption {
 export interface ProviderDraftState {
   apiKey: string
   baseURL: string
+  selectedAuthMethod: string | null
+  activeFlow?: ProviderAuthFlow | null
 }
 
 export interface SkillInfo {

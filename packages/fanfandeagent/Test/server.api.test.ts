@@ -15,6 +15,7 @@ import * as Session from "#session/session.ts"
 import * as LiveStreamHub from "#session/live-stream-hub.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Env from "#env/env.ts"
+import * as Config from "#config/config.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {
   success: boolean
@@ -138,8 +139,51 @@ type ProviderCatalogEnvelope = JsonEnvelope<
     available: boolean
     apiKeyConfigured: boolean
     modelCount: number
+    authScope?: "global"
+    activeAuthMethod?: string
+    authState?: {
+      activeMethod?: string
+      status: string
+      connectionLabel?: string
+    }
   }>
 >
+
+type ProviderAuthStateEnvelope = JsonEnvelope<{
+  providerID: string
+  scope: "global"
+  activeMethod?: string
+  status: string
+  connectionLabel?: string
+  account?: {
+    email?: string
+    planType?: string
+    workspaceName?: string
+  }
+  credentials: Array<{
+    method: string
+    kind: "api_key" | "oauth_session"
+    source: "credential_store" | "legacy_config" | "environment" | "external_cache"
+    configured: boolean
+  }>
+}>
+
+type ProviderAuthFlowEnvelope = JsonEnvelope<{
+  id: string
+  providerID: string
+  method: string
+  kind: "browser_oauth" | "device_code" | "api_key"
+  status: string
+  authorizationURL?: string
+  verificationURI?: string
+  userCode?: string
+  errorMessage?: string
+  account?: {
+    email?: string
+    planType?: string
+    workspaceName?: string
+  }
+}>
 
 type ProviderListEnvelope = JsonEnvelope<{
   items: Array<{
@@ -417,6 +461,26 @@ async function resetGlobalProviderState(app: ReturnType<typeof createServerApp>)
       small_model: null,
     }),
   })
+  await app.request("http://localhost/api/providers/deepseek/auth/api-key", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      apiKey: null,
+    }),
+  })
+  await app.request("http://localhost/api/providers/openai/auth/api-key", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      apiKey: null,
+    }),
+  })
+  await app.request("http://localhost/api/providers/deepseek/auth/session", {
+    method: "DELETE",
+  })
+  await app.request("http://localhost/api/providers/openai/auth/session", {
+    method: "DELETE",
+  })
 }
 
 async function withTemporaryEnv<T>(
@@ -449,6 +513,12 @@ async function withTemporaryEnv<T>(
       }
     }
   }
+}
+
+function encodeJwt(payload: Record<string, unknown>) {
+  const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url")
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url")
+  return `${header}.${body}.signature`
 }
 
 async function readStreamUntil(
@@ -1385,6 +1455,284 @@ describe("server api", () => {
     } finally {
       await resetGlobalProviderState(app)
       restoreFetch()
+    }
+  })
+
+  test("provider auth API key routes should persist shared credentials without writing provider config", async () => {
+    const app = createServerApp()
+
+    try {
+      await withTemporaryEnv(
+        {
+          OPENAI_API_KEY: undefined,
+          DEEPSEEK_API_KEY: undefined,
+        },
+        async () => {
+          await resetGlobalProviderState(app)
+
+          const saveResponse = await app.request("http://localhost/api/providers/openai/auth/api-key", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              apiKey: "sk-openai-auth-test",
+            }),
+          })
+          const saveBody = (await saveResponse.json()) as ProviderAuthStateEnvelope
+
+          expect(saveResponse.status).toBe(200)
+          expect(saveBody.success).toBe(true)
+          expect(saveBody.data).toMatchObject({
+            providerID: "openai",
+            scope: "global",
+            activeMethod: "api-key",
+            status: "connected",
+            connectionLabel: "Connected via API key",
+          })
+          expect(saveBody.data?.credentials).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                method: "api-key",
+                kind: "api_key",
+                source: "credential_store",
+                configured: true,
+              }),
+            ]),
+          )
+
+          const authResponse = await app.request("http://localhost/api/providers/openai/auth")
+          const authBody = (await authResponse.json()) as ProviderAuthStateEnvelope
+
+          expect(authResponse.status).toBe(200)
+          expect(authBody.success).toBe(true)
+          expect(authBody.data).toMatchObject({
+            providerID: "openai",
+            activeMethod: "api-key",
+            status: "connected",
+          })
+
+          const catalogResponse = await app.request("http://localhost/api/providers/catalog")
+          const catalogBody = (await catalogResponse.json()) as ProviderCatalogEnvelope
+          const openAIProvider = catalogBody.data?.find((provider) => provider.id === "openai")
+
+          expect(catalogResponse.status).toBe(200)
+          expect(openAIProvider).toMatchObject({
+            id: "openai",
+            authScope: "global",
+            activeAuthMethod: "api-key",
+            authState: {
+              activeMethod: "api-key",
+              status: "connected",
+              connectionLabel: "Connected via API key",
+            },
+          })
+
+          const globalConfig = await Config.get(Config.GLOBAL_CONFIG_ID)
+          expect(globalConfig.provider?.openai?.options?.apiKey).toBeUndefined()
+        },
+      )
+    } finally {
+      await resetGlobalProviderState(app)
+    }
+  })
+
+  test("GET /api/providers/:providerID/auth should surface shared Codex ChatGPT cache for OpenAI", async () => {
+    const app = createServerApp()
+    const codexHome = await mkdtemp(join(tmpdir(), "fanfande-codex-home-"))
+    const idToken = encodeJwt({
+      exp: Math.floor(Date.now() / 1000) + 60 * 60,
+      email: "codex-cache@example.test",
+      "https://api.openai.com/auth": {
+        chatgpt_account_id: "acct_codex_cache",
+        chatgpt_user_id: "user_codex_cache",
+        chatgpt_plan_type: "pro",
+        chatgpt_workspace_id: "ws_codex_cache",
+        chatgpt_workspace_name: "Codex Workspace",
+      },
+    })
+
+    try {
+      await writeFile(
+        join(codexHome, "auth.json"),
+        JSON.stringify({
+          auth_mode: "chatgpt",
+          OPENAI_API_KEY: null,
+          tokens: {
+            access_token: "codex-cache-access-token",
+            refresh_token: "codex-cache-refresh-token",
+            id_token: idToken,
+            account_id: "acct_codex_cache",
+          },
+          last_refresh: Date.now(),
+        }),
+      )
+
+      await withTemporaryEnv(
+        {
+          CODEX_HOME: codexHome,
+          OPENAI_API_KEY: undefined,
+        },
+        async () => {
+          await resetGlobalProviderState(app)
+
+          const response = await app.request("http://localhost/api/providers/openai/auth")
+          const body = (await response.json()) as ProviderAuthStateEnvelope
+
+          expect(response.status).toBe(200)
+          expect(body.success).toBe(true)
+          expect(body.data).toMatchObject({
+            providerID: "openai",
+            scope: "global",
+            activeMethod: "chatgpt-browser",
+            status: "connected",
+            account: {
+              email: "codex-cache@example.test",
+              planType: "pro",
+              workspaceName: "Codex Workspace",
+            },
+          })
+          expect(body.data?.connectionLabel).toContain("Codex cache")
+          expect(body.data?.credentials).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                method: "chatgpt-browser",
+                kind: "oauth_session",
+                source: "external_cache",
+                configured: true,
+                email: "codex-cache@example.test",
+              }),
+            ]),
+          )
+        },
+      )
+    } finally {
+      await rm(codexHome, { recursive: true, force: true })
+      await resetGlobalProviderState(app)
+    }
+  })
+
+  test("POST /api/providers/:providerID/auth/flows should complete OpenAI browser auth through a localhost callback", async () => {
+    const app = createServerApp()
+    const restoreFetch = mockModelsDevFetch(({ url }) => {
+      if (url === "https://auth.openai.com/oauth/token") {
+        return Response.json({
+          access_token: "browser-access-token",
+          refresh_token: "browser-refresh-token",
+          id_token: encodeJwt({
+            exp: Math.floor(Date.now() / 1000) + 60 * 60,
+            email: "browser-auth@example.test",
+            "https://api.openai.com/auth": {
+              chatgpt_account_id: "acct_browser_auth",
+              chatgpt_user_id: "user_browser_auth",
+              chatgpt_plan_type: "plus",
+              chatgpt_workspace_id: "ws_browser_auth",
+              chatgpt_workspace_name: "Browser Workspace",
+            },
+          }),
+          expires_in: 3600,
+          token_type: "Bearer",
+          scope: "openid profile email offline_access",
+        })
+      }
+    })
+
+    try {
+      await withTemporaryEnv(
+        {
+          FanFande_OPENAI_CODEX_CALLBACK_PORT: "0",
+          OPENAI_API_KEY: undefined,
+        },
+        async () => {
+          await resetGlobalProviderState(app)
+
+          const startResponse = await app.request("http://localhost/api/providers/openai/auth/flows", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              method: "chatgpt-browser",
+            }),
+          })
+          const startBody = (await startResponse.json()) as ProviderAuthFlowEnvelope
+
+          expect(startResponse.status).toBe(200)
+          expect(startBody.success).toBe(true)
+          expect(startBody.data).toMatchObject({
+            providerID: "openai",
+            method: "chatgpt-browser",
+            kind: "browser_oauth",
+            status: "waiting_user",
+          })
+
+          const authorizationURL = new URL(startBody.data?.authorizationURL ?? "")
+          expect(authorizationURL.origin).toBe("https://auth.openai.com")
+          expect(authorizationURL.searchParams.get("scope")).toBe("openid profile email offline_access")
+
+          const redirectURI = authorizationURL.searchParams.get("redirect_uri")
+          expect(redirectURI).toBeString()
+
+          const redirectURL = new URL(redirectURI ?? "")
+          expect(redirectURL.hostname).toBe("localhost")
+          expect(redirectURL.pathname).toBe("/auth/callback")
+          expect(redirectURL.port).not.toBe("")
+
+          const state = authorizationURL.searchParams.get("state")
+          expect(state).toBeString()
+
+          const callbackResponse = await fetch(
+            `${redirectURI}?code=browser-auth-code&state=${encodeURIComponent(state ?? "")}`,
+          )
+          const callbackHtml = await callbackResponse.text()
+
+          expect(callbackResponse.status).toBe(200)
+          expect(callbackHtml).toContain("Sign-in complete")
+
+          const flowResponse = await app.request(
+            `http://localhost/api/providers/openai/auth/flows/${encodeURIComponent(startBody.data?.id ?? "")}`,
+          )
+          const flowBody = (await flowResponse.json()) as ProviderAuthFlowEnvelope
+
+          expect(flowResponse.status).toBe(200)
+          expect(flowBody.data).toMatchObject({
+            id: startBody.data?.id,
+            providerID: "openai",
+            method: "chatgpt-browser",
+            status: "connected",
+            account: {
+              email: "browser-auth@example.test",
+              planType: "plus",
+              workspaceName: "Browser Workspace",
+            },
+          })
+
+          const authResponse = await app.request("http://localhost/api/providers/openai/auth")
+          const authBody = (await authResponse.json()) as ProviderAuthStateEnvelope
+
+          expect(authResponse.status).toBe(200)
+          expect(authBody.data).toMatchObject({
+            providerID: "openai",
+            scope: "global",
+            activeMethod: "chatgpt-browser",
+            status: "connected",
+            account: {
+              email: "browser-auth@example.test",
+              planType: "plus",
+              workspaceName: "Browser Workspace",
+            },
+          })
+          expect(authBody.data?.credentials).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                method: "chatgpt-browser",
+                kind: "oauth_session",
+                source: "credential_store",
+                configured: true,
+              }),
+            ]),
+          )
+        },
+      )
+    } finally {
+      restoreFetch()
+      await resetGlobalProviderState(app)
     }
   })
 

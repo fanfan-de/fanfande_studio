@@ -1221,12 +1221,26 @@ export function create(input: {
                             case "raw":
                                 break;
                             case 'error':
-                                // 澶勭悊閿欒浜嬩欢
-                                // value.error 閿欒淇℃伅
-                                // TODO: 璁板綍閿欒鍒版秷鎭殑 error 瀛楁
-                                // TODO: 鏇存柊鏁版嵁搴撲腑鐨勯敊璇姸鎬?
-                                // TODO: 鏍规嵁閿欒绫诲瀷鍐冲畾鏄惁閲嶈瘯锛堝鍔?attempt锛?
-                                // TODO: 鍙戦€侀敊璇簨浠堕€氱煡 UI
+                                const streamErrorMessage = normalizeToolError(value.error)
+                                input.Assistant.error = {
+                                    name: "UnknownError",
+                                    data: {
+                                        message: streamErrorMessage,
+                                    },
+                                } as Message.Assistant["error"]
+                                emitRuntimeEvent?.("llm.call.failed", {
+                                    messageID: input.Assistant.id,
+                                    providerID: streamInput.model.providerID,
+                                    modelID: streamInput.model.id,
+                                    agent: streamInput.agent.name,
+                                    iteration: attempt,
+                                    messageCount: llmSummary.messageCount,
+                                    toolCount: llmSummary.toolCount,
+                                    hasAttachments: llmSummary.hasAttachments,
+                                    error: streamErrorMessage,
+                                    retryable: false,
+                                })
+                                llmCallSettled = true
                                 log.error("stream error", { error: value.error })
                                 break;
                             case "finish-step":

@@ -5,6 +5,10 @@ import type {
   ArchivedSessionSummary,
   LoadedFolderWorkspace,
   LoadedSessionSnapshot,
+  ProviderAuthFlow,
+  ProviderAuthState,
+  ProviderCatalogItem,
+  ProviderModel,
   SessionRuntimeDebugSnapshot,
   SideChatLink,
 } from "./app/types"
@@ -357,66 +361,16 @@ declare global {
         PermissionRequestPrompt[]
       >
       respondPermissionRequest?: (input: PermissionResolveInput) => Promise<PermissionResolveResult>
-      getGlobalProviderCatalog?: () => Promise<
-        Array<{
-          id: string
-          name: string
-          source: "env" | "config" | "custom" | "api"
-          env: string[]
-          configured: boolean
-          available: boolean
-          apiKeyConfigured: boolean
-          baseURL?: string
-          modelCount: number
-        }>
-      >
-      refreshGlobalProviderCatalog?: () => Promise<
-        Array<{
-          id: string
-          name: string
-          source: "env" | "config" | "custom" | "api"
-          env: string[]
-          configured: boolean
-          available: boolean
-          apiKeyConfigured: boolean
-          baseURL?: string
-          modelCount: number
-        }>
-      >
+      getGlobalProviderCatalog?: () => Promise<ProviderCatalogItem[]>
+      refreshGlobalProviderCatalog?: () => Promise<ProviderCatalogItem[]>
+      getGlobalProviderAuth?: (input: { providerID: string }) => Promise<ProviderAuthState>
+      startGlobalProviderAuthFlow?: (input: { providerID: string; method: string }) => Promise<ProviderAuthFlow>
+      getGlobalProviderAuthFlow?: (input: { providerID: string; flowID: string }) => Promise<ProviderAuthFlow>
+      cancelGlobalProviderAuthFlow?: (input: { providerID: string; flowID: string }) => Promise<ProviderAuthFlow>
+      saveGlobalProviderApiKey?: (input: { providerID: string; apiKey?: string | null }) => Promise<ProviderAuthState>
+      deleteGlobalProviderAuthSession?: (input: { providerID: string }) => Promise<ProviderAuthState>
       getGlobalModels?: () => Promise<{
-        items: Array<{
-          id: string
-          providerID: string
-          name: string
-          family?: string
-          status: "alpha" | "beta" | "deprecated" | "active"
-          available: boolean
-          capabilities: {
-            temperature: boolean
-            reasoning: boolean
-            attachment: boolean
-            toolcall: boolean
-            input: {
-              text: boolean
-              audio: boolean
-              image: boolean
-              video: boolean
-              pdf: boolean
-            }
-            output: {
-              text: boolean
-              audio: boolean
-              image: boolean
-              video: boolean
-              pdf: boolean
-            }
-          }
-          limit: {
-            context: number
-            input?: number
-            output: number
-          }
-        }>
+        items: ProviderModel[]
         selection: {
           model?: string
           small_model?: string
@@ -636,32 +590,8 @@ declare global {
         directory: string
         removed: boolean
       }>
-      getProjectProviderCatalog?: (input: { projectID: string }) => Promise<
-        Array<{
-          id: string
-          name: string
-          source: "env" | "config" | "custom" | "api"
-          env: string[]
-          configured: boolean
-          available: boolean
-          apiKeyConfigured: boolean
-          baseURL?: string
-          modelCount: number
-        }>
-      >
-      refreshProjectProviderCatalog?: (input: { projectID: string }) => Promise<
-        Array<{
-          id: string
-          name: string
-          source: "env" | "config" | "custom" | "api"
-          env: string[]
-          configured: boolean
-          available: boolean
-          apiKeyConfigured: boolean
-          baseURL?: string
-          modelCount: number
-        }>
-      >
+      getProjectProviderCatalog?: (input: { projectID: string }) => Promise<ProviderCatalogItem[]>
+      refreshProjectProviderCatalog?: (input: { projectID: string }) => Promise<ProviderCatalogItem[]>
       getProjectModels?: (input: { projectID: string }) => Promise<{
         items: Array<{
           id: string

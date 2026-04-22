@@ -437,7 +437,7 @@
 }
 
 .settings-service-list-panel {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .settings-service-list-body {

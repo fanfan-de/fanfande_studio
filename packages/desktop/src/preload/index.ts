@@ -10,7 +10,12 @@ import type {
 import type {
   AgentArchivedSessionSummary,
   AgentFolderWorkspace,
+  AgentProjectModelSelection,
   AgentProjectWorkspace,
+  AgentProviderAuthFlow,
+  AgentProviderAuthState,
+  AgentProviderCatalogItem,
+  AgentProviderModel,
   AgentSessionRuntimeDebugSnapshot,
   AgentSideChatLink,
   AgentWorkspaceSession,
@@ -415,72 +420,25 @@ try {
     respondPermissionRequest: (input: PermissionResolveInput) =>
       ipcRenderer.invoke("desktop:respond-permission-request", input) as Promise<PermissionResolveResult>,
     getGlobalProviderCatalog: () =>
-      ipcRenderer.invoke("desktop:get-global-provider-catalog") as Promise<
-        Array<{
-          id: string
-          name: string
-          source: "env" | "config" | "custom" | "api"
-          env: string[]
-          configured: boolean
-          available: boolean
-          apiKeyConfigured: boolean
-          baseURL?: string
-          modelCount: number
-        }>
-      >,
+      ipcRenderer.invoke("desktop:get-global-provider-catalog") as Promise<AgentProviderCatalogItem[]>,
     refreshGlobalProviderCatalog: () =>
-      ipcRenderer.invoke("desktop:refresh-global-provider-catalog") as Promise<
-        Array<{
-          id: string
-          name: string
-          source: "env" | "config" | "custom" | "api"
-          env: string[]
-          configured: boolean
-          available: boolean
-          apiKeyConfigured: boolean
-          baseURL?: string
-          modelCount: number
-        }>
-      >,
+      ipcRenderer.invoke("desktop:refresh-global-provider-catalog") as Promise<AgentProviderCatalogItem[]>,
+    getGlobalProviderAuth: (input: { providerID: string }) =>
+      ipcRenderer.invoke("desktop:get-global-provider-auth", input) as Promise<AgentProviderAuthState>,
+    startGlobalProviderAuthFlow: (input: { providerID: string; method: string }) =>
+      ipcRenderer.invoke("desktop:start-global-provider-auth-flow", input) as Promise<AgentProviderAuthFlow>,
+    getGlobalProviderAuthFlow: (input: { providerID: string; flowID: string }) =>
+      ipcRenderer.invoke("desktop:get-global-provider-auth-flow", input) as Promise<AgentProviderAuthFlow>,
+    cancelGlobalProviderAuthFlow: (input: { providerID: string; flowID: string }) =>
+      ipcRenderer.invoke("desktop:cancel-global-provider-auth-flow", input) as Promise<AgentProviderAuthFlow>,
+    saveGlobalProviderApiKey: (input: { providerID: string; apiKey?: string | null }) =>
+      ipcRenderer.invoke("desktop:save-global-provider-api-key", input) as Promise<AgentProviderAuthState>,
+    deleteGlobalProviderAuthSession: (input: { providerID: string }) =>
+      ipcRenderer.invoke("desktop:delete-global-provider-auth-session", input) as Promise<AgentProviderAuthState>,
     getGlobalModels: () =>
       ipcRenderer.invoke("desktop:get-global-models") as Promise<{
-        items: Array<{
-          id: string
-          providerID: string
-          name: string
-          family?: string
-          status: "alpha" | "beta" | "deprecated" | "active"
-          available: boolean
-          capabilities: {
-            temperature: boolean
-            reasoning: boolean
-            attachment: boolean
-            toolcall: boolean
-            input: {
-              text: boolean
-              audio: boolean
-              image: boolean
-              video: boolean
-              pdf: boolean
-            }
-            output: {
-              text: boolean
-              audio: boolean
-              image: boolean
-              video: boolean
-              pdf: boolean
-            }
-          }
-          limit: {
-            context: number
-            input?: number
-            output: number
-          }
-        }>
-        selection: {
-          model?: string
-          small_model?: string
-        }
+        items: AgentProviderModel[]
+        selection: AgentProjectModelSelection
       }>,
     updateGlobalProvider: (input: {
       providerID: string
@@ -563,33 +521,9 @@ try {
         removed: boolean
       }>,
     getProjectProviderCatalog: (input: { projectID: string }) =>
-      ipcRenderer.invoke("desktop:get-project-provider-catalog", input) as Promise<
-        Array<{
-          id: string
-          name: string
-          source: "env" | "config" | "custom" | "api"
-          env: string[]
-          configured: boolean
-          available: boolean
-          apiKeyConfigured: boolean
-          baseURL?: string
-          modelCount: number
-        }>
-      >,
+      ipcRenderer.invoke("desktop:get-project-provider-catalog", input) as Promise<AgentProviderCatalogItem[]>,
     refreshProjectProviderCatalog: (input: { projectID: string }) =>
-      ipcRenderer.invoke("desktop:refresh-project-provider-catalog", input) as Promise<
-        Array<{
-          id: string
-          name: string
-          source: "env" | "config" | "custom" | "api"
-          env: string[]
-          configured: boolean
-          available: boolean
-          apiKeyConfigured: boolean
-          baseURL?: string
-          modelCount: number
-        }>
-      >,
+      ipcRenderer.invoke("desktop:refresh-project-provider-catalog", input) as Promise<AgentProviderCatalogItem[]>,
     getProjectModels: (input: { projectID: string }) =>
       ipcRenderer.invoke("desktop:get-project-models", input) as Promise<{
         items: Array<{

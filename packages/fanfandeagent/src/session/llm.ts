@@ -35,6 +35,8 @@ import * as db from "#database/Sqlite.ts"
 const log = Log.create({ service: "llm" })
 const DEFAULT_LLM_TOTAL_TIMEOUT_MS = 15 * 60 * 1000
 const DEFAULT_LLM_STEP_TIMEOUT_MS = 10 * 60 * 1000
+const OPENAI_PROVIDER_ID = "openai"
+const OPENAI_CODEX_API_SEGMENT = "/backend-api/codex"
 
 //export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
 
@@ -86,6 +88,14 @@ function summarizeModelMessages(messages: ModelMessage[]) {
   }
 }
 
+function buildSystemPrompt(systemParts: string[]) {
+  return systemParts.join("\n")
+}
+
+function isOpenAICodexModel(model: Provider.Model) {
+  return model.providerID === OPENAI_PROVIDER_ID && model.api.url.includes(OPENAI_CODEX_API_SEGMENT)
+}
+
 export async function stream(input: StreamInput): Promise<StreamOutput> {
   const l = log
     .clone()
@@ -109,12 +119,8 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
 
 
   // 组装 system prompt
-  const system = []
-  system.push(
-    [
-      ...input.system,
-    ]
-  )
+  const systemPrompt = buildSystemPrompt(input.system)
+  const isOpenAICodex = isOpenAICodexModel(input.model)
 
   // const variant =
   //   !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
@@ -244,16 +250,29 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //----------- 输出与采样参数 --------------------
     output: Output.text(),// 输出纯文本
     ///temperature: params.temperature,
-    temperature: 1,
+    temperature: isOpenAICodex ? undefined : 1,
     ///topP: params.topP,
     ///topK: params.topK,
     //maxOutputTokens : maxOutputTokens ,
-    presencePenalty: 0,// 降低重复提及已出现主题的倾向
-    frequencyPenalty: 0,// 降低重复使用相同词语或短语的倾向
+    presencePenalty: isOpenAICodex ? undefined : 0,// 降低重复提及已出现主题的倾向
+    frequencyPenalty: isOpenAICodex ? undefined : 0,// 降低重复使用相同词语或短语的倾向
     ///providerOptions: ProviderTransform.providerOptions(input.model, params.options),// 如需透传 provider 专有参数，可在这里扩展
     // OpenAI、Claude、Gemini 等模型支持的 providerOptions 并不完全一致。
     // 如果后续需要细粒度控制，可以在这里按 provider 组装额外参数。
     // providerOptions 会原样透传给底层 SDK，用于覆盖各家模型的专有配置。
+    providerOptions:
+      isOpenAICodex
+        ? {
+            openai: {
+              store: false,
+              ...(systemPrompt
+                ? {
+                    instructions: systemPrompt,
+                  }
+                : {}),
+            },
+          }
+        : undefined,
     activeTools: Object.keys(tools).filter((x) => x !== "invalid"),// 过滤掉兜底的 invalid 工具
 
     ///stopSequences:, // string[]，自定义停止序列
@@ -334,7 +353,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //   ...input.model.headers,
     //   ...headers,
     // },
-    system:input.system.join(""),
+    system: isOpenAICodex ? undefined : systemPrompt || undefined,
     prompt: [
       ...input.messages,
     ],

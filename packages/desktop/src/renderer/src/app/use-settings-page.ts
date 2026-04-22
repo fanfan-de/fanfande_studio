@@ -7,6 +7,7 @@ import type {
   McpServerSummary,
   LoadedSessionSnapshot,
   ProjectModelSelection,
+  ProviderAuthCapability,
   ProviderCatalogItem,
   ProviderDraftState,
   ProviderModel,
@@ -34,7 +35,6 @@ type ProviderMutationPayload = {
   name?: string
   env?: string[]
   options?: {
-    apiKey?: string
     baseURL?: string
   }
 }
@@ -51,9 +51,71 @@ function buildProviderDrafts(items: ProviderCatalogItem[]) {
     result[item.id] = {
       apiKey: "",
       baseURL: item.baseURL ?? "",
+      selectedAuthMethod: item.authState.activeMethod ?? item.authCapabilities[0]?.method ?? null,
+      activeFlow: item.authState.flow ?? null,
     }
     return result
   }, {})
+}
+
+function normalizeProviderCatalogItem(item: ProviderCatalogItem): ProviderCatalogItem {
+  const partial = item as Partial<ProviderCatalogItem>
+  const authCapabilities: ProviderAuthCapability[] =
+    Array.isArray(partial.authCapabilities) && partial.authCapabilities.length > 0
+      ? partial.authCapabilities
+      : [
+          {
+            method: "api-key",
+            label: "API key",
+            kind: "api_key",
+            supportsDisconnect: true,
+          },
+        ]
+  const fallbackMethod = partial.activeAuthMethod ?? authCapabilities[0]?.method ?? undefined
+  const authStatePartial = partial.authState as Partial<ProviderCatalogItem["authState"]> | undefined
+  const status =
+    authStatePartial?.status ??
+    (partial.available ? "connected" : partial.lastAuthError ? "error" : "not_connected")
+  const connectionLabel =
+    partial.connectionLabel ??
+    authStatePartial?.connectionLabel ??
+    (status === "connected"
+      ? "Connected"
+      : status === "pending"
+        ? "Pending"
+        : status === "expired"
+          ? "Expired"
+          : status === "error"
+            ? "Error"
+            : partial.apiKeyConfigured
+              ? "Configured"
+              : "Not connected")
+
+  return {
+    ...item,
+    authCapabilities,
+    authState: {
+      providerID: partial.id ?? item.id,
+      scope: "global",
+      activeMethod: authStatePartial?.activeMethod ?? fallbackMethod,
+      status,
+      connectionLabel,
+      lastError: partial.lastAuthError ?? authStatePartial?.lastError,
+      expiresAt: authStatePartial?.expiresAt,
+      account: authStatePartial?.account,
+      capabilities: authStatePartial?.capabilities ?? authCapabilities,
+      credentials: authStatePartial?.credentials ?? [],
+      flow: authStatePartial?.flow,
+    },
+    authScope: "global",
+    activeAuthMethod: partial.activeAuthMethod ?? authStatePartial?.activeMethod ?? fallbackMethod,
+    connectionLabel,
+    lastAuthError: partial.lastAuthError ?? authStatePartial?.lastError,
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function tryParseStringArrayLiteral(input: string) {
@@ -370,15 +432,16 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         loadModels(),
         window.desktop.getGlobalMcpServers(),
       ])
+      const normalizedCatalog = nextCatalog.map((item) => normalizeProviderCatalogItem(item))
 
       if (requestIDRef.current !== requestID) return
 
       const nextSelection = normalizeSelection(modelPayload.selection)
-      setCatalog(nextCatalog)
+      setCatalog(normalizedCatalog)
       setModels(modelPayload.items)
       setSavedSelection(nextSelection)
       setSelectionDraft(nextSelection)
-      setProviderDrafts(buildProviderDrafts(nextCatalog))
+      setProviderDrafts(buildProviderDrafts(normalizedCatalog))
       setMcpServers(nextMcpServers)
       setMcpDiagnostics((current) =>
         Object.fromEntries(
@@ -460,13 +523,27 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setIsOpen(false)
   }
 
-  function setProviderDraftValue(providerID: string, field: keyof ProviderDraftState, value: string) {
+  function setProviderDraftValue(providerID: string, field: "apiKey" | "baseURL", value: string) {
     setProviderDrafts((current) => ({
       ...current,
       [providerID]: {
         apiKey: current[providerID]?.apiKey ?? "",
         baseURL: current[providerID]?.baseURL ?? "",
+        selectedAuthMethod: current[providerID]?.selectedAuthMethod ?? null,
+        activeFlow: current[providerID]?.activeFlow ?? null,
         [field]: value,
+      },
+    }))
+  }
+
+  function setProviderAuthMethod(providerID: string, method: string) {
+    setProviderDrafts((current) => ({
+      ...current,
+      [providerID]: {
+        apiKey: current[providerID]?.apiKey ?? "",
+        baseURL: current[providerID]?.baseURL ?? "",
+        selectedAuthMethod: method,
+        activeFlow: current[providerID]?.activeFlow?.method === method ? current[providerID]?.activeFlow ?? null : null,
       },
     }))
   }
@@ -522,14 +599,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     const draft = providerDrafts[providerID] ?? {
       apiKey: "",
       baseURL: provider.baseURL ?? "",
+      selectedAuthMethod: provider.authState.activeMethod ?? provider.authCapabilities[0]?.method ?? null,
+      activeFlow: provider.authState.flow ?? null,
     }
-    const apiKey = draft.apiKey.trim()
     const baseURL = draft.baseURL.trim()
     const nextProvider: {
       name?: string
       env?: string[]
       options?: {
-        apiKey?: string
         baseURL?: string
       }
     } = {
@@ -537,13 +614,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       env: provider.env,
     }
     const optionsPayload: {
-      apiKey?: string
       baseURL?: string
     } = {}
-
-    if (apiKey) {
-      optionsPayload.apiKey = apiKey
-    }
 
     if (baseURL !== (provider.baseURL ?? "")) {
       optionsPayload.baseURL = baseURL
@@ -571,6 +643,204 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setMessage({
         tone: "success",
         text: "Provider settings saved.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingProviderID(null)
+    }
+  }
+
+  async function pollProviderAuthFlow(providerID: string, flowID: string) {
+    if (!window.desktop?.getGlobalProviderAuthFlow) return
+
+    while (true) {
+      try {
+        const flow = await window.desktop.getGlobalProviderAuthFlow({
+          providerID,
+          flowID,
+        })
+
+        setProviderDrafts((current) => ({
+          ...current,
+          [providerID]: {
+            apiKey: current[providerID]?.apiKey ?? "",
+            baseURL: current[providerID]?.baseURL ?? "",
+            selectedAuthMethod: current[providerID]?.selectedAuthMethod ?? flow.method,
+            activeFlow: flow,
+          },
+        }))
+
+        if (["connected", "error", "expired", "cancelled"].includes(flow.status)) {
+          await loadSettingsData({ silent: true })
+          await notifyProviderModelsUpdated()
+
+          if (flow.status === "connected") {
+            setMessage({
+              tone: "success",
+              text: "Provider authentication connected.",
+            })
+          } else if (flow.status === "cancelled") {
+            setMessage({
+              tone: "error",
+              text: flow.errorMessage ?? "Provider authentication was cancelled.",
+            })
+          } else {
+            setMessage({
+              tone: "error",
+              text: flow.errorMessage ?? "Provider authentication failed.",
+            })
+          }
+          return
+        }
+      } catch (error) {
+        setMessage({
+          tone: "error",
+          text: getErrorMessage(error),
+        })
+        return
+      }
+
+      await sleep(1500)
+    }
+  }
+
+  async function startProviderAuthFlow(providerID: string) {
+    if (!window.desktop?.startGlobalProviderAuthFlow) return false
+
+    const provider = catalog.find((item) => item.id === providerID)
+    const draft = providerDrafts[providerID]
+    const method = draft?.selectedAuthMethod ?? provider?.authState.activeMethod ?? provider?.authCapabilities[0]?.method
+    if (!provider || !method) return false
+
+    setSavingProviderID(providerID)
+    setMessage(null)
+
+    try {
+      const flow = await window.desktop.startGlobalProviderAuthFlow({
+        providerID,
+        method,
+      })
+
+      setProviderDrafts((current) => ({
+        ...current,
+        [providerID]: {
+          apiKey: current[providerID]?.apiKey ?? "",
+          baseURL: current[providerID]?.baseURL ?? provider.baseURL ?? "",
+          selectedAuthMethod: method,
+          activeFlow: flow,
+        },
+      }))
+
+      const continuationURL = flow.authorizationURL ?? flow.verificationURI
+      if (continuationURL && window.desktop?.openExternalUrl) {
+        await window.desktop.openExternalUrl({
+          url: continuationURL,
+        })
+      }
+
+      setMessage({
+        tone: "success",
+        text:
+          flow.kind === "device_code"
+            ? "Complete the device code sign-in in your browser."
+            : "Continue the sign-in flow in your browser.",
+      })
+
+      void pollProviderAuthFlow(providerID, flow.id)
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingProviderID(null)
+    }
+  }
+
+  async function cancelProviderAuthFlow(providerID: string) {
+    const flowID = providerDrafts[providerID]?.activeFlow?.id
+    if (!flowID || !window.desktop?.cancelGlobalProviderAuthFlow) return false
+
+    setSavingProviderID(providerID)
+    setMessage(null)
+
+    try {
+      await window.desktop.cancelGlobalProviderAuthFlow({
+        providerID,
+        flowID,
+      })
+      await loadSettingsData({ silent: true })
+      setMessage({
+        tone: "success",
+        text: "Provider authentication cancelled.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingProviderID(null)
+    }
+  }
+
+  async function saveProviderApiKey(providerID: string, nextApiKey?: string | null) {
+    if (!window.desktop?.saveGlobalProviderApiKey) return false
+
+    const apiKey =
+      (nextApiKey === undefined ? providerDrafts[providerID]?.apiKey ?? "" : nextApiKey ?? "").trim()
+
+    setSavingProviderID(providerID)
+    setMessage(null)
+
+    try {
+      await window.desktop.saveGlobalProviderApiKey({
+        providerID,
+        apiKey: apiKey || null,
+      })
+      await loadSettingsData({ silent: true })
+      await notifyProviderModelsUpdated()
+      setMessage({
+        tone: "success",
+        text: apiKey ? "API key saved." : "API key cleared.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingProviderID(null)
+    }
+  }
+
+  async function deleteProviderAuthSession(providerID: string) {
+    if (!window.desktop?.deleteGlobalProviderAuthSession) return false
+
+    setSavingProviderID(providerID)
+    setMessage(null)
+
+    try {
+      await window.desktop.deleteGlobalProviderAuthSession({
+        providerID,
+      })
+      await loadSettingsData({ silent: true })
+      await notifyProviderModelsUpdated()
+      setMessage({
+        tone: "success",
+        text: "Shared provider session removed.",
       })
       return true
     } catch (error) {
@@ -856,9 +1126,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     activeMcpServerDiagnostic: activeMcpServerID ? mcpDiagnostics[activeMcpServerID] ?? null : null,
     archivedSessions,
     archivedSessionsError,
+    cancelProviderAuthFlow,
     catalog,
     closeSettings,
     deleteArchivedSession,
+    deleteProviderAuthSession,
     deleteMcpServer,
     deleteProvider,
     deletingArchivedSessionID,
@@ -883,15 +1155,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     restoringArchivedSessionID,
     savedSelection,
     saveMcpServer,
+    saveProviderApiKey,
     saveProvider,
     saveSelection,
     savingMcpServerID,
     savingProviderID,
+    setProviderAuthMethod,
     selectMcpServer,
     selectionDraft,
     setMcpServerDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
+    startProviderAuthFlow,
     startNewMcpServer,
     restoreArchivedSession,
   }
