@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
+﻿import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
 import { ChangesPanel } from "./changes/ChangesPanel"
 import { sidebarActions } from "./constants"
 import { WorkspaceFilesPanel } from "./files/WorkspaceFilesPanel"
@@ -6,10 +6,11 @@ import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitS
 import { PreviewPanel } from "./preview/PreviewPanel"
 import { buildTurnsFromHistory } from "./stream"
 import { ThreadRichText } from "./thread-rich-text"
+import { Composer } from "./composer/Composer"
+import { createComposerDraftStateFromPlainText, createEmptyComposerDraftState } from "./composer/draft-state"
 import { useProjectComposer } from "./use-project-composer"
 import {
   ArchiveIcon,
-  ArrowUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
@@ -46,10 +47,8 @@ import type {
   AssistantTraceVisibility,
   AssistantTraceVisibilityKey,
   ComposerAttachment,
-  ComposerCommentReference,
+  ComposerDraftState,
   ComposerMcpOption,
-  ComposerModelOption,
-  ComposerReasoningEffortOption,
   ComposerSkillOption,
   CreateSessionTab,
   GlobalSkillTreeNode,
@@ -5395,7 +5394,7 @@ export function SettingsPage({
 
                           <p className="provider-card-copy">
                             <strong>{provider.id}</strong>
-                            {provider.env.length > 0 ? ` 路 Env ${provider.env.join(", ")}` : " 路 No env key required"}
+                            {provider.env.length > 0 ? ` · Env ${provider.env.join(", ")}` : " · No env key required"}
                           </p>
 
                           <div className="provider-model-strip">
@@ -5403,7 +5402,7 @@ export function SettingsPage({
                               providerModels.slice(0, 3).map((model) => (
                                 <div key={`${model.providerID}/${model.id}`} className="provider-model-chip">
                                   <strong>{model.name}</strong>
-                                  <span>{buildModelTags(model).join(" 路 ")}</span>
+                                  <span>{buildModelTags(model).join(" · ")}</span>
                                 </div>
                               ))
                             ) : (
@@ -5572,9 +5571,8 @@ interface ThreadViewProps {
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
   sideChatAttachments?: ComposerAttachment[]
-  sideChatCommentReferences?: ComposerCommentReference[]
   sideChatCountsByAnchorMessageID: Record<string, number>
-  sideChatDraft?: string
+  sideChatDraftState?: ComposerDraftState
   sideChatIsSending?: boolean
   sideChatPendingPermissionRequests?: PermissionRequest[]
   sideChatPermissionRequestActionError?: string | null
@@ -5583,17 +5581,16 @@ interface ThreadViewProps {
   sideChatTurns?: Turn[]
   threadColumnRef: RefObject<HTMLDivElement | null>
   onAskUserQuestionAnswer: QuestionAnswerHandler
-  onSideChatDraftChange?: (value: string) => void
+  onSideChatDraftStateChange?: (value: ComposerDraftState) => void
   onSideChatPickAttachments?: (input: {
     allowImage: boolean
     allowPdf: boolean
     disabledReason: string | null
   }) => void | Promise<void>
   onSideChatRemoveAttachment?: (path: string) => void
-  onSideChatRemoveCommentReference?: (referenceID: string) => void
   onSideChatSend?: (input: {
     attachmentError?: string | null
-    draftOverride?: string
+    draftStateOverride?: ComposerDraftState
     questionAnswer?: {
       questionID: string
       selectedOptions?: string[]
@@ -5980,9 +5977,8 @@ interface InlineSideChatThreadProps {
   activeProjectID: string | null
   attachments: ComposerAttachment[]
   assistantTraceVisibility: AssistantTraceVisibility
-  commentReferences: ComposerCommentReference[]
   composerRefreshVersion: number
-  draft: string
+  draftState: ComposerDraftState
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
   isSending: boolean
@@ -5991,7 +5987,7 @@ interface InlineSideChatThreadProps {
   permissionRequestActionRequestID: string | null
   session: SessionSummary
   turns: Turn[]
-  onDraftChange: (value: string) => void
+  onDraftStateChange: (value: ComposerDraftState) => void
   onHide: () => void
   onPermissionRequestResponse: PermissionRequestResponseHandler
   onPickAttachments: (input: {
@@ -6000,10 +5996,9 @@ interface InlineSideChatThreadProps {
     disabledReason: string | null
   }) => void | Promise<void>
   onRemoveAttachment: (path: string) => void
-  onRemoveCommentReference: (referenceID: string) => void
   onSend: (input: {
     attachmentError?: string | null
-    draftOverride?: string
+    draftStateOverride?: ComposerDraftState
     questionAnswer?: {
       questionID: string
       selectedOptions?: string[]
@@ -6019,9 +6014,8 @@ function InlineSideChatThread({
   activeProjectID,
   attachments,
   assistantTraceVisibility,
-  commentReferences,
   composerRefreshVersion,
-  draft,
+  draftState,
   isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
   isSending,
@@ -6030,12 +6024,11 @@ function InlineSideChatThread({
   permissionRequestActionRequestID,
   session,
   turns,
-  onDraftChange,
+  onDraftStateChange,
   onHide,
   onPermissionRequestResponse,
   onPickAttachments,
   onRemoveAttachment,
-  onRemoveCommentReference,
   onSend,
 }: InlineSideChatThreadProps) {
   const composer = useProjectComposer({
@@ -6111,7 +6104,7 @@ function InlineSideChatThread({
           threadColumnRef={threadColumnRef}
           onAskUserQuestionAnswer={(answer) =>
             void onSend({
-              draftOverride: answer.text,
+              draftStateOverride: createComposerDraftStateFromPlainText(answer.text),
               questionAnswer: answer.questionID
                 ? {
                     questionID: answer.questionID,
@@ -6129,23 +6122,29 @@ function InlineSideChatThread({
 
         <Composer
           attachments={attachments}
-          commentReferences={commentReferences}
           attachmentButtonTitle={composer.attachmentButtonTitle}
           attachmentDisabledReason={composer.attachmentDisabledReason}
           attachmentError={composer.attachmentError}
           canSend
-          draft={draft}
+          draftState={draftState}
           hasPendingPermissionRequests={pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
           isSending={isSending}
+          mcpOptions={composer.mcpOptions}
           modelOptions={composer.modelOptions}
+          permissionMode="default"
           reasoningEffortOptions={composer.reasoningEffortOptions}
+          selectedMcpServerIDs={composer.selectedMcpServerIDs}
           selectedModel={composer.selectedModel}
           selectedModelLabel={composer.selectedModelLabel}
           selectedReasoningEffort={composer.selectedReasoningEffort}
           selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
+          selectedSkillIDs={composer.selectedSkillIDs}
           showModelSelector={false}
+          showProjectTagCommands={false}
+          skillOptions={composer.skillOptions}
           unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-          onDraftChange={onDraftChange}
+          workspaceDirectory={null}
+          onDraftStateChange={onDraftStateChange}
           onModelChange={composer.handleModelChange}
           onReasoningEffortChange={composer.handleReasoningEffortChange}
           onPickAttachments={() =>
@@ -6156,11 +6155,10 @@ function InlineSideChatThread({
             })
           }
           onRemoveAttachment={onRemoveAttachment}
-          onRemoveCommentReference={onRemoveCommentReference}
-          onSend={(draftOverride) =>
+          onSend={(draftStateOverride) =>
             void onSend({
               attachmentError: composer.attachmentError,
-              draftOverride,
+              draftStateOverride,
               selectedReasoningEffort: composer.selectedReasoningEffort,
               selectedSkillIDs: composer.selectedSkillIDs,
               waitForPendingModelSelection: composer.awaitPendingModelSelection,
@@ -6876,9 +6874,8 @@ export function ThreadView({
   permissionRequestActionError,
   permissionRequestActionRequestID,
   sideChatAttachments = [],
-  sideChatCommentReferences = [],
   sideChatCountsByAnchorMessageID,
-  sideChatDraft = "",
+  sideChatDraftState = createEmptyComposerDraftState(),
   sideChatIsSending = false,
   sideChatPendingPermissionRequests = [],
   sideChatPermissionRequestActionError = null,
@@ -6886,10 +6883,9 @@ export function ThreadView({
   sideChatSession = null,
   sideChatTurns = [],
   threadColumnRef,
-  onSideChatDraftChange,
+  onSideChatDraftStateChange,
   onSideChatPickAttachments,
   onSideChatRemoveAttachment,
-  onSideChatRemoveCommentReference,
   onSideChatSend,
   onPermissionRequestResponse,
 }: ThreadViewProps) {
@@ -7055,18 +7051,16 @@ export function ThreadView({
                               </div>
 
                               {activeInlineSideChat &&
-                              onSideChatDraftChange &&
+                              onSideChatDraftStateChange &&
                               onSideChatPickAttachments &&
                               onSideChatRemoveAttachment &&
-                              onSideChatRemoveCommentReference &&
                               onSideChatSend ? (
                                 <InlineSideChatThread
                                   activeProjectID={activeProjectID}
                                   attachments={sideChatAttachments}
                                   assistantTraceVisibility={assistantTraceVisibility}
-                                  commentReferences={sideChatCommentReferences}
                                   composerRefreshVersion={composerRefreshVersion}
-                                  draft={sideChatDraft}
+                                  draftState={sideChatDraftState}
                                   isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
                                   isResolvingPermissionRequest={isResolvingPermissionRequest}
                                   isSending={sideChatIsSending}
@@ -7075,12 +7069,11 @@ export function ThreadView({
                                   permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}
                                   session={activeInlineSideChat}
                                   turns={sideChatTurns}
-                                  onDraftChange={onSideChatDraftChange}
+                                  onDraftStateChange={onSideChatDraftStateChange}
                                   onHide={() => void onOpenSideChat?.(turn.id)}
                                   onPermissionRequestResponse={onPermissionRequestResponse}
                                   onPickAttachments={onSideChatPickAttachments}
                                   onRemoveAttachment={onSideChatRemoveAttachment}
-                                  onRemoveCommentReference={onSideChatRemoveCommentReference}
                                   onSend={onSideChatSend}
                                 />
                               ) : null}
@@ -7111,344 +7104,6 @@ export function ThreadView({
   )
 }
 
-interface ComposerProps {
-  attachments: ComposerAttachment[]
-  commentReferences: ComposerCommentReference[]
-  attachmentButtonTitle: string
-  attachmentDisabledReason: string | null
-  attachmentError: string | null
-  canSend: boolean
-  draft: string
-  hasPendingPermissionRequests: boolean
-  isSending: boolean
-  modelOptions: ComposerModelOption[]
-  reasoningEffortOptions: ComposerReasoningEffortOption[]
-  selectedModel: string | null
-  selectedModelLabel: string
-  selectedReasoningEffort: OpenAIReasoningEffort | null
-  selectedReasoningEffortLabel: string
-  showModelSelector?: boolean
-  unsupportedAttachmentPaths: string[]
-  onDraftChange: (value: string) => void
-  onModelChange: (value: string | null) => void | Promise<void>
-  onReasoningEffortChange: (value: OpenAIReasoningEffort | null) => void
-  onPickAttachments: () => void | Promise<void>
-  onRemoveAttachment: (path: string) => void
-  onRemoveCommentReference: (referenceID: string) => void
-  onSend: (draftOverride?: string) => void | Promise<void>
-}
 
-type ComposerMenuKey = "model" | null
-
-function isComposerSubmitKeyEvent(event: KeyboardEvent<HTMLTextAreaElement>, isComposing: boolean) {
-  if (event.key !== "Enter") return false
-  if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return false
-
-  const nativeEvent = event.nativeEvent
-  return !(isComposing || nativeEvent.isComposing || nativeEvent.keyCode === 229)
-}
-
-function getComposerSendButtonDescription({
-  attachmentError,
-  canSend,
-  hasPendingPermissionRequests,
-  isSending,
-}: {
-  attachmentError: string | null
-  canSend: boolean
-  hasPendingPermissionRequests: boolean
-  isSending: boolean
-}) {
-  if (attachmentError) {
-    return `${attachmentError} Press Shift+Enter for a newline.`
-  }
-
-  if (!canSend) {
-    return "Choose a session or workspace before sending. Press Shift+Enter for a newline."
-  }
-
-  if (hasPendingPermissionRequests) {
-    return "Enter is unavailable while approval requests are pending. Press Shift+Enter for a newline."
-  }
-
-  if (isSending) {
-    return "Enter is unavailable while the current request is sending. Press Shift+Enter for a newline."
-  }
-
-  return "Press Enter to send. Press Shift+Enter for a newline."
-}
-
-export function Composer({
-  attachments,
-  commentReferences,
-  attachmentButtonTitle,
-  attachmentDisabledReason,
-  attachmentError,
-  canSend,
-  draft,
-  hasPendingPermissionRequests,
-  isSending,
-  modelOptions,
-  reasoningEffortOptions,
-  selectedModel,
-  selectedModelLabel,
-  selectedReasoningEffort,
-  selectedReasoningEffortLabel,
-  showModelSelector = true,
-  unsupportedAttachmentPaths,
-  onDraftChange,
-  onModelChange,
-  onReasoningEffortChange,
-  onPickAttachments,
-  onRemoveAttachment,
-  onRemoveCommentReference,
-  onSend,
-}: ComposerProps) {
-  const [openMenu, setOpenMenu] = useState<ComposerMenuKey>(null)
-  const isComposingRef = useRef(false)
-  const toolbarRef = useRef<HTMLDivElement | null>(null)
-  const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
-
-  useEffect(() => {
-    if (!openMenu) return
-
-    const handlePointerDown = (event: globalThis.PointerEvent) => {
-      if (!toolbarRef.current?.contains(event.target as Node)) {
-        setOpenMenu(null)
-      }
-    }
-
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpenMenu(null)
-      }
-    }
-
-    window.addEventListener("pointerdown", handlePointerDown)
-    window.addEventListener("keydown", handleKeyDown)
-
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown)
-      window.removeEventListener("keydown", handleKeyDown)
-    }
-  }, [openMenu])
-
-  function toggleMenu(menu: Exclude<ComposerMenuKey, null>) {
-    setOpenMenu((current) => (current === menu ? null : menu))
-  }
-
-  function handleModelSelect(value: string | null) {
-    setOpenMenu(null)
-    void onModelChange(value)
-  }
-
-  function handleReasoningEffortSelect(value: OpenAIReasoningEffort | null) {
-    setOpenMenu(null)
-    onReasoningEffortChange(value)
-  }
-
-  function handleDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (!isComposerSubmitKeyEvent(event, isComposingRef.current)) return
-
-    event.preventDefault()
-    void onSend(event.currentTarget.value)
-  }
-
-  const sendButtonLabel = isSending ? "Sending task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
-  const sendButtonDescription = getComposerSendButtonDescription({
-    attachmentError,
-    canSend,
-    hasPendingPermissionRequests,
-    isSending,
-  })
-  const sendButtonTitle = `${sendButtonLabel}. ${sendButtonDescription}`
-  const sendShortcut = !isSending && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
-  const showReasoningEffortSelector = showModelSelector && reasoningEffortOptions.length > 0
-  const selectedModelButtonLabel = selectedReasoningEffort
-    ? `${selectedModelLabel} · ${selectedReasoningEffortLabel}`
-    : selectedModelLabel
-
-  return (
-    <footer className="composer prompt-input-shell">
-      <textarea
-        aria-label="Task draft"
-        aria-description={sendButtonDescription}
-        enterKeyHint="send"
-        value={draft}
-        onChange={(event) => onDraftChange(event.target.value)}
-        onCompositionEnd={() => {
-          isComposingRef.current = false
-        }}
-        onCompositionStart={() => {
-          isComposingRef.current = true
-        }}
-        onKeyDown={handleDraftKeyDown}
-        placeholder="Describe the UI, implementation task, or review target for the agent."
-        rows={3}
-      />
-
-      {commentReferences.length > 0 ? (
-        <div className="composer-reference-strip" aria-label="Selected comment references">
-          {commentReferences.map((reference) => (
-            <div key={reference.id} className="composer-reference-chip">
-              <span className="composer-reference-name" title={reference.title}>
-                {reference.label}
-              </span>
-              <button
-                aria-label={`Remove ${reference.label}`}
-                className="composer-reference-remove"
-                onClick={() => onRemoveCommentReference(reference.id)}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {attachments.length > 0 ? (
-        <div className="composer-attachment-strip" aria-label="Selected attachments">
-          {attachments.map((attachment) => (
-            <div
-              key={attachment.path}
-              className={
-                unsupportedAttachmentPathSet.has(attachment.path)
-                  ? "composer-attachment-chip is-invalid"
-                  : "composer-attachment-chip"
-              }
-            >
-              <span className="composer-attachment-name" title={attachment.path}>
-                {attachment.name}
-              </span>
-              <button
-                aria-label={`Remove ${attachment.name}`}
-                className="composer-attachment-remove"
-                onClick={() => onRemoveAttachment(attachment.path)}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {attachmentError ? (
-        <p className="composer-attachment-note" role="alert">
-          {attachmentError}
-        </p>
-      ) : null}
-
-      <div ref={toolbarRef} className="composer-toolbar">
-        <div className="composer-selectors" aria-label="Composer options">
-          <button
-            aria-label="Add attachments"
-            className="composer-selector-button is-icon-only"
-            disabled={attachmentDisabledReason !== null}
-            onClick={() => void onPickAttachments()}
-            title={attachmentButtonTitle}
-            type="button"
-          >
-            <PaperclipIcon />
-          </button>
-
-          {showModelSelector ? (
-            <div className="composer-menu-anchor">
-              <button
-                aria-expanded={openMenu === "model"}
-                aria-haspopup="dialog"
-                aria-label={
-                  selectedReasoningEffort
-                    ? `Select model: ${selectedModelLabel}. Reasoning effort: ${selectedReasoningEffortLabel}`
-                    : `Select model: ${selectedModelLabel}`
-                }
-                className="composer-selector-button"
-                onClick={() => toggleMenu("model")}
-                type="button"
-              >
-                <span>{selectedModelButtonLabel}</span>
-                <ChevronDownIcon />
-              </button>
-
-              {openMenu === "model" ? (
-                <div className="composer-menu-panel" role="dialog" aria-label="Model selection">
-                  <button
-                    className={selectedModel === null ? "composer-menu-option is-selected" : "composer-menu-option"}
-                    onClick={() => handleModelSelect(null)}
-                    type="button"
-                  >
-                    <span>Use server default</span>
-                  </button>
-                  {modelOptions.length > 0 ? (
-                    modelOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
-                        onClick={() => handleModelSelect(option.value)}
-                        type="button"
-                      >
-                        <span>{option.label}</span>
-                      </button>
-                    ))
-                  ) : (
-                    <p className="composer-menu-empty">No visible models are available for this project yet.</p>
-                  )}
-                  {showReasoningEffortSelector ? (
-                    <>
-                      <div className="composer-menu-divider" aria-hidden="true" />
-                      <p className="composer-menu-section-label">Reasoning effort</p>
-                      <button
-                        className={selectedReasoningEffort === null ? "composer-menu-option is-selected" : "composer-menu-option"}
-                        onClick={() => handleReasoningEffortSelect(null)}
-                        type="button"
-                      >
-                        <span className="composer-menu-option-copy">
-                          <strong>Model default</strong>
-                          <small>Use the default reasoning level for the current OpenAI model.</small>
-                        </span>
-                      </button>
-                      {reasoningEffortOptions.map((option) => (
-                        <button
-                          key={option.value}
-                          className={
-                            selectedReasoningEffort === option.value
-                              ? "composer-menu-option is-selected"
-                              : "composer-menu-option"
-                          }
-                          onClick={() => handleReasoningEffortSelect(option.value)}
-                          type="button"
-                        >
-                          <span className="composer-menu-option-copy">
-                            <strong>{option.label}</strong>
-                            <small>{option.description}</small>
-                          </span>
-                        </button>
-                      ))}
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="composer-actions">
-          <button
-            aria-label={sendButtonLabel}
-            aria-description={sendButtonDescription}
-            aria-keyshortcuts={sendShortcut}
-            className="primary-button is-icon-only"
-            disabled={isSending || !canSend || hasPendingPermissionRequests || attachmentError !== null}
-            onClick={() => void onSend()}
-            title={sendButtonTitle}
-            type="button"
-          >
-            <ArrowUpIcon />
-          </button>
-        </div>
-      </div>
-    </footer>
-  )
-}
+export { Composer }
 

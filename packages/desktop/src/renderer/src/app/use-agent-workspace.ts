@@ -23,6 +23,7 @@ import type {
   AgentSessionStreamIPCEvent,
   ComposerAttachment,
   ComposerCommentReference,
+  ComposerDraftState,
   ComposerPermissionMode,
   ComposerMcpOption,
   ComposerModelOption,
@@ -59,6 +60,16 @@ import type {
   WorkspaceFileSearchResult,
   WorkspaceGroup,
 } from "./types"
+import {
+  appendComposerTagToDraftState,
+  appendTextToComposerDraftState,
+  compileComposerSubmission,
+  createComposerCommentTagData,
+  createComposerDraftStateFromPlainText,
+  createEmptyComposerDraftState,
+  normalizeComposerDraftState,
+  syncComposerMcpTagsWithSelection,
+} from "./composer/draft-state"
 import { buildPreviewCommentDraft, normalizePreviewUrlInput } from "./preview/utils"
 import {
   buildWorkspaceFileCommentDraft,
@@ -230,22 +241,6 @@ function buildComposerAttachment(path: string): ComposerAttachment {
     path,
     name: getComposerAttachmentName(path),
   }
-}
-
-function buildComposerCommentReferencesPrompt(references: ComposerCommentReference[]) {
-  return references
-    .map((reference) => reference.prompt.trim())
-    .filter(Boolean)
-    .join("\n\n")
-}
-
-function buildComposerRequestText(draft: string, references: ComposerCommentReference[]) {
-  const trimmedDraft = draft.trim()
-  const referencesPrompt = buildComposerCommentReferencesPrompt(references)
-
-  if (!trimmedDraft) return referencesPrompt
-  if (!referencesPrompt) return trimmedDraft
-  return `${trimmedDraft}\n\n${referencesPrompt}`
 }
 
 function getComposerAttachmentKind(path: string): ComposerAttachmentKind {
@@ -791,10 +786,12 @@ export function useAgentWorkspace({
   const [workspaceFileReviewState, setWorkspaceFileReviewState] = useState<WorkspaceFileReviewState>(
     DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
   )
-  const [draftByTabKey, setDraftByTabKey] = useState<Record<string, string>>(() =>
+  const [composerDraftStateByTabKey, setComposerDraftStateByTabKey] = useState<Record<string, ComposerDraftState>>(() =>
     initialWorkbenchTab
       ? {
-          [getWorkbenchTabKey(initialWorkbenchTab)]: "Help me align the desktop sidebar with the Pencil design.",
+          [getWorkbenchTabKey(initialWorkbenchTab)]: createComposerDraftStateFromPlainText(
+            "Help me align the desktop sidebar with the Pencil design.",
+          ),
         }
       : {},
   )
@@ -802,9 +799,6 @@ export function useAgentWorkspace({
   const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
   const [sessionDirectoryBySession, setSessionDirectoryBySession] = useState<Record<string, string>>({})
   const [composerAttachmentsByTabKey, setComposerAttachmentsByTabKey] = useState<Record<string, ComposerAttachment[]>>({})
-  const [composerCommentReferencesByTabKey, setComposerCommentReferencesByTabKey] = useState<
-    Record<string, ComposerCommentReference[]>
-  >({})
   const [composerPermissionModeByTabKey, setComposerPermissionModeByTabKey] = useState<
     Record<string, ComposerPermissionMode>
   >(
@@ -969,23 +963,24 @@ export function useAgentWorkspace({
   const activeSideChatTurns = activeSideChatSession ? conversations[activeSideChatSession.id] ?? [] : []
   const activeSideChatPendingPermissionRequests =
     activeSideChatSession ? pendingPermissionRequestsBySession[activeSideChatSession.id] ?? [] : []
-  const activeSideChatDraft = activeSideChatTabKey ? draftByTabKey[activeSideChatTabKey] ?? "" : ""
+  const activeSideChatDraftState = activeSideChatTabKey
+    ? composerDraftStateByTabKey[activeSideChatTabKey] ?? createEmptyComposerDraftState()
+    : createEmptyComposerDraftState()
   const activeSideChatAttachments = activeSideChatTabKey ? composerAttachmentsByTabKey[activeSideChatTabKey] ?? [] : []
-  const activeSideChatCommentReferences =
-    activeSideChatTabKey ? composerCommentReferencesByTabKey[activeSideChatTabKey] ?? [] : []
   const activeSideChatIsSending = activeSideChatTabKey ? Boolean(isSendingByTabKey[activeSideChatTabKey]) : false
   const activeSideChatCountsByAnchorMessageID =
     activeSession && !activeSessionIsSideChat ? collectSideChatCountsForParentSession(workspaces, activeSession.id) : {}
   const isCreateSessionTabActive = activeCreateSessionTab !== null
   const createSessionWorkspaceID = activeCreateSessionTab?.workspaceID ?? null
   const createSessionTitle = activeCreateSessionTab?.title ?? ""
-  const draft = activeTabKey ? draftByTabKey[activeTabKey] ?? "" : ""
+  const draftState = activeTabKey
+    ? composerDraftStateByTabKey[activeTabKey] ?? createEmptyComposerDraftState()
+    : createEmptyComposerDraftState()
   const activePreviewState = previewByWorkspaceID[activePreviewScopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
   const deferredWorkspaceFileQuery = useDeferredValue(workspaceFileReviewState.query)
   const canInsertPreviewCommentsIntoDraft = Boolean(activeTabKey)
   const canInsertWorkspaceFileCommentsIntoDraft = Boolean(activeTabKey)
   const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
-  const composerCommentReferences = activeTabKey ? composerCommentReferencesByTabKey[activeTabKey] ?? [] : []
   const composerPermissionMode = activeTabKey
     ? resolveComposerPermissionModeForSession(activeSession, composerPermissionModeByTabKey[activeTabKey] ?? "default")
     : "default"
@@ -1033,6 +1028,30 @@ export function useAgentWorkspace({
     label: server.name ?? server.id,
     description: describeComposerMcpServer(server),
   }))
+  useEffect(() => {
+    if (!activeTabKey || activeSessionIsSideChat) return
+
+    setComposerDraftStateByTabKey((current) => {
+      const currentDraftState = current[activeTabKey] ?? createEmptyComposerDraftState()
+      const nextDraftState = syncComposerMcpTagsWithSelection(
+        currentDraftState,
+        composerSelectedMcpServerIDs,
+        composerMcpOptions,
+      )
+
+      if (
+        nextDraftState.lexicalJSON === currentDraftState.lexicalJSON &&
+        nextDraftState.plainText === currentDraftState.plainText
+      ) {
+        return current
+      }
+
+      return {
+        ...current,
+        [activeTabKey]: nextDraftState,
+      }
+    })
+  }, [activeSessionIsSideChat, activeTabKey, composerMcpOptions, composerSelectedMcpServerIDs])
   const composerSelectedModelLabel = resolveComposerModelLabel(
     composerSelectedModel,
     composerModels,
@@ -1788,13 +1807,19 @@ export function useAgentWorkspace({
     const updateWorkspaceWatchDirectories = window.desktop?.updateWorkspaceWatchDirectories
     if (!updateWorkspaceWatchDirectories) return
 
+    const activeWorkspaceID = activeWorkspace?.id ?? null
+    const shouldWatchActiveSessionDirectory =
+      Boolean(activeSessionDirectory?.trim()) &&
+      activeWorkspaceID !== null &&
+      isWorkspaceAvailable(activeWorkspace) &&
+      !(isInitialWorkspaceLoadPending && seedWorkspaceIDs.has(activeWorkspaceID))
     const uniqueDirectories = [
       ...new Set(
         [
           ...workspaces
             .filter((workspace) => !seedWorkspaceIDs.has(workspace.id) && isWorkspaceAvailable(workspace))
             .map((workspace) => workspace.directory.trim()),
-          activeSessionDirectory?.trim() ?? "",
+          shouldWatchActiveSessionDirectory ? activeSessionDirectory?.trim() ?? "" : "",
         ].filter(Boolean),
       ),
     ]
@@ -1813,7 +1838,7 @@ export function useAgentWorkspace({
     }).catch((error) => {
       console.error("[desktop] updateWorkspaceWatchDirectories failed:", error)
     })
-  }, [activeSessionDirectory, platform, workspaces])
+  }, [activeSessionDirectory, activeWorkspace, isInitialWorkspaceLoadPending, platform, workspaces])
 
   useEffect(() => {
     let mounted = true
@@ -2990,14 +3015,14 @@ export function useAgentWorkspace({
     setExpandedFolderID(nextWorkspaceID)
   }
 
-  function setDraftForTab(tabKey: string, value: string) {
-    setDraftByTabKey((current) => ({
+  function setDraftForTab(tabKey: string, value: ComposerDraftState) {
+    setComposerDraftStateByTabKey((current) => ({
       ...current,
-      [tabKey]: value,
+      [tabKey]: normalizeComposerDraftState(value),
     }))
   }
 
-  function setDraft(value: string) {
+  function setDraft(value: ComposerDraftState) {
     if (!activeTabKey) return
     setDraftForTab(activeTabKey, value)
   }
@@ -3006,11 +3031,11 @@ export function useAgentWorkspace({
     const trimmedValue = value.trim()
     if (!trimmedValue) return
 
-    setDraftByTabKey((current) => {
-      const existingDraft = current[tabKey]?.trimEnd() ?? ""
+    setComposerDraftStateByTabKey((current) => {
+      const existingDraft = current[tabKey] ?? createEmptyComposerDraftState()
       return {
         ...current,
-        [tabKey]: existingDraft ? `${existingDraft}\n\n${trimmedValue}` : trimmedValue,
+        [tabKey]: appendTextToComposerDraftState(existingDraft, trimmedValue),
       }
     })
   }
@@ -3363,9 +3388,12 @@ export function useAgentWorkspace({
         prompt,
       }
 
-      setComposerCommentReferencesByTabKey((current) => ({
+      setComposerDraftStateByTabKey((current) => ({
         ...current,
-        [activeTabKey]: [...(current[activeTabKey] ?? []), nextReference],
+        [activeTabKey]: appendComposerTagToDraftState(
+          current[activeTabKey] ?? createEmptyComposerDraftState(),
+          createComposerCommentTagData(nextReference),
+        ),
       }))
     }
   }
@@ -3530,13 +3558,9 @@ async function sendPromptToSession(input: {
     }
 
     if (!preserveComposerState) {
-      setDraftByTabKey((current) => ({
+      setComposerDraftStateByTabKey((current) => ({
         ...current,
-        [tabKey]: "",
-      }))
-      setComposerCommentReferencesByTabKey((current) => ({
-        ...current,
-        [tabKey]: [],
+        [tabKey]: createEmptyComposerDraftState(),
       }))
       setComposerAttachmentsByTabKey((current) => ({
         ...current,
@@ -3676,9 +3700,8 @@ async function sendPromptToSession(input: {
   async function handleSend(input?: {
     attachmentError?: string | null
     attachmentsOverride?: ComposerAttachment[]
-    commentReferencesOverride?: ComposerCommentReference[]
     createSessionTabID?: string | null
-    draftOverride?: string
+    draftStateOverride?: ComposerDraftState
     paneID?: string | null
     preserveComposerState?: boolean
     questionAnswer?: {
@@ -3696,12 +3719,17 @@ async function sendPromptToSession(input: {
     const targetSessionID = input?.sessionID ?? activeSessionID
     const targetCreateSessionTabID = input?.createSessionTabID ?? activeCreateSessionTabID
     const attachments = input?.attachmentsOverride ?? (targetTabKey ? composerAttachmentsByTabKey[targetTabKey] ?? [] : [])
-    const commentReferences = input?.commentReferencesOverride ?? (targetTabKey ? composerCommentReferencesByTabKey[targetTabKey] ?? [] : [])
     const permissionMode = targetTabKey ? composerPermissionModeByTabKey[targetTabKey] ?? "default" : "default"
-    const displayText = (input?.draftOverride ?? (targetTabKey ? draftByTabKey[targetTabKey] ?? "" : "")).trim()
-    const text = buildComposerRequestText(displayText, commentReferences)
+    const draftState = normalizeComposerDraftState(
+      input?.draftStateOverride ??
+        (targetTabKey ? composerDraftStateByTabKey[targetTabKey] ?? createEmptyComposerDraftState() : createEmptyComposerDraftState()),
+    )
+    const compiledSubmission = compileComposerSubmission({
+      draftState,
+      selectedSkillIDs: input?.selectedSkillIDs ?? [],
+    })
     const normalizedQuestionAnswerText = normalizeQuestionAnswerText(input?.questionAnswer)
-    const effectiveText = text || normalizedQuestionAnswerText
+    const effectiveText = compiledSubmission.transportText || normalizedQuestionAnswerText
     const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
     if (!targetTabKey || ((!effectiveText && attachments.length === 0) || isSendingByTabKey[targetTabKey] || pendingPermissionRequests.length > 0)) return
     if (input?.waitForPendingModelSelection) {
@@ -3716,13 +3744,13 @@ async function sendPromptToSession(input: {
       if (!nextSelection.workspace || !nextSelection.session) return
       await sendPromptToSession({
         attachments,
-        commentReferences,
-        displayText,
+        commentReferences: compiledSubmission.commentReferences,
+        displayText: compiledSubmission.displayText,
         permissionMode,
         preserveComposerState: input?.preserveComposerState,
         questionAnswer: input?.questionAnswer,
         reasoningEffort: input?.selectedReasoningEffort,
-        selectedSkillIDs: input?.selectedSkillIDs ?? [],
+        selectedSkillIDs: compiledSubmission.selectedSkillIDs,
         session: nextSelection.session,
         tabKey: targetTabKey,
         text: effectiveText,
@@ -3750,13 +3778,13 @@ async function sendPromptToSession(input: {
     await sendPromptToSession({
       attachments,
       backendSessionID: created.backendSessionID,
-      commentReferences,
-      displayText,
+      commentReferences: compiledSubmission.commentReferences,
+      displayText: compiledSubmission.displayText,
       permissionMode,
       preserveComposerState: input?.preserveComposerState,
       questionAnswer: input?.questionAnswer,
       reasoningEffort: input?.selectedReasoningEffort,
-      selectedSkillIDs: input?.selectedSkillIDs ?? [],
+      selectedSkillIDs: compiledSubmission.selectedSkillIDs,
       session: created.session,
       tabKey: targetTabKey,
       text: effectiveText,
@@ -3912,14 +3940,6 @@ async function sendPromptToSession(input: {
     setComposerAttachmentsByTabKey((current) => ({
       ...current,
       [tabKey]: (current[tabKey] ?? []).filter((attachment) => attachment.path !== path),
-    }))
-  }
-
-  function handleRemoveComposerCommentReference(referenceID: string, tabKey = activeTabKey) {
-    if (!tabKey) return
-    setComposerCommentReferencesByTabKey((current) => ({
-      ...current,
-      [tabKey]: (current[tabKey] ?? []).filter((reference) => reference.id !== referenceID),
     }))
   }
 
@@ -4154,10 +4174,9 @@ async function sendPromptToSession(input: {
         ? sessionRuntimeDebugStateBySession[currentActiveSessionID] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
         : DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
       activeSideChatAttachments: paneActiveSideChatTabKey ? composerAttachmentsByTabKey[paneActiveSideChatTabKey] ?? [] : [],
-      activeSideChatCommentReferences: paneActiveSideChatTabKey
-        ? composerCommentReferencesByTabKey[paneActiveSideChatTabKey] ?? []
-        : [],
-      activeSideChatDraft: paneActiveSideChatTabKey ? draftByTabKey[paneActiveSideChatTabKey] ?? "" : "",
+      activeSideChatDraftState: paneActiveSideChatTabKey
+        ? composerDraftStateByTabKey[paneActiveSideChatTabKey] ?? createEmptyComposerDraftState()
+        : createEmptyComposerDraftState(),
       activeSideChatIsSending: paneActiveSideChatTabKey ? Boolean(isSendingByTabKey[paneActiveSideChatTabKey]) : false,
       activeSideChatPendingPermissionRequests: paneActiveSideChatSession
         ? pendingPermissionRequestsBySession[paneActiveSideChatSession.id] ?? []
@@ -4171,7 +4190,6 @@ async function sendPromptToSession(input: {
       activeSessionSelectedDiffFile: currentActiveSessionID ? selectedDiffFileBySession[currentActiveSessionID] ?? null : null,
       activeTurns: currentActiveSessionID ? conversations[currentActiveSessionID] ?? [] : [],
       composerAttachments: currentActiveTabKey ? composerAttachmentsByTabKey[currentActiveTabKey] ?? [] : [],
-      composerCommentReferences: currentActiveTabKey ? composerCommentReferencesByTabKey[currentActiveTabKey] ?? [] : [],
       composerPermissionMode: currentActiveTabKey
         ? resolveComposerPermissionModeForSession(
             currentSession,
@@ -4190,14 +4208,19 @@ async function sendPromptToSession(input: {
           : "No project selected",
       createSessionTabID: currentActiveCreateSessionTab?.id ?? null,
       createSessionWorkspaceID: currentActiveCreateSessionTab?.workspaceID ?? null,
-      draft: currentActiveTabKey ? draftByTabKey[currentActiveTabKey] ?? "" : "",
+      draftState: currentActiveTabKey
+        ? composerDraftStateByTabKey[currentActiveTabKey] ?? createEmptyComposerDraftState()
+        : createEmptyComposerDraftState(),
       isCreatingSession:
         currentActiveTabKey && currentActiveCreateSessionTab
           ? Boolean(isCreatingSessionByTabKey[currentActiveTabKey])
           : false,
       isSending: currentActiveTabKey ? Boolean(isSendingByTabKey[currentActiveTabKey]) : false,
       pendingPermissionRequests: currentActiveSessionID ? pendingPermissionRequestsBySession[currentActiveSessionID] ?? [] : [],
-      projectID: currentWorkspace?.project.id ?? null,
+      projectID:
+        isInitialWorkspaceLoadPending && currentWorkspace && seedWorkspaceIDs.has(currentWorkspace.id)
+          ? null
+          : currentWorkspace?.project.id ?? null,
       size: pane.size,
       sessionID: currentSession?.id ?? null,
       sideChatCountsByAnchorMessageID:
@@ -4223,9 +4246,8 @@ async function sendPromptToSession(input: {
     activeSessionRuntimeDebugState,
     activePendingPermissionRequests,
     activeSideChatAttachments,
-    activeSideChatCommentReferences,
     activeSessionSelectedDiffFile,
-    activeSideChatDraft,
+    activeSideChatDraftState,
     activeSideChatIsSending,
     activeSessionIsSideChat,
     activeSideChatCountsByAnchorMessageID,
@@ -4241,7 +4263,6 @@ async function sendPromptToSession(input: {
     canInsertPreviewCommentsIntoDraft,
     canInsertWorkspaceFileCommentsIntoDraft,
     composerAttachments,
-    composerCommentReferences,
     composerAttachmentButtonTitle,
     composerAttachmentDisabledReason,
     composerAttachmentError,
@@ -4262,7 +4283,7 @@ async function sendPromptToSession(input: {
     createSessionTitle,
     createSessionWorkspaceID,
     deletingSessionID,
-    draft,
+    draftState,
     expandedFolderID,
     handleCanvasSessionTabClose,
     handleCanvasSessionTabSelect,
@@ -4285,7 +4306,6 @@ async function sendPromptToSession(input: {
     handlePaneSplit,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
-    handleRemoveComposerCommentReference,
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,

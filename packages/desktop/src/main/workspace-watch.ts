@@ -57,6 +57,14 @@ function safeSend(sender: SenderLike, payload: WorkspaceFileChangeIPCEvent) {
   sender.send(WORKSPACE_FILE_CHANGE_EVENT_CHANNEL, payload)
 }
 
+function safeExists(existsSync: ExistsSync, targetDirectory: string) {
+  try {
+    return existsSync(targetDirectory)
+  } catch {
+    return false
+  }
+}
+
 export class WorkspaceWatchManager {
   private readonly trackedSenders = new Set<number>()
   private readonly senderStates = new Map<number, Map<string, DirectoryWatchState>>()
@@ -74,6 +82,7 @@ export class WorkspaceWatchManager {
       const trimmed = directory.trim()
       if (!trimmed) continue
       const resolvedDirectory = resolveDirectory(trimmed)
+      if (!safeExists(this.existsSync, resolvedDirectory)) continue
       nextDirectories.set(normalizeDirectory(resolvedDirectory), resolvedDirectory)
     }
 
@@ -87,7 +96,9 @@ export class WorkspaceWatchManager {
 
     for (const [directoryKey, resolvedDirectory] of nextDirectories.entries()) {
       if (currentStates.has(directoryKey)) continue
-      currentStates.set(directoryKey, this.createDirectoryState(sender, resolvedDirectory))
+      const nextState = this.createDirectoryState(sender, resolvedDirectory)
+      if (!nextState) continue
+      currentStates.set(directoryKey, nextState)
     }
 
     if (currentStates.size === 0) {
@@ -126,7 +137,7 @@ export class WorkspaceWatchManager {
     this.senderStates.delete(senderID)
   }
 
-  private createDirectoryState(sender: SenderLike, directory: string): DirectoryWatchState {
+  private createDirectoryState(sender: SenderLike, directory: string): DirectoryWatchState | null {
     const state: DirectoryWatchState = {
       directory,
       gitDirectory: path.join(directory, ".git"),
@@ -140,6 +151,7 @@ export class WorkspaceWatchManager {
     state.rootWatcher = this.createWatcher(directory, (_eventType, filename) => {
       this.recordChange(state, directory, filename)
     })
+    if (!state.rootWatcher) return null
 
     this.syncGitWatcher(state)
     return state
@@ -149,7 +161,11 @@ export class WorkspaceWatchManager {
     try {
       return this.watchFactory(targetDirectory, { recursive: true }, listener)
     } catch {
-      return this.watchFactory(targetDirectory, {}, listener)
+      try {
+        return this.watchFactory(targetDirectory, {}, listener)
+      } catch {
+        return null
+      }
     }
   }
 

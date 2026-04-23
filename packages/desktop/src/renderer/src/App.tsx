@@ -17,6 +17,7 @@ import {
   WindowChrome,
 } from "./app/components"
 import { ComposerUtilityBar } from "./app/ComposerUtilityBar"
+import { createComposerDraftStateFromPlainText } from "./app/composer/draft-state"
 import { TerminalPanel } from "./app/terminal/TerminalPanel"
 import { TerminalPanelToggleButton } from "./app/terminal/TerminalPanelToggleButton"
 import { useTerminalWorkspace } from "./app/terminal/use-terminal-workspace"
@@ -26,7 +27,7 @@ import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useProjectComposer } from "./app/use-project-composer"
 import { useSettingsPage } from "./app/use-settings-page"
-import type { AssistantTraceVisibility } from "./app/types"
+import type { AssistantTraceVisibility, ComposerDraftState } from "./app/types"
 import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
 import { isSideChatSession } from "./app/workspace"
 
@@ -234,7 +235,6 @@ export function App() {
     handleProjectClick,
     handleProjectRemove,
     handleRemoveComposerAttachment,
-    handleRemoveComposerCommentReference,
     handleRightSidebarViewChange,
     handleSend,
     handleSessionDelete,
@@ -755,7 +755,6 @@ export function App() {
                 onToggleComposerPermissionMode={handleComposerPermissionModeToggle}
                 onRegisterPane={handleRegisterPane}
                 onRemoveComposerAttachment={handleRemoveComposerAttachment}
-                onRemoveComposerCommentReference={handleRemoveComposerCommentReference}
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}
                 onSelectSessionTab={handleCanvasSessionTabSelect}
                 onSend={handleSend}
@@ -971,11 +970,10 @@ interface WorkbenchTreeProps {
   onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
-  onRemoveComposerCommentReference: (referenceID: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onSend: AgentWorkspaceState["handleSend"]
-  onSetDraft: (tabKey: string, value: string) => void
+  onSetDraft: (tabKey: string, value: ComposerDraftState) => void
   onToggleLeftSidebar: () => void
   onToggleRightSidebar: () => void
 }
@@ -1069,7 +1067,6 @@ function WorkbenchNodeView({
         onToggleComposerPermissionMode={props.onToggleComposerPermissionMode}
         onRegisterPane={props.onRegisterPane}
         onRemoveComposerAttachment={props.onRemoveComposerAttachment}
-        onRemoveComposerCommentReference={props.onRemoveComposerCommentReference}
         onSelectCreateSessionTab={props.onSelectCreateSessionTab}
         onSelectSessionTab={props.onSelectSessionTab}
         onSend={props.onSend}
@@ -1142,11 +1139,10 @@ interface PaneSurfaceProps {
   onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
-  onRemoveComposerCommentReference: (referenceID: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onSend: AgentWorkspaceState["handleSend"]
-  onSetDraft: (tabKey: string, value: string) => void
+  onSetDraft: (tabKey: string, value: ComposerDraftState) => void
 }
 
 const PaneSurface = memo(function PaneSurface({
@@ -1183,7 +1179,6 @@ const PaneSurface = memo(function PaneSurface({
   onToggleComposerPermissionMode,
   onRegisterPane,
   onRemoveComposerAttachment,
-  onRemoveComposerCommentReference,
   onSelectCreateSessionTab,
   onSelectSessionTab,
   onSend,
@@ -1263,24 +1258,32 @@ const PaneSurface = memo(function PaneSurface({
               <div className="composer-stack">
                 <Composer
                   attachments={pane.composerAttachments}
-                  commentReferences={pane.composerCommentReferences}
                   attachmentButtonTitle={composer.attachmentButtonTitle}
                   attachmentDisabledReason={composer.attachmentDisabledReason}
                   attachmentError={composer.attachmentError}
                   canSend={Boolean(pane.createSessionWorkspaceID)}
-                  draft={pane.draft}
+                  draftState={pane.draftState}
                   hasPendingPermissionRequests={false}
                   isSending={pane.isSending || pane.isCreatingSession}
+                  mcpOptions={composer.mcpOptions}
                   modelOptions={composer.modelOptions}
+                  onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                  onMcpToggle={composer.handleMcpToggle}
                   reasoningEffortOptions={composer.reasoningEffortOptions}
+                  permissionMode={pane.composerPermissionMode}
+                  selectedMcpServerIDs={composer.selectedMcpServerIDs}
                   selectedModel={composer.selectedModel}
                   selectedModelLabel={composer.selectedModelLabel}
                   selectedReasoningEffort={composer.selectedReasoningEffort}
                   selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
+                  selectedSkillIDs={composer.selectedSkillIDs}
                   showModelSelector
+                  showProjectTagCommands
+                  skillOptions={composer.skillOptions}
                   unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-                  onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                  workspaceDirectory={pane.workspace?.directory ?? null}
                   onModelChange={composer.handleModelChange}
+                  onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
                   onReasoningEffortChange={composer.handleReasoningEffortChange}
                   onPickAttachments={() =>
                     onPickComposerAttachments({
@@ -1291,11 +1294,11 @@ const PaneSurface = memo(function PaneSurface({
                     })
                   }
                   onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
-                  onRemoveCommentReference={(referenceID) => onRemoveComposerCommentReference(referenceID, pane.tabKey)}
-                  onSend={() =>
+                  onSend={(draftStateOverride) =>
                     void onSend({
                       attachmentError: composer.attachmentError,
                       createSessionTabID: pane.createSessionTabID,
+                      draftStateOverride,
                       paneID: pane.id,
                       selectedReasoningEffort: composer.selectedReasoningEffort,
                       selectedSkillIDs: composer.selectedSkillIDs,
@@ -1331,9 +1334,8 @@ const PaneSurface = memo(function PaneSurface({
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
                 activeTurns={pane.activeTurns}
                 sideChatAttachments={pane.activeSideChatAttachments}
-                sideChatCommentReferences={pane.activeSideChatCommentReferences}
                 sideChatCountsByAnchorMessageID={pane.sideChatCountsByAnchorMessageID}
-                sideChatDraft={pane.activeSideChatDraft}
+                sideChatDraftState={pane.activeSideChatDraftState}
                 sideChatIsSending={pane.activeSideChatIsSending}
                 sideChatPendingPermissionRequests={pane.activeSideChatPendingPermissionRequests}
                 sideChatPermissionRequestActionError={permissionRequestActionError}
@@ -1344,8 +1346,7 @@ const PaneSurface = memo(function PaneSurface({
                 onAskUserQuestionAnswer={(answer) =>
                   void onSend({
                     attachmentsOverride: [],
-                    commentReferencesOverride: [],
-                    draftOverride: answer.text,
+                    draftStateOverride: createComposerDraftStateFromPlainText(answer.text),
                     paneID: pane.id,
                     preserveComposerState: true,
                     questionAnswer: answer.questionID
@@ -1360,7 +1361,7 @@ const PaneSurface = memo(function PaneSurface({
                     sessionID: pane.sessionID,
                     tabKey: pane.tabKey,
                     waitForPendingModelSelection: composer.awaitPendingModelSelection,
-                  })
+                    })
                 }
                 onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
                 onOpenSideChat={(anchorMessageID) =>
@@ -1369,7 +1370,7 @@ const PaneSurface = memo(function PaneSurface({
                     parentSessionID: pane.sessionID,
                   })
                 }
-                onSideChatDraftChange={(value) => {
+                onSideChatDraftStateChange={(value) => {
                   if (pane.activeSideChatTabKey) {
                     onSetDraft(pane.activeSideChatTabKey, value)
                   }
@@ -1383,13 +1384,10 @@ const PaneSurface = memo(function PaneSurface({
                   })
                 }
                 onSideChatRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.activeSideChatTabKey)}
-                onSideChatRemoveCommentReference={(referenceID) =>
-                  onRemoveComposerCommentReference(referenceID, pane.activeSideChatTabKey)
-                }
                 onSideChatSend={(input) =>
                   void onSend({
                     attachmentError: input.attachmentError,
-                    draftOverride: input.draftOverride,
+                    draftStateOverride: input.draftStateOverride,
                     paneID: pane.id,
                     preserveComposerState: Boolean(input.questionAnswer),
                     questionAnswer: input.questionAnswer,
@@ -1405,24 +1403,32 @@ const PaneSurface = memo(function PaneSurface({
               <div className="composer-stack">
                 <Composer
                   attachments={pane.composerAttachments}
-                  commentReferences={pane.composerCommentReferences}
                   attachmentButtonTitle={composer.attachmentButtonTitle}
                   attachmentDisabledReason={composer.attachmentDisabledReason}
                   attachmentError={composer.attachmentError}
                   canSend={Boolean(pane.activeSession)}
-                  draft={pane.draft}
+                  draftState={pane.draftState}
                   hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
                   isSending={pane.isSending}
+                  mcpOptions={composer.mcpOptions}
                   modelOptions={composer.modelOptions}
+                  onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                  onMcpToggle={readOnlySideChat ? undefined : composer.handleMcpToggle}
                   reasoningEffortOptions={composer.reasoningEffortOptions}
+                  permissionMode={pane.composerPermissionMode}
+                  selectedMcpServerIDs={composer.selectedMcpServerIDs}
                   selectedModel={composer.selectedModel}
                   selectedModelLabel={composer.selectedModelLabel}
                   selectedReasoningEffort={composer.selectedReasoningEffort}
                   selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
+                  selectedSkillIDs={composer.selectedSkillIDs}
                   showModelSelector={!readOnlySideChat}
+                  showProjectTagCommands={!readOnlySideChat}
+                  skillOptions={composer.skillOptions}
                   unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-                  onDraftChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                  workspaceDirectory={pane.workspace?.directory ?? null}
                   onModelChange={composer.handleModelChange}
+                  onPermissionModeToggle={readOnlySideChat ? undefined : () => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
                   onReasoningEffortChange={composer.handleReasoningEffortChange}
                   onPickAttachments={() =>
                     onPickComposerAttachments({
@@ -1433,10 +1439,10 @@ const PaneSurface = memo(function PaneSurface({
                     })
                   }
                   onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
-                  onRemoveCommentReference={(referenceID) => onRemoveComposerCommentReference(referenceID, pane.tabKey)}
-                  onSend={() =>
+                  onSend={(draftStateOverride) =>
                     void onSend({
                       attachmentError: composer.attachmentError,
+                      draftStateOverride,
                       paneID: pane.id,
                       selectedReasoningEffort: composer.selectedReasoningEffort,
                       selectedSkillIDs: composer.selectedSkillIDs,

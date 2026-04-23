@@ -42,6 +42,33 @@ function getComposerSendButton() {
   return screen.getByRole("button", { name: /^(Send|Sending) task$|^Resolve approval first$/ })
 }
 
+function setComposerDraftValue(input: HTMLElement, value: string) {
+  if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+    fireEvent.change(input, {
+      target: {
+        value,
+      },
+    })
+    return
+  }
+
+  act(() => {
+    input.dispatchEvent(new CustomEvent("desktop-composer-change", {
+      bubbles: true,
+      detail: { value },
+    }))
+  })
+}
+
+function expectComposerDraftValue(input: HTMLElement, value: string) {
+  if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+    expect(input).toHaveValue(value)
+    return
+  }
+
+  expect(input.textContent ?? "").toBe(value)
+}
+
 function getCreateSessionProjectSelect() {
   return screen.getByRole("combobox", { name: "Session project" })
 }
@@ -937,16 +964,12 @@ describe("App", () => {
     const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
     const sideChatDraft = within(nestedSideChat).getByRole("textbox", { name: "Task draft" })
 
-    fireEvent.change(sideChatDraft, {
-      target: {
-        value: "Drill into the parser failure from this reply",
-      },
-    })
+    setComposerDraftValue(sideChatDraft, "Drill into the parser failure from this reply")
     fireEvent.click(within(nestedSideChat).getByRole("button", { name: "Send task" }))
 
     await waitFor(() => {
       expect(within(nestedSideChat).getAllByText("Drill into the parser failure from this reply").length).toBeGreaterThan(0)
-      expect(within(nestedSideChat).getByRole("textbox", { name: "Task draft" })).toHaveValue("")
+      expectComposerDraftValue(within(nestedSideChat).getByRole("textbox", { name: "Task draft" }), "")
     })
   })
 
@@ -991,7 +1014,7 @@ describe("App", () => {
 
     fireEvent.click(within(inspector).getByRole("button", { name: "Use in chat" }))
     await waitFor(() => {
-      expect((screen.getByRole("textbox", { name: "Task draft" }) as HTMLTextAreaElement).value).toContain("Tighten hero spacing")
+      expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).toContain("Tighten hero spacing")
     })
 
     fireEvent.click(within(inspector).getByRole("button", { name: "Open External" }))
@@ -1137,8 +1160,8 @@ describe("App", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Confirm" }))
 
-    await screen.findByText("focus-files.tsx:L2-L3")
-    expect((screen.getByRole("textbox", { name: "Task draft" }) as HTMLTextAreaElement).value).toBe("")
+    await screen.findByText(/focus-files\.tsx:L2-L3/)
+    expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).toContain("@focus-files.tsx:L2-L3")
     expect(screen.getByText("Check how these values flow through the summary.")).toBeInTheDocument()
 
     fireEvent.click(getComposerSendButton())
@@ -1164,8 +1187,10 @@ describe("App", () => {
       expect(screen.queryByLabelText("Selected comment references")).not.toBeInTheDocument()
     })
 
-    const threadReferenceChip = screen.getByText("focus-files.tsx:L2-L3")
-    expect(threadReferenceChip.closest(".user-bubble-reference-chip")).not.toBeNull()
+    const threadReferenceChip = screen
+      .getAllByText(/focus-files\.tsx:L2-L3/)
+      .find((element) => element.closest(".user-bubble-reference-chip"))
+    expect(threadReferenceChip?.closest(".user-bubble-reference-chip")).not.toBeNull()
     expect(screen.getByText("Check how these values flow through the summary.")).toBeInTheDocument()
     expect(screen.queryByText("File feedback for src/focus-files.tsx (Lines 2-3)")).not.toBeInTheDocument()
   })
@@ -3605,11 +3630,7 @@ describe("App", () => {
       expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
     })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Show live output",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Show live output")
     fireEvent.click(getComposerSendButton())
 
     const reasoningText = await screen.findByText("Planning live update.")
@@ -3980,11 +4001,7 @@ describe("App", () => {
     expect(await screen.findByText("brief.pdf")).toBeInTheDocument()
 
     const draftInput = screen.getByRole("textbox", { name: "Task draft" })
-    fireEvent.change(draftInput, {
-      target: {
-        value: "keep this draft",
-      },
-    })
+    setComposerDraftValue(draftInput, "keep this draft")
     expect(draftInput).toHaveValue("keep this draft")
 
     fireEvent.click(within(questionCard).getByRole("button", { name: "Vercel" }))
@@ -4668,6 +4685,65 @@ describe("App", () => {
     expect(window.desktop!.getGlobalMcpServers).toHaveBeenCalledTimes(1)
   })
 
+  it("waits for the initial workspace load before starting git and file watchers", async () => {
+    const startupLoad = createDeferred<LoadedFolderWorkspace[]>()
+    window.desktop!.listFolderWorkspaces = vi.fn().mockImplementation(() => startupLoad.promise)
+    window.desktop!.updateWorkspaceWatchDirectories = vi.fn().mockResolvedValue({
+      directories: [],
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.listFolderWorkspaces).toHaveBeenCalledTimes(1)
+    })
+
+    expect(window.desktop!.updateWorkspaceWatchDirectories).not.toHaveBeenCalled()
+    expect(window.desktop!.gitGetCapabilities).not.toHaveBeenCalled()
+
+    await act(async () => {
+      startupLoad.resolve([
+        {
+          id: "C:\\Projects\\Atlas\\client",
+          directory: "C:\\Projects\\Atlas\\client",
+          name: "client",
+          created: 1,
+          updated: 2,
+          project: {
+            id: "project-atlas",
+            name: "Atlas",
+            worktree: "C:\\Projects\\Atlas",
+          },
+          sessions: [
+            {
+              id: "session-atlas-review",
+              projectID: "project-atlas",
+              directory: "C:\\Projects\\Atlas\\client",
+              title: "Atlas review",
+              created: 1,
+              updated: 2,
+            },
+          ],
+        },
+      ])
+      await startupLoad.promise
+    })
+
+    await screen.findByRole("button", { name: "Atlas review" })
+
+    await waitFor(() => {
+      expect(window.desktop!.updateWorkspaceWatchDirectories).toHaveBeenCalledWith({
+        directories: ["C:\\Projects\\Atlas\\client"],
+      })
+    })
+    await waitFor(() => {
+      expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledWith({
+        projectID: "project-atlas",
+        directory: "C:\\Projects\\Atlas\\client",
+      })
+    })
+  })
+
   it("shows each newly opened folder and keeps only the latest one selected", async () => {
     window.desktop!.pickProjectDirectory = vi
       .fn()
@@ -5170,9 +5246,7 @@ describe("App", () => {
     expect(await screen.findByRole("combobox", { name: "Session project" })).toBeInTheDocument()
     expect(screen.queryByRole("textbox", { name: "Session title" })).not.toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: { value: "Create the backend session" },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Create the backend session")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -5207,9 +5281,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
     await screen.findByRole("combobox", { name: "Session project" })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: { value: "Create session for src" },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Create session for src")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -5254,9 +5326,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create session for src" }))
     await screen.findByRole("combobox", { name: "Session project" })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: { value: "Create scratch session" },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Create scratch session")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -5294,9 +5364,7 @@ describe("App", () => {
     expect(screen.getByRole("textbox", { name: "Task draft" })).toBeInTheDocument()
     expect(getComposerSendButton()).toBeEnabled()
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: { value: "Ship the first session prompt" },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Ship the first session prompt")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -5339,9 +5407,7 @@ describe("App", () => {
       expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
     })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: { value: "Inspect the seeded workspace" },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Inspect the seeded workspace")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -5416,9 +5482,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
     await screen.findByRole("combobox", { name: "Session project" })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: { value: "Stream the first session prompt" },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Stream the first session prompt")
     await act(async () => {
       fireEvent.click(getComposerSendButton())
       await Promise.resolve()
@@ -6866,11 +6930,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Select model: GPT-5.4. Reasoning effort: High" })).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Trace the new toolbar flow",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Trace the new toolbar flow")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -6939,11 +6999,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Select project skills: layout-review" })).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Use the project skill selection for this task",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Use the project skill selection for this task")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -7007,11 +7063,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Select project MCP servers: Filesystem" })).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Keep the selected MCP servers on the project",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Keep the selected MCP servers on the project")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -7119,11 +7171,7 @@ describe("App", () => {
     expect(await screen.findByText("hero.png")).toBeInTheDocument()
     expect(screen.getByText("brief.pdf")).toBeInTheDocument()
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Use the references to refine the layout",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Use the references to refine the layout")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -7152,11 +7200,7 @@ describe("App", () => {
     })
 
     expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Audit the toolbar changes",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Audit the toolbar changes")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
@@ -7188,11 +7232,7 @@ describe("App", () => {
     expect(sendButton).toHaveAttribute("aria-keyshortcuts", "Enter")
     expect(draftInput).toHaveAttribute("aria-description", "Press Enter to send. Press Shift+Enter for a newline.")
 
-    fireEvent.change(draftInput, {
-      target: {
-        value: "Submit from the keyboard",
-      },
-    })
+    setComposerDraftValue(draftInput, "Submit from the keyboard")
 
     const enterEvent = createEvent.keyDown(draftInput, { key: "Enter", code: "Enter" })
     fireEvent(draftInput, enterEvent)
@@ -7213,11 +7253,7 @@ describe("App", () => {
 
     const draftInput = screen.getByRole("textbox", { name: "Task draft" })
 
-    fireEvent.change(draftInput, {
-      target: {
-        value: "Keep editing this draft",
-      },
-    })
+    setComposerDraftValue(draftInput, "Keep editing this draft")
 
     const shiftEnterEvent = createEvent.keyDown(draftInput, {
       key: "Enter",
@@ -7244,11 +7280,7 @@ describe("App", () => {
 
     const draftInput = screen.getByRole("textbox", { name: "Task draft" })
 
-    fireEvent.change(draftInput, {
-      target: {
-        value: "你好",
-      },
-    })
+    setComposerDraftValue(draftInput, "你好")
 
     fireEvent.compositionStart(draftInput)
 
@@ -7353,16 +7385,12 @@ describe("App", () => {
   it("appends a prompt and clears the draft input", async () => {
     render(<App />)
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Ship custom titlebar",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Ship custom titlebar")
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
       expect(screen.getAllByText("Ship custom titlebar").length).toBeGreaterThan(0)
-      expect(screen.getByRole("textbox", { name: "Task draft" })).toHaveValue("")
+      expectComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "")
     })
   })
 
@@ -7411,11 +7439,7 @@ describe("App", () => {
       expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
     })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Wait for the first token",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Wait for the first token")
     await act(async () => {
       fireEvent.click(getComposerSendButton())
       await Promise.resolve()
@@ -7518,11 +7542,7 @@ describe("App", () => {
       expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
     })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Show live output",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Show live output")
     await act(async () => {
       fireEvent.click(getComposerSendButton())
       await Promise.resolve()
@@ -7734,11 +7754,7 @@ describe("App", () => {
     const draftInput = screen.getByRole("textbox", { name: "Task draft" })
     const sendButton = getComposerSendButton()
 
-    fireEvent.change(draftInput, {
-      target: {
-        value: "First prompt",
-      },
-    })
+    setComposerDraftValue(draftInput, "First prompt")
     fireEvent.click(sendButton)
 
     expect(await screen.findByText("First reply")).toBeInTheDocument()
@@ -7746,11 +7762,7 @@ describe("App", () => {
       expect(sendButton).toBeEnabled()
     })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Second prompt",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Second prompt")
     fireEvent.click(getComposerSendButton())
 
     expect(await screen.findByText("Second reply")).toBeInTheDocument()
@@ -8000,11 +8012,7 @@ describe("App", () => {
       })
     })
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Task draft" }), {
-      target: {
-        value: "Measure current context pressure",
-      },
-    })
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Measure current context pressure")
 
     await act(async () => {
       fireEvent.click(getComposerSendButton())

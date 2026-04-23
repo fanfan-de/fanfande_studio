@@ -807,6 +807,51 @@ export interface ComposerCommentReference {
   prompt: string
 }
 
+export interface ComposerDraftState {
+  lexicalJSON: string
+  plainText: string
+}
+
+export interface ComposerFileTagData {
+  kind: "file"
+  id: string
+  label: string
+  filePath: string
+}
+
+export interface ComposerCommentTagData {
+  kind: "comment"
+  id: string
+  label: string
+  filePath: string
+  startLineNumber: number
+  endLineNumber: number
+  title: string
+  prompt: string
+}
+
+export interface ComposerSkillTagData {
+  kind: "skill"
+  id: string
+  label: string
+  skillID: string
+  description?: string
+}
+
+export interface ComposerMcpTagData {
+  kind: "mcp"
+  id: string
+  label: string
+  serverID: string
+  description?: string
+}
+
+export type ComposerTagData =
+  | ComposerFileTagData
+  | ComposerCommentTagData
+  | ComposerSkillTagData
+  | ComposerMcpTagData
+
 export type ColorMode = "system" | "light" | "dark"
 
 export type ComposerPermissionMode = "default" | "full-access"

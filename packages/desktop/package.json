@@ -16,8 +16,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@lexical/history": "^0.43.0",
+    "@lexical/plain-text": "^0.43.0",
+    "@lexical/react": "^0.43.0",
+    "@lexical/utils": "^0.43.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "lexical": "^0.43.0",
     "lucide-react": "^1.8.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"

@@ -103,7 +103,10 @@ describe("workspace watch manager", () => {
       } as unknown as fs.FSWatcher
     })
 
-    const manager = new WorkspaceWatchManager(watchFactory, () => false)
+    const manager = new WorkspaceWatchManager(
+      watchFactory,
+      (target) => target === workspaceA || target === workspaceB,
+    )
     const sender = createSender(9)
 
     manager.updateDirectories(sender, [workspaceA, workspaceB])
@@ -115,6 +118,35 @@ describe("workspace watch manager", () => {
 
     sender.destroy()
     expect(watchCalls[1]?.close).toHaveBeenCalledTimes(1)
+
+    manager.dispose()
+  })
+
+  it("skips directories that no longer exist instead of attempting to watch them", () => {
+    const missingWorkspace = "C:\\Projects\\Ghost\\app"
+    const workspace = "C:\\Projects\\Atlas\\client"
+    const watchCalls: WatchCall[] = []
+    const watchFactory = vi.fn((target: string, _options: fs.WatchOptions, listener: fs.WatchListener<string>) => {
+      const close = vi.fn()
+      watchCalls.push({
+        target,
+        listener,
+        close,
+      })
+      return {
+        close,
+      } as unknown as fs.FSWatcher
+    })
+
+    const manager = new WorkspaceWatchManager(
+      watchFactory,
+      (target) => target === workspace,
+    )
+    const sender = createSender(7)
+
+    expect(manager.updateDirectories(sender, [missingWorkspace, workspace])).toEqual([workspace])
+    expect(watchCalls).toHaveLength(1)
+    expect(watchCalls[0]?.target).toBe(workspace)
 
     manager.dispose()
   })
