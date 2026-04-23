@@ -6283,6 +6283,8 @@ describe("App", () => {
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
+    expect(screen.getByRole("radio", { name: /Warm Terra & Sand/i })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: /Sage \/ Slate/i })).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
     expect(screen.queryByRole("switch", { name: "Show debug region colors" })).not.toBeInTheDocument()
     expect(screen.queryByRole("switch", { name: "Show line debug colors" })).not.toBeInTheDocument()
@@ -6293,6 +6295,28 @@ describe("App", () => {
     expect(screen.queryByRole("switch", { name: "Show right rail" })).not.toBeInTheDocument()
     expect(screen.getByText("No rail")).toBeInTheDocument()
     expect(screen.queryByText("Line Colors")).not.toBeInTheDocument()
+  })
+
+  it("switches the accent theme from appearance settings", async () => {
+    render(<App />)
+
+    await waitFor(() => {
+      expect(document.documentElement).toHaveAttribute("data-brand-theme", "terra")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+
+    fireEvent.click(screen.getByRole("radio", { name: /Sage \/ Slate/i }))
+
+    expect(document.documentElement).toHaveAttribute("data-brand-theme", "sage")
+    expect(window.localStorage.getItem("desktop.brandTheme")).toBe("sage")
+
+    fireEvent.click(screen.getByRole("radio", { name: /Warm Terra & Sand/i }))
+
+    expect(document.documentElement).toHaveAttribute("data-brand-theme", "terra")
+    expect(window.localStorage.getItem("desktop.brandTheme")).toBe("terra")
   })
 
   it("groups debug overlays and trace visibility under developer mode", async () => {
@@ -8870,6 +8894,12 @@ describe("App", () => {
   })
 
   it("keeps the canvas tabs separate from the session top menu", () => {
+    expect(styles).toMatch(/--brand-primary:\s*#d46b63;/i)
+    expect(styles).toMatch(/--brand-accent-highlight:\s*#fca5a5;/i)
+    expect(styles).toMatch(/--semantic-error:\s*#9f1239;/i)
+    expect(styles).toMatch(/--surface-app-dark:\s*#1c1917;/i)
+    expect(styles).toMatch(/--brand-primary-dark:\s*#e17068;/i)
+    expect(styles).toMatch(/:root\[data-brand-theme="sage"\]\s*\{[^}]*--brand-primary:\s*#0f766e;[^}]*--brand-accent-highlight:\s*#2dd4bf;/is)
     expect(styles).toMatch(/\.canvas\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto auto;[^}]*gap:\s*14px;/s)
     expect(styles).toMatch(/\.canvas-top-stack\s*\{[^}]*display:\s*grid;[^}]*gap:\s*6px;/s)
     expect(styles).toMatch(/\.workbench-pane\s*\{[^}]*flex:\s*1 1 0;[^}]*position:\s*relative;[^}]*overflow:\s*hidden;/s)
@@ -8878,9 +8908,9 @@ describe("App", () => {
     expect(styles).toMatch(/\.workbench-pane-stage\s*\{[^}]*--pane-drop-preview-motion-duration:\s*220ms;[^}]*--pane-drop-preview-fade-duration:\s*180ms;[^}]*--pane-drop-preview-motion-curve:\s*cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\);[^}]*--pane-drop-preview-sheen-x:\s*50%;[^}]*--pane-drop-preview-sheen-y:\s*50%;/s)
     expect(styles).toMatch(/\.workbench-pane-live-region\s*\{[^}]*position:\s*absolute;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto auto;/s)
     expect(styles).toMatch(/\.window-controls-floating\s*\{[^}]*top:\s*5px;[^}]*gap:\s*10px;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
-    expect(styles).toMatch(/\.window-control\s*\{[^}]*width:\s*30px;[^}]*min-width:\s*30px;[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*border-radius:\s*8px;[^}]*color:\s*#5f7384;/s)
+    expect(styles).toMatch(/\.window-control\s*\{[^}]*color:\s*var\(--seg-text-2\);/s)
     expect(styles).toMatch(/\.window-control svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
-    expect(styles).toMatch(/\.window-control:hover,\s*\.window-control:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);[^}]*color:\s*#22303d;[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.window-control:hover,\s*\.window-control:focus-visible\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-text-2\)\s*12%,\s*transparent\);[^}]*color:\s*var\(--seg-text-1\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.panel-toolbar\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*padding:\s*0;[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.panel-toolbar\.window-drag-region\s*\{[^}]*-webkit-app-region:\s*drag;/s)
     expect(styles).toMatch(/\.shell-top-menu\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;/s)
@@ -8906,7 +8936,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.pane-tab-bar-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu,[\s\S]*?\.pane-tab-bar\s+\.canvas-region-top-menu-add-button\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.right-sidebar-view-host\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;[^}]*padding-right:\s*2px;/s)
-    expect(styles).toMatch(/\.pane-tab-merge-preview\s*\{[^}]*width:\s*12px;[^}]*height:\s*28px;[^}]*border-radius:\s*8px;[^}]*background:\s*rgba\(221,\s*236,\s*245,\s*0\.96\);[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.pane-tab-merge-preview\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--brand-accent-active\)\s*12%,\s*var\(--seg-panel\)\s*88%\);/s)
     expect(styles).toMatch(/\.pane-drop-targets\s*\{[^}]*grid-template-columns:\s*144px minmax\(0,\s*1fr\) 144px;[^}]*grid-template-rows:\s*10px minmax\(0,\s*1fr\) 108px;[^}]*grid-template-areas:\s*[\s\S]*"\.\s+top\s+\."[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
     expect(styles).toMatch(/\.pane-drop-targets\.is-top-row\s*\{[^}]*grid-template-areas:\s*[\s\S]*"top top top"[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
     expect(styles).toMatch(/\.pane-drop-target\s*\{[^}]*pointer-events:\s*auto;[^}]*background:\s*transparent;/s)
@@ -8914,28 +8944,41 @@ describe("App", () => {
     expect(styles).toMatch(/\.pane-drop-preview\.is-left\s*\{[^}]*--pane-drop-preview-sheen-x:\s*18%;[^}]*--pane-drop-preview-sheen-y:\s*50%;/s)
     expect(styles).toMatch(/\.pane-drop-preview\.is-top\s*\{[^}]*--pane-drop-preview-sheen-x:\s*50%;[^}]*--pane-drop-preview-sheen-y:\s*18%;/s)
     expect(styles).toMatch(/\.pane-drop-preview-current,\s*\.pane-drop-preview-incoming\s*\{[^}]*position:\s*absolute;[^}]*transition:[^}]*top var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)[^}]*left var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)[^}]*width var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)[^}]*height var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)/s)
-    expect(styles).toMatch(/\.pane-drop-preview-incoming\s*\{[^}]*background:\s*rgba\(221,\s*236,\s*245,\s*0\.94\);/s)
-    expect(styles).toMatch(/\.pane-drop-preview-current\s*\{[^}]*background:\s*rgba\(248,\s*251,\s*255,\s*0\.82\);/s)
+    expect(styles).toMatch(/\.pane-drop-preview-incoming\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--brand-accent-active\)\s*12%,\s*var\(--seg-panel\)\s*88%\);/s)
+    expect(styles).toMatch(/\.pane-drop-preview-current\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-panel\)\s*88%,\s*white\s*12%\);/s)
     expect(styles).toMatch(/\.canvas-top-menu-git-trigger svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
-    expect(styles).toMatch(/\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
-    expect(styles).toMatch(/\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
+    expect(styles).toMatch(
+      /\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible,[\s\S]*?\{[^}]*background:\s*var\(--seg-panel\);/s,
+    )
+    expect(styles).toMatch(
+      /\.top-menu-view-button\.is-active,[\s\S]*?\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*transparent\);/s,
+    )
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\s*\{[^}]*border-radius:\s*8px;/s)
-    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail:hover,\s*\.sidebar-toggle-button\.is-rail:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
-    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-active:hover,\s*\.sidebar-toggle-button\.is-rail\.is-active:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.14\);/s)
+    expect(styles).toMatch(
+      /\.sidebar-toggle-button\.is-rail:hover,\s*\.sidebar-toggle-button\.is-rail:focus-visible,[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*68%,\s*var\(--seg-panel\)\s*32%\);/s,
+    )
+    expect(styles).toMatch(
+      /\.sidebar-toggle-button\.is-rail\.is-active,[\s\S]*?\.sidebar-toggle-button\.is-rail\.is-active:hover,\s*\.sidebar-toggle-button\.is-rail\.is-active:focus-visible,[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*68%,\s*var\(--seg-panel\)\s*32%\);/s,
+    )
     expect(styles).toMatch(/\.session-tab\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-close\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger,\s*\.session-tab-close,[\s\S]*?\.canvas-region-top-menu-add-button\s*\{[^}]*border-radius:\s*8px;/s)
-    expect(styles).toMatch(/\.session-tab-close:hover,\s*\.session-tab-close:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*color:\s*#22303d;/s)
-    expect(styles).toMatch(/\.canvas-region-top-menu \.sidebar-toggle-button\.is-top-menu:hover,\s*\.canvas-region-top-menu-add-button:hover\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.08\);/s)
-    expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*82%,\s*#eef2f7\s*18%\);/s)
-    expect(styles).toMatch(/--canvas-region-tab-hover:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*62%,\s*#ffffff\s*38%\);/s)
+    expect(styles).toMatch(
+      /\.canvas-region-top-menu\s+\.session-tab-close:hover,\s*\.canvas-region-top-menu\s+\.session-tab-close:focus-visible,[\s\S]*?\.pane-tab-bar\s+\.session-tab-close:hover,\s*\.pane-tab-bar\s+\.session-tab-close:focus-visible\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--seg-panel\)\s*28%\);[^}]*color:\s*var\(--seg-accent-strong\);/s,
+    )
+    expect(styles).toMatch(
+      /\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.canvas-region-top-menu-add-button:hover,[\s\S]*?\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu:focus-visible,\s*\.canvas-region-top-menu-add-button:focus-visible[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--seg-panel\)\s*28%\);/s,
+    )
+    expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*84%,\s*var\(--seg-panel-muted\)\s*16%\);/s)
+    expect(styles).toMatch(/--canvas-region-tab-hover:\s*color-mix\(in srgb,\s*var\(--seg-panel\)\s*66%,\s*var\(--seg-panel-muted\)\s*34%\);/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*background:\s*var\(--pane-tab-inactive-bg\);[^}]*color:\s*var\(--seg-text-2\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*34px;[^}]*margin-top:\s*6px;[^}]*background:\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*left top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*right top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*var\(--pane-tab-active-bg\);[^}]*border:\s*0;[^}]*transform:\s*none;[^}]*box-shadow:\s*inset 0 1px 0 var\(--pane-tab-border\),\s*0 10px 18px rgba\(15,\s*23,\s*42,\s*0\.04\);/s,
+      /\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*34px;[^}]*margin-top:\s*6px;[^}]*background:\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*left top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*right top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*var\(--pane-tab-active-bg\);[^}]*border:\s*0;[^}]*transform:\s*none;/s,
     )
+    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*box-shadow:\s*inset 0 1px 0 var\(--pane-tab-border\),\s*0 10px 18px rgba\(15,\s*23,\s*42,\s*0\.05\);/s)
     expect(styles).toMatch(
       /\.pane-tab-bar\s+\.session-tab\.is-active::before\s*\{[^}]*left:\s*calc\(var\(--pane-tab-curve\) - 1px\);[^}]*right:\s*calc\(var\(--pane-tab-curve\) - 1px\);[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--pane-tab-active-bg\);/s,
     )
@@ -8998,10 +9041,13 @@ describe("App", () => {
 
   it("styles composer selector buttons as bordered controls", () => {
     expect(styles).toMatch(
-      /\.composer-selector-button\s*\{[^}]*min-height:\s*34px;[^}]*border:\s*1px solid rgba\(166,\s*186,\s*208,\s*0\.42\);[^}]*background:\s*#f5f8fb;/s,
+      /\.composer-selector-button\s*\{[^}]*min-height:\s*34px;/s,
     )
     expect(styles).toMatch(
-      /\.composer-selector-button:hover,\s*\.composer-selector-button:focus-visible\s*\{[^}]*border-color:\s*rgba\(22,\s*119,\s*200,\s*0\.28\);/s,
+      /\.composer-utility-chip,[\s\S]*?\.composer-selector-button,[\s\S]*?\.composer-attachment-chip\s*\{[^}]*border:\s*1px solid color-mix\(in srgb,\s*var\(--seg-border\)\s*96%,\s*transparent\);[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-panel-muted\)\s*88%,\s*var\(--seg-panel\)\s*12%\);/s,
+    )
+    expect(styles).toMatch(
+      /\.composer-selector-button:hover,\s*\.composer-selector-button:focus-visible,[\s\S]*?\{[^}]*border-color:\s*color-mix\(in srgb,\s*var\(--seg-accent\)\s*34%,\s*var\(--seg-border\)\);/s,
     )
     expect(styles).toMatch(
       /\.composer-menu-panel\s*\{[^}]*bottom:\s*calc\(100%\s*\+\s*8px\);[^}]*max-height:\s*min\(320px,\s*calc\(100dvh - 180px\)\);[^}]*overflow:\s*auto;/s,
@@ -9030,7 +9076,8 @@ describe("App", () => {
   })
 
   it("styles assistant turns as three stacked panels with call separators", () => {
-    expect(styles).toMatch(/\.assistant-section\s*\{[^}]*border:\s*1px solid rgba\(166,\s*186,\s*208,\s*0\.42\);[^}]*padding:\s*14px 16px;/s)
+    expect(styles).toMatch(/\.permission-request-card\s*\{[^}]*border-left-color:\s*var\(--seg-warning\);[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-warning\)\s*8%,\s*var\(--surface-trace\)\);/s)
+    expect(styles).toMatch(/\.ask-user-question-card\s*\{[^}]*border-left-color:\s*var\(--seg-accent\);[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--surface-trace\)\s*28%\);/s)
     expect(styles).toMatch(/\.assistant-shell\.is-sectioned\s*\{[^}]*border:\s*0;[^}]*padding:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(
       /\.assistant-section\.is-reasoning,\s*\.assistant-section\.is-response,\s*\.assistant-section\.is-tools\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*padding:\s*0;/s,
@@ -9061,10 +9108,10 @@ describe("App", () => {
     expect(styles).toMatch(
       /\.settings-page-nav,\s*\.settings-page-primary-nav\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;[^}]*gap:\s*20px;/s,
     )
-    expect(styles).toMatch(/\.settings-primary-nav-group-label\s*\{[^}]*font-size:\s*12px;[^}]*color:\s*#98a2ad;/s)
+    expect(styles).toMatch(/\.settings-primary-nav-group-label,[\s\S]*?\.settings-helper-text,[\s\S]*?\.settings-page-copy,[\s\S]*?\.settings-section-header p,[\s\S]*?\.provider-row-copy,[\s\S]*?\.provider-model-empty,[\s\S]*?\.settings-toggle-copy small\s*\{[^}]*color:\s*var\(--seg-text-3\);/s)
     expect(styles).toMatch(
       /\.settings-primary-nav-item\s*\{[^}]*border:\s*1px solid transparent;[^}]*border-radius:\s*12px;[^}]*background:\s*transparent;[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);/s,
     )
-    expect(styles).toMatch(/\.settings-primary-nav-item\.is-active\s*\{[^}]*background:\s*#e6e7e8;[^}]*color:\s*#182532;/s)
+    expect(styles).toMatch(/\.settings-primary-nav-item\.is-active\s*\{[^}]*border-color:\s*color-mix\(in srgb,\s*var\(--seg-accent\)\s*24%,\s*var\(--seg-border\)\);[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*80%,\s*var\(--seg-panel\)\s*20%\);[^}]*color:\s*var\(--seg-text-1\);/s)
   })
 })

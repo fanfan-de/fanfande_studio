@@ -2,9 +2,12 @@ import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEve
 import { TerminalTabs } from "./TerminalTabs"
 import { TerminalView } from "./TerminalView"
 import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
+import type { BrandTheme, ColorMode } from "../types"
 
 interface TerminalPanelProps {
   activeSession: TerminalSessionRecord | null
+  brandTheme: BrandTheme
+  colorMode: ColorMode
   isOpen: boolean
   panelHeight: number
   sessions: TerminalSessionRecord[]
@@ -28,6 +31,8 @@ function clampHeight(value: number) {
 
 export const TerminalPanel = memo(function TerminalPanel({
   activeSession,
+  brandTheme,
+  colorMode,
   isOpen,
   panelHeight,
   sessions,
@@ -145,6 +150,8 @@ export const TerminalPanel = memo(function TerminalPanel({
 
       {activeSession ? (
         <TerminalView
+          brandTheme={brandTheme}
+          colorMode={colorMode}
           panelHeight={renderedHeight}
           session={activeSession}
           onInput={onTerminalInput}

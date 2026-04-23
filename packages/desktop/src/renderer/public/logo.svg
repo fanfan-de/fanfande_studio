@@ -1,7 +1,7 @@
 <svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 724" width="740" height="724">
 	<style>
-		.s0 { fill: #101b29 } 
-		.s1 { fill: #fbfcfc } 
+		.s0 { fill: #0f172a } 
+		.s1 { fill: #2dd4bf } 
 	</style>
 	<g id="Background">
 		<path id="Path 0" class="s0" d="m0 362v362h740v-724h-740z"/>

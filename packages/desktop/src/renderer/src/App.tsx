@@ -150,8 +150,10 @@ export function App() {
     assistantTraceVisibility,
     appShellRef,
     appShellStyle,
+    brandTheme,
     handleActivityRailVisibilityChange,
     handleAssistantTraceVisibilityChange,
+    handleBrandThemeChange,
     handleAgentDebugTraceChange,
     handleDebugLineColorsChange,
     handleDebugUiRegionsChange,
@@ -789,7 +791,9 @@ export function App() {
                 onToggleRightSidebar={handleRightSidebarToggle}
               />
               <TerminalArea
+                brandTheme={brandTheme}
                 collapsedTogglePortalTarget={isActivityRailVisible ? activityRailTerminalSlot : null}
+                colorMode={colorMode}
                 currentWorkspaceDirectory={terminalWorkspaceDirectory}
                 defaultCwd={agentDefaultDirectory}
                 storageKey={WORKBENCH_TERMINAL_STORAGE_KEY}
@@ -861,6 +865,7 @@ export function App() {
           deletingPromptPresetID={deletingPromptPresetID}
           deletingProviderID={deletingProviderID}
           assistantTraceVisibility={assistantTraceVisibility}
+          brandTheme={brandTheme}
           colorMode={colorMode}
           isCreatingPromptPreset={isCreatingPromptPreset}
           isActivityRailVisible={isActivityRailVisible}
@@ -903,6 +908,7 @@ export function App() {
           savingProviderID={savingProviderID}
           selectedPromptPreset={selectedPromptPreset}
           selectionDraft={selectionDraft}
+          onBrandThemeChange={handleBrandThemeChange}
           onColorModeChange={handleColorModeChange}
           onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
           onAssistantTraceVisibilityChange={handleAssistantTraceVisibilityChange}
@@ -1562,14 +1568,18 @@ const PaneSurface = memo(function PaneSurface({
 })
 
 interface TerminalAreaProps {
+  brandTheme: "terra" | "sage"
   collapsedTogglePortalTarget?: Element | null
+  colorMode: "system" | "light" | "dark"
   currentWorkspaceDirectory: string | null
   defaultCwd: string
   storageKey?: string
 }
 
 const TerminalArea = memo(function TerminalArea({
+  brandTheme,
   collapsedTogglePortalTarget,
+  colorMode,
   currentWorkspaceDirectory,
   defaultCwd,
   storageKey,
@@ -1609,6 +1619,8 @@ const TerminalArea = memo(function TerminalArea({
         : null}
       <TerminalPanel
         activeSession={activeSession}
+        brandTheme={brandTheme}
+        colorMode={colorMode}
         isOpen={isOpen}
         panelHeight={panelHeight}
         sessions={sessions}

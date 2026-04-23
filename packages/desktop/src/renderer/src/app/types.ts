@@ -876,6 +876,7 @@ export type ComposerTagData =
   | ComposerMcpTagData
 
 export type ColorMode = "system" | "light" | "dark"
+export type BrandTheme = "terra" | "sage"
 
 export type ComposerPermissionMode = "default" | "full-access"
 export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"

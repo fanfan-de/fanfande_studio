@@ -121,8 +121,8 @@
 .sidebar-resizer:hover::before,
 .sidebar-resizer:focus-visible::before,
 .sidebar-resizer.is-active::before {
-  background: #1677c8;
-  box-shadow: 0 0 0 3px rgba(22, 119, 200, 0.14);
+  background: var(--seg-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 14%, transparent);
 }
 
 .sidebar-resizer:focus-visible {
@@ -179,7 +179,7 @@
 .sidebar-settings:hover,
 .row-action:hover {
   color: #1d2a35;
-  background: rgba(22, 119, 200, 0.08);
+  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
   box-shadow: none;
 }
 
@@ -355,8 +355,8 @@
 
 .project-row.is-active {
   border-color: transparent;
-  background: rgba(22, 119, 200, 0.1);
-  color: #17344f;
+  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
+  color: var(--seg-accent-strong);
   box-shadow: none;
 }
 
@@ -406,8 +406,8 @@
 
 .session-row.is-active {
   border-color: transparent;
-  color: #17344f;
-  background: rgba(22, 119, 200, 0.1);
+  color: var(--seg-accent-strong);
+  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
   box-shadow: none;
 }
 
@@ -455,8 +455,8 @@
 }
 
 .skills-create-input:focus-visible {
-  border-color: rgba(22, 119, 200, 0.6);
-  box-shadow: 0 0 0 3px rgba(22, 119, 200, 0.12);
+  border-color: color-mix(in srgb, var(--seg-accent) 42%, var(--seg-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 12%, transparent);
 }
 
 .skills-create-actions {
@@ -477,9 +477,9 @@
 }
 
 .skills-create-actions button[type="submit"] {
-  border-color: rgba(22, 119, 200, 0.36);
-  background: rgba(22, 119, 200, 0.12);
-  color: #17344f;
+  border-color: color-mix(in srgb, var(--seg-accent) 34%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-accent-soft) 82%, transparent);
+  color: var(--seg-accent-strong);
 }
 
 .skills-create-actions button:disabled {
@@ -533,8 +533,8 @@
 }
 
 .skill-tree-row.is-active {
-  background: rgba(22, 119, 200, 0.1);
-  color: #17344f;
+  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
+  color: var(--seg-accent-strong);
 }
 
 .skill-tree-leading {
@@ -578,7 +578,7 @@
   gap: 8px;
   padding: 0 8px;
   border-radius: 8px;
-  background: rgba(22, 119, 200, 0.08);
+  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
 }
 
 .skill-tree-rename-input {
@@ -586,16 +586,16 @@
   min-width: 0;
   min-height: 28px;
   padding: 0 8px;
-  border: 1px solid rgba(22, 119, 200, 0.25);
+  border: 1px solid color-mix(in srgb, var(--seg-accent) 24%, var(--seg-border));
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
-  color: #17344f;
+  color: var(--seg-accent-strong);
   outline: none;
 }
 
 .skill-tree-rename-input:focus-visible {
-  border-color: rgba(22, 119, 200, 0.6);
-  box-shadow: 0 0 0 3px rgba(22, 119, 200, 0.12);
+  border-color: color-mix(in srgb, var(--seg-accent) 42%, var(--seg-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 12%, transparent);
 }
 
 .sidebar-settings {
@@ -603,8 +603,8 @@
 }
 
 .sidebar-settings.is-active {
-  background: rgba(22, 119, 200, 0.12);
-  color: #123a5a;
+  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
+  color: var(--seg-accent-strong);
 }
 
 .sidebar-toggle-button.is-top-menu svg {
@@ -650,5 +650,76 @@
 }
 
 .project-row.is-active .project-row-leading {
-  color: #1677c8;
+  color: var(--seg-accent);
+}
+
+/* Sage / Teal & Slate theme overrides */
+
+.sidebar-action,
+.sidebar-toggle-button.is-sidebar,
+.sidebar-toggle-button.is-rail,
+.sidebar-settings,
+.row-action,
+.project-row-action,
+.skill-tree-row-action {
+  background: transparent;
+  color: var(--seg-text-2);
+}
+
+.sidebar-action:hover,
+.sidebar-action:focus-visible,
+.sidebar-toggle-button.is-sidebar:hover,
+.sidebar-toggle-button.is-sidebar:focus-visible,
+.sidebar-toggle-button.is-sidebar.is-active,
+.sidebar-toggle-button.is-rail:hover,
+.sidebar-toggle-button.is-rail:focus-visible,
+.sidebar-toggle-button.is-rail.is-active,
+.sidebar-toggle-button.is-rail.is-active:hover,
+.sidebar-toggle-button.is-rail.is-active:focus-visible,
+.sidebar-settings:hover,
+.sidebar-settings:focus-visible,
+.row-action:hover,
+.row-action:focus-visible,
+.project-row-action:hover,
+.project-row-action:focus-visible,
+.skill-tree-row-action:hover,
+.skill-tree-row-action:focus-visible {
+  background: color-mix(in srgb, var(--seg-accent-soft) 68%, var(--seg-panel) 32%);
+  color: var(--seg-accent-strong);
+  box-shadow: none;
+}
+
+.project-row,
+.session-row,
+.skill-tree-row {
+  background: transparent;
+  color: var(--seg-text-2);
+}
+
+.project-row:hover,
+.project-row:focus-visible,
+.session-row:hover,
+.session-row:focus-visible,
+.skill-tree-row:hover,
+.skill-tree-row:focus-visible {
+  background: color-mix(in srgb, var(--seg-panel-muted) 86%, transparent);
+  color: var(--seg-text-1);
+}
+
+.project-row.is-active,
+.session-row.is-active,
+.skill-tree-row.is-active {
+  background: var(--seg-panel);
+  border: 1px solid var(--seg-border);
+  box-shadow: none;
+}
+
+.project-row.is-active .project-row-leading {
+  color: var(--seg-accent);
+}
+
+.project-row-meta,
+.session-row-meta,
+.skill-tree-row-meta {
+  color: var(--seg-text-3);
 }

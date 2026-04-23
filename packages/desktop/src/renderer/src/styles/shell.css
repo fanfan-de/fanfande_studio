@@ -265,3 +265,27 @@
   background: rgba(166, 75, 60, 0.1);
   color: var(--seg-danger);
 }
+
+/* Sage / Teal & Slate theme overrides */
+
+.window-shell {
+  background: var(--seg-shell);
+}
+
+.window-control {
+  color: var(--seg-text-2);
+  background: transparent;
+}
+
+.window-control:hover,
+.window-control:focus-visible {
+  background: color-mix(in srgb, var(--seg-text-2) 12%, transparent);
+  color: var(--seg-text-1);
+  transform: none;
+}
+
+.window-control.is-close:hover,
+.window-control.is-close:focus-visible {
+  background: color-mix(in srgb, var(--seg-danger) 12%, transparent);
+  color: var(--seg-danger);
+}

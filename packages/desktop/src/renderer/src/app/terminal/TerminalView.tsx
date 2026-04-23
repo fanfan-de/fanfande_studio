@@ -2,6 +2,7 @@ import { memo, useEffect, useEffectEvent, useRef } from "react"
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
 import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
+import type { BrandTheme, ColorMode } from "../types"
 
 function shouldAutoFocusTerminal(container: HTMLElement) {
   const activeElement = document.activeElement
@@ -20,6 +21,8 @@ function shouldAutoFocusTerminal(container: HTMLElement) {
 }
 
 interface TerminalViewProps {
+  brandTheme: BrandTheme
+  colorMode: ColorMode
   panelHeight: number
   session: TerminalSessionRecord
   onInput: (data: string) => void | Promise<void>
@@ -28,7 +31,51 @@ interface TerminalViewProps {
   subscribeToTerminalStream: (ptyID: string, listener: (event: TerminalStreamEvent) => void) => () => void
 }
 
+function readCssVariable(styles: CSSStyleDeclaration, name: string, fallback: string) {
+  const value = styles.getPropertyValue(name).trim()
+  return value || fallback
+}
+
+function getTerminalTheme() {
+  const styles = getComputedStyle(document.documentElement)
+  const background = readCssVariable(styles, "--surface-code-strong", "#14100f")
+  const surface = readCssVariable(styles, "--surface-code", "#27272a")
+  const foreground = readCssVariable(styles, "--text-on-dark", "#fafaf9")
+  const accent = readCssVariable(styles, "--brand-accent-active", "#fca5a5")
+  const brand = readCssVariable(styles, "--brand-primary-active", "#d46b63")
+  const success = readCssVariable(styles, "--semantic-success", "#65a30d")
+  const warning = readCssVariable(styles, "--semantic-warning", "#b45309")
+  const error = readCssVariable(styles, "--semantic-error", "#9f1239")
+  const info = readCssVariable(styles, "--semantic-info", "#6366f1")
+  const tertiary = readCssVariable(styles, "--text-tertiary", "#a8a29e")
+
+  return {
+    background,
+    foreground,
+    cursor: accent,
+    cursorAccent: background,
+    black: surface,
+    red: error,
+    green: success,
+    yellow: warning,
+    blue: info,
+    magenta: brand,
+    cyan: accent,
+    white: foreground,
+    brightBlack: tertiary,
+    brightRed: brand,
+    brightGreen: success,
+    brightYellow: warning,
+    brightBlue: info,
+    brightMagenta: accent,
+    brightCyan: accent,
+    brightWhite: "#ffffff",
+  }
+}
+
 export const TerminalView = memo(function TerminalView({
+  brandTheme,
+  colorMode,
   panelHeight,
   session,
   onInput,
@@ -45,9 +92,16 @@ export const TerminalView = memo(function TerminalView({
   const lastMeasuredDimensionsRef = useRef<{ rows: number; cols: number } | null>(null)
   const writeQueueRef = useRef<string[]>([])
   const isFlushingRef = useRef(false)
+  const themeSignature = `${brandTheme}:${colorMode}`
   const handleInput = useEffectEvent(onInput)
   const handleResize = useEffectEvent(onResize)
   const handleSnapshotChange = useEffectEvent(onSnapshotChange)
+  const applyTerminalTheme = useEffectEvent(() => {
+    const terminal = terminalRef.current
+    if (!terminal) return
+    if (!("options" in terminal) || !terminal.options) return
+    terminal.options.theme = getTerminalTheme()
+  })
   const fitTerminal = useEffectEvent(() => {
     const fitAddon = fitAddonRef.current
     if (!fitAddon) return
@@ -139,28 +193,7 @@ export const TerminalView = memo(function TerminalView({
       fontSize: 13,
       lineHeight: 1.25,
       scrollback: 5_000,
-      theme: {
-        background: "#0f1b26",
-        foreground: "#dbe7f3",
-        cursor: "#8cd2ff",
-        cursorAccent: "#0f1b26",
-        black: "#1a2c3a",
-        red: "#ff7a70",
-        green: "#7fd89b",
-        yellow: "#e5c67a",
-        blue: "#79b8ff",
-        magenta: "#d9a9ff",
-        cyan: "#7ddce0",
-        white: "#dbe7f3",
-        brightBlack: "#567086",
-        brightRed: "#ff9f97",
-        brightGreen: "#9aeab2",
-        brightYellow: "#f2d693",
-        brightBlue: "#96c9ff",
-        brightMagenta: "#e7beff",
-        brightCyan: "#9fe9ec",
-        brightWhite: "#ffffff",
-      },
+      theme: getTerminalTheme(),
     })
     const fitAddon = new FitAddon()
     fitAddonRef.current = fitAddon
@@ -225,6 +258,21 @@ export const TerminalView = memo(function TerminalView({
       flushFrameRef.current = null
     }
   }, [fitTerminal, handleInput, handleSnapshotChange, session.ptyID])
+
+  useEffect(() => {
+    applyTerminalTheme()
+    if (colorMode !== "system" || typeof window.matchMedia !== "function") return
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+    const handleChange = () => applyTerminalTheme()
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange)
+      return () => mediaQuery.removeEventListener("change", handleChange)
+    }
+
+    mediaQuery.addListener(handleChange)
+    return () => mediaQuery.removeListener(handleChange)
+  }, [applyTerminalTheme, colorMode, themeSignature])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

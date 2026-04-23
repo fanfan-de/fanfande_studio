@@ -729,8 +729,8 @@
 .permission-request-meta {
   min-width: 0;
   padding: 12px;
-  border: 1px solid rgba(166, 186, 208, 0.42);
-  background: #f8fbff;
+  border: 1px solid color-mix(in srgb, var(--seg-border) 90%, transparent);
+  background: color-mix(in srgb, var(--seg-panel-muted) 78%, var(--seg-panel) 22%);
   display: grid;
   gap: 6px;
 }
@@ -769,8 +769,8 @@
 }
 
 .permission-request-disclosure {
-  border: 1px solid rgba(166, 186, 208, 0.34);
-  background: #f8fbff;
+  border: 1px solid color-mix(in srgb, var(--seg-border) 84%, transparent);
+  background: color-mix(in srgb, var(--seg-panel-muted) 78%, var(--seg-panel) 22%);
 }
 
 .permission-request-disclosure summary {
@@ -871,7 +871,7 @@
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: #1677c8;
+  accent-color: var(--seg-accent);
 }
 
 .ask-user-question-option .primary-button,
@@ -890,15 +890,15 @@
   width: 100%;
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid rgba(166, 186, 208, 0.5);
+  border: 1px solid color-mix(in srgb, var(--seg-border) 96%, transparent);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.96);
-  color: #17232f;
+  color: var(--seg-text-1);
 }
 
 .ask-user-question-freeform-input:focus-visible {
-  border-color: rgba(22, 119, 200, 0.56);
-  box-shadow: 0 0 0 3px rgba(22, 119, 200, 0.12);
+  border-color: color-mix(in srgb, var(--seg-accent) 40%, var(--seg-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 12%, transparent);
 }
 
 .ask-user-question-actions {
@@ -1291,9 +1291,9 @@
 }
 
 .user-bubble-reference-chip {
-  border-color: rgba(111, 148, 187, 0.34);
-  background: #eef5fb;
-  color: #123a5a;
+  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-accent-soft) 78%, var(--seg-panel) 22%);
+  color: var(--seg-accent-strong);
 }
 
 .user-bubble-chip svg {
@@ -1309,4 +1309,204 @@
   white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+@keyframes sage-thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    box-shadow: none;
+  }
+
+  50% {
+    opacity: 1;
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--brand-accent-active) 48%, transparent);
+  }
+}
+
+@keyframes sage-thinking-caret {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Sage / Teal & Slate theme overrides */
+
+.assistant-shell.is-streaming,
+.assistant-shell.is-sectioned.is-streaming {
+  border: 0;
+  box-shadow: none;
+}
+
+.assistant-shell.is-streaming .assistant-section.is-reasoning .trace-item,
+.assistant-shell.is-streaming .assistant-section.is-tools .trace-item,
+.assistant-shell.is-streaming .assistant-ephemeral-state {
+  animation: sage-thinking-pulse 2s ease-in-out infinite;
+}
+
+.assistant-section.is-reasoning .trace-item,
+.assistant-section.is-tools .trace-item,
+.assistant-section.is-file-change .trace-item,
+.assistant-ephemeral-state,
+.permission-request-card,
+.ask-user-question-card {
+  border: 1px solid var(--seg-border);
+  border-left: 3px solid var(--seg-accent);
+  border-radius: var(--seg-radius-xs);
+  background: var(--surface-trace);
+  color: var(--seg-text-1);
+  box-shadow: none;
+}
+
+.assistant-section.is-tools .trace-item {
+  border-left-color: var(--brand-accent-active);
+}
+
+.assistant-section.is-file-change .trace-item {
+  border-left-color: var(--seg-info);
+}
+
+.permission-request-card {
+  border-left-color: var(--seg-warning);
+  background: color-mix(in srgb, var(--seg-warning) 8%, var(--surface-trace));
+}
+
+.ask-user-question-card {
+  border-left-color: var(--seg-accent);
+  background: color-mix(in srgb, var(--seg-accent-soft) 72%, var(--surface-trace) 28%);
+}
+
+.assistant-section.is-response,
+.assistant-section.is-response .trace-item,
+.assistant-section.is-response .trace-kind-text {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.assistant-section.is-debug {
+  background: color-mix(in srgb, var(--surface-trace) 88%, var(--seg-panel) 12%);
+}
+
+.assistant-section-label,
+.trace-item-detail,
+.trace-item-debug,
+.trace-item-debug-label,
+.trace-item-plain-detail,
+.assistant-section-empty,
+.assistant-reasoning-separator,
+.trace-item-inline-status,
+.trace-item-subsection-label {
+  color: var(--seg-text-3);
+}
+
+.trace-item-inline-title,
+.trace-item-toggle-line,
+.trace-item-text,
+.trace-item-plain-text,
+.trace-item-title,
+.assistant-section.is-response .trace-item-text,
+.assistant-section.is-response .trace-item-detail {
+  color: var(--seg-text-1);
+}
+
+.trace-kind-system {
+  background: color-mix(in srgb, var(--seg-panel-muted) 82%, var(--seg-panel) 18%);
+  border-left-color: var(--seg-border-strong);
+}
+
+.trace-kind-reasoning {
+  background: color-mix(in srgb, var(--surface-trace) 88%, var(--seg-panel) 12%);
+  border-left-color: var(--brand-accent-active);
+}
+
+.trace-kind-tool {
+  background: color-mix(in srgb, var(--surface-trace) 84%, var(--seg-panel) 16%);
+  border-left-color: var(--seg-info);
+}
+
+.assistant-reasoning-separator::before,
+.assistant-reasoning-separator::after,
+.assistant-response-actions,
+.trace-item-debug {
+  border-color: var(--seg-divider);
+  background: none;
+}
+
+.assistant-reasoning-separator::before,
+.assistant-reasoning-separator::after {
+  background: var(--seg-divider);
+}
+
+.assistant-shell.is-streaming .assistant-header h3 {
+  background: transparent;
+}
+
+.trace-item.is-streaming .trace-item-text::after {
+  background: linear-gradient(180deg, var(--brand-accent-active), var(--brand-accent-active));
+  animation: sage-thinking-caret 1.8s ease-in-out infinite;
+}
+
+.trace-item-status.is-running,
+.trace-item-status.is-working {
+  color: var(--brand-accent-active);
+}
+
+.trace-item-status.is-success {
+  color: var(--seg-success);
+}
+
+.trace-item-status.is-waiting-approval {
+  color: var(--seg-warning);
+}
+
+.trace-item-status.is-error {
+  color: var(--seg-danger);
+}
+
+.user-bubble,
+.inline-side-chat-thread .user-bubble {
+  border: 1px solid color-mix(in srgb, var(--seg-accent) 14%, var(--seg-border));
+  background: var(--surface-user-bubble);
+  color: var(--seg-text-1);
+  box-shadow: none;
+}
+
+.user-bubble-chip {
+  border: 1px solid var(--seg-border);
+  background: color-mix(in srgb, var(--surface-user-bubble) 68%, var(--seg-panel) 32%);
+  color: var(--seg-text-2);
+}
+
+.user-bubble-reference-chip,
+.trace-item-file-chip {
+  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-accent-soft) 80%, var(--seg-panel) 20%);
+  color: var(--seg-accent-strong);
+}
+
+.trace-item-file-chip:hover,
+.trace-item-file-chip:focus-visible {
+  border-color: color-mix(in srgb, var(--seg-accent) 48%, var(--seg-border));
+  background: var(--seg-panel);
+  color: var(--seg-accent-strong);
+}
+
+.user-bubble-reference-chip svg,
+.trace-item-file-chip svg,
+.assistant-response-action-button:hover,
+.assistant-response-action-button:focus-visible,
+.assistant-response-action-button.is-active,
+.side-chat-badge {
+  color: var(--seg-accent-strong);
+}
+
+.side-chat-badge {
+  background: color-mix(in srgb, var(--seg-accent-soft) 70%, var(--seg-panel) 30%);
+  border-left-color: var(--seg-accent);
 }

@@ -182,7 +182,7 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.01em;
-  color: #98a2ad;
+  color: var(--seg-text-3);
 }
 
 .settings-primary-nav-group-items {
@@ -224,8 +224,8 @@
 }
 
 .settings-primary-nav-item.is-active {
-  border-color: rgba(161, 166, 173, 0.52);
-  background: #e6e7e8;
+  border-color: color-mix(in srgb, var(--seg-border-strong) 76%, transparent);
+  background: color-mix(in srgb, var(--seg-accent-soft) 42%, var(--seg-shell) 58%);
   color: #182532;
 }
 
@@ -366,9 +366,9 @@
 .settings-field textarea {
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid rgba(169, 189, 212, 0.5);
-  background: #f8fbff;
-  color: #182532;
+  border: 1px solid color-mix(in srgb, var(--seg-border) 96%, transparent);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
 }
 
 .settings-field textarea {
@@ -1135,6 +1135,106 @@
   gap: 8px;
 }
 
+.settings-theme-palette-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-theme-palette-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel);
+  color: var(--seg-text-2);
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.settings-theme-palette-option:hover,
+.settings-theme-palette-option:focus-visible {
+  border-color: color-mix(in srgb, var(--seg-accent) 22%, var(--seg-border-strong));
+  background: color-mix(in srgb, var(--seg-panel-muted) 72%, var(--seg-panel) 28%);
+  color: var(--seg-text-1);
+}
+
+.settings-theme-palette-option.is-active {
+  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-accent-soft) 74%, var(--seg-panel) 26%);
+  color: var(--seg-text-1);
+}
+
+.settings-theme-palette-swatch {
+  display: grid;
+  grid-template-columns: repeat(3, 14px);
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--seg-panel-muted) 74%, var(--seg-panel) 26%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seg-border) 84%, transparent);
+}
+
+.settings-theme-palette-swatch span {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  display: block;
+  border: 1px solid rgba(255, 255, 255, 0.46);
+}
+
+.settings-theme-palette-swatch.is-terra span:nth-child(1) {
+  background: #d46b63;
+}
+
+.settings-theme-palette-swatch.is-terra span:nth-child(2) {
+  background: #fca5a5;
+}
+
+.settings-theme-palette-swatch.is-terra span:nth-child(3) {
+  background: #fafaf9;
+}
+
+.settings-theme-palette-swatch.is-sage span:nth-child(1) {
+  background: #0f766e;
+}
+
+.settings-theme-palette-swatch.is-sage span:nth-child(2) {
+  background: #2dd4bf;
+}
+
+.settings-theme-palette-swatch.is-sage span:nth-child(3) {
+  background: #f8fafc;
+}
+
+.settings-theme-palette-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-theme-palette-copy strong {
+  color: currentColor;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.settings-theme-palette-copy small {
+  color: var(--seg-text-3);
+  line-height: 1.5;
+}
+
+.settings-theme-palette-option.is-active .settings-theme-palette-copy small {
+  color: var(--seg-text-2);
+}
+
 .settings-color-mode-option {
   flex: 1;
   display: flex;
@@ -1524,4 +1624,108 @@
   height: var(--icon-button-size);
   min-height: var(--icon-button-size);
   padding: 0;
+}
+
+/* Sage / Teal & Slate theme overrides */
+
+.settings-page-overlay,
+.provider-connect-overlay,
+.git-branch-create-overlay {
+  background: var(--surface-overlay);
+}
+
+.settings-page {
+  border: 1px solid var(--seg-border-strong);
+  background: var(--seg-shell);
+  box-shadow: var(--shadow-md);
+}
+
+.settings-page-nav,
+.settings-page-primary-nav {
+  background: var(--seg-sidebar);
+  color: var(--seg-text-1);
+}
+
+.settings-page-header h2,
+.settings-section-header h3,
+.provider-card h4,
+.settings-empty-state h3,
+.settings-toggle-copy strong {
+  color: var(--seg-text-1);
+}
+
+.settings-primary-nav-group-label,
+.settings-helper-text,
+.settings-page-copy,
+.settings-section-header p,
+.provider-row-copy,
+.provider-model-empty,
+.settings-toggle-copy small {
+  color: var(--seg-text-3);
+}
+
+.settings-primary-nav-item {
+  color: var(--seg-text-2);
+}
+
+.settings-primary-nav-item:hover,
+.settings-primary-nav-item:focus-visible {
+  border-color: var(--seg-border-strong);
+  background: color-mix(in srgb, var(--seg-panel) 72%, var(--seg-panel-muted) 28%);
+  color: var(--seg-text-1);
+}
+
+.settings-primary-nav-item.is-active {
+  border-color: color-mix(in srgb, var(--seg-accent) 24%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-accent-soft) 80%, var(--seg-panel) 20%);
+  color: var(--seg-text-1);
+}
+
+.settings-page-close-button:hover,
+.settings-page-close-button:focus-visible {
+  color: var(--seg-accent-strong);
+}
+
+.settings-banner,
+.settings-panel,
+.provider-card,
+.settings-empty-state,
+.settings-toggle-card {
+  border: 1px solid var(--seg-border);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  box-shadow: none;
+}
+
+.settings-toggle-card:hover {
+  border-color: color-mix(in srgb, var(--seg-accent) 34%, var(--seg-border));
+  box-shadow: none;
+}
+
+.settings-toggle-card:focus-visible {
+  border-color: color-mix(in srgb, var(--seg-accent) 42%, var(--seg-border));
+  box-shadow: none;
+}
+
+.settings-toggle-card.is-active {
+  border-color: color-mix(in srgb, var(--seg-accent) 32%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-accent-soft) 74%, var(--seg-panel) 26%);
+}
+
+.settings-toggle-icon {
+  color: var(--seg-text-2);
+}
+
+.settings-toggle-control {
+  border-color: var(--seg-border-strong);
+  background: color-mix(in srgb, var(--seg-border-strong) 72%, var(--seg-panel) 28%);
+}
+
+.settings-toggle-thumb {
+  background: var(--seg-panel);
+}
+
+.settings-toggle-card.is-active .settings-toggle-control {
+  border-color: var(--seg-accent);
+  background: var(--seg-accent);
 }

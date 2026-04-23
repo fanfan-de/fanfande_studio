@@ -1,12 +1,10 @@
 /* Token source of truth for the desktop renderer.
-   Keep new visual work on semantic tokens and preserve legacy aliases
-   while the feature styles are migrated away from --ui-* / --seg-*. */
+   Keep visual styling on semantic tokens and preserve legacy aliases
+   while feature styles are migrated away from --ui-* / --seg-*. */
 
 :root {
   color-scheme: light dark;
   font-family: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: #1f2733;
-  background: #eef1f5;
 
   --font-sans: "IBM Plex Sans", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
@@ -22,10 +20,6 @@
   --space-9: 36px;
   --space-10: 40px;
 
-  --focus-outline-width: 2px;
-  --focus-outline-offset: 2px;
-  --focus-outline-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
-
   --radius-control: 4px;
   --radius-chip: 6px;
   --radius-panel: 8px;
@@ -40,49 +34,139 @@
   --motion-xslow: 320ms;
   --ease-standard: ease;
 
-  --shadow-sm: 0 14px 30px rgba(22, 31, 45, 0.07);
-  --shadow-md: 0 20px 46px rgba(22, 31, 45, 0.1);
-  --shadow-lg: 0 28px 68px rgba(22, 31, 45, 0.14);
+  --surface-app-light: #fafaf9;
+  --surface-shell-light: #f5f2ee;
+  --surface-panel-light: #ffffff;
+  --surface-panel-muted-light: #f7f1ee;
+  --surface-sidebar-light: #f3ece7;
+  --surface-sidebar-strong-light: #ebe1da;
+  --surface-user-bubble-light: #fff1f2;
+  --surface-trace-light: #f8f2ef;
+  --surface-elevated-light: rgba(255, 255, 255, 0.96);
+  --surface-overlay-light: rgba(41, 37, 36, 0.16);
+  --surface-code-light: #27272a;
+  --surface-code-strong-light: #1c1917;
+  --text-primary-light: #292524;
+  --text-secondary-light: #78716c;
+  --text-tertiary-light: #a8a29e;
+  --text-on-dark-light: #fafaf9;
+  --border-subtle-light: rgba(41, 37, 36, 0.08);
+  --border-default-light: #e7e5e4;
+  --border-strong-light: #d6d3d1;
+  --shadow-sm-light: 0 14px 30px rgba(41, 37, 36, 0.06);
+  --shadow-md-light: 0 20px 46px rgba(41, 37, 36, 0.08);
+  --shadow-lg-light: 0 28px 68px rgba(41, 37, 36, 0.12);
 
-  --color-surface-app: #eef1f5;
-  --color-surface-shell: #f6f7f9;
-  --color-surface-panel: #fbfcfd;
-  --color-surface-panel-muted: #f1f4f7;
-  --color-surface-sidebar: #f2f4f7;
-  --color-surface-sidebar-strong: #eceff3;
-  --color-border-subtle: rgba(32, 41, 54, 0.08);
-  --color-border-default: #d5dbe3;
-  --color-border-strong: #c4ccd7;
-  --color-text-primary: #1f2733;
-  --color-text-secondary: #566170;
-  --color-text-tertiary: #7b8797;
-  --color-accent: #d97706;
-  --color-accent-strong: #b45309;
-  --color-accent-soft: rgba(217, 119, 6, 0.12);
-  --color-success: #2f7a57;
-  --color-warning: #94611c;
-  --color-danger: #a64b3c;
-  --selection-background: rgba(217, 119, 6, 0.18);
+  --surface-app-dark: #1c1917;
+  --surface-shell-dark: #221d1a;
+  --surface-panel-dark: #292524;
+  --surface-panel-muted-dark: #342d2a;
+  --surface-sidebar-dark: #241f1c;
+  --surface-sidebar-strong-dark: #181311;
+  --surface-user-bubble-dark: rgba(225, 112, 104, 0.16);
+  --surface-trace-dark: #241d1b;
+  --surface-elevated-dark: rgba(41, 37, 36, 0.96);
+  --surface-overlay-dark: rgba(12, 10, 9, 0.58);
+  --surface-code-dark: #27272a;
+  --surface-code-strong-dark: #14100f;
+  --text-primary-dark: #f5f5f4;
+  --text-secondary-dark: #d6d3d1;
+  --text-tertiary-dark: #a8a29e;
+  --text-on-dark-dark: #fafaf9;
+  --border-subtle-dark: rgba(231, 229, 228, 0.14);
+  --border-default-dark: rgba(231, 229, 228, 0.24);
+  --border-strong-dark: rgba(231, 229, 228, 0.34);
+  --shadow-sm-dark: 0 12px 28px rgba(12, 10, 9, 0.28);
+  --shadow-md-dark: 0 18px 40px rgba(12, 10, 9, 0.34);
+  --shadow-lg-dark: 0 28px 64px rgba(12, 10, 9, 0.42);
 
-  /* Warm glass aliases from the earlier visual refresh pass. */
-  --ui-bg: #f2ede6;
-  --ui-bg-highlight: #faf7f2;
-  --ui-panel: rgba(255, 255, 255, 0.76);
-  --ui-panel-strong: rgba(255, 255, 255, 0.92);
-  --ui-panel-subtle: rgba(243, 246, 250, 0.88);
-  --ui-border: rgba(29, 41, 57, 0.1);
-  --ui-border-strong: rgba(29, 41, 57, 0.16);
-  --ui-divider: rgba(29, 41, 57, 0.08);
-  --ui-text-1: #18212d;
-  --ui-text-2: #5d6978;
-  --ui-text-3: #8694a3;
-  --ui-accent: #1d6eff;
-  --ui-accent-strong: #1458d6;
-  --ui-accent-soft: rgba(29, 110, 255, 0.12);
-  --ui-accent-soft-strong: rgba(29, 110, 255, 0.18);
-  --ui-success: #1f7a4f;
-  --ui-warning: #a66b1a;
-  --ui-danger: #b64a37;
+  --brand-primary: #d46b63;
+  --brand-primary-hover: #b9534c;
+  --brand-accent-highlight: #fca5a5;
+  --brand-primary-soft: rgba(212, 107, 99, 0.12);
+  --brand-primary-soft-strong: rgba(212, 107, 99, 0.18);
+  --brand-primary-dark: #e17068;
+  --brand-primary-hover-dark: #fca5a5;
+  --brand-accent-highlight-dark: #fca5a5;
+  --brand-primary-soft-dark: rgba(225, 112, 104, 0.14);
+  --brand-primary-soft-strong-dark: rgba(225, 112, 104, 0.22);
+
+  --semantic-success: #65a30d;
+  --semantic-warning: #b45309;
+  --semantic-error: #9f1239;
+  --semantic-info: #6366f1;
+
+  --surface-app: var(--surface-app-light);
+  --surface-shell: var(--surface-shell-light);
+  --surface-panel: var(--surface-panel-light);
+  --surface-panel-muted: var(--surface-panel-muted-light);
+  --surface-sidebar: var(--surface-sidebar-light);
+  --surface-sidebar-strong: var(--surface-sidebar-strong-light);
+  --surface-user-bubble: var(--surface-user-bubble-light);
+  --surface-trace: var(--surface-trace-light);
+  --surface-elevated: var(--surface-elevated-light);
+  --surface-overlay: var(--surface-overlay-light);
+  --surface-code: var(--surface-code-light);
+  --surface-code-strong: var(--surface-code-strong-light);
+  --text-primary: var(--text-primary-light);
+  --text-secondary: var(--text-secondary-light);
+  --text-tertiary: var(--text-tertiary-light);
+  --text-on-dark: var(--text-on-dark-light);
+  --border-subtle: var(--border-subtle-light);
+  --border-default: var(--border-default-light);
+  --border-strong: var(--border-strong-light);
+  --shadow-sm: var(--shadow-sm-light);
+  --shadow-md: var(--shadow-md-light);
+  --shadow-lg: var(--shadow-lg-light);
+  --brand-primary-active: var(--brand-primary);
+  --brand-primary-strong: var(--brand-primary-hover);
+  --brand-accent-active: var(--brand-accent-highlight);
+
+  color: var(--text-primary);
+  background: var(--surface-app);
+
+  --focus-outline-width: 2px;
+  --focus-outline-offset: 2px;
+  --focus-outline-color: color-mix(in srgb, var(--brand-primary-active) 32%, transparent);
+  --selection-background: color-mix(in srgb, var(--brand-primary-active) 18%, transparent);
+
+  --color-surface-app: var(--surface-app);
+  --color-surface-shell: var(--surface-shell);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-panel-muted: var(--surface-panel-muted);
+  --color-surface-sidebar: var(--surface-sidebar);
+  --color-surface-sidebar-strong: var(--surface-sidebar-strong);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-accent: var(--brand-primary-active);
+  --color-accent-strong: var(--brand-primary-strong);
+  --color-accent-soft: var(--brand-primary-soft);
+  --color-success: var(--semantic-success);
+  --color-warning: var(--semantic-warning);
+  --color-danger: var(--semantic-error);
+
+  --ui-bg: var(--surface-app);
+  --ui-bg-highlight: var(--surface-shell);
+  --ui-panel: color-mix(in srgb, var(--surface-panel) 84%, transparent);
+  --ui-panel-strong: var(--surface-elevated);
+  --ui-panel-subtle: color-mix(in srgb, var(--surface-panel-muted) 88%, transparent);
+  --ui-border: var(--border-subtle);
+  --ui-border-strong: var(--border-default);
+  --ui-divider: var(--border-subtle);
+  --ui-text-1: var(--text-primary);
+  --ui-text-2: var(--text-secondary);
+  --ui-text-3: var(--text-tertiary);
+  --ui-accent: var(--brand-primary-active);
+  --ui-accent-strong: var(--brand-primary-strong);
+  --ui-accent-soft: var(--brand-primary-soft);
+  --ui-accent-soft-strong: var(--brand-primary-soft-strong);
+  --ui-success: var(--semantic-success);
+  --ui-warning: var(--semantic-warning);
+  --ui-danger: var(--semantic-error);
   --ui-shadow-sm: var(--shadow-sm);
   --ui-shadow-md: var(--shadow-md);
   --ui-shadow-lg: var(--shadow-lg);
@@ -92,124 +176,160 @@
   --ui-radius-lg: 28px;
   --ui-radius-pill: var(--radius-pill);
 
-  /* Segmented workbench aliases used by the latest layout pass. */
-  --seg-bg: var(--color-surface-app);
-  --seg-shell: var(--color-surface-shell);
-  --seg-panel: var(--color-surface-panel);
-  --seg-panel-muted: var(--color-surface-panel-muted);
-  --seg-sidebar: var(--color-surface-sidebar);
-  --seg-sidebar-strong: var(--color-surface-sidebar-strong);
-  --seg-border: var(--color-border-default);
-  --seg-border-strong: var(--color-border-strong);
-  --seg-divider: var(--color-border-subtle);
-  --seg-text-1: var(--color-text-primary);
-  --seg-text-2: var(--color-text-secondary);
-  --seg-text-3: var(--color-text-tertiary);
-  --seg-accent: var(--color-accent);
-  --seg-accent-soft: var(--color-accent-soft);
-  --seg-accent-strong: var(--color-accent-strong);
-  --seg-success: var(--color-success);
-  --seg-warning: var(--color-warning);
-  --seg-danger: var(--color-danger);
+  --seg-bg: var(--surface-app);
+  --seg-shell: var(--surface-shell);
+  --seg-panel: var(--surface-panel);
+  --seg-panel-muted: var(--surface-panel-muted);
+  --seg-sidebar: var(--surface-sidebar);
+  --seg-sidebar-strong: var(--surface-sidebar-strong);
+  --seg-border: var(--border-default);
+  --seg-border-strong: var(--border-strong);
+  --seg-divider: var(--border-subtle);
+  --seg-text-1: var(--text-primary);
+  --seg-text-2: var(--text-secondary);
+  --seg-text-3: var(--text-tertiary);
+  --seg-accent: var(--brand-primary-active);
+  --seg-accent-soft: var(--brand-primary-soft);
+  --seg-accent-strong: var(--brand-primary-strong);
+  --seg-success: var(--semantic-success);
+  --seg-warning: var(--semantic-warning);
+  --seg-danger: var(--semantic-error);
+  --seg-info: var(--semantic-info);
   --seg-radius-xs: var(--radius-control);
   --seg-radius-sm: var(--radius-chip);
   --seg-radius-md: var(--radius-panel);
 }
 
+:root[data-brand-theme="sage"] {
+  --surface-app-light: #f8fafc;
+  --surface-shell-light: #f1f5f9;
+  --surface-panel-light: #ffffff;
+  --surface-panel-muted-light: #f0f7f6;
+  --surface-sidebar-light: #eef4f3;
+  --surface-sidebar-strong-light: #e2ece9;
+  --surface-user-bubble-light: #f0fdfa;
+  --surface-trace-light: #f4f8f8;
+  --surface-elevated-light: rgba(255, 255, 255, 0.96);
+  --surface-overlay-light: rgba(15, 23, 42, 0.16);
+  --surface-code-light: #1e293b;
+  --surface-code-strong-light: #0f172a;
+  --text-primary-light: #0f172a;
+  --text-secondary-light: #475569;
+  --text-tertiary-light: #64748b;
+  --text-on-dark-light: #f8fafc;
+  --border-subtle-light: rgba(15, 23, 42, 0.08);
+  --border-default-light: #e2e8f0;
+  --border-strong-light: #cbd5e1;
+  --shadow-sm-light: 0 14px 30px rgba(15, 23, 42, 0.06);
+  --shadow-md-light: 0 20px 46px rgba(15, 23, 42, 0.08);
+  --shadow-lg-light: 0 28px 68px rgba(15, 23, 42, 0.12);
+
+  --surface-app-dark: #0f172a;
+  --surface-shell-dark: #162235;
+  --surface-panel-dark: #1e293b;
+  --surface-panel-muted-dark: #182536;
+  --surface-sidebar-dark: #162235;
+  --surface-sidebar-strong-dark: #111c2c;
+  --surface-user-bubble-dark: rgba(45, 212, 191, 0.1);
+  --surface-trace-dark: #122234;
+  --surface-elevated-dark: rgba(30, 41, 59, 0.96);
+  --surface-overlay-dark: rgba(2, 6, 23, 0.56);
+  --surface-code-dark: #0f172a;
+  --surface-code-strong-dark: #020617;
+  --text-primary-dark: #f1f5f9;
+  --text-secondary-dark: #cbd5e1;
+  --text-tertiary-dark: #94a3b8;
+  --text-on-dark-dark: #f8fafc;
+  --border-subtle-dark: rgba(148, 163, 184, 0.14);
+  --border-default-dark: rgba(148, 163, 184, 0.24);
+  --border-strong-dark: rgba(148, 163, 184, 0.34);
+  --shadow-sm-dark: 0 12px 28px rgba(2, 6, 23, 0.28);
+  --shadow-md-dark: 0 18px 40px rgba(2, 6, 23, 0.34);
+  --shadow-lg-dark: 0 28px 64px rgba(2, 6, 23, 0.42);
+
+  --brand-primary: #0f766e;
+  --brand-primary-hover: #115e59;
+  --brand-accent-highlight: #2dd4bf;
+  --brand-primary-soft: rgba(15, 118, 110, 0.12);
+  --brand-primary-soft-strong: rgba(15, 118, 110, 0.18);
+  --brand-primary-dark: #14b8a6;
+  --brand-primary-hover-dark: #2dd4bf;
+  --brand-accent-highlight-dark: #5eead4;
+  --brand-primary-soft-dark: rgba(20, 184, 166, 0.14);
+  --brand-primary-soft-strong-dark: rgba(20, 184, 166, 0.22);
+
+  --semantic-success: #0f766e;
+  --semantic-warning: #d97706;
+  --semantic-error: #e11d48;
+  --semantic-info: #0ea5e9;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    color: #e2e6ec;
-    background: #0d0f12;
-
-    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
-
-    --color-surface-app:           #0d0f12;
-    --color-surface-shell:         #13161b;
-    --color-surface-panel:         #1a1e25;
-    --color-surface-panel-muted:   #161920;
-    --color-surface-sidebar:       #13161b;
-    --color-surface-sidebar-strong:#0f1216;
-    --color-border-subtle:         rgba(255, 255, 255, 0.05);
-    --color-border-default:        rgba(255, 255, 255, 0.09);
-    --color-border-strong:         rgba(255, 255, 255, 0.14);
-    --color-text-primary:          #e2e6ec;
-    --color-text-secondary:        #8b95a3;
-    --color-text-tertiary:         #525d6b;
-    --color-accent:                #e08c1a;
-    --color-accent-strong:         #f5a623;
-    --color-accent-soft:           rgba(224, 140, 26, 0.14);
-    --color-success:               #34a36e;
-    --color-warning:               #c8883a;
-    --color-danger:                #d4614e;
-    --selection-background:        rgba(224, 140, 26, 0.22);
-
-    --ui-bg:                #0d0f12;
-    --ui-bg-highlight:      #1a1e25;
-    --ui-panel:             rgba(26, 30, 37, 0.92);
-    --ui-panel-strong:      rgba(32, 37, 46, 0.96);
-    --ui-panel-subtle:      rgba(19, 22, 27, 0.88);
-    --ui-border:            rgba(255, 255, 255, 0.07);
-    --ui-border-strong:     rgba(255, 255, 255, 0.12);
-    --ui-divider:           rgba(255, 255, 255, 0.05);
-    --ui-text-1:            #e2e6ec;
-    --ui-text-2:            #8b95a3;
-    --ui-text-3:            #525d6b;
-    --ui-accent:            #e08c1a;
-    --ui-accent-strong:     #f5a623;
-    --ui-accent-soft:       rgba(224, 140, 26, 0.14);
-    --ui-accent-soft-strong:rgba(224, 140, 26, 0.22);
-    --ui-success:           #34a36e;
-    --ui-warning:           #c8883a;
-    --ui-danger:            #d4614e;
+    --surface-app: var(--surface-app-dark);
+    --surface-shell: var(--surface-shell-dark);
+    --surface-panel: var(--surface-panel-dark);
+    --surface-panel-muted: var(--surface-panel-muted-dark);
+    --surface-sidebar: var(--surface-sidebar-dark);
+    --surface-sidebar-strong: var(--surface-sidebar-strong-dark);
+    --surface-user-bubble: var(--surface-user-bubble-dark);
+    --surface-trace: var(--surface-trace-dark);
+    --surface-elevated: var(--surface-elevated-dark);
+    --surface-overlay: var(--surface-overlay-dark);
+    --surface-code: var(--surface-code-dark);
+    --surface-code-strong: var(--surface-code-strong-dark);
+    --text-primary: var(--text-primary-dark);
+    --text-secondary: var(--text-secondary-dark);
+    --text-tertiary: var(--text-tertiary-dark);
+    --text-on-dark: var(--text-on-dark-dark);
+    --border-subtle: var(--border-subtle-dark);
+    --border-default: var(--border-default-dark);
+    --border-strong: var(--border-strong-dark);
+    --shadow-sm: var(--shadow-sm-dark);
+    --shadow-md: var(--shadow-md-dark);
+    --shadow-lg: var(--shadow-lg-dark);
+    --brand-primary-active: var(--brand-primary-dark);
+    --brand-primary-strong: var(--brand-primary-hover-dark);
+    --brand-accent-active: var(--brand-accent-highlight-dark);
+    --ui-panel: color-mix(in srgb, var(--surface-panel) 90%, transparent);
+    --ui-panel-subtle: color-mix(in srgb, var(--surface-panel-muted) 92%, transparent);
+    --brand-primary-soft: var(--brand-primary-soft-dark);
+    --brand-primary-soft-strong: var(--brand-primary-soft-strong-dark);
+    color: var(--text-primary);
+    background: var(--surface-app);
   }
 }
 
 :root[data-theme="dark"] {
-  color: #e2e6ec;
-  background: #0d0f12;
-
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
-
-  --color-surface-app:           #0d0f12;
-  --color-surface-shell:         #13161b;
-  --color-surface-panel:         #1a1e25;
-  --color-surface-panel-muted:   #161920;
-  --color-surface-sidebar:       #13161b;
-  --color-surface-sidebar-strong:#0f1216;
-  --color-border-subtle:         rgba(255, 255, 255, 0.05);
-  --color-border-default:        rgba(255, 255, 255, 0.09);
-  --color-border-strong:         rgba(255, 255, 255, 0.14);
-  --color-text-primary:          #e2e6ec;
-  --color-text-secondary:        #8b95a3;
-  --color-text-tertiary:         #525d6b;
-  --color-accent:                #e08c1a;
-  --color-accent-strong:         #f5a623;
-  --color-accent-soft:           rgba(224, 140, 26, 0.14);
-  --color-success:               #34a36e;
-  --color-warning:               #c8883a;
-  --color-danger:                #d4614e;
-  --selection-background:        rgba(224, 140, 26, 0.22);
-
-  --ui-bg:                #0d0f12;
-  --ui-bg-highlight:      #1a1e25;
-  --ui-panel:             rgba(26, 30, 37, 0.92);
-  --ui-panel-strong:      rgba(32, 37, 46, 0.96);
-  --ui-panel-subtle:      rgba(19, 22, 27, 0.88);
-  --ui-border:            rgba(255, 255, 255, 0.07);
-  --ui-border-strong:     rgba(255, 255, 255, 0.12);
-  --ui-divider:           rgba(255, 255, 255, 0.05);
-  --ui-text-1:            #e2e6ec;
-  --ui-text-2:            #8b95a3;
-  --ui-text-3:            #525d6b;
-  --ui-accent:            #e08c1a;
-  --ui-accent-strong:     #f5a623;
-  --ui-accent-soft:       rgba(224, 140, 26, 0.14);
-  --ui-accent-soft-strong:rgba(224, 140, 26, 0.22);
-  --ui-success:           #34a36e;
-  --ui-warning:           #c8883a;
-  --ui-danger:            #d4614e;
+  --surface-app: var(--surface-app-dark);
+  --surface-shell: var(--surface-shell-dark);
+  --surface-panel: var(--surface-panel-dark);
+  --surface-panel-muted: var(--surface-panel-muted-dark);
+  --surface-sidebar: var(--surface-sidebar-dark);
+  --surface-sidebar-strong: var(--surface-sidebar-strong-dark);
+  --surface-user-bubble: var(--surface-user-bubble-dark);
+  --surface-trace: var(--surface-trace-dark);
+  --surface-elevated: var(--surface-elevated-dark);
+  --surface-overlay: var(--surface-overlay-dark);
+  --surface-code: var(--surface-code-dark);
+  --surface-code-strong: var(--surface-code-strong-dark);
+  --text-primary: var(--text-primary-dark);
+  --text-secondary: var(--text-secondary-dark);
+  --text-tertiary: var(--text-tertiary-dark);
+  --text-on-dark: var(--text-on-dark-dark);
+  --border-subtle: var(--border-subtle-dark);
+  --border-default: var(--border-default-dark);
+  --border-strong: var(--border-strong-dark);
+  --shadow-sm: var(--shadow-sm-dark);
+  --shadow-md: var(--shadow-md-dark);
+  --shadow-lg: var(--shadow-lg-dark);
+  --brand-primary-active: var(--brand-primary-dark);
+  --brand-primary-strong: var(--brand-primary-hover-dark);
+  --brand-accent-active: var(--brand-accent-highlight-dark);
+  --ui-panel: color-mix(in srgb, var(--surface-panel) 90%, transparent);
+  --ui-panel-subtle: color-mix(in srgb, var(--surface-panel-muted) 92%, transparent);
+  --brand-primary-soft: var(--brand-primary-soft-dark);
+  --brand-primary-soft-strong: var(--brand-primary-soft-strong-dark);
+  color: var(--text-primary);
+  background: var(--surface-app);
 }

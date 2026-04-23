@@ -9,6 +9,7 @@ import {
   DEFAULT_ASSISTANT_TRACE_VISIBILITY,
   type AssistantTraceVisibility,
   type AssistantTraceVisibilityKey,
+  type BrandTheme,
   type ColorMode,
   type WindowAction,
 } from "./types"
@@ -16,6 +17,7 @@ import { clamp, resolveRightSidebarWidthBounds, resolveSidebarWidthBounds } from
 
 const ACTIVITY_RAIL_VISIBILITY_STORAGE_KEY = "desktop.activityRailVisible"
 const COLOR_MODE_STORAGE_KEY = "desktop.colorMode"
+const BRAND_THEME_STORAGE_KEY = "desktop.brandTheme"
 const DEBUG_UI_REGIONS_STORAGE_KEY = "desktop.debugUiRegions"
 const DEBUG_LINE_COLORS_STORAGE_KEY = "desktop.debugLineColors"
 const AGENT_DEBUG_TRACE_STORAGE_KEY = "desktop.agentDebugTrace"
@@ -49,6 +51,17 @@ function readColorModePreference(): ColorMode {
     return "system"
   } catch {
     return "system"
+  }
+}
+
+function readBrandThemePreference(): BrandTheme {
+  if (typeof window === "undefined") return "terra"
+  try {
+    const stored = window.localStorage.getItem(BRAND_THEME_STORAGE_KEY)
+    if (stored === "terra" || stored === "sage") return stored
+    return "terra"
+  } catch {
+    return "terra"
   }
 }
 
@@ -109,6 +122,7 @@ export function useDesktopShell() {
   const [rightSidebarWidth, setRightSidebarWidth] = useState(DEFAULT_RIGHT_SIDEBAR_WIDTH)
   const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
   const [colorMode, setColorMode] = useState<ColorMode>(readColorModePreference)
+  const [brandTheme, setBrandTheme] = useState<BrandTheme>(readBrandThemePreference)
   const [isDebugUiRegionsEnabled, setIsDebugUiRegionsEnabled] = useState(readDebugUiRegionsPreference)
   const [isDebugLineColorsEnabled, setIsDebugLineColorsEnabled] = useState(readDebugLineColorsPreference)
   const [assistantTraceVisibility, setAssistantTraceVisibility] = useState(readAssistantTraceVisibilityPreference)
@@ -258,6 +272,15 @@ export function useDesktopShell() {
       return
     }
   }, [colorMode])
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-brand-theme", brandTheme)
+    try {
+      window.localStorage.setItem(BRAND_THEME_STORAGE_KEY, brandTheme)
+    } catch {
+      return
+    }
+  }, [brandTheme])
 
   useEffect(() => {
     try {
@@ -564,7 +587,9 @@ export function useDesktopShell() {
     assistantTraceVisibility,
     appShellRef,
     appShellStyle,
+    brandTheme,
     colorMode,
+    handleBrandThemeChange: setBrandTheme,
     handleColorModeChange: setColorMode,
     handleActivityRailVisibilityChange,
     handleAssistantTraceVisibilityChange,

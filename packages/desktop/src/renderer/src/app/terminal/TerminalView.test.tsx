@@ -23,6 +23,8 @@ const baseSession: TerminalSessionRecord = {
 function renderTerminalView() {
   return (
     <TerminalView
+      brandTheme="terra"
+      colorMode="light"
       panelHeight={280}
       session={baseSession}
       onInput={vi.fn()}

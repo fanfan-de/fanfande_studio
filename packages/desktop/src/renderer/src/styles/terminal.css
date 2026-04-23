@@ -44,7 +44,7 @@
 
 .terminal-panel-resizer.is-active::after,
 .terminal-panel-resizer:hover::after {
-  background: #1677c8;
+  background: var(--seg-accent);
 }
 
 .terminal-tabs,
@@ -87,7 +87,7 @@
 .terminal-panel-toggle-button:focus-visible,
 .terminal-panel-toggle-button.is-active {
   border: 0;
-  background: rgba(22, 119, 200, 0.08);
+  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
   box-shadow: none;
 }
 
@@ -176,7 +176,7 @@
 .terminal-panel-create:hover,
 .terminal-panel-create:focus-visible {
   color: #1d2a35;
-  background: rgba(22, 119, 200, 0.08);
+  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
 }
 
 .terminal-tab-close svg,
@@ -352,4 +352,72 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
   background: var(--seg-panel);
   color: var(--seg-text-1);
   box-shadow: none;
+}
+
+/* Sage / Teal & Slate theme overrides */
+
+.terminal-panel {
+  border-top-color: color-mix(in srgb, var(--seg-border) 82%, transparent);
+  background: color-mix(in srgb, var(--seg-shell) 92%, var(--seg-panel) 8%);
+}
+
+.terminal-panel-resizer::after {
+  background: color-mix(in srgb, var(--seg-text-3) 34%, transparent);
+}
+
+.terminal-tabs {
+  background: color-mix(in srgb, var(--seg-shell) 92%, var(--seg-panel) 8%);
+}
+
+.terminal-panel-toggle-button,
+.terminal-tab-close,
+.terminal-panel-create,
+.activity-rail-bottom .terminal-panel-toggle-button {
+  background: transparent;
+  color: var(--seg-text-2);
+  box-shadow: none;
+}
+
+.terminal-panel-toggle-button:hover,
+.terminal-panel-toggle-button:focus-visible,
+.terminal-panel-toggle-button.is-active,
+.terminal-tab-close:hover,
+.terminal-tab-close:focus-visible,
+.terminal-panel-create:hover,
+.terminal-panel-create:focus-visible,
+.activity-rail-bottom .terminal-panel-toggle-button:hover,
+.activity-rail-bottom .terminal-panel-toggle-button:focus-visible,
+.activity-rail-bottom .terminal-panel-toggle-button.is-active {
+  background: color-mix(in srgb, var(--seg-accent-soft) 72%, var(--seg-panel) 28%);
+  color: var(--seg-accent-strong);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.terminal-tab {
+  background: transparent;
+  color: var(--seg-text-2);
+}
+
+.terminal-tab.is-active {
+  background: color-mix(in srgb, var(--surface-code) 16%, var(--seg-panel) 84%);
+  color: var(--seg-text-1);
+}
+
+.terminal-view-error {
+  color: var(--seg-danger);
+}
+
+.terminal-surface,
+.terminal-xterm {
+  background: var(--surface-code-strong);
+}
+
+.terminal-surface {
+  border: 1px solid color-mix(in srgb, var(--surface-code) 48%, var(--seg-border));
+  box-shadow: none;
+}
+
+.terminal-tabs-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--brand-accent-active) 28%, rgba(148, 163, 184, 0.28));
 }

@@ -289,3 +289,84 @@
   background: #fff4f2;
   color: var(--seg-danger);
 }
+
+/* Sage / Teal & Slate theme overrides */
+
+.empty-state {
+  border: 1px solid var(--seg-border);
+  background: var(--seg-panel);
+  color: var(--seg-text-2);
+}
+
+.status-live {
+  color: var(--seg-info);
+}
+
+.status-review {
+  color: var(--seg-text-2);
+}
+
+.status-ready {
+  color: var(--seg-success);
+}
+
+.permission-risk-chip,
+.permission-meta-chip,
+.session-workflow-badge {
+  border: 1px solid var(--seg-border);
+  background: var(--seg-panel-muted);
+  color: var(--seg-text-2);
+}
+
+.permission-risk-chip.is-low,
+.session-workflow-badge.is-approved {
+  border-color: color-mix(in srgb, var(--seg-success) 24%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-success) 10%, var(--seg-panel));
+  color: var(--seg-success);
+}
+
+.permission-risk-chip.is-medium,
+.session-workflow-badge.is-planning,
+.session-workflow-badge.is-pending {
+  border-color: color-mix(in srgb, var(--seg-warning) 28%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-warning) 10%, var(--seg-panel));
+  color: var(--seg-warning);
+}
+
+.permission-risk-chip.is-high,
+.permission-risk-chip.is-critical {
+  border-color: color-mix(in srgb, var(--seg-danger) 30%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-danger) 10%, var(--seg-panel));
+  color: var(--seg-danger);
+}
+
+.primary-button {
+  background: color-mix(in srgb, var(--seg-accent-soft) 72%, var(--seg-panel) 28%);
+  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
+  color: var(--seg-accent-strong);
+}
+
+.primary-button:hover,
+.primary-button:focus-visible {
+  background: color-mix(in srgb, var(--seg-accent-soft) 84%, var(--seg-panel) 16%);
+  border-color: color-mix(in srgb, var(--seg-accent) 42%, var(--seg-border));
+  color: var(--seg-text-1);
+}
+
+.secondary-button {
+  background: var(--seg-panel);
+  color: var(--seg-text-2);
+}
+
+.secondary-button:hover,
+.secondary-button:focus-visible {
+  background: var(--surface-elevated);
+  border-color: var(--seg-border-strong);
+  color: var(--seg-text-1);
+}
+
+.secondary-button.is-danger {
+  border-color: color-mix(in srgb, var(--seg-danger) 26%, var(--seg-border));
+  background: color-mix(in srgb, var(--seg-danger) 8%, var(--seg-panel));
+  color: var(--seg-danger);
+}

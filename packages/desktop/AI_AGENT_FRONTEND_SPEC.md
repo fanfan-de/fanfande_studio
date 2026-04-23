@@ -453,3 +453,32 @@ npm run dev
 3. 设置页的作用域、分组、保存链路或 Appearance 能力变化。
 4. Composer 的模型选择、附件或发送禁用行为变化。
 5. `Canvas Region Top Menu`、`Session Canvas Top Menu`、Inspector、左右侧栏之间的切换关系变化。
+
+## 12. Sage / Teal Theme Rules
+
+The desktop renderer now ships a single Sage / Teal & Slate theme system. There is no parallel legacy brand theme. The only runtime mode switch remains `system`, `light`, and `dark`.
+
+- Token source of truth: `src/renderer/src/styles/tokens.css`
+- Brand primary: `#0F766E`
+- Brand hover: `#115E59`
+- Accent mint: `#2DD4BF`
+- Light app background: `#F8FAFC`
+- Light panel background: `#FFFFFF`
+- Light primary text: `#0F172A`
+- Light secondary text: `#475569`
+- Light default border: `#E2E8F0`
+- Dark background: `#0F172A`
+- Dark panel surface: `#1E293B`
+- Dark primary accent: `#14B8A6`
+- Semantic error: `#E11D48`
+- Semantic warning: `#D97706`
+- Semantic info: `#0EA5E9`
+
+UI behavior rules:
+
+- User bubbles use the soft teal surface `#F0FDFA` with dark text.
+- Assistant response content stays transparent or panel-neutral and should not be rendered as a filled bubble.
+- Reasoning, tool, file-change, and approval cards use muted slate surfaces with semantic accent rails.
+- Thinking and streaming states use a slow pulse treatment. Do not use fast spinner-style motion for in-thread thinking feedback.
+- Code and terminal surfaces stay dark in both light and dark themes. They are an intentional exception to the regular panel surfaces.
+- New feature CSS must use semantic custom properties instead of hardcoded brand hex values.

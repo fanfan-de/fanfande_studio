@@ -16,6 +16,8 @@ describe("TerminalPanel", () => {
     const { container } = render(
       <TerminalPanel
         activeSession={null}
+        brandTheme="terra"
+        colorMode="light"
         isOpen={true}
         panelHeight={280}
         sessions={[]}

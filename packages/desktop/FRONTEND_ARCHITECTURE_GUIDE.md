@@ -360,3 +360,15 @@ Current coverage focuses on:
 - tab switching
 - snapshot restore
 - reconnect with cursor-based replay
+
+## 10.7 Theme Source Of Truth
+
+Theme tokens for the desktop renderer live in `src/renderer/src/styles/tokens.css`. This file defines the canonical light and dark palette, brand accents, semantic colors, code and terminal surfaces, and the compatibility aliases used by existing CSS.
+
+Architecture rules:
+
+- Keep `ColorMode = "system" | "light" | "dark"` unchanged.
+- `data-theme` remains the only renderer theme switch mechanism.
+- Feature-level CSS must consume semantic custom properties from `tokens.css`.
+- Do not introduce new hardcoded brand hex values inside feature styles or inline component styles.
+- Code and terminal surfaces are intentionally dark in both light and dark modes and should use the dedicated code-surface tokens instead of generic panel tokens.

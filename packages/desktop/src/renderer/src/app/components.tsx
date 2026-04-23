@@ -42,6 +42,7 @@ import {
 } from "./icons"
 import type {
   AssistantTraceSectionKey,
+  BrandTheme,
   ColorMode,
   AssistantTurn,
   AssistantTraceItem,
@@ -3557,6 +3558,7 @@ interface SettingsPageProps {
   deletingMcpServerID: string | null
   deletingPromptPresetID: string | null
   deletingProviderID: string | null
+  brandTheme: BrandTheme
   colorMode: ColorMode
   isCreatingPromptPreset: boolean
   isActivityRailVisible: boolean
@@ -3602,6 +3604,7 @@ interface SettingsPageProps {
   savingProviderID: string | null
   selectedPromptPreset: PromptPresetDocument | null
   selectionDraft: ProjectModelSelection
+  onBrandThemeChange: (theme: BrandTheme) => void
   onColorModeChange: (mode: ColorMode) => void
   onActivityRailVisibilityChange: (value: boolean) => void
   onAssistantTraceVisibilityChange: (key: AssistantTraceVisibilityKey, value: boolean) => void
@@ -3647,6 +3650,7 @@ export function SettingsPage({
   deletingMcpServerID,
   deletingPromptPresetID,
   deletingProviderID,
+  brandTheme,
   colorMode,
   isCreatingPromptPreset,
   isActivityRailVisible,
@@ -3689,6 +3693,7 @@ export function SettingsPage({
   savingProviderID,
   selectedPromptPreset,
   selectionDraft,
+  onBrandThemeChange,
   onColorModeChange,
   onActivityRailVisibilityChange,
   onAssistantTraceVisibilityChange,
@@ -3890,6 +3895,18 @@ export function SettingsPage({
     const selectedPromptPresetUsageLabels = selectedPromptPreset
       ? getPromptPresetUsageLabels(selectedPromptPreset.id, promptPresetSelection)
       : []
+    const brandThemeOptions = [
+      {
+        value: "terra" as const,
+        label: "Warm Terra & Sand",
+        description: "Muted pale red, warm stone surfaces, and a softer trust-first feel.",
+      },
+      {
+        value: "sage" as const,
+        label: "Sage / Slate",
+        description: "Cool sage accents with the existing slate-driven shell.",
+      },
+    ]
 
     const primarySectionGroups = [
       {
@@ -4218,6 +4235,42 @@ export function SettingsPage({
                 )
               ) : activeSection === "appearance" ? (
                 <div className="settings-appearance-layout">
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Brand</span>
+                        <h3>Accent Theme</h3>
+                      </div>
+                      <p>Switch between the new warm terra palette and the original cool sage shell.</p>
+                    </div>
+                    <div className="settings-theme-palette-group" role="group" aria-label="Accent theme">
+                      {brandThemeOptions.map((theme) => (
+                        <button
+                          key={theme.value}
+                          className={
+                            brandTheme === theme.value
+                              ? "settings-theme-palette-option is-active"
+                              : "settings-theme-palette-option"
+                          }
+                          role="radio"
+                          aria-checked={brandTheme === theme.value}
+                          type="button"
+                          onClick={() => onBrandThemeChange(theme.value)}
+                        >
+                          <span className={`settings-theme-palette-swatch is-${theme.value}`} aria-hidden="true">
+                            <span />
+                            <span />
+                            <span />
+                          </span>
+                          <span className="settings-theme-palette-copy">
+                            <strong>{theme.label}</strong>
+                            <small>{theme.description}</small>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>
