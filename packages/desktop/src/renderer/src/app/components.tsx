@@ -3520,6 +3520,8 @@ function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServ
   return transport === "remote" ? "http" : "stdio"
 }
 
+type SettingsSectionKey = "services" | "defaults" | "mcp" | "appearance" | "developer" | "archive"
+
 interface SettingsPageProps {
   activeMcpServerID: string | null
   activeMcpServerDiagnostic: McpServerDiagnostic | null
@@ -3645,9 +3647,7 @@ export function SettingsPage({
   onCancelProviderAuthFlow,
 }: SettingsPageProps) {
   {
-    const [activeSection, setActiveSection] = useState<"services" | "defaults" | "mcp" | "appearance" | "developer" | "archive">(
-      "services",
-    )
+    const [activeSection, setActiveSection] = useState<SettingsSectionKey>("services")
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
     const serviceDetailPanelRef = useRef<HTMLDivElement | null>(null)
@@ -3772,24 +3772,19 @@ export function SettingsPage({
       onClose()
     }
 
-    const primarySections = [
-      { key: "services" as const, label: "Provider", meta: `${catalog.length} providers`, Icon: SettingsIcon },
-      { key: "defaults" as const, label: "Models", meta: `${visibleModels.length} available`, Icon: ConnectedStatusIcon },
+    const primarySectionGroups = [
       {
-        key: "mcp" as const,
-        label: "MCP",
-        meta: `${mcpServers.length} servers`,
-        Icon: FolderIcon,
+        label: "\u9009\u9879",
+        items: [
+          { key: "services" as const, label: "Provider", Icon: SettingsIcon },
+          { key: "defaults" as const, label: "Models", Icon: ConnectedStatusIcon },
+          { key: "mcp" as const, label: "MCP", Icon: FolderIcon },
+          { key: "appearance" as const, label: "Appearance", Icon: LayoutSidebarLeftIcon },
+          { key: "developer" as const, label: "Developer Mode", Icon: TerminalIcon },
+          { key: "archive" as const, label: "Archived Sessions", Icon: ArchiveIcon },
+        ],
       },
-      { key: "appearance" as const, label: "Appearance", meta: "2 options", Icon: LayoutSidebarLeftIcon },
-      { key: "developer" as const, label: "Developer Mode", meta: "3 groups", Icon: TerminalIcon },
-      {
-        key: "archive" as const,
-        label: "Archived Sessions",
-        meta: `${archivedSessions.length} sessions`,
-        Icon: ArchiveIcon,
-      },
-    ]
+    ] as const
 
     return (
       <section className="settings-page-overlay" role="presentation" onClick={handleSettingsOverlayClick}>
@@ -3802,27 +3797,34 @@ export function SettingsPage({
 
           <div className="settings-page-shell">
             <aside className="settings-page-primary-nav" aria-label="Settings sections">
-              {primarySections.map((section) => {
-                const isActive = activeSection === section.key
-                const Icon = section.Icon
+              {primarySectionGroups.map((group) => (
+                <section key={group.label} className="settings-primary-nav-group" aria-label={group.label}>
+                  <p className="settings-primary-nav-group-label">{group.label}</p>
+                  <div className="settings-primary-nav-group-items">
+                    {group.items.map((section) => {
+                      const isActive = activeSection === section.key
+                      const Icon = section.Icon
 
-                return (
-                  <button
-                    key={section.key}
-                    className={isActive ? "settings-primary-nav-item is-active" : "settings-primary-nav-item"}
-                    aria-current={isActive ? "page" : undefined}
-                    onClick={() => setActiveSection(section.key)}
-                  >
-                    <span className="settings-primary-nav-icon" aria-hidden="true">
-                      <Icon />
-                    </span>
-                    <span className="settings-primary-nav-copy">
-                      <span className="settings-primary-nav-label">{section.label}</span>
-                      <small>{section.meta}</small>
-                    </span>
-                  </button>
-                )
-              })}
+                      return (
+                        <button
+                          key={section.key}
+                          className={isActive ? "settings-primary-nav-item is-active" : "settings-primary-nav-item"}
+                          aria-current={isActive ? "page" : undefined}
+                          type="button"
+                          onClick={() => setActiveSection(section.key)}
+                        >
+                          <span className="settings-primary-nav-icon" aria-hidden="true">
+                            <Icon />
+                          </span>
+                          <span className="settings-primary-nav-copy">
+                            <span className="settings-primary-nav-label">{section.label}</span>
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))}
             </aside>
 
             <div className={activeSection === "services" ? "settings-page-main is-services" : "settings-page-main"}>

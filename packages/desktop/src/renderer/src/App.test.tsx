@@ -5605,11 +5605,12 @@ describe("App", () => {
     expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
     expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(6)
-    expect(screen.getByRole("button", { name: /^Provider/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /^Models/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /^Archived Sessions/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /^Appearance/ })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /^Developer Mode/ })).toBeInTheDocument()
+    expect(screen.getByText("\u9009\u9879")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Provider" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Models" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Archived Sessions" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Appearance" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Developer Mode" })).toBeInTheDocument()
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
     expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
     expect(screen.queryByText("Search providers")).not.toBeInTheDocument()
@@ -8741,11 +8742,15 @@ describe("App", () => {
     expect(styles).toMatch(/\.settings-service-detail-panel\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s)
   })
 
-  it("keeps the settings primary nav minimal and color-led", () => {
+  it("keeps the settings primary nav grouped and pill-led", () => {
     expect(styles).toMatch(/\.settings-page-close-button\s*\{[^}]*width:\s*32px;[^}]*background:\s*transparent;/s)
-    expect(styles).toMatch(/\.settings-primary-nav-item\s*\{[^}]*background:\s*transparent;[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);/s)
-    expect(styles).toMatch(/\.settings-primary-nav-item::before\s*\{[^}]*width:\s*2px;[^}]*opacity:\s*0;/s)
-    expect(styles).toMatch(/\.settings-primary-nav-item:hover\s*\{[^}]*color:\s*#1d496c;/s)
-    expect(styles).toMatch(/\.settings-primary-nav-item:focus-visible,\s*\.settings-primary-nav-item\.is-active\s*\{[^}]*color:\s*#0f67aa;/s)
+    expect(styles).toMatch(
+      /\.settings-page-nav,\s*\.settings-page-primary-nav\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;[^}]*gap:\s*20px;/s,
+    )
+    expect(styles).toMatch(/\.settings-primary-nav-group-label\s*\{[^}]*font-size:\s*12px;[^}]*color:\s*#98a2ad;/s)
+    expect(styles).toMatch(
+      /\.settings-primary-nav-item\s*\{[^}]*border:\s*1px solid transparent;[^}]*border-radius:\s*12px;[^}]*background:\s*transparent;[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);/s,
+    )
+    expect(styles).toMatch(/\.settings-primary-nav-item\.is-active\s*\{[^}]*background:\s*#e6e7e8;[^}]*color:\s*#182532;/s)
   })
 })
