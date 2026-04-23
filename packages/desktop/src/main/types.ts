@@ -229,6 +229,7 @@ export interface AgentSessionDiffSummary {
 
 export interface AgentWorkspaceFileSearchResult {
   path: string
+  absolutePath?: string
   name: string
   extension: string | null
 }

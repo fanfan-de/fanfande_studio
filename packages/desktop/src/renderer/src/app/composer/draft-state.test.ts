@@ -65,9 +65,43 @@ describe("composer draft-state", () => {
     expect(compiled.taggedFilePaths).toEqual(["src/app/components.tsx"])
     expect(compiled.taggedMcpServerIDs).toEqual(["filesystem"])
     expect(compiled.commentReferences).toHaveLength(1)
+    expect(compiled.userReferences).toEqual([
+      {
+        id: "file:src/app/components.tsx",
+        kind: "file",
+        label: "src/app/components.tsx",
+        title: "src/app/components.tsx",
+      },
+      {
+        id: "comment-1",
+        kind: "comment",
+        label: "App.tsx:10-14",
+        title: "src/App.tsx (lines 10-14)",
+      },
+    ])
     expect(compiled.selectedSkillIDs).toEqual(["existing-skill", SKILL_OPTION.value])
     expect(compiled.transportText).toContain("Referenced files:\n- src/app/components.tsx")
     expect(compiled.transportText).toContain("Review the selected lines before making changes.")
+  })
+
+  it("keeps file tag labels short while compiling absolute file paths into transport text", () => {
+    const absolutePath = "C:\\Projects\\Atlas\\frontend\\src\\angry-birds.js"
+    let draftState = createEmptyComposerDraftState()
+    draftState = appendComposerTagToDraftState(draftState, createComposerFileTagData(absolutePath, "src/angry-birds.js"))
+
+    const compiled = compileComposerSubmission({ draftState })
+
+    expect(compiled.displayText).toContain("@src/angry-birds.js")
+    expect(compiled.taggedFilePaths).toEqual([absolutePath])
+    expect(compiled.userReferences).toEqual([
+      {
+        id: `file:${absolutePath}`,
+        kind: "file",
+        label: "src/angry-birds.js",
+        title: absolutePath,
+      },
+    ])
+    expect(compiled.transportText).toContain(`Referenced files:\n- ${absolutePath}`)
   })
 
   it("adds plain text in a new paragraph without dropping existing tags", () => {

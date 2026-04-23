@@ -560,6 +560,7 @@ declare global {
       searchWorkspaceFiles?: (input: { directory: string; query: string }) => Promise<
         Array<{
           path: string
+          absolutePath?: string
           name: string
           extension: string | null
         }>

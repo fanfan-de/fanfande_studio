@@ -12,7 +12,7 @@ import {
   applyAgentStreamEventToTurn,
   buildAgentTurn,
   buildAgentTurnFromEvents,
-  buildUserTurnText,
+  buildUserTurn,
   buildTurnsFromHistory,
   buildFailureTurn,
   buildSessionStreamingAssistantTurn,
@@ -116,6 +116,7 @@ import {
   upsertWorkspaceGroup,
 } from "./workspace"
 import { notifyGitStateChanged } from "./git-events"
+import { mergeUserTurnPresentationState, persistUserTurns, readPersistedUserTurns } from "./user-turn-presentation"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
@@ -1265,7 +1266,11 @@ export function useAgentWorkspace({
 
   function appendConversationTurns(sessionID: string, nextTurns: Turn[]) {
     bumpConversationVersion(sessionID)
-    setConversations((prev) => appendConversationTurnsToMap(prev, sessionID, nextTurns))
+    setConversations((prev) => {
+      const next = appendConversationTurnsToMap(prev, sessionID, nextTurns)
+      persistUserTurns(sessionID, next[sessionID] ?? [])
+      return next
+    })
   }
 
   function updateAssistantConversationTurn(
@@ -1277,68 +1282,17 @@ export function useAgentWorkspace({
     setConversations((prev) => updateAssistantTurnInMap(prev, sessionID, turnID, updater))
   }
 
-  function mergeUserTurnPresentationState(previousTurns: Turn[], nextTurns: Turn[]) {
-    const previousUserTurns = previousTurns.filter((turn): turn is UserTurn => turn.kind === "user")
-    let previousUserTurnIndex = 0
-
-    const mergedTurns = nextTurns.map((turn) => {
-      if (turn.kind !== "user") return turn
-
-      const previousTurn = previousUserTurns[previousUserTurnIndex++]
-      if (!previousTurn) return turn
-
-      const mergedDisplayText = previousTurn.displayText ?? turn.displayText
-      const mergedAttachments = previousTurn.attachments?.length ? previousTurn.attachments : turn.attachments
-      const mergedReferences = previousTurn.references?.length ? previousTurn.references : turn.references
-
-      return {
-        ...turn,
-        text: buildUserTurnText({
-          text: mergedDisplayText ?? turn.displayText ?? turn.text,
-          attachmentNames: mergedAttachments?.map((attachment) => attachment.name),
-          referenceLabels: mergedReferences?.map((reference) => reference.label),
-        }),
-        ...(mergedDisplayText ? { displayText: mergedDisplayText } : {}),
-        ...(mergedAttachments?.length ? { attachments: mergedAttachments } : {}),
-        ...(mergedReferences?.length ? { references: mergedReferences } : {}),
-      }
-    })
-
-    if (mergedTurns.length === 0) {
-      return previousTurns.length > 0 ? previousTurns : mergedTurns
-    }
-
-    if (mergedTurns.length >= previousTurns.length) {
-      return mergedTurns
-    }
-
-    const hasMatchingPrefix = mergedTurns.every((turn, index) => {
-      const previousTurn = previousTurns[index]
-      if (!previousTurn || previousTurn.kind !== turn.kind) return false
-
-      if (previousTurn.id === turn.id) return true
-
-      if (previousTurn.kind === "user" && turn.kind === "user") {
-        return previousTurn.text === turn.text &&
-          (previousTurn.questionAnswer?.questionID ?? "") === (turn.questionAnswer?.questionID ?? "")
-      }
-
-      if (previousTurn.kind === "assistant" && turn.kind === "assistant") {
-        return previousTurn.state === turn.state && previousTurn.items.length === turn.items.length
-      }
-
-      return false
-    })
-
-    return hasMatchingPrefix ? [...mergedTurns, ...previousTurns.slice(mergedTurns.length)] : mergedTurns
-  }
-
   function replaceConversationTurnsFromHistory(sessionID: string, nextTurns: Turn[]) {
     bumpConversationVersion(sessionID)
-    setConversations((prev) => ({
-      ...prev,
-      [sessionID]: mergeUserTurnPresentationState(prev[sessionID] ?? [], nextTurns),
-    }))
+    setConversations((prev) => {
+      const previousTurns = prev[sessionID]?.length ? prev[sessionID] : readPersistedUserTurns(sessionID)
+      const mergedTurns = mergeUserTurnPresentationState(previousTurns, nextTurns)
+      persistUserTurns(sessionID, mergedTurns)
+      return {
+        ...prev,
+        [sessionID]: mergedTurns,
+      }
+    })
   }
 
   function resolveStreamCursor(event: { id?: string; data: unknown }) {
@@ -3489,7 +3443,7 @@ export function useAgentWorkspace({
       })
   }, [deferredWorkspaceFileQuery, platform, workspaceFileReviewState.scopeDirectory])
 
-async function sendPromptToSession(input: {
+  async function sendPromptToSession(input: {
     attachments: ComposerAttachment[]
     backendSessionID?: string | null
     commentReferences?: ComposerCommentReference[]
@@ -3502,6 +3456,7 @@ async function sendPromptToSession(input: {
       freeformText?: string
     }
     reasoningEffort?: OpenAIReasoningEffort | null
+    references?: UserTurn["references"]
     session: SessionSummary
     selectedSkillIDs: string[]
     tabKey: string
@@ -3516,6 +3471,7 @@ async function sendPromptToSession(input: {
       preserveComposerState,
       questionAnswer,
       reasoningEffort,
+      references = [],
       session,
       selectedSkillIDs,
       tabKey,
@@ -3532,30 +3488,13 @@ async function sendPromptToSession(input: {
     const effectivePermissionMode = resolveComposerPermissionModeForSession(session, permissionMode)
     const effectiveSelectedSkillIDs = resolveComposerSkillSelectionForSession(session, selectedSkillIDs)
     const userTurnDisplayText = displayText?.trim() || normalizeQuestionAnswerText(questionAnswer) || undefined
-    const userTurnText = buildUserTurnText({
-      text: userTurnDisplayText ?? normalizedText,
-      attachmentNames: attachments.map((attachment) => attachment.name),
-      referenceLabels: commentReferences.map((reference) => reference.label),
+    const userTurn: Turn = buildUserTurn({
+      attachments: attachmentInputs,
+      displayText: userTurnDisplayText,
+      fallbackText: normalizedText,
+      questionAnswer,
+      references,
     })
-
-    const userTurn: Turn = {
-      id: createID("user"),
-      kind: "user",
-      text: userTurnText,
-      ...(userTurnDisplayText ? { displayText: userTurnDisplayText } : {}),
-      ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
-      ...(commentReferences.length > 0
-        ? {
-            references: commentReferences.map((reference) => ({
-              id: reference.id,
-              label: reference.label,
-              title: reference.title,
-            })),
-          }
-        : {}),
-      ...(questionAnswer ? { questionAnswer } : {}),
-      timestamp: Date.now(),
-    }
 
     if (!preserveComposerState) {
       setComposerDraftStateByTabKey((current) => ({
@@ -3579,7 +3518,7 @@ async function sendPromptToSession(input: {
             ? {
                 ...currentSession,
                 status: "Live",
-                summary: userTurnText,
+                summary: userTurn.text,
                 updated: nextUpdatedAt,
               }
             : currentSession,
@@ -3588,7 +3527,7 @@ async function sendPromptToSession(input: {
     })
 
     if (!agentConnected || !window.desktop?.createAgentSession || (!canStream && !window.desktop?.sendAgentMessage)) {
-      const fallback = buildAgentTurn(userTurnText, session, workspace.name, platform)
+      const fallback = buildAgentTurn(userTurn.text, session, workspace.name, platform)
       startTransition(() => {
         appendConversationTurns(uiSessionID, [fallback])
       })
@@ -3625,7 +3564,7 @@ async function sendPromptToSession(input: {
       }
 
       if (canStream && window.desktop?.streamAgentMessage) {
-        const streamingTurn = buildStreamingAssistantTurn(userTurnText)
+        const streamingTurn = buildStreamingAssistantTurn(userTurn.text)
         streamingTurnID = streamingTurn.id
         streamID = createID("stream")
         pendingStreamsRef.current[streamID] = {
@@ -3664,7 +3603,7 @@ async function sendPromptToSession(input: {
         throw new Error("Desktop preload does not expose an agent send method")
       }
 
-      const backendTurn = buildAgentTurnFromEvents(result.events, userTurnText)
+      const backendTurn = buildAgentTurnFromEvents(result.events, userTurn.text)
       startTransition(() => {
         appendConversationTurns(uiSessionID, [backendTurn])
       })
@@ -3750,6 +3689,7 @@ async function sendPromptToSession(input: {
         preserveComposerState: input?.preserveComposerState,
         questionAnswer: input?.questionAnswer,
         reasoningEffort: input?.selectedReasoningEffort,
+        references: compiledSubmission.userReferences,
         selectedSkillIDs: compiledSubmission.selectedSkillIDs,
         session: nextSelection.session,
         tabKey: targetTabKey,
@@ -3784,6 +3724,7 @@ async function sendPromptToSession(input: {
       preserveComposerState: input?.preserveComposerState,
       questionAnswer: input?.questionAnswer,
       reasoningEffort: input?.selectedReasoningEffort,
+      references: compiledSubmission.userReferences,
       selectedSkillIDs: compiledSubmission.selectedSkillIDs,
       session: created.session,
       tabKey: targetTabKey,

@@ -39,11 +39,13 @@ describe("workspace files", () => {
     expect(results).toEqual([
       {
         path: "docs/app-guide.md",
+        absolutePath: join(workspaceRoot, "docs", "app-guide.md"),
         name: "app-guide.md",
         extension: "md",
       },
       {
         path: "src/App.tsx",
+        absolutePath: join(workspaceRoot, "src", "App.tsx"),
         name: "App.tsx",
         extension: "tsx",
       },

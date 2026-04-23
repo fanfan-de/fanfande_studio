@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { applyAgentStreamEventToTurn, buildStreamingAssistantTurn, buildTurnsFromHistory, buildUserTurnText } from "./stream"
+import { applyAgentStreamEventToTurn, buildStreamingAssistantTurn, buildTurnsFromHistory, buildUserTurn, buildUserTurnText } from "./stream"
 
 describe("stream trace reducer", () => {
   it("surfaces the response text while the stream is still running", () => {
@@ -427,6 +427,42 @@ describe("stream trace reducer", () => {
     expect(turns[1]?.kind === "assistant" ? turns[1].items.map((item) => item.kind) : []).toEqual(["reasoning", "text", "system"])
   })
 
+  it("restores referenced file tags from persisted user history", () => {
+    const absolutePath = "C:\\Projects\\Atlas\\frontend\\src\\angry-birds.js"
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "msg-user-file-reference",
+          sessionID: "session-1",
+          role: "user",
+          created: 20,
+        },
+        parts: [{
+          id: "part-user-file-reference",
+          type: "text",
+          text: `@src/angry-birds.js\n\nReferenced files:\n- ${absolutePath}`,
+        }],
+      },
+    ])
+
+    expect(turns[0]).toMatchObject({
+      id: "msg-user-file-reference",
+      kind: "user",
+      displayText: "@src/angry-birds.js",
+      timestamp: 20,
+      references: [
+        {
+          id: `file:${absolutePath}`,
+          kind: "file",
+          label: "src/angry-birds.js",
+          title: absolutePath,
+        },
+      ],
+    })
+    expect(turns[0]?.kind === "user" ? turns[0].text : "").toContain("References: src/angry-birds.js")
+    expect(turns[0]?.kind === "user" ? turns[0].displayText : "").not.toContain("Referenced files:")
+  })
+
   it("keeps backend-only history parts as hidden system trace items with debug metadata", () => {
     const turns = buildTurnsFromHistory([
       {
@@ -515,6 +551,35 @@ describe("stream trace reducer", () => {
         attachmentNames: ["hero.png", "brief.pdf"],
       }),
     ).toBe("Review these references\n\nAttachments: hero.png, brief.pdf")
+  })
+
+  it("keeps file references as structured metadata on optimistic user turns", () => {
+    const turn = buildUserTurn({
+      displayText: "@src/angry-birds.js",
+      references: [
+        {
+          id: "file:C:\\Projects\\Atlas\\frontend\\src\\angry-birds.js",
+          kind: "file",
+          label: "src/angry-birds.js",
+          title: "C:\\Projects\\Atlas\\frontend\\src\\angry-birds.js",
+        },
+      ],
+      timestamp: 30,
+    })
+
+    expect(turn).toMatchObject({
+      kind: "user",
+      displayText: "@src/angry-birds.js",
+      timestamp: 30,
+      references: [
+        {
+          id: "file:C:\\Projects\\Atlas\\frontend\\src\\angry-birds.js",
+          label: "src/angry-birds.js",
+          title: "C:\\Projects\\Atlas\\frontend\\src\\angry-birds.js",
+        },
+      ],
+    })
+    expect(turn.text).toContain("References: src/angry-birds.js")
   })
 
   it("summarizes structured references without expanding their prompt text", () => {

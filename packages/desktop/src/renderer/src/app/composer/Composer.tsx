@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react"
 import { ContentEditable } from "@lexical/react/LexicalContentEditable"
 import { LexicalComposer } from "@lexical/react/LexicalComposer"
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary"
@@ -12,6 +12,7 @@ import {
   $getSelection,
   $isRangeSelection,
   $isTextNode,
+  type TextNode,
   type LexicalEditor,
 } from "lexical"
 import { ArrowUpIcon, ChevronDownIcon, CloseIcon, PaperclipIcon } from "../icons"
@@ -191,6 +192,8 @@ const SLASH_COMMANDS: Array<{
   },
 ]
 
+const WORKSPACE_ROOT_LABEL = "根目录"
+
 function isComposerSubmitKeyEvent(event: KeyboardEvent<HTMLElement>, isComposing: boolean) {
   if (event.key !== "Enter") return false
   if (event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return false
@@ -249,6 +252,10 @@ function matchesQuery(value: string, query: string) {
   return value.toLowerCase().includes(query.trim().toLowerCase())
 }
 
+export function formatComposerAbsoluteFilePath(filePath: string) {
+  return filePath.trim()
+}
+
 export function buildMenuStyle(anchorRect: DOMRect | null, containerRect: DOMRect | null): CSSProperties | undefined {
   if (!anchorRect || !containerRect) return undefined
 
@@ -267,6 +274,25 @@ export function shouldApplyExternalComposerDraftState(
   } catch {
     return true
   }
+}
+
+function isComposerCommandMenuTextAnchor(anchorNode: unknown): anchorNode is Pick<TextNode, "getTextContent" | "isToken"> {
+  return Boolean(
+    anchorNode &&
+      typeof anchorNode === "object" &&
+      "getTextContent" in anchorNode &&
+      typeof (anchorNode as { getTextContent?: unknown }).getTextContent === "function" &&
+      "isToken" in anchorNode &&
+      typeof (anchorNode as { isToken?: unknown }).isToken === "function",
+  )
+}
+
+export function readComposerBeforeTextForCommandMenu(anchorNode: unknown, anchorOffset: number) {
+  if (!isComposerCommandMenuTextAnchor(anchorNode) || anchorNode.isToken()) {
+    return null
+  }
+
+  return anchorNode.getTextContent().slice(0, anchorOffset)
 }
 
 export function getComposerKeyAction({
@@ -311,6 +337,20 @@ export function getComposerKeyAction({
   }
 
   return { type: "noop", preventDefault: false }
+}
+
+export function handleComposerCommandMenuMouseDown(
+  event: Pick<ReactMouseEvent<HTMLButtonElement>, "button" | "preventDefault" | "stopPropagation">,
+  onSelect: () => void,
+) {
+  if (event.button !== 0) {
+    return false
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+  onSelect()
+  return true
 }
 
 function createTextReplacement(editor: LexicalEditor, match: ComposerTriggerMatch, replacementText: string) {
@@ -371,7 +411,9 @@ function deriveCommandMenuState() {
   const anchorNode = selection.anchor.getNode()
   if (!$isTextNode(anchorNode)) return null
 
-  const beforeText = anchorNode.getTextContent().slice(0, selection.anchor.offset)
+  const beforeText = readComposerBeforeTextForCommandMenu(anchorNode, selection.anchor.offset)
+  if (beforeText === null) return null
+
   const selectorMatch = findTriggerMatch(beforeText, /(^|\s)\/(file|skill|mcp)(?:\s+([^\n]*))?$/)
   if (selectorMatch) {
     return {
@@ -612,10 +654,7 @@ export function Composer({
       return []
     }
 
-    return [
-      ...(showProjectTagCommands ? buildSkillTagItems(state.query) : []),
-      ...(showProjectTagCommands ? buildMcpTagItems(state.query) : []),
-    ]
+    return []
   }
 
   function readCommandMenuStateFromEditor() {
@@ -698,13 +737,14 @@ export function Composer({
       }
 
       return results.map((result) => {
-        const tagData = createComposerFileTagData(result.path, result.path)
+        const tagData = createComposerFileTagData(result.absolutePath ?? result.path, result.path)
+        const filePathDescription = formatComposerAbsoluteFilePath(result.absolutePath ?? result.path)
         return {
           type: "tag",
           key: `file:${result.path}`,
           group: "Files",
-          label: result.path,
-          description: result.name,
+          label: result.name,
+          description: filePathDescription,
           disabled: currentTagIdentities.has(readComposerTagIdentity(tagData)),
           tagData,
         } satisfies ComposerCommandMenuItem
@@ -736,17 +776,10 @@ export function Composer({
       return
     }
 
-    const query = commandMenuState.query
-    const nextItems = [
-      ...(showProjectTagCommands ? buildSkillTagItems(query) : []),
-      ...(showProjectTagCommands ? buildMcpTagItems(query) : []),
-    ]
-    setCommandMenuItemsWithRef(nextItems)
-    void buildFileTagItems(query).then((fileItems) => {
+    setCommandMenuItemsWithRef([])
+    void buildFileTagItems(commandMenuState.query).then((fileItems) => {
       if (!fileItems) return
-      const mergedItems = [...fileItems, ...commandMenuItemsRef.current]
-      commandMenuItemsRef.current = mergedItems
-      setCommandMenuItems(mergedItems)
+      setCommandMenuItemsWithRef(fileItems)
     })
   }, [
     commandMenuState,
@@ -865,10 +898,6 @@ export function Composer({
     setCommandMenuStateWithRef(null)
   }
 
-  function handleCommandMenuPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    event.preventDefault()
-  }
-
   function isEditorEventTarget(target: EventTarget | null) {
     return target instanceof Node && contentEditableRef.current?.contains(target)
   }
@@ -932,6 +961,12 @@ export function Composer({
   const selectedModelButtonLabel = selectedReasoningEffort
     ? `${selectedModelLabel} · ${selectedReasoningEffortLabel}`
     : selectedModelLabel
+  const commandMenuEmptyLabel =
+    commandMenuState?.kind === "mention" || (commandMenuState?.kind === "slash-selector" && commandMenuState.selector === "file")
+      ? "Type a file name to search this project."
+      : commandMenuState?.kind === "slash-command"
+        ? "No matching commands."
+        : "No matching commands or tags."
 
   return (
     <footer ref={footerRef} className="composer prompt-input-shell" onKeyDownCapture={handleEditorKeyDown}>
@@ -941,35 +976,37 @@ export function Composer({
           editorState: normalizedDraftState.lexicalJSON,
         }}
       >
-        <ComposerEditorSyncPlugin draftState={normalizedDraftState} onReady={handleEditorReady} />
-        <HistoryPlugin />
-        <OnChangePlugin onChange={handleEditorChange} />
-        <PlainTextPlugin
-          contentEditable={
-            <ContentEditable
-              aria-description={sendButtonDescription}
-              aria-label="Task draft"
-              className="composer-editor-input"
-              onCompositionEnd={() => {
-                isComposingRef.current = false
-              }}
-              onCompositionStart={() => {
-                isComposingRef.current = true
-              }}
-              ref={contentEditableRef}
-            />
-          }
-          ErrorBoundary={LexicalErrorBoundary}
-          placeholder={<div className="composer-editor-placeholder">Describe the UI, implementation task, or review target for the agent.</div>}
-        />
+        <div className="composer-editor-shell">
+          <ComposerEditorSyncPlugin draftState={normalizedDraftState} onReady={handleEditorReady} />
+          <HistoryPlugin />
+          <OnChangePlugin onChange={handleEditorChange} />
+          <PlainTextPlugin
+            contentEditable={
+              <ContentEditable
+                aria-description={sendButtonDescription}
+                aria-label="Task draft"
+                className="composer-editor-input"
+                onCompositionEnd={() => {
+                  isComposingRef.current = false
+                }}
+                onCompositionStart={() => {
+                  isComposingRef.current = true
+                }}
+                ref={contentEditableRef}
+              />
+            }
+            ErrorBoundary={LexicalErrorBoundary}
+            placeholder={<div className="composer-editor-placeholder">Describe the UI, implementation task, or review target for the agent.</div>}
+          />
+        </div>
       </LexicalComposer>
 
       {commandMenuState ? (
         <div
           className="composer-command-menu"
+          data-kind={commandMenuState.kind}
           role="listbox"
           aria-label="Composer commands"
-          style={buildMenuStyle(commandMenuState.anchorRect, footerRef.current?.getBoundingClientRect() ?? null)}
         >
           {commandMenuItems.length > 0 ? (
             commandMenuItems.map((item, index) => (
@@ -980,22 +1017,28 @@ export function Composer({
                 aria-selected={index === activeCommandIndex}
                 className={index === activeCommandIndex ? "composer-command-option is-active" : "composer-command-option"}
                 disabled={item.disabled}
-                onMouseDown={handleCommandMenuPointerDown}
-                onClick={() => handleCommandMenuItemSelect(item)}
+                onMouseDown={(event) => {
+                  handleComposerCommandMenuMouseDown(event, () => handleCommandMenuItemSelect(item))
+                }}
               >
-                <span className="composer-command-option-group">{item.group}</span>
-                <span className="composer-command-option-copy">
+                <span
+                  className={
+                    item.type === "tag" && item.tagData.kind === "file"
+                      ? "composer-command-option-copy is-file"
+                      : "composer-command-option-copy"
+                  }
+                >
                   <strong>{item.label}</strong>
-                  <small>{item.description}</small>
+                  {item.type === "tag" && item.tagData.kind === "file" && item.description ? (
+                    <span className="composer-command-option-meta" title={item.description}>
+                      {item.description}
+                    </span>
+                  ) : null}
                 </span>
               </button>
             ))
           ) : (
-            <div className="composer-command-empty">
-              {commandMenuState.kind === "slash-selector" && commandMenuState.selector === "file"
-                ? "Type a file name to search this project."
-                : "No matching commands or tags."}
-            </div>
+            <div className="composer-command-empty">{commandMenuEmptyLabel}</div>
           )}
         </div>
       ) : null}

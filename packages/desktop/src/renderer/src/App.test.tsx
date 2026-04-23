@@ -1189,8 +1189,8 @@ describe("App", () => {
 
     const threadReferenceChip = screen
       .getAllByText(/focus-files\.tsx:L2-L3/)
-      .find((element) => element.closest(".user-bubble-reference-chip"))
-    expect(threadReferenceChip?.closest(".user-bubble-reference-chip")).not.toBeNull()
+      .find((element) => element.classList.contains("composer-inline-tag"))
+    expect(threadReferenceChip).toHaveClass("composer-inline-tag", "thread-inline-reference", "is-comment")
     expect(screen.getByText("Check how these values flow through the summary.")).toBeInTheDocument()
     expect(screen.queryByText("File feedback for src/focus-files.tsx (Lines 2-3)")).not.toBeInTheDocument()
   })
@@ -1298,8 +1298,8 @@ describe("App", () => {
       expect(screen.queryByLabelText("Selected comment references")).not.toBeInTheDocument()
     })
 
-    const initialReferenceChip = await screen.findByText("focus-files.tsx:L2-L3")
-    expect(initialReferenceChip.closest(".user-bubble-reference-chip")).not.toBeNull()
+    const initialReferenceChip = await screen.findByText("@focus-files.tsx:L2-L3")
+    expect(initialReferenceChip).toHaveClass("composer-inline-tag", "thread-inline-reference", "is-comment")
 
     await act(async () => {
       historyPhase = "after-send"
@@ -1324,8 +1324,8 @@ describe("App", () => {
       ).toBe(true)
     })
 
-    const referenceChipAfterRefresh = await screen.findByText("focus-files.tsx:L2-L3")
-    expect(referenceChipAfterRefresh.closest(".user-bubble-reference-chip")).not.toBeNull()
+    const referenceChipAfterRefresh = await screen.findByText("@focus-files.tsx:L2-L3")
+    expect(referenceChipAfterRefresh).toHaveClass("composer-inline-tag", "thread-inline-reference", "is-comment")
     expect(screen.getByText("Check how these values flow through the summary.")).toBeInTheDocument()
     expect(screen.getByText("History refresh complete.")).toBeInTheDocument()
     expect(screen.queryByText("File feedback for src/focus-files.tsx (Lines 2-3)")).not.toBeInTheDocument()
@@ -8690,6 +8690,27 @@ describe("App", () => {
     )
     expect(styles).toMatch(
       /\.composer-menu-panel\s*\{[^}]*bottom:\s*calc\(100%\s*\+\s*8px\);[^}]*max-height:\s*min\(320px,\s*calc\(100dvh - 180px\)\);[^}]*overflow:\s*auto;/s,
+    )
+  })
+
+  it("aligns inline composer tags to the text bottom edge", () => {
+    expect(styles).toMatch(
+      /\.composer-inline-tag\s*\{[^}]*display:\s*inline-flex;[^}]*box-sizing:\s*border-box;[^}]*line-height:\s*1;[^}]*vertical-align:\s*text-bottom;/s,
+    )
+    expect(styles).toMatch(
+      /\.thread-inline-reference\s*\{[^}]*white-space:\s*nowrap;[^}]*vertical-align:\s*text-bottom;/s,
+    )
+  })
+
+  it("gives composer and user body text a slightly larger size than tag text", () => {
+    expect(styles).toMatch(
+      /\.composer-editor-input\s*\{[^}]*font-size:\s*16px;[^}]*line-height:\s*1\.65;/s,
+    )
+    expect(styles).toMatch(
+      /\.composer-editor-placeholder\s*\{[^}]*font-size:\s*16px;[^}]*line-height:\s*1\.65;/s,
+    )
+    expect(styles).toMatch(
+      /\.user-bubble\s*\{[^}]*font-size:\s*16px;[^}]*line-height:\s*1\.6;/s,
     )
   })
 

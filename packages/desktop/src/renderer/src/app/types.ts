@@ -255,6 +255,7 @@ export interface WorkspacePreviewState {
 
 export interface WorkspaceFileSearchResult {
   path: string
+  absolutePath?: string
   name: string
   extension: string | null
 }
@@ -498,6 +499,7 @@ export interface UserTurnReference {
   id: string
   label: string
   title?: string
+  kind?: "comment" | "file"
 }
 
 export type AssistantTraceItemKind =

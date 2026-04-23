@@ -14,6 +14,7 @@ import type {
   ComposerMcpOption,
   ComposerTagData,
   ComposerSkillOption,
+  UserTurnReference,
 } from "../types"
 import { $createComposerTagNode, $isComposerTagNode, ComposerTagNode } from "./ComposerTagNode"
 
@@ -23,6 +24,7 @@ export interface CompiledComposerSubmission {
   selectedSkillIDs: string[]
   taggedFilePaths: string[]
   taggedMcpServerIDs: string[]
+  userReferences: UserTurnReference[]
   transportText: string
 }
 
@@ -151,6 +153,40 @@ function buildComposerCommentReferences(tags: ComposerTagData[]) {
         } satisfies ComposerCommentReference]
       : [],
   )
+}
+
+function buildComposerUserReferences(tags: ComposerTagData[]) {
+  const references: UserTurnReference[] = []
+  const seen = new Set<string>()
+
+  for (const tag of tags) {
+    if (tag.kind === "file") {
+      const identity = `file:${tag.filePath}`
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      references.push({
+        id: identity,
+        label: tag.label,
+        kind: "file",
+        title: tag.filePath,
+      })
+      continue
+    }
+
+    if (tag.kind === "comment") {
+      const identity = `comment:${tag.id}`
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      references.push({
+        id: tag.id,
+        label: tag.label,
+        kind: "comment",
+        title: tag.title,
+      })
+    }
+  }
+
+  return references
 }
 
 function getComposerTagIdentity(tag: ComposerTagData) {
@@ -372,6 +408,7 @@ export function compileComposerSubmission(input: {
   const normalizedDraftState = normalizeComposerDraftState(input.draftState)
   const tags = readComposerTagsFromDraftState(normalizedDraftState)
   const commentReferences = buildComposerCommentReferences(tags)
+  const userReferences = buildComposerUserReferences(tags)
   const taggedFilePaths = [...new Set(tags.flatMap((tag) => (tag.kind === "file" ? [tag.filePath] : [])))]
   const taggedMcpServerIDs = [...new Set(tags.flatMap((tag) => (tag.kind === "mcp" ? [tag.serverID] : [])))]
   const selectedSkillIDs = [
@@ -402,6 +439,7 @@ export function compileComposerSubmission(input: {
     selectedSkillIDs,
     taggedFilePaths,
     taggedMcpServerIDs,
+    userReferences,
     transportText: [displayText, ...transportSections].filter(Boolean).join("\n\n"),
   } satisfies CompiledComposerSubmission
 }

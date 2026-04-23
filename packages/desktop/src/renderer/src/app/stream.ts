@@ -13,6 +13,9 @@ import type {
   LoadedSessionHistoryMessage,
   SessionSummary,
   Turn,
+  UserTurn,
+  UserTurnAttachment,
+  UserTurnReference,
 } from "./types"
 import { compactText, createID } from "./utils"
 
@@ -1112,6 +1115,73 @@ function summarizeReferenceLabels(referenceLabels: string[]) {
   return compactText(referenceLabels.join(", "), 140)
 }
 
+function buildHistoryFileReferenceLabel(filePath: string) {
+  const normalizedPath = filePath.trim().replace(/\\/g, "/")
+  if (!normalizedPath) return "Reference"
+  if (!/^(?:[a-z]:\/|\/)/i.test(normalizedPath)) return normalizedPath
+
+  const segments = normalizedPath.split("/").filter(Boolean)
+  if (segments.length >= 2) {
+    return `${segments[segments.length - 2]}/${segments[segments.length - 1]}`
+  }
+
+  return segments[segments.length - 1] ?? filePath
+}
+
+function extractReferencedFilePathsFromText(text: string) {
+  if (!text.includes("Referenced files:")) {
+    return {
+      displayText: text.trim(),
+      references: [] as UserTurnReference[],
+    }
+  }
+
+  const lines = text.split("\n")
+  const keptLines: string[] = []
+  const filePaths: string[] = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim() ?? ""
+    if (line !== "Referenced files:") {
+      keptLines.push(lines[index] ?? "")
+      continue
+    }
+
+    const sectionPaths: string[] = []
+    let cursor = index + 1
+    while (cursor < lines.length) {
+      const itemLine = lines[cursor] ?? ""
+      if (!itemLine.startsWith("- ")) break
+      const filePath = itemLine.slice(2).trim()
+      if (filePath) {
+        sectionPaths.push(filePath)
+      }
+      cursor += 1
+    }
+
+    if (sectionPaths.length === 0) {
+      keptLines.push(lines[index] ?? "")
+      continue
+    }
+
+    filePaths.push(...sectionPaths)
+    index = cursor - 1
+  }
+
+  const displayText = keptLines.join("\n").replace(/\n{3,}/g, "\n\n").trim()
+  const references = [...new Set(filePaths)].map((filePath) => ({
+    id: `file:${filePath}`,
+    kind: "file" as const,
+    label: buildHistoryFileReferenceLabel(filePath),
+    title: filePath,
+  }))
+
+  return {
+    displayText,
+    references,
+  }
+}
+
 export function buildUserTurnText(input: {
   text?: string
   attachmentNames?: string[]
@@ -1157,6 +1227,37 @@ export function buildUserTurnText(input: {
   return sections.join("\n\n")
 }
 
+export function buildUserTurn(input: {
+  attachments?: UserTurnAttachment[]
+  displayText?: string
+  fallbackText?: string
+  id?: string
+  questionAnswer?: UserTurn["questionAnswer"]
+  references?: UserTurnReference[]
+  timestamp?: number
+}) {
+  const displayText = readString(input.displayText).trim()
+  const fallbackText = readString(input.fallbackText).trim()
+  const attachments = (input.attachments ?? []).filter((attachment) => attachment.name.trim().length > 0)
+  const references = (input.references ?? []).filter((reference) => reference.label.trim().length > 0)
+  const text = buildUserTurnText({
+    text: displayText || fallbackText,
+    attachmentNames: attachments.map((attachment) => attachment.name),
+    referenceLabels: references.map((reference) => reference.label),
+  })
+
+  return {
+    id: input.id ?? createID("user"),
+    kind: "user",
+    text,
+    ...(displayText ? { displayText } : {}),
+    ...(attachments.length > 0 ? { attachments } : {}),
+    ...(references.length > 0 ? { references } : {}),
+    ...(input.questionAnswer ? { questionAnswer: input.questionAnswer } : {}),
+    timestamp: input.timestamp ?? Date.now(),
+  } satisfies UserTurn
+}
+
 function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]) {
   const error = readRecord(info.error)
   if (error) return "Backend request failed"
@@ -1186,21 +1287,18 @@ function resolveAssistantHistoryToolName(items: AssistantTraceItem[]) {
 function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
   const textParts = extractTextParts(message.parts)
   const attachmentNames = extractAttachmentNames(message.parts)
-  const displayText = textParts.join("\n\n").trim()
   const attachments = attachmentNames.map((name) => ({ name }))
   const questionAnswer = extractQuestionAnswer(message.parts)
-  return {
+  const presentation = extractReferencedFilePathsFromText(textParts.join("\n\n").trim())
+
+  return buildUserTurn({
     id: message.info.id || createID("user"),
-    kind: "user",
-    text: buildUserTurnText({
-      text: displayText,
-      attachmentNames,
-    }),
-    ...(displayText ? { displayText } : {}),
-    ...(attachments.length > 0 ? { attachments } : {}),
-    ...(questionAnswer ? { questionAnswer } : {}),
+    attachments,
+    displayText: presentation.displayText,
+    questionAnswer,
+    references: presentation.references,
     timestamp: readNumber(message.info.created) || Date.now(),
-  } satisfies Turn
+  }) satisfies Turn
 }
 
 function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {

@@ -79,6 +79,7 @@ async function collectWorkspaceFileMatches(
 
     results.push({
       path: toRelativeWorkspacePath(workspaceRoot, entryPath),
+      absolutePath: entryPath,
       name: entry.name,
       extension: getFileExtension(entry.name),
     })

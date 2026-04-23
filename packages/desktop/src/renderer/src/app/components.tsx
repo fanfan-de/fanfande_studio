@@ -6,6 +6,7 @@ import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitS
 import { PreviewPanel } from "./preview/PreviewPanel"
 import { buildTurnsFromHistory } from "./stream"
 import { ThreadRichText } from "./thread-rich-text"
+import { mergeUserTurnPresentationState, readPersistedUserTurns } from "./user-turn-presentation"
 import { Composer } from "./composer/Composer"
 import { createComposerDraftStateFromPlainText, createEmptyComposerDraftState } from "./composer/draft-state"
 import { useProjectComposer } from "./use-project-composer"
@@ -5622,6 +5623,7 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
   const references = turn.references ?? []
   const attachments = turn.attachments ?? []
   const hasStructuredContent = Boolean(displayText) || references.length > 0 || attachments.length > 0
+  const bodyText = displayText || (references.length > 0 ? references.map((reference) => `@${reference.label}`).join(" ") : turn.text)
 
   if (!hasStructuredContent) {
     return (
@@ -5634,20 +5636,7 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
   return (
     <div className="user-bubble">
       <div className="user-bubble-content">
-        {displayText ? <ThreadRichText as="div" className="user-bubble-text" text={displayText} /> : null}
-
-        {references.length > 0 ? (
-          <div className="user-bubble-chip-strip" aria-label="Sent references">
-            {references.map((reference) => (
-              <div key={reference.id} className="user-bubble-chip user-bubble-reference-chip">
-                <FileTextIcon />
-                <span className="user-bubble-chip-label" title={reference.title ?? reference.label}>
-                  {reference.label}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <ThreadRichText as="div" className="user-bubble-text" references={references} text={bodyText} />
 
         {attachments.length > 0 ? (
           <div className="user-bubble-chip-strip" aria-label="Sent attachments">
@@ -6058,7 +6047,8 @@ function InlineSideChatThread({
     void getSessionHistory({ sessionID: session.id })
       .then((messages) => {
         if (isCancelled) return
-        setHydratedTurns(buildTurnsFromHistory(messages))
+        const nextTurns = buildTurnsFromHistory(messages)
+        setHydratedTurns(mergeUserTurnPresentationState(readPersistedUserTurns(session.id), nextTurns))
       })
       .catch((error) => {
         if (isCancelled) return

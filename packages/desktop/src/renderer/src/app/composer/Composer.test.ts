@@ -1,6 +1,13 @@
 import type { LexicalEditor } from "lexical"
-import { describe, expect, it } from "vitest"
-import { buildMenuStyle, getComposerKeyAction, shouldApplyExternalComposerDraftState } from "./Composer"
+import { describe, expect, it, vi } from "vitest"
+import {
+  buildMenuStyle,
+  formatComposerAbsoluteFilePath,
+  getComposerKeyAction,
+  handleComposerCommandMenuMouseDown,
+  readComposerBeforeTextForCommandMenu,
+  shouldApplyExternalComposerDraftState,
+} from "./Composer"
 import { createComposerDraftStateFromPlainText } from "./draft-state"
 
 function createEditorStateMock(lexicalJSON: string) {
@@ -47,6 +54,42 @@ describe("buildMenuStyle", () => {
       left: "56px",
       bottom: "218px",
     })
+  })
+})
+
+describe("readComposerBeforeTextForCommandMenu", () => {
+  it("returns the visible prefix for regular text nodes", () => {
+    const anchorNode = {
+      getTextContent() {
+        return "@world-of-goo.js"
+      },
+      isToken() {
+        return false
+      },
+    }
+
+    expect(readComposerBeforeTextForCommandMenu(anchorNode, "@world-of-goo.js".length)).toBe("@world-of-goo.js")
+  })
+
+  it("ignores token nodes so tag boundary selections do not keep menus open", () => {
+    const anchorNode = {
+      getTextContent() {
+        return "@world-of-goo.js"
+      },
+      isToken() {
+        return true
+      },
+    }
+
+    expect(readComposerBeforeTextForCommandMenu(anchorNode, "@world-of-goo.js".length)).toBeNull()
+  })
+})
+
+describe("formatComposerAbsoluteFilePath", () => {
+  it("preserves the absolute file path for menu display", () => {
+    expect(formatComposerAbsoluteFilePath("C:\\Projects\\Atlas\\games\\angry-birds.html")).toBe(
+      "C:\\Projects\\Atlas\\games\\angry-birds.html",
+    )
   })
 })
 
@@ -105,5 +148,49 @@ describe("getComposerKeyAction", () => {
       type: "send",
       preventDefault: true,
     })
+  })
+})
+
+describe("handleComposerCommandMenuMouseDown", () => {
+  it("selects the menu item on primary-button mouse down", () => {
+    const preventDefault = vi.fn()
+    const stopPropagation = vi.fn()
+    const onSelect = vi.fn()
+
+    expect(
+      handleComposerCommandMenuMouseDown(
+        {
+          button: 0,
+          preventDefault,
+          stopPropagation,
+        },
+        onSelect,
+      ),
+    ).toBe(true)
+
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(stopPropagation).toHaveBeenCalledOnce()
+    expect(onSelect).toHaveBeenCalledOnce()
+  })
+
+  it("ignores non-primary mouse buttons", () => {
+    const preventDefault = vi.fn()
+    const stopPropagation = vi.fn()
+    const onSelect = vi.fn()
+
+    expect(
+      handleComposerCommandMenuMouseDown(
+        {
+          button: 2,
+          preventDefault,
+          stopPropagation,
+        },
+        onSelect,
+      ),
+    ).toBe(false)
+
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(stopPropagation).not.toHaveBeenCalled()
+    expect(onSelect).not.toHaveBeenCalled()
   })
 })

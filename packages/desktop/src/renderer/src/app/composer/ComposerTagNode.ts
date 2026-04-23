@@ -32,6 +32,9 @@ export function formatComposerTagText(tagData: ComposerTagData) {
 function applyComposerTagDomAttributes(element: HTMLElement, tagData: ComposerTagData) {
   element.className = `composer-inline-tag is-${tagData.kind}`
   element.dataset.composerTagKind = tagData.kind
+  element.contentEditable = "false"
+  element.spellcheck = false
+  element.tabIndex = -1
   element.title = readComposerTagTitle(tagData)
 }
 

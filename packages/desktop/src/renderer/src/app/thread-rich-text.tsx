@@ -1,16 +1,30 @@
 import { Fragment, type MouseEvent, type ReactNode } from "react"
+import type { UserTurnReference } from "./types"
 
 type ThreadRichTextElement = "div" | "p" | "span"
 
-export interface ThreadRichTextSegment {
-  type: "text" | "link"
-  text: string
-  href?: string
-}
+type ThreadRichTextReference = UserTurnReference
+
+type ThreadRichTextSegment =
+  | {
+      type: "text"
+      text: string
+    }
+  | {
+      type: "link"
+      text: string
+      href: string
+    }
+  | {
+      type: "reference"
+      text: string
+      reference: ThreadRichTextReference
+    }
 
 interface ThreadRichTextProps {
   as?: ThreadRichTextElement
   className?: string
+  references?: ThreadRichTextReference[]
   text: string
 }
 
@@ -19,6 +33,13 @@ interface MarkdownLinkMatch {
   end: number
   label: string
   href: string
+}
+
+interface ThreadReferenceMatch {
+  end: number
+  reference: ThreadRichTextReference
+  start: number
+  text: string
 }
 
 const BARE_URL_PATTERN = /https?:\/\/[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+/g
@@ -203,7 +224,40 @@ function findNextMarkdownLink(text: string, startIndex: number): MarkdownLinkMat
   return null
 }
 
-export function parseThreadRichText(text: string): ThreadRichTextSegment[] {
+function resolveThreadReferenceKind(reference: ThreadRichTextReference) {
+  if (reference.kind) return reference.kind
+  return reference.id.startsWith("file:") ? "file" : "comment"
+}
+
+function findNextThreadReference(text: string, startIndex: number, references: ThreadRichTextReference[]) {
+  let nextMatch: ThreadReferenceMatch | null = null
+
+  for (const reference of references) {
+    const token = `@${reference.label}`
+    if (!token.trim()) continue
+
+    const matchStart = text.indexOf(token, startIndex)
+    if (matchStart === -1) continue
+
+    if (
+      nextMatch &&
+      (matchStart > nextMatch.start || (matchStart === nextMatch.start && token.length <= nextMatch.text.length))
+    ) {
+      continue
+    }
+
+    nextMatch = {
+      start: matchStart,
+      end: matchStart + token.length,
+      text: token,
+      reference,
+    }
+  }
+
+  return nextMatch
+}
+
+function parseThreadRichTextWithoutReferences(text: string): ThreadRichTextSegment[] {
   const segments: ThreadRichTextSegment[] = []
   let cursor = 0
 
@@ -231,26 +285,73 @@ export function parseThreadRichText(text: string): ThreadRichTextSegment[] {
   return segments.filter((segment) => segment.text.length > 0)
 }
 
+export function parseThreadRichText(text: string, references: ThreadRichTextReference[] = []): ThreadRichTextSegment[] {
+  if (references.length === 0) {
+    return parseThreadRichTextWithoutReferences(text)
+  }
+
+  const segments: ThreadRichTextSegment[] = []
+  let cursor = 0
+
+  while (cursor < text.length) {
+    const referenceMatch = findNextThreadReference(text, cursor, references)
+
+    if (!referenceMatch) {
+      segments.push(...parseThreadRichTextWithoutReferences(text.slice(cursor)))
+      break
+    }
+
+    if (referenceMatch.start > cursor) {
+      segments.push(...parseThreadRichTextWithoutReferences(text.slice(cursor, referenceMatch.start)))
+    }
+
+    segments.push({
+      type: "reference",
+      text: referenceMatch.text,
+      reference: referenceMatch.reference,
+    })
+    cursor = referenceMatch.end
+  }
+
+  return segments.filter((segment) => segment.text.length > 0)
+}
+
 function renderSegment(segment: ThreadRichTextSegment, index: number): ReactNode {
-  if (segment.type === "text" || !segment.href) {
+  if (segment.type === "text") {
     return <Fragment key={`text-${index}`}>{segment.text}</Fragment>
   }
+
+  if (segment.type === "reference") {
+    const kind = resolveThreadReferenceKind(segment.reference)
+    return (
+      <span
+        key={`reference-${index}-${segment.reference.id}`}
+        className={`composer-inline-tag thread-inline-reference is-${kind}`}
+        data-thread-reference-kind={kind}
+        title={segment.reference.title ?? segment.reference.label}
+      >
+        {segment.text}
+      </span>
+    )
+  }
+
+  const href = segment.href
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     const openExternalUrl = window.desktop?.openExternalUrl
     if (!openExternalUrl) return
 
     event.preventDefault()
-    void openExternalUrl({ url: segment.href! }).catch((error) => {
+    void openExternalUrl({ url: href }).catch((error) => {
       console.error("[desktop] Failed to open external URL.", error)
     })
   }
 
   return (
     <a
-      key={`link-${index}-${segment.href}`}
+      key={`link-${index}-${href}`}
       className="thread-inline-link"
-      href={segment.href}
+      href={href}
       onClick={handleClick}
       rel="noreferrer noopener"
       target="_blank"
@@ -263,10 +364,11 @@ function renderSegment(segment: ThreadRichTextSegment, index: number): ReactNode
 export function ThreadRichText({
   as = "p",
   className,
+  references = [],
   text,
 }: ThreadRichTextProps) {
   const Component = as
-  const segments = parseThreadRichText(text)
+  const segments = parseThreadRichText(text, references)
 
   return (
     <Component className={className}>
