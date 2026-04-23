@@ -316,11 +316,19 @@ export function App() {
     deleteProvider,
     deletingArchivedSessionID,
     deletingMcpServerID,
+    deletingPromptPresetID,
     deletingProviderID,
+    isCreatingPromptPreset,
     isLoading,
+    isLoadingPromptPreset,
+    isLoadingPrompts,
     isLoadingArchivedSessions,
     isOpen,
+    isPromptDirty,
+    isSystemPromptPresetDirty,
+    isPlanModePromptPresetDirty,
     isRefreshingProviderCatalog,
+    isSavingPromptPresetSelection,
     isSavingSelection,
     loadError,
     mcpServerDraft,
@@ -328,24 +336,42 @@ export function App() {
     message,
     models,
     openSettings,
+    promptDraftLabel,
+    promptDraftContent,
+    promptLoadError,
+    promptPresets,
+    promptPresetSelection,
     projectID,
     projectName,
     projectWorktree,
     providerDrafts,
+    createPromptPreset,
+    deletePromptPreset,
     refreshProviderCatalog,
+    resetPromptPreset,
+    resettingPromptPresetID,
     restoringArchivedSessionID,
     savedSelection,
     restoreArchivedSession,
     saveMcpServer,
+    savePromptPreset,
+    savePromptPresetSelection,
+    savingPromptPresetSelectionField,
     saveProviderApiKey,
     saveProvider,
     saveSelection,
     savingMcpServerID,
+    savingPromptPresetID,
     savingProviderID,
+    selectedPromptPreset,
     setProviderAuthMethod,
+    setPromptDraftLabelValue,
+    setPromptPresetSelectionValue,
+    selectPromptPreset,
     selectMcpServer,
     selectionDraft,
     setMcpServerDraftValue,
+    setPromptDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
     startProviderAuthFlow,
@@ -832,31 +858,50 @@ export function App() {
           catalog={catalog}
           deletingArchivedSessionID={deletingArchivedSessionID}
           deletingMcpServerID={deletingMcpServerID}
+          deletingPromptPresetID={deletingPromptPresetID}
           deletingProviderID={deletingProviderID}
           assistantTraceVisibility={assistantTraceVisibility}
           colorMode={colorMode}
+          isCreatingPromptPreset={isCreatingPromptPreset}
           isActivityRailVisible={isActivityRailVisible}
           isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
           isDebugLineColorsEnabled={isDebugLineColorsEnabled}
           isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
           isLoading={isLoading}
+          isLoadingPromptPreset={isLoadingPromptPreset}
+          isLoadingPrompts={isLoadingPrompts}
           isLoadingArchivedSessions={isLoadingArchivedSessions}
           isOpen={isOpen}
+          isPromptDirty={isPromptDirty}
+          isSystemPromptPresetDirty={isSystemPromptPresetDirty}
+          isPlanModePromptPresetDirty={isPlanModePromptPresetDirty}
           isRefreshingProviderCatalog={isRefreshingProviderCatalog}
+          isSavingPromptPresetSelection={isSavingPromptPresetSelection}
           isSavingSelection={isSavingSelection}
           loadError={loadError}
           mcpServerDraft={mcpServerDraft}
           mcpServers={mcpServers}
           message={message}
           models={models}
+          promptDraftLabel={promptDraftLabel}
+          promptDraftContent={promptDraftContent}
+          promptLoadError={promptLoadError}
+          promptPresets={promptPresets}
+          promptPresetSelection={promptPresetSelection}
           projectID={projectID}
           projectName={projectName}
           projectWorktree={projectWorktree}
           providerDrafts={providerDrafts}
+          onCreatePromptPreset={createPromptPreset}
+          onDeletePromptPreset={deletePromptPreset}
+          resettingPromptPresetID={resettingPromptPresetID}
           restoringArchivedSessionID={restoringArchivedSessionID}
           savedSelection={savedSelection}
           savingMcpServerID={savingMcpServerID}
+          savingPromptPresetID={savingPromptPresetID}
+          savingPromptPresetSelectionField={savingPromptPresetSelectionField}
           savingProviderID={savingProviderID}
+          selectedPromptPreset={selectedPromptPreset}
           selectionDraft={selectionDraft}
           onColorModeChange={handleColorModeChange}
           onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
@@ -870,12 +915,19 @@ export function App() {
           onDeleteProviderAuthSession={deleteProviderAuthSession}
           onDeleteProvider={deleteProvider}
           onMcpServerDraftChange={setMcpServerDraftValue}
+          onPromptDraftLabelChange={setPromptDraftLabelValue}
+          onPromptDraftChange={setPromptDraftValue}
+          onPromptPresetSelectionChange={setPromptPresetSelectionValue}
+          onSavePromptPresetSelection={savePromptPresetSelection}
+          onPromptPresetSelect={selectPromptPreset}
           onMcpServerSelect={selectMcpServer}
           onProviderAuthMethodChange={setProviderAuthMethod}
           onProviderDraftChange={setProviderDraftValue}
           onRefreshProviderCatalog={refreshProviderCatalog}
+          onResetPromptPreset={resetPromptPreset}
           onRestoreArchivedSession={restoreArchivedSession}
           onSaveMcpServer={saveMcpServer}
+          onSavePromptPreset={savePromptPreset}
           onSaveProviderApiKey={saveProviderApiKey}
           onSaveProvider={saveProvider}
           onSaveSelection={saveSelection}

@@ -104,6 +104,38 @@ const SelectedSkillsField = z
   .optional()
   .describe("Project-scoped selected skill ids")
 
+const PromptOverridesField = z
+  .record(z.string(), z.string())
+  .optional()
+  .describe("Prompt preset overrides keyed by preset id")
+
+export const CustomPromptPreset = z
+  .object({
+    label: z.string().min(1),
+    content: z.string(),
+    description: z.string().optional(),
+  })
+  .strict()
+  .meta({
+    ref: "CustomPromptPreset",
+  })
+export type CustomPromptPreset = z.infer<typeof CustomPromptPreset>
+
+const CustomPromptPresetsField = z
+  .record(z.string(), CustomPromptPreset)
+  .optional()
+  .describe("Custom prompt preset definitions keyed by preset id")
+
+const SelectedSystemPromptPresetField = z
+  .string()
+  .optional()
+  .describe("Selected preset id for the runtime system prompt")
+
+const SelectedPlanModePromptPresetField = z
+  .string()
+  .optional()
+  .describe("Selected preset id for the runtime plan-mode prompt")
+
 export const McpServerTransport = z.enum(["stdio", "remote"]).meta({
   ref: "McpServerTransport",
 })
@@ -333,6 +365,10 @@ export const Info = z
     mcp: McpConfigField,
     selected_mcp_servers: SelectedMcpServersField,
     selected_skills: SelectedSkillsField,
+    prompt_overrides: PromptOverridesField,
+    custom_prompt_presets: CustomPromptPresetsField,
+    selected_system_prompt_preset: SelectedSystemPromptPresetField,
+    selected_plan_mode_prompt_preset: SelectedPlanModePromptPresetField,
     permission: Permission.Config.optional(),
     enterprise: z
       .object({
@@ -526,6 +562,46 @@ function normalizeSkillIDs(skillIDs: string[]) {
   return result
 }
 
+function normalizePromptOverrides(overrides: Record<string, string>) {
+  const result: Record<string, string> = {}
+
+  for (const [presetID, content] of Object.entries(overrides)) {
+    const normalizedPresetID = presetID.trim()
+    if (!normalizedPresetID) continue
+    result[normalizedPresetID] = content
+  }
+
+  return result
+}
+
+function normalizePromptPresetID(presetID: string | undefined | null) {
+  const normalizedPresetID = presetID?.trim()
+  return normalizedPresetID && normalizedPresetID.length > 0 ? normalizedPresetID : undefined
+}
+
+function normalizeCustomPromptPreset(preset: CustomPromptPreset): CustomPromptPreset {
+  return {
+    label: preset.label.trim(),
+    content: preset.content,
+    description: preset.description?.trim() || undefined,
+  }
+}
+
+function normalizeCustomPromptPresets(presets: Record<string, CustomPromptPreset>) {
+  const result: Record<string, CustomPromptPreset> = {}
+
+  for (const [presetID, preset] of Object.entries(presets)) {
+    const normalizedPresetID = normalizePromptPresetID(presetID)
+    if (!normalizedPresetID) continue
+
+    const normalizedPreset = normalizeCustomPromptPreset(preset)
+    if (!normalizedPreset.label) continue
+    result[normalizedPresetID] = normalizedPreset
+  }
+
+  return result
+}
+
 function readConfig(configID: string): Info {
   ensureProjectConfigTable()
   const row = db.findById("project_configs", ProjectConfigRecord, configID, "projectID")
@@ -666,6 +742,125 @@ export async function setSelectedSkillIDs(configID: string, skillIDs: string[]) 
   const next: Info = {
     ...current,
     selected_skills: normalizeSkillIDs(skillIDs),
+  }
+
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+export async function getPromptOverrides(configID = GLOBAL_CONFIG_ID): Promise<Record<string, string>> {
+  const config = readConfig(normalizeConfigID(configID))
+  return config.prompt_overrides ? normalizePromptOverrides(config.prompt_overrides) : {}
+}
+
+export async function setPromptOverride(configID: string, presetID: string, content: string) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const normalizedPresetID = presetID.trim()
+  const current = readConfig(normalizedConfigID)
+  const nextOverrides = normalizePromptOverrides({
+    ...(current.prompt_overrides ?? {}),
+    [normalizedPresetID]: content,
+  })
+  const next: Info = {
+    ...current,
+    prompt_overrides: nextOverrides,
+  }
+
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+export async function clearPromptOverride(configID: string, presetID: string) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const normalizedPresetID = presetID.trim()
+  const current = readConfig(normalizedConfigID)
+  const nextOverrides = { ...(current.prompt_overrides ?? {}) }
+  delete nextOverrides[normalizedPresetID]
+  const normalizedOverrides = normalizePromptOverrides(nextOverrides)
+  const next: Info = {
+    ...current,
+    prompt_overrides: Object.keys(normalizedOverrides).length > 0 ? normalizedOverrides : undefined,
+  }
+
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+export async function getCustomPromptPresets(
+  configID = GLOBAL_CONFIG_ID,
+): Promise<Record<string, CustomPromptPreset>> {
+  const config = readConfig(normalizeConfigID(configID))
+  return config.custom_prompt_presets
+    ? normalizeCustomPromptPresets(config.custom_prompt_presets)
+    : {}
+}
+
+export async function setCustomPromptPreset(
+  configID: string,
+  presetID: string,
+  preset: CustomPromptPreset,
+) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const normalizedPresetID = normalizePromptPresetID(presetID)
+  if (!normalizedPresetID) {
+    throw new Error("Prompt preset id is required.")
+  }
+
+  const normalizedPreset = normalizeCustomPromptPreset(preset)
+  if (!normalizedPreset.label) {
+    throw new Error("Prompt preset label is required.")
+  }
+
+  const current = readConfig(normalizedConfigID)
+  const nextPresets = normalizeCustomPromptPresets({
+    ...(current.custom_prompt_presets ?? {}),
+    [normalizedPresetID]: normalizedPreset,
+  })
+  const next: Info = {
+    ...current,
+    custom_prompt_presets: nextPresets,
+  }
+
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+export async function removeCustomPromptPreset(configID: string, presetID: string) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const normalizedPresetID = normalizePromptPresetID(presetID)
+  if (!normalizedPresetID) return undefined
+
+  const current = readConfig(normalizedConfigID)
+  const nextPresets = { ...(current.custom_prompt_presets ?? {}) }
+  delete nextPresets[normalizedPresetID]
+  const normalizedPresets = normalizeCustomPromptPresets(nextPresets)
+  const next: Info = {
+    ...current,
+    custom_prompt_presets: Object.keys(normalizedPresets).length > 0 ? normalizedPresets : undefined,
+  }
+
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+export async function getSelectedSystemPromptPresetID(configID = GLOBAL_CONFIG_ID) {
+  return normalizePromptPresetID(readConfig(normalizeConfigID(configID)).selected_system_prompt_preset)
+}
+
+export async function getSelectedPlanModePromptPresetID(configID = GLOBAL_CONFIG_ID) {
+  return normalizePromptPresetID(readConfig(normalizeConfigID(configID)).selected_plan_mode_prompt_preset)
+}
+
+export async function setSelectedPromptPresetIDs(
+  configID: string,
+  selection: {
+    systemPromptPresetID?: string | null
+    planModePromptPresetID?: string | null
+  },
+) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const systemPromptPresetID = normalizePromptPresetID(selection.systemPromptPresetID)
+  const planModePromptPresetID = normalizePromptPresetID(selection.planModePromptPresetID)
+  const next: Info = {
+    ...current,
+    selected_system_prompt_preset: systemPromptPresetID,
+    selected_plan_mode_prompt_preset: planModePromptPresetID,
   }
 
   return writeConfig(normalizedConfigID, Info.parse(next))

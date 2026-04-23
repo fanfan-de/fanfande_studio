@@ -6,6 +6,9 @@ import type {
   McpServerDraftState,
   McpServerSummary,
   LoadedSessionSnapshot,
+  PromptPresetDocument,
+  PromptPresetSelection,
+  PromptPresetSummary,
   ProjectModelSelection,
   ProviderAuthCapability,
   ProviderCatalogItem,
@@ -298,10 +301,22 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [mcpDiagnostics, setMcpDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
   const [activeMcpServerID, setActiveMcpServerID] = useState<string | null>(null)
   const [mcpServerDraft, setMcpServerDraft] = useState<McpServerDraftState>(() => toMcpDraft())
+  const [promptPresets, setPromptPresets] = useState<PromptPresetSummary[]>([])
+  const [promptPresetSelection, setPromptPresetSelection] = useState<PromptPresetSelection | null>(null)
+  const [savedPromptPresetSelection, setSavedPromptPresetSelection] = useState<PromptPresetSelection | null>(null)
+  const [selectedPromptPresetID, setSelectedPromptPresetID] = useState<string | null>(null)
+  const [selectedPromptPreset, setSelectedPromptPreset] = useState<PromptPresetDocument | null>(null)
+  const [promptDraftLabel, setPromptDraftLabel] = useState("")
+  const [savedPromptLabel, setSavedPromptLabel] = useState("")
+  const [promptDraftContent, setPromptDraftContent] = useState("")
+  const [savedPromptContent, setSavedPromptContent] = useState("")
   const [archivedSessions, setArchivedSessions] = useState<ArchivedSessionSummary[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingPrompts, setIsLoadingPrompts] = useState(false)
+  const [isLoadingPromptPreset, setIsLoadingPromptPreset] = useState(false)
   const [isLoadingArchivedSessions, setIsLoadingArchivedSessions] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [promptLoadError, setPromptLoadError] = useState<string | null>(null)
   const [archivedSessionsError, setArchivedSessionsError] = useState<string | null>(null)
   const [message, setMessage] = useState<SettingsMessage | null>(null)
   const [savingProviderID, setSavingProviderID] = useState<string | null>(null)
@@ -310,16 +325,26 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [isSavingSelection, setIsSavingSelection] = useState(false)
   const [savingMcpServerID, setSavingMcpServerID] = useState<string | null>(null)
   const [deletingMcpServerID, setDeletingMcpServerID] = useState<string | null>(null)
+  const [isCreatingPromptPreset, setIsCreatingPromptPreset] = useState(false)
+  const [isSavingPromptPresetSelection, setIsSavingPromptPresetSelection] = useState(false)
+  const [savingPromptPresetSelectionField, setSavingPromptPresetSelectionField] =
+    useState<keyof PromptPresetSelection | null>(null)
+  const [deletingPromptPresetID, setDeletingPromptPresetID] = useState<string | null>(null)
+  const [savingPromptPresetID, setSavingPromptPresetID] = useState<string | null>(null)
+  const [resettingPromptPresetID, setResettingPromptPresetID] = useState<string | null>(null)
   const [restoringArchivedSessionID, setRestoringArchivedSessionID] = useState<string | null>(null)
   const [deletingArchivedSessionID, setDeletingArchivedSessionID] = useState<string | null>(null)
   const requestIDRef = useRef(0)
   const archivedSessionsRequestIDRef = useRef(0)
   const mcpDiagnosticRequestIDRef = useRef<Record<string, number>>({})
+  const promptPresetsRequestIDRef = useRef(0)
+  const promptPresetDocumentRequestIDRef = useRef(0)
 
   useEffect(() => {
     if (!isOpen) return
 
     void loadSettingsData()
+    void loadPromptPresets()
     void loadArchivedSessions()
   }, [isOpen, options.projectID])
 
@@ -361,6 +386,136 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       await options.onArchivedSessionRestored?.(session)
     } catch (error) {
       console.error("[desktop] archived session restore sync failed:", error)
+    }
+  }
+
+  function syncPromptPresetSummary(document: PromptPresetDocument) {
+    setPromptPresets((current) => {
+      const nextSummary: PromptPresetSummary = {
+        id: document.id,
+        label: document.label,
+        description: document.description,
+        source: document.source,
+        hasOverride: document.hasOverride,
+        editable: document.editable,
+        sourcePath: document.sourcePath,
+      }
+
+      if (current.some((preset) => preset.id === document.id)) {
+        return current.map((preset) => (preset.id === document.id ? nextSummary : preset))
+      }
+
+      return [...current, nextSummary]
+    })
+  }
+
+  async function loadPromptPresetDocument(presetID: string, optionsArg?: LoadSettingsOptions) {
+    const readPromptPreset = window.desktop?.readPromptPreset
+    if (!readPromptPreset) {
+      setSelectedPromptPresetID(null)
+      setSelectedPromptPreset(null)
+      setPromptDraftLabel("")
+      setSavedPromptLabel("")
+      setPromptDraftContent("")
+      setSavedPromptContent("")
+      setPromptLoadError("Desktop prompt preset APIs are unavailable.")
+      return null
+    }
+
+    const requestID = ++promptPresetDocumentRequestIDRef.current
+    if (!optionsArg?.silent) {
+      setIsLoadingPromptPreset(true)
+    }
+    setPromptLoadError(null)
+
+    try {
+      const document = await readPromptPreset({ presetID })
+      if (promptPresetDocumentRequestIDRef.current !== requestID) return null
+      setSelectedPromptPresetID(document.id)
+      setSelectedPromptPreset(document)
+      setPromptDraftLabel(document.label)
+      setSavedPromptLabel(document.label)
+      setPromptDraftContent(document.content)
+      setSavedPromptContent(document.content)
+      syncPromptPresetSummary(document)
+      return document
+    } catch (error) {
+      if (promptPresetDocumentRequestIDRef.current !== requestID) return null
+      setPromptLoadError(getErrorMessage(error))
+      return null
+    } finally {
+      if (promptPresetDocumentRequestIDRef.current === requestID) {
+        setIsLoadingPromptPreset(false)
+      }
+    }
+  }
+
+  async function loadPromptPresets(optionsArg?: LoadSettingsOptions) {
+    const getPromptPresets = window.desktop?.getPromptPresets
+    const getPromptPresetSelection = window.desktop?.getPromptPresetSelection
+    if (!getPromptPresets || !getPromptPresetSelection) {
+      setPromptPresets([])
+      setPromptPresetSelection(null)
+      setSavedPromptPresetSelection(null)
+      setSelectedPromptPresetID(null)
+      setSelectedPromptPreset(null)
+      setPromptDraftLabel("")
+      setSavedPromptLabel("")
+      setPromptDraftContent("")
+      setSavedPromptContent("")
+      setPromptLoadError("Desktop prompt preset APIs are unavailable.")
+      return
+    }
+
+    const requestID = ++promptPresetsRequestIDRef.current
+    if (!optionsArg?.silent) {
+      setIsLoadingPrompts(true)
+    }
+    setPromptLoadError(null)
+
+    try {
+      const [nextPromptPresets, nextPromptPresetSelection] = await Promise.all([
+        getPromptPresets(),
+        getPromptPresetSelection(),
+      ])
+      if (promptPresetsRequestIDRef.current !== requestID) return
+
+      setPromptPresets(nextPromptPresets)
+      setPromptPresetSelection(nextPromptPresetSelection)
+      setSavedPromptPresetSelection(nextPromptPresetSelection)
+      const preferredPresetID =
+        (selectedPromptPresetID && nextPromptPresets.some((preset) => preset.id === selectedPromptPresetID)
+          ? selectedPromptPresetID
+          : nextPromptPresets.find((preset) => preset.id === nextPromptPresetSelection.systemPromptPresetID)?.id ??
+            nextPromptPresets[0]?.id) ?? null
+
+      if (!preferredPresetID) {
+        setSelectedPromptPresetID(null)
+        setSelectedPromptPreset(null)
+        setPromptDraftLabel("")
+        setSavedPromptLabel("")
+        setPromptDraftContent("")
+        setSavedPromptContent("")
+        return
+      }
+
+      await loadPromptPresetDocument(preferredPresetID, { silent: true })
+    } catch (error) {
+      if (promptPresetsRequestIDRef.current !== requestID) return
+      setPromptPresets([])
+      setPromptPresetSelection(null)
+      setSavedPromptPresetSelection(null)
+      setSelectedPromptPresetID(null)
+      setSelectedPromptPreset(null)
+      setPromptDraftLabel("")
+      setSavedPromptLabel("")
+      setPromptDraftContent("")
+      setSavedPromptContent("")
+      setPromptLoadError(getErrorMessage(error))
+    } finally {
+      if (promptPresetsRequestIDRef.current === requestID) {
+        setIsLoadingPrompts(false)
+      }
     }
   }
 
@@ -573,6 +728,261 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       ...current,
       [field]: value,
     }))
+  }
+
+  function setPromptDraftValue(value: string) {
+    setPromptDraftContent(value)
+  }
+
+  function setPromptDraftLabelValue(value: string) {
+    setPromptDraftLabel(value)
+  }
+
+  function setPromptPresetSelectionValue(
+    field: keyof PromptPresetSelection,
+    value: string,
+  ) {
+    setPromptPresetSelection((current) => {
+      if (current) {
+        return {
+          ...current,
+          [field]: value,
+        }
+      }
+
+      return {
+        systemPromptPresetID: field === "systemPromptPresetID" ? value : selectedPromptPresetID ?? value,
+        planModePromptPresetID: field === "planModePromptPresetID" ? value : selectedPromptPresetID ?? value,
+      }
+    })
+  }
+
+  async function selectPromptPreset(presetID: string) {
+    const document = await loadPromptPresetDocument(presetID)
+    return Boolean(document)
+  }
+
+  async function savePromptPresetSelection(field?: keyof PromptPresetSelection) {
+    if (!promptPresetSelection || !window.desktop?.updatePromptPresetSelection) return false
+
+    const selectionToSave =
+      field && savedPromptPresetSelection
+        ? {
+            systemPromptPresetID:
+              field === "systemPromptPresetID"
+                ? promptPresetSelection.systemPromptPresetID
+                : savedPromptPresetSelection.systemPromptPresetID,
+            planModePromptPresetID:
+              field === "planModePromptPresetID"
+                ? promptPresetSelection.planModePromptPresetID
+                : savedPromptPresetSelection.planModePromptPresetID,
+          }
+        : promptPresetSelection
+
+    setIsSavingPromptPresetSelection(true)
+    setSavingPromptPresetSelectionField(field ?? null)
+    setMessage(null)
+
+    try {
+      const selection = await window.desktop.updatePromptPresetSelection(selectionToSave)
+      setPromptPresetSelection((current) => {
+        if (!current || !field) return selection
+
+        return {
+          systemPromptPresetID:
+            field === "systemPromptPresetID" ? selection.systemPromptPresetID : current.systemPromptPresetID,
+          planModePromptPresetID:
+            field === "planModePromptPresetID" ? selection.planModePromptPresetID : current.planModePromptPresetID,
+        }
+      })
+      setSavedPromptPresetSelection(selection)
+      setMessage({
+        tone: "success",
+        text:
+          field === "systemPromptPresetID"
+            ? "System prompt updated."
+            : field === "planModePromptPresetID"
+              ? "Plan prompt updated."
+              : "Prompt assignments updated.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsSavingPromptPresetSelection(false)
+      setSavingPromptPresetSelectionField(null)
+    }
+  }
+
+  async function createPromptPreset() {
+    if (!window.desktop?.createPromptPreset) return false
+
+    setIsCreatingPromptPreset(true)
+    setMessage(null)
+
+    try {
+      const document = await window.desktop.createPromptPreset({
+        label: "Untitled preset",
+        content: "",
+      })
+      setPromptPresets((current) => [...current, {
+        id: document.id,
+        label: document.label,
+        description: document.description,
+        source: document.source,
+        hasOverride: document.hasOverride,
+        editable: document.editable,
+        sourcePath: document.sourcePath,
+      }])
+      setSelectedPromptPresetID(document.id)
+      setSelectedPromptPreset(document)
+      setPromptDraftLabel(document.label)
+      setSavedPromptLabel(document.label)
+      setPromptDraftContent(document.content)
+      setSavedPromptContent(document.content)
+      setMessage({
+        tone: "success",
+        text: "Prompt preset created.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsCreatingPromptPreset(false)
+    }
+  }
+
+  async function savePromptPreset() {
+    if (!selectedPromptPresetID || !selectedPromptPreset || !window.desktop?.updatePromptPreset) return false
+
+    setSavingPromptPresetID(selectedPromptPresetID)
+    setMessage(null)
+
+    try {
+      const document = await window.desktop.updatePromptPreset({
+        presetID: selectedPromptPresetID,
+        label: selectedPromptPreset.source === "custom" ? promptDraftLabel : undefined,
+        content: promptDraftContent,
+      })
+      setSelectedPromptPreset(document)
+      setSavedPromptLabel(document.label)
+      setPromptDraftLabel(document.label)
+      setSavedPromptContent(document.content)
+      setPromptDraftContent(document.content)
+      syncPromptPresetSummary(document)
+      setMessage({
+        tone: "success",
+        text: "Prompt preset saved.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingPromptPresetID(null)
+    }
+  }
+
+  async function resetPromptPreset() {
+    if (
+      !selectedPromptPresetID ||
+      selectedPromptPreset?.source !== "bundled" ||
+      !window.desktop?.resetPromptPreset
+    ) {
+      return false
+    }
+
+    setResettingPromptPresetID(selectedPromptPresetID)
+    setMessage(null)
+
+    try {
+      const document = await window.desktop.resetPromptPreset({
+        presetID: selectedPromptPresetID,
+      })
+      setSelectedPromptPreset(document)
+      setSavedPromptLabel(document.label)
+      setPromptDraftLabel(document.label)
+      setSavedPromptContent(document.content)
+      setPromptDraftContent(document.content)
+      syncPromptPresetSummary(document)
+      setMessage({
+        tone: "success",
+        text: "Prompt preset reset to default.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setResettingPromptPresetID(null)
+    }
+  }
+
+  async function deletePromptPreset() {
+    if (
+      !selectedPromptPresetID ||
+      selectedPromptPreset?.source !== "custom" ||
+      !window.desktop?.deletePromptPreset
+    ) {
+      return false
+    }
+
+    setDeletingPromptPresetID(selectedPromptPresetID)
+    setMessage(null)
+
+    try {
+      const nextSelection = await window.desktop.deletePromptPreset({
+        presetID: selectedPromptPresetID,
+      })
+      const remainingPromptPresets = promptPresets.filter((preset) => preset.id !== selectedPromptPresetID)
+      setPromptPresets(remainingPromptPresets)
+      setPromptPresetSelection(nextSelection)
+      setSavedPromptPresetSelection(nextSelection)
+
+      const nextPresetID =
+        remainingPromptPresets.find((preset) => preset.id === nextSelection.systemPromptPresetID)?.id ??
+        remainingPromptPresets[0]?.id ??
+        null
+
+      if (!nextPresetID) {
+        setSelectedPromptPresetID(null)
+        setSelectedPromptPreset(null)
+        setPromptDraftLabel("")
+        setSavedPromptLabel("")
+        setPromptDraftContent("")
+        setSavedPromptContent("")
+      } else {
+        await loadPromptPresetDocument(nextPresetID, { silent: true })
+      }
+
+      setMessage({
+        tone: "success",
+        text: "Prompt preset deleted.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setDeletingPromptPresetID(null)
+    }
   }
 
   async function saveProvider(providerID: string) {
@@ -1121,6 +1531,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  const isPromptDirty =
+    selectedPromptPresetID !== null &&
+    (promptDraftLabel !== savedPromptLabel || promptDraftContent !== savedPromptContent)
+  const isSystemPromptPresetDirty =
+    promptPresetSelection !== null &&
+    savedPromptPresetSelection !== null &&
+    promptPresetSelection.systemPromptPresetID !== savedPromptPresetSelection.systemPromptPresetID
+  const isPlanModePromptPresetDirty =
+    promptPresetSelection !== null &&
+    savedPromptPresetSelection !== null &&
+    promptPresetSelection.planModePromptPresetID !== savedPromptPresetSelection.planModePromptPresetID
+
   return {
     activeMcpServerID,
     activeMcpServerDiagnostic: activeMcpServerID ? mcpDiagnostics[activeMcpServerID] ?? null : null,
@@ -1135,11 +1557,19 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     deleteProvider,
     deletingArchivedSessionID,
     deletingMcpServerID,
+    deletingPromptPresetID,
     deletingProviderID,
+    isCreatingPromptPreset,
     isLoading,
+    isLoadingPromptPreset,
+    isLoadingPrompts,
     isLoadingArchivedSessions,
     isOpen,
+    isPromptDirty,
+    isSystemPromptPresetDirty,
+    isPlanModePromptPresetDirty,
     isRefreshingProviderCatalog,
+    isSavingPromptPresetSelection,
     isSavingSelection,
     loadError,
     mcpServerDraft,
@@ -1147,23 +1577,41 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     message,
     models,
     openSettings,
+    promptDraftLabel,
+    promptDraftContent,
+    promptLoadError,
+    promptPresets,
+    promptPresetSelection,
     projectID: options.projectID,
     projectName: options.projectName ?? null,
     projectWorktree: options.projectWorktree ?? null,
     providerDrafts,
+    createPromptPreset,
+    deletePromptPreset,
     refreshProviderCatalog,
+    resetPromptPreset,
+    resettingPromptPresetID,
     restoringArchivedSessionID,
     savedSelection,
     saveMcpServer,
+    savePromptPreset,
+    savePromptPresetSelection,
+    savingPromptPresetSelectionField,
     saveProviderApiKey,
     saveProvider,
     saveSelection,
     savingMcpServerID,
+    savingPromptPresetID,
     savingProviderID,
+    selectedPromptPreset,
     setProviderAuthMethod,
+    setPromptDraftLabelValue,
+    setPromptPresetSelectionValue,
+    selectPromptPreset,
     selectMcpServer,
     selectionDraft,
     setMcpServerDraftValue,
+    setPromptDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
     startProviderAuthFlow,

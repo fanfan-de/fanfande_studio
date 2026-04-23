@@ -336,6 +336,97 @@ const WORKSPACE_FILE_CONTENT = [
   "export const summary = nextValue",
 ].join("\n")
 
+type PromptPresetFixture = {
+  id: string
+  label: string
+  description: string
+  source: "bundled" | "custom"
+  hasOverride: boolean
+  editable: boolean
+  sourcePath?: string
+}
+
+const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
+  {
+    id: "system-default",
+    label: "System Prompt",
+    description: "Base instructions applied to every session turn.",
+    source: "bundled" as const,
+    hasOverride: false,
+    editable: true,
+    sourcePath: "src/session/prompt/default.txt",
+  },
+  {
+    id: "plan-mode",
+    label: "Plan Mode Prompt",
+    description: "Additional instructions appended when the plan agent is active.",
+    source: "bundled" as const,
+    hasOverride: false,
+    editable: true,
+    sourcePath: "src/session/prompt/plan.txt",
+  },
+  {
+    id: "provider-gpt",
+    label: "GPT Provider Prompt",
+    description: "Reserved provider-specific prompt for GPT-family models.",
+    source: "bundled" as const,
+    hasOverride: false,
+    editable: true,
+    sourcePath: "src/session/prompt/gpt.txt",
+  },
+]
+
+const PROMPT_PRESET_SELECTION_FIXTURE = {
+  systemPromptPresetID: "system-default",
+  planModePromptPresetID: "plan-mode",
+}
+
+function createPromptPresetSummary(
+  presetID: string,
+  overrides: Partial<PromptPresetFixture> = {},
+) {
+  const preset = PROMPT_PRESET_FIXTURES.find((item) => item.id === presetID)
+  if (preset) {
+    return {
+      ...preset,
+      ...overrides,
+    }
+  }
+
+  return {
+    id: presetID,
+    label: "Untitled preset",
+    description: "Custom prompt preset.",
+    source: "custom" as const,
+    hasOverride: false,
+    editable: true,
+    sourcePath: undefined,
+    ...overrides,
+  }
+}
+
+function createPromptPresetDocument(
+  presetID: string,
+  overrides: Partial<PromptPresetFixture> & { content?: string } = {},
+) {
+  const preset = createPromptPresetSummary(presetID, overrides)
+
+  const defaultContent =
+    presetID === "system-default"
+      ? "You are Anybox, an interactive tool that helps users with software engineering tasks."
+      : presetID === "plan-mode"
+        ? "<system-reminder>\n# Plan Mode - System Reminder"
+        : preset.source === "custom"
+          ? ""
+        : "GPT provider prompt placeholder. This preset is currently inactive."
+
+  return {
+    ...preset,
+    ...overrides,
+    content: overrides.content ?? defaultContent,
+  }
+}
+
 function createWorkspaceFileReviewWorkspaces(): LoadedFolderWorkspace[] {
   return [
     {
@@ -563,6 +654,35 @@ describe("App", () => {
         selection: {},
       }),
       getGlobalMcpServers: vi.fn().mockResolvedValue([]),
+      getPromptPresets: vi.fn().mockResolvedValue(PROMPT_PRESET_FIXTURES),
+      getPromptPresetSelection: vi.fn().mockResolvedValue(PROMPT_PRESET_SELECTION_FIXTURE),
+      readPromptPreset: vi.fn().mockImplementation(({ presetID }: { presetID: string }) =>
+        Promise.resolve(createPromptPresetDocument(presetID)),
+      ),
+      createPromptPreset: vi.fn().mockResolvedValue(
+        createPromptPresetDocument("custom-untitled-preset", {
+          label: "Untitled preset",
+          source: "custom",
+        }),
+      ),
+      updatePromptPreset: vi.fn().mockImplementation(
+        ({ presetID, label, content }: { presetID: string; label?: string; content: string }) =>
+          Promise.resolve(createPromptPresetDocument(presetID, {
+            label: label ?? createPromptPresetSummary(presetID).label,
+            content,
+            hasOverride: presetID.startsWith("custom-") ? false : true,
+            source: presetID.startsWith("custom-") ? "custom" : "bundled",
+          })),
+      ),
+      updatePromptPresetSelection: vi.fn().mockImplementation(
+        (input: typeof PROMPT_PRESET_SELECTION_FIXTURE) => Promise.resolve(input),
+      ),
+      resetPromptPreset: vi.fn().mockImplementation(({ presetID }: { presetID: string }) =>
+        Promise.resolve(createPromptPresetDocument(presetID, {
+          hasOverride: false,
+        })),
+      ),
+      deletePromptPreset: vi.fn().mockResolvedValue(PROMPT_PRESET_SELECTION_FIXTURE),
       getProjectProviderCatalog: vi.fn().mockResolvedValue([]),
       refreshProjectProviderCatalog: vi.fn().mockResolvedValue([]),
       getProjectModels: vi.fn().mockResolvedValue({
@@ -5604,7 +5724,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Close settings" })).toBeInTheDocument()
     expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
-    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(6)
+    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(7)
     expect(screen.getByText("\u9009\u9879")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Provider" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Models" })).toBeInTheDocument()
@@ -5651,6 +5771,200 @@ describe("App", () => {
       expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalledTimes(1)
       expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(1)
     })
+  })
+
+  it("edits prompt presets from settings", async () => {
+    let promptPresetSelection = { ...PROMPT_PRESET_SELECTION_FIXTURE }
+    let promptPresetDocuments = [
+      createPromptPresetDocument("system-default"),
+      createPromptPresetDocument("plan-mode"),
+      createPromptPresetDocument("provider-gpt"),
+    ]
+
+    function listPromptPresetSummaries() {
+      return promptPresetDocuments.map(({ content, ...summary }) => summary)
+    }
+
+    function readPromptPresetDocumentForTest(presetID: string) {
+      const preset = promptPresetDocuments.find((item) => item.id === presetID)
+      if (!preset) {
+        throw new Error(`Unknown prompt preset '${presetID}'`)
+      }
+
+      return preset
+    }
+
+    function upsertPromptPresetDocument(document: ReturnType<typeof createPromptPresetDocument>) {
+      promptPresetDocuments = promptPresetDocuments.some((preset) => preset.id === document.id)
+        ? promptPresetDocuments.map((preset) => (preset.id === document.id ? document : preset))
+        : [...promptPresetDocuments, document]
+    }
+
+    window.desktop!.getPromptPresets = vi.fn().mockImplementation(() =>
+      Promise.resolve(listPromptPresetSummaries()),
+    )
+    window.desktop!.getPromptPresetSelection = vi.fn().mockImplementation(() =>
+      Promise.resolve({ ...promptPresetSelection }),
+    )
+    window.desktop!.readPromptPreset = vi.fn().mockImplementation(({ presetID }: { presetID: string }) =>
+      Promise.resolve(readPromptPresetDocumentForTest(presetID)),
+    )
+    window.desktop!.createPromptPreset = vi.fn().mockImplementation(() => {
+      const document = createPromptPresetDocument("custom-untitled-preset", {
+        label: "Untitled preset",
+        source: "custom",
+        description: "Custom prompt preset.",
+        content: "",
+      })
+      upsertPromptPresetDocument(document)
+      return Promise.resolve(document)
+    })
+    window.desktop!.updatePromptPresetSelection = vi.fn().mockImplementation((input: typeof PROMPT_PRESET_SELECTION_FIXTURE) => {
+      promptPresetSelection = { ...input }
+      return Promise.resolve(promptPresetSelection)
+    })
+    window.desktop!.updatePromptPreset = vi.fn().mockImplementation(
+      ({ presetID, label, content }: { presetID: string; label?: string; content: string }) => {
+        const current = readPromptPresetDocumentForTest(presetID)
+        const nextDocument = {
+          ...current,
+          label: label ?? current.label,
+          content,
+          hasOverride: current.source === "bundled" ? true : false,
+        }
+        upsertPromptPresetDocument(nextDocument)
+        return Promise.resolve(nextDocument)
+      },
+    )
+    window.desktop!.resetPromptPreset = vi.fn().mockImplementation(({ presetID }: { presetID: string }) => {
+      const nextDocument = createPromptPresetDocument(presetID, {
+        hasOverride: false,
+      })
+      upsertPromptPresetDocument(nextDocument)
+      return Promise.resolve(nextDocument)
+    })
+    window.desktop!.deletePromptPreset = vi.fn().mockImplementation(({ presetID }: { presetID: string }) => {
+      promptPresetDocuments = promptPresetDocuments.filter((preset) => preset.id !== presetID)
+      promptPresetSelection = {
+        systemPromptPresetID: "system-default",
+        planModePromptPresetID: promptPresetSelection.planModePromptPresetID,
+      }
+      return Promise.resolve(promptPresetSelection)
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Prompts/ }))
+
+    await screen.findByRole("list", { name: "Prompt presets" })
+    expect(screen.getByRole("button", { name: "System Prompt" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Plan Mode Prompt" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "GPT Provider Prompt" })).toBeInTheDocument()
+    expect(screen.getByLabelText("System prompt preset")).toHaveValue("system-default")
+    expect(screen.getByLabelText("Plan mode prompt preset")).toHaveValue("plan-mode")
+
+    fireEvent.change(screen.getByLabelText("System prompt preset"), {
+      target: {
+        value: "provider-gpt",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Confirm system prompt preset" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updatePromptPresetSelection).toHaveBeenCalledWith({
+        systemPromptPresetID: "provider-gpt",
+        planModePromptPresetID: "plan-mode",
+      })
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "New" }))
+
+    expect(await screen.findByDisplayValue("Untitled preset")).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Preset name"), {
+      target: {
+        value: "Focus preset",
+      },
+    })
+
+    const customTextarea = screen.getByRole("textbox", { name: "Untitled preset content" })
+    fireEvent.change(customTextarea, {
+      target: {
+        value: "custom system prompt",
+      },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updatePromptPreset).toHaveBeenCalledWith({
+        presetID: "custom-untitled-preset",
+        label: "Focus preset",
+        content: "custom system prompt",
+      })
+    })
+
+    fireEvent.change(screen.getByLabelText("System prompt preset"), {
+      target: {
+        value: "custom-untitled-preset",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Confirm system prompt preset" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updatePromptPresetSelection).toHaveBeenLastCalledWith({
+        systemPromptPresetID: "custom-untitled-preset",
+        planModePromptPresetID: "plan-mode",
+      })
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.deletePromptPreset).toHaveBeenCalledWith({
+        presetID: "custom-untitled-preset",
+      })
+    })
+
+    expect(await screen.findByText("Prompt preset deleted.")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "GPT Provider Prompt" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.readPromptPreset).toHaveBeenCalledWith({
+        presetID: "provider-gpt",
+      })
+    })
+
+    const textarea = screen.getByRole("textbox", { name: "GPT Provider Prompt content" })
+    fireEvent.change(textarea, {
+      target: {
+        value: "custom gpt provider prompt",
+      },
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updatePromptPreset).toHaveBeenCalledWith({
+        presetID: "provider-gpt",
+        label: undefined,
+        content: "custom gpt provider prompt",
+      })
+    })
+
+    expect(await screen.findByText("Prompt preset saved.")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.resetPromptPreset).toHaveBeenCalledWith({
+        presetID: "provider-gpt",
+      })
+    })
+
+    expect(await screen.findByText("Prompt preset reset to default.")).toBeInTheDocument()
   })
 
   it("refreshes the global provider catalog from settings", async () => {

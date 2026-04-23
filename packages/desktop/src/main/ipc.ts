@@ -23,6 +23,9 @@ import type {
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
+  AgentPromptPresetDocument,
+  AgentPromptPresetSelection,
+  AgentPromptPresetSummary,
   AgentProjectMcpSelection,
   AgentProjectModelsResult,
   AgentProjectSkillSelection,
@@ -1134,6 +1137,100 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
   ipcMain.handle("desktop:get-global-skills", async () => {
     const result = await requestAgentJSON<AgentSkillInfo[]>("/api/skills")
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:get-prompt-presets", async () => {
+    const result = await requestAgentJSON<AgentPromptPresetSummary[]>("/api/prompts")
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:get-prompt-preset-selection", async () => {
+    const result = await requestAgentJSON<AgentPromptPresetSelection>("/api/prompts/selection")
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:read-prompt-preset", async (_event, input: { presetID: string }) => {
+    const result = await requestAgentJSON<AgentPromptPresetDocument>(
+      `/api/prompts/${encodeURIComponent(input.presetID.trim())}`,
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle(
+    "desktop:update-prompt-preset",
+    async (_event, input: { presetID: string; label?: string; content: string; description?: string }) => {
+    const result = await requestAgentJSON<AgentPromptPresetDocument>(
+      `/api/prompts/${encodeURIComponent(input.presetID.trim())}`,
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          label: input.label,
+          content: input.content,
+          description: input.description,
+        }),
+      },
+    )
+
+    return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:update-prompt-preset-selection",
+    async (_event, input: AgentPromptPresetSelection) => {
+      const result = await requestAgentJSON<AgentPromptPresetSelection>("/api/prompts/selection", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input),
+      })
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:create-prompt-preset",
+    async (_event, input: { label?: string; content?: string; description?: string }) => {
+      const result = await requestAgentJSON<AgentPromptPresetDocument>("/api/prompts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input),
+      })
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle("desktop:reset-prompt-preset", async (_event, input: { presetID: string }) => {
+    const result = await requestAgentJSON<AgentPromptPresetDocument>(
+      `/api/prompts/${encodeURIComponent(input.presetID.trim())}`,
+      {
+        method: "DELETE",
+      },
+    )
+
+    return result.data
+  })
+
+  ipcMain.handle("desktop:delete-prompt-preset", async (_event, input: { presetID: string }) => {
+    const result = await requestAgentJSON<AgentPromptPresetSelection>(
+      `/api/prompts/${encodeURIComponent(input.presetID.trim())}/custom`,
+      {
+        method: "DELETE",
+      },
+    )
 
     return result.data
   })

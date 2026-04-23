@@ -23,6 +23,25 @@ interface DesktopGlobalSkillTreeNode {
   children?: DesktopGlobalSkillTreeNode[]
 }
 
+interface DesktopPromptPresetSummary {
+  id: string
+  label: string
+  description: string
+  source: "bundled" | "custom"
+  hasOverride: boolean
+  editable: boolean
+  sourcePath?: string
+}
+
+interface DesktopPromptPresetDocument extends DesktopPromptPresetSummary {
+  content: string
+}
+
+interface DesktopPromptPresetSelection {
+  systemPromptPresetID: string
+  planModePromptPresetID: string
+}
+
 interface DesktopComposerAttachmentInput {
   path: string
   name?: string
@@ -549,6 +568,14 @@ declare global {
           scope: "project" | "user"
         }>
       >
+      getPromptPresets?: () => Promise<DesktopPromptPresetSummary[]>
+      getPromptPresetSelection?: () => Promise<DesktopPromptPresetSelection>
+      readPromptPreset?: (input: { presetID: string }) => Promise<DesktopPromptPresetDocument>
+      createPromptPreset?: (input: {
+        label?: string
+        content?: string
+        description?: string
+      }) => Promise<DesktopPromptPresetDocument>
       getGlobalSkillsTree?: () => Promise<{
         root: string
         items: DesktopGlobalSkillTreeNode[]
@@ -577,6 +604,17 @@ declare global {
         path: string
         content: string
       }>
+      updatePromptPreset?: (input: {
+        presetID: string
+        label?: string
+        content: string
+        description?: string
+      }) => Promise<DesktopPromptPresetDocument>
+      updatePromptPresetSelection?: (
+        input: DesktopPromptPresetSelection,
+      ) => Promise<DesktopPromptPresetSelection>
+      resetPromptPreset?: (input: { presetID: string }) => Promise<DesktopPromptPresetDocument>
+      deletePromptPreset?: (input: { presetID: string }) => Promise<DesktopPromptPresetSelection>
       createGlobalSkill?: (input: { name: string }) => Promise<{
         directory: string
         file: {

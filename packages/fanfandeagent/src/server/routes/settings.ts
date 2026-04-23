@@ -3,6 +3,7 @@ import z from "zod"
 import * as Config from "#config/config.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Provider from "#provider/provider.ts"
+import * as PromptPresets from "#session/prompt-presets.ts"
 import * as Skill from "#skill/skill.ts"
 import * as SkillManager from "#skill/manage.ts"
 import { ApiError } from "#server/error.ts"
@@ -48,6 +49,20 @@ export function SettingsRoutes() {
   const ProviderAuthApiKeyBody = z.object({
     apiKey: z.string().nullable().optional(),
   })
+  const PromptPresetCreateBody = z.object({
+    label: z.string().optional(),
+    content: z.string().optional(),
+    description: z.string().optional(),
+  })
+  const PromptPresetBody = z.object({
+    label: z.string().optional(),
+    content: z.string(),
+    description: z.string().optional(),
+  })
+  const PromptPresetSelectionBody = z.object({
+    systemPromptPresetID: z.string().min(1),
+    planModePromptPresetID: z.string().min(1),
+  })
 
   function toSkillApiError(error: unknown) {
     if (error instanceof SkillManager.SkillManagerError) {
@@ -60,6 +75,22 @@ export function SettingsRoutes() {
       }
 
       return new ApiError(400, error.code, error.message)
+    }
+
+    return error
+  }
+
+  function toPromptPresetApiError(error: unknown) {
+    if (!(error instanceof Error)) {
+      return error
+    }
+
+    if (error.message.startsWith("Unknown prompt preset")) {
+      return new ApiError(404, "PROMPT_PRESET_NOT_FOUND", error.message)
+    }
+
+    if (error.message.includes("cannot be reset") || error.message.includes("cannot be deleted")) {
+      return new ApiError(400, "PROMPT_PRESET_ACTION_NOT_ALLOWED", error.message)
     }
 
     return error
@@ -355,6 +386,120 @@ export function SettingsRoutes() {
       },
       requestId: c.get("requestId"),
     })
+  })
+
+  app.get("/prompts", async (c) => {
+    return c.json({
+      success: true,
+      data: await PromptPresets.listPromptPresetSummaries(Config.GLOBAL_CONFIG_ID),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.get("/prompts/selection", async (c) => {
+    return c.json({
+      success: true,
+      data: await PromptPresets.getPromptPresetSelection(Config.GLOBAL_CONFIG_ID),
+      requestId: c.get("requestId"),
+    })
+  })
+
+  app.put("/prompts/selection", async (c) => {
+    const payload = PromptPresetSelectionBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(
+        400,
+        "INVALID_PAYLOAD",
+        "Body must contain non-empty 'systemPromptPresetID' and 'planModePromptPresetID' fields.",
+      )
+    }
+
+    try {
+      return c.json({
+        success: true,
+        data: await PromptPresets.updatePromptPresetSelection(payload.data, Config.GLOBAL_CONFIG_ID),
+        requestId: c.get("requestId"),
+      })
+    } catch (error) {
+      throw toPromptPresetApiError(error)
+    }
+  })
+
+  app.post("/prompts", async (c) => {
+    const payload = PromptPresetCreateBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must be a valid prompt preset input.")
+    }
+
+    try {
+      return c.json({
+        success: true,
+        data: await PromptPresets.createPromptPreset(payload.data, Config.GLOBAL_CONFIG_ID),
+        requestId: c.get("requestId"),
+      })
+    } catch (error) {
+      throw toPromptPresetApiError(error)
+    }
+  })
+
+  app.get("/prompts/:presetID", async (c) => {
+    const presetID = c.req.param("presetID")
+
+    try {
+      return c.json({
+        success: true,
+        data: await PromptPresets.readPromptPresetDocument(presetID, Config.GLOBAL_CONFIG_ID),
+        requestId: c.get("requestId"),
+      })
+    } catch (error) {
+      throw toPromptPresetApiError(error)
+    }
+  })
+
+  app.put("/prompts/:presetID", async (c) => {
+    const presetID = c.req.param("presetID")
+    const payload = PromptPresetBody.safeParse(await c.req.json().catch(() => undefined))
+    if (!payload.success) {
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must contain a string 'content' field.")
+    }
+
+    try {
+      return c.json({
+        success: true,
+        data: await PromptPresets.updatePromptPreset(presetID, payload.data, Config.GLOBAL_CONFIG_ID),
+        requestId: c.get("requestId"),
+      })
+    } catch (error) {
+      throw toPromptPresetApiError(error)
+    }
+  })
+
+  app.delete("/prompts/:presetID", async (c) => {
+    const presetID = c.req.param("presetID")
+
+    try {
+      return c.json({
+        success: true,
+        data: await PromptPresets.resetPromptPreset(presetID, Config.GLOBAL_CONFIG_ID),
+        requestId: c.get("requestId"),
+      })
+    } catch (error) {
+      throw toPromptPresetApiError(error)
+    }
+  })
+
+  app.delete("/prompts/:presetID/custom", async (c) => {
+    const presetID = c.req.param("presetID")
+
+    try {
+      return c.json({
+        success: true,
+        data: await PromptPresets.deletePromptPreset(presetID, Config.GLOBAL_CONFIG_ID),
+        requestId: c.get("requestId"),
+      })
+    } catch (error) {
+      throw toPromptPresetApiError(error)
+    }
   })
 
   app.get("/skills", async (c) => {

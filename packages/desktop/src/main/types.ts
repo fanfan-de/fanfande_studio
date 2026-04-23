@@ -599,6 +599,27 @@ export interface AgentGlobalSkillRenameResult {
   filePath: string | null
 }
 
+export type AgentPromptPresetSource = "bundled" | "custom"
+
+export interface AgentPromptPresetSelection {
+  systemPromptPresetID: string
+  planModePromptPresetID: string
+}
+
+export interface AgentPromptPresetSummary {
+  id: string
+  label: string
+  description: string
+  source: AgentPromptPresetSource
+  hasOverride: boolean
+  editable: boolean
+  sourcePath?: string
+}
+
+export interface AgentPromptPresetDocument extends AgentPromptPresetSummary {
+  content: string
+}
+
 export type AgentMcpAllowedTools =
   | string[]
   | {

@@ -434,7 +434,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             //组装 静态系统提示词,(base + 项目环境)
             const system = [
                 //SystemPrompt.provider(model),//每一个模型对应一个system prompt，我觉得不是很必要
-                ...SystemPrompt.defaultPrompt({
+                ...await SystemPrompt.defaultPrompt({
                     agent,
                     session: activeSession,
                 }),

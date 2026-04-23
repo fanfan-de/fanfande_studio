@@ -794,6 +794,27 @@ export interface ProjectMcpSelection {
   serverIDs: string[]
 }
 
+export type PromptPresetSource = "bundled" | "custom"
+
+export interface PromptPresetSelection {
+  systemPromptPresetID: string
+  planModePromptPresetID: string
+}
+
+export interface PromptPresetSummary {
+  id: string
+  label: string
+  description: string
+  source: PromptPresetSource
+  hasOverride: boolean
+  editable: boolean
+  sourcePath?: string
+}
+
+export interface PromptPresetDocument extends PromptPresetSummary {
+  content: string
+}
+
 export interface ComposerAttachment {
   path: string
   name: string

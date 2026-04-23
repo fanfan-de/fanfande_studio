@@ -16,6 +16,7 @@ import * as LiveStreamHub from "#session/live-stream-hub.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Env from "#env/env.ts"
 import * as Config from "#config/config.ts"
+import * as SystemPrompt from "#session/system.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {
   success: boolean
@@ -301,6 +302,34 @@ type McpServerEnvelope = JsonEnvelope<StdioMcpServerSummary | RemoteMcpServerSum
 type McpDeleteEnvelope = JsonEnvelope<{
   serverID: string
   removed: boolean
+}>
+
+type PromptPresetSummaryEnvelope = JsonEnvelope<
+  Array<{
+    id: string
+    label: string
+    description: string
+    source: "bundled" | "custom"
+    hasOverride: boolean
+    editable: boolean
+    sourcePath?: string
+  }>
+>
+
+type PromptPresetDocumentEnvelope = JsonEnvelope<{
+  id: string
+  label: string
+  description: string
+  source: "bundled" | "custom"
+  hasOverride: boolean
+  editable: boolean
+  sourcePath?: string
+  content: string
+}>
+
+type PromptPresetSelectionEnvelope = JsonEnvelope<{
+  systemPromptPresetID: string
+  planModePromptPresetID: string
 }>
 
 const modelsDevFixture = {
@@ -1784,6 +1813,220 @@ describe("server api", () => {
       ).toBe(true)
     } finally {
       await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("prompt preset routes should manage assignments, custom presets, resets, and runtime overrides", async () => {
+    const app = createServerApp()
+    const customPlanPrompt = "Custom plan-mode prompt for runtime verification."
+    const customSystemPrompt = "Custom system prompt selected from the preset library."
+    let customPresetID: string | null = null
+
+    try {
+      await Config.clearPromptOverride(Config.GLOBAL_CONFIG_ID, "plan-mode")
+      await Config.clearPromptOverride(Config.GLOBAL_CONFIG_ID, "provider-gpt")
+      await Config.setSelectedPromptPresetIDs(Config.GLOBAL_CONFIG_ID, {
+        systemPromptPresetID: "system-default",
+        planModePromptPresetID: "plan-mode",
+      })
+
+      const listResponse = await app.request("http://localhost/api/prompts")
+      const listBody = (await listResponse.json()) as PromptPresetSummaryEnvelope
+
+      expect(listResponse.status).toBe(200)
+      expect(listBody.success).toBe(true)
+      expect(listBody.data).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "system-default",
+            source: "bundled",
+            hasOverride: false,
+          }),
+          expect.objectContaining({
+            id: "plan-mode",
+            source: "bundled",
+            hasOverride: false,
+          }),
+          expect.objectContaining({
+            id: "provider-gpt",
+            source: "bundled",
+            hasOverride: false,
+          }),
+        ]),
+      )
+
+      const selectionResponse = await app.request("http://localhost/api/prompts/selection")
+      const selectionBody = (await selectionResponse.json()) as PromptPresetSelectionEnvelope
+
+      expect(selectionResponse.status).toBe(200)
+      expect(selectionBody.success).toBe(true)
+      expect(selectionBody.data).toEqual({
+        systemPromptPresetID: "system-default",
+        planModePromptPresetID: "plan-mode",
+      })
+
+      const createResponse = await app.request("http://localhost/api/prompts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          label: "Focus preset",
+          content: customSystemPrompt,
+        }),
+      })
+      const createBody = (await createResponse.json()) as PromptPresetDocumentEnvelope
+
+      expect(createResponse.status).toBe(200)
+      expect(createBody.success).toBe(true)
+      expect(createBody.data).toMatchObject({
+        label: "Focus preset",
+        source: "custom",
+        content: customSystemPrompt,
+      })
+      customPresetID = createBody.data?.id ?? null
+      expect(customPresetID).toBeTruthy()
+
+      const updateSelectionResponse = await app.request("http://localhost/api/prompts/selection", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          systemPromptPresetID: customPresetID,
+          planModePromptPresetID: "plan-mode",
+        }),
+      })
+      const updateSelectionBody = (await updateSelectionResponse.json()) as PromptPresetSelectionEnvelope
+
+      expect(updateSelectionResponse.status).toBe(200)
+      expect(updateSelectionBody.success).toBe(true)
+      expect(updateSelectionBody.data).toEqual({
+        systemPromptPresetID: customPresetID,
+        planModePromptPresetID: "plan-mode",
+      })
+
+      const runtimeWithCustomSystemPrompt = await SystemPrompt.defaultPrompt()
+      expect(runtimeWithCustomSystemPrompt.some((section) => section.includes(customSystemPrompt))).toBe(true)
+
+      const readResponse = await app.request(`http://localhost/api/prompts/${encodeURIComponent(customPresetID!)}`)
+      const readBody = (await readResponse.json()) as PromptPresetDocumentEnvelope
+
+      expect(readResponse.status).toBe(200)
+      expect(readBody.success).toBe(true)
+      expect(readBody.data?.content).toBe(customSystemPrompt)
+
+      const updateResponse = await app.request("http://localhost/api/prompts/plan-mode", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: customPlanPrompt,
+        }),
+      })
+      const updateBody = (await updateResponse.json()) as PromptPresetDocumentEnvelope
+
+      expect(updateResponse.status).toBe(200)
+      expect(updateBody.success).toBe(true)
+      expect(updateBody.data).toMatchObject({
+        id: "plan-mode",
+        hasOverride: true,
+        content: customPlanPrompt,
+      })
+
+      const updateCustomPresetResponse = await app.request(
+        `http://localhost/api/prompts/${encodeURIComponent(customPresetID!)}`,
+        {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            label: "Focus preset v2",
+            content: `${customSystemPrompt}\nupdated`,
+          }),
+        },
+      )
+      const updateCustomPresetBody = (await updateCustomPresetResponse.json()) as PromptPresetDocumentEnvelope
+
+      expect(updateCustomPresetResponse.status).toBe(200)
+      expect(updateCustomPresetBody.success).toBe(true)
+      expect(updateCustomPresetBody.data).toMatchObject({
+        id: customPresetID,
+        label: "Focus preset v2",
+        source: "custom",
+        content: `${customSystemPrompt}\nupdated`,
+      })
+
+      const runtimePrompt = await SystemPrompt.defaultPrompt({
+        agent: {
+          name: "plan",
+        },
+      })
+      expect(runtimePrompt.some((section) => section.includes(customPlanPrompt))).toBe(true)
+      expect(runtimePrompt.some((section) => section.includes(`${customSystemPrompt}\nupdated`))).toBe(true)
+
+      const blankOverrideResponse = await app.request("http://localhost/api/prompts/provider-gpt", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: "",
+        }),
+      })
+      const blankOverrideBody = (await blankOverrideResponse.json()) as PromptPresetDocumentEnvelope
+
+      expect(blankOverrideResponse.status).toBe(200)
+      expect(blankOverrideBody.success).toBe(true)
+      expect(blankOverrideBody.data).toMatchObject({
+        id: "provider-gpt",
+        hasOverride: true,
+        content: "",
+      })
+
+      const resetResponse = await app.request("http://localhost/api/prompts/plan-mode", {
+        method: "DELETE",
+      })
+      const resetBody = (await resetResponse.json()) as PromptPresetDocumentEnvelope
+
+      expect(resetResponse.status).toBe(200)
+      expect(resetBody.success).toBe(true)
+      expect(resetBody.data?.hasOverride).toBe(false)
+      expect(resetBody.data?.content).toContain("# Plan Mode - System Reminder")
+
+      const runtimeAfterReset = await SystemPrompt.defaultPrompt({
+        agent: {
+          name: "plan",
+        },
+      })
+      expect(runtimeAfterReset.some((section) => section.includes(customPlanPrompt))).toBe(false)
+
+      const deleteCustomResponse = await app.request(
+        `http://localhost/api/prompts/${encodeURIComponent(customPresetID!)}/custom`,
+        {
+          method: "DELETE",
+        },
+      )
+      const deleteCustomBody = (await deleteCustomResponse.json()) as PromptPresetSelectionEnvelope
+
+      expect(deleteCustomResponse.status).toBe(200)
+      expect(deleteCustomBody.success).toBe(true)
+      expect(deleteCustomBody.data).toEqual({
+        systemPromptPresetID: "system-default",
+        planModePromptPresetID: "plan-mode",
+      })
+
+      const runtimeAfterDelete = await SystemPrompt.defaultPrompt()
+      expect(runtimeAfterDelete.some((section) => section.includes(customSystemPrompt))).toBe(false)
+
+      const missingResponse = await app.request("http://localhost/api/prompts/not-a-preset")
+      const missingBody = (await missingResponse.json()) as JsonEnvelope
+
+      expect(missingResponse.status).toBe(404)
+      expect(missingBody.success).toBe(false)
+      expect(missingBody.error?.code).toBe("PROMPT_PRESET_NOT_FOUND")
+    } finally {
+      await Config.clearPromptOverride(Config.GLOBAL_CONFIG_ID, "plan-mode")
+      await Config.clearPromptOverride(Config.GLOBAL_CONFIG_ID, "provider-gpt")
+      if (customPresetID) {
+        await Config.removeCustomPromptPreset(Config.GLOBAL_CONFIG_ID, customPresetID)
+      }
+      await Config.setSelectedPromptPresetIDs(Config.GLOBAL_CONFIG_ID, {
+        systemPromptPresetID: "system-default",
+        planModePromptPresetID: "plan-mode",
+      })
     }
   })
 

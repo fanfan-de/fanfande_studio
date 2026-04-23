@@ -3,20 +3,10 @@
 //import { Ripgrep } from "../file/ripgrep"
 
 import { Instance } from "../project/instance"
-
-import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
-import PROMPT_DEFAULT from "./prompt/default.txt"
-import PROMPT_BEAST from "./prompt/beast.txt"
-import PROMPT_GEMINI from "./prompt/gemini.txt"
-import PROMPT_GPT from "./prompt/gpt.txt"
-import PROMPT_KIMI from "./prompt/kimi.txt"
-
-import PROMPT_CODEX from "./prompt/codex.txt"
-import PROMPT_TRINITY from "./prompt/trinity.txt"
-import PROMPT_PLAN from "./prompt/plan.txt"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
 import type * as Session from "#session/session.ts"
+import * as PromptPresets from "#session/prompt-presets.ts"
 //import type { Agent } from "@/agent/agent"
 //import { Permission } from "@/permission"
 //import { Skill } from "@/skill"
@@ -37,19 +27,20 @@ export function provider(model: Provider.Model): string[] {
     // return [PROMPT_DEFAULT]
 
 
-    return [PROMPT_DEFAULT]
+    return [PromptPresets.getBundledPromptPresetContent("system-default")]
 }
 
-export function defaultPrompt(input?: {
+export async function defaultPrompt(input?: {
     agent?: {
         name?: string
     }
     session?: Session.SessionInfo | null
 })
 {
-    const prompts = [PROMPT_DEFAULT]
+    const selection = await PromptPresets.getPromptPresetSelection()
+    const prompts = [await PromptPresets.getResolvedPromptPresetContent(selection.systemPromptPresetID)]
     if (input?.agent?.name === "plan") {
-        prompts.push(PROMPT_PLAN)
+        prompts.push(await PromptPresets.getResolvedPromptPresetContent(selection.planModePromptPresetID))
     }
 
     const workflow = input?.session?.workflow

@@ -60,6 +60,9 @@ import type {
   OpenAIReasoningEffort,
   PermissionDecision,
   PermissionRequest,
+  PromptPresetDocument,
+  PromptPresetSelection,
+  PromptPresetSummary,
   PreviewComment,
   PreviewMode,
   ProjectModelSelection,
@@ -3520,7 +3523,28 @@ function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServ
   return transport === "remote" ? "http" : "stdio"
 }
 
-type SettingsSectionKey = "services" | "defaults" | "mcp" | "appearance" | "developer" | "archive"
+function getPromptPresetSourceLabel(source: PromptPresetSummary["source"]) {
+  return source === "custom" ? "Custom" : "Bundled"
+}
+
+function getPromptPresetUsageLabels(
+  presetID: string,
+  selection: PromptPresetSelection | null,
+) {
+  if (!selection) return []
+
+  const labels: string[] = []
+  if (selection.systemPromptPresetID === presetID) {
+    labels.push("System")
+  }
+  if (selection.planModePromptPresetID === presetID) {
+    labels.push("Plan")
+  }
+
+  return labels
+}
+
+type SettingsSectionKey = "services" | "defaults" | "mcp" | "prompts" | "appearance" | "developer" | "archive"
 
 interface SettingsPageProps {
   activeMcpServerID: string | null
@@ -3531,16 +3555,24 @@ interface SettingsPageProps {
   catalog: ProviderCatalogItem[]
   deletingArchivedSessionID: string | null
   deletingMcpServerID: string | null
+  deletingPromptPresetID: string | null
   deletingProviderID: string | null
   colorMode: ColorMode
+  isCreatingPromptPreset: boolean
   isActivityRailVisible: boolean
   isAgentDebugTraceEnabled: boolean
   isDebugLineColorsEnabled: boolean
   isDebugUiRegionsEnabled: boolean
   isLoading: boolean
+  isLoadingPromptPreset: boolean
+  isLoadingPrompts: boolean
   isLoadingArchivedSessions: boolean
   isOpen: boolean
+  isPromptDirty: boolean
+  isSystemPromptPresetDirty: boolean
+  isPlanModePromptPresetDirty: boolean
   isRefreshingProviderCatalog: boolean
+  isSavingPromptPresetSelection: boolean
   isSavingSelection: boolean
   loadError: string | null
   mcpServerDraft: McpServerDraftState
@@ -3550,14 +3582,25 @@ interface SettingsPageProps {
     text: string
   } | null
   models: ProviderModel[]
+  promptDraftLabel: string
+  promptDraftContent: string
+  promptLoadError: string | null
+  promptPresets: PromptPresetSummary[]
+  promptPresetSelection: PromptPresetSelection | null
   projectID: string | null
   projectName: string | null
   projectWorktree: string | null
   providerDrafts: Record<string, ProviderDraftState>
+  onCreatePromptPreset: () => boolean | Promise<boolean>
+  onDeletePromptPreset: () => boolean | Promise<boolean>
+  resettingPromptPresetID: string | null
   restoringArchivedSessionID: string | null
   savedSelection: ProjectModelSelection
   savingMcpServerID: string | null
+  savingPromptPresetID: string | null
+  savingPromptPresetSelectionField: keyof PromptPresetSelection | null
   savingProviderID: string | null
+  selectedPromptPreset: PromptPresetDocument | null
   selectionDraft: ProjectModelSelection
   onColorModeChange: (mode: ColorMode) => void
   onActivityRailVisibilityChange: (value: boolean) => void
@@ -3571,12 +3614,19 @@ interface SettingsPageProps {
   onDeleteProviderAuthSession: (providerID: string) => boolean | Promise<boolean>
   onDeleteProvider: (providerID: string) => void | Promise<void>
   onMcpServerDraftChange: (field: keyof McpServerDraftState, value: string | boolean) => void
+  onPromptDraftLabelChange: (value: string) => void
+  onPromptDraftChange: (value: string) => void
+  onPromptPresetSelectionChange: (field: keyof PromptPresetSelection, value: string) => void
+  onSavePromptPresetSelection: (field?: keyof PromptPresetSelection) => boolean | Promise<boolean>
+  onPromptPresetSelect: (presetID: string) => boolean | Promise<boolean>
   onMcpServerSelect: (serverID: string) => void
   onProviderAuthMethodChange: (providerID: string, method: string) => void
   onProviderDraftChange: (providerID: string, field: "apiKey" | "baseURL", value: string) => void
   onRefreshProviderCatalog: () => boolean | Promise<boolean>
+  onResetPromptPreset: () => boolean | Promise<boolean>
   onRestoreArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onSaveMcpServer: () => boolean | Promise<boolean>
+  onSavePromptPreset: () => boolean | Promise<boolean>
   onSaveProviderApiKey: (providerID: string, apiKey?: string | null) => boolean | Promise<boolean>
   onSaveProvider: (providerID: string) => boolean | Promise<boolean>
   onSaveSelection: () => void | Promise<void>
@@ -3595,30 +3645,49 @@ export function SettingsPage({
   catalog,
   deletingArchivedSessionID,
   deletingMcpServerID,
+  deletingPromptPresetID,
   deletingProviderID,
   colorMode,
+  isCreatingPromptPreset,
   isActivityRailVisible,
   isAgentDebugTraceEnabled,
   isDebugLineColorsEnabled,
   isDebugUiRegionsEnabled,
   isLoading,
+  isLoadingPromptPreset,
+  isLoadingPrompts,
   isLoadingArchivedSessions,
   isOpen,
+  isPromptDirty,
+  isSystemPromptPresetDirty,
+  isPlanModePromptPresetDirty,
   isRefreshingProviderCatalog,
+  isSavingPromptPresetSelection,
   isSavingSelection,
   loadError,
   mcpServerDraft,
   mcpServers,
   message,
   models,
+  promptDraftLabel,
+  promptDraftContent,
+  promptLoadError,
+  promptPresets,
+  promptPresetSelection,
   projectID,
   projectName,
   projectWorktree,
   providerDrafts,
+  onCreatePromptPreset,
+  onDeletePromptPreset,
+  resettingPromptPresetID,
   restoringArchivedSessionID,
   savedSelection,
   savingMcpServerID,
+  savingPromptPresetID,
+  savingPromptPresetSelectionField,
   savingProviderID,
+  selectedPromptPreset,
   selectionDraft,
   onColorModeChange,
   onActivityRailVisibilityChange,
@@ -3632,12 +3701,19 @@ export function SettingsPage({
   onDeleteProviderAuthSession,
   onDeleteProvider,
   onMcpServerDraftChange,
+  onPromptDraftLabelChange,
+  onPromptDraftChange,
+  onPromptPresetSelectionChange,
+  onSavePromptPresetSelection,
+  onPromptPresetSelect,
   onMcpServerSelect,
   onProviderAuthMethodChange,
   onProviderDraftChange,
   onRefreshProviderCatalog,
+  onResetPromptPreset,
   onRestoreArchivedSession,
   onSaveMcpServer,
+  onSavePromptPreset,
   onSaveProviderApiKey,
   onSaveProvider,
   onSaveSelection,
@@ -3716,6 +3792,20 @@ export function SettingsPage({
     const mcpServerCanSave = !mcpServerValidationError
     const showLoadedState = !isLoading && !loadError
     const showProviderSections = activeSection === "services" || activeSection === "defaults" || activeSection === "mcp"
+    const promptPresetOptions = [...promptPresets].sort((left, right) => {
+      if (left.source !== right.source) {
+        return left.source === "bundled" ? -1 : 1
+      }
+
+      return left.label.localeCompare(right.label)
+    })
+    const selectedPromptPresetBusy =
+      selectedPromptPreset !== null &&
+      (
+        savingPromptPresetID === selectedPromptPreset.id ||
+        resettingPromptPresetID === selectedPromptPreset.id ||
+        deletingPromptPresetID === selectedPromptPreset.id
+      )
     useEffect(() => {
       if (!isOpen) {
         setActiveSection("services")
@@ -3772,6 +3862,35 @@ export function SettingsPage({
       onClose()
     }
 
+    function handlePromptPresetSelection(presetID: string) {
+      if (presetID === selectedPromptPreset?.id) return
+      if (
+        isPromptDirty &&
+        typeof window.confirm === "function" &&
+        !window.confirm("Discard unsaved prompt changes and switch presets?")
+      ) {
+        return
+      }
+
+      void onPromptPresetSelect(presetID)
+    }
+
+    function handlePromptPresetCreate() {
+      if (
+        isPromptDirty &&
+        typeof window.confirm === "function" &&
+        !window.confirm("Discard unsaved prompt changes and create a new preset?")
+      ) {
+        return
+      }
+
+      void onCreatePromptPreset()
+    }
+
+    const selectedPromptPresetUsageLabels = selectedPromptPreset
+      ? getPromptPresetUsageLabels(selectedPromptPreset.id, promptPresetSelection)
+      : []
+
     const primarySectionGroups = [
       {
         label: "\u9009\u9879",
@@ -3779,6 +3898,7 @@ export function SettingsPage({
           { key: "services" as const, label: "Provider", Icon: SettingsIcon },
           { key: "defaults" as const, label: "Models", Icon: ConnectedStatusIcon },
           { key: "mcp" as const, label: "MCP", Icon: FolderIcon },
+          { key: "prompts" as const, label: "Prompts", Icon: FileTextIcon },
           { key: "appearance" as const, label: "Appearance", Icon: LayoutSidebarLeftIcon },
           { key: "developer" as const, label: "Developer Mode", Icon: TerminalIcon },
           { key: "archive" as const, label: "Archived Sessions", Icon: ArchiveIcon },
@@ -3827,7 +3947,13 @@ export function SettingsPage({
               ))}
             </aside>
 
-            <div className={activeSection === "services" ? "settings-page-main is-services" : "settings-page-main"}>
+            <div
+              className={
+                activeSection === "services" || activeSection === "prompts"
+                  ? "settings-page-main is-services"
+                  : "settings-page-main"
+              }
+            >
               {message ? (
                 <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>{message.text}</div>
               ) : null}
@@ -3838,11 +3964,23 @@ export function SettingsPage({
                 <div className="settings-banner is-error">{archivedSessionsError}</div>
               ) : null}
 
+              {promptLoadError && activeSection === "prompts" ? (
+                <div className="settings-banner is-error">{promptLoadError}</div>
+              ) : null}
+
               {isLoading && showProviderSections ? (
                 <article className="settings-empty-state">
                   <span className="label">Loading</span>
                   <h3>Fetching provider catalog</h3>
                   <p>Reading provider availability, model visibility, and saved model preferences.</p>
+                </article>
+              ) : null}
+
+              {isLoadingPrompts && activeSection === "prompts" ? (
+                <article className="settings-empty-state">
+                  <span className="label">Loading</span>
+                  <h3>Fetching prompt presets</h3>
+                  <p>Reading the prompt catalog, override state, and current editable content.</p>
                 </article>
               ) : null}
 
@@ -3854,7 +3992,231 @@ export function SettingsPage({
                 </article>
               ) : null}
 
-              {activeSection === "appearance" ? (
+              {activeSection === "prompts" ? (
+                isLoadingPrompts ? null : (
+                  <section className="settings-prompts-shell" aria-label="Prompt preset layout">
+                    <section className="settings-panel settings-prompt-slots-panel">
+                      <div className="settings-prompt-assignment-list">
+                        <div className="settings-prompt-assignment-row">
+                          <div className="settings-prompt-assignment-copy">
+                            <span className="settings-prompt-assignment-title">System</span>
+                            <span className="settings-prompt-assignment-note">Every turn</span>
+                          </div>
+
+                          <div className="settings-prompt-assignment-control">
+                            <div className="settings-prompt-assignment-actions">
+                              <select
+                                id="settings-system-prompt-preset"
+                                aria-label="System prompt preset"
+                                value={promptPresetSelection?.systemPromptPresetID ?? ""}
+                                disabled={!promptPresetSelection || isSavingPromptPresetSelection}
+                                onChange={(event) =>
+                                  onPromptPresetSelectionChange("systemPromptPresetID", event.target.value)
+                                }
+                              >
+                                {promptPresetOptions.map((preset) => (
+                                  <option key={`system-${preset.id}`} value={preset.id}>
+                                    {preset.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                className="secondary-button"
+                                type="button"
+                                aria-label="Confirm system prompt preset"
+                                disabled={!isSystemPromptPresetDirty || isSavingPromptPresetSelection}
+                                onClick={() => void onSavePromptPresetSelection("systemPromptPresetID")}
+                              >
+                                {savingPromptPresetSelectionField === "systemPromptPresetID" ? "Saving..." : "Confirm"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="settings-prompt-assignment-row">
+                          <div className="settings-prompt-assignment-copy">
+                            <span className="settings-prompt-assignment-title">Plan</span>
+                            <span className="settings-prompt-assignment-note">Plan only</span>
+                          </div>
+
+                          <div className="settings-prompt-assignment-control">
+                            <div className="settings-prompt-assignment-actions">
+                              <select
+                                id="settings-plan-mode-prompt-preset"
+                                aria-label="Plan mode prompt preset"
+                                value={promptPresetSelection?.planModePromptPresetID ?? ""}
+                                disabled={!promptPresetSelection || isSavingPromptPresetSelection}
+                                onChange={(event) =>
+                                  onPromptPresetSelectionChange("planModePromptPresetID", event.target.value)
+                                }
+                              >
+                                {promptPresetOptions.map((preset) => (
+                                  <option key={`plan-${preset.id}`} value={preset.id}>
+                                    {preset.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                className="secondary-button"
+                                type="button"
+                                aria-label="Confirm plan mode prompt preset"
+                                disabled={!isPlanModePromptPresetDirty || isSavingPromptPresetSelection}
+                                onClick={() => void onSavePromptPresetSelection("planModePromptPresetID")}
+                              >
+                                {savingPromptPresetSelectionField === "planModePromptPresetID" ? "Saving..." : "Confirm"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+
+                    <div className="settings-services-layout settings-prompts-layout">
+                      <div className="settings-service-list-panel settings-prompt-library-panel">
+                        <div className="settings-prompt-section-bar">
+                          <h3>Presets</h3>
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            disabled={isCreatingPromptPreset}
+                            onClick={handlePromptPresetCreate}
+                          >
+                            {isCreatingPromptPreset ? "Creating..." : "New"}
+                          </button>
+                        </div>
+
+                        <div className="settings-service-list-body">
+                          {promptPresetOptions.length > 0 ? (
+                            <div className="settings-service-list settings-prompt-library" role="list" aria-label="Prompt presets">
+                              {promptPresetOptions.map((preset) => {
+                                const isActive = preset.id === selectedPromptPreset?.id
+                                const usageLabels = getPromptPresetUsageLabels(preset.id, promptPresetSelection)
+
+                                return (
+                                  <button
+                                    key={preset.id}
+                                    className={
+                                      isActive
+                                        ? "settings-service-item settings-prompt-library-item is-active"
+                                        : "settings-service-item settings-prompt-library-item"
+                                    }
+                                    aria-label={preset.label}
+                                    aria-pressed={isActive}
+                                    type="button"
+                                    onClick={() => handlePromptPresetSelection(preset.id)}
+                                  >
+                                    <div className="settings-service-item-header">
+                                      <strong>{preset.label}</strong>
+                                      <span className="settings-badge">{getPromptPresetSourceLabel(preset.source)}</span>
+                                    </div>
+                                    <div className="settings-prompt-item-statuses">
+                                      {usageLabels.map((label) => (
+                                        <span key={`${preset.id}-${label}`} className="settings-badge is-highlight">
+                                          {label}
+                                        </span>
+                                      ))}
+                                      {preset.hasOverride ? <span className="settings-badge is-warning">Edited</span> : null}
+                                    </div>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <article className="settings-empty-state settings-service-list-empty-state">
+                              <h3>No presets</h3>
+                            </article>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="settings-service-detail-panel settings-prompt-detail-panel">
+                        {selectedPromptPreset ? (
+                          <section className="settings-panel settings-prompt-editor-panel">
+                            <div className="settings-prompt-editor-header">
+                              <div className="settings-prompt-editor-meta">
+                                {selectedPromptPreset.source === "custom" ? (
+                                  <input
+                                    className="settings-prompt-name-input"
+                                    aria-label="Preset name"
+                                    value={promptDraftLabel}
+                                    readOnly={isLoadingPromptPreset}
+                                    onChange={(event) => onPromptDraftLabelChange(event.target.value)}
+                                  />
+                                ) : (
+                                  <h3>{selectedPromptPreset.label}</h3>
+                                )}
+
+                                <div className="settings-prompt-item-statuses">
+                                  <span className="settings-badge">{getPromptPresetSourceLabel(selectedPromptPreset.source)}</span>
+                                  {selectedPromptPresetUsageLabels.map((label) => (
+                                    <span key={`${selectedPromptPreset.id}-${label}`} className="settings-badge is-highlight">
+                                      {label}
+                                    </span>
+                                  ))}
+                                  {selectedPromptPreset.hasOverride ? (
+                                    <span className="settings-badge is-warning">Edited</span>
+                                  ) : null}
+                                  {isLoadingPromptPreset ? <span className="settings-badge">Loading</span> : null}
+                                </div>
+                              </div>
+
+                              <div className="settings-inline-actions">
+                                {selectedPromptPreset.source === "custom" ? (
+                                  <button
+                                    className="secondary-button"
+                                    type="button"
+                                    disabled={selectedPromptPresetBusy || isLoadingPromptPreset}
+                                    onClick={() => void onDeletePromptPreset()}
+                                  >
+                                    {deletingPromptPresetID === selectedPromptPreset.id ? "Deleting..." : "Delete"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="secondary-button"
+                                    type="button"
+                                    disabled={!selectedPromptPreset.hasOverride || selectedPromptPresetBusy || isLoadingPromptPreset}
+                                    onClick={() => void onResetPromptPreset()}
+                                  >
+                                    {resettingPromptPresetID === selectedPromptPreset.id ? "Resetting..." : "Reset"}
+                                  </button>
+                                )}
+                                <button
+                                  className="primary-button"
+                                  type="button"
+                                  disabled={!isPromptDirty || selectedPromptPresetBusy || isLoadingPromptPreset}
+                                  onClick={() => void onSavePromptPreset()}
+                                >
+                                  {savingPromptPresetID === selectedPromptPreset.id ? "Saving..." : "Save"}
+                                </button>
+                              </div>
+                            </div>
+
+                            <label className="settings-field settings-prompt-editor-field">
+                              <textarea
+                                className="settings-prompt-editor"
+                                aria-label={`${selectedPromptPreset.label} content`}
+                                value={promptDraftContent}
+                                readOnly={!selectedPromptPreset.editable || isLoadingPromptPreset}
+                                onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onPromptDraftChange(event.target.value)}
+                              />
+                            </label>
+
+                            {selectedPromptPreset.sourcePath ? (
+                              <p className="settings-helper-text settings-prompt-source-path">
+                                <code>{selectedPromptPreset.sourcePath}</code>
+                              </p>
+                            ) : null}
+                          </section>
+                        ) : (
+                          <article className="settings-empty-state settings-detail-empty-state">
+                            <h3>Select a preset</h3>
+                          </article>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                )
+              ) : activeSection === "appearance" ? (
                 <div className="settings-appearance-layout">
                   <section className="settings-panel">
                     <div className="settings-section-header">

@@ -153,6 +153,22 @@ type GlobalSkillFileDocument = {
   path: string
   content: string
 }
+type PromptPresetSummary = {
+  id: string
+  label: string
+  description: string
+  source: "bundled" | "custom"
+  hasOverride: boolean
+  editable: boolean
+  sourcePath?: string
+}
+type PromptPresetDocument = PromptPresetSummary & {
+  content: string
+}
+type PromptPresetSelection = {
+  systemPromptPresetID: string
+  planModePromptPresetID: string
+}
 type WorkspaceFileSearchResult = {
   path: string
   name: string
@@ -495,6 +511,14 @@ try {
       }>,
     getGlobalSkills: () =>
       ipcRenderer.invoke("desktop:get-global-skills") as Promise<SkillInfo[]>,
+    getPromptPresets: () =>
+      ipcRenderer.invoke("desktop:get-prompt-presets") as Promise<PromptPresetSummary[]>,
+    getPromptPresetSelection: () =>
+      ipcRenderer.invoke("desktop:get-prompt-preset-selection") as Promise<PromptPresetSelection>,
+    readPromptPreset: (input: { presetID: string }) =>
+      ipcRenderer.invoke("desktop:read-prompt-preset", input) as Promise<PromptPresetDocument>,
+    createPromptPreset: (input: { label?: string; content?: string; description?: string }) =>
+      ipcRenderer.invoke("desktop:create-prompt-preset", input) as Promise<PromptPresetDocument>,
     getGlobalSkillsTree: () =>
       ipcRenderer.invoke("desktop:get-global-skills-tree") as Promise<GlobalSkillTree>,
     readGlobalSkillFile: (input: { path: string }) =>
@@ -505,6 +529,14 @@ try {
       ipcRenderer.invoke("desktop:read-workspace-file", input) as Promise<WorkspaceFileDocument>,
     updateGlobalSkillFile: (input: { path: string; content: string }) =>
       ipcRenderer.invoke("desktop:update-global-skill-file", input) as Promise<GlobalSkillFileDocument>,
+    updatePromptPreset: (input: { presetID: string; label?: string; content: string; description?: string }) =>
+      ipcRenderer.invoke("desktop:update-prompt-preset", input) as Promise<PromptPresetDocument>,
+    updatePromptPresetSelection: (input: PromptPresetSelection) =>
+      ipcRenderer.invoke("desktop:update-prompt-preset-selection", input) as Promise<PromptPresetSelection>,
+    resetPromptPreset: (input: { presetID: string }) =>
+      ipcRenderer.invoke("desktop:reset-prompt-preset", input) as Promise<PromptPresetDocument>,
+    deletePromptPreset: (input: { presetID: string }) =>
+      ipcRenderer.invoke("desktop:delete-prompt-preset", input) as Promise<PromptPresetSelection>,
     createGlobalSkill: (input: { name: string }) =>
       ipcRenderer.invoke("desktop:create-global-skill", input) as Promise<{
         directory: string
