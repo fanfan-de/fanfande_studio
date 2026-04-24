@@ -23,7 +23,7 @@
 
 .sidebar.is-right {
   --right-sidebar-inline-padding: 14px;
-  padding-top: 0;
+  padding: 0;
   gap: 0;
   background: transparent;
 }
@@ -51,12 +51,12 @@
   --right-sidebar-toolbar-button-border: color-mix(in srgb, var(--seg-accent) 26%, var(--seg-border));
   position: relative;
   min-height: 40px;
-  margin: 0 calc(-1 * var(--right-sidebar-inline-padding));
+  margin: 0;
   padding-left: 12px;
   padding-right: calc(var(--window-controls-right-sidebar-clearance) + 12px);
   align-items: stretch;
   gap: 0;
-  background: color-mix(in srgb, var(--seg-shell) 92%, #ffffff 8%);
+  background: transparent;
   isolation: isolate;
 }
 
@@ -192,11 +192,13 @@
 }
 
 .right-sidebar-section {
-  padding: 14px;
-  border: 1px solid var(--seg-border);
-  background: var(--seg-panel);
+  min-height: 100%;
+  padding: 16px 14px 18px;
+  border: 0;
+  background: transparent;
   display: grid;
-  gap: 12px;
+  align-content: start;
+  gap: 14px;
 }
 
 .right-sidebar-section-header {
@@ -1548,7 +1550,6 @@
 
 /* Sage / Teal & Slate theme overrides */
 
-.right-sidebar-section,
 .preview-empty-state,
 .preview-comments-empty,
 .preview-comment-list-item,

@@ -75,12 +75,12 @@
   grid-column: 2;
   min-height: 0;
   min-width: 0;
-  padding: 8px 14px 14px;
+  padding: 0;
   background: var(--seg-sidebar);
   border-right: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
   animation: rise-in 420ms ease;
 }
 
@@ -139,6 +139,64 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.left-sidebar-top-menu {
+  position: relative;
+  min-height: 40px;
+  margin: 0;
+  padding-left: 12px;
+  padding-right: 12px;
+  align-items: stretch;
+  gap: 0;
+  background: transparent;
+  isolation: isolate;
+}
+
+.left-sidebar-top-menu::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--seg-border) 76%, transparent);
+  pointer-events: none;
+}
+
+.left-sidebar-top-menu .shell-top-menu-content,
+.left-sidebar-top-menu .shell-top-menu-trailing {
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.left-sidebar-top-menu-tabs {
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.left-sidebar-top-menu-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.left-sidebar-top-menu-actions {
+  justify-content: flex-end;
+}
+
+.sidebar-view-host {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 14px 18px;
 }
 
 .view-toolbar,
@@ -713,8 +771,9 @@
 .project-row.is-active,
 .session-row.is-active,
 .skill-tree-row.is-active {
-  background: var(--seg-panel);
-  border: 1px solid var(--seg-border);
+  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
+  border: 0;
+  color: var(--seg-accent-strong);
   box-shadow: none;
 }
 

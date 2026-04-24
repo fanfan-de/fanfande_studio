@@ -1546,7 +1546,6 @@
 .composer-menu-panel,
 .composer-utility-git-branch-panel,
 .git-branch-create-dialog,
-.right-sidebar-section,
 .right-sidebar-change-row,
 .right-sidebar-metric,
 .right-sidebar-diff-hunk,
@@ -1673,8 +1672,7 @@
 .empty-state,
 .composer-menu-panel,
 .composer-utility-git-branch-panel,
-.git-branch-create-dialog,
-.right-sidebar-section {
+.git-branch-create-dialog {
   border: 1px solid var(--seg-border);
   border-radius: var(--seg-radius-sm);
   background: var(--seg-panel);
