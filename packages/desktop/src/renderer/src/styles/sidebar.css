@@ -117,6 +117,17 @@
     box-shadow 160ms ease;
 }
 
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--section-toolbar-height) - 1px);
+  height: 1px;
+  background: var(--seg-border);
+  pointer-events: none;
+}
+
 .sidebar-resizer.is-right::before {
   left: auto;
   right: 0;

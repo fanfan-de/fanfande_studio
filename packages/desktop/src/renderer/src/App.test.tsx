@@ -8981,6 +8981,7 @@ describe("App", () => {
     expect(styles).toMatch(
       /\.pane-tab-bar::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--pane-tab-border\);/s,
     )
+    expect(styles).toMatch(/\.sidebar-resizer::after\s*\{[^}]*top:\s*calc\(var\(--section-toolbar-height\)\s*-\s*1px\);[^}]*height:\s*1px;[^}]*background:\s*var\(--seg-border\);/s)
     expect(styles).toMatch(/\.pane-tab-bar-leading,\s*\.pane-tab-bar-trailing\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar\.window-drag-region\s+\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*drag;/s)
