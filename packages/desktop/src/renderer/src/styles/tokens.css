@@ -1,6 +1,6 @@
-/* Token source of truth for the desktop renderer.
-   Keep visual styling on semantic tokens and preserve legacy aliases
-   while feature styles are migrated away from --ui-* / --seg-*. */
+/* 桌面端渲染层 token 的单一来源。
+   视觉样式优先消费语义 token，旧的 --ui-* / --seg-* 继续保留为兼容别名，
+   方便现有样式逐步迁移。 */
 
 :root {
   color-scheme: light dark;
@@ -95,6 +95,29 @@
   --semantic-warning: #b45309;
   --semantic-error: #9f1239;
   --semantic-info: #6366f1;
+  /* 语义状态色补成完整的派生层。
+     默认情况下这些值会跟随基础色、边框色和面板色自动联动；
+     如果设置页单独覆盖某个派生 token，也能精细控制局部语义表现。 */
+  --semantic-success-strong: color-mix(in srgb, var(--semantic-success) 84%, var(--text-primary) 16%);
+  --semantic-success-text: color-mix(in srgb, var(--semantic-success) 88%, var(--text-primary) 12%);
+  --semantic-success-border: color-mix(in srgb, var(--semantic-success) 28%, var(--border-default) 72%);
+  --semantic-success-surface: color-mix(in srgb, var(--semantic-success) 10%, var(--surface-panel) 90%);
+  --semantic-success-surface-strong: color-mix(in srgb, var(--semantic-success) 16%, var(--surface-panel) 84%);
+  --semantic-warning-strong: color-mix(in srgb, var(--semantic-warning) 84%, var(--text-primary) 16%);
+  --semantic-warning-text: color-mix(in srgb, var(--semantic-warning) 88%, var(--text-primary) 12%);
+  --semantic-warning-border: color-mix(in srgb, var(--semantic-warning) 28%, var(--border-default) 72%);
+  --semantic-warning-surface: color-mix(in srgb, var(--semantic-warning) 10%, var(--surface-panel) 90%);
+  --semantic-warning-surface-strong: color-mix(in srgb, var(--semantic-warning) 16%, var(--surface-panel) 84%);
+  --semantic-error-strong: color-mix(in srgb, var(--semantic-error) 84%, var(--text-primary) 16%);
+  --semantic-error-text: color-mix(in srgb, var(--semantic-error) 88%, var(--text-primary) 12%);
+  --semantic-error-border: color-mix(in srgb, var(--semantic-error) 28%, var(--border-default) 72%);
+  --semantic-error-surface: color-mix(in srgb, var(--semantic-error) 10%, var(--surface-panel) 90%);
+  --semantic-error-surface-strong: color-mix(in srgb, var(--semantic-error) 16%, var(--surface-panel) 84%);
+  --semantic-info-strong: color-mix(in srgb, var(--semantic-info) 84%, var(--text-primary) 16%);
+  --semantic-info-text: color-mix(in srgb, var(--semantic-info) 88%, var(--text-primary) 12%);
+  --semantic-info-border: color-mix(in srgb, var(--semantic-info) 28%, var(--border-default) 72%);
+  --semantic-info-surface: color-mix(in srgb, var(--semantic-info) 10%, var(--surface-panel) 90%);
+  --semantic-info-surface-strong: color-mix(in srgb, var(--semantic-info) 16%, var(--surface-panel) 84%);
 
   --surface-app: var(--surface-app-light);
   --surface-shell: var(--surface-shell-light);
@@ -146,8 +169,29 @@
   --color-accent-strong: var(--brand-primary-strong);
   --color-accent-soft: var(--brand-primary-soft);
   --color-success: var(--semantic-success);
+  --color-success-strong: var(--semantic-success-strong);
+  --color-success-text: var(--semantic-success-text);
+  --color-success-border: var(--semantic-success-border);
+  --color-success-surface: var(--semantic-success-surface);
+  --color-success-surface-strong: var(--semantic-success-surface-strong);
   --color-warning: var(--semantic-warning);
+  --color-warning-strong: var(--semantic-warning-strong);
+  --color-warning-text: var(--semantic-warning-text);
+  --color-warning-border: var(--semantic-warning-border);
+  --color-warning-surface: var(--semantic-warning-surface);
+  --color-warning-surface-strong: var(--semantic-warning-surface-strong);
   --color-danger: var(--semantic-error);
+  --color-danger-strong: var(--semantic-error-strong);
+  --color-danger-text: var(--semantic-error-text);
+  --color-danger-border: var(--semantic-error-border);
+  --color-danger-surface: var(--semantic-error-surface);
+  --color-danger-surface-strong: var(--semantic-error-surface-strong);
+  --color-info: var(--semantic-info);
+  --color-info-strong: var(--semantic-info-strong);
+  --color-info-text: var(--semantic-info-text);
+  --color-info-border: var(--semantic-info-border);
+  --color-info-surface: var(--semantic-info-surface);
+  --color-info-surface-strong: var(--semantic-info-surface-strong);
 
   --ui-bg: var(--surface-app);
   --ui-bg-highlight: var(--surface-shell);
@@ -165,8 +209,29 @@
   --ui-accent-soft: var(--brand-primary-soft);
   --ui-accent-soft-strong: var(--brand-primary-soft-strong);
   --ui-success: var(--semantic-success);
+  --ui-success-strong: var(--semantic-success-strong);
+  --ui-success-text: var(--semantic-success-text);
+  --ui-success-border: var(--semantic-success-border);
+  --ui-success-surface: var(--semantic-success-surface);
+  --ui-success-surface-strong: var(--semantic-success-surface-strong);
   --ui-warning: var(--semantic-warning);
+  --ui-warning-strong: var(--semantic-warning-strong);
+  --ui-warning-text: var(--semantic-warning-text);
+  --ui-warning-border: var(--semantic-warning-border);
+  --ui-warning-surface: var(--semantic-warning-surface);
+  --ui-warning-surface-strong: var(--semantic-warning-surface-strong);
   --ui-danger: var(--semantic-error);
+  --ui-danger-strong: var(--semantic-error-strong);
+  --ui-danger-text: var(--semantic-error-text);
+  --ui-danger-border: var(--semantic-error-border);
+  --ui-danger-surface: var(--semantic-error-surface);
+  --ui-danger-surface-strong: var(--semantic-error-surface-strong);
+  --ui-info: var(--semantic-info);
+  --ui-info-strong: var(--semantic-info-strong);
+  --ui-info-text: var(--semantic-info-text);
+  --ui-info-border: var(--semantic-info-border);
+  --ui-info-surface: var(--semantic-info-surface);
+  --ui-info-surface-strong: var(--semantic-info-surface-strong);
   --ui-shadow-sm: var(--shadow-sm);
   --ui-shadow-md: var(--shadow-md);
   --ui-shadow-lg: var(--shadow-lg);
@@ -192,9 +257,29 @@
   --seg-accent-soft: var(--brand-primary-soft);
   --seg-accent-strong: var(--brand-primary-strong);
   --seg-success: var(--semantic-success);
+  --seg-success-strong: var(--semantic-success-strong);
+  --seg-success-text: var(--semantic-success-text);
+  --seg-success-border: var(--semantic-success-border);
+  --seg-success-surface: var(--semantic-success-surface);
+  --seg-success-surface-strong: var(--semantic-success-surface-strong);
   --seg-warning: var(--semantic-warning);
+  --seg-warning-strong: var(--semantic-warning-strong);
+  --seg-warning-text: var(--semantic-warning-text);
+  --seg-warning-border: var(--semantic-warning-border);
+  --seg-warning-surface: var(--semantic-warning-surface);
+  --seg-warning-surface-strong: var(--semantic-warning-surface-strong);
   --seg-danger: var(--semantic-error);
+  --seg-danger-strong: var(--semantic-error-strong);
+  --seg-danger-text: var(--semantic-error-text);
+  --seg-danger-border: var(--semantic-error-border);
+  --seg-danger-surface: var(--semantic-error-surface);
+  --seg-danger-surface-strong: var(--semantic-error-surface-strong);
   --seg-info: var(--semantic-info);
+  --seg-info-strong: var(--semantic-info-strong);
+  --seg-info-text: var(--semantic-info-text);
+  --seg-info-border: var(--semantic-info-border);
+  --seg-info-surface: var(--semantic-info-surface);
+  --seg-info-surface-strong: var(--semantic-info-surface-strong);
   --seg-radius-xs: var(--radius-control);
   --seg-radius-sm: var(--radius-chip);
   --seg-radius-md: var(--radius-panel);

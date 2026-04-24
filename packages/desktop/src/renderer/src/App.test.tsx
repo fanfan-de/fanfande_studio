@@ -8944,6 +8944,10 @@ describe("App", () => {
     expect(styles).toMatch(/--brand-primary:\s*#d46b63;/i)
     expect(styles).toMatch(/--brand-accent-highlight:\s*#fca5a5;/i)
     expect(styles).toMatch(/--semantic-error:\s*#9f1239;/i)
+    expect(styles).toMatch(
+      /--semantic-success-surface:\s*color-mix\(in srgb,\s*var\(--semantic-success\)\s*10%,\s*var\(--surface-panel\)\s*90%\);/s,
+    )
+    expect(styles).toMatch(/--seg-danger-border:\s*var\(--semantic-error-border\);/s)
     expect(styles).toMatch(/--surface-app-dark:\s*#1c1917;/i)
     expect(styles).toMatch(/--brand-primary-dark:\s*#e17068;/i)
     expect(styles).toMatch(/:root\[data-brand-theme="sage"\]\s*\{[^}]*--brand-primary:\s*#0f766e;[^}]*--brand-accent-highlight:\s*#2dd4bf;/is)
@@ -8995,10 +8999,10 @@ describe("App", () => {
     expect(styles).toMatch(/\.pane-drop-preview-current\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-panel\)\s*88%,\s*white\s*12%\);/s)
     expect(styles).toMatch(/\.canvas-top-menu-git-trigger svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(
-      /\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible,[\s\S]*?\{[^}]*background:\s*var\(--seg-panel\);/s,
+      /\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible,[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--ui-accent-strong\)\s*14%,\s*transparent\);[^}]*color:\s*var\(--ui-accent-strong\);/s,
     )
     expect(styles).toMatch(
-      /\.top-menu-view-button\.is-active,[\s\S]*?\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*transparent\);/s,
+      /\.top-menu-view-button\.is-active,[\s\S]*?\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--brand-accent-active\)\s*12%,\s*transparent\);[^}]*color:\s*var\(--brand-accent-active\);/s,
     )
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(
@@ -9020,12 +9024,8 @@ describe("App", () => {
       /\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.canvas-region-top-menu-add-button:hover,[\s\S]*?\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu:focus-visible,\s*\.canvas-region-top-menu-add-button:focus-visible[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--seg-panel\)\s*28%\);/s,
     )
     expect(styles).toMatch(/\.right-sidebar-top-menu-tabs\s*\{[^}]*align-items:\s*center;[^}]*gap:\s*4px;/s)
-    expect(styles).toMatch(/\.right-sidebar-top-menu\s*\{[^}]*--right-sidebar-toolbar-button-highlight:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--seg-panel\)\s*28%\);[^}]*--right-sidebar-toolbar-button-border:\s*color-mix\(in srgb,\s*var\(--seg-accent\)\s*26%,\s*var\(--seg-border\)\);/s)
     expect(styles).toMatch(
       /\.right-sidebar-top-menu\s+\.top-menu-view-button\s*\{[^}]*align-self:\s*center;[^}]*border:\s*1px solid transparent;[^}]*border-radius:\s*8px;[^}]*background:\s*transparent;/s,
-    )
-    expect(styles).toMatch(
-      /\.right-sidebar-top-menu\s+\.top-menu-view-button:hover,\s*\.right-sidebar-top-menu\s+\.top-menu-view-button:focus-visible,[\s\S]*?\.right-sidebar-top-menu\s+\.top-menu-view-button\.is-active,[\s\S]*?\.right-sidebar-top-menu\s+\.top-menu-view-button\.is-active:hover,\s*\.right-sidebar-top-menu\s+\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*var\(--right-sidebar-toolbar-button-highlight\);[^}]*border-color:\s*var\(--right-sidebar-toolbar-button-border\);[^}]*color:\s*var\(--seg-accent-strong\);/s,
     )
     expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*84%,\s*var\(--seg-panel-muted\)\s*16%\);/s)
     expect(styles).toMatch(/--canvas-region-tab-hover:\s*color-mix\(in srgb,\s*var\(--seg-panel\)\s*66%,\s*var\(--seg-panel-muted\)\s*34%\);/s)

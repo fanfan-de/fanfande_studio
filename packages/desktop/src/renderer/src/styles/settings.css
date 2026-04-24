@@ -1293,7 +1293,7 @@
 }
 
 .settings-theme-config-error {
-  color: var(--seg-danger);
+  color: var(--seg-danger-text);
 }
 
 .settings-theme-config-preview textarea {

@@ -1368,12 +1368,12 @@
 }
 
 .assistant-section.is-file-change .trace-item {
-  border-left-color: var(--seg-info);
+  border-left-color: var(--seg-info-strong);
 }
 
 .permission-request-card {
-  border-left-color: var(--seg-warning);
-  background: color-mix(in srgb, var(--seg-warning) 8%, var(--surface-trace));
+  border-left-color: var(--seg-warning-strong);
+  background: color-mix(in srgb, var(--seg-warning-surface) 84%, var(--surface-trace) 16%);
 }
 
 .ask-user-question-card {

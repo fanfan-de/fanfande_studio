@@ -1,6 +1,8 @@
 export type AppearanceColorMode = "system" | "light" | "dark"
 export type AppearanceBrandTheme = "terra" | "sage"
 
+// 设置页按“基础层 -> 状态家族”分组展示。
+// 语义状态色拆成基础色、强调色、文本色、描边色和两档表面色，方便后续组件逐步从手写 color-mix 迁移过来。
 export const APPEARANCE_TOKEN_GROUPS = [
   {
     id: "light-foundation",
@@ -63,18 +65,60 @@ export const APPEARANCE_TOKEN_GROUPS = [
     ],
   },
   {
-    id: "status",
-    label: "Status Colors",
-    description: "Semantic tones for success, warning, error, and info states.",
+    id: "status-success",
+    label: "Status / Success",
+    description: "Success tones from base hue to text, border, and surface treatments.",
     tokens: [
       "semantic-success",
+      "semantic-success-strong",
+      "semantic-success-text",
+      "semantic-success-border",
+      "semantic-success-surface",
+      "semantic-success-surface-strong",
+    ],
+  },
+  {
+    id: "status-warning",
+    label: "Status / Warning",
+    description: "Warning tones from base hue to text, border, and surface treatments.",
+    tokens: [
       "semantic-warning",
+      "semantic-warning-strong",
+      "semantic-warning-text",
+      "semantic-warning-border",
+      "semantic-warning-surface",
+      "semantic-warning-surface-strong",
+    ],
+  },
+  {
+    id: "status-error",
+    label: "Status / Error",
+    description: "Error tones from base hue to text, border, and surface treatments.",
+    tokens: [
       "semantic-error",
+      "semantic-error-strong",
+      "semantic-error-text",
+      "semantic-error-border",
+      "semantic-error-surface",
+      "semantic-error-surface-strong",
+    ],
+  },
+  {
+    id: "status-info",
+    label: "Status / Info",
+    description: "Informational tones from base hue to text, border, and surface treatments.",
+    tokens: [
       "semantic-info",
+      "semantic-info-strong",
+      "semantic-info-text",
+      "semantic-info-border",
+      "semantic-info-surface",
+      "semantic-info-surface-strong",
     ],
   },
 ] as const
 
+// 这里保持扁平 token 列表，方便序列化、覆盖和设置页统一遍历。
 export const APPEARANCE_TOKEN_NAMES = [
   "surface-app-light",
   "surface-shell-light",
@@ -109,9 +153,29 @@ export const APPEARANCE_TOKEN_NAMES = [
   "surface-code-dark",
   "surface-code-strong-dark",
   "semantic-success",
+  "semantic-success-strong",
+  "semantic-success-text",
+  "semantic-success-border",
+  "semantic-success-surface",
+  "semantic-success-surface-strong",
   "semantic-warning",
+  "semantic-warning-strong",
+  "semantic-warning-text",
+  "semantic-warning-border",
+  "semantic-warning-surface",
+  "semantic-warning-surface-strong",
   "semantic-error",
+  "semantic-error-strong",
+  "semantic-error-text",
+  "semantic-error-border",
+  "semantic-error-surface",
+  "semantic-error-surface-strong",
   "semantic-info",
+  "semantic-info-strong",
+  "semantic-info-text",
+  "semantic-info-border",
+  "semantic-info-surface",
+  "semantic-info-surface-strong",
 ] as const
 
 export type AppearanceTokenName = (typeof APPEARANCE_TOKEN_NAMES)[number]
@@ -133,6 +197,7 @@ export interface AppearanceConfigSnapshot {
   document: AppearanceConfigDocument
 }
 
+// 这些文案直接驱动设置页里的 token 卡片标题和说明。
 type AppearanceTokenMetadata = {
   label: string
   description: string
@@ -268,20 +333,100 @@ export const APPEARANCE_TOKEN_METADATA: Record<AppearanceTokenName, AppearanceTo
     description: "Deeper dark-mode background for code emphasis.",
   },
   "semantic-success": {
-    label: "Success",
-    description: "Success badges and affirmative feedback.",
+    label: "Base",
+    description: "Primary success hue used to derive the rest of the success scale.",
+  },
+  "semantic-success-strong": {
+    label: "Strong",
+    description: "Higher-emphasis success accents and terminal-friendly highlights.",
+  },
+  "semantic-success-text": {
+    label: "Text",
+    description: "Success text and icons placed on neutral surfaces.",
+  },
+  "semantic-success-border": {
+    label: "Border",
+    description: "Success outlines, chips, and low-emphasis separators.",
+  },
+  "semantic-success-surface": {
+    label: "Surface",
+    description: "Soft success fill for badges, cards, and inline notices.",
+  },
+  "semantic-success-surface-strong": {
+    label: "Surface Strong",
+    description: "Stronger success fill for denser emphasis blocks.",
   },
   "semantic-warning": {
-    label: "Warning",
-    description: "Warning badges and cautionary feedback.",
+    label: "Base",
+    description: "Primary warning hue used to derive the rest of the warning scale.",
+  },
+  "semantic-warning-strong": {
+    label: "Strong",
+    description: "Higher-emphasis warning accents and stronger callouts.",
+  },
+  "semantic-warning-text": {
+    label: "Text",
+    description: "Warning text and icons placed on neutral surfaces.",
+  },
+  "semantic-warning-border": {
+    label: "Border",
+    description: "Warning outlines, chips, and low-emphasis separators.",
+  },
+  "semantic-warning-surface": {
+    label: "Surface",
+    description: "Soft warning fill for badges, cards, and inline notices.",
+  },
+  "semantic-warning-surface-strong": {
+    label: "Surface Strong",
+    description: "Stronger warning fill for denser emphasis blocks.",
   },
   "semantic-error": {
-    label: "Error",
-    description: "Danger actions and error feedback.",
+    label: "Base",
+    description: "Primary error hue used to derive the rest of the danger scale.",
+  },
+  "semantic-error-strong": {
+    label: "Strong",
+    description: "Higher-emphasis error accents and destructive highlights.",
+  },
+  "semantic-error-text": {
+    label: "Text",
+    description: "Error text and icons placed on neutral surfaces.",
+  },
+  "semantic-error-border": {
+    label: "Border",
+    description: "Error outlines, chips, and low-emphasis separators.",
+  },
+  "semantic-error-surface": {
+    label: "Surface",
+    description: "Soft error fill for badges, cards, and inline notices.",
+  },
+  "semantic-error-surface-strong": {
+    label: "Surface Strong",
+    description: "Stronger error fill for denser emphasis blocks.",
   },
   "semantic-info": {
-    label: "Info",
-    description: "Informational accents and status markers.",
+    label: "Base",
+    description: "Primary info hue used to derive the rest of the informational scale.",
+  },
+  "semantic-info-strong": {
+    label: "Strong",
+    description: "Higher-emphasis informational accents and active markers.",
+  },
+  "semantic-info-text": {
+    label: "Text",
+    description: "Informational text and icons placed on neutral surfaces.",
+  },
+  "semantic-info-border": {
+    label: "Border",
+    description: "Informational outlines, chips, and low-emphasis separators.",
+  },
+  "semantic-info-surface": {
+    label: "Surface",
+    description: "Soft informational fill for badges, cards, and inline notices.",
+  },
+  "semantic-info-surface-strong": {
+    label: "Surface Strong",
+    description: "Stronger informational fill for denser emphasis blocks.",
   },
 }
 

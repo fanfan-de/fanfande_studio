@@ -20,15 +20,15 @@
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #5f7384;
+  color: var(--seg-text-2);
   box-shadow: none;
 }
 
 .top-menu-view-button:hover,
 .top-menu-view-button:focus-visible {
-  background: rgba(84, 96, 109, 0.14);
+  background: color-mix(in srgb, var(--ui-accent-strong) 14%, transparent);
   box-shadow: none;
-  color: #22303d;
+  color: var(--ui-accent-strong);
   transform: none;
 }
 
@@ -38,15 +38,16 @@
 }
 
 .top-menu-view-button.is-active {
-  background: transparent;
-  color: #22303d;
+  background: color-mix(in srgb, var(--brand-accent-active) 12%, transparent);
+  color: var(--brand-accent-active);
   box-shadow: none;
   transform: none;
 }
 
 .top-menu-view-button.is-active:hover,
 .top-menu-view-button.is-active:focus-visible {
-  background: rgba(84, 96, 109, 0.14);
+  background: color-mix(in srgb, var(--brand-accent-active) 16%, transparent);
+  color: var(--brand-accent-active);
 }
 
 .top-menu-view-button svg {
@@ -299,7 +300,7 @@
 }
 
 .status-live {
-  color: var(--seg-info);
+  color: var(--seg-info-text);
 }
 
 .status-review {
@@ -307,7 +308,7 @@
 }
 
 .status-ready {
-  color: var(--seg-success);
+  color: var(--seg-success-text);
 }
 
 .permission-risk-chip,
@@ -320,24 +321,24 @@
 
 .permission-risk-chip.is-low,
 .session-workflow-badge.is-approved {
-  border-color: color-mix(in srgb, var(--seg-success) 24%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-success) 10%, var(--seg-panel));
-  color: var(--seg-success);
+  border-color: var(--seg-success-border);
+  background: var(--seg-success-surface);
+  color: var(--seg-success-text);
 }
 
 .permission-risk-chip.is-medium,
 .session-workflow-badge.is-planning,
 .session-workflow-badge.is-pending {
-  border-color: color-mix(in srgb, var(--seg-warning) 28%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-warning) 10%, var(--seg-panel));
-  color: var(--seg-warning);
+  border-color: var(--seg-warning-border);
+  background: var(--seg-warning-surface);
+  color: var(--seg-warning-text);
 }
 
 .permission-risk-chip.is-high,
 .permission-risk-chip.is-critical {
-  border-color: color-mix(in srgb, var(--seg-danger) 30%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-danger) 10%, var(--seg-panel));
-  color: var(--seg-danger);
+  border-color: var(--seg-danger-border);
+  background: var(--seg-danger-surface);
+  color: var(--seg-danger-text);
 }
 
 .primary-button {
@@ -366,7 +367,7 @@
 }
 
 .secondary-button.is-danger {
-  border-color: color-mix(in srgb, var(--seg-danger) 26%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-danger) 8%, var(--seg-panel));
-  color: var(--seg-danger);
+  border-color: var(--seg-danger-border);
+  background: var(--seg-danger-surface);
+  color: var(--seg-danger-text);
 }

@@ -43,10 +43,11 @@ function getTerminalTheme() {
   const foreground = readCssVariable(styles, "--text-on-dark", "#fafaf9")
   const accent = readCssVariable(styles, "--brand-accent-active", "#fca5a5")
   const brand = readCssVariable(styles, "--brand-primary-active", "#d46b63")
-  const success = readCssVariable(styles, "--semantic-success", "#65a30d")
-  const warning = readCssVariable(styles, "--semantic-warning", "#b45309")
-  const error = readCssVariable(styles, "--semantic-error", "#9f1239")
-  const info = readCssVariable(styles, "--semantic-info", "#6366f1")
+  // 终端里的 ANSI 颜色需要更高对比度，所以优先读取强调态语义色。
+  const success = readCssVariable(styles, "--semantic-success-strong", "#65a30d")
+  const warning = readCssVariable(styles, "--semantic-warning-strong", "#b45309")
+  const error = readCssVariable(styles, "--semantic-error-strong", "#9f1239")
+  const info = readCssVariable(styles, "--semantic-info-strong", "#6366f1")
   const tertiary = readCssVariable(styles, "--text-tertiary", "#a8a29e")
 
   return {

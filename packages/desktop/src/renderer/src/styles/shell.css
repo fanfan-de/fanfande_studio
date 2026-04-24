@@ -286,6 +286,6 @@
 
 .window-control.is-close:hover,
 .window-control.is-close:focus-visible {
-  background: color-mix(in srgb, var(--seg-danger) 12%, transparent);
-  color: var(--seg-danger);
+  background: var(--seg-danger-surface);
+  color: var(--seg-danger-text);
 }

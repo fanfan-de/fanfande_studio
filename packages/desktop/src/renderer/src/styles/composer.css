@@ -990,25 +990,25 @@
 }
 
 .composer-inline-tag.is-comment {
-  border-color: color-mix(in srgb, var(--seg-warning) 30%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-warning) 10%, var(--seg-panel));
-  color: var(--seg-warning);
+  border-color: var(--seg-warning-border);
+  background: var(--seg-warning-surface);
+  color: var(--seg-warning-text);
 }
 
 .composer-inline-tag.is-skill {
-  border-color: color-mix(in srgb, var(--seg-success) 28%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-success) 10%, var(--seg-panel));
-  color: var(--seg-success);
+  border-color: var(--seg-success-border);
+  background: var(--seg-success-surface);
+  color: var(--seg-success-text);
 }
 
 .composer-inline-tag.is-mcp {
-  border-color: color-mix(in srgb, var(--seg-info) 26%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-info) 10%, var(--seg-panel));
-  color: var(--seg-info);
+  border-color: var(--seg-info-border);
+  background: var(--seg-info-surface);
+  color: var(--seg-info-text);
 }
 
 .composer-attachment-chip.is-invalid {
-  border-color: color-mix(in srgb, var(--seg-danger) 28%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-danger) 9%, var(--seg-panel));
-  color: var(--seg-danger);
+  border-color: var(--seg-danger-border);
+  background: var(--seg-danger-surface);
+  color: var(--seg-danger-text);
 }
