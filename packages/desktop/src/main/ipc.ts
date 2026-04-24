@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions, type NativeImage } from "electron"
 import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
+import { readAppearanceConfigSnapshot, writeAppearanceConfigSnapshot } from "./appearance-config"
 import { filterAvailableExternalEditorsForTarget, listAvailableExternalEditors, openInExternalEditor } from "./external-editors"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
 import {
@@ -59,6 +60,7 @@ import type {
   WindowAction,
 } from "./types"
 import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sendWindowState } from "./window-state"
+import type { AppearanceConfigDocument } from "../shared/appearance"
 
 const AGENT_STREAM_EVENT_CHANNEL = "desktop:agent-stream-event"
 const AGENT_SESSION_STREAM_EVENT_CHANNEL = "desktop:agent-session-stream-event"
@@ -315,6 +317,12 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       isMaximized: win ? isWindowMaximized(win) : false,
     }
   })
+
+  ipcMain.handle("desktop:get-appearance-config", async () => readAppearanceConfigSnapshot())
+
+  ipcMain.handle("desktop:save-appearance-config", async (_event, input: { document: AppearanceConfigDocument }) =>
+    writeAppearanceConfigSnapshot(input.document),
+  )
 
   ipcMain.handle("desktop:window-action", (event, action: WindowAction) => {
     const win = BrowserWindow.fromWebContents(event.sender)

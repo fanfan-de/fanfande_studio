@@ -25,7 +25,7 @@
   --right-sidebar-inline-padding: 14px;
   padding-top: 0;
   gap: 0;
-  background: var(--seg-shell);
+  background: transparent;
 }
 
 .session-tab-trigger,

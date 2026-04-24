@@ -147,11 +147,19 @@ export function App() {
   const {
     agentConnected,
     agentDefaultDirectory,
+    appearanceConfigError,
+    appearanceConfigPath,
+    appearanceConfigPreview,
+    appearanceOverrides,
+    appearanceTokenValues,
     assistantTraceVisibility,
     appShellRef,
     appShellStyle,
     brandTheme,
     handleActivityRailVisibilityChange,
+    handleAppearancePaletteReset,
+    handleAppearanceTokenChange,
+    handleAppearanceTokenReset,
     handleAssistantTraceVisibilityChange,
     handleBrandThemeChange,
     handleAgentDebugTraceChange,
@@ -864,6 +872,11 @@ export function App() {
           deletingMcpServerID={deletingMcpServerID}
           deletingPromptPresetID={deletingPromptPresetID}
           deletingProviderID={deletingProviderID}
+          appearanceConfigError={appearanceConfigError}
+          appearanceConfigPath={appearanceConfigPath}
+          appearanceConfigPreview={appearanceConfigPreview}
+          appearanceOverrides={appearanceOverrides}
+          appearanceTokenValues={appearanceTokenValues}
           assistantTraceVisibility={assistantTraceVisibility}
           brandTheme={brandTheme}
           colorMode={colorMode}
@@ -911,6 +924,9 @@ export function App() {
           onBrandThemeChange={handleBrandThemeChange}
           onColorModeChange={handleColorModeChange}
           onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
+          onAppearancePaletteReset={handleAppearancePaletteReset}
+          onAppearanceTokenChange={handleAppearanceTokenChange}
+          onAppearanceTokenReset={handleAppearanceTokenReset}
           onAssistantTraceVisibilityChange={handleAssistantTraceVisibilityChange}
           onAgentDebugTraceChange={handleAgentDebugTraceChange}
           onDebugLineColorsChange={handleDebugLineColorsChange}

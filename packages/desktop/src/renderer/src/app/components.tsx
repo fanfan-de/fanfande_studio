@@ -1,4 +1,10 @@
 ﻿import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
+import {
+  APPEARANCE_TOKEN_GROUPS,
+  APPEARANCE_TOKEN_METADATA,
+  type AppearanceTokenMap,
+  type AppearanceTokenName,
+} from "../../../shared/appearance"
 import { ChangesPanel } from "./changes/ChangesPanel"
 import { sidebarActions } from "./constants"
 import { WorkspaceFilesPanel } from "./files/WorkspaceFilesPanel"
@@ -3550,6 +3556,11 @@ type SettingsSectionKey = "services" | "defaults" | "mcp" | "prompts" | "appeara
 interface SettingsPageProps {
   activeMcpServerID: string | null
   activeMcpServerDiagnostic: McpServerDiagnostic | null
+  appearanceConfigError: string | null
+  appearanceConfigPath: string | null
+  appearanceConfigPreview: string
+  appearanceOverrides: AppearanceTokenMap
+  appearanceTokenValues: Record<AppearanceTokenName, string>
   assistantTraceVisibility: AssistantTraceVisibility
   archivedSessions: ArchivedSessionSummary[]
   archivedSessionsError: string | null
@@ -3607,6 +3618,9 @@ interface SettingsPageProps {
   onBrandThemeChange: (theme: BrandTheme) => void
   onColorModeChange: (mode: ColorMode) => void
   onActivityRailVisibilityChange: (value: boolean) => void
+  onAppearancePaletteReset: () => void
+  onAppearanceTokenChange: (tokenName: AppearanceTokenName, value: string) => void
+  onAppearanceTokenReset: (tokenName: AppearanceTokenName) => void
   onAssistantTraceVisibilityChange: (key: AssistantTraceVisibilityKey, value: boolean) => void
   onAgentDebugTraceChange: (value: boolean) => void
   onDebugLineColorsChange: (value: boolean) => void
@@ -3642,6 +3656,11 @@ interface SettingsPageProps {
 export function SettingsPage({
   activeMcpServerID,
   activeMcpServerDiagnostic,
+  appearanceConfigError,
+  appearanceConfigPath,
+  appearanceConfigPreview,
+  appearanceOverrides,
+  appearanceTokenValues,
   assistantTraceVisibility,
   archivedSessions,
   archivedSessionsError,
@@ -3696,6 +3715,9 @@ export function SettingsPage({
   onBrandThemeChange,
   onColorModeChange,
   onActivityRailVisibilityChange,
+  onAppearancePaletteReset,
+  onAppearanceTokenChange,
+  onAppearanceTokenReset,
   onAssistantTraceVisibilityChange,
   onAgentDebugTraceChange,
   onDebugLineColorsChange,
@@ -3907,6 +3929,7 @@ export function SettingsPage({
         description: "Cool sage accents with the existing slate-driven shell.",
       },
     ]
+    const hasCustomAppearanceOverrides = Object.keys(appearanceOverrides).length > 0
 
     const primarySectionGroups = [
       {
@@ -4297,6 +4320,107 @@ export function SettingsPage({
                       ))}
                     </div>
                   </section>
+
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Config</span>
+                        <h3>Theme Config File</h3>
+                      </div>
+                      <div className="settings-inline-actions">
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          disabled={!hasCustomAppearanceOverrides}
+                          onClick={onAppearancePaletteReset}
+                        >
+                          Reset Custom Colors
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="settings-theme-config-meta">
+                      <div className="settings-theme-config-path">
+                        <span className="label">Saved To</span>
+                        <code>{appearanceConfigPath ?? "Appearance config bridge unavailable."}</code>
+                      </div>
+                      <p className="settings-helper-text">
+                        This file is saved automatically. After you tune the palette here, you can ask the coding agent to
+                        read this JSON and continue building UI against the exact same color scheme.
+                      </p>
+                      {appearanceConfigError ? (
+                        <p className="settings-helper-text settings-theme-config-error">{appearanceConfigError}</p>
+                      ) : null}
+                    </div>
+
+                    <label className="settings-theme-config-preview">
+                      <span className="label">Current JSON</span>
+                      <textarea
+                        aria-label="Current appearance config JSON"
+                        readOnly
+                        value={appearanceConfigPreview}
+                      />
+                    </label>
+                  </section>
+
+                  {APPEARANCE_TOKEN_GROUPS.map((group) => (
+                    <section key={group.id} className="settings-panel">
+                      <div className="settings-section-header">
+                        <div>
+                          <span className="label">Semantic Tokens</span>
+                          <h3>{group.label}</h3>
+                        </div>
+                        <p>{group.description}</p>
+                      </div>
+
+                      <div className="settings-theme-token-grid">
+                        {group.tokens.map((tokenName) => {
+                          const metadata = APPEARANCE_TOKEN_METADATA[tokenName]
+                          const isCustomized = Boolean(appearanceOverrides[tokenName])
+
+                          return (
+                            <article
+                              key={tokenName}
+                              className={
+                                isCustomized
+                                  ? "settings-theme-token-card is-customized"
+                                  : "settings-theme-token-card"
+                              }
+                            >
+                              <div className="settings-theme-token-copy">
+                                <div className="settings-theme-token-heading">
+                                  <strong>{metadata.label}</strong>
+                                  <span className={isCustomized ? "settings-badge is-highlight" : "settings-badge"}>
+                                    {isCustomized ? "Custom" : "Preset"}
+                                  </span>
+                                </div>
+                                <small>{metadata.description}</small>
+                              </div>
+
+                              <div className="settings-theme-token-controls">
+                                <input
+                                  aria-label={`${group.label} ${metadata.label} ${tokenName}`}
+                                  className="settings-theme-color-picker"
+                                  type="color"
+                                  value={appearanceTokenValues[tokenName]}
+                                  onChange={(event) => onAppearanceTokenChange(tokenName, event.target.value)}
+                                />
+                                <code>{appearanceTokenValues[tokenName]}</code>
+                                <button
+                                  className="secondary-button"
+                                  type="button"
+                                  disabled={!isCustomized}
+                                  onClick={() => onAppearanceTokenReset(tokenName)}
+                                >
+                                  Use Preset
+                                </button>
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  ))}
 
                   <section className="settings-panel">
                     <div className="settings-section-header">

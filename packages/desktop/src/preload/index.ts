@@ -7,6 +7,7 @@ import type {
   PermissionResolveInput,
   PermissionResolveResult,
 } from "../shared/permission"
+import type { AppearanceConfigDocument, AppearanceConfigSnapshot } from "../shared/appearance"
 import type {
   AgentArchivedSessionSummary,
   AgentFolderWorkspace,
@@ -279,6 +280,10 @@ try {
       ipcRenderer.invoke("desktop:get-window-state") as Promise<{
         isMaximized: boolean
       }>,
+    getAppearanceConfig: () =>
+      ipcRenderer.invoke("desktop:get-appearance-config") as Promise<AppearanceConfigSnapshot>,
+    saveAppearanceConfig: (input: { document: AppearanceConfigDocument }) =>
+      ipcRenderer.invoke("desktop:save-appearance-config", input) as Promise<AppearanceConfigSnapshot>,
     showMenu: (menuKey: MenuKey, anchor?: MenuAnchor) => ipcRenderer.invoke("desktop:show-menu", { menuKey, anchor }),
     showExternalEditorMenu: (input: { targetPath: string; anchor?: MenuAnchor }) =>
       ipcRenderer.invoke("desktop:show-external-editor-menu", input) as Promise<void>,

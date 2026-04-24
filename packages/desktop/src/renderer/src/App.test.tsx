@@ -501,6 +501,26 @@ describe("App", () => {
       getWindowState: vi.fn().mockResolvedValue({
         isMaximized: false,
       }),
+      getAppearanceConfig: vi.fn().mockResolvedValue({
+        path: "C:\\Users\\tester\\AppData\\Roaming\\fanfande-desktop-agent\\appearance-theme.json",
+        exists: true,
+        document: {
+          version: 1,
+          brandTheme: "terra",
+          colorMode: "system",
+          overrides: {},
+          resolvedTokens: {},
+          updatedAt: 1,
+        },
+      }),
+      saveAppearanceConfig: vi.fn().mockImplementation(async ({ document }: { document: Record<string, unknown> }) => ({
+        path: "C:\\Users\\tester\\AppData\\Roaming\\fanfande-desktop-agent\\appearance-theme.json",
+        exists: true,
+        document: {
+          ...document,
+          updatedAt: typeof document.updatedAt === "number" ? document.updatedAt : 1,
+        },
+      })),
       getAgentConfig: vi.fn().mockResolvedValue({
         baseURL: "http://127.0.0.1:4096",
         defaultDirectory: "C:\\Projects\\fanfande_studio",
@@ -6276,7 +6296,7 @@ describe("App", () => {
     expect(window.localStorage.getItem("desktop.agentDebugTrace")).toBe("false")
   })
 
-  it("keeps appearance settings focused on shell visibility only", async () => {
+  it("keeps theme editing and shell visibility under appearance while excluding developer toggles", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
@@ -6285,6 +6305,9 @@ describe("App", () => {
 
     expect(screen.getByRole("radio", { name: /Warm Terra & Sand/i })).toBeInTheDocument()
     expect(screen.getByRole("radio", { name: /Sage \/ Slate/i })).toBeInTheDocument()
+    expect(screen.getByText("Theme Config File")).toBeInTheDocument()
+    expect(screen.getByLabelText("Current appearance config JSON")).toBeInTheDocument()
+    expect(screen.getByLabelText("Accent States Accent Base brand-primary")).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
     expect(screen.queryByRole("switch", { name: "Show debug region colors" })).not.toBeInTheDocument()
     expect(screen.queryByRole("switch", { name: "Show line debug colors" })).not.toBeInTheDocument()
@@ -6317,6 +6340,30 @@ describe("App", () => {
 
     expect(document.documentElement).toHaveAttribute("data-brand-theme", "terra")
     expect(window.localStorage.getItem("desktop.brandTheme")).toBe("terra")
+  })
+
+  it("saves semantic token overrides from appearance settings", async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("dialog", { name: "Settings" })
+    fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
+
+    const accentBaseInput = screen.getByLabelText("Accent States Accent Base brand-primary") as HTMLInputElement
+    const preview = screen.getByLabelText("Current appearance config JSON") as HTMLTextAreaElement
+    const saveAppearanceConfig = window.desktop!.saveAppearanceConfig as ReturnType<typeof vi.fn>
+
+    fireEvent.change(accentBaseInput, { target: { value: "#123456" } })
+
+    await waitFor(() => {
+      expect(document.documentElement.style.getPropertyValue("--brand-primary")).toBe("#123456")
+    })
+    await waitFor(() => {
+      expect(saveAppearanceConfig).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      expect(preview.value).toContain("#123456")
+    })
   })
 
   it("groups debug overlays and trace visibility under developer mode", async () => {

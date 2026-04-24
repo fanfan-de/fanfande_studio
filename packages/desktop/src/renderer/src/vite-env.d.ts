@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import type { AppearanceConfigDocument, AppearanceConfigSnapshot } from "../../shared/appearance"
 import type { PermissionRequestPrompt, PermissionResolveInput, PermissionResolveResult } from "../../shared/permission"
 import type {
   ArchivedSessionSummary,
@@ -77,6 +78,8 @@ declare global {
       getWindowState?: () => Promise<{
         isMaximized: boolean
       }>
+      getAppearanceConfig?: () => Promise<AppearanceConfigSnapshot>
+      saveAppearanceConfig?: (input: { document: AppearanceConfigDocument }) => Promise<AppearanceConfigSnapshot>
       showMenu?: (
         menuKey: "file" | "edit" | "view" | "window" | "help",
         anchor?: { x: number; y: number },

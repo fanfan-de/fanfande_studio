@@ -261,17 +261,36 @@ export const TerminalView = memo(function TerminalView({
 
   useEffect(() => {
     applyTerminalTheme()
-    if (colorMode !== "system" || typeof window.matchMedia !== "function") return
-
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+    const cleanupCallbacks: Array<() => void> = []
     const handleChange = () => applyTerminalTheme()
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", handleChange)
-      return () => mediaQuery.removeEventListener("change", handleChange)
+
+    if (typeof MutationObserver !== "undefined") {
+      const rootObserver = new MutationObserver(() => {
+        applyTerminalTheme()
+      })
+      rootObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["data-theme", "data-brand-theme", "style"],
+      })
+      cleanupCallbacks.push(() => rootObserver.disconnect())
     }
 
-    mediaQuery.addListener(handleChange)
-    return () => mediaQuery.removeListener(handleChange)
+    if (colorMode === "system" && typeof window.matchMedia === "function") {
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+      if (typeof mediaQuery.addEventListener === "function") {
+        mediaQuery.addEventListener("change", handleChange)
+        cleanupCallbacks.push(() => mediaQuery.removeEventListener("change", handleChange))
+      } else {
+        mediaQuery.addListener(handleChange)
+        cleanupCallbacks.push(() => mediaQuery.removeListener(handleChange))
+      }
+    }
+
+    return () => {
+      for (const cleanup of cleanupCallbacks) {
+        cleanup()
+      }
+    }
   }, [applyTerminalTheme, colorMode, themeSignature])
 
   useEffect(() => {

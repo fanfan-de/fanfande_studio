@@ -87,7 +87,7 @@
 .sidebar.is-right {
   grid-column: 6;
   border-left: 0;
-  background: #f4f6f8;
+  background: transparent;
   container-type: inline-size;
 }
 
@@ -109,13 +109,17 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 50%;
+  left: 0;
   width: 1px;
-  transform: translateX(-50%);
   background: #d4dde8;
   transition:
     background 160ms ease,
     box-shadow 160ms ease;
+}
+
+.sidebar-resizer.is-right::before {
+  left: auto;
+  right: 0;
 }
 
 .sidebar-resizer:hover::before,

@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react"
 import {
+  APPEARANCE_TOKEN_NAMES,
+  normalizeAppearanceConfigDocument,
+  type AppearanceConfigDocument,
+  type AppearanceTokenMap,
+  type AppearanceTokenName,
+} from "../../../shared/appearance"
+import { applyAppearanceOverrides, normalizeAppearanceColorInputValue, readResolvedAppearanceTokenValues } from "./appearance-theme"
+import {
   DEFAULT_RIGHT_SIDEBAR_WIDTH,
   DEFAULT_SIDEBAR_WIDTH,
   RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO,
@@ -24,6 +32,11 @@ const AGENT_DEBUG_TRACE_STORAGE_KEY = "desktop.agentDebugTrace"
 const ASSISTANT_TRACE_VISIBILITY_STORAGE_KEY = "desktop.assistantTraceVisibility.v1"
 const WINDOW_CONTROLS_CLEARANCE_FALLBACK = 124
 const WINDOW_CONTROLS_CLEARANCE_PADDING = 24
+const APPEARANCE_CONFIG_SAVE_DEBOUNCE_MS = 160
+
+const EMPTY_APPEARANCE_TOKEN_VALUES = Object.fromEntries(
+  APPEARANCE_TOKEN_NAMES.map((tokenName) => [tokenName, "#000000"]),
+) as Record<AppearanceTokenName, string>
 
 type SidebarResizerSide = "left" | "right"
 
@@ -123,6 +136,12 @@ export function useDesktopShell() {
   const [isActivityRailVisible, setIsActivityRailVisible] = useState(readActivityRailVisibilityPreference)
   const [colorMode, setColorMode] = useState<ColorMode>(readColorModePreference)
   const [brandTheme, setBrandTheme] = useState<BrandTheme>(readBrandThemePreference)
+  const [appearanceOverrides, setAppearanceOverrides] = useState<AppearanceTokenMap>({})
+  const [appearanceTokenValues, setAppearanceTokenValues] =
+    useState<Record<AppearanceTokenName, string>>(EMPTY_APPEARANCE_TOKEN_VALUES)
+  const [appearanceConfigPath, setAppearanceConfigPath] = useState<string | null>(null)
+  const [appearanceConfigError, setAppearanceConfigError] = useState<string | null>(null)
+  const [isAppearanceConfigReady, setIsAppearanceConfigReady] = useState(false)
   const [isDebugUiRegionsEnabled, setIsDebugUiRegionsEnabled] = useState(readDebugUiRegionsPreference)
   const [isDebugLineColorsEnabled, setIsDebugLineColorsEnabled] = useState(readDebugLineColorsPreference)
   const [assistantTraceVisibility, setAssistantTraceVisibility] = useState(readAssistantTraceVisibilityPreference)
@@ -169,6 +188,43 @@ export function useDesktopShell() {
       })
       .catch(() => {
         if (mounted && window.desktop?.platform) setPlatform(window.desktop.platform)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    if (!window.desktop?.getAppearanceConfig) {
+      setIsAppearanceConfigReady(true)
+      return () => {
+        mounted = false
+      }
+    }
+
+    void window.desktop.getAppearanceConfig()
+      .then((snapshot) => {
+        if (!mounted) return
+
+        const nextDocument = normalizeAppearanceConfigDocument(snapshot.document)
+        setAppearanceConfigPath(snapshot.path)
+        setAppearanceConfigError(null)
+        setColorMode(nextDocument.colorMode)
+        setBrandTheme(nextDocument.brandTheme)
+        setAppearanceOverrides(nextDocument.overrides)
+      })
+      .catch((error) => {
+        if (!mounted) return
+
+        setAppearanceConfigError(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => {
+        if (mounted) {
+          setIsAppearanceConfigReady(true)
+        }
       })
 
     return () => {
@@ -281,6 +337,40 @@ export function useDesktopShell() {
       return
     }
   }, [brandTheme])
+
+  useEffect(() => {
+    applyAppearanceOverrides(document.documentElement, appearanceOverrides)
+    setAppearanceTokenValues(readResolvedAppearanceTokenValues(document.documentElement))
+  }, [appearanceOverrides, brandTheme, colorMode])
+
+  useEffect(() => {
+    const saveAppearanceConfig = window.desktop?.saveAppearanceConfig
+    if (!isAppearanceConfigReady || !saveAppearanceConfig) return
+
+    const timer = window.setTimeout(() => {
+      const nextDocument: AppearanceConfigDocument = {
+        version: 1,
+        brandTheme,
+        colorMode,
+        overrides: appearanceOverrides,
+        resolvedTokens: readResolvedAppearanceTokenValues(document.documentElement),
+        updatedAt: Date.now(),
+      }
+
+      void saveAppearanceConfig({ document: nextDocument })
+        .then((snapshot) => {
+          setAppearanceConfigPath(snapshot.path)
+          setAppearanceConfigError(null)
+        })
+        .catch((error) => {
+          setAppearanceConfigError(error instanceof Error ? error.message : String(error))
+        })
+    }, APPEARANCE_CONFIG_SAVE_DEBOUNCE_MS)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [appearanceOverrides, brandTheme, colorMode, isAppearanceConfigReady])
 
   useEffect(() => {
     try {
@@ -553,6 +643,33 @@ export function useDesktopShell() {
     handleAssistantTraceVisibilityChange("debugMetadata", nextEnabled)
   }
 
+  function handleAppearanceTokenChange(tokenName: AppearanceTokenName, nextValue: string) {
+    const normalizedValue = normalizeAppearanceColorInputValue(nextValue)
+
+    setAppearanceOverrides((current) => {
+      if (current[tokenName] === normalizedValue) return current
+
+      return {
+        ...current,
+        [tokenName]: normalizedValue,
+      }
+    })
+  }
+
+  function handleAppearanceTokenReset(tokenName: AppearanceTokenName) {
+    setAppearanceOverrides((current) => {
+      if (!(tokenName in current)) return current
+
+      const nextOverrides = { ...current }
+      delete nextOverrides[tokenName]
+      return nextOverrides
+    })
+  }
+
+  function handleAppearancePaletteReset() {
+    setAppearanceOverrides({})
+  }
+
   function handleWindowAction(action: WindowAction) {
     if (!window.desktop?.windowAction) {
       console.warn("[desktop] windowAction is unavailable. preload may not be loaded.")
@@ -580,10 +697,27 @@ export function useDesktopShell() {
   const currentAppShellWidth = appShellRef.current?.getBoundingClientRect().width
   const sidebarWidthBounds = resolveLeftSidebarBounds(currentAppShellWidth)
   const rightSidebarWidthBounds = resolveRightSidebarBounds(currentAppShellWidth)
+  const appearanceConfigPreview = JSON.stringify(
+    {
+      version: 1,
+      path: appearanceConfigPath,
+      brandTheme,
+      colorMode,
+      overrides: appearanceOverrides,
+      resolvedTokens: appearanceTokenValues,
+    },
+    null,
+    2,
+  )
 
   return {
     agentConnected,
     agentDefaultDirectory,
+    appearanceConfigError,
+    appearanceConfigPath,
+    appearanceConfigPreview,
+    appearanceOverrides,
+    appearanceTokenValues,
     assistantTraceVisibility,
     appShellRef,
     appShellStyle,
@@ -592,6 +726,9 @@ export function useDesktopShell() {
     handleBrandThemeChange: setBrandTheme,
     handleColorModeChange: setColorMode,
     handleActivityRailVisibilityChange,
+    handleAppearancePaletteReset,
+    handleAppearanceTokenChange,
+    handleAppearanceTokenReset,
     handleAssistantTraceVisibilityChange,
     handleAgentDebugTraceChange,
     handleDebugLineColorsChange,
