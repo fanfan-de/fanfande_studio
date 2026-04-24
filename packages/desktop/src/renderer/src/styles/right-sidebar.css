@@ -352,7 +352,7 @@
   align-items: center;
   gap: 6px;
   padding: 4px;
-  border: 1px solid color-mix(in srgb, var(--seg-border) 84%, transparent);
+  border: 1px solid var(--mix-seg-border-84-transparent-16);
   background: var(--seg-panel-muted);
   width: fit-content;
 }
@@ -371,7 +371,7 @@
 }
 
 .preview-mode-button.is-active {
-  border-color: color-mix(in srgb, var(--seg-accent) 24%, var(--seg-border));
+  border-color: var(--mix-seg-accent-24-seg-border-76);
   background: #ffffff;
   color: var(--seg-accent-strong);
 }
@@ -390,7 +390,7 @@
 .preview-empty-state,
 .preview-comments-empty,
 .preview-comment-list-item {
-  border: 1px solid color-mix(in srgb, var(--seg-border) 84%, transparent);
+  border: 1px solid var(--mix-seg-border-84-transparent-16);
   background: var(--seg-panel-muted);
   padding: 12px;
 }
@@ -473,7 +473,7 @@
   color: #ffffff;
   font-size: 12px;
   font-weight: 600;
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--seg-accent) 24%, transparent);
+  box-shadow: 0 8px 20px var(--mix-seg-accent-24-transparent-76);
 }
 
 .preview-comment-card {
@@ -491,7 +491,7 @@
   display: grid;
   gap: 10px;
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--seg-border) 84%, transparent);
+  border: 1px solid var(--mix-seg-border-84-transparent-16);
   background: var(--seg-panel-muted);
 }
 
@@ -567,7 +567,7 @@
 }
 
 .right-sidebar-filter-chip.is-active {
-  border-color: color-mix(in srgb, var(--seg-accent) 34%, var(--seg-border));
+  border-color: var(--mix-seg-accent-34-seg-border-66);
   background: #ffffff;
   color: var(--seg-accent-strong);
 }
@@ -916,7 +916,7 @@
 .right-sidebar-changes-panel .right-sidebar-filter-chip:hover,
 .right-sidebar-changes-panel .right-sidebar-filter-chip:focus-visible {
   border-color: transparent;
-  background: color-mix(in srgb, var(--seg-text-1) 5%, transparent);
+  background: var(--mix-seg-text-1-5-transparent-95);
   color: var(--seg-text-1);
   box-shadow: none;
 }
@@ -943,7 +943,7 @@
 }
 
 .right-sidebar-changes-panel .right-sidebar-change-row.is-expanded {
-  background: color-mix(in srgb, var(--seg-panel) 92%, transparent);
+  background: var(--mix-seg-panel-92-transparent-8);
 }
 
 .right-sidebar-changes-panel .right-sidebar-change-toggle {
@@ -1036,7 +1036,7 @@
 }
 
 .right-sidebar-changes-panel .right-sidebar-diff-row + .right-sidebar-diff-row {
-  border-top: 1px solid color-mix(in srgb, var(--seg-divider) 80%, transparent);
+  border-top: 1px solid var(--mix-seg-divider-80-transparent-20);
 }
 
 .right-sidebar-changes-panel .right-sidebar-diff-line-number {
@@ -1052,11 +1052,11 @@
 }
 
 .right-sidebar-changes-panel .right-sidebar-diff-row.is-add {
-  background: color-mix(in srgb, var(--seg-success) 9%, transparent);
+  background: var(--mix-seg-success-9-transparent-91);
 }
 
 .right-sidebar-changes-panel .right-sidebar-diff-row.is-add .right-sidebar-diff-content {
-  color: color-mix(in srgb, var(--seg-success) 78%, var(--seg-text-1));
+  color: var(--mix-seg-success-78-seg-text-1-22);
 }
 
 .right-sidebar-changes-panel .right-sidebar-diff-row.is-add .right-sidebar-diff-line-number {
@@ -1064,11 +1064,11 @@
 }
 
 .right-sidebar-changes-panel .right-sidebar-diff-row.is-remove {
-  background: color-mix(in srgb, var(--seg-danger) 9%, transparent);
+  background: var(--mix-seg-danger-9-transparent-91);
 }
 
 .right-sidebar-changes-panel .right-sidebar-diff-row.is-remove .right-sidebar-diff-content {
-  color: color-mix(in srgb, var(--seg-danger) 78%, var(--seg-text-1));
+  color: var(--mix-seg-danger-78-seg-text-1-22);
 }
 
 .right-sidebar-changes-panel .right-sidebar-diff-row.is-remove .right-sidebar-diff-line-number {
@@ -1595,8 +1595,8 @@
 .workspace-files-result-row:hover,
 .workspace-files-result-row:focus-visible,
 .workspace-files-result-row.is-active {
-  border-color: color-mix(in srgb, var(--seg-accent) 36%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-accent-soft) 76%, var(--seg-panel) 24%);
+  border-color: var(--mix-seg-accent-36-seg-border-64);
+  background: var(--mix-seg-accent-soft-76-seg-panel-24);
   color: var(--seg-accent-strong);
   box-shadow: none;
 }
@@ -1645,14 +1645,14 @@
 
 .right-sidebar-diff-preview,
 .workspace-files-code {
-  border: 1px solid color-mix(in srgb, var(--surface-code) 34%, var(--seg-border));
+  border: 1px solid var(--mix-surface-code-34-seg-border-66);
   background: var(--surface-code);
   color: var(--text-on-dark);
 }
 
 .right-sidebar-diff-hunk {
   border: 1px solid rgba(148, 163, 184, 0.16);
-  background: color-mix(in srgb, var(--surface-code) 88%, var(--surface-code-strong) 12%);
+  background: var(--mix-surface-code-88-surface-code-strong-12);
 }
 
 .right-sidebar-diff-hunk-header {
@@ -1685,19 +1685,19 @@
 }
 
 .right-sidebar-diff-row.is-add {
-  background: color-mix(in srgb, var(--seg-success) 10%, transparent);
+  background: var(--mix-seg-success-10-transparent-90);
 }
 
 .right-sidebar-diff-row.is-add .right-sidebar-diff-content {
-  color: color-mix(in srgb, var(--seg-success) 72%, var(--text-on-dark));
+  color: var(--mix-seg-success-72-text-on-dark-28);
 }
 
 .right-sidebar-diff-row.is-remove {
-  background: color-mix(in srgb, var(--seg-danger) 10%, transparent);
+  background: var(--mix-seg-danger-10-transparent-90);
 }
 
 .right-sidebar-diff-row.is-remove .right-sidebar-diff-content {
-  color: color-mix(in srgb, var(--seg-danger) 72%, var(--text-on-dark));
+  color: var(--mix-seg-danger-72-text-on-dark-28);
 }
 
 .workspace-files-line.is-hovered,
@@ -1708,14 +1708,14 @@
 
 .workspace-files-comment-composer,
 .workspace-files-line-comments {
-  background: color-mix(in srgb, var(--surface-code) 86%, var(--surface-code-strong) 14%);
+  background: var(--mix-surface-code-86-surface-code-strong-14);
   border-top: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .workspace-files-line-comment {
-  background: color-mix(in srgb, var(--surface-elevated) 88%, var(--seg-panel) 12%);
+  background: var(--mix-surface-elevated-88-seg-panel-12);
 }
 
 .right-sidebar-runtime-event.is-error {
-  background: color-mix(in srgb, var(--seg-danger) 8%, var(--seg-panel));
+  background: var(--mix-seg-danger-8-seg-panel-92);
 }

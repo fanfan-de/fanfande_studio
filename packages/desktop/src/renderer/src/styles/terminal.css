@@ -87,7 +87,7 @@
 .terminal-panel-toggle-button:focus-visible,
 .terminal-panel-toggle-button.is-active {
   border: 0;
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
+  background: var(--mix-seg-accent-soft-72-transparent-28);
   box-shadow: none;
 }
 
@@ -176,7 +176,7 @@
 .terminal-panel-create:hover,
 .terminal-panel-create:focus-visible {
   color: #1d2a35;
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
+  background: var(--mix-seg-accent-soft-72-transparent-28);
 }
 
 .terminal-tab-close svg,
@@ -356,8 +356,8 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 
 .top-menu-view-button:hover,
 .top-menu-view-button:focus-visible {
-  border-color: color-mix(in srgb, var(--ui-accent-strong) 18%, transparent);
-  background: color-mix(in srgb, var(--ui-accent-strong) 14%, transparent);
+  border-color: var(--mix-ui-accent-strong-18-transparent-82);
+  background: var(--mix-ui-accent-strong-14-transparent-86);
   color: var(--ui-accent-strong);
   box-shadow: none;
 }
@@ -365,16 +365,16 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 /* Sage / Teal & Slate theme overrides */
 
 .terminal-panel {
-  border-top-color: color-mix(in srgb, var(--seg-border) 82%, transparent);
-  background: color-mix(in srgb, var(--seg-shell) 92%, var(--seg-panel) 8%);
+  border-top-color: var(--mix-seg-border-82-transparent-18);
+  background: var(--mix-seg-shell-92-seg-panel-8);
 }
 
 .terminal-panel-resizer::after {
-  background: color-mix(in srgb, var(--seg-text-3) 34%, transparent);
+  background: var(--mix-seg-text-3-34-transparent-66);
 }
 
 .terminal-tabs {
-  background: color-mix(in srgb, var(--seg-shell) 92%, var(--seg-panel) 8%);
+  background: var(--mix-seg-shell-92-seg-panel-8);
 }
 
 .terminal-panel-toggle-button,
@@ -396,7 +396,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 .activity-rail-bottom .terminal-panel-toggle-button:hover,
 .activity-rail-bottom .terminal-panel-toggle-button:focus-visible,
 .activity-rail-bottom .terminal-panel-toggle-button.is-active {
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, var(--seg-panel) 28%);
+  background: var(--mix-seg-accent-soft-72-seg-panel-28);
   color: var(--seg-accent-strong);
   border-color: transparent;
   box-shadow: none;
@@ -408,7 +408,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 }
 
 .terminal-tab.is-active {
-  background: color-mix(in srgb, var(--surface-code) 16%, var(--seg-panel) 84%);
+  background: var(--mix-surface-code-16-seg-panel-84);
   color: var(--seg-text-1);
 }
 
@@ -422,10 +422,10 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 }
 
 .terminal-surface {
-  border: 1px solid color-mix(in srgb, var(--surface-code) 48%, var(--seg-border));
+  border: 1px solid var(--mix-surface-code-48-seg-border-52);
   box-shadow: none;
 }
 
 .terminal-tabs-list::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--brand-accent-active) 28%, rgba(148, 163, 184, 0.28));
+  background: var(--mix-brand-accent-active-28-rgba-148-163-184-0-28-72);
 }

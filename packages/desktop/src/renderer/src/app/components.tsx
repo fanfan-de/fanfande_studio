@@ -1,7 +1,6 @@
 ﻿import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
 import {
   APPEARANCE_TOKEN_GROUPS,
-  APPEARANCE_TOKEN_METADATA,
   type AppearanceTokenMap,
   type AppearanceTokenName,
 } from "../../../shared/appearance"
@@ -38,6 +37,7 @@ import {
   MonitorIcon,
   PaletteIcon,
   PaperclipIcon,
+  ResetIcon,
   RestoreIcon,
   SunIcon,
   RightSidebarCollapseIcon,
@@ -92,7 +92,7 @@ import type {
   WorkspaceGroup,
 } from "./types"
 import { getSessionWorkflowBadge } from "./session-workflow"
-import { formatTime } from "./utils"
+import { clamp, formatTime } from "./utils"
 import { isSideChatSession } from "./workspace"
 
 interface WindowChromeProps {
@@ -3553,6 +3553,59 @@ function getPromptPresetUsageLabels(
 
 type SettingsSectionKey = "services" | "defaults" | "mcp" | "prompts" | "appearance" | "developer" | "archive"
 
+const SETTINGS_PAGE_DRAG_MARGIN = 16
+
+interface SettingsPageOffset {
+  x: number
+  y: number
+}
+
+interface SettingsPageDragBounds {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+}
+
+interface SettingsPageDragState {
+  bounds: SettingsPageDragBounds
+  pointerID: number
+  startClientX: number
+  startClientY: number
+  startOffset: SettingsPageOffset
+}
+
+function resolveSettingsPageDragBounds(
+  overlayRect: DOMRect,
+  pageRect: DOMRect,
+  currentOffset: SettingsPageOffset,
+): SettingsPageDragBounds {
+  const leftLimit = currentOffset.x + overlayRect.left + SETTINGS_PAGE_DRAG_MARGIN - pageRect.left
+  const rightLimit = currentOffset.x + overlayRect.right - SETTINGS_PAGE_DRAG_MARGIN - pageRect.right
+  const topLimit = currentOffset.y + overlayRect.top + SETTINGS_PAGE_DRAG_MARGIN - pageRect.top
+  const bottomLimit = currentOffset.y + overlayRect.bottom - SETTINGS_PAGE_DRAG_MARGIN - pageRect.bottom
+
+  return {
+    minX: Math.min(leftLimit, rightLimit),
+    maxX: Math.max(leftLimit, rightLimit),
+    minY: Math.min(topLimit, bottomLimit),
+    maxY: Math.max(topLimit, bottomLimit),
+  }
+}
+
+function clampSettingsPageOffset(offset: SettingsPageOffset, bounds: SettingsPageDragBounds): SettingsPageOffset {
+  return {
+    x: clamp(offset.x, bounds.minX, bounds.maxX),
+    y: clamp(offset.y, bounds.minY, bounds.maxY),
+  }
+}
+
+function shouldIgnoreSettingsDragTarget(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false
+
+  return Boolean(target.closest("button, a, input, select, textarea, [role='button']"))
+}
+
 interface SettingsPageProps {
   activeMcpServerID: string | null
   activeMcpServerDiagnostic: McpServerDiagnostic | null
@@ -3753,7 +3806,13 @@ export function SettingsPage({
     const [activeSection, setActiveSection] = useState<SettingsSectionKey>("services")
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
+    const settingsOverlayRef = useRef<HTMLElement | null>(null)
+    const settingsPageRef = useRef<HTMLDivElement | null>(null)
     const serviceDetailPanelRef = useRef<HTMLDivElement | null>(null)
+    const settingsPageOffsetRef = useRef<SettingsPageOffset>({ x: 0, y: 0 })
+    const settingsPageDragRef = useRef<SettingsPageDragState | null>(null)
+    const [settingsPageOffset, setSettingsPageOffset] = useState<SettingsPageOffset>({ x: 0, y: 0 })
+    const [isSettingsPageDragging, setIsSettingsPageDragging] = useState(false)
     const enabledTraceVisibilityCount = assistantTraceVisibilityOptions.filter(
       (option) => assistantTraceVisibility[option.key],
     ).length
@@ -3882,7 +3941,118 @@ export function SettingsPage({
       return () => window.removeEventListener("keydown", handleWindowKeyDown)
     }, [isOpen, onClose])
 
+    useEffect(() => {
+      if (isOpen) return
+
+      settingsPageDragRef.current = null
+      setIsSettingsPageDragging(false)
+    }, [isOpen])
+
+    useEffect(() => {
+      if (!isOpen) return
+
+      function handleWindowResize() {
+        clampSettingsPageIntoOverlay()
+      }
+
+      handleWindowResize()
+      window.addEventListener("resize", handleWindowResize)
+      return () => window.removeEventListener("resize", handleWindowResize)
+    }, [isOpen])
+
+    useEffect(() => {
+      if (!isSettingsPageDragging) return
+
+      function handleWindowPointerMove(event: globalThis.PointerEvent) {
+        const dragState = settingsPageDragRef.current
+        if (!dragState || event.pointerId !== dragState.pointerID) return
+
+        event.preventDefault()
+        updateSettingsPageOffset(
+          clampSettingsPageOffset(
+            {
+              x: dragState.startOffset.x + event.clientX - dragState.startClientX,
+              y: dragState.startOffset.y + event.clientY - dragState.startClientY,
+            },
+            dragState.bounds,
+          ),
+        )
+      }
+
+      function stopSettingsPageDrag(pointerID?: number) {
+        const dragState = settingsPageDragRef.current
+        if (dragState && typeof pointerID === "number" && pointerID !== dragState.pointerID) return
+
+        settingsPageDragRef.current = null
+        setIsSettingsPageDragging(false)
+      }
+
+      function handleWindowPointerStop(event: globalThis.PointerEvent) {
+        stopSettingsPageDrag(event.pointerId)
+      }
+
+      function handleWindowBlur() {
+        stopSettingsPageDrag()
+      }
+
+      document.body.classList.add("is-dragging-settings-page")
+      window.addEventListener("pointermove", handleWindowPointerMove)
+      window.addEventListener("pointerup", handleWindowPointerStop)
+      window.addEventListener("pointercancel", handleWindowPointerStop)
+      window.addEventListener("blur", handleWindowBlur)
+      return () => {
+        document.body.classList.remove("is-dragging-settings-page")
+        window.removeEventListener("pointermove", handleWindowPointerMove)
+        window.removeEventListener("pointerup", handleWindowPointerStop)
+        window.removeEventListener("pointercancel", handleWindowPointerStop)
+        window.removeEventListener("blur", handleWindowBlur)
+      }
+    }, [isSettingsPageDragging])
+
     if (!isOpen) return null
+
+    function updateSettingsPageOffset(nextOffset: SettingsPageOffset) {
+      settingsPageOffsetRef.current = nextOffset
+      setSettingsPageOffset((currentOffset) =>
+        currentOffset.x === nextOffset.x && currentOffset.y === nextOffset.y ? currentOffset : nextOffset,
+      )
+    }
+
+    function clampSettingsPageIntoOverlay() {
+      const overlayElement = settingsOverlayRef.current
+      const pageElement = settingsPageRef.current
+      if (!overlayElement || !pageElement) return
+
+      const bounds = resolveSettingsPageDragBounds(
+        overlayElement.getBoundingClientRect(),
+        pageElement.getBoundingClientRect(),
+        settingsPageOffsetRef.current,
+      )
+      updateSettingsPageOffset(clampSettingsPageOffset(settingsPageOffsetRef.current, bounds))
+    }
+
+    function handleSettingsHeaderPointerDown(event: PointerEvent<HTMLElement>) {
+      if (event.button !== 0 || shouldIgnoreSettingsDragTarget(event.target)) return
+
+      const overlayElement = settingsOverlayRef.current
+      const pageElement = settingsPageRef.current
+      if (!overlayElement || !pageElement) return
+
+      event.preventDefault()
+      const startOffset = settingsPageOffsetRef.current
+      settingsPageDragRef.current = {
+        bounds: resolveSettingsPageDragBounds(
+          overlayElement.getBoundingClientRect(),
+          pageElement.getBoundingClientRect(),
+          startOffset,
+        ),
+        pointerID: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startOffset,
+      }
+      setIsSettingsPageDragging(true)
+    }
 
     function handleSettingsOverlayClick(event: MouseEvent<HTMLElement>) {
       if (event.target !== event.currentTarget) return
@@ -3947,9 +4117,21 @@ export function SettingsPage({
     ] as const
 
     return (
-      <section className="settings-page-overlay" role="presentation" onClick={handleSettingsOverlayClick}>
-        <div className="settings-page" role="dialog" aria-modal="true" aria-label="Settings">
-          <header className="settings-page-header">
+      <section
+        ref={settingsOverlayRef}
+        className={isSettingsPageDragging ? "settings-page-overlay is-dragging-settings-page" : "settings-page-overlay"}
+        role="presentation"
+        onClick={handleSettingsOverlayClick}
+      >
+        <div
+          ref={settingsPageRef}
+          className={isSettingsPageDragging ? "settings-page is-dragging" : "settings-page"}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Settings"
+          style={{ transform: `translate3d(${settingsPageOffset.x}px, ${settingsPageOffset.y}px, 0)` }}
+        >
+          <header className="settings-page-header" title="Drag settings" onPointerDown={handleSettingsHeaderPointerDown}>
             <button className="settings-page-close-button" aria-label="Close settings" title="Close settings" onClick={onClose}>
               <CloseIcon />
             </button>
@@ -4364,23 +4546,23 @@ export function SettingsPage({
                   </section>
 
                   {APPEARANCE_TOKEN_GROUPS.map((group) => (
-                    <section key={group.id} className="settings-panel">
+                    <section key={group.id} className="settings-panel settings-theme-token-panel">
                       <div className="settings-section-header">
                         <div>
-                          <span className="label">Semantic Tokens</span>
                           <h3>{group.label}</h3>
                         </div>
                         <p>{group.description}</p>
                       </div>
 
                       <div className="settings-theme-token-grid">
-                        {group.tokens.map((tokenName) => {
-                          const metadata = APPEARANCE_TOKEN_METADATA[tokenName]
-                          const isCustomized = Boolean(appearanceOverrides[tokenName])
+                        {group.rows.map((row) => {
+                          const isLightCustomized = Boolean(appearanceOverrides[row.lightToken])
+                          const isDarkCustomized = Boolean(appearanceOverrides[row.darkToken])
+                          const isCustomized = isLightCustomized || isDarkCustomized
 
                           return (
                             <article
-                              key={tokenName}
+                              key={row.id}
                               className={
                                 isCustomized
                                   ? "settings-theme-token-card is-customized"
@@ -4388,31 +4570,45 @@ export function SettingsPage({
                               }
                             >
                               <div className="settings-theme-token-copy">
-                                <div className="settings-theme-token-heading">
-                                  <strong>{metadata.label}</strong>
-                                  <span className={isCustomized ? "settings-badge is-highlight" : "settings-badge"}>
-                                    {isCustomized ? "Custom" : "Preset"}
-                                  </span>
-                                </div>
-                                <small>{metadata.description}</small>
+                                <strong>{row.label}</strong>
+                                <code className="settings-theme-token-name">{row.id}</code>
                               </div>
 
                               <div className="settings-theme-token-controls">
-                                <input
-                                  aria-label={`${group.label} ${metadata.label} ${tokenName}`}
-                                  className="settings-theme-color-picker"
-                                  type="color"
-                                  value={appearanceTokenValues[tokenName]}
-                                  onChange={(event) => onAppearanceTokenChange(tokenName, event.target.value)}
-                                />
-                                <code>{appearanceTokenValues[tokenName]}</code>
+                                <div className="settings-theme-token-mode">
+                                  <span>Light</span>
+                                  <input
+                                    aria-label={`${group.label} ${row.label} Light ${row.lightToken}`}
+                                    className="settings-theme-color-picker"
+                                    type="color"
+                                    value={appearanceTokenValues[row.lightToken]}
+                                    onChange={(event) => onAppearanceTokenChange(row.lightToken, event.target.value)}
+                                  />
+                                  <code>{appearanceTokenValues[row.lightToken]}</code>
+                                </div>
+                                <div className="settings-theme-token-mode">
+                                  <span>Dark</span>
+                                  <input
+                                    aria-label={`${group.label} ${row.label} Dark ${row.darkToken}`}
+                                    className="settings-theme-color-picker"
+                                    type="color"
+                                    value={appearanceTokenValues[row.darkToken]}
+                                    onChange={(event) => onAppearanceTokenChange(row.darkToken, event.target.value)}
+                                  />
+                                  <code>{appearanceTokenValues[row.darkToken]}</code>
+                                </div>
                                 <button
-                                  className="secondary-button"
+                                  aria-label={`Use preset for ${group.label} ${row.label}`}
+                                  className="secondary-button settings-theme-token-reset"
                                   type="button"
                                   disabled={!isCustomized}
-                                  onClick={() => onAppearanceTokenReset(tokenName)}
+                                  title="Use Preset"
+                                  onClick={() => {
+                                    onAppearanceTokenReset(row.lightToken)
+                                    onAppearanceTokenReset(row.darkToken)
+                                  }}
                                 >
-                                  Use Preset
+                                  <ResetIcon size={14} />
                                 </button>
                               </div>
                             </article>

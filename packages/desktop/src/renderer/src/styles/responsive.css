@@ -222,12 +222,14 @@
   }
 
   .composer-utility-git-branch-anchor,
+  .composer-utility-permission-anchor,
   .composer-menu-anchor,
   .canvas-top-menu-selector-anchor {
     width: 100%;
   }
 
   .composer-utility-git-branch-button,
+  .composer-utility-permission-toggle,
   .canvas-top-menu-mcp-trigger,
   .canvas-top-menu-skill-trigger,
   .composer-selector-button,
@@ -268,14 +270,10 @@
     justify-content: center;
   }
 
-  .composer-selector-button.is-icon-only {
-    width: 34px;
-    min-width: 34px;
-  }
-
+  .composer-selector-button.is-icon-only,
   .composer-actions .primary-button.is-icon-only {
-    width: 40px;
-    min-width: 40px;
+    width: var(--icon-button-size);
+    min-width: var(--icon-button-size);
   }
 
   .terminal-panel {

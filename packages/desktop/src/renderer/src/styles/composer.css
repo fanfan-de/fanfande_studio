@@ -51,8 +51,8 @@
 
 .composer-stack {
   display: grid;
-  gap: 10px;
-  padding: 0 var(--pane-content-gutter);
+  gap: 4px;
+  padding: 0 var(--pane-content-gutter) 12px;
 }
 
 .composer-utility-chip {
@@ -66,7 +66,8 @@
   color: #5f7384;
 }
 
-.composer-utility-git-branch-anchor {
+.composer-utility-git-branch-anchor,
+.composer-utility-permission-anchor {
   position: relative;
 }
 
@@ -90,10 +91,10 @@
 .composer-utility-permission-toggle:hover,
 .composer-utility-permission-toggle:focus-visible,
 .composer-utility-permission-toggle.is-active {
-  background: color-mix(in srgb, var(--seg-panel) 76%, var(--seg-accent-soft) 24%);
-  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
-  color: var(--seg-accent-strong);
-  box-shadow: 0 10px 20px color-mix(in srgb, var(--seg-accent) 12%, transparent);
+  background: var(--seg-composer-button-surface);
+  border-color: var(--mix-seg-accent-28-seg-border-72);
+  color: var(--seg-composer-button-text);
+  box-shadow: 0 10px 20px var(--mix-seg-accent-12-transparent-88);
   outline: none;
 }
 
@@ -140,7 +141,7 @@
   display: grid;
   gap: 8px;
   border: 1px solid rgba(147, 171, 195, 0.52);
-  background: rgba(255, 255, 255, 0.98);
+  background: var(--seg-dropdown-menu-surface);
   box-shadow: 0 18px 36px rgba(36, 59, 82, 0.14);
 }
 
@@ -230,6 +231,20 @@
   color: #b14537;
 }
 
+.composer-utility-permission-panel {
+  min-width: 180px;
+  max-height: none;
+}
+
+.composer-utility-chip.context-pressure-indicator {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
 .context-pressure-ring {
   width: 28px;
   height: 28px;
@@ -299,7 +314,7 @@
 .git-branch-create-field input {
   min-height: 42px;
   padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--seg-border) 96%, transparent);
+  border: 1px solid var(--mix-seg-border-96-transparent-4);
   background: var(--seg-panel);
   color: var(--seg-text-1);
 }
@@ -309,8 +324,8 @@
 }
 
 .git-branch-create-field input:focus-visible {
-  border-color: color-mix(in srgb, var(--seg-accent) 42%, var(--seg-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 12%, transparent);
+  border-color: var(--mix-seg-accent-42-seg-border-58);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88);
 }
 
 .git-branch-create-actions {
@@ -389,8 +404,8 @@
   margin: 0 2px;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--seg-accent) 24%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, var(--seg-panel) 28%);
+  border: 1px solid var(--mix-seg-accent-24-seg-border-76);
+  background: var(--mix-seg-accent-soft-72-seg-panel-28);
   color: var(--seg-accent-strong);
   box-sizing: border-box;
   white-space: nowrap;
@@ -401,8 +416,8 @@
 }
 
 .composer-inline-tag.is-file {
-  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-accent-soft) 78%, var(--seg-panel) 22%);
+  border-color: var(--mix-seg-accent-28-seg-border-72);
+  background: var(--mix-seg-accent-soft-78-seg-panel-22);
 }
 
 .composer-inline-tag.is-comment {
@@ -446,7 +461,7 @@
 
 .composer-attachment-remove:hover,
 .composer-attachment-remove:focus-visible {
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
+  background: var(--mix-seg-accent-soft-72-transparent-28);
   color: var(--seg-accent-strong);
 }
 
@@ -471,13 +486,13 @@
 .composer-selector-button {
   min-height: 34px;
   padding: 0 12px;
-  border-radius: 0;
+  border-radius: var(--seg-radius-xs);
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(166, 186, 208, 0.42);
-  background: #f5f8fb;
-  color: #314353;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--seg-text-2);
   cursor: pointer;
   transition:
     transform 160ms ease,
@@ -496,9 +511,9 @@
 
 .composer-selector-button:hover,
 .composer-selector-button:focus-visible {
-  background: var(--seg-panel);
-  border-color: color-mix(in srgb, var(--seg-accent) 34%, var(--seg-border));
-  color: var(--seg-accent-strong);
+  background: var(--seg-composer-button-surface);
+  border-color: transparent;
+  color: var(--seg-composer-button-text);
 }
 
 .composer-selector-button:disabled {
@@ -527,8 +542,70 @@
   display: grid;
   gap: 4px;
   border: 1px solid rgba(166, 186, 208, 0.42);
-  background: #ffffff;
+  background: var(--seg-dropdown-menu-surface);
   box-shadow: 0 14px 34px rgba(46, 81, 118, 0.12);
+  scrollbar-color: var(--mix-seg-text-3-54-transparent-46) var(--seg-dropdown-menu-surface);
+}
+
+.composer-menu-panel:not(.is-scrollbar-hidden)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.composer-menu-panel:not(.is-scrollbar-hidden)::-webkit-scrollbar-track {
+  background: var(--seg-dropdown-menu-surface);
+}
+
+.composer-menu-panel:not(.is-scrollbar-hidden)::-webkit-scrollbar-thumb {
+  border: 3px solid var(--seg-dropdown-menu-surface);
+  border-radius: 999px;
+  background: var(--mix-seg-text-3-54-transparent-46);
+}
+
+.composer-menu-panel.is-scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.composer-menu-panel.is-scrollbar-hidden::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.composer-menu-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0 0 4px;
+  background: inherit;
+}
+
+.composer-menu-search-input {
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: #ffffff;
+  color: var(--seg-text-1);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.composer-menu-search-input::placeholder {
+  color: var(--seg-text-3);
+}
+
+.composer-menu-search-input:focus {
+  border-color: var(--mix-seg-accent-34-seg-border-66);
+  box-shadow: inset 0 0 0 1px var(--mix-seg-accent-16-transparent-84);
+}
+
+.composer-menu-options {
+  display: grid;
+  gap: 4px;
 }
 
 .composer-command-menu {
@@ -668,8 +745,8 @@
 .composer-menu-option:hover,
 .composer-menu-option:focus-visible,
 .composer-menu-option.is-selected {
-  background: var(--seg-panel);
-  color: var(--seg-accent-strong);
+  background: var(--seg-composer-button-surface);
+  color: var(--seg-composer-button-text);
 }
 
 .composer-menu-empty {
@@ -850,9 +927,9 @@
 .composer-menu-option:hover,
 .composer-menu-option:focus-visible,
 .composer-menu-option.is-selected {
-  background: var(--seg-panel);
+  background: var(--seg-composer-button-surface);
   border-color: var(--seg-border-strong);
-  color: var(--seg-text-1);
+  color: var(--seg-composer-button-text);
 }
 
 .external-editor-menu-panel .external-editor-menu-option:hover,
@@ -865,7 +942,11 @@
 }
 
 .composer-menu-panel,
-.composer-utility-git-branch-panel,
+.composer-utility-git-branch-panel {
+  border-color: var(--seg-border-strong);
+  background: var(--seg-dropdown-menu-surface);
+}
+
 .git-branch-create-dialog {
   border-color: var(--seg-border-strong);
   background: #fbfcfd;
@@ -897,9 +978,13 @@
   padding: 10px 16px 14px;
   border: 1px solid var(--seg-border);
   border-radius: var(--seg-radius-sm);
-  background: #f7f9fb;
+  background: var(--seg-composer-surface);
   box-shadow: 0 10px 24px rgba(46, 81, 118, 0.05);
   animation: rise-in 560ms ease;
+}
+
+.composer-stack .composer {
+  margin-bottom: 0;
 }
 
 .inline-side-chat-thread .composer {
@@ -908,9 +993,9 @@
   max-width: none;
   margin: 0;
   padding: 10px 12px 12px;
-  border: 1px solid color-mix(in srgb, var(--seg-border) 82%, white 18%);
+  border: 1px solid var(--mix-seg-border-82-white-18);
   border-radius: 12px;
-  background: var(--seg-panel);
+  background: var(--seg-composer-surface);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
@@ -918,12 +1003,12 @@
 
 .composer {
   border-color: var(--seg-border);
-  background: color-mix(in srgb, var(--seg-panel-muted) 78%, var(--seg-panel) 22%);
+  background: var(--seg-composer-surface);
   box-shadow: none;
 }
 
 .inline-side-chat-thread .composer {
-  background: var(--seg-panel);
+  background: var(--seg-composer-surface);
   box-shadow: none;
 }
 
@@ -932,8 +1017,8 @@
 .composer-utility-permission-toggle,
 .composer-selector-button,
 .composer-attachment-chip {
-  border: 1px solid color-mix(in srgb, var(--seg-border) 96%, transparent);
-  background: color-mix(in srgb, var(--seg-panel-muted) 88%, var(--seg-panel) 12%);
+  border: 1px solid var(--mix-seg-border-96-transparent-4);
+  background: var(--mix-seg-panel-muted-88-seg-panel-12);
   color: var(--seg-text-2);
   box-shadow: none;
 }
@@ -954,14 +1039,19 @@
 .composer-menu-option:hover,
 .composer-menu-option:focus-visible,
 .composer-menu-option.is-selected {
-  border-color: color-mix(in srgb, var(--seg-accent) 34%, var(--seg-border));
-  background: var(--seg-panel);
-  color: var(--seg-accent-strong);
+  border-color: var(--mix-seg-accent-34-seg-border-66);
+  background: var(--seg-composer-button-surface);
+  color: var(--seg-composer-button-text);
   box-shadow: none;
 }
 
 .composer-menu-panel,
-.composer-utility-git-branch-panel,
+.composer-utility-git-branch-panel {
+  border: 1px solid var(--seg-border-strong);
+  background: var(--seg-dropdown-menu-surface);
+  box-shadow: var(--shadow-sm);
+}
+
 .git-branch-create-dialog {
   border: 1px solid var(--seg-border-strong);
   background: var(--surface-elevated);
@@ -978,14 +1068,14 @@
 }
 
 .composer-inline-tag {
-  border: 1px solid color-mix(in srgb, var(--seg-accent) 24%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-accent-soft) 78%, var(--seg-panel) 22%);
+  border: 1px solid var(--mix-seg-accent-24-seg-border-76);
+  background: var(--mix-seg-accent-soft-78-seg-panel-22);
   color: var(--seg-accent-strong);
 }
 
 .composer-inline-tag.is-file {
-  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-accent-soft) 78%, var(--seg-panel) 22%);
+  border-color: var(--mix-seg-accent-28-seg-border-72);
+  background: var(--mix-seg-accent-soft-78-seg-panel-22);
   color: var(--seg-accent-strong);
 }
 
@@ -1011,4 +1101,56 @@
   border-color: var(--seg-danger-border);
   background: var(--seg-danger-surface);
   color: var(--seg-danger-text);
+}
+
+.composer .composer-selector-button,
+.composer .composer-actions .primary-button,
+.composer .composer-menu-option {
+  border-color: transparent;
+  background: transparent;
+  color: var(--seg-text-2);
+  box-shadow: none;
+}
+
+.composer .composer-selector-button:not(:disabled):hover,
+.composer .composer-selector-button:not(:disabled):focus-visible,
+.composer .composer-actions .primary-button:not(:disabled):hover,
+.composer .composer-actions .primary-button:not(:disabled):focus-visible,
+.composer .composer-menu-option:not(:disabled):hover,
+.composer .composer-menu-option:not(:disabled):focus-visible {
+  border-color: transparent;
+  background: var(--seg-composer-button-surface);
+  color: var(--seg-composer-button-text);
+  box-shadow: none;
+}
+
+.composer .composer-menu-option.is-selected {
+  border-color: transparent;
+  background: var(--seg-composer-button-surface-strong);
+  color: var(--seg-composer-button-text-strong);
+}
+
+.composer-utility-bar .composer-utility-git-branch-button,
+.composer-utility-bar .composer-utility-permission-toggle {
+  border-color: transparent;
+  background: transparent;
+  color: var(--seg-text-2);
+  box-shadow: none;
+}
+
+.composer-utility-bar .composer-utility-permission-toggle.is-full-access {
+  color: var(--seg-composer-button-text-strong);
+}
+
+.composer-utility-bar .composer-utility-git-branch-button:not(:disabled):hover,
+.composer-utility-bar .composer-utility-git-branch-button:not(:disabled):focus-visible,
+.composer-utility-bar .composer-utility-git-branch-button.is-active,
+.composer-utility-bar .composer-utility-permission-toggle:not(:disabled):hover,
+.composer-utility-bar .composer-utility-permission-toggle:not(:disabled):focus-visible,
+.composer-utility-bar .composer-utility-permission-toggle.is-active {
+  border-color: transparent;
+  background: var(--seg-composer-button-surface);
+  color: var(--seg-composer-button-text);
+  box-shadow: none;
+  outline: none;
 }

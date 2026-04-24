@@ -137,7 +137,7 @@
 .sidebar-resizer:focus-visible::before,
 .sidebar-resizer.is-active::before {
   background: var(--seg-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 14%, transparent);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-14-transparent-86);
 }
 
 .sidebar-resizer:focus-visible {
@@ -171,7 +171,7 @@
   right: 0;
   bottom: 0;
   height: 1px;
-  background: color-mix(in srgb, var(--seg-border) 76%, transparent);
+  background: var(--mix-seg-border-76-transparent-24);
   pointer-events: none;
 }
 
@@ -252,7 +252,7 @@
 .sidebar-settings:hover,
 .row-action:hover {
   color: #1d2a35;
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
+  background: var(--mix-seg-accent-soft-72-transparent-28);
   box-shadow: none;
 }
 
@@ -428,7 +428,7 @@
 
 .project-row.is-active {
   border-color: transparent;
-  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
+  background: var(--mix-seg-accent-soft-84-transparent-16);
   color: var(--seg-accent-strong);
   box-shadow: none;
 }
@@ -480,7 +480,7 @@
 .session-row.is-active {
   border-color: transparent;
   color: var(--seg-accent-strong);
-  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
+  background: var(--mix-seg-accent-soft-84-transparent-16);
   box-shadow: none;
 }
 
@@ -528,8 +528,8 @@
 }
 
 .skills-create-input:focus-visible {
-  border-color: color-mix(in srgb, var(--seg-accent) 42%, var(--seg-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 12%, transparent);
+  border-color: var(--mix-seg-accent-42-seg-border-58);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88);
 }
 
 .skills-create-actions {
@@ -550,8 +550,8 @@
 }
 
 .skills-create-actions button[type="submit"] {
-  border-color: color-mix(in srgb, var(--seg-accent) 34%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-accent-soft) 82%, transparent);
+  border-color: var(--mix-seg-accent-34-seg-border-66);
+  background: var(--mix-seg-accent-soft-82-transparent-18);
   color: var(--seg-accent-strong);
 }
 
@@ -606,7 +606,7 @@
 }
 
 .skill-tree-row.is-active {
-  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
+  background: var(--mix-seg-accent-soft-84-transparent-16);
   color: var(--seg-accent-strong);
 }
 
@@ -651,7 +651,7 @@
   gap: 8px;
   padding: 0 8px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
+  background: var(--mix-seg-accent-soft-72-transparent-28);
 }
 
 .skill-tree-rename-input {
@@ -659,7 +659,7 @@
   min-width: 0;
   min-height: 28px;
   padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--seg-accent) 24%, var(--seg-border));
+  border: 1px solid var(--mix-seg-accent-24-seg-border-76);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
   color: var(--seg-accent-strong);
@@ -667,8 +667,8 @@
 }
 
 .skill-tree-rename-input:focus-visible {
-  border-color: color-mix(in srgb, var(--seg-accent) 42%, var(--seg-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 12%, transparent);
+  border-color: var(--mix-seg-accent-42-seg-border-58);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88);
 }
 
 .sidebar-settings {
@@ -676,7 +676,7 @@
 }
 
 .sidebar-settings.is-active {
-  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
+  background: var(--mix-seg-accent-soft-84-transparent-16);
   color: var(--seg-accent-strong);
 }
 
@@ -757,7 +757,7 @@
 .project-row-action:focus-visible,
 .skill-tree-row-action:hover,
 .skill-tree-row-action:focus-visible {
-  background: color-mix(in srgb, var(--seg-accent-soft) 68%, var(--seg-panel) 32%);
+  background: var(--mix-seg-accent-soft-68-seg-panel-32);
   color: var(--seg-accent-strong);
   box-shadow: none;
 }
@@ -775,14 +775,14 @@
 .session-row:focus-visible,
 .skill-tree-row:hover,
 .skill-tree-row:focus-visible {
-  background: color-mix(in srgb, var(--seg-panel-muted) 86%, transparent);
+  background: var(--mix-seg-panel-muted-86-transparent-14);
   color: var(--seg-text-1);
 }
 
 .project-row.is-active,
 .session-row.is-active,
 .skill-tree-row.is-active {
-  background: color-mix(in srgb, var(--seg-accent-soft) 84%, transparent);
+  background: var(--mix-seg-accent-soft-84-transparent-16);
   border: 0;
   color: var(--seg-accent-strong);
   box-shadow: none;

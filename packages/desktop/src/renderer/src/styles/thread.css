@@ -729,8 +729,8 @@
 .permission-request-meta {
   min-width: 0;
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--seg-border) 90%, transparent);
-  background: color-mix(in srgb, var(--seg-panel-muted) 78%, var(--seg-panel) 22%);
+  border: 1px solid var(--mix-seg-border-90-transparent-10);
+  background: var(--mix-seg-panel-muted-78-seg-panel-22);
   display: grid;
   gap: 6px;
 }
@@ -769,8 +769,8 @@
 }
 
 .permission-request-disclosure {
-  border: 1px solid color-mix(in srgb, var(--seg-border) 84%, transparent);
-  background: color-mix(in srgb, var(--seg-panel-muted) 78%, var(--seg-panel) 22%);
+  border: 1px solid var(--mix-seg-border-84-transparent-16);
+  background: var(--mix-seg-panel-muted-78-seg-panel-22);
 }
 
 .permission-request-disclosure summary {
@@ -890,15 +890,15 @@
   width: 100%;
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--seg-border) 96%, transparent);
+  border: 1px solid var(--mix-seg-border-96-transparent-4);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.96);
   color: var(--seg-text-1);
 }
 
 .ask-user-question-freeform-input:focus-visible {
-  border-color: color-mix(in srgb, var(--seg-accent) 40%, var(--seg-border));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 12%, transparent);
+  border-color: var(--mix-seg-accent-40-seg-border-60);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88);
 }
 
 .ask-user-question-actions {
@@ -1051,9 +1051,9 @@
   gap: 14px;
   margin: 4px 0 2px 10px;
   padding: 14px 16px 16px 18px;
-  border: 1px solid color-mix(in srgb, var(--seg-border) 86%, var(--seg-accent-soft) 14%);
+  border: 1px solid var(--mix-seg-border-86-seg-accent-soft-14);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--seg-panel-muted) 92%, var(--seg-accent-soft) 8%);
+  background: var(--mix-seg-panel-muted-92-seg-accent-soft-8);
   box-shadow: 0 12px 28px rgba(22, 31, 45, 0.06);
   animation: rise-in 220ms ease;
 }
@@ -1068,8 +1068,8 @@
   border-radius: 999px;
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--seg-accent-strong) 88%, white 12%) 0%,
-    color-mix(in srgb, var(--seg-accent) 72%, transparent 28%) 100%
+    var(--mix-seg-accent-strong-88-white-12) 0%,
+    var(--mix-seg-accent-72-transparent-28) 100%
   );
 }
 
@@ -1099,7 +1099,7 @@
   min-height: 20px;
   padding: 0 8px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, transparent);
+  background: var(--mix-seg-accent-soft-72-transparent-28);
   color: var(--seg-accent-strong, #174b76);
   font-size: 11px;
   font-weight: 600;
@@ -1150,8 +1150,8 @@
 }
 
 .inline-side-chat-thread .user-bubble {
-  background: color-mix(in srgb, var(--seg-panel) 76%, var(--seg-panel-muted) 24%);
-  border-color: color-mix(in srgb, var(--seg-border) 88%, white 12%);
+  background: var(--mix-seg-panel-76-seg-panel-muted-24);
+  border-color: var(--mix-seg-border-88-white-12);
 }
 
 .thread-session-banner {
@@ -1291,8 +1291,8 @@
 }
 
 .user-bubble-reference-chip {
-  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-accent-soft) 78%, var(--seg-panel) 22%);
+  border-color: var(--mix-seg-accent-28-seg-border-72);
+  background: var(--mix-seg-accent-soft-78-seg-panel-22);
   color: var(--seg-accent-strong);
 }
 
@@ -1320,7 +1320,7 @@
 
   50% {
     opacity: 1;
-    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--brand-accent-active) 48%, transparent);
+    box-shadow: inset 3px 0 0 var(--mix-brand-accent-active-48-transparent-52);
   }
 }
 
@@ -1373,12 +1373,12 @@
 
 .permission-request-card {
   border-left-color: var(--seg-warning-strong);
-  background: color-mix(in srgb, var(--seg-warning-surface) 84%, var(--surface-trace) 16%);
+  background: var(--mix-seg-warning-surface-84-surface-trace-16);
 }
 
 .ask-user-question-card {
   border-left-color: var(--seg-accent);
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, var(--surface-trace) 28%);
+  background: var(--mix-seg-accent-soft-72-surface-trace-28);
 }
 
 .assistant-section.is-response,
@@ -1390,7 +1390,7 @@
 }
 
 .assistant-section.is-debug {
-  background: color-mix(in srgb, var(--surface-trace) 88%, var(--seg-panel) 12%);
+  background: var(--mix-surface-trace-88-seg-panel-12);
 }
 
 .assistant-section-label,
@@ -1416,17 +1416,17 @@
 }
 
 .trace-kind-system {
-  background: color-mix(in srgb, var(--seg-panel-muted) 82%, var(--seg-panel) 18%);
+  background: var(--mix-seg-panel-muted-82-seg-panel-18);
   border-left-color: var(--seg-border-strong);
 }
 
 .trace-kind-reasoning {
-  background: color-mix(in srgb, var(--surface-trace) 88%, var(--seg-panel) 12%);
+  background: var(--mix-surface-trace-88-seg-panel-12);
   border-left-color: var(--brand-accent-active);
 }
 
 .trace-kind-tool {
-  background: color-mix(in srgb, var(--surface-trace) 84%, var(--seg-panel) 16%);
+  background: var(--mix-surface-trace-84-seg-panel-16);
   border-left-color: var(--seg-info);
 }
 
@@ -1471,7 +1471,7 @@
 
 .user-bubble,
 .inline-side-chat-thread .user-bubble {
-  border: 1px solid color-mix(in srgb, var(--seg-accent) 14%, var(--seg-border));
+  border: 1px solid var(--mix-seg-accent-14-seg-border-86);
   background: var(--surface-user-bubble);
   color: var(--seg-text-1);
   box-shadow: none;
@@ -1479,20 +1479,20 @@
 
 .user-bubble-chip {
   border: 1px solid var(--seg-border);
-  background: color-mix(in srgb, var(--surface-user-bubble) 68%, var(--seg-panel) 32%);
+  background: var(--mix-surface-user-bubble-68-seg-panel-32);
   color: var(--seg-text-2);
 }
 
 .user-bubble-reference-chip,
 .trace-item-file-chip {
-  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
-  background: color-mix(in srgb, var(--seg-accent-soft) 80%, var(--seg-panel) 20%);
+  border-color: var(--mix-seg-accent-28-seg-border-72);
+  background: var(--mix-seg-accent-soft-80-seg-panel-20);
   color: var(--seg-accent-strong);
 }
 
 .trace-item-file-chip:hover,
 .trace-item-file-chip:focus-visible {
-  border-color: color-mix(in srgb, var(--seg-accent) 48%, var(--seg-border));
+  border-color: var(--mix-seg-accent-48-seg-border-52);
   background: var(--seg-panel);
   color: var(--seg-accent-strong);
 }
@@ -1507,6 +1507,6 @@
 }
 
 .side-chat-badge {
-  background: color-mix(in srgb, var(--seg-accent-soft) 70%, var(--seg-panel) 30%);
+  background: var(--mix-seg-accent-soft-70-seg-panel-30);
   border-left-color: var(--seg-accent);
 }

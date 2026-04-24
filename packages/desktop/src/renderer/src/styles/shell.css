@@ -279,7 +279,7 @@
 
 .window-control:hover,
 .window-control:focus-visible {
-  background: color-mix(in srgb, var(--seg-text-2) 12%, transparent);
+  background: var(--mix-seg-text-2-12-transparent-88);
   color: var(--seg-text-1);
   transform: none;
 }

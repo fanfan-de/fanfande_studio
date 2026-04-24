@@ -6307,7 +6307,12 @@ describe("App", () => {
     expect(screen.getByRole("radio", { name: /Sage \/ Slate/i })).toBeInTheDocument()
     expect(screen.getByText("Theme Config File")).toBeInTheDocument()
     expect(screen.getByLabelText("Current appearance config JSON")).toBeInTheDocument()
-    expect(screen.getByLabelText("Accent States Accent Base brand-primary")).toBeInTheDocument()
+    expect(screen.getByLabelText("Accent States Accent Base Light brand-primary")).toBeInTheDocument()
+    expect(screen.getByLabelText("Accent States Accent Base Dark brand-primary-dark")).toBeInTheDocument()
+    expect(screen.getByLabelText("Dropdown Select Menu Surface Light semantic-dropdown-menu-surface-light")).toBeInTheDocument()
+    expect(screen.getByLabelText("Dropdown Select Menu Surface Dark semantic-dropdown-menu-surface-dark")).toBeInTheDocument()
+    expect(screen.getByLabelText("Composer Button Surface Light semantic-composer-button-surface-light")).toBeInTheDocument()
+    expect(screen.getByLabelText("Composer Button Surface Dark semantic-composer-button-surface-dark")).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
     expect(screen.queryByRole("switch", { name: "Show debug region colors" })).not.toBeInTheDocument()
     expect(screen.queryByRole("switch", { name: "Show line debug colors" })).not.toBeInTheDocument()
@@ -6349,7 +6354,7 @@ describe("App", () => {
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
-    const accentBaseInput = screen.getByLabelText("Accent States Accent Base brand-primary") as HTMLInputElement
+    const accentBaseInput = screen.getByLabelText("Accent States Accent Base Light brand-primary") as HTMLInputElement
     const preview = screen.getByLabelText("Current appearance config JSON") as HTMLTextAreaElement
     const saveAppearanceConfig = window.desktop!.saveAppearanceConfig as ReturnType<typeof vi.fn>
 
@@ -6879,6 +6884,75 @@ describe("App", () => {
     })
   })
 
+  it("drags settings within the main window", async () => {
+    const { container } = render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    const dialog = await screen.findByRole("dialog", { name: "Settings" })
+    const settingsOverlay = container.querySelector(".settings-page-overlay")
+    const settingsHeader = container.querySelector(".settings-page-header")
+    expect(settingsOverlay).not.toBeNull()
+    expect(settingsHeader).not.toBeNull()
+
+    Object.defineProperty(settingsOverlay!, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: 600,
+        height: 600,
+        left: 0,
+        right: 800,
+        top: 0,
+        width: 800,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+    Object.defineProperty(dialog, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: 500,
+        height: 400,
+        left: 200,
+        right: 600,
+        top: 100,
+        width: 400,
+        x: 200,
+        y: 100,
+        toJSON: () => ({}),
+      }),
+    })
+
+    fireEvent.pointerDown(settingsHeader!, {
+      button: 0,
+      clientX: 400,
+      clientY: 120,
+      pointerId: 7,
+    })
+
+    await waitFor(() => {
+      expect(dialog).toHaveClass("is-dragging")
+    })
+
+    fireEvent.pointerMove(window, {
+      clientX: 500,
+      clientY: 170,
+      pointerId: 7,
+    })
+
+    await waitFor(() => {
+      expect(dialog).toHaveStyle({ transform: "translate3d(100px, 50px, 0)" })
+    })
+
+    fireEvent.pointerUp(window, {
+      pointerId: 7,
+    })
+
+    await waitFor(() => {
+      expect(dialog).not.toHaveClass("is-dragging")
+    })
+  })
+
   it("updates the global model selection from settings", async () => {
     window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
       {
@@ -7249,7 +7323,15 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Add attachments" })).toBeDisabled()
     fireEvent.click(await screen.findByRole("button", { name: "Select model: DeepSeek Reasoner" }))
-    fireEvent.click(screen.getByRole("button", { name: "GPT-4o mini" }))
+    const modelList = screen.getByRole("listbox", { name: "Model selection" })
+    expect(within(modelList).queryByRole("option", { name: /^Model default/ })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search models" }), {
+      target: {
+        value: "gpt",
+      },
+    })
+    expect(within(modelList).queryByRole("option", { name: "DeepSeek Reasoner" })).not.toBeInTheDocument()
+    fireEvent.click(within(modelList).getByRole("option", { name: "GPT-4o mini" }))
 
     await waitFor(() => {
       expect(window.desktop!.updateProjectModelSelection).toHaveBeenCalledWith({
@@ -7311,10 +7393,12 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Select model: GPT-5.4" }))
-    fireEvent.click(screen.getByRole("button", { name: /^High/ }))
+    fireEvent.click(await screen.findByRole("button", { name: "Select reasoning effort: Model default" }))
+    expect(screen.queryByText("Spend more compute on harder or more ambiguous tasks.")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("option", { name: /^High/ }))
 
-    expect(await screen.findByRole("button", { name: "Select model: GPT-5.4. Reasoning effort: High" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Select model: GPT-5.4" })).toBeInTheDocument()
+    expect(await screen.findByRole("button", { name: "Select reasoning effort: High" })).toBeInTheDocument()
 
     setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Trace the new toolbar flow")
     fireEvent.click(getComposerSendButton())
@@ -8943,10 +9027,10 @@ describe("App", () => {
   it("keeps the canvas tabs separate from the session top menu", () => {
     expect(styles).toMatch(/--brand-primary:\s*#d46b63;/i)
     expect(styles).toMatch(/--brand-accent-highlight:\s*#fca5a5;/i)
-    expect(styles).toMatch(/--semantic-error:\s*#9f1239;/i)
-    expect(styles).toMatch(
-      /--semantic-success-surface:\s*color-mix\(in srgb,\s*var\(--semantic-success\)\s*10%,\s*var\(--surface-panel\)\s*90%\);/s,
-    )
+    expect(styles).toMatch(/--semantic-error-light:\s*#9f1239;/i)
+    expect(styles).toMatch(/--semantic-error:\s*var\(--semantic-error-light\);/s)
+    expect(styles).toMatch(/--semantic-success-surface-light:\s*#f0f6e7;/i)
+    expect(styles).toMatch(/--semantic-success-surface:\s*var\(--semantic-success-surface-light\);/s)
     expect(styles).toMatch(/--seg-danger-border:\s*var\(--semantic-error-border\);/s)
     expect(styles).toMatch(/--surface-app-dark:\s*#1c1917;/i)
     expect(styles).toMatch(/--brand-primary-dark:\s*#e17068;/i)
@@ -8961,7 +9045,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.window-controls-floating\s*\{[^}]*top:\s*5px;[^}]*gap:\s*10px;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(/\.window-control\s*\{[^}]*color:\s*var\(--seg-text-2\);/s)
     expect(styles).toMatch(/\.window-control svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
-    expect(styles).toMatch(/\.window-control:hover,\s*\.window-control:focus-visible\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-text-2\)\s*12%,\s*transparent\);[^}]*color:\s*var\(--seg-text-1\);[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.window-control:hover,\s*\.window-control:focus-visible\s*\{[^}]*background:\s*var\(--mix-seg-text-2-12-transparent-88\);[^}]*color:\s*var\(--seg-text-1\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.panel-toolbar\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*padding:\s*0;[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.panel-toolbar\.window-drag-region\s*\{[^}]*-webkit-app-region:\s*drag;/s)
     expect(styles).toMatch(/\.shell-top-menu\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;/s)
@@ -8977,7 +9061,9 @@ describe("App", () => {
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-top-menu svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.session-tab-close svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.pane-tab-bar\s*\{[^}]*--pane-tab-bar-bg:\s*var\(--seg-shell\);[^}]*background:\s*var\(--pane-tab-bar-bg\);[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/--pane-tab-inactive-bg:\s*var\(--seg-panel-muted\);/s)
+    expect(styles).toMatch(/--pane-tab-hover-bg:\s*var\(--seg-panel\);/s)
     expect(styles).toMatch(
       /\.pane-tab-bar::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--pane-tab-border\);/s,
     )
@@ -8988,7 +9074,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.pane-tab-bar-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu,[\s\S]*?\.pane-tab-bar\s+\.canvas-region-top-menu-add-button\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.right-sidebar-view-host\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;[^}]*padding-right:\s*2px;/s)
-    expect(styles).toMatch(/\.pane-tab-merge-preview\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--brand-accent-active\)\s*12%,\s*var\(--seg-panel\)\s*88%\);/s)
+    expect(styles).toMatch(/\.pane-tab-merge-preview\s*\{[^}]*background:\s*var\(--pane-tab-merge-bg\);/s)
     expect(styles).toMatch(/\.pane-drop-targets\s*\{[^}]*grid-template-columns:\s*144px minmax\(0,\s*1fr\) 144px;[^}]*grid-template-rows:\s*10px minmax\(0,\s*1fr\) 108px;[^}]*grid-template-areas:\s*[\s\S]*"\.\s+top\s+\."[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
     expect(styles).toMatch(/\.pane-drop-targets\.is-top-row\s*\{[^}]*grid-template-areas:\s*[\s\S]*"top top top"[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
     expect(styles).toMatch(/\.pane-drop-target\s*\{[^}]*pointer-events:\s*auto;[^}]*background:\s*transparent;/s)
@@ -8996,21 +9082,21 @@ describe("App", () => {
     expect(styles).toMatch(/\.pane-drop-preview\.is-left\s*\{[^}]*--pane-drop-preview-sheen-x:\s*18%;[^}]*--pane-drop-preview-sheen-y:\s*50%;/s)
     expect(styles).toMatch(/\.pane-drop-preview\.is-top\s*\{[^}]*--pane-drop-preview-sheen-x:\s*50%;[^}]*--pane-drop-preview-sheen-y:\s*18%;/s)
     expect(styles).toMatch(/\.pane-drop-preview-current,\s*\.pane-drop-preview-incoming\s*\{[^}]*position:\s*absolute;[^}]*transition:[^}]*top var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)[^}]*left var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)[^}]*width var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)[^}]*height var\(--pane-drop-preview-motion-duration\) var\(--pane-drop-preview-motion-curve\)/s)
-    expect(styles).toMatch(/\.pane-drop-preview-incoming\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--brand-accent-active\)\s*12%,\s*var\(--seg-panel\)\s*88%\);/s)
-    expect(styles).toMatch(/\.pane-drop-preview-current\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-panel\)\s*88%,\s*white\s*12%\);/s)
+    expect(styles).toMatch(/\.pane-drop-preview-incoming\s*\{[^}]*background:\s*var\(--mix-brand-accent-active-12-seg-panel-88\);/s)
+    expect(styles).toMatch(/\.pane-drop-preview-current\s*\{[^}]*background:\s*var\(--mix-seg-panel-88-white-12\);/s)
     expect(styles).toMatch(/\.canvas-top-menu-git-trigger svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(
-      /\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible,[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--ui-accent-strong\)\s*14%,\s*transparent\);[^}]*color:\s*var\(--ui-accent-strong\);/s,
+      /\.top-menu-view-button:hover,\s*\.top-menu-view-button:focus-visible,[\s\S]*?\{[^}]*background:\s*var\(--mix-ui-accent-strong-14-transparent-86\);[^}]*color:\s*var\(--ui-accent-strong\);/s,
     )
     expect(styles).toMatch(
-      /\.top-menu-view-button\.is-active,[\s\S]*?\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--brand-accent-active\)\s*12%,\s*transparent\);[^}]*color:\s*var\(--brand-accent-active\);/s,
+      /\.top-menu-view-button\.is-active,[\s\S]*?\.top-menu-view-button\.is-active:hover,\s*\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*var\(--mix-brand-accent-active-12-transparent-88\);[^}]*color:\s*var\(--brand-accent-active\);/s,
     )
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(
-      /\.sidebar-toggle-button\.is-rail:hover,\s*\.sidebar-toggle-button\.is-rail:focus-visible,[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*68%,\s*var\(--seg-panel\)\s*32%\);/s,
+      /\.sidebar-toggle-button\.is-rail:hover,\s*\.sidebar-toggle-button\.is-rail:focus-visible,[\s\S]*?\{[^}]*background:\s*var\(--mix-seg-accent-soft-68-seg-panel-32\);/s,
     )
     expect(styles).toMatch(
-      /\.sidebar-toggle-button\.is-rail\.is-active,[\s\S]*?\.sidebar-toggle-button\.is-rail\.is-active:hover,\s*\.sidebar-toggle-button\.is-rail\.is-active:focus-visible,[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*68%,\s*var\(--seg-panel\)\s*32%\);/s,
+      /\.sidebar-toggle-button\.is-rail\.is-active,[\s\S]*?\.sidebar-toggle-button\.is-rail\.is-active:hover,\s*\.sidebar-toggle-button\.is-rail\.is-active:focus-visible,[\s\S]*?\{[^}]*background:\s*var\(--mix-seg-accent-soft-68-seg-panel-32\);/s,
     )
     expect(styles).toMatch(/\.session-tab\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
@@ -9019,22 +9105,22 @@ describe("App", () => {
     expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger,\s*\.session-tab-close,[\s\S]*?\.canvas-region-top-menu-add-button\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(
-      /\.canvas-region-top-menu\s+\.session-tab-close:hover,\s*\.canvas-region-top-menu\s+\.session-tab-close:focus-visible,[\s\S]*?\.pane-tab-bar\s+\.session-tab-close:hover,\s*\.pane-tab-bar\s+\.session-tab-close:focus-visible\s*\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--seg-panel\)\s*28%\);[^}]*color:\s*var\(--seg-accent-strong\);/s,
+      /\.canvas-region-top-menu\s+\.session-tab-close:hover,\s*\.canvas-region-top-menu\s+\.session-tab-close:focus-visible,[\s\S]*?\.pane-tab-bar\s+\.session-tab-close:hover,\s*\.pane-tab-bar\s+\.session-tab-close:focus-visible\s*\{[^}]*background:\s*var\(--seg-accent-soft\);[^}]*color:\s*var\(--seg-accent-strong\);/s,
     )
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.canvas-region-top-menu-add-button:hover,[\s\S]*?\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu:focus-visible,\s*\.canvas-region-top-menu-add-button:focus-visible[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--seg-panel\)\s*28%\);/s,
+      /\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.canvas-region-top-menu-add-button:hover,[\s\S]*?\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu:focus-visible,\s*\.canvas-region-top-menu-add-button:focus-visible[\s\S]*?\{[^}]*background:\s*var\(--seg-accent-soft\);/s,
     )
     expect(styles).toMatch(/\.right-sidebar-top-menu-tabs\s*\{[^}]*align-items:\s*center;[^}]*gap:\s*4px;/s)
     expect(styles).toMatch(
       /\.right-sidebar-top-menu\s+\.top-menu-view-button\s*\{[^}]*align-self:\s*center;[^}]*border:\s*1px solid transparent;[^}]*border-radius:\s*8px;[^}]*background:\s*transparent;/s,
     )
-    expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*84%,\s*var\(--seg-panel-muted\)\s*16%\);/s)
-    expect(styles).toMatch(/--canvas-region-tab-hover:\s*color-mix\(in srgb,\s*var\(--seg-panel\)\s*66%,\s*var\(--seg-panel-muted\)\s*34%\);/s)
+    expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*var\(--mix-seg-shell-84-seg-panel-muted-16\);/s)
+    expect(styles).toMatch(/--canvas-region-tab-hover:\s*var\(--mix-seg-panel-66-seg-panel-muted-34\);/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*background:\s*var\(--pane-tab-inactive-bg\);[^}]*color:\s*var\(--seg-text-2\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(
       /\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*34px;[^}]*margin-top:\s*6px;[^}]*background:\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*left top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*right top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*var\(--pane-tab-active-bg\);[^}]*border:\s*0;[^}]*transform:\s*none;/s,
     )
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*box-shadow:\s*inset 0 1px 0 var\(--pane-tab-border\),\s*0 10px 18px rgba\(15,\s*23,\s*42,\s*0\.05\);/s)
+    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*box-shadow:\s*var\(--pane-tab-active-shadow\);/s)
     expect(styles).toMatch(
       /\.pane-tab-bar\s+\.session-tab\.is-active::before\s*\{[^}]*left:\s*calc\(var\(--pane-tab-curve\) - 1px\);[^}]*right:\s*calc\(var\(--pane-tab-curve\) - 1px\);[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--pane-tab-active-bg\);/s,
     )
@@ -9095,18 +9181,51 @@ describe("App", () => {
     )
   })
 
-  it("styles composer selector buttons as bordered controls", () => {
+  it("styles composer dropdown selectors as text-only controls with semantic hover states", () => {
+    expect(styles).toMatch(/--semantic-composer-surface-light:\s*#ffffff;/i)
+    expect(styles).toMatch(/--semantic-composer-surface:\s*var\(--semantic-composer-surface-light\);/s)
+    expect(styles).toMatch(/--semantic-composer-surface:\s*var\(--semantic-composer-surface-dark\);/s)
+    expect(styles).not.toMatch(/--semantic-composer-surface:\s*var\(--surface-panel\);/s)
+    expect(styles).toMatch(/--semantic-dropdown-menu-surface-light:\s*#ffffff;/i)
+    expect(styles).toMatch(
+      /--semantic-dropdown-menu-surface:\s*var\(--semantic-dropdown-menu-surface-light\);/s,
+    )
+    expect(styles).toMatch(
+      /--semantic-dropdown-menu-surface:\s*var\(--semantic-dropdown-menu-surface-dark\);/s,
+    )
+    expect(styles).not.toMatch(/--semantic-dropdown-menu-surface:\s*var\(--surface-panel\);/s)
+    expect(styles).toMatch(
+      /--semantic-composer-button-surface:\s*var\(--semantic-composer-button-surface-light\);/s,
+    )
+    expect(styles).toMatch(/--seg-composer-button-surface:\s*var\(--semantic-composer-button-surface\);/s)
+    expect(styles).toMatch(/--seg-composer-surface:\s*var\(--semantic-composer-surface\);/s)
+    expect(styles).toMatch(/--seg-dropdown-menu-surface:\s*var\(--semantic-dropdown-menu-surface\);/s)
+    expect(styles).toMatch(
+      /\.composer\s*\{[^}]*background:\s*var\(--seg-composer-surface\);/s,
+    )
     expect(styles).toMatch(
       /\.composer-selector-button\s*\{[^}]*min-height:\s*34px;/s,
     )
     expect(styles).toMatch(
-      /\.composer-utility-chip,[\s\S]*?\.composer-selector-button,[\s\S]*?\.composer-attachment-chip\s*\{[^}]*border:\s*1px solid color-mix\(in srgb,\s*var\(--seg-border\)\s*96%,\s*transparent\);[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-panel-muted\)\s*88%,\s*var\(--seg-panel\)\s*12%\);/s,
+      /\.composer\s+\.composer-selector-button,\s*\.composer\s+\.composer-actions\s+\.primary-button,\s*\.composer\s+\.composer-menu-option\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;/s,
     )
     expect(styles).toMatch(
-      /\.composer-selector-button:hover,\s*\.composer-selector-button:focus-visible,[\s\S]*?\{[^}]*border-color:\s*color-mix\(in srgb,\s*var\(--seg-accent\)\s*34%,\s*var\(--seg-border\)\);/s,
+      /\.composer\s+\.composer-selector-button:not\(:disabled\):hover,\s*\.composer\s+\.composer-selector-button:not\(:disabled\):focus-visible,\s*\.composer\s+\.composer-actions\s+\.primary-button:not\(:disabled\):hover,\s*\.composer\s+\.composer-actions\s+\.primary-button:not\(:disabled\):focus-visible,\s*\.composer\s+\.composer-menu-option:not\(:disabled\):hover,\s*\.composer\s+\.composer-menu-option:not\(:disabled\):focus-visible\s*\{[^}]*background:\s*var\(--seg-composer-button-surface\);[^}]*color:\s*var\(--seg-composer-button-text\);/s,
     )
     expect(styles).toMatch(
-      /\.composer-menu-panel\s*\{[^}]*bottom:\s*calc\(100%\s*\+\s*8px\);[^}]*max-height:\s*min\(320px,\s*calc\(100dvh - 180px\)\);[^}]*overflow:\s*auto;/s,
+      /\.composer\s+\.composer-menu-option\.is-selected\s*\{[^}]*background:\s*var\(--seg-composer-button-surface-strong\);[^}]*color:\s*var\(--seg-composer-button-text-strong\);/s,
+    )
+    expect(styles).toMatch(
+      /\.composer-menu-panel\s*\{[^}]*bottom:\s*calc\(100%\s*\+\s*8px\);[^}]*max-height:\s*min\(320px,\s*calc\(100dvh - 180px\)\);[^}]*overflow:\s*auto;[^}]*background:\s*var\(--seg-dropdown-menu-surface\);/s,
+    )
+    expect(styles).toMatch(
+      /\.canvas-top-menu-selector-panel\s*\{[^}]*top:\s*calc\(100%\s*\+\s*8px\);[^}]*background:\s*var\(--seg-dropdown-menu-surface\);/s,
+    )
+    expect(styles).toMatch(
+      /select option,\s*select optgroup\s*\{[^}]*background:\s*var\(--seg-dropdown-menu-surface\);/s,
+    )
+    expect(styles).toMatch(
+      /\.composer-selector-button\.is-icon-only,\s*\.composer-actions\s+\.primary-button\.is-icon-only\s*\{[^}]*width:\s*var\(--icon-button-size\);[^}]*min-width:\s*var\(--icon-button-size\);/s,
     )
   })
 
@@ -9132,8 +9251,8 @@ describe("App", () => {
   })
 
   it("styles assistant turns as three stacked panels with call separators", () => {
-    expect(styles).toMatch(/\.permission-request-card\s*\{[^}]*border-left-color:\s*var\(--seg-warning\);[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-warning\)\s*8%,\s*var\(--surface-trace\)\);/s)
-    expect(styles).toMatch(/\.ask-user-question-card\s*\{[^}]*border-left-color:\s*var\(--seg-accent\);[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--surface-trace\)\s*28%\);/s)
+    expect(styles).toMatch(/\.permission-request-card\s*\{[^}]*border-left-color:\s*var\(--seg-warning-strong\);[^}]*background:\s*var\(--mix-seg-warning-surface-84-surface-trace-16\);/s)
+    expect(styles).toMatch(/\.ask-user-question-card\s*\{[^}]*border-left-color:\s*var\(--seg-accent\);[^}]*background:\s*var\(--mix-seg-accent-soft-72-surface-trace-28\);/s)
     expect(styles).toMatch(/\.assistant-shell\.is-sectioned\s*\{[^}]*border:\s*0;[^}]*padding:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(
       /\.assistant-section\.is-reasoning,\s*\.assistant-section\.is-response,\s*\.assistant-section\.is-tools\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*padding:\s*0;/s,
@@ -9168,6 +9287,6 @@ describe("App", () => {
     expect(styles).toMatch(
       /\.settings-primary-nav-item\s*\{[^}]*border:\s*1px solid transparent;[^}]*border-radius:\s*12px;[^}]*background:\s*transparent;[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);/s,
     )
-    expect(styles).toMatch(/\.settings-primary-nav-item\.is-active\s*\{[^}]*border-color:\s*color-mix\(in srgb,\s*var\(--seg-accent\)\s*24%,\s*var\(--seg-border\)\);[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*80%,\s*var\(--seg-panel\)\s*20%\);[^}]*color:\s*var\(--seg-text-1\);/s)
+    expect(styles).toMatch(/\.settings-primary-nav-item\.is-active\s*\{[^}]*border-color:\s*var\(--mix-seg-accent-24-seg-border-76\);[^}]*background:\s*var\(--mix-seg-accent-soft-80-seg-panel-20\);[^}]*color:\s*var\(--seg-text-1\);/s)
   })
 })

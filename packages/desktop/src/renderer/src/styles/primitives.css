@@ -26,7 +26,7 @@
 
 .top-menu-view-button:hover,
 .top-menu-view-button:focus-visible {
-  background: color-mix(in srgb, var(--ui-accent-strong) 14%, transparent);
+  background: var(--mix-ui-accent-strong-14-transparent-86);
   box-shadow: none;
   color: var(--ui-accent-strong);
   transform: none;
@@ -38,7 +38,7 @@
 }
 
 .top-menu-view-button.is-active {
-  background: color-mix(in srgb, var(--brand-accent-active) 12%, transparent);
+  background: var(--mix-brand-accent-active-12-transparent-88);
   color: var(--brand-accent-active);
   box-shadow: none;
   transform: none;
@@ -46,7 +46,7 @@
 
 .top-menu-view-button.is-active:hover,
 .top-menu-view-button.is-active:focus-visible {
-  background: color-mix(in srgb, var(--brand-accent-active) 16%, transparent);
+  background: var(--mix-brand-accent-active-16-transparent-84);
   color: var(--brand-accent-active);
 }
 
@@ -342,15 +342,15 @@
 }
 
 .primary-button {
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, var(--seg-panel) 28%);
-  border-color: color-mix(in srgb, var(--seg-accent) 28%, var(--seg-border));
+  background: var(--mix-seg-accent-soft-72-seg-panel-28);
+  border-color: var(--mix-seg-accent-28-seg-border-72);
   color: var(--seg-accent-strong);
 }
 
 .primary-button:hover,
 .primary-button:focus-visible {
-  background: color-mix(in srgb, var(--seg-accent-soft) 84%, var(--seg-panel) 16%);
-  border-color: color-mix(in srgb, var(--seg-accent) 42%, var(--seg-border));
+  background: var(--mix-seg-accent-soft-84-seg-panel-16);
+  border-color: var(--mix-seg-accent-42-seg-border-58);
   color: var(--seg-text-1);
 }
 

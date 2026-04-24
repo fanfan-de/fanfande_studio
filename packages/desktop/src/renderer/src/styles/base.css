@@ -40,6 +40,12 @@ button:not(:disabled) {
   cursor: pointer;
 }
 
+select option,
+select optgroup {
+  background: var(--seg-dropdown-menu-surface);
+  color: var(--seg-text-1);
+}
+
 ::selection {
   background: var(--selection-background);
   color: var(--ui-text-1);

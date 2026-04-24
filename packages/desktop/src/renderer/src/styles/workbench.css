@@ -419,17 +419,24 @@
 .workbench-pane-resizer:focus-visible::before,
 body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   background: var(--seg-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--seg-accent) 14%, transparent);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-14-transparent-86);
 }
 
 .pane-tab-bar {
+  --pane-tab-bar-bg: var(--seg-shell);
   --pane-tab-border: var(--seg-border);
   --pane-tab-curve: 8px;
-  --pane-tab-divider: rgba(32, 41, 54, 0.08);
+  --pane-tab-divider: var(--seg-divider);
   --pane-tab-radius: 8px;
   --pane-tab-active-bg: var(--seg-panel);
-  --pane-tab-inactive-bg: color-mix(in srgb, var(--seg-shell) 82%, #eef2f7 18%);
-  --pane-tab-hover-bg: color-mix(in srgb, var(--seg-shell) 62%, #ffffff 38%);
+  --pane-tab-inactive-bg: var(--seg-panel-muted);
+  --pane-tab-hover-bg: var(--seg-panel);
+  --pane-tab-control-hover-bg: var(--seg-accent-soft);
+  --pane-tab-control-hover-border: var(--seg-accent);
+  --pane-tab-control-hover-color: var(--seg-accent-strong);
+  --pane-tab-merge-bg: var(--seg-accent-soft);
+  --pane-tab-merge-border: var(--seg-accent);
+  --pane-tab-active-shadow: inset 0 1px 0 var(--pane-tab-border);
   min-width: 0;
   position: relative;
   display: flex;
@@ -438,7 +445,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   gap: 8px;
   padding: 0 12px;
   border-bottom: 0;
-  background: color-mix(in srgb, var(--seg-shell) 92%, #ffffff 8%);
+  background: var(--pane-tab-bar-bg);
   -webkit-app-region: no-drag;
   user-select: none;
   isolation: isolate;
@@ -518,9 +525,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .pane-tab-bar .sidebar-toggle-button.is-top-menu:hover,
 .pane-tab-bar .canvas-region-top-menu-add-button:hover {
-  background: rgba(84, 96, 109, 0.08);
-  border-color: rgba(32, 41, 54, 0.08);
-  color: var(--seg-text-1);
+  background: var(--pane-tab-control-hover-bg);
+  border-color: var(--pane-tab-control-hover-border);
+  color: var(--pane-tab-control-hover-color);
 }
 
 .pane-tab-merge-preview {
@@ -531,10 +538,8 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   display: inline-block;
   align-self: center;
   border-radius: 8px;
-  background: rgba(221, 236, 245, 0.96);
-  box-shadow:
-    0 10px 24px rgba(135, 167, 186, 0.18),
-    inset 0 0 0 1px rgba(157, 187, 204, 0.62);
+  background: var(--pane-tab-merge-bg);
+  box-shadow: inset 0 0 0 1px var(--pane-tab-merge-border);
   transition:
     opacity var(--pane-drop-preview-fade-duration) var(--pane-drop-preview-motion-curve),
     transform var(--pane-drop-preview-motion-duration) var(--pane-drop-preview-motion-curve),
@@ -636,9 +641,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   color: var(--seg-text-1);
   z-index: 2;
   transform: none;
-  box-shadow:
-    inset 0 1px 0 var(--pane-tab-border),
-    0 10px 18px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--pane-tab-active-shadow);
 }
 
 .pane-tab-bar .session-tab.is-active::before {
@@ -716,8 +719,8 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .pane-tab-bar .session-tab-close:hover,
 .pane-tab-bar .session-tab-close:focus-visible {
-  background: rgba(84, 96, 109, 0.08);
-  color: var(--seg-text-1);
+  background: var(--pane-tab-control-hover-bg);
+  color: var(--pane-tab-control-hover-color);
 }
 
 .pane-tab-bar .session-tab:active,
@@ -852,9 +855,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   --canvas-region-tab-border: var(--seg-border);
   --canvas-region-tab-divider: rgba(32, 41, 54, 0.08);
   --canvas-region-tab-active-bg: var(--seg-panel);
-  --canvas-region-tab-inactive-bg: color-mix(in srgb, var(--seg-shell) 82%, #eef2f7 18%);
-  --canvas-region-tab-hover: color-mix(in srgb, var(--seg-shell) 62%, #ffffff 38%);
-  --canvas-region-tab-focus: color-mix(in srgb, var(--seg-shell) 56%, #ffffff 44%);
+  --canvas-region-tab-inactive-bg: var(--mix-seg-shell-82-eef2f7-18);
+  --canvas-region-tab-hover: var(--mix-seg-shell-62-ffffff-38);
+  --canvas-region-tab-focus: var(--mix-seg-shell-56-ffffff-44);
   --canvas-region-tab-cap-radius: 8px;
   --canvas-region-tab-height: 32px;
   position: relative;
@@ -1356,7 +1359,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   padding: 14px;
   display: grid;
   gap: 12px;
-  background: rgba(255, 255, 255, 0.98);
+  background: var(--seg-dropdown-menu-surface);
   border: 1px solid rgba(147, 171, 195, 0.52);
   box-shadow: 0 18px 36px rgba(36, 59, 82, 0.14);
 }
@@ -1375,7 +1378,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   display: grid;
   gap: 4px;
   border: 1px solid rgba(166, 186, 208, 0.42);
-  background: #ffffff;
+  background: var(--seg-dropdown-menu-surface);
   box-shadow: 0 14px 34px rgba(46, 81, 118, 0.12);
   -webkit-app-region: no-drag;
 }
@@ -1416,7 +1419,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .canvas-top-menu-quick-field input {
   min-height: 40px;
   padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--seg-border) 96%, transparent);
+  border: 1px solid var(--mix-seg-border-96-transparent-4);
   background: var(--seg-panel);
   color: var(--seg-text-1);
 }
@@ -1579,7 +1582,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .sidebar-toggle-button.is-top-menu,
 .canvas-top-menu-button {
   border: 1px solid var(--seg-border);
-  background: color-mix(in srgb, var(--seg-panel) 92%, transparent);
+  background: var(--mix-seg-panel-92-transparent-8);
   color: var(--seg-text-2);
   box-shadow: none;
 }
@@ -1605,32 +1608,32 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .top-menu-view-button:hover,
 .top-menu-view-button:focus-visible {
-  background: color-mix(in srgb, var(--ui-accent-strong) 14%, transparent);
-  border-color: color-mix(in srgb, var(--ui-accent-strong) 18%, transparent);
+  background: var(--mix-ui-accent-strong-14-transparent-86);
+  border-color: var(--mix-ui-accent-strong-18-transparent-82);
   color: var(--ui-accent-strong);
 }
 
 .top-menu-view-button.is-active,
 .top-menu-view-button.is-active:hover,
 .top-menu-view-button.is-active:focus-visible {
-  background: color-mix(in srgb, var(--brand-accent-active) 12%, transparent);
-  border-color: color-mix(in srgb, var(--brand-accent-active) 20%, transparent);
+  background: var(--mix-brand-accent-active-12-transparent-88);
+  border-color: var(--mix-brand-accent-active-20-transparent-80);
   color: var(--brand-accent-active);
 }
 
 .pane-tab-bar {
   --pane-tab-border: var(--seg-border);
   --pane-tab-divider: var(--seg-divider);
-  --pane-tab-inactive-bg: color-mix(in srgb, var(--seg-shell) 84%, var(--seg-panel-muted) 16%);
-  --pane-tab-hover-bg: color-mix(in srgb, var(--seg-panel) 66%, var(--seg-panel-muted) 34%);
+  --pane-tab-inactive-bg: var(--seg-panel-muted);
+  --pane-tab-hover-bg: var(--seg-panel);
 }
 
 .canvas-region-top-menu {
   --canvas-region-tab-border: var(--seg-border);
   --canvas-region-tab-divider: var(--seg-divider);
-  --canvas-region-tab-inactive-bg: color-mix(in srgb, var(--seg-shell) 84%, var(--seg-panel-muted) 16%);
-  --canvas-region-tab-hover: color-mix(in srgb, var(--seg-panel) 66%, var(--seg-panel-muted) 34%);
-  --canvas-region-tab-focus: color-mix(in srgb, var(--seg-accent-soft) 74%, var(--seg-panel) 26%);
+  --canvas-region-tab-inactive-bg: var(--mix-seg-shell-84-seg-panel-muted-16);
+  --canvas-region-tab-hover: var(--mix-seg-panel-66-seg-panel-muted-34);
+  --canvas-region-tab-focus: var(--mix-seg-accent-soft-74-seg-panel-26);
 }
 
 .pane-tab-bar .sidebar-toggle-button.is-top-menu:hover,
@@ -1643,35 +1646,33 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .canvas-region-top-menu .session-tab-close:focus-visible,
 .pane-tab-bar .session-tab-close:hover,
 .pane-tab-bar .session-tab-close:focus-visible {
-  background: color-mix(in srgb, var(--seg-accent-soft) 72%, var(--seg-panel) 28%);
-  border-color: color-mix(in srgb, var(--seg-accent) 26%, var(--seg-border));
+  background: var(--seg-accent-soft);
+  border-color: var(--seg-accent);
   color: var(--seg-accent-strong);
   box-shadow: none;
 }
 
 .pane-tab-bar .session-tab.is-active {
-  box-shadow: inset 0 1px 0 var(--pane-tab-border), 0 10px 18px rgba(15, 23, 42, 0.05);
+  box-shadow: var(--pane-tab-active-shadow);
 }
 
 .pane-tab-merge-preview {
-  background: color-mix(in srgb, var(--brand-accent-active) 12%, var(--seg-panel) 88%);
-  box-shadow:
-    0 10px 24px rgba(15, 23, 42, 0.08),
-    inset 0 0 0 1px color-mix(in srgb, var(--brand-accent-active) 24%, var(--seg-border));
+  background: var(--pane-tab-merge-bg);
+  box-shadow: inset 0 0 0 1px var(--pane-tab-merge-border);
 }
 
 .pane-drop-preview-current {
-  background: color-mix(in srgb, var(--seg-panel) 88%, white 12%);
+  background: var(--mix-seg-panel-88-white-12);
   box-shadow:
     0 10px 24px rgba(15, 23, 42, 0.06),
-    inset 0 0 0 1px color-mix(in srgb, var(--seg-border) 74%, transparent);
+    inset 0 0 0 1px var(--mix-seg-border-74-transparent-26);
 }
 
 .pane-drop-preview-incoming {
-  background: color-mix(in srgb, var(--brand-accent-active) 12%, var(--seg-panel) 88%);
+  background: var(--mix-brand-accent-active-12-seg-panel-88);
   box-shadow:
     0 16px 36px rgba(15, 23, 42, 0.08),
-    inset 0 0 0 1px color-mix(in srgb, var(--brand-accent-active) 26%, var(--seg-border));
+    inset 0 0 0 1px var(--mix-brand-accent-active-26-seg-border-74);
 }
 
 .create-session-native-select {
@@ -1690,7 +1691,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .window-control:hover,
 .window-control:focus-visible {
-  background: color-mix(in srgb, var(--seg-text-2) 12%, transparent);
+  background: var(--mix-seg-text-2-12-transparent-88);
   color: var(--seg-text-1);
   transform: none;
 }

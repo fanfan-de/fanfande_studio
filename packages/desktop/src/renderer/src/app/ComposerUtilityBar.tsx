@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState } from "react"
 import { GitBranchSwitcher } from "./GitBranchSwitcher"
+import { ChevronDownIcon } from "./icons"
 import type { ComposerPermissionMode, SessionContextUsage } from "./types"
 
 interface ComposerUtilityBarProps {
@@ -10,6 +12,15 @@ interface ComposerUtilityBarProps {
   showGitControls?: boolean
   showPermissionToggle?: boolean
   usage: SessionContextUsage | null
+}
+
+const PERMISSION_MODE_OPTIONS: Array<{ label: string; value: ComposerPermissionMode }> = [
+  { value: "default", label: "Default" },
+  { value: "full-access", label: "Full access" },
+]
+
+function getPermissionModeLabel(mode: ComposerPermissionMode) {
+  return PERMISSION_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "Default"
 }
 
 function PermissionModeIcon({ mode }: { mode: ComposerPermissionMode }) {
@@ -51,6 +62,10 @@ export function ComposerUtilityBar({
   showPermissionToggle = true,
   usage,
 }: ComposerUtilityBarProps) {
+  const permissionButtonRef = useRef<HTMLButtonElement | null>(null)
+  const permissionPanelRef = useRef<HTMLDivElement | null>(null)
+  const [isPermissionPanelOpen, setIsPermissionPanelOpen] = useState(false)
+
   const rawRatio = contextWindow && usage ? usage.inputTokens / contextWindow : null
   const clampedRatio = rawRatio === null ? 0 : clampRatio(rawRatio)
   const pressureState = resolvePressureState(rawRatio)
@@ -67,11 +82,39 @@ export function ComposerUtilityBar({
       : contextWindow
         ? `Context pressure unavailable until a response records usage (${formatContextValue(contextWindow)} context window)`
         : "Context pressure unavailable until a model is available"
-  const permissionLabel = permissionMode === "full-access" ? "Permissions · Full access" : "Permissions · Default"
-  const permissionTitle =
-    permissionMode === "full-access"
-      ? "Full access allows tool calls by default for this composer. Click to switch back to built-in approval defaults."
-      : "Default permissions use the built-in tool approval policy. Click to switch to full access."
+  const permissionModeLabel = getPermissionModeLabel(permissionMode)
+  const permissionLabel = `Permissions: ${permissionModeLabel}`
+  const permissionTitle = `Permissions: ${permissionModeLabel}`
+
+  useEffect(() => {
+    if (!isPermissionPanelOpen) return
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (permissionPanelRef.current?.contains(target) || permissionButtonRef.current?.contains(target)) return
+      setIsPermissionPanelOpen(false)
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      setIsPermissionPanelOpen(false)
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isPermissionPanelOpen])
+
+  function handlePermissionModeSelect(nextMode: ComposerPermissionMode) {
+    setIsPermissionPanelOpen(false)
+    if (nextMode === permissionMode) return
+    onPermissionModeToggle()
+  }
 
   return (
     <div className="composer-utility-bar" aria-label="Composer utility bar">
@@ -95,17 +138,44 @@ export function ComposerUtilityBar({
         </svg>
       </div>
       {showPermissionToggle ? (
-        <button
-          type="button"
-          className={`composer-utility-chip composer-utility-permission-toggle${permissionMode === "full-access" ? " is-active is-full-access" : ""}`}
-          aria-label={permissionLabel}
-          aria-pressed={permissionMode === "full-access"}
-          title={permissionTitle}
-          onClick={onPermissionModeToggle}
-        >
-          <PermissionModeIcon mode={permissionMode} />
-          <span className="composer-utility-permission-toggle-label">{permissionLabel}</span>
-        </button>
+        <div className="composer-utility-permission-anchor">
+          <button
+            ref={permissionButtonRef}
+            type="button"
+            className={`composer-utility-chip composer-utility-permission-toggle${isPermissionPanelOpen ? " is-active" : ""}${permissionMode === "full-access" ? " is-full-access" : ""}`}
+            aria-expanded={isPermissionPanelOpen}
+            aria-haspopup="listbox"
+            aria-label={permissionLabel}
+            title={permissionTitle}
+            onClick={() => setIsPermissionPanelOpen((current) => !current)}
+          >
+            <PermissionModeIcon mode={permissionMode} />
+            <span className="composer-utility-permission-toggle-label">{permissionLabel}</span>
+            <ChevronDownIcon />
+          </button>
+
+          {isPermissionPanelOpen ? (
+            <div
+              ref={permissionPanelRef}
+              className="composer-menu-panel composer-utility-permission-panel is-scrollbar-hidden"
+              role="listbox"
+              aria-label="Permission mode selection"
+            >
+              {PERMISSION_MODE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="option"
+                  aria-selected={permissionMode === option.value}
+                  className={permissionMode === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
+                  onClick={() => handlePermissionModeSelect(option.value)}
+                >
+                  <span>{option.label}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
       {showGitControls ? <GitBranchSwitcher projectID={gitProjectID} directory={gitDirectory} /> : null}
     </div>

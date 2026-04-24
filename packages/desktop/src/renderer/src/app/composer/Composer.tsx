@@ -81,7 +81,7 @@ interface ComposerProps {
   workspaceDirectory: string | null
 }
 
-type ComposerMenuKey = "model" | null
+type ComposerMenuKey = "model" | "reasoning" | null
 type SlashCommandKey = "attach" | "file" | "mcp" | "model" | "permission" | "reasoning" | "skill"
 
 interface ComposerTriggerMatch {
@@ -536,6 +536,7 @@ export function Composer({
   } | null>(null)
 
   const [openMenu, setOpenMenu] = useState<ComposerMenuKey>(null)
+  const [modelSearchQuery, setModelSearchQuery] = useState("")
   const [commandMenuState, setCommandMenuState] = useState<ComposerCommandMenuState | null>(null)
   const [commandMenuItems, setCommandMenuItems] = useState<ComposerCommandMenuItem[]>([])
   const [activeCommandIndex, setActiveCommandIndex] = useState(0)
@@ -569,7 +570,11 @@ export function Composer({
           return false
         }
 
-        if ((command.value === "model" || command.value === "reasoning") && !showModelSelector) {
+        if (command.value === "model" && !showModelSelector) {
+          return false
+        }
+
+        if (command.value === "reasoning" && (!showModelSelector || reasoningEffortOptions.length === 0)) {
           return false
         }
 
@@ -715,6 +720,11 @@ export function Composer({
   }, [openMenu])
 
   useEffect(() => {
+    if (openMenu === "model" || modelSearchQuery === "") return
+    setModelSearchQuery("")
+  }, [modelSearchQuery, openMenu])
+
+  useEffect(() => {
     if (!commandMenuState) {
       setCommandMenuItemsWithRef([])
       return
@@ -784,6 +794,7 @@ export function Composer({
   }, [
     commandMenuState,
     mcpOptions,
+    reasoningEffortOptions.length,
     selectedMcpServerIDs,
     selectedSkillIDs,
     showModelSelector,
@@ -860,8 +871,13 @@ export function Composer({
       return
     }
 
-    if (command === "model" || command === "reasoning") {
+    if (command === "model") {
       setOpenMenu("model")
+      return
+    }
+
+    if (command === "reasoning") {
+      setOpenMenu("reasoning")
       return
     }
 
@@ -958,9 +974,16 @@ export function Composer({
   const sendButtonTitle = `${sendButtonLabel}. ${sendButtonDescription}`
   const sendShortcut = !isSending && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
   const showReasoningEffortSelector = showModelSelector && reasoningEffortOptions.length > 0
-  const selectedModelButtonLabel = selectedReasoningEffort
-    ? `${selectedModelLabel} · ${selectedReasoningEffortLabel}`
-    : selectedModelLabel
+  const selectedReasoningEffortButtonLabel = `Reasoning: ${selectedReasoningEffortLabel}`
+  const normalizedModelSearchQuery = modelSearchQuery.trim().toLowerCase()
+  const visibleModelOptions =
+    normalizedModelSearchQuery.length === 0
+      ? modelOptions
+      : modelOptions.filter((option) =>
+          `${option.label} ${option.value}`.toLowerCase().includes(normalizedModelSearchQuery),
+        )
+  const modelMenuEmptyLabel =
+    modelOptions.length === 0 ? "No visible models are available for this project yet." : "No models match your search."
   const commandMenuEmptyLabel =
     commandMenuState?.kind === "mention" || (commandMenuState?.kind === "slash-selector" && commandMenuState.selector === "file")
       ? "Type a file name to search this project."
@@ -1093,76 +1116,102 @@ export function Composer({
             <div className="composer-menu-anchor">
               <button
                 aria-expanded={openMenu === "model"}
-                aria-haspopup="dialog"
-                aria-label={
-                  selectedReasoningEffort
-                    ? `Select model: ${selectedModelLabel}. Reasoning effort: ${selectedReasoningEffortLabel}`
-                    : `Select model: ${selectedModelLabel}`
-                }
+                aria-haspopup="listbox"
+                aria-label={`Select model: ${selectedModelLabel}`}
                 className="composer-selector-button"
                 onClick={() => setOpenMenu((current) => (current === "model" ? null : "model"))}
                 type="button"
               >
-                <span>{selectedModelButtonLabel}</span>
+                <span>{selectedModelLabel}</span>
                 <ChevronDownIcon />
               </button>
 
               {openMenu === "model" ? (
-                <div className="composer-menu-panel" role="dialog" aria-label="Model selection">
-                  <button
-                    className={selectedModel === null ? "composer-menu-option is-selected" : "composer-menu-option"}
-                    onClick={() => handleModelSelect(null)}
-                    type="button"
-                  >
-                    <span>Use server default</span>
-                  </button>
-                  {modelOptions.length > 0 ? (
-                    modelOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
-                        onClick={() => handleModelSelect(option.value)}
-                        type="button"
-                      >
-                        <span>{option.label}</span>
-                      </button>
-                    ))
-                  ) : (
-                    <p className="composer-menu-empty">No visible models are available for this project yet.</p>
-                  )}
-                  {showReasoningEffortSelector ? (
-                    <>
-                      <div className="composer-menu-divider" aria-hidden="true" />
-                      <p className="composer-menu-section-label">Reasoning effort</p>
-                      <button
-                        className={selectedReasoningEffort === null ? "composer-menu-option is-selected" : "composer-menu-option"}
-                        onClick={() => handleReasoningEffortSelect(null)}
-                        type="button"
-                      >
-                        <span className="composer-menu-option-copy">
-                          <strong>Model default</strong>
-                          <small>Use the default reasoning level for the current OpenAI model.</small>
-                        </span>
-                      </button>
-                      {reasoningEffortOptions.map((option) => (
+                <div className="composer-menu-panel">
+                  <div className="composer-menu-search" role="presentation">
+                    <input
+                      aria-label="Search models"
+                      autoFocus
+                      className="composer-menu-search-input"
+                      onChange={(event) => setModelSearchQuery(event.currentTarget.value)}
+                      placeholder="Search models"
+                      type="search"
+                      value={modelSearchQuery}
+                    />
+                  </div>
+                  <div className="composer-menu-options" role="listbox" aria-label="Model selection">
+                    <button
+                      aria-selected={selectedModel === null}
+                      className={selectedModel === null ? "composer-menu-option is-selected" : "composer-menu-option"}
+                      onClick={() => handleModelSelect(null)}
+                      role="option"
+                      type="button"
+                    >
+                      <span>Use server default</span>
+                    </button>
+                    {visibleModelOptions.length > 0 ? (
+                      visibleModelOptions.map((option) => (
                         <button
                           key={option.value}
-                          className={
-                            selectedReasoningEffort === option.value
-                              ? "composer-menu-option is-selected"
-                              : "composer-menu-option"
-                          }
-                          onClick={() => handleReasoningEffortSelect(option.value)}
+                          aria-selected={selectedModel === option.value}
+                          className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
+                          onClick={() => handleModelSelect(option.value)}
+                          role="option"
                           type="button"
                         >
-                          <span className="composer-menu-option-copy">
-                            <strong>{option.label}</strong>
-                            <small>{option.description}</small>
-                          </span>
+                          <span>{option.label}</span>
                         </button>
-                      ))}
-                    </>
-                  ) : null}
+                      ))
+                    ) : (
+                      <p className="composer-menu-empty">{modelMenuEmptyLabel}</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showReasoningEffortSelector ? (
+            <div className="composer-menu-anchor">
+              <button
+                aria-expanded={openMenu === "reasoning"}
+                aria-haspopup="listbox"
+                aria-label={`Select reasoning effort: ${selectedReasoningEffortLabel}`}
+                className="composer-selector-button"
+                onClick={() => setOpenMenu((current) => (current === "reasoning" ? null : "reasoning"))}
+                type="button"
+              >
+                <span>{selectedReasoningEffortButtonLabel}</span>
+                <ChevronDownIcon />
+              </button>
+
+              {openMenu === "reasoning" ? (
+                <div className="composer-menu-panel is-scrollbar-hidden" role="listbox" aria-label="Reasoning effort selection">
+                  <button
+                    aria-selected={selectedReasoningEffort === null}
+                    className={selectedReasoningEffort === null ? "composer-menu-option is-selected" : "composer-menu-option"}
+                    onClick={() => handleReasoningEffortSelect(null)}
+                    role="option"
+                    type="button"
+                  >
+                    <span>Model default</span>
+                  </button>
+                  {reasoningEffortOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      aria-selected={selectedReasoningEffort === option.value}
+                      className={
+                        selectedReasoningEffort === option.value
+                          ? "composer-menu-option is-selected"
+                          : "composer-menu-option"
+                      }
+                      onClick={() => handleReasoningEffortSelect(option.value)}
+                      role="option"
+                      type="button"
+                    >
+                      <span>{option.label}</span>
+                    </button>
+                  ))}
                 </div>
               ) : null}
             </div>
