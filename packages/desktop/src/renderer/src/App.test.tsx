@@ -9019,6 +9019,14 @@ describe("App", () => {
     expect(styles).toMatch(
       /\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.canvas-region-top-menu-add-button:hover,[\s\S]*?\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu:focus-visible,\s*\.canvas-region-top-menu-add-button:focus-visible[\s\S]*?\{[^}]*background:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--seg-panel\)\s*28%\);/s,
     )
+    expect(styles).toMatch(/\.right-sidebar-top-menu-tabs\s*\{[^}]*align-items:\s*center;[^}]*gap:\s*4px;/s)
+    expect(styles).toMatch(/\.right-sidebar-top-menu\s*\{[^}]*--right-sidebar-toolbar-button-highlight:\s*color-mix\(in srgb,\s*var\(--seg-accent-soft\)\s*72%,\s*var\(--seg-panel\)\s*28%\);[^}]*--right-sidebar-toolbar-button-border:\s*color-mix\(in srgb,\s*var\(--seg-accent\)\s*26%,\s*var\(--seg-border\)\);/s)
+    expect(styles).toMatch(
+      /\.right-sidebar-top-menu\s+\.top-menu-view-button\s*\{[^}]*align-self:\s*center;[^}]*border:\s*1px solid transparent;[^}]*border-radius:\s*8px;[^}]*background:\s*transparent;/s,
+    )
+    expect(styles).toMatch(
+      /\.right-sidebar-top-menu\s+\.top-menu-view-button:hover,\s*\.right-sidebar-top-menu\s+\.top-menu-view-button:focus-visible,[\s\S]*?\.right-sidebar-top-menu\s+\.top-menu-view-button\.is-active,[\s\S]*?\.right-sidebar-top-menu\s+\.top-menu-view-button\.is-active:hover,\s*\.right-sidebar-top-menu\s+\.top-menu-view-button\.is-active:focus-visible\s*\{[^}]*background:\s*var\(--right-sidebar-toolbar-button-highlight\);[^}]*border-color:\s*var\(--right-sidebar-toolbar-button-border\);[^}]*color:\s*var\(--seg-accent-strong\);/s,
+    )
     expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*color-mix\(in srgb,\s*var\(--seg-shell\)\s*84%,\s*var\(--seg-panel-muted\)\s*16%\);/s)
     expect(styles).toMatch(/--canvas-region-tab-hover:\s*color-mix\(in srgb,\s*var\(--seg-panel\)\s*66%,\s*var\(--seg-panel-muted\)\s*34%\);/s)
     expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*background:\s*var\(--pane-tab-inactive-bg\);[^}]*color:\s*var\(--seg-text-2\);[^}]*transform:\s*none;/s)

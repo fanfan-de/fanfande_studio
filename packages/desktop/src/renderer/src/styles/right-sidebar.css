@@ -47,10 +47,8 @@
 
 .right-sidebar-top-menu {
   --right-sidebar-tab-border: var(--seg-border);
-  --right-sidebar-tab-divider: var(--seg-divider);
-  --right-sidebar-tab-active-bg: var(--seg-panel);
-  --right-sidebar-tab-inactive-bg: color-mix(in srgb, var(--seg-shell) 84%, var(--seg-panel-muted) 16%);
-  --right-sidebar-tab-hover-bg: color-mix(in srgb, var(--seg-panel) 66%, var(--seg-panel-muted) 34%);
+  --right-sidebar-toolbar-button-highlight: color-mix(in srgb, var(--seg-accent-soft) 72%, var(--seg-panel) 28%);
+  --right-sidebar-toolbar-button-border: color-mix(in srgb, var(--seg-accent) 26%, var(--seg-border));
   position: relative;
   min-height: 40px;
   margin: 0 calc(-1 * var(--right-sidebar-inline-padding));
@@ -78,7 +76,7 @@
   min-width: 0;
   flex: 1 1 auto;
   min-height: 40px;
-  align-items: flex-end;
+  align-items: center;
   position: relative;
   z-index: 2;
 }
@@ -97,8 +95,8 @@
 .right-sidebar-top-menu-tabs {
   min-width: 0;
   min-height: 40px;
-  align-items: flex-end;
-  gap: 0;
+  align-items: center;
+  gap: 4px;
   overflow: auto hidden;
   scrollbar-width: none;
 }
@@ -108,79 +106,35 @@
 }
 
 .right-sidebar-top-menu .top-menu-view-button {
-  position: relative;
-  align-self: flex-end;
-  width: 34px;
-  min-width: 34px;
-  min-height: 34px;
-  margin-top: 6px;
-  margin-bottom: -1px;
-  border: 0;
-  border-radius: 8px 8px 0 0;
-  background: var(--right-sidebar-tab-inactive-bg);
+  align-self: center;
+  width: var(--section-toolbar-control-size);
+  min-width: var(--section-toolbar-control-size);
+  min-height: var(--section-toolbar-control-size);
+  margin-top: 0;
+  margin-bottom: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
   color: var(--seg-text-2);
   box-shadow: none;
   transform: none;
   transition:
     background 140ms ease,
+    border-color 140ms ease,
     color 140ms ease,
     box-shadow 140ms ease;
 }
 
-.right-sidebar-top-menu .top-menu-view-button:not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 8px;
-  right: -1px;
-  bottom: 8px;
-  width: 1px;
-  background: var(--right-sidebar-tab-divider);
-  transition: opacity 140ms ease;
-}
-
 .right-sidebar-top-menu .top-menu-view-button:hover,
-.right-sidebar-top-menu .top-menu-view-button:focus-visible {
-  background: var(--right-sidebar-tab-hover-bg);
-  color: var(--seg-text-1);
-  box-shadow: none;
-  transform: none;
-}
-
-.right-sidebar-top-menu .top-menu-view-button:hover::after,
-.right-sidebar-top-menu .top-menu-view-button:focus-visible::after,
-.right-sidebar-top-menu .top-menu-view-button.is-active::after {
-  opacity: 0;
-}
-
-.right-sidebar-top-menu .top-menu-view-button.is-active {
-  background:
-    linear-gradient(var(--right-sidebar-tab-border), var(--right-sidebar-tab-border)) left top / 1px calc(100% - 8px) no-repeat,
-    linear-gradient(var(--right-sidebar-tab-border), var(--right-sidebar-tab-border)) right top / 1px calc(100% - 8px) no-repeat,
-    var(--right-sidebar-tab-active-bg);
-  color: var(--seg-text-1);
-  box-shadow:
-    inset 0 1px 0 var(--right-sidebar-tab-border),
-    0 10px 18px rgba(15, 23, 42, 0.05);
-  z-index: 2;
-}
-
-.right-sidebar-top-menu .top-menu-view-button.is-active::before {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: -1px;
-  height: 2px;
-  background: var(--right-sidebar-tab-active-bg);
-}
-
+.right-sidebar-top-menu .top-menu-view-button:focus-visible,
+.right-sidebar-top-menu .top-menu-view-button.is-active,
 .right-sidebar-top-menu .top-menu-view-button.is-active:hover,
 .right-sidebar-top-menu .top-menu-view-button.is-active:focus-visible {
-  background:
-    linear-gradient(var(--right-sidebar-tab-border), var(--right-sidebar-tab-border)) left top / 1px calc(100% - 8px) no-repeat,
-    linear-gradient(var(--right-sidebar-tab-border), var(--right-sidebar-tab-border)) right top / 1px calc(100% - 8px) no-repeat,
-    var(--right-sidebar-tab-active-bg);
-  color: var(--seg-text-1);
+  background: var(--right-sidebar-toolbar-button-highlight);
+  border-color: var(--right-sidebar-toolbar-button-border);
+  color: var(--seg-accent-strong);
+  box-shadow: none;
+  transform: none;
 }
 
 .right-sidebar-top-menu .top-menu-view-button:focus-visible {
