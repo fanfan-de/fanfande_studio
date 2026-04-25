@@ -50,34 +50,6 @@ export type Logger = {
 
 const loggers = new Map<string, Logger>()
 
-export type LogEntry = {
-  id: string
-  timestamp: number
-  level: Level
-  service: string | null
-  message: string
-  fields: Record<string, unknown>
-  requestId?: string
-  sessionID?: string
-  raw: string
-}
-
-export type LogFilter = {
-  level?: Level
-  service?: string
-  q?: string
-}
-
-type LogSubscriber = {
-  filter?: LogFilter
-  push(entry: LogEntry): void
-}
-
-const recentLogs: LogEntry[] = []
-const logSubscribers = new Set<LogSubscriber>()
-const MAX_RECENT_LOGS = 500
-let logSeq = 0
-
 export const Default = create({ service: "default" })
 
 export interface Options {
@@ -108,74 +80,6 @@ function write(msg: any) {
   for (const current of writers) {
     current(msg)
   }
-}
-
-function stringifyForLog(value: unknown) {
-  if (value instanceof Error) return formatError(value)
-  if (typeof value === "string") return value
-  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value)
-  if (value === undefined) return ""
-  if (value === null) return "null"
-
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
-
-function matchesFilter(entry: LogEntry, filter: LogFilter | undefined) {
-  if (!filter) return true
-  if (filter.level && entry.level !== filter.level) return false
-  if (filter.service && entry.service !== filter.service) return false
-
-  const query = filter.q?.trim().toLowerCase()
-  if (!query) return true
-
-  return (
-    entry.message.toLowerCase().includes(query) ||
-    entry.raw.toLowerCase().includes(query) ||
-    Object.values(entry.fields).some((value) => stringifyForLog(value).toLowerCase().includes(query))
-  )
-}
-
-function publishEntry(entry: LogEntry) {
-  recentLogs.push(entry)
-  if (recentLogs.length > MAX_RECENT_LOGS) {
-    recentLogs.splice(0, recentLogs.length - MAX_RECENT_LOGS)
-  }
-
-  for (const subscriber of [...logSubscribers]) {
-    if (matchesFilter(entry, subscriber.filter)) {
-      subscriber.push(entry)
-    }
-  }
-}
-
-export function listRecent(input: { limit?: number; filter?: LogFilter } = {}) {
-  const limit = Math.max(1, Math.min(input.limit ?? 200, MAX_RECENT_LOGS))
-  return recentLogs.filter((entry) => matchesFilter(entry, input.filter)).slice(-limit)
-}
-
-export function subscribe(input: { filter?: LogFilter; push: (entry: LogEntry) => void }) {
-  const subscriber: LogSubscriber = {
-    filter: input.filter,
-    push: input.push,
-  }
-  logSubscribers.add(subscriber)
-
-  return () => {
-    logSubscribers.delete(subscriber)
-  }
-}
-
-export function clearRecentForTest() {
-  recentLogs.splice(0, recentLogs.length)
-  logSubscribers.clear()
-}
-
-export function subscriberCountForTest() {
-  return logSubscribers.size
 }
 
 export function status() {
@@ -262,17 +166,18 @@ export function create(tags?: Record<string, any>) {
     }
   }
   // 格式化构建 (`build`)
-  function build(inputLevel: Level, message: any, extra?: Record<string, any>) {
-    const fields: Record<string, unknown> = {
+  function build(message: any, extra?: Record<string, any>) {
+    // 1. 合并初始化时的 tags 和当前调用的 extra
+    const prefix = Object.entries({
       ...tags,
       ...extra,
-    }
-    // 1. 合并初始化时的 tags 和当前调用的 extra
-    const prefix = Object.entries(fields)
+    })
       .filter(([_, value]) => value !== undefined && value !== null)
       .map(([key, value]) => {
         const prefix = `${key}=`
-        return prefix + stringifyForLog(value)
+        if (value instanceof Error) return prefix + formatError(value)
+        if (typeof value === "object") return prefix + JSON.stringify(value)
+        return prefix + value
       })
       .join(" ")
     const next = new Date()
@@ -280,29 +185,7 @@ export function create(tags?: Record<string, any>) {
     const diff = next.getTime() - last
     last = next.getTime()
     // 3. 拼接：[时间] [+距离上次毫秒数] [标签键值对] [消息内容]
-    const renderedMessage = stringifyForLog(message)
-    const line = [next.toISOString().split(".")[0], "+" + diff + "ms", prefix, renderedMessage].filter(Boolean).join(" ") + "\n"
-    const raw = `${inputLevel.padEnd(5, " ")} ${line}`
-    const requestId = typeof fields["requestId"] === "string" ? fields["requestId"] : undefined
-    const sessionID = typeof fields["sessionID"] === "string" ? fields["sessionID"] : undefined
-
-    return {
-      id: `log_${++logSeq}`,
-      timestamp: next.getTime(),
-      level: inputLevel,
-      service: typeof fields["service"] === "string" ? fields["service"] : null,
-      message: renderedMessage,
-      fields,
-      requestId,
-      sessionID,
-      raw,
-    } satisfies LogEntry
-  }
-
-  function emit(inputLevel: Level, message?: any, extra?: Record<string, any>) {
-    const entry = build(inputLevel, message, extra)
-    write(entry.raw)
-    publishEntry(entry)
+    return [next.toISOString().split(".")[0], "+" + diff + "ms", prefix, message].filter(Boolean).join(" ") + "\n"
   }
 
   //实现 Logger 接口
@@ -310,22 +193,22 @@ export function create(tags?: Record<string, any>) {
     debug(message?: any, extra?: Record<string, any>) {
       if (shouldLog("DEBUG")) {
         // 这里的 write 可能是 console 或者是 file writer
-        emit("DEBUG", message, extra)
+        write("DEBUG " + build(message, extra))
       }
     },
     info(message?: any, extra?: Record<string, any>) {
       if (shouldLog("INFO")) {
-        emit("INFO", message, extra)
+        write("INFO  " + build(message, extra))
       }
     },
     error(message?: any, extra?: Record<string, any>) {
       if (shouldLog("ERROR")) {
-        emit("ERROR", message, extra)
+        write("ERROR " + build(message, extra))
       }
     },
     warn(message?: any, extra?: Record<string, any>) {
       if (shouldLog("WARN")) {
-        emit("WARN", message, extra)
+        write("WARN  " + build(message, extra))
       }
     },
     // 链式调用：修改当前闭包内的 tags
