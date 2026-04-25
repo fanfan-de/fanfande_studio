@@ -17,6 +17,7 @@ import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Env from "#env/env.ts"
 import * as Config from "#config/config.ts"
 import * as SystemPrompt from "#session/system.ts"
+import * as Log from "#util/log.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {
   success: boolean
@@ -727,6 +728,90 @@ describe("server api", () => {
       RunningState.finish(session.id, controller)
       Session.removeSession(session.id)
     }
+  })
+
+  test("debug status and logs expose structured diagnostics in dev mode", async () => {
+    Log.clearRecentForTest()
+    const app = createServerApp()
+    const logger = Log.create({ service: "server.debug.test" })
+
+    logger.info("debug-log-info-filter", { requestId: "request_debug_log", sessionID: "session_debug_log" })
+    logger.error("debug-log-error-filter", { requestId: "request_debug_error" })
+
+    const statusResponse = await app.request("http://localhost/api/debug/status")
+    const statusBody = (await statusResponse.json()) as JsonEnvelope<{
+      ok: boolean
+      runningSessions: {
+        count: number
+      }
+      recentErrors: Log.LogEntry[]
+    }>
+
+    expect(statusResponse.status).toBe(200)
+    expect(statusBody.success).toBe(true)
+    expect(statusBody.data?.ok).toBe(true)
+    expect(statusBody.data?.runningSessions.count).toBeNumber()
+    expect(statusBody.data?.recentErrors.some((entry) => entry.message === "debug-log-error-filter")).toBe(true)
+
+    const logsResponse = await app.request(
+      "http://localhost/api/debug/logs?limit=20&level=INFO&service=server.debug.test&q=info-filter",
+    )
+    const logsBody = (await logsResponse.json()) as JsonEnvelope<{
+      logs: Log.LogEntry[]
+    }>
+
+    expect(logsResponse.status).toBe(200)
+    expect(logsBody.success).toBe(true)
+    expect(logsBody.data?.logs).toHaveLength(1)
+    expect(logsBody.data?.logs[0]).toMatchObject({
+      level: "INFO",
+      service: "server.debug.test",
+      message: "debug-log-info-filter",
+      requestId: "request_debug_log",
+      sessionID: "session_debug_log",
+    })
+  })
+
+  test("debug log stream emits matching log entries and cleans up subscribers", async () => {
+    Log.clearRecentForTest()
+    const app = createServerApp()
+    const response = await app.request("http://localhost/api/debug/logs/stream?q=stream-filter")
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    expect(Log.subscriberCountForTest()).toBe(1)
+
+    const reader = response.body?.getReader()
+    expect(reader).toBeDefined()
+    const nextChunk = reader!.read()
+
+    Log.create({ service: "server.debug.stream.test" }).warn("debug-stream-filter-message")
+
+    const chunk = await nextChunk
+    const text = new TextDecoder().decode(chunk.value)
+    expect(text).toContain("event: log")
+    expect(text).toContain("debug-stream-filter-message")
+
+    await reader!.cancel()
+    expect(Log.subscriberCountForTest()).toBe(0)
+  })
+
+  test("debug routes are hidden in production unless explicitly enabled", async () => {
+    await withTemporaryEnv(
+      {
+        NODE_ENV: "production",
+        FanFande_DEBUG_API_ENABLED: undefined,
+      },
+      async () => {
+        const app = createServerApp()
+        const response = await app.request("http://localhost/api/debug/status")
+        const body = (await response.json()) as JsonEnvelope
+
+        expect(response.status).toBe(404)
+        expect(body.success).toBe(false)
+        expect(body.error?.code).toBe("NOT_FOUND")
+      },
+    )
   })
 
   test("POST /api/sessions should validate payload", async () => {
