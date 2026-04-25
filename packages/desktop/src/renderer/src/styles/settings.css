@@ -1830,6 +1830,108 @@ body.is-dragging-settings-page {
   padding: 0;
 }
 
+/* Keep icon-only controls on Accent States, even when legacy chrome rules differ by surface. */
+
+.window-control,
+.sidebar-action,
+.sidebar-toggle-button.is-sidebar,
+.sidebar-toggle-button.is-rail,
+.sidebar-settings,
+.row-action,
+.project-row-action,
+.skill-tree-row-action,
+.canvas-region-top-menu .session-tab-close,
+.canvas-region-top-menu .sidebar-toggle-button.is-top-menu,
+.canvas-region-top-menu-add-button,
+.terminal-panel-toggle-button,
+.activity-rail-bottom .terminal-panel-toggle-button,
+.terminal-tab-close,
+.terminal-panel-create,
+.settings-page-close-button,
+.session-canvas-top-menu .canvas-top-menu-editor-launch-button,
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button,
+.composer .composer-selector-button.is-icon-only,
+.composer .composer-actions .primary-button.is-icon-only {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--semantic-accent-icon);
+}
+
+.window-control:hover,
+.window-control:focus-visible,
+.window-control.is-close:hover,
+.window-control.is-close:focus-visible,
+.sidebar-action:hover,
+.sidebar-action:focus-visible,
+.sidebar-toggle-button.is-sidebar:hover,
+.sidebar-toggle-button.is-sidebar:focus-visible,
+.sidebar-toggle-button.is-rail:hover,
+.sidebar-toggle-button.is-rail:focus-visible,
+.sidebar-settings:hover,
+.sidebar-settings:focus-visible,
+.row-action:hover,
+.row-action:focus-visible,
+.project-row-action:hover,
+.project-row-action:focus-visible,
+.skill-tree-row-action:hover,
+.skill-tree-row-action:focus-visible,
+.canvas-region-top-menu .session-tab-close:hover,
+.canvas-region-top-menu .session-tab-close:focus-visible,
+.canvas-region-top-menu .sidebar-toggle-button.is-top-menu:hover,
+.canvas-region-top-menu .sidebar-toggle-button.is-top-menu:focus-visible,
+.canvas-region-top-menu-add-button:hover,
+.canvas-region-top-menu-add-button:focus-visible,
+.terminal-panel-toggle-button:hover,
+.terminal-panel-toggle-button:focus-visible,
+.activity-rail-bottom .terminal-panel-toggle-button:hover,
+.activity-rail-bottom .terminal-panel-toggle-button:focus-visible,
+.terminal-tab-close:hover,
+.terminal-tab-close:focus-visible,
+.terminal-panel-create:hover,
+.terminal-panel-create:focus-visible,
+.settings-page-close-button:hover,
+.settings-page-close-button:focus-visible,
+.session-canvas-top-menu .canvas-top-menu-editor-launch-button:hover,
+.session-canvas-top-menu .canvas-top-menu-editor-launch-button:focus-visible,
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button:hover,
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button:focus-visible,
+.composer .composer-selector-button.is-icon-only:not(:disabled):hover,
+.composer .composer-selector-button.is-icon-only:not(:disabled):focus-visible,
+.composer .composer-actions .primary-button.is-icon-only:not(:disabled):hover,
+.composer .composer-actions .primary-button.is-icon-only:not(:disabled):focus-visible {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--semantic-accent-icon-hover);
+  transform: none;
+}
+
+.sidebar-toggle-button.is-sidebar.is-active,
+.sidebar-toggle-button.is-sidebar.is-active:hover,
+.sidebar-toggle-button.is-sidebar.is-active:focus-visible,
+.sidebar-toggle-button.is-rail.is-active,
+.sidebar-toggle-button.is-rail.is-active:hover,
+.sidebar-toggle-button.is-rail.is-active:focus-visible,
+.sidebar-settings.is-active,
+.sidebar-settings.is-active:hover,
+.sidebar-settings.is-active:focus-visible,
+.terminal-panel-toggle-button.is-active,
+.terminal-panel-toggle-button.is-active:hover,
+.terminal-panel-toggle-button.is-active:focus-visible,
+.activity-rail-bottom .terminal-panel-toggle-button.is-active,
+.activity-rail-bottom .terminal-panel-toggle-button.is-active:hover,
+.activity-rail-bottom .terminal-panel-toggle-button.is-active:focus-visible,
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button.is-active,
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button.is-active:hover,
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button.is-active:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--semantic-accent-icon-active);
+  transform: none;
+}
+
 /* Sage / Teal & Slate theme overrides */
 
 .settings-page-overlay,
@@ -1887,7 +1989,7 @@ body.is-dragging-settings-page {
 
 .settings-page-close-button:hover,
 .settings-page-close-button:focus-visible {
-  color: var(--seg-accent-strong);
+  color: var(--semantic-accent-icon-hover);
 }
 
 .settings-banner,

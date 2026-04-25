@@ -1308,7 +1308,6 @@ const PaneSurface = memo(function PaneSurface({
           />
           <SessionCanvasTopMenu
             activeSession={pane.activeSession}
-            contextLabel={pane.contextLabel}
             gitProjectID={pane.projectID}
             gitDirectory={pane.workspace?.directory ?? null}
             mcpOptions={composer.mcpOptions}

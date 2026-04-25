@@ -2617,7 +2617,6 @@ export function CanvasRegionUtilityMenu({
 
 interface SessionCanvasTopMenuProps {
   activeSession: SessionSummary | null
-  contextLabel: string
   gitProjectID: string | null
   gitDirectory: string | null
   mcpOptions: ComposerMcpOption[]
@@ -3136,7 +3135,6 @@ function ExternalEditorMenuButton({ directory }: { directory: string | null }) {
 
 export function SessionCanvasTopMenu({
   activeSession,
-  contextLabel,
   gitProjectID,
   gitDirectory,
   mcpOptions,
@@ -3151,6 +3149,7 @@ export function SessionCanvasTopMenu({
 }: SessionCanvasTopMenuProps) {
   const workflowBadge = getSessionWorkflowBadge(activeSession?.workflow, pendingPermissionRequests)
   const readOnlySideChat = isSideChatSession(activeSession)
+  const sessionTitle = activeSession?.title ?? ""
 
   return (
     <ShellTopMenu
@@ -3158,9 +3157,9 @@ export function SessionCanvasTopMenu({
       as="div"
       className="session-canvas-top-menu"
       contentClassName="panel-toolbar-copy session-canvas-top-menu-copy"
-      content={(
+      content={sessionTitle || readOnlySideChat || workflowBadge ? (
         <div className="session-canvas-top-menu-copy-main">
-          <span className="label">{contextLabel}</span>
+          {sessionTitle ? <span className="label" title={sessionTitle}>{sessionTitle}</span> : null}
           {readOnlySideChat || workflowBadge ? (
             <div className="session-canvas-top-menu-copy-status">
               {readOnlySideChat ? <SideChatBadge /> : null}
@@ -3168,7 +3167,7 @@ export function SessionCanvasTopMenu({
             </div>
           ) : null}
         </div>
-      )}
+      ) : null}
       controlsSpacerVariant="canvas"
       trailing={(
         <>

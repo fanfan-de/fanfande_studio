@@ -423,14 +423,17 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .pane-tab-bar {
-  --pane-tab-bar-bg: var(--seg-shell);
+  --pane-tab-bar-bg: var(--seg-pane-tab-bar-surface);
   --pane-tab-border: var(--seg-border);
   --pane-tab-curve: 8px;
   --pane-tab-divider: var(--seg-divider);
   --pane-tab-radius: 8px;
-  --pane-tab-active-bg: var(--seg-panel);
-  --pane-tab-inactive-bg: var(--seg-panel-muted);
-  --pane-tab-hover-bg: var(--seg-panel);
+  --pane-tab-active-bg: var(--seg-shell);
+  --pane-tab-inactive-bg: var(--seg-pane-tab-bar-surface);
+  --pane-tab-hover-bg: var(--brand-primary-hover);
+  --pane-tab-icon-color: var(--semantic-accent-icon);
+  --pane-tab-icon-hover-color: var(--semantic-accent-icon-hover);
+  --pane-tab-icon-active-color: var(--semantic-accent-icon-active);
   --pane-tab-control-hover-bg: var(--seg-accent-soft);
   --pane-tab-control-hover-border: var(--seg-accent);
   --pane-tab-control-hover-color: var(--seg-accent-strong);
@@ -442,7 +445,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 8px;
+  gap: 0;
   padding: 0 12px;
   border-bottom: 0;
   background: var(--pane-tab-bar-bg);
@@ -518,16 +521,18 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   border-radius: 6px;
   background: transparent;
   box-shadow: none;
-  color: var(--seg-text-3);
+  color: var(--pane-tab-icon-color);
   flex: 0 0 auto;
   -webkit-app-region: no-drag;
 }
 
 .pane-tab-bar .sidebar-toggle-button.is-top-menu:hover,
-.pane-tab-bar .canvas-region-top-menu-add-button:hover {
-  background: var(--pane-tab-control-hover-bg);
-  border-color: var(--pane-tab-control-hover-border);
-  color: var(--pane-tab-control-hover-color);
+.pane-tab-bar .sidebar-toggle-button.is-top-menu:focus-visible,
+.pane-tab-bar .canvas-region-top-menu-add-button:hover,
+.pane-tab-bar .canvas-region-top-menu-add-button:focus-visible {
+  background: transparent;
+  border-color: transparent;
+  color: var(--pane-tab-icon-hover-color);
 }
 
 .pane-tab-merge-preview {
@@ -705,7 +710,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   height: 18px;
   min-width: 18px;
   border-radius: 5px;
-  color: var(--seg-text-3);
+  color: var(--pane-tab-icon-color);
   opacity: 0;
   pointer-events: none;
 }
@@ -719,8 +724,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .pane-tab-bar .session-tab-close:hover,
 .pane-tab-bar .session-tab-close:focus-visible {
-  background: var(--pane-tab-control-hover-bg);
-  color: var(--pane-tab-control-hover-color);
+  background: transparent;
+  border-color: transparent;
+  color: var(--pane-tab-icon-hover-color);
 }
 
 .pane-tab-bar .session-tab:active,
@@ -1085,12 +1091,12 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .session-canvas-top-menu {
-  min-height: 34px;
+  min-height: var(--section-toolbar-height);
   padding-left: 12px;
   padding-right: 12px;
   padding-right: calc(var(--window-controls-canvas-clearance) + 8px);
-  padding-top: 4px;
-  padding-bottom: 2px;
+  padding-top: 0;
+  padding-bottom: 0;
   background: transparent;
   border-bottom: 0;
 }
@@ -1103,7 +1109,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .session-canvas-top-menu-copy {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
 }
 
@@ -1111,30 +1117,31 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex: 1 1 auto;
 }
 
 .session-canvas-top-menu-copy .label {
   font-family: var(--font-sans);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
   letter-spacing: 0.01em;
   text-transform: none;
-  color: var(--seg-text-3);
+  color: var(--text-primary);
 }
 
 .session-canvas-top-menu-copy-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex: 0 0 auto;
   flex-wrap: nowrap;
   white-space: nowrap;
 }
 
 .session-canvas-top-menu-actions {
-  gap: 4px;
+  gap: 6px;
   flex-wrap: nowrap;
   align-items: center;
 }
@@ -1214,14 +1221,15 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .session-canvas-top-menu .canvas-top-menu-button {
-  min-height: 28px;
-  padding: 0 9px;
+  min-height: var(--section-toolbar-pill-height);
+  padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--seg-text-2);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
+  line-height: 1.2;
   letter-spacing: 0.01em;
   box-shadow: none;
   white-space: nowrap;
@@ -1263,24 +1271,24 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .session-canvas-top-menu .canvas-top-menu-editor-launch-button {
-  width: 28px;
-  min-width: 28px;
-  border-radius: 6px 0 0 6px;
+  width: 30px;
+  min-width: 30px;
+  border-radius: 8px 0 0 8px;
 }
 
 .session-canvas-top-menu .canvas-top-menu-editor-menu-button {
   position: relative;
-  width: 18px;
-  min-width: 18px;
-  border-radius: 0 6px 6px 0;
+  width: 20px;
+  min-width: 20px;
+  border-radius: 0 8px 8px 0;
 }
 
 .session-canvas-top-menu .canvas-top-menu-editor-menu-button::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 6px;
-  bottom: 6px;
+  top: 7px;
+  bottom: 7px;
   width: 1px;
   background: rgba(84, 96, 109, 0.16);
 }
@@ -1292,8 +1300,8 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 }
 
 .external-editor-toolbar-icon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1545,9 +1553,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 
 .session-canvas-top-menu-copy .session-workflow-badge,
 .session-canvas-top-menu-copy .side-chat-badge {
-  min-height: 18px;
-  padding: 0 6px;
-  font-size: 10px;
+  min-height: 20px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 .canvas-top-menu-button svg {
@@ -1624,8 +1632,8 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .pane-tab-bar {
   --pane-tab-border: var(--seg-border);
   --pane-tab-divider: var(--seg-divider);
-  --pane-tab-inactive-bg: var(--seg-panel-muted);
-  --pane-tab-hover-bg: var(--seg-panel);
+  --pane-tab-inactive-bg: var(--seg-pane-tab-bar-surface);
+  --pane-tab-hover-bg: var(--brand-primary-hover);
 }
 
 .canvas-region-top-menu {
@@ -1636,16 +1644,12 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   --canvas-region-tab-focus: var(--mix-seg-accent-soft-74-seg-panel-26);
 }
 
-.pane-tab-bar .sidebar-toggle-button.is-top-menu:hover,
-.pane-tab-bar .canvas-region-top-menu-add-button:hover,
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu:hover,
 .canvas-region-top-menu-add-button:hover,
 .canvas-region-top-menu .sidebar-toggle-button.is-top-menu:focus-visible,
 .canvas-region-top-menu-add-button:focus-visible,
 .canvas-region-top-menu .session-tab-close:hover,
-.canvas-region-top-menu .session-tab-close:focus-visible,
-.pane-tab-bar .session-tab-close:hover,
-.pane-tab-bar .session-tab-close:focus-visible {
+.canvas-region-top-menu .session-tab-close:focus-visible {
   background: var(--seg-accent-soft);
   border-color: var(--seg-accent);
   color: var(--seg-accent-strong);

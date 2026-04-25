@@ -54,7 +54,7 @@
   padding-right: calc(var(--window-controls-right-sidebar-clearance) + 12px);
   align-items: stretch;
   gap: 0;
-  background: transparent;
+  background: var(--seg-right-sidebar-top-menu-surface);
   isolation: isolate;
 }
 
@@ -103,6 +103,16 @@
   display: none;
 }
 
+.left-sidebar-top-menu .top-menu-view-button,
+.right-sidebar-top-menu .top-menu-view-button {
+  align-self: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--semantic-accent-icon);
+  box-shadow: none;
+  transform: none;
+}
+
 .right-sidebar-top-menu .top-menu-view-button {
   align-self: center;
   width: var(--section-toolbar-control-size);
@@ -110,12 +120,7 @@
   min-height: var(--section-toolbar-control-size);
   margin-top: 0;
   margin-bottom: 0;
-  border: 1px solid transparent;
   border-radius: 8px;
-  background: transparent;
-  color: var(--seg-text-2);
-  box-shadow: none;
-  transform: none;
   transition:
     background 140ms ease,
     border-color 140ms ease,
@@ -123,28 +128,46 @@
     box-shadow 140ms ease;
 }
 
+.left-sidebar-top-menu .top-menu-view-button:hover,
+.left-sidebar-top-menu .top-menu-view-button:focus-visible,
+.right-sidebar-top-menu .top-menu-view-button:hover,
+.right-sidebar-top-menu .top-menu-view-button:focus-visible {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--semantic-accent-icon-hover);
+  transform: none;
+}
+
+.left-sidebar-top-menu .top-menu-view-button.is-active,
+.left-sidebar-top-menu .top-menu-view-button.is-active:hover,
+.left-sidebar-top-menu .top-menu-view-button.is-active:focus-visible,
+.right-sidebar-top-menu .top-menu-view-button.is-active,
+.right-sidebar-top-menu .top-menu-view-button.is-active:hover,
+.right-sidebar-top-menu .top-menu-view-button.is-active:focus-visible {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--semantic-accent-icon-active);
+}
+
 .left-sidebar-top-menu .sidebar-toggle-button.is-top-menu,
 .right-sidebar-top-menu .sidebar-toggle-button.is-top-menu {
   border: 0;
   background: transparent;
   box-shadow: none;
-  color: #5f7384;
+  color: var(--semantic-accent-icon);
 }
 
 .left-sidebar-top-menu .sidebar-toggle-button.is-top-menu:hover,
 .left-sidebar-top-menu .sidebar-toggle-button.is-top-menu:focus-visible,
 .right-sidebar-top-menu .sidebar-toggle-button.is-top-menu:hover,
 .right-sidebar-top-menu .sidebar-toggle-button.is-top-menu:focus-visible {
-  background: rgba(84, 96, 109, 0.14);
+  background: transparent;
   border-color: transparent;
   box-shadow: none;
-  color: #22303d;
+  color: var(--semantic-accent-icon-hover);
   transform: none;
-}
-
-.left-sidebar-top-menu .sidebar-toggle-button.is-top-menu.is-active,
-.right-sidebar-top-menu .sidebar-toggle-button.is-top-menu.is-active {
-  color: #22303d;
 }
 
 .left-sidebar-top-menu .sidebar-toggle-button.is-top-menu:focus-visible,
