@@ -249,6 +249,25 @@ function isSupportedSDKPackage(npmPackage: string): npmPackage is SupportedSDKPa
   return npmPackage in SDK_ADAPTERS
 }
 
+function resolveSDKPackage(model: Model): SupportedSDKPackage {
+  const requested = model.api.npm
+  if (!isSupportedSDKPackage(requested)) {
+    throw new Error(
+      `Unsupported SDK package '${requested}'. Add it to the SDK adapter allowlist before using it in provider.npm or model.provider.npm.`,
+    )
+  }
+
+  // DeepSeek's dedicated AI SDK adapter drops reasoning_content for assistant
+  // turns before the latest user message, which breaks follow-up calls in
+  // thinking mode. Route DeepSeek models through the OpenAI-compatible adapter
+  // instead so full reasoning history is preserved.
+  if (requested === DEEPSEEK_SDK_PACKAGE) {
+    return OPENAI_COMPATIBLE_SDK_PACKAGE
+  }
+
+  return requested
+}
+
 // -----------------------------------------------------------------------------
 // 通用小工具
 // -----------------------------------------------------------------------------
@@ -902,6 +921,7 @@ function runtimeKey(provider: ProviderInfo, model: Model) {
   return JSON.stringify({
     providerID: provider.id,
     modelID: model.id,
+    sdkPackage: resolveSDKPackage(model),
     apiKey: provider.key ?? "",
     baseURL: firstNonEmptyString(provider.runtimeBaseURL, provider.options.baseURL, model.api.url) ?? "",
     headers: {
@@ -1106,13 +1126,7 @@ export async function getLanguage(model: Model, configID = resolveConfigID()): P
   return language
 }
 
-async function loadSDKFactory(npmPackage: string) {
-  if (!isSupportedSDKPackage(npmPackage)) {
-    throw new Error(
-      `Unsupported SDK package '${npmPackage}'. Add it to the SDK adapter allowlist before using it in provider.npm or model.provider.npm.`,
-    )
-  }
-
+async function loadSDKFactory(npmPackage: SupportedSDKPackage) {
   const adapter = SDK_ADAPTERS[npmPackage]
   const loaded = await BunProc.importPackage<Record<string, unknown>>(npmPackage, adapter.version)
   const factory = loaded.module[adapter.exportName]
@@ -1153,11 +1167,13 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
     ...model.headers,
   }
   const headers = Object.keys(combinedHeaders).length > 0 ? combinedHeaders : undefined
-  const loaded = await loadSDKFactory(model.api.npm)
+  const sdkPackage = resolveSDKPackage(model)
+  const loaded = await loadSDKFactory(sdkPackage)
   log.info("initializing sdk provider", {
     providerID: model.providerID,
     modelID: model.id,
-    sdkPackage: model.api.npm,
+    requestedSdkPackage: model.api.npm,
+    sdkPackage,
     baseURL,
     apiKeyConfigured: Boolean(provider.key),
     headersConfigured: Boolean(headers),

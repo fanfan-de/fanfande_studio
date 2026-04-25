@@ -986,6 +986,138 @@ describe("tool contract", () => {
     ])
   })
 
+  it("keeps multiple tool calls in the same assistant message for reasoning_content models", async () => {
+    const model = {
+      id: "deepseek-reasoner",
+      providerID: "deepseek",
+      api: {
+        id: "deepseek-reasoner",
+        url: "https://api.deepseek.com",
+        npm: "@ai-sdk/deepseek",
+      },
+      capabilities: {
+        reasoning: true,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+        interleaved: {
+          field: "reasoning_content",
+        },
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "assistant-multi-tool-history",
+            sessionID: "session-multi-tool-history",
+            role: "assistant",
+            created: Date.now(),
+            parentID: "user-multi-tool-history",
+            modelID: "deepseek-reasoner",
+            providerID: "deepseek",
+            agent: "plan",
+            path: {
+              cwd: ".",
+              root: ".",
+            },
+            cost: 0,
+            tokens: {
+              input: 0,
+              output: 0,
+              reasoning: 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            },
+          } as Message.Assistant,
+          parts: [
+            {
+              id: "assistant-multi-tool-1",
+              sessionID: "session-multi-tool-history",
+              messageID: "assistant-multi-tool-history",
+              type: "reasoning",
+              text: "Need two reads before answering.",
+              time: {
+                start: Date.now(),
+              },
+            } as Message.ReasoningPart,
+            {
+              id: "assistant-multi-tool-2",
+              sessionID: "session-multi-tool-history",
+              messageID: "assistant-multi-tool-history",
+              type: "tool",
+              callID: "call-multi-tool-a",
+              tool: "read-file",
+              state: {
+                status: "waiting-approval",
+                approvalID: "approval-multi-tool-a",
+                input: {
+                  path: "README.md",
+                },
+                time: {
+                  start: Date.now(),
+                },
+              },
+            } as Message.ToolPart,
+            {
+              id: "assistant-multi-tool-3",
+              sessionID: "session-multi-tool-history",
+              messageID: "assistant-multi-tool-history",
+              type: "tool",
+              callID: "call-multi-tool-b",
+              tool: "glob",
+              state: {
+                status: "waiting-approval",
+                approvalID: "approval-multi-tool-b",
+                input: {
+                  pattern: "*.ts",
+                },
+                time: {
+                  start: Date.now(),
+                },
+              },
+            } as Message.ToolPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    const assistantMessages = messages.filter((item) => item.role === "assistant") as any[]
+    expect(assistantMessages).toHaveLength(1)
+    expect(assistantMessages[0]?.content).toEqual([
+      {
+        type: "reasoning",
+        text: "Need two reads before answering.",
+      },
+      {
+        type: "tool-call",
+        toolCallId: "call-multi-tool-a",
+        toolName: "read-file",
+        input: {
+          path: "README.md",
+        },
+      },
+      {
+        type: "tool-call",
+        toolCallId: "call-multi-tool-b",
+        toolName: "glob",
+        input: {
+          pattern: "*.ts",
+        },
+      },
+    ])
+  })
+
   it("fails fast with a clear error when the model does not support image input", async () => {
     const model = {
       id: "deepseek-chat",

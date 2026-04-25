@@ -94,10 +94,6 @@ function shouldReplayAssistantReasoning(model: Provider.Model) {
     return providerID === "deepseek" || sdkPackage === "@ai-sdk/deepseek" || apiURL.includes("deepseek")
 }
 
-function assistantContentHasReasoning(content: Array<{ type?: unknown }>) {
-    return content.some((part) => part?.type === "reasoning")
-}
-
 function summarizeQuestionAnswerForModel(part: TextPart) {
     const metadata = part.metadata
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -838,6 +834,7 @@ export async function toModelMessages(
                 return {
                     type: "reasoning" as const,
                     text: part.text,
+                    ...(part.metadata ? { providerOptions: part.metadata } : {}),
                 }
             case "file":
                 {
@@ -954,14 +951,7 @@ export async function toModelMessages(
         }
 
         const assistantContent: any[] = []
-        const flushAssistant = () => {
-            if (assistantContent.length === 0) return
-            result.push({
-                role: aiRole,
-                content: [...assistantContent],
-            } as ModelMessage)
-            assistantContent.length = 0
-        }
+        const toolContent: any[] = []
 
         for (const part of orderedParts) {
             if (aiRole === "assistant" && part.type === "tool") {
@@ -978,17 +968,7 @@ export async function toModelMessages(
                     state.status === "error" ||
                     state.status === "denied"
                 ) {
-                    const mergeLeadingAssistantContent =
-                        replayAssistantReasoning && assistantContentHasReasoning(assistantContent)
-
-                    const assistantToolContent: any[] = mergeLeadingAssistantContent ? [...assistantContent] : []
-                    if (mergeLeadingAssistantContent) {
-                        assistantContent.length = 0
-                    } else {
-                        flushAssistant()
-                    }
-
-                    assistantToolContent.push({
+                    assistantContent.push({
                         type: "tool-call" as const,
                         toolCallId: part.callID,
                         toolName: part.tool,
@@ -998,7 +978,7 @@ export async function toModelMessages(
                     })
 
                     if (approvalRequest) {
-                        assistantToolContent.push({
+                        assistantContent.push({
                             type: "tool-approval-request" as const,
                             approvalId: approvalRequest.approvalID,
                             toolCallId: part.callID,
@@ -1006,7 +986,7 @@ export async function toModelMessages(
                     }
 
                     if (part.providerExecuted && (state.status === "completed" || state.status === "error")) {
-                        assistantToolContent.push({
+                        assistantContent.push({
                             type: "tool-result" as const,
                             toolCallId: part.callID,
                             toolName: part.tool,
@@ -1014,13 +994,6 @@ export async function toModelMessages(
                             ...(state.metadata ? { providerOptions: state.metadata } : {}),
                         })
                     }
-
-                    result.push({
-                        role: "assistant",
-                        content: assistantToolContent,
-                    } as ModelMessage)
-
-                    const toolContent: any[] = []
                     if (approvalRequest && approvalResponse) {
                         toolContent.push({
                             type: "tool-approval-response" as const,
@@ -1040,12 +1013,6 @@ export async function toModelMessages(
                         })
                     }
 
-                    if (toolContent.length > 0) {
-                        result.push({
-                            role: "tool",
-                            content: toolContent as any,
-                        } as ModelMessage)
-                    }
                     continue
                 }
             }
@@ -1060,7 +1027,19 @@ export async function toModelMessages(
             }
         }
 
-        flushAssistant()
+        if (assistantContent.length > 0) {
+            result.push({
+                role: aiRole,
+                content: [...assistantContent],
+            } as ModelMessage)
+        }
+
+        if (aiRole === "assistant" && toolContent.length > 0) {
+            result.push({
+                role: "tool",
+                content: toolContent as any,
+            } as ModelMessage)
+        }
     }
 
     return result
