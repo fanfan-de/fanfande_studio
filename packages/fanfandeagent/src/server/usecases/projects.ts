@@ -1,0 +1,480 @@
+import path from "node:path"
+import { realpath } from "node:fs/promises"
+import z from "zod"
+import * as db from "#database/Sqlite.ts"
+import * as Config from "#config/config.ts"
+import * as Git from "#git/git.ts"
+import * as Mcp from "#mcp/manager.ts"
+import { Instance } from "#project/instance.ts"
+import * as Project from "#project/project.ts"
+import * as ModelsDev from "#provider/modelsdev.ts"
+import * as Provider from "#provider/provider.ts"
+import { ApiError } from "#server/error.ts"
+import * as Session from "#session/session.ts"
+import * as Skill from "#skill/skill.ts"
+
+export const CreateProjectBody = z.object({
+  directory: z.string().min(1),
+})
+
+export const CreateProjectSessionBody = z.object({
+  directory: z.string().min(1).optional(),
+  title: z.string().min(1).optional(),
+})
+
+export const UpdateMcpServerBody = Config.McpServerInput
+export const UpdateProjectProviderBody = Config.Provider
+export const UpdateProjectModelSelectionBody = Config.ModelSelection
+export const UpdateProjectSkillSelectionBody = Config.ProjectSkillSelection
+export const UpdateProjectMcpSelectionBody = Config.ProjectMcpSelection
+
+export const GitDirectoryQuery = z.object({
+  directory: z.string().min(1),
+})
+
+export const GitCommitBody = z.object({
+  directory: z.string().min(1),
+  message: z.string().min(1),
+  stageAll: z.boolean().optional(),
+})
+
+export const GitDirectoryBody = z.object({
+  directory: z.string().min(1),
+})
+
+export const GitCreateBranchBody = z.object({
+  directory: z.string().min(1),
+  name: z.string().min(1),
+})
+
+export const GitCheckoutBranchBody = z.object({
+  directory: z.string().min(1),
+  name: z.string().min(1),
+})
+
+function safeReadProject(projectID: string) {
+  const project = Project.get(projectID)
+  if (!project) {
+    throw new ApiError(404, "PROJECT_NOT_FOUND", `Project '${projectID}' not found`)
+  }
+
+  return project
+}
+
+function normalizeProjectDirectory(input: string) {
+  const normalized = path.normalize(input)
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized
+}
+
+async function canonicalizeProjectDirectory(input: string) {
+  const resolved = path.resolve(input)
+
+  try {
+    return path.normalize(await realpath(resolved))
+  } catch {
+    return path.normalize(resolved)
+  }
+}
+
+function isDirectoryInsideProjectRoot(directory: string, root: string) {
+  const normalizedRoot = normalizeProjectDirectory(root)
+  const normalizedDirectory = normalizeProjectDirectory(directory)
+  const relative = path.relative(normalizedRoot, normalizedDirectory)
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+}
+
+async function resolveProjectBoundaryRoots(project: Project.ProjectInfo) {
+  const roots = new Set<string>()
+
+  roots.add(await canonicalizeProjectDirectory(project.worktree))
+
+  for (const sandbox of project.sandboxes ?? []) {
+    roots.add(await canonicalizeProjectDirectory(sandbox))
+  }
+
+  return [...roots]
+}
+
+function projectContainsDirectory(projectRoots: string[], directory: string) {
+  return projectRoots.some((root) => isDirectoryInsideProjectRoot(directory, root))
+}
+
+async function resolveProjectGitDirectory(
+  projectID: string,
+  rawDirectory: string,
+  options?: {
+    verifyRepositoryRoot?: boolean
+  },
+) {
+  const project = safeReadProject(projectID)
+  const directory = rawDirectory.trim()
+  if (!directory) {
+    throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a non-empty 'directory'")
+  }
+
+  const [projectRoots, canonicalDirectory] = await Promise.all([
+    resolveProjectBoundaryRoots(project),
+    canonicalizeProjectDirectory(directory),
+  ])
+
+  if (!projectContainsDirectory(projectRoots, canonicalDirectory)) {
+    throw new ApiError(400, "DIRECTORY_NOT_IN_PROJECT", `Directory '${directory}' does not belong to project '${projectID}'`)
+  }
+
+  if (options?.verifyRepositoryRoot) {
+    const repositoryRoot = await Git.resolveGitRepositoryRoot(canonicalDirectory)
+    if (repositoryRoot) {
+      const canonicalRepositoryRoot = await canonicalizeProjectDirectory(repositoryRoot)
+      if (!projectContainsDirectory(projectRoots, canonicalRepositoryRoot)) {
+        throw new ApiError(
+          400,
+          "DIRECTORY_NOT_IN_PROJECT",
+          `Git repository root '${repositoryRoot}' does not belong to project '${projectID}'`,
+        )
+      }
+    }
+  }
+
+  return canonicalDirectory
+}
+
+function parseModelReference(value: string) {
+  const [providerID, ...rest] = value.split("/")
+  const modelID = rest.join("/")
+  if (!providerID || !modelID) {
+    throw new ApiError(400, "INVALID_MODEL_REFERENCE", `Model '${value}' must use the format provider/model`)
+  }
+
+  return {
+    providerID,
+    modelID,
+  }
+}
+
+function mapSessionSummary(session: Session.SessionInfo) {
+  const normalized = Session.normalizeSessionInfo(session)
+  return {
+    ...normalized,
+    origin: Session.getSessionOrigin(normalized.id),
+  }
+}
+
+export async function listProjects() {
+  return Project.list()
+}
+
+export async function createProject(input: z.infer<typeof CreateProjectBody>) {
+  const { project } = await Project.fromDirectory(input.directory)
+  return project
+}
+
+export function listProjectSessions(projectID: string) {
+  safeReadProject(projectID)
+  return Session.listByProject(projectID).map(mapSessionSummary)
+}
+
+export async function createProjectSession(
+  projectID: string,
+  input: z.infer<typeof CreateProjectSessionBody>,
+) {
+  const project = safeReadProject(projectID)
+
+  let directory = input.directory?.trim() || project.worktree
+  if (input.directory) {
+    const resolved = await Project.fromDirectory(directory)
+    if (resolved.project.id !== projectID) {
+      throw new ApiError(400, "DIRECTORY_NOT_IN_PROJECT", `Directory '${directory}' does not belong to project '${projectID}'`)
+    }
+    directory = input.directory.trim()
+  }
+
+  const session = await Session.createSession({
+    directory,
+    projectID,
+    title: input.title?.trim() || undefined,
+  })
+
+  return mapSessionSummary(session)
+}
+
+export async function listProjectProviderCatalog(projectID: string) {
+  safeReadProject(projectID)
+  return Provider.catalog(projectID)
+}
+
+export async function listProjectProviders(projectID: string) {
+  safeReadProject(projectID)
+  return {
+    items: await Provider.listPublicProviders(projectID),
+    selection: await Provider.getSelection(projectID),
+  }
+}
+
+export async function listProjectModels(projectID: string) {
+  safeReadProject(projectID)
+
+  const items = await Provider.listModels(projectID)
+  let effectiveModel: Provider.PublicModel | null = null
+
+  try {
+    const effectiveRef = await Provider.getDefaultModelRef(projectID)
+    effectiveModel =
+      items.find((model) => model.providerID === effectiveRef.providerID && model.id === effectiveRef.modelID) ?? null
+  } catch {
+    effectiveModel = null
+  }
+
+  return {
+    effectiveModel,
+    items,
+    selection: await Provider.getSelection(projectID),
+  }
+}
+
+export async function updateProjectProvider(
+  projectID: string,
+  providerID: string,
+  input: z.infer<typeof Config.Provider>,
+) {
+  safeReadProject(projectID)
+
+  try {
+    await Provider.validateProviderConfig(providerID, input, projectID)
+  } catch (error) {
+    throw new ApiError(
+      400,
+      "PROVIDER_VALIDATION_FAILED",
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+
+  const providerConfig = await Config.setProvider(projectID, providerID, input)
+  const provider = await Provider.getPublicProvider(providerID, projectID)
+  if (!provider) {
+    throw new ApiError(404, "PROVIDER_NOT_FOUND", `Provider '${providerID}' not found in the catalog`)
+  }
+
+  return {
+    provider,
+    selection: {
+      model: providerConfig.model,
+      small_model: providerConfig.small_model,
+    },
+  }
+}
+
+export async function removeProjectProvider(projectID: string, providerID: string) {
+  safeReadProject(projectID)
+  const providerConfig = await Config.removeProvider(projectID, providerID)
+
+  return {
+    providerID,
+    selection: {
+      model: providerConfig.model,
+      small_model: providerConfig.small_model,
+    },
+  }
+}
+
+export async function updateProjectModelSelection(
+  projectID: string,
+  input: z.infer<typeof Config.ModelSelection>,
+) {
+  safeReadProject(projectID)
+
+  if (input.model) {
+    const ref = parseModelReference(input.model)
+    await Provider.getModel(ref.providerID, ref.modelID, projectID)
+  }
+
+  if (input.small_model) {
+    const ref = parseModelReference(input.small_model)
+    await Provider.getModel(ref.providerID, ref.modelID, projectID)
+  }
+
+  const selection = await Config.setModelSelection(projectID, input)
+  return {
+    model: selection.model,
+    small_model: selection.small_model,
+  }
+}
+
+export async function refreshProjectProviderCatalog(projectID: string) {
+  safeReadProject(projectID)
+
+  try {
+    await ModelsDev.refresh()
+  } catch (error) {
+    throw new ApiError(
+      502,
+      "PROVIDER_CATALOG_REFRESH_FAILED",
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+
+  return Provider.catalog(projectID)
+}
+
+export async function getProjectGitCapabilities(
+  projectID: string,
+  input: z.infer<typeof GitDirectoryQuery>,
+) {
+  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+  return Git.getGitCapabilities(directory)
+}
+
+export async function commitProjectGitChanges(
+  projectID: string,
+  input: z.infer<typeof GitCommitBody>,
+) {
+  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+  return Git.commitGitChanges(directory, input.message, {
+    stageAll: input.stageAll,
+  })
+}
+
+export async function pushProjectGitChanges(
+  projectID: string,
+  input: z.infer<typeof GitDirectoryBody>,
+) {
+  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+  return Git.pushGitChanges(directory)
+}
+
+export async function createProjectGitBranch(
+  projectID: string,
+  input: z.infer<typeof GitCreateBranchBody>,
+) {
+  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+  return Git.createGitBranch(directory, input.name)
+}
+
+export async function listProjectGitBranches(
+  projectID: string,
+  input: z.infer<typeof GitDirectoryQuery>,
+) {
+  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+  return Git.listGitBranches(directory)
+}
+
+export async function checkoutProjectGitBranch(
+  projectID: string,
+  input: z.infer<typeof GitCheckoutBranchBody>,
+) {
+  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+  return Git.checkoutGitBranch(directory, input.name)
+}
+
+export async function createProjectGitPullRequest(
+  projectID: string,
+  input: z.infer<typeof GitDirectoryBody>,
+) {
+  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+  return Git.createGitPullRequest(directory)
+}
+
+export async function listProjectSkills(projectID: string) {
+  const project = safeReadProject(projectID)
+  return Skill.list(project.worktree)
+}
+
+export async function getProjectSkillSelection(projectID: string) {
+  const project = safeReadProject(projectID)
+  return {
+    skillIDs: await Skill.resolveSelectedSkillIDs(project.worktree, await Config.getSelectedSkillIDs(projectID)),
+  }
+}
+
+export async function updateProjectSkillSelection(
+  projectID: string,
+  input: z.infer<typeof UpdateProjectSkillSelectionBody>,
+) {
+  const project = safeReadProject(projectID)
+  const skillIDs = await Skill.resolveSelectedSkillIDs(project.worktree, input.skillIDs)
+  const config = await Config.setSelectedSkillIDs(projectID, skillIDs)
+
+  return {
+    skillIDs: config.selected_skills ?? [],
+  }
+}
+
+export async function getProjectMcpSelection(projectID: string) {
+  safeReadProject(projectID)
+  return {
+    serverIDs: await Config.getSelectedMcpServerIDs(projectID),
+  }
+}
+
+export async function updateProjectMcpSelection(
+  projectID: string,
+  input: z.infer<typeof UpdateProjectMcpSelectionBody>,
+) {
+  safeReadProject(projectID)
+  const config = await Config.setSelectedMcpServerIDs(projectID, input.serverIDs)
+
+  return {
+    serverIDs: config.selected_mcp_servers ?? [],
+  }
+}
+
+export async function listProjectMcpServers(projectID: string) {
+  safeReadProject(projectID)
+  return Config.resolveProjectMcpServers(projectID)
+}
+
+export async function getProjectMcpServerDiagnostic(projectID: string, serverID: string) {
+  const project = safeReadProject(projectID)
+
+  const server = await Config.getProjectMcpServer(projectID, serverID)
+  if (!server) {
+    throw new ApiError(404, "MCP_SERVER_NOT_FOUND", `MCP server '${serverID}' is not available for project '${projectID}'`)
+  }
+
+  return Instance.provide({
+    directory: project.worktree,
+    fn: async () => await Mcp.diagnose(serverID),
+  })
+}
+
+export async function updateProjectMcpServer(
+  projectID: string,
+  serverID: string,
+  input: z.infer<typeof UpdateMcpServerBody>,
+) {
+  safeReadProject(projectID)
+  return Config.setMcpServer(projectID, serverID, input)
+}
+
+export async function removeProjectMcpServer(projectID: string, serverID: string) {
+  safeReadProject(projectID)
+  return {
+    serverID,
+    removed: Boolean(await Config.removeMcpServer(projectID, serverID)),
+  }
+}
+
+export function deleteProject(projectID: string) {
+  safeReadProject(projectID)
+
+  const deletedSessions = Session.removeProjectSessions(projectID)
+  db.deleteById("projects", projectID)
+  db.deleteById("project_configs", projectID, "projectID")
+  if (db.tableExists("permission_rules")) {
+    db.deleteMany("permission_rules", [{ column: "projectID", value: projectID }])
+  }
+  if (db.tableExists("permission_requests")) {
+    db.deleteMany("permission_requests", [{ column: "projectID", value: projectID }])
+  }
+  if (db.tableExists("permission_audits")) {
+    db.deleteMany("permission_audits", [{ column: "projectID", value: projectID }])
+  }
+
+  return {
+    projectID,
+    deletedSessionIDs: deletedSessions.map((session) => session.id),
+  }
+}
+
+export function getProject(projectID: string) {
+  return safeReadProject(projectID)
+}
