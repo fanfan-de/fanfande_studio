@@ -338,7 +338,7 @@ export async function readPromptPresetDocument(
 
     return {
       ...toPromptPresetSummary(preset, overrides),
-      content: hasPromptOverride(overrides, preset.id) ? overrides[preset.id] : preset.bundledContent,
+      content: hasPromptOverride(overrides, preset.id) ? (overrides[preset.id] ?? "") : preset.bundledContent,
     }
   }
 

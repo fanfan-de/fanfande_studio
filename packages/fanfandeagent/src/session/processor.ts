@@ -773,7 +773,10 @@ export function create(input: {
                     let currentText: Message.TextPart | undefined = undefined
                     // 鏌愪簺妯″瀷锛堝 Claude銆丟emini锛夋敮鎸佸涓苟琛屾帹鐞嗛摼鎴栧祵濂楁帹鐞嗭紝鎸?id 鍒嗗紑璺熻釜
                     let reasoningMap: Record<string, Message.ReasoningPart> = {}
-                    for await (const value of stream.fullStream) {
+                    for await (const streamValue of stream.fullStream) {
+                        const value = streamValue as typeof streamValue | (
+                            { type: "source-url" | "source-document" } & Record<string, unknown>
+                        )
                         switch (value.type) {
                             case "text-start":
                                 emitRuntimePhase("responding", {
@@ -1174,8 +1177,8 @@ export function create(input: {
                                     messageID: input.Assistant.id,
                                     type: "step-start",
                                     snapshot:
-                                        typeof (value as { snapshot?: unknown }).snapshot === "string"
-                                            ? (value as { snapshot: string }).snapshot
+                                        typeof (value as unknown as { snapshot?: unknown }).snapshot === "string"
+                                            ? (value as unknown as { snapshot: string }).snapshot
                                             : undefined,
                                 }
                                 emitRuntimeEvent?.("part.recorded", {
@@ -1257,8 +1260,8 @@ export function create(input: {
                                             ? value.finishReason
                                             : "Reasoning step completed.",
                                     snapshot:
-                                        typeof (value as { snapshot?: unknown }).snapshot === "string"
-                                            ? (value as { snapshot: string }).snapshot
+                                        typeof (value as unknown as { snapshot?: unknown }).snapshot === "string"
+                                            ? (value as unknown as { snapshot: string }).snapshot
                                             : undefined,
                                     cost: 0,
                                     tokens: buildStepTokens(value.usage),

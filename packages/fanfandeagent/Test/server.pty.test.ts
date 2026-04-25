@@ -148,7 +148,7 @@ class SocketHarness {
   }
 }
 
-const activeServers: Bun.Server[] = []
+const activeServers: Bun.Server<unknown>[] = []
 
 afterEach(() => {
   for (const server of activeServers.splice(0, activeServers.length)) {

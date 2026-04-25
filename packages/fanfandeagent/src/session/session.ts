@@ -328,16 +328,16 @@ function DataBaseRead<T extends Exclude<TableName, "projects">>(
   tableName: T,
   id: string,
   idColumn: string = "id",
-) {
+): TableRecordMap[T] | null {
   ensureSessionTables()
   const result = db.findById(tableName, TableSchemaMap[tableName], id, idColumn)
   if (!result) return null
   const parsed = TableSchemaMap[tableName].parse(result)
   if (tableName === "sessions") {
-    return normalizeSessionInfo(parsed as SessionInfo)
+    return normalizeSessionInfo(parsed as SessionInfo) as TableRecordMap[T]
   }
 
-  return parsed
+  return parsed as TableRecordMap[T]
 }
 
 function upsertMessage(message: Message.MessageInfo) {

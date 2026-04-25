@@ -113,7 +113,7 @@ export type ProviderAuthState = z.infer<typeof ProviderAuthState>
 export type ProviderRuntimeAuth = {
   credentialKind?: Auth.CredentialRecord["kind"]
   credentialSource?: Auth.ProviderCredentialDescriptor["source"]
-  activeMethod?: string
+  activeMethod?: string | null
   apiKey?: string
   runtimeBaseURL?: string
   runtimeHeaders?: Record<string, string>
@@ -1331,7 +1331,7 @@ export async function resolveProviderRuntimeAuth(
   const record = await Auth.getProviderRecord(providerID)
   const fallback = await buildFallbackCredential(providerID, fallbacks)
 
-  let activeMethod = record?.activeMethod
+  let activeMethod = record?.activeMethod ?? undefined
   let credential = activeMethod ? record?.credentials[activeMethod] : undefined
   let credentialSource: Auth.ProviderCredentialDescriptor["source"] | undefined = credential ? "credential_store" : undefined
 

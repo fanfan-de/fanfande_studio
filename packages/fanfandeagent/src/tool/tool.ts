@@ -96,6 +96,17 @@ export interface ToolRuntime<
   ): Awaitable<ToolModelOutput>
 }
 
+export interface NormalizedToolRuntime<
+  Parameters extends z.ZodType = z.ZodType,
+  M extends Metadata = Metadata,
+  D = unknown,
+> extends Omit<ToolRuntime<Parameters, M, D>, "execute"> {
+  execute(
+    args: z.infer<Parameters>,
+    ctx: Context,
+  ): Awaitable<ToolOutput<M, D>>
+}
+
 export interface ToolInfo<
   Parameters extends z.ZodType = z.ZodType,
   M extends Metadata = Metadata,
@@ -105,7 +116,7 @@ export interface ToolInfo<
   title?: string
   aliases?: string[]
   capabilities?: ToolCapabilities
-  init: (ctx?: InitContext) => Promise<ToolRuntime<Parameters, M, D>>
+  init: (ctx?: InitContext) => Promise<NormalizedToolRuntime<Parameters, M, D>>
 }
 
 type ToolDefineOptions<
@@ -171,13 +182,13 @@ export function normalizeToolModelOutput(output: ToolModelOutput): Exclude<ToolM
  */
 export function define<Parameters extends z.ZodType, Result extends Metadata, Data = unknown>(
   id: string,
-  init: ToolInfo<Parameters, Result, Data>["init"],
+  init: (ctx?: InitContext) => Promise<ToolRuntime<Parameters, Result, Data>>,
   options: ToolDefineOptions<Parameters, Result, Data> = {},
 ): ToolInfo<Parameters, Result, Data> {
   return {
     id,
     ...options,
-    init: async (initctx) => {
+    init: async (initctx): Promise<NormalizedToolRuntime<Parameters, Result, Data>> => {
       const runtime = await init(initctx)
       const execute = runtime.execute
 
@@ -207,7 +218,7 @@ export function define<Parameters extends z.ZodType, Result extends Metadata, Da
         return normalizeToolOutput(await execute(parsed.data, ctx))
       }
 
-      return runtime
+      return runtime as NormalizedToolRuntime<Parameters, Result, Data>
     },
   }
 }

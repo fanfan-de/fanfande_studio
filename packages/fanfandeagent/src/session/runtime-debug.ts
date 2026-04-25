@@ -86,6 +86,7 @@ export type RuntimeErrorContextSummary = {
 }
 
 export type RuntimeTurnSummary = {
+  id: string
   turnID: string
   startedAt?: number
   endedAt?: number
@@ -147,6 +148,7 @@ export type SessionRuntimeDebugSnapshot = {
     reason?: string
   }
   activeTurnID: string | null
+  turn: RuntimeTurnSummary | null
   latestTurn: RuntimeTurnSummary | null
   turns: RuntimeTurnSummary[]
   recentEvents: RuntimeEventSummary[]
@@ -673,6 +675,7 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
 
 function createTurnSummary(turnID: string): MutableTurnSummary {
   return {
+    id: turnID,
     turnID,
     status: "running",
     resume: false,
@@ -848,6 +851,7 @@ function finalizeTurnSummary(turn: MutableTurnSummary): RuntimeTurnSummary {
 
   return {
     ...turn,
+    id: turn.turnID,
     durationMs:
       typeof startedAt === "number"
         ? Math.max(0, (typeof endedAt === "number" ? endedAt : Date.now()) - startedAt)
@@ -933,6 +937,7 @@ export function getSessionRuntimeDebugSnapshot(input: {
       reason: undefined,
     },
     activeTurnID: activeTurn?.turnID ?? null,
+    turn: latestTurn,
     latestTurn,
     turns: finalizedTurns.slice(0, turnLimit),
     recentEvents,

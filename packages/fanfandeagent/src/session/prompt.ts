@@ -322,6 +322,10 @@ type RunLoopResult = {
     finishReason?: string
 }
 
+type AssistantWithParts = Message.WithParts & {
+    info: Message.Assistant
+}
+
 // ---------------------------------------------------------------------------
 // 推理循环
 // ---------------------------------------------------------------------------
@@ -691,7 +695,7 @@ export const prompt = fn(PromptInput, async (input) => {
             parts: result.latest.parts,
         })
 
-        return result.latest
+        return result.latest as AssistantWithParts
     } catch (error) {
         const latestAssistant = latestAssistantWithPartsAfter(
             input.sessionID,
@@ -812,7 +816,7 @@ export const resume = fn(ResumeInput, async (input) => {
             parts: result.latest.parts,
         })
 
-        return result.latest
+        return result.latest as AssistantWithParts
     } catch (error) {
         const latestAssistant = latestAssistantWithPartsAfter(
             input.sessionID,

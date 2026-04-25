@@ -1884,12 +1884,13 @@ describe("server api", () => {
       })
       customPresetID = createBody.data?.id ?? null
       expect(customPresetID).toBeTruthy()
+      const customPresetIDValue = customPresetID!
 
       const updateSelectionResponse = await app.request("http://localhost/api/prompts/selection", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          systemPromptPresetID: customPresetID,
+          systemPromptPresetID: customPresetIDValue,
           planModePromptPresetID: "plan-mode",
         }),
       })
@@ -1898,14 +1899,14 @@ describe("server api", () => {
       expect(updateSelectionResponse.status).toBe(200)
       expect(updateSelectionBody.success).toBe(true)
       expect(updateSelectionBody.data).toEqual({
-        systemPromptPresetID: customPresetID,
+        systemPromptPresetID: customPresetIDValue,
         planModePromptPresetID: "plan-mode",
       })
 
       const runtimeWithCustomSystemPrompt = await SystemPrompt.defaultPrompt()
-      expect(runtimeWithCustomSystemPrompt.some((section) => section.includes(customSystemPrompt))).toBe(true)
+      expect(runtimeWithCustomSystemPrompt.some((section) => section?.includes(customSystemPrompt) === true)).toBe(true)
 
-      const readResponse = await app.request(`http://localhost/api/prompts/${encodeURIComponent(customPresetID!)}`)
+      const readResponse = await app.request(`http://localhost/api/prompts/${encodeURIComponent(customPresetIDValue)}`)
       const readBody = (await readResponse.json()) as PromptPresetDocumentEnvelope
 
       expect(readResponse.status).toBe(200)
@@ -1930,7 +1931,7 @@ describe("server api", () => {
       })
 
       const updateCustomPresetResponse = await app.request(
-        `http://localhost/api/prompts/${encodeURIComponent(customPresetID!)}`,
+        `http://localhost/api/prompts/${encodeURIComponent(customPresetIDValue)}`,
         {
           method: "PUT",
           headers: { "content-type": "application/json" },
@@ -1945,7 +1946,7 @@ describe("server api", () => {
       expect(updateCustomPresetResponse.status).toBe(200)
       expect(updateCustomPresetBody.success).toBe(true)
       expect(updateCustomPresetBody.data).toMatchObject({
-        id: customPresetID,
+        id: customPresetIDValue,
         label: "Focus preset v2",
         source: "custom",
         content: `${customSystemPrompt}\nupdated`,
@@ -1956,8 +1957,8 @@ describe("server api", () => {
           name: "plan",
         },
       })
-      expect(runtimePrompt.some((section) => section.includes(customPlanPrompt))).toBe(true)
-      expect(runtimePrompt.some((section) => section.includes(`${customSystemPrompt}\nupdated`))).toBe(true)
+      expect(runtimePrompt.some((section) => section?.includes(customPlanPrompt) === true)).toBe(true)
+      expect(runtimePrompt.some((section) => section?.includes(`${customSystemPrompt}\nupdated`) === true)).toBe(true)
 
       const blankOverrideResponse = await app.request("http://localhost/api/prompts/provider-gpt", {
         method: "PUT",
@@ -1991,10 +1992,10 @@ describe("server api", () => {
           name: "plan",
         },
       })
-      expect(runtimeAfterReset.some((section) => section.includes(customPlanPrompt))).toBe(false)
+      expect(runtimeAfterReset.some((section) => section?.includes(customPlanPrompt) === true)).toBe(false)
 
       const deleteCustomResponse = await app.request(
-        `http://localhost/api/prompts/${encodeURIComponent(customPresetID!)}/custom`,
+        `http://localhost/api/prompts/${encodeURIComponent(customPresetIDValue)}/custom`,
         {
           method: "DELETE",
         },
@@ -2009,7 +2010,7 @@ describe("server api", () => {
       })
 
       const runtimeAfterDelete = await SystemPrompt.defaultPrompt()
-      expect(runtimeAfterDelete.some((section) => section.includes(customSystemPrompt))).toBe(false)
+      expect(runtimeAfterDelete.some((section) => section?.includes(customSystemPrompt) === true)).toBe(false)
 
       const missingResponse = await app.request("http://localhost/api/prompts/not-a-preset")
       const missingBody = (await missingResponse.json()) as JsonEnvelope

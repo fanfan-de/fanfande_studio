@@ -25,7 +25,6 @@ test("test prompt", async () => {
         async fn() {
             console.log(Instance.directory)
 
-            const project = Session.DataBaseCreate("projects", projectinfo)
             const session: Session.SessionInfo = await Session.createSession({
                 directory: projectinfo.worktree,
                 projectID: projectinfo.id

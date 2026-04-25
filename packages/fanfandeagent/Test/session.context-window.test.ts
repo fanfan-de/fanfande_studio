@@ -305,8 +305,10 @@ test("preparePromptContext prunes oversized tool outputs when compaction cannot 
         )
 
         expect(prunedTool).toBeDefined()
-        if (prunedTool?.state.status === "completed") {
-          expect(prunedTool.state.output.length).toBeLessThan(toolPart.state.output.length)
+        const prunedToolState = prunedTool?.state as Message.ToolStateCompleted | undefined
+        const originalToolState = toolPart.state as Message.ToolStateCompleted
+        if (prunedToolState?.status === "completed") {
+          expect(prunedToolState.output.length).toBeLessThan(originalToolState.output.length)
         }
       },
     })

@@ -49,8 +49,8 @@ interface ExecCommandMetadata extends Record<string, unknown> {
   stderrTruncated: boolean
   stdout: string
   stderr: string
-  runInBackground: boolean
-  backgroundTaskId: string | null
+  runInBackground?: boolean
+  backgroundTaskId?: string | null
 }
 
 async function isExistingFile(filePath: string) {

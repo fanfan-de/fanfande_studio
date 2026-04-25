@@ -1,6 +1,9 @@
 import { spawn as spawnChild } from "node:child_process"
 
-export function terminateProcessTree(input: { pid: number | null; kill: (signal?: NodeJS.Signals | number) => boolean }) {
+export function terminateProcessTree(input: {
+  pid?: number | null | undefined
+  kill: (signal?: NodeJS.Signals | number) => boolean
+}) {
   if (!input.pid) return
 
   if (process.platform === "win32") {

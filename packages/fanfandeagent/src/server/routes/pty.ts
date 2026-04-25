@@ -1,4 +1,4 @@
-import type { UpgradeWebSocket } from "hono/helper/websocket"
+import type { UpgradeWebSocket } from "hono/ws"
 import { Hono } from "hono"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
@@ -34,7 +34,9 @@ function parseCursor(value: string | undefined) {
 function readClientMessageData(data: MessageEvent["data"]) {
   if (typeof data === "string") return data
   if (data instanceof ArrayBuffer) return new TextDecoder().decode(data)
-  if (ArrayBuffer.isView(data)) return new TextDecoder().decode(data)
+  if (ArrayBuffer.isView(data)) {
+    return new TextDecoder().decode(new Uint8Array(data.buffer as ArrayBuffer, data.byteOffset, data.byteLength))
+  }
   throw new Error("PTY websocket payload must be text")
 }
 
@@ -109,6 +111,9 @@ export function PtyRoutes(options: { registry: PtyRegistry; upgradeWebSocket: Up
     "/:id/connect",
     options.upgradeWebSocket((c) => {
       const id = c.req.param("id")
+      if (!id) {
+        throw new ApiError(400, "INVALID_PTY_ID", "PTY session id is required")
+      }
       const cursor = parseCursor(c.req.query("cursor"))
       const session = options.registry.get(id)
       if (!session) {

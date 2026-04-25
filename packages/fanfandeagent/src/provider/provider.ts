@@ -104,6 +104,55 @@ export const Model = z
   })
 export type Model = z.infer<typeof Model>
 
+export const testDeepSeekModel: Model = {
+  id: "deepseek-chat",
+  providerID: "deepseek",
+  api: {
+    id: "deepseek-chat",
+    url: "https://api.deepseek.com/v1",
+    npm: DEEPSEEK_SDK_PACKAGE,
+  },
+  name: "DeepSeek Chat",
+  family: "deepseek",
+  capabilities: {
+    temperature: true,
+    reasoning: false,
+    attachment: false,
+    toolcall: true,
+    input: {
+      text: true,
+      audio: false,
+      image: false,
+      video: false,
+      pdf: false,
+    },
+    output: {
+      text: true,
+      audio: false,
+      image: false,
+      video: false,
+      pdf: false,
+    },
+    interleaved: false,
+  },
+  cost: {
+    input: 0,
+    output: 0,
+    cache: {
+      read: 0,
+      write: 0,
+    },
+  },
+  limit: {
+    context: 128_000,
+    output: 8_000,
+  },
+  status: "active",
+  options: {},
+  headers: {},
+  release_date: "2024-01-01",
+}
+
 export const ProviderInfo = z
   .object({
     id: z.string(),
@@ -117,7 +166,7 @@ export const ProviderInfo = z
     runtimeBaseURL: z.string().optional(),
     runtimeHeaders: z.record(z.string(), z.string()).optional(),
     credentialKind: z.enum(["api_key", "oauth_session"]).optional(),
-    credentialSource: z.enum(["credential_store", "legacy_config", "environment"]).optional(),
+    credentialSource: z.enum(["credential_store", "legacy_config", "environment", "external_cache"]).optional(),
     authCapabilities: z.array(ProviderAuth.ProviderAuthCapability).optional(),
     authState: ProviderAuth.ProviderAuthState.optional(),
   })

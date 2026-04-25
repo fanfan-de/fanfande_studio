@@ -1,4 +1,5 @@
 import z from "zod"
+import type { JSONValue } from "@ai-sdk/provider"
 import * as Identifier from "#id/id.ts"
 import * as Tool from "#tool/tool.ts"
 import * as Subtask from "#session/subtask.ts"
@@ -35,7 +36,7 @@ export const CancelSubagentTool = Tool.define(
         type: "json",
         value: {
           ...(result.metadata as Record<string, unknown>),
-        },
+        } as JSONValue,
       }),
     }
   },
