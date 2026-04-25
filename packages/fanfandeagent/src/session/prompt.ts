@@ -22,7 +22,17 @@ import * as SessionTitle from "#session/title.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
-//import type { string } from "yargs";
+
+/**
+ * Agent prompt 编排层。
+ *
+ * 核心流向：
+ * 1. prompt(): 新建 user message / parts，并启动本轮对话。
+ * 2. resume(): 不创建新 user message，只继续推进已有对话。
+ * 3. runLoop(): 每轮重建上下文，拼装 system/messages/tools，交给 Processor 执行。
+ *
+ * 约束：数据库是会话真相；RunningState 只保存当前运行中的 AbortController。
+ */
 
 const log = Log.create({ service: "session.prompt" });
 const DEFAULT_PROMPT_LOOP_LIMIT = 64
@@ -30,20 +40,16 @@ const HARD_PROMPT_LOOP_LIMIT = Flag.FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT
 const DANGLING_TOOL_CALL_ERROR =
     "Recovered dangling tool call from an earlier interrupted run before resuming."
 
-// ====================
-// 业务模块：运行态控制
-// ====================
-// 这里只保存“当前正在执行”的 session loop 控制器，不保存历史消息。
-// 历史会话状态统一以数据库为准，运行态只负责并发保护和取消信号。
+// ---------------------------------------------------------------------------
+// 输入协议与运行态
+// ---------------------------------------------------------------------------
+
+// 当前正在执行的 session loop 控制器；历史消息始终以数据库为准。
 export function state() {
-    // 这里只跟踪当前正在运行的 prompt loop。
     return RunningState.state();
 }
 
-// ====================
-// 业务模块：外部输入协议
-// ====================
-// prompt API 的原始入参会先经过这里校验，再被拆成 message / part 两层结构。
+// 外部 prompt API 入参。保存时会被拆成 message 和 part 两层结构。
 export const PromptInput = z.object({
     sessionID: Identifier.schema("session"),
     model: z
@@ -115,20 +121,6 @@ export const PromptInput = z.object({
     ),
 });
 export type PromptInput = z.infer<typeof PromptInput>;
-
-// function start(sessionID: string): AbortController | undefined {
-//     // 为当前 session 注册唯一的取消信号；若已存在，说明已有 loop 正在运行。
-//     const running = state();
-//     if (running[sessionID]) return;
-
-//     const controller = new AbortController();
-//     running[sessionID] = {
-//         abort: controller,
-//         latestAgent:Input.
-//     };
-
-//     return controller;
-// }
 
 function finish(sessionID: string, controller?: AbortController) {
     RunningState.finish(sessionID, controller);
@@ -321,7 +313,6 @@ function emitTurnFailureContext(input: {
 }
 
 export function cancel(sessionID: string) {
-    // 主动中断某个正在运行的 loop，并从运行态注册表中移除。
     return RunningState.cancel(sessionID);
 }
 
@@ -331,6 +322,11 @@ type RunLoopResult = {
     finishReason?: string
 }
 
+// ---------------------------------------------------------------------------
+// 推理循环
+// ---------------------------------------------------------------------------
+
+// session 级状态机：一个用户输入可能经过多轮模型调用和工具调用，直到最终回答或阻塞。
 async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
     const { sessionID, abort, controller, turn } = input;
     const session = Session.DataBaseRead("sessions", sessionID) as Session.SessionInfo | null;
@@ -348,7 +344,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             if (abort.aborted) throw new Error("Prompt aborted");
 
             Status.set(sessionID, { type: "busy" });
-            //组装 history  memory
+            // 每轮从数据库重建历史，确保工具结果、恢复补写、diff part 都进入上下文。
             const messages = loadMessagesWithParts(sessionID);
 
             let lastUser: Message.User | undefined;
@@ -442,7 +438,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 break;
             }
 
-            //获得runtime model
+            // 本轮实际执行所需的模型、assistant 壳消息和工具集。
             const model = await Provider.getModel(
                 lastUser.model.providerID,
                 lastUser.model.modelID,
@@ -453,7 +449,6 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             currentAssistant = assistantMessage;
             await persistMessageRecord(assistantMessage, turn);
 
-            //解析工具参数
             const tools = await resolveTools({
                 agent,
                 sessionID,
@@ -462,9 +457,8 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 abort,
             });
 
-            //组装 静态系统提示词,(base + 项目环境)
-            const system = [
-                //SystemPrompt.provider(model),//每一个模型对应一个system prompt，我觉得不是很必要
+            // system prompt 由 agent 基础规则、侧聊上下文、项目环境、skills 和用户追加规则组成。
+            const system: string[] = [
                 ...await SystemPrompt.defaultPrompt({
                     agent,
                     session: activeSession,
@@ -473,7 +467,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 ...await SystemPrompt.environment(model),
                 ...await SystemPrompt.skills(sessionID, lastUser.skills ?? []),
                 ...(lastUser.system ? [lastUser.system] : []),
-            ]
+            ].filter((item): item is string => typeof item === "string")
 
             const promptContext = await ContextWindow.preparePromptContext({
                 sessionID,
@@ -566,12 +560,11 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
     }
 }
 
-// ====================
-// 业务模块：入口编排
-// ====================
-// prompt 入口负责两件事：
-// 1. 校验目标 session 存在
-// 2. 先落库用户消息，再启动推理循环
+// ---------------------------------------------------------------------------
+// 对外入口
+// ---------------------------------------------------------------------------
+
+// 新用户输入入口：先记录 user message / parts，再启动 runLoop。
 export const prompt = fn(PromptInput, async (input) => {
     const existingMessages = loadMessagesWithParts(input.sessionID)
     const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
@@ -579,7 +572,6 @@ export const prompt = fn(PromptInput, async (input) => {
         throw new Error(`Session '${input.sessionID}' was not found.`);
     }
 
-    //已有 loop 正在运行。
     const shouldAutoGenerateTitle =
         Session.isDefaultSessionTitle(session.title) &&
         existingMessages.length === 0
@@ -616,8 +608,6 @@ export const prompt = fn(PromptInput, async (input) => {
 
 
     try {
-        //判断当前session最新的assistant message是什么mode，如果mode发生变化，插入一个system message
-        //Session.DataBaseRead("messages")
         userMessage = await createUserMessage(nextInput, {
             snapshot: baselineSnapshot,
         });
@@ -754,7 +744,7 @@ export const ResumeInput = z.object({
     sessionID: Identifier.schema("session"),
 });
 
-// resume 不创建新的 user message，只尝试继续推进既有会话。
+// 恢复入口：等待旧 loop 停止后，基于最近一次 user message 继续推进。
 export const resume = fn(ResumeInput, async (input) => {
     const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
     if (!session) {
@@ -763,10 +753,6 @@ export const resume = fn(ResumeInput, async (input) => {
 
     await waitForStop(input.sessionID);
 
-    //const controller = start(input.sessionID);
-
-
-    // 为当前 session 注册唯一的取消信号；若已存在，说明已有 loop 正在运行。
     const running = state();
     if (running[input.sessionID])
         throw new Error(`Session '${input.sessionID}' is already running.`);
@@ -881,13 +867,12 @@ type LoopRuntimeInput = {
     turn: Orchestrator.TurnContext
 }
 
-// ====================
-// 业务模块：上下文重建
-// ====================
-// 每一轮都从 messages + parts 重建上下文，而不是依赖内存中的缓存副本。
-// 这样工具执行写入的新 part、恢复会话后的补写等状态都能自然进入下一轮推理。
+// ---------------------------------------------------------------------------
+// 上下文重建与恢复保护
+// ---------------------------------------------------------------------------
+
+// 从 messages + parts 重建模型上下文，避免内存态与数据库脱节。
 function loadMessagesWithParts(sessionID: string): Message.WithParts[] {
-    // 每轮都从 messages + parts 重建上下文，避免内存态与数据库脱节。
     const messageInfos = db.findManyWithSchema("messages", Message.MessageInfo, {
         where: [{ column: "sessionID", value: sessionID }],
         orderBy: [{ column: "created", direction: "ASC" }],
@@ -1018,8 +1003,7 @@ function resolvePromptLoopLimit(agent: Agent.AgentInfo) {
 }
 
 function isFinalFinishReason(finishReason?: string) {
-    // `tool-calls` / `unknown` 往往意味着当前轮还没有真正收束，
-    // 其余 finish reason 才可以视为最终回答。
+    // `tool-calls` / `unknown` 表示还可能需要继续工具循环。
     return Boolean(finishReason && !["tool-calls", "unknown"].includes(finishReason));
 }
 
@@ -1117,6 +1101,10 @@ async function persistDiffArtifacts(input: {
     await Session.updatePart(patchPart)
 }
 
+// ---------------------------------------------------------------------------
+// 消息构造与附属任务
+// ---------------------------------------------------------------------------
+
 // 先创建 assistant message 的“骨架记录”。
 // 真正的文本、推理链、工具调用结果会在 Processor 执行期间作为 part 持续补齐。
 function createAssistantMessage(
@@ -1151,19 +1139,7 @@ function createAssistantMessage(
     };
 }
 
-// ====================
-// 业务模块：推理循环协调器
-// ====================
-// loop 是 session 级状态机，它把一次完整回答拆成多个“单轮 processor 执行”：
-// 1. 从数据库重建最新上下文
-// 2. 判断当前输入是否已经被回复
-// 3. 绑定模型和工具，创建本轮 assistant 壳消息
-// 4. 调用 Processor 执行单轮推理和工具调用
-// 5. 根据 finishReason / process 结果决定是否继续下一轮
-// ====================
-// 业务模块：输入归一化
-// ====================
-// 把外部 prompt 入参里的 part 转成数据库统一使用的 Part 结构。
+// 把外部 prompt part 归一化为数据库统一使用的 Part 结构。
 function toUserPart(
     part: PromptInput["parts"][number],
     messageID: string,
@@ -1204,11 +1180,7 @@ function toUserPart(
     }
 }
 
-// ====================
-// 业务模块：用户消息入库
-// ====================
-// 用户输入会先落成一条 user message，再拆成多条 part。
-// 这样后续无论是模型消费、UI 展示，还是工具补写，都可以复用同一套消息模型。
+// 用户输入先落成一条 user message，再拆成多条 part，供模型、UI 和工具链复用。
 async function createUserMessage(input: PromptInput, options?: { snapshot?: string }) {
     const messageinfo: Message.User = {
         id: Identifier.ascending("message"),
@@ -1238,7 +1210,7 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
     }
 
 
-    // part 校验失败不会阻断整条消息入库，但会打日志，便于排查调用方传参问题。
+    // 这里仅记录校验问题，避免单个异常 part 阻断整条用户消息。
     parts.forEach((part, index) => {
         const parsedPart = Message.Part.safeParse(part);
         if (parsedPart.success) return;
@@ -1254,11 +1226,11 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         });
     });
 
-      return {
-          messageinfo,
-          parts,
-      };
-  }
+    return {
+        messageinfo,
+        parts,
+    };
+}
 
 function isSessionTitleSourcePart(part: Message.Part) {
     return part.type === "text" || part.type === "file" || part.type === "image"
