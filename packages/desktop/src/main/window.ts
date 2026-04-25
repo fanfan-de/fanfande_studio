@@ -1,6 +1,7 @@
 import { BrowserWindow, app } from "electron"
 import fs from "node:fs"
 import path from "node:path"
+import { safeError } from "./safe-console"
 import { clearManualMaximize, sendWindowState } from "./window-state"
 
 function resolvePreloadPath(mainDir: string) {
@@ -22,7 +23,7 @@ function resolvePreloadPath(mainDir: string) {
   if (resolved) return resolved
 
   // Keep Electron startup resilient and surface enough detail for diagnosis.
-  console.error("[desktop] preload not found, fallback:", candidatePaths[0], "candidates:", candidatePaths)
+  safeError("[desktop] preload not found, fallback:", candidatePaths[0], "candidates:", candidatePaths)
   return candidatePaths[0]
 }
 

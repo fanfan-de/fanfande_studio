@@ -6,6 +6,7 @@ import net from "node:net"
 import path from "node:path"
 import type { Readable } from "node:stream"
 import { setTimeout as delay } from "node:timers/promises"
+import { safeError, safeLog } from "./safe-console"
 import { createSourceRuntimeSnapshot, shouldRestartForSourceRuntimeChange, type SourceRuntimeSnapshot } from "./source-runtime-watch"
 
 const MANAGED_AGENT_BASE_URL_ENV = "FANFANDE_AGENT_BASE_URL"
@@ -38,11 +39,11 @@ let sourceRuntimeRestartPromise: Promise<void> | undefined
 let sourceRuntimeSnapshot: SourceRuntimeSnapshot | undefined
 
 function log(message: string, ...details: unknown[]) {
-  console.log("[desktop][agent]", message, ...details)
+  safeLog("[desktop][agent]", message, ...details)
 }
 
 function logError(message: string, error: unknown) {
-  console.error("[desktop][agent]", message, error)
+  safeError("[desktop][agent]", message, error)
 }
 
 function resolveBundledRuntimeCandidates() {
@@ -185,7 +186,7 @@ function attachProcessLogging(child: ChildProcessByStdio<null, Readable, Readabl
     for (const line of chunk.split(/\r?\n/)) {
       const trimmed = line.trim()
       if (!trimmed) continue
-      console.error("[desktop][agent]", trimmed)
+      safeError("[desktop][agent]", trimmed)
     }
   })
 }

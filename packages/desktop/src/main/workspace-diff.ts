@@ -185,10 +185,6 @@ async function buildAddedPatch(directory: string, file: string, emptyFilePath: s
       "diff",
       "--no-index",
       "--no-ext-diff",
-      "--label",
-      `a/${file}`,
-      "--label",
-      `b/${file}`,
       emptyFilePath,
       file,
     ],
@@ -198,7 +194,28 @@ async function buildAddedPatch(directory: string, file: string, emptyFilePath: s
     },
   )
 
-  return result.stdout.trim()
+  return normalizeAddedPatch(result.stdout, file)
+}
+
+function normalizeAddedPatch(patch: string, file: string) {
+  const trimmed = patch.trim()
+  if (!trimmed) return ""
+
+  return trimmed
+    .split(/\r?\n/)
+    .map((line) => {
+      if (line.startsWith("diff --git ")) {
+        return `diff --git a/${file} b/${file}`
+      }
+      if (line.startsWith("--- ")) {
+        return `--- a/${file}`
+      }
+      if (line.startsWith("+++ ")) {
+        return `+++ b/${file}`
+      }
+      return line
+    })
+    .join("\n")
 }
 
 export async function getWorkspaceGitDiff(directory: string, runner: CommandRunner = runGit): Promise<AgentSessionDiffSummary | null> {

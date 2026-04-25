@@ -4,7 +4,7 @@ import * as Identifier from "#id/id.ts"
 import { Instance } from "#project/instance.ts"
 
 describe("prompt loop unresolved tool guard", () => {
-  it("returns the latest assistant without creating a new step when a tool is still unresolved", async () => {
+  it("repairs dangling tool calls and continues the loop", async () => {
     let streamCalls = 0
 
     mock.module("#provider/provider.ts", () => ({
@@ -13,9 +13,15 @@ describe("prompt loop unresolved tool guard", () => {
         modelID: "test-model",
       }),
       getSelection: async () => ({}),
-      getModel: async () => {
-        throw new Error("getModel should not be called while an unresolved tool is blocking the loop")
-      },
+      getModel: async () => ({
+        id: "test-model",
+        providerID: "test-provider",
+        capabilities: {
+          reasoning: false,
+          attachment: false,
+          toolcall: false,
+        },
+      }),
       getLanguage: async (model: Record<string, unknown>) => model,
     }))
 
@@ -23,7 +29,16 @@ describe("prompt loop unresolved tool guard", () => {
       stream: async () => {
         streamCalls += 1
         return {
-          fullStream: (async function* () {})(),
+          fullStream: (async function* () {
+            yield { type: "start" }
+            yield { type: "text-start" }
+            yield { type: "text-delta", text: "resumed" }
+            yield { type: "text-end" }
+            yield {
+              type: "finish",
+              finishReason: "stop",
+            }
+          })(),
         }
       },
     }))
@@ -105,16 +120,29 @@ describe("prompt loop unresolved tool guard", () => {
           sessionID: session.id,
         })
 
-        expect(result.info.id).toBe(assistant.id)
-        expect(streamCalls).toBe(0)
+        expect(result.info.id).not.toBe(assistant.id)
+        expect(result.info.finishReason).toBe("stop")
+        expect(streamCalls).toBe(1)
 
-        const assistants: string[] = []
+        const assistants: Array<{ info: { id: string; role: string }; parts: any[] }> = []
         for await (const item of Message.stream(session.id)) {
           if (item.info.role !== "assistant") continue
-          assistants.push(item.info.id)
+          assistants.push(item)
         }
 
-        expect(assistants).toEqual([assistant.id])
+        expect(assistants.map((item) => item.info.id)).toHaveLength(2)
+        expect(assistants.at(-1)?.info.id).toBe(result.info.id)
+
+        const recoveredAssistant = assistants.find((item) => item.info.id === assistant.id)
+        const recoveredTool = recoveredAssistant?.parts.find(
+          (part) => part.type === "tool" && part.callID === "call-stuck",
+        )
+
+        expect(recoveredTool?.state.status).toBe("error")
+        if (!recoveredTool || recoveredTool.state.status !== "error") {
+          throw new Error("expected dangling tool call to be repaired as an error")
+        }
+        expect(recoveredTool.state.error).toContain("interrupted run")
       },
     })
   })

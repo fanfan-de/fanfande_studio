@@ -62,13 +62,13 @@ describe("workspace git diff", () => {
         }
       }
 
-      if (command.includes("diff --no-index --no-ext-diff --label a/notes.txt --label b/notes.txt")) {
+      if (command.includes("diff --no-index --no-ext-diff")) {
         return {
           exitCode: 1,
           stderr: "",
           stdout: [
-            "diff --git a/notes.txt b/notes.txt",
-            "--- a/notes.txt",
+            "diff --git a/C:/tmp/empty b/notes.txt",
+            "--- a/C:/tmp/empty",
             "+++ b/notes.txt",
             "@@ -0,0 +1 @@",
             "+hello world",
@@ -119,13 +119,13 @@ describe("workspace git diff", () => {
         }
       }
 
-      if (command.includes("diff --no-index --no-ext-diff --label a/random.txt --label b/random.txt")) {
+      if (command.includes("diff --no-index --no-ext-diff")) {
         return {
           exitCode: 1,
           stderr: "",
           stdout: [
-            "diff --git a/random.txt b/random.txt",
-            "--- a/random.txt",
+            "diff --git a/C:/tmp/empty b/random.txt",
+            "--- a/C:/tmp/empty",
             "+++ b/random.txt",
             "@@ -0,0 +1 @@",
             "+Random content",

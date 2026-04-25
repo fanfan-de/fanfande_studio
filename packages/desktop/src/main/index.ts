@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { registerIpcHandlers } from "./ipc"
 import { ensureManagedAgentRunning, stopManagedAgent } from "./managed-agent"
 import { createApplicationMenus } from "./menu"
+import { safeError } from "./safe-console"
 import { createWindow } from "./window"
 
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
@@ -12,7 +13,7 @@ void app.whenReady().then(async () => {
   try {
     await ensureManagedAgentRunning()
   } catch (error) {
-    console.error("[desktop] failed to start managed agent", error)
+    safeError("[desktop] failed to start managed agent", error)
   }
 
   const menus = createApplicationMenus()

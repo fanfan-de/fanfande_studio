@@ -16,6 +16,7 @@ import { getWorkspaceGitDiff } from "./workspace-diff"
 import { readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
 import type { ApplicationMenus } from "./menu"
 import { PtyProxyManager, PTY_EVENT_CHANNEL } from "./pty-proxy"
+import { safeWarn } from "./safe-console"
 import { WorkspaceWatchManager } from "./workspace-watch"
 import type {
   AgentEnvelope,
@@ -852,7 +853,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     const sessionID = input.sessionID.trim()
     const sessionResult = await requestAgentJSON<AgentSessionInfo>(`/api/sessions/${encodeURIComponent(sessionID)}`)
     const workspaceDiff = await getWorkspaceGitDiff(sessionResult.data.directory).catch((error) => {
-      console.warn("[desktop] getWorkspaceGitDiff failed:", error)
+      safeWarn("[desktop] getWorkspaceGitDiff failed:", error)
       return null
     })
     if (workspaceDiff) return workspaceDiff

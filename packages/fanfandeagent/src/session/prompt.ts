@@ -27,6 +27,8 @@ import { resolveTools } from "./resolve-tools.ts";
 const log = Log.create({ service: "session.prompt" });
 const DEFAULT_PROMPT_LOOP_LIMIT = 64
 const HARD_PROMPT_LOOP_LIMIT = Flag.FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT
+const DANGLING_TOOL_CALL_ERROR =
+    "Recovered dangling tool call from an earlier interrupted run before resuming."
 
 // ====================
 // 业务模块：运行态控制
@@ -148,6 +150,20 @@ async function persistMessageRecord(
     }
 
     await Session.updateMessage(message)
+}
+
+async function persistRecoveredToolError(
+    part: Message.ToolPart,
+    turn?: Orchestrator.TurnContext,
+) {
+    if (turn) {
+        turn.emit("tool.call.failed", {
+            part,
+        })
+        return
+    }
+
+    await Session.updatePart(part)
 }
 
 async function removePartRecord(
@@ -383,6 +399,21 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     `Prompt loop exceeded ${maxLoopIterations} iterations without reaching a final response. ` +
                     `If this task legitimately needs more tool steps, increase FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT.`,
                 );
+            }
+
+            const recoveredDanglingToolCalls = await recoverDanglingToolCallsAfterUser(
+                messages,
+                lastUser.id,
+                turn,
+            )
+            if (recoveredDanglingToolCalls > 0) {
+                log.warn("recovered dangling tool calls before resuming the prompt loop", {
+                    sessionID,
+                    userMessageID: lastUser.id,
+                    recoveredDanglingToolCalls,
+                })
+                iteration -= 1
+                continue
             }
 
             const blockingInteraction = findBlockingAssistantInteractionAfterUser(messages, lastUser.id);
@@ -923,6 +954,56 @@ function findBlockingAssistantInteractionAfterUser(
             }
         }
     }
+}
+
+async function recoverDanglingToolCallsAfterUser(
+    messages: Message.WithParts[],
+    userMessageID: string,
+    turn?: Orchestrator.TurnContext,
+) {
+    let afterUser = false
+    let recovered = 0
+
+    for (const message of messages) {
+        if (!afterUser) {
+            afterUser = message.info.id === userMessageID
+            continue
+        }
+
+        if (message.info.role !== "assistant") continue
+
+        for (const part of message.parts) {
+            if (part.type !== "tool") continue
+            if (part.state.status !== "pending" && part.state.status !== "running") continue
+
+            const end = Date.now()
+            const repaired = Message.ToolPart.parse({
+                ...part,
+                state: {
+                    status: "error",
+                    input: part.state.input,
+                    raw: part.state.raw,
+                    error: DANGLING_TOOL_CALL_ERROR,
+                    metadata:
+                        part.state.status === "running"
+                            ? part.state.metadata
+                            : undefined,
+                    time: {
+                        start:
+                            part.state.status === "running"
+                                ? part.state.time.start
+                                : end,
+                        end,
+                    },
+                },
+            })
+
+            await persistRecoveredToolError(repaired, turn)
+            recovered += 1
+        }
+    }
+
+    return recovered
 }
 
 function resolvePromptLoopLimit(agent: Agent.AgentInfo) {
