@@ -992,13 +992,45 @@ describe("App", () => {
       })
     })
 
+    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
+
     expect(currentSessionTab).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to session Chat 1 / Side chat" })).not.toBeInTheDocument()
-    expect(screen.getByText("Anchored reply snapshot")).toBeInTheDocument()
-    expect(screen.getByText("Scoped")).toBeInTheDocument()
-    expect(screen.getByText("Focused on this reply only. Messages here stay outside the main thread context.")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Hide" })).toBeInTheDocument()
+    expect(within(nestedSideChat).getByText("Anchored reply snapshot")).toBeInTheDocument()
+    expect(within(nestedSideChat).queryByText("Scoped")).not.toBeInTheDocument()
+    expect(
+      within(nestedSideChat).queryByText("Focused on this reply only. Messages here stay outside the main thread context."),
+    ).not.toBeInTheDocument()
+    expect(within(nestedSideChat).getByRole("button", { name: "Hide side chat" })).toBeInTheDocument()
+    expect(within(nestedSideChat).getByText("Ask a follow-up about this reply.")).toBeInTheDocument()
     expect(screen.getAllByRole("textbox", { name: "Task draft" }).length).toBeGreaterThan(1)
+  })
+
+  it("keeps the response action row persistent after hiding an existing side chat", async () => {
+    render(<App />)
+
+    const threadSideChatButton = await screen.findByRole("button", { name: "Sidechat" })
+    const assistantTurn = threadSideChatButton.closest(".assistant-turn") as HTMLElement | null
+
+    expect(assistantTurn).not.toBeNull()
+
+    fireEvent.click(threadSideChatButton)
+
+    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
+    fireEvent.click(within(nestedSideChat).getByRole("button", { name: "Hide side chat" }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole("region", { name: "Nested side chat" })).not.toBeInTheDocument()
+    })
+
+    const responseActionRow = (assistantTurn as HTMLElement).querySelector(".assistant-response-side-chat") as HTMLElement | null
+
+    expect(responseActionRow).not.toBeNull()
+    expect(responseActionRow).toHaveClass("is-persistent")
+    expect(within(responseActionRow as HTMLElement).getByRole("button", { name: "Sidechat" })).toHaveAttribute(
+      "title",
+      "1 side chat thread",
+    )
   })
 
   it("copies the response content from the response action row", async () => {
@@ -1087,10 +1119,11 @@ describe("App", () => {
     const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
     expect(await within(nestedSideChat).findByText("I found the root cause in the config parser.")).toBeInTheDocument()
 
-    expect(within(nestedSideChat).getByText("Scoped")).toBeInTheDocument()
+    expect(within(nestedSideChat).queryByText("Scoped")).not.toBeInTheDocument()
     expect(
-      within(nestedSideChat).getByText("Focused on this reply only. Messages here stay outside the main thread context."),
-    ).toBeInTheDocument()
+      within(nestedSideChat).queryByText("Focused on this reply only. Messages here stay outside the main thread context."),
+    ).not.toBeInTheDocument()
+    expect(within(nestedSideChat).getByRole("button", { name: "Hide side chat" })).toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("region", { name: "Reasoning" })).toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("button", { name: /read-file/i })).toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("region", { name: "File Changes" })).toBeInTheDocument()
@@ -9349,6 +9382,10 @@ describe("App", () => {
     )
     expect(styles).toMatch(/\.assistant-reasoning-separator::before,\s*\.assistant-reasoning-separator::after\s*\{[^}]*height:\s*1px;/s)
     expect(styles).toMatch(/\.assistant-section\.is-response\s+\.trace-item-header\s*\{[^}]*display:\s*none;/s)
+    expect(styles).toMatch(/\.assistant-response-side-chat\s*\{[^}]*gap:\s*8px;[^}]*margin-top:\s*0;/s)
+    expect(styles).toMatch(
+      /@media \(hover:\s*hover\) and \(pointer:\s*fine\)\s*\{[\s\S]*\.assistant-response-side-chat:not\(\.is-persistent\) \.assistant-response-actions\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;[\s\S]*\.assistant-section\.is-response:hover \.assistant-response-side-chat \.assistant-response-actions,[\s\S]*\.assistant-response-side-chat\.is-persistent \.assistant-response-actions\s*\{[^}]*opacity:\s*1;[^}]*pointer-events:\s*auto;/s,
+    )
     expect(styles).toMatch(/\.trace-item-toggle\s*\{[^}]*background:\s*transparent;[^}]*text-align:\s*left;[^}]*cursor:\s*pointer;/s)
   })
 

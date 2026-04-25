@@ -27,7 +27,7 @@
   width: min(100%, 1320px);
   height: min(calc(100dvh - 64px), 860px);
   max-height: min(calc(100dvh - 64px), 860px);
-  border-color: var(--seg-border-strong);
+  border-color: var(--seg-border);
   border-radius: var(--seg-radius-md);
   background: var(--seg-shell);
   display: grid;
@@ -238,7 +238,7 @@ body.is-dragging-settings-page {
 }
 
 .settings-primary-nav-item.is-active {
-  border-color: var(--mix-seg-border-strong-76-transparent-24);
+  border-color: var(--mix-seg-border-76-transparent-24);
   background: var(--mix-seg-accent-soft-42-seg-shell-58);
   color: #182532;
 }
@@ -1118,7 +1118,7 @@ body.is-dragging-settings-page {
   flex: 0 0 auto;
   width: 48px;
   height: 28px;
-  border: 1px solid var(--seg-border-strong);
+  border: 1px solid var(--seg-border);
   border-radius: 999px;
   background: #d7dde6;
 }
@@ -1174,7 +1174,7 @@ body.is-dragging-settings-page {
 
 .settings-theme-palette-option:hover,
 .settings-theme-palette-option:focus-visible {
-  border-color: var(--mix-seg-accent-22-seg-border-strong-78);
+  border-color: var(--mix-seg-accent-22-seg-border-78);
   background: var(--mix-seg-panel-muted-72-seg-panel-28);
   color: var(--seg-text-1);
 }
@@ -1270,7 +1270,7 @@ body.is-dragging-settings-page {
 }
 
 .settings-color-mode-option:hover {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border-default);
   color: var(--color-text-primary);
 }
 
@@ -1417,7 +1417,7 @@ body.is-dragging-settings-page {
 }
 
 .settings-theme-color-picker::-webkit-color-swatch {
-  border: 1px solid var(--seg-border-strong);
+  border: 1px solid var(--seg-border);
   border-radius: var(--seg-radius-xs);
 }
 
@@ -1738,7 +1738,7 @@ body.is-dragging-settings-page {
 .composer-selector-button:focus-visible,
 .composer-menu-option:hover,
 .composer-menu-option:focus-visible {
-  border-color: var(--seg-border-strong);
+  border-color: var(--seg-border);
   background: #ffffff;
   color: var(--seg-text-1);
   box-shadow: none;
@@ -1941,7 +1941,7 @@ body.is-dragging-settings-page {
 }
 
 .settings-page {
-  border: 1px solid var(--seg-border-strong);
+  border: 1px solid var(--seg-border);
   background: var(--seg-shell);
   box-shadow: var(--shadow-md);
 }
@@ -1976,7 +1976,7 @@ body.is-dragging-settings-page {
 
 .settings-primary-nav-item:hover,
 .settings-primary-nav-item:focus-visible {
-  border-color: var(--seg-border-strong);
+  border-color: var(--seg-border);
   background: var(--mix-seg-panel-72-seg-panel-muted-28);
   color: var(--seg-text-1);
 }
@@ -2023,8 +2023,8 @@ body.is-dragging-settings-page {
 }
 
 .settings-toggle-control {
-  border-color: var(--seg-border-strong);
-  background: var(--mix-seg-border-strong-72-seg-panel-28);
+  border-color: var(--seg-border);
+  background: var(--mix-seg-border-72-seg-panel-28);
 }
 
 .settings-toggle-thumb {

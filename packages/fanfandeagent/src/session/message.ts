@@ -71,6 +71,33 @@ function summarizeModelCapabilitiesForLog(model: Provider.Model) {
     }
 }
 
+function shouldReplayAssistantReasoning(model: Provider.Model) {
+    const interleaved = model.capabilities.interleaved
+    if (interleaved === true) return true
+    if (interleaved && typeof interleaved === "object") {
+        return interleaved.field === "reasoning_content"
+    }
+
+    // DeepSeek reasoning/tool-call history must echo reasoning_content back on
+    // follow-up requests. Keep a provider-level fallback for older catalog
+    // entries that do not mark the interleaved capability yet.
+    const providerID = typeof model.providerID === "string" ? model.providerID.trim().toLowerCase() : ""
+    const sdkPackage =
+        model.api && typeof model.api.npm === "string"
+            ? model.api.npm.trim().toLowerCase()
+            : ""
+    const apiURL =
+        model.api && typeof model.api.url === "string"
+            ? model.api.url.trim().toLowerCase()
+            : ""
+
+    return providerID === "deepseek" || sdkPackage === "@ai-sdk/deepseek" || apiURL.includes("deepseek")
+}
+
+function assistantContentHasReasoning(content: Array<{ type?: unknown }>) {
+    return content.some((part) => part?.type === "reasoning")
+}
+
 function summarizeQuestionAnswerForModel(part: TextPart) {
     const metadata = part.metadata
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -732,6 +759,7 @@ export async function toModelMessages(
     const result: ModelMessage[] = []
     const toolRuntimeCache = new Map<string, Promise<any | undefined>>()
     const modelLabel = `${model.providerID}/${model.id}`
+    const replayAssistantReasoning = shouldReplayAssistantReasoning(model)
     const imageCount = input.reduce((count, item) => count + item.parts.filter((part) => part.type === "image").length, 0)
     const fileCount = input.reduce((count, item) => count + item.parts.filter((part) => part.type === "file").length, 0)
 
@@ -801,9 +829,16 @@ export async function toModelMessages(
                     text: summarizeQuestionAnswerForModel(part),
                 }
             case "reasoning":
-                // Keep reasoning parts available for local UI/debugging, but do not
-                // feed prior chain-of-thought back into subsequent model turns.
-                return null
+                if (!replayAssistantReasoning) {
+                    // Keep reasoning parts available for local UI/debugging, but
+                    // only replay them for providers that explicitly require
+                    // reasoning_content on follow-up requests.
+                    return null
+                }
+                return {
+                    type: "reasoning" as const,
+                    text: part.text,
+                }
             case "file":
                 {
                     const message = unsupportedAttachmentMessage(part, model)
@@ -943,18 +978,24 @@ export async function toModelMessages(
                     state.status === "error" ||
                     state.status === "denied"
                 ) {
-                    flushAssistant()
+                    const mergeLeadingAssistantContent =
+                        replayAssistantReasoning && assistantContentHasReasoning(assistantContent)
 
-                    const assistantToolContent: any[] = [
-                        {
-                            type: "tool-call" as const,
-                            toolCallId: part.callID,
-                            toolName: part.tool,
-                            input: state.input,
-                            ...(part.providerExecuted ? { providerExecuted: true } : {}),
-                            ...(part.metadata ? { providerOptions: part.metadata } : {}),
-                        },
-                    ]
+                    const assistantToolContent: any[] = mergeLeadingAssistantContent ? [...assistantContent] : []
+                    if (mergeLeadingAssistantContent) {
+                        assistantContent.length = 0
+                    } else {
+                        flushAssistant()
+                    }
+
+                    assistantToolContent.push({
+                        type: "tool-call" as const,
+                        toolCallId: part.callID,
+                        toolName: part.tool,
+                        input: state.input,
+                        ...(part.providerExecuted ? { providerExecuted: true } : {}),
+                        ...(part.metadata ? { providerOptions: part.metadata } : {}),
+                    })
 
                     if (approvalRequest) {
                         assistantToolContent.push({

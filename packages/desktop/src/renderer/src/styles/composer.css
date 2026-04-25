@@ -928,7 +928,7 @@
 .composer-menu-option:focus-visible,
 .composer-menu-option.is-selected {
   background: var(--seg-composer-button-surface);
-  border-color: var(--seg-border-strong);
+  border-color: var(--seg-border);
   color: var(--seg-composer-button-text);
 }
 
@@ -943,12 +943,12 @@
 
 .composer-menu-panel,
 .composer-utility-git-branch-panel {
-  border-color: var(--seg-border-strong);
+  border-color: var(--seg-border);
   background: var(--seg-dropdown-menu-surface);
 }
 
 .git-branch-create-dialog {
-  border-color: var(--seg-border-strong);
+  border-color: var(--seg-border);
   background: #fbfcfd;
 }
 
@@ -1047,13 +1047,13 @@
 
 .composer-menu-panel,
 .composer-utility-git-branch-panel {
-  border: 1px solid var(--seg-border-strong);
+  border: 1px solid var(--seg-border);
   background: var(--seg-dropdown-menu-surface);
   box-shadow: var(--shadow-sm);
 }
 
 .git-branch-create-dialog {
-  border: 1px solid var(--seg-border-strong);
+  border: 1px solid var(--seg-border);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-sm);
 }

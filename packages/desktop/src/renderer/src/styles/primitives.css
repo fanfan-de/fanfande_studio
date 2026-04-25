@@ -362,7 +362,7 @@
 .secondary-button:hover,
 .secondary-button:focus-visible {
   background: var(--surface-elevated);
-  border-color: var(--seg-border-strong);
+  border-color: var(--seg-border);
   color: var(--seg-text-1);
 }
 

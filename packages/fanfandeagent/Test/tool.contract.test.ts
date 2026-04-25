@@ -713,6 +713,7 @@ describe("tool contract", () => {
           video: false,
           pdf: false,
         },
+        interleaved: false,
       },
     } as any
 
@@ -784,6 +785,205 @@ describe("tool contract", () => {
         }),
       ]),
     )
+  })
+
+  it("replays assistant reasoning parts for models that require reasoning_content", async () => {
+    const model = {
+      id: "deepseek-reasoner",
+      providerID: "deepseek",
+      api: {
+        id: "deepseek-reasoner",
+        url: "https://api.deepseek.com",
+        npm: "@ai-sdk/deepseek",
+      },
+      capabilities: {
+        reasoning: true,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+        interleaved: {
+          field: "reasoning_content",
+        },
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "assistant-required-reasoning-history",
+            sessionID: "session-required-reasoning-history",
+            role: "assistant",
+            created: Date.now(),
+            parentID: "user-required-reasoning-history",
+            modelID: "deepseek-reasoner",
+            providerID: "deepseek",
+            agent: "plan",
+            path: {
+              cwd: ".",
+              root: ".",
+            },
+            cost: 0,
+            tokens: {
+              input: 0,
+              output: 0,
+              reasoning: 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            },
+          } as Message.Assistant,
+          parts: [
+            {
+              id: "assistant-required-reasoning-1",
+              sessionID: "session-required-reasoning-history",
+              messageID: "assistant-required-reasoning-history",
+              type: "text",
+              text: "Final answer",
+            } as Message.TextPart,
+            {
+              id: "assistant-required-reasoning-2",
+              sessionID: "session-required-reasoning-history",
+              messageID: "assistant-required-reasoning-history",
+              type: "reasoning",
+              text: "Required reasoning context",
+              time: {
+                start: Date.now(),
+              },
+            } as Message.ReasoningPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      content: [
+        {
+          type: "text",
+          text: "Final answer",
+        },
+        {
+          type: "reasoning",
+          text: "Required reasoning context",
+        },
+      ],
+    })
+  })
+
+  it("keeps reasoning and tool-call history in the same assistant message for reasoning_content models", async () => {
+    const model = {
+      id: "deepseek-reasoner",
+      providerID: "deepseek",
+      api: {
+        id: "deepseek-reasoner",
+        url: "https://api.deepseek.com",
+        npm: "@ai-sdk/deepseek",
+      },
+      capabilities: {
+        reasoning: true,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+        interleaved: {
+          field: "reasoning_content",
+        },
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "assistant-reasoning-tool-history",
+            sessionID: "session-reasoning-tool-history",
+            role: "assistant",
+            created: Date.now(),
+            parentID: "user-reasoning-tool-history",
+            modelID: "deepseek-reasoner",
+            providerID: "deepseek",
+            agent: "plan",
+            path: {
+              cwd: ".",
+              root: ".",
+            },
+            cost: 0,
+            tokens: {
+              input: 0,
+              output: 0,
+              reasoning: 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            },
+          } as Message.Assistant,
+          parts: [
+            {
+              id: "assistant-reasoning-tool-1",
+              sessionID: "session-reasoning-tool-history",
+              messageID: "assistant-reasoning-tool-history",
+              type: "reasoning",
+              text: "Need to inspect the file before answering.",
+              time: {
+                start: Date.now(),
+              },
+            } as Message.ReasoningPart,
+            {
+              id: "assistant-reasoning-tool-2",
+              sessionID: "session-reasoning-tool-history",
+              messageID: "assistant-reasoning-tool-history",
+              type: "tool",
+              callID: "call-reasoning-tool",
+              tool: "read-file",
+              state: {
+                status: "waiting-approval",
+                approvalID: "approval-reasoning-tool",
+                input: {
+                  path: "README.md",
+                },
+                time: {
+                  start: Date.now(),
+                },
+              },
+            } as Message.ToolPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    const assistantMessages = messages.filter((item) => item.role === "assistant") as any[]
+    expect(assistantMessages).toHaveLength(1)
+    expect(assistantMessages[0]?.content).toEqual([
+      {
+        type: "reasoning",
+        text: "Need to inspect the file before answering.",
+      },
+      {
+        type: "tool-call",
+        toolCallId: "call-reasoning-tool",
+        toolName: "read-file",
+        input: {
+          path: "README.md",
+        },
+      },
+    ])
   })
 
   it("fails fast with a clear error when the model does not support image input", async () => {

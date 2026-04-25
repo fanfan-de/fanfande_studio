@@ -67,6 +67,7 @@ interface ComposerProps {
   onRemoveAttachment: (path: string) => void
   onSend: (draftStateOverride?: ComposerDraftState) => void | Promise<void>
   permissionMode?: ComposerPermissionMode
+  placeholder?: string
   reasoningEffortOptions: ComposerReasoningEffortOption[]
   selectedMcpServerIDs: string[]
   selectedModel: string | null
@@ -510,6 +511,7 @@ export function Composer({
   onRemoveAttachment,
   onSend,
   permissionMode = "default",
+  placeholder = "Describe the UI, implementation task, or review target for the agent.",
   reasoningEffortOptions,
   selectedMcpServerIDs,
   selectedModel,
@@ -1019,7 +1021,7 @@ export function Composer({
               />
             }
             ErrorBoundary={LexicalErrorBoundary}
-            placeholder={<div className="composer-editor-placeholder">Describe the UI, implementation task, or review target for the agent.</div>}
+            placeholder={<div className="composer-editor-placeholder">{placeholder}</div>}
           />
         </div>
       </LexicalComposer>

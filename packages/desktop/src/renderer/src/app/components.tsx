@@ -6800,15 +6800,16 @@ function InlineSideChatThread({
     <section className="inline-side-chat-thread" aria-label="Nested side chat">
       <header className="inline-side-chat-header">
         <div className="inline-side-chat-copy">
-          <div className="inline-side-chat-header-row">
-            <span className="label">Side chat</span>
-            <span className="inline-side-chat-pill">Scoped</span>
-          </div>
           <strong title={session.origin?.anchorPreview || session.title}>{session.origin?.anchorPreview || session.title}</strong>
-          <p>Focused on this reply only. Messages here stay outside the main thread context.</p>
         </div>
-        <button className="secondary-button inline-side-chat-close" type="button" onClick={onHide}>
-          Hide
+        <button
+          aria-label="Hide side chat"
+          className="inline-side-chat-close"
+          title="Hide side chat"
+          type="button"
+          onClick={onHide}
+        >
+          <CloseIcon />
         </button>
       </header>
 
@@ -6866,6 +6867,7 @@ function InlineSideChatThread({
           selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
           selectedSkillIDs={composer.selectedSkillIDs}
           showModelSelector={false}
+          placeholder="Ask a follow-up about this reply."
           showProjectTagCommands={false}
           skillOptions={composer.skillOptions}
           unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
@@ -7740,7 +7742,15 @@ export function ThreadView({
                           if (!responseCopyText && !canOpenSideChat) return null
 
                           return (
-                            <div className="assistant-response-side-chat">
+                            <div
+                              className={joinClassNames(
+                                "assistant-response-side-chat",
+                                (copiedResponseTurnID === turn.id ||
+                                  activeInlineSideChat ||
+                                  existingSideChatCount > 0) &&
+                                  "is-persistent",
+                              )}
+                            >
                               <div className="assistant-response-actions">
                                 {responseCopyText ? (
                                   <button

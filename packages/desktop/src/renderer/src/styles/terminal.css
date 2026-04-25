@@ -258,7 +258,7 @@
 .sidebar-resizer::before,
 .workbench-pane-resizer::before,
 .terminal-panel-resizer::after {
-  background: var(--seg-border-strong);
+  background: var(--seg-border);
   box-shadow: none;
 }
 

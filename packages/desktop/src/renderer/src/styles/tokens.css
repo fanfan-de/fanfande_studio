@@ -52,7 +52,6 @@
   --text-on-dark-light: #fafaf9;
   --border-subtle-light: rgba(41, 37, 36, 0.08);
   --border-default-light: #e7e5e4;
-  --border-strong-light: #d6d3d1;
   --shadow-sm-light: 0 14px 30px rgba(41, 37, 36, 0.06);
   --shadow-md-light: 0 20px 46px rgba(41, 37, 36, 0.08);
   --shadow-lg-light: 0 28px 68px rgba(41, 37, 36, 0.12);
@@ -75,7 +74,6 @@
   --text-on-dark-dark: #fafaf9;
   --border-subtle-dark: rgba(231, 229, 228, 0.14);
   --border-default-dark: rgba(231, 229, 228, 0.24);
-  --border-strong-dark: rgba(231, 229, 228, 0.34);
   --shadow-sm-dark: 0 12px 28px rgba(12, 10, 9, 0.28);
   --shadow-md-dark: 0 18px 40px rgba(12, 10, 9, 0.34);
   --shadow-lg-dark: 0 28px 64px rgba(12, 10, 9, 0.42);
@@ -253,7 +251,8 @@
   --mix-seg-accent-14-transparent-86-light: rgba(212, 107, 99, 0.14);
   --mix-seg-accent-14-seg-border-86-light: #e4d4d2;
   --mix-seg-accent-16-transparent-84-light: rgba(212, 107, 99, 0.16);
-  --mix-seg-accent-22-seg-border-strong-78-light: #d6bcb9;
+  --mix-seg-accent-22-seg-border-78-light:
+    color-mix(in srgb, var(--brand-primary) 22%, var(--border-default-light) 78%);
   --mix-seg-accent-24-transparent-76-light: rgba(212, 107, 99, 0.24);
   --mix-seg-accent-24-seg-border-76-light: #e2c8c5;
   --mix-seg-accent-26-seg-border-74-light: #e2c5c2;
@@ -288,8 +287,8 @@
   --mix-seg-border-88-white-12-light: #eae8e7;
   --mix-seg-border-90-transparent-10-light: rgba(231, 229, 228, 0.9);
   --mix-seg-border-96-transparent-4-light: rgba(231, 229, 228, 0.96);
-  --mix-seg-border-strong-72-seg-panel-28-light: #e1dfde;
-  --mix-seg-border-strong-76-transparent-24-light: rgba(214, 211, 209, 0.76);
+  --mix-seg-border-72-seg-panel-28-light:
+    color-mix(in srgb, var(--border-default-light) 72%, var(--surface-panel-light) 28%);
   --mix-seg-danger-10-transparent-90-light: rgba(159, 18, 57, 0.1);
   --mix-seg-danger-72-text-on-dark-28-light: #b8536f;
   --mix-seg-danger-78-seg-text-1-22-light: #851634;
@@ -347,7 +346,8 @@
   --mix-seg-accent-14-transparent-86-dark: rgba(225, 112, 104, 0.14);
   --mix-seg-accent-14-seg-border-86-dark: rgba(229, 182, 178, 0.346);
   --mix-seg-accent-16-transparent-84-dark: rgba(225, 112, 104, 0.16);
-  --mix-seg-accent-22-seg-border-strong-78-dark: rgba(228, 176, 172, 0.485);
+  --mix-seg-accent-22-seg-border-78-dark:
+    color-mix(in srgb, var(--brand-primary-dark) 22%, var(--border-default-dark) 78%);
   --mix-seg-accent-24-transparent-76-dark: rgba(225, 112, 104, 0.24);
   --mix-seg-accent-24-seg-border-76-dark: rgba(228, 163, 158, 0.422);
   --mix-seg-accent-26-seg-border-74-dark: rgba(227, 159, 154, 0.438);
@@ -382,8 +382,8 @@
   --mix-seg-border-88-white-12-dark: rgba(240, 238, 238, 0.331);
   --mix-seg-border-90-transparent-10-dark: rgba(231, 229, 228, 0.216);
   --mix-seg-border-96-transparent-4-dark: rgba(231, 229, 228, 0.23);
-  --mix-seg-border-strong-72-seg-panel-28-dark: rgba(130, 127, 126, 0.525);
-  --mix-seg-border-strong-76-transparent-24-dark: rgba(231, 229, 228, 0.258);
+  --mix-seg-border-72-seg-panel-28-dark:
+    color-mix(in srgb, var(--border-default-dark) 72%, var(--surface-panel-dark) 28%);
   --mix-seg-danger-10-transparent-90-dark: rgba(159, 18, 57, 0.1);
   --mix-seg-danger-72-text-on-dark-28-dark: #b8536f;
   --mix-seg-danger-78-seg-text-1-22-dark: #b24462;
@@ -441,7 +441,7 @@
   --mix-seg-accent-14-transparent-86: var(--mix-seg-accent-14-transparent-86-light);
   --mix-seg-accent-14-seg-border-86: var(--mix-seg-accent-14-seg-border-86-light);
   --mix-seg-accent-16-transparent-84: var(--mix-seg-accent-16-transparent-84-light);
-  --mix-seg-accent-22-seg-border-strong-78: var(--mix-seg-accent-22-seg-border-strong-78-light);
+  --mix-seg-accent-22-seg-border-78: var(--mix-seg-accent-22-seg-border-78-light);
   --mix-seg-accent-24-transparent-76: var(--mix-seg-accent-24-transparent-76-light);
   --mix-seg-accent-24-seg-border-76: var(--mix-seg-accent-24-seg-border-76-light);
   --mix-seg-accent-26-seg-border-74: var(--mix-seg-accent-26-seg-border-74-light);
@@ -476,8 +476,7 @@
   --mix-seg-border-88-white-12: var(--mix-seg-border-88-white-12-light);
   --mix-seg-border-90-transparent-10: var(--mix-seg-border-90-transparent-10-light);
   --mix-seg-border-96-transparent-4: var(--mix-seg-border-96-transparent-4-light);
-  --mix-seg-border-strong-72-seg-panel-28: var(--mix-seg-border-strong-72-seg-panel-28-light);
-  --mix-seg-border-strong-76-transparent-24: var(--mix-seg-border-strong-76-transparent-24-light);
+  --mix-seg-border-72-seg-panel-28: var(--mix-seg-border-72-seg-panel-28-light);
   --mix-seg-danger-10-transparent-90: var(--mix-seg-danger-10-transparent-90-light);
   --mix-seg-danger-72-text-on-dark-28: var(--mix-seg-danger-72-text-on-dark-28-light);
   --mix-seg-danger-78-seg-text-1-22: var(--mix-seg-danger-78-seg-text-1-22-light);
@@ -542,7 +541,6 @@
   --text-on-dark: var(--text-on-dark-light);
   --border-subtle: var(--border-subtle-light);
   --border-default: var(--border-default-light);
-  --border-strong: var(--border-strong-light);
   --shadow-sm: var(--shadow-sm-light);
   --shadow-md: var(--shadow-md-light);
   --shadow-lg: var(--shadow-lg-light);
@@ -566,7 +564,6 @@
   --color-surface-sidebar-strong: var(--surface-sidebar-strong);
   --color-border-subtle: var(--border-subtle);
   --color-border-default: var(--border-default);
-  --color-border-strong: var(--border-strong);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
@@ -613,7 +610,6 @@
   --ui-panel-strong: var(--surface-elevated);
   --ui-panel-subtle: var(--ui-panel-subtle-light);
   --ui-border: var(--border-subtle);
-  --ui-border-strong: var(--border-default);
   --ui-divider: var(--border-subtle);
   --ui-text-1: var(--text-primary);
   --ui-text-2: var(--text-secondary);
@@ -674,7 +670,6 @@
   --seg-left-sidebar-top-menu-surface: var(--semantic-left-sidebar-top-menu-surface);
   --seg-right-sidebar-top-menu-surface: var(--semantic-right-sidebar-top-menu-surface);
   --seg-border: var(--border-default);
-  --seg-border-strong: var(--border-strong);
   --seg-divider: var(--border-subtle);
   --seg-text-1: var(--text-primary);
   --seg-text-2: var(--text-secondary);
@@ -739,7 +734,6 @@
   --text-on-dark-light: #f8fafc;
   --border-subtle-light: rgba(15, 23, 42, 0.08);
   --border-default-light: #e2e8f0;
-  --border-strong-light: #cbd5e1;
   --shadow-sm-light: 0 14px 30px rgba(15, 23, 42, 0.06);
   --shadow-md-light: 0 20px 46px rgba(15, 23, 42, 0.08);
   --shadow-lg-light: 0 28px 68px rgba(15, 23, 42, 0.12);
@@ -762,7 +756,6 @@
   --text-on-dark-dark: #f8fafc;
   --border-subtle-dark: rgba(148, 163, 184, 0.14);
   --border-default-dark: rgba(148, 163, 184, 0.24);
-  --border-strong-dark: rgba(148, 163, 184, 0.34);
   --shadow-sm-dark: 0 12px 28px rgba(2, 6, 23, 0.28);
   --shadow-md-dark: 0 18px 40px rgba(2, 6, 23, 0.34);
   --shadow-lg-dark: 0 28px 64px rgba(2, 6, 23, 0.42);
@@ -878,7 +871,8 @@
   --mix-seg-accent-14-transparent-86-light: rgba(15, 118, 110, 0.14);
   --mix-seg-accent-14-seg-border-86-light: #c4d8de;
   --mix-seg-accent-16-transparent-84-light: rgba(15, 118, 110, 0.16);
-  --mix-seg-accent-22-seg-border-strong-78-light: #a2c0c8;
+  --mix-seg-accent-22-seg-border-78-light:
+    color-mix(in srgb, var(--brand-primary) 22%, var(--border-default-light) 78%);
   --mix-seg-accent-24-transparent-76-light: rgba(15, 118, 110, 0.24);
   --mix-seg-accent-24-seg-border-76-light: #afcdd1;
   --mix-seg-accent-26-seg-border-74-light: #abcace;
@@ -913,8 +907,8 @@
   --mix-seg-border-88-white-12-light: #e5ebf2;
   --mix-seg-border-90-transparent-10-light: rgba(226, 232, 240, 0.9);
   --mix-seg-border-96-transparent-4-light: rgba(226, 232, 240, 0.96);
-  --mix-seg-border-strong-72-seg-panel-28-light: #dae1e9;
-  --mix-seg-border-strong-76-transparent-24-light: rgba(203, 213, 225, 0.76);
+  --mix-seg-border-72-seg-panel-28-light:
+    color-mix(in srgb, var(--border-default-light) 72%, var(--surface-panel-light) 28%);
   --mix-seg-danger-10-transparent-90-light: rgba(225, 29, 72, 0.1);
   --mix-seg-danger-72-text-on-dark-28-light: #e75b7a;
   --mix-seg-danger-78-seg-text-1-22-light: #b31c41;
@@ -972,7 +966,8 @@
   --mix-seg-accent-14-transparent-86-dark: rgba(20, 184, 166, 0.14);
   --mix-seg-accent-14-seg-border-86-dark: rgba(96, 171, 177, 0.346);
   --mix-seg-accent-16-transparent-84-dark: rgba(20, 184, 166, 0.16);
-  --mix-seg-accent-22-seg-border-strong-78-dark: rgba(90, 173, 176, 0.485);
+  --mix-seg-accent-22-seg-border-78-dark:
+    color-mix(in srgb, var(--brand-primary-dark) 22%, var(--border-default-dark) 78%);
   --mix-seg-accent-24-transparent-76-dark: rgba(20, 184, 166, 0.24);
   --mix-seg-accent-24-seg-border-76-dark: rgba(75, 175, 174, 0.422);
   --mix-seg-accent-26-seg-border-74-dark: rgba(72, 175, 173, 0.438);
@@ -1007,8 +1002,8 @@
   --mix-seg-border-88-white-12-dark: rgba(187, 196, 210, 0.331);
   --mix-seg-border-90-transparent-10-dark: rgba(148, 163, 184, 0.216);
   --mix-seg-border-96-transparent-4-dark: rgba(148, 163, 184, 0.23);
-  --mix-seg-border-strong-72-seg-panel-28-dark: rgba(85, 98, 117, 0.525);
-  --mix-seg-border-strong-76-transparent-24-dark: rgba(148, 163, 184, 0.258);
+  --mix-seg-border-72-seg-panel-28-dark:
+    color-mix(in srgb, var(--border-default-dark) 72%, var(--surface-panel-dark) 28%);
   --mix-seg-danger-10-transparent-90-dark: rgba(225, 29, 72, 0.1);
   --mix-seg-danger-72-text-on-dark-28-dark: #e75b7a;
   --mix-seg-danger-78-seg-text-1-22-dark: #e54d6f;
@@ -1076,7 +1071,6 @@
     --text-on-dark: var(--text-on-dark-dark);
     --border-subtle: var(--border-subtle-dark);
     --border-default: var(--border-default-dark);
-    --border-strong: var(--border-strong-dark);
     --shadow-sm: var(--shadow-sm-dark);
     --shadow-md: var(--shadow-md-dark);
     --shadow-lg: var(--shadow-lg-dark);
@@ -1139,7 +1133,7 @@
     --mix-seg-accent-14-transparent-86: var(--mix-seg-accent-14-transparent-86-dark);
     --mix-seg-accent-14-seg-border-86: var(--mix-seg-accent-14-seg-border-86-dark);
     --mix-seg-accent-16-transparent-84: var(--mix-seg-accent-16-transparent-84-dark);
-    --mix-seg-accent-22-seg-border-strong-78: var(--mix-seg-accent-22-seg-border-strong-78-dark);
+    --mix-seg-accent-22-seg-border-78: var(--mix-seg-accent-22-seg-border-78-dark);
     --mix-seg-accent-24-transparent-76: var(--mix-seg-accent-24-transparent-76-dark);
     --mix-seg-accent-24-seg-border-76: var(--mix-seg-accent-24-seg-border-76-dark);
     --mix-seg-accent-26-seg-border-74: var(--mix-seg-accent-26-seg-border-74-dark);
@@ -1174,8 +1168,7 @@
     --mix-seg-border-88-white-12: var(--mix-seg-border-88-white-12-dark);
     --mix-seg-border-90-transparent-10: var(--mix-seg-border-90-transparent-10-dark);
     --mix-seg-border-96-transparent-4: var(--mix-seg-border-96-transparent-4-dark);
-    --mix-seg-border-strong-72-seg-panel-28: var(--mix-seg-border-strong-72-seg-panel-28-dark);
-    --mix-seg-border-strong-76-transparent-24: var(--mix-seg-border-strong-76-transparent-24-dark);
+    --mix-seg-border-72-seg-panel-28: var(--mix-seg-border-72-seg-panel-28-dark);
     --mix-seg-danger-10-transparent-90: var(--mix-seg-danger-10-transparent-90-dark);
     --mix-seg-danger-72-text-on-dark-28: var(--mix-seg-danger-72-text-on-dark-28-dark);
     --mix-seg-danger-78-seg-text-1-22: var(--mix-seg-danger-78-seg-text-1-22-dark);
@@ -1247,7 +1240,6 @@
   --text-on-dark: var(--text-on-dark-dark);
   --border-subtle: var(--border-subtle-dark);
   --border-default: var(--border-default-dark);
-  --border-strong: var(--border-strong-dark);
   --shadow-sm: var(--shadow-sm-dark);
   --shadow-md: var(--shadow-md-dark);
   --shadow-lg: var(--shadow-lg-dark);
@@ -1316,7 +1308,7 @@
   --mix-seg-accent-14-transparent-86: var(--mix-seg-accent-14-transparent-86-dark);
   --mix-seg-accent-14-seg-border-86: var(--mix-seg-accent-14-seg-border-86-dark);
   --mix-seg-accent-16-transparent-84: var(--mix-seg-accent-16-transparent-84-dark);
-  --mix-seg-accent-22-seg-border-strong-78: var(--mix-seg-accent-22-seg-border-strong-78-dark);
+  --mix-seg-accent-22-seg-border-78: var(--mix-seg-accent-22-seg-border-78-dark);
   --mix-seg-accent-24-transparent-76: var(--mix-seg-accent-24-transparent-76-dark);
   --mix-seg-accent-24-seg-border-76: var(--mix-seg-accent-24-seg-border-76-dark);
   --mix-seg-accent-26-seg-border-74: var(--mix-seg-accent-26-seg-border-74-dark);
@@ -1351,8 +1343,7 @@
   --mix-seg-border-88-white-12: var(--mix-seg-border-88-white-12-dark);
   --mix-seg-border-90-transparent-10: var(--mix-seg-border-90-transparent-10-dark);
   --mix-seg-border-96-transparent-4: var(--mix-seg-border-96-transparent-4-dark);
-  --mix-seg-border-strong-72-seg-panel-28: var(--mix-seg-border-strong-72-seg-panel-28-dark);
-  --mix-seg-border-strong-76-transparent-24: var(--mix-seg-border-strong-76-transparent-24-dark);
+  --mix-seg-border-72-seg-panel-28: var(--mix-seg-border-72-seg-panel-28-dark);
   --mix-seg-danger-10-transparent-90: var(--mix-seg-danger-10-transparent-90-dark);
   --mix-seg-danger-72-text-on-dark-28: var(--mix-seg-danger-72-text-on-dark-28-dark);
   --mix-seg-danger-78-seg-text-1-22: var(--mix-seg-danger-78-seg-text-1-22-dark);

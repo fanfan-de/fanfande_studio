@@ -920,7 +920,7 @@
 .right-sidebar-changes-panel .right-sidebar-search-field input:focus-visible {
   outline: var(--focus-outline-width) solid var(--focus-outline-color);
   outline-offset: 1px;
-  border-color: var(--seg-border-strong);
+  border-color: var(--seg-border);
 }
 
 .right-sidebar-changes-panel .right-sidebar-filter-group {
@@ -1655,7 +1655,7 @@
 
 .preview-comment-card,
 .preview-comment-composer {
-  border: 1px solid var(--seg-border-strong);
+  border: 1px solid var(--seg-border);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-sm);
 }
