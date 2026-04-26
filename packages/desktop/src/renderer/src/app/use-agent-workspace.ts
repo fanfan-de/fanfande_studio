@@ -1,4 +1,4 @@
-import { startTransition, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState, type MouseEvent } from "react"
+import { startTransition, useDeferredValue, useEffect, useEffectEvent, useRef, type MouseEvent } from "react"
 import {
   appendConversationTurns as appendConversationTurnsToMap,
   ensureAgentSessions,
@@ -7,7 +7,7 @@ import {
   removeConversationSession,
   updateAssistantTurn as updateAssistantTurnInMap,
 } from "./conversation-state"
-import { initialConversations, initialSelection, seedWorkspaces } from "./seed-data"
+import { initialSelection } from "./seed-data"
 import {
   applyAgentStreamEventToTurn,
   buildAgentTurn,
@@ -25,28 +25,17 @@ import type {
   ComposerCommentReference,
   ComposerDraftState,
   ComposerPermissionMode,
-  ComposerMcpOption,
-  ComposerModelOption,
-  ComposerSkillOption,
   CreateSessionTab,
   LeftSidebarView,
   LoadedSessionHistoryMessage,
-  McpServerSummary,
   OpenAIReasoningEffort,
   PermissionDecision,
   PermissionRequest,
-  PendingAgentStream,
   PreviewComment,
   PreviewMode,
-  ProviderModel,
   RightSidebarView,
   SessionContextUsage,
-  SessionDiffState,
-  SessionDiffSummary,
-  SessionRuntimeDebugSnapshot,
-  SessionRuntimeDebugState,
   SessionSummary,
-  SkillInfo,
   SidebarActionKey,
   Turn,
   UserTurn,
@@ -65,11 +54,10 @@ import {
   appendTextToComposerDraftState,
   compileComposerSubmission,
   createComposerCommentTagData,
-  createComposerDraftStateFromPlainText,
   createEmptyComposerDraftState,
   normalizeComposerDraftState,
-  syncComposerMcpTagsWithSelection,
 } from "./composer/draft-state"
+import { buildComposerAttachment, isComposerAttachmentSupported } from "./composer/attachment-utils"
 import { buildPreviewCommentDraft, normalizePreviewUrlInput } from "./preview/utils"
 import {
   buildWorkspaceFileCommentDraft,
@@ -118,8 +106,20 @@ import {
 import { notifyGitStateChanged } from "./git-events"
 import { mergeUserTurnPresentationState, persistUserTurns, readPersistedUserTurns } from "./user-turn-presentation"
 import { getAgentSessionBridge, type AgentSessionBridgeEvent } from "./agent-session/client"
-import { createAgentSessionEventRouter } from "./agent-session/event-router"
-import { createAgentSessionStore } from "./agent-session/store"
+import { useComposerDraftState } from "./agent-workspace/composer-draft-state"
+import {
+  DEFAULT_SESSION_DIFF_STATE,
+  DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
+  DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+  DEFAULT_WORKSPACE_PREVIEW_STATE,
+  getWorkspaceFileCommentKey,
+  resolvePreviewScopeID,
+  resolveWorkspaceFileReviewStatus,
+  useReviewPreviewState,
+} from "./agent-workspace/review-preview-state"
+import { useStreamPermissionController } from "./agent-workspace/stream-permission-controller"
+import { seedWorkspaceIDs, useWorkspaceSessionStore } from "./agent-workspace/workspace-session-store"
+import { useWorkbenchState } from "./agent-workspace/workbench-state"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
@@ -127,77 +127,9 @@ interface UseAgentWorkspaceOptions {
   platform: string
 }
 
-interface ComposerAttachmentCapabilities {
-  image: boolean
-  pdf: boolean
-}
-
-type ComposerAttachmentKind = "image" | "pdf" | "unsupported"
-
-const IMAGE_ATTACHMENT_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"])
 const GIT_REFRESH_SUPPRESSION_MS = 1000
 const WORKSPACE_DIFF_REFRESH_DEBOUNCE_MS = 500
 const WORKSPACE_RELOAD_SUPPRESSION_MS = 1500
-const DEFAULT_SESSION_DIFF_STATE: SessionDiffState = {
-  status: "idle",
-  errorMessage: null,
-  updatedAt: null,
-  isStale: false,
-}
-const DEFAULT_SESSION_RUNTIME_DEBUG_STATE: SessionRuntimeDebugState = {
-  status: "idle",
-  errorMessage: null,
-  updatedAt: null,
-  isStale: false,
-}
-const PREVIEW_FALLBACK_SCOPE_ID = "__preview_global__"
-const DEFAULT_WORKSPACE_PREVIEW_STATE: WorkspacePreviewState = {
-  draftUrl: "http://localhost:3000",
-  committedUrl: null,
-  mode: "browse",
-  reloadToken: 0,
-  errorMessage: null,
-  comments: [],
-}
-const DEFAULT_WORKSPACE_FILE_REVIEW_STATE: WorkspaceFileReviewState = {
-  scopeDirectory: null,
-  query: "",
-  results: [],
-  selectedFilePath: null,
-  selectedFileContent: null,
-  selectedFileKind: null,
-  selectedFileExtension: null,
-  status: "idle",
-  errorMessage: null,
-  comments: [],
-  pendingComment: null,
-}
-
-function resolvePreviewScopeID(workspaceID: string | null | undefined) {
-  return workspaceID ?? PREVIEW_FALLBACK_SCOPE_ID
-}
-
-function getWorkspaceFileCommentKey(
-  directory: string | null | undefined,
-  filePath: string | null | undefined,
-  platform: string,
-) {
-  if (!directory || !filePath) return null
-  return `${normalizeWorkspacePath(directory, platform)}::${filePath.replace(/\\/g, "/")}`
-}
-
-function resolveWorkspaceFileReviewStatus(
-  state: Pick<
-    WorkspaceFileReviewState,
-    "errorMessage" | "query" | "results" | "selectedFileContent" | "selectedFileKind" | "selectedFilePath"
-  >,
-): WorkspaceFileReviewState["status"] {
-  if (state.errorMessage) return "error"
-  if (state.selectedFileKind === "unsupported") return "unsupported"
-  if (state.selectedFilePath && state.selectedFileKind === "text" && state.selectedFileContent !== null) return "ready"
-  if (state.query.trim() && state.results.length === 0) return "empty"
-  return "idle"
-}
 
 function collectSessionDirectoryMap(
   workspaces: Array<{
@@ -212,13 +144,6 @@ function collectSessionDirectoryMap(
       workspace.sessions.map((session) => [session.id, session.directory] as const),
     ),
   )
-}
-
-function normalizeModelSelection(selection?: { model?: string; small_model?: string }) {
-  return {
-    model: selection?.model ?? null,
-    smallModel: selection?.small_model ?? null,
-  }
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {
@@ -273,26 +198,6 @@ function isPermissionRequestStreamEvent(streamEvent: { event: string; data: unkn
   return readString(part?.type) === "permission" && readString(part?.action) === "ask"
 }
 
-function getComposerAttachmentName(path: string) {
-  const segments = path.split(/[\\/]/).filter(Boolean)
-  return segments[segments.length - 1] ?? path
-}
-
-function buildComposerAttachment(path: string): ComposerAttachment {
-  return {
-    path,
-    name: getComposerAttachmentName(path),
-  }
-}
-
-function getComposerAttachmentKind(path: string): ComposerAttachmentKind {
-  const normalizedPath = path.trim().toLowerCase()
-  const extension = normalizedPath.split(".").pop() ?? ""
-  if (IMAGE_ATTACHMENT_EXTENSIONS.has(extension)) return "image"
-  if (extension === "pdf") return "pdf"
-  return "unsupported"
-}
-
 function normalizeWorkspacePath(value: string, platform: string) {
   const normalized = value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "")
   return platform === "win32" ? normalized.toLowerCase() : normalized
@@ -319,116 +224,6 @@ function isGitInternalRelativePath(relativePath: string) {
 function shouldRefreshWorkspaceDiffFromRelativePaths(relativePaths: string[]) {
   if (relativePaths.length === 0) return true
   return relativePaths.some((relativePath) => !isGitInternalRelativePath(relativePath))
-}
-
-function resolveComposerEffectiveModel(
-  selectedModel: string | null,
-  models: ProviderModel[],
-  defaultModel: ProviderModel | null,
-) {
-  if (!selectedModel) return defaultModel
-  return models.find((model) => toComposerModelValue(model) === selectedModel) ?? defaultModel
-}
-
-function getComposerAttachmentCapabilities(model: ProviderModel | null): ComposerAttachmentCapabilities {
-  return {
-    image: Boolean(model?.capabilities.input.image),
-    pdf: Boolean(model?.capabilities.attachment && model?.capabilities.input.pdf),
-  }
-}
-
-function isComposerAttachmentSupported(path: string, capabilities: ComposerAttachmentCapabilities) {
-  const kind = getComposerAttachmentKind(path)
-  if (kind === "image") return capabilities.image
-  if (kind === "pdf") return capabilities.pdf
-  return false
-}
-
-function describeComposerAttachmentSupport(capabilities: ComposerAttachmentCapabilities) {
-  if (capabilities.image && capabilities.pdf) return "images and PDFs"
-  if (capabilities.image) return "images"
-  if (capabilities.pdf) return "PDFs"
-  return null
-}
-
-function getComposerAttachmentDisabledReason(
-  model: ProviderModel | null,
-  capabilities: ComposerAttachmentCapabilities,
-  isLoading: boolean,
-) {
-  if (describeComposerAttachmentSupport(capabilities)) return null
-  if (isLoading) return "Loading model capabilities..."
-  if (!model) return "No available model for this project supports image or PDF input."
-  return `${model.name} does not support image or PDF input.`
-}
-
-function getComposerAttachmentError(
-  attachments: ComposerAttachment[],
-  model: ProviderModel | null,
-  capabilities: ComposerAttachmentCapabilities,
-) {
-  const unsupportedAttachments = attachments.filter((attachment) => !isComposerAttachmentSupported(attachment.path, capabilities))
-  if (unsupportedAttachments.length === 0) return null
-
-  const unsupportedKinds = new Set(unsupportedAttachments.map((attachment) => getComposerAttachmentKind(attachment.path)))
-  if (unsupportedKinds.has("unsupported")) {
-    return "Desktop composer attachments currently support images and PDFs only."
-  }
-
-  const supportedDescription = describeComposerAttachmentSupport(capabilities)
-  if (!supportedDescription) {
-    if (!model) return "Attachments are unavailable until a compatible model is available."
-    return `${model.name} does not support image or PDF input. Remove attachments or switch models.`
-  }
-
-  return `${model?.name ?? "The current model"} only accepts ${supportedDescription}. Remove incompatible attachments or switch models.`
-}
-
-function toComposerModelValue(model: ProviderModel) {
-  return `${model.providerID}/${model.id}`
-}
-
-function toComposerModelLabel(model: ProviderModel) {
-  return model.name
-}
-
-function resolveComposerModelLabel(
-  selectedModel: string | null,
-  models: ProviderModel[],
-  effectiveModel: ProviderModel | null,
-  isLoading: boolean,
-) {
-  if (isLoading && models.length === 0 && !effectiveModel) return "Loading..."
-  if (!selectedModel) {
-    return effectiveModel ? `Server default (${effectiveModel.name})` : "Server default"
-  }
-  return models.find((model) => toComposerModelValue(model) === selectedModel)?.name ?? selectedModel
-}
-
-function resolveComposerSkillLabel(selectedSkillIDs: string[], skills: SkillInfo[], isLoading: boolean) {
-  if (isLoading && skills.length === 0) return "Loading skills..."
-  if (selectedSkillIDs.length === 0) return "Skills"
-  if (selectedSkillIDs.length === 1) {
-    return skills.find((skill) => skill.id === selectedSkillIDs[0])?.name ?? "1 skill"
-  }
-  return `${selectedSkillIDs.length} skills`
-}
-
-function describeComposerMcpServer(server: McpServerSummary) {
-  if (server.transport === "stdio") {
-    return server.command
-  }
-
-  return server.serverUrl ?? server.connectorId ?? "Remote HTTP MCP"
-}
-
-function resolveComposerMcpLabel(selectedServerIDs: string[], servers: McpServerSummary[], isLoading: boolean) {
-  if (isLoading && servers.length === 0) return "Loading MCP..."
-  if (selectedServerIDs.length === 0) return "MCP"
-  if (selectedServerIDs.length === 1) {
-    return servers.find((server) => server.id === selectedServerIDs[0])?.name ?? "1 server"
-  }
-  return `${selectedServerIDs.length} servers`
 }
 
 function resolveComposerPermissionModeForSession(
@@ -791,7 +586,6 @@ function resolveCreateSessionWorkspaceID(
 const initialCreateSessionTab = initialSelection.session === null
   ? createCreateSessionTab(initialSelection.workspace?.id ?? null)
   : null
-const seedWorkspaceIDs = new Set(seedWorkspaces.map((workspace) => workspace.id))
 const initialWorkbenchTab =
   initialSelection.session !== null
     ? createSessionWorkbenchTab(initialSelection.session.id)
@@ -807,117 +601,103 @@ export function useAgentWorkspace({
   platform,
 }: UseAgentWorkspaceOptions) {
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
-  const projectRowRefs = useRef<Record<string, HTMLButtonElement | null>>({})
-  const pendingStreamsRef = useRef<Record<string, PendingAgentStream>>({})
-  const historyRequestRef = useRef(0)
-  const sessionDiffRequestRef = useRef<Record<string, number>>({})
-  const sessionDiffRefreshTimerRef = useRef<Record<string, number>>({})
-  const runtimeDebugRequestRef = useRef<Record<string, number>>({})
-  const runtimeDebugRefreshTimerRef = useRef<Record<string, number>>({})
-  const workspaceFileSearchRequestRef = useRef(0)
-  const workspaceFileReadRequestRef = useRef(0)
-  const permissionRequestsRequestRef = useRef<Record<string, number>>({})
-  const workspaceRefreshRequestRef = useRef<Record<string, number>>({})
-  const conversationVersionRef = useRef<Record<string, number>>({})
-  const skipNextHistoryLoadRef = useRef<Record<string, boolean>>({})
-  const initialFolderWorkspacesLoadedRef = useRef(false)
-  const preserveLocalWorkspaceStateOnInitialLoadRef = useRef(false)
-  const subscribedSessionStreamsRef = useRef<Record<string, string>>({})
-  const sessionEventRouterRef = useRef(createAgentSessionEventRouter())
-  const agentSessionStoreRef = useRef(createAgentSessionStore())
-  const lastFocusedSessionIDRef = useRef<string | null>(initialSelection.session?.id ?? null)
-  const watchedWorkspaceDirectoriesKeyRef = useRef("")
-  const gitRefreshSuppressedUntilRef = useRef<Record<string, number>>({})
-  const workspaceReloadSuppressedUntilRef = useRef<Record<string, number>>({})
-  const [workspaces, setWorkspaces] = useState(seedWorkspaces)
-  const [selectedFolderID, setSelectedFolderID] = useState<string | null>(initialSelection.workspace?.id ?? null)
-  const [createSessionTabs, setCreateSessionTabs] = useState<CreateSessionTab[]>(initialCreateSessionTab ? [initialCreateSessionTab] : [])
-  const [workbenchLayout, setWorkbenchLayout] = useState<WorkbenchLayoutState>(initialWorkbenchLayout)
-  const [expandedFolderID, setExpandedFolderID] = useState<string | null>(initialSelection.workspace?.id ?? null)
-  const [hoveredFolderID, setHoveredFolderID] = useState<string | null>(null)
-  const [leftSidebarView, setLeftSidebarView] = useState<LeftSidebarView>("workspace")
-  const [rightSidebarView, setRightSidebarView] = useState<RightSidebarView>("changes")
-  const [activeSideChatSessionIDByParentSessionID, setActiveSideChatSessionIDByParentSessionID] = useState<Record<string, string>>({})
-  const [previewByWorkspaceID, setPreviewByWorkspaceID] = useState<Record<string, WorkspacePreviewState>>({})
-  const [workspaceFileCommentsByTarget, setWorkspaceFileCommentsByTarget] = useState<Record<string, WorkspaceFileComment[]>>({})
-  const [workspaceFileReviewState, setWorkspaceFileReviewState] = useState<WorkspaceFileReviewState>(
-    DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
-  )
-  const [composerDraftStateByTabKey, setComposerDraftStateByTabKey] = useState<Record<string, ComposerDraftState>>(() =>
-    initialWorkbenchTab
-      ? {
-          [getWorkbenchTabKey(initialWorkbenchTab)]: createComposerDraftStateFromPlainText(
-            "Help me align the desktop sidebar with the Pencil design.",
-          ),
-        }
-      : {},
-  )
-  const [conversations, setConversations] = useState(initialConversations)
-  const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
-  const [sessionDirectoryBySession, setSessionDirectoryBySession] = useState<Record<string, string>>({})
-  const [composerAttachmentsByTabKey, setComposerAttachmentsByTabKey] = useState<Record<string, ComposerAttachment[]>>({})
-  const [composerPermissionModeByTabKey, setComposerPermissionModeByTabKey] = useState<
-    Record<string, ComposerPermissionMode>
-  >(
-    () =>
-      initialWorkbenchTab
-        ? {
-            [getWorkbenchTabKey(initialWorkbenchTab)]: "default",
-          }
-        : {},
-  )
-  const [isSendingByTabKey, setIsSendingByTabKey] = useState<Record<string, boolean>>({})
-  const [isCreatingSessionByTabKey, setIsCreatingSessionByTabKey] = useState<Record<string, boolean>>({})
-  const [isCreatingProject, setIsCreatingProject] = useState(false)
-  const [deletingSessionID, setDeletingSessionID] = useState<string | null>(null)
-  const [canLoadSessionHistory, setCanLoadSessionHistory] = useState(false)
-  const [isInitialWorkspaceLoadPending, setIsInitialWorkspaceLoadPending] = useState(() =>
-    Boolean(window.desktop?.listFolderWorkspaces),
-  )
-  const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySession] = useState<
-    Record<string, PermissionRequest[]>
-  >({})
-  const [sessionDiffBySession, setSessionDiffBySession] = useState<Record<string, SessionDiffSummary>>({})
-  const [sessionDiffStateBySession, setSessionDiffStateBySession] = useState<Record<string, SessionDiffState>>({})
-  const [sessionRuntimeDebugBySession, setSessionRuntimeDebugBySession] = useState<
-    Record<string, SessionRuntimeDebugSnapshot>
-  >({})
-  const [sessionRuntimeDebugStateBySession, setSessionRuntimeDebugStateBySession] = useState<
-    Record<string, SessionRuntimeDebugState>
-  >({})
-  const [selectedDiffFileBySession, setSelectedDiffFileBySession] = useState<Record<string, string | null>>({})
-  const [contextUsageBySession, setContextUsageBySession] = useState<Record<string, SessionContextUsage>>({})
-  const [permissionRequestActionRequestID, setPermissionRequestActionRequestID] = useState<string | null>(null)
-  const [permissionRequestActionError, setPermissionRequestActionError] = useState<string | null>(null)
-  const [composerRefreshVersion, setComposerRefreshVersion] = useState(0)
-  const [composerModels, setComposerModels] = useState<ProviderModel[]>([])
-  const [composerDefaultModel, setComposerDefaultModel] = useState<ProviderModel | null>(null)
-  const [composerSelectedModel, setComposerSelectedModel] = useState<string | null>(null)
-  const [composerSmallModel, setComposerSmallModel] = useState<string | null>(null)
-  const [isLoadingComposerModels, setIsLoadingComposerModels] = useState(false)
-  const [composerSkills, setComposerSkills] = useState<SkillInfo[]>([])
-  const [composerSelectedSkillIDs, setComposerSelectedSkillIDs] = useState<string[]>([])
-  const [isLoadingComposerSkills, setIsLoadingComposerSkills] = useState(false)
-  const [composerMcpServers, setComposerMcpServers] = useState<McpServerSummary[]>([])
-  const [composerSelectedMcpServerIDs, setComposerSelectedMcpServerIDs] = useState<string[]>([])
-  const [isLoadingComposerMcp, setIsLoadingComposerMcp] = useState(false)
-  const composerModelsRequestRef = useRef(0)
-  const composerSkillsRequestRef = useRef(0)
-  const composerSkillSelectionRequestRef = useRef(0)
-  const composerMcpRequestRef = useRef(0)
-  const composerMcpSelectionRequestRef = useRef(0)
-  const pendingModelSelectionRef = useRef<Promise<void> | null>(null)
-  const composerAttachmentPolicyRef = useRef<{
-    attachmentError: string | null
-    disabledReason: string | null
-    allowImage: boolean
-    allowPdf: boolean
-  }>({
-    attachmentError: null,
-    disabledReason: "Loading model capabilities...",
-    allowImage: false,
-    allowPdf: false,
-  })
+  const { workbenchLayout, setWorkbenchLayout } = useWorkbenchState({ initialWorkbenchLayout })
+  const {
+    activeSideChatSessionIDByParentSessionID,
+    canLoadSessionHistory,
+    createSessionTabs,
+    deletingSessionID,
+    expandedFolderID,
+    gitRefreshSuppressedUntilRef,
+    hoveredFolderID,
+    initialFolderWorkspacesLoadedRef,
+    isCreatingProject,
+    isInitialWorkspaceLoadPending,
+    leftSidebarView,
+    preserveLocalWorkspaceStateOnInitialLoadRef,
+    projectRowRefs,
+    rightSidebarView,
+    selectedFolderID,
+    setActiveSideChatSessionIDByParentSessionID,
+    setCanLoadSessionHistory,
+    setCreateSessionTabs,
+    setDeletingSessionID,
+    setExpandedFolderID,
+    setHoveredFolderID,
+    setIsCreatingProject,
+    setIsInitialWorkspaceLoadPending,
+    setLeftSidebarView,
+    setRightSidebarView,
+    setSelectedFolderID,
+    setWorkspaces,
+    watchedWorkspaceDirectoriesKeyRef,
+    workspaceRefreshRequestRef,
+    workspaceReloadSuppressedUntilRef,
+    workspaces,
+  } = useWorkspaceSessionStore({ initialCreateSessionTab })
+  const {
+    previewByWorkspaceID,
+    runtimeDebugRefreshTimerRef,
+    runtimeDebugRequestRef,
+    selectedDiffFileBySession,
+    sessionDiffBySession,
+    sessionDiffRefreshTimerRef,
+    sessionDiffRequestRef,
+    sessionDiffStateBySession,
+    sessionRuntimeDebugBySession,
+    sessionRuntimeDebugStateBySession,
+    setPreviewByWorkspaceID,
+    setSelectedDiffFileBySession,
+    setSessionDiffBySession,
+    setSessionDiffStateBySession,
+    setSessionRuntimeDebugBySession,
+    setSessionRuntimeDebugStateBySession,
+    setWorkspaceFileCommentsByTarget,
+    setWorkspaceFileReviewState,
+    workspaceFileCommentsByTarget,
+    workspaceFileReadRequestRef,
+    workspaceFileReviewState,
+    workspaceFileSearchRequestRef,
+  } = useReviewPreviewState()
+  const {
+    composerAttachmentsByTabKey,
+    composerDraftStateByTabKey,
+    composerPermissionModeByTabKey,
+    composerRefreshVersion,
+    isCreatingSessionByTabKey,
+    isSendingByTabKey,
+    setComposerAttachmentsByTabKey,
+    setComposerDraftStateByTabKey,
+    setComposerPermissionModeByTabKey,
+    setComposerRefreshVersion,
+    setIsCreatingSessionByTabKey,
+    setIsSendingByTabKey,
+  } = useComposerDraftState({ initialTabKey: initialWorkbenchTab ? getWorkbenchTabKey(initialWorkbenchTab) : null })
+  const {
+    agentSessionStoreRef,
+    agentSessions,
+    contextUsageBySession,
+    conversationVersionRef,
+    conversations,
+    historyRequestRef,
+    lastFocusedSessionIDRef,
+    pendingPermissionRequestsBySession,
+    pendingStreamsRef,
+    permissionRequestActionError,
+    permissionRequestActionRequestID,
+    permissionRequestsRequestRef,
+    sessionDirectoryBySession,
+    sessionEventRouterRef,
+    setAgentSessions,
+    setContextUsageBySession,
+    setConversations,
+    setPendingPermissionRequestsBySession,
+    setPermissionRequestActionError,
+    setPermissionRequestActionRequestID,
+    setSessionDirectoryBySession,
+    skipNextHistoryLoadRef,
+    subscribedSessionStreamsRef,
+  } = useStreamPermissionController({ initialSessionID: initialSelection.session?.id ?? null })
   function resolveWorkspaceIDForTab(tab: WorkbenchTabReference | null) {
     if (!tab) return null
     if (tab.kind === "session") {
@@ -1050,95 +830,6 @@ export function useAgentWorkspace({
         return session ? [session] : []
       })
     : []
-  const composerModelOptions: ComposerModelOption[] = composerModels
-    .filter((model) => model.available)
-    .map((model) => ({
-      value: toComposerModelValue(model),
-      label: toComposerModelLabel(model),
-    }))
-  const composerEffectiveModel = resolveComposerEffectiveModel(composerSelectedModel, composerModels, composerDefaultModel)
-  const composerAttachmentCapabilities = getComposerAttachmentCapabilities(composerEffectiveModel)
-  const composerAttachmentDisabledReason = getComposerAttachmentDisabledReason(
-    composerEffectiveModel,
-    composerAttachmentCapabilities,
-    isLoadingComposerModels,
-  )
-  const composerUnsupportedAttachments = composerAttachments.filter(
-    (attachment) => !isComposerAttachmentSupported(attachment.path, composerAttachmentCapabilities),
-  )
-  const composerAttachmentError = getComposerAttachmentError(
-    composerAttachments,
-    composerEffectiveModel,
-    composerAttachmentCapabilities,
-  )
-  const composerAttachmentButtonTitle =
-    composerAttachmentDisabledReason ??
-    `Add ${describeComposerAttachmentSupport(composerAttachmentCapabilities) ?? "attachments"}.`
-  const composerSkillOptions: ComposerSkillOption[] = useMemo(
-    () =>
-      composerSkills.map((skill) => ({
-        value: skill.id,
-        label: skill.name,
-        description: skill.description,
-      })),
-    [composerSkills],
-  )
-  const composerMcpOptions: ComposerMcpOption[] = useMemo(
-    () =>
-      composerMcpServers.map((server) => ({
-        value: server.id,
-        label: server.name ?? server.id,
-        description: describeComposerMcpServer(server),
-      })),
-    [composerMcpServers],
-  )
-  useEffect(() => {
-    if (!activeTabKey || activeSessionIsSideChat) return
-
-    setComposerDraftStateByTabKey((current) => {
-      const currentDraftState = current[activeTabKey] ?? createEmptyComposerDraftState()
-      const nextDraftState = syncComposerMcpTagsWithSelection(
-        currentDraftState,
-        composerSelectedMcpServerIDs,
-        composerMcpOptions,
-      )
-
-      if (
-        nextDraftState.lexicalJSON === currentDraftState.lexicalJSON &&
-        nextDraftState.plainText === currentDraftState.plainText
-      ) {
-        return current
-      }
-
-      return {
-        ...current,
-        [activeTabKey]: nextDraftState,
-      }
-    })
-  }, [activeSessionIsSideChat, activeTabKey, composerMcpOptions, composerSelectedMcpServerIDs])
-  const composerSelectedModelLabel = resolveComposerModelLabel(
-    composerSelectedModel,
-    composerModels,
-    composerEffectiveModel,
-    isLoadingComposerModels,
-  )
-  const composerSelectedSkillLabel = resolveComposerSkillLabel(
-    composerSelectedSkillIDs,
-    composerSkills,
-    isLoadingComposerSkills,
-  )
-  const composerSelectedMcpLabel = resolveComposerMcpLabel(
-    composerSelectedMcpServerIDs,
-    composerMcpServers,
-    isLoadingComposerMcp,
-  )
-  const composerContextWindow = composerEffectiveModel?.limit.context ?? null
-  composerAttachmentPolicyRef.current = {
-    attachmentError: composerAttachmentError,
-    disabledReason: composerAttachmentDisabledReason,
-    allowImage: composerAttachmentCapabilities.image,
-    allowPdf: composerAttachmentCapabilities.pdf,
-  }
 
   function updateSessionContextUsage(sessionID: string, usage: SessionContextUsage | null) {
     setContextUsageBySession((prev) => {
@@ -2058,112 +1749,20 @@ export function useAgentWorkspace({
     }
   }, [])
 
-  async function refreshComposerModels() {
-    const projectID = selectedProjectID
-    const getProjectModels = window.desktop?.getProjectModels
-
-    if (!projectID || !getProjectModels) {
-      setComposerModels([])
-      setComposerDefaultModel(null)
-      setComposerSelectedModel(null)
-      setComposerSmallModel(null)
-      return
-    }
-
-    const requestID = ++composerModelsRequestRef.current
-    setIsLoadingComposerModels(true)
-
-    try {
-      const payload = await getProjectModels({ projectID })
-      if (composerModelsRequestRef.current !== requestID) return
-      const nextSelection = normalizeModelSelection(payload.selection)
-      setComposerModels(payload.items)
-      setComposerDefaultModel(payload.effectiveModel ?? null)
-      setComposerSelectedModel(nextSelection.model)
-      setComposerSmallModel(nextSelection.smallModel)
-    } catch (error) {
-      if (composerModelsRequestRef.current !== requestID) return
-      console.error("[desktop] refreshComposerModels failed:", error)
-      setComposerModels([])
-      setComposerDefaultModel(null)
-      setComposerSelectedModel(null)
-      setComposerSmallModel(null)
-    } finally {
-      if (composerModelsRequestRef.current === requestID) {
-        setIsLoadingComposerModels(false)
-      }
-    }
+  function invalidateProjectComposer() {
+    setComposerRefreshVersion((current) => current + 1)
   }
 
-  async function refreshComposerSkills() {
-    const projectID = selectedProjectID
-    const getProjectSkills = window.desktop?.getProjectSkills
-    const getProjectSkillSelection = window.desktop?.getProjectSkillSelection
-    if (!projectID || !getProjectSkills || !getProjectSkillSelection) {
-      setComposerSkills([])
-      setComposerSelectedSkillIDs([])
-      setIsLoadingComposerSkills(false)
-      return
-    }
-
-    const requestID = ++composerSkillsRequestRef.current
-    setIsLoadingComposerSkills(true)
-
-    try {
-      const [skills, selection] = await Promise.all([
-        getProjectSkills({ projectID }),
-        getProjectSkillSelection({ projectID }),
-      ])
-      if (composerSkillsRequestRef.current !== requestID) return
-      const availableSkillIDs = new Set(skills.map((skill) => skill.id))
-      setComposerSkills(skills)
-      setComposerSelectedSkillIDs(selection.skillIDs.filter((skillID) => availableSkillIDs.has(skillID)))
-    } catch (error) {
-      if (composerSkillsRequestRef.current !== requestID) return
-      console.error("[desktop] refreshComposerSkills failed:", error)
-      setComposerSkills([])
-      setComposerSelectedSkillIDs([])
-    } finally {
-      if (composerSkillsRequestRef.current === requestID) {
-        setIsLoadingComposerSkills(false)
-      }
-    }
+  function refreshComposerModels() {
+    invalidateProjectComposer()
   }
 
-  async function refreshComposerMcp() {
-    const projectID = selectedProjectID
-    const getGlobalMcpServers = window.desktop?.getGlobalMcpServers
-    const getProjectMcpSelection = window.desktop?.getProjectMcpSelection
-    if (!projectID || !getGlobalMcpServers || !getProjectMcpSelection) {
-      setComposerMcpServers([])
-      setComposerSelectedMcpServerIDs([])
-      setIsLoadingComposerMcp(false)
-      return
-    }
+  function refreshComposerSkills() {
+    invalidateProjectComposer()
+  }
 
-    const requestID = ++composerMcpRequestRef.current
-    setIsLoadingComposerMcp(true)
-
-    try {
-      const [servers, selection] = await Promise.all([
-        getGlobalMcpServers(),
-        getProjectMcpSelection({ projectID }),
-      ])
-      if (composerMcpRequestRef.current !== requestID) return
-
-      const availableServerIDs = new Set(servers.map((server) => server.id))
-      setComposerMcpServers(servers)
-      setComposerSelectedMcpServerIDs(selection.serverIDs.filter((serverID) => availableServerIDs.has(serverID)))
-    } catch (error) {
-      if (composerMcpRequestRef.current !== requestID) return
-      console.error("[desktop] MCP selector refresh failed:", error)
-      setComposerMcpServers([])
-      setComposerSelectedMcpServerIDs([])
-    } finally {
-      if (composerMcpRequestRef.current === requestID) {
-        setIsLoadingComposerMcp(false)
-      }
-    }
+  function refreshComposerMcp() {
+    invalidateProjectComposer()
   }
 
   useEffect(() => {
@@ -3805,8 +3404,6 @@ export function useAgentWorkspace({
     if (!targetTabKey || ((!effectiveText && attachments.length === 0) || isSendingByTabKey[targetTabKey] || pendingPermissionRequests.length > 0)) return
     if (input?.waitForPendingModelSelection) {
       await input.waitForPendingModelSelection().catch(() => undefined)
-    } else if (pendingModelSelectionRef.current) {
-      await pendingModelSelectionRef.current.catch(() => undefined)
     }
     if (input?.attachmentError) return
 
@@ -3971,9 +3568,9 @@ export function useAgentWorkspace({
     if (!pickComposerAttachments) return
 
     const tabKey = input?.tabKey ?? activeTabKey
-    const allowImage = input?.allowImage ?? composerAttachmentPolicyRef.current.allowImage
-    const allowPdf = input?.allowPdf ?? composerAttachmentPolicyRef.current.allowPdf
-    const disabledReason = input ? input.disabledReason ?? null : composerAttachmentPolicyRef.current.disabledReason
+    const allowImage = input?.allowImage ?? false
+    const allowPdf = input?.allowPdf ?? false
+    const disabledReason = input?.disabledReason ?? null
     if (disabledReason) return
     if (!tabKey) return
 
@@ -4025,113 +3622,6 @@ export function useAgentWorkspace({
       ...current,
       [tabKey]: current[tabKey] === "full-access" ? "default" : "full-access",
     }))
-  }
-
-  async function handleComposerModelChange(value: string | null) {
-    if (activeSessionIsSideChat) {
-      return
-    }
-    const projectID = selectedProjectID
-    const updateProjectModelSelection = window.desktop?.updateProjectModelSelection
-    const previousSelection = composerSelectedModel
-    setComposerSelectedModel(value)
-
-    if (!projectID || !updateProjectModelSelection) {
-      return
-    }
-
-    const saveTask = (async () => {
-      try {
-        const result = await updateProjectModelSelection({
-          projectID,
-          model: value,
-          small_model: composerSmallModel,
-        })
-        setComposerSelectedModel(result.model ?? null)
-        setComposerSmallModel(result.small_model ?? composerSmallModel)
-      } catch (error) {
-        console.error("[desktop] updateProjectModelSelection failed:", error)
-        setComposerSelectedModel(previousSelection)
-        throw error
-      }
-    })()
-
-    const trackedTask = saveTask.finally(() => {
-      if (pendingModelSelectionRef.current === trackedTask) {
-        pendingModelSelectionRef.current = null
-      }
-    })
-    pendingModelSelectionRef.current = trackedTask
-
-    await trackedTask
-  }
-
-  async function handleComposerSkillToggle(value: string) {
-    if (activeSessionIsSideChat) {
-      return
-    }
-    const projectID = selectedProjectID
-    const updateProjectSkillSelection = window.desktop?.updateProjectSkillSelection
-    if (!projectID || !updateProjectSkillSelection) {
-      return
-    }
-
-    let nextSelection: string[] = []
-    setComposerSelectedSkillIDs((current) => {
-      nextSelection = current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
-      return nextSelection
-    })
-
-    const requestID = ++composerSkillSelectionRequestRef.current
-
-    try {
-      const result = await updateProjectSkillSelection({
-        projectID,
-        skillIDs: nextSelection,
-      })
-      if (composerSkillSelectionRequestRef.current !== requestID) return
-
-      const availableSkillIDs = new Set(composerSkills.map((skill) => skill.id))
-      setComposerSelectedSkillIDs(result.skillIDs.filter((skillID) => availableSkillIDs.has(skillID)))
-    } catch (error) {
-      if (composerSkillSelectionRequestRef.current !== requestID) return
-      console.error("[desktop] updateProjectSkillSelection failed:", error)
-      void refreshComposerSkills()
-    }
-  }
-
-  async function handleComposerMcpToggle(value: string) {
-    if (activeSessionIsSideChat) {
-      return
-    }
-    const projectID = selectedProjectID
-    const updateProjectMcpSelection = window.desktop?.updateProjectMcpSelection
-    if (!projectID || !updateProjectMcpSelection) {
-      return
-    }
-
-    let nextSelection: string[] = []
-    setComposerSelectedMcpServerIDs((current) => {
-      nextSelection = current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
-      return nextSelection
-    })
-
-    const requestID = ++composerMcpSelectionRequestRef.current
-
-    try {
-      const result = await updateProjectMcpSelection({
-        projectID,
-        serverIDs: nextSelection,
-      })
-      if (composerMcpSelectionRequestRef.current !== requestID) return
-
-      const availableServerIDs = new Set(composerMcpServers.map((server) => server.id))
-      setComposerSelectedMcpServerIDs(result.serverIDs.filter((serverID) => availableServerIDs.has(serverID)))
-    } catch (error) {
-      if (composerMcpSelectionRequestRef.current !== requestID) return
-      console.error("[desktop] updateProjectMcpSelection failed:", error)
-      void refreshComposerMcp()
-    }
   }
 
   function handleLeftSidebarViewChange(nextView: LeftSidebarView) {
@@ -4335,21 +3825,7 @@ export function useAgentWorkspace({
     canInsertPreviewCommentsIntoDraft,
     canInsertWorkspaceFileCommentsIntoDraft,
     composerAttachments,
-    composerAttachmentButtonTitle,
-    composerAttachmentDisabledReason,
-    composerAttachmentError,
     composerPermissionMode,
-    composerMcpOptions,
-    composerModelOptions,
-    composerContextWindow,
-    composerSelectedMcpLabel,
-    composerSelectedMcpServerIDs,
-    composerSkillOptions,
-    composerSelectedModel,
-    composerSelectedModelLabel,
-    composerSelectedSkillIDs,
-    composerSelectedSkillLabel,
-    composerUnsupportedAttachmentPaths: composerUnsupportedAttachments.map((attachment) => attachment.path),
     composerRefreshVersion,
     createSessionTabs,
     createSessionTitle,
@@ -4360,10 +3836,7 @@ export function useAgentWorkspace({
     handleCanvasSessionTabClose,
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
-    handleComposerModelChange,
     handleComposerPermissionModeToggle,
-    handleComposerMcpToggle,
-    handleComposerSkillToggle,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
     handleCreateSessionTitleChange,
