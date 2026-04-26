@@ -127,6 +127,15 @@ function normalizeSearch(value: string | undefined) {
   return trimmed || undefined
 }
 
+function normalizeServiceFilters(value: string | undefined) {
+  const services = value
+    ?.split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+
+  return services && services.length > 0 ? new Set(services) : undefined
+}
+
 function normalizeLimit(limit: number | undefined, fallback: number, max: number) {
   if (!Number.isInteger(limit) || !limit || limit <= 0) return fallback
   return Math.min(limit, max)
@@ -136,8 +145,8 @@ export function matches(entry: LogEntry, query: Omit<LogQuery, "limit"> = {}) {
   const levelFilter = normalizeLevelFilter(query.level)
   if (levelFilter && entry.level !== levelFilter) return false
 
-  const serviceFilter = query.service?.trim().toLowerCase()
-  if (serviceFilter && entry.service?.toLowerCase() !== serviceFilter) return false
+  const serviceFilters = normalizeServiceFilters(query.service)
+  if (serviceFilters && (!entry.service || !serviceFilters.has(entry.service.toLowerCase()))) return false
 
   const search = normalizeSearch(query.q)
   if (!search) return true

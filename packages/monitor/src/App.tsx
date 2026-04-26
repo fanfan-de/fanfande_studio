@@ -215,6 +215,20 @@ function appendUniqueLogs(current: LogEntry[], nextEntry: LogEntry) {
   return [...current, nextEntry].slice(-MAX_VISIBLE_LOGS)
 }
 
+function mergeServiceOptions(current: string[], next: Array<string | undefined>) {
+  const services = new Set(current)
+  let changed = false
+
+  for (const value of next) {
+    const service = value?.trim()
+    if (!service || services.has(service)) continue
+    services.add(service)
+    changed = true
+  }
+
+  return changed ? Array.from(services).sort((a, b) => a.localeCompare(b)) : current
+}
+
 function MetricCard({
   label,
   tone = "neutral",
@@ -430,7 +444,8 @@ export function App() {
   const [lastStatusReceivedAt, setLastStatusReceivedAt] = useState<number | undefined>()
   const [statusEventCount, setStatusEventCount] = useState(0)
   const [levelFilter, setLevelFilter] = useState("")
-  const [serviceFilter, setServiceFilter] = useState("")
+  const [selectedServices, setSelectedServices] = useState<string[]>([])
+  const [knownServices, setKnownServices] = useState<string[]>([])
   const [searchFilter, setSearchFilter] = useState("")
   const [isStreamPaused, setIsStreamPaused] = useState(false)
   const [autoScroll, setAutoScroll] = useState(true)
@@ -439,10 +454,10 @@ export function App() {
   const query = useMemo(
     () => ({
       level: levelFilter || undefined,
-      service: serviceFilter.trim() || undefined,
+      service: selectedServices.length > 0 ? selectedServices.join(",") : undefined,
       q: searchFilter.trim() || undefined,
     }),
-    [levelFilter, searchFilter, serviceFilter],
+    [levelFilter, searchFilter, selectedServices],
   )
 
   async function refreshSnapshot() {
@@ -564,9 +579,25 @@ export function App() {
     node.scrollTop = node.scrollHeight
   }, [autoScroll, logs])
 
+  useEffect(() => {
+    setKnownServices((current) =>
+      mergeServiceOptions(current, [
+        ...logs.map((entry) => entry.service),
+        ...(status?.recentErrors ?? []).map((entry) => entry.service),
+      ]),
+    )
+  }, [logs, status?.recentErrors])
+
+  function toggleServiceFilter(service: string) {
+    setSelectedServices((current) =>
+      current.includes(service)
+        ? current.filter((item) => item !== service)
+        : [...current, service].sort((a, b) => a.localeCompare(b)),
+    )
+  }
+
   const runningSessions = runtime?.runningSessions ?? []
   const recentErrors = status?.recentErrors ?? []
-  const services = useMemo(() => Array.from(new Set(logs.map((entry) => entry.service).filter(Boolean))).sort(), [logs])
 
   return (
     <main className="monitor-shell">
@@ -722,20 +753,37 @@ export function App() {
               <option value="ERROR">ERROR</option>
             </select>
           </label>
-          <label className="select-field">
+          <div className="service-filter-field">
             <span>Service</span>
-            <input
-              list="service-options"
-              value={serviceFilter}
-              onChange={(event) => setServiceFilter(event.target.value)}
-              placeholder="Any service"
-            />
-            <datalist id="service-options">
-              {services.map((service) => (
-                <option value={service} key={service} />
-              ))}
-            </datalist>
-          </label>
+            <div className="filter-chip-group" aria-label="Service filter">
+              <label className={selectedServices.length === 0 ? "filter-chip is-active" : "filter-chip"}>
+                <input
+                  type="checkbox"
+                  checked={selectedServices.length === 0}
+                  onChange={() => setSelectedServices([])}
+                />
+                <span>All</span>
+              </label>
+              {knownServices.length > 0 ? (
+                knownServices.map((service) => (
+                  <label
+                    className={selectedServices.includes(service) ? "filter-chip is-active" : "filter-chip"}
+                    key={service}
+                    title={service}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedServices.includes(service)}
+                      onChange={() => toggleServiceFilter(service)}
+                    />
+                    <span>{service}</span>
+                  </label>
+                ))
+              ) : (
+                <span className="filter-chip is-disabled">No services yet</span>
+              )}
+            </div>
+          </div>
           <label className="search-field">
             <Search size={16} />
             <input

@@ -88,7 +88,8 @@ button {
 }
 
 .connection-form label,
-.select-field {
+.select-field,
+.service-filter-field {
   display: grid;
   gap: 6px;
   color: #6a6258;
@@ -445,7 +446,8 @@ button {
 
 .log-toolbar {
   display: grid;
-  grid-template-columns: 128px 190px minmax(220px, 1fr) 120px;
+  grid-template-columns: 128px minmax(260px, 1.5fr) minmax(220px, 1fr) 120px;
+  align-items: start;
   gap: 10px;
   margin-bottom: 12px;
 }
@@ -486,6 +488,58 @@ button {
   color: #6a6258;
   font-size: 0.86rem;
   font-weight: 700;
+}
+
+.filter-chip-group {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  display: inline-flex;
+  max-width: 190px;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d6d0c8;
+  border-radius: 7px;
+  padding: 4px 8px;
+  background: #fffdfa;
+  color: #3d352e;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: none;
+}
+
+.filter-chip input {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #237a57;
+}
+
+.filter-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-chip.is-active {
+  border-color: #237a57;
+  background: #e7f3ed;
+  color: #125d40;
+}
+
+.filter-chip.is-disabled {
+  cursor: default;
+  color: #8a8278;
+  background: #f8f4ee;
 }
 
 .log-list {
@@ -735,6 +789,7 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .service-filter-field,
   .search-field,
   .checkbox-field {
     align-self: auto;

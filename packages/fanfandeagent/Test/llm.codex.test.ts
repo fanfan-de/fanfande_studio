@@ -28,16 +28,17 @@ mock.module("#provider/provider.ts", () => ({
 
 const llmModulePromise = import("#session/llm.ts")
 
-function createModel(input: { providerID: string; url: string }) {
+function createModel(input: { providerID: string; url: string; id?: string; reasoning?: boolean }) {
   return {
-    id: "test-model",
+    id: input.id ?? "test-model",
     providerID: input.providerID,
     api: {
-      id: "test-model",
+      id: input.id ?? "test-model",
       url: input.url,
       npm: "@ai-sdk/openai",
     },
     capabilities: {
+      reasoning: input.reasoning ?? false,
       attachment: false,
       toolcall: true,
       input: {
@@ -112,6 +113,30 @@ describe("llm codex request shaping", () => {
 
     expect(capturedRequests).toHaveLength(1)
     expect(capturedRequests[0]?.providerOptions).toBeUndefined()
+    expect(capturedRequests[0]?.system).toBe("alpha\nbeta")
+  })
+
+  it("requests OpenAI reasoning summaries for reasoning models", async () => {
+    const { stream } = await llmModulePromise
+
+    await stream({
+      ...createInput(
+        createModel({
+          providerID: "openai",
+          url: "https://api.openai.com/v1",
+          reasoning: true,
+        }),
+      ),
+      reasoningEffort: "high",
+    })
+
+    expect(capturedRequests).toHaveLength(1)
+    expect(capturedRequests[0]?.providerOptions).toEqual({
+      openai: {
+        reasoningEffort: "high",
+        reasoningSummary: "auto",
+      },
+    })
     expect(capturedRequests[0]?.system).toBe("alpha\nbeta")
   })
 })
