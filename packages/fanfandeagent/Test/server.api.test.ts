@@ -17,6 +17,7 @@ import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Env from "#env/env.ts"
 import * as Config from "#config/config.ts"
 import * as SystemPrompt from "#session/system.ts"
+import * as Log from "#util/log.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {
   success: boolean
@@ -589,6 +590,46 @@ async function readStreamUntil(
   }
 }
 
+async function readStreamUntilOccurrences(
+  response: Response,
+  pattern: string,
+  count: number,
+  maxReads = 12,
+) {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error("Expected streaming response body")
+  }
+
+  const decoder = new TextDecoder()
+  let raw = ""
+
+  try {
+    for (let index = 0; index < maxReads; index += 1) {
+      const next = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("Timed out while reading stream")), 2000)
+        }),
+      ])
+
+      if (next.done) {
+        break
+      }
+
+      raw += decoder.decode(next.value, { stream: true })
+      if (raw.split(pattern).length - 1 >= count) {
+        break
+      }
+    }
+
+    raw += decoder.decode()
+    return raw
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+}
+
 describe("server api", () => {
   test("GET /healthz should return request id header", async () => {
     const app = createServerApp()
@@ -600,6 +641,122 @@ describe("server api", () => {
     expect(body.success).toBe(true)
     expect(body.data?.ok).toBe(true)
     expect(body.requestId).toBeString()
+  })
+
+  test("GET /api/debug/status should expose process health and recent errors", async () => {
+    const app = createServerApp()
+    const message = `monitor status error ${Date.now()}`
+    Log.create({ service: "monitor-test-status" }).error(message, {
+      requestId: "req_monitor_status",
+      token: "secret-token",
+    })
+
+    const response = await app.request("http://localhost/api/debug/status")
+    const body = (await response.json()) as JsonEnvelope<{
+      ok: boolean
+      generatedAt: number
+      process: {
+        pid: number
+        uptimeMs: number
+        memory: {
+          heapUsed: number
+        }
+      }
+      logging: {
+        level: string
+        print: boolean
+        file: boolean
+      }
+      runningSessions: {
+        count: number
+      }
+      recentErrors: Log.LogEntry[]
+    }>
+
+    expect(response.status).toBe(200)
+    expect(body.success).toBe(true)
+    expect(body.data?.ok).toBe(true)
+    expect(body.data?.generatedAt).toBeNumber()
+    expect(body.data?.process.pid).toBeNumber()
+    expect(body.data?.process.uptimeMs).toBeNumber()
+    expect(body.data?.process.memory.heapUsed).toBeNumber()
+    expect(body.data?.logging.level).toBeString()
+    expect(body.data?.runningSessions.count).toBeNumber()
+    const statusLog = body.data?.recentErrors.find((entry) => entry.message === message)
+    expect(statusLog?.requestId).toBe("req_monitor_status")
+    expect(statusLog?.extra?.token).toBe("[REDACTED]")
+  })
+
+  test("GET /api/debug/logs should filter in-memory log entries", async () => {
+    const app = createServerApp()
+    const message = `monitor log query ${Date.now()}`
+    Log.create({ service: "monitor-test-logs" }).warn(message, {
+      sessionID: "ses_monitor_logs",
+      password: "secret-password",
+    })
+
+    const response = await app.request(
+      `http://localhost/api/debug/logs?service=monitor-test-logs&q=${encodeURIComponent(message)}&limit=5`,
+    )
+    const body = (await response.json()) as JsonEnvelope<{
+      logs: Log.LogEntry[]
+    }>
+
+    expect(response.status).toBe(200)
+    expect(body.success).toBe(true)
+    expect(body.data?.logs.length).toBeGreaterThanOrEqual(1)
+    const entry = body.data?.logs.find((item) => item.message === message)
+    expect(entry?.level).toBe("WARN")
+    expect(entry?.service).toBe("monitor-test-logs")
+    expect(entry?.sessionID).toBe("ses_monitor_logs")
+    expect(entry?.extra?.password).toBe("[REDACTED]")
+  })
+
+  test("GET /api/debug/logs/stream should emit matching log events", async () => {
+    const app = createServerApp()
+    const message = `monitor stream log ${Date.now()}`
+    const response = await app.request("http://localhost/api/debug/logs/stream?service=monitor-test-stream")
+    const rawPromise = readStreamUntil(response, ["event: log", message])
+
+    Log.create({ service: "monitor-test-stream" }).info(message, {
+      projectID: "project_monitor_stream",
+    })
+
+    const raw = await rawPromise
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    expect(raw).toContain("event: log")
+    expect(raw).toContain(message)
+    expect(raw).toContain(`"projectID":"project_monitor_stream"`)
+  })
+
+  test("GET /api/debug/status/stream should push status snapshots", async () => {
+    const app = createServerApp()
+    const message = `monitor status stream ${Date.now()}`
+    const response = await app.request("http://localhost/api/debug/status/stream")
+    const rawPromise = readStreamUntil(response, ["event: status", "\"runtime\"", message])
+
+    Log.create({ service: "monitor-test-status-stream" }).error(message)
+
+    const raw = await rawPromise
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    expect(raw).toContain("event: status")
+    expect(raw).toContain("\"status\"")
+    expect(raw).toContain("\"runtime\"")
+    expect(raw).toContain(message)
+  })
+
+  test("GET /api/debug/status/stream should keep pushing snapshots while idle", async () => {
+    const app = createServerApp()
+    const response = await app.request("http://localhost/api/debug/status/stream")
+    const raw = await readStreamUntilOccurrences(response, "event: status", 2)
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    expect(raw.split("event: status").length - 1).toBeGreaterThanOrEqual(2)
   })
 
   test("GET /api/debug runtime routes should expose running session state and recent events", async () => {
@@ -2304,6 +2461,38 @@ describe("server api", () => {
     }
   })
 
+  test("project git branch list should return a client error outside git repositories", async () => {
+    const app = createServerApp()
+    const directory = await mkdtemp(join(tmpdir(), "fanfande-non-git-branch-list-project-"))
+
+    try {
+      await writeFile(join(directory, "README.md"), "# plain project\n")
+
+      const projectResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const projectBody = (await projectResponse.json()) as ProjectResponseEnvelope
+      const projectID = projectBody.data?.id
+
+      expect(projectResponse.status).toBe(201)
+      expect(projectID).toBeString()
+
+      const branchesResponse = await app.request(
+        `http://localhost/api/projects/${projectID}/git/branches?directory=${encodeURIComponent(directory)}`,
+      )
+      const branchesBody = (await branchesResponse.json()) as GitBranchesEnvelope
+
+      expect(branchesResponse.status).toBe(400)
+      expect(branchesBody.success).toBe(false)
+      expect(branchesBody.error?.code).toBe("GIT_OPERATION_FAILED")
+      expect(branchesBody.error?.message).toBe("The current workspace is not a Git repository.")
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   test("project git capabilities should disable branch creation before the first commit", async () => {
     const app = createServerApp()
     const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-unborn-project-"))
@@ -2834,13 +3023,100 @@ describe("server api", () => {
     const raw = await response.text()
     const completedCursor = RuntimeEvent.serializeCursor(RuntimeEvent.cursorOf(completedEvent))
 
-    expect(raw).toContain("event: started")
-    expect(raw).toContain("event: delta")
-    expect(raw).toContain("event: done")
-    expect(raw).toContain(`"cursor":"`)
+    expect(raw).toContain("event: runtime")
+    expect(raw).toContain(`"type":"turn.started"`)
+    expect(raw).toContain(`"type":"text.part.delta"`)
+    expect(raw).toContain(`"type":"turn.completed"`)
+    expect(raw).toContain(`"eventID":"`)
     expect(raw).toContain(`id: ${completedCursor}`)
     expect(raw).toContain(`"turnID":"${turnID}"`)
     expect(raw).toContain(`"partID":"${partID}"`)
+  })
+
+  test("session execution stream fallback terminal event keeps the observed turn id", async () => {
+    const sessionID = "ses_stream_runtime_fallback"
+    const turnID = Identifier.ascending("turn")
+    const messageID = Identifier.ascending("message")
+    const factory = RuntimeEvent.createRuntimeEventFactory({
+      sessionID,
+      turnID,
+    })
+    const assistantMessage: Message.Assistant = {
+      id: messageID,
+      sessionID,
+      role: "assistant",
+      created: Date.now(),
+      completed: Date.now() + 1,
+      parentID: Identifier.ascending("message"),
+      modelID: "test-model",
+      providerID: "test-provider",
+      agent: "plan",
+      path: {
+        cwd: process.cwd(),
+        root: process.cwd(),
+      },
+      cost: 0,
+      tokens: {
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache: {
+          read: 0,
+          write: 0,
+        },
+      },
+      finishReason: "stop",
+    }
+    const startedEvent = factory.next("turn.started", {})
+    const completedStateEvent = factory.next("turn.state.changed", {
+      phase: "completed",
+      reason: "stop",
+      messageID,
+    })
+
+    const response = createSessionExecutionStream({
+      sessionID,
+      heartbeatIntervalMs: 10,
+      execute: async () => {
+        LiveStreamHub.publish(startedEvent)
+        LiveStreamHub.publish(completedStateEvent)
+
+        return {
+          info: assistantMessage,
+          parts: [],
+        }
+      },
+      cancel: () => {},
+    })
+
+    const raw = await response.text()
+
+    expect(raw).toContain(`"type":"turn.started"`)
+    expect(raw).toContain(`"type":"turn.state.changed"`)
+    expect(raw).toContain(`"type":"turn.completed"`)
+    expect(raw).toContain(`"turnID":"${turnID}"`)
+    expect(raw).toContain(`"seq":3`)
+    expect(raw).toContain(`:${turnID}:3`)
+  })
+
+  test("runtime event schema treats cancelled turns as terminal events", () => {
+    const factory = RuntimeEvent.createRuntimeEventFactory({
+      sessionID: Identifier.ascending("session"),
+      turnID: Identifier.ascending("turn"),
+      timestamp: () => 123,
+    })
+
+    const started = factory.next("turn.started", {})
+    const cancelled = factory.next("turn.cancelled", {
+      reason: "client-disconnect",
+      detail: "client closed the stream",
+    })
+
+    expect(started.seq).toBe(1)
+    expect(cancelled.seq).toBe(2)
+    expect(RuntimeEvent.isTerminalRuntimeEvent(started)).toBe(false)
+    expect(RuntimeEvent.isTerminalRuntimeEvent(cancelled)).toBe(true)
+    expect(RuntimeEvent.isTerminalRuntimeEventType("turn.cancelled")).toBe(true)
   })
 
   test("session execution stream emits keepalive comments while waiting for runtime events", async () => {
@@ -2895,9 +3171,10 @@ describe("server api", () => {
 
     const raw = await response.text()
 
-    expect(raw).toContain("event: started")
+    expect(raw).toContain("event: runtime")
+    expect(raw).toContain(`"type":"turn.started"`)
     expect(raw).toContain(": keepalive")
-    expect(raw).toContain("event: done")
+    expect(raw).toContain(`"type":"turn.completed"`)
   })
 
   test("GET /api/sessions/:id/events/stream replays missed session events across detached turns", async () => {
@@ -3008,15 +3285,16 @@ describe("server api", () => {
       `http://localhost/api/sessions/${session.id}/events/stream?since=${encodeURIComponent(since)}`,
     )
     const raw = await readStreamUntil(response, [
-      `event: done`,
+      `"type":"turn.completed"`,
       `"turnID":"${turn2ID}"`,
       `"status":"blocked"`,
     ])
 
     expect(response.status).toBe(200)
-    expect(raw).toContain("event: started")
-    expect(raw).toContain("event: part")
-    expect(raw).toContain("event: done")
+    expect(raw).toContain("event: runtime")
+    expect(raw).toContain(`"type":"turn.started"`)
+    expect(raw).toContain(`"type":"tool.call.waiting_approval"`)
+    expect(raw).toContain(`"type":"turn.completed"`)
     expect(raw).toContain(`id: ${RuntimeEvent.serializeCursor(RuntimeEvent.cursorOf(turn2Started))}`)
     expect(raw).toContain(`"tool":"read-file"`)
     expect(raw).toContain(`"turnID":"${turn2ID}"`)

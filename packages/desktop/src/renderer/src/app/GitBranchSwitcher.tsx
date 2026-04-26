@@ -51,6 +51,9 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   const gitCreateBranch = window.desktop?.gitCreateBranch
   const gitGetCapabilities = window.desktop?.gitGetCapabilities
   const gitListBranches = window.desktop?.gitListBranches
+  const hasCurrentGitCapabilities =
+    capabilities?.isGitRepo === true &&
+    isMatchingGitStateChangedDetail({ directory: capabilities.directory }, directory)
 
   async function refreshCapabilities(reportError = false) {
     if (!projectID || !directory || !gitGetCapabilities) {
@@ -102,7 +105,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
   }
 
   async function refreshBranches(reportError = false) {
-    if (!projectID || !directory || !gitListBranches) {
+    if (!projectID || !directory || !gitListBranches || !hasCurrentGitCapabilities) {
       setBranches([])
       setIsLoadingBranches(false)
       return []
@@ -290,7 +293,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
     return null
   }
 
-  if (!capabilities?.isGitRepo) {
+  if (!hasCurrentGitCapabilities) {
     return null
   }
 

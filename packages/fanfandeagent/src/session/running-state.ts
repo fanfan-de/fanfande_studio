@@ -5,8 +5,14 @@ type RunningSession = {
 }
 
 const runningSessions: Record<string, RunningSession> = Object.create(null)
+const subscribers = new Set<(event: RunningStateEvent) => void>()
 
 export type { RunningSession }
+
+export type RunningStateEvent = {
+  type: "registered" | "finished" | "cancelled"
+  sessionID: string
+}
 
 export type RunningSessionSnapshot = {
   sessionID: string
@@ -43,6 +49,23 @@ export function snapshot(): RunningSessionSnapshot[] {
     .sort((left, right) => left.startedAt - right.startedAt)
 }
 
+function notify(event: RunningStateEvent) {
+  for (const subscriber of [...subscribers]) {
+    try {
+      subscriber(event)
+    } catch {
+      subscribers.delete(subscriber)
+    }
+  }
+}
+
+export function subscribe(subscriber: (event: RunningStateEvent) => void) {
+  subscribers.add(subscriber)
+  return () => {
+    subscribers.delete(subscriber)
+  }
+}
+
 export function register(
   sessionID: string,
   controller: AbortController,
@@ -58,6 +81,7 @@ export function register(
     startedAt: options?.startedAt ?? Date.now(),
     reason: options?.reason,
   }
+  notify({ type: "registered", sessionID })
   return true
 }
 
@@ -67,6 +91,7 @@ export function finish(sessionID: string, controller?: AbortController) {
   if (controller && current.abort !== controller) return
 
   delete runningSessions[sessionID]
+  notify({ type: "finished", sessionID })
 }
 
 export async function waitForStop(sessionID: string) {
@@ -81,5 +106,6 @@ export function cancel(sessionID: string) {
 
   current.abort.abort()
   delete runningSessions[sessionID]
+  notify({ type: "cancelled", sessionID })
   return true
 }

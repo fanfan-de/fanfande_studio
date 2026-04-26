@@ -313,6 +313,8 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
         tone:
           event.payload.phase === "waiting_approval"
             ? "warning"
+            : event.payload.phase === "cancelled"
+              ? "warning"
             : event.payload.phase === "failed"
               ? "error"
               : event.payload.phase === "completed"
@@ -654,6 +656,19 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
           partCount: event.payload.parts?.length ?? 0,
         },
       }
+    case "turn.cancelled":
+      return {
+        ...base,
+        title: "Turn cancelled",
+        detail: truncate(event.payload.detail ?? event.payload.reason ?? "cancelled", 180),
+        tone: "warning",
+        summary: {
+          reason: event.payload.reason,
+          detail: event.payload.detail,
+          message: summarizeMessage(event.payload.message),
+          partCount: event.payload.parts?.length ?? 0,
+        },
+      }
     case "turn.error.context":
       return {
         ...base,
@@ -821,6 +836,13 @@ function updateTurnFromEvent(turn: MutableTurnSummary, event: RuntimeEvent.Runti
         message: event.payload.error,
         ...(summarizeMessage(event.payload.message) ?? {}),
       }
+      turn.message = summarizeMessage(event.payload.message)
+      return
+    case "turn.cancelled":
+      turn.endedAt = event.timestamp
+      turn.status = "stopped"
+      turn.phase = "cancelled"
+      turn.phaseReason = event.payload.detail ?? event.payload.reason
       turn.message = summarizeMessage(event.payload.message)
       return
     case "turn.error.context":

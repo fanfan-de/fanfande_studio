@@ -62,6 +62,18 @@ const TurnCompletedPayload = z.object({
 
 const TurnFailedPayload = z.object({
   error: z.string(),
+  code: z.string().optional(),
+  phase: z.string().optional(),
+  retryable: z.boolean().optional(),
+  toolCallID: z.string().optional(),
+  model: ModelRef.optional(),
+  message: Message.MessageInfo.optional(),
+  parts: Message.Part.array().optional(),
+})
+
+const TurnCancelledPayload = z.object({
+  reason: z.enum(["user", "client-disconnect", "shutdown", "unknown"]).optional(),
+  detail: z.string().optional(),
   message: Message.MessageInfo.optional(),
   parts: Message.Part.array().optional(),
 })
@@ -134,6 +146,7 @@ export const TurnRuntimePhase = z.enum([
   "retrying",
   "blocked",
   "completed",
+  "cancelled",
   "failed",
 ])
 
@@ -235,6 +248,11 @@ export const TurnCompletedEvent = RuntimeEventBase.extend({
 export const TurnFailedEvent = RuntimeEventBase.extend({
   type: z.literal("turn.failed"),
   payload: TurnFailedPayload,
+})
+
+export const TurnCancelledEvent = RuntimeEventBase.extend({
+  type: z.literal("turn.cancelled"),
+  payload: TurnCancelledPayload,
 })
 
 export const TextPartStartedEvent = RuntimeEventBase.extend({
@@ -365,6 +383,7 @@ export const RuntimeEvent = z.discriminatedUnion("type", [
   LlmCallFailedEvent,
   TurnCompletedEvent,
   TurnFailedEvent,
+  TurnCancelledEvent,
   TurnErrorContextEvent,
   TextPartStartedEvent,
   TextPartDeltaEvent,
@@ -404,6 +423,7 @@ export type RuntimeEventPayloadByType = {
   "llm.call.failed": z.infer<typeof LlmCallFailedPayload>
   "turn.completed": z.infer<typeof TurnCompletedPayload>
   "turn.failed": z.infer<typeof TurnFailedPayload>
+  "turn.cancelled": z.infer<typeof TurnCancelledPayload>
   "turn.error.context": z.infer<typeof TurnErrorContextPayload>
   "text.part.started": z.infer<typeof TextPartStartedPayload>
   "text.part.delta": z.infer<typeof TextPartDeltaPayload>
@@ -481,6 +501,10 @@ export function parseCursor(value: string) {
   })
 }
 
+export function isTerminalRuntimeEventType(type: RuntimeEventType) {
+  return type === "turn.completed" || type === "turn.failed" || type === "turn.cancelled"
+}
+
 export function isTerminalRuntimeEvent(event: RuntimeEvent) {
-  return event.type === "turn.completed" || event.type === "turn.failed"
+  return isTerminalRuntimeEventType(event.type)
 }

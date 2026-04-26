@@ -83,7 +83,8 @@ function projectReasoningPart(
 function projectTerminalState(
   event:
     | z.infer<typeof RuntimeEvent.TurnCompletedEvent>
-    | z.infer<typeof RuntimeEvent.TurnFailedEvent>,
+    | z.infer<typeof RuntimeEvent.TurnFailedEvent>
+    | z.infer<typeof RuntimeEvent.TurnCancelledEvent>,
 ) {
   if (event.payload.message) {
     Session.upsertMessage(event.payload.message)
@@ -147,6 +148,7 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
       return
     case "turn.completed":
     case "turn.failed":
+    case "turn.cancelled":
       projectTerminalState(event)
       return
   }

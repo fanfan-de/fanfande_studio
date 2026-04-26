@@ -1,6 +1,7 @@
 import { STREAM_PENDING_PREFIX } from "./constants"
 import type {
   AgentStreamEvent,
+  AgentRuntimeEvent,
   AssistantQuestionPrompt,
   AssistantTraceDebugEntry,
   AssistantTraceItem,
@@ -30,6 +31,35 @@ function readNumber(value: unknown) {
 function readRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   return value as Record<string, unknown>
+}
+
+function readRuntimeEvent(item: AgentStreamEvent): AgentRuntimeEvent | null {
+  if (item.event !== "runtime") return null
+
+  const event = readRecord(item.data)
+  const payload = readRecord(event?.payload)
+  const eventID = readString(event?.eventID)
+  const sessionID = readString(event?.sessionID)
+  const turnID = readString(event?.turnID)
+  const type = readString(event?.type)
+  const seq = readNumber(event?.seq)
+  const timestamp = readNumber(event?.timestamp)
+
+  if (!eventID || !sessionID || !turnID || !type || seq <= 0) return null
+
+  return {
+    eventID,
+    sessionID,
+    turnID,
+    seq,
+    timestamp,
+    type,
+    payload: payload ?? {},
+  }
+}
+
+function isSettledRuntimePhase(phase: string) {
+  return phase === "completed" || phase === "blocked" || phase === "cancelled" || phase === "failed"
 }
 
 function describeOptionalStructuredValue(
@@ -294,6 +324,24 @@ function buildStreamEventDebugEntries(
   return entries.length > 0 ? entries : undefined
 }
 
+function buildRuntimeEventDebugEntries(
+  event: AgentRuntimeEvent,
+  cursor?: string,
+  extra?: Record<string, unknown>,
+) {
+  return buildStreamEventDebugEntries("runtime", {
+    eventID: event.eventID,
+    cursor,
+    seq: event.seq,
+    timestamp: event.timestamp,
+  }, {
+    "runtime.type": event.type,
+    "session.id": event.sessionID,
+    "turn.id": event.turnID,
+    ...extra,
+  })
+}
+
 function isVisibleAssistantTraceItem(item: AssistantTraceItem) {
   if (item.kind === "error") return true
   if (item.visibilityKey === "debugMetadata" || item.section === "debug") return false
@@ -389,7 +437,7 @@ function createToolTraceInputText(status: AssistantTraceStatus, state: Record<st
   }
 
   if (status === "waiting-approval" || status === "running" || status === "pending") {
-    return compactText(readString(state?.raw), 320) || describeOptionalStructuredValue(state?.input, {
+    return readString(state?.raw) || describeOptionalStructuredValue(state?.input, {
       pretty: true,
     })
   }
@@ -1577,7 +1625,325 @@ export function finalizeStreamAssistantTurn(
   )
 }
 
+function mapRuntimePhaseToAssistantLifecycle(payload: Record<string, unknown>) {
+  const phase = readString(payload.phase)
+  const toolName = readString(payload.toolName) || null
+  const reason = readString(payload.reason)
+
+  switch (phase) {
+    case "preparing":
+    case "waiting_llm":
+      return {
+        phase: "reasoning" as const,
+        state: reason || "Preparing agent request",
+        toolName: null,
+      }
+    case "reasoning":
+      return {
+        phase: "reasoning" as const,
+        state: reason || "Agent is reasoning",
+        toolName: null,
+      }
+    case "executing_tool":
+      return {
+        phase: "tool_running" as const,
+        state: reason || "Running tools",
+        toolName,
+      }
+    case "waiting_approval":
+      return {
+        phase: "waiting_approval" as const,
+        state: reason || "Waiting for permission approval",
+        toolName,
+      }
+    case "responding":
+      return {
+        phase: "responding" as const,
+        state: reason || "Streaming response",
+        toolName: null,
+      }
+    case "blocked":
+      return {
+        phase: "waiting_approval" as const,
+        state: reason || "Waiting for permission approval",
+        toolName,
+      }
+    case "completed":
+      return {
+        phase: "completed" as const,
+        state: reason || "Backend response received",
+        toolName: null,
+      }
+    case "cancelled":
+      return {
+        phase: "cancelled" as const,
+        state: reason || "Backend stream cancelled",
+        toolName: null,
+      }
+    case "failed":
+      return {
+        phase: "failed" as const,
+        state: reason || "Backend stream failed",
+        toolName: null,
+      }
+    default:
+      return null
+  }
+}
+
+function applyRuntimeEventToTurn(
+  turn: AssistantTurn,
+  item: AgentStreamEvent,
+  event: AgentRuntimeEvent,
+): AssistantTurn {
+  const payload = event.payload
+  const preparedItems = settleQueuedPrompt(turn.items, turn.id)
+  const debugEntries = buildRuntimeEventDebugEntries(event, item.id)
+
+  if (event.type === "turn.started") {
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: true,
+      },
+      {
+        phase: "reasoning",
+        state: readBoolean(payload.resume) ? "Resuming agent stream" : "Agent stream connected",
+      },
+      appendSystemTrace(
+        preparedItems,
+        turn.id,
+        readBoolean(payload.resume) ? "Agent stream resumed" : "Agent stream connected",
+        "Renderer subscribed to canonical runtime updates.",
+        "completed",
+        debugEntries,
+      ),
+    )
+  }
+
+  if (event.type === "turn.state.changed") {
+    const lifecycle = mapRuntimePhaseToAssistantLifecycle(payload)
+    if (!lifecycle) return turn
+    const runtimePhase = readString(payload.phase)
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: !isSettledRuntimePhase(runtimePhase),
+      },
+      {
+        phase: lifecycle.phase,
+        state: lifecycle.state,
+        toolName: lifecycle.toolName,
+      },
+      preparedItems,
+    )
+  }
+
+  if (event.type === "text.part.started" || event.type === "text.part.delta") {
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: true,
+      },
+      {
+        phase: "responding",
+        state: "Streaming response",
+      },
+      appendTraceDelta(preparedItems, {
+        kind: "text",
+        delta: readString(payload.delta) || readString(payload.text),
+        fullText: readString(payload.text) || undefined,
+        sourceID: readString(payload.partID) || undefined,
+        debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
+          "message.id": readString(payload.messageID),
+          "part.id": readString(payload.partID),
+        }),
+      }),
+    )
+  }
+
+  if (event.type === "reasoning.part.started" || event.type === "reasoning.part.delta") {
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: true,
+      },
+      {
+        phase: "reasoning",
+        state: "Agent is reasoning",
+      },
+      appendTraceDelta(preparedItems, {
+        kind: "reasoning",
+        delta: readString(payload.delta) || readString(payload.text),
+        fullText: readString(payload.text) || undefined,
+        sourceID: readString(payload.partID) || undefined,
+        debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
+          "message.id": readString(payload.messageID),
+          "part.id": readString(payload.partID),
+        }),
+      }),
+    )
+  }
+
+  if (event.type === "part.removed") {
+    const partID = readString(payload.partID)
+    if (!partID) return turn
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: true,
+      },
+      {},
+      preparedItems.filter((traceItem) => traceItem.sourceID !== partID && traceItem.id !== partID),
+    )
+  }
+
+  const part = payload.part
+  if (
+    event.type === "permission.requested" ||
+    event.type === "permission.resolved" ||
+    event.type === "text.part.completed" ||
+    event.type === "reasoning.part.completed" ||
+    event.type.startsWith("tool.call.") ||
+    event.type === "source.recorded" ||
+    event.type === "file.generated" ||
+    event.type === "patch.generated" ||
+    event.type === "snapshot.captured"
+  ) {
+    const traceItems = buildTraceItemFromPart(part, {
+      debugEntries,
+    })
+    if (traceItems.length === 0) return turn
+
+    const nextItems = upsertTraceItems(clearStreamingItems(preparedItems), traceItems)
+    const primaryItem = traceItems[0]
+    const partRecord = readRecord(part)
+    const partState = readRecord(partRecord?.state)
+    const approvalRequestID = readString(partState?.approvalID) || null
+
+    if (primaryItem?.kind === "tool") {
+      const phase = primaryItem.status === "waiting-approval"
+        ? "waiting_approval"
+        : primaryItem.status === "running" || primaryItem.status === "pending"
+          ? "tool_running"
+          : turn.runtime.phase
+      const state = primaryItem.status === "waiting-approval" ? "Waiting for permission approval" : "Running tools"
+
+      return updateAssistantTurnLifecycle(
+        {
+          ...turn,
+          isStreaming: true,
+        },
+        {
+          phase,
+          state,
+          toolName: primaryItem.title ?? null,
+          approvalRequestID,
+        },
+        nextItems,
+      )
+    }
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: true,
+      },
+      {},
+      nextItems,
+    )
+  }
+
+  if (event.type === "turn.completed") {
+    const parts = Array.isArray(payload.parts) ? payload.parts : []
+    const finalizedItems = alignAnonymousTraceItemsWithParts(clearStreamingItems(preparedItems), parts)
+    const nextItems = mergeTraceParts(finalizedItems, parts)
+
+    return finalizeStreamAssistantTurn({
+      ...turn,
+      state: "Backend response received",
+      items: nextItems,
+    }, {
+      status: readString(payload.status) || undefined,
+      finishReason: readString(payload.finishReason) || undefined,
+      message: payload.message,
+      debugEntries,
+    })
+  }
+
+  if (event.type === "turn.failed") {
+    const parts = Array.isArray(payload.parts) ? payload.parts : []
+    const message = readString(payload.error) || "Unknown backend error"
+    const nextItems = appendTraceItem(
+      mergeTraceParts(clearStreamingItems(preparedItems), parts),
+      createTraceItem({
+        kind: "error",
+        label: "Error",
+        title: "Runtime turn failed",
+        detail: message,
+        status: "error",
+        debugEntries,
+      }),
+    )
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: false,
+      },
+      {
+        phase: "failed",
+        state: "Backend stream failed",
+        errorMessage: message,
+      },
+      nextItems,
+    )
+  }
+
+  if (event.type === "turn.cancelled") {
+    const parts = Array.isArray(payload.parts) ? payload.parts : []
+    const detail = readString(payload.detail) || readString(payload.reason) || "The turn was cancelled."
+    const nextItems = appendTraceItem(
+      mergeTraceParts(clearStreamingItems(preparedItems), parts),
+      createTraceItem({
+        kind: "system",
+        label: "System",
+        title: "Turn cancelled",
+        detail,
+        status: "completed",
+        section: "workflow",
+        visibilityKey: "workflow",
+        debugEntries,
+      }),
+    )
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: false,
+      },
+      {
+        phase: "cancelled",
+        state: "Backend stream cancelled",
+        toolName: null,
+        approvalRequestID: null,
+        errorMessage: null,
+      },
+      nextItems,
+    )
+  }
+
+  return turn
+}
+
 export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStreamEvent): AssistantTurn {
+  const runtimeEvent = readRuntimeEvent(item)
+  if (runtimeEvent) {
+    return applyRuntimeEventToTurn(turn, item, runtimeEvent)
+  }
+
   const payload = readRecord(item.data)
   const preparedItems = settleQueuedPrompt(turn.items, turn.id)
 

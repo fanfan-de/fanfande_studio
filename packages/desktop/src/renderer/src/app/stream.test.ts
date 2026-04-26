@@ -2,6 +2,142 @@ import { describe, expect, it } from "vitest"
 import { applyAgentStreamEventToTurn, buildStreamingAssistantTurn, buildTurnsFromHistory, buildUserTurn, buildUserTurnText } from "./stream"
 
 describe("stream trace reducer", () => {
+  it("reduces canonical runtime events into an assistant turn", () => {
+    let turn = buildStreamingAssistantTurn("Show runtime trace")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      id: "100:turn-runtime:1",
+      event: "runtime",
+      data: {
+        eventID: "event-1",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.started",
+        payload: {},
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      id: "101:turn-runtime:2",
+      event: "runtime",
+      data: {
+        eventID: "event-2",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "text.part.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "part-runtime-text",
+          kind: "text",
+          delta: "Runtime answer",
+          text: "Runtime answer",
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      id: "102:turn-runtime:3",
+      event: "runtime",
+      data: {
+        eventID: "event-3",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 3,
+        timestamp: 102,
+        type: "turn.completed",
+        payload: {
+          status: "completed",
+          finishReason: "stop",
+          parts: [{ id: "part-runtime-text", type: "text", text: "Runtime answer" }],
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("completed")
+    expect(turn.isStreaming).toBe(false)
+    expect(turn.items.some((item) => item.kind === "text" && item.text === "Runtime answer")).toBe(true)
+  })
+
+  it("marks runtime cancelled turns as stopped streams", () => {
+    let turn = buildStreamingAssistantTurn("Cancel runtime trace")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-cancelled",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.cancelled",
+        payload: {
+          reason: "client-disconnect",
+          detail: "client closed the stream",
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("cancelled")
+    expect(turn.isStreaming).toBe(false)
+    expect(turn.state).toBe("Backend stream cancelled")
+  })
+
+  it("settles on completed runtime phase even before a terminal event arrives", () => {
+    let turn = buildStreamingAssistantTurn("Finish from state")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-state-completed",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.state.changed",
+        payload: {
+          phase: "completed",
+          reason: "stop",
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("completed")
+    expect(turn.isStreaming).toBe(false)
+    expect(turn.state).toBe("stop")
+  })
+
+  it("does not render canonical user prompt parts as assistant response sections", () => {
+    let turn = buildStreamingAssistantTurn("User prompt")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-user-part",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "part.recorded",
+        payload: {
+          part: {
+            id: "part-user-prompt",
+            messageID: "message-user",
+            type: "text",
+            text: "User prompt",
+          },
+        },
+      },
+    })
+
+    expect(turn.items.some((item) => item.kind === "text" && item.text === "User prompt")).toBe(false)
+    expect(turn.runtime.phase).toBe("waiting_first_event")
+    expect(turn.isStreaming).toBe(true)
+  })
+
   it("surfaces the response text while the stream is still running", () => {
     let turn = buildStreamingAssistantTurn("Show live trace")
     expect(turn.runtime.phase).toBe("waiting_first_event")
@@ -145,6 +281,33 @@ describe("stream trace reducer", () => {
     expect(toolItems[0]?.toolInputText).toContain("\"content\": \"input-marker\"")
     expect(toolItems[0]?.toolOutputText).toBe("output-marker")
     expect(toolItems[0]?.detail).toBe("Wrote notes.txt")
+  })
+
+  it("preserves the full streamed tool input while the call is running", () => {
+    const longRawInput = `${"streamed input line\n".repeat(40)}tail-input-marker`
+
+    let turn = buildStreamingAssistantTurn("Inspect streamed tool payloads")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "part",
+      data: {
+        part: {
+          id: "tool-streaming-input",
+          type: "tool",
+          tool: "shell",
+          state: {
+            status: "running",
+            raw: longRawInput,
+          },
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(toolItems[0]?.toolInputText).toBe(longRawInput)
+    expect(toolItems[0]?.toolInputText).toContain("tail-input-marker")
+    expect(toolItems[0]?.toolInputText?.endsWith("...")).toBe(false)
   })
 
   it("derives source and attachment trace items from assistant parts", () => {

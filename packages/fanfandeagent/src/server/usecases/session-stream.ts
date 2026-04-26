@@ -1,8 +1,9 @@
 import * as EventStore from "#session/event-store.ts"
+import * as Identifier from "#id/id.ts"
 import * as LiveStreamHub from "#session/live-stream-hub.ts"
 import * as Message from "#session/message.ts"
+import * as Orchestrator from "#session/orchestrator.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
-import * as StreamMapper from "#session/stream-mapper.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "server.session" })
@@ -73,6 +74,58 @@ function runtimeEventSSEID(event: RuntimeEvent.RuntimeEvent) {
   return RuntimeEvent.serializeCursor(RuntimeEvent.cursorOf(event))
 }
 
+function sendRuntimeEvent(
+  send: (event: string, data: unknown, id?: string) => void,
+  event: RuntimeEvent.RuntimeEvent,
+) {
+  send("runtime", event, runtimeEventSSEID(event))
+}
+
+function createTransportTerminalEvent(input: {
+  sessionID: string
+  turnID?: string
+  seq?: number
+  type: "turn.completed" | "turn.failed"
+  payload:
+    | RuntimeEvent.RuntimeEventPayloadByType["turn.completed"]
+    | RuntimeEvent.RuntimeEventPayloadByType["turn.failed"]
+}) {
+  return RuntimeEvent.RuntimeEvent.parse({
+    eventID: Identifier.ascending("event"),
+    sessionID: input.sessionID,
+    turnID: input.turnID ?? Identifier.ascending("turn"),
+    seq: input.seq ?? 1,
+    timestamp: Date.now(),
+    type: input.type,
+    payload: input.payload,
+  })
+}
+
+function cancelActiveRuntimeTurn(input: {
+  sessionID: string
+  reason: RuntimeEvent.RuntimeEventPayloadByType["turn.cancelled"]["reason"]
+  detail?: string
+}) {
+  const turn = Orchestrator.activeTurn(input.sessionID)
+  if (!turn) return
+
+  try {
+    turn.emit("turn.state.changed", {
+      phase: "cancelled",
+      reason: input.detail ?? input.reason,
+    })
+    turn.emit("turn.cancelled", {
+      reason: input.reason,
+      detail: input.detail,
+    })
+  } catch (error) {
+    log.warn("failed to emit runtime cancellation event", {
+      sessionID: input.sessionID,
+      error: normalizeLogError(error),
+    })
+  }
+}
+
 export function createSessionEventStream(input: {
   sessionID: string
   requestId?: string
@@ -130,10 +183,7 @@ export function createSessionEventStream(input: {
             break
           }
 
-          const sseID = runtimeEventSSEID(next.event)
-          for (const rendererEvent of StreamMapper.toRendererStreamEvents(next.event)) {
-            send(rendererEvent.event, rendererEvent.data, sseID)
-          }
+          sendRuntimeEvent(send, next.event)
         }
 
         subscription.close()
@@ -144,11 +194,15 @@ export function createSessionEventStream(input: {
           requestId: input.requestId,
           error: normalizeLogError(error),
         })
-        send("error", {
+        sendRuntimeEvent(send, createTransportTerminalEvent({
           sessionID: input.sessionID,
-          turnID: "",
-          message: error instanceof Error ? error.message : String(error),
-        })
+          type: "turn.failed",
+          payload: {
+            error: error instanceof Error ? error.message : String(error),
+            phase: "stream",
+            retryable: true,
+          },
+        }))
         subscription.close()
         if (!cancelled) controller.close()
       })
@@ -214,6 +268,8 @@ export function createSessionExecutionStream(input: {
         let resolved: SessionStreamResult | undefined
         let failed: unknown
         let terminalEvent: RuntimeEvent.RuntimeEvent | undefined
+        let observedTurnID = input.replayTurnID
+        let observedSeq = input.sinceSeq ?? 0
         let executionDone = false
 
         const execution = input.execute()
@@ -248,10 +304,9 @@ export function createSessionExecutionStream(input: {
             break
           }
 
-          const sseID = runtimeEventSSEID(next.event)
-          for (const rendererEvent of StreamMapper.toRendererStreamEvents(next.event)) {
-            send(rendererEvent.event, rendererEvent.data, sseID)
-          }
+          observedTurnID = next.event.turnID
+          observedSeq = Math.max(observedSeq, next.event.seq)
+          sendRuntimeEvent(send, next.event)
 
           if (RuntimeEvent.isTerminalRuntimeEvent(next.event)) {
             terminalEvent = next.event
@@ -270,10 +325,17 @@ export function createSessionExecutionStream(input: {
               requestId: input.requestId,
               error: normalizeLogError(failed),
             })
-            send("error", {
+            sendRuntimeEvent(send, createTransportTerminalEvent({
               sessionID: input.sessionID,
-              message: failed instanceof Error ? failed.message : String(failed),
-            })
+              turnID: observedTurnID,
+              seq: observedSeq + 1,
+              type: "turn.failed",
+              payload: {
+                error: failed instanceof Error ? failed.message : String(failed),
+                phase: "execution",
+                retryable: false,
+              },
+            }))
           } else if (resolved) {
             log.warn("session execution stream completed without terminal runtime event", {
               sessionID: input.sessionID,
@@ -281,20 +343,33 @@ export function createSessionExecutionStream(input: {
               assistantMessageID: resolved.info.id,
               partCount: resolved.parts.length,
             })
-            send("done", {
+            sendRuntimeEvent(send, createTransportTerminalEvent({
               sessionID: input.sessionID,
-              message: resolved.info,
-              parts: resolved.parts,
-            })
+              turnID: observedTurnID,
+              seq: observedSeq + 1,
+              type: "turn.completed",
+              payload: {
+                status: "completed",
+                message: resolved.info,
+                parts: resolved.parts,
+              },
+            }))
           } else {
             log.error("session execution stream exited without result", {
               sessionID: input.sessionID,
               requestId: input.requestId,
             })
-            send("error", {
+            sendRuntimeEvent(send, createTransportTerminalEvent({
               sessionID: input.sessionID,
-              message: "Prompt exited unexpectedly",
-            })
+              turnID: observedTurnID,
+              seq: observedSeq + 1,
+              type: "turn.failed",
+              payload: {
+                error: "Prompt exited unexpectedly",
+                phase: "execution",
+                retryable: true,
+              },
+            }))
           }
         }
 
@@ -306,16 +381,27 @@ export function createSessionExecutionStream(input: {
           requestId: input.requestId,
           error: normalizeLogError(error),
         })
-        send("error", {
+        sendRuntimeEvent(send, createTransportTerminalEvent({
           sessionID: input.sessionID,
-          message: error instanceof Error ? error.message : String(error),
-        })
+          turnID: input.replayTurnID,
+          type: "turn.failed",
+          payload: {
+            error: error instanceof Error ? error.message : String(error),
+            phase: "stream",
+            retryable: true,
+          },
+        }))
         subscription.close()
         if (!cancelled) controller.close()
       })
     },
     cancel() {
       cancelled = true
+      cancelActiveRuntimeTurn({
+        sessionID: input.sessionID,
+        reason: "client-disconnect",
+        detail: "Execution stream was cancelled by the client.",
+      })
       subscription.close()
       input.cancel()
     },

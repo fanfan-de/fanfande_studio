@@ -1,5 +1,7 @@
 import z from "zod"
 import * as db from "#database/Sqlite.ts"
+import * as LiveStreamHub from "#session/live-stream-hub.ts"
+import * as Projector from "#session/projector.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 
 const SessionEventRecord = z.object({
@@ -13,6 +15,7 @@ const SessionEventRecord = z.object({
 })
 
 let sessionEventsGeneration = -1
+const subscribers = new Set<(event: RuntimeEvent.RuntimeEvent) => void>()
 
 function ensureEventStoreTables() {
   const generation = db.getDatabaseGeneration()
@@ -31,6 +34,10 @@ function ensureEventStoreTables() {
   `)
   db.db.run(`
     CREATE INDEX IF NOT EXISTS "idx_session_events_session_turn_seq"
+    ON "session_events" ("sessionID", "turnID", "seq");
+  `)
+  db.db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "idx_session_events_session_turn_seq_unique"
     ON "session_events" ("sessionID", "turnID", "seq");
   `)
   db.db.run(`
@@ -69,9 +76,53 @@ function fromStoredRecord(record: z.infer<typeof SessionEventRecord>) {
   })
 }
 
+function notify(event: RuntimeEvent.RuntimeEvent) {
+  for (const subscriber of [...subscribers]) {
+    try {
+      subscriber(event)
+    } catch {
+      subscribers.delete(subscriber)
+    }
+  }
+}
+
+export function subscribe(subscriber: (event: RuntimeEvent.RuntimeEvent) => void) {
+  subscribers.add(subscriber)
+  return () => {
+    subscribers.delete(subscriber)
+  }
+}
+
 export function append(event: RuntimeEvent.RuntimeEvent) {
   ensureEventStoreTables()
+  if (hasEvent(event.eventID)) return event
   db.insertOneWithSchema("session_events", toStoredRecord(event), SessionEventRecord)
+  notify(event)
+  return event
+}
+
+export function hasEvent(eventID: string) {
+  ensureEventStoreTables()
+  return Boolean(db.findById("session_events", SessionEventRecord, eventID, "eventID"))
+}
+
+export function appendAndProject(event: RuntimeEvent.RuntimeEvent) {
+  ensureEventStoreTables()
+
+  const commit = db.db.transaction((nextEvent: RuntimeEvent.RuntimeEvent) => {
+    if (hasEvent(nextEvent.eventID)) return false
+
+    db.insertOneWithSchema("session_events", toStoredRecord(nextEvent), SessionEventRecord)
+    Projector.project(nextEvent)
+    return true
+  })
+
+  const inserted = commit(event)
+  if (inserted) {
+    LiveStreamHub.publish(event)
+    notify(event)
+  }
+
   return event
 }
 

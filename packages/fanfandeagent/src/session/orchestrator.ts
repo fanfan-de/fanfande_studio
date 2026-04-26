@@ -1,7 +1,5 @@
 import * as Identifier from "#id/id.ts"
 import * as EventStore from "#session/event-store.ts"
-import * as LiveStreamHub from "#session/live-stream-hub.ts"
-import * as Projector from "#session/projector.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 
 export interface TurnContext {
@@ -21,6 +19,7 @@ class TurnRuntime implements TurnContext {
   readonly turnID: string
   private readonly factory: ReturnType<typeof RuntimeEvent.createRuntimeEventFactory>
   private closed = false
+  private terminalEvent: RuntimeEvent.RuntimeEvent | undefined
 
   constructor(input: { sessionID: string; turnID: string }) {
     this.sessionID = input.sessionID
@@ -39,10 +38,17 @@ class TurnRuntime implements TurnContext {
       throw new Error(`Turn '${this.turnID}' is already closed.`)
     }
 
+    if (this.terminalEvent) {
+      return this.terminalEvent
+    }
+
     const event = this.factory.next(type, payload)
-    EventStore.append(event)
-    Projector.project(event)
-    LiveStreamHub.publish(event)
+    EventStore.appendAndProject(event)
+
+    if (RuntimeEvent.isTerminalRuntimeEvent(event)) {
+      this.terminalEvent = event
+    }
+
     return event
   }
 

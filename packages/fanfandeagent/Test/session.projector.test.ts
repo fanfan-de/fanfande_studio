@@ -4,8 +4,11 @@ import { Instance } from "#project/instance.ts"
 import * as db from "#database/Sqlite.ts"
 import * as Identifier from "#id/id.ts"
 import * as Permission from "#permission/schema.ts"
+import * as EventStore from "#session/event-store.ts"
+import * as LiveStreamHub from "#session/live-stream-hub.ts"
 import * as Message from "#session/message.ts"
 import * as Orchestrator from "#session/orchestrator.ts"
+import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Session from "#session/session.ts"
 
 test("runtime events project messages and parts into the session read model", async () => {
@@ -272,6 +275,63 @@ test("runtime events project messages and parts into the session read model", as
 
       const removedPatch = db.findById("parts", Message.Part, patchPart.id)
       expect(removedPatch).toBeNull()
+    },
+  })
+})
+
+test("appendAndProject is idempotent and publishes only committed events", async () => {
+  await Instance.provide({
+    directory: process.cwd(),
+    async fn() {
+      const session = await Session.createSession({
+        directory: Instance.directory,
+        projectID: Instance.project.id,
+      })
+      const turnID = Identifier.ascending("turn")
+      const factory = RuntimeEvent.createRuntimeEventFactory({
+        sessionID: session.id,
+        turnID,
+      })
+      const userMessage = Message.User.parse({
+        id: Identifier.ascending("message"),
+        sessionID: session.id,
+        role: "user",
+        created: Date.now(),
+        agent: "plan",
+        model: {
+          providerID: "test-provider",
+          modelID: "test-model",
+        },
+      })
+      const event = factory.next("message.recorded", {
+        message: userMessage,
+      })
+      const subscription = LiveStreamHub.subscribe({
+        sessionID: session.id,
+        turnID,
+        closeOnTerminalTurn: false,
+      })
+
+      try {
+        EventStore.appendAndProject(event)
+        EventStore.appendAndProject(event)
+
+        const projectedMessages = db.findManyWithSchema("messages", Message.MessageInfo, {
+          where: [{ column: "sessionID", value: session.id }],
+        })
+        expect(projectedMessages).toHaveLength(1)
+
+        const firstPublished = await subscription.next()
+        const secondPublished = await Promise.race([
+          subscription.next(),
+          new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 20)),
+        ])
+
+        expect(firstPublished?.eventID).toBe(event.eventID)
+        expect(secondPublished).toBeUndefined()
+      } finally {
+        subscription.close()
+      }
     },
   })
 })

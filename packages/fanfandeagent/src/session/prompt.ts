@@ -313,6 +313,18 @@ function emitTurnFailureContext(input: {
 }
 
 export function cancel(sessionID: string) {
+    const turn = Orchestrator.activeTurn(sessionID)
+    if (turn) {
+        turn.emit("turn.state.changed", {
+            phase: "cancelled",
+            reason: "Prompt cancellation requested.",
+        })
+        turn.emit("turn.cancelled", {
+            reason: "user",
+            detail: "Prompt cancellation requested.",
+        })
+    }
+
     return RunningState.cancel(sessionID);
 }
 

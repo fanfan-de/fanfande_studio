@@ -308,6 +308,7 @@ export interface AgentSessionRuntimeErrorContext {
     | "retrying"
     | "blocked"
     | "completed"
+    | "cancelled"
     | "failed"
   messageID?: string
   agent?: string
@@ -348,6 +349,7 @@ export interface AgentSessionRuntimeTurnSummary {
     | "retrying"
     | "blocked"
     | "completed"
+    | "cancelled"
     | "failed"
   phaseReason?: string
   phaseUpdatedAt?: number
@@ -404,6 +406,7 @@ export interface AgentSessionRuntimeDebugSnapshot {
       | "retrying"
       | "blocked"
       | "completed"
+      | "cancelled"
       | "failed"
   }
   running: {

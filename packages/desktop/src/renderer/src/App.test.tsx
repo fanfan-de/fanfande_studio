@@ -2210,8 +2210,10 @@ describe("App", () => {
 
     const gitGetCapabilities = window.desktop!.gitGetCapabilities as ReturnType<typeof vi.fn>
     const openFolderWorkspace = window.desktop!.openFolderWorkspace as ReturnType<typeof vi.fn>
+    const getSessionDiff = window.desktop!.getSessionDiff as ReturnType<typeof vi.fn>
     gitGetCapabilities.mockClear()
     openFolderWorkspace.mockClear()
+    getSessionDiff.mockClear()
 
     act(() => {
       workspaceFileChangeListener?.({
@@ -2224,6 +2226,7 @@ describe("App", () => {
       expect(gitGetCapabilities).toHaveBeenCalled()
     })
     expect(openFolderWorkspace).not.toHaveBeenCalled()
+    expect(getSessionDiff).not.toHaveBeenCalled()
   })
 
   it("reopens the workspace when watcher events indicate repository structure changed", async () => {
@@ -2376,12 +2379,21 @@ describe("App", () => {
     })
     expect(screen.getByText("No changes in this session.")).toBeInTheDocument()
 
-    act(() => {
-      workspaceFileChangeListener?.({
-        directory: workspace.directory,
-        paths: ["C:\\Projects\\Atlas\\client\\src\\App.tsx"],
+    vi.useFakeTimers()
+    try {
+      act(() => {
+        workspaceFileChangeListener?.({
+          directory: workspace.directory,
+          paths: ["C:\\Projects\\Atlas\\client\\src\\App.tsx"],
+        })
       })
-    })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500)
+      })
+    } finally {
+      vi.useRealTimers()
+    }
 
     await waitFor(() => {
       expect(window.desktop!.getSessionDiff).toHaveBeenCalledTimes(2)

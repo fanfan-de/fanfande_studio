@@ -311,6 +311,7 @@ export type RuntimePhase =
   | "retrying"
   | "blocked"
   | "completed"
+  | "cancelled"
   | "failed"
 
 export interface SessionRuntimeEventSummary {
@@ -576,6 +577,7 @@ export type AssistantTurnPhase =
   | "waiting_approval"
   | "responding"
   | "completed"
+  | "cancelled"
   | "failed"
 
 export interface AssistantTurnRuntime {
@@ -646,6 +648,16 @@ export interface AgentStreamEvent {
   id?: string
   event: string
   data: unknown
+}
+
+export interface AgentRuntimeEvent {
+  eventID: string
+  sessionID: string
+  turnID: string
+  seq: number
+  timestamp: number
+  type: string
+  payload: Record<string, unknown>
 }
 
 export interface AgentStreamIPCEvent extends AgentStreamEvent {

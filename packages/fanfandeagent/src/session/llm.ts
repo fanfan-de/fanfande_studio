@@ -289,6 +289,11 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
                 reasoningEffort: openAIReasoningEffort,
               }
             : {}),
+          ...(isOpenAIReasoning && openAIReasoningEffort !== "none"
+            ? {
+                reasoningSummary: "auto",
+              }
+            : {}),
         }
       : undefined
 

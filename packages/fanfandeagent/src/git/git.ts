@@ -185,6 +185,13 @@ function parseBranchList(stdout: string) {
     .filter(Boolean)
 }
 
+function parseRemoteBranchList(stdout: string) {
+  return parseBranchList(stdout)
+    .filter((name) => !isRemoteHeadReference(name))
+    .map((name) => name.replace(/^refs\/remotes\//, ""))
+    .filter(Boolean)
+}
+
 function isRemoteHeadReference(name: string) {
   return /\/HEAD$/.test(name)
 }
@@ -409,12 +416,11 @@ export async function listGitBranches(directory: string): Promise<GitBranchSumma
 
   const remoteResult = await runCommandOrThrow(
     gitBinary,
-    ["for-each-ref", "--format=%(refname:short)", "refs/remotes"],
+    ["for-each-ref", "--format=%(refname)", "refs/remotes"],
     targetDirectory,
     "Failed to list remote branches.",
   )
-  const remoteBranches = parseBranchList(remoteResult.stdout).filter((name) => {
-    if (isRemoteHeadReference(name)) return false
+  const remoteBranches = parseRemoteBranchList(remoteResult.stdout).filter((name) => {
     const localName = resolveRemoteLocalBranchName(name)
     return localName ? !localBranchNames.has(localName) : true
   })

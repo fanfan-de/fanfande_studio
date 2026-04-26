@@ -133,6 +133,7 @@ type ComposerAttachmentKind = "image" | "pdf" | "unsupported"
 
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"])
 const GIT_REFRESH_SUPPRESSION_MS = 1000
+const WORKSPACE_DIFF_REFRESH_DEBOUNCE_MS = 500
 const WORKSPACE_RELOAD_SUPPRESSION_MS = 1500
 const DEFAULT_SESSION_DIFF_STATE: SessionDiffState = {
   status: "idle",
@@ -225,7 +226,44 @@ function readString(value: unknown) {
   return typeof value === "string" ? value : undefined
 }
 
+function readRuntimeStreamEvent(value: unknown) {
+  const event = readRecord(value)
+  if (!event || !readString(event.type) || !readString(event.eventID)) return null
+  if (!readString(event.sessionID) || !readString(event.turnID)) return null
+  if (!readRecord(event.payload)) return null
+  return event
+}
+
+function readRuntimeStreamPayload(value: unknown) {
+  return readRecord(readRuntimeStreamEvent(value)?.payload)
+}
+
+function readRuntimeStreamType(streamEvent: { event: string; data: unknown }) {
+  if (streamEvent.event !== "runtime") return undefined
+  return readString(readRuntimeStreamEvent(streamEvent.data)?.type)
+}
+
+function isTerminalStreamEvent(streamEvent: { event: string; data: unknown }) {
+  const runtimeType = readRuntimeStreamType(streamEvent)
+  if (runtimeType) {
+    return runtimeType === "turn.completed" || runtimeType === "turn.failed" || runtimeType === "turn.cancelled"
+  }
+
+  return streamEvent.event === "done" || streamEvent.event === "error"
+}
+
+function isCompletedStreamEvent(streamEvent: { event: string; data: unknown }) {
+  const runtimeType = readRuntimeStreamType(streamEvent)
+  if (runtimeType) return runtimeType === "turn.completed"
+  return streamEvent.event === "done"
+}
+
 function isPermissionRequestStreamEvent(streamEvent: { event: string; data: unknown }) {
+  const runtimeType = readRuntimeStreamType(streamEvent)
+  if (runtimeType) {
+    if (runtimeType === "permission.requested" || runtimeType === "tool.call.waiting_approval") return true
+  }
+
   if (streamEvent.event !== "part") return false
   const data = readRecord(streamEvent.data)
   const part = readRecord(data?.part)
@@ -269,6 +307,15 @@ function resolveWorkspaceRelativePath(directory: string, target: string, platfor
 
 function shouldReloadWorkspaceFromRelativePath(relativePath: string) {
   return relativePath === ".git" || relativePath === ".git/config"
+}
+
+function isGitInternalRelativePath(relativePath: string) {
+  return relativePath === ".git" || relativePath.startsWith(".git/")
+}
+
+function shouldRefreshWorkspaceDiffFromRelativePaths(relativePaths: string[]) {
+  if (relativePaths.length === 0) return true
+  return relativePaths.some((relativePath) => !isGitInternalRelativePath(relativePath))
 }
 
 function resolveComposerEffectiveModel(
@@ -682,6 +729,11 @@ function readSessionContextUsageFromMessageInfo(value: unknown): SessionContextU
 }
 
 function readSessionContextUsageFromDoneEventData(value: unknown) {
+  const runtimePayload = readRuntimeStreamPayload(value)
+  if (runtimePayload) {
+    return readSessionContextUsageFromMessageInfo(runtimePayload.message)
+  }
+
   const payload = readStreamRecord(value)
   return readSessionContextUsageFromMessageInfo(payload?.message)
 }
@@ -756,6 +808,7 @@ export function useAgentWorkspace({
   const pendingStreamsRef = useRef<Record<string, PendingAgentStream>>({})
   const historyRequestRef = useRef(0)
   const sessionDiffRequestRef = useRef<Record<string, number>>({})
+  const sessionDiffRefreshTimerRef = useRef<Record<string, number>>({})
   const runtimeDebugRequestRef = useRef<Record<string, number>>({})
   const runtimeDebugRefreshTimerRef = useRef<Record<string, number>>({})
   const workspaceFileSearchRequestRef = useRef(0)
@@ -1152,6 +1205,23 @@ export function useAgentWorkspace({
     })
   }
 
+  function clearSessionDiffRefreshTimer(sessionID: string) {
+    const timerID = sessionDiffRefreshTimerRef.current[sessionID]
+    if (timerID === undefined) return
+    window.clearTimeout(timerID)
+    delete sessionDiffRefreshTimerRef.current[sessionID]
+  }
+
+  function scheduleSessionDiffRefreshForSession(sessionID: string) {
+    clearSessionDiffRefreshTimer(sessionID)
+    sessionDiffRefreshTimerRef.current[sessionID] = window.setTimeout(() => {
+      delete sessionDiffRefreshTimerRef.current[sessionID]
+      void loadSessionDiffForSession(sessionID).catch((error) => {
+        console.error("[desktop] workspace diff refresh failed:", error)
+      })
+    }, WORKSPACE_DIFF_REFRESH_DEBOUNCE_MS)
+  }
+
   function clearRuntimeDebugRefreshTimer(sessionID: string) {
     const timerID = runtimeDebugRefreshTimerRef.current[sessionID]
     if (timerID === undefined) return
@@ -1296,11 +1366,21 @@ export function useAgentWorkspace({
   }
 
   function resolveStreamCursor(event: { id?: string; data: unknown }) {
+    const runtimeEvent = readRuntimeStreamEvent(event.data)
+    if (runtimeEvent) {
+      return event.id || readStreamString(runtimeEvent.eventID)
+    }
+
     const payload = readStreamRecord(event.data)
     return readStreamString(payload?.cursor) || event.id || ""
   }
 
   function resolveStreamTurnID(event: { data: unknown }) {
+    const runtimeEvent = readRuntimeStreamEvent(event.data)
+    if (runtimeEvent) {
+      return readStreamString(runtimeEvent.turnID) || undefined
+    }
+
     const payload = readStreamRecord(event.data)
     return readStreamString(payload?.turnID) || undefined
   }
@@ -1381,8 +1461,8 @@ export function useAgentWorkspace({
       target.backendSessionID ?? resolveBackendSessionID(target.sessionID),
     )
 
-    if (streamEvent.event === "done" || streamEvent.event === "error") {
-      if (streamEvent.event === "done") {
+    if (isTerminalStreamEvent(streamEvent)) {
+      if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(target.sessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
       }
       delete pendingStreamsRef.current[streamEvent.streamID]
@@ -1414,8 +1494,8 @@ export function useAgentWorkspace({
 
     const backendTurnID = resolveStreamTurnID(streamEvent)
     if (!backendTurnID) {
-      if (streamEvent.event === "done" || streamEvent.event === "error") {
-        if (streamEvent.event === "done") {
+      if (isTerminalStreamEvent(streamEvent)) {
+        if (isCompletedStreamEvent(streamEvent)) {
           updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
         }
         refreshWorkspaceForSession(uiSessionID)
@@ -1446,8 +1526,8 @@ export function useAgentWorkspace({
 
     scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)
 
-    if (streamEvent.event === "done" || streamEvent.event === "error") {
-      if (streamEvent.event === "done") {
+    if (isTerminalStreamEvent(streamEvent)) {
+      if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
       }
       cleanupTurnTarget(streamEvent.sessionID, backendTurnID)
@@ -1485,6 +1565,7 @@ export function useAgentWorkspace({
     const getSessionDiff = window.desktop?.getSessionDiff
     if (!getSessionDiff) return
 
+    clearSessionDiffRefreshTimer(sessionID)
     const requestID = (sessionDiffRequestRef.current[sessionID] ?? 0) + 1
     sessionDiffRequestRef.current[sessionID] = requestID
     const hasExistingSummary = Boolean(sessionDiffBySession[sessionID])
@@ -1640,19 +1721,25 @@ export function useAgentWorkspace({
     const now = Date.now()
 
     if (activeSessionID && normalizedActiveSessionDirectory === normalizedEventDirectory) {
-      setSessionDiffStateBySession((prev) => {
-        const current = prev[activeSessionID] ?? DEFAULT_SESSION_DIFF_STATE
-        return {
-          ...prev,
-          [activeSessionID]: {
-            ...current,
-            isStale: true,
-          },
-        }
-      })
-      void loadSessionDiffForSession(activeSessionID).catch((error) => {
-        console.error("[desktop] workspace diff refresh failed:", error)
-      })
+      const activeRelativePaths = workspaceEvent.paths
+        .map((changedPath) =>
+          resolveWorkspaceRelativePath(activeSessionDirectory ?? workspaceEvent.directory, changedPath, platform),
+        )
+        .filter((value): value is string => value !== null)
+
+      if (shouldRefreshWorkspaceDiffFromRelativePaths(activeRelativePaths)) {
+        setSessionDiffStateBySession((prev) => {
+          const current = prev[activeSessionID] ?? DEFAULT_SESSION_DIFF_STATE
+          return {
+            ...prev,
+            [activeSessionID]: {
+              ...current,
+              isStale: true,
+            },
+          }
+        })
+        scheduleSessionDiffRefreshForSession(activeSessionID)
+      }
     }
 
     const matchingWorkspace = workspaces.find(
@@ -1921,6 +2008,9 @@ export function useAgentWorkspace({
 
   useEffect(() => {
     return () => {
+      for (const sessionID of Object.keys(sessionDiffRefreshTimerRef.current)) {
+        clearSessionDiffRefreshTimer(sessionID)
+      }
       for (const sessionID of Object.keys(runtimeDebugRefreshTimerRef.current)) {
         clearRuntimeDebugRefreshTimer(sessionID)
       }
@@ -2282,6 +2372,7 @@ export function useAgentWorkspace({
       delete conversationVersionRef.current[sessionID]
       delete permissionRequestsRequestRef.current[sessionID]
       delete sessionDiffRequestRef.current[sessionID]
+      clearSessionDiffRefreshTimer(sessionID)
       delete runtimeDebugRequestRef.current[sessionID]
       clearRuntimeDebugRefreshTimer(sessionID)
       delete seenStreamCursorsRef.current[sessionID]
@@ -2793,6 +2884,7 @@ export function useAgentWorkspace({
         delete conversationVersionRef.current[archivedSessionID]
         delete permissionRequestsRequestRef.current[archivedSessionID]
         delete sessionDiffRequestRef.current[archivedSessionID]
+        clearSessionDiffRefreshTimer(archivedSessionID)
         delete runtimeDebugRequestRef.current[archivedSessionID]
         clearRuntimeDebugRefreshTimer(archivedSessionID)
         delete seenStreamCursorsRef.current[archivedSessionID]

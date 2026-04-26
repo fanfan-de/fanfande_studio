@@ -138,6 +138,24 @@ async function resolveProjectGitDirectory(
   return canonicalDirectory
 }
 
+function createProjectGitApiError(error: unknown) {
+  if (error instanceof ApiError) return error
+
+  const message = error instanceof Error && error.message.trim()
+    ? error.message
+    : "Git operation failed."
+
+  return new ApiError(400, "GIT_OPERATION_FAILED", message)
+}
+
+async function runProjectGitOperation<T>(operation: () => Promise<T>) {
+  try {
+    return await operation()
+  } catch (error) {
+    throw createProjectGitApiError(error)
+  }
+}
+
 function parseModelReference(value: string) {
   const [providerID, ...rest] = value.split("/")
   const modelID = rest.join("/")
@@ -327,9 +345,11 @@ export async function commitProjectGitChanges(
   projectID: string,
   input: z.infer<typeof GitCommitBody>,
 ) {
-  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
-  return Git.commitGitChanges(directory, input.message, {
-    stageAll: input.stageAll,
+  return runProjectGitOperation(async () => {
+    const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+    return Git.commitGitChanges(directory, input.message, {
+      stageAll: input.stageAll,
+    })
   })
 }
 
@@ -337,40 +357,50 @@ export async function pushProjectGitChanges(
   projectID: string,
   input: z.infer<typeof GitDirectoryBody>,
 ) {
-  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
-  return Git.pushGitChanges(directory)
+  return runProjectGitOperation(async () => {
+    const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+    return Git.pushGitChanges(directory)
+  })
 }
 
 export async function createProjectGitBranch(
   projectID: string,
   input: z.infer<typeof GitCreateBranchBody>,
 ) {
-  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
-  return Git.createGitBranch(directory, input.name)
+  return runProjectGitOperation(async () => {
+    const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+    return Git.createGitBranch(directory, input.name)
+  })
 }
 
 export async function listProjectGitBranches(
   projectID: string,
   input: z.infer<typeof GitDirectoryQuery>,
 ) {
-  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
-  return Git.listGitBranches(directory)
+  return runProjectGitOperation(async () => {
+    const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+    return Git.listGitBranches(directory)
+  })
 }
 
 export async function checkoutProjectGitBranch(
   projectID: string,
   input: z.infer<typeof GitCheckoutBranchBody>,
 ) {
-  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
-  return Git.checkoutGitBranch(directory, input.name)
+  return runProjectGitOperation(async () => {
+    const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+    return Git.checkoutGitBranch(directory, input.name)
+  })
 }
 
 export async function createProjectGitPullRequest(
   projectID: string,
   input: z.infer<typeof GitDirectoryBody>,
 ) {
-  const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
-  return Git.createGitPullRequest(directory)
+  return runProjectGitOperation(async () => {
+    const directory = await resolveProjectGitDirectory(projectID, input.directory, { verifyRepositoryRoot: true })
+    return Git.createGitPullRequest(directory)
+  })
 }
 
 export async function listProjectSkills(projectID: string) {

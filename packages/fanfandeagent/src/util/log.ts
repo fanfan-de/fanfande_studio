@@ -24,6 +24,169 @@ const levelPriority: Record<Level, number> = {
   "ERROR": 3,
 }
 
+const MAX_LOG_BUFFER_SIZE = 1000
+const SENSITIVE_KEY_PATTERN = /(password|token|api[_-]?key|authorization|secret|credential|bearer)/i
+
+export interface LogEntry {
+  id: string
+  timestamp: number
+  level: Level
+  service?: string
+  message: string
+  raw: string
+  requestId?: string
+  sessionID?: string
+  projectID?: string
+  extra?: Record<string, unknown>
+}
+
+export interface LogQuery {
+  level?: Level | string
+  service?: string
+  q?: string
+  limit?: number
+}
+
+type LogSubscriber = (entry: LogEntry) => void
+
+const logEntries: LogEntry[] = []
+const logSubscribers = new Set<LogSubscriber>()
+let logSequence = 0
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function redactForLog(
+  value: unknown,
+  key = "",
+  depth = 0,
+  seen = new WeakSet<object>(),
+): unknown {
+  if (SENSITIVE_KEY_PATTERN.test(key)) return "[REDACTED]"
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: formatError(value),
+    }
+  }
+  if (typeof value === "bigint") return value.toString()
+  if (typeof value === "function") return "[Function]"
+  if (!value || typeof value !== "object") return value
+  if (depth >= 6) return "[Truncated]"
+
+  if (seen.has(value)) return "[Circular]"
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactForLog(item, key, depth + 1, seen))
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+      childKey,
+      redactForLog(childValue, childKey, depth + 1, seen),
+    ]),
+  )
+}
+
+function stringifyLogValue(key: string, value: unknown) {
+  const redacted = redactForLog(value, key)
+  if (typeof redacted === "string") return redacted
+  if (typeof redacted === "number" || typeof redacted === "boolean") return String(redacted)
+  if (redacted === undefined) return "undefined"
+  if (redacted === null) return "null"
+
+  try {
+    return JSON.stringify(redacted)
+  } catch {
+    return String(redacted)
+  }
+}
+
+function stringifyMessage(message: unknown) {
+  if (message === undefined || message === null) return ""
+  if (typeof message === "string") return message
+  if (message instanceof Error) return formatError(message)
+  return stringifyLogValue("message", message)
+}
+
+function sanitizeExtra(extra: Record<string, unknown>) {
+  const sanitized = redactForLog(extra)
+  return isRecord(sanitized) ? sanitized : {}
+}
+
+function normalizeLevelFilter(levelFilter: Level | string | undefined) {
+  if (!levelFilter) return undefined
+  const parsed = Level.safeParse(String(levelFilter).trim().toUpperCase())
+  return parsed.success ? parsed.data : undefined
+}
+
+function normalizeSearch(value: string | undefined) {
+  const trimmed = value?.trim().toLowerCase()
+  return trimmed || undefined
+}
+
+function normalizeLimit(limit: number | undefined, fallback: number, max: number) {
+  if (!Number.isInteger(limit) || !limit || limit <= 0) return fallback
+  return Math.min(limit, max)
+}
+
+export function matches(entry: LogEntry, query: Omit<LogQuery, "limit"> = {}) {
+  const levelFilter = normalizeLevelFilter(query.level)
+  if (levelFilter && entry.level !== levelFilter) return false
+
+  const serviceFilter = query.service?.trim().toLowerCase()
+  if (serviceFilter && entry.service?.toLowerCase() !== serviceFilter) return false
+
+  const search = normalizeSearch(query.q)
+  if (!search) return true
+
+  const haystack = [
+    entry.raw,
+    entry.message,
+    entry.service,
+    entry.requestId,
+    entry.sessionID,
+    entry.projectID,
+    entry.extra ? JSON.stringify(entry.extra) : undefined,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase()
+
+  return haystack.includes(search)
+}
+
+export function list(query: LogQuery = {}) {
+  const limit = normalizeLimit(query.limit, 200, MAX_LOG_BUFFER_SIZE)
+  return logEntries
+    .filter((entry) => matches(entry, query))
+    .slice(-limit)
+}
+
+export function subscribe(subscriber: LogSubscriber) {
+  logSubscribers.add(subscriber)
+  return () => {
+    logSubscribers.delete(subscriber)
+  }
+}
+
+function appendLogEntry(entry: LogEntry) {
+  logEntries.push(entry)
+  if (logEntries.length > MAX_LOG_BUFFER_SIZE) {
+    logEntries.splice(0, logEntries.length - MAX_LOG_BUFFER_SIZE)
+  }
+
+  for (const subscriber of [...logSubscribers]) {
+    try {
+      subscriber(entry)
+    } catch {
+      // Ignore subscriber failures so logging cannot break the server path.
+    }
+  }
+}
+
 
 
 //通过比较数字大小来实现日志过滤（例如设置为 `WARN` (2) 时，`INFO` (1) 就不会输出）。
@@ -166,26 +329,56 @@ export function create(tags?: Record<string, any>) {
     }
   }
   // 格式化构建 (`build`)
-  function build(message: any, extra?: Record<string, any>) {
+  function build(levelName: Level, message: any, extra?: Record<string, any>) {
     // 1. 合并初始化时的 tags 和当前调用的 extra
-    const prefix = Object.entries({
+    const merged = {
       ...tags,
       ...extra,
-    })
+    } as Record<string, unknown>
+    const sanitizedExtra = sanitizeExtra(merged)
+    const prefix = Object.entries(sanitizedExtra)
       .filter(([_, value]) => value !== undefined && value !== null)
       .map(([key, value]) => {
-        const prefix = `${key}=`
-        if (value instanceof Error) return prefix + formatError(value)
-        if (typeof value === "object") return prefix + JSON.stringify(value)
-        return prefix + value
+        return `${key}=${stringifyLogValue(key, value)}`
       })
       .join(" ")
     const next = new Date()
+    const timestamp = next.getTime()
     // 2. 计算时间差 (与上一条日志的间隔，用于性能分析)
-    const diff = next.getTime() - last
-    last = next.getTime()
+    const diff = timestamp - last
+    last = timestamp
+    const messageText = stringifyMessage(message)
     // 3. 拼接：[时间] [+距离上次毫秒数] [标签键值对] [消息内容]
-    return [next.toISOString().split(".")[0], "+" + diff + "ms", prefix, message].filter(Boolean).join(" ") + "\n"
+    const body = [next.toISOString().split(".")[0], "+" + diff + "ms", prefix, messageText].filter(Boolean).join(" ") + "\n"
+    const line = `${levelName.padEnd(5)} ${body}`
+    const service = typeof sanitizedExtra.service === "string" ? sanitizedExtra.service : undefined
+    const requestId = typeof sanitizedExtra.requestId === "string" ? sanitizedExtra.requestId : undefined
+    const sessionID = typeof sanitizedExtra.sessionID === "string" ? sanitizedExtra.sessionID : undefined
+    const projectID = typeof sanitizedExtra.projectID === "string" ? sanitizedExtra.projectID : undefined
+
+    return {
+      line,
+      entry: {
+        id: `log_${++logSequence}`,
+        timestamp,
+        level: levelName,
+        service,
+        message: messageText,
+        raw: line.trimEnd(),
+        requestId,
+        sessionID,
+        projectID,
+        extra: Object.keys(sanitizedExtra).length > 0 ? sanitizedExtra : undefined,
+      } satisfies LogEntry,
+    }
+  }
+
+  function emit(levelName: Level, message?: any, extra?: Record<string, any>) {
+    if (!shouldLog(levelName)) return
+    const { entry, line } = build(levelName, message, extra)
+    appendLogEntry(entry)
+    // 杩欓噷鐨?write 鍙兘鏄?console 鎴栬€呮槸 file writer
+    write(line)
   }
 
   //实现 Logger 接口
@@ -193,22 +386,22 @@ export function create(tags?: Record<string, any>) {
     debug(message?: any, extra?: Record<string, any>) {
       if (shouldLog("DEBUG")) {
         // 这里的 write 可能是 console 或者是 file writer
-        write("DEBUG " + build(message, extra))
+        emit("DEBUG", message, extra)
       }
     },
     info(message?: any, extra?: Record<string, any>) {
       if (shouldLog("INFO")) {
-        write("INFO  " + build(message, extra))
+        emit("INFO", message, extra)
       }
     },
     error(message?: any, extra?: Record<string, any>) {
       if (shouldLog("ERROR")) {
-        write("ERROR " + build(message, extra))
+        emit("ERROR", message, extra)
       }
     },
     warn(message?: any, extra?: Record<string, any>) {
       if (shouldLog("WARN")) {
-        write("WARN  " + build(message, extra))
+        emit("WARN", message, extra)
       }
     },
     // 链式调用：修改当前闭包内的 tags

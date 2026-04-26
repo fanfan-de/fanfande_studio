@@ -7292,6 +7292,8 @@ function formatRuntimePhaseLabel(phase?: SessionRuntimeDebugSnapshot["status"]["
       return "Blocked"
     case "completed":
       return "Completed"
+    case "cancelled":
+      return "Cancelled"
     case "failed":
       return "Failed"
     default:
