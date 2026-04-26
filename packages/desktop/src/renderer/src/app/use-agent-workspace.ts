@@ -1756,7 +1756,7 @@ export function useAgentWorkspace({
       }))
     } catch (error) {
       if (permissionRequestsRequestRef.current[sessionID] !== requestID) return
-      console.error("[desktop] getSessionPermissionRequests failed:", error)
+      console.error("[desktop] agentSession.loadPermissionRequests failed:", error)
     }
   }
 
@@ -2021,7 +2021,7 @@ export function useAgentWorkspace({
         })
       })
       .catch((error) => {
-        console.error("[desktop] getSessionHistory failed:", error)
+        console.error("[desktop] agentSession.loadHistory failed:", error)
       })
 
     return () => {

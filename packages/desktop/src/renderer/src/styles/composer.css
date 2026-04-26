@@ -400,7 +400,8 @@
 }
 
 .composer-inline-tag {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   margin: 0 2px;
   padding: 2px 8px;
   border-radius: 999px;
@@ -411,8 +412,8 @@
   white-space: nowrap;
   font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
   font-size: 12px;
-  line-height: 1.2;
-  vertical-align: baseline;
+  line-height: 1;
+  vertical-align: text-bottom;
 }
 
 .composer-inline-tag.is-file {

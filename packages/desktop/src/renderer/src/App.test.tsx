@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+﻿import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -67,6 +67,56 @@ function expectComposerDraftValue(input: HTMLElement, value: string) {
   }
 
   expect(input.textContent ?? "").toBe(value)
+}
+
+type DesktopAgentSession = NonNullable<NonNullable<Window["desktop"]>["agentSession"]>
+type DesktopAgentSessionEventListener = Parameters<DesktopAgentSession["onEvent"]>[0]
+type DesktopAgentSessionEvent = Parameters<DesktopAgentSessionEventListener>[0]
+
+let agentSessionEventListeners: DesktopAgentSessionEventListener[] = []
+
+function emitAgentSessionEvent(event: DesktopAgentSessionEvent) {
+  for (const listener of agentSessionEventListeners) {
+    listener(event)
+  }
+}
+
+function createRequestStreamEvent(input: {
+  backendSessionID: string
+  clientTurnID: string
+  id?: string
+  event: string
+  data: unknown
+}): DesktopAgentSessionEvent {
+  return {
+    kind: "stream",
+    source: "request",
+    backendSessionID: input.backendSessionID,
+    clientTurnID: input.clientTurnID,
+    id: input.id,
+    event: input.event,
+    data: input.data,
+    receivedAt: Date.now(),
+  }
+}
+
+function createSubscriptionStreamEvent(input: {
+  backendSessionID: string
+  uiSessionID?: string
+  id?: string
+  event: string
+  data: unknown
+}): DesktopAgentSessionEvent {
+  return {
+    kind: "stream",
+    source: "subscription",
+    backendSessionID: input.backendSessionID,
+    uiSessionID: input.uiSessionID,
+    id: input.id,
+    event: input.event,
+    data: input.data,
+    receivedAt: Date.now(),
+  }
 }
 
 function getCreateSessionProjectSelect() {
@@ -479,6 +529,7 @@ function createWorkspaceFileReviewWorkspaces(): LoadedFolderWorkspace[] {
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear()
+    agentSessionEventListeners = []
     Object.defineProperty(window.navigator, "clipboard", {
       configurable: true,
       value: {
@@ -603,7 +654,7 @@ describe("App", () => {
         branch: "main",
         stdout: "",
         stderr: "",
-        summary: "宸叉彁浜ゅ埌 main",
+        summary: "已提交到 main",
       }),
       gitPush: vi.fn().mockResolvedValue({
         directory: "C:\\Projects\\Project 2",
@@ -611,7 +662,7 @@ describe("App", () => {
         branch: "main",
         stdout: "",
         stderr: "",
-        summary: "宸叉帹閫?main",
+        summary: "已推送 main",
       }),
       listFolderWorkspaces: vi.fn().mockRejectedValue(new Error("backend unavailable")),
       openFolderWorkspace: vi.fn(),
@@ -638,7 +689,6 @@ describe("App", () => {
       deleteArchivedSession: vi.fn().mockResolvedValue({
         sessionID: "session-archived-1",
       }),
-      getSessionHistory: vi.fn().mockResolvedValue([]),
       getSessionDiff: vi.fn().mockResolvedValue({
         diffs: [],
       }),
@@ -665,8 +715,6 @@ describe("App", () => {
       createGlobalSkill: vi.fn(),
       renameGlobalSkill: vi.fn(),
       deleteGlobalSkill: vi.fn(),
-      getSessionPermissionRequests: vi.fn().mockResolvedValue([]),
-      respondPermissionRequest: vi.fn().mockResolvedValue(createPermissionResolveResult()),
       getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
       refreshGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
       getGlobalModels: vi.fn().mockResolvedValue({
@@ -771,18 +819,30 @@ describe("App", () => {
           updated: 1,
         },
       }),
-      sendAgentMessage: vi.fn().mockResolvedValue({
-        events: [{ event: "delta", data: { kind: "text", delta: "ok" } }],
-      }),
-      subscribeAgentSessionStream: vi.fn().mockResolvedValue({
-        sessionID: "session-default",
-      }),
-      unsubscribeAgentSessionStream: vi.fn().mockResolvedValue({
-        sessionID: "session-default",
-        removed: true,
-      }),
-      onAgentStreamEvent: vi.fn(() => vi.fn()),
-      onAgentSessionStreamEvent: vi.fn(() => vi.fn()),
+      agentSession: {
+        loadHistory: vi.fn().mockResolvedValue([]),
+        sendTurn: vi.fn().mockImplementation(async (input: { clientTurnID: string }) => ({
+          clientTurnID: input.clientTurnID,
+        })),
+        resumeTurn: vi.fn().mockImplementation(async (input: { clientTurnID: string }) => ({
+          clientTurnID: input.clientTurnID,
+        })),
+        subscribe: vi.fn().mockResolvedValue({
+          backendSessionID: "session-default",
+        }),
+        unsubscribe: vi.fn().mockResolvedValue({
+          backendSessionID: "session-default",
+          removed: true,
+        }),
+        loadPermissionRequests: vi.fn().mockResolvedValue([]),
+        respondPermissionRequest: vi.fn().mockResolvedValue(createPermissionResolveResult()),
+        onEvent: vi.fn((listener: DesktopAgentSessionEventListener) => {
+          agentSessionEventListeners.push(listener)
+          return vi.fn(() => {
+            agentSessionEventListeners = agentSessionEventListeners.filter((item) => item !== listener)
+          })
+        }),
+      },
       showMenu: vi.fn().mockResolvedValue(undefined),
       showExternalEditorMenu: vi.fn().mockResolvedValue(undefined),
       listExternalEditorsForTarget: vi.fn().mockResolvedValue([
@@ -1052,7 +1112,7 @@ describe("App", () => {
   })
 
   it("renders full assistant sections inside inline side chat", async () => {
-    window.desktop!.getSessionHistory = vi.fn().mockImplementation(async ({ sessionID }: { sessionID: string }) => {
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockImplementation(async ({ backendSessionID: sessionID }: { backendSessionID: string }) => {
       if (sessionID !== "session-side-chat-1") return []
 
       return [
@@ -1111,8 +1171,8 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Sidechat" }))
 
     await waitFor(() => {
-      expect(window.desktop!.getSessionHistory).toHaveBeenCalledWith({
-        sessionID: "session-side-chat-1",
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-side-chat-1",
       })
     })
 
@@ -1340,10 +1400,10 @@ describe("App", () => {
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalled()
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalled()
     })
 
-    const sendAgentMessage = window.desktop!.sendAgentMessage
+    const sendAgentMessage = window.desktop!.agentSession!.sendTurn
     expect(sendAgentMessage).toBeDefined()
     if (!sendAgentMessage) throw new Error("Expected sendAgentMessage mock")
 
@@ -1369,13 +1429,7 @@ describe("App", () => {
   })
 
   it("keeps user reference chips after streamed history refresh replaces the conversation", async () => {
-    let streamListener:
-      | ((event: {
-          streamID: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let streamListener: DesktopAgentSessionEventListener | undefined
     let activeStreamID = ""
     let historyPhase: "initial" | "after-send" = "initial"
 
@@ -1410,7 +1464,7 @@ describe("App", () => {
       kind: "text",
       content: WORKSPACE_FILE_CONTENT,
     })
-    window.desktop!.getSessionHistory = vi.fn().mockImplementation(async ({ sessionID }: { sessionID: string }) => {
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockImplementation(async ({ backendSessionID: sessionID }: { backendSessionID: string }) => {
       if (sessionID !== "session-frontend-review" || historyPhase !== "after-send") return []
 
       return [
@@ -1435,14 +1489,14 @@ describe("App", () => {
         },
       ]
     })
-    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       streamListener = listener
       return vi.fn()
     })
-    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(async (input: { streamID: string }) => {
-      activeStreamID = input.streamID
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(async (input: { clientTurnID: string }) => {
+      activeStreamID = input.clientTurnID
       return {
-        streamID: input.streamID,
+        clientTurnID: input.clientTurnID,
       }
     })
 
@@ -1476,23 +1530,24 @@ describe("App", () => {
 
     await act(async () => {
       historyPhase = "after-send"
-      streamListener?.({
-        streamID: activeStreamID,
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: "session-frontend-review",
+        clientTurnID: activeStreamID,
         event: "done",
         data: {
           sessionID: "session-frontend-review",
           parts: [{ id: "part-assistant-history", type: "text", text: "History refresh complete." }],
         },
-      })
+      }))
       await Promise.resolve()
     })
 
-    const getSessionHistory = window.desktop!.getSessionHistory as ReturnType<typeof vi.fn>
+    const getSessionHistory = window.desktop!.agentSession!.loadHistory as ReturnType<typeof vi.fn>
 
     await waitFor(() => {
       expect(
         vi.mocked(getSessionHistory).mock.calls.some(
-          ([input]) => input?.sessionID === "session-frontend-review",
+          ([input]) => input?.backendSessionID === "session-frontend-review",
         ),
       ).toBe(true)
     })
@@ -3175,7 +3230,7 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
       {
         info: {
           id: "msg-user-1",
@@ -3200,8 +3255,8 @@ describe("App", () => {
 
     expect(await screen.findByText("Recover the server session")).toBeInTheDocument()
     expect(screen.getByText("History restored from backend")).toBeInTheDocument()
-    expect(window.desktop!.getSessionHistory).toHaveBeenCalledWith({
-      sessionID: "session-atlas-review",
+    expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+      backendSessionID: "session-atlas-review",
     })
   })
 
@@ -3230,7 +3285,7 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
       {
         info: {
           id: "msg-user-1",
@@ -3363,7 +3418,7 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
       {
         info: {
           id: "msg-user-1",
@@ -3501,7 +3556,7 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
       {
         info: {
           id: "msg-user-1",
@@ -3582,14 +3637,7 @@ describe("App", () => {
   })
 
   it("replays detached backend turns from the session event stream", async () => {
-    let sessionStreamListener:
-      | ((event: {
-          sessionID: string
-          id?: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let sessionStreamListener: DesktopAgentSessionEventListener | undefined
 
     window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
       ok: true,
@@ -3640,15 +3688,15 @@ describe("App", () => {
         ],
       },
     ]
-    window.desktop!.getSessionHistory = vi
+    window.desktop!.agentSession!.loadHistory = vi
       .fn()
       .mockResolvedValue(detachedTurnHistory)
       .mockResolvedValueOnce([])
-    window.desktop!.getSessionPermissionRequests = vi.fn().mockResolvedValue([])
-    window.desktop!.subscribeAgentSessionStream = vi.fn().mockResolvedValue({
-      sessionID: "session-atlas-review",
+    window.desktop!.agentSession!.loadPermissionRequests = vi.fn().mockResolvedValue([])
+    window.desktop!.agentSession!.subscribe = vi.fn().mockResolvedValue({
+      backendSessionID: "session-atlas-review",
     })
-    window.desktop!.onAgentSessionStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       sessionStreamListener = listener
       return vi.fn()
     })
@@ -3696,15 +3744,16 @@ describe("App", () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(window.desktop!.subscribeAgentSessionStream).toHaveBeenCalledWith({
-        sessionID: "session-atlas-review",
+      expect(window.desktop!.agentSession!.subscribe).toHaveBeenCalledWith({
+        uiSessionID: "session-atlas-review",
+        backendSessionID: "session-atlas-review",
       })
-      expect(window.desktop!.onAgentSessionStreamEvent).toHaveBeenCalled()
+      expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalled()
     })
 
     act(() => {
-      sessionStreamListener?.({
-        sessionID: "session-atlas-review",
+      sessionStreamListener?.(createSubscriptionStreamEvent({
+        backendSessionID: "session-atlas-review",
         id: "200:turn-detached:1",
         event: "started",
         data: {
@@ -3712,9 +3761,9 @@ describe("App", () => {
           turnID: "turn-detached",
           cursor: "200:turn-detached:1",
         },
-      })
-      sessionStreamListener?.({
-        sessionID: "session-atlas-review",
+      }))
+      sessionStreamListener?.(createSubscriptionStreamEvent({
+        backendSessionID: "session-atlas-review",
         id: "201:turn-detached:2",
         event: "part",
         data: {
@@ -3731,9 +3780,9 @@ describe("App", () => {
             },
           },
         },
-      })
-      sessionStreamListener?.({
-        sessionID: "session-atlas-review",
+      }))
+      sessionStreamListener?.(createSubscriptionStreamEvent({
+        backendSessionID: "session-atlas-review",
         id: "202:turn-detached:3",
         event: "done",
         data: {
@@ -3753,24 +3802,18 @@ describe("App", () => {
             },
           ],
         },
-      })
+      }))
     })
 
     await waitFor(() => {
-      expect(window.desktop!.getSessionHistory).toHaveBeenCalledTimes(2)
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledTimes(2)
     })
 
     await screen.findByRole("button", { name: /read-file.*waiting approval/i })
   })
 
   it("streams the response immediately while keeping file changes hidden until completion", async () => {
-    let streamListener:
-      | ((event: {
-          streamID: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let streamListener: DesktopAgentSessionEventListener | undefined
     let activeStreamID = ""
     let activeSessionID = ""
 
@@ -3778,32 +3821,34 @@ describe("App", () => {
       ok: true,
       baseURL: "http://127.0.0.1:4096",
     })
-    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       streamListener = listener
       return vi.fn()
     })
-    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(
       async (input: {
-        streamID: string
-        sessionID: string
+        clientTurnID: string
+        backendSessionID: string
         text: string
       }) => {
-        activeStreamID = input.streamID
-        activeSessionID = input.sessionID
+        activeStreamID = input.clientTurnID
+        activeSessionID = input.backendSessionID
 
-        streamListener?.({
-          streamID: input.streamID,
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "started",
-          data: { sessionID: input.sessionID },
-        })
-        streamListener?.({
-          streamID: input.streamID,
+          data: { sessionID: input.backendSessionID },
+        }))
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "delta",
           data: { kind: "reasoning", delta: "Planning live update." },
-        })
+        }))
 
         return {
-          streamID: input.streamID,
+          clientTurnID: input.clientTurnID,
         }
       },
     )
@@ -3812,7 +3857,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
-      expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalledTimes(1)
     })
 
     setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Show live output")
@@ -3829,19 +3874,21 @@ describe("App", () => {
     expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
 
     act(() => {
-      streamListener?.({
-        streamID: activeStreamID,
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: activeSessionID,
+        clientTurnID: activeStreamID,
         event: "delta",
         data: { kind: "text", delta: "Streaming answer" },
-      })
+      }))
     })
 
     expect(await screen.findByText("Streaming answer")).toBeInTheDocument()
     expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
 
     act(() => {
-      streamListener?.({
-        streamID: activeStreamID,
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: activeSessionID,
+        clientTurnID: activeStreamID,
         event: "part",
         data: {
           part: {
@@ -3861,9 +3908,10 @@ describe("App", () => {
             ],
           },
         },
-      })
-      streamListener?.({
-        streamID: activeStreamID,
+      }))
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: activeSessionID,
+        clientTurnID: activeStreamID,
         event: "part",
         data: {
           part: {
@@ -3888,15 +3936,16 @@ describe("App", () => {
             ],
           },
         },
-      })
+      }))
     })
 
     expect(within(assistantTurn as HTMLElement).queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
     expect(within(assistantTurn as HTMLElement).getByRole("region", { name: "Response" })).toBeInTheDocument()
 
     act(() => {
-      streamListener?.({
-        streamID: activeStreamID,
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: activeSessionID,
+        clientTurnID: activeStreamID,
         event: "done",
         data: {
           sessionID: activeSessionID,
@@ -3942,7 +3991,7 @@ describe("App", () => {
             { id: "text-1", type: "text", text: "Streaming answer" },
           ],
         },
-      })
+      }))
     })
 
     await waitFor(() => {
@@ -3996,7 +4045,7 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi
+    window.desktop!.agentSession!.loadHistory = vi
       .fn()
       .mockResolvedValueOnce([
         {
@@ -4039,11 +4088,11 @@ describe("App", () => {
     expect(await screen.findByText("Second session prompt")).toBeInTheDocument()
     expect(screen.getByText("Second session reply")).toBeInTheDocument()
     await waitFor(() => {
-      expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(1, {
-        sessionID: "session-atlas-review",
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(1, {
+        backendSessionID: "session-atlas-review",
       })
-      expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(2, {
-        sessionID: "session-atlas-followup",
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(2, {
+        backendSessionID: "session-atlas-followup",
       })
     })
   })
@@ -4115,7 +4164,7 @@ describe("App", () => {
       effectiveModel: attachmentCapableModel,
     })
     window.desktop!.pickComposerAttachments = vi.fn().mockResolvedValue(["C:\\Refs\\brief.pdf"])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
       {
         info: {
           id: "msg-user-1",
@@ -4192,10 +4241,10 @@ describe("App", () => {
     fireEvent.click(within(questionCard).getByRole("button", { name: "Vercel" }))
 
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalled()
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalled()
     })
 
-    const sendAgentMessage = window.desktop!.sendAgentMessage
+    const sendAgentMessage = window.desktop!.agentSession!.sendTurn
     expect(sendAgentMessage).toBeDefined()
     if (!sendAgentMessage) throw new Error("Expected sendAgentMessage mock")
 
@@ -4204,13 +4253,13 @@ describe("App", () => {
     if (!sendInput) throw new Error("Expected sendAgentMessage payload")
 
     expect(sendInput).toEqual(expect.objectContaining({
-      sessionID: "session-atlas-review",
+      backendSessionID: "session-atlas-review",
       skills: [],
       text: "vercel",
-      questionAnswer: {
+      questionAnswer: expect.objectContaining({
         questionID: "que_deploy_target",
         selectedOptions: ["vercel"],
-      },
+      }),
     }))
     expect(sendInput).not.toHaveProperty("attachments")
     expect(screen.getByText("brief.pdf")).toBeInTheDocument()
@@ -4244,8 +4293,8 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([])
-    window.desktop!.getSessionPermissionRequests = vi.fn().mockResolvedValue([
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([])
+    window.desktop!.agentSession!.loadPermissionRequests = vi.fn().mockResolvedValue([
       createPermissionRequest({
         id: "permission-atlas-1",
         approvalID: "approval-atlas-1",
@@ -4273,8 +4322,8 @@ describe("App", () => {
     expect(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" })).toBeInTheDocument()
     expect(within(approvalPanel).getByRole("button", { name: "Deny Read repo config" })).toBeInTheDocument()
     await waitFor(() => {
-      expect(window.desktop!.getSessionPermissionRequests).toHaveBeenCalledWith({
-        sessionID: "session-atlas-review",
+      expect(window.desktop!.agentSession!.loadPermissionRequests).toHaveBeenCalledWith({
+        backendSessionID: "session-atlas-review",
       })
     })
   })
@@ -4304,7 +4353,7 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi
+    window.desktop!.agentSession!.loadHistory = vi
       .fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
@@ -4318,7 +4367,7 @@ describe("App", () => {
           parts: [{ id: "part-text-2", type: "text", text: "Approval recorded and session resumed." }],
         },
       ])
-    window.desktop!.getSessionPermissionRequests = vi
+    window.desktop!.agentSession!.loadPermissionRequests = vi
       .fn()
       .mockResolvedValueOnce([
         createPermissionRequest({
@@ -4338,7 +4387,7 @@ describe("App", () => {
         }),
       ])
       .mockResolvedValueOnce([])
-    window.desktop!.respondPermissionRequest = vi.fn().mockResolvedValue(
+    window.desktop!.agentSession!.respondPermissionRequest = vi.fn().mockResolvedValue(
       createPermissionResolveResult({
         id: "permission-atlas-1",
         approvalID: "approval-atlas-1",
@@ -4356,33 +4405,31 @@ describe("App", () => {
     fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" }))
 
     await waitFor(() => {
-      expect(window.desktop!.respondPermissionRequest).toHaveBeenCalledWith({
+      expect(window.desktop!.agentSession!.respondPermissionRequest).toHaveBeenCalledWith({
         requestID: "permission-atlas-1",
         decision: "allow-once",
         note: undefined,
-        resume: true,
+        resume: false,
       })
+      expect(window.desktop!.agentSession!.resumeTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-atlas-review",
+        clientTurnID: expect.any(String),
+      }))
     })
     expect(await screen.findByText("Approval recorded and session resumed.")).toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Tool approval request" })).not.toBeInTheDocument()
     await waitFor(() => {
-      expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(2, {
-        sessionID: "session-atlas-review",
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(2, {
+        backendSessionID: "session-atlas-review",
       })
-      expect(window.desktop!.getSessionPermissionRequests).toHaveBeenNthCalledWith(2, {
-        sessionID: "session-atlas-review",
+      expect(window.desktop!.agentSession!.loadPermissionRequests).toHaveBeenNthCalledWith(2, {
+        backendSessionID: "session-atlas-review",
       })
     })
   })
 
   it("streams resumed output immediately after approval and clears the waiting tool state first", async () => {
-    let streamListener:
-      | ((event: {
-          streamID: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let streamListener: DesktopAgentSessionEventListener | undefined
     let finishResumeStream: (() => void) | undefined
 
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
@@ -4409,7 +4456,7 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi
+    window.desktop!.agentSession!.loadHistory = vi
       .fn()
       .mockResolvedValueOnce([
         {
@@ -4506,7 +4553,7 @@ describe("App", () => {
           parts: [{ id: "part-text-2", type: "text", text: "Resumed answer" }],
         },
       ])
-    window.desktop!.getSessionPermissionRequests = vi
+    window.desktop!.agentSession!.loadPermissionRequests = vi
       .fn()
       .mockResolvedValueOnce([
         createPermissionRequest({
@@ -4527,7 +4574,7 @@ describe("App", () => {
       ])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
-    window.desktop!.respondPermissionRequest = vi.fn().mockResolvedValue(
+    window.desktop!.agentSession!.respondPermissionRequest = vi.fn().mockResolvedValue(
       createPermissionResolveResult({
         id: "permission-atlas-1",
         approvalID: "approval-atlas-1",
@@ -4538,42 +4585,45 @@ describe("App", () => {
         createdAt: 100,
       }),
     )
-    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       streamListener = listener
       return vi.fn()
     })
-    window.desktop!.resumeAgentMessageStream = vi.fn().mockImplementation(
+    window.desktop!.agentSession!.resumeTurn = vi.fn().mockImplementation(
       async (input: {
-        streamID: string
-        sessionID: string
+        clientTurnID: string
+        backendSessionID: string
       }) => {
-        streamListener?.({
-          streamID: input.streamID,
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "started",
-          data: { sessionID: input.sessionID },
-        })
-        streamListener?.({
-          streamID: input.streamID,
+          data: { sessionID: input.backendSessionID },
+        }))
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "delta",
           data: { kind: "text", delta: "Resumed answer" },
-        })
+        }))
 
         await new Promise<void>((resolve) => {
           finishResumeStream = () => {
-            streamListener?.({
-              streamID: input.streamID,
+            streamListener?.(createRequestStreamEvent({
+              backendSessionID: input.backendSessionID,
+              clientTurnID: input.clientTurnID,
               event: "done",
               data: {
-                sessionID: input.sessionID,
+                sessionID: input.backendSessionID,
                 parts: [{ id: "part-text-2", type: "text", text: "Resumed answer" }],
               },
-            })
+            }))
             resolve()
           }
         })
 
         return {
-          streamID: input.streamID,
+          clientTurnID: input.clientTurnID,
         }
       },
     )
@@ -4597,13 +4647,13 @@ describe("App", () => {
     fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" }))
 
     await waitFor(() => {
-      expect(window.desktop!.respondPermissionRequest).toHaveBeenCalledWith({
+      expect(window.desktop!.agentSession!.respondPermissionRequest).toHaveBeenCalledWith({
         requestID: "permission-atlas-1",
         decision: "allow-once",
         note: undefined,
         resume: false,
       })
-      expect(window.desktop!.resumeAgentMessageStream).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.agentSession!.resumeTurn).toHaveBeenCalledTimes(1)
     })
 
     fireEvent.click(await screen.findByRole("button", { name: /read-file output/i }))
@@ -4619,8 +4669,8 @@ describe("App", () => {
     expect(await screen.findByText("Resumed answer")).toBeInTheDocument()
 
     await waitFor(() => {
-      expect(window.desktop!.getSessionHistory).toHaveBeenNthCalledWith(3, {
-        sessionID: "session-atlas-review",
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenNthCalledWith(3, {
+        backendSessionID: "session-atlas-review",
       })
       expect(getComposerSendButton()).toBeEnabled()
     })
@@ -4653,8 +4703,8 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([])
-    window.desktop!.getSessionPermissionRequests = vi
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([])
+    window.desktop!.agentSession!.loadPermissionRequests = vi
       .fn()
       .mockResolvedValueOnce([
         createPermissionRequest({
@@ -4674,7 +4724,7 @@ describe("App", () => {
         }),
       ])
       .mockResolvedValueOnce([])
-    window.desktop!.respondPermissionRequest = vi.fn().mockReturnValue(response.promise)
+    window.desktop!.agentSession!.respondPermissionRequest = vi.fn().mockReturnValue(response.promise)
 
     render(<App />)
 
@@ -4699,8 +4749,8 @@ describe("App", () => {
     )
 
     await waitFor(() => {
-      expect(window.desktop!.getSessionPermissionRequests).toHaveBeenNthCalledWith(2, {
-        sessionID: "session-atlas-review",
+      expect(window.desktop!.agentSession!.loadPermissionRequests).toHaveBeenNthCalledWith(2, {
+        backendSessionID: "session-atlas-review",
       })
     })
   })
@@ -5560,11 +5610,11 @@ describe("App", () => {
       })
     })
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
-        sessionID: "session-backend-new",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-backend-new",
         text: "Ship the first session prompt",
         skills: [],
-      })
+      }))
     })
 
     expect(await screen.findByRole("button", { name: "Backend chat" })).toBeInTheDocument()
@@ -5602,22 +5652,16 @@ describe("App", () => {
       })
     })
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
-        sessionID: "session-backend-local",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-backend-local",
         text: "Inspect the seeded workspace",
         skills: [],
-      })
+      }))
     })
   })
 
   it("renders the first streamed turn immediately after sending from the create session canvas", async () => {
-    let streamListener:
-      | ((event: {
-          streamID: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let streamListener: DesktopAgentSessionEventListener | undefined
     let releaseStream: (() => void) | undefined
     let activeStreamID = ""
     let activeSessionID = ""
@@ -5636,25 +5680,25 @@ describe("App", () => {
         updated: 2,
       },
     })
-    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       streamListener = listener
       return vi.fn()
     })
-    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(
       async (input: {
-        streamID: string
-        sessionID: string
+        clientTurnID: string
+        backendSessionID: string
         text: string
       }) => {
-        activeStreamID = input.streamID
-        activeSessionID = input.sessionID
+        activeStreamID = input.clientTurnID
+        activeSessionID = input.backendSessionID
 
         await new Promise<void>((resolve) => {
           releaseStream = resolve
         })
 
         return {
-          streamID: input.streamID,
+          clientTurnID: input.clientTurnID,
         }
       },
     )
@@ -5662,7 +5706,7 @@ describe("App", () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalledTimes(1)
     })
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
@@ -5675,20 +5719,21 @@ describe("App", () => {
     })
 
     await waitFor(() => {
-      expect(window.desktop!.streamAgentMessage).toHaveBeenCalledWith({
-        streamID: expect.any(String),
-        sessionID: "session-backend-streamed",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        clientTurnID: expect.any(String),
+        backendSessionID: "session-backend-streamed",
         text: "Stream the first session prompt",
         skills: [],
-      })
+      }))
     })
     expect(await screen.findByRole("button", { name: "Streamed backend chat" })).toBeInTheDocument()
     expect(screen.queryByRole("combobox", { name: "Session project" })).not.toBeInTheDocument()
     expect(screen.getByText("Preparing...")).toBeInTheDocument()
 
     await act(async () => {
-      streamListener?.({
-        streamID: activeStreamID,
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: activeSessionID,
+        clientTurnID: activeStreamID,
         event: "delta",
         data: {
           kind: "text",
@@ -5696,21 +5741,22 @@ describe("App", () => {
           delta: "First token is visible.",
           text: "First token is visible.",
         },
-      })
+      }))
       await Promise.resolve()
     })
 
     expect(await screen.findByText("First token is visible.")).toBeInTheDocument()
 
     await act(async () => {
-      streamListener?.({
-        streamID: activeStreamID,
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: activeSessionID,
+        clientTurnID: activeStreamID,
         event: "done",
         data: {
           sessionID: activeSessionID,
           parts: [{ id: "part-text-1", type: "text", text: "First token is visible." }],
         },
-      })
+      }))
       releaseStream?.()
       await Promise.resolve()
     })
@@ -6471,7 +6517,7 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
       {
         info: {
           id: "msg-user-1",
@@ -6574,7 +6620,7 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
       {
         info: {
           id: "msg-user-1",
@@ -7462,12 +7508,12 @@ describe("App", () => {
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
-        sessionID: "session-backend",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-backend",
         skills: [],
         text: "Trace the new toolbar flow",
         reasoningEffort: "high",
-      })
+      }))
     })
   })
 
@@ -7531,11 +7577,11 @@ describe("App", () => {
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
-        sessionID: "session-backend",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-backend",
         skills: ["skill-layout-review"],
         text: "Use the project skill selection for this task",
-      })
+      }))
     })
 
     expect(await screen.findByRole("button", { name: "Select project skills: layout-review" })).toBeInTheDocument()
@@ -7595,11 +7641,11 @@ describe("App", () => {
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
-        sessionID: "session-backend",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-backend",
         skills: [],
         text: "Keep the selected MCP servers on the project",
-      })
+      }))
     })
 
     expect(await screen.findByRole("button", { name: "Select project MCP servers: Filesystem" })).toBeInTheDocument()
@@ -7703,15 +7749,15 @@ describe("App", () => {
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
-        sessionID: "session-backend",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-backend",
         attachments: [
           { path: "C:\\Refs\\hero.png", name: "hero.png" },
           { path: "C:\\Refs\\brief.pdf", name: "brief.pdf" },
         ],
         skills: [],
         text: "Use the references to refine the layout",
-      })
+      }))
     })
   })
 
@@ -7732,11 +7778,11 @@ describe("App", () => {
     fireEvent.click(getComposerSendButton())
 
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
-        sessionID: "session-backend",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-backend",
         skills: [],
         text: "Audit the toolbar changes",
-      })
+      }))
     })
   })
 
@@ -7768,11 +7814,11 @@ describe("App", () => {
     expect(enterEvent.defaultPrevented).toBe(true)
 
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
-        sessionID: "session-backend",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-backend",
         skills: [],
         text: "Submit from the keyboard",
-      })
+      }))
     })
   })
 
@@ -7791,7 +7837,7 @@ describe("App", () => {
     fireEvent(draftInput, shiftEnterEvent)
 
     expect(shiftEnterEvent.defaultPrevented).toBe(false)
-    expect(window.desktop!.sendAgentMessage).not.toHaveBeenCalled()
+    expect(window.desktop!.agentSession!.sendTurn).not.toHaveBeenCalled()
   })
 
   it("does not submit composer prompts while IME composition is active", async () => {
@@ -7820,7 +7866,7 @@ describe("App", () => {
     fireEvent(draftInput, composingEnterEvent)
 
     expect(composingEnterEvent.defaultPrevented).toBe(false)
-    expect(window.desktop!.sendAgentMessage).not.toHaveBeenCalled()
+    expect(window.desktop!.agentSession!.sendTurn).not.toHaveBeenCalled()
 
     fireEvent.compositionEnd(draftInput)
 
@@ -7830,11 +7876,11 @@ describe("App", () => {
     expect(enterEvent.defaultPrevented).toBe(true)
 
     await waitFor(() => {
-      expect(window.desktop!.sendAgentMessage).toHaveBeenCalledWith({
-        sessionID: "session-backend",
+      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "session-backend",
         skills: [],
         text: "你好",
-      })
+      }))
     })
   })
 
@@ -7923,13 +7969,7 @@ describe("App", () => {
   })
 
   it("shows a minimal waiting hint before the first visible streamed output arrives", async () => {
-    let streamListener:
-      | ((event: {
-          streamID: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let streamListener: DesktopAgentSessionEventListener | undefined
     let releaseStream: (() => void) | undefined
     let activeStreamID = ""
     let activeSessionID = ""
@@ -7938,25 +7978,25 @@ describe("App", () => {
       ok: true,
       baseURL: "http://127.0.0.1:4096",
     })
-    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       streamListener = listener
       return vi.fn()
     })
-    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(
       async (input: {
-        streamID: string
-        sessionID: string
+        clientTurnID: string
+        backendSessionID: string
         text: string
       }) => {
-        activeStreamID = input.streamID
-        activeSessionID = input.sessionID
+        activeStreamID = input.clientTurnID
+        activeSessionID = input.backendSessionID
 
         await new Promise<void>((resolve) => {
           releaseStream = resolve
         })
 
         return {
-          streamID: input.streamID,
+          clientTurnID: input.clientTurnID,
         }
       },
     )
@@ -7964,7 +8004,7 @@ describe("App", () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalledTimes(1)
     })
 
     setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Wait for the first token")
@@ -7977,8 +8017,9 @@ describe("App", () => {
     expect(getComposerSendButton()).toBeDisabled()
 
     await act(async () => {
-      streamListener?.({
-        streamID: activeStreamID,
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: activeSessionID,
+        clientTurnID: activeStreamID,
         event: "delta",
         data: {
           kind: "text",
@@ -7986,15 +8027,16 @@ describe("App", () => {
           delta: "Ready now.",
           text: "Ready now.",
         },
-      })
-      streamListener?.({
-        streamID: activeStreamID,
+      }))
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: activeSessionID,
+        clientTurnID: activeStreamID,
         event: "done",
         data: {
           sessionID: activeSessionID,
           parts: [{ id: "part-text-1", type: "text", text: "Ready now." }],
         },
-      })
+      }))
       releaseStream?.()
       await Promise.resolve()
     })
@@ -8004,24 +8046,11 @@ describe("App", () => {
   })
 
   it("ignores stale session stream events after the request stream settles a turn", async () => {
-    let streamListener:
-      | ((event: {
-          streamID: string
-          id?: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
-    let sessionStreamListener:
-      | ((event: {
-          sessionID: string
-          id?: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let streamListener: DesktopAgentSessionEventListener | undefined
+    let sessionStreamListener: DesktopAgentSessionEventListener | undefined
     let releaseStream: (() => void) | undefined
     let activeStreamID = ""
+    let activeSessionID = ""
 
     window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
       ok: true,
@@ -8051,32 +8080,30 @@ describe("App", () => {
         ],
       },
     ])
-    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([])
-    window.desktop!.subscribeAgentSessionStream = vi.fn().mockResolvedValue({
-      sessionID: "session-atlas-review",
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([])
+    window.desktop!.agentSession!.subscribe = vi.fn().mockResolvedValue({
+      backendSessionID: "session-atlas-review",
     })
-    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       streamListener = listener
-      return vi.fn()
-    })
-    window.desktop!.onAgentSessionStreamEvent = vi.fn((listener) => {
       sessionStreamListener = listener
       return vi.fn()
     })
-    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(
       async (input: {
-        streamID: string
-        sessionID: string
+        clientTurnID: string
+        backendSessionID: string
         text: string
       }) => {
-        activeStreamID = input.streamID
+        activeStreamID = input.clientTurnID
+        activeSessionID = input.backendSessionID
 
         await new Promise<void>((resolve) => {
           releaseStream = resolve
         })
 
         return {
-          streamID: input.streamID,
+          clientTurnID: input.clientTurnID,
         }
       },
     )
@@ -8084,8 +8111,9 @@ describe("App", () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(window.desktop!.subscribeAgentSessionStream).toHaveBeenCalledWith({
-        sessionID: "session-atlas-review",
+      expect(window.desktop!.agentSession!.subscribe).toHaveBeenCalledWith({
+        uiSessionID: "session-atlas-review",
+        backendSessionID: "session-atlas-review",
       })
     })
 
@@ -8098,8 +8126,9 @@ describe("App", () => {
     expect(screen.getByText("Preparing...")).toBeInTheDocument()
 
     await act(async () => {
-      streamListener?.({
-        streamID: activeStreamID,
+      streamListener?.(createRequestStreamEvent({
+        backendSessionID: activeSessionID,
+        clientTurnID: activeStreamID,
         id: "102:turn-runtime:3",
         event: "runtime",
         data: {
@@ -8115,7 +8144,7 @@ describe("App", () => {
             parts: [{ id: "part-text", type: "text", text: "Done." }],
           },
         },
-      })
+      }))
       releaseStream?.()
       await Promise.resolve()
     })
@@ -8125,8 +8154,8 @@ describe("App", () => {
     })
 
     act(() => {
-      sessionStreamListener?.({
-        sessionID: "session-atlas-review",
+      sessionStreamListener?.(createSubscriptionStreamEvent({
+        backendSessionID: "session-atlas-review",
         id: "100:turn-runtime:1",
         event: "runtime",
         data: {
@@ -8138,68 +8167,66 @@ describe("App", () => {
           type: "turn.started",
           payload: {},
         },
-      })
+      }))
     })
 
     expect(screen.queryByText("Preparing...")).not.toBeInTheDocument()
   })
 
   it("renders streamed reasoning and response before completion", async () => {
-    let streamListener:
-      | ((event: {
-          streamID: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let streamListener: DesktopAgentSessionEventListener | undefined
     let finishStream: (() => void) | undefined
 
     window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
       ok: true,
       baseURL: "http://127.0.0.1:4096",
     })
-    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       streamListener = listener
       return vi.fn()
     })
-    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(
       async (input: {
-        streamID: string
-        sessionID: string
+        clientTurnID: string
+        backendSessionID: string
         text: string
       }) => {
-        streamListener?.({
-          streamID: input.streamID,
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "started",
-          data: { sessionID: input.sessionID },
-        })
-        streamListener?.({
-          streamID: input.streamID,
+          data: { sessionID: input.backendSessionID },
+        }))
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "delta",
           data: { kind: "reasoning", delta: "Planning live update." },
-        })
-        streamListener?.({
-          streamID: input.streamID,
+        }))
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "delta",
           data: { kind: "text", delta: "Streaming answer" },
-        })
+        }))
 
         await new Promise<void>((resolve) => {
           finishStream = () => {
-            streamListener?.({
-              streamID: input.streamID,
+            streamListener?.(createRequestStreamEvent({
+              backendSessionID: input.backendSessionID,
+              clientTurnID: input.clientTurnID,
               event: "done",
               data: {
-                sessionID: input.sessionID,
+                sessionID: input.backendSessionID,
                 parts: [{ id: "part-text", type: "text", text: "Streaming answer" }],
               },
-            })
+            }))
             resolve()
           }
         })
 
         return {
-          streamID: input.streamID,
+          clientTurnID: input.clientTurnID,
         }
       },
     )
@@ -8208,7 +8235,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
-      expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalledTimes(1)
     })
 
     setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Show live output")
@@ -8244,14 +8271,7 @@ describe("App", () => {
   })
 
   it("refreshes the sidebar workspace metadata after a streamed session updates git metadata", async () => {
-    let sessionStreamListener:
-      | ((event: {
-          sessionID: string
-          id?: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let sessionStreamListener: DesktopAgentSessionEventListener | undefined
 
     window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
       ok: true,
@@ -8303,10 +8323,10 @@ describe("App", () => {
         },
       ],
     } satisfies LoadedFolderWorkspace)
-    window.desktop!.subscribeAgentSessionStream = vi.fn().mockResolvedValue({
-      sessionID: "session-atlas-review",
+    window.desktop!.agentSession!.subscribe = vi.fn().mockResolvedValue({
+      backendSessionID: "session-atlas-review",
     })
-    window.desktop!.onAgentSessionStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       sessionStreamListener = listener
       return vi.fn()
     })
@@ -8316,15 +8336,16 @@ describe("App", () => {
     expect((await screen.findAllByText("client")).length).toBeGreaterThan(0)
 
     await waitFor(() => {
-      expect(window.desktop!.subscribeAgentSessionStream).toHaveBeenCalledWith({
-        sessionID: "session-atlas-review",
+      expect(window.desktop!.agentSession!.subscribe).toHaveBeenCalledWith({
+        uiSessionID: "session-atlas-review",
+        backendSessionID: "session-atlas-review",
       })
-      expect(window.desktop!.onAgentSessionStreamEvent).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalledTimes(1)
     })
 
     act(() => {
-      sessionStreamListener?.({
-        sessionID: "session-atlas-review",
+      sessionStreamListener?.(createSubscriptionStreamEvent({
+        backendSessionID: "session-atlas-review",
         event: "done",
         data: {
           message: {
@@ -8332,7 +8353,7 @@ describe("App", () => {
             created: 20,
           },
         },
-      })
+      }))
     })
 
     await waitFor(() => {
@@ -8345,13 +8366,7 @@ describe("App", () => {
   })
 
   it("keeps consecutive streamed replies isolated to their own assistant cards", async () => {
-    let streamListener:
-      | ((event: {
-          streamID: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let streamListener: DesktopAgentSessionEventListener | undefined
     let callIndex = 0
     const streamedReplies = [
       {
@@ -8370,14 +8385,14 @@ describe("App", () => {
       ok: true,
       baseURL: "http://127.0.0.1:4096",
     })
-    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       streamListener = listener
       return vi.fn()
     })
-    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(
       async (input: {
-        streamID: string
-        sessionID: string
+        clientTurnID: string
+        backendSessionID: string
         text: string
       }) => {
         const reply = streamedReplies[callIndex++]
@@ -8385,31 +8400,34 @@ describe("App", () => {
           throw new Error("Unexpected extra streamed reply")
         }
 
-        streamListener?.({
-          streamID: input.streamID,
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "started",
-          data: { sessionID: input.sessionID },
-        })
-        streamListener?.({
-          streamID: input.streamID,
+          data: { sessionID: input.backendSessionID },
+        }))
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "delta",
           data: {
             kind: "text",
             delta: reply.delta,
             text: reply.fullText,
           },
-        })
-        streamListener?.({
-          streamID: input.streamID,
+        }))
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "done",
           data: {
-            sessionID: input.sessionID,
+            sessionID: input.backendSessionID,
             parts: [{ id: `part-text-${callIndex}`, type: "text", text: reply.finalText }],
           },
-        })
+        }))
 
         return {
-          streamID: input.streamID,
+          clientTurnID: input.clientTurnID,
         }
       },
     )
@@ -8417,7 +8435,7 @@ describe("App", () => {
     render(<App />)
 
     await waitFor(() => {
-      expect(window.desktop!.onAgentStreamEvent).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalledTimes(1)
     })
 
     const draftInput = screen.getByRole("textbox", { name: "Task draft" })
@@ -8521,13 +8539,7 @@ describe("App", () => {
   })
 
   it("shows real context pressure from streamed assistant usage against the selected model context window", async () => {
-    let streamListener:
-      | ((event: {
-          streamID: string
-          event: string
-          data: unknown
-        }) => void)
-      | undefined
+    let streamListener: DesktopAgentSessionEventListener | undefined
 
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
@@ -8624,31 +8636,33 @@ describe("App", () => {
       ok: true,
       baseURL: "http://127.0.0.1:4096",
     })
-    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
       streamListener = listener
       return vi.fn()
     })
-    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(
       async (input: {
-        streamID: string
-        sessionID: string
+        clientTurnID: string
+        backendSessionID: string
         text: string
       }) => {
-        streamListener?.({
-          streamID: input.streamID,
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "started",
           data: {
-            sessionID: input.sessionID,
+            sessionID: input.backendSessionID,
           },
-        })
-        streamListener?.({
-          streamID: input.streamID,
+        }))
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
           event: "done",
           data: {
-            sessionID: input.sessionID,
+            sessionID: input.backendSessionID,
             message: {
               id: "message-assistant-1",
-              sessionID: input.sessionID,
+              sessionID: input.backendSessionID,
               role: "assistant",
               created: 100,
               completed: 120,
@@ -8664,10 +8678,10 @@ describe("App", () => {
             },
             parts: [{ id: "part-text-1", type: "text", text: "Pressure tracked." }],
           },
-        })
+        }))
 
         return {
-          streamID: input.streamID,
+          clientTurnID: input.clientTurnID,
         }
       },
     )

@@ -5,6 +5,7 @@ import {
   type AppearanceTokenName,
 } from "../../../shared/appearance"
 import { ChangesPanel } from "./changes/ChangesPanel"
+import { getAgentSessionBridge } from "./agent-session/client"
 import { sidebarActions } from "./constants"
 import { WorkspaceFilesPanel } from "./files/WorkspaceFilesPanel"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "./git-events"
@@ -6777,8 +6778,8 @@ function InlineSideChatThread({
       return
     }
 
-    const getSessionHistory = window.desktop?.getSessionHistory
-    if (!getSessionHistory) {
+    const agentSession = getAgentSessionBridge()
+    if (!agentSession) {
       setHydratedTurns([])
       return
     }
@@ -6786,7 +6787,7 @@ function InlineSideChatThread({
     let isCancelled = false
     setHydratedTurns([])
 
-    void getSessionHistory({ sessionID: session.id })
+    void agentSession.loadHistory({ backendSessionID: session.id })
       .then((messages) => {
         if (isCancelled) return
         const nextTurns = buildTurnsFromHistory(messages)
@@ -6794,7 +6795,7 @@ function InlineSideChatThread({
       })
       .catch((error) => {
         if (isCancelled) return
-        console.error("[desktop] getSessionHistory failed for inline side chat:", error)
+        console.error("[desktop] agentSession.loadHistory failed for inline side chat:", error)
       })
 
     return () => {

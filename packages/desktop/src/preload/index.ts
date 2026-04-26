@@ -38,17 +38,6 @@ type ExternalEditorSummary = {
   iconPath?: string
   iconDataUrl?: string
 }
-type AgentSSEEvent = {
-  id?: string
-  event: string
-  data: unknown
-}
-type AgentStreamIPCEvent = AgentSSEEvent & {
-  streamID: string
-}
-type AgentSessionStreamIPCEvent = AgentSSEEvent & {
-  sessionID: string
-}
 type WorkspaceFileChangeIPCEvent = {
   directory: string
   paths: string[]
@@ -186,12 +175,6 @@ type WorkspaceFileDocument = {
   content?: string
   unsupportedReason?: string
 }
-type ComposerAttachmentInput = {
-  path: string
-  name?: string
-}
-type ComposerPermissionMode = "default" | "full-access"
-type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
 type McpAllowedTools =
   | string[]
   | {
@@ -415,13 +398,6 @@ try {
         sessionID: string
         requestId?: string
       }>,
-    getSessionHistory: (input: { sessionID: string }) =>
-      ipcRenderer.invoke("desktop:get-session-history", input) as Promise<
-        Array<{
-          info: Record<string, unknown>
-          parts: unknown[]
-        }>
-      >,
     getSessionDiff: (input: { sessionID: string }) =>
       ipcRenderer.invoke("desktop:get-session-diff", input) as Promise<{
         title?: string
@@ -440,10 +416,6 @@ try {
       }>,
     getSessionRuntimeDebug: (input: { sessionID: string; limit?: number; turns?: number }) =>
       ipcRenderer.invoke("desktop:get-session-runtime-debug", input) as Promise<AgentSessionRuntimeDebugSnapshot>,
-    getSessionPermissionRequests: (input: { sessionID: string }) =>
-      ipcRenderer.invoke("desktop:get-session-permission-requests", input) as Promise<PermissionRequestPrompt[]>,
-    respondPermissionRequest: (input: PermissionResolveInput) =>
-      ipcRenderer.invoke("desktop:respond-permission-request", input) as Promise<PermissionResolveResult>,
     agentSession: {
       loadHistory: (input: { backendSessionID: string }) =>
         ipcRenderer.invoke("desktop:agent-session-load-history", input) as Promise<AgentSessionHistoryMessage[]>,
@@ -744,82 +716,6 @@ try {
         model?: string
         small_model?: string
       }>,
-    streamAgentMessage: (input: {
-      streamID: string
-      sessionID: string
-      text?: string
-      attachments?: ComposerAttachmentInput[]
-      questionAnswer?: {
-        questionID: string
-        selectedOptions?: string[]
-        freeformText?: string
-      }
-      permissionMode?: ComposerPermissionMode
-      reasoningEffort?: OpenAIReasoningEffort
-      system?: string
-      agent?: string
-      skills?: string[]
-    }) =>
-      ipcRenderer.invoke("desktop:agent-stream-message", input) as Promise<{
-        streamID: string
-        requestId?: string
-      }>,
-    resumeAgentMessageStream: (input: { streamID: string; sessionID: string }) =>
-      ipcRenderer.invoke("desktop:agent-resume-stream", input) as Promise<{
-        streamID: string
-        requestId?: string
-      }>,
-    subscribeAgentSessionStream: (input: { sessionID: string }) =>
-      ipcRenderer.invoke("desktop:subscribe-agent-session-stream", input) as Promise<{
-        sessionID: string
-        lastEventID?: string
-      }>,
-    unsubscribeAgentSessionStream: (input: { sessionID: string }) =>
-      ipcRenderer.invoke("desktop:unsubscribe-agent-session-stream", input) as Promise<{
-        sessionID: string
-        removed: boolean
-      }>,
-    sendAgentMessage: (input: {
-      sessionID: string
-      text?: string
-      attachments?: ComposerAttachmentInput[]
-      questionAnswer?: {
-        questionID: string
-        selectedOptions?: string[]
-        freeformText?: string
-      }
-      permissionMode?: ComposerPermissionMode
-      reasoningEffort?: OpenAIReasoningEffort
-      system?: string
-      agent?: string
-      skills?: string[]
-    }) =>
-      ipcRenderer.invoke("desktop:agent-send-message", input) as Promise<{
-        events: AgentSSEEvent[]
-        requestId?: string
-      }>,
-    onAgentStreamEvent: (listener: (event: AgentStreamIPCEvent) => void) => {
-      const wrappedListener = (_event: Electron.IpcRendererEvent, streamEvent: AgentStreamIPCEvent) => {
-        listener(streamEvent)
-      }
-
-      ipcRenderer.on("desktop:agent-stream-event", wrappedListener)
-
-      return () => {
-        ipcRenderer.removeListener("desktop:agent-stream-event", wrappedListener)
-      }
-    },
-    onAgentSessionStreamEvent: (listener: (event: AgentSessionStreamIPCEvent) => void) => {
-      const wrappedListener = (_event: Electron.IpcRendererEvent, streamEvent: AgentSessionStreamIPCEvent) => {
-        listener(streamEvent)
-      }
-
-      ipcRenderer.on("desktop:agent-session-stream-event", wrappedListener)
-
-      return () => {
-        ipcRenderer.removeListener("desktop:agent-session-stream-event", wrappedListener)
-      }
-    },
     onWorkspaceFileChange: (listener: (event: WorkspaceFileChangeIPCEvent) => void) => {
       const wrappedListener = (_event: Electron.IpcRendererEvent, workspaceEvent: WorkspaceFileChangeIPCEvent) => {
         listener(workspaceEvent)

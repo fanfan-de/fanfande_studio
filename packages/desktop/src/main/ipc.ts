@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions, type NativeImage } from "electron"
-import { getAgentConfig, parseSSE, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
+import { getAgentConfig, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { readAppearanceConfigSnapshot, writeAppearanceConfigSnapshot } from "./appearance-config"
 import { filterAvailableExternalEditorsForTarget, listAvailableExternalEditors, openInExternalEditor } from "./external-editors"
 import { buildFolderWorkspaceForDirectory, buildFolderWorkspaces } from "./folder-workspaces"
@@ -49,8 +49,6 @@ import type {
   AgentSessionHistoryMessage,
   AgentSessionRuntimeDebugSnapshot,
   AgentSessionBridgeIPCEvent,
-  AgentSessionStreamIPCEvent,
-  AgentStreamIPCEvent,
   AgentSessionInfo,
   AgentSessionTurnRequestInput,
   AgentSessionArchiveResult,
@@ -65,8 +63,6 @@ import type {
 import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sendWindowState } from "./window-state"
 import type { AppearanceConfigDocument } from "../shared/appearance"
 
-const AGENT_STREAM_EVENT_CHANNEL = "desktop:agent-stream-event"
-const AGENT_SESSION_STREAM_EVENT_CHANNEL = "desktop:agent-session-stream-event"
 const AGENT_SESSION_EVENT_CHANNEL = "desktop:agent-session-event"
 
 function normalizeShowMenuInput(input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }) {
@@ -127,10 +123,8 @@ type SessionStreamSubscription = {
   dispose(): void
 }
 
-type SessionStreamSubscriptionMode = "legacy" | "agent-session"
-
-function sessionStreamSubscriptionKey(webContentsID: number, sessionID: string, mode: SessionStreamSubscriptionMode) {
-  return `${mode}:${webContentsID}:${sessionID}`
+function sessionStreamSubscriptionKey(webContentsID: number, sessionID: string) {
+  return `${webContentsID}:${sessionID}`
 }
 
 export function registerIpcHandlers(menus: ApplicationMenus) {
@@ -203,17 +197,15 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   function getSessionStreamSubscription(
     webContentsID: number,
     sessionID: string,
-    mode: SessionStreamSubscriptionMode,
   ) {
-    return sessionStreamSubscriptions.get(sessionStreamSubscriptionKey(webContentsID, sessionID, mode))
+    return sessionStreamSubscriptions.get(sessionStreamSubscriptionKey(webContentsID, sessionID))
   }
 
   function removeSessionStreamSubscription(
     webContentsID: number,
     sessionID: string,
-    mode: SessionStreamSubscriptionMode,
   ) {
-    const key = sessionStreamSubscriptionKey(webContentsID, sessionID, mode)
+    const key = sessionStreamSubscriptionKey(webContentsID, sessionID)
     const subscription = sessionStreamSubscriptions.get(key)
     if (!subscription) return false
     subscription.dispose()
@@ -225,7 +217,6 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     target: Electron.WebContents,
     sessionID: string,
     options: {
-      mode: SessionStreamSubscriptionMode
       uiSessionID?: string
     },
   ): SessionStreamSubscription {
@@ -238,7 +229,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       state: Extract<AgentSessionBridgeIPCEvent, { kind: "subscription-state" }>["state"],
       message?: string,
     ) => {
-      if (options.mode !== "agent-session" || target.isDestroyed()) return
+      if (target.isDestroyed()) return
       target.send(AGENT_SESSION_EVENT_CHANNEL, {
         kind: "subscription-state",
         backendSessionID: sessionID,
@@ -300,25 +291,16 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
             lastEventID = item.id
           }
 
-          if (options.mode === "agent-session") {
-            target.send(AGENT_SESSION_EVENT_CHANNEL, {
-              kind: "stream",
-              source: "subscription",
-              backendSessionID: sessionID,
-              uiSessionID: options.uiSessionID,
-              id: item.id,
-              event: item.event,
-              data: item.data,
-              receivedAt: Date.now(),
-            } satisfies AgentSessionBridgeIPCEvent)
-          } else {
-            target.send(AGENT_SESSION_STREAM_EVENT_CHANNEL, {
-              sessionID,
-              id: item.id,
-              event: item.event,
-              data: item.data,
-            } satisfies AgentSessionStreamIPCEvent)
-          }
+          target.send(AGENT_SESSION_EVENT_CHANNEL, {
+            kind: "stream",
+            source: "subscription",
+            backendSessionID: sessionID,
+            uiSessionID: options.uiSessionID,
+            id: item.id,
+            event: item.event,
+            data: item.data,
+            receivedAt: Date.now(),
+          } satisfies AgentSessionBridgeIPCEvent)
         })
 
         if (!disposed) {
@@ -329,30 +311,19 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         if (disposed || aborted) return
 
         const message = error instanceof Error ? error.message : String(error)
-        if (options.mode === "agent-session") {
-          sendUnifiedSubscriptionState("error", message)
-          target.send(AGENT_SESSION_EVENT_CHANNEL, {
-            kind: "stream",
-            source: "subscription",
-            backendSessionID: sessionID,
-            uiSessionID: options.uiSessionID,
-            event: "error",
-            data: {
-              sessionID,
-              message,
-            },
-            receivedAt: Date.now(),
-          } satisfies AgentSessionBridgeIPCEvent)
-        } else {
-          target.send(AGENT_SESSION_STREAM_EVENT_CHANNEL, {
+        sendUnifiedSubscriptionState("error", message)
+        target.send(AGENT_SESSION_EVENT_CHANNEL, {
+          kind: "stream",
+          source: "subscription",
+          backendSessionID: sessionID,
+          uiSessionID: options.uiSessionID,
+          event: "error",
+          data: {
             sessionID,
-            event: "error",
-            data: {
-              sessionID,
-              message,
-            },
-          } satisfies AgentSessionStreamIPCEvent)
-        }
+            message,
+          },
+          receivedAt: Date.now(),
+        } satisfies AgentSessionBridgeIPCEvent)
         scheduleRestart()
       }
     }
@@ -911,15 +882,6 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle("desktop:get-session-history", async (_event, input: { sessionID: string }) => {
-    const sessionID = input.sessionID.trim()
-    const result = await requestAgentJSON<AgentSessionHistoryMessage[]>(
-      `/api/sessions/${encodeURIComponent(sessionID)}/messages`,
-    )
-
-    return result.data
-  })
-
   ipcMain.handle("desktop:get-session-diff", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
     const sessionResult = await requestAgentJSON<AgentSessionInfo>(`/api/sessions/${encodeURIComponent(sessionID)}`)
@@ -948,46 +910,6 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       const suffix = search.size > 0 ? `?${search.toString()}` : ""
       const result = await requestAgentJSON<AgentSessionRuntimeDebugSnapshot>(
         `/api/debug/sessions/${encodeURIComponent(sessionID)}/runtime${suffix}`,
-      )
-
-      return result.data
-    },
-  )
-
-  ipcMain.handle("desktop:get-session-permission-requests", async (_event, input: { sessionID: string }) => {
-    const sessionID = input.sessionID.trim()
-    const result = await requestAgentJSON<AgentPermissionRequest[]>(
-      `/api/permissions/requests?status=pending&view=prompt&sessionID=${encodeURIComponent(sessionID)}`,
-    )
-
-    return result.data
-  })
-
-  ipcMain.handle(
-    "desktop:respond-permission-request",
-    async (
-      _event,
-      input: {
-        requestID: string
-        decision: "allow-once" | "allow-session" | "allow-project" | "allow-forever" | "deny"
-        note?: string
-        resume?: boolean
-      },
-    ) => {
-      const requestID = input.requestID.trim()
-      const result = await requestAgentJSON<AgentPermissionResolveResult>(
-        `/api/permissions/requests/${encodeURIComponent(requestID)}/resolve`,
-        {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          decision: input.decision,
-          note: input.note?.trim() || undefined,
-          resume: input.resume ?? true,
-        }),
-      },
       )
 
       return result.data
@@ -1799,7 +1721,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     async (event, input: { uiSessionID?: string; backendSessionID: string }) => {
       const backendSessionID = input.backendSessionID.trim()
       const target = event.sender
-      const existing = getSessionStreamSubscription(target.id, backendSessionID, "agent-session")
+      const existing = getSessionStreamSubscription(target.id, backendSessionID)
       if (existing) {
         return {
           backendSessionID,
@@ -1808,11 +1730,10 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       }
 
       const subscription = createSessionStreamSubscription(target, backendSessionID, {
-        mode: "agent-session",
         uiSessionID: input.uiSessionID,
       })
       sessionStreamSubscriptions.set(
-        sessionStreamSubscriptionKey(target.id, backendSessionID, "agent-session"),
+        sessionStreamSubscriptionKey(target.id, backendSessionID),
         subscription,
       )
 
@@ -1841,237 +1762,8 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     "desktop:agent-session-unsubscribe",
     async (event, input: { backendSessionID: string }) => ({
       backendSessionID: input.backendSessionID.trim(),
-      removed: removeSessionStreamSubscription(event.sender.id, input.backendSessionID.trim(), "agent-session"),
+      removed: removeSessionStreamSubscription(event.sender.id, input.backendSessionID.trim()),
     }),
   )
 
-  ipcMain.handle(
-    "desktop:agent-stream-message",
-    async (
-      event,
-      input: {
-        streamID: string
-        sessionID: string
-        text?: string
-        attachments?: Array<{
-          path: string
-          name?: string
-        }>
-        questionAnswer?: {
-          questionID: string
-          selectedOptions?: string[]
-          freeformText?: string
-        }
-        permissionMode?: "default" | "full-access"
-        reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
-        system?: string
-        agent?: string
-        skills?: string[]
-      },
-    ) => {
-      const streamID = input.streamID.trim()
-      const sessionID = input.sessionID.trim()
-      const response = await fetch(resolveAgentURL(`/api/sessions/${encodeURIComponent(sessionID)}/messages/stream`), {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          text: input.text,
-          attachments: input.attachments,
-          questionAnswer: input.questionAnswer,
-          permissionMode: input.permissionMode,
-          reasoningEffort: input.reasoningEffort,
-          system: input.system,
-          agent: input.agent,
-          skills: input.skills,
-        }),
-      })
-
-      if (!response.ok) {
-        const envelope = (await response.json().catch(() => null)) as AgentEnvelope<unknown> | null
-        throw new Error(envelope?.error?.message || `Agent stream failed (${response.status})`)
-      }
-
-      const requestId = response.headers.get("x-request-id") ?? undefined
-
-      try {
-        await readAgentSSEStream(response, (item) => {
-          event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
-            streamID,
-            id: item.id,
-            event: item.event,
-            data: item.data,
-          } satisfies AgentStreamIPCEvent)
-        })
-      } catch (error) {
-        event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
-          streamID,
-          event: "error",
-          data: {
-            sessionID,
-            message: error instanceof Error ? error.message : String(error),
-          },
-        } satisfies AgentStreamIPCEvent)
-      }
-
-      return {
-        streamID,
-        requestId,
-      }
-    },
-  )
-
-  ipcMain.handle(
-    "desktop:subscribe-agent-session-stream",
-    async (event, input: { sessionID: string }) => {
-      const sessionID = input.sessionID.trim()
-      const target = event.sender
-      const existing = getSessionStreamSubscription(target.id, sessionID, "legacy")
-      if (existing) {
-        return {
-          sessionID,
-          lastEventID: existing.lastEventID,
-        }
-      }
-
-      const subscription = createSessionStreamSubscription(target, sessionID, {
-        mode: "legacy",
-      })
-      sessionStreamSubscriptions.set(sessionStreamSubscriptionKey(target.id, sessionID, "legacy"), subscription)
-
-      if (!sessionStreamCleanupTargets.has(target.id)) {
-        sessionStreamCleanupTargets.add(target.id)
-        target.once("destroyed", () => {
-          for (const [key, streamSubscription] of [...sessionStreamSubscriptions.entries()]) {
-            if (!key.includes(`:${target.id}:`)) continue
-            streamSubscription.dispose()
-            sessionStreamSubscriptions.delete(key)
-          }
-          sessionStreamCleanupTargets.delete(target.id)
-        })
-      }
-
-      void subscription.start()
-
-      return {
-        sessionID,
-        lastEventID: subscription.lastEventID,
-      }
-    },
-  )
-
-  ipcMain.handle(
-    "desktop:unsubscribe-agent-session-stream",
-    async (event, input: { sessionID: string }) => ({
-      sessionID: input.sessionID.trim(),
-      removed: removeSessionStreamSubscription(event.sender.id, input.sessionID.trim(), "legacy"),
-    }),
-  )
-
-  ipcMain.handle(
-    "desktop:agent-resume-stream",
-    async (
-      event,
-      input: {
-        streamID: string
-        sessionID: string
-      },
-    ) => {
-      const streamID = input.streamID.trim()
-      const sessionID = input.sessionID.trim()
-      const response = await fetch(resolveAgentURL(`/api/sessions/${encodeURIComponent(sessionID)}/resume/stream`), {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-      })
-
-      if (!response.ok) {
-        const envelope = (await response.json().catch(() => null)) as AgentEnvelope<unknown> | null
-        throw new Error(envelope?.error?.message || `Agent resume stream failed (${response.status})`)
-      }
-
-      const requestId = response.headers.get("x-request-id") ?? undefined
-
-      try {
-        await readAgentSSEStream(response, (item) => {
-          event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
-            streamID,
-            id: item.id,
-            event: item.event,
-            data: item.data,
-          } satisfies AgentStreamIPCEvent)
-        })
-      } catch (error) {
-          event.sender.send(AGENT_STREAM_EVENT_CHANNEL, {
-          streamID,
-          event: "error",
-          data: {
-            sessionID,
-            message: error instanceof Error ? error.message : String(error),
-          },
-        } satisfies AgentStreamIPCEvent)
-      }
-
-      return {
-        streamID,
-        requestId,
-      }
-    },
-  )
-
-  ipcMain.handle(
-    "desktop:agent-send-message",
-    async (
-      _event,
-      input: {
-        sessionID: string
-        text?: string
-        attachments?: Array<{
-          path: string
-          name?: string
-        }>
-        questionAnswer?: {
-          questionID: string
-          selectedOptions?: string[]
-          freeformText?: string
-        }
-        permissionMode?: "default" | "full-access"
-        reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
-        system?: string
-        agent?: string
-        skills?: string[]
-      },
-    ) => {
-      const sessionID = input.sessionID.trim()
-      const response = await fetch(resolveAgentURL(`/api/sessions/${encodeURIComponent(sessionID)}/messages/stream`), {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          text: input.text,
-          attachments: input.attachments,
-          questionAnswer: input.questionAnswer,
-          permissionMode: input.permissionMode,
-          reasoningEffort: input.reasoningEffort,
-          system: input.system,
-          agent: input.agent,
-          skills: input.skills,
-        }),
-      })
-
-      if (!response.ok) {
-        const envelope = (await response.json().catch(() => null)) as AgentEnvelope<unknown> | null
-        throw new Error(envelope?.error?.message || `Agent stream failed (${response.status})`)
-      }
-
-      const raw = await response.text()
-      return {
-        events: parseSSE(raw),
-        requestId: response.headers.get("x-request-id") ?? undefined,
-      }
-    },
-  )
 }

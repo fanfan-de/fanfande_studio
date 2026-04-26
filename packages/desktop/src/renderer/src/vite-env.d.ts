@@ -387,23 +387,6 @@ declare global {
         sessionID: string
         requestId?: string
       }>
-      getSessionHistory?: (input: { sessionID: string }) => Promise<
-        Array<{
-          info: {
-            id: string
-            sessionID: string
-            role: "user" | "assistant"
-            created: number
-            completed?: number
-            error?: {
-              message?: string
-              [key: string]: unknown
-            }
-            [key: string]: unknown
-          }
-          parts: unknown[]
-        }>
-      >
       getSessionDiff?: (input: { sessionID: string }) => Promise<{
         title?: string
         body?: string
@@ -420,10 +403,6 @@ declare global {
         }>
       }>
       getSessionRuntimeDebug?: (input: { sessionID: string; limit?: number; turns?: number }) => Promise<SessionRuntimeDebugSnapshot>
-      getSessionPermissionRequests?: (input: { sessionID: string }) => Promise<
-        PermissionRequestPrompt[]
-      >
-      respondPermissionRequest?: (input: PermissionResolveInput) => Promise<PermissionResolveResult>
       agentSession?: {
         loadHistory: (input: { backendSessionID: string }) => Promise<LoadedSessionHistoryMessage[]>
         sendTurn: (input: DesktopAgentSessionTurnInput) => Promise<{
@@ -969,78 +948,6 @@ declare global {
         model?: string
         small_model?: string
       }>
-      streamAgentMessage?: (input: {
-        streamID: string
-        sessionID: string
-        text?: string
-        attachments?: DesktopComposerAttachmentInput[]
-        questionAnswer?: {
-          questionID: string
-          selectedOptions?: string[]
-          freeformText?: string
-        }
-        permissionMode?: DesktopComposerPermissionMode
-        reasoningEffort?: DesktopOpenAIReasoningEffort
-        system?: string
-        agent?: string
-        skills?: string[]
-      }) => Promise<{
-        streamID: string
-        requestId?: string
-      }>
-      resumeAgentMessageStream?: (input: {
-        streamID: string
-        sessionID: string
-      }) => Promise<{
-        streamID: string
-        requestId?: string
-      }>
-      subscribeAgentSessionStream?: (input: { sessionID: string }) => Promise<{
-        sessionID: string
-        lastEventID?: string
-      }>
-      unsubscribeAgentSessionStream?: (input: { sessionID: string }) => Promise<{
-        sessionID: string
-        removed: boolean
-      }>
-      sendAgentMessage?: (input: {
-        sessionID: string
-        text?: string
-        attachments?: DesktopComposerAttachmentInput[]
-        questionAnswer?: {
-          questionID: string
-          selectedOptions?: string[]
-          freeformText?: string
-        }
-        permissionMode?: DesktopComposerPermissionMode
-        reasoningEffort?: DesktopOpenAIReasoningEffort
-        system?: string
-        agent?: string
-        skills?: string[]
-      }) => Promise<{
-        events: Array<{
-          id?: string
-          event: string
-          data: unknown
-        }>
-        requestId?: string
-      }>
-      onAgentStreamEvent?: (
-        listener: (event: {
-          streamID: string
-          id?: string
-          event: string
-          data: unknown
-        }) => void,
-      ) => () => void
-      onAgentSessionStreamEvent?: (
-        listener: (event: {
-          sessionID: string
-          id?: string
-          event: string
-          data: unknown
-        }) => void,
-      ) => () => void
       onWorkspaceFileChange?: (
         listener: (event: {
           directory: string
