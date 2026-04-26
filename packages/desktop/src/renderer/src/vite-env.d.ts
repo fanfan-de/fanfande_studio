@@ -5,6 +5,7 @@ import type { PermissionRequestPrompt, PermissionResolveInput, PermissionResolve
 import type {
   ArchivedSessionSummary,
   LoadedFolderWorkspace,
+  LoadedSessionHistoryMessage,
   LoadedSessionSnapshot,
   ProviderAuthFlow,
   ProviderAuthState,
@@ -51,6 +52,44 @@ interface DesktopComposerAttachmentInput {
 type DesktopComposerPermissionMode = "default" | "full-access"
 type DesktopOpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
 type DesktopSessionSummary = LoadedSessionSnapshot
+type DesktopAgentSessionEvent =
+  | {
+      kind: "stream"
+      source: "request" | "subscription"
+      backendSessionID: string
+      uiSessionID?: string
+      clientTurnID?: string
+      id?: string
+      event: string
+      data: unknown
+      receivedAt: number
+    }
+  | {
+      kind: "subscription-state"
+      backendSessionID: string
+      uiSessionID?: string
+      state: "connecting" | "connected" | "reconnecting" | "closed" | "error"
+      message?: string
+      lastEventID?: string
+      receivedAt: number
+    }
+
+interface DesktopAgentSessionTurnInput {
+  clientTurnID: string
+  backendSessionID: string
+  text?: string
+  attachments?: DesktopComposerAttachmentInput[]
+  questionAnswer?: {
+    questionID: string
+    selectedOptions?: string[]
+    freeformText?: string
+  }
+  permissionMode?: DesktopComposerPermissionMode
+  reasoningEffort?: DesktopOpenAIReasoningEffort
+  system?: string
+  agent?: string
+  skills?: string[]
+}
 
 declare global {
   namespace JSX {
@@ -385,6 +424,28 @@ declare global {
         PermissionRequestPrompt[]
       >
       respondPermissionRequest?: (input: PermissionResolveInput) => Promise<PermissionResolveResult>
+      agentSession?: {
+        loadHistory: (input: { backendSessionID: string }) => Promise<LoadedSessionHistoryMessage[]>
+        sendTurn: (input: DesktopAgentSessionTurnInput) => Promise<{
+          clientTurnID: string
+          requestId?: string
+        }>
+        resumeTurn: (input: { clientTurnID: string; backendSessionID: string }) => Promise<{
+          clientTurnID: string
+          requestId?: string
+        }>
+        subscribe: (input: { uiSessionID?: string; backendSessionID: string }) => Promise<{
+          backendSessionID: string
+          lastEventID?: string
+        }>
+        unsubscribe: (input: { backendSessionID: string }) => Promise<{
+          backendSessionID: string
+          removed: boolean
+        }>
+        loadPermissionRequests: (input: { backendSessionID: string }) => Promise<PermissionRequestPrompt[]>
+        respondPermissionRequest: (input: PermissionResolveInput) => Promise<PermissionResolveResult>
+        onEvent: (listener: (event: DesktopAgentSessionEvent) => void) => () => void
+      }
       getGlobalProviderCatalog?: () => Promise<ProviderCatalogItem[]>
       refreshGlobalProviderCatalog?: () => Promise<ProviderCatalogItem[]>
       getGlobalProviderAuth?: (input: { providerID: string }) => Promise<ProviderAuthState>

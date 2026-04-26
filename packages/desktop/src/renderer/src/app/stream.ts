@@ -62,6 +62,26 @@ function isSettledRuntimePhase(phase: string) {
   return phase === "completed" || phase === "blocked" || phase === "cancelled" || phase === "failed"
 }
 
+function isSettledAssistantPhase(phase: AssistantTurnPhase) {
+  return phase === "completed" || phase === "blocked" || phase === "cancelled" || phase === "failed"
+}
+
+function isTerminalRuntimeEventType(type: string) {
+  return type === "turn.completed" || type === "turn.failed" || type === "turn.cancelled"
+}
+
+function isTerminalLegacyStreamEvent(event: string) {
+  return event === "done" || event === "error"
+}
+
+function canInferLifecycleFromTrace(phase: AssistantTurnPhase) {
+  return !isSettledAssistantPhase(phase) && phase !== "waiting_approval"
+}
+
+function canInferModelWaitFromRuntimePhase(phase: AssistantTurnPhase) {
+  return phase === "requesting" || phase === "waiting_first_event" || phase === "preparing"
+}
+
 function describeOptionalStructuredValue(
   value: unknown,
   options?: {
@@ -1321,6 +1341,7 @@ function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedS
 function resolveAssistantHistoryPhase(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]): AssistantTurnPhase {
   const error = readRecord(info.error)
   if (error) return "failed"
+  if (items.some((item) => item.kind === "question")) return "blocked"
   if (items.some((item) => item.status === "waiting-approval")) return "waiting_approval"
   if (items.some((item) => item.status === "running" || item.status === "pending")) return "tool_running"
   if (items.some((item) => item.kind === "text")) return "completed"
@@ -1564,7 +1585,7 @@ export function finalizeStreamAssistantTurn(
         isStreaming: false,
       },
       {
-        phase: "completed",
+        phase: "blocked",
         state: "Waiting for your answer",
         toolName: null,
         approvalRequestID: null,
@@ -1574,7 +1595,8 @@ export function finalizeStreamAssistantTurn(
     )
   }
 
-  if (input?.status === "blocked" || items.some((item) => item.status === "waiting-approval")) {
+  const waitingTool = items.find((item) => item.kind === "tool" && item.status === "waiting-approval")
+  if (waitingTool) {
     const nextItems = upsertTraceItem(
       items,
       buildCompletionTraceItem({
@@ -1584,7 +1606,6 @@ export function finalizeStreamAssistantTurn(
         debugEntries: input?.debugEntries,
       }),
     )
-    const waitingTool = nextItems.find((item) => item.kind === "tool" && item.status === "waiting-approval")
 
     return updateAssistantTurnLifecycle(
       {
@@ -1597,6 +1618,23 @@ export function finalizeStreamAssistantTurn(
         toolName: waitingTool?.title ?? null,
       },
       nextItems,
+    )
+  }
+
+  if (input?.status === "blocked") {
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: false,
+      },
+      {
+        phase: "blocked",
+        state: "Backend response blocked",
+        toolName: null,
+        approvalRequestID: null,
+        errorMessage: null,
+      },
+      items,
     )
   }
 
@@ -1632,10 +1670,15 @@ function mapRuntimePhaseToAssistantLifecycle(payload: Record<string, unknown>) {
 
   switch (phase) {
     case "preparing":
+      return {
+        phase: "preparing" as const,
+        state: reason || "Preparing agent request",
+        toolName: null,
+      }
     case "waiting_llm":
       return {
-        phase: "reasoning" as const,
-        state: reason || "Preparing agent request",
+        phase: "waiting_llm" as const,
+        state: reason || "Waiting for model stream",
         toolName: null,
       }
     case "reasoning":
@@ -1664,8 +1707,8 @@ function mapRuntimePhaseToAssistantLifecycle(payload: Record<string, unknown>) {
       }
     case "blocked":
       return {
-        phase: "waiting_approval" as const,
-        state: reason || "Waiting for permission approval",
+        phase: "blocked" as const,
+        state: reason || "Backend response blocked",
         toolName,
       }
     case "completed":
@@ -1691,11 +1734,45 @@ function mapRuntimePhaseToAssistantLifecycle(payload: Record<string, unknown>) {
   }
 }
 
+function inferToolLifecycleFromTraceItem(
+  turn: AssistantTurn,
+  item: AssistantTraceItem,
+  approvalRequestID: string | null,
+) {
+  if (item.kind !== "tool" || !canInferLifecycleFromTrace(turn.runtime.phase)) {
+    return null
+  }
+
+  if (item.status === "waiting-approval") {
+    return {
+      phase: "waiting_approval" as const,
+      state: "Waiting for permission approval",
+      toolName: item.title ?? null,
+      ...(approvalRequestID ? { approvalRequestID } : {}),
+    }
+  }
+
+  if (item.status === "running" || item.status === "pending") {
+    return {
+      phase: "tool_running" as const,
+      state: "Running tools",
+      toolName: item.title ?? null,
+      approvalRequestID: null,
+    }
+  }
+
+  return null
+}
+
 function applyRuntimeEventToTurn(
   turn: AssistantTurn,
   item: AgentStreamEvent,
   event: AgentRuntimeEvent,
 ): AssistantTurn {
+  if (isSettledAssistantPhase(turn.runtime.phase) && !isTerminalRuntimeEventType(event.type)) {
+    return turn
+  }
+
   const payload = event.payload
   const preparedItems = settleQueuedPrompt(turn.items, turn.id)
   const debugEntries = buildRuntimeEventDebugEntries(event, item.id)
@@ -1707,7 +1784,7 @@ function applyRuntimeEventToTurn(
         isStreaming: true,
       },
       {
-        phase: "reasoning",
+        phase: "preparing",
         state: readBoolean(payload.resume) ? "Resuming agent stream" : "Agent stream connected",
       },
       appendSystemTrace(
@@ -1735,6 +1812,23 @@ function applyRuntimeEventToTurn(
         phase: lifecycle.phase,
         state: lifecycle.state,
         toolName: lifecycle.toolName,
+      },
+      preparedItems,
+    )
+  }
+
+  if (event.type === "llm.call.started") {
+    if (!canInferModelWaitFromRuntimePhase(turn.runtime.phase)) return turn
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: true,
+      },
+      {
+        phase: "waiting_llm",
+        state: "Waiting for model stream",
+        toolName: null,
       },
       preparedItems,
     )
@@ -1822,26 +1916,21 @@ function applyRuntimeEventToTurn(
     const partRecord = readRecord(part)
     const partState = readRecord(partRecord?.state)
     const approvalRequestID = readString(partState?.approvalID) || null
+    const isStreaming = !isSettledAssistantPhase(turn.runtime.phase)
 
     if (primaryItem?.kind === "tool") {
-      const phase = primaryItem.status === "waiting-approval"
-        ? "waiting_approval"
-        : primaryItem.status === "running" || primaryItem.status === "pending"
-          ? "tool_running"
-          : turn.runtime.phase
-      const state = primaryItem.status === "waiting-approval" ? "Waiting for permission approval" : "Running tools"
+      const inferredLifecycle = inferToolLifecycleFromTraceItem(turn, primaryItem, approvalRequestID)
 
       return updateAssistantTurnLifecycle(
         {
           ...turn,
-          isStreaming: true,
+          isStreaming,
         },
-        {
-          phase,
-          state,
-          toolName: primaryItem.title ?? null,
-          approvalRequestID,
-        },
+        inferredLifecycle ?? (
+          primaryItem.status === "waiting-approval" && turn.runtime.phase === "waiting_approval" && approvalRequestID
+            ? { approvalRequestID }
+            : {}
+        ),
         nextItems,
       )
     }
@@ -1849,7 +1938,7 @@ function applyRuntimeEventToTurn(
     return updateAssistantTurnLifecycle(
       {
         ...turn,
-        isStreaming: true,
+        isStreaming,
       },
       {},
       nextItems,
@@ -1944,6 +2033,10 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     return applyRuntimeEventToTurn(turn, item, runtimeEvent)
   }
 
+  if (isSettledAssistantPhase(turn.runtime.phase) && !isTerminalLegacyStreamEvent(item.event)) {
+    return turn
+  }
+
   const payload = readRecord(item.data)
   const preparedItems = settleQueuedPrompt(turn.items, turn.id)
 
@@ -2029,26 +2122,21 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     const partRecord = readRecord(payload?.part)
     const partState = readRecord(partRecord?.state)
     const approvalRequestID = readString(partState?.approvalID) || null
+    const isStreaming = !isSettledAssistantPhase(turn.runtime.phase)
 
     if (primaryItem?.kind === "tool") {
-      const phase = primaryItem.status === "waiting-approval"
-        ? "waiting_approval"
-        : primaryItem.status === "running" || primaryItem.status === "pending"
-          ? "tool_running"
-          : turn.runtime.phase
-      const state = primaryItem.status === "waiting-approval" ? "Waiting for permission approval" : "Running tools"
+      const inferredLifecycle = inferToolLifecycleFromTraceItem(turn, primaryItem, approvalRequestID)
 
       return updateAssistantTurnLifecycle(
         {
           ...turn,
-          isStreaming: true,
+          isStreaming,
         },
-        {
-          phase,
-          state,
-          toolName: primaryItem.title ?? null,
-          approvalRequestID,
-        },
+        inferredLifecycle ?? (
+          primaryItem.status === "waiting-approval" && turn.runtime.phase === "waiting_approval" && approvalRequestID
+            ? { approvalRequestID }
+            : {}
+        ),
         nextItems,
       )
     }
@@ -2056,7 +2144,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     return updateAssistantTurnLifecycle(
       {
         ...turn,
-        isStreaming: true,
+        isStreaming,
       },
       {},
       nextItems,

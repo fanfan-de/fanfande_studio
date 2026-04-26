@@ -17,7 +17,10 @@ import type {
   AgentProviderAuthState,
   AgentProviderCatalogItem,
   AgentProviderModel,
+  AgentSessionBridgeIPCEvent,
+  AgentSessionHistoryMessage,
   AgentSessionRuntimeDebugSnapshot,
+  AgentSessionTurnRequestInput,
   AgentSideChatLink,
   AgentWorkspaceSession,
 } from "../main/types"
@@ -441,6 +444,45 @@ try {
       ipcRenderer.invoke("desktop:get-session-permission-requests", input) as Promise<PermissionRequestPrompt[]>,
     respondPermissionRequest: (input: PermissionResolveInput) =>
       ipcRenderer.invoke("desktop:respond-permission-request", input) as Promise<PermissionResolveResult>,
+    agentSession: {
+      loadHistory: (input: { backendSessionID: string }) =>
+        ipcRenderer.invoke("desktop:agent-session-load-history", input) as Promise<AgentSessionHistoryMessage[]>,
+      sendTurn: (input: AgentSessionTurnRequestInput) =>
+        ipcRenderer.invoke("desktop:agent-session-send-turn", input) as Promise<{
+          clientTurnID: string
+          requestId?: string
+        }>,
+      resumeTurn: (input: { clientTurnID: string; backendSessionID: string }) =>
+        ipcRenderer.invoke("desktop:agent-session-resume-turn", input) as Promise<{
+          clientTurnID: string
+          requestId?: string
+        }>,
+      subscribe: (input: { uiSessionID?: string; backendSessionID: string }) =>
+        ipcRenderer.invoke("desktop:agent-session-subscribe", input) as Promise<{
+          backendSessionID: string
+          lastEventID?: string
+        }>,
+      unsubscribe: (input: { backendSessionID: string }) =>
+        ipcRenderer.invoke("desktop:agent-session-unsubscribe", input) as Promise<{
+          backendSessionID: string
+          removed: boolean
+        }>,
+      loadPermissionRequests: (input: { backendSessionID: string }) =>
+        ipcRenderer.invoke("desktop:agent-session-load-permission-requests", input) as Promise<PermissionRequestPrompt[]>,
+      respondPermissionRequest: (input: PermissionResolveInput) =>
+        ipcRenderer.invoke("desktop:agent-session-respond-permission-request", input) as Promise<PermissionResolveResult>,
+      onEvent: (listener: (event: AgentSessionBridgeIPCEvent) => void) => {
+        const wrappedListener = (_event: Electron.IpcRendererEvent, sessionEvent: AgentSessionBridgeIPCEvent) => {
+          listener(sessionEvent)
+        }
+
+        ipcRenderer.on("desktop:agent-session-event", wrappedListener)
+
+        return () => {
+          ipcRenderer.removeListener("desktop:agent-session-event", wrappedListener)
+        }
+      },
+    },
     getGlobalProviderCatalog: () =>
       ipcRenderer.invoke("desktop:get-global-provider-catalog") as Promise<AgentProviderCatalogItem[]>,
     refreshGlobalProviderCatalog: () =>

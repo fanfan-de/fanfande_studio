@@ -6580,12 +6580,18 @@ function getAssistantEphemeralHint(turn: AssistantTurn) {
   switch (turn.runtime.phase) {
     case "requesting":
     case "waiting_first_event":
+    case "preparing":
+      return "Preparing..."
+    case "waiting_llm":
+      return "Waiting for model..."
     case "reasoning":
       return "Thinking..."
     case "tool_running":
       return turn.runtime.toolName ? `Running ${turn.runtime.toolName}...` : "Running tools..."
     case "waiting_approval":
       return "Waiting for approval..."
+    case "blocked":
+      return turn.state || "Blocked..."
     case "responding":
       return "Responding..."
     default:

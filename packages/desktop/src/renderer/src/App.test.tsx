@@ -4187,7 +4187,7 @@ describe("App", () => {
 
     const draftInput = screen.getByRole("textbox", { name: "Task draft" })
     setComposerDraftValue(draftInput, "keep this draft")
-    expect(draftInput).toHaveValue("keep this draft")
+    expectComposerDraftValue(draftInput, "keep this draft")
 
     fireEvent.click(within(questionCard).getByRole("button", { name: "Vercel" }))
 
@@ -4214,7 +4214,7 @@ describe("App", () => {
     }))
     expect(sendInput).not.toHaveProperty("attachments")
     expect(screen.getByText("brief.pdf")).toBeInTheDocument()
-    expect(draftInput).toHaveValue("keep this draft")
+    expectComposerDraftValue(draftInput, "keep this draft")
     expect(await screen.findByText("vercel")).toBeInTheDocument()
     expect(within(questionCard).getByText("Answered.")).toBeInTheDocument()
   })
@@ -5684,7 +5684,7 @@ describe("App", () => {
     })
     expect(await screen.findByRole("button", { name: "Streamed backend chat" })).toBeInTheDocument()
     expect(screen.queryByRole("combobox", { name: "Session project" })).not.toBeInTheDocument()
-    expect(screen.getByText("Thinking...")).toBeInTheDocument()
+    expect(screen.getByText("Preparing...")).toBeInTheDocument()
 
     await act(async () => {
       streamListener?.({
@@ -7973,7 +7973,7 @@ describe("App", () => {
       await Promise.resolve()
     })
 
-    expect(screen.getByText("Thinking...")).toBeInTheDocument()
+    expect(screen.getByText("Preparing...")).toBeInTheDocument()
     expect(getComposerSendButton()).toBeDisabled()
 
     await act(async () => {
@@ -8000,7 +8000,148 @@ describe("App", () => {
     })
 
     expect(await screen.findByText("Ready now.")).toBeInTheDocument()
-    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument()
+    expect(screen.queryByText("Preparing...")).not.toBeInTheDocument()
+  })
+
+  it("ignores stale session stream events after the request stream settles a turn", async () => {
+    let streamListener:
+      | ((event: {
+          streamID: string
+          id?: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+    let sessionStreamListener:
+      | ((event: {
+          sessionID: string
+          id?: string
+          event: string
+          data: unknown
+        }) => void)
+      | undefined
+    let releaseStream: (() => void) | undefined
+    let activeStreamID = ""
+
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Atlas\\client",
+        directory: "C:\\Projects\\Atlas\\client",
+        name: "client",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-atlas",
+          name: "Atlas",
+          worktree: "C:\\Projects\\Atlas",
+        },
+        sessions: [
+          {
+            id: "session-atlas-review",
+            projectID: "project-atlas",
+            directory: "C:\\Projects\\Atlas\\client",
+            title: "Atlas review",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.getSessionHistory = vi.fn().mockResolvedValue([])
+    window.desktop!.subscribeAgentSessionStream = vi.fn().mockResolvedValue({
+      sessionID: "session-atlas-review",
+    })
+    window.desktop!.onAgentStreamEvent = vi.fn((listener) => {
+      streamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.onAgentSessionStreamEvent = vi.fn((listener) => {
+      sessionStreamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.streamAgentMessage = vi.fn().mockImplementation(
+      async (input: {
+        streamID: string
+        sessionID: string
+        text: string
+      }) => {
+        activeStreamID = input.streamID
+
+        await new Promise<void>((resolve) => {
+          releaseStream = resolve
+        })
+
+        return {
+          streamID: input.streamID,
+        }
+      },
+    )
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.subscribeAgentSessionStream).toHaveBeenCalledWith({
+        sessionID: "session-atlas-review",
+      })
+    })
+
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Finish without stale placeholders")
+    await act(async () => {
+      fireEvent.click(getComposerSendButton())
+      await Promise.resolve()
+    })
+
+    expect(screen.getByText("Preparing...")).toBeInTheDocument()
+
+    await act(async () => {
+      streamListener?.({
+        streamID: activeStreamID,
+        id: "102:turn-runtime:3",
+        event: "runtime",
+        data: {
+          eventID: "event-completed",
+          sessionID: "session-atlas-review",
+          turnID: "turn-runtime",
+          seq: 3,
+          timestamp: 102,
+          type: "turn.completed",
+          payload: {
+            status: "completed",
+            finishReason: "stop",
+            parts: [{ id: "part-text", type: "text", text: "Done." }],
+          },
+        },
+      })
+      releaseStream?.()
+      await Promise.resolve()
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText("Preparing...")).not.toBeInTheDocument()
+    })
+
+    act(() => {
+      sessionStreamListener?.({
+        sessionID: "session-atlas-review",
+        id: "100:turn-runtime:1",
+        event: "runtime",
+        data: {
+          eventID: "event-started-late",
+          sessionID: "session-atlas-review",
+          turnID: "turn-runtime",
+          seq: 1,
+          timestamp: 100,
+          type: "turn.started",
+          payload: {},
+        },
+      })
+    })
+
+    expect(screen.queryByText("Preparing...")).not.toBeInTheDocument()
   })
 
   it("renders streamed reasoning and response before completion", async () => {

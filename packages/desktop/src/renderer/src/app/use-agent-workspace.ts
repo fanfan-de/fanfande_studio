@@ -1,4 +1,4 @@
-import { startTransition, useDeferredValue, useEffect, useEffectEvent, useRef, useState, type MouseEvent } from "react"
+import { startTransition, useDeferredValue, useEffect, useEffectEvent, useMemo, useRef, useState, type MouseEvent } from "react"
 import {
   appendConversationTurns as appendConversationTurnsToMap,
   ensureAgentSessions,
@@ -117,6 +117,9 @@ import {
 } from "./workspace"
 import { notifyGitStateChanged } from "./git-events"
 import { mergeUserTurnPresentationState, persistUserTurns, readPersistedUserTurns } from "./user-turn-presentation"
+import { getAgentSessionBridge, type AgentSessionBridgeEvent } from "./agent-session/client"
+import { createAgentSessionEventRouter } from "./agent-session/event-router"
+import { createAgentSessionStore } from "./agent-session/store"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
@@ -820,8 +823,8 @@ export function useAgentWorkspace({
   const initialFolderWorkspacesLoadedRef = useRef(false)
   const preserveLocalWorkspaceStateOnInitialLoadRef = useRef(false)
   const subscribedSessionStreamsRef = useRef<Record<string, string>>({})
-  const seenStreamCursorsRef = useRef<Record<string, string[]>>({})
-  const turnTargetsRef = useRef<Record<string, { sessionID: string; assistantTurnID: string }>>({})
+  const sessionEventRouterRef = useRef(createAgentSessionEventRouter())
+  const agentSessionStoreRef = useRef(createAgentSessionStore())
   const lastFocusedSessionIDRef = useRef<string | null>(initialSelection.session?.id ?? null)
   const watchedWorkspaceDirectoriesKeyRef = useRef("")
   const gitRefreshSuppressedUntilRef = useRef<Record<string, number>>({})
@@ -915,7 +918,6 @@ export function useAgentWorkspace({
     allowImage: false,
     allowPdf: false,
   })
-
   function resolveWorkspaceIDForTab(tab: WorkbenchTabReference | null) {
     if (!tab) return null
     if (tab.kind === "session") {
@@ -1072,16 +1074,24 @@ export function useAgentWorkspace({
   const composerAttachmentButtonTitle =
     composerAttachmentDisabledReason ??
     `Add ${describeComposerAttachmentSupport(composerAttachmentCapabilities) ?? "attachments"}.`
-  const composerSkillOptions: ComposerSkillOption[] = composerSkills.map((skill) => ({
-    value: skill.id,
-    label: skill.name,
-    description: skill.description,
-  }))
-  const composerMcpOptions: ComposerMcpOption[] = composerMcpServers.map((server) => ({
-    value: server.id,
-    label: server.name ?? server.id,
-    description: describeComposerMcpServer(server),
-  }))
+  const composerSkillOptions: ComposerSkillOption[] = useMemo(
+    () =>
+      composerSkills.map((skill) => ({
+        value: skill.id,
+        label: skill.name,
+        description: skill.description,
+      })),
+    [composerSkills],
+  )
+  const composerMcpOptions: ComposerMcpOption[] = useMemo(
+    () =>
+      composerMcpServers.map((server) => ({
+        value: server.id,
+        label: server.name ?? server.id,
+        description: describeComposerMcpServer(server),
+      })),
+    [composerMcpServers],
+  )
   useEffect(() => {
     if (!activeTabKey || activeSessionIsSideChat) return
 
@@ -1301,29 +1311,30 @@ export function useAgentWorkspace({
     return agentSessions[sessionID] ?? sessionID
   }
 
-  function turnTargetKey(backendSessionID: string, turnID: string) {
-    return `${backendSessionID}:${turnID}`
-  }
-
   function rememberSeenCursor(sessionID: string, cursor: string) {
-    if (!cursor) return false
-
-    const current = seenStreamCursorsRef.current[sessionID] ?? []
-    if (current.includes(cursor)) {
-      return true
-    }
-
-    const next = [...current, cursor]
-    if (next.length > 200) {
-      next.splice(0, next.length - 200)
-    }
-    seenStreamCursorsRef.current[sessionID] = next
-    return false
+    return sessionEventRouterRef.current.rememberSeenCursor(sessionID, cursor)
   }
 
   function cleanupTurnTarget(backendSessionID: string | undefined, turnID: string | undefined) {
+    sessionEventRouterRef.current.cleanupTurnTarget(backendSessionID, turnID)
+  }
+
+  function cleanupPendingStreamsForBackendTurn(backendSessionID: string | undefined, turnID: string | undefined) {
     if (!backendSessionID || !turnID) return
-    delete turnTargetsRef.current[turnTargetKey(backendSessionID, turnID)]
+
+    for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
+      if (target.backendSessionID === backendSessionID && target.backendTurnID === turnID) {
+        delete pendingStreamsRef.current[streamID]
+      }
+    }
+  }
+
+  function markBackendTurnSettled(backendSessionID: string | undefined, turnID: string | undefined) {
+    sessionEventRouterRef.current.markBackendTurnSettled(backendSessionID, turnID)
+  }
+
+  function hasBackendTurnSettled(backendSessionID: string | undefined, turnID: string | undefined) {
+    return sessionEventRouterRef.current.hasBackendTurnSettled(backendSessionID, turnID)
   }
 
   function replaceConversationTurns(sessionID: string, nextTurns: Turn[]) {
@@ -1390,8 +1401,7 @@ export function useAgentWorkspace({
     backendSessionID: string
     turnID: string
   }) {
-    const targetKey = turnTargetKey(input.backendSessionID, input.turnID)
-    const existing = turnTargetsRef.current[targetKey]
+    const existing = sessionEventRouterRef.current.getTurnTarget(input.backendSessionID, input.turnID)
     if (existing) {
       return existing.assistantTurnID
     }
@@ -1405,18 +1415,18 @@ export function useAgentWorkspace({
 
     if (pending) {
       pending.backendTurnID = input.turnID
-      turnTargetsRef.current[targetKey] = {
+      sessionEventRouterRef.current.setTurnTarget(input.backendSessionID, input.turnID, {
         sessionID: input.uiSessionID,
         assistantTurnID: pending.assistantTurnID,
-      }
+      })
       return pending.assistantTurnID
     }
 
     const streamingTurn = buildSessionStreamingAssistantTurn()
-    turnTargetsRef.current[targetKey] = {
+    sessionEventRouterRef.current.setTurnTarget(input.backendSessionID, input.turnID, {
       sessionID: input.uiSessionID,
       assistantTurnID: streamingTurn.id,
-    }
+    })
 
     appendConversationTurns(input.uiSessionID, [streamingTurn])
 
@@ -1429,18 +1439,30 @@ export function useAgentWorkspace({
 
     const cursor = resolveStreamCursor(streamEvent)
     if (cursor && rememberSeenCursor(target.sessionID, cursor)) {
+      const backendTurnID = resolveStreamTurnID(streamEvent)
+      const backendSessionID = target.backendSessionID ?? resolveBackendSessionID(target.sessionID)
+      if (backendTurnID && isTerminalStreamEvent(streamEvent)) {
+        delete pendingStreamsRef.current[streamEvent.streamID]
+        cleanupTurnTarget(backendSessionID, backendTurnID)
+      }
       return
     }
 
     const backendTurnID = resolveStreamTurnID(streamEvent)
     if (backendTurnID) {
       const backendSessionID = target.backendSessionID ?? resolveBackendSessionID(target.sessionID)
+      if (hasBackendTurnSettled(backendSessionID, backendTurnID)) {
+        delete pendingStreamsRef.current[streamEvent.streamID]
+        cleanupTurnTarget(backendSessionID, backendTurnID)
+        return
+      }
+
       target.backendSessionID = backendSessionID
       target.backendTurnID = backendTurnID
-      turnTargetsRef.current[turnTargetKey(backendSessionID, backendTurnID)] = {
+      sessionEventRouterRef.current.setTurnTarget(backendSessionID, backendTurnID, {
         sessionID: target.sessionID,
         assistantTurnID: target.assistantTurnID,
-      }
+      })
     }
 
     startTransition(() => {
@@ -1465,6 +1487,7 @@ export function useAgentWorkspace({
       if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(target.sessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
       }
+      markBackendTurnSettled(target.backendSessionID, target.backendTurnID)
       delete pendingStreamsRef.current[streamEvent.streamID]
       cleanupTurnTarget(target.backendSessionID, target.backendTurnID)
       refreshWorkspaceForSession(target.sessionID)
@@ -1507,6 +1530,8 @@ export function useAgentWorkspace({
       return
     }
 
+    if (hasBackendTurnSettled(streamEvent.sessionID, backendTurnID)) return
+
     const assistantTurnID = ensureAssistantTurnForBackendTurn({
       uiSessionID,
       backendSessionID: streamEvent.sessionID,
@@ -1530,6 +1555,8 @@ export function useAgentWorkspace({
       if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
       }
+      markBackendTurnSettled(streamEvent.sessionID, backendTurnID)
+      cleanupPendingStreamsForBackendTurn(streamEvent.sessionID, backendTurnID)
       cleanupTurnTarget(streamEvent.sessionID, backendTurnID)
       refreshWorkspaceForSession(uiSessionID)
       if (canLoadSessionHistory) {
@@ -1546,11 +1573,39 @@ export function useAgentWorkspace({
     }
   }
 
-  async function reloadSessionHistoryForSession(sessionID: string, backendSessionID = resolveBackendSessionID(sessionID)) {
-    const getSessionHistory = window.desktop?.getSessionHistory
-    if (!getSessionHistory) return
+  function handleAgentSessionBridgeEvent(sessionEvent: AgentSessionBridgeEvent) {
+    if (sessionEvent.kind === "subscription-state") {
+      agentSessionStoreRef.current.dispatch({
+        type: "subscription.state",
+        event: sessionEvent,
+      })
+      return
+    }
 
-    const messages = await getSessionHistory({ sessionID: backendSessionID })
+    if (sessionEvent.source === "request") {
+      if (!sessionEvent.clientTurnID) return
+      handleRequestStreamEvent({
+        streamID: sessionEvent.clientTurnID,
+        id: sessionEvent.id,
+        event: sessionEvent.event,
+        data: sessionEvent.data,
+      })
+      return
+    }
+
+    handleSessionStreamEvent({
+      sessionID: sessionEvent.backendSessionID,
+      id: sessionEvent.id,
+      event: sessionEvent.event,
+      data: sessionEvent.data,
+    })
+  }
+
+  async function reloadSessionHistoryForSession(sessionID: string, backendSessionID = resolveBackendSessionID(sessionID)) {
+    const agentSession = getAgentSessionBridge()
+    if (!agentSession) return
+
+    const messages = await agentSession.loadHistory({ backendSessionID })
     const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
     startTransition(() => {
       replaceConversationTurnsFromHistory(sessionID, buildTurnsFromHistory(messages))
@@ -1685,14 +1740,14 @@ export function useAgentWorkspace({
     sessionID: string,
     backendSessionID = resolveBackendSessionID(sessionID),
   ) {
-    const getSessionPermissionRequests = window.desktop?.getSessionPermissionRequests
-    if (!getSessionPermissionRequests) return
+    const agentSession = getAgentSessionBridge()
+    if (!agentSession) return
 
     const requestID = (permissionRequestsRequestRef.current[sessionID] ?? 0) + 1
     permissionRequestsRequestRef.current[sessionID] = requestID
 
     try {
-      const nextRequests = await getSessionPermissionRequests({ sessionID: backendSessionID })
+      const nextRequests = await agentSession.loadPermissionRequests({ backendSessionID })
       if (permissionRequestsRequestRef.current[sessionID] !== requestID) return
 
       setPendingPermissionRequestsBySession((prev) => ({
@@ -1705,12 +1760,8 @@ export function useAgentWorkspace({
     }
   }
 
-  const handleRequestStreamEventEffect = useEffectEvent((streamEvent: AgentStreamIPCEvent) => {
-    handleRequestStreamEvent(streamEvent)
-  })
-
-  const handleSessionStreamEventEffect = useEffectEvent((streamEvent: AgentSessionStreamIPCEvent) => {
-    handleSessionStreamEvent(streamEvent)
+  const handleAgentSessionBridgeEventEffect = useEffectEvent((sessionEvent: AgentSessionBridgeEvent) => {
+    handleAgentSessionBridgeEvent(sessionEvent)
   })
 
   const handleWorkspaceFileChangeEffect = useEffectEvent((workspaceEvent: WorkspaceFileChangeIPCEvent) => {
@@ -1767,22 +1818,12 @@ export function useAgentWorkspace({
   })
 
   useEffect(() => {
-    const unsubscribe = window.desktop?.onAgentStreamEvent?.((streamEvent: AgentStreamIPCEvent) => {
-      handleRequestStreamEventEffect(streamEvent)
+    const unsubscribe = getAgentSessionBridge()?.onEvent((sessionEvent) => {
+      handleAgentSessionBridgeEventEffect(sessionEvent)
     })
 
     return () => {
       pendingStreamsRef.current = {}
-      unsubscribe?.()
-    }
-  }, [])
-
-  useEffect(() => {
-    const unsubscribe = window.desktop?.onAgentSessionStreamEvent?.((streamEvent: AgentSessionStreamIPCEvent) => {
-      handleSessionStreamEventEffect(streamEvent)
-    })
-
-    return () => {
       unsubscribe?.()
     }
   }, [])
@@ -1798,13 +1839,12 @@ export function useAgentWorkspace({
   }, [])
 
   useEffect(() => {
-    const subscribeSessionStream = window.desktop?.subscribeAgentSessionStream
-    const unsubscribeSessionStream = window.desktop?.unsubscribeAgentSessionStream
+    const agentSession = getAgentSessionBridge()
 
-    if (!agentConnected || !canLoadSessionHistory || !subscribeSessionStream || !unsubscribeSessionStream) {
-      if (unsubscribeSessionStream) {
+    if (!agentConnected || !canLoadSessionHistory || !agentSession) {
+      if (agentSession) {
         for (const backendSessionID of Object.values(subscribedSessionStreamsRef.current)) {
-          void unsubscribeSessionStream({ sessionID: backendSessionID }).catch(() => undefined)
+          void agentSession.unsubscribe({ backendSessionID }).catch(() => undefined)
         }
       }
       subscribedSessionStreamsRef.current = {}
@@ -1819,26 +1859,26 @@ export function useAgentWorkspace({
 
     for (const [uiSessionID, backendSessionID] of Object.entries(subscribedSessionStreamsRef.current)) {
       if (nextSubscriptions[uiSessionID] === backendSessionID) continue
-      void unsubscribeSessionStream({ sessionID: backendSessionID }).catch(() => undefined)
+      void agentSession.unsubscribe({ backendSessionID }).catch(() => undefined)
       delete subscribedSessionStreamsRef.current[uiSessionID]
     }
 
     for (const [uiSessionID, backendSessionID] of Object.entries(nextSubscriptions)) {
       if (subscribedSessionStreamsRef.current[uiSessionID] === backendSessionID) continue
       subscribedSessionStreamsRef.current[uiSessionID] = backendSessionID
-      void subscribeSessionStream({ sessionID: backendSessionID }).catch((error) => {
-        console.error("[desktop] subscribeAgentSessionStream failed:", error)
+      void agentSession.subscribe({ uiSessionID, backendSessionID }).catch((error) => {
+        console.error("[desktop] agentSession.subscribe failed:", error)
       })
     }
   }, [agentConnected, canLoadSessionHistory, openCanvasSessionIDs, agentSessions])
 
   useEffect(() => {
     return () => {
-      const unsubscribeSessionStream = window.desktop?.unsubscribeAgentSessionStream
-      if (!unsubscribeSessionStream) return
+      const agentSession = getAgentSessionBridge()
+      if (!agentSession) return
 
       for (const backendSessionID of Object.values(subscribedSessionStreamsRef.current)) {
-        void unsubscribeSessionStream({ sessionID: backendSessionID }).catch(() => undefined)
+        void agentSession.unsubscribe({ backendSessionID }).catch(() => undefined)
       }
       subscribedSessionStreamsRef.current = {}
     }
@@ -1955,8 +1995,8 @@ export function useAgentWorkspace({
   }, [])
 
   useEffect(() => {
-    const getSessionHistory = window.desktop?.getSessionHistory
-    if (!canLoadSessionHistory || !activeSessionID || !getSessionHistory) return
+    const agentSession = getAgentSessionBridge()
+    if (!canLoadSessionHistory || !activeSessionID || !agentSession) return
 
     if (skipNextHistoryLoadRef.current[activeSessionID]) {
       delete skipNextHistoryLoadRef.current[activeSessionID]
@@ -1965,10 +2005,11 @@ export function useAgentWorkspace({
 
     let cancelled = false
     const sessionID = activeSessionID
+    const backendSessionID = resolveBackendSessionID(sessionID)
     const requestID = ++historyRequestRef.current
     const baselineVersion = conversationVersionRef.current[sessionID] ?? 0
 
-    getSessionHistory({ sessionID })
+    agentSession.loadHistory({ backendSessionID })
       .then((messages) => {
         if (cancelled || historyRequestRef.current !== requestID) return
         if ((conversationVersionRef.current[sessionID] ?? 0) !== baselineVersion) return
@@ -2375,14 +2416,12 @@ export function useAgentWorkspace({
       clearSessionDiffRefreshTimer(sessionID)
       delete runtimeDebugRequestRef.current[sessionID]
       clearRuntimeDebugRefreshTimer(sessionID)
-      delete seenStreamCursorsRef.current[sessionID]
+      sessionEventRouterRef.current.cleanupUISession(sessionID)
+      agentSessionStoreRef.current.dispatch({
+        type: "session.cleanup",
+        sessionID,
+      })
       delete subscribedSessionStreamsRef.current[sessionID]
-    }
-
-    for (const [turnKey, target] of Object.entries(turnTargetsRef.current)) {
-      if (sessionIDs.has(target.sessionID)) {
-        delete turnTargetsRef.current[turnKey]
-      }
     }
 
     for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
@@ -2887,13 +2926,12 @@ export function useAgentWorkspace({
         clearSessionDiffRefreshTimer(archivedSessionID)
         delete runtimeDebugRequestRef.current[archivedSessionID]
         clearRuntimeDebugRefreshTimer(archivedSessionID)
-        delete seenStreamCursorsRef.current[archivedSessionID]
+        sessionEventRouterRef.current.cleanupUISession(archivedSessionID)
+        agentSessionStoreRef.current.dispatch({
+          type: "session.cleanup",
+          sessionID: archivedSessionID,
+        })
         delete subscribedSessionStreamsRef.current[archivedSessionID]
-      }
-      for (const [turnKey, target] of Object.entries(turnTargetsRef.current)) {
-        if (archivedSessionIDs.has(target.sessionID)) {
-          delete turnTargetsRef.current[turnKey]
-        }
       }
       for (const [streamID, target] of Object.entries(pendingStreamsRef.current)) {
         if (archivedSessionIDs.has(target.sessionID)) {
@@ -3571,7 +3609,8 @@ export function useAgentWorkspace({
       workspace,
     } = input
     const uiSessionID = session.id
-    const canStream = Boolean(window.desktop?.streamAgentMessage && window.desktop?.onAgentStreamEvent)
+    const agentSession = getAgentSessionBridge()
+    const canStream = Boolean(agentSession?.canStream)
     const normalizedText = text.trim() || normalizeQuestionAnswerText(questionAnswer)
     const attachmentInputs = attachments.map((attachment) => ({
       path: attachment.path,
@@ -3618,7 +3657,7 @@ export function useAgentWorkspace({
       }))
     })
 
-    if (!agentConnected || !window.desktop?.createAgentSession || (!canStream && !window.desktop?.sendAgentMessage)) {
+    if (!agentConnected || !window.desktop?.createAgentSession || !agentSession) {
       const fallback = buildAgentTurn(userTurn.text, session, workspace.name, platform)
       startTransition(() => {
         appendConversationTurns(uiSessionID, [fallback])
@@ -3655,7 +3694,7 @@ export function useAgentWorkspace({
         throw new Error("Backend session id is missing")
       }
 
-      if (canStream && window.desktop?.streamAgentMessage) {
+      if (canStream) {
         const streamingTurn = buildStreamingAssistantTurn(userTurn.text)
         streamingTurnID = streamingTurn.id
         streamID = createID("stream")
@@ -3667,9 +3706,9 @@ export function useAgentWorkspace({
 
         appendConversationTurns(uiSessionID, [streamingTurn])
 
-        await window.desktop.streamAgentMessage({
-          streamID,
-          sessionID: backendSessionID,
+        await agentSession.sendTurn({
+          clientTurnID: streamID,
+          backendSessionID,
           ...(normalizedText ? { text: normalizedText } : {}),
           ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
           ...(questionAnswer ? { questionAnswer } : {}),
@@ -3681,8 +3720,9 @@ export function useAgentWorkspace({
         return
       }
 
-      const result = await window.desktop.sendAgentMessage?.({
-        sessionID: backendSessionID,
+      const result = await agentSession.sendTurn({
+        clientTurnID: createID("turn"),
+        backendSessionID,
         ...(normalizedText ? { text: normalizedText } : {}),
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         ...(questionAnswer ? { questionAnswer } : {}),
@@ -3691,8 +3731,8 @@ export function useAgentWorkspace({
         skills: effectiveSelectedSkillIDs,
       })
 
-      if (!result) {
-        throw new Error("Desktop preload does not expose an agent send method")
+      if (!result.events) {
+        throw new Error("Desktop preload did not return batch agent events")
       }
 
       const backendTurn = buildAgentTurnFromEvents(result.events, userTurn.text)
@@ -3831,13 +3871,12 @@ export function useAgentWorkspace({
     decision: PermissionDecision
     note?: string
   }) {
-    const respondPermissionRequest = window.desktop?.respondPermissionRequest
-    const resumeAgentMessageStream = window.desktop?.resumeAgentMessageStream
-    if (!respondPermissionRequest || permissionRequestActionRequestID) return
+    const agentSession = getAgentSessionBridge()
+    if (!agentSession || permissionRequestActionRequestID) return
 
     permissionRequestsRequestRef.current[input.sessionID] = (permissionRequestsRequestRef.current[input.sessionID] ?? 0) + 1
     const removedRequest = input.request
-    const canStreamResume = Boolean(resumeAgentMessageStream)
+    const canStreamResume = agentSession.canResumeStream
     let requestResolved = false
     setPermissionRequestActionRequestID(input.request.id)
     setPermissionRequestActionError(null)
@@ -3850,7 +3889,7 @@ export function useAgentWorkspace({
     })
 
     try {
-      await respondPermissionRequest({
+      await agentSession.respondPermissionRequest({
         requestID: input.request.id,
         decision: input.decision,
         note: input.note?.trim() || undefined,
@@ -3872,7 +3911,7 @@ export function useAgentWorkspace({
       })
       refreshWorkspaceForSession(input.sessionID)
 
-      if (resumeAgentMessageStream) {
+      if (canStreamResume) {
         const streamID = createID("stream")
         const streamingTurn = buildStreamingAssistantTurn(input.decision === "deny" ? "Continue after denial" : "Continue after approval")
         pendingStreamsRef.current[streamID] = {
@@ -3884,9 +3923,9 @@ export function useAgentWorkspace({
         appendConversationTurns(input.sessionID, [streamingTurn])
 
         try {
-          await resumeAgentMessageStream({
-            streamID,
-            sessionID: input.request.sessionID,
+          await agentSession.resumeTurn({
+            clientTurnID: streamID,
+            backendSessionID: input.request.sessionID,
           })
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)

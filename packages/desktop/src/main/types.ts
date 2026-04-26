@@ -204,6 +204,52 @@ export interface AgentSessionStreamIPCEvent extends AgentSSEEvent {
   sessionID: string
 }
 
+export interface AgentSessionComposerAttachmentInput {
+  path: string
+  name?: string
+}
+
+export interface AgentSessionQuestionAnswerInput {
+  questionID: string
+  selectedOptions?: string[]
+  freeformText?: string
+}
+
+export interface AgentSessionTurnRequestInput {
+  clientTurnID: string
+  backendSessionID: string
+  text?: string
+  attachments?: AgentSessionComposerAttachmentInput[]
+  questionAnswer?: AgentSessionQuestionAnswerInput
+  permissionMode?: "default" | "full-access"
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
+  system?: string
+  agent?: string
+  skills?: string[]
+}
+
+export type AgentSessionBridgeIPCEvent =
+  | {
+      kind: "stream"
+      source: "request" | "subscription"
+      backendSessionID: string
+      uiSessionID?: string
+      clientTurnID?: string
+      id?: string
+      event: string
+      data: unknown
+      receivedAt: number
+    }
+  | {
+      kind: "subscription-state"
+      backendSessionID: string
+      uiSessionID?: string
+      state: "connecting" | "connected" | "reconnecting" | "closed" | "error"
+      message?: string
+      lastEventID?: string
+      receivedAt: number
+    }
+
 export interface AgentSessionHistoryMessage {
   info: Record<string, unknown>
   parts: unknown[]

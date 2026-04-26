@@ -48,9 +48,11 @@ import type {
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
   AgentSessionRuntimeDebugSnapshot,
+  AgentSessionBridgeIPCEvent,
   AgentSessionStreamIPCEvent,
   AgentStreamIPCEvent,
   AgentSessionInfo,
+  AgentSessionTurnRequestInput,
   AgentSessionArchiveResult,
   AgentSessionDeleteResult,
   AgentArchivedSessionDeleteResult,
@@ -65,6 +67,7 @@ import type { AppearanceConfigDocument } from "../shared/appearance"
 
 const AGENT_STREAM_EVENT_CHANNEL = "desktop:agent-stream-event"
 const AGENT_SESSION_STREAM_EVENT_CHANNEL = "desktop:agent-session-stream-event"
+const AGENT_SESSION_EVENT_CHANNEL = "desktop:agent-session-event"
 
 function normalizeShowMenuInput(input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }) {
   if (typeof input === "string") {
@@ -124,8 +127,10 @@ type SessionStreamSubscription = {
   dispose(): void
 }
 
-function sessionStreamSubscriptionKey(webContentsID: number, sessionID: string) {
-  return `${webContentsID}:${sessionID}`
+type SessionStreamSubscriptionMode = "legacy" | "agent-session"
+
+function sessionStreamSubscriptionKey(webContentsID: number, sessionID: string, mode: SessionStreamSubscriptionMode) {
+  return `${mode}:${webContentsID}:${sessionID}`
 }
 
 export function registerIpcHandlers(menus: ApplicationMenus) {
@@ -195,12 +200,20 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   const sessionStreamSubscriptions = new Map<string, SessionStreamSubscription>()
   const sessionStreamCleanupTargets = new Set<number>()
 
-  function getSessionStreamSubscription(webContentsID: number, sessionID: string) {
-    return sessionStreamSubscriptions.get(sessionStreamSubscriptionKey(webContentsID, sessionID))
+  function getSessionStreamSubscription(
+    webContentsID: number,
+    sessionID: string,
+    mode: SessionStreamSubscriptionMode,
+  ) {
+    return sessionStreamSubscriptions.get(sessionStreamSubscriptionKey(webContentsID, sessionID, mode))
   }
 
-  function removeSessionStreamSubscription(webContentsID: number, sessionID: string) {
-    const key = sessionStreamSubscriptionKey(webContentsID, sessionID)
+  function removeSessionStreamSubscription(
+    webContentsID: number,
+    sessionID: string,
+    mode: SessionStreamSubscriptionMode,
+  ) {
+    const key = sessionStreamSubscriptionKey(webContentsID, sessionID, mode)
     const subscription = sessionStreamSubscriptions.get(key)
     if (!subscription) return false
     subscription.dispose()
@@ -208,14 +221,38 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return true
   }
 
-  function createSessionStreamSubscription(target: Electron.WebContents, sessionID: string): SessionStreamSubscription {
+  function createSessionStreamSubscription(
+    target: Electron.WebContents,
+    sessionID: string,
+    options: {
+      mode: SessionStreamSubscriptionMode
+      uiSessionID?: string
+    },
+  ): SessionStreamSubscription {
     let lastEventID: string | undefined
     let disposed = false
     let abortController: AbortController | null = null
     let restartTimer: ReturnType<typeof setTimeout> | null = null
 
+    const sendUnifiedSubscriptionState = (
+      state: Extract<AgentSessionBridgeIPCEvent, { kind: "subscription-state" }>["state"],
+      message?: string,
+    ) => {
+      if (options.mode !== "agent-session" || target.isDestroyed()) return
+      target.send(AGENT_SESSION_EVENT_CHANNEL, {
+        kind: "subscription-state",
+        backendSessionID: sessionID,
+        uiSessionID: options.uiSessionID,
+        state,
+        message,
+        lastEventID,
+        receivedAt: Date.now(),
+      } satisfies AgentSessionBridgeIPCEvent)
+    }
+
     const scheduleRestart = () => {
       if (disposed || restartTimer || target.isDestroyed()) return
+      sendUnifiedSubscriptionState("reconnecting")
       restartTimer = setTimeout(() => {
         restartTimer = null
         void start()
@@ -224,6 +261,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
     const dispose = () => {
       disposed = true
+      sendUnifiedSubscriptionState("closed")
       if (restartTimer) {
         clearTimeout(restartTimer)
         restartTimer = null
@@ -237,6 +275,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
       abortController?.abort()
       abortController = new AbortController()
+      sendUnifiedSubscriptionState("connecting")
 
       try {
         const response = await fetch(resolveAgentURL(`/api/sessions/${encodeURIComponent(sessionID)}/events/stream`), {
@@ -253,18 +292,33 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           throw new Error(envelope?.error?.message || `Session stream failed (${response.status})`)
         }
 
+        sendUnifiedSubscriptionState("connected")
+
         await readAgentSSEStream(response, (item) => {
           if (disposed || target.isDestroyed()) return
           if (item.id) {
             lastEventID = item.id
           }
 
-          target.send(AGENT_SESSION_STREAM_EVENT_CHANNEL, {
-            sessionID,
-            id: item.id,
-            event: item.event,
-            data: item.data,
-          } satisfies AgentSessionStreamIPCEvent)
+          if (options.mode === "agent-session") {
+            target.send(AGENT_SESSION_EVENT_CHANNEL, {
+              kind: "stream",
+              source: "subscription",
+              backendSessionID: sessionID,
+              uiSessionID: options.uiSessionID,
+              id: item.id,
+              event: item.event,
+              data: item.data,
+              receivedAt: Date.now(),
+            } satisfies AgentSessionBridgeIPCEvent)
+          } else {
+            target.send(AGENT_SESSION_STREAM_EVENT_CHANNEL, {
+              sessionID,
+              id: item.id,
+              event: item.event,
+              data: item.data,
+            } satisfies AgentSessionStreamIPCEvent)
+          }
         })
 
         if (!disposed) {
@@ -274,14 +328,31 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         const aborted = error instanceof Error && error.name === "AbortError"
         if (disposed || aborted) return
 
-        target.send(AGENT_SESSION_STREAM_EVENT_CHANNEL, {
-          sessionID,
-          event: "error",
-          data: {
+        const message = error instanceof Error ? error.message : String(error)
+        if (options.mode === "agent-session") {
+          sendUnifiedSubscriptionState("error", message)
+          target.send(AGENT_SESSION_EVENT_CHANNEL, {
+            kind: "stream",
+            source: "subscription",
+            backendSessionID: sessionID,
+            uiSessionID: options.uiSessionID,
+            event: "error",
+            data: {
+              sessionID,
+              message,
+            },
+            receivedAt: Date.now(),
+          } satisfies AgentSessionBridgeIPCEvent)
+        } else {
+          target.send(AGENT_SESSION_STREAM_EVENT_CHANNEL, {
             sessionID,
-            message: error instanceof Error ? error.message : String(error),
-          },
-        } satisfies AgentSessionStreamIPCEvent)
+            event: "error",
+            data: {
+              sessionID,
+              message,
+            },
+          } satisfies AgentSessionStreamIPCEvent)
+        }
         scheduleRestart()
       }
     }
@@ -1576,6 +1647,205 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   )
 
   ipcMain.handle(
+    "desktop:agent-session-load-history",
+    async (_event, input: { backendSessionID: string }) => {
+      const sessionID = input.backendSessionID.trim()
+      const result = await requestAgentJSON<AgentSessionHistoryMessage[]>(
+        `/api/sessions/${encodeURIComponent(sessionID)}/messages`,
+      )
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:agent-session-load-permission-requests",
+    async (_event, input: { backendSessionID: string }) => {
+      const sessionID = input.backendSessionID.trim()
+      const result = await requestAgentJSON<AgentPermissionRequest[]>(
+        `/api/permissions/requests?status=pending&view=prompt&sessionID=${encodeURIComponent(sessionID)}`,
+      )
+
+      return result.data
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:agent-session-respond-permission-request",
+    async (
+      _event,
+      input: {
+        requestID: string
+        decision: "allow-once" | "allow-session" | "allow-project" | "allow-forever" | "deny"
+        note?: string
+        resume?: boolean
+      },
+    ) => {
+      const requestID = input.requestID.trim()
+      const result = await requestAgentJSON<AgentPermissionResolveResult>(
+        `/api/permissions/requests/${encodeURIComponent(requestID)}/resolve`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            decision: input.decision,
+            note: input.note,
+            resume: input.resume,
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  function buildAgentSessionTurnRequestBody(input: AgentSessionTurnRequestInput) {
+    return {
+      text: input.text,
+      attachments: input.attachments,
+      questionAnswer: input.questionAnswer,
+      permissionMode: input.permissionMode,
+      reasoningEffort: input.reasoningEffort,
+      system: input.system,
+      agent: input.agent,
+      skills: input.skills,
+    }
+  }
+
+  async function streamAgentSessionTurnToRenderer(
+    target: Electron.WebContents,
+    input: Pick<AgentSessionTurnRequestInput, "backendSessionID" | "clientTurnID"> & Partial<AgentSessionTurnRequestInput>,
+    routePath: string,
+  ) {
+    const clientTurnID = input.clientTurnID.trim()
+    const backendSessionID = input.backendSessionID.trim()
+    const response = await fetch(resolveAgentURL(routePath), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(buildAgentSessionTurnRequestBody({
+        ...input,
+        clientTurnID,
+        backendSessionID,
+      })),
+    })
+
+    if (!response.ok) {
+      const envelope = (await response.json().catch(() => null)) as AgentEnvelope<unknown> | null
+      throw new Error(envelope?.error?.message || `Agent session stream failed (${response.status})`)
+    }
+
+    const requestId = response.headers.get("x-request-id") ?? undefined
+
+    try {
+      await readAgentSSEStream(response, (item) => {
+        target.send(AGENT_SESSION_EVENT_CHANNEL, {
+          kind: "stream",
+          source: "request",
+          backendSessionID,
+          clientTurnID,
+          id: item.id,
+          event: item.event,
+          data: item.data,
+          receivedAt: Date.now(),
+        } satisfies AgentSessionBridgeIPCEvent)
+      })
+    } catch (error) {
+      target.send(AGENT_SESSION_EVENT_CHANNEL, {
+        kind: "stream",
+        source: "request",
+        backendSessionID,
+        clientTurnID,
+        event: "error",
+        data: {
+          sessionID: backendSessionID,
+          message: error instanceof Error ? error.message : String(error),
+        },
+        receivedAt: Date.now(),
+      } satisfies AgentSessionBridgeIPCEvent)
+    }
+
+    return {
+      clientTurnID,
+      requestId,
+    }
+  }
+
+  ipcMain.handle(
+    "desktop:agent-session-send-turn",
+    async (_event, input: AgentSessionTurnRequestInput) =>
+      streamAgentSessionTurnToRenderer(
+        _event.sender,
+        input,
+        `/api/sessions/${encodeURIComponent(input.backendSessionID.trim())}/messages/stream`,
+      ),
+  )
+
+  ipcMain.handle(
+    "desktop:agent-session-resume-turn",
+    async (_event, input: { clientTurnID: string; backendSessionID: string }) =>
+      streamAgentSessionTurnToRenderer(
+        _event.sender,
+        {
+          clientTurnID: input.clientTurnID,
+          backendSessionID: input.backendSessionID,
+        },
+        `/api/sessions/${encodeURIComponent(input.backendSessionID.trim())}/resume/stream`,
+      ),
+  )
+
+  ipcMain.handle(
+    "desktop:agent-session-subscribe",
+    async (event, input: { uiSessionID?: string; backendSessionID: string }) => {
+      const backendSessionID = input.backendSessionID.trim()
+      const target = event.sender
+      const existing = getSessionStreamSubscription(target.id, backendSessionID, "agent-session")
+      if (existing) {
+        return {
+          backendSessionID,
+          lastEventID: existing.lastEventID,
+        }
+      }
+
+      const subscription = createSessionStreamSubscription(target, backendSessionID, {
+        mode: "agent-session",
+        uiSessionID: input.uiSessionID,
+      })
+      sessionStreamSubscriptions.set(
+        sessionStreamSubscriptionKey(target.id, backendSessionID, "agent-session"),
+        subscription,
+      )
+
+      if (!sessionStreamCleanupTargets.has(target.id)) {
+        sessionStreamCleanupTargets.add(target.id)
+        target.once("destroyed", () => {
+          for (const [key, streamSubscription] of [...sessionStreamSubscriptions.entries()]) {
+            if (!key.includes(`:${target.id}:`)) continue
+            streamSubscription.dispose()
+            sessionStreamSubscriptions.delete(key)
+          }
+          sessionStreamCleanupTargets.delete(target.id)
+        })
+      }
+
+      void subscription.start()
+
+      return {
+        backendSessionID,
+        lastEventID: subscription.lastEventID,
+      }
+    },
+  )
+
+  ipcMain.handle(
+    "desktop:agent-session-unsubscribe",
+    async (event, input: { backendSessionID: string }) => ({
+      backendSessionID: input.backendSessionID.trim(),
+      removed: removeSessionStreamSubscription(event.sender.id, input.backendSessionID.trim(), "agent-session"),
+    }),
+  )
+
+  ipcMain.handle(
     "desktop:agent-stream-message",
     async (
       event,
@@ -1657,7 +1927,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     async (event, input: { sessionID: string }) => {
       const sessionID = input.sessionID.trim()
       const target = event.sender
-      const existing = getSessionStreamSubscription(target.id, sessionID)
+      const existing = getSessionStreamSubscription(target.id, sessionID, "legacy")
       if (existing) {
         return {
           sessionID,
@@ -1665,14 +1935,16 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         }
       }
 
-      const subscription = createSessionStreamSubscription(target, sessionID)
-      sessionStreamSubscriptions.set(sessionStreamSubscriptionKey(target.id, sessionID), subscription)
+      const subscription = createSessionStreamSubscription(target, sessionID, {
+        mode: "legacy",
+      })
+      sessionStreamSubscriptions.set(sessionStreamSubscriptionKey(target.id, sessionID, "legacy"), subscription)
 
       if (!sessionStreamCleanupTargets.has(target.id)) {
         sessionStreamCleanupTargets.add(target.id)
         target.once("destroyed", () => {
           for (const [key, streamSubscription] of [...sessionStreamSubscriptions.entries()]) {
-            if (!key.startsWith(`${target.id}:`)) continue
+            if (!key.includes(`:${target.id}:`)) continue
             streamSubscription.dispose()
             sessionStreamSubscriptions.delete(key)
           }
@@ -1693,7 +1965,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     "desktop:unsubscribe-agent-session-stream",
     async (event, input: { sessionID: string }) => ({
       sessionID: input.sessionID.trim(),
-      removed: removeSessionStreamSubscription(event.sender.id, input.sessionID.trim()),
+      removed: removeSessionStreamSubscription(event.sender.id, input.sessionID.trim(), "legacy"),
     }),
   )
 

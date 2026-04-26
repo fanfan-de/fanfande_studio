@@ -110,6 +110,302 @@ describe("stream trace reducer", () => {
     expect(turn.state).toBe("stop")
   })
 
+  it("does not regress a settled runtime turn when older lifecycle events arrive late", () => {
+    let turn = buildStreamingAssistantTurn("Handle duplicate stream ordering")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-completed",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 3,
+        timestamp: 103,
+        type: "turn.completed",
+        payload: {
+          status: "completed",
+          finishReason: "stop",
+          parts: [{ id: "part-text", type: "text", text: "Done." }],
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-started-late",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 101,
+        type: "turn.started",
+        payload: {},
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-preparing-late",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 102,
+        type: "turn.state.changed",
+        payload: {
+          phase: "preparing",
+          reason: "Preparing request",
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("completed")
+    expect(turn.isStreaming).toBe(false)
+    expect(turn.items.some((item) => item.kind === "text" && item.text === "Done.")).toBe(true)
+  })
+
+  it("does not regress a settled legacy stream when older events arrive late", () => {
+    let turn = buildStreamingAssistantTurn("Handle legacy ordering")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "done",
+      data: {
+        parts: [{ id: "part-text", type: "text", text: "Done." }],
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "started",
+      data: {
+        sessionID: "session-legacy",
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "delta",
+      data: {
+        kind: "text",
+        partID: "part-text",
+        delta: "late",
+        text: "late",
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("completed")
+    expect(turn.isStreaming).toBe(false)
+    expect(turn.items.some((item) => item.kind === "text" && item.text === "Done.")).toBe(true)
+    expect(turn.items.some((item) => item.kind === "text" && item.text === "late")).toBe(false)
+  })
+
+  it("preserves canonical runtime phases instead of folding them into reasoning", () => {
+    let turn = buildStreamingAssistantTurn("Track phases")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-state-preparing",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.state.changed",
+        payload: {
+          phase: "preparing",
+          reason: "Preparing request",
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("preparing")
+    expect(turn.state).toBe("Preparing request")
+    expect(turn.isStreaming).toBe(true)
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-state-waiting-llm",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "turn.state.changed",
+        payload: {
+          phase: "waiting_llm",
+          reason: "Awaiting the next model stream.",
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("waiting_llm")
+    expect(turn.state).toBe("Awaiting the next model stream.")
+    expect(turn.isStreaming).toBe(true)
+  })
+
+  it("keeps blocked runtime phase distinct from approval waiting", () => {
+    let turn = buildStreamingAssistantTurn("Block generically")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-state-blocked",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.state.changed",
+        payload: {
+          phase: "blocked",
+          reason: "Waiting for a user answer.",
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("blocked")
+    expect(turn.state).toBe("Waiting for a user answer.")
+    expect(turn.isStreaming).toBe(false)
+  })
+
+  it("uses runtime tool events to advance past earlier lifecycle phases when phase events are missing", () => {
+    let turn = buildStreamingAssistantTurn("Wait for model")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-state-waiting-llm",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.state.changed",
+        payload: {
+          phase: "waiting_llm",
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-tool-started",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "tool.call.started",
+        payload: {
+          part: {
+            id: "tool-runtime",
+            type: "tool",
+            tool: "shell",
+            state: {
+              status: "running",
+              title: "Run tests",
+            },
+          },
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("tool_running")
+    expect(turn.state).toBe("Running tools")
+    expect(turn.items.some((item) => item.kind === "tool" && item.title === "shell")).toBe(true)
+  })
+
+  it("uses llm started events as a model-wait fallback after turn start", () => {
+    let turn = buildStreamingAssistantTurn("Wait for model")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-turn-started",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.started",
+        payload: {},
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("preparing")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-llm-started",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "llm.call.started",
+        payload: {
+          messageID: "message-runtime",
+          providerID: "openai",
+          modelID: "gpt-test",
+          messageCount: 3,
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("waiting_llm")
+    expect(turn.state).toBe("Waiting for model stream")
+  })
+
+  it("uses runtime tool events as a lifecycle fallback before any phase event arrives", () => {
+    let turn = buildStreamingAssistantTurn("Run tool")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-tool-fallback",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.call.started",
+        payload: {
+          part: {
+            id: "tool-runtime",
+            type: "tool",
+            tool: "shell",
+            state: {
+              status: "running",
+              title: "Run tests",
+            },
+          },
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("tool_running")
+    expect(turn.state).toBe("Running tools")
+  })
+
+  it("finalizes generic blocked turns without treating them as approval requests", () => {
+    let turn = buildStreamingAssistantTurn("Block without approval")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-blocked-complete",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.completed",
+        payload: {
+          status: "blocked",
+          finishReason: "user-input",
+          parts: [],
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("blocked")
+    expect(turn.state).toBe("Backend response blocked")
+    expect(turn.items.some((item) => item.title === "Approval required")).toBe(false)
+  })
+
   it("does not render canonical user prompt parts as assistant response sections", () => {
     let turn = buildStreamingAssistantTurn("User prompt")
 
