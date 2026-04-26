@@ -666,6 +666,7 @@ describe("server api", () => {
         level: string
         print: boolean
         file: boolean
+        services: string[]
       }
       runningSessions: {
         count: number
@@ -681,6 +682,8 @@ describe("server api", () => {
     expect(body.data?.process.uptimeMs).toBeNumber()
     expect(body.data?.process.memory.heapUsed).toBeNumber()
     expect(body.data?.logging.level).toBeString()
+    expect(body.data?.logging.services).toContain("monitor-test-status")
+    expect(body.data?.logging.services).toContain("server.debug")
     expect(body.data?.runningSessions.count).toBeNumber()
     const statusLog = body.data?.recentErrors.find((entry) => entry.message === message)
     expect(statusLog?.requestId).toBe("req_monitor_status")
@@ -710,6 +713,25 @@ describe("server api", () => {
     expect(entry?.service).toBe("monitor-test-logs")
     expect(entry?.sessionID).toBe("ses_monitor_logs")
     expect(entry?.extra?.password).toBe("[REDACTED]")
+  })
+
+  test("GET /api/debug/logs should exclude selected services", async () => {
+    const app = createServerApp()
+    const prefix = `monitor exclude query ${Date.now()}`
+    Log.create({ service: "monitor-test-keep" }).info(`${prefix} keep`)
+    Log.create({ service: "monitor-test-drop" }).info(`${prefix} drop`)
+
+    const response = await app.request(
+      `http://localhost/api/debug/logs?excludeService=monitor-test-drop&q=${encodeURIComponent(prefix)}&limit=10`,
+    )
+    const body = (await response.json()) as JsonEnvelope<{
+      logs: Log.LogEntry[]
+    }>
+
+    expect(response.status).toBe(200)
+    expect(body.success).toBe(true)
+    expect(body.data?.logs.some((entry) => entry.service === "monitor-test-keep")).toBe(true)
+    expect(body.data?.logs.some((entry) => entry.service === "monitor-test-drop")).toBe(false)
   })
 
   test("GET /api/debug/logs/stream should emit matching log events", async () => {

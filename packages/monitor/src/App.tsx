@@ -20,6 +20,7 @@ import { FormEvent, useEffect, useId, useMemo, useRef, useState } from "react"
 const DEFAULT_BASE_URL = "http://127.0.0.1:4096"
 const BASE_URL_STORAGE_KEY = "fanfande.monitor.baseURL"
 const MAX_VISIBLE_LOGS = 300
+const NO_SERVICE_FILTER_VALUE = "__fanfande_monitor_no_service__"
 
 type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 
@@ -56,6 +57,7 @@ type MonitorStatus = {
     print: boolean
     file: boolean
     path: string | null
+    services?: string[]
   }
   runningSessions: {
     count: number
@@ -227,6 +229,10 @@ function mergeServiceOptions(current: string[], next: Array<string | undefined>)
   }
 
   return changed ? Array.from(services).sort((a, b) => a.localeCompare(b)) : current
+}
+
+function areStringArraysEqual(a: string[], b: string[]) {
+  return a.length === b.length && a.every((value, index) => value === b[index])
 }
 
 function MetricCard({
@@ -445,6 +451,7 @@ export function App() {
   const [statusEventCount, setStatusEventCount] = useState(0)
   const [levelFilter, setLevelFilter] = useState("")
   const [selectedServices, setSelectedServices] = useState<string[]>([])
+  const [selectNewServices, setSelectNewServices] = useState(true)
   const [knownServices, setKnownServices] = useState<string[]>([])
   const [searchFilter, setSearchFilter] = useState("")
   const [isStreamPaused, setIsStreamPaused] = useState(false)
@@ -452,12 +459,29 @@ export function App() {
   const logListRef = useRef<HTMLDivElement | null>(null)
 
   const query = useMemo(
-    () => ({
-      level: levelFilter || undefined,
-      service: selectedServices.length > 0 ? selectedServices.join(",") : undefined,
-      q: searchFilter.trim() || undefined,
-    }),
-    [levelFilter, searchFilter, selectedServices],
+    () => {
+      const selectedServiceSet = new Set(selectedServices)
+      const unselectedServices = knownServices.filter((service) => !selectedServiceSet.has(service))
+      const hasKnownServices = knownServices.length > 0
+      const hasSelectedServices = selectedServices.length > 0
+      const allKnownServicesSelected = hasKnownServices && unselectedServices.length === 0
+
+      return {
+        level: levelFilter || undefined,
+        service:
+          hasKnownServices && !hasSelectedServices
+            ? NO_SERVICE_FILTER_VALUE
+            : allKnownServicesSelected || unselectedServices.length < selectedServices.length
+              ? undefined
+              : selectedServices.join(",") || undefined,
+        excludeService:
+          hasSelectedServices && unselectedServices.length > 0 && unselectedServices.length < selectedServices.length
+            ? unselectedServices.join(",")
+            : undefined,
+        q: searchFilter.trim() || undefined,
+      }
+    },
+    [knownServices, levelFilter, searchFilter, selectedServices],
   )
 
   async function refreshSnapshot() {
@@ -582,11 +606,20 @@ export function App() {
   useEffect(() => {
     setKnownServices((current) =>
       mergeServiceOptions(current, [
+        ...(status?.logging.services ?? []),
         ...logs.map((entry) => entry.service),
         ...(status?.recentErrors ?? []).map((entry) => entry.service),
       ]),
     )
-  }, [logs, status?.recentErrors])
+  }, [logs, status?.logging.services, status?.recentErrors])
+
+  useEffect(() => {
+    if (!selectNewServices) return
+    setSelectedServices((current) => {
+      const next = mergeServiceOptions(current, knownServices)
+      return areStringArraysEqual(current, next) ? current : next
+    })
+  }, [knownServices, selectNewServices])
 
   function toggleServiceFilter(service: string) {
     setSelectedServices((current) =>
@@ -594,10 +627,24 @@ export function App() {
         ? current.filter((item) => item !== service)
         : [...current, service].sort((a, b) => a.localeCompare(b)),
     )
+    setSelectNewServices(false)
+  }
+
+  function selectAllServices() {
+    setSelectNewServices(true)
+    setSelectedServices(knownServices)
+  }
+
+  function clearSelectedServices() {
+    setSelectNewServices(false)
+    setSelectedServices([])
   }
 
   const runningSessions = runtime?.runningSessions ?? []
   const recentErrors = status?.recentErrors ?? []
+  const selectedServiceSet = new Set(selectedServices)
+  const isAllServicesSelected = knownServices.length > 0 && knownServices.every((service) => selectedServiceSet.has(service))
+  const isNoServiceSelected = selectedServices.length === 0
 
   return (
     <main className="monitor-shell">
@@ -756,13 +803,21 @@ export function App() {
           <div className="service-filter-field">
             <span>Service</span>
             <div className="filter-chip-group" aria-label="Service filter">
-              <label className={selectedServices.length === 0 ? "filter-chip is-active" : "filter-chip"}>
+              <label className={isAllServicesSelected ? "filter-chip is-active" : "filter-chip"}>
                 <input
                   type="checkbox"
-                  checked={selectedServices.length === 0}
-                  onChange={() => setSelectedServices([])}
+                  checked={isAllServicesSelected}
+                  onChange={selectAllServices}
                 />
                 <span>All</span>
+              </label>
+              <label className={isNoServiceSelected ? "filter-chip is-active" : "filter-chip"}>
+                <input
+                  type="checkbox"
+                  checked={isNoServiceSelected}
+                  onChange={clearSelectedServices}
+                />
+                <span>Only</span>
               </label>
               {knownServices.length > 0 ? (
                 knownServices.map((service) => (

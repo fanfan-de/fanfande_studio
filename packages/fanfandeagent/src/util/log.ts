@@ -43,6 +43,7 @@ export interface LogEntry {
 export interface LogQuery {
   level?: Level | string
   service?: string
+  excludeService?: string
   q?: string
   limit?: number
 }
@@ -51,10 +52,17 @@ type LogSubscriber = (entry: LogEntry) => void
 
 const logEntries: LogEntry[] = []
 const logSubscribers = new Set<LogSubscriber>()
+const serviceRegistry = new Set<string>()
 let logSequence = 0
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function registerService(value: unknown) {
+  const service = typeof value === "string" ? value.trim() : ""
+  if (service) serviceRegistry.add(service)
+  return service || undefined
 }
 
 function redactForLog(
@@ -147,6 +155,9 @@ export function matches(entry: LogEntry, query: Omit<LogQuery, "limit"> = {}) {
 
   const serviceFilters = normalizeServiceFilters(query.service)
   if (serviceFilters && (!entry.service || !serviceFilters.has(entry.service.toLowerCase()))) return false
+
+  const excludedServiceFilters = normalizeServiceFilters(query.excludeService)
+  if (excludedServiceFilters && entry.service && excludedServiceFilters.has(entry.service.toLowerCase())) return false
 
   const search = normalizeSearch(query.q)
   if (!search) return true
@@ -260,7 +271,12 @@ export function status() {
     print: loggerStatus.print,
     file: loggerStatus.file,
     path: logpath || null,
+    services: services(),
   }
+}
+
+export function services() {
+  return Array.from(serviceRegistry).sort((a, b) => a.localeCompare(b))
 }
 
 //初始化log系统
@@ -330,8 +346,8 @@ let last = Date.now()
 export function create(tags?: Record<string, any>) {
   tags = tags || {}
   // 如果指定了 service 名称，则尝试从缓存中获取，实现单例复用
-  const service = tags["service"]
-  if (service && typeof service === "string") {
+  const service = registerService(tags["service"])
+  if (service) {
     const cached = loggers.get(service)
     if (cached) {
       return cached
@@ -360,7 +376,7 @@ export function create(tags?: Record<string, any>) {
     // 3. 拼接：[时间] [+距离上次毫秒数] [标签键值对] [消息内容]
     const body = [next.toISOString().split(".")[0], "+" + diff + "ms", prefix, messageText].filter(Boolean).join(" ") + "\n"
     const line = `${levelName.padEnd(5)} ${body}`
-    const service = typeof sanitizedExtra.service === "string" ? sanitizedExtra.service : undefined
+    const service = registerService(sanitizedExtra.service)
     const requestId = typeof sanitizedExtra.requestId === "string" ? sanitizedExtra.requestId : undefined
     const sessionID = typeof sanitizedExtra.sessionID === "string" ? sanitizedExtra.sessionID : undefined
     const projectID = typeof sanitizedExtra.projectID === "string" ? sanitizedExtra.projectID : undefined

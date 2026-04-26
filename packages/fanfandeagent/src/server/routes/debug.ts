@@ -28,6 +28,7 @@ function parseLogQuery(c: Context<AppEnv>) {
   return {
     level: parseLogLevel(c.req.query("level")),
     service: c.req.query("service")?.trim() || undefined,
+    excludeService: c.req.query("excludeService")?.trim() || undefined,
     q: c.req.query("q")?.trim() || undefined,
     limit: parseLimit(c.req.query("limit"), 200, 1000),
   } satisfies Log.LogQuery
