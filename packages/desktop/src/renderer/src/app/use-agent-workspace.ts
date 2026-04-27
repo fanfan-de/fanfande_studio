@@ -10,13 +10,8 @@ import {
 import { initialSelection } from "./seed-data"
 import {
   applyAgentStreamEventToTurn,
-  buildAgentTurn,
-  buildAgentTurnFromEvents,
-  buildUserTurn,
   buildTurnsFromHistory,
-  buildFailureTurn,
   buildSessionStreamingAssistantTurn,
-  buildStreamingAssistantTurn,
 } from "./stream"
 import type {
   AgentStreamIPCEvent,
@@ -81,7 +76,6 @@ import {
   getReferenceForTabId,
   getTabIdForReference,
   moveTabToGroup,
-  normalizeLayoutState,
   removeTabFromGroup,
   replaceTabReferenceInGroup,
   resizeSplitChildren,
@@ -91,7 +85,6 @@ import {
   type WorkbenchLayoutState,
 } from "./workbench/core"
 import {
-  findFirstSession,
   findSession,
   findWorkspaceByID,
   getPrimaryWorkspaceSessions,
@@ -99,20 +92,17 @@ import {
   isWorkspaceAvailable,
   mapLoadedSession,
   mapLoadedWorkspace,
-  mapLoadedWorkspaces,
   selectAfterSessionDelete,
   sortWorkspaceGroups,
   upsertSessionInWorkspace,
   upsertWorkspaceGroup,
 } from "./workspace"
-import { notifyGitStateChanged } from "./git-events"
 import { mergeUserTurnPresentationState, persistUserTurns, readPersistedUserTurns } from "./user-turn-presentation"
 import { getAgentSessionBridge, type AgentSessionBridgeEvent } from "./agent-session/client"
 import { useComposerDraftState } from "./agent-workspace/composer-draft-state"
 import {
   DEFAULT_SESSION_DIFF_STATE,
   DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
-  DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
   DEFAULT_WORKSPACE_PREVIEW_STATE,
   getWorkspaceFileCommentKey,
   resolvePreviewScopeID,
@@ -123,30 +113,41 @@ import { useStreamPermissionController } from "./agent-workspace/stream-permissi
 import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-store"
 import { useWorkbenchState } from "./agent-workspace/workbench-state"
 import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
+import {
+  normalizeQuestionAnswerText,
+  resolveComposerPermissionModeForSession,
+  sendPromptToSession as sendPromptToSessionService,
+} from "./agent-workspace/composer-send-service"
+import {
+  loadPendingPermissionRequestsForSession as loadPendingPermissionRequestsForSessionService,
+  respondPermissionRequest,
+} from "./agent-workspace/permission-requests-service"
+import {
+  clearRuntimeDebugRefreshTimer as clearRuntimeDebugRefreshTimerService,
+  clearSessionDiffRefreshTimer as clearSessionDiffRefreshTimerService,
+  loadSessionDiffForSession as loadSessionDiffForSessionService,
+  loadSessionRuntimeDebugForSession as loadSessionRuntimeDebugForSessionService,
+  scheduleRuntimeDebugRefresh as scheduleRuntimeDebugRefreshService,
+  scheduleSessionDiffRefreshForSession as scheduleSessionDiffRefreshForSessionService,
+  useActiveSessionReviewEffects,
+  useReviewRefreshCleanupEffect,
+  useWorkspaceFileReviewSearchEffects,
+} from "./agent-workspace/review-diff-runtime-hooks"
+import { useAgentSessionStreamEffects } from "./agent-workspace/session-stream-hooks"
+import {
+  handleWorkspaceFileChange,
+  collectSessionDirectoryMap,
+  normalizeWorkspacePath,
+  refreshWorkspaceFromDirectory as refreshWorkspaceFromDirectoryService,
+  useInitialFolderWorkspacesEffect,
+  useWorkspaceFileChangeSubscription,
+  useWorkspaceWatchDirectoriesEffect,
+} from "./agent-workspace/workspace-loading-hooks"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
   agentDefaultDirectory: string
   platform: string
-}
-
-const GIT_REFRESH_SUPPRESSION_MS = 1000
-const WORKSPACE_DIFF_REFRESH_DEBOUNCE_MS = 500
-const WORKSPACE_RELOAD_SUPPRESSION_MS = 1500
-
-function collectSessionDirectoryMap(
-  workspaces: Array<{
-    sessions: Array<{
-      id: string
-      directory: string
-    }>
-  }>,
-) {
-  return Object.fromEntries(
-    workspaces.flatMap((workspace) =>
-      workspace.sessions.map((session) => [session.id, session.directory] as const),
-    ),
-  )
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {
@@ -199,48 +200,6 @@ function isPermissionRequestStreamEvent(streamEvent: { event: string; data: unkn
   const data = readRecord(streamEvent.data)
   const part = readRecord(data?.part)
   return readString(part?.type) === "permission" && readString(part?.action) === "ask"
-}
-
-function normalizeWorkspacePath(value: string, platform: string) {
-  const normalized = value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "")
-  return platform === "win32" ? normalized.toLowerCase() : normalized
-}
-
-function resolveWorkspaceRelativePath(directory: string, target: string, platform: string) {
-  const normalizedDirectory = normalizeWorkspacePath(directory, platform)
-  const normalizedTarget = normalizeWorkspacePath(target, platform)
-  if (!normalizedDirectory || !normalizedTarget) return null
-  if (normalizedTarget === normalizedDirectory) return ""
-  const prefix = `${normalizedDirectory}/`
-  if (!normalizedTarget.startsWith(prefix)) return null
-  return normalizedTarget.slice(prefix.length)
-}
-
-function shouldReloadWorkspaceFromRelativePath(relativePath: string) {
-  return relativePath === ".git" || relativePath === ".git/config"
-}
-
-function isGitInternalRelativePath(relativePath: string) {
-  return relativePath === ".git" || relativePath.startsWith(".git/")
-}
-
-function shouldRefreshWorkspaceDiffFromRelativePaths(relativePaths: string[]) {
-  if (relativePaths.length === 0) return true
-  return relativePaths.some((relativePath) => !isGitInternalRelativePath(relativePath))
-}
-
-function resolveComposerPermissionModeForSession(
-  session: Pick<SessionSummary, "kind"> | null | undefined,
-  permissionMode: ComposerPermissionMode,
-) {
-  return isSideChatSession(session) ? "default" : permissionMode
-}
-
-function resolveComposerSkillSelectionForSession(
-  session: Pick<SessionSummary, "kind"> | null | undefined,
-  selectedSkillIDs: string[],
-) {
-  return isSideChatSession(session) ? [] : selectedSkillIDs
 }
 
 function collectSideChatCountsForParentSession(workspaces: WorkspaceGroup[], parentSessionID: string) {
@@ -714,19 +673,6 @@ function readLatestSessionContextUsageFromHistory(messages: LoadedSessionHistory
   return null
 }
 
-function normalizeQuestionAnswerText(input?: {
-  selectedOptions?: string[]
-  freeformText?: string
-}) {
-  const freeformText = input?.freeformText?.trim()
-  if (freeformText) return freeformText
-
-  const selectedOptions = (input?.selectedOptions ?? []).map((value) => value.trim()).filter(Boolean)
-  if (selectedOptions.length > 0) return selectedOptions.join(", ")
-
-  return ""
-}
-
 function createCreateSessionTab(workspaceID: string | null): CreateSessionTab {
   return {
     id: createID("create-session-tab"),
@@ -1071,89 +1017,32 @@ export function useAgentWorkspace({
     conversationVersionRef.current[sessionID] = (conversationVersionRef.current[sessionID] ?? 0) + 1
   }
 
-  function setSessionDiffRequestState(sessionID: string, hasExistingSummary: boolean) {
-    setSessionDiffStateBySession((prev) => {
-      const current = prev[sessionID] ?? DEFAULT_SESSION_DIFF_STATE
-      return {
-        ...prev,
-        [sessionID]: {
-          ...current,
-          status: hasExistingSummary ? "refreshing" : "loading",
-          errorMessage: null,
-        },
-      }
-    })
-  }
-
   function clearSessionDiffRefreshTimer(sessionID: string) {
-    const timerID = sessionDiffRefreshTimerRef.current[sessionID]
-    if (timerID === undefined) return
-    window.clearTimeout(timerID)
-    delete sessionDiffRefreshTimerRef.current[sessionID]
+    clearSessionDiffRefreshTimerService(sessionID, sessionDiffRefreshTimerRef)
   }
 
   function scheduleSessionDiffRefreshForSession(sessionID: string) {
-    clearSessionDiffRefreshTimer(sessionID)
-    sessionDiffRefreshTimerRef.current[sessionID] = window.setTimeout(() => {
-      delete sessionDiffRefreshTimerRef.current[sessionID]
-      void loadSessionDiffForSession(sessionID).catch((error) => {
-        console.error("[desktop] workspace diff refresh failed:", error)
-      })
-    }, WORKSPACE_DIFF_REFRESH_DEBOUNCE_MS)
-  }
-
-  function clearRuntimeDebugRefreshTimer(sessionID: string) {
-    const timerID = runtimeDebugRefreshTimerRef.current[sessionID]
-    if (timerID === undefined) return
-    window.clearTimeout(timerID)
-    delete runtimeDebugRefreshTimerRef.current[sessionID]
-  }
-
-  function setSessionRuntimeDebugRequestState(sessionID: string, hasExistingSnapshot: boolean) {
-    setSessionRuntimeDebugStateBySession((prev) => {
-      const current = prev[sessionID] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
-      return {
-        ...prev,
-        [sessionID]: {
-          ...current,
-          status: hasExistingSnapshot ? "refreshing" : "loading",
-          errorMessage: null,
-        },
-      }
+    scheduleSessionDiffRefreshForSessionService({
+      loadSessionDiffForSession,
+      sessionDiffRefreshTimerRef,
+      sessionID,
     })
   }
 
+  function clearRuntimeDebugRefreshTimer(sessionID: string) {
+    clearRuntimeDebugRefreshTimerService(sessionID, runtimeDebugRefreshTimerRef)
+  }
+
   async function refreshWorkspaceFromDirectory(directory: string) {
-    const openFolderWorkspace = window.desktop?.openFolderWorkspace
-    const trimmedDirectory = directory.trim()
-    if (!trimmedDirectory || !openFolderWorkspace) return null
-
-    const requestID = (workspaceRefreshRequestRef.current[trimmedDirectory] ?? 0) + 1
-    workspaceRefreshRequestRef.current[trimmedDirectory] = requestID
-
-    try {
-      const loadedWorkspace = await openFolderWorkspace({ directory: trimmedDirectory })
-      if (!loadedWorkspace) return null
-      if (workspaceRefreshRequestRef.current[trimmedDirectory] !== requestID) return null
-
-      const nextWorkspace = mapLoadedWorkspace(loadedWorkspace)
-      const loadedSessionIDs = loadedWorkspace.sessions.map((session) => session.id)
-      setWorkspaces((prev) => upsertWorkspaceGroup(prev, nextWorkspace))
-      setConversations((prev) => ensureConversationSessions(prev, loadedSessionIDs))
-      setAgentSessions((prev) => ensureAgentSessions(prev, loadedSessionIDs))
-      setSessionDirectoryBySession((prev) => ({
-        ...prev,
-        ...collectSessionDirectoryMap([loadedWorkspace]),
-      }))
-      setCanLoadSessionHistory(true)
-
-      return nextWorkspace
-    } catch (error) {
-      if (workspaceRefreshRequestRef.current[trimmedDirectory] === requestID) {
-        console.error("[desktop] workspace refresh failed:", error)
-      }
-      return null
-    }
+    return refreshWorkspaceFromDirectoryService({
+      directory,
+      setAgentSessions,
+      setCanLoadSessionHistory,
+      setConversations,
+      setSessionDirectoryBySession,
+      setWorkspaces,
+      workspaceRefreshRequestRef,
+    })
   }
 
   function refreshWorkspaceForSession(sessionID: string) {
@@ -1487,49 +1376,15 @@ export function useAgentWorkspace({
     sessionID: string,
     backendSessionID = resolveBackendSessionID(sessionID),
   ) {
-    const getSessionDiff = window.desktop?.getSessionDiff
-    if (!getSessionDiff) return
-
-    clearSessionDiffRefreshTimer(sessionID)
-    const requestID = (sessionDiffRequestRef.current[sessionID] ?? 0) + 1
-    sessionDiffRequestRef.current[sessionID] = requestID
-    const hasExistingSummary = Boolean(sessionDiffBySession[sessionID])
-    setSessionDiffRequestState(sessionID, hasExistingSummary)
-
-    try {
-      const nextDiff = await getSessionDiff({ sessionID: backendSessionID })
-      if (sessionDiffRequestRef.current[sessionID] !== requestID) return
-
-      setSessionDiffBySession((prev) => ({
-        ...prev,
-        [sessionID]: nextDiff,
-      }))
-      setSessionDiffStateBySession((prev) => ({
-        ...prev,
-        [sessionID]: {
-          status: nextDiff.diffs.length > 0 ? "ready" : "empty",
-          errorMessage: null,
-          updatedAt: Date.now(),
-          isStale: false,
-        },
-      }))
-    } catch (error) {
-      if (sessionDiffRequestRef.current[sessionID] !== requestID) return
-      const message = error instanceof Error ? error.message : String(error)
-      setSessionDiffStateBySession((prev) => {
-        const current = prev[sessionID] ?? DEFAULT_SESSION_DIFF_STATE
-        return {
-          ...prev,
-          [sessionID]: {
-            ...current,
-            status: "error",
-            errorMessage: message,
-            isStale: hasExistingSummary || current.isStale,
-          },
-        }
-      })
-      console.error("[desktop] getSessionDiff failed:", error)
-    }
+    await loadSessionDiffForSessionService({
+      backendSessionID,
+      sessionDiffBySession,
+      sessionDiffRefreshTimerRef,
+      sessionDiffRequestRef,
+      sessionID,
+      setSessionDiffBySession,
+      setSessionDiffStateBySession,
+    })
   }
 
   async function loadSessionRuntimeDebugForSession(
@@ -1540,54 +1395,16 @@ export function useAgentWorkspace({
       turns?: number
     },
   ) {
-    const getSessionRuntimeDebug = window.desktop?.getSessionRuntimeDebug
-    if (!getSessionRuntimeDebug) return
-
-    clearRuntimeDebugRefreshTimer(sessionID)
-
-    const requestID = (runtimeDebugRequestRef.current[sessionID] ?? 0) + 1
-    runtimeDebugRequestRef.current[sessionID] = requestID
-    const hasExistingSnapshot = Boolean(sessionRuntimeDebugBySession[sessionID])
-    setSessionRuntimeDebugRequestState(sessionID, hasExistingSnapshot)
-
-    try {
-      const nextRuntimeDebug = await getSessionRuntimeDebug({
-        sessionID: backendSessionID,
-        limit: options?.limit,
-        turns: options?.turns,
-      })
-      if (runtimeDebugRequestRef.current[sessionID] !== requestID) return
-
-      setSessionRuntimeDebugBySession((prev) => ({
-        ...prev,
-        [sessionID]: nextRuntimeDebug,
-      }))
-      setSessionRuntimeDebugStateBySession((prev) => ({
-        ...prev,
-        [sessionID]: {
-          status: "ready",
-          errorMessage: null,
-          updatedAt: Date.now(),
-          isStale: false,
-        },
-      }))
-    } catch (error) {
-      if (runtimeDebugRequestRef.current[sessionID] !== requestID) return
-      const message = error instanceof Error ? error.message : String(error)
-      setSessionRuntimeDebugStateBySession((prev) => {
-        const current = prev[sessionID] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
-        return {
-          ...prev,
-          [sessionID]: {
-            ...current,
-            status: "error",
-            errorMessage: message,
-            isStale: hasExistingSnapshot || current.isStale,
-          },
-        }
-      })
-      console.error("[desktop] getSessionRuntimeDebug failed:", error)
-    }
+    await loadSessionRuntimeDebugForSessionService({
+      backendSessionID,
+      runtimeDebugRefreshTimerRef,
+      runtimeDebugRequestRef,
+      sessionID,
+      sessionRuntimeDebugBySession,
+      setSessionRuntimeDebugBySession,
+      setSessionRuntimeDebugStateBySession,
+      options,
+    })
   }
 
   function scheduleRuntimeDebugRefresh(
@@ -1595,39 +1412,25 @@ export function useAgentWorkspace({
     backendSessionID = resolveBackendSessionID(sessionID),
     delayMs = 160,
   ) {
-    if (!window.desktop?.getSessionRuntimeDebug) return
-
-    clearRuntimeDebugRefreshTimer(sessionID)
-    runtimeDebugRefreshTimerRef.current[sessionID] = window.setTimeout(() => {
-      delete runtimeDebugRefreshTimerRef.current[sessionID]
-      void loadSessionRuntimeDebugForSession(sessionID, backendSessionID).catch((error) => {
-        console.error("[desktop] session runtime debug refresh failed:", error)
-      })
-    }, delayMs)
+    scheduleRuntimeDebugRefreshService({
+      backendSessionID,
+      delayMs,
+      loadSessionRuntimeDebugForSession,
+      runtimeDebugRefreshTimerRef,
+      sessionID,
+    })
   }
 
   async function loadPendingPermissionRequestsForSession(
     sessionID: string,
     backendSessionID = resolveBackendSessionID(sessionID),
   ) {
-    const agentSession = getAgentSessionBridge()
-    if (!agentSession) return
-
-    const requestID = (permissionRequestsRequestRef.current[sessionID] ?? 0) + 1
-    permissionRequestsRequestRef.current[sessionID] = requestID
-
-    try {
-      const nextRequests = await agentSession.loadPermissionRequests({ backendSessionID })
-      if (permissionRequestsRequestRef.current[sessionID] !== requestID) return
-
-      setPendingPermissionRequestsBySession((prev) => ({
-        ...prev,
-        [sessionID]: nextRequests.filter((request) => request.status === "pending"),
-      }))
-    } catch (error) {
-      if (permissionRequestsRequestRef.current[sessionID] !== requestID) return
-      console.error("[desktop] agentSession.loadPermissionRequests failed:", error)
-    }
+    await loadPendingPermissionRequestsForSessionService({
+      backendSessionID,
+      permissionRequestsRequestRef,
+      sessionID,
+      setPendingPermissionRequestsBySession,
+    })
   }
 
   const handleAgentSessionBridgeEventEffect = useEffectEvent((sessionEvent: AgentSessionBridgeEvent) => {
@@ -1635,234 +1438,60 @@ export function useAgentWorkspace({
   })
 
   const handleWorkspaceFileChangeEffect = useEffectEvent((workspaceEvent: WorkspaceFileChangeIPCEvent) => {
-    const normalizedEventDirectory = normalizeWorkspacePath(workspaceEvent.directory, platform)
-    const normalizedActiveSessionDirectory = activeSessionDirectory
-      ? normalizeWorkspacePath(activeSessionDirectory, platform)
-      : null
-    const now = Date.now()
-
-    if (activeSessionID && normalizedActiveSessionDirectory === normalizedEventDirectory) {
-      const activeRelativePaths = workspaceEvent.paths
-        .map((changedPath) =>
-          resolveWorkspaceRelativePath(activeSessionDirectory ?? workspaceEvent.directory, changedPath, platform),
-        )
-        .filter((value): value is string => value !== null)
-
-      if (shouldRefreshWorkspaceDiffFromRelativePaths(activeRelativePaths)) {
-        setSessionDiffStateBySession((prev) => {
-          const current = prev[activeSessionID] ?? DEFAULT_SESSION_DIFF_STATE
-          return {
-            ...prev,
-            [activeSessionID]: {
-              ...current,
-              isStale: true,
-            },
-          }
-        })
-        scheduleSessionDiffRefreshForSession(activeSessionID)
-      }
-    }
-
-    const matchingWorkspace = workspaces.find(
-      (workspace) => normalizeWorkspacePath(workspace.directory, platform) === normalizedEventDirectory,
-    )
-    if (!matchingWorkspace) return
-
-    const relativePaths = workspaceEvent.paths
-      .map((changedPath) => resolveWorkspaceRelativePath(matchingWorkspace.directory, changedPath, platform))
-      .filter((value): value is string => value !== null)
-    const requiresWorkspaceReload = relativePaths.some(shouldReloadWorkspaceFromRelativePath)
-
-    if (now >= (gitRefreshSuppressedUntilRef.current[normalizedEventDirectory] ?? 0)) {
-      gitRefreshSuppressedUntilRef.current[normalizedEventDirectory] = now + GIT_REFRESH_SUPPRESSION_MS
-      notifyGitStateChanged({
-        directory: matchingWorkspace.directory,
-      })
-    }
-
-    if (!requiresWorkspaceReload) return
-    if (now < (workspaceReloadSuppressedUntilRef.current[normalizedEventDirectory] ?? 0)) return
-
-    workspaceReloadSuppressedUntilRef.current[normalizedEventDirectory] = now + WORKSPACE_RELOAD_SUPPRESSION_MS
-    void refreshWorkspaceFromDirectory(matchingWorkspace.directory)
+    handleWorkspaceFileChange({
+      activeSessionDirectory,
+      activeSessionID,
+      gitRefreshSuppressedUntilRef,
+      platform,
+      refreshWorkspaceFromDirectory,
+      scheduleSessionDiffRefreshForSession,
+      setSessionDiffStateBySession,
+      workspaceEvent,
+      workspaces,
+      workspaceReloadSuppressedUntilRef,
+    })
   })
 
-  useEffect(() => {
-    const unsubscribe = getAgentSessionBridge()?.onEvent((sessionEvent) => {
-      handleAgentSessionBridgeEventEffect(sessionEvent)
-    })
+  useAgentSessionStreamEffects({
+    agentConnected,
+    agentSessions,
+    canLoadSessionHistory,
+    openCanvasSessionIDs,
+    pendingStreamsRef,
+    resolveBackendSessionID,
+    subscribedSessionStreamsRef,
+    onSessionEvent: handleAgentSessionBridgeEventEffect,
+  })
 
-    return () => {
-      pendingStreamsRef.current = {}
-      unsubscribe?.()
-    }
-  }, [])
+  useWorkspaceFileChangeSubscription(handleWorkspaceFileChangeEffect)
 
-  useEffect(() => {
-    const unsubscribe = window.desktop?.onWorkspaceFileChange?.((workspaceEvent: WorkspaceFileChangeIPCEvent) => {
-      handleWorkspaceFileChangeEffect(workspaceEvent)
-    })
+  useWorkspaceWatchDirectoriesEffect({
+    activeSessionDirectory,
+    activeWorkspace,
+    isInitialWorkspaceLoadPending,
+    platform,
+    watchedWorkspaceDirectoriesKeyRef,
+    workspaces,
+  })
 
-    return () => {
-      unsubscribe?.()
-    }
-  }, [])
-
-  useEffect(() => {
-    const agentSession = getAgentSessionBridge()
-
-    if (!agentConnected || !canLoadSessionHistory || !agentSession) {
-      if (agentSession) {
-        for (const backendSessionID of Object.values(subscribedSessionStreamsRef.current)) {
-          void agentSession.unsubscribe({ backendSessionID }).catch(() => undefined)
-        }
-      }
-      subscribedSessionStreamsRef.current = {}
-      return
-    }
-
-    const nextSubscriptions = Object.fromEntries(
-      openCanvasSessionIDs
-        .map((uiSessionID) => [uiSessionID, resolveBackendSessionID(uiSessionID)] as const)
-        .filter(([, backendSessionID]) => Boolean(backendSessionID)),
-    )
-
-    for (const [uiSessionID, backendSessionID] of Object.entries(subscribedSessionStreamsRef.current)) {
-      if (nextSubscriptions[uiSessionID] === backendSessionID) continue
-      void agentSession.unsubscribe({ backendSessionID }).catch(() => undefined)
-      delete subscribedSessionStreamsRef.current[uiSessionID]
-    }
-
-    for (const [uiSessionID, backendSessionID] of Object.entries(nextSubscriptions)) {
-      if (subscribedSessionStreamsRef.current[uiSessionID] === backendSessionID) continue
-      subscribedSessionStreamsRef.current[uiSessionID] = backendSessionID
-      void agentSession.subscribe({ uiSessionID, backendSessionID }).catch((error) => {
-        console.error("[desktop] agentSession.subscribe failed:", error)
-      })
-    }
-  }, [agentConnected, canLoadSessionHistory, openCanvasSessionIDs, agentSessions])
-
-  useEffect(() => {
-    return () => {
-      const agentSession = getAgentSessionBridge()
-      if (!agentSession) return
-
-      for (const backendSessionID of Object.values(subscribedSessionStreamsRef.current)) {
-        void agentSession.unsubscribe({ backendSessionID }).catch(() => undefined)
-      }
-      subscribedSessionStreamsRef.current = {}
-    }
-  }, [])
-
-  useEffect(() => {
-    const updateWorkspaceWatchDirectories = window.desktop?.updateWorkspaceWatchDirectories
-    if (!updateWorkspaceWatchDirectories) return
-
-    const activeWorkspaceID = activeWorkspace?.id ?? null
-    const shouldWatchActiveSessionDirectory =
-      Boolean(activeSessionDirectory?.trim()) &&
-      activeWorkspaceID !== null &&
-      isWorkspaceAvailable(activeWorkspace) &&
-      !(isInitialWorkspaceLoadPending && seedWorkspaceIDs.has(activeWorkspaceID))
-    const uniqueDirectories = [
-      ...new Set(
-        [
-          ...workspaces
-            .filter((workspace) => !seedWorkspaceIDs.has(workspace.id) && isWorkspaceAvailable(workspace))
-            .map((workspace) => workspace.directory.trim()),
-          shouldWatchActiveSessionDirectory ? activeSessionDirectory?.trim() ?? "" : "",
-        ].filter(Boolean),
-      ),
-    ]
-    const normalizedKey = uniqueDirectories
-      .map((directory) =>
-        platform === "win32" ? directory.replace(/\//g, "\\").toLowerCase() : directory.replace(/\\/g, "/"),
-      )
-      .sort()
-      .join("\n")
-
-    if (normalizedKey === watchedWorkspaceDirectoriesKeyRef.current) return
-    watchedWorkspaceDirectoriesKeyRef.current = normalizedKey
-
-    void updateWorkspaceWatchDirectories({
-      directories: uniqueDirectories,
-    }).catch((error) => {
-      console.error("[desktop] updateWorkspaceWatchDirectories failed:", error)
-    })
-  }, [activeSessionDirectory, activeWorkspace, isInitialWorkspaceLoadPending, platform, workspaces])
-
-  useEffect(() => {
-    let mounted = true
-
-    const listFolderWorkspaces = window.desktop?.listFolderWorkspaces
-    if (!listFolderWorkspaces) {
-      return () => {
-        mounted = false
-      }
-    }
-
-    listFolderWorkspaces()
-      .then((loadedWorkspaces) => {
-        if (!mounted) return
-
-        const nextWorkspaces = mapLoadedWorkspaces(loadedWorkspaces)
-        const loadedSessionIDs = loadedWorkspaces.flatMap((workspace) => workspace.sessions.map((session) => session.id))
-        const preserveLocalWorkspaceState = preserveLocalWorkspaceStateOnInitialLoadRef.current
-        setWorkspaces((current) => {
-          if (!preserveLocalWorkspaceState) {
-            return nextWorkspaces
-          }
-
-          const loadedWorkspaceIDs = new Set(nextWorkspaces.map((workspace) => workspace.id))
-          const preservedWorkspaces = current.filter(
-            (workspace) => !loadedWorkspaceIDs.has(workspace.id) && !seedWorkspaceIDs.has(workspace.id),
-          )
-
-          return sortWorkspaceGroups([...nextWorkspaces, ...preservedWorkspaces])
-        })
-        setConversations((prev) => ensureConversationSessions(prev, loadedSessionIDs))
-        setAgentSessions((prev) => ensureAgentSessions(prev, loadedSessionIDs))
-        setSessionDirectoryBySession((prev) => ({
-          ...prev,
-          ...collectSessionDirectoryMap(loadedWorkspaces),
-        }))
-
-        if (!preserveLocalWorkspaceState) {
-          const nextSelection = findFirstSession(nextWorkspaces)
-          const nextFolderID = nextSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null
-          const nextCreateSessionTab = nextSelection.session === null ? createCreateSessionTab(nextFolderID) : null
-          const nextInitialTab =
-            nextSelection.session !== null
-              ? createSessionWorkbenchTab(nextSelection.session.id)
-              : nextCreateSessionTab
-                ? createCreateSessionWorkbenchTab(nextCreateSessionTab.id)
-                : null
-          const nextPane = nextInitialTab ? createWorkbenchPane([nextInitialTab]) : null
-          setSelectedFolderID(nextFolderID)
-          setExpandedFolderID(nextFolderID)
-          setCreateSessionTabs(nextCreateSessionTab ? [nextCreateSessionTab] : [])
-          setWorkbenchLayout(nextInitialTab ? createWorkbenchLayoutWithTab(nextInitialTab) : normalizeLayoutState({
-            rootId: null,
-            nodes: {},
-            tabs: {},
-            docs: {},
-            focusedGroupId: null,
-          }))
-          lastFocusedSessionIDRef.current = nextSelection.session?.id ?? null
-        }
-
-        setCanLoadSessionHistory(true)
-        initialFolderWorkspacesLoadedRef.current = true
-        setIsInitialWorkspaceLoadPending(false)
-      })
-      .catch(() => {
-        setIsInitialWorkspaceLoadPending(false)
-      })
-
-    return () => {
-      mounted = false
-    }
-  }, [])
+  useInitialFolderWorkspacesEffect({
+    createCreateSessionTab,
+    createCreateSessionWorkbenchTab,
+    createSessionWorkbenchTab,
+    initialFolderWorkspacesLoadedRef,
+    lastFocusedSessionIDRef,
+    preserveLocalWorkspaceStateOnInitialLoadRef,
+    setAgentSessions,
+    setCanLoadSessionHistory,
+    setConversations,
+    setCreateSessionTabs,
+    setExpandedFolderID,
+    setIsInitialWorkspaceLoadPending,
+    setSelectedFolderID,
+    setSessionDirectoryBySession,
+    setWorkbenchLayout,
+    setWorkspaces,
+  })
 
   useEffect(() => {
     const agentSession = getAgentSessionBridge()
@@ -1899,34 +1528,21 @@ export function useAgentWorkspace({
     }
   }, [activeSessionID, canLoadSessionHistory])
 
-  useEffect(() => {
-    if (!canLoadSessionHistory || !activeSessionID) return
+  useActiveSessionReviewEffects({
+    activeSessionID,
+    agentSessions,
+    canLoadSessionHistory,
+    loadPendingPermissionRequestsForSession,
+    loadSessionDiffForSession,
+    loadSessionRuntimeDebugForSession,
+  })
 
-    void loadSessionDiffForSession(activeSessionID)
-  }, [activeSessionID, canLoadSessionHistory, agentSessions])
-
-  useEffect(() => {
-    if (!canLoadSessionHistory || !activeSessionID) return
-
-    void loadSessionRuntimeDebugForSession(activeSessionID)
-  }, [activeSessionID, canLoadSessionHistory, agentSessions])
-
-  useEffect(() => {
-    if (!canLoadSessionHistory || !activeSessionID) return
-
-    void loadPendingPermissionRequestsForSession(activeSessionID)
-  }, [activeSessionID, canLoadSessionHistory, agentSessions])
-
-  useEffect(() => {
-    return () => {
-      for (const sessionID of Object.keys(sessionDiffRefreshTimerRef.current)) {
-        clearSessionDiffRefreshTimer(sessionID)
-      }
-      for (const sessionID of Object.keys(runtimeDebugRefreshTimerRef.current)) {
-        clearRuntimeDebugRefreshTimer(sessionID)
-      }
-    }
-  }, [])
+  useReviewRefreshCleanupEffect({
+    clearRuntimeDebugRefreshTimer,
+    clearSessionDiffRefreshTimer,
+    runtimeDebugRefreshTimerRef,
+    sessionDiffRefreshTimerRef,
+  })
 
   function invalidateProjectComposer() {
     setComposerRefreshVersion((current) => current + 1)
@@ -3268,88 +2884,15 @@ export function useAgentWorkspace({
     commitWorkspaceFileComment(true)
   }
 
-  useEffect(() => {
-    const nextScopeKey = activeWorkspaceFileScopeDirectory
-      ? normalizeWorkspacePath(activeWorkspaceFileScopeDirectory, platform)
-      : null
-
-    setWorkspaceFileReviewState((current) => {
-      const currentScopeKey = current.scopeDirectory ? normalizeWorkspacePath(current.scopeDirectory, platform) : null
-      if (currentScopeKey === nextScopeKey) return current
-
-      workspaceFileSearchRequestRef.current += 1
-      workspaceFileReadRequestRef.current += 1
-      return {
-        ...DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
-        scopeDirectory: activeWorkspaceFileScopeDirectory,
-      }
-    })
-  }, [activeWorkspaceFileScopeDirectory, platform])
-
-  useEffect(() => {
-    const searchWorkspaceFiles = window.desktop?.searchWorkspaceFiles
-    const scopeDirectory = workspaceFileReviewState.scopeDirectory
-    const query = deferredWorkspaceFileQuery.trim()
-    if (!searchWorkspaceFiles || !scopeDirectory) return
-
-    if (!query) {
-      setWorkspaceFileReviewState((current) => {
-        const nextErrorMessage = current.selectedFileKind === "unsupported" ? current.errorMessage : null
-        const nextState = {
-          ...current,
-          results: [],
-          errorMessage: nextErrorMessage,
-        }
-
-        return {
-          ...nextState,
-          status: resolveWorkspaceFileReviewStatus(nextState),
-        }
-      })
-      return
-    }
-
-    const requestID = workspaceFileSearchRequestRef.current + 1
-    workspaceFileSearchRequestRef.current = requestID
-    setWorkspaceFileReviewState((current) => ({
-      ...current,
-      errorMessage: current.selectedFileKind === "unsupported" ? current.errorMessage : null,
-      status: "searching",
-    }))
-
-    searchWorkspaceFiles({
-      directory: scopeDirectory,
-      query,
-    })
-      .then((results) => {
-        if (workspaceFileSearchRequestRef.current !== requestID) return
-
-        setWorkspaceFileReviewState((current) => {
-          const nextState = {
-            ...current,
-            results,
-            errorMessage: current.selectedFileKind === "unsupported" ? current.errorMessage : null,
-          }
-
-          return {
-            ...nextState,
-            status: resolveWorkspaceFileReviewStatus(nextState),
-          }
-        })
-      })
-      .catch((error) => {
-        if (workspaceFileSearchRequestRef.current !== requestID) return
-        const message = error instanceof Error ? error.message : String(error)
-
-        setWorkspaceFileReviewState((current) => ({
-          ...current,
-          results: [],
-          errorMessage: message,
-          status: "error",
-        }))
-        console.error("[desktop] searchWorkspaceFiles failed:", error)
-      })
-  }, [deferredWorkspaceFileQuery, platform, workspaceFileReviewState.scopeDirectory])
+  useWorkspaceFileReviewSearchEffects({
+    activeWorkspaceFileScopeDirectory,
+    deferredWorkspaceFileQuery,
+    platform,
+    setWorkspaceFileReviewState,
+    workspaceFileReadRequestRef,
+    workspaceFileReviewState,
+    workspaceFileSearchRequestRef,
+  })
 
   async function sendPromptToSession(input: {
     attachments: ComposerAttachment[]
@@ -3371,179 +2914,24 @@ export function useAgentWorkspace({
     text: string
     workspace: WorkspaceGroup
   }) {
-    const {
-      attachments,
-      commentReferences = [],
-      displayText,
-      permissionMode,
-      preserveComposerState,
-      questionAnswer,
-      reasoningEffort,
-      references = [],
-      session,
-      selectedSkillIDs,
-      tabKey,
-      text,
-      workspace,
-    } = input
-    const uiSessionID = session.id
-    const agentSession = getAgentSessionBridge()
-    const canStream = Boolean(agentSession?.canStream)
-    const normalizedText = text.trim() || normalizeQuestionAnswerText(questionAnswer)
-    const attachmentInputs = attachments.map((attachment) => ({
-      path: attachment.path,
-      name: attachment.name,
-    }))
-    const effectivePermissionMode = resolveComposerPermissionModeForSession(session, permissionMode)
-    const effectiveSelectedSkillIDs = resolveComposerSkillSelectionForSession(session, selectedSkillIDs)
-    const userTurnDisplayText = displayText?.trim() || normalizeQuestionAnswerText(questionAnswer) || undefined
-    const userTurn: Turn = buildUserTurn({
-      attachments: attachmentInputs,
-      displayText: userTurnDisplayText,
-      fallbackText: normalizedText,
-      questionAnswer,
-      references,
+    await sendPromptToSessionService(input, {
+      agentConnected,
+      agentDefaultDirectory,
+      agentSessions,
+      appendConversationTurns,
+      pendingStreamsRef,
+      platform,
+      refreshWorkspaceFromDirectory,
+      reloadSessionHistoryForSession,
+      sessionDirectoryBySession,
+      setAgentSessions,
+      setComposerAttachmentsByTabKey,
+      setComposerDraftStateByTabKey,
+      setIsSendingByTabKey,
+      setSessionDirectoryBySession,
+      setWorkspaces,
+      updateAssistantConversationTurn,
     })
-
-    if (!preserveComposerState) {
-      setComposerDraftStateByTabKey((current) => ({
-        ...current,
-        [tabKey]: createEmptyComposerDraftState(),
-      }))
-      setComposerAttachmentsByTabKey((current) => ({
-        ...current,
-        [tabKey]: [],
-      }))
-    }
-
-    appendConversationTurns(uiSessionID, [userTurn])
-    setWorkspaces((prev) => {
-      const nextUpdatedAt = Date.now()
-
-      return prev.map((currentWorkspace) => ({
-        ...currentWorkspace,
-        sessions: currentWorkspace.sessions.map((currentSession) =>
-              currentSession.id === uiSessionID
-            ? {
-                ...currentSession,
-                status: "Live",
-                summary: userTurn.text,
-                updated: nextUpdatedAt,
-              }
-            : currentSession,
-        ),
-      }))
-    })
-
-    if (!agentConnected || !window.desktop?.createAgentSession || !agentSession) {
-      const fallback = buildAgentTurn(userTurn.text, session, workspace.name, platform)
-      startTransition(() => {
-        appendConversationTurns(uiSessionID, [fallback])
-      })
-      return
-    }
-
-    setIsSendingByTabKey((current) => ({
-      ...current,
-      [tabKey]: true,
-    }))
-    let streamingTurnID: string | null = null
-    let streamID: string | null = null
-
-    try {
-      let backendSessionID = input.backendSessionID ?? agentSessions[uiSessionID]
-      if (!backendSessionID) {
-        const requestedSessionDirectory = sessionDirectoryBySession[uiSessionID] ?? workspace.directory
-        const created = await window.desktop.createAgentSession({
-          directory: requestedSessionDirectory || agentDefaultDirectory || undefined,
-        })
-        backendSessionID = created.session.id
-        setAgentSessions((prev) => ({
-          ...prev,
-          [uiSessionID]: backendSessionID!,
-        }))
-        setSessionDirectoryBySession((prev) => ({
-          ...prev,
-          [uiSessionID]: created.session.directory,
-        }))
-      }
-
-      if (!backendSessionID) {
-        throw new Error("Backend session id is missing")
-      }
-
-      if (canStream) {
-        const streamingTurn = buildStreamingAssistantTurn(userTurn.text)
-        streamingTurnID = streamingTurn.id
-        streamID = createID("stream")
-        pendingStreamsRef.current[streamID] = {
-          sessionID: uiSessionID,
-          backendSessionID,
-          assistantTurnID: streamingTurn.id,
-        }
-
-        appendConversationTurns(uiSessionID, [streamingTurn])
-
-        await agentSession.sendTurn({
-          clientTurnID: streamID,
-          backendSessionID,
-          ...(normalizedText ? { text: normalizedText } : {}),
-          ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
-          ...(questionAnswer ? { questionAnswer } : {}),
-          ...(effectivePermissionMode !== "default" ? { permissionMode: effectivePermissionMode } : {}),
-          ...(reasoningEffort ? { reasoningEffort } : {}),
-          skills: effectiveSelectedSkillIDs,
-        })
-
-        return
-      }
-
-      const result = await agentSession.sendTurn({
-        clientTurnID: createID("turn"),
-        backendSessionID,
-        ...(normalizedText ? { text: normalizedText } : {}),
-        ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
-        ...(questionAnswer ? { questionAnswer } : {}),
-        ...(effectivePermissionMode !== "default" ? { permissionMode: effectivePermissionMode } : {}),
-        ...(reasoningEffort ? { reasoningEffort } : {}),
-        skills: effectiveSelectedSkillIDs,
-      })
-
-      if (!result.events) {
-        throw new Error("Desktop preload did not return batch agent events")
-      }
-
-      const backendTurn = buildAgentTurnFromEvents(result.events, userTurn.text)
-      startTransition(() => {
-        appendConversationTurns(uiSessionID, [backendTurn])
-      })
-      void reloadSessionHistoryForSession(uiSessionID, backendSessionID).catch((error) => {
-        console.error("[desktop] session history refresh failed after send:", error)
-      })
-      void refreshWorkspaceFromDirectory(workspace.directory)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (streamID) {
-        delete pendingStreamsRef.current[streamID]
-      }
-
-      startTransition(() => {
-        if (streamingTurnID) {
-          const failedTurnID = streamingTurnID
-          updateAssistantConversationTurn(uiSessionID, failedTurnID, (current) => buildFailureTurn(message, current))
-          return
-        }
-
-        appendConversationTurns(uiSessionID, [buildFailureTurn(message)])
-      })
-    } finally {
-      setIsSendingByTabKey((current) => {
-        if (!(tabKey in current)) return current
-        const next = { ...current }
-        delete next[tabKey]
-        return next
-      })
-    }
   }
 
   async function handleSend(input?: {
@@ -3647,94 +3035,22 @@ export function useAgentWorkspace({
     decision: PermissionDecision
     note?: string
   }) {
-    const agentSession = getAgentSessionBridge()
-    if (!agentSession || permissionRequestActionRequestID) return
-
-    permissionRequestsRequestRef.current[input.sessionID] = (permissionRequestsRequestRef.current[input.sessionID] ?? 0) + 1
-    const removedRequest = input.request
-    const canStreamResume = agentSession.canResumeStream
-    let requestResolved = false
-    setPermissionRequestActionRequestID(input.request.id)
-    setPermissionRequestActionError(null)
-    setPendingPermissionRequestsBySession((prev) => {
-      const current = prev[input.sessionID] ?? []
-      return {
-        ...prev,
-        [input.sessionID]: current.filter((request) => request.id !== input.request.id),
-      }
+    await respondPermissionRequest({
+      appendConversationTurns,
+      input,
+      loadPendingPermissionRequestsForSession,
+      loadSessionDiffForSession,
+      loadSessionRuntimeDebugForSession,
+      pendingStreamsRef,
+      permissionRequestActionRequestID,
+      permissionRequestsRequestRef,
+      refreshWorkspaceForSession,
+      reloadSessionHistoryForSession,
+      setPendingPermissionRequestsBySession,
+      setPermissionRequestActionError,
+      setPermissionRequestActionRequestID,
+      updateAssistantConversationTurn,
     })
-
-    try {
-      await agentSession.respondPermissionRequest({
-        requestID: input.request.id,
-        decision: input.decision,
-        note: input.note?.trim() || undefined,
-        resume: !canStreamResume,
-      })
-      requestResolved = true
-
-      await reloadSessionHistoryForSession(input.sessionID, input.request.sessionID).catch((error) => {
-        console.error("[desktop] permission history refresh failed:", error)
-      })
-      await loadSessionDiffForSession(input.sessionID, input.request.sessionID).catch((error) => {
-        console.error("[desktop] permission diff refresh failed:", error)
-      })
-      await loadSessionRuntimeDebugForSession(input.sessionID, input.request.sessionID).catch((error) => {
-        console.error("[desktop] permission runtime refresh failed:", error)
-      })
-      await loadPendingPermissionRequestsForSession(input.sessionID, input.request.sessionID).catch((error) => {
-        console.error("[desktop] permission request refresh failed:", error)
-      })
-      refreshWorkspaceForSession(input.sessionID)
-
-      if (canStreamResume) {
-        const streamID = createID("stream")
-        const streamingTurn = buildStreamingAssistantTurn(input.decision === "deny" ? "Continue after denial" : "Continue after approval")
-        pendingStreamsRef.current[streamID] = {
-          sessionID: input.sessionID,
-          backendSessionID: input.request.sessionID,
-          assistantTurnID: streamingTurn.id,
-        }
-
-        appendConversationTurns(input.sessionID, [streamingTurn])
-
-        try {
-          await agentSession.resumeTurn({
-            clientTurnID: streamID,
-            backendSessionID: input.request.sessionID,
-          })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error)
-          delete pendingStreamsRef.current[streamID]
-          startTransition(() => {
-            updateAssistantConversationTurn(input.sessionID, streamingTurn.id, (current) =>
-              buildFailureTurn(message, current),
-            )
-          })
-          throw error
-        }
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.error("[desktop] respondPermissionRequest failed:", error)
-
-      if (!requestResolved) {
-        setPermissionRequestActionError(message)
-        setPendingPermissionRequestsBySession((prev) => {
-          const current = prev[input.sessionID] ?? []
-          if (current.some((request) => request.id === removedRequest.id)) {
-            return prev
-          }
-
-          return {
-            ...prev,
-            [input.sessionID]: [removedRequest, ...current],
-          }
-        })
-      }
-    } finally {
-      setPermissionRequestActionRequestID(null)
-    }
   }
 
   async function handlePickComposerAttachments(input?: {
