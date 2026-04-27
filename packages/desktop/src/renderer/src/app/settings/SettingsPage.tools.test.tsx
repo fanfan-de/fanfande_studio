@@ -112,6 +112,7 @@ function createSettingsPageProps(
     onCreatePromptPreset: vi.fn(),
     onDebugLineColorsChange: vi.fn(),
     onDebugUiRegionsChange: vi.fn(),
+    onDismissMessage: vi.fn(),
     onDeleteArchivedSession: vi.fn(),
     onDeleteMcpServer: vi.fn(),
     onDeletePromptPreset: vi.fn(),
@@ -166,6 +167,26 @@ function createSettingsPageProps(
 }
 
 describe("SettingsPage built-in tools", () => {
+  it("renders a dismiss button for settings messages", () => {
+    const onDismissMessage = vi.fn()
+
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          message: {
+            tone: "success",
+            text: "Provider catalog refreshed.",
+          },
+          onDismissMessage,
+        })}
+      />,
+    )
+
+    expect(screen.getByText("Provider catalog refreshed.")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss settings message" }))
+    expect(onDismissMessage).toHaveBeenCalledTimes(1)
+  })
+
   it("renders built-in tools, toggles selection, saves, and resets", () => {
     const onBuiltinToolToggle = vi.fn()
     const onSaveBuiltinTools = vi.fn()

@@ -112,6 +112,35 @@ function providerSourceLabel(provider: ProviderCatalogItem) {
   return "Catalog"
 }
 
+const providerLogoBaseURL = "https://models.dev/logos"
+
+function getProviderLogoUrl(providerID: string) {
+  return `${providerLogoBaseURL}/${encodeURIComponent(providerID)}.svg`
+}
+
+function getProviderLogoInitial(provider: ProviderCatalogItem) {
+  return (provider.name.trim() || provider.id.trim()).slice(0, 1).toUpperCase() || "?"
+}
+
+function ProviderLogo({ provider, className = "" }: { provider: ProviderCatalogItem; className?: string }) {
+  return (
+    <span className={className ? `provider-logo ${className}` : "provider-logo"} aria-hidden="true">
+      <span className="provider-logo-fallback">{getProviderLogoInitial(provider)}</span>
+      <img
+        key={provider.id}
+        className="provider-logo-image"
+        src={getProviderLogoUrl(provider.id)}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={(event) => {
+          event.currentTarget.hidden = true
+        }}
+      />
+    </span>
+  )
+}
+
 function buildModelTags(model: ProviderModel) {
   const tags = [`${formatContextWindow(model.limit.context)} ctx`]
 
@@ -476,6 +505,7 @@ interface SettingsPageProps {
   onDebugLineColorsChange: (value: boolean) => void
   onDebugUiRegionsChange: (value: boolean) => void
   onClose: () => void
+  onDismissMessage: () => void
   onBuiltinToolToggle: (toolID: string, enabled: boolean) => void
   onDeleteArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
@@ -581,6 +611,7 @@ export function SettingsPage({
   onDebugLineColorsChange,
   onDebugUiRegionsChange,
   onClose,
+  onDismissMessage,
   onBuiltinToolToggle,
   onDeleteArchivedSession,
   onDeleteMcpServer,
@@ -998,7 +1029,18 @@ export function SettingsPage({
               }
             >
               {message ? (
-                <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>{message.text}</div>
+                <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
+                  <span className="settings-banner-text">{message.text}</span>
+                  <button
+                    className="settings-banner-dismiss"
+                    type="button"
+                    aria-label="Dismiss settings message"
+                    title="Dismiss"
+                    onClick={onDismissMessage}
+                  >
+                    <CloseIcon />
+                  </button>
+                </div>
               ) : null}
 
               {loadError && showProviderSections ? <div className="settings-banner is-error">{loadError}</div> : null}
@@ -1831,30 +1873,26 @@ export function SettingsPage({
               ) : showLoadedState ? (
                 activeSection === "services" ? (
                   <section className="settings-services-layout" aria-label="Provider layout">
-                    <div className="settings-service-list-panel">
-                      <div className="settings-actions-row">
-                        <span className="settings-helper-text">Fetch the latest provider catalog and model metadata.</span>
-                        <div className="settings-inline-actions">
-                          <button
-                            className="secondary-button"
-                            aria-label="Refresh provider catalog"
-                            type="button"
-                            disabled={isRefreshingProviderCatalog}
-                            onClick={() => void onRefreshProviderCatalog()}
-                          >
-                            {isRefreshingProviderCatalog ? "Refreshing..." : "Refresh"}
-                          </button>
+                    <div className="settings-service-list-panel settings-provider-list-panel">
+                      <div className="settings-provider-search-row">
+                        <div className="settings-field settings-search-field">
+                          <input
+                            aria-label="Search providers"
+                            type="text"
+                            value={providerSearch}
+                            placeholder="Search providers"
+                            onChange={(event: ChangeEvent<HTMLInputElement>) => setProviderSearch(event.target.value)}
+                          />
                         </div>
-                      </div>
-
-                      <div className="settings-field settings-search-field">
-                        <input
-                          aria-label="Search providers"
-                          type="text"
-                          value={providerSearch}
-                          placeholder="Search providers"
-                          onChange={(event: ChangeEvent<HTMLInputElement>) => setProviderSearch(event.target.value)}
-                        />
+                        <button
+                          className="secondary-button"
+                          aria-label="Refresh provider catalog"
+                          type="button"
+                          disabled={isRefreshingProviderCatalog}
+                          onClick={() => void onRefreshProviderCatalog()}
+                        >
+                          {isRefreshingProviderCatalog ? "Refreshing..." : "Refresh"}
+                        </button>
                       </div>
 
                       <div className="settings-service-list-body">
@@ -1874,7 +1912,10 @@ export function SettingsPage({
                                   onClick={() => setSelectedProviderID(provider.id)}
                                 >
                                   <div className="settings-service-item-header">
-                                    <strong>{provider.name}</strong>
+                                    <span className="settings-service-item-title">
+                                      <ProviderLogo provider={provider} />
+                                      <strong>{provider.name}</strong>
+                                    </span>
                                     <span
                                       className={
                                         isProviderConnected(provider)
@@ -1905,26 +1946,6 @@ export function SettingsPage({
                     <div ref={serviceDetailPanelRef} className="settings-service-detail-panel">
                       {activeProvider && activeProviderDraft ? (
                         <>
-                          <div className="settings-detail-hero">
-                            <div>
-                              <span className="label">{providerSourceLabel(activeProvider)}</span>
-                              <h3>{activeProvider.name}</h3>
-                              <p>
-                                {projectID
-                                  ? `Shared connection credentials are available across the app. Only non-secret overrides below are stored for ${projectName ?? "this project"}.`
-                                  : "Shared connection credentials are available across the app. Provider overrides below only store non-secret settings."}
-                              </p>
-                            </div>
-
-                            <div className="provider-row-statuses">
-                              <span className="settings-badge">{getProviderConnectionLabel(activeProvider)}</span>
-                              {activeProviderSelectedCapability ? (
-                                <span className="settings-badge">{activeProviderSelectedCapability.label}</span>
-                              ) : null}
-                              <span className="settings-badge">{activeProvider.modelCount} models</span>
-                            </div>
-                          </div>
-
                           <div className="settings-panel">
                             <div className="settings-section-header">
                               <div>
@@ -2843,9 +2864,12 @@ export function SettingsPage({
                           <article key={provider.id} className={provider.available ? "provider-row" : "provider-row is-muted"}>
                             <div className="provider-row-main">
                               <div className="provider-row-heading">
-                                <div>
-                                  <span className="label">{providerSourceLabel(provider)}</span>
-                                  <h4>{provider.name}</h4>
+                                <div className="provider-row-title">
+                                  <ProviderLogo provider={provider} className="is-large" />
+                                  <div>
+                                    <span className="label">{providerSourceLabel(provider)}</span>
+                                    <h4>{provider.name}</h4>
+                                  </div>
                                 </div>
 
                                 <div className="provider-row-statuses">

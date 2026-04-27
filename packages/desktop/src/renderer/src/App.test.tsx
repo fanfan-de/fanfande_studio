@@ -5896,9 +5896,7 @@ describe("App", () => {
     expect(screen.queryByText("1 known models")).not.toBeInTheDocument()
     expect(await screen.findByRole("heading", { name: "Shared across the app" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Project 2" })).toBeInTheDocument()
-    const detailHero = settingsDialog.querySelector(".settings-detail-hero")
-    expect(detailHero).not.toBeNull()
-    expect(within(detailHero as HTMLElement).getByText("Saved config")).toBeInTheDocument()
+    expect(settingsDialog.querySelector(".settings-detail-hero")).toBeNull()
     expect(screen.queryByText("Provider ID")).not.toBeInTheDocument()
     expect(screen.queryByText("Environment")).not.toBeInTheDocument()
     expect(screen.queryByText("Save shared credentials and endpoint overrides for this provider.")).not.toBeInTheDocument()
@@ -6229,6 +6227,8 @@ describe("App", () => {
     })
 
     expect(await screen.findByText("Provider catalog refreshed.")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss settings message" }))
+    expect(screen.queryByText("Provider catalog refreshed.")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
   })
 
@@ -6760,10 +6760,7 @@ describe("App", () => {
     const detailPanel = settingsDialog.querySelector(".settings-service-detail-panel")
     expect(detailPanel).not.toBeNull()
     expect((detailPanel as HTMLElement).querySelector(".settings-detail-meta-grid")).toBeNull()
-
-    const detailHero = (detailPanel as HTMLElement).querySelector(".settings-detail-hero")
-    expect(detailHero).not.toBeNull()
-    expect(within(detailHero as HTMLElement).getByText("Environment")).toBeInTheDocument()
+    expect((detailPanel as HTMLElement).querySelector(".settings-detail-hero")).toBeNull()
     expect(
       within(detailPanel as HTMLElement).queryByText(
         "Edit the shared credentials and endpoint the app should use when routing to DeepSeek.",

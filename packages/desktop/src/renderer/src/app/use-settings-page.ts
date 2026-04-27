@@ -756,6 +756,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setIsOpen(false)
   }
 
+  function dismissMessage() {
+    setMessage(null)
+  }
+
   function setProviderDraftValue(providerID: string, field: "apiKey" | "baseURL", value: string) {
     setProviderDrafts((current) => ({
       ...current,
@@ -1703,6 +1707,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     cancelProviderAuthFlow,
     catalog,
     closeSettings,
+    dismissMessage,
     deleteArchivedSession,
     deleteProviderAuthSession,
     deleteMcpServer,

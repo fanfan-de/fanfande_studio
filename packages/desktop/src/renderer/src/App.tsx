@@ -236,6 +236,7 @@ export function App() {
     deletingMcpServerID,
     deletingPromptPresetID,
     deletingProviderID,
+    dismissMessage,
     isCreatingPromptPreset,
     isLoading,
     isLoadingBuiltinTools,
@@ -856,6 +857,7 @@ export function App() {
           onDebugLineColorsChange={handleDebugLineColorsChange}
           onDebugUiRegionsChange={handleDebugUiRegionsChange}
           onClose={closeSettings}
+          onDismissMessage={dismissMessage}
           onBuiltinToolToggle={setBuiltinToolEnabled}
           onDeleteArchivedSession={deleteArchivedSession}
           onDeleteMcpServer={deleteMcpServer}
