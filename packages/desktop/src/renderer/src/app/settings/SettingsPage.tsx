@@ -23,6 +23,7 @@ import type {
   AssistantTraceVisibility,
   AssistantTraceVisibilityKey,
   BrandTheme,
+  BuiltinToolSummary,
   ColorMode,
   McpServerDiagnostic,
   McpServerDraftState,
@@ -306,7 +307,43 @@ function getPromptPresetUsageLabels(
   return labels
 }
 
-type SettingsSectionKey = "services" | "defaults" | "mcp" | "prompts" | "appearance" | "developer" | "archive"
+function getBuiltinToolKindLabel(tool: BuiltinToolSummary) {
+  return getBuiltinToolGroupLabel(tool.capabilities.kind ?? "other")
+}
+
+function getBuiltinToolGroupLabel(kind: BuiltinToolSummary["capabilities"]["kind"] | "other") {
+  switch (kind) {
+    case "exec":
+      return "Shell"
+    case "write":
+      return "Write"
+    case "search":
+      return "Search"
+    case "read":
+      return "Read"
+    default:
+      return "Other"
+  }
+}
+
+function getBuiltinToolRiskLabel(tool: BuiltinToolSummary) {
+  if (tool.capabilities.needsShell || tool.capabilities.kind === "exec") return "Shell access"
+  if (tool.capabilities.destructive) return "High risk"
+  if (tool.capabilities.readOnly) return "Read-only"
+  return "Moderate"
+}
+
+function getBuiltinToolRiskBadgeClassName(tool: BuiltinToolSummary) {
+  if (tool.capabilities.needsShell || tool.capabilities.kind === "exec" || tool.capabilities.destructive) {
+    return "settings-badge is-warning"
+  }
+  if (tool.capabilities.readOnly) {
+    return "settings-badge is-highlight"
+  }
+  return "settings-badge"
+}
+
+type SettingsSectionKey = "services" | "defaults" | "mcp" | "tools" | "prompts" | "appearance" | "developer" | "archive"
 
 const SETTINGS_PAGE_DRAG_MARGIN = 16
 
@@ -372,6 +409,8 @@ interface SettingsPageProps {
   assistantTraceVisibility: AssistantTraceVisibility
   archivedSessions: ArchivedSessionSummary[]
   archivedSessionsError: string | null
+  builtinTools: BuiltinToolSummary[]
+  builtinToolsError: string | null
   catalog: ProviderCatalogItem[]
   deletingArchivedSessionID: string | null
   deletingMcpServerID: string | null
@@ -385,15 +424,18 @@ interface SettingsPageProps {
   isDebugLineColorsEnabled: boolean
   isDebugUiRegionsEnabled: boolean
   isLoading: boolean
+  isLoadingBuiltinTools: boolean
   isLoadingPromptPreset: boolean
   isLoadingPrompts: boolean
   isLoadingArchivedSessions: boolean
   isOpen: boolean
   isPromptDirty: boolean
+  isBuiltinToolSelectionDirty: boolean
   isSystemPromptPresetDirty: boolean
   isPlanModePromptPresetDirty: boolean
   isRefreshingProviderCatalog: boolean
   isSavingPromptPresetSelection: boolean
+  isSavingBuiltinTools: boolean
   isSavingSelection: boolean
   loadError: string | null
   mcpServerDraft: McpServerDraftState
@@ -434,6 +476,7 @@ interface SettingsPageProps {
   onDebugLineColorsChange: (value: boolean) => void
   onDebugUiRegionsChange: (value: boolean) => void
   onClose: () => void
+  onBuiltinToolToggle: (toolID: string, enabled: boolean) => void
   onDeleteArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
   onDeleteProviderAuthSession: (providerID: string) => boolean | Promise<boolean>
@@ -449,7 +492,9 @@ interface SettingsPageProps {
   onProviderDraftChange: (providerID: string, field: "apiKey" | "baseURL", value: string) => void
   onRefreshProviderCatalog: () => boolean | Promise<boolean>
   onResetPromptPreset: () => boolean | Promise<boolean>
+  onResetBuiltinTools: () => boolean | Promise<boolean>
   onRestoreArchivedSession: (sessionID: string) => boolean | Promise<boolean>
+  onSaveBuiltinTools: () => boolean | Promise<boolean>
   onSaveMcpServer: () => boolean | Promise<boolean>
   onSavePromptPreset: () => boolean | Promise<boolean>
   onSaveProviderApiKey: (providerID: string, apiKey?: string | null) => boolean | Promise<boolean>
@@ -472,6 +517,8 @@ export function SettingsPage({
   assistantTraceVisibility,
   archivedSessions,
   archivedSessionsError,
+  builtinTools,
+  builtinToolsError,
   catalog,
   deletingArchivedSessionID,
   deletingMcpServerID,
@@ -485,15 +532,18 @@ export function SettingsPage({
   isDebugLineColorsEnabled,
   isDebugUiRegionsEnabled,
   isLoading,
+  isLoadingBuiltinTools,
   isLoadingPromptPreset,
   isLoadingPrompts,
   isLoadingArchivedSessions,
   isOpen,
   isPromptDirty,
+  isBuiltinToolSelectionDirty,
   isSystemPromptPresetDirty,
   isPlanModePromptPresetDirty,
   isRefreshingProviderCatalog,
   isSavingPromptPresetSelection,
+  isSavingBuiltinTools,
   isSavingSelection,
   loadError,
   mcpServerDraft,
@@ -531,6 +581,7 @@ export function SettingsPage({
   onDebugLineColorsChange,
   onDebugUiRegionsChange,
   onClose,
+  onBuiltinToolToggle,
   onDeleteArchivedSession,
   onDeleteMcpServer,
   onDeleteProviderAuthSession,
@@ -546,7 +597,9 @@ export function SettingsPage({
   onProviderDraftChange,
   onRefreshProviderCatalog,
   onResetPromptPreset,
+  onResetBuiltinTools,
   onRestoreArchivedSession,
+  onSaveBuiltinTools,
   onSaveMcpServer,
   onSavePromptPreset,
   onSaveProviderApiKey,
@@ -633,6 +686,18 @@ export function SettingsPage({
     const mcpServerCanSave = !mcpServerValidationError
     const showLoadedState = !isLoading && !loadError
     const showProviderSections = activeSection === "services" || activeSection === "defaults" || activeSection === "mcp"
+    const enabledBuiltinToolCount = builtinTools.filter((tool) => tool.enabled).length
+    const builtinToolKindOrder = ["exec", "write", "search", "read", "other"] as const
+    const builtinToolGroups = builtinToolKindOrder
+      .map((kind) => {
+        const items = builtinTools.filter((tool) => (tool.capabilities.kind ?? "other") === kind)
+        return {
+          kind,
+          label: getBuiltinToolGroupLabel(kind),
+          items,
+        }
+      })
+      .filter((group) => group.items.length > 0)
     const promptPresetOptions = [...promptPresets].sort((left, right) => {
       if (left.source !== right.source) {
         return left.source === "bundled" ? -1 : 1
@@ -863,6 +928,7 @@ export function SettingsPage({
           { key: "services" as const, label: "Provider", Icon: SettingsIcon },
           { key: "defaults" as const, label: "Models", Icon: ConnectedStatusIcon },
           { key: "mcp" as const, label: "MCP", Icon: FolderIcon },
+          { key: "tools" as const, label: "Tools", Icon: TerminalIcon },
           { key: "prompts" as const, label: "Prompts", Icon: FileTextIcon },
           { key: "appearance" as const, label: "Appearance", Icon: LayoutSidebarLeftIcon },
           { key: "developer" as const, label: "Developer Mode", Icon: TerminalIcon },
@@ -945,11 +1011,23 @@ export function SettingsPage({
                 <div className="settings-banner is-error">{promptLoadError}</div>
               ) : null}
 
+              {builtinToolsError && activeSection === "tools" ? (
+                <div className="settings-banner is-error">{builtinToolsError}</div>
+              ) : null}
+
               {isLoading && showProviderSections ? (
                 <article className="settings-empty-state">
                   <span className="label">Loading</span>
                   <h3>Fetching provider catalog</h3>
                   <p>Reading provider availability, model visibility, and saved model preferences.</p>
+                </article>
+              ) : null}
+
+              {isLoadingBuiltinTools && activeSection === "tools" ? (
+                <article className="settings-empty-state">
+                  <span className="label">Loading</span>
+                  <h3>Fetching built-in tools</h3>
+                  <p>Reading the built-in registry and saved global availability limits.</p>
                 </article>
               ) : null}
 
@@ -969,7 +1047,90 @@ export function SettingsPage({
                 </article>
               ) : null}
 
-              {activeSection === "prompts" ? (
+              {activeSection === "tools" ? (
+                isLoadingBuiltinTools ? null : (
+                  <section className="settings-panel settings-tools-panel" aria-label="Built-in tools">
+                    <div className="settings-tools-header">
+                      <div>
+                        <span className="label">Built-in tools</span>
+                        <h2>Global tool availability</h2>
+                        <p>
+                          {enabledBuiltinToolCount} of {builtinTools.length} built-in tools enabled.
+                        </p>
+                      </div>
+                      <div className="settings-tools-actions">
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          disabled={isSavingBuiltinTools}
+                          onClick={() => void onResetBuiltinTools()}
+                        >
+                          {isSavingBuiltinTools ? "Resetting..." : "Reset to default"}
+                        </button>
+                        <button
+                          className="primary-button"
+                          type="button"
+                          disabled={!isBuiltinToolSelectionDirty || isSavingBuiltinTools}
+                          onClick={() => void onSaveBuiltinTools()}
+                        >
+                          {isSavingBuiltinTools ? "Saving..." : "Save changes"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {builtinTools.length > 0 ? (
+                      <div className="settings-tool-groups">
+                        {builtinToolGroups.map((group) => (
+                          <section key={group.kind} className="settings-tool-group" aria-label={`${group.label} tools`}>
+                            <div className="settings-tool-group-heading">
+                              <h3>{group.label}</h3>
+                              <span className="settings-badge">{group.items.length}</span>
+                            </div>
+                            <div className="settings-tool-list">
+                              {group.items.map((tool) => (
+                                <button
+                                  key={tool.id}
+                                  className={
+                                    tool.enabled
+                                      ? "settings-toggle-card is-active settings-tool-card"
+                                      : "settings-toggle-card settings-tool-card"
+                                  }
+                                  type="button"
+                                  aria-pressed={tool.enabled}
+                                  onClick={() => onBuiltinToolToggle(tool.id, !tool.enabled)}
+                                >
+                                  <span className="settings-toggle-copy">
+                                    <span className="settings-tool-card-header">
+                                      <strong>{tool.title}</strong>
+                                      <span className="settings-tool-id">{tool.id}</span>
+                                    </span>
+                                    <small>{tool.description}</small>
+                                    <span className="settings-tool-meta">
+                                      <span className="settings-badge">{getBuiltinToolKindLabel(tool)}</span>
+                                      <span className={getBuiltinToolRiskBadgeClassName(tool)}>{getBuiltinToolRiskLabel(tool)}</span>
+                                      {tool.aliases.length > 0 ? (
+                                        <span className="settings-badge">{tool.aliases.length} aliases</span>
+                                      ) : null}
+                                    </span>
+                                  </span>
+                                  <span className="settings-toggle-control" aria-hidden="true">
+                                    <span className="settings-toggle-thumb" />
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    ) : (
+                      <article className="settings-empty-state">
+                        <h3>No built-in tools</h3>
+                        <p>The agent registry did not return any built-in tools.</p>
+                      </article>
+                    )}
+                  </section>
+                )
+              ) : activeSection === "prompts" ? (
                 isLoadingPrompts ? null : (
                   <section className="settings-prompts-shell" aria-label="Prompt preset layout">
                     <section className="settings-panel settings-prompt-slots-panel">

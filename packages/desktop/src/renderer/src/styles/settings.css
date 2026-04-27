@@ -804,6 +804,20 @@ body.is-dragging-settings-page {
 }
 
 @media (max-width: 900px) {
+  .settings-tools-header {
+    flex-direction: column;
+  }
+
+  .settings-tools-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .settings-tools-actions .secondary-button,
+  .settings-tools-actions .primary-button {
+    flex: 1 1 180px;
+  }
+
   .settings-prompt-section-bar,
   .settings-prompt-editor-header {
     flex-direction: column;
@@ -1142,6 +1156,83 @@ body.is-dragging-settings-page {
 
 .settings-toggle-card.is-active .settings-toggle-thumb {
   transform: translateX(20px);
+}
+
+.settings-tools-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-tools-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.settings-tools-header h2,
+.settings-tool-group-heading h3 {
+  margin: 0;
+  color: #182532;
+}
+
+.settings-tools-header p {
+  margin: 6px 0 0;
+  color: #5b6f82;
+}
+
+.settings-tools-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-tool-groups {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-tool-group {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-tool-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-tool-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-tool-card {
+  align-items: flex-start;
+}
+
+.settings-tool-card-header,
+.settings-tool-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-tool-id {
+  color: #728197;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace);
+  font-size: 12px;
+}
+
+.settings-tool-meta {
+  margin-top: 4px;
 }
 
 .settings-color-mode-group {

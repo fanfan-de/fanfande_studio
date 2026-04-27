@@ -310,6 +310,30 @@ type McpDeleteEnvelope = JsonEnvelope<{
   removed: boolean
 }>
 
+type BuiltinToolListEnvelope = JsonEnvelope<{
+  items: Array<{
+    id: string
+    title: string
+    description: string
+    aliases: string[]
+    capabilities: {
+      kind?: "read" | "write" | "search" | "exec" | "other"
+      readOnly?: boolean
+      destructive?: boolean
+      concurrency?: "safe" | "exclusive"
+      needsShell?: boolean
+    }
+    enabled: boolean
+  }>
+  selection: {
+    tools: Record<string, boolean>
+  }
+}>
+
+type BuiltinToolSelectionEnvelope = JsonEnvelope<{
+  tools: Record<string, boolean>
+}>
+
 type PromptPresetSummaryEnvelope = JsonEnvelope<
   Array<{
     id: string
@@ -646,6 +670,77 @@ describe("server api", () => {
     expect(body.success).toBe(true)
     expect(body.data?.ok).toBe(true)
     expect(body.requestId).toBeString()
+  })
+
+  test("built-in tool settings routes list, persist, reset, and validate selections", async () => {
+    const app = createServerApp()
+    await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {})
+
+    try {
+      const listResponse = await app.request("http://localhost/api/tools/builtins")
+      const listBody = (await listResponse.json()) as BuiltinToolListEnvelope
+
+      expect(listResponse.status).toBe(200)
+      expect(listBody.success).toBe(true)
+      expect(listBody.data?.selection.tools).toEqual({})
+      expect(listBody.data?.items.some((tool) => tool.id === "AskUserQuestion")).toBe(true)
+      expect(listBody.data?.items.find((tool) => tool.id === "exec_command")).toMatchObject({
+        enabled: true,
+        capabilities: {
+          kind: "exec",
+          needsShell: true,
+        },
+      })
+
+      const updateResponse = await app.request("http://localhost/api/tools/builtins/selection", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tools: {
+            exec_command: false,
+          },
+        }),
+      })
+      const updateBody = (await updateResponse.json()) as BuiltinToolSelectionEnvelope
+
+      expect(updateResponse.status).toBe(200)
+      expect(updateBody.data).toEqual({
+        tools: {
+          exec_command: false,
+        },
+      })
+
+      const disabledListResponse = await app.request("http://localhost/api/tools/builtins")
+      const disabledListBody = (await disabledListResponse.json()) as BuiltinToolListEnvelope
+      expect(disabledListBody.data?.items.find((tool) => tool.id === "exec_command")?.enabled).toBe(false)
+
+      const resetResponse = await app.request("http://localhost/api/tools/builtins/selection", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tools: {},
+        }),
+      })
+      const resetBody = (await resetResponse.json()) as BuiltinToolSelectionEnvelope
+      expect(resetResponse.status).toBe(200)
+      expect(resetBody.data?.tools).toEqual({})
+
+      const invalidResponse = await app.request("http://localhost/api/tools/builtins/selection", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tools: {
+            "not-a-built-in-tool": false,
+          },
+        }),
+      })
+      const invalidBody = (await invalidResponse.json()) as JsonEnvelope
+
+      expect(invalidResponse.status).toBe(400)
+      expect(invalidBody.error?.code).toBe("UNKNOWN_BUILTIN_TOOL")
+    } finally {
+      await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {})
+    }
   })
 
   test("GET /api/debug/status should expose process health and recent errors", async () => {

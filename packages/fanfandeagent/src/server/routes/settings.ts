@@ -110,6 +110,17 @@ export function SettingsRoutes() {
     ok(c, await SettingsUseCase.removeMcpServer(c.req.param("serverID"))),
   )
 
+  app.get("/tools/builtins", async (c) => ok(c, await SettingsUseCase.listBuiltinTools()))
+
+  app.put("/tools/builtins/selection", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.UpdateBuiltinToolSelectionBody,
+      "Body must contain a tools object keyed by built-in tool id.",
+    )
+    return ok(c, await SettingsUseCase.updateBuiltinToolSelection(payload))
+  })
+
   app.get("/prompts", async (c) => ok(c, await SettingsUseCase.listPromptPresets()))
 
   app.get("/prompts/selection", async (c) => ok(c, await SettingsUseCase.getPromptPresetSelection()))

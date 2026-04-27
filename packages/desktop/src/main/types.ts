@@ -190,6 +190,35 @@ export interface AgentEnvelope<T> {
   }
 }
 
+export type AgentBuiltinToolKind = "read" | "write" | "search" | "exec" | "other"
+export type AgentBuiltinToolConcurrency = "safe" | "exclusive"
+
+export interface AgentBuiltinToolCapabilities {
+  kind?: AgentBuiltinToolKind
+  readOnly?: boolean
+  destructive?: boolean
+  concurrency?: AgentBuiltinToolConcurrency
+  needsShell?: boolean
+}
+
+export interface AgentBuiltinToolSummary {
+  id: string
+  title: string
+  description: string
+  aliases: string[]
+  capabilities: AgentBuiltinToolCapabilities
+  enabled: boolean
+}
+
+export interface AgentBuiltinToolSelection {
+  tools: Record<string, boolean>
+}
+
+export interface AgentBuiltinToolsPayload {
+  items: AgentBuiltinToolSummary[]
+  selection: AgentBuiltinToolSelection
+}
+
 export interface AgentSSEEvent {
   id?: string
   event: string

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import type {
   ArchivedSessionSummary,
+  BuiltinToolSelection,
+  BuiltinToolSummary,
   LoadedSessionSnapshot,
   McpAllowedTools,
   McpServerDiagnostic,
@@ -47,6 +49,36 @@ function normalizeSelection(selection?: { model?: string; small_model?: string }
     model: selection?.model ?? null,
     smallModel: selection?.small_model ?? null,
   }
+}
+
+const EMPTY_BUILTIN_TOOL_SELECTION: BuiltinToolSelection = { tools: {} }
+
+function normalizeBuiltinToolSelection(selection?: BuiltinToolSelection | null): BuiltinToolSelection {
+  return {
+    tools: { ...(selection?.tools ?? {}) },
+  }
+}
+
+function resolveBuiltinToolEnabled(tool: BuiltinToolSummary, selection: BuiltinToolSelection) {
+  const explicitStates = [tool.id, ...tool.aliases]
+    .map((name) => selection.tools[name])
+    .filter((value): value is boolean => typeof value === "boolean")
+
+  return !explicitStates.includes(false)
+}
+
+function applyBuiltinToolSelection(
+  items: BuiltinToolSummary[],
+  selection: BuiltinToolSelection,
+) {
+  return items.map((tool) => ({
+    ...tool,
+    enabled: resolveBuiltinToolEnabled(tool, selection),
+  }))
+}
+
+function stableSelectionKey(selection: BuiltinToolSelection) {
+  return JSON.stringify([...Object.entries(selection.tools)].sort(([left], [right]) => left.localeCompare(right)))
 }
 
 function buildProviderDrafts(items: ProviderCatalogItem[]) {
@@ -301,6 +333,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [mcpDiagnostics, setMcpDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
   const [activeMcpServerID, setActiveMcpServerID] = useState<string | null>(null)
   const [mcpServerDraft, setMcpServerDraft] = useState<McpServerDraftState>(() => toMcpDraft())
+  const [builtinTools, setBuiltinTools] = useState<BuiltinToolSummary[]>([])
+  const [builtinToolSelection, setBuiltinToolSelection] = useState<BuiltinToolSelection>(EMPTY_BUILTIN_TOOL_SELECTION)
+  const [savedBuiltinToolSelection, setSavedBuiltinToolSelection] =
+    useState<BuiltinToolSelection>(EMPTY_BUILTIN_TOOL_SELECTION)
   const [promptPresets, setPromptPresets] = useState<PromptPresetSummary[]>([])
   const [promptPresetSelection, setPromptPresetSelection] = useState<PromptPresetSelection | null>(null)
   const [savedPromptPresetSelection, setSavedPromptPresetSelection] = useState<PromptPresetSelection | null>(null)
@@ -312,10 +348,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [savedPromptContent, setSavedPromptContent] = useState("")
   const [archivedSessions, setArchivedSessions] = useState<ArchivedSessionSummary[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingBuiltinTools, setIsLoadingBuiltinTools] = useState(false)
   const [isLoadingPrompts, setIsLoadingPrompts] = useState(false)
   const [isLoadingPromptPreset, setIsLoadingPromptPreset] = useState(false)
   const [isLoadingArchivedSessions, setIsLoadingArchivedSessions] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [builtinToolsError, setBuiltinToolsError] = useState<string | null>(null)
   const [promptLoadError, setPromptLoadError] = useState<string | null>(null)
   const [archivedSessionsError, setArchivedSessionsError] = useState<string | null>(null)
   const [message, setMessage] = useState<SettingsMessage | null>(null)
@@ -325,6 +363,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [isSavingSelection, setIsSavingSelection] = useState(false)
   const [savingMcpServerID, setSavingMcpServerID] = useState<string | null>(null)
   const [deletingMcpServerID, setDeletingMcpServerID] = useState<string | null>(null)
+  const [isSavingBuiltinTools, setIsSavingBuiltinTools] = useState(false)
   const [isCreatingPromptPreset, setIsCreatingPromptPreset] = useState(false)
   const [isSavingPromptPresetSelection, setIsSavingPromptPresetSelection] = useState(false)
   const [savingPromptPresetSelectionField, setSavingPromptPresetSelectionField] =
@@ -335,6 +374,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [restoringArchivedSessionID, setRestoringArchivedSessionID] = useState<string | null>(null)
   const [deletingArchivedSessionID, setDeletingArchivedSessionID] = useState<string | null>(null)
   const requestIDRef = useRef(0)
+  const builtinToolsRequestIDRef = useRef(0)
   const archivedSessionsRequestIDRef = useRef(0)
   const mcpDiagnosticRequestIDRef = useRef<Record<string, number>>({})
   const promptPresetsRequestIDRef = useRef(0)
@@ -344,6 +384,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!isOpen) return
 
     void loadSettingsData()
+    void loadBuiltinTools()
     void loadPromptPresets()
     void loadArchivedSessions()
   }, [isOpen, options.projectID])
@@ -629,6 +670,43 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function loadBuiltinTools(optionsArg?: LoadSettingsOptions) {
+    const getBuiltinTools = window.desktop?.getBuiltinTools
+    if (!getBuiltinTools) {
+      setBuiltinTools([])
+      setBuiltinToolSelection(normalizeBuiltinToolSelection())
+      setSavedBuiltinToolSelection(normalizeBuiltinToolSelection())
+      setBuiltinToolsError("Desktop built-in tool settings APIs are unavailable.")
+      return
+    }
+
+    const requestID = ++builtinToolsRequestIDRef.current
+    if (!optionsArg?.silent) {
+      setIsLoadingBuiltinTools(true)
+    }
+    setBuiltinToolsError(null)
+
+    try {
+      const payload = await getBuiltinTools()
+      if (builtinToolsRequestIDRef.current !== requestID) return
+
+      const selection = normalizeBuiltinToolSelection(payload.selection)
+      setBuiltinToolSelection(selection)
+      setSavedBuiltinToolSelection(selection)
+      setBuiltinTools(applyBuiltinToolSelection(payload.items, selection))
+    } catch (error) {
+      if (builtinToolsRequestIDRef.current !== requestID) return
+      setBuiltinTools([])
+      setBuiltinToolSelection(normalizeBuiltinToolSelection())
+      setSavedBuiltinToolSelection(normalizeBuiltinToolSelection())
+      setBuiltinToolsError(getErrorMessage(error))
+    } finally {
+      if (builtinToolsRequestIDRef.current === requestID) {
+        setIsLoadingBuiltinTools(false)
+      }
+    }
+  }
+
   async function loadMcpServerDiagnostic(projectID: string, serverID: string) {
     if (!window.desktop?.getProjectMcpServerDiagnostic) return null
 
@@ -728,6 +806,76 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       ...current,
       [field]: value,
     }))
+  }
+
+  function setBuiltinToolEnabled(toolID: string, enabled: boolean) {
+    setBuiltinToolSelection((current) => {
+      return {
+        tools: {
+          ...current.tools,
+          [toolID]: enabled,
+        },
+      }
+    })
+    setBuiltinTools((items) => items.map((tool) => (tool.id === toolID ? { ...tool, enabled } : tool)))
+  }
+
+  async function saveBuiltinTools() {
+    const updateBuiltinToolSelection = window.desktop?.updateBuiltinToolSelection
+    if (!updateBuiltinToolSelection) return false
+
+    setIsSavingBuiltinTools(true)
+    setMessage(null)
+
+    try {
+      const selection = normalizeBuiltinToolSelection(
+        await updateBuiltinToolSelection(builtinToolSelection),
+      )
+      setSavedBuiltinToolSelection(selection)
+      setBuiltinToolSelection(selection)
+      setBuiltinTools((items) => applyBuiltinToolSelection(items, selection))
+      setMessage({
+        tone: "success",
+        text: "Built-in tool settings saved.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsSavingBuiltinTools(false)
+    }
+  }
+
+  async function resetBuiltinTools() {
+    const updateBuiltinToolSelection = window.desktop?.updateBuiltinToolSelection
+    if (!updateBuiltinToolSelection) return false
+
+    setIsSavingBuiltinTools(true)
+    setMessage(null)
+
+    try {
+      const selection = normalizeBuiltinToolSelection(await updateBuiltinToolSelection({ tools: {} }))
+      setSavedBuiltinToolSelection(selection)
+      setBuiltinToolSelection(selection)
+      setBuiltinTools((items) => applyBuiltinToolSelection(items, selection))
+      setMessage({
+        tone: "success",
+        text: "Built-in tool settings reset to defaults.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsSavingBuiltinTools(false)
+    }
   }
 
   function setPromptDraftValue(value: string) {
@@ -1542,12 +1690,16 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     promptPresetSelection !== null &&
     savedPromptPresetSelection !== null &&
     promptPresetSelection.planModePromptPresetID !== savedPromptPresetSelection.planModePromptPresetID
+  const isBuiltinToolSelectionDirty =
+    stableSelectionKey(builtinToolSelection) !== stableSelectionKey(savedBuiltinToolSelection)
 
   return {
     activeMcpServerID,
     activeMcpServerDiagnostic: activeMcpServerID ? mcpDiagnostics[activeMcpServerID] ?? null : null,
     archivedSessions,
     archivedSessionsError,
+    builtinTools,
+    builtinToolsError,
     cancelProviderAuthFlow,
     catalog,
     closeSettings,
@@ -1561,15 +1713,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     deletingProviderID,
     isCreatingPromptPreset,
     isLoading,
+    isLoadingBuiltinTools,
     isLoadingPromptPreset,
     isLoadingPrompts,
     isLoadingArchivedSessions,
     isOpen,
     isPromptDirty,
+    isBuiltinToolSelectionDirty,
     isSystemPromptPresetDirty,
     isPlanModePromptPresetDirty,
     isRefreshingProviderCatalog,
     isSavingPromptPresetSelection,
+    isSavingBuiltinTools,
     isSavingSelection,
     loadError,
     mcpServerDraft,
@@ -1590,10 +1745,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     deletePromptPreset,
     refreshProviderCatalog,
     resetPromptPreset,
+    resetBuiltinTools,
     resettingPromptPresetID,
     restoringArchivedSessionID,
     savedSelection,
     saveMcpServer,
+    saveBuiltinTools,
     savePromptPreset,
     savePromptPresetSelection,
     savingPromptPresetSelectionField,
@@ -1614,6 +1771,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setPromptDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
+    setBuiltinToolEnabled,
     startProviderAuthFlow,
     startNewMcpServer,
     restoreArchivedSession,

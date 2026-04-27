@@ -832,6 +832,35 @@ export interface PromptPresetDocument extends PromptPresetSummary {
   content: string
 }
 
+export type BuiltinToolKind = "read" | "write" | "search" | "exec" | "other"
+export type BuiltinToolConcurrency = "safe" | "exclusive"
+
+export interface BuiltinToolCapabilities {
+  kind?: BuiltinToolKind
+  readOnly?: boolean
+  destructive?: boolean
+  concurrency?: BuiltinToolConcurrency
+  needsShell?: boolean
+}
+
+export interface BuiltinToolSummary {
+  id: string
+  title: string
+  description: string
+  aliases: string[]
+  capabilities: BuiltinToolCapabilities
+  enabled: boolean
+}
+
+export interface BuiltinToolSelection {
+  tools: Record<string, boolean>
+}
+
+export interface BuiltinToolsPayload {
+  items: BuiltinToolSummary[]
+  selection: BuiltinToolSelection
+}
+
 export interface ComposerAttachment {
   path: string
   name: string

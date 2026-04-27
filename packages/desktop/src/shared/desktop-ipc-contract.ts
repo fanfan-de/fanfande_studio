@@ -1,6 +1,9 @@
 import type {
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
+  AgentBuiltinToolSelection,
+  AgentBuiltinToolSummary,
+  AgentBuiltinToolsPayload,
   AgentConfig,
   AgentFolderWorkspace,
   AgentGlobalSkillFileDocument,
@@ -54,6 +57,9 @@ export const DESKTOP_WINDOW_STATE_EVENT_CHANNEL = "desktop:window-state-changed"
 export type {
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
+  AgentBuiltinToolSelection,
+  AgentBuiltinToolSummary,
+  AgentBuiltinToolsPayload,
   AgentConfig,
   AgentFolderWorkspace,
   AgentGlobalSkillFileDocument,
@@ -162,6 +168,9 @@ export type GlobalSkillTree = AgentGlobalSkillTree
 export type PromptPresetDocument = AgentPromptPresetDocument
 export type PromptPresetSelection = AgentPromptPresetSelection
 export type PromptPresetSummary = AgentPromptPresetSummary
+export type BuiltinToolSummary = AgentBuiltinToolSummary
+export type BuiltinToolSelection = AgentBuiltinToolSelection
+export type BuiltinToolsPayload = AgentBuiltinToolsPayload
 
 export interface DesktopInfo {
   platform: string
@@ -510,6 +519,14 @@ export interface DesktopIpcContract {
     input: { serverID: string }
     output: { serverID: string; removed: boolean }
   }
+  "desktop:get-builtin-tools": {
+    input: void
+    output: AgentBuiltinToolsPayload
+  }
+  "desktop:update-builtin-tool-selection": {
+    input: AgentBuiltinToolSelection
+    output: AgentBuiltinToolSelection
+  }
   "desktop:get-global-skills": {
     input: void
     output: AgentSkillInfo[]
@@ -768,6 +785,8 @@ export interface DesktopApiMethods {
   getGlobalMcpServers(): Promise<DesktopIpcOutput<"desktop:get-global-mcp-servers">>
   updateGlobalMcpServer(input: DesktopIpcInput<"desktop:update-global-mcp-server">): Promise<DesktopIpcOutput<"desktop:update-global-mcp-server">>
   deleteGlobalMcpServer(input: DesktopIpcInput<"desktop:delete-global-mcp-server">): Promise<DesktopIpcOutput<"desktop:delete-global-mcp-server">>
+  getBuiltinTools(): Promise<DesktopIpcOutput<"desktop:get-builtin-tools">>
+  updateBuiltinToolSelection(input: DesktopIpcInput<"desktop:update-builtin-tool-selection">): Promise<DesktopIpcOutput<"desktop:update-builtin-tool-selection">>
   getGlobalSkills(): Promise<DesktopIpcOutput<"desktop:get-global-skills">>
   getPromptPresets(): Promise<DesktopIpcOutput<"desktop:get-prompt-presets">>
   getPromptPresetSelection(): Promise<DesktopIpcOutput<"desktop:get-prompt-preset-selection">>

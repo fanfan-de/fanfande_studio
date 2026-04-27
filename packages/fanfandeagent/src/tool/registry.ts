@@ -48,10 +48,8 @@ export const state = Instance.state(async () => {
   }
 })
 
-export async function tools(): Promise<Tool.ToolInfo[]> {
-  const custom = await state().then((x) => x.custom)
-  const mcpTools = await Mcp.tools()
-  const result = [
+export async function builtinTools(): Promise<Tool.ToolInfo[]> {
+  return [
     AskUserQuestionTool,
     EnterPlanModeTool,
     ExitPlanModeTool,
@@ -76,6 +74,14 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
     LspHoverTool,
     LspWorkspaceSymbolsTool,
     ExecCommandTool,
+  ]
+}
+
+export async function tools(): Promise<Tool.ToolInfo[]> {
+  const custom = await state().then((x) => x.custom)
+  const mcpTools = await Mcp.tools()
+  const result = [
+    ...(await builtinTools()),
     ...mcpTools,
     ...custom,
   ]

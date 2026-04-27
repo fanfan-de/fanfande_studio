@@ -562,6 +562,18 @@ function normalizeSkillIDs(skillIDs: string[]) {
   return result
 }
 
+function normalizeToolSelection(tools: Record<string, boolean>) {
+  const result: Record<string, boolean> = {}
+
+  for (const [toolID, enabled] of Object.entries(tools)) {
+    const normalizedToolID = toolID.trim()
+    if (!normalizedToolID) continue
+    result[normalizedToolID] = enabled
+  }
+
+  return result
+}
+
 function normalizePromptOverrides(overrides: Record<string, string>) {
   const result: Record<string, string> = {}
 
@@ -745,6 +757,28 @@ export async function setSelectedSkillIDs(configID: string, skillIDs: string[]) 
   }
 
   return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+export async function getToolSelection(configID = GLOBAL_CONFIG_ID): Promise<{ tools: Record<string, boolean> }> {
+  const config = readConfig(normalizeConfigID(configID))
+  return {
+    tools: config.tools ? normalizeToolSelection(config.tools) : {},
+  }
+}
+
+export async function setToolSelection(configID: string, tools: Record<string, boolean>) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const normalizedTools = normalizeToolSelection(tools)
+  const next: Info = {
+    ...current,
+    tools: Object.keys(normalizedTools).length > 0 ? normalizedTools : undefined,
+  }
+
+  const config = writeConfig(normalizedConfigID, Info.parse(next))
+  return {
+    tools: config.tools ? normalizeToolSelection(config.tools) : {},
+  }
 }
 
 export async function getPromptOverrides(configID = GLOBAL_CONFIG_ID): Promise<Record<string, string>> {

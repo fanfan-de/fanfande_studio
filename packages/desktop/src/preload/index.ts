@@ -19,6 +19,8 @@ import type {
   AgentSideChatLink,
   AppearanceConfigDocument,
   AppearanceConfigSnapshot,
+  BuiltinToolSelection,
+  BuiltinToolsPayload,
   DesktopIpcChannel,
   DesktopIpcInput,
   DesktopIpcOutput,
@@ -373,6 +375,10 @@ try {
         serverID: string
         removed: boolean
       }>,
+    getBuiltinTools: () =>
+      invokeDesktop("desktop:get-builtin-tools") as Promise<BuiltinToolsPayload>,
+    updateBuiltinToolSelection: (input: BuiltinToolSelection) =>
+      invokeDesktop("desktop:update-builtin-tool-selection", input) as Promise<BuiltinToolSelection>,
     getGlobalSkills: () =>
       invokeDesktop("desktop:get-global-skills") as Promise<SkillInfo[]>,
     getPromptPresets: () =>

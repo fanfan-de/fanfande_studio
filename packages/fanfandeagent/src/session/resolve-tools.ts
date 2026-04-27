@@ -1,5 +1,6 @@
 import { tool, type ToolSet } from "ai"
 import * as Agent from "#agent/agent.ts"
+import * as Config from "#config/config.ts"
 import * as Session from "#session/session.ts"
 import { Instance } from "#project/instance.ts"
 import * as Permission from "#permission/permission.ts"
@@ -40,14 +41,34 @@ function isToolAllowedForAgent(tool: Tool.ToolInfo, agent: Agent.AgentInfo) {
   return true
 }
 
+function isToolGloballyEnabled(tool: Tool.ToolInfo, selection: Record<string, boolean>) {
+  const matches = [tool.id, ...(tool.aliases ?? [])]
+    .map((name) => selection[name])
+    .filter((value): value is boolean => typeof value === "boolean")
+
+  if (matches.includes(false)) {
+    return false
+  }
+
+  return true
+}
+
 export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
   // Load registered tools and build the ToolSet expected by the AI SDK.
-  const registry = await ToolRegistry.tools()
+  const [registry, builtinRegistry, globalToolSelection] = await Promise.all([
+    ToolRegistry.tools(),
+    ToolRegistry.builtinTools(),
+    Config.getToolSelection(Config.GLOBAL_CONFIG_ID),
+  ])
+  const builtinToolIDs = new Set(builtinRegistry.map((tool) => tool.id))
   const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null
   const sideChatReadOnly = Session.isSideChatSession(session)
   const tools: ToolSet = {}
 
   for (const item of registry) {
+    if (builtinToolIDs.has(item.id) && !isToolGloballyEnabled(item, globalToolSelection.tools)) {
+      continue
+    }
     if (!isToolAllowedForAgent(item, input.agent)) {
       continue
     }

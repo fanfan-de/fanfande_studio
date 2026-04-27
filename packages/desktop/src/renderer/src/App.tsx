@@ -224,6 +224,8 @@ export function App() {
     activeMcpServerDiagnostic,
     archivedSessions,
     archivedSessionsError,
+    builtinTools,
+    builtinToolsError,
     catalog,
     closeSettings,
     deleteArchivedSession,
@@ -236,15 +238,18 @@ export function App() {
     deletingProviderID,
     isCreatingPromptPreset,
     isLoading,
+    isLoadingBuiltinTools,
     isLoadingPromptPreset,
     isLoadingPrompts,
     isLoadingArchivedSessions,
     isOpen,
     isPromptDirty,
+    isBuiltinToolSelectionDirty,
     isSystemPromptPresetDirty,
     isPlanModePromptPresetDirty,
     isRefreshingProviderCatalog,
     isSavingPromptPresetSelection,
+    isSavingBuiltinTools,
     isSavingSelection,
     loadError,
     mcpServerDraft,
@@ -264,11 +269,13 @@ export function App() {
     createPromptPreset,
     deletePromptPreset,
     refreshProviderCatalog,
+    resetBuiltinTools,
     resetPromptPreset,
     resettingPromptPresetID,
     restoringArchivedSessionID,
     savedSelection,
     restoreArchivedSession,
+    saveBuiltinTools,
     saveMcpServer,
     savePromptPreset,
     savePromptPresetSelection,
@@ -287,6 +294,7 @@ export function App() {
     selectMcpServer,
     selectionDraft,
     setMcpServerDraftValue,
+    setBuiltinToolEnabled,
     setPromptDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
@@ -778,6 +786,8 @@ export function App() {
           activeMcpServerDiagnostic={activeMcpServerDiagnostic}
           archivedSessions={archivedSessions}
           archivedSessionsError={archivedSessionsError}
+          builtinTools={builtinTools}
+          builtinToolsError={builtinToolsError}
           catalog={catalog}
           deletingArchivedSessionID={deletingArchivedSessionID}
           deletingMcpServerID={deletingMcpServerID}
@@ -797,15 +807,18 @@ export function App() {
           isDebugLineColorsEnabled={isDebugLineColorsEnabled}
           isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
           isLoading={isLoading}
+          isLoadingBuiltinTools={isLoadingBuiltinTools}
           isLoadingPromptPreset={isLoadingPromptPreset}
           isLoadingPrompts={isLoadingPrompts}
           isLoadingArchivedSessions={isLoadingArchivedSessions}
           isOpen={isOpen}
           isPromptDirty={isPromptDirty}
+          isBuiltinToolSelectionDirty={isBuiltinToolSelectionDirty}
           isSystemPromptPresetDirty={isSystemPromptPresetDirty}
           isPlanModePromptPresetDirty={isPlanModePromptPresetDirty}
           isRefreshingProviderCatalog={isRefreshingProviderCatalog}
           isSavingPromptPresetSelection={isSavingPromptPresetSelection}
+          isSavingBuiltinTools={isSavingBuiltinTools}
           isSavingSelection={isSavingSelection}
           loadError={loadError}
           mcpServerDraft={mcpServerDraft}
@@ -843,6 +856,7 @@ export function App() {
           onDebugLineColorsChange={handleDebugLineColorsChange}
           onDebugUiRegionsChange={handleDebugUiRegionsChange}
           onClose={closeSettings}
+          onBuiltinToolToggle={setBuiltinToolEnabled}
           onDeleteArchivedSession={deleteArchivedSession}
           onDeleteMcpServer={deleteMcpServer}
           onDeleteProviderAuthSession={deleteProviderAuthSession}
@@ -857,8 +871,10 @@ export function App() {
           onProviderAuthMethodChange={setProviderAuthMethod}
           onProviderDraftChange={setProviderDraftValue}
           onRefreshProviderCatalog={refreshProviderCatalog}
+          onResetBuiltinTools={resetBuiltinTools}
           onResetPromptPreset={resetPromptPreset}
           onRestoreArchivedSession={restoreArchivedSession}
+          onSaveBuiltinTools={saveBuiltinTools}
           onSaveMcpServer={saveMcpServer}
           onSavePromptPreset={savePromptPreset}
           onSaveProviderApiKey={saveProviderApiKey}

@@ -7,6 +7,7 @@ import { ApiError } from "#server/error.ts"
 import * as PromptPresets from "#session/prompt-presets.ts"
 import * as Skill from "#skill/skill.ts"
 import * as SkillManager from "#skill/manage.ts"
+import * as ToolRegistry from "#tool/registry.ts"
 
 export const SkillFileQuery = z.object({
   path: z.string().min(1),
@@ -58,6 +59,12 @@ export const PromptPresetSelectionBody = z.object({
   systemPromptPresetID: z.string().min(1),
   planModePromptPresetID: z.string().min(1),
 })
+
+export const UpdateBuiltinToolSelectionBody = z
+  .object({
+    tools: z.record(z.string(), z.boolean()),
+  })
+  .strict()
 
 function parseModelReference(value: string) {
   const [providerID, ...rest] = value.split("/")
@@ -279,6 +286,51 @@ export async function removeMcpServer(serverID: string) {
     serverID,
     removed: Boolean(await Config.removeMcpServer(Config.GLOBAL_CONFIG_ID, serverID)),
   }
+}
+
+export async function listBuiltinTools() {
+  const [items, selection] = await Promise.all([
+    ToolRegistry.builtinTools(),
+    Config.getToolSelection(Config.GLOBAL_CONFIG_ID),
+  ])
+
+  return {
+    items: await Promise.all(
+      items.map(async (item) => {
+        const runtime = await item.init()
+        const explicitStates = [item.id, ...(item.aliases ?? [])]
+          .map((name) => selection.tools[name])
+          .filter((value): value is boolean => typeof value === "boolean")
+
+        return {
+          id: item.id,
+          title: runtime.title ?? item.title ?? item.id,
+          description: runtime.description,
+          aliases: item.aliases ?? [],
+          capabilities: item.capabilities ?? {},
+          enabled: !explicitStates.includes(false),
+        }
+      }),
+    ),
+    selection,
+  }
+}
+
+export async function updateBuiltinToolSelection(input: z.infer<typeof UpdateBuiltinToolSelectionBody>) {
+  const items = await ToolRegistry.builtinTools()
+  const knownToolIDs = new Set(items.map((item) => item.id))
+  const tools: Record<string, boolean> = {}
+
+  for (const [toolID, enabled] of Object.entries(input.tools)) {
+    const normalizedToolID = toolID.trim()
+    if (!normalizedToolID) continue
+    if (!knownToolIDs.has(normalizedToolID)) {
+      throw new ApiError(400, "UNKNOWN_BUILTIN_TOOL", `Unknown built-in tool id '${normalizedToolID}'.`)
+    }
+    tools[normalizedToolID] = enabled
+  }
+
+  return Config.setToolSelection(Config.GLOBAL_CONFIG_ID, tools)
 }
 
 export async function listPromptPresets() {

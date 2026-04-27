@@ -30,6 +30,8 @@ import { safeWarn } from "./safe-console"
 import type {
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
+  AgentBuiltinToolSelection,
+  AgentBuiltinToolsPayload,
   AgentEnvelope,
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillRenameResult,
@@ -1199,6 +1201,26 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         method: "DELETE",
       },
     )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-builtin-tools", async () => {
+    const result = await requestAgentJSON<AgentBuiltinToolsPayload>("/api/tools/builtins")
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:update-builtin-tool-selection", async (_event, input: AgentBuiltinToolSelection) => {
+    const result = await requestAgentJSON<AgentBuiltinToolSelection>("/api/tools/builtins/selection", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        tools: input.tools,
+      }),
+    })
 
     return result.data
   })
