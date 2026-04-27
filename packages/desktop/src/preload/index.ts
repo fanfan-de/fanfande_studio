@@ -49,6 +49,7 @@ import type {
   WorkspaceFileChangeIPCEvent,
   WorkspaceFileDocument,
   WorkspaceFileSearchResult,
+  WorkspaceDiffFileRestoreResult,
 } from "../shared/desktop-ipc-contract"
 import {
   DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
@@ -248,6 +249,8 @@ try {
           patch?: string
         }>
       }>,
+    restoreWorkspaceDiffFile: (input: { directory: string; file: string }) =>
+      invokeDesktop("desktop:restore-workspace-diff-file", input) as Promise<WorkspaceDiffFileRestoreResult>,
     getSessionRuntimeDebug: (input: { sessionID: string; limit?: number; turns?: number }) =>
       invokeDesktop("desktop:get-session-runtime-debug", input) as Promise<AgentSessionRuntimeDebugSnapshot>,
     agentSession: {

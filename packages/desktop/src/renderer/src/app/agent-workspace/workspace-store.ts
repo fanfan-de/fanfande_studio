@@ -182,6 +182,9 @@ export function createWorkspaceStore({
   initialCreateSessionTab,
   initialWorkbenchLayout,
 }: CreateWorkspaceStoreOptions) {
+  const shouldUseSeedData = !hasFolderWorkspaceLoader
+  const initialWorkspace = shouldUseSeedData ? initialSelection.workspace : null
+
   return createStore<WorkspaceStore>((set) => ({
     workbench: {
       workbenchLayout: initialWorkbenchLayout,
@@ -191,14 +194,14 @@ export function createWorkspaceStore({
       canLoadSessionHistory: false,
       createSessionTabs: initialCreateSessionTab ? [initialCreateSessionTab] : [],
       deletingSessionID: null,
-      expandedFolderID: initialSelection.workspace?.id ?? null,
+      expandedFolderID: initialWorkspace?.id ?? null,
       hoveredFolderID: null,
       isCreatingProject: false,
       isInitialWorkspaceLoadPending: hasFolderWorkspaceLoader,
       leftSidebarView: "workspace",
       rightSidebarView: "changes",
-      selectedFolderID: initialSelection.workspace?.id ?? null,
-      workspaces: seedWorkspaces,
+      selectedFolderID: initialWorkspace?.id ?? null,
+      workspaces: shouldUseSeedData ? seedWorkspaces : [],
     },
     composer: {
       composerAttachmentsByTabKey: {},
@@ -221,7 +224,7 @@ export function createWorkspaceStore({
     agentStream: {
       agentSessions: {},
       contextUsageBySession: {},
-      conversations: initialConversations,
+      conversations: shouldUseSeedData ? initialConversations : {},
       pendingPermissionRequestsBySession: {},
       permissionRequestActionError: null,
       permissionRequestActionRequestID: null,

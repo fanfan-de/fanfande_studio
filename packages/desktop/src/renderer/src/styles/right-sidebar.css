@@ -848,11 +848,11 @@
 
 .right-sidebar-changes-panel {
   min-height: 100%;
-  padding: 16px 14px 18px;
+  padding: 10px 14px 18px;
   border: 0;
   background: transparent;
   align-content: start;
-  gap: 14px;
+  gap: 10px;
 }
 
 .right-sidebar-changes-panel .right-sidebar-panel-header {
@@ -961,7 +961,6 @@
 
 .right-sidebar-changes-panel .right-sidebar-change-list {
   gap: 0;
-  border-top: 1px solid var(--seg-divider);
 }
 
 .right-sidebar-changes-panel .right-sidebar-change-row {
@@ -973,13 +972,24 @@
   overflow: visible;
 }
 
+.right-sidebar-change-line {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
 .right-sidebar-changes-panel .right-sidebar-change-row.is-expanded {
   background: var(--mix-seg-panel-92-transparent-8);
 }
 
 .right-sidebar-changes-panel .right-sidebar-change-toggle {
-  padding: 12px 0;
-  gap: 10px;
+  min-width: 0;
+  padding: 10px 0;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
 }
 
@@ -993,31 +1003,79 @@
   outline-offset: 2px;
 }
 
-.right-sidebar-changes-panel .right-sidebar-change-copy {
-  gap: 3px;
-}
-
-.right-sidebar-change-title-row {
+.right-sidebar-change-summary {
   min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 6px;
 }
 
-.right-sidebar-changes-panel .right-sidebar-change-copy strong {
+.right-sidebar-change-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--seg-text-1);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.45;
 }
 
-.right-sidebar-changes-panel .right-sidebar-change-meta {
-  gap: 6px;
+.right-sidebar-change-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .right-sidebar-changes-panel .right-sidebar-change-stat {
   color: var(--seg-text-3);
-  font-size: 11px;
+}
+
+.right-sidebar-changes-panel .right-sidebar-change-stat.is-add {
+  color: var(--seg-success);
+}
+
+.right-sidebar-changes-panel .right-sidebar-change-stat.is-remove {
+  color: var(--seg-danger);
+}
+
+.right-sidebar-change-restore-button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--seg-text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.right-sidebar-change-restore-button:hover,
+.right-sidebar-change-restore-button:focus-visible {
+  border-color: var(--seg-divider);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+}
+
+.right-sidebar-change-restore-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.right-sidebar-change-restore-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .right-sidebar-changes-panel .right-sidebar-diff-preview,

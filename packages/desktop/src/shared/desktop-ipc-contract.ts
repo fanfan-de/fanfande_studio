@@ -135,6 +135,10 @@ export type GitBranchSummary = {
   kind: "local" | "remote"
   current: boolean
 }
+export type WorkspaceDiffFileRestoreResult = {
+  directory: string
+  file: string
+}
 export type McpServerSummary = AgentMcpServerSummary
 export type McpServerDiagnostic = AgentMcpServerDiagnostic
 export type McpServerInput = AgentMcpServerSummary extends infer Server
@@ -437,6 +441,10 @@ export interface DesktopIpcContract {
   "desktop:get-session-diff": {
     input: { sessionID: string }
     output: AgentSessionDiffSummary
+  }
+  "desktop:restore-workspace-diff-file": {
+    input: { directory: string; file: string }
+    output: WorkspaceDiffFileRestoreResult
   }
   "desktop:get-session-runtime-debug": {
     input: { sessionID: string; limit?: number; turns?: number }
@@ -742,6 +750,7 @@ export interface DesktopApiMethods {
   restoreArchivedSession(input: DesktopIpcInput<"desktop:restore-archived-session">): Promise<DesktopIpcOutput<"desktop:restore-archived-session">>
   deleteArchivedSession(input: DesktopIpcInput<"desktop:delete-archived-session">): Promise<DesktopIpcOutput<"desktop:delete-archived-session">>
   getSessionDiff(input: DesktopIpcInput<"desktop:get-session-diff">): Promise<DesktopIpcOutput<"desktop:get-session-diff">>
+  restoreWorkspaceDiffFile(input: DesktopIpcInput<"desktop:restore-workspace-diff-file">): Promise<DesktopIpcOutput<"desktop:restore-workspace-diff-file">>
   getSessionRuntimeDebug(input: DesktopIpcInput<"desktop:get-session-runtime-debug">): Promise<DesktopIpcOutput<"desktop:get-session-runtime-debug">>
   agentSession: DesktopAgentSessionApi
   getGlobalProviderCatalog(): Promise<DesktopIpcOutput<"desktop:get-global-provider-catalog">>

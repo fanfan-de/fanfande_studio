@@ -119,7 +119,7 @@ export function App() {
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
     handleActiveSessionDiffFileSelect,
-    handleActiveSessionDiffRefresh,
+    handleActiveSessionDiffFileRestore,
     handleActiveSessionRuntimeDebugRefresh,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
@@ -750,7 +750,7 @@ export function App() {
               selectedDiffFile={leftSidebarView === "skills" ? null : activeSessionSelectedDiffFile}
               activeView={rightSidebarView}
               onDiffFileSelect={handleActiveSessionDiffFileSelect}
-              onDiffRefresh={handleActiveSessionDiffRefresh}
+              onDiffFileRestore={handleActiveSessionDiffFileRestore}
               onPreviewAddComment={handlePreviewAddComment}
               onPreviewDeleteComment={handlePreviewDeleteComment}
               onPreviewDraftUrlChange={handlePreviewDraftUrlChange}

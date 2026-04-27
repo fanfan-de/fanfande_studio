@@ -35,6 +35,7 @@ import type { WorkspaceStateUpdater } from "./workspace-store"
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 
 interface UseReviewPanelControllerOptions {
+  activeSessionDirectory: string | null
   activeSessionID: string | null
   activeTabKey: string | null
   activeWorkspaceFileScopeDirectory: string | null
@@ -57,6 +58,7 @@ interface UseReviewPanelControllerOptions {
 }
 
 export function useReviewPanelController({
+  activeSessionDirectory,
   activeSessionID,
   activeTabKey,
   activeWorkspaceFileScopeDirectory,
@@ -460,6 +462,26 @@ export function useReviewPanelController({
     await loadSessionDiffForSession(sessionID)
   }
 
+  async function handleActiveSessionDiffFileRestore(file: string, sessionID = activeSessionID) {
+    const restoreWorkspaceDiffFile = window.desktop?.restoreWorkspaceDiffFile
+    if (!restoreWorkspaceDiffFile) {
+      throw new Error("Workspace diff restore bridge is unavailable.")
+    }
+    if (!sessionID || !activeSessionDirectory) {
+      throw new Error("Select a session before restoring a file.")
+    }
+
+    await restoreWorkspaceDiffFile({
+      directory: activeSessionDirectory,
+      file,
+    })
+    setSelectedDiffFileBySession((prev) => ({
+      ...prev,
+      [sessionID]: null,
+    }))
+    await loadSessionDiffForSession(sessionID)
+  }
+
   async function handleActiveSessionRuntimeDebugRefresh(sessionID = activeSessionID) {
     if (!sessionID) return
     await loadSessionRuntimeDebugForSession(sessionID)
@@ -477,6 +499,7 @@ export function useReviewPanelController({
 
   return {
     handleActiveSessionDiffFileSelect,
+    handleActiveSessionDiffFileRestore,
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handlePreviewAddComment,

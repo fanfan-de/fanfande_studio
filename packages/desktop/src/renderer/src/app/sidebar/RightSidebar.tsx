@@ -42,7 +42,7 @@ interface RightSidebarProps {
   selectedDiffFile: string | null
   activeView: RightSidebarView
   onDiffFileSelect: (file: string | null) => void
-  onDiffRefresh: () => void | Promise<void>
+  onDiffFileRestore: (file: string) => void | Promise<void>
   onPreviewAddComment: (input: { x: number; y: number; text: string; anchor?: PreviewComment["anchor"] }) => void
   onPreviewDeleteComment: (commentID: string) => void
   onPreviewDraftUrlChange: (value: string) => void
@@ -88,7 +88,7 @@ export function RightSidebar({
   selectedDiffFile,
   activeView,
   onDiffFileSelect,
-  onDiffRefresh,
+  onDiffFileRestore,
   onPreviewAddComment,
   onPreviewDeleteComment,
   onPreviewDraftUrlChange,
@@ -149,12 +149,11 @@ export function RightSidebar({
         {activeView === "changes" ? (
           <ChangesPanel
             activeSession={activeSession}
-            activeSessionDirectory={activeSessionDirectory}
             activeSessionDiff={activeSessionDiff}
             activeSessionDiffState={activeSessionDiffState}
             selectedDiffFile={selectedDiffFile}
             onDiffFileSelect={onDiffFileSelect}
-            onDiffRefresh={onDiffRefresh}
+            onDiffFileRestore={onDiffFileRestore}
           />
         ) : null}
 

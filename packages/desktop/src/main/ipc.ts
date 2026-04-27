@@ -70,7 +70,7 @@ import type {
   WindowAction,
 } from "./types"
 import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sendWindowState } from "./window-state"
-import { getWorkspaceGitDiff } from "./workspace-diff"
+import { getWorkspaceGitDiff, restoreWorkspaceDiffFile } from "./workspace-diff"
 import { readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
 import { WorkspaceWatchManager } from "./workspace-watch"
 
@@ -955,6 +955,11 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     const result = await requestAgentJSON<AgentSessionDiffSummary>(`/api/sessions/${encodeURIComponent(sessionID)}/diff`)
     return result.data
   })
+
+  handleDesktopIpc(
+    "desktop:restore-workspace-diff-file",
+    async (_event, input: { directory: string; file: string }) => restoreWorkspaceDiffFile(input),
+  )
 
   handleDesktopIpc(
     "desktop:get-session-runtime-debug",

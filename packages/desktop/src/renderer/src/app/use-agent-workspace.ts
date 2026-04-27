@@ -29,17 +29,32 @@ interface UseAgentWorkspaceOptions {
   platform: string
 }
 
-const initialCreateSessionTab = initialSelection.session === null
-  ? createCreateSessionTab(initialSelection.workspace?.id ?? null)
-  : null
-const initialWorkbenchTab =
-  initialSelection.session !== null
-    ? createSessionWorkbenchTab(initialSelection.session.id)
-    : initialCreateSessionTab
-      ? createCreateSessionWorkbenchTab(initialCreateSessionTab.id)
-      : null
-const initialWorkbenchPane = initialWorkbenchTab ? createWorkbenchPane([initialWorkbenchTab]) : null
-const initialWorkbenchLayout = createWorkbenchLayoutFromLegacyPanes(initialWorkbenchPane ? [initialWorkbenchPane] : [])
+function createInitialWorkspaceState(shouldUseSeedData: boolean) {
+  if (!shouldUseSeedData) {
+    return {
+      initialComposerTabKey: null,
+      initialCreateSessionTab: null,
+      initialWorkbenchLayout: createWorkbenchLayoutFromLegacyPanes([]),
+    }
+  }
+
+  const initialCreateSessionTab = initialSelection.session === null
+    ? createCreateSessionTab(initialSelection.workspace?.id ?? null)
+    : null
+  const initialWorkbenchTab =
+    initialSelection.session !== null
+      ? createSessionWorkbenchTab(initialSelection.session.id)
+      : initialCreateSessionTab
+        ? createCreateSessionWorkbenchTab(initialCreateSessionTab.id)
+        : null
+  const initialWorkbenchPane = initialWorkbenchTab ? createWorkbenchPane([initialWorkbenchTab]) : null
+
+  return {
+    initialComposerTabKey: initialWorkbenchTab ? getWorkbenchTabKey(initialWorkbenchTab) : null,
+    initialCreateSessionTab,
+    initialWorkbenchLayout: createWorkbenchLayoutFromLegacyPanes(initialWorkbenchPane ? [initialWorkbenchPane] : []),
+  }
+}
 
 export function useAgentWorkspace({
   agentConnected,
@@ -49,11 +64,14 @@ export function useAgentWorkspace({
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
   const workspaceStoreRef = useRef<WorkspaceStoreApi | null>(null)
   if (!workspaceStoreRef.current) {
+    const hasFolderWorkspaceLoader = Boolean(window.desktop?.listFolderWorkspaces)
+    const initialWorkspaceState = createInitialWorkspaceState(!hasFolderWorkspaceLoader)
+
     workspaceStoreRef.current = createWorkspaceStore({
-      hasFolderWorkspaceLoader: Boolean(window.desktop?.listFolderWorkspaces),
-      initialComposerTabKey: initialWorkbenchTab ? getWorkbenchTabKey(initialWorkbenchTab) : null,
-      initialCreateSessionTab,
-      initialWorkbenchLayout,
+      hasFolderWorkspaceLoader,
+      initialComposerTabKey: initialWorkspaceState.initialComposerTabKey,
+      initialCreateSessionTab: initialWorkspaceState.initialCreateSessionTab,
+      initialWorkbenchLayout: initialWorkspaceState.initialWorkbenchLayout,
     })
   }
   const workspaceStore = workspaceStoreRef.current
@@ -495,7 +513,9 @@ export function useAgentWorkspace({
     handleWorkspaceFileCommentSubmit,
     handleWorkspaceFileQueryChange,
     handleWorkspaceFileSelect,
+    handleActiveSessionDiffFileRestore,
   } = useReviewPanelController({
+    activeSessionDirectory,
     activeSessionID,
     activeTabKey,
     activeWorkspaceFileScopeDirectory,
@@ -603,6 +623,7 @@ export function useAgentWorkspace({
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleActiveSessionDiffFileSelect,
+    handleActiveSessionDiffFileRestore,
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handlePreviewAddComment,

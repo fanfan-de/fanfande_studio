@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react"
-import { ChevronDownIcon, ChevronRightIcon } from "../icons"
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
+import { ChevronDownIcon, ChevronRightIcon, ResetIcon } from "../icons"
 import type { SessionDiffState, SessionDiffSummary, SessionSummary } from "../types"
-import { formatTime } from "../utils"
 
 type DiffPreviewLineTone = "add" | "remove" | "context"
-type DiffFilterKey = "all" | "added" | "modified" | "deleted" | "renamed"
 
 interface ParsedDiffRow {
   content: string
@@ -25,91 +23,6 @@ const CHANGES_IDLE_STATE: SessionDiffState = {
   errorMessage: null,
   updatedAt: null,
   isStale: false,
-}
-
-const DIFF_FILTER_OPTIONS: Array<{ key: DiffFilterKey; label: string }> = [
-  { key: "all", label: "All" },
-  { key: "added", label: "Added" },
-  { key: "modified", label: "Modified" },
-  { key: "deleted", label: "Deleted" },
-  { key: "renamed", label: "Renamed" },
-]
-
-function getDiffChangeType(diff: SessionDiffSummary["diffs"][number]): Exclude<DiffFilterKey, "all"> {
-  const patch = diff.patch ?? ""
-
-  if (/^rename from /m.test(patch) || /^rename to /m.test(patch)) return "renamed"
-  if (/^new file mode /m.test(patch)) return "added"
-  if (/^deleted file mode /m.test(patch)) return "deleted"
-  if (diff.additions > 0 && diff.deletions === 0) return "added"
-  if (diff.deletions > 0 && diff.additions === 0) return "deleted"
-  return "modified"
-}
-
-function formatDiffChangeTypeLabel(type: Exclude<DiffFilterKey, "all">) {
-  switch (type) {
-    case "added":
-      return "Added"
-    case "deleted":
-      return "Deleted"
-    case "renamed":
-      return "Renamed"
-    default:
-      return "Modified"
-  }
-}
-
-function formatDiffStateLabel(status: SessionDiffState["status"]) {
-  switch (status) {
-    case "loading":
-      return "Loading"
-    case "refreshing":
-      return "Refreshing"
-    case "ready":
-      return "Up to date"
-    case "empty":
-      return "Clean"
-    case "error":
-      return "Refresh failed"
-    default:
-      return "Idle"
-  }
-}
-
-function buildDiffStatusDescription(input: {
-  activeSession: SessionSummary | null
-  diffState: SessionDiffState
-  diffSummary: SessionDiffSummary | null
-}) {
-  if (!input.activeSession) {
-    return "Select a session to inspect changes."
-  }
-
-  if (input.diffState.status === "loading") {
-    return "Loading current workspace changes."
-  }
-
-  if (input.diffState.status === "refreshing") {
-    return input.diffState.updatedAt
-      ? `Refreshing. Last synced at ${formatTime(input.diffState.updatedAt)}.`
-      : "Refreshing current workspace changes."
-  }
-
-  if (input.diffState.status === "error") {
-    return input.diffState.updatedAt
-      ? `Refresh failed. Showing the snapshot from ${formatTime(input.diffState.updatedAt)}.`
-      : "Couldn't load the workspace diff."
-  }
-
-  if (input.diffState.updatedAt) {
-    return `Synced at ${formatTime(input.diffState.updatedAt)}.`
-  }
-
-  if (input.diffSummary?.body) {
-    return input.diffSummary.body
-  }
-
-  return "Inspect the current workspace changes for this session."
 }
 
 function formatDiffRange(start: number, count: number) {
@@ -249,49 +162,34 @@ function DiffPreview({ file, patch, isFullHeight, onToggleFullHeight }: DiffPrev
 
 export interface ChangesPanelProps {
   activeSession: SessionSummary | null
-  activeSessionDirectory: string | null
   activeSessionDiff: SessionDiffSummary | null
   activeSessionDiffState?: SessionDiffState
   selectedDiffFile: string | null
   onDiffFileSelect: (file: string | null) => void
-  onDiffRefresh: () => void | Promise<void>
+  onDiffFileRestore: (file: string) => void | Promise<void>
 }
 
 export function ChangesPanel({
   activeSession,
-  activeSessionDirectory,
   activeSessionDiff,
   activeSessionDiffState,
   selectedDiffFile,
   onDiffFileSelect,
-  onDiffRefresh,
+  onDiffFileRestore,
 }: ChangesPanelProps) {
-  const [diffFilter, setDiffFilter] = useState<DiffFilterKey>("all")
-  const [diffQuery, setDiffQuery] = useState("")
   const [isSelectedDiffFullHeight, setIsSelectedDiffFullHeight] = useState(false)
+  const [restoringFile, setRestoringFile] = useState<string | null>(null)
+  const [restoreErrorMessage, setRestoreErrorMessage] = useState<string | null>(null)
 
-  const searchInputRef = useRef<HTMLInputElement | null>(null)
   const rowRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
 
   const diffState = activeSessionDiffState ?? CHANGES_IDLE_STATE
-  const changedFilesCount = activeSessionDiff?.stats?.files ?? activeSessionDiff?.diffs.length ?? 0
-  const additionsCount = activeSessionDiff?.stats?.additions ?? 0
-  const deletionsCount = activeSessionDiff?.stats?.deletions ?? 0
+  const diffs = activeSessionDiff?.diffs ?? []
   const hasWorkspaceChanges = Boolean(activeSessionDiff && activeSessionDiff.diffs.length > 0)
 
-  const normalizedQuery = diffQuery.trim().toLowerCase()
-  const filteredDiffs = useMemo(() => {
-    return (activeSessionDiff?.diffs ?? []).filter((diff) => {
-      const diffType = getDiffChangeType(diff)
-      if (diffFilter !== "all" && diffType !== diffFilter) return false
-      if (!normalizedQuery) return true
-      return diff.file.toLowerCase().includes(normalizedQuery)
-    })
-  }, [activeSessionDiff, diffFilter, normalizedQuery])
-
   useEffect(() => {
-    setDiffFilter("all")
-    setDiffQuery("")
+    setRestoringFile(null)
+    setRestoreErrorMessage(null)
   }, [activeSession?.id])
 
   useEffect(() => {
@@ -306,16 +204,10 @@ export function ChangesPanel({
     }
   }, [activeSessionDiff, onDiffFileSelect, selectedDiffFile])
 
-  const statusDescription = buildDiffStatusDescription({
-    activeSession,
-    diffState,
-    diffSummary: activeSessionDiff,
-  })
-
   function focusRowAtIndex(index: number) {
-    if (filteredDiffs.length === 0) return
-    const clamped = Math.max(0, Math.min(filteredDiffs.length - 1, index))
-    const target = filteredDiffs[clamped]
+    if (diffs.length === 0) return
+    const clamped = Math.max(0, Math.min(diffs.length - 1, index))
+    const target = diffs[clamped]
     if (!target) return
     const node = rowRefs.current.get(target.file)
     node?.focus()
@@ -337,7 +229,7 @@ export function ChangesPanel({
         return
       case "End":
         event.preventDefault()
-        focusRowAtIndex(filteredDiffs.length - 1)
+        focusRowAtIndex(diffs.length - 1)
         return
       default:
         return
@@ -345,36 +237,25 @@ export function ChangesPanel({
   }
 
   function handleSectionKeyDown(event: KeyboardEvent<HTMLElement>) {
-    const target = event.target as HTMLElement | null
-    const activeTag = target?.tagName
-    const isTypingInField =
-      activeTag === "INPUT" || activeTag === "TEXTAREA" || (target?.isContentEditable ?? false)
-
-    if (event.key === "/" && !isTypingInField) {
-      if (!hasWorkspaceChanges) return
+    if (event.key === "Escape" && selectedDiffFile) {
       event.preventDefault()
-      searchInputRef.current?.focus()
-      searchInputRef.current?.select()
-      return
+      onDiffFileSelect(null)
     }
+  }
 
-    if (event.key === "Escape") {
-      if (isTypingInField && target === searchInputRef.current) {
-        if (diffQuery.length > 0) {
-          event.preventDefault()
-          setDiffQuery("")
-          return
-        }
-        event.preventDefault()
-        searchInputRef.current?.blur()
-        focusRowAtIndex(0)
-        return
-      }
-      if (selectedDiffFile) {
-        event.preventDefault()
-        onDiffFileSelect(null)
-        return
-      }
+  async function handleRestoreClick(event: MouseEvent<HTMLButtonElement>, file: string) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    setRestoringFile(file)
+    setRestoreErrorMessage(null)
+    try {
+      await onDiffFileRestore(file)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setRestoreErrorMessage(message)
+    } finally {
+      setRestoringFile((current) => current === file ? null : current)
     }
   }
 
@@ -390,131 +271,71 @@ export function ChangesPanel({
 
   return (
     <section className="right-sidebar-section right-sidebar-changes-panel" onKeyDown={handleSectionKeyDown}>
-      <div className="right-sidebar-panel-header">
-        <div className="right-sidebar-panel-copy">
-          <span className="label">Changes</span>
-          <h3>Workspace diff</h3>
-          {activeSessionDirectory ? (
-            <p className="right-sidebar-scope">
-              <code>{activeSessionDirectory}</code>
-            </p>
-          ) : null}
-        </div>
-        <div className="right-sidebar-panel-actions">
-          <button
-            type="button"
-            className="secondary-button right-sidebar-refresh-button"
-            aria-label="Refresh workspace diff"
-            disabled={!activeSession || diffState.status === "loading" || diffState.status === "refreshing"}
-            onClick={() => void onDiffRefresh()}
-          >
-            {diffState.status === "loading" || diffState.status === "refreshing" ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-      </div>
-
-      <div className="right-sidebar-status-row">
-        <span className={`settings-badge right-sidebar-status-badge is-${diffState.status}`}>{formatDiffStateLabel(diffState.status)}</span>
-        {activeSession ? (
-          <span className="right-sidebar-status-summary-inline">
-            {String(changedFilesCount)} files | +{additionsCount} -{deletionsCount}
-          </span>
-        ) : null}
-        {diffState.isStale ? <span className="settings-badge">Stale</span> : null}
-      </div>
-
-      <p className="right-sidebar-status-copy">{statusDescription}</p>
-      {activeSessionDiff?.title && activeSessionDiff.title !== activeSessionDiff.body ? (
-        <p className="right-sidebar-status-summary">{activeSessionDiff.title}</p>
-      ) : null}
       {diffState.errorMessage ? (
         <p className="right-sidebar-status-error" role="alert">{diffState.errorMessage}</p>
+      ) : null}
+      {restoreErrorMessage ? (
+        <p className="right-sidebar-status-error" role="alert">{restoreErrorMessage}</p>
       ) : null}
 
       {activeSession ? (
         <>
           {hasWorkspaceChanges ? (
-            <>
-              <div className="right-sidebar-toolbar right-sidebar-changes-toolbar">
-                <label className="right-sidebar-search-field">
-                  <input
-                    ref={searchInputRef}
-                    aria-label="Search workspace diff files"
-                    type="search"
-                    value={diffQuery}
-                    placeholder="Filter files"
-                    onChange={(event: ChangeEvent<HTMLInputElement>) => setDiffQuery(event.target.value)}
-                  />
-                </label>
-                <div className="right-sidebar-filter-group" role="group" aria-label="Workspace diff filters">
-                  {DIFF_FILTER_OPTIONS.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      className={diffFilter === option.key ? "right-sidebar-filter-chip is-active" : "right-sidebar-filter-chip"}
-                      aria-pressed={diffFilter === option.key}
-                      onClick={() => setDiffFilter(option.key)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <div className="right-sidebar-change-list" role="list">
+              {diffs.map((diff, index) => {
+                const isExpanded = selectedDiffFile === diff.file
+                const isRestoring = restoringFile === diff.file
 
-              {filteredDiffs.length > 0 ? (
-                <div className="right-sidebar-change-list" role="list">
-                  {filteredDiffs.map((diff, index) => {
-                    const diffType = getDiffChangeType(diff)
-                    const isExpanded = selectedDiffFile === diff.file
-
-                    return (
-                      <div
-                        key={diff.file}
-                        className={isExpanded ? "right-sidebar-change-row is-expanded" : "right-sidebar-change-row"}
-                        role="listitem"
+                return (
+                  <div
+                    key={diff.file}
+                    className={isExpanded ? "right-sidebar-change-row is-expanded" : "right-sidebar-change-row"}
+                    role="listitem"
+                  >
+                    <div className="right-sidebar-change-line">
+                      <button
+                        ref={registerRowRef(diff.file)}
+                        type="button"
+                        className="right-sidebar-change-toggle"
+                        aria-expanded={isExpanded}
+                        aria-label={diff.file}
+                        onClick={() => onDiffFileSelect(isExpanded ? null : diff.file)}
+                        onKeyDown={(event) => handleRowKeyDown(event, index)}
                       >
-                        <button
-                          ref={registerRowRef(diff.file)}
-                          type="button"
-                          className="right-sidebar-change-toggle"
-                          aria-expanded={isExpanded}
-                          aria-label={`Toggle diff for ${diff.file}`}
-                          onClick={() => onDiffFileSelect(isExpanded ? null : diff.file)}
-                          onKeyDown={(event) => handleRowKeyDown(event, index)}
-                        >
-                          <span className="right-sidebar-change-icon" aria-hidden="true">
-                            {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                        <span className="right-sidebar-change-icon" aria-hidden="true">
+                          {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                        </span>
+                        <span className="right-sidebar-change-summary">
+                          <strong className="right-sidebar-change-file">{diff.file}</strong>
+                          <span className="right-sidebar-change-stats" aria-label={`${diff.additions} additions, ${diff.deletions} deletions`}>
+                            <span className="right-sidebar-change-stat is-add">+{diff.additions}</span>
+                            <span className="right-sidebar-change-stat is-remove">-{diff.deletions}</span>
                           </span>
-                          <div className="right-sidebar-change-copy">
-                            <div className="right-sidebar-change-title-row">
-                              <strong>{diff.file}</strong>
-                            </div>
-                            <span className="right-sidebar-change-meta">
-                              <span className={`right-sidebar-change-type is-${diffType}`}>{formatDiffChangeTypeLabel(diffType)}</span>
-                            </span>
-                          </div>
-                          <span className="right-sidebar-change-stat">
-                            +{diff.additions} -{diff.deletions}
-                          </span>
-                        </button>
-                        {isExpanded ? (
-                          <DiffPreview
-                            file={diff.file}
-                            patch={diff.patch}
-                            isFullHeight={isSelectedDiffFullHeight}
-                            onToggleFullHeight={() => setIsSelectedDiffFullHeight((current) => !current)}
-                          />
-                        ) : null}
-                      </div>
-                    )
-                  })}
-                </div>
-              ) : (
-                <div className="right-sidebar-empty">
-                  <p>No files match the current filters.</p>
-                </div>
-              )}
-            </>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="right-sidebar-change-restore-button"
+                        aria-label={`Restore ${diff.file}`}
+                        disabled={isRestoring}
+                        title="Restore file"
+                        onClick={(event) => void handleRestoreClick(event, diff.file)}
+                      >
+                        <ResetIcon />
+                      </button>
+                    </div>
+                    {isExpanded ? (
+                      <DiffPreview
+                        file={diff.file}
+                        patch={diff.patch}
+                        isFullHeight={isSelectedDiffFullHeight}
+                        onToggleFullHeight={() => setIsSelectedDiffFullHeight((current) => !current)}
+                      />
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
           ) : diffState.status === "loading" ? (
             <div className="right-sidebar-empty">
               <p>Loading workspace diff.</p>

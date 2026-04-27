@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { isAbsolute, join, relative, resolve } from "node:path"
 import type { AgentSessionDiffSummary } from "./types"
 
 type CommandResult = {
@@ -136,6 +136,41 @@ async function hasHeadCommit(directory: string, runner: CommandRunner) {
   return result.exitCode === 0
 }
 
+function normalizeWorkspaceDiffFile(file: string) {
+  const normalized = file.trim().replace(/\\/g, "/")
+  if (!normalized) {
+    throw new Error("Workspace diff file is required.")
+  }
+
+  if (isAbsolute(normalized) || /^[a-zA-Z]:\//.test(normalized)) {
+    throw new Error("Workspace diff file must be relative to the current project.")
+  }
+
+  const segments = normalized.split("/").filter((segment) => segment.length > 0 && segment !== ".")
+  if (segments.length === 0 || segments.some((segment) => segment === "..")) {
+    throw new Error("Workspace diff file must stay within the current project.")
+  }
+
+  return segments.join("/")
+}
+
+function assertWorkspaceDiffFileIsInsideDirectory(directory: string, file: string) {
+  const targetPath = resolve(directory, file)
+  const relativePath = relative(directory, targetPath)
+  if (relativePath === "" || relativePath.startsWith("..") || isAbsolute(relativePath)) {
+    throw new Error("Workspace diff file must stay within the current project.")
+  }
+}
+
+async function isWorkspaceFileTracked(directory: string, file: string, runner: CommandRunner) {
+  const result = await runner(["-C", directory, "ls-files", "--error-unmatch", "--", file], {
+    cwd: directory,
+    allowExitCodes: [0, 1],
+  })
+
+  return result.exitCode === 0
+}
+
 async function readTrackedChangedFiles(directory: string, runner: CommandRunner) {
   const result = await runner(["-C", directory, "diff", "--name-only", "--relative", "HEAD", "--", "."], {
     cwd: directory,
@@ -250,5 +285,49 @@ export async function getWorkspaceGitDiff(directory: string, runner: CommandRunn
     return createSummary(diffs)
   } finally {
     await rm(tempDirectory, { force: true, recursive: true }).catch(() => undefined)
+  }
+}
+
+export async function restoreWorkspaceDiffFile(
+  input: {
+    directory: string
+    file: string
+  },
+  runner: CommandRunner = runGit,
+) {
+  const directory = input.directory.trim()
+  if (!directory) {
+    throw new Error("Workspace directory is required.")
+  }
+
+  const root = await resolveGitRoot(directory, runner)
+  if (!root) {
+    throw new Error("Workspace directory must be inside a git repository.")
+  }
+
+  const file = normalizeWorkspaceDiffFile(input.file)
+  assertWorkspaceDiffFileIsInsideDirectory(directory, file)
+
+  const hasHead = await hasHeadCommit(directory, runner)
+  const isTracked = await isWorkspaceFileTracked(directory, file, runner)
+
+  if (isTracked) {
+    await runner(
+      hasHead
+        ? ["-C", directory, "restore", "--source=HEAD", "--staged", "--worktree", "--", file]
+        : ["-C", directory, "rm", "-f", "--", file],
+      {
+        cwd: directory,
+      },
+    )
+  } else {
+    await runner(["-C", directory, "clean", "-f", "--", file], {
+      cwd: directory,
+    })
+  }
+
+  return {
+    directory,
+    file,
   }
 }

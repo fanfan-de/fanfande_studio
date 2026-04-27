@@ -659,7 +659,7 @@ describe("App", () => {
         stderr: "",
         summary: "已推送 main",
       }),
-      listFolderWorkspaces: vi.fn().mockRejectedValue(new Error("backend unavailable")),
+      listFolderWorkspaces: undefined as unknown as NonNullable<Window["desktop"]>["listFolderWorkspaces"],
       openFolderWorkspace: vi.fn(),
       createFolderSession: vi.fn(),
       deleteProjectWorkspace: vi.fn(),
@@ -686,6 +686,10 @@ describe("App", () => {
       }),
       getSessionDiff: vi.fn().mockResolvedValue({
         diffs: [],
+      }),
+      restoreWorkspaceDiffFile: vi.fn().mockResolvedValue({
+        directory: "C:\\Projects\\Project 2",
+        file: "src/App.tsx",
       }),
       getSessionRuntimeDebug: vi.fn().mockResolvedValue(createSessionRuntimeDebugSnapshot()),
       getGlobalSkills: vi.fn().mockResolvedValue([]),
@@ -978,8 +982,8 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument()
     expect(inspector).toBeInTheDocument()
     expect(within(topMenu).getByRole("group", { name: "Open current project" })).toBeInTheDocument()
-    expect(within(inspector).getByText("Changes")).toBeInTheDocument()
-    expect(within(inspector).getByText("Workspace diff")).toBeInTheDocument()
+    expect(within(inspector).queryByText("Workspace diff")).not.toBeInTheDocument()
+    expect(await within(inspector).findByText("No changes in this session.")).toBeInTheDocument()
     expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Workspace")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Current execution state")).not.toBeInTheDocument()
@@ -3133,6 +3137,8 @@ describe("App", () => {
 
     render(<App />)
 
+    expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
     expect(await screen.findByRole("button", { name: "client" })).toBeInTheDocument()
     expect(screen.getAllByText("Atlas").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Atlas review" })).toBeInTheDocument()
@@ -3372,17 +3378,33 @@ describe("App", () => {
         },
       ],
     })
+    window.desktop!.restoreWorkspaceDiffFile = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      file: "src/App.tsx",
+    })
 
     const { container } = render(<App />)
 
     expect(await screen.findByText("Ship the toolbar update")).toBeInTheDocument()
-    expect((await screen.findAllByText("2 file changes (+8 -3)")).length).toBeGreaterThan(0)
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    expect(within(inspector).queryByText("Workspace diff")).not.toBeInTheDocument()
+    expect(within(inspector).queryByText("2 file changes (+8 -3)")).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole("searchbox", { name: "Search workspace diff files" })).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole("group", { name: "Workspace diff filters" })).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole("button", { name: "All" })).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole("button", { name: "Added" })).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole("button", { name: "Modified" })).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole("button", { name: "Deleted" })).not.toBeInTheDocument()
+    expect(within(inspector).queryByRole("button", { name: "Renamed" })).not.toBeInTheDocument()
     expect(screen.getAllByText("src/App.tsx").length).toBeGreaterThan(0)
     expect(screen.getAllByText("src/styles.css").length).toBeGreaterThan(0)
+    expect(within(inspector).getByText("+5")).toBeInTheDocument()
+    expect(within(inspector).getByText("-1")).toBeInTheDocument()
+    expect(within(inspector).getByRole("button", { name: "Restore src/App.tsx" })).toBeInTheDocument()
     expect(screen.queryByText("@@ -1,2 +1,2 @@")).not.toBeInTheDocument()
     expect(screen.queryByText("diff --git a/src/App.tsx b/src/App.tsx")).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "src/App.tsx" }))
+    fireEvent.click(within(inspector).getByRole("button", { name: "src/App.tsx" }))
 
     expect(screen.queryByText("@@ -1,2 +1,2 @@")).not.toBeInTheDocument()
     expect(screen.getByText('import { OldToolbar } from "./toolbar"')).toBeInTheDocument()
@@ -3392,6 +3414,20 @@ describe("App", () => {
     expect(container.querySelectorAll(".right-sidebar-diff-row.is-remove").length).toBeGreaterThan(0)
     expect(window.desktop!.getSessionDiff).toHaveBeenCalledWith({
       sessionID: "session-atlas-review",
+    })
+
+    const getSessionDiff = window.desktop!.getSessionDiff as ReturnType<typeof vi.fn>
+    const diffCallsBeforeRestore = getSessionDiff.mock.calls.length
+    fireEvent.click(within(inspector).getByRole("button", { name: "Restore src/App.tsx" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.restoreWorkspaceDiffFile).toHaveBeenCalledWith({
+        directory: "C:\\Projects\\Atlas\\client",
+        file: "src/App.tsx",
+      })
+    })
+    await waitFor(() => {
+      expect(getSessionDiff.mock.calls.length).toBeGreaterThan(diffCallsBeforeRestore)
     })
   })
 
@@ -4757,16 +4793,16 @@ describe("App", () => {
     })
   })
 
-  it("keeps the seed sidebar when startup folder loading fails", async () => {
+  it("does not show seed workspaces when startup folder loading fails", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockRejectedValue(new Error("backend unavailable"))
 
     render(<App />)
 
-    expect(await screen.findByRole("button", { name: "app" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     await waitFor(() => {
       expect(window.desktop!.listFolderWorkspaces).toHaveBeenCalledTimes(1)
     })
+    expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
   })
 
   it("opens a folder from a selected directory and appends it to the sidebar", async () => {

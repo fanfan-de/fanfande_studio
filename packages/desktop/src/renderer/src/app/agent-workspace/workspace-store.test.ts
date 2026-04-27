@@ -98,6 +98,21 @@ describe("workspace store", () => {
     expect(store.getState().sessions.selectedFolderID).toBe("workspace-1")
   })
 
+  it("starts without seed workspaces while the desktop workspace loader is available", () => {
+    const store = createWorkspaceStore({
+      hasFolderWorkspaceLoader: true,
+      initialComposerTabKey: null,
+      initialCreateSessionTab: null,
+      initialWorkbenchLayout: createEmptyWorkbenchLayout(),
+    })
+
+    expect(store.getState().sessions.workspaces).toEqual([])
+    expect(store.getState().sessions.selectedFolderID).toBeNull()
+    expect(store.getState().sessions.expandedFolderID).toBeNull()
+    expect(store.getState().sessions.isInitialWorkspaceLoadPending).toBe(true)
+    expect(store.getState().agentStream.conversations).toEqual({})
+  })
+
   it("tracks stream permissions and request lifecycle state", () => {
     const store = createTestStore()
     const permissionRequest = {

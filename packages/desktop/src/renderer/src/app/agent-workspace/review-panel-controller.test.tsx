@@ -68,6 +68,7 @@ describe("review panel controller", () => {
       const workspaceFileSearchRequestRef = useRef(0)
 
       return useReviewPanelController({
+        activeSessionDirectory: workspace.directory,
         activeSessionID: "session-1",
         activeTabKey: "session:session-1",
         activeWorkspaceFileScopeDirectory: workspace.directory,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { getWorkspaceGitDiff } from "./workspace-diff"
+import { getWorkspaceGitDiff, restoreWorkspaceDiffFile } from "./workspace-diff"
 
 describe("workspace git diff", () => {
   it("builds a workspace diff from tracked and untracked changes", async () => {
@@ -164,5 +164,220 @@ describe("workspace git diff", () => {
     }
 
     await expect(getWorkspaceGitDiff("C:\\Projects\\Scratch", runner)).resolves.toBeNull()
+  })
+
+  it("restores tracked file changes to HEAD", async () => {
+    const commands: string[] = []
+    const runner = async (args: string[]) => {
+      const command = args.join(" ")
+      commands.push(command)
+
+      if (command.includes("rev-parse --show-toplevel")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "C:\\Projects\\Atlas\n",
+        }
+      }
+
+      if (command.includes("rev-parse --verify HEAD")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "abc123\n",
+        }
+      }
+
+      if (command.includes("ls-files --error-unmatch -- src/App.tsx")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "src/App.tsx\n",
+        }
+      }
+
+      if (command.includes("restore --source=HEAD --staged --worktree -- src/App.tsx")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "",
+        }
+      }
+
+      throw new Error(`Unexpected command: ${command}`)
+    }
+
+    await expect(
+      restoreWorkspaceDiffFile(
+        {
+          directory: "C:\\Projects\\Atlas\\client",
+          file: "src\\App.tsx",
+        },
+        runner,
+      ),
+    ).resolves.toEqual({
+      directory: "C:\\Projects\\Atlas\\client",
+      file: "src/App.tsx",
+    })
+    expect(commands).toContain(
+      "-C C:\\Projects\\Atlas\\client restore --source=HEAD --staged --worktree -- src/App.tsx",
+    )
+  })
+
+  it("cleans untracked file changes", async () => {
+    const commands: string[] = []
+    const runner = async (args: string[]) => {
+      const command = args.join(" ")
+      commands.push(command)
+
+      if (command.includes("rev-parse --show-toplevel")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "C:\\Projects\\Atlas\n",
+        }
+      }
+
+      if (command.includes("rev-parse --verify HEAD")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "abc123\n",
+        }
+      }
+
+      if (command.includes("ls-files --error-unmatch -- notes.txt")) {
+        return {
+          exitCode: 1,
+          stderr: "",
+          stdout: "",
+        }
+      }
+
+      if (command.includes("clean -f -- notes.txt")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "",
+        }
+      }
+
+      throw new Error(`Unexpected command: ${command}`)
+    }
+
+    await restoreWorkspaceDiffFile(
+      {
+        directory: "C:\\Projects\\Atlas\\client",
+        file: "notes.txt",
+      },
+      runner,
+    )
+    expect(commands).toContain("-C C:\\Projects\\Atlas\\client clean -f -- notes.txt")
+  })
+
+  it("removes tracked-in-index files when a repository has no HEAD", async () => {
+    const commands: string[] = []
+    const runner = async (args: string[]) => {
+      const command = args.join(" ")
+      commands.push(command)
+
+      if (command.includes("rev-parse --show-toplevel")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "C:\\Projects\\NewRepo\n",
+        }
+      }
+
+      if (command.includes("rev-parse --verify HEAD")) {
+        return {
+          exitCode: 128,
+          stderr: "fatal: Needed a single revision",
+          stdout: "",
+        }
+      }
+
+      if (command.includes("ls-files --error-unmatch -- src/App.tsx")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "src/App.tsx\n",
+        }
+      }
+
+      if (command.includes("rm -f -- src/App.tsx")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "",
+        }
+      }
+
+      throw new Error(`Unexpected command: ${command}`)
+    }
+
+    await restoreWorkspaceDiffFile(
+      {
+        directory: "C:\\Projects\\NewRepo",
+        file: "src/App.tsx",
+      },
+      runner,
+    )
+    expect(commands).toContain("-C C:\\Projects\\NewRepo rm -f -- src/App.tsx")
+  })
+
+  it("rejects invalid restore targets", async () => {
+    const gitRunner = async (args: string[]) => {
+      const command = args.join(" ")
+
+      if (command.includes("rev-parse --show-toplevel")) {
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: "C:\\Projects\\Atlas\n",
+        }
+      }
+
+      throw new Error(`Unexpected command: ${command}`)
+    }
+    const nonGitRunner = async (args: string[]) => {
+      if (args.join(" ").includes("rev-parse --show-toplevel")) {
+        return {
+          exitCode: 128,
+          stderr: "fatal: not a git repository",
+          stdout: "",
+        }
+      }
+
+      throw new Error(`Unexpected command: ${args.join(" ")}`)
+    }
+
+    await expect(
+      restoreWorkspaceDiffFile(
+        {
+          directory: "C:\\Projects\\Scratch",
+          file: "src/App.tsx",
+        },
+        nonGitRunner,
+      ),
+    ).rejects.toThrow("Workspace directory must be inside a git repository.")
+    await expect(
+      restoreWorkspaceDiffFile(
+        {
+          directory: "C:\\Projects\\Atlas\\client",
+          file: "",
+        },
+        gitRunner,
+      ),
+    ).rejects.toThrow("Workspace diff file is required.")
+    await expect(
+      restoreWorkspaceDiffFile(
+        {
+          directory: "C:\\Projects\\Atlas\\client",
+          file: "../secret.txt",
+        },
+        gitRunner,
+      ),
+    ).rejects.toThrow("Workspace diff file must stay within the current project.")
   })
 })
