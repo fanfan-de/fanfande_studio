@@ -37,21 +37,30 @@ describe("global built-in tool selection", () => {
       async fn() {
         const toolNames = await resolveAgentToolNames("default")
         expect(toolNames).toContain("read-file")
-        expect(toolNames).toContain("exec_command")
-        expect(toolNames).toContain("bash")
+        expect(toolNames).toContain("git_bash_command")
+        expect(toolNames).toContain("powershell_command")
+        expect(toolNames).toContain("cmd_command")
+        expect(toolNames).toContain("wsl_bash_command")
+        expect(toolNames).not.toContain("exec_command")
+        expect(toolNames).not.toContain("bash")
+        expect(toolNames).not.toContain("exec-command")
       },
     })
   })
 
-  it("filters a globally disabled built-in tool and its aliases", async () => {
+  it("filters a globally disabled built-in shell tool without legacy aliases", async () => {
     await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {
-      exec_command: false,
+      git_bash_command: false,
     })
 
     await Instance.provide({
       directory: process.cwd(),
       async fn() {
         const toolNames = await resolveAgentToolNames("default")
+        expect(toolNames).not.toContain("git_bash_command")
+        expect(toolNames).toContain("powershell_command")
+        expect(toolNames).toContain("cmd_command")
+        expect(toolNames).toContain("wsl_bash_command")
         expect(toolNames).not.toContain("exec_command")
         expect(toolNames).not.toContain("bash")
         expect(toolNames).not.toContain("exec-command")

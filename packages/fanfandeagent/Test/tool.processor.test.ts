@@ -417,14 +417,14 @@ describe("processor tool persistence", () => {
           yield {
             type: "tool-input-start",
             id: "tool-stuck",
-            toolName: "bash",
+            toolName: "git_bash_command",
           }
           yield {
             type: "tool-call",
             toolCallId: "tool-stuck",
-            toolName: "bash",
+            toolName: "git_bash_command",
             input: { command: "pwd" },
-            title: "Bash",
+            title: "Git Bash",
           }
           yield {
             type: "finish",

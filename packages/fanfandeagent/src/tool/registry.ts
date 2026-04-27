@@ -3,7 +3,12 @@ import * as Tool from "#tool/tool.ts"
 import { AskUserQuestionTool } from "#tool/ask-user-question.ts"
 import { ApplyPatchTool } from "#tool/apply-patch.ts"
 import { CancelSubagentTool } from "#tool/cancel-subagent.ts"
-import { ExecCommandTool } from "#tool/exec-command.ts"
+import {
+  CmdCommandTool,
+  GitBashCommandTool,
+  PowerShellCommandTool,
+  WslBashCommandTool,
+} from "#tool/exec-command.ts"
 import { EnterPlanModeTool } from "#tool/enter-plan-mode.ts"
 import { ExitPlanModeTool } from "#tool/exit-plan-mode.ts"
 import { GlobTool } from "#tool/glob.ts"
@@ -22,6 +27,8 @@ import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
 import { WriteFileTool } from "#tool/write-file.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
 import * as Mcp from "#mcp/manager.ts"
+
+const LEGACY_GIT_BASH_TOOL_NAMES = new Set(["exec_command", "bash", "exec-command"])
 
 function exposedNames(tool: Tool.ToolInfo): string[] {
   return [tool.id, ...(tool.aliases ?? [])]
@@ -73,7 +80,10 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     LspReferencesTool,
     LspHoverTool,
     LspWorkspaceSymbolsTool,
-    ExecCommandTool,
+    GitBashCommandTool,
+    PowerShellCommandTool,
+    CmdCommandTool,
+    WslBashCommandTool,
   ]
 }
 
@@ -91,6 +101,10 @@ export async function tools(): Promise<Tool.ToolInfo[]> {
 }
 
 export async function get(id: string): Promise<Tool.ToolInfo | undefined> {
+  if (LEGACY_GIT_BASH_TOOL_NAMES.has(id)) {
+    return GitBashCommandTool
+  }
+
   return (await tools()).find((tool) => Tool.toolMatchesName(tool, id))
 }
 

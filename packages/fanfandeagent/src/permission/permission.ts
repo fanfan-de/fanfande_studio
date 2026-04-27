@@ -1204,7 +1204,7 @@ function approvalRuleFromRequest(request: Request, resolution: Schema.RequestRes
     risk: [request.risk],
     destructive: request.toolKind === "write" || request.toolKind === "exec" ? true : undefined,
     readOnly: request.toolKind === "read" || request.toolKind === "search" ? true : undefined,
-    needsShell: request.tool === "exec_command" ? true : undefined,
+    needsShell: request.toolKind === "exec" ? true : undefined,
     reason: resolution.note?.trim() || `Created from approval request ${request.id}.`,
     createdBy: "approval",
   })

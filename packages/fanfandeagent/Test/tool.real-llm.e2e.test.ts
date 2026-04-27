@@ -199,13 +199,13 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
       },
     },
     {
-      name: "bash",
-      toolName: "bash",
+      name: "git_bash_command",
+      toolName: "git_bash_command",
       setup: async () => undefined,
-      prompt: "Run echo bash-ok with the bash tool and then confirm bash-ok.",
+      prompt: "Run echo git-bash-ok with the git_bash_command tool and then confirm git-bash-ok.",
       verify: async (_directory, _assistant, toolPart) => {
         const completed = toolPart.state as Message.ToolStateCompleted
-        expect(String(completed.output)).toContain("bash-ok")
+        expect(String(completed.output)).toContain("git-bash-ok")
       },
     },
   ]

@@ -503,7 +503,10 @@ describe("subagent tools", () => {
 
         expect(planTools["read-file"]).toBeDefined()
         expect(planTools["ExitPlanMode"]).toBeDefined()
-        expect(planTools["exec_command"]).toBeUndefined()
+        expect(planTools["git_bash_command"]).toBeUndefined()
+        expect(planTools["powershell_command"]).toBeUndefined()
+        expect(planTools["cmd_command"]).toBeUndefined()
+        expect(planTools["wsl_bash_command"]).toBeUndefined()
         expect(planTools["write-file"]).toBeUndefined()
         expect(planTools["spawn_subagent"]).toBeUndefined()
 

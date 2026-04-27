@@ -8,7 +8,17 @@ import z from "zod"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/message.ts"
 import { AskUserQuestionTool } from "#tool/ask-user-question.ts"
-import { ExecCommandTool, resolveExecCommandBashExecutable, waitForProcessExit } from "#tool/exec-command.ts"
+import {
+  CmdCommandTool,
+  GitBashCommandTool,
+  PowerShellCommandTool,
+  WslBashCommandTool,
+  resolveCmdExecutable,
+  resolveGitBashExecutable,
+  resolvePowerShellExecutable,
+  resolveWslExecutable,
+  waitForProcessExit,
+} from "#tool/exec-command.ts"
 import { GlobTool } from "#tool/glob.ts"
 import { GrepTool } from "#tool/grep.ts"
 import { ReadBackgroundTaskTool } from "#tool/read-background-task.ts"
@@ -293,7 +303,7 @@ describe("tool contract", () => {
     expect(serializedMessage).toContain("answer: vercel")
   })
 
-  it("exposes exec_command runtime hooks with structured behavior", async () => {
+  it("exposes git_bash_command runtime hooks with structured behavior", async () => {
     const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-exec-command-"))
 
     try {
@@ -302,7 +312,7 @@ describe("tool contract", () => {
       await Instance.provide({
         directory: repositoryRoot,
         async fn() {
-          const runtime = await ExecCommandTool.init()
+          const runtime = await GitBashCommandTool.init()
           const ctx = {
             sessionID: "session-exec-command",
             messageID: "message-exec-command",
@@ -320,7 +330,7 @@ describe("tool contract", () => {
               } as never,
               ctx,
             ),
-          ).rejects.toThrow("Invalid exec_command arguments. command:")
+          ).rejects.toThrow("Invalid git_bash_command arguments. command:")
 
           await expect(runtime.validate?.({ command: "   " }, ctx)).resolves.toBe(
             "Command must contain non-whitespace characters.",
@@ -349,7 +359,7 @@ describe("tool contract", () => {
           })
 
           const modelOutput = await runtime.toModelOutput?.({
-            title: "exec_command: printf hello",
+            title: "git_bash_command: printf hello",
             text: "Command: printf hello\nWorkdir: .\nShell: /bin/bash\nExit: 0\n\nSTDOUT:\nhello\n\nSTDERR:\n(no stderr)",
             metadata: {
               command: "printf hello",
@@ -365,13 +375,15 @@ describe("tool contract", () => {
               stderrTruncated: false,
               stdout: "hello",
               stderr: "",
+              runInBackground: false,
+              backgroundTaskId: null,
             },
           })
 
           expect(Tool.normalizeToolModelOutput(modelOutput!)).toEqual({
             type: "json",
             value: {
-              title: "exec_command: printf hello",
+              title: "git_bash_command: printf hello",
               command: "printf hello",
               workdir: ".",
               shell: "/bin/bash",
@@ -380,6 +392,8 @@ describe("tool contract", () => {
               timedOut: false,
               aborted: false,
               status: "ok",
+              backgroundTaskId: null,
+              runInBackground: false,
               stdoutTruncated: false,
               stderrTruncated: false,
               stdout: "hello",
@@ -412,7 +426,7 @@ describe("tool contract", () => {
     await Instance.provide({
       directory: process.cwd(),
       async fn() {
-        const execRuntime = await ExecCommandTool.init()
+        const execRuntime = await GitBashCommandTool.init()
         const readRuntime = await ReadBackgroundTaskTool.init()
         const stopRuntime = await StopBackgroundTaskTool.init()
         const ctx = {
@@ -483,10 +497,62 @@ describe("tool contract", () => {
     })
   }, 120000)
 
-  it("prefers Git Bash before a generic PATH bash on Windows", async () => {
-    const selected = await resolveExecCommandBashExecutable({
+  it("exposes four shell tools with distinct schemas and capabilities", async () => {
+    const tools = [
+      {
+        tool: GitBashCommandTool,
+        id: "git_bash_command",
+        title: "Git Bash",
+        background: true,
+        distro: false,
+      },
+      {
+        tool: PowerShellCommandTool,
+        id: "powershell_command",
+        title: "PowerShell",
+        background: false,
+        distro: false,
+      },
+      {
+        tool: CmdCommandTool,
+        id: "cmd_command",
+        title: "Command Prompt",
+        background: false,
+        distro: false,
+      },
+      {
+        tool: WslBashCommandTool,
+        id: "wsl_bash_command",
+        title: "WSL Bash",
+        background: false,
+        distro: true,
+      },
+    ]
+
+    for (const item of tools) {
+      const runtime = await item.tool.init()
+      expect(item.tool.id).toBe(item.id)
+      expect(item.tool.title).toBe(item.title)
+      expect(item.tool.aliases ?? []).toEqual([])
+      expect(item.tool.capabilities).toMatchObject({
+        kind: "exec",
+        readOnly: false,
+        destructive: true,
+        needsShell: true,
+      })
+      expect(runtime.title).toBe(item.title)
+      expect(runtime.description).toBeString()
+
+      const shape = (runtime.parameters as z.ZodObject<any>).shape
+      expect(Boolean(shape.runInBackground)).toBe(item.background)
+      expect(Boolean(shape.run_in_background)).toBe(item.background)
+      expect(Boolean(shape.distro)).toBe(item.distro)
+    }
+  })
+
+  it("resolves shell executables by shell-specific Windows rules", async () => {
+    const gitBash = await resolveGitBashExecutable({
       platform: "win32",
-      shellEnv: "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
       configuredGitBashPath: null,
       env: {
         PATH: "C:\\WINDOWS\\System32",
@@ -506,7 +572,53 @@ describe("tool contract", () => {
       isFile: async (filePath) => filePath === "C:\\Apps\\Git\\bin\\bash.exe",
     })
 
-    expect(selected).toBe("C:\\Apps\\Git\\bin\\bash.exe")
+    expect(gitBash).toBe("C:\\Apps\\Git\\bin\\bash.exe")
+
+    const powershell = await resolvePowerShellExecutable({
+      platform: "win32",
+      env: {
+        SystemRoot: "C:\\Windows",
+      },
+      whichCommand: () => null,
+      isFile: async (filePath) => filePath === "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    })
+    expect(powershell).toBe("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+
+    const cmd = await resolveCmdExecutable({
+      platform: "win32",
+      env: {
+        ComSpec: "C:\\Windows\\System32\\cmd.exe",
+      },
+      whichCommand: () => null,
+      isFile: async (filePath) => filePath === "C:\\Windows\\System32\\cmd.exe",
+    })
+    expect(cmd).toBe("C:\\Windows\\System32\\cmd.exe")
+
+    const wsl = await resolveWslExecutable({
+      platform: "win32",
+      env: {
+        SystemRoot: "C:\\Windows",
+      },
+      whichCommand: () => null,
+      isFile: async (filePath) => filePath === "C:\\Windows\\System32\\wsl.exe",
+    })
+    expect(wsl).toBe("C:\\Windows\\System32\\wsl.exe")
+
+    await expect(
+      resolveGitBashExecutable({
+        platform: "win32",
+        configuredGitBashPath: null,
+        env: {},
+        whichCommand: (command) => {
+          if (command === "bash" || command === "bash.exe") {
+            return "C:\\WINDOWS\\System32\\bash.exe"
+          }
+
+          return null
+        },
+        isFile: async (filePath) => filePath === "C:\\WINDOWS\\System32\\bash.exe",
+      }),
+    ).rejects.toThrow("No Git Bash executable was found")
   })
 
   it("replays completed tool history through the tool model output formatter", async () => {
@@ -580,6 +692,43 @@ describe("tool contract", () => {
                         stderrTruncated: false,
                         stdout: "hello",
                         stderr: "",
+                        runInBackground: false,
+                        backgroundTaskId: null,
+                      },
+                      time: {
+                        start: 1,
+                        end: 2,
+                      },
+                    },
+                  } as Message.ToolPart,
+                  {
+                    id: "tool-history-bash",
+                    sessionID: "session-history",
+                    messageID: "assistant-history",
+                    type: "tool",
+                    callID: "call-history-bash",
+                    tool: "bash",
+                    state: {
+                      status: "completed",
+                      input: { command: "printf hello" },
+                      output: "Command: printf hello",
+                      title: "Bash: printf hello",
+                      metadata: {
+                        command: "printf hello",
+                        shell: "/bin/bash",
+                        cwd: repositoryRoot,
+                        displayCwd: ".",
+                        timeoutMs: 60_000,
+                        exitCode: 0,
+                        signal: null,
+                        timedOut: false,
+                        aborted: false,
+                        stdoutTruncated: false,
+                        stderrTruncated: false,
+                        stdout: "hello",
+                        stderr: "",
+                        runInBackground: false,
+                        backgroundTaskId: null,
                       },
                       time: {
                         start: 1,
@@ -595,8 +744,8 @@ describe("tool contract", () => {
 
           const toolMessage = messages.find((item) => item.role === "tool") as any
           expect(toolMessage).toBeDefined()
-          expect(toolMessage.content).toHaveLength(1)
-          expect(toolMessage.content[0]).toMatchObject({
+          expect(toolMessage.content).toHaveLength(2)
+          expect(toolMessage.content.find((item: any) => item.toolName === "exec_command")).toMatchObject({
             type: "tool-result",
             toolCallId: "call-history",
             toolName: "exec_command",
@@ -605,6 +754,22 @@ describe("tool contract", () => {
               value: {
                 status: "ok",
                 stdout: "hello",
+                runInBackground: false,
+                backgroundTaskId: null,
+              },
+            },
+          })
+          expect(toolMessage.content.find((item: any) => item.toolName === "bash")).toMatchObject({
+            type: "tool-result",
+            toolCallId: "call-history-bash",
+            toolName: "bash",
+            output: {
+              type: "json",
+              value: {
+                status: "ok",
+                stdout: "hello",
+                runInBackground: false,
+                backgroundTaskId: null,
               },
             },
           })

@@ -40,10 +40,10 @@ function createSettingsPageProps(
     brandTheme: "sage",
     builtinTools: [
       {
-        id: "exec_command",
-        title: "Bash",
-        description: "Run a bash command inside the current project boundary.",
-        aliases: ["bash", "exec-command"],
+        id: "git_bash_command",
+        title: "Git Bash",
+        description: "Run a Git Bash/MSYS Bash command inside the current project boundary.",
+        aliases: [],
         capabilities: {
           kind: "exec",
           readOnly: false,
@@ -185,15 +185,15 @@ describe("SettingsPage built-in tools", () => {
 
     expect(screen.getByText("Global tool availability")).toBeInTheDocument()
     expect(screen.getByText("1 of 2 built-in tools enabled.")).toBeInTheDocument()
-    expect(screen.getByText("Bash")).toBeInTheDocument()
+    expect(screen.getByText("Git Bash")).toBeInTheDocument()
     expect(screen.getByText("Shell access")).toBeInTheDocument()
     expect(screen.getByText("Read File")).toBeInTheDocument()
     expect(screen.getByText("Read-only")).toBeInTheDocument()
 
-    const bashCard = screen.getByText("exec_command").closest("button")
+    const bashCard = screen.getByText("git_bash_command").closest("button")
     expect(bashCard).not.toBeNull()
     fireEvent.click(bashCard!)
-    expect(onBuiltinToolToggle).toHaveBeenCalledWith("exec_command", false)
+    expect(onBuiltinToolToggle).toHaveBeenCalledWith("git_bash_command", false)
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
     expect(onSaveBuiltinTools).toHaveBeenCalled()

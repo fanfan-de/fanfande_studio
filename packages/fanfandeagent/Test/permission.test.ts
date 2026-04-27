@@ -80,7 +80,7 @@ test("permission defaults allow reads, ask writes, and deny dangerous commands",
           cwd: Instance.directory,
           worktree: Instance.worktree,
           tool: {
-            id: "exec_command",
+            id: "git_bash_command",
             kind: "exec",
             readOnly: false,
             destructive: true,

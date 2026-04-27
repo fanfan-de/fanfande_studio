@@ -684,20 +684,43 @@ describe("server api", () => {
       expect(listBody.success).toBe(true)
       expect(listBody.data?.selection.tools).toEqual({})
       expect(listBody.data?.items.some((tool) => tool.id === "AskUserQuestion")).toBe(true)
-      expect(listBody.data?.items.find((tool) => tool.id === "exec_command")).toMatchObject({
+      expect(listBody.data?.items.find((tool) => tool.id === "git_bash_command")).toMatchObject({
         enabled: true,
         capabilities: {
           kind: "exec",
           needsShell: true,
         },
       })
+      expect(listBody.data?.items.find((tool) => tool.id === "powershell_command")).toMatchObject({
+        enabled: true,
+        capabilities: {
+          kind: "exec",
+          needsShell: true,
+        },
+      })
+      expect(listBody.data?.items.find((tool) => tool.id === "cmd_command")).toMatchObject({
+        enabled: true,
+        capabilities: {
+          kind: "exec",
+          needsShell: true,
+        },
+      })
+      expect(listBody.data?.items.find((tool) => tool.id === "wsl_bash_command")).toMatchObject({
+        enabled: true,
+        capabilities: {
+          kind: "exec",
+          needsShell: true,
+        },
+      })
+      expect(listBody.data?.items.find((tool) => tool.id === "exec_command")).toBeUndefined()
+      expect(listBody.data?.items.find((tool) => tool.id === "bash")).toBeUndefined()
 
       const updateResponse = await app.request("http://localhost/api/tools/builtins/selection", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           tools: {
-            exec_command: false,
+            git_bash_command: false,
           },
         }),
       })
@@ -706,13 +729,13 @@ describe("server api", () => {
       expect(updateResponse.status).toBe(200)
       expect(updateBody.data).toEqual({
         tools: {
-          exec_command: false,
+          git_bash_command: false,
         },
       })
 
       const disabledListResponse = await app.request("http://localhost/api/tools/builtins")
       const disabledListBody = (await disabledListResponse.json()) as BuiltinToolListEnvelope
-      expect(disabledListBody.data?.items.find((tool) => tool.id === "exec_command")?.enabled).toBe(false)
+      expect(disabledListBody.data?.items.find((tool) => tool.id === "git_bash_command")?.enabled).toBe(false)
 
       const resetResponse = await app.request("http://localhost/api/tools/builtins/selection", {
         method: "PUT",
@@ -1050,6 +1073,7 @@ describe("server api", () => {
 
       expect(createResponse.status).toBe(201)
       expect(sessionID).toBeString()
+      if (!sessionID) throw new Error("Expected session id")
 
       const response = await app.request(`http://localhost/api/sessions/${sessionID}/cancel`, {
         method: "POST",
@@ -1087,7 +1111,8 @@ describe("server api", () => {
 
       expect(createResponse.status).toBe(201)
       expect(sessionID).toBeString()
-      expect(RunningState.register(sessionID!, controller, { reason: "prompt" })).toBe(true)
+      if (!sessionID) throw new Error("Expected session id")
+      expect(RunningState.register(sessionID, controller, { reason: "prompt" })).toBe(true)
 
       const response = await app.request(`http://localhost/api/sessions/${sessionID}/cancel`, {
         method: "POST",
@@ -1101,7 +1126,7 @@ describe("server api", () => {
         cancelled: true,
       })
       expect(controller.signal.aborted).toBe(true)
-      expect(RunningState.isRunning(sessionID!)).toBe(false)
+      expect(RunningState.isRunning(sessionID)).toBe(false)
     } finally {
       if (sessionID) {
         RunningState.finish(sessionID, controller)
