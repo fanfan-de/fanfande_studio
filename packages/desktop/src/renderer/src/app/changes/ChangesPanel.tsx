@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
-import { ChevronDownIcon, ChevronRightIcon, ResetIcon } from "../icons"
+import { ResetIcon } from "../icons"
 import type { SessionDiffState, SessionDiffSummary, SessionSummary } from "../types"
 
 type DiffPreviewLineTone = "add" | "remove" | "context"
+type DiffViewMode = "unified" | "split"
+type SplitDiffCellTone = DiffPreviewLineTone | "empty"
 
 interface ParsedDiffRow {
   content: string
@@ -14,6 +16,15 @@ interface ParsedDiffRow {
 interface ParsedDiffHunk {
   header: string
   rows: ParsedDiffRow[]
+}
+
+interface SplitDiffRow {
+  newContent: string
+  newLineNumber: number | null
+  newTone: SplitDiffCellTone
+  oldContent: string
+  oldLineNumber: number | null
+  oldTone: SplitDiffCellTone
 }
 
 const DIFF_HUNK_HEADER_PATTERN = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: ?(.*))?$/
@@ -104,15 +115,75 @@ function parsePatchHunks(patch?: string): ParsedDiffHunk[] {
   return hunks.filter((hunk) => hunk.rows.length > 0)
 }
 
+function buildSplitDiffRows(rows: ParsedDiffRow[]): SplitDiffRow[] {
+  const splitRows: SplitDiffRow[] = []
+  let index = 0
+
+  while (index < rows.length) {
+    const row = rows[index]
+    if (!row) break
+
+    if (row.tone === "context") {
+      splitRows.push({
+        oldLineNumber: row.oldLineNumber,
+        oldContent: row.content,
+        oldTone: "context",
+        newLineNumber: row.newLineNumber,
+        newContent: row.content,
+        newTone: "context",
+      })
+      index += 1
+      continue
+    }
+
+    const removedRows: ParsedDiffRow[] = []
+    const addedRows: ParsedDiffRow[] = []
+
+    while (rows[index]?.tone === "remove") {
+      removedRows.push(rows[index])
+      index += 1
+    }
+
+    while (rows[index]?.tone === "add") {
+      addedRows.push(rows[index])
+      index += 1
+    }
+
+    const pairedRowCount = Math.max(removedRows.length, addedRows.length)
+    for (let pairIndex = 0; pairIndex < pairedRowCount; pairIndex += 1) {
+      const removedRow = removedRows[pairIndex]
+      const addedRow = addedRows[pairIndex]
+      splitRows.push({
+        oldLineNumber: removedRow?.oldLineNumber ?? null,
+        oldContent: removedRow?.content ?? "",
+        oldTone: removedRow ? "remove" : "empty",
+        newLineNumber: addedRow?.newLineNumber ?? null,
+        newContent: addedRow?.content ?? "",
+        newTone: addedRow ? "add" : "empty",
+      })
+    }
+  }
+
+  return splitRows
+}
+
 interface DiffPreviewProps {
   file: string
   patch?: string
   isFullHeight: boolean
   onToggleFullHeight: () => void
+  viewMode: DiffViewMode
 }
 
-function DiffPreview({ file, patch, isFullHeight, onToggleFullHeight }: DiffPreviewProps) {
+function DiffPreview({ file, patch, isFullHeight, onToggleFullHeight, viewMode }: DiffPreviewProps) {
   const hunks = useMemo(() => parsePatchHunks(patch), [patch])
+  const splitHunks = useMemo(
+    () => hunks.map((hunk) => ({
+      header: hunk.header,
+      rows: buildSplitDiffRows(hunk.rows),
+    })),
+    [hunks],
+  )
 
   if (!patch?.trim() || hunks.length === 0) {
     return (
@@ -128,21 +199,41 @@ function DiffPreview({ file, patch, isFullHeight, onToggleFullHeight }: DiffPrev
       role="region"
       aria-label={`Diff preview for ${file}`}
     >
-      <div className="right-sidebar-diff-code">
+      <div className={viewMode === "split" ? "right-sidebar-diff-code is-split" : "right-sidebar-diff-code"}>
         {hunks.map((hunk, hunkIndex) => (
           <section key={`${file}-hunk-${hunkIndex}`} className="right-sidebar-diff-hunk" aria-label={hunk.header}>
             <div className="right-sidebar-diff-hunk-header">{hunk.header}</div>
-            {hunk.rows.map((row, rowIndex) => (
-              <div key={`${file}-${hunkIndex}-${rowIndex}`} className={`right-sidebar-diff-row is-${row.tone}`}>
-                <span className="right-sidebar-diff-line-number" aria-hidden="true">
-                  {row.oldLineNumber ?? ""}
-                </span>
-                <span className="right-sidebar-diff-line-number" aria-hidden="true">
-                  {row.newLineNumber ?? ""}
-                </span>
-                <span className="right-sidebar-diff-content">{row.content || " "}</span>
-              </div>
-            ))}
+            {viewMode === "split"
+              ? splitHunks[hunkIndex]?.rows.map((row, rowIndex) => (
+                <div
+                  key={`${file}-${hunkIndex}-split-${rowIndex}`}
+                  className={`right-sidebar-split-diff-row is-old-${row.oldTone} is-new-${row.newTone}`}
+                >
+                  <span className="right-sidebar-diff-line-number" aria-hidden="true">
+                    {row.oldLineNumber ?? ""}
+                  </span>
+                  <span className={`right-sidebar-split-diff-content is-${row.oldTone}`}>
+                    {row.oldContent || " "}
+                  </span>
+                  <span className="right-sidebar-diff-line-number" aria-hidden="true">
+                    {row.newLineNumber ?? ""}
+                  </span>
+                  <span className={`right-sidebar-split-diff-content is-${row.newTone}`}>
+                    {row.newContent || " "}
+                  </span>
+                </div>
+              ))
+              : hunk.rows.map((row, rowIndex) => (
+                <div key={`${file}-${hunkIndex}-${rowIndex}`} className={`right-sidebar-diff-row is-${row.tone}`}>
+                  <span className="right-sidebar-diff-line-number" aria-hidden="true">
+                    {row.oldLineNumber ?? ""}
+                  </span>
+                  <span className="right-sidebar-diff-line-number" aria-hidden="true">
+                    {row.newLineNumber ?? ""}
+                  </span>
+                  <span className="right-sidebar-diff-content">{row.content || " "}</span>
+                </div>
+              ))}
           </section>
         ))}
       </div>
@@ -180,6 +271,7 @@ export function ChangesPanel({
   const [isSelectedDiffFullHeight, setIsSelectedDiffFullHeight] = useState(false)
   const [restoringFile, setRestoringFile] = useState<string | null>(null)
   const [restoreErrorMessage, setRestoreErrorMessage] = useState<string | null>(null)
+  const [diffViewMode, setDiffViewMode] = useState<DiffViewMode>("unified")
 
   const rowRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
 
@@ -271,6 +363,27 @@ export function ChangesPanel({
 
   return (
     <section className="right-sidebar-section right-sidebar-changes-panel" onKeyDown={handleSectionKeyDown}>
+      <div className="right-sidebar-changes-menu" role="toolbar" aria-label="Diff display options">
+        <div className="right-sidebar-diff-view-toggle" role="group" aria-label="Diff view mode">
+          <button
+            type="button"
+            className={diffViewMode === "unified" ? "right-sidebar-diff-view-button is-active" : "right-sidebar-diff-view-button"}
+            aria-pressed={diffViewMode === "unified"}
+            onClick={() => setDiffViewMode("unified")}
+          >
+            Unified
+          </button>
+          <button
+            type="button"
+            className={diffViewMode === "split" ? "right-sidebar-diff-view-button is-active" : "right-sidebar-diff-view-button"}
+            aria-pressed={diffViewMode === "split"}
+            onClick={() => setDiffViewMode("split")}
+          >
+            Split
+          </button>
+        </div>
+      </div>
+
       {diffState.errorMessage ? (
         <p className="right-sidebar-status-error" role="alert">{diffState.errorMessage}</p>
       ) : null}
@@ -302,9 +415,6 @@ export function ChangesPanel({
                         onClick={() => onDiffFileSelect(isExpanded ? null : diff.file)}
                         onKeyDown={(event) => handleRowKeyDown(event, index)}
                       >
-                        <span className="right-sidebar-change-icon" aria-hidden="true">
-                          {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                        </span>
                         <span className="right-sidebar-change-summary">
                           <strong className="right-sidebar-change-file">{diff.file}</strong>
                           <span className="right-sidebar-change-stats" aria-label={`${diff.additions} additions, ${diff.deletions} deletions`}>
@@ -330,6 +440,7 @@ export function ChangesPanel({
                         patch={diff.patch}
                         isFullHeight={isSelectedDiffFullHeight}
                         onToggleFullHeight={() => setIsSelectedDiffFullHeight((current) => !current)}
+                        viewMode={diffViewMode}
                       />
                     ) : null}
                   </div>
