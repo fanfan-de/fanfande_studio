@@ -3,8 +3,7 @@ import { createAgentSessionEventRouter } from "../agent-session/event-router"
 import { createAgentSessionStore } from "../agent-session/store"
 import type {
   PendingAgentStream,
-  PermissionRequest,
-  SessionContextUsage,
+  PermissionRequest
 } from "../types"
 import { useWorkspaceStoreSelector, type WorkspaceStoreApi } from "./workspace-store"
 

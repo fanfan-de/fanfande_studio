@@ -67,6 +67,11 @@ type DeleteSessionResponseEnvelope = JsonEnvelope<{
   projectID: string
 }>
 
+type CancelSessionResponseEnvelope = JsonEnvelope<{
+  sessionID: string
+  cancelled: boolean
+}>
+
 type DeleteProjectResponseEnvelope = JsonEnvelope<{
   projectID: string
   deletedSessionIDs: string[]
@@ -920,6 +925,95 @@ describe("server api", () => {
     expect(response.status).toBe(400)
     expect(body.success).toBe(false)
     expect(body.error?.code).toBe("INVALID_PAYLOAD")
+  })
+
+  test("POST /api/sessions/:id/cancel should return 404 for missing session", async () => {
+    const app = createServerApp()
+    const response = await app.request("http://localhost/api/sessions/session_missing/cancel", {
+      method: "POST",
+    })
+    const body = (await response.json()) as JsonEnvelope
+
+    expect(response.status).toBe(404)
+    expect(body.success).toBe(false)
+    expect(body.error?.code).toBe("SESSION_NOT_FOUND")
+  })
+
+  test("POST /api/sessions/:id/cancel should return false for an idle session", async () => {
+    const app = createServerApp()
+    const directory = await mkdtemp(join(tmpdir(), "fanfande-cancel-idle-"))
+    let sessionID: string | null = null
+
+    try {
+      const createResponse = await app.request("http://localhost/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const createBody = (await createResponse.json()) as SessionResponseEnvelope
+      sessionID = createBody.data?.id ?? null
+
+      expect(createResponse.status).toBe(201)
+      expect(sessionID).toBeString()
+
+      const response = await app.request(`http://localhost/api/sessions/${sessionID}/cancel`, {
+        method: "POST",
+      })
+      const body = (await response.json()) as CancelSessionResponseEnvelope
+
+      expect(response.status).toBe(200)
+      expect(body.success).toBe(true)
+      expect(body.data).toEqual({
+        sessionID,
+        cancelled: false,
+      })
+    } finally {
+      if (sessionID) {
+        Session.removeSession(sessionID)
+      }
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("POST /api/sessions/:id/cancel should stop a running session", async () => {
+    const app = createServerApp()
+    const directory = await mkdtemp(join(tmpdir(), "fanfande-cancel-running-"))
+    const controller = new AbortController()
+    let sessionID: string | null = null
+
+    try {
+      const createResponse = await app.request("http://localhost/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const createBody = (await createResponse.json()) as SessionResponseEnvelope
+      sessionID = createBody.data?.id ?? null
+
+      expect(createResponse.status).toBe(201)
+      expect(sessionID).toBeString()
+      expect(RunningState.register(sessionID!, controller, { reason: "prompt" })).toBe(true)
+
+      const response = await app.request(`http://localhost/api/sessions/${sessionID}/cancel`, {
+        method: "POST",
+      })
+      const body = (await response.json()) as CancelSessionResponseEnvelope
+
+      expect(response.status).toBe(200)
+      expect(body.success).toBe(true)
+      expect(body.data).toEqual({
+        sessionID,
+        cancelled: true,
+      })
+      expect(controller.signal.aborted).toBe(true)
+      expect(RunningState.isRunning(sessionID!)).toBe(false)
+    } finally {
+      if (sessionID) {
+        RunningState.finish(sessionID, controller)
+        Session.removeSession(sessionID)
+      }
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   test("POST /api/projects should validate payload", async () => {

@@ -8,6 +8,7 @@ import {
 import type {
   ComposerPermissionMode,
   CreateSessionTab,
+  PendingAgentStream,
   PermissionRequest,
   SessionContextUsage,
   SessionDiffState,
@@ -42,8 +43,6 @@ import {
   upsertSessionInWorkspace,
   upsertWorkspaceGroup,
 } from "../workspace"
-import { collectSessionDirectoryMap } from "./workspace-loading-hooks"
-import type { WorkspaceStateUpdater } from "./workspace-store"
 import {
   createCreateSessionWorkbenchTab,
   createSessionWorkbenchTab,
@@ -52,7 +51,8 @@ import {
   resolveCreateSessionWorkspaceID,
   resolveWorkbenchGroupID,
 } from "./workspace-derived-state"
-import type { PendingAgentStream } from "../types"
+import { collectSessionDirectoryMap } from "./workspace-loading-hooks"
+import type { WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 

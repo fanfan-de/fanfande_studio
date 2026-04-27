@@ -129,6 +129,7 @@ function useComposerHarness(input?: {
   return {
     controller,
     createSessionForWorkspace,
+    pendingStreamsRef,
     turnsRef,
   }
 }
@@ -173,5 +174,48 @@ describe("composer controller", () => {
       }),
     )
     expect(result.current.turnsRef.current["created-session-1"]).toHaveLength(2)
+  })
+
+  it("cancels the active pending stream for the current session", async () => {
+    const previousDesktop = window.desktop
+    const cancelTurn = vi.fn(async (input: { backendSessionID: string; clientTurnID: string }) => ({
+      ...input,
+      localRequestAborted: true,
+      backendCancelled: true,
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        agentSession: {
+          cancelTurn,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() => useComposerHarness())
+
+      result.current.pendingStreamsRef.current["stream-1"] = {
+        assistantTurnID: "assistant-1",
+        backendSessionID: "backend-session-1",
+        sessionID: "session-1",
+      }
+
+      await act(async () => {
+        await result.current.controller.handleCancelSend()
+      })
+
+      expect(cancelTurn).toHaveBeenCalledWith({
+        backendSessionID: "backend-session-1",
+        clientTurnID: "stream-1",
+      })
+      expect(result.current.pendingStreamsRef.current["stream-1"]?.cancelRequested).toBe(true)
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
   })
 })

@@ -1,37 +1,22 @@
-import { Fragment, memo, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
-import { createPortal } from "react-dom"
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import {
   ActivityRail,
   CanvasRegionUtilityMenu,
-  Composer,
-  CreateSessionCanvas,
   GlobalSkillsCanvas,
-  PaneTabBar,
   RightSidebar,
-  SessionCanvasTopMenu,
   SettingsPage,
   Sidebar,
-  SidebarToggleButton,
   SidebarResizer,
-  ThreadView,
   WindowChrome,
 } from "./app/components"
-import { ComposerUtilityBar } from "./app/ComposerUtilityBar"
-import { createComposerDraftStateFromPlainText } from "./app/composer/draft-state"
-import { TerminalPanel } from "./app/terminal/TerminalPanel"
-import { TerminalPanelToggleButton } from "./app/terminal/TerminalPanelToggleButton"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
-import { useTerminalWorkspace } from "./app/terminal/use-terminal-workspace"
-import { clamp } from "./app/utils"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
-import { useProjectComposer } from "./app/use-project-composer"
 import { useSettingsPage } from "./app/use-settings-page"
-import type { AssistantTraceVisibility, ComposerDraftState } from "./app/types"
+import { clamp } from "./app/utils"
 import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
 import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
-import { isSideChatSession } from "./app/workspace"
 
 const MIN_WORKBENCH_PANE_WIDTH = 320
 const MIN_WORKBENCH_PANE_HEIGHT = 240
@@ -61,89 +46,7 @@ interface ActivePaneResize {
   totalSize: number
 }
 
-const PANE_DROP_PREVIEW_INSET = 12
-const PANE_DROP_PREVIEW_GAP = 12
-const PANE_DROP_PREVIEW_HALF_SPAN = `calc(50% - ${PANE_DROP_PREVIEW_INSET + PANE_DROP_PREVIEW_GAP / 2}px)`
-const PANE_DROP_PREVIEW_FULL_SPAN = `calc(100% - ${PANE_DROP_PREVIEW_INSET * 2}px)`
-const PANE_DROP_PREVIEW_TRAILING_OFFSET = `calc(50% + ${PANE_DROP_PREVIEW_GAP / 2}px)`
 
-function getPaneDropPreviewStyles(position: PaneDropPosition): { current: CSSProperties; incoming: CSSProperties } {
-  switch (position) {
-    case "left":
-      return {
-        current: {
-          top: `${PANE_DROP_PREVIEW_INSET}px`,
-          left: PANE_DROP_PREVIEW_TRAILING_OFFSET,
-          width: PANE_DROP_PREVIEW_HALF_SPAN,
-          height: PANE_DROP_PREVIEW_FULL_SPAN,
-        },
-        incoming: {
-          top: `${PANE_DROP_PREVIEW_INSET}px`,
-          left: `${PANE_DROP_PREVIEW_INSET}px`,
-          width: PANE_DROP_PREVIEW_HALF_SPAN,
-          height: PANE_DROP_PREVIEW_FULL_SPAN,
-        },
-      }
-    case "right":
-      return {
-        current: {
-          top: `${PANE_DROP_PREVIEW_INSET}px`,
-          left: `${PANE_DROP_PREVIEW_INSET}px`,
-          width: PANE_DROP_PREVIEW_HALF_SPAN,
-          height: PANE_DROP_PREVIEW_FULL_SPAN,
-        },
-        incoming: {
-          top: `${PANE_DROP_PREVIEW_INSET}px`,
-          left: PANE_DROP_PREVIEW_TRAILING_OFFSET,
-          width: PANE_DROP_PREVIEW_HALF_SPAN,
-          height: PANE_DROP_PREVIEW_FULL_SPAN,
-        },
-      }
-    case "top":
-      return {
-        current: {
-          top: PANE_DROP_PREVIEW_TRAILING_OFFSET,
-          left: `${PANE_DROP_PREVIEW_INSET}px`,
-          width: PANE_DROP_PREVIEW_FULL_SPAN,
-          height: PANE_DROP_PREVIEW_HALF_SPAN,
-        },
-        incoming: {
-          top: `${PANE_DROP_PREVIEW_INSET}px`,
-          left: `${PANE_DROP_PREVIEW_INSET}px`,
-          width: PANE_DROP_PREVIEW_FULL_SPAN,
-          height: PANE_DROP_PREVIEW_HALF_SPAN,
-        },
-      }
-    case "bottom":
-      return {
-        current: {
-          top: `${PANE_DROP_PREVIEW_INSET}px`,
-          left: `${PANE_DROP_PREVIEW_INSET}px`,
-          width: PANE_DROP_PREVIEW_FULL_SPAN,
-          height: PANE_DROP_PREVIEW_HALF_SPAN,
-        },
-        incoming: {
-          top: PANE_DROP_PREVIEW_TRAILING_OFFSET,
-          left: `${PANE_DROP_PREVIEW_INSET}px`,
-          width: PANE_DROP_PREVIEW_FULL_SPAN,
-          height: PANE_DROP_PREVIEW_HALF_SPAN,
-        },
-      }
-    case "center":
-      return {
-        current: {
-          inset: 0,
-        },
-        incoming: {
-          top: "50%",
-          left: "50%",
-          width: 0,
-          height: 0,
-          opacity: 0,
-        },
-      }
-  }
-}
 
 export function App() {
   const {
@@ -210,6 +113,7 @@ export function App() {
     composerRefreshVersion,
     deletingSessionID,
     expandedFolderID,
+    handleCancelSend,
     handleComposerPermissionModeToggle,
     handleCanvasSessionTabClose,
     handleCanvasSessionTabSelect,
@@ -648,11 +552,12 @@ export function App() {
   ]
     .filter(Boolean)
     .join(" ")
+  const windowControls = (
+    <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
+  )
 
   return (
     <div className={windowShellClassName}>
-      <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
-
       <main ref={appShellRef} className="app-shell" style={appShellStyle}>
         {isActivityRailVisible ? (
           <ActivityRail
@@ -734,6 +639,7 @@ export function App() {
                 onToggleLeftSidebar={handleSidebarToggle}
                 onToggleRightSidebar={handleRightSidebarToggle}
                 showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
+                windowControls={isRightSidebarCollapsed ? windowControls : null}
               />
             </div>
           ) : null}
@@ -769,6 +675,7 @@ export function App() {
                 paneDropTarget={paneDropTarget}
                 paneRefs={paneRefs}
                 workbenchPanesRef={workbenchPanesRef}
+                windowControls={isRightSidebarCollapsed ? windowControls : null}
                 paneStateByID={workbenchPaneStateByID}
                 permissionRequestActionError={permissionRequestActionError}
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
@@ -795,6 +702,7 @@ export function App() {
                 onRemoveComposerAttachment={handleRemoveComposerAttachment}
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}
                 onSelectSessionTab={handleCanvasSessionTabSelect}
+                onCancelSend={handleCancelSend}
                 onSend={handleSend}
                 onSetDraft={setDraftForTab}
                 onToggleLeftSidebar={handleSidebarToggle}
@@ -860,6 +768,7 @@ export function App() {
               onWorkspaceFileSelect={handleWorkspaceFileSelect}
               onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
               onViewChange={handleRightSidebarViewChange}
+              windowControls={windowControls}
             />
           </>
         ) : null}
@@ -964,693 +873,3 @@ export function App() {
     </div>
   )
 }
-
-type AgentWorkspaceState = ReturnType<typeof useAgentWorkspace>
-type WorkbenchLayout = AgentWorkspaceState["workbenchLayout"]
-type WorkbenchPaneState = AgentWorkspaceState["workbenchPaneStates"][number]
-type WorkbenchPaneStateByID = AgentWorkspaceState["workbenchPaneStateByID"]
-type PaneTabDescriptor =
-  | {
-      key: string
-      kind: "session"
-      sessionID: string
-      title: string
-      sessionKind?: NonNullable<WorkbenchPaneState["activeSession"]>["kind"]
-      workflow?: NonNullable<WorkbenchPaneState["activeSession"]>["workflow"]
-    }
-  | {
-      key: string
-      kind: "create-session"
-      createSessionTabID: string
-      title: string
-    }
-
-function getTopRowRightmostPaneID(layout: WorkbenchLayout): string | null {
-  function visit(nodeId: string | null): string | null {
-    if (!nodeId) return null
-
-    const node = layout.nodes[nodeId]
-    if (!node) return null
-    if (node.kind === "group") return node.id
-
-    if (node.axis === "horizontal") {
-      for (let index = node.children.length - 1; index >= 0; index -= 1) {
-        const match = visit(node.children[index] ?? null)
-        if (match) return match
-      }
-      return null
-    }
-
-    return visit(node.children[0] ?? null)
-  }
-
-  return visit(layout.rootId)
-}
-
-interface WorkbenchTreeProps {
-  assistantTraceVisibility: AssistantTraceVisibility
-  composerRefreshVersion: number
-  draggedTabKey: string | null
-  firstPaneID: string | null
-  isActivityRailVisible: boolean
-  isAgentDebugTraceEnabled: boolean
-  isResolvingPermissionRequest: boolean
-  isRightSidebarCollapsed: boolean
-  isSidebarCollapsed: boolean
-  lastPaneID: string | null
-  layout: WorkbenchLayout
-  paneDropTarget: PaneDropTarget | null
-  paneRefs: { current: Record<string, HTMLElement | null> }
-  workbenchPanesRef: { current: HTMLDivElement | null }
-  paneStateByID: WorkbenchPaneStateByID
-  permissionRequestActionError: string | null
-  permissionRequestActionRequestID: string | null
-  workspaces: AgentWorkspaceState["workspaces"]
-  onCloseCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
-  onCloseSessionTab: (sessionID: string, paneID?: string) => void
-  onCreateSessionSubmit: (createSessionTabID?: string | null, paneID?: string) => Promise<void>
-  onCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
-  onFocusPane: (paneID: string) => void
-  onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
-  onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
-  onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
-  onPaneDropTargetChange: (paneID: string, position: PaneDropPosition | null) => void
-  onPaneResizerPointerDown: (event: ReactPointerEvent<HTMLDivElement>, splitID: string, leftIndex: number) => void
-  onPaneTabDragEnd: () => void
-  onPaneTabDragStart: (paneID: string, tabKey: string) => void
-  onPaneTabPointerDragMove: (clientX: number, clientY: number) => void
-  onPaneTabPointerDrop: (clientX: number, clientY: number) => void
-  onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
-  onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
-  onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
-  onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
-  onRegisterPane: (paneID: string, node: HTMLElement | null) => void
-  onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
-  onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
-  onSelectSessionTab: (sessionID: string, paneID?: string) => void
-  onSend: AgentWorkspaceState["handleSend"]
-  onSetDraft: (tabKey: string, value: ComposerDraftState) => void
-  onToggleLeftSidebar: () => void
-  onToggleRightSidebar: () => void
-}
-
-function WorkbenchTree(props: WorkbenchTreeProps) {
-  if (!props.layout.rootId) {
-    return <div ref={props.workbenchPanesRef} className="workbench-panes" />
-  }
-
-  const hasMultiplePanes = props.firstPaneID !== null && props.lastPaneID !== null && props.firstPaneID !== props.lastPaneID
-  const topRowRightmostPaneID = getTopRowRightmostPaneID(props.layout) ?? props.lastPaneID
-
-  return (
-    <div ref={props.workbenchPanesRef} className={hasMultiplePanes ? "workbench-panes has-multiple" : "workbench-panes"}>
-      <WorkbenchNodeView {...props} lastPaneID={topRowRightmostPaneID} nodeId={props.layout.rootId} />
-    </div>
-  )
-}
-
-interface WorkbenchNodeViewProps extends WorkbenchTreeProps {
-  flexSize?: number
-  isTopRow?: boolean
-  nodeId: string
-}
-
-function WorkbenchNodeView({
-  flexSize,
-  isTopRow = true,
-  nodeId,
-  ...props
-}: WorkbenchNodeViewProps) {
-  const node = props.layout.nodes[nodeId]
-  if (!node) return null
-
-  const style: CSSProperties | undefined = flexSize !== undefined
-    ? {
-        flexBasis: 0,
-        flexGrow: flexSize,
-      }
-    : undefined
-
-  if (node.kind === "group") {
-    const pane = props.paneStateByID[node.id]
-    if (!pane) return null
-
-    return (
-      <PaneSurface
-        assistantTraceVisibility={props.assistantTraceVisibility}
-        composerRefreshVersion={props.composerRefreshVersion}
-        draggedTabKey={props.draggedTabKey}
-        dropTargetPosition={props.paneDropTarget?.paneID === pane.id ? props.paneDropTarget.position : null}
-        isResolvingPermissionRequest={props.isResolvingPermissionRequest}
-        isAgentDebugTraceEnabled={props.isAgentDebugTraceEnabled}
-        isTopRow={isTopRow}
-        leadingAccessory={
-          node.id === props.firstPaneID && !props.isActivityRailVisible && props.isSidebarCollapsed ? (
-            <SidebarToggleButton isSidebarCollapsed={true} onToggleSidebar={props.onToggleLeftSidebar} side="left" variant="top-menu" />
-          ) : null
-        }
-        pane={pane}
-        permissionRequestActionError={props.permissionRequestActionError}
-        permissionRequestActionRequestID={props.permissionRequestActionRequestID}
-        style={style}
-        trailingAccessory={
-          node.id === props.lastPaneID ? (
-            <SidebarToggleButton
-              isSidebarCollapsed={props.isRightSidebarCollapsed}
-              onToggleSidebar={props.onToggleRightSidebar}
-              side="right"
-              variant="top-menu"
-            />
-          ) : null
-        }
-        workspaces={props.workspaces}
-        onCloseCreateSessionTab={props.onCloseCreateSessionTab}
-        onCloseSessionTab={props.onCloseSessionTab}
-        onCreateSessionSubmit={props.onCreateSessionSubmit}
-        onCreateSessionWorkspaceChange={props.onCreateSessionWorkspaceChange}
-        onFocusPane={props.onFocusPane}
-        onInspectFileInSidebar={props.onInspectFileInSidebar}
-        onOpenCreateSessionTab={props.onOpenCreateSessionTab}
-        onOpenSideChat={props.onOpenSideChat}
-        onPaneDropTargetChange={props.onPaneDropTargetChange}
-        onPaneTabDragEnd={props.onPaneTabDragEnd}
-        onPaneTabDragStart={props.onPaneTabDragStart}
-        onPaneTabPointerDragMove={props.onPaneTabPointerDragMove}
-        onPaneTabPointerDrop={props.onPaneTabPointerDrop}
-        onPaneTabDrop={props.onPaneTabDrop}
-        onPermissionRequestResponse={props.onPermissionRequestResponse}
-        onPickComposerAttachments={props.onPickComposerAttachments}
-        onToggleComposerPermissionMode={props.onToggleComposerPermissionMode}
-        onRegisterPane={props.onRegisterPane}
-        onRemoveComposerAttachment={props.onRemoveComposerAttachment}
-        onSelectCreateSessionTab={props.onSelectCreateSessionTab}
-        onSelectSessionTab={props.onSelectSessionTab}
-        onSend={props.onSend}
-        onSetDraft={props.onSetDraft}
-      />
-    )
-  }
-
-  return (
-    <div
-      ref={(element) => props.onRegisterPane(node.id, element)}
-      className={`workbench-split is-${node.axis}`}
-      style={style}
-    >
-      {node.children.map((childId, index) => {
-        const nextChildId = node.children[index + 1]
-        const childIsTopRow = isTopRow && (node.axis === "horizontal" || index === 0)
-
-        return (
-          <Fragment key={childId}>
-            <WorkbenchNodeView {...props} flexSize={node.sizes[index]} isTopRow={childIsTopRow} nodeId={childId} />
-            {nextChildId ? (
-              <div
-                className={node.axis === "horizontal" ? "workbench-pane-resizer is-horizontal" : "workbench-pane-resizer is-vertical"}
-                data-testid={node.id === props.layout.rootId ? `workbench-pane-resizer-${index}` : `workbench-pane-resizer-${node.id}-${index}`}
-                role="separator"
-                aria-label="Resize workbench panes"
-                aria-orientation={node.axis === "horizontal" ? "vertical" : "horizontal"}
-                onPointerDown={(event) => props.onPaneResizerPointerDown(event, node.id, index)}
-              />
-            ) : null}
-          </Fragment>
-        )
-      })}
-    </div>
-  )
-}
-
-interface PaneSurfaceProps {
-  assistantTraceVisibility: AssistantTraceVisibility
-  composerRefreshVersion: number
-  draggedTabKey: string | null
-  dropTargetPosition: PaneDropPosition | null
-  isResolvingPermissionRequest: boolean
-  isAgentDebugTraceEnabled: boolean
-  isTopRow: boolean
-  leadingAccessory: ReactNode
-  pane: WorkbenchPaneState
-  permissionRequestActionError: string | null
-  permissionRequestActionRequestID: string | null
-  style?: CSSProperties
-  trailingAccessory: ReactNode
-  workspaces: AgentWorkspaceState["workspaces"]
-  onCloseCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
-  onCloseSessionTab: (sessionID: string, paneID?: string) => void
-  onCreateSessionSubmit: (createSessionTabID?: string | null, paneID?: string) => Promise<void>
-  onCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
-  onFocusPane: (paneID: string) => void
-  onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
-  onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
-  onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
-  onPaneDropTargetChange: (paneID: string, position: PaneDropPosition | null) => void
-  onPaneTabDragEnd: () => void
-  onPaneTabDragStart: (paneID: string, tabKey: string) => void
-  onPaneTabPointerDragMove: (clientX: number, clientY: number) => void
-  onPaneTabPointerDrop: (clientX: number, clientY: number) => void
-  onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
-  onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
-  onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
-  onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
-  onRegisterPane: (paneID: string, node: HTMLElement | null) => void
-  onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
-  onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
-  onSelectSessionTab: (sessionID: string, paneID?: string) => void
-  onSend: AgentWorkspaceState["handleSend"]
-  onSetDraft: (tabKey: string, value: ComposerDraftState) => void
-}
-
-const PaneSurface = memo(function PaneSurface({
-  assistantTraceVisibility,
-  composerRefreshVersion,
-  draggedTabKey,
-  dropTargetPosition,
-  isResolvingPermissionRequest,
-  isAgentDebugTraceEnabled,
-  isTopRow,
-  leadingAccessory,
-  pane,
-  permissionRequestActionError,
-  permissionRequestActionRequestID,
-  style,
-  trailingAccessory,
-  workspaces,
-  onCloseCreateSessionTab,
-  onCloseSessionTab,
-  onCreateSessionSubmit,
-  onCreateSessionWorkspaceChange,
-  onFocusPane,
-  onInspectFileInSidebar,
-  onOpenCreateSessionTab,
-  onOpenSideChat,
-  onPaneDropTargetChange,
-  onPaneTabDragEnd,
-  onPaneTabDragStart,
-  onPaneTabPointerDragMove,
-  onPaneTabPointerDrop,
-  onPaneTabDrop,
-  onPermissionRequestResponse,
-  onPickComposerAttachments,
-  onToggleComposerPermissionMode,
-  onRegisterPane,
-  onRemoveComposerAttachment,
-  onSelectCreateSessionTab,
-  onSelectSessionTab,
-  onSend,
-  onSetDraft,
-}: PaneSurfaceProps) {
-  const threadColumnRef = useRef<HTMLDivElement | null>(null)
-  const splitPreviewPosition = draggedTabKey && dropTargetPosition && dropTargetPosition !== "center" ? dropTargetPosition : null
-  const splitPreviewStyles = splitPreviewPosition ? getPaneDropPreviewStyles(splitPreviewPosition) : null
-
-  useEffect(() => {
-    const threadColumn = threadColumnRef.current
-    if (!threadColumn) return
-    threadColumn.scrollTop = threadColumn.scrollHeight
-  }, [pane.activeSession?.id, pane.activeTurns, pane.pendingPermissionRequests.length, permissionRequestActionRequestID])
-
-  const composer = useProjectComposer({
-    attachmentPaths: pane.composerAttachments.map((attachment) => attachment.path),
-    projectID: pane.composerProjectID,
-    refreshToken: composerRefreshVersion,
-  })
-  const readOnlySideChat = isSideChatSession(pane.activeSession)
-
-  return (
-    <section
-      ref={(node) => onRegisterPane(pane.id, node)}
-      className={pane.isFocused ? "workbench-pane is-focused" : "workbench-pane"}
-      data-is-top-row={isTopRow ? "true" : "false"}
-      data-pane-id={pane.id}
-      style={style}
-      onPointerDownCapture={() => onFocusPane(pane.id)}
-    >
-      <div className={splitPreviewPosition ? `workbench-pane-stage pane-drop-preview is-${splitPreviewPosition}` : "workbench-pane-stage"}>
-        <div className={splitPreviewPosition ? "workbench-pane-live-region pane-drop-preview-current" : "workbench-pane-live-region"} style={splitPreviewStyles?.current}>
-          <PaneTabBar
-            activeTabKey={pane.activeTabKey}
-            draggedTabKey={draggedTabKey}
-            hasMergePreview={draggedTabKey !== null && dropTargetPosition === "center"}
-            isFocused={pane.isFocused}
-            isTopRow={isTopRow}
-            leadingAccessory={leadingAccessory}
-            tabs={pane.tabs as PaneTabDescriptor[]}
-            onCloseCreateSessionTab={(createSessionTabID) => onCloseCreateSessionTab(createSessionTabID, pane.id)}
-            onCloseSessionTab={(sessionID) => onCloseSessionTab(sessionID, pane.id)}
-            onFocus={() => onFocusPane(pane.id)}
-            onOpenCreateSessionTab={() => onOpenCreateSessionTab(pane.workspace?.id ?? null, pane.id)}
-            onTabDragEnd={onPaneTabDragEnd}
-            onTabDragStart={(tabKey) => onPaneTabDragStart(pane.id, tabKey)}
-            onTabPointerDragMove={onPaneTabPointerDragMove}
-            onTabPointerDrop={onPaneTabPointerDrop}
-            onSelectCreateSessionTab={(createSessionTabID) => onSelectCreateSessionTab(createSessionTabID, pane.id)}
-            onSelectSessionTab={(sessionID) => onSelectSessionTab(sessionID, pane.id)}
-            trailingAccessory={trailingAccessory}
-          />
-          <SessionCanvasTopMenu
-            activeSession={pane.activeSession}
-            gitProjectID={pane.projectID}
-            gitDirectory={pane.workspace?.directory ?? null}
-            mcpOptions={composer.mcpOptions}
-            pendingPermissionRequests={pane.pendingPermissionRequests}
-            selectedMcpServerIDs={composer.selectedMcpServerIDs}
-            selectedMcpServerLabel={composer.selectedMcpLabel}
-            onMcpServerToggle={composer.handleMcpToggle}
-            skillOptions={composer.skillOptions}
-            selectedSkillIDs={composer.selectedSkillIDs}
-            selectedSkillLabel={composer.selectedSkillLabel}
-            onSkillToggle={composer.handleSkillToggle}
-          />
-          {pane.createSessionTabID ? (
-            <>
-              <CreateSessionCanvas
-                isCreatingSession={pane.isCreatingSession}
-                selectedWorkspaceID={pane.createSessionWorkspaceID}
-                workspaces={workspaces}
-                onWorkspaceChange={(workspaceID) => onCreateSessionWorkspaceChange(workspaceID, pane.createSessionTabID)}
-              />
-              <div className="composer-stack">
-                <Composer
-                  attachments={pane.composerAttachments}
-                  attachmentButtonTitle={composer.attachmentButtonTitle}
-                  attachmentDisabledReason={composer.attachmentDisabledReason}
-                  attachmentError={composer.attachmentError}
-                  canSend={Boolean(pane.createSessionWorkspaceID)}
-                  draftState={pane.draftState}
-                  hasPendingPermissionRequests={false}
-                  isSending={pane.isSending || pane.isCreatingSession}
-                  mcpOptions={composer.mcpOptions}
-                  modelOptions={composer.modelOptions}
-                  onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
-                  onMcpToggle={composer.handleMcpToggle}
-                  reasoningEffortOptions={composer.reasoningEffortOptions}
-                  permissionMode={pane.composerPermissionMode}
-                  selectedMcpServerIDs={composer.selectedMcpServerIDs}
-                  selectedModel={composer.selectedModel}
-                  selectedModelLabel={composer.selectedModelLabel}
-                  selectedReasoningEffort={composer.selectedReasoningEffort}
-                  selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
-                  selectedSkillIDs={composer.selectedSkillIDs}
-                  showModelSelector
-                  showProjectTagCommands
-                  skillOptions={composer.skillOptions}
-                  unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-                  workspaceDirectory={pane.workspace?.directory ?? null}
-                  onModelChange={composer.handleModelChange}
-                  onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
-                  onReasoningEffortChange={composer.handleReasoningEffortChange}
-                  onPickAttachments={() =>
-                    onPickComposerAttachments({
-                      allowImage: composer.attachmentCapabilities.image,
-                      allowPdf: composer.attachmentCapabilities.pdf,
-                      disabledReason: composer.attachmentDisabledReason,
-                      tabKey: pane.tabKey,
-                    })
-                  }
-                  onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
-                  onSend={(draftStateOverride) =>
-                    void onSend({
-                      attachmentError: composer.attachmentError,
-                      createSessionTabID: pane.createSessionTabID,
-                      draftStateOverride,
-                      paneID: pane.id,
-                      selectedReasoningEffort: composer.selectedReasoningEffort,
-                      selectedSkillIDs: composer.selectedSkillIDs,
-                      tabKey: pane.tabKey,
-                      waitForPendingModelSelection: composer.awaitPendingModelSelection,
-                    })
-                  }
-                />
-                <ComposerUtilityBar
-                  contextWindow={composer.contextWindow}
-                  gitDirectory={pane.workspace?.directory ?? null}
-                  gitProjectID={pane.projectID}
-                  permissionMode={pane.composerPermissionMode}
-                  onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
-                  showGitControls
-                  showPermissionToggle
-                  usage={null}
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <ThreadView
-                activeProjectID={pane.projectID}
-                activeSession={pane.activeSession}
-                assistantTraceVisibility={assistantTraceVisibility}
-                composerRefreshVersion={composerRefreshVersion}
-                isResolvingPermissionRequest={isResolvingPermissionRequest}
-                isSendingQuestionAnswer={pane.isSending}
-                isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-                pendingPermissionRequests={pane.pendingPermissionRequests}
-                permissionRequestActionError={permissionRequestActionError}
-                permissionRequestActionRequestID={permissionRequestActionRequestID}
-                activeTurns={pane.activeTurns}
-                sideChatAttachments={pane.activeSideChatAttachments}
-                sideChatCountsByAnchorMessageID={pane.sideChatCountsByAnchorMessageID}
-                sideChatDraftState={pane.activeSideChatDraftState}
-                sideChatIsSending={pane.activeSideChatIsSending}
-                sideChatPendingPermissionRequests={pane.activeSideChatPendingPermissionRequests}
-                sideChatPermissionRequestActionError={permissionRequestActionError}
-                sideChatPermissionRequestActionRequestID={permissionRequestActionRequestID}
-                sideChatSession={pane.activeSideChatSession}
-                sideChatTurns={pane.activeSideChatTurns}
-                threadColumnRef={threadColumnRef}
-                onAskUserQuestionAnswer={(answer) =>
-                  void onSend({
-                    attachmentsOverride: [],
-                    draftStateOverride: createComposerDraftStateFromPlainText(answer.text),
-                    paneID: pane.id,
-                    preserveComposerState: true,
-                    questionAnswer: answer.questionID
-                      ? {
-                          questionID: answer.questionID,
-                          selectedOptions: answer.selectedOptions,
-                          freeformText: answer.freeformText,
-                        }
-                      : undefined,
-                    selectedReasoningEffort: composer.selectedReasoningEffort,
-                    selectedSkillIDs: composer.selectedSkillIDs,
-                    sessionID: pane.sessionID,
-                    tabKey: pane.tabKey,
-                    waitForPendingModelSelection: composer.awaitPendingModelSelection,
-                    })
-                }
-                onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
-                onOpenSideChat={(anchorMessageID) =>
-                  void onOpenSideChat(anchorMessageID, {
-                    paneID: pane.id,
-                    parentSessionID: pane.sessionID,
-                  })
-                }
-                onSideChatDraftStateChange={(value) => {
-                  if (pane.activeSideChatTabKey) {
-                    onSetDraft(pane.activeSideChatTabKey, value)
-                  }
-                }}
-                onSideChatPickAttachments={({ allowImage, allowPdf, disabledReason }) =>
-                  onPickComposerAttachments({
-                    allowImage,
-                    allowPdf,
-                    disabledReason,
-                    tabKey: pane.activeSideChatTabKey,
-                  })
-                }
-                onSideChatRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.activeSideChatTabKey)}
-                onSideChatSend={(input) =>
-                  void onSend({
-                    attachmentError: input.attachmentError,
-                    draftStateOverride: input.draftStateOverride,
-                    paneID: pane.id,
-                    preserveComposerState: Boolean(input.questionAnswer),
-                    questionAnswer: input.questionAnswer,
-                    selectedReasoningEffort: input.selectedReasoningEffort,
-                    selectedSkillIDs: input.selectedSkillIDs,
-                    sessionID: pane.activeSideChatSession?.id,
-                    tabKey: pane.activeSideChatTabKey,
-                    waitForPendingModelSelection: input.waitForPendingModelSelection,
-                  })
-                }
-                onPermissionRequestResponse={onPermissionRequestResponse}
-              />
-              <div className="composer-stack">
-                <Composer
-                  attachments={pane.composerAttachments}
-                  attachmentButtonTitle={composer.attachmentButtonTitle}
-                  attachmentDisabledReason={composer.attachmentDisabledReason}
-                  attachmentError={composer.attachmentError}
-                  canSend={Boolean(pane.activeSession)}
-                  draftState={pane.draftState}
-                  hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
-                  isSending={pane.isSending}
-                  mcpOptions={composer.mcpOptions}
-                  modelOptions={composer.modelOptions}
-                  onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
-                  onMcpToggle={readOnlySideChat ? undefined : composer.handleMcpToggle}
-                  reasoningEffortOptions={composer.reasoningEffortOptions}
-                  permissionMode={pane.composerPermissionMode}
-                  selectedMcpServerIDs={composer.selectedMcpServerIDs}
-                  selectedModel={composer.selectedModel}
-                  selectedModelLabel={composer.selectedModelLabel}
-                  selectedReasoningEffort={composer.selectedReasoningEffort}
-                  selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
-                  selectedSkillIDs={composer.selectedSkillIDs}
-                  showModelSelector={!readOnlySideChat}
-                  showProjectTagCommands={!readOnlySideChat}
-                  skillOptions={composer.skillOptions}
-                  unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-                  workspaceDirectory={pane.workspace?.directory ?? null}
-                  onModelChange={composer.handleModelChange}
-                  onPermissionModeToggle={readOnlySideChat ? undefined : () => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
-                  onReasoningEffortChange={composer.handleReasoningEffortChange}
-                  onPickAttachments={() =>
-                    onPickComposerAttachments({
-                      allowImage: composer.attachmentCapabilities.image,
-                      allowPdf: composer.attachmentCapabilities.pdf,
-                      disabledReason: composer.attachmentDisabledReason,
-                      tabKey: pane.tabKey,
-                    })
-                  }
-                  onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
-                  onSend={(draftStateOverride) =>
-                    void onSend({
-                      attachmentError: composer.attachmentError,
-                      draftStateOverride,
-                      paneID: pane.id,
-                      selectedReasoningEffort: composer.selectedReasoningEffort,
-                      selectedSkillIDs: composer.selectedSkillIDs,
-                      sessionID: pane.sessionID,
-                      tabKey: pane.tabKey,
-                      waitForPendingModelSelection: composer.awaitPendingModelSelection,
-                    })
-                  }
-                />
-                <ComposerUtilityBar
-                  contextWindow={composer.contextWindow}
-                  gitDirectory={pane.workspace?.directory ?? null}
-                  gitProjectID={pane.projectID}
-                  permissionMode={pane.composerPermissionMode}
-                  onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
-                  showGitControls={!readOnlySideChat}
-                  showPermissionToggle={!readOnlySideChat}
-                  usage={pane.activeSessionContextUsage}
-                />
-              </div>
-            </>
-          )}
-        </div>
-        {splitPreviewStyles ? <div className="workbench-pane-incoming-preview pane-drop-preview-incoming" style={splitPreviewStyles.incoming} aria-hidden="true" /> : null}
-      </div>
-      {draggedTabKey ? (
-        <div className={isTopRow ? "pane-drop-targets is-top-row" : "pane-drop-targets"} aria-hidden="true">
-          {(
-            [
-              ["top", "Drop tab to split above"],
-              ["left", "Drop tab to split left"],
-              ["center", "Drop tab into pane"],
-              ["right", "Drop tab to split right"],
-              ["bottom", "Drop tab to split below"],
-            ] as const
-          ).map(([position, label]) => (
-            <div
-              key={position}
-              className={dropTargetPosition === position ? `pane-drop-target is-active is-${position}` : `pane-drop-target is-${position}`}
-              data-pane-drop-position={position}
-              data-pane-id={pane.id}
-              data-testid={`pane-drop-${position}`}
-              aria-label={label}
-              onDragEnter={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onPaneDropTargetChange(pane.id, position)
-              }}
-              onDragOver={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onPaneDropTargetChange(pane.id, position)
-              }}
-              onDrop={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                onPaneTabDrop(pane.id, position)
-              }}
-            />
-          ))}
-        </div>
-      ) : null}
-    </section>
-  )
-})
-
-interface TerminalAreaProps {
-  brandTheme: "terra" | "sage"
-  collapsedTogglePortalTarget?: Element | null
-  colorMode: "system" | "light" | "dark"
-  currentWorkspaceDirectory: string | null
-  defaultCwd: string
-  storageKey?: string
-}
-
-const TerminalArea = memo(function TerminalArea({
-  brandTheme,
-  collapsedTogglePortalTarget,
-  colorMode,
-  currentWorkspaceDirectory,
-  defaultCwd,
-  storageKey,
-}: TerminalAreaProps) {
-  const {
-    activeSession,
-    handleCloseTerminal,
-    handleCreateTerminal,
-    handlePanelHeightChange,
-    handleSelectTerminal,
-    handleTerminalInput,
-    handleTerminalResize,
-    handleTerminalSnapshotChange,
-    handleTogglePanel,
-    isOpen,
-    panelHeight,
-    sessions,
-    subscribeToTerminalStream,
-  } = useTerminalWorkspace({
-    defaultCwd,
-    currentWorkspaceDirectory,
-    storageKey,
-  })
-
-  const collapsedToggleButton = <TerminalPanelToggleButton isOpen={false} onToggle={() => void handleTogglePanel()} />
-
-  return (
-    <>
-      {!isOpen
-        ? collapsedTogglePortalTarget
-          ? createPortal(collapsedToggleButton, collapsedTogglePortalTarget)
-          : (
-            <div className="canvas-terminal-toggle-anchor">
-              {collapsedToggleButton}
-            </div>
-          )
-        : null}
-      <TerminalPanel
-        activeSession={activeSession}
-        brandTheme={brandTheme}
-        colorMode={colorMode}
-        isOpen={isOpen}
-        panelHeight={panelHeight}
-        sessions={sessions}
-        onCloseTerminal={handleCloseTerminal}
-        onCreateTerminal={handleCreateTerminal}
-        onPanelHeightChange={handlePanelHeightChange}
-        onSelectTerminal={handleSelectTerminal}
-        onTerminalInput={handleTerminalInput}
-        onTerminalResize={handleTerminalResize}
-        onTerminalSnapshotChange={handleTerminalSnapshotChange}
-        onTogglePanel={() => void handleTogglePanel()}
-        subscribeToTerminalStream={subscribeToTerminalStream}
-      />
-    </>
-  )
-})

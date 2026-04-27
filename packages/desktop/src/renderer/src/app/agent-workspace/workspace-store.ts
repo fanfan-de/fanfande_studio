@@ -1,6 +1,6 @@
 import { type SetStateAction } from "react"
-import { createStore, type StoreApi } from "zustand/vanilla"
 import { useStore } from "zustand"
+import { createStore, type StoreApi } from "zustand/vanilla"
 import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import { initialConversations, initialSelection, seedWorkspaces } from "../seed-data"
 import type {
@@ -23,9 +23,7 @@ import type {
 } from "../types"
 import type { WorkbenchLayoutState } from "../workbench/core"
 import {
-  DEFAULT_SESSION_DIFF_STATE,
-  DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
-  DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+  DEFAULT_WORKSPACE_FILE_REVIEW_STATE
 } from "./review-preview-state"
 
 export const seedWorkspaceIDs = new Set(seedWorkspaces.map((workspace) => workspace.id))

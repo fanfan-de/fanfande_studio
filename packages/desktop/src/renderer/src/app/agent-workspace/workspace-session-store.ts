@@ -1,6 +1,5 @@
 import { useRef } from "react"
-import { initialSelection, seedWorkspaces } from "../seed-data"
-import type { LeftSidebarView, RightSidebarView } from "../types"
+import { seedWorkspaces } from "../seed-data"
 import { useWorkspaceStoreSelector, type WorkspaceStoreApi } from "./workspace-store"
 
 interface WorkspaceSessionStoreOptions {

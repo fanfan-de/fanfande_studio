@@ -19,6 +19,7 @@ import type {
   WorkspaceGroup,
   WorkspacePreviewState,
 } from "../types"
+import { createID } from "../utils"
 import {
   getFirstGroupId,
   getGroupIdForTabId,
@@ -29,7 +30,7 @@ import {
   type WorkbenchLayoutState,
 } from "../workbench/core"
 import { findSession, findWorkspaceByID, isSideChatSession, isWorkspaceAvailable } from "../workspace"
-import { createID } from "../utils"
+import { resolveComposerPermissionModeForSession } from "./composer-send-service"
 import {
   DEFAULT_SESSION_DIFF_STATE,
   DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
@@ -37,7 +38,6 @@ import {
   getWorkspaceFileCommentKey,
   resolvePreviewScopeID,
 } from "./review-preview-state"
-import { resolveComposerPermissionModeForSession } from "./composer-send-service"
 
 export function collectSideChatCountsForParentSession(workspaces: WorkspaceGroup[], parentSessionID: string) {
   const counts: Record<string, number> = {}

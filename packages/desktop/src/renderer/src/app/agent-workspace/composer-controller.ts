@@ -1,11 +1,11 @@
 import type { MutableRefObject } from "react"
+import { buildComposerAttachment, isComposerAttachmentSupported } from "../composer/attachment-utils"
 import {
   appendTextToComposerDraftState,
   compileComposerSubmission,
   createEmptyComposerDraftState,
   normalizeComposerDraftState,
 } from "../composer/draft-state"
-import { buildComposerAttachment, isComposerAttachmentSupported } from "../composer/attachment-utils"
 import type {
   AssistantTurn,
   ComposerAttachment,
@@ -22,14 +22,15 @@ import type {
   UserTurn,
   WorkspaceGroup,
 } from "../types"
+import { getAgentSessionBridge } from "../agent-session/client"
 import { findSession, findWorkspaceByID, isSideChatSession } from "../workspace"
-import type { WorkspaceStateUpdater } from "./workspace-store"
 import {
   normalizeQuestionAnswerText,
   sendPromptToSession as sendPromptToSessionService,
 } from "./composer-send-service"
 import { respondPermissionRequest } from "./permission-requests-service"
 import { getWorkbenchTabReferenceFromKey } from "./workspace-derived-state"
+import type { WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 
@@ -291,6 +292,37 @@ export function useComposerController({
     })
   }
 
+  async function handleCancelSend(input?: {
+    sessionID?: string | null
+    tabKey?: string | null
+  }) {
+    const agentSession = getAgentSessionBridge()
+    if (!agentSession?.cancelTurn) return
+
+    const tabKey = input?.tabKey ?? activeTabKey
+    const tabReference = tabKey ? getWorkbenchTabReferenceFromKey(tabKey) : null
+    const sessionID = input?.sessionID ?? (tabReference?.kind === "session" ? tabReference.sessionID : activeSessionID)
+    if (!sessionID) return
+
+    const pending = Object.entries(pendingStreamsRef.current).find(([, stream]) => stream.sessionID === sessionID)
+    if (!pending) return
+
+    const [clientTurnID, stream] = pending
+    if (!stream.backendSessionID || stream.cancelRequested) return
+
+    stream.cancelRequested = true
+
+    try {
+      await agentSession.cancelTurn({
+        clientTurnID,
+        backendSessionID: stream.backendSessionID,
+      })
+    } catch (error) {
+      stream.cancelRequested = false
+      console.error("[desktop] agentSession.cancelTurn failed:", error)
+    }
+  }
+
   async function handlePermissionRequestResponse(input: {
     sessionID: string
     request: PermissionRequest
@@ -387,6 +419,7 @@ export function useComposerController({
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleRemoveComposerAttachment,
+    handleCancelSend,
     handleSend,
     sendPromptToSession,
     setDraft,

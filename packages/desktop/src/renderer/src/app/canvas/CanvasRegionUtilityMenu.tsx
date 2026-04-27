@@ -1,3 +1,4 @@
+import { type ReactNode } from "react"
 import { joinClassNames, ShellTopMenu, SidebarToggleButton } from "../shared-ui"
 
 export function CanvasRegionUtilityMenu({
@@ -6,12 +7,14 @@ export function CanvasRegionUtilityMenu({
   onToggleLeftSidebar,
   onToggleRightSidebar,
   showLeftSidebarToggleButton,
+  windowControls,
 }: {
   isRightSidebarCollapsed: boolean
   label: string
   onToggleLeftSidebar: () => void
   onToggleRightSidebar: () => void
   showLeftSidebarToggleButton: boolean
+  windowControls?: ReactNode
 }) {
   return (
     <ShellTopMenu
@@ -28,7 +31,10 @@ export function CanvasRegionUtilityMenu({
       ) : null}
       leadingClassName="canvas-region-top-menu-leading"
       trailing={(
-        <SidebarToggleButton isSidebarCollapsed={isRightSidebarCollapsed} onToggleSidebar={onToggleRightSidebar} side="right" variant="top-menu" />
+        <>
+          <SidebarToggleButton isSidebarCollapsed={isRightSidebarCollapsed} onToggleSidebar={onToggleRightSidebar} side="right" variant="top-menu" />
+          {isRightSidebarCollapsed ? windowControls : null}
+        </>
       )}
       trailingClassName={joinClassNames(
         "canvas-region-top-menu-trailing",

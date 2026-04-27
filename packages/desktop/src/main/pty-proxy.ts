@@ -1,7 +1,7 @@
 import type { WebContents } from "electron"
+import { DESKTOP_PTY_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
 import { requestAgentJSON, resolveAgentWebSocketURL } from "./agent-client"
 import type { AgentPtySessionInfo, AgentPtySocketMessage, PtyTransportIPCEvent } from "./types"
-import { DESKTOP_PTY_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
 
 export const PTY_EVENT_CHANNEL = DESKTOP_PTY_EVENT_CHANNEL
 

@@ -1,19 +1,13 @@
 import { useEffect, useRef } from "react"
-import { initialSelection } from "./seed-data"
-import type { LeftSidebarView, RightSidebarView } from "./types"
-import { createWorkbenchLayoutFromLegacyPanes } from "./workbench/core"
-import { useComposerDraftState } from "./agent-workspace/composer-draft-state"
-import { useReviewPreviewState } from "./agent-workspace/review-preview-state"
-import { useStreamPermissionController } from "./agent-workspace/stream-permission-controller"
-import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-store"
-import { useWorkbenchState } from "./agent-workspace/workbench-state"
-import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
 import { useComposerController } from "./agent-workspace/composer-controller"
+import { useComposerDraftState } from "./agent-workspace/composer-draft-state"
 import { useReviewPanelController } from "./agent-workspace/review-panel-controller"
+import { useReviewPreviewState } from "./agent-workspace/review-preview-state"
 import { useSessionLifecycleController } from "./agent-workspace/session-lifecycle-controller"
 import { useSessionStreamController } from "./agent-workspace/session-stream-controller"
+import { useStreamPermissionController } from "./agent-workspace/stream-permission-controller"
+import { useWorkbenchState } from "./agent-workspace/workbench-state"
 import { useWorkbenchTabController } from "./agent-workspace/workbench-tab-controller"
-import { useWorkspaceLoadingController } from "./agent-workspace/workspace-loading-controller"
 import {
   buildWorkspaceDerivedState,
   createCreateSessionTab,
@@ -22,6 +16,12 @@ import {
   createWorkbenchPane,
   getWorkbenchTabKey,
 } from "./agent-workspace/workspace-derived-state"
+import { useWorkspaceLoadingController } from "./agent-workspace/workspace-loading-controller"
+import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-store"
+import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
+import { initialSelection } from "./seed-data"
+import type { LeftSidebarView, RightSidebarView } from "./types"
+import { createWorkbenchLayoutFromLegacyPanes } from "./workbench/core"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
@@ -428,6 +428,7 @@ export function useAgentWorkspace({
 
   const {
     appendDraftForTab,
+    handleCancelSend,
     handleComposerPermissionModeToggle,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
@@ -584,6 +585,7 @@ export function useAgentWorkspace({
     expandedFolderID,
     handleCanvasSessionTabClose,
     handleCanvasSessionTabSelect,
+    handleCancelSend,
     handleCreateSessionTabSelect,
     handleComposerPermissionModeToggle,
     handleCloseCreateSessionTab,

@@ -160,6 +160,7 @@ export const initialConversations: Record<string, Turn[]> = {
     },
     {
       id: "chat-agent-1",
+      messageID: "chat-agent-message-1",
       kind: "assistant",
       timestamp: timestamp("2026-03-31T10:08:00+08:00"),
       runtime: completedRuntime("2026-03-31T10:08:00+08:00"),

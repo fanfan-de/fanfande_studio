@@ -495,7 +495,7 @@ export type {
   AgentPermissionRequestStatus,
   AgentPermissionResolveResult,
   AgentPermissionRisk,
-  AgentPermissionToolKind,
+  AgentPermissionToolKind
 }
 
 export interface AgentProviderCatalogItem {

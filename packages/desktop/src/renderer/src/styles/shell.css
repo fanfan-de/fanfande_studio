@@ -5,7 +5,7 @@
 .window-shell {
   --window-controls-clearance: 124px;
   --window-controls-canvas-clearance: 0px;
-  --window-controls-right-sidebar-clearance: var(--window-controls-clearance);
+  --window-controls-right-sidebar-clearance: 0px;
   height: 100vh;
   height: 100dvh;
   min-height: 100vh;
@@ -18,25 +18,18 @@
   background: #e9edf2;
 }
 
-.window-controls-floating {
-  position: absolute;
-  top: 5px;
-  top: 8px;
-  right: 10px;
-  z-index: 8;
-  display: flex;
+.window-controls {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-height: var(--section-toolbar-height);
   gap: 4px;
-  padding: 0;
   padding: 4px;
+  padding: 0;
   border: 0;
-  border: 1px solid var(--seg-border);
-  border-radius: var(--seg-radius-sm);
   background: transparent;
-  background: rgba(246, 247, 249, 0.96);
   box-shadow: none;
-  backdrop-filter: none;
   -webkit-app-region: no-drag;
 }
 
@@ -253,11 +246,6 @@
 
 .window-shell.is-maximized {
   padding: 0;
-}
-
-.window-shell.is-maximized .window-controls-floating {
-  top: 8px;
-  right: 12px;
 }
 
 .window-control.is-close:hover,

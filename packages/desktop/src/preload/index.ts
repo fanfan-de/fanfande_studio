@@ -1,16 +1,9 @@
+import { contextBridge, ipcRenderer } from "electron"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { contextBridge, ipcRenderer } from "electron"
-import {
-  DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
-  DESKTOP_PTY_EVENT_CHANNEL,
-  DESKTOP_WINDOW_STATE_EVENT_CHANNEL,
-  DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL,
-} from "../shared/desktop-ipc-contract"
 import type {
   AgentArchivedSessionSummary,
-  AgentSessionSummary,
   AgentFolderWorkspace,
   AgentProjectModelSelection,
   AgentProjectWorkspace,
@@ -21,6 +14,7 @@ import type {
   AgentSessionBridgeIPCEvent,
   AgentSessionHistoryMessage,
   AgentSessionRuntimeDebugSnapshot,
+  AgentSessionSummary,
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
   AppearanceConfigDocument,
@@ -55,6 +49,12 @@ import type {
   WorkspaceFileChangeIPCEvent,
   WorkspaceFileDocument,
   WorkspaceFileSearchResult,
+} from "../shared/desktop-ipc-contract"
+import {
+  DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
+  DESKTOP_PTY_EVENT_CHANNEL,
+  DESKTOP_WINDOW_STATE_EVENT_CHANNEL,
+  DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL,
 } from "../shared/desktop-ipc-contract"
 
 const safeProcess = typeof process !== "undefined" ? process : undefined
@@ -262,6 +262,14 @@ try {
         invokeDesktop("desktop:agent-session-resume-turn", input) as Promise<{
           clientTurnID: string
           requestId?: string
+        }>,
+      cancelTurn: (input: { clientTurnID: string; backendSessionID: string }) =>
+        invokeDesktop("desktop:agent-session-cancel-turn", input) as Promise<{
+          clientTurnID: string
+          backendSessionID: string
+          localRequestAborted: boolean
+          backendCancelled: boolean
+          backendCancelError?: string
         }>,
       subscribe: (input: { uiSessionID?: string; backendSessionID: string }) =>
         invokeDesktop("desktop:agent-session-subscribe", input) as Promise<{

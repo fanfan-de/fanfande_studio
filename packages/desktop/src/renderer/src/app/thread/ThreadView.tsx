@@ -1,90 +1,35 @@
-import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
+import { useEffect, useEffectEvent, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react"
+import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
 import { createComposerDraftStateFromPlainText, createEmptyComposerDraftState } from "../composer/draft-state"
-import { getAgentSessionBridge } from "../agent-session/client"
-import { useProjectComposer } from "../use-project-composer"
-import { buildTurnsFromHistory } from "../stream"
-import { ThreadRichText } from "../thread-rich-text"
-import { mergeUserTurnPresentationState, readPersistedUserTurns } from "../user-turn-presentation"
 import {
-  ArchiveIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
-  ConnectedStatusIcon,
-  DeleteIcon,
-  DisconnectedStatusIcon,
-  FileTextIcon,
-  FolderIcon,
-  LayoutSidebarLeftIcon,
-  LayoutSidebarRightIcon,
-  LeftSidebarCollapseIcon,
-  LeftSidebarExpandIcon,
-  MaximizeIcon,
-  MinimizeIcon,
-  NewItemIcon,
-  OpenInEditorIcon,
-  MoonIcon,
-  MonitorIcon,
-  PaletteIcon,
-  PaperclipIcon,
-  ResetIcon,
-  RestoreIcon,
-  SunIcon,
-  RightSidebarCollapseIcon,
-  RightSidebarExpandIcon,
-  SettingsIcon,
-  SortIcon,
-  TerminalIcon
+  PaperclipIcon
 } from "../icons"
+import { joinClassNames, writeTextToClipboard } from "../shared-ui"
+import { buildTurnsFromHistory } from "../stream"
+import { ThreadRichText } from "../thread-rich-text"
 import type {
-  AssistantTraceSectionKey,
-  BrandTheme,
-  ColorMode,
-  AssistantTurn,
   AssistantTraceItem,
+  AssistantTraceSectionKey,
   AssistantTraceVisibility,
   AssistantTraceVisibilityKey,
+  AssistantTurn,
   ComposerAttachment,
   ComposerDraftState,
-  ComposerMcpOption,
-  ComposerSkillOption,
-  CreateSessionTab,
-  GlobalSkillTreeNode,
-  LeftSidebarView,
-  McpServerDiagnostic,
-  McpServerDraftState,
-  McpServerSummary,
   OpenAIReasoningEffort,
   PermissionDecision,
   PermissionRequest,
-  PromptPresetDocument,
-  PromptPresetSelection,
-  PromptPresetSummary,
-  PreviewComment,
-  PreviewMode,
-  ProjectModelSelection,
-  ProviderCatalogItem,
-  ProviderDraftState,
-  ProviderModel,
-  RightSidebarView,
-  ArchivedSessionSummary,
-  SessionDiffState,
-  SessionDiffSummary,
-  SessionRuntimeDebugSnapshot,
-  SessionRuntimeDebugState,
   SessionSummary,
-  SidebarActionKey,
   Turn,
-  UserTurn,
-  WindowAction,
-  WorkspaceFileReviewState,
-  WorkspacePreviewState,
-  WorkspaceGroup
+  UserTurn
 } from "../types"
+import { useProjectComposer } from "../use-project-composer"
+import { mergeUserTurnPresentationState, readPersistedUserTurns } from "../user-turn-presentation"
 import { formatTime } from "../utils"
 import { isSideChatSession } from "../workspace"
-import { joinClassNames, writeTextToClipboard } from "../shared-ui"
 
 interface ThreadViewProps {
   activeProjectID?: string | null
@@ -119,6 +64,7 @@ interface ThreadViewProps {
     disabledReason: string | null
   }) => void | Promise<void>
   onSideChatRemoveAttachment?: (path: string) => void
+  onSideChatCancelSend?: () => void | Promise<void>
   onSideChatSend?: (input: {
     attachmentError?: string | null
     draftStateOverride?: ComposerDraftState
@@ -521,6 +467,7 @@ interface InlineSideChatThreadProps {
     disabledReason: string | null
   }) => void | Promise<void>
   onRemoveAttachment: (path: string) => void
+  onCancelSend?: () => void | Promise<void>
   onSend: (input: {
     attachmentError?: string | null
     draftStateOverride?: ComposerDraftState
@@ -554,6 +501,7 @@ function InlineSideChatThread({
   onPermissionRequestResponse,
   onPickAttachments,
   onRemoveAttachment,
+  onCancelSend,
   onSend,
 }: InlineSideChatThreadProps) {
   const composer = useProjectComposer({
@@ -683,6 +631,7 @@ function InlineSideChatThread({
             })
           }
           onRemoveAttachment={onRemoveAttachment}
+          onCancelSend={onCancelSend}
           onSend={(draftStateOverride) =>
             void onSend({
               attachmentError: composer.attachmentError,
@@ -1297,6 +1246,7 @@ export function ThreadView({
   onSideChatDraftStateChange,
   onSideChatPickAttachments,
   onSideChatRemoveAttachment,
+  onSideChatCancelSend,
   onSideChatSend,
   onPermissionRequestResponse,
 }: ThreadViewProps) {
@@ -1401,9 +1351,10 @@ export function ThreadView({
               )
               const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
               if (renderedItems.length === 0 && !ephemeralHint) return null
-              const existingSideChatCount = sideChatCountsByAnchorMessageID[turn.id] ?? 0
+              const sideChatAnchorMessageID = turn.messageID ?? turn.id
+              const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
               const canOpenSideChat = !readOnlySideChat && !turn.isStreaming && hasResponseTraceItems(traceItems) && Boolean(onOpenSideChat)
-              const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === turn.id ? sideChatSession : null
+              const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
 
               return (
                 <article key={turn.id} className="turn assistant-turn">
@@ -1462,7 +1413,7 @@ export function ThreadView({
                                           ? `${existingSideChatCount} side chat thread${existingSideChatCount === 1 ? "" : "s"}`
                                           : "Open a side chat for this reply"
                                     }
-                                    onClick={() => void onOpenSideChat?.(turn.id)}
+                                    onClick={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
                                   >
                                     Sidechat
                                   </button>
@@ -1489,10 +1440,11 @@ export function ThreadView({
                                   session={activeInlineSideChat}
                                   turns={sideChatTurns}
                                   onDraftStateChange={onSideChatDraftStateChange}
-                                  onHide={() => void onOpenSideChat?.(turn.id)}
+                                  onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
                                   onPermissionRequestResponse={onPermissionRequestResponse}
                                   onPickAttachments={onSideChatPickAttachments}
                                   onRemoveAttachment={onSideChatRemoveAttachment}
+                                  onCancelSend={onSideChatCancelSend}
                                   onSend={onSideChatSend}
                                 />
                               ) : null}

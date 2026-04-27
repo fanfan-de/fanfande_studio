@@ -1,86 +1,28 @@
-import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
+import { type ReactNode } from "react"
 import { ChangesPanel } from "../changes/ChangesPanel"
 import { WorkspaceFilesPanel } from "../files/WorkspaceFilesPanel"
-import { PreviewPanel } from "../preview/PreviewPanel"
 import {
-  ArchiveIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CloseIcon,
   ConnectedStatusIcon,
-  DeleteIcon,
-  DisconnectedStatusIcon,
   FileTextIcon,
-  FolderIcon,
-  LayoutSidebarLeftIcon,
   LayoutSidebarRightIcon,
-  LeftSidebarCollapseIcon,
-  LeftSidebarExpandIcon,
-  MaximizeIcon,
-  MinimizeIcon,
-  NewItemIcon,
-  OpenInEditorIcon,
-  MoonIcon,
-  MonitorIcon,
-  PaletteIcon,
-  PaperclipIcon,
-  ResetIcon,
-  RestoreIcon,
-  SunIcon,
-  RightSidebarCollapseIcon,
-  RightSidebarExpandIcon,
-  SettingsIcon,
-  SortIcon,
-  TerminalIcon
+  OpenInEditorIcon
 } from "../icons"
+import { PreviewPanel } from "../preview/PreviewPanel"
+import { buildRuntimeStatusDescription, formatRuntimeBusyStateLabel, formatRuntimeDuration, formatRuntimeLoadStateLabel, formatRuntimePhaseLabel, formatRuntimeTurnStatusLabel } from "../runtime-debug"
+import { ShellTopMenu, TopMenuViewButton } from "../shared-ui"
 import type {
-  AssistantTraceSectionKey,
-  BrandTheme,
-  ColorMode,
-  AssistantTurn,
-  AssistantTraceItem,
-  AssistantTraceVisibility,
-  AssistantTraceVisibilityKey,
-  ComposerAttachment,
-  ComposerDraftState,
-  ComposerMcpOption,
-  ComposerSkillOption,
-  CreateSessionTab,
-  GlobalSkillTreeNode,
-  LeftSidebarView,
-  McpServerDiagnostic,
-  McpServerDraftState,
-  McpServerSummary,
-  OpenAIReasoningEffort,
-  PermissionDecision,
-  PermissionRequest,
-  PromptPresetDocument,
-  PromptPresetSelection,
-  PromptPresetSummary,
   PreviewComment,
   PreviewMode,
-  ProjectModelSelection,
-  ProviderCatalogItem,
-  ProviderDraftState,
-  ProviderModel,
   RightSidebarView,
-  ArchivedSessionSummary,
   SessionDiffState,
   SessionDiffSummary,
   SessionRuntimeDebugSnapshot,
   SessionRuntimeDebugState,
   SessionSummary,
-  SidebarActionKey,
-  Turn,
-  UserTurn,
-  WindowAction,
   WorkspaceFileReviewState,
-  WorkspacePreviewState,
-  WorkspaceGroup
+  WorkspacePreviewState
 } from "../types"
-import { ShellTopMenu, TopMenuViewButton } from "../shared-ui"
 import { formatTime } from "../utils"
-import { buildRuntimeStatusDescription, formatRuntimeBusyStateLabel, formatRuntimeDuration, formatRuntimeLoadStateLabel, formatRuntimePhaseLabel, formatRuntimeTurnStatusLabel } from "../runtime-debug"
 
 interface RightSidebarProps {
   activeWorkspaceFileScopeDirectory: string | null
@@ -118,6 +60,7 @@ interface RightSidebarProps {
   onWorkspaceFileSelect: (path: string) => void
   onRuntimeRefresh: () => void | Promise<void>
   onViewChange: (view: RightSidebarView) => void
+  windowControls?: ReactNode
 }
 
 const RIGHT_SIDEBAR_RUNTIME_IDLE_STATE: SessionRuntimeDebugState = {
@@ -163,6 +106,7 @@ export function RightSidebar({
   onWorkspaceFileSelect,
   onRuntimeRefresh,
   onViewChange,
+  windowControls,
 }: RightSidebarProps) {
   const runtimeState = activeSessionRuntimeDebugState ?? RIGHT_SIDEBAR_RUNTIME_IDLE_STATE
   const latestRuntimeTurn = activeSessionRuntimeDebug?.latestTurn ?? null
@@ -196,8 +140,9 @@ export function RightSidebar({
             </TopMenuViewButton>
           </>
         )}
-        controlsSpacerVariant="right-sidebar"
         dragRegion
+        trailing={windowControls}
+        trailingClassName="right-sidebar-top-menu-window-controls"
       />
 
       <div className={activeView === "preview" ? "right-sidebar-view-host is-preview" : "right-sidebar-view-host"}>

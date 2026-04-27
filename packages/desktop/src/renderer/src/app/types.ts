@@ -17,7 +17,7 @@ export type {
   PermissionRequestResolutionRecord,
   PermissionRequestStatus,
   PermissionRisk,
-  PermissionToolKind,
+  PermissionToolKind
 }
 
 export type SessionStatus = "Live" | "Review" | "Ready"
@@ -637,6 +637,7 @@ export interface AssistantTraceItem {
 
 export interface AssistantTurn {
   id: string
+  messageID?: string
   kind: "assistant"
   timestamp: number
   runtime: AssistantTurnRuntime
@@ -681,6 +682,7 @@ export interface PendingAgentStream {
   backendSessionID?: string
   assistantTurnID: string
   backendTurnID?: string
+  cancelRequested?: boolean
 }
 
 export interface ProviderCatalogItem {

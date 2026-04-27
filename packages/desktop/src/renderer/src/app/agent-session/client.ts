@@ -1,15 +1,15 @@
 import type {
+  PermissionRequestPrompt,
+  PermissionResolveInput,
+  PermissionResolveResult,
+} from "../../../../shared/permission"
+import type {
   AgentStreamEvent,
   ComposerAttachment,
   ComposerPermissionMode,
   LoadedSessionHistoryMessage,
   OpenAIReasoningEffort,
 } from "../types"
-import type {
-  PermissionRequestPrompt,
-  PermissionResolveInput,
-  PermissionResolveResult,
-} from "../../../../shared/permission"
 
 export type AgentSessionBridgeEvent =
   | {
@@ -56,12 +56,21 @@ export interface AgentSessionSendTurnResult {
   events?: AgentStreamEvent[]
 }
 
+export interface AgentSessionCancelTurnResult {
+  clientTurnID: string
+  backendSessionID: string
+  localRequestAborted: boolean
+  backendCancelled: boolean
+  backendCancelError?: string
+}
+
 export interface AgentSessionBridge {
   canStream: boolean
   canResumeStream: boolean
   loadHistory(input: { backendSessionID: string }): Promise<LoadedSessionHistoryMessage[]>
   sendTurn(input: AgentSessionTurnInput): Promise<AgentSessionSendTurnResult>
   resumeTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionSendTurnResult>
+  cancelTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionCancelTurnResult>
   subscribe(input: { uiSessionID: string; backendSessionID: string }): Promise<{
     backendSessionID: string
     lastEventID?: string
@@ -85,6 +94,7 @@ function createModernAgentSessionBridge(desktop: NonNullable<Window["desktop"]>)
     loadHistory: modern.loadHistory,
     sendTurn: modern.sendTurn,
     resumeTurn: modern.resumeTurn,
+    cancelTurn: modern.cancelTurn,
     subscribe: (input) => modern.subscribe(input),
     unsubscribe: modern.unsubscribe,
     loadPermissionRequests: modern.loadPermissionRequests,

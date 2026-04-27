@@ -1,18 +1,18 @@
 import { startTransition, useEffect, useEffectEvent, type MutableRefObject } from "react"
+import { getAgentSessionBridge, type AgentSessionBridgeEvent } from "../agent-session/client"
+import { AgentSessionEventRouter } from "../agent-session/event-router"
 import {
   appendConversationTurns as appendConversationTurnsToMap,
   updateAssistantTurn as updateAssistantTurnInMap,
 } from "../conversation-state"
-import { getAgentSessionBridge, type AgentSessionBridgeEvent } from "../agent-session/client"
-import { AgentSessionEventRouter } from "../agent-session/event-router"
 import {
   applyAgentStreamEventToTurn,
   buildSessionStreamingAssistantTurn,
   buildTurnsFromHistory,
 } from "../stream"
 import type {
-  AgentStreamIPCEvent,
   AgentSessionStreamIPCEvent,
+  AgentStreamIPCEvent,
   AssistantTraceItem,
   AssistantTurn,
   LoadedSessionHistoryMessage,
@@ -26,8 +26,8 @@ import type {
   Turn,
   WorkspaceGroup,
 } from "../types"
-import { findSession } from "../workspace"
 import { mergeUserTurnPresentationState, persistUserTurns, readPersistedUserTurns } from "../user-turn-presentation"
+import { findSession } from "../workspace"
 import {
   loadPendingPermissionRequestsForSession as loadPendingPermissionRequestsForSessionService,
 } from "./permission-requests-service"

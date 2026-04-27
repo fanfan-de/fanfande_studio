@@ -504,6 +504,15 @@ export function deleteSession(sessionID: string) {
   }
 }
 
+export function cancelSession(sessionID: string) {
+  requireSession(sessionID)
+
+  return {
+    sessionID,
+    cancelled: Prompt.cancel(sessionID),
+  }
+}
+
 export function createEventStreamResponse(input: {
   sessionID: string
   requestId?: string

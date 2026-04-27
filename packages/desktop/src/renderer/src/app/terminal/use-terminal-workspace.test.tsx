@@ -1,8 +1,8 @@
-import { act } from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { useTerminalWorkspace } from "./use-terminal-workspace"
 import type { PtyEvent } from "./types"
+import { useTerminalWorkspace } from "./use-terminal-workspace"
 
 function Harness() {
   const terminal = useTerminalWorkspace({

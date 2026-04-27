@@ -33,6 +33,15 @@ function readRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>
 }
 
+function readMessageID(value: unknown) {
+  const message = readRecord(value)
+  return readString(message?.id)
+}
+
+function resolvePayloadMessageID(payload: Record<string, unknown>) {
+  return readString(payload.messageID) || readMessageID(payload.message)
+}
+
 function readRuntimeEvent(item: AgentStreamEvent): AgentRuntimeEvent | null {
   if (item.event !== "runtime") return null
 
@@ -1420,6 +1429,7 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
 
   return {
     id: message.info.id || createID("assistant"),
+    messageID: message.info.id || undefined,
     kind: "assistant",
     timestamp: createdAt,
     runtime: createAssistantTurnRuntime({
@@ -1563,11 +1573,13 @@ export function finalizeStreamAssistantTurn(
 ): AssistantTurn {
   const items = clearStreamingItems(settleQueuedPrompt(turn.items, turn.id))
   const waitingQuestion = items.find((item) => item.kind === "question")
+  const nextMessageID = readMessageID(input?.message) || turn.messageID
 
   if (turn.runtime.phase === "failed") {
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID: nextMessageID,
         isStreaming: false,
       },
       {
@@ -1582,6 +1594,7 @@ export function finalizeStreamAssistantTurn(
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID: nextMessageID,
         isStreaming: false,
       },
       {
@@ -1610,6 +1623,7 @@ export function finalizeStreamAssistantTurn(
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID: nextMessageID,
         isStreaming: false,
       },
       {
@@ -1625,6 +1639,7 @@ export function finalizeStreamAssistantTurn(
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID: nextMessageID,
         isStreaming: false,
       },
       {
@@ -1641,6 +1656,7 @@ export function finalizeStreamAssistantTurn(
   return updateAssistantTurnLifecycle(
     {
       ...turn,
+      messageID: nextMessageID,
       isStreaming: false,
     },
     {
@@ -1802,10 +1818,12 @@ function applyRuntimeEventToTurn(
     const lifecycle = mapRuntimePhaseToAssistantLifecycle(payload)
     if (!lifecycle) return turn
     const runtimePhase = readString(payload.phase)
+    const messageID = resolvePayloadMessageID(payload) || turn.messageID
 
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming: !isSettledRuntimePhase(runtimePhase),
       },
       {
@@ -1819,10 +1837,12 @@ function applyRuntimeEventToTurn(
 
   if (event.type === "llm.call.started") {
     if (!canInferModelWaitFromRuntimePhase(turn.runtime.phase)) return turn
+    const messageID = resolvePayloadMessageID(payload) || turn.messageID
 
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming: true,
       },
       {
@@ -1835,9 +1855,12 @@ function applyRuntimeEventToTurn(
   }
 
   if (event.type === "text.part.started" || event.type === "text.part.delta") {
+    const messageID = resolvePayloadMessageID(payload) || turn.messageID
+
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming: true,
       },
       {
@@ -1858,9 +1881,12 @@ function applyRuntimeEventToTurn(
   }
 
   if (event.type === "reasoning.part.started" || event.type === "reasoning.part.delta") {
+    const messageID = resolvePayloadMessageID(payload) || turn.messageID
+
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming: true,
       },
       {
@@ -1917,6 +1943,7 @@ function applyRuntimeEventToTurn(
     const partState = readRecord(partRecord?.state)
     const approvalRequestID = readString(partState?.approvalID) || null
     const isStreaming = !isSettledAssistantPhase(turn.runtime.phase)
+    const messageID = readString(partRecord?.messageID) || turn.messageID
 
     if (primaryItem?.kind === "tool") {
       const inferredLifecycle = inferToolLifecycleFromTraceItem(turn, primaryItem, approvalRequestID)
@@ -1924,6 +1951,7 @@ function applyRuntimeEventToTurn(
       return updateAssistantTurnLifecycle(
         {
           ...turn,
+          messageID,
           isStreaming,
         },
         inferredLifecycle ?? (
@@ -1938,6 +1966,7 @@ function applyRuntimeEventToTurn(
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming,
       },
       {},
@@ -1965,6 +1994,7 @@ function applyRuntimeEventToTurn(
   if (event.type === "turn.failed") {
     const parts = Array.isArray(payload.parts) ? payload.parts : []
     const message = readString(payload.error) || "Unknown backend error"
+    const messageID = resolvePayloadMessageID(payload) || turn.messageID
     const nextItems = appendTraceItem(
       mergeTraceParts(clearStreamingItems(preparedItems), parts),
       createTraceItem({
@@ -1980,6 +2010,7 @@ function applyRuntimeEventToTurn(
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming: false,
       },
       {
@@ -1994,6 +2025,7 @@ function applyRuntimeEventToTurn(
   if (event.type === "turn.cancelled") {
     const parts = Array.isArray(payload.parts) ? payload.parts : []
     const detail = readString(payload.detail) || readString(payload.reason) || "The turn was cancelled."
+    const messageID = resolvePayloadMessageID(payload) || turn.messageID
     const nextItems = appendTraceItem(
       mergeTraceParts(clearStreamingItems(preparedItems), parts),
       createTraceItem({
@@ -2011,6 +2043,7 @@ function applyRuntimeEventToTurn(
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming: false,
       },
       {
@@ -2068,6 +2101,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     const fullText = readString(payload?.text)
     const kind = readString(payload?.kind) || "text"
     const sourceID = readString(payload?.partID) || undefined
+    const messageID = resolvePayloadMessageID(payload ?? {}) || turn.messageID
     const debugEntries = buildStreamEventDebugEntries("delta", payload, {
       "message.id": readString(payload?.messageID),
       "part.id": sourceID ?? "",
@@ -2077,6 +2111,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
       return updateAssistantTurnLifecycle(
         {
           ...turn,
+          messageID,
           isStreaming: true,
         },
         {
@@ -2096,6 +2131,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming: true,
       },
       {
@@ -2123,6 +2159,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     const partState = readRecord(partRecord?.state)
     const approvalRequestID = readString(partState?.approvalID) || null
     const isStreaming = !isSettledAssistantPhase(turn.runtime.phase)
+    const messageID = readString(partRecord?.messageID) || turn.messageID
 
     if (primaryItem?.kind === "tool") {
       const inferredLifecycle = inferToolLifecycleFromTraceItem(turn, primaryItem, approvalRequestID)
@@ -2130,6 +2167,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
       return updateAssistantTurnLifecycle(
         {
           ...turn,
+          messageID,
           isStreaming,
         },
         inferredLifecycle ?? (
@@ -2144,6 +2182,7 @@ export function applyAgentStreamEventToTurn(turn: AssistantTurn, item: AgentStre
     return updateAssistantTurnLifecycle(
       {
         ...turn,
+        messageID,
         isStreaming,
       },
       {},

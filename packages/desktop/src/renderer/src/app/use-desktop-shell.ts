@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react"
 import {
   APPEARANCE_TOKEN_NAMES,
   normalizeAppearanceConfigDocument,
@@ -127,7 +127,10 @@ function readAssistantTraceVisibilityPreference() {
 
 export function useDesktopShell() {
   const appShellRef = useRef<HTMLElement | null>(null)
-  const windowControlsRef = useRef<HTMLDivElement | null>(null)
+  const [windowControlsElement, setWindowControlsElement] = useState<HTMLDivElement | null>(null)
+  const windowControlsRef = useCallback((node: HTMLDivElement | null) => {
+    setWindowControlsElement(node)
+  }, [])
   const [platform, setPlatform] = useState("Desktop")
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
   const [windowControlsClearance, setWindowControlsClearance] = useState(WINDOW_CONTROLS_CLEARANCE_FALLBACK)
@@ -233,7 +236,7 @@ export function useDesktopShell() {
   }, [])
 
   useEffect(() => {
-    const controls = windowControlsRef.current
+    const controls = windowControlsElement
     if (!controls) return
 
     const syncWindowControlsClearance = () => {
@@ -261,7 +264,7 @@ export function useDesktopShell() {
     return () => {
       window.removeEventListener("resize", syncWindowControlsClearance)
     }
-  }, [])
+  }, [windowControlsElement])
 
   useEffect(() => {
     let mounted = true
@@ -683,8 +686,8 @@ export function useDesktopShell() {
 
   const appShellStyle = {
     "--window-controls-clearance": `${windowControlsClearance}px`,
-    "--window-controls-canvas-clearance": isRightSidebarCollapsed ? `${windowControlsClearance}px` : "0px",
-    "--window-controls-right-sidebar-clearance": isRightSidebarCollapsed ? "0px" : `${windowControlsClearance}px`,
+    "--window-controls-canvas-clearance": "0px",
+    "--window-controls-right-sidebar-clearance": "0px",
     "--activity-rail-display-width": isActivityRailVisible ? "54px" : "0px",
     "--sidebar-display-width": isSidebarCollapsed ? "0px" : `${sidebarWidth}px`,
     "--sidebar-resizer-width": isSidebarCollapsed ? "0px" : "10px",

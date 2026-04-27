@@ -1,4 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type WebContents } from "electron"
+import type { AppearanceConfigDocument } from "../shared/appearance"
+import type {
+  DesktopIpcChannel,
+  DesktopIpcEventChannel,
+  DesktopIpcEventPayload,
+  DesktopIpcInput,
+  DesktopIpcOutput,
+  McpServerInput,
+} from "../shared/desktop-ipc-contract"
+import {
+  DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
+} from "../shared/desktop-ipc-contract"
 import { getAgentConfig, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { readAppearanceConfigSnapshot, writeAppearanceConfigSnapshot } from "./appearance-config"
 import { filterAvailableExternalEditorsForTarget, listAvailableExternalEditors, openInExternalEditor } from "./external-editors"
@@ -12,67 +24,55 @@ import {
   listGitBranches,
   pushGitChanges,
 } from "./git"
-import { getWorkspaceGitDiff } from "./workspace-diff"
-import { readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
 import type { ApplicationMenus } from "./menu"
-import { PtyProxyManager, PTY_EVENT_CHANNEL } from "./pty-proxy"
+import { PtyProxyManager } from "./pty-proxy"
 import { safeWarn } from "./safe-console"
-import { WorkspaceWatchManager } from "./workspace-watch"
 import type {
+  AgentArchivedSessionDeleteResult,
+  AgentArchivedSessionSummary,
   AgentEnvelope,
-  AgentWorkspaceFileDocument,
-  AgentWorkspaceFileSearchResult,
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
+  AgentMcpServerDiagnostic,
+  AgentMcpServerSummary,
+  AgentPermissionRequest,
+  AgentPermissionResolveResult,
+  AgentProjectDeleteResult,
+  AgentProjectInfo,
+  AgentProjectMcpSelection,
+  AgentProjectModelSelection,
+  AgentProjectModelsResult,
+  AgentProjectSkillSelection,
+  AgentProjectWorkspace,
   AgentPromptPresetDocument,
   AgentPromptPresetSelection,
   AgentPromptPresetSummary,
-  AgentProjectMcpSelection,
-  AgentProjectModelsResult,
-  AgentProjectSkillSelection,
-  AgentProjectModelSelection,
   AgentProviderAuthFlow,
   AgentProviderAuthState,
-  AgentPtySessionInfo,
   AgentProviderCatalogItem,
   AgentProviderModel,
-  AgentProjectDeleteResult,
-  AgentProjectInfo,
-  AgentPermissionResolveResult,
-  AgentPermissionRequest,
-  AgentSkillInfo,
-  AgentMcpServerSummary,
-  AgentMcpServerDiagnostic,
-  AgentProjectWorkspace,
+  AgentPtySessionInfo,
+  AgentSessionArchiveResult,
+  AgentSessionBridgeIPCEvent,
+  AgentSessionDeleteResult,
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
-  AgentSessionRuntimeDebugSnapshot,
-  AgentSessionBridgeIPCEvent,
   AgentSessionInfo,
+  AgentSessionRuntimeDebugSnapshot,
   AgentSessionTurnRequestInput,
-  AgentSessionArchiveResult,
-  AgentSessionDeleteResult,
-  AgentArchivedSessionDeleteResult,
-  AgentArchivedSessionSummary,
   AgentSideChatLink,
+  AgentSkillInfo,
+  AgentWorkspaceFileDocument,
+  AgentWorkspaceFileSearchResult,
   MenuAnchor,
   MenuKey,
   WindowAction,
 } from "./types"
 import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sendWindowState } from "./window-state"
-import type { AppearanceConfigDocument } from "../shared/appearance"
-import {
-  DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
-} from "../shared/desktop-ipc-contract"
-import type {
-  DesktopIpcChannel,
-  DesktopIpcEventChannel,
-  DesktopIpcEventPayload,
-  DesktopIpcInput,
-  DesktopIpcOutput,
-  McpServerInput,
-} from "../shared/desktop-ipc-contract"
+import { getWorkspaceGitDiff } from "./workspace-diff"
+import { readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
+import { WorkspaceWatchManager } from "./workspace-watch"
 
 const AGENT_SESSION_EVENT_CHANNEL = DESKTOP_AGENT_SESSION_EVENT_CHANNEL
 
@@ -157,8 +157,23 @@ type SessionStreamSubscription = {
   dispose(): void
 }
 
+type ActiveAgentSessionRequest = {
+  backendSessionID: string
+  cancelRequested: boolean
+  clientTurnID: string
+  controller: AbortController
+}
+
 function sessionStreamSubscriptionKey(webContentsID: number, sessionID: string) {
   return `${webContentsID}:${sessionID}`
+}
+
+function agentSessionRequestKey(webContentsID: number, clientTurnID: string) {
+  return `${webContentsID}:${clientTurnID}`
+}
+
+function isAbortError(error: unknown) {
+  return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
 }
 
 export function registerIpcHandlers(menus: ApplicationMenus) {
@@ -227,6 +242,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   }
   const sessionStreamSubscriptions = new Map<string, SessionStreamSubscription>()
   const sessionStreamCleanupTargets = new Set<number>()
+  const activeAgentSessionRequests = new Map<string, ActiveAgentSessionRequest>()
 
   function getSessionStreamSubscription(
     webContentsID: number,
@@ -245,6 +261,17 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     subscription.dispose()
     sessionStreamSubscriptions.delete(key)
     return true
+  }
+
+  function getActiveAgentSessionRequest(webContentsID: number, clientTurnID: string) {
+    return activeAgentSessionRequests.get(agentSessionRequestKey(webContentsID, clientTurnID))
+  }
+
+  function removeActiveAgentSessionRequest(webContentsID: number, clientTurnID: string, request: ActiveAgentSessionRequest) {
+    const key = agentSessionRequestKey(webContentsID, clientTurnID)
+    if (activeAgentSessionRequests.get(key) === request) {
+      activeAgentSessionRequests.delete(key)
+    }
   }
 
   function createSessionStreamSubscription(
@@ -1674,26 +1701,37 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   ) {
     const clientTurnID = input.clientTurnID.trim()
     const backendSessionID = input.backendSessionID.trim()
-    const response = await fetch(resolveAgentURL(routePath), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(buildAgentSessionTurnRequestBody({
-        ...input,
-        clientTurnID,
-        backendSessionID,
-      })),
-    })
-
-    if (!response.ok) {
-      const envelope = (await response.json().catch(() => null)) as AgentEnvelope<unknown> | null
-      throw new Error(envelope?.error?.message || `Agent session stream failed (${response.status})`)
+    const request: ActiveAgentSessionRequest = {
+      backendSessionID,
+      cancelRequested: false,
+      clientTurnID,
+      controller: new AbortController(),
     }
+    activeAgentSessionRequests.set(agentSessionRequestKey(target.id, clientTurnID), request)
 
-    const requestId = response.headers.get("x-request-id") ?? undefined
+    let requestId: string | undefined
 
     try {
+      const response = await fetch(resolveAgentURL(routePath), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(buildAgentSessionTurnRequestBody({
+          ...input,
+          clientTurnID,
+          backendSessionID,
+        })),
+        signal: request.controller.signal,
+      })
+
+      if (!response.ok) {
+        const envelope = (await response.json().catch(() => null)) as AgentEnvelope<unknown> | null
+        throw new Error(envelope?.error?.message || `Agent session stream failed (${response.status})`)
+      }
+
+      requestId = response.headers.get("x-request-id") ?? undefined
+
       await readAgentSSEStream(response, (item) => {
         sendDesktopIpcEvent(target, AGENT_SESSION_EVENT_CHANNEL, {
           kind: "stream",
@@ -1707,6 +1745,13 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         } satisfies AgentSessionBridgeIPCEvent)
       })
     } catch (error) {
+      if (request.cancelRequested && isAbortError(error)) {
+        return {
+          clientTurnID,
+          requestId,
+        }
+      }
+
       sendDesktopIpcEvent(target, AGENT_SESSION_EVENT_CHANNEL, {
         kind: "stream",
         source: "request",
@@ -1717,8 +1762,10 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           sessionID: backendSessionID,
           message: error instanceof Error ? error.message : String(error),
         },
-        receivedAt: Date.now(),
-      } satisfies AgentSessionBridgeIPCEvent)
+          receivedAt: Date.now(),
+        } satisfies AgentSessionBridgeIPCEvent)
+    } finally {
+      removeActiveAgentSessionRequest(target.id, clientTurnID, request)
     }
 
     return {
@@ -1748,6 +1795,51 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         },
         `/api/sessions/${encodeURIComponent(input.backendSessionID.trim())}/resume/stream`,
       ),
+  )
+
+  handleDesktopIpc(
+    "desktop:agent-session-cancel-turn",
+    async (event, input: { clientTurnID: string; backendSessionID: string }) => {
+      const clientTurnID = input.clientTurnID.trim()
+      const backendSessionID = input.backendSessionID.trim()
+      const request = getActiveAgentSessionRequest(event.sender.id, clientTurnID)
+      const localRequestAborted = Boolean(request)
+
+      if (request) {
+        request.cancelRequested = true
+        request.controller.abort()
+      }
+
+      try {
+        const result = await requestAgentJSON<{ sessionID: string; cancelled: boolean }>(
+          `/api/sessions/${encodeURIComponent(backendSessionID)}/cancel`,
+          {
+            method: "POST",
+          },
+        )
+
+        return {
+          clientTurnID,
+          backendSessionID,
+          localRequestAborted,
+          backendCancelled: result.data.cancelled,
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (localRequestAborted) {
+          safeWarn("[desktop] agent session cancel endpoint failed after local abort:", message)
+          return {
+            clientTurnID,
+            backendSessionID,
+            localRequestAborted,
+            backendCancelled: false,
+            backendCancelError: message,
+          }
+        }
+
+        throw error
+      }
+    },
   )
 
   handleDesktopIpc(

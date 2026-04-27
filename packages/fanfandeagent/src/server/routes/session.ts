@@ -60,6 +60,8 @@ export function SessionRoutes() {
 
   app.get("/:id/diff", async (c) => ok(c, await SessionUseCase.getSessionDiff(c.req.param("id"))))
 
+  app.post("/:id/cancel", (c) => ok(c, SessionUseCase.cancelSession(c.req.param("id"))))
+
   app.delete("/:id", (c) => ok(c, SessionUseCase.deleteSession(c.req.param("id"))))
 
   app.get("/:id/events/stream", (c) =>

@@ -58,6 +58,7 @@ describe("stream trace reducer", () => {
     })
 
     expect(turn.runtime.phase).toBe("completed")
+    expect(turn.messageID).toBe("message-runtime")
     expect(turn.isStreaming).toBe(false)
     expect(turn.items.some((item) => item.kind === "text" && item.text === "Runtime answer")).toBe(true)
   })
@@ -878,6 +879,7 @@ describe("stream trace reducer", () => {
     })
     expect(turns[1]).toMatchObject({
       id: "msg-assistant-1",
+      messageID: "msg-assistant-1",
       kind: "assistant",
       timestamp: 11,
       state: "Backend response received",

@@ -20,9 +20,10 @@ function createUserTurn(id: string, text: string): UserTurn {
   }
 }
 
-function createAssistantTurn(id: string, itemID: string, text: string, sourceID = "source-1"): AssistantTurn {
+function createAssistantTurn(id: string, itemID: string, text: string, sourceID = "source-1", messageID?: string): AssistantTurn {
   return {
     id,
+    messageID,
     kind: "assistant",
     timestamp: 2,
     runtime: {
@@ -164,7 +165,7 @@ describe("session stream controller helpers", () => {
     const previousAssistant = createAssistantTurn("assistant-local", "item-local", "Done", "source-1")
     const nextTurns: Turn[] = [
       createUserTurn("user-history", "history text"),
-      createAssistantTurn("assistant-history", "item-history", "Done", "source-1"),
+      createAssistantTurn("assistant-history", "item-history", "Done", "source-1", "msg-assistant-history"),
     ]
 
     const merged = mergeConversationTurnsFromHistory([previousUser, previousAssistant], nextTurns)
@@ -178,6 +179,7 @@ describe("session stream controller helpers", () => {
     })
     expect(merged[1]).toMatchObject({
       id: "assistant-local",
+      messageID: "msg-assistant-history",
       items: [
         expect.objectContaining({
           id: "item-local",

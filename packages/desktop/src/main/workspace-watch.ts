@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
-import { DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
 import type { WorkspaceFileChangeIPCEvent } from "../shared/desktop-ipc-contract"
+import { DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
 
 export const WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL
 

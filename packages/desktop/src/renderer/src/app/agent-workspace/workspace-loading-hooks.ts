@@ -14,6 +14,11 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import {
+  createWorkbenchLayoutWithTab,
+  normalizeLayoutState,
+  type WorkbenchLayoutState,
+} from "../workbench/core"
+import {
   findFirstSession,
   isWorkspaceAvailable,
   mapLoadedWorkspace,
@@ -21,11 +26,6 @@ import {
   sortWorkspaceGroups,
   upsertWorkspaceGroup,
 } from "../workspace"
-import {
-  createWorkbenchLayoutWithTab,
-  normalizeLayoutState,
-  type WorkbenchLayoutState,
-} from "../workbench/core"
 import { DEFAULT_SESSION_DIFF_STATE } from "./review-preview-state"
 import { seedWorkspaceIDs, type WorkspaceStateUpdater } from "./workspace-store"
 

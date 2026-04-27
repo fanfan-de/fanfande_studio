@@ -1,8 +1,8 @@
 import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import type { BrandTheme, ColorMode } from "../types"
 import { TerminalTabs } from "./TerminalTabs"
 import { TerminalView } from "./TerminalView"
 import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
-import type { BrandTheme, ColorMode } from "../types"
 
 interface TerminalPanelProps {
   activeSession: TerminalSessionRecord | null

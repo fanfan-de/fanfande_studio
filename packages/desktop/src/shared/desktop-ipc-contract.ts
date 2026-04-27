@@ -1,9 +1,3 @@
-import type { AppearanceConfigDocument, AppearanceConfigSnapshot } from "./appearance"
-import type {
-  PermissionRequestPrompt,
-  PermissionResolveInput,
-  PermissionResolveResult,
-} from "./permission"
 import type {
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
@@ -45,6 +39,12 @@ import type {
   PtyTransportIPCEvent,
   WindowAction,
 } from "../main/types"
+import type { AppearanceConfigDocument, AppearanceConfigSnapshot } from "./appearance"
+import type {
+  PermissionRequestPrompt,
+  PermissionResolveInput,
+  PermissionResolveResult,
+} from "./permission"
 
 export const DESKTOP_AGENT_SESSION_EVENT_CHANNEL = "desktop:agent-session-event"
 export const DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = "desktop:workspace-file-change"
@@ -94,7 +94,7 @@ export type {
   PermissionRequestPrompt,
   PermissionResolveInput,
   PermissionResolveResult,
-  WindowAction,
+  WindowAction
 }
 
 export type AgentSessionSummary = AgentWorkspaceSession
@@ -233,6 +233,14 @@ export interface DesktopModelSelectionUpdateInput {
 export interface DesktopAgentSessionTurnResult {
   clientTurnID: string
   requestId?: string
+}
+
+export interface DesktopAgentSessionCancelTurnResult {
+  clientTurnID: string
+  backendSessionID: string
+  localRequestAborted: boolean
+  backendCancelled: boolean
+  backendCancelError?: string
 }
 
 export interface DesktopAgentSessionSubscriptionResult {
@@ -634,6 +642,10 @@ export interface DesktopIpcContract {
     input: { clientTurnID: string; backendSessionID: string }
     output: DesktopAgentSessionTurnResult
   }
+  "desktop:agent-session-cancel-turn": {
+    input: { clientTurnID: string; backendSessionID: string }
+    output: DesktopAgentSessionCancelTurnResult
+  }
   "desktop:agent-session-subscribe": {
     input: { uiSessionID?: string; backendSessionID: string }
     output: DesktopAgentSessionSubscriptionResult
@@ -669,6 +681,7 @@ export interface DesktopAgentSessionApi {
   loadHistory(input: DesktopIpcInput<"desktop:agent-session-load-history">): Promise<DesktopIpcOutput<"desktop:agent-session-load-history">>
   sendTurn(input: DesktopIpcInput<"desktop:agent-session-send-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-send-turn">>
   resumeTurn(input: DesktopIpcInput<"desktop:agent-session-resume-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-resume-turn">>
+  cancelTurn(input: DesktopIpcInput<"desktop:agent-session-cancel-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-cancel-turn">>
   subscribe(input: DesktopIpcInput<"desktop:agent-session-subscribe">): Promise<DesktopIpcOutput<"desktop:agent-session-subscribe">>
   unsubscribe(input: DesktopIpcInput<"desktop:agent-session-unsubscribe">): Promise<DesktopIpcOutput<"desktop:agent-session-unsubscribe">>
   loadPermissionRequests(input: DesktopIpcInput<"desktop:agent-session-load-permission-requests">): Promise<DesktopIpcOutput<"desktop:agent-session-load-permission-requests">>

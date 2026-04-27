@@ -6,12 +6,12 @@ import {
   SessionCanvasTopMenu,
   ThreadView,
 } from "../components"
-import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
+import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import type { AssistantTraceVisibility, ComposerDraftState } from "../types"
+import type { useAgentWorkspace } from "../use-agent-workspace"
 import { useProjectComposer } from "../use-project-composer"
 import { isSideChatSession } from "../workspace"
-import type { useAgentWorkspace } from "../use-agent-workspace"
 import { WorkbenchDragLayer } from "./WorkbenchDragLayer"
 
 export type PaneDropPosition = "center" | "left" | "right" | "top" | "bottom"
@@ -154,6 +154,7 @@ export interface WorkbenchPaneSurfaceProps {
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
+  onCancelSend: AgentWorkspaceState["handleCancelSend"]
   onSend: AgentWorkspaceState["handleSend"]
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
 }
@@ -194,6 +195,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onRemoveComposerAttachment,
   onSelectCreateSessionTab,
   onSelectSessionTab,
+  onCancelSend,
   onSend,
   onSetDraft,
 }: WorkbenchPaneSurfaceProps) {
@@ -306,6 +308,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                     })
                   }
                   onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
+                  onCancelSend={() => void onCancelSend({ tabKey: pane.tabKey })}
                   onSend={(draftStateOverride) =>
                     void onSend({
                       attachmentError: composer.attachmentError,
@@ -396,6 +399,10 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   })
                 }
                 onSideChatRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.activeSideChatTabKey)}
+                onSideChatCancelSend={() => void onCancelSend({
+                  sessionID: pane.activeSideChatSession?.id,
+                  tabKey: pane.activeSideChatTabKey,
+                })}
                 onSideChatSend={(input) =>
                   void onSend({
                     attachmentError: input.attachmentError,
@@ -451,6 +458,10 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                     })
                   }
                   onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
+                  onCancelSend={() => void onCancelSend({
+                    sessionID: pane.sessionID,
+                    tabKey: pane.tabKey,
+                  })}
                   onSend={(draftStateOverride) =>
                     void onSend({
                       attachmentError: composer.attachmentError,

@@ -1,36 +1,11 @@
 import { type ReactNode } from "react"
-import { getSessionWorkflowBadge } from "./session-workflow"
 import {
-  ArchiveIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CloseIcon,
-  ConnectedStatusIcon,
-  DeleteIcon,
-  DisconnectedStatusIcon,
-  FileTextIcon,
-  FolderIcon,
-  LayoutSidebarLeftIcon,
-  LayoutSidebarRightIcon,
   LeftSidebarCollapseIcon,
   LeftSidebarExpandIcon,
-  MaximizeIcon,
-  MinimizeIcon,
-  NewItemIcon,
-  OpenInEditorIcon,
-  MoonIcon,
-  MonitorIcon,
-  PaletteIcon,
-  PaperclipIcon,
-  ResetIcon,
-  RestoreIcon,
-  SunIcon,
   RightSidebarCollapseIcon,
-  RightSidebarExpandIcon,
-  SettingsIcon,
-  SortIcon,
-  TerminalIcon
+  RightSidebarExpandIcon
 } from "./icons"
+import { getSessionWorkflowBadge } from "./session-workflow"
 
 export function WindowControlsSpacer({ variant }: { variant: "canvas" | "right-sidebar" }) {
   return <div className={`panel-toolbar-window-controls-spacer is-${variant}`} aria-hidden="true" />

@@ -1,16 +1,16 @@
-import { type RefObject } from "react"
+import { type Ref } from "react"
 import { CloseIcon, MaximizeIcon, MinimizeIcon, RestoreIcon } from "../icons"
 import type { WindowAction } from "../types"
 
 interface WindowChromeProps {
-  controlsRef: RefObject<HTMLDivElement | null>
+  controlsRef: Ref<HTMLDivElement>
   isWindowMaximized: boolean
   onWindowAction: (action: WindowAction) => void
 }
 
 export function WindowChrome({ controlsRef, isWindowMaximized, onWindowAction }: WindowChromeProps) {
   return (
-    <div ref={controlsRef} className="window-controls-floating" role="group" aria-label="Window controls">
+    <div ref={controlsRef} className="window-controls" role="group" aria-label="Window controls">
       <button className="window-control" aria-label="Minimize window" type="button" onClick={() => onWindowAction("minimize")}>
         <MinimizeIcon />
       </button>

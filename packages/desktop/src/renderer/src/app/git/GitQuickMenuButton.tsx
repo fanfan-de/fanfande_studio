@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react"
-import { ChevronDownIcon } from "../icons"
 import { isMatchingGitStateChangedDetail, notifyGitStateChanged, subscribeToGitStateChanged } from "../git-events"
+import { ChevronDownIcon } from "../icons"
 import { commitGit, createGitBranch, createGitPullRequest, getGitCapabilities, hasGitQuickMenuClient, pushGit, type GitCapabilitiesState } from "./client"
 
 const GIT_QUICK_MENU_REFRESH_INTERVAL_MS = 2000

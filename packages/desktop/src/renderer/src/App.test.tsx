@@ -1,8 +1,9 @@
-﻿import { readFileSync } from "node:fs"
+﻿import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PermissionRequestPrompt, PermissionResolveResult } from "../../shared/permission"
+import { App } from "./App"
 import {
   DEFAULT_RIGHT_SIDEBAR_WIDTH,
   DEFAULT_SIDEBAR_WIDTH,
@@ -13,7 +14,6 @@ import {
   RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO,
 } from "./app/constants"
 import type { LoadedFolderWorkspace, SessionRuntimeDebugSnapshot } from "./app/types"
-import { App } from "./App"
 
 function readBundledStyles() {
   const stylesRoot = resolve(process.cwd(), "src/renderer/src")
@@ -39,7 +39,7 @@ function createDeferred<T>() {
 }
 
 function getComposerSendButton() {
-  return screen.getByRole("button", { name: /^(Send|Sending) task$|^Resolve approval first$/ })
+  return screen.getByRole("button", { name: /^(Send|Sending|Stop) task$|^Resolve approval first$/ })
 }
 
 function setComposerDraftValue(input: HTMLElement, value: string) {
@@ -75,11 +75,6 @@ type DesktopAgentSessionEvent = Parameters<DesktopAgentSessionEventListener>[0]
 
 let agentSessionEventListeners: DesktopAgentSessionEventListener[] = []
 
-function emitAgentSessionEvent(event: DesktopAgentSessionEvent) {
-  for (const listener of agentSessionEventListeners) {
-    listener(event)
-  }
-}
 
 function createRequestStreamEvent(input: {
   backendSessionID: string
@@ -812,7 +807,7 @@ describe("App", () => {
           kind: "side-chat",
           origin: {
             parentSessionID: "session-chat-1",
-            anchorMessageID: "chat-agent-1",
+            anchorMessageID: "chat-agent-message-1",
             anchorPreview: "Anchored reply snapshot",
           },
           created: 1,
@@ -826,6 +821,11 @@ describe("App", () => {
         })),
         resumeTurn: vi.fn().mockImplementation(async (input: { clientTurnID: string }) => ({
           clientTurnID: input.clientTurnID,
+        })),
+        cancelTurn: vi.fn().mockImplementation(async (input: { backendSessionID: string; clientTurnID: string }) => ({
+          ...input,
+          localRequestAborted: false,
+          backendCancelled: false,
         })),
         subscribe: vi.fn().mockResolvedValue({
           backendSessionID: "session-default",
@@ -931,15 +931,17 @@ describe("App", () => {
     })
   })
 
-  it("renders the desktop shell with floating window controls and folder workspace", async () => {
+  it("renders the desktop shell with window controls in the right sidebar menu", async () => {
     const { container } = render(<App />)
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
     const topMenu = screen.getByLabelText("Session canvas top menu")
     const leftSidebarTopMenu = screen.getByLabelText("Left sidebar top menu")
     const rightSidebarTopMenu = screen.getByLabelText("Right sidebar top menu")
 
-    expect(screen.getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Minimize window" }).closest(".window-controls-floating")).not.toBeNull()
+    const minimizeWindowButton = screen.getByRole("button", { name: "Minimize window" })
+    expect(minimizeWindowButton).toBeInTheDocument()
+    expect(minimizeWindowButton.closest(".window-controls")).not.toBeNull()
+    expect(minimizeWindowButton.closest(".right-sidebar-top-menu")).toBe(rightSidebarTopMenu)
     expect(container.querySelector(".pane-tab-bar.window-drag-region")).not.toBeNull()
     expect(container.querySelector(".session-canvas-top-menu.window-drag-region")).toBeNull()
     expect(leftSidebarTopMenu).toHaveClass("shell-top-menu")
@@ -1048,7 +1050,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.desktop?.createSideChat).toHaveBeenCalledWith({
         parentSessionID: "session-chat-1",
-        anchorMessageID: "chat-agent-1",
+        anchorMessageID: "chat-agent-message-1",
       })
     })
 
@@ -5320,7 +5322,8 @@ describe("App", () => {
 
     expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
     expect(document.querySelector(".workbench-panes")).toHaveClass("has-multiple")
-    expect(document.querySelectorAll(".pane-tab-bar .panel-toolbar-window-controls-spacer.is-canvas")).toHaveLength(1)
+    expect(document.querySelectorAll(".pane-tab-bar .window-controls")).toHaveLength(0)
+    expect(document.querySelectorAll(".right-sidebar-top-menu .window-controls")).toHaveLength(1)
 
     fireEvent.click(within(panes[1]).getByRole("button", { name: "Close create session tab" }))
 
@@ -5329,8 +5332,9 @@ describe("App", () => {
     })
 
     expect(document.querySelector(".workbench-panes")).not.toHaveClass("has-multiple")
-    expect(document.querySelector(".pane-tab-bar")).toHaveClass("has-window-controls-clearance")
-    expect(document.querySelectorAll(".pane-tab-bar .panel-toolbar-window-controls-spacer.is-canvas")).toHaveLength(1)
+    expect(document.querySelector(".pane-tab-bar")).not.toHaveClass("has-window-controls-clearance")
+    expect(document.querySelectorAll(".pane-tab-bar .window-controls")).toHaveLength(0)
+    expect(document.querySelectorAll(".right-sidebar-top-menu .window-controls")).toHaveLength(1)
   })
 
   it("limits session canvas tab drag regions to the top row of panes", async () => {
@@ -8014,7 +8018,7 @@ describe("App", () => {
     })
 
     expect(screen.getByText("Preparing...")).toBeInTheDocument()
-    expect(getComposerSendButton()).toBeDisabled()
+    expect(getComposerSendButton()).toBeEnabled()
 
     await act(async () => {
       streamListener?.(createRequestStreamEvent({
@@ -8255,7 +8259,7 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: "Streaming response" })).not.toBeInTheDocument()
     expect(screen.queryByText("Renderer subscribed to live backend updates.")).not.toBeInTheDocument()
     expect(screen.queryByText("Waiting for backend response.")).not.toBeInTheDocument()
-    expect(getComposerSendButton()).toBeDisabled()
+    expect(getComposerSendButton()).toBeEnabled()
 
     act(() => {
       finishStream?.()
@@ -8942,10 +8946,11 @@ describe("App", () => {
     const rightSidebarTopMenu = screen.getByLabelText("Right sidebar top menu")
 
     expect(appShell).not.toBeNull()
-    expect(appShell!.getAttribute("style")).toContain("--window-controls-right-sidebar-clearance: 124px")
+    expect(appShell!.getAttribute("style")).toContain("--window-controls-right-sidebar-clearance: 0px")
     expect(appShell!.getAttribute("style")).toContain("--window-controls-canvas-clearance: 0px")
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
+    expect(within(rightSidebarTopMenu).getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(within(rightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
@@ -8954,9 +8959,11 @@ describe("App", () => {
 
     expect(appShell!.getAttribute("style")).toContain("--right-sidebar-display-width: 0px")
     expect(appShell!.getAttribute("style")).toContain("--window-controls-right-sidebar-clearance: 0px")
-    expect(appShell!.getAttribute("style")).toContain("--window-controls-canvas-clearance: 124px")
+    expect(appShell!.getAttribute("style")).toContain("--window-controls-canvas-clearance: 0px")
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     expect(screen.queryByTestId("right-sidebar-resizer")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Minimize window" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Minimize window" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Expand right sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
@@ -8964,11 +8971,13 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand right sidebar" }))
 
     expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-display-width: ${DEFAULT_RIGHT_SIDEBAR_WIDTH}px`)
-    expect(appShell!.getAttribute("style")).toContain("--window-controls-right-sidebar-clearance: 124px")
+    expect(appShell!.getAttribute("style")).toContain("--window-controls-right-sidebar-clearance: 0px")
     expect(appShell!.getAttribute("style")).toContain("--window-controls-canvas-clearance: 0px")
     expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
     expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
-    expect(within(rightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
+    const restoredRightSidebarTopMenu = screen.getByLabelText("Right sidebar top menu")
+    expect(within(restoredRightSidebarTopMenu).getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
+    expect(within(restoredRightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
   })
@@ -9258,7 +9267,7 @@ describe("App", () => {
     expect(styles).toMatch(/@property --pane-drop-preview-sheen-y\s*\{[^}]*initial-value:\s*50%;/s)
     expect(styles).toMatch(/\.workbench-pane-stage\s*\{[^}]*--pane-drop-preview-motion-duration:\s*220ms;[^}]*--pane-drop-preview-fade-duration:\s*180ms;[^}]*--pane-drop-preview-motion-curve:\s*cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\);[^}]*--pane-drop-preview-sheen-x:\s*50%;[^}]*--pane-drop-preview-sheen-y:\s*50%;/s)
     expect(styles).toMatch(/\.workbench-pane-live-region\s*\{[^}]*position:\s*absolute;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto auto;/s)
-    expect(styles).toMatch(/\.window-controls-floating\s*\{[^}]*top:\s*5px;[^}]*gap:\s*10px;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
+    expect(styles).toMatch(/\.window-controls\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*flex-end;[^}]*gap:\s*4px;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.window-control,[\s\S]*?\{[^}]*color:\s*var\(--semantic-accent-icon\);/s)
     expect(styles).toMatch(/\.window-control svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.window-control:hover,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s)

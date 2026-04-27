@@ -51,7 +51,7 @@
   min-height: 40px;
   margin: 0;
   padding-left: 12px;
-  padding-right: calc(var(--window-controls-right-sidebar-clearance) + 12px);
+  padding-right: 8px;
   align-items: stretch;
   gap: 0;
   background: var(--seg-right-sidebar-top-menu-surface);
@@ -101,6 +101,14 @@
 
 .right-sidebar-top-menu-tabs::-webkit-scrollbar {
   display: none;
+}
+
+.right-sidebar-top-menu-window-controls {
+  align-self: stretch;
+  flex: 0 0 auto;
+  padding-left: 8px;
+  position: relative;
+  z-index: 2;
 }
 
 .left-sidebar-top-menu .top-menu-view-button,

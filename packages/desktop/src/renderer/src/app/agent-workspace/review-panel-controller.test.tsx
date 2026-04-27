@@ -9,8 +9,8 @@ import type {
   WorkspaceGroup,
   WorkspacePreviewState,
 } from "../types"
-import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE } from "./review-preview-state"
 import { useReviewPanelController } from "./review-panel-controller"
+import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE } from "./review-preview-state"
 
 function createWorkspace(): WorkspaceGroup {
   return {

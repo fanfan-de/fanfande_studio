@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { Composer } from "./Composer"
 import { appendComposerTagToDraftState, createComposerDraftStateFromPlainText, createComposerFileTagData } from "./draft-state"
@@ -122,5 +122,49 @@ describe("Composer", () => {
     expect(tag).toHaveClass("composer-inline-tag", "is-file")
     expect(tag).toHaveProperty("contentEditable", "false")
     expect(tag).toHaveProperty("tabIndex", -1)
+  })
+
+  it("switches the send button to stop while sending", () => {
+    const onCancelSend = vi.fn()
+    const onSend = vi.fn()
+
+    render(
+      <Composer
+        attachments={[]}
+        attachmentButtonTitle="Add attachments"
+        attachmentDisabledReason={null}
+        attachmentError={null}
+        canSend
+        draftState={createComposerDraftStateFromPlainText("Running prompt")}
+        hasPendingPermissionRequests={false}
+        isSending
+        mcpOptions={[]}
+        modelOptions={[]}
+        onCancelSend={onCancelSend}
+        onDraftStateChange={vi.fn()}
+        onModelChange={vi.fn()}
+        onPickAttachments={vi.fn()}
+        onReasoningEffortChange={vi.fn()}
+        onRemoveAttachment={vi.fn()}
+        onSend={onSend}
+        reasoningEffortOptions={[]}
+        selectedMcpServerIDs={[]}
+        selectedModel={null}
+        selectedModelLabel="Server default"
+        selectedReasoningEffort={null}
+        selectedReasoningEffortLabel="Model default"
+        selectedSkillIDs={[]}
+        skillOptions={[]}
+        unsupportedAttachmentPaths={[]}
+        workspaceDirectory={null}
+      />,
+    )
+
+    const button = screen.getByRole("button", { name: "Stop task" })
+
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(onCancelSend).toHaveBeenCalledTimes(1)
+    expect(onSend).not.toHaveBeenCalled()
   })
 })

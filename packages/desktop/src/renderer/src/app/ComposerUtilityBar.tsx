@@ -71,7 +71,6 @@ export function ComposerUtilityBar({
   const pressureState = resolvePressureState(rawRatio)
   const percent = rawRatio === null ? null : Math.round(rawRatio * 100)
   const size = 28
-  const strokeWidth = 2.5
   const radius = 10
   const circumference = 2 * Math.PI * radius
   const dashOffset = circumference * (1 - clampedRatio)

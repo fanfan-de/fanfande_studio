@@ -1,12 +1,9 @@
 import { useRef } from "react"
 import type {
   SessionDiffState,
-  SessionDiffSummary,
-  SessionRuntimeDebugSnapshot,
   SessionRuntimeDebugState,
-  WorkspaceFileComment,
   WorkspaceFileReviewState,
-  WorkspacePreviewState,
+  WorkspacePreviewState
 } from "../types"
 import { useWorkspaceStoreSelector, type WorkspaceStoreApi } from "./workspace-store"
 

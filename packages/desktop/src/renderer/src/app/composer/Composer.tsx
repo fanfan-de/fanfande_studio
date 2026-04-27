@@ -1,21 +1,21 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react"
-import { ContentEditable } from "@lexical/react/LexicalContentEditable"
 import { LexicalComposer } from "@lexical/react/LexicalComposer"
+import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
+import { ContentEditable } from "@lexical/react/LexicalContentEditable"
 import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary"
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin"
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin"
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin"
-import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
 import {
   $createTextNode,
   $getNodeByKey,
   $getSelection,
   $isRangeSelection,
   $isTextNode,
-  type TextNode,
   type LexicalEditor,
+  type TextNode,
 } from "lexical"
-import { ArrowUpIcon, ChevronDownIcon, CloseIcon, PaperclipIcon } from "../icons"
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react"
+import { ArrowUpIcon, ChevronDownIcon, CloseIcon, PaperclipIcon, StopIcon } from "../icons"
 import type {
   ComposerAttachment,
   ComposerDraftState,
@@ -27,7 +27,7 @@ import type {
   ComposerTagData,
   OpenAIReasoningEffort,
 } from "../types"
-import { $createComposerTagNode } from "./ComposerTagNode"
+import { $createComposerTagNode, ComposerTagNode } from "./ComposerTagNode"
 import {
   createComposerDraftStateFromEditorState,
   createComposerDraftStateFromPlainText,
@@ -35,17 +35,11 @@ import {
   createComposerMcpTagData,
   createComposerSkillTagData,
   normalizeComposerDraftState,
+  readComposerTagIdentity,
   readComposerTagsFromDraftState,
   readTaggedMcpServerIDsFromDraftState,
-  readComposerTagIdentity,
 } from "./draft-state"
-import { ComposerTagNode } from "./ComposerTagNode"
 
-interface WorkspaceFileSearchResult {
-  extension: string | null
-  name: string
-  path: string
-}
 
 interface ComposerProps {
   attachments: ComposerAttachment[]
@@ -65,6 +59,7 @@ interface ComposerProps {
   onPickAttachments: () => void | Promise<void>
   onReasoningEffortChange: (value: OpenAIReasoningEffort | null) => void
   onRemoveAttachment: (path: string) => void
+  onCancelSend?: () => void | Promise<void>
   onSend: (draftStateOverride?: ComposerDraftState) => void | Promise<void>
   permissionMode?: ComposerPermissionMode
   placeholder?: string
@@ -193,7 +188,6 @@ const SLASH_COMMANDS: Array<{
   },
 ]
 
-const WORKSPACE_ROOT_LABEL = "根目录"
 
 function isComposerSubmitKeyEvent(event: KeyboardEvent<HTMLElement>, isComposing: boolean) {
   if (event.key !== "Enter") return false
@@ -227,7 +221,7 @@ function getComposerSendButtonDescription({
   }
 
   if (isSending) {
-    return "Enter is unavailable while the current request is sending. Press Shift+Enter for a newline."
+    return "Stop the current assistant turn. Press Shift+Enter for a newline."
   }
 
   return "Press Enter to send. Press Shift+Enter for a newline."
@@ -509,6 +503,7 @@ export function Composer({
   onPickAttachments,
   onReasoningEffortChange,
   onRemoveAttachment,
+  onCancelSend,
   onSend,
   permissionMode = "default",
   placeholder = "Describe the UI, implementation task, or review target for the agent.",
@@ -966,7 +961,7 @@ export function Composer({
   }
 
   const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
-  const sendButtonLabel = isSending ? "Sending task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
+  const sendButtonLabel = isSending ? "Stop task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
   const sendButtonDescription = getComposerSendButtonDescription({
     attachmentError,
     canSend,
@@ -975,6 +970,7 @@ export function Composer({
   })
   const sendButtonTitle = `${sendButtonLabel}. ${sendButtonDescription}`
   const sendShortcut = !isSending && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
+  const sendButtonDisabled = isSending ? !onCancelSend : !canSend || hasPendingPermissionRequests || attachmentError !== null
   const showReasoningEffortSelector = showModelSelector && reasoningEffortOptions.length > 0
   const selectedReasoningEffortButtonLabel = `Reasoning: ${selectedReasoningEffortLabel}`
   const normalizedModelSearchQuery = modelSearchQuery.trim().toLowerCase()
@@ -1226,12 +1222,19 @@ export function Composer({
             aria-keyshortcuts={sendShortcut}
             aria-label={sendButtonLabel}
             className="primary-button is-icon-only"
-            disabled={isSending || !canSend || hasPendingPermissionRequests || attachmentError !== null}
-            onClick={() => void onSend(draftStateRef.current)}
+            disabled={sendButtonDisabled}
+            onClick={() => {
+              if (isSending) {
+                void onCancelSend?.()
+                return
+              }
+
+              void onSend(draftStateRef.current)
+            }}
             title={sendButtonTitle}
             type="button"
           >
-            <ArrowUpIcon />
+            {isSending ? <StopIcon /> : <ArrowUpIcon />}
           </button>
         </div>
       </div>

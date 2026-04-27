@@ -1,55 +1,16 @@
-import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
-import { ChevronDownIcon } from "../icons"
-import type {
-  AssistantTraceSectionKey,
-  BrandTheme,
-  ColorMode,
-  AssistantTurn,
-  AssistantTraceItem,
-  AssistantTraceVisibility,
-  AssistantTraceVisibilityKey,
-  ComposerAttachment,
-  ComposerDraftState,
-  ComposerMcpOption,
-  ComposerSkillOption,
-  CreateSessionTab,
-  GlobalSkillTreeNode,
-  LeftSidebarView,
-  McpServerDiagnostic,
-  McpServerDraftState,
-  McpServerSummary,
-  OpenAIReasoningEffort,
-  PermissionDecision,
-  PermissionRequest,
-  PromptPresetDocument,
-  PromptPresetSelection,
-  PromptPresetSummary,
-  PreviewComment,
-  PreviewMode,
-  ProjectModelSelection,
-  ProviderCatalogItem,
-  ProviderDraftState,
-  ProviderModel,
-  RightSidebarView,
-  ArchivedSessionSummary,
-  SessionDiffState,
-  SessionDiffSummary,
-  SessionRuntimeDebugSnapshot,
-  SessionRuntimeDebugState,
-  SessionSummary,
-  SidebarActionKey,
-  Turn,
-  UserTurn,
-  WindowAction,
-  WorkspaceFileReviewState,
-  WorkspacePreviewState,
-  WorkspaceGroup
-} from "../types"
-import { getSessionWorkflowBadge } from "../session-workflow"
-import { isSideChatSession } from "../workspace"
+import { useEffect, useRef, useState } from "react"
 import { ExternalEditorMenuButton } from "../external-editor/ExternalEditorMenuButton"
 import { GitQuickMenuButton } from "../git/GitQuickMenuButton"
+import { ChevronDownIcon } from "../icons"
+import { getSessionWorkflowBadge } from "../session-workflow"
 import { SessionWorkflowBadge, ShellTopMenu, SideChatBadge } from "../shared-ui"
+import type {
+  ComposerMcpOption,
+  ComposerSkillOption,
+  PermissionRequest,
+  SessionSummary
+} from "../types"
+import { isSideChatSession } from "../workspace"
 
 interface SessionCanvasTopMenuProps {
   activeSession: SessionSummary | null

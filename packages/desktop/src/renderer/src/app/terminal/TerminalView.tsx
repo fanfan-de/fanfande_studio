@@ -1,8 +1,8 @@
-import { memo, useEffect, useEffectEvent, useRef } from "react"
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
-import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
+import { memo, useEffect, useEffectEvent, useRef } from "react"
 import type { BrandTheme, ColorMode } from "../types"
+import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
 
 function shouldAutoFocusTerminal(container: HTMLElement) {
   const activeElement = document.activeElement

@@ -1,8 +1,8 @@
-import { useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type Dispatch, type DragEvent as ReactDragEvent, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from "react"
+import { useEffect, useRef, type PointerEvent, type DragEvent as ReactDragEvent, type ReactNode } from "react"
 import { CloseIcon } from "../icons"
-import type { SessionSummary } from "../types"
 import { getSessionWorkflowBadge } from "../session-workflow"
-import { SessionWorkflowBadge, SideChatBadge, WindowControlsSpacer } from "../shared-ui"
+import { SessionWorkflowBadge, SideChatBadge } from "../shared-ui"
+import type { SessionSummary } from "../types"
 
 interface PaneTabBarProps {
   activeTabKey: string | null
@@ -84,7 +84,6 @@ export function PaneTabBar({
   onTabPointerDrop,
   trailingAccessory,
 }: PaneTabBarProps) {
-  const hasWindowControlsClearance = Boolean(trailingAccessory)
   const pointerDragRef = useRef<{
     pointerId: number
     startX: number
@@ -208,7 +207,6 @@ export function PaneTabBar({
     "pane-tab-bar",
     "panel-toolbar",
     isFocused ? "is-focused" : null,
-    hasWindowControlsClearance ? "has-window-controls-clearance" : null,
     isTopRow && draggedTabKey === null ? "window-drag-region" : null,
   ]
     .filter(Boolean)
@@ -327,7 +325,6 @@ export function PaneTabBar({
       </div>
       <div className="pane-tab-bar-actions">
         {trailingAccessory ? <div className="pane-tab-bar-trailing">{trailingAccessory}</div> : null}
-        {hasWindowControlsClearance ? <WindowControlsSpacer variant="canvas" /> : null}
       </div>
     </nav>
   )

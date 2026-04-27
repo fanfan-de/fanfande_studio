@@ -1,4 +1,11 @@
 import { useEffect, useRef, useState } from "react"
+import {
+  describeComposerAttachmentSupport,
+  getComposerAttachmentCapabilities,
+  getComposerAttachmentDisabledReason,
+  getComposerAttachmentError,
+  isComposerAttachmentSupported,
+} from "./composer/attachment-utils"
 import type {
   ComposerMcpOption,
   ComposerModelOption,
@@ -9,13 +16,6 @@ import type {
   ProviderModel,
   SkillInfo,
 } from "./types"
-import {
-  describeComposerAttachmentSupport,
-  getComposerAttachmentCapabilities,
-  getComposerAttachmentDisabledReason,
-  getComposerAttachmentError,
-  isComposerAttachmentSupported,
-} from "./composer/attachment-utils"
 const DEFAULT_OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ["low", "medium", "high"]
 const OPENAI_REASONING_EFFORT_COPY: Record<
   OpenAIReasoningEffort,

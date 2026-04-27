@@ -7,17 +7,16 @@ import {
   CircleX,
   Copy,
   Expand,
-  FileText,
   FilePlus2,
+  FileText,
   Folder,
   LayoutPanelLeft,
   MessageSquare,
   Minus,
-  Moon,
   Monitor,
+  Moon,
   Palette,
   PanelLeftClose,
-  Sun,
   PanelLeftOpen,
   PanelRight,
   PanelRightClose,
@@ -28,6 +27,7 @@ import {
   Settings,
   SortAsc,
   Square,
+  Sun,
   Terminal,
   Trash2,
   X,
@@ -69,6 +69,7 @@ export const RestoreIcon = createIcon(Copy)
 export const CloseIcon = createIcon(X)
 export const TerminalIcon = createIcon(Terminal)
 export const ArrowUpIcon = createIcon(ArrowUp)
+export const StopIcon = createIcon(Square, { fill: "currentColor", strokeWidth: 0 })
 export const PaletteIcon = createIcon(Palette)
 export const ResetIcon = createIcon(RotateCcw)
 export const SunIcon = createIcon(Sun)

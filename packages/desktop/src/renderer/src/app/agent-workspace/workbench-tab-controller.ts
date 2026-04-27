@@ -16,8 +16,7 @@ import {
   upsertTabReferenceInGroup,
   type WorkbenchLayoutState,
 } from "../workbench/core"
-import { findSession, findWorkspaceByID } from "../workspace"
-import type { WorkspaceStateUpdater } from "./workspace-store"
+import { findSession } from "../workspace"
 import {
   createCreateSessionTab,
   createCreateSessionWorkbenchTab,
@@ -26,11 +25,11 @@ import {
   getPaneByID,
   getPaneByTabKey,
   getWorkbenchGroupIDForTabKey,
-  getWorkbenchTabKey,
   getWorkbenchTabReferenceFromKey,
   resolveCreateSessionWorkspaceID,
-  resolveWorkbenchGroupID,
+  resolveWorkbenchGroupID
 } from "./workspace-derived-state"
+import type { WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 

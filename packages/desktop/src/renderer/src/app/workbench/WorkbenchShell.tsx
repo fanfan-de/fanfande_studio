@@ -1,4 +1,4 @@
-import { Fragment, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
+import { Fragment, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { SidebarToggleButton } from "../shared-ui"
 import type { AssistantTraceVisibility, ComposerDraftState } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
@@ -50,6 +50,7 @@ export interface WorkbenchShellProps {
   paneDropTarget: PaneDropTarget | null
   paneRefs: { current: Record<string, HTMLElement | null> }
   workbenchPanesRef: { current: HTMLDivElement | null }
+  windowControls?: ReactNode
   paneStateByID: WorkbenchPaneStateByID
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
@@ -76,6 +77,7 @@ export interface WorkbenchShellProps {
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
+  onCancelSend: AgentWorkspaceState["handleCancelSend"]
   onSend: AgentWorkspaceState["handleSend"]
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
   onToggleLeftSidebar: () => void
@@ -143,12 +145,15 @@ function WorkbenchNodeView({
         style={style}
         trailingAccessory={
           node.id === props.lastPaneID ? (
-            <SidebarToggleButton
-              isSidebarCollapsed={props.isRightSidebarCollapsed}
-              onToggleSidebar={props.onToggleRightSidebar}
-              side="right"
-              variant="top-menu"
-            />
+            <>
+              <SidebarToggleButton
+                isSidebarCollapsed={props.isRightSidebarCollapsed}
+                onToggleSidebar={props.onToggleRightSidebar}
+                side="right"
+                variant="top-menu"
+              />
+              {props.isRightSidebarCollapsed ? props.windowControls : null}
+            </>
           ) : null
         }
         workspaces={props.workspaces}
@@ -173,6 +178,7 @@ function WorkbenchNodeView({
         onRemoveComposerAttachment={props.onRemoveComposerAttachment}
         onSelectCreateSessionTab={props.onSelectCreateSessionTab}
         onSelectSessionTab={props.onSelectSessionTab}
+        onCancelSend={props.onCancelSend}
         onSend={props.onSend}
         onSetDraft={props.onSetDraft}
       />

@@ -19,18 +19,18 @@ import type {
   RightSidebarView,
   WorkspaceFileComment,
   WorkspaceFileReviewState,
-  WorkspacePreviewState,
   WorkspaceGroup,
+  WorkspacePreviewState,
 } from "../types"
 import { createID } from "../utils"
-import type { WorkspaceStateUpdater } from "./workspace-store"
+import { useWorkspaceFileReviewSearchEffects } from "./review-diff-runtime-hooks"
 import {
   DEFAULT_WORKSPACE_PREVIEW_STATE,
   getWorkspaceFileCommentKey,
   resolvePreviewScopeID,
   resolveWorkspaceFileReviewStatus,
 } from "./review-preview-state"
-import { useWorkspaceFileReviewSearchEffects } from "./review-diff-runtime-hooks"
+import type { WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 
