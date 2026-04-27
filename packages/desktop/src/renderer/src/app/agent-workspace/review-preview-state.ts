@@ -1,4 +1,4 @@
-import { useRef, useState } from "react"
+import { useRef } from "react"
 import type {
   SessionDiffState,
   SessionDiffSummary,
@@ -8,6 +8,7 @@ import type {
   WorkspaceFileReviewState,
   WorkspacePreviewState,
 } from "../types"
+import { useWorkspaceStoreSelector, type WorkspaceStoreApi } from "./workspace-store"
 
 const PREVIEW_FALLBACK_SCOPE_ID = "__preview_global__"
 
@@ -79,7 +80,7 @@ export function resolveWorkspaceFileReviewStatus(
   return "idle"
 }
 
-export function useReviewPreviewState() {
+export function useReviewPreviewState(store: WorkspaceStoreApi) {
   const sessionDiffRequestRef = useRef<Record<string, number>>({})
   const sessionDiffRefreshTimerRef = useRef<Record<string, number>>({})
   const runtimeDebugRequestRef = useRef<Record<string, number>>({})
@@ -87,22 +88,49 @@ export function useReviewPreviewState() {
   const workspaceFileSearchRequestRef = useRef(0)
   const workspaceFileReadRequestRef = useRef(0)
 
-  const [previewByWorkspaceID, setPreviewByWorkspaceID] = useState<Record<string, WorkspacePreviewState>>({})
-  const [workspaceFileCommentsByTarget, setWorkspaceFileCommentsByTarget] = useState<
-    Record<string, WorkspaceFileComment[]>
-  >({})
-  const [workspaceFileReviewState, setWorkspaceFileReviewState] = useState<WorkspaceFileReviewState>(
-    DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+  const previewByWorkspaceID = useWorkspaceStoreSelector(store, (state) => state.review.previewByWorkspaceID)
+  const selectedDiffFileBySession = useWorkspaceStoreSelector(store, (state) => state.review.selectedDiffFileBySession)
+  const sessionDiffBySession = useWorkspaceStoreSelector(store, (state) => state.review.sessionDiffBySession)
+  const sessionDiffStateBySession = useWorkspaceStoreSelector(store, (state) => state.review.sessionDiffStateBySession)
+  const sessionRuntimeDebugBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.review.sessionRuntimeDebugBySession,
   )
-  const [sessionDiffBySession, setSessionDiffBySession] = useState<Record<string, SessionDiffSummary>>({})
-  const [sessionDiffStateBySession, setSessionDiffStateBySession] = useState<Record<string, SessionDiffState>>({})
-  const [sessionRuntimeDebugBySession, setSessionRuntimeDebugBySession] = useState<
-    Record<string, SessionRuntimeDebugSnapshot>
-  >({})
-  const [sessionRuntimeDebugStateBySession, setSessionRuntimeDebugStateBySession] = useState<
-    Record<string, SessionRuntimeDebugState>
-  >({})
-  const [selectedDiffFileBySession, setSelectedDiffFileBySession] = useState<Record<string, string | null>>({})
+  const sessionRuntimeDebugStateBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.review.sessionRuntimeDebugStateBySession,
+  )
+  const workspaceFileCommentsByTarget = useWorkspaceStoreSelector(
+    store,
+    (state) => state.review.workspaceFileCommentsByTarget,
+  )
+  const workspaceFileReviewState = useWorkspaceStoreSelector(store, (state) => state.review.workspaceFileReviewState)
+  const setPreviewByWorkspaceID = useWorkspaceStoreSelector(store, (state) => state.reviewActions.setPreviewByWorkspaceID)
+  const setSelectedDiffFileBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.reviewActions.setSelectedDiffFileBySession,
+  )
+  const setSessionDiffBySession = useWorkspaceStoreSelector(store, (state) => state.reviewActions.setSessionDiffBySession)
+  const setSessionDiffStateBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.reviewActions.setSessionDiffStateBySession,
+  )
+  const setSessionRuntimeDebugBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.reviewActions.setSessionRuntimeDebugBySession,
+  )
+  const setSessionRuntimeDebugStateBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.reviewActions.setSessionRuntimeDebugStateBySession,
+  )
+  const setWorkspaceFileCommentsByTarget = useWorkspaceStoreSelector(
+    store,
+    (state) => state.reviewActions.setWorkspaceFileCommentsByTarget,
+  )
+  const setWorkspaceFileReviewState = useWorkspaceStoreSelector(
+    store,
+    (state) => state.reviewActions.setWorkspaceFileReviewState,
+  )
 
   return {
     previewByWorkspaceID,

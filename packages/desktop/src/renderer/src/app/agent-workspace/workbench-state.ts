@@ -1,12 +1,12 @@
-import { useState } from "react"
-import type { WorkbenchLayoutState } from "../workbench/core"
+import { useWorkspaceStoreSelector, type WorkspaceStoreApi } from "./workspace-store"
 
 interface WorkbenchStateOptions {
-  initialWorkbenchLayout: WorkbenchLayoutState
+  store: WorkspaceStoreApi
 }
 
-export function useWorkbenchState({ initialWorkbenchLayout }: WorkbenchStateOptions) {
-  const [workbenchLayout, setWorkbenchLayout] = useState<WorkbenchLayoutState>(initialWorkbenchLayout)
+export function useWorkbenchState({ store }: WorkbenchStateOptions) {
+  const workbenchLayout = useWorkspaceStoreSelector(store, (state) => state.workbench.workbenchLayout)
+  const setWorkbenchLayout = useWorkspaceStoreSelector(store, (state) => state.workbenchActions.setWorkbenchLayout)
 
   return {
     setWorkbenchLayout,

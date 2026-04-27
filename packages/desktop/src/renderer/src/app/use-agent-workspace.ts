@@ -21,6 +21,8 @@ import {
 import type {
   AgentStreamIPCEvent,
   AgentSessionStreamIPCEvent,
+  AssistantTraceItem,
+  AssistantTurn,
   ComposerAttachment,
   ComposerCommentReference,
   ComposerDraftState,
@@ -118,8 +120,9 @@ import {
   useReviewPreviewState,
 } from "./agent-workspace/review-preview-state"
 import { useStreamPermissionController } from "./agent-workspace/stream-permission-controller"
-import { seedWorkspaceIDs, useWorkspaceSessionStore } from "./agent-workspace/workspace-session-store"
+import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-store"
 import { useWorkbenchState } from "./agent-workspace/workbench-state"
+import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
@@ -496,6 +499,172 @@ function readStreamRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>
 }
 
+function normalizeTraceText(value: string | undefined) {
+  return (value ?? "").trim()
+}
+
+function findMatchingTraceItemIndex(
+  previousItems: AssistantTraceItem[],
+  nextItem: AssistantTraceItem,
+  usedIndices: Set<number>,
+) {
+  if (nextItem.sourceID) {
+    const sourceMatchIndex = previousItems.findIndex(
+      (item, index) => !usedIndices.has(index) && item.sourceID === nextItem.sourceID,
+    )
+    if (sourceMatchIndex !== -1) return sourceMatchIndex
+  }
+
+  const idMatchIndex = previousItems.findIndex(
+    (item, index) => !usedIndices.has(index) && item.id === nextItem.id,
+  )
+  if (idMatchIndex !== -1) return idMatchIndex
+
+  const nextText = normalizeTraceText(nextItem.text)
+  if (nextText) {
+    const textMatchIndex = previousItems.findIndex(
+      (item, index) =>
+        !usedIndices.has(index) &&
+        item.kind === nextItem.kind &&
+        normalizeTraceText(item.text) === nextText,
+    )
+    if (textMatchIndex !== -1) return textMatchIndex
+  }
+
+  const nextTitle = normalizeTraceText(nextItem.title)
+  const nextDetail = normalizeTraceText(nextItem.detail)
+  if (nextTitle || nextDetail || nextItem.status) {
+    return previousItems.findIndex(
+      (item, index) =>
+        !usedIndices.has(index) &&
+        item.kind === nextItem.kind &&
+        normalizeTraceText(item.title) === nextTitle &&
+        normalizeTraceText(item.detail) === nextDetail &&
+        (item.status ?? "") === (nextItem.status ?? ""),
+    )
+  }
+
+  return -1
+}
+
+function preserveTraceItemIdentity(
+  previousItems: AssistantTraceItem[],
+  nextItems: AssistantTraceItem[],
+) {
+  if (previousItems.length === 0 || nextItems.length === 0) return nextItems
+
+  const usedIndices = new Set<number>()
+
+  return nextItems.map((nextItem) => {
+    const matchIndex = findMatchingTraceItemIndex(previousItems, nextItem, usedIndices)
+    if (matchIndex === -1) return nextItem
+
+    const previousItem = previousItems[matchIndex]
+    if (!previousItem) return nextItem
+
+    usedIndices.add(matchIndex)
+
+    return {
+      ...nextItem,
+      id: previousItem.id,
+      timestamp: previousItem.timestamp,
+    }
+  })
+}
+
+function getAssistantTurnResponseText(turn: AssistantTurn) {
+  return turn.items
+    .filter((item) => item.kind === "text" || item.kind === "question")
+    .map((item) => normalizeTraceText(item.text))
+    .filter(Boolean)
+    .join("\n\n")
+}
+
+function getAssistantTurnSourceIDs(turn: AssistantTurn) {
+  return new Set(
+    turn.items
+      .map((item) => item.sourceID)
+      .filter((sourceID): sourceID is string => Boolean(sourceID)),
+  )
+}
+
+function assistantTurnsAreCompatible(previousTurn: AssistantTurn, nextTurn: AssistantTurn) {
+  if (previousTurn.id === nextTurn.id) return true
+
+  const previousSourceIDs = getAssistantTurnSourceIDs(previousTurn)
+  if (previousSourceIDs.size > 0) {
+    for (const sourceID of getAssistantTurnSourceIDs(nextTurn)) {
+      if (previousSourceIDs.has(sourceID)) return true
+    }
+  }
+
+  const previousResponseText = getAssistantTurnResponseText(previousTurn)
+  const nextResponseText = getAssistantTurnResponseText(nextTurn)
+  return Boolean(previousResponseText && previousResponseText === nextResponseText)
+}
+
+function findMatchingAssistantTurnIndex(
+  previousAssistantTurns: AssistantTurn[],
+  nextTurn: AssistantTurn,
+  preferredIndex: number,
+  usedIndices: Set<number>,
+) {
+  const idMatchIndex = previousAssistantTurns.findIndex(
+    (turn, index) => !usedIndices.has(index) && turn.id === nextTurn.id,
+  )
+  if (idMatchIndex !== -1) return idMatchIndex
+
+  const preferredTurn = previousAssistantTurns[preferredIndex]
+  if (
+    preferredTurn &&
+    !usedIndices.has(preferredIndex) &&
+    assistantTurnsAreCompatible(preferredTurn, nextTurn)
+  ) {
+    return preferredIndex
+  }
+
+  return previousAssistantTurns.findIndex(
+    (turn, index) => !usedIndices.has(index) && assistantTurnsAreCompatible(turn, nextTurn),
+  )
+}
+
+function preserveAssistantTurnIdentity(previousTurns: Turn[], nextTurns: Turn[]) {
+  const previousAssistantTurns = previousTurns.filter((turn): turn is AssistantTurn => turn.kind === "assistant")
+  if (previousAssistantTurns.length === 0) return nextTurns
+
+  const usedIndices = new Set<number>()
+  let nextAssistantIndex = 0
+
+  return nextTurns.map((turn) => {
+    if (turn.kind !== "assistant") return turn
+
+    const matchIndex = findMatchingAssistantTurnIndex(
+      previousAssistantTurns,
+      turn,
+      nextAssistantIndex,
+      usedIndices,
+    )
+    nextAssistantIndex += 1
+
+    if (matchIndex === -1) return turn
+
+    const previousTurn = previousAssistantTurns[matchIndex]
+    if (!previousTurn) return turn
+
+    usedIndices.add(matchIndex)
+
+    return {
+      ...turn,
+      id: previousTurn.id,
+      items: preserveTraceItemIdentity(previousTurn.items, turn.items),
+    }
+  })
+}
+
+function mergeConversationTurnsFromHistory(previousTurns: Turn[], nextTurns: Turn[]) {
+  return preserveAssistantTurnIdentity(previousTurns, mergeUserTurnPresentationState(previousTurns, nextTurns))
+}
+
 function readSessionContextUsageFromMessageInfo(value: unknown): SessionContextUsage | null {
   const message = readStreamRecord(value)
   if (!message || readStreamString(message.role) !== "assistant") return null
@@ -601,7 +770,17 @@ export function useAgentWorkspace({
   platform,
 }: UseAgentWorkspaceOptions) {
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
-  const { workbenchLayout, setWorkbenchLayout } = useWorkbenchState({ initialWorkbenchLayout })
+  const workspaceStoreRef = useRef<WorkspaceStoreApi | null>(null)
+  if (!workspaceStoreRef.current) {
+    workspaceStoreRef.current = createWorkspaceStore({
+      hasFolderWorkspaceLoader: Boolean(window.desktop?.listFolderWorkspaces),
+      initialComposerTabKey: initialWorkbenchTab ? getWorkbenchTabKey(initialWorkbenchTab) : null,
+      initialCreateSessionTab,
+      initialWorkbenchLayout,
+    })
+  }
+  const workspaceStore = workspaceStoreRef.current
+  const { workbenchLayout, setWorkbenchLayout } = useWorkbenchState({ store: workspaceStore })
   const {
     activeSideChatSessionIDByParentSessionID,
     canLoadSessionHistory,
@@ -634,7 +813,7 @@ export function useAgentWorkspace({
     workspaceRefreshRequestRef,
     workspaceReloadSuppressedUntilRef,
     workspaces,
-  } = useWorkspaceSessionStore({ initialCreateSessionTab })
+  } = useWorkspaceSessionStore({ store: workspaceStore })
   const {
     previewByWorkspaceID,
     runtimeDebugRefreshTimerRef,
@@ -658,7 +837,7 @@ export function useAgentWorkspace({
     workspaceFileReadRequestRef,
     workspaceFileReviewState,
     workspaceFileSearchRequestRef,
-  } = useReviewPreviewState()
+  } = useReviewPreviewState(workspaceStore)
   const {
     composerAttachmentsByTabKey,
     composerDraftStateByTabKey,
@@ -672,7 +851,7 @@ export function useAgentWorkspace({
     setComposerRefreshVersion,
     setIsCreatingSessionByTabKey,
     setIsSendingByTabKey,
-  } = useComposerDraftState({ initialTabKey: initialWorkbenchTab ? getWorkbenchTabKey(initialWorkbenchTab) : null })
+  } = useComposerDraftState({ store: workspaceStore })
   const {
     agentSessionStoreRef,
     agentSessions,
@@ -697,7 +876,7 @@ export function useAgentWorkspace({
     setSessionDirectoryBySession,
     skipNextHistoryLoadRef,
     subscribedSessionStreamsRef,
-  } = useStreamPermissionController({ initialSessionID: initialSelection.session?.id ?? null })
+  } = useStreamPermissionController({ initialSessionID: initialSelection.session?.id ?? null, store: workspaceStore })
   function resolveWorkspaceIDForTab(tab: WorkbenchTabReference | null) {
     if (!tab) return null
     if (tab.kind === "session") {
@@ -1058,7 +1237,7 @@ export function useAgentWorkspace({
     bumpConversationVersion(sessionID)
     setConversations((prev) => {
       const previousTurns = prev[sessionID]?.length ? prev[sessionID] : readPersistedUserTurns(sessionID)
-      const mergedTurns = mergeUserTurnPresentationState(previousTurns, nextTurns)
+      const mergedTurns = mergeConversationTurnsFromHistory(previousTurns, nextTurns)
       persistUserTurns(sessionID, mergedTurns)
       return {
         ...prev,
@@ -1647,7 +1826,6 @@ export function useAgentWorkspace({
           ...prev,
           ...collectSessionDirectoryMap(loadedWorkspaces),
         }))
-        setCanLoadSessionHistory(true)
 
         if (!preserveLocalWorkspaceState) {
           const nextSelection = findFirstSession(nextWorkspaces)
@@ -1673,6 +1851,7 @@ export function useAgentWorkspace({
           lastFocusedSessionIDRef.current = nextSelection.session?.id ?? null
         }
 
+        setCanLoadSessionHistory(true)
         initialFolderWorkspacesLoadedRef.current = true
         setIsInitialWorkspaceLoadPending(false)
       })

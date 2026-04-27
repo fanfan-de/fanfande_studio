@@ -1,5 +1,4 @@
-import { useRef, useState } from "react"
-import { initialConversations } from "../seed-data"
+import { useRef } from "react"
 import { createAgentSessionEventRouter } from "../agent-session/event-router"
 import { createAgentSessionStore } from "../agent-session/store"
 import type {
@@ -7,12 +6,14 @@ import type {
   PermissionRequest,
   SessionContextUsage,
 } from "../types"
+import { useWorkspaceStoreSelector, type WorkspaceStoreApi } from "./workspace-store"
 
 interface StreamPermissionControllerOptions {
   initialSessionID: string | null
+  store: WorkspaceStoreApi
 }
 
-export function useStreamPermissionController({ initialSessionID }: StreamPermissionControllerOptions) {
+export function useStreamPermissionController({ initialSessionID, store }: StreamPermissionControllerOptions) {
   const pendingStreamsRef = useRef<Record<string, PendingAgentStream>>({})
   const historyRequestRef = useRef(0)
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
@@ -23,15 +24,47 @@ export function useStreamPermissionController({ initialSessionID }: StreamPermis
   const agentSessionStoreRef = useRef(createAgentSessionStore())
   const lastFocusedSessionIDRef = useRef<string | null>(initialSessionID)
 
-  const [conversations, setConversations] = useState(initialConversations)
-  const [agentSessions, setAgentSessions] = useState<Record<string, string>>({})
-  const [sessionDirectoryBySession, setSessionDirectoryBySession] = useState<Record<string, string>>({})
-  const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySession] = useState<
-    Record<string, PermissionRequest[]>
-  >({})
-  const [contextUsageBySession, setContextUsageBySession] = useState<Record<string, SessionContextUsage>>({})
-  const [permissionRequestActionRequestID, setPermissionRequestActionRequestID] = useState<string | null>(null)
-  const [permissionRequestActionError, setPermissionRequestActionError] = useState<string | null>(null)
+  const agentSessions = useWorkspaceStoreSelector(store, (state) => state.agentStream.agentSessions)
+  const contextUsageBySession = useWorkspaceStoreSelector(store, (state) => state.agentStream.contextUsageBySession)
+  const conversations = useWorkspaceStoreSelector(store, (state) => state.agentStream.conversations)
+  const pendingPermissionRequestsBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStream.pendingPermissionRequestsBySession as Record<string, PermissionRequest[]>,
+  )
+  const permissionRequestActionError = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStream.permissionRequestActionError,
+  )
+  const permissionRequestActionRequestID = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStream.permissionRequestActionRequestID,
+  )
+  const sessionDirectoryBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStream.sessionDirectoryBySession,
+  )
+  const setAgentSessions = useWorkspaceStoreSelector(store, (state) => state.agentStreamActions.setAgentSessions)
+  const setContextUsageBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStreamActions.setContextUsageBySession,
+  )
+  const setConversations = useWorkspaceStoreSelector(store, (state) => state.agentStreamActions.setConversations)
+  const setPendingPermissionRequestsBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStreamActions.setPendingPermissionRequestsBySession,
+  )
+  const setPermissionRequestActionError = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStreamActions.setPermissionRequestActionError,
+  )
+  const setPermissionRequestActionRequestID = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStreamActions.setPermissionRequestActionRequestID,
+  )
+  const setSessionDirectoryBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.agentStreamActions.setSessionDirectoryBySession,
+  )
 
   return {
     agentSessionStoreRef,

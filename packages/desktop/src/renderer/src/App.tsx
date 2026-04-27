@@ -20,6 +20,7 @@ import { ComposerUtilityBar } from "./app/ComposerUtilityBar"
 import { createComposerDraftStateFromPlainText } from "./app/composer/draft-state"
 import { TerminalPanel } from "./app/terminal/TerminalPanel"
 import { TerminalPanelToggleButton } from "./app/terminal/TerminalPanelToggleButton"
+import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
 import { useTerminalWorkspace } from "./app/terminal/use-terminal-workspace"
 import { clamp } from "./app/utils"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
@@ -29,6 +30,7 @@ import { useProjectComposer } from "./app/use-project-composer"
 import { useSettingsPage } from "./app/use-settings-page"
 import type { AssistantTraceVisibility, ComposerDraftState } from "./app/types"
 import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
+import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
 import { isSideChatSession } from "./app/workspace"
 
 const MIN_WORKBENCH_PANE_WIDTH = 320
@@ -752,7 +754,7 @@ export function App() {
             />
           ) : (
             <>
-              <WorkbenchTree
+              <WorkbenchShell
                 composerRefreshVersion={composerRefreshVersion}
                 draggedTabKey={draggedPaneTab?.tabKey ?? null}
                 firstPaneID={firstPaneID}
@@ -798,7 +800,7 @@ export function App() {
                 onToggleLeftSidebar={handleSidebarToggle}
                 onToggleRightSidebar={handleRightSidebarToggle}
               />
-              <TerminalArea
+              <TerminalAreaHost
                 brandTheme={brandTheme}
                 collapsedTogglePortalTarget={isActivityRailVisible ? activityRailTerminalSlot : null}
                 colorMode={colorMode}

@@ -1,35 +1,47 @@
-import { useState } from "react"
-import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import type { ComposerAttachment, ComposerDraftState, ComposerPermissionMode } from "../types"
+import { useWorkspaceStoreSelector, type WorkspaceStoreApi } from "./workspace-store"
 
 interface ComposerDraftStateOptions {
-  initialTabKey: string | null
+  store: WorkspaceStoreApi
 }
 
-export function useComposerDraftState({ initialTabKey }: ComposerDraftStateOptions) {
-  const [composerDraftStateByTabKey, setComposerDraftStateByTabKey] = useState<Record<string, ComposerDraftState>>(() =>
-    initialTabKey
-      ? {
-          [initialTabKey]: createComposerDraftStateFromPlainText(
-            "Help me align the desktop sidebar with the Pencil design.",
-          ),
-        }
-      : {},
+export function useComposerDraftState({ store }: ComposerDraftStateOptions) {
+  const composerAttachmentsByTabKey = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composer.composerAttachmentsByTabKey as Record<string, ComposerAttachment[]>,
   )
-  const [composerAttachmentsByTabKey, setComposerAttachmentsByTabKey] = useState<Record<string, ComposerAttachment[]>>({})
-  const [composerPermissionModeByTabKey, setComposerPermissionModeByTabKey] = useState<
-    Record<string, ComposerPermissionMode>
-  >(
-    () =>
-      initialTabKey
-        ? {
-            [initialTabKey]: "default",
-          }
-        : {},
+  const composerDraftStateByTabKey = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composer.composerDraftStateByTabKey as Record<string, ComposerDraftState>,
   )
-  const [isSendingByTabKey, setIsSendingByTabKey] = useState<Record<string, boolean>>({})
-  const [isCreatingSessionByTabKey, setIsCreatingSessionByTabKey] = useState<Record<string, boolean>>({})
-  const [composerRefreshVersion, setComposerRefreshVersion] = useState(0)
+  const composerPermissionModeByTabKey = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composer.composerPermissionModeByTabKey as Record<string, ComposerPermissionMode>,
+  )
+  const composerRefreshVersion = useWorkspaceStoreSelector(store, (state) => state.composer.composerRefreshVersion)
+  const isCreatingSessionByTabKey = useWorkspaceStoreSelector(store, (state) => state.composer.isCreatingSessionByTabKey)
+  const isSendingByTabKey = useWorkspaceStoreSelector(store, (state) => state.composer.isSendingByTabKey)
+  const setComposerAttachmentsByTabKey = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composerActions.setComposerAttachmentsByTabKey,
+  )
+  const setComposerDraftStateByTabKey = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composerActions.setComposerDraftStateByTabKey,
+  )
+  const setComposerPermissionModeByTabKey = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composerActions.setComposerPermissionModeByTabKey,
+  )
+  const setComposerRefreshVersion = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composerActions.setComposerRefreshVersion,
+  )
+  const setIsCreatingSessionByTabKey = useWorkspaceStoreSelector(
+    store,
+    (state) => state.composerActions.setIsCreatingSessionByTabKey,
+  )
+  const setIsSendingByTabKey = useWorkspaceStoreSelector(store, (state) => state.composerActions.setIsSendingByTabKey)
 
   return {
     composerAttachmentsByTabKey,
