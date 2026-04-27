@@ -250,8 +250,21 @@ export type AgentSessionBridgeIPCEvent =
       receivedAt: number
     }
 
+export interface AgentSessionHistoryInfo {
+  id: string
+  sessionID: string
+  role: "user" | "assistant"
+  created: number
+  completed?: number
+  error?: {
+    message?: string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
 export interface AgentSessionHistoryMessage {
-  info: Record<string, unknown>
+  info: AgentSessionHistoryInfo
   parts: unknown[]
 }
 

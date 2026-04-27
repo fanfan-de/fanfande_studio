@@ -1,14 +1,13 @@
 import fs from "node:fs"
 import path from "node:path"
+import { DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
+import type { WorkspaceFileChangeIPCEvent } from "../shared/desktop-ipc-contract"
 
-export const WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = "desktop:workspace-file-change"
+export const WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL
 
 const WORKSPACE_WATCH_DEBOUNCE_MS = 300
 
-export interface WorkspaceFileChangeIPCEvent {
-  directory: string
-  paths: string[]
-}
+export type { WorkspaceFileChangeIPCEvent }
 
 type SenderLike = {
   id: number

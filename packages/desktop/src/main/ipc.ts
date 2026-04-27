@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions, type NativeImage } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type WebContents } from "electron"
 import { getAgentConfig, readAgentSSEStream, requestAgentJSON, resolveAgentURL } from "./agent-client"
 import { readAppearanceConfigSnapshot, writeAppearanceConfigSnapshot } from "./appearance-config"
 import { filterAvailableExternalEditorsForTarget, listAvailableExternalEditors, openInExternalEditor } from "./external-editors"
@@ -62,8 +62,42 @@ import type {
 } from "./types"
 import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sendWindowState } from "./window-state"
 import type { AppearanceConfigDocument } from "../shared/appearance"
+import {
+  DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
+} from "../shared/desktop-ipc-contract"
+import type {
+  DesktopIpcChannel,
+  DesktopIpcEventChannel,
+  DesktopIpcEventPayload,
+  DesktopIpcInput,
+  DesktopIpcOutput,
+  McpServerInput,
+} from "../shared/desktop-ipc-contract"
 
-const AGENT_SESSION_EVENT_CHANNEL = "desktop:agent-session-event"
+const AGENT_SESSION_EVENT_CHANNEL = DESKTOP_AGENT_SESSION_EVENT_CHANNEL
+
+type Awaitable<T> = T | Promise<T>
+type DesktopIpcHandler<Channel extends DesktopIpcChannel> =
+  undefined extends DesktopIpcInput<Channel>
+    ? (event: IpcMainInvokeEvent, input?: DesktopIpcInput<Channel>) => Awaitable<DesktopIpcOutput<Channel>>
+    : (event: IpcMainInvokeEvent, input: DesktopIpcInput<Channel>) => Awaitable<DesktopIpcOutput<Channel>>
+
+function handleDesktopIpc<Channel extends DesktopIpcChannel>(
+  channel: Channel,
+  handler: DesktopIpcHandler<Channel>,
+) {
+  ipcMain.handle(channel, (event, input) =>
+    (handler as (event: IpcMainInvokeEvent, input?: unknown) => Awaitable<DesktopIpcOutput<Channel>>)(event, input),
+  )
+}
+
+function sendDesktopIpcEvent<Channel extends DesktopIpcEventChannel>(
+  target: WebContents,
+  channel: Channel,
+  payload: DesktopIpcEventPayload<Channel>,
+) {
+  target.send(channel, payload)
+}
 
 function normalizeShowMenuInput(input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }) {
   if (typeof input === "string") {
@@ -230,7 +264,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       message?: string,
     ) => {
       if (target.isDestroyed()) return
-      target.send(AGENT_SESSION_EVENT_CHANNEL, {
+      sendDesktopIpcEvent(target, AGENT_SESSION_EVENT_CHANNEL, {
         kind: "subscription-state",
         backendSessionID: sessionID,
         uiSessionID: options.uiSessionID,
@@ -291,7 +325,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
             lastEventID = item.id
           }
 
-          target.send(AGENT_SESSION_EVENT_CHANNEL, {
+          sendDesktopIpcEvent(target, AGENT_SESSION_EVENT_CHANNEL, {
             kind: "stream",
             source: "subscription",
             backendSessionID: sessionID,
@@ -312,7 +346,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
         const message = error instanceof Error ? error.message : String(error)
         sendUnifiedSubscriptionState("error", message)
-        target.send(AGENT_SESSION_EVENT_CHANNEL, {
+        sendDesktopIpcEvent(target, AGENT_SESSION_EVENT_CHANNEL, {
           kind: "stream",
           source: "subscription",
           backendSessionID: sessionID,
@@ -346,14 +380,14 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   }
 
-  ipcMain.handle("desktop:get-info", () => ({
+  handleDesktopIpc("desktop:get-info", () => ({
     platform: process.platform,
     electron: process.versions.electron,
     chrome: process.versions.chrome,
     node: process.versions.node,
   }))
 
-  ipcMain.handle("desktop:get-window-state", (event) => {
+  handleDesktopIpc("desktop:get-window-state", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
 
     return {
@@ -361,13 +395,13 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle("desktop:get-appearance-config", async () => readAppearanceConfigSnapshot())
+  handleDesktopIpc("desktop:get-appearance-config", async () => readAppearanceConfigSnapshot())
 
-  ipcMain.handle("desktop:save-appearance-config", async (_event, input: { document: AppearanceConfigDocument }) =>
+  handleDesktopIpc("desktop:save-appearance-config", async (_event, input: { document: AppearanceConfigDocument }) =>
     writeAppearanceConfigSnapshot(input.document),
   )
 
-  ipcMain.handle("desktop:window-action", (event, action: WindowAction) => {
+  handleDesktopIpc("desktop:window-action", (event, action: WindowAction) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
 
@@ -387,7 +421,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     if (action === "close") win.close()
   })
 
-  ipcMain.handle("desktop:open-external-url", async (_event, input: { url: string }) => {
+  handleDesktopIpc("desktop:open-external-url", async (_event, input: { url: string }) => {
     const url = input.url.trim()
     if (!url) {
       throw new Error("A URL is required.")
@@ -401,7 +435,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle("desktop:show-menu", (event, input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }) => {
+  handleDesktopIpc("desktop:show-menu", (event, input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
 
@@ -418,7 +452,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     })
   })
 
-  ipcMain.handle("desktop:show-external-editor-menu", async (event, input: { targetPath: string; anchor?: MenuAnchor }) => {
+  handleDesktopIpc("desktop:show-external-editor-menu", async (event, input: { targetPath: string; anchor?: MenuAnchor }) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
 
@@ -467,7 +501,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     })
   })
 
-  ipcMain.handle("desktop:list-external-editors-for-target", (_event, input: { targetPath: string }) => {
+  handleDesktopIpc("desktop:list-external-editors-for-target", (_event, input: { targetPath: string }) => {
     const targetPath = input.targetPath.trim()
     if (!targetPath) {
       throw new Error("A workspace directory is required.")
@@ -487,13 +521,13 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     })
   })
 
-  ipcMain.handle("desktop:open-in-external-editor", async (_event, input: { editorID?: string; targetPath: string }) =>
+  handleDesktopIpc("desktop:open-in-external-editor", async (_event, input: { editorID?: string; targetPath: string }) =>
     openInExternalEditor(input, { openPath: shell.openPath }),
   )
 
-  ipcMain.handle("desktop:get-agent-config", () => getAgentConfig())
+  handleDesktopIpc("desktop:get-agent-config", () => getAgentConfig())
 
-  ipcMain.handle("desktop:agent-health", async () => {
+  handleDesktopIpc("desktop:agent-health", async () => {
     const config = getAgentConfig()
 
     try {
@@ -512,13 +546,13 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle("desktop:list-folder-workspaces", async () => listFolderWorkspaces())
-  ipcMain.handle("desktop:list-project-workspaces", async () => listProjectWorkspaces())
-  ipcMain.handle("desktop:update-workspace-watch-directories", async (event, input: { directories: string[] }) => ({
+  handleDesktopIpc("desktop:list-folder-workspaces", async () => listFolderWorkspaces())
+  handleDesktopIpc("desktop:list-project-workspaces", async () => listProjectWorkspaces())
+  handleDesktopIpc("desktop:update-workspace-watch-directories", async (event, input: { directories: string[] }) => ({
     directories: workspaceWatchManager.updateDirectories(event.sender, input.directories),
   }))
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:create-pty-session",
     async (
       _event,
@@ -542,13 +576,13 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:get-pty-session", async (_event, input: { id: string }) => {
+  handleDesktopIpc("desktop:get-pty-session", async (_event, input: { id: string }) => {
     const id = input.id.trim()
     const result = await requestAgentJSON<AgentPtySessionInfo>(`/api/pty/${encodeURIComponent(id)}`)
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-pty-session",
     async (
       _event,
@@ -576,7 +610,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:delete-pty-session", async (event, input: { id: string }) => {
+  handleDesktopIpc("desktop:delete-pty-session", async (event, input: { id: string }) => {
     const id = input.id.trim()
     ptyProxyManager.detach(event.sender, id)
     const result = await requestAgentJSON<AgentPtySessionInfo>(`/api/pty/${encodeURIComponent(id)}`, {
@@ -586,19 +620,19 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:attach-pty-session", async (event, input: { id: string; cursor?: number }) =>
+  handleDesktopIpc("desktop:attach-pty-session", async (event, input: { id: string; cursor?: number }) =>
     ptyProxyManager.attach(event.sender, input),
   )
 
-  ipcMain.handle("desktop:detach-pty-session", async (event, input: { id: string }) =>
+  handleDesktopIpc("desktop:detach-pty-session", async (event, input: { id: string }) =>
     ptyProxyManager.detach(event.sender, input.id),
   )
 
-  ipcMain.handle("desktop:write-pty-input", async (event, input: { id: string; data: string }) =>
+  handleDesktopIpc("desktop:write-pty-input", async (event, input: { id: string; data: string }) =>
     ptyProxyManager.write(event.sender, input),
   )
 
-  ipcMain.handle("desktop:pick-project-directory", async (event) => {
+  handleDesktopIpc("desktop:pick-project-directory", async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const options = {
       title: "Select folder",
@@ -609,7 +643,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.canceled ? null : result.filePaths[0] ?? null
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:pick-composer-attachments",
     async (event, input?: { allowImage?: boolean; allowPdf?: boolean }) => {
       const allowImage = input?.allowImage ?? true
@@ -646,36 +680,36 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:git-get-capabilities", async (_event, input: { projectID: string; directory: string }) =>
+  handleDesktopIpc("desktop:git-get-capabilities", async (_event, input: { projectID: string; directory: string }) =>
     getGitCapabilities(input),
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:git-commit",
     async (_event, input: { projectID: string; directory: string; message: string; stageAll?: boolean }) =>
     commitGitChanges(input),
   )
 
-  ipcMain.handle("desktop:git-push", async (_event, input: { projectID: string; directory: string }) => pushGitChanges(input))
+  handleDesktopIpc("desktop:git-push", async (_event, input: { projectID: string; directory: string }) => pushGitChanges(input))
 
-  ipcMain.handle("desktop:git-create-branch", async (_event, input: { projectID: string; directory: string; name: string }) =>
+  handleDesktopIpc("desktop:git-create-branch", async (_event, input: { projectID: string; directory: string; name: string }) =>
     createGitBranch(input),
   )
 
-  ipcMain.handle("desktop:git-list-branches", async (_event, input: { projectID: string; directory: string }) =>
+  handleDesktopIpc("desktop:git-list-branches", async (_event, input: { projectID: string; directory: string }) =>
     listGitBranches(input),
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:git-checkout-branch",
     async (_event, input: { projectID: string; directory: string; name: string }) => checkoutGitBranch(input),
   )
 
-  ipcMain.handle("desktop:git-create-pull-request", async (_event, input: { projectID: string; directory: string }) =>
+  handleDesktopIpc("desktop:git-create-pull-request", async (_event, input: { projectID: string; directory: string }) =>
     createGitPullRequest(input),
   )
 
-  ipcMain.handle("desktop:create-project-workspace", async (_event, input: { directory: string }) => {
+  handleDesktopIpc("desktop:create-project-workspace", async (_event, input: { directory: string }) => {
     const directory = input.directory.trim()
     const result = await requestAgentJSON<AgentProjectInfo>("/api/projects", {
       method: "POST",
@@ -688,7 +722,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return loadProjectWorkspace(result.data)
   })
 
-  ipcMain.handle("desktop:open-folder-workspace", async (_event, input: { directory: string }) => {
+  handleDesktopIpc("desktop:open-folder-workspace", async (_event, input: { directory: string }) => {
     const directory = input.directory.trim()
     const result = await requestAgentJSON<AgentProjectInfo>("/api/projects", {
       method: "POST",
@@ -701,7 +735,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return buildFolderWorkspaceForDirectory(result.data, projectWorkspace, directory)
   })
 
-  ipcMain.handle("desktop:agent-create-session", async (_event, input?: { directory?: string }) => {
+  handleDesktopIpc("desktop:agent-create-session", async (_event, input?: { directory?: string }) => {
     const config = getAgentConfig()
     const directory = input?.directory?.trim() || config.defaultDirectory
     const result = await requestAgentJSON<AgentSessionInfo>("/api/sessions", {
@@ -718,7 +752,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:create-project-session",
     async (_event, input: { projectID: string; title?: string; directory?: string }) => {
       const projectID = input.projectID.trim()
@@ -740,7 +774,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:create-folder-session",
     async (_event, input: { projectID: string; directory: string; title?: string }) => {
       const projectID = input.projectID.trim()
@@ -763,7 +797,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:create-side-chat",
     async (_event, input: { parentSessionID: string; anchorMessageID: string }) => {
       const parentSessionID = input.parentSessionID.trim()
@@ -788,7 +822,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:list-side-chats",
     async (_event, input: { parentSessionID: string; anchorMessageID?: string }) => {
       const parentSessionID = input.parentSessionID.trim()
@@ -802,7 +836,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:get-side-chat-link", async (_event, input: { sessionID: string }) => {
+  handleDesktopIpc("desktop:get-side-chat-link", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
     const result = await requestAgentJSON<AgentSideChatLink>(
       `/api/sessions/${encodeURIComponent(sessionID)}/side-chat-link`,
@@ -811,7 +845,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:delete-project-workspace", async (_event, input: { projectID: string }) => {
+  handleDesktopIpc("desktop:delete-project-workspace", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentProjectDeleteResult>(`/api/projects/${encodeURIComponent(projectID)}`, {
       method: "DELETE",
@@ -823,7 +857,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle("desktop:delete-agent-session", async (_event, input: { sessionID: string }) => {
+  handleDesktopIpc("desktop:delete-agent-session", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
     const result = await requestAgentJSON<AgentSessionDeleteResult>(`/api/sessions/${encodeURIComponent(sessionID)}`, {
       method: "DELETE",
@@ -835,7 +869,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle("desktop:archive-agent-session", async (_event, input: { sessionID: string }) => {
+  handleDesktopIpc("desktop:archive-agent-session", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
     const result = await requestAgentJSON<AgentSessionArchiveResult>(
       `/api/sessions/${encodeURIComponent(sessionID)}/archive`,
@@ -850,12 +884,12 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle("desktop:list-archived-sessions", async () => {
+  handleDesktopIpc("desktop:list-archived-sessions", async () => {
     const result = await requestAgentJSON<AgentArchivedSessionSummary[]>("/api/sessions/archived")
     return result.data
   })
 
-  ipcMain.handle("desktop:restore-archived-session", async (_event, input: { sessionID: string }) => {
+  handleDesktopIpc("desktop:restore-archived-session", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
     const result = await requestAgentJSON<AgentSessionInfo>(`/api/sessions/archived/${encodeURIComponent(sessionID)}/restore`, {
       method: "POST",
@@ -867,7 +901,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle("desktop:delete-archived-session", async (_event, input: { sessionID: string }) => {
+  handleDesktopIpc("desktop:delete-archived-session", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
     const result = await requestAgentJSON<AgentArchivedSessionDeleteResult>(
       `/api/sessions/archived/${encodeURIComponent(sessionID)}`,
@@ -882,7 +916,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   })
 
-  ipcMain.handle("desktop:get-session-diff", async (_event, input: { sessionID: string }) => {
+  handleDesktopIpc("desktop:get-session-diff", async (_event, input: { sessionID: string }) => {
     const sessionID = input.sessionID.trim()
     const sessionResult = await requestAgentJSON<AgentSessionInfo>(`/api/sessions/${encodeURIComponent(sessionID)}`)
     const workspaceDiff = await getWorkspaceGitDiff(sessionResult.data.directory).catch((error) => {
@@ -895,7 +929,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:get-session-runtime-debug",
     async (_event, input: { sessionID: string; limit?: number; turns?: number }) => {
       const sessionID = input.sessionID.trim()
@@ -916,13 +950,13 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:get-global-provider-catalog", async () => {
+  handleDesktopIpc("desktop:get-global-provider-catalog", async () => {
     const result = await requestAgentJSON<AgentProviderCatalogItem[]>("/api/providers/catalog")
 
     return result.data
   })
 
-  ipcMain.handle("desktop:refresh-global-provider-catalog", async () => {
+  handleDesktopIpc("desktop:refresh-global-provider-catalog", async () => {
     const result = await requestAgentJSON<AgentProviderCatalogItem[]>("/api/providers/catalog/refresh", {
       method: "POST",
     })
@@ -930,13 +964,13 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:get-global-provider-auth", async (_event, input: { providerID: string }) => {
+  handleDesktopIpc("desktop:get-global-provider-auth", async (_event, input: { providerID: string }) => {
     const providerID = input.providerID.trim()
     const result = await requestAgentJSON<AgentProviderAuthState>(`/api/providers/${encodeURIComponent(providerID)}/auth`)
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:start-global-provider-auth-flow",
     async (_event, input: { providerID: string; method: string }) => {
       const providerID = input.providerID.trim()
@@ -956,7 +990,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:get-global-provider-auth-flow",
     async (_event, input: { providerID: string; flowID: string }) => {
       const providerID = input.providerID.trim()
@@ -968,7 +1002,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:cancel-global-provider-auth-flow",
     async (_event, input: { providerID: string; flowID: string }) => {
       const providerID = input.providerID.trim()
@@ -983,7 +1017,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:save-global-provider-api-key",
     async (_event, input: { providerID: string; apiKey?: string | null }) => {
       const providerID = input.providerID.trim()
@@ -1003,7 +1037,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:delete-global-provider-auth-session", async (_event, input: { providerID: string }) => {
+  handleDesktopIpc("desktop:delete-global-provider-auth-session", async (_event, input: { providerID: string }) => {
     const providerID = input.providerID.trim()
     const result = await requestAgentJSON<AgentProviderAuthState>(
       `/api/providers/${encodeURIComponent(providerID)}/auth/session`,
@@ -1014,7 +1048,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:get-global-models", async () => {
+  handleDesktopIpc("desktop:get-global-models", async () => {
     const result = await requestAgentJSON<{
       items: AgentProviderModel[]
       selection: AgentProjectModelSelection
@@ -1023,7 +1057,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-global-provider",
     async (
       _event,
@@ -1061,7 +1095,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:delete-global-provider", async (_event, input: { providerID: string }) => {
+  handleDesktopIpc("desktop:delete-global-provider", async (_event, input: { providerID: string }) => {
     const providerID = input.providerID.trim()
     const result = await requestAgentJSON<{
       providerID: string
@@ -1073,7 +1107,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-global-model-selection",
     async (
       _event,
@@ -1097,19 +1131,19 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:get-global-mcp-servers", async () => {
+  handleDesktopIpc("desktop:get-global-mcp-servers", async () => {
     const result = await requestAgentJSON<AgentMcpServerSummary[]>("/api/mcp/servers")
 
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-global-mcp-server",
     async (
       _event,
       input: {
         serverID: string
-        server: Omit<AgentMcpServerSummary, "id">
+        server: McpServerInput
       },
     ) => {
       const serverID = input.serverID.trim()
@@ -1125,7 +1159,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:delete-global-mcp-server", async (_event, input: { serverID: string }) => {
+  handleDesktopIpc("desktop:delete-global-mcp-server", async (_event, input: { serverID: string }) => {
     const serverID = input.serverID.trim()
     const result = await requestAgentJSON<{ serverID: string; removed: boolean }>(
       `/api/mcp/servers/${encodeURIComponent(serverID)}`,
@@ -1137,25 +1171,25 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:get-global-skills", async () => {
+  handleDesktopIpc("desktop:get-global-skills", async () => {
     const result = await requestAgentJSON<AgentSkillInfo[]>("/api/skills")
 
     return result.data
   })
 
-  ipcMain.handle("desktop:get-prompt-presets", async () => {
+  handleDesktopIpc("desktop:get-prompt-presets", async () => {
     const result = await requestAgentJSON<AgentPromptPresetSummary[]>("/api/prompts")
 
     return result.data
   })
 
-  ipcMain.handle("desktop:get-prompt-preset-selection", async () => {
+  handleDesktopIpc("desktop:get-prompt-preset-selection", async () => {
     const result = await requestAgentJSON<AgentPromptPresetSelection>("/api/prompts/selection")
 
     return result.data
   })
 
-  ipcMain.handle("desktop:read-prompt-preset", async (_event, input: { presetID: string }) => {
+  handleDesktopIpc("desktop:read-prompt-preset", async (_event, input: { presetID: string }) => {
     const result = await requestAgentJSON<AgentPromptPresetDocument>(
       `/api/prompts/${encodeURIComponent(input.presetID.trim())}`,
     )
@@ -1163,7 +1197,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-prompt-preset",
     async (_event, input: { presetID: string; label?: string; content: string; description?: string }) => {
     const result = await requestAgentJSON<AgentPromptPresetDocument>(
@@ -1185,7 +1219,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-prompt-preset-selection",
     async (_event, input: AgentPromptPresetSelection) => {
       const result = await requestAgentJSON<AgentPromptPresetSelection>("/api/prompts/selection", {
@@ -1200,7 +1234,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:create-prompt-preset",
     async (_event, input: { label?: string; content?: string; description?: string }) => {
       const result = await requestAgentJSON<AgentPromptPresetDocument>("/api/prompts", {
@@ -1215,7 +1249,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:reset-prompt-preset", async (_event, input: { presetID: string }) => {
+  handleDesktopIpc("desktop:reset-prompt-preset", async (_event, input: { presetID: string }) => {
     const result = await requestAgentJSON<AgentPromptPresetDocument>(
       `/api/prompts/${encodeURIComponent(input.presetID.trim())}`,
       {
@@ -1226,7 +1260,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:delete-prompt-preset", async (_event, input: { presetID: string }) => {
+  handleDesktopIpc("desktop:delete-prompt-preset", async (_event, input: { presetID: string }) => {
     const result = await requestAgentJSON<AgentPromptPresetSelection>(
       `/api/prompts/${encodeURIComponent(input.presetID.trim())}/custom`,
       {
@@ -1237,13 +1271,13 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:get-global-skills-tree", async () => {
+  handleDesktopIpc("desktop:get-global-skills-tree", async () => {
     const result = await requestAgentJSON<AgentGlobalSkillTree>("/api/skills/tree")
 
     return result.data
   })
 
-  ipcMain.handle("desktop:read-global-skill-file", async (_event, input: { path: string }) => {
+  handleDesktopIpc("desktop:read-global-skill-file", async (_event, input: { path: string }) => {
     const result = await requestAgentJSON<AgentGlobalSkillFileDocument>(
       `/api/skills/file?path=${encodeURIComponent(input.path.trim())}`,
     )
@@ -1251,19 +1285,19 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:search-workspace-files",
     async (_event, input: { directory: string; query: string }): Promise<AgentWorkspaceFileSearchResult[]> =>
       searchWorkspaceFiles(input.directory, input.query),
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:read-workspace-file",
     async (_event, input: { directory: string; path: string }): Promise<AgentWorkspaceFileDocument> =>
       readWorkspaceFile(input.directory, input.path),
   )
 
-  ipcMain.handle("desktop:update-global-skill-file", async (_event, input: { path: string; content: string }) => {
+  handleDesktopIpc("desktop:update-global-skill-file", async (_event, input: { path: string; content: string }) => {
     const result = await requestAgentJSON<AgentGlobalSkillFileDocument>("/api/skills/file", {
       method: "PUT",
       headers: {
@@ -1278,7 +1312,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:create-global-skill", async (_event, input: { name: string }) => {
+  handleDesktopIpc("desktop:create-global-skill", async (_event, input: { name: string }) => {
     const result = await requestAgentJSON<{
       directory: string
       file: AgentGlobalSkillFileDocument
@@ -1295,7 +1329,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:rename-global-skill", async (_event, input: { directory: string; name: string }) => {
+  handleDesktopIpc("desktop:rename-global-skill", async (_event, input: { directory: string; name: string }) => {
     const result = await requestAgentJSON<AgentGlobalSkillRenameResult>("/api/skills", {
       method: "PATCH",
       headers: {
@@ -1310,7 +1344,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:delete-global-skill", async (_event, input: { directory: string }) => {
+  handleDesktopIpc("desktop:delete-global-skill", async (_event, input: { directory: string }) => {
     const result = await requestAgentJSON<{ directory: string; removed: boolean }>(
       `/api/skills?directory=${encodeURIComponent(input.directory.trim())}`,
       {
@@ -1321,7 +1355,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:get-project-provider-catalog", async (_event, input: { projectID: string }) => {
+  handleDesktopIpc("desktop:get-project-provider-catalog", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentProviderCatalogItem[]>(
       `/api/projects/${encodeURIComponent(projectID)}/providers/catalog`,
@@ -1330,7 +1364,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:refresh-project-provider-catalog", async (_event, input: { projectID: string }) => {
+  handleDesktopIpc("desktop:refresh-project-provider-catalog", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentProviderCatalogItem[]>(
       `/api/projects/${encodeURIComponent(projectID)}/providers/catalog/refresh`,
@@ -1342,14 +1376,14 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:get-project-models", async (_event, input: { projectID: string }) => {
+  handleDesktopIpc("desktop:get-project-models", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentProjectModelsResult>(`/api/projects/${encodeURIComponent(projectID)}/models`)
 
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-project-provider",
     async (
       _event,
@@ -1389,7 +1423,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:delete-project-provider",
     async (_event, input: { projectID: string; providerID: string }) => {
       const projectID = input.projectID.trim()
@@ -1405,7 +1439,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-project-model-selection",
     async (
       _event,
@@ -1434,7 +1468,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:get-project-skills", async (_event, input: { projectID: string }) => {
+  handleDesktopIpc("desktop:get-project-skills", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentSkillInfo[]>(
       `/api/projects/${encodeURIComponent(projectID)}/skills`,
@@ -1443,7 +1477,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle("desktop:get-project-skill-selection", async (_event, input: { projectID: string }) => {
+  handleDesktopIpc("desktop:get-project-skill-selection", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentProjectSkillSelection>(
       `/api/projects/${encodeURIComponent(projectID)}/skills/selection`,
@@ -1452,7 +1486,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-project-skill-selection",
     async (_event, input: { projectID: string; skillIDs: string[] }) => {
       const projectID = input.projectID.trim()
@@ -1473,7 +1507,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:get-project-mcp-selection", async (_event, input: { projectID: string }) => {
+  handleDesktopIpc("desktop:get-project-mcp-selection", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentProjectMcpSelection>(
       `/api/projects/${encodeURIComponent(projectID)}/mcp/selection`,
@@ -1482,7 +1516,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-project-mcp-selection",
     async (_event, input: { projectID: string; serverIDs: string[] }) => {
       const projectID = input.projectID.trim()
@@ -1503,7 +1537,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle("desktop:get-project-mcp-servers", async (_event, input: { projectID: string }) => {
+  handleDesktopIpc("desktop:get-project-mcp-servers", async (_event, input: { projectID: string }) => {
     const projectID = input.projectID.trim()
     const result = await requestAgentJSON<AgentMcpServerSummary[]>(
       `/api/projects/${encodeURIComponent(projectID)}/mcp/servers`,
@@ -1512,7 +1546,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:get-project-mcp-server-diagnostic",
     async (_event, input: { projectID: string; serverID: string }) => {
       const projectID = input.projectID.trim()
@@ -1525,14 +1559,14 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:update-project-mcp-server",
     async (
       _event,
       input: {
         projectID: string
         serverID: string
-        server: Omit<AgentMcpServerSummary, "id">
+        server: McpServerInput
       },
     ) => {
       const projectID = input.projectID.trim()
@@ -1552,7 +1586,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:delete-project-mcp-server",
     async (_event, input: { projectID: string; serverID: string }) => {
       const projectID = input.projectID.trim()
@@ -1568,7 +1602,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:agent-session-load-history",
     async (_event, input: { backendSessionID: string }) => {
       const sessionID = input.backendSessionID.trim()
@@ -1580,7 +1614,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:agent-session-load-permission-requests",
     async (_event, input: { backendSessionID: string }) => {
       const sessionID = input.backendSessionID.trim()
@@ -1592,7 +1626,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:agent-session-respond-permission-request",
     async (
       _event,
@@ -1661,7 +1695,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
     try {
       await readAgentSSEStream(response, (item) => {
-        target.send(AGENT_SESSION_EVENT_CHANNEL, {
+        sendDesktopIpcEvent(target, AGENT_SESSION_EVENT_CHANNEL, {
           kind: "stream",
           source: "request",
           backendSessionID,
@@ -1673,7 +1707,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         } satisfies AgentSessionBridgeIPCEvent)
       })
     } catch (error) {
-      target.send(AGENT_SESSION_EVENT_CHANNEL, {
+      sendDesktopIpcEvent(target, AGENT_SESSION_EVENT_CHANNEL, {
         kind: "stream",
         source: "request",
         backendSessionID,
@@ -1693,7 +1727,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }
   }
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:agent-session-send-turn",
     async (_event, input: AgentSessionTurnRequestInput) =>
       streamAgentSessionTurnToRenderer(
@@ -1703,7 +1737,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       ),
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:agent-session-resume-turn",
     async (_event, input: { clientTurnID: string; backendSessionID: string }) =>
       streamAgentSessionTurnToRenderer(
@@ -1716,7 +1750,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       ),
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:agent-session-subscribe",
     async (event, input: { uiSessionID?: string; backendSessionID: string }) => {
       const backendSessionID = input.backendSessionID.trim()
@@ -1758,7 +1792,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     },
   )
 
-  ipcMain.handle(
+  handleDesktopIpc(
     "desktop:agent-session-unsubscribe",
     async (event, input: { backendSessionID: string }) => ({
       backendSessionID: input.backendSessionID.trim(),

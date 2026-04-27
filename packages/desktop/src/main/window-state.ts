@@ -1,6 +1,7 @@
 import { BrowserWindow, screen, type Rectangle } from "electron"
+import { DESKTOP_WINDOW_STATE_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
 
-export const WINDOW_STATE_CHANNEL = "desktop:window-state-changed"
+export const WINDOW_STATE_CHANNEL = DESKTOP_WINDOW_STATE_EVENT_CHANNEL
 
 const manualMaximizedBounds = new WeakMap<BrowserWindow, Rectangle>()
 const manualMaximizedWindows = new WeakSet<BrowserWindow>()
