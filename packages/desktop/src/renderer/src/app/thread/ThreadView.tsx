@@ -171,7 +171,7 @@ function defaultTraceSectionKeyForItem(item: AssistantTraceItem): AssistantTrace
   if (isFileChangeTraceItem(item)) return "file-change"
   if (isToolTraceItem(item)) return "tools"
   if (item.kind === "reasoning") return "reasoning"
-  if (item.kind === "step" || item.kind === "retry" || item.kind === "snapshot" || item.kind === "subtask") {
+  if (item.kind === "step" || item.kind === "retry" || item.kind === "snapshot" || item.kind === "subtask" || item.kind === "plan-progress") {
     return "workflow"
   }
   if (item.kind === "system") return "debug"
@@ -847,6 +847,28 @@ function TraceItemView({
 
           {note ? <p className="ask-user-question-note">{note}</p> : null}
         </div>
+        {renderDebugEntries()}
+      </article>
+    )
+  }
+
+  if (item.kind === "plan-progress" && item.progressItems?.length) {
+    return (
+      <article className={className} data-kind={item.kind}>
+        <div className="trace-item-header">
+          <span className="trace-item-label">{item.label}</span>
+          {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
+          {item.status ? <span className={`trace-item-status is-${item.status}`}>{formatTraceStatusText(item.status) ?? item.status}</span> : null}
+        </div>
+        {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
+        <ol className="plan-progress-list">
+          {item.progressItems.map((progressItem) => (
+            <li key={`${item.id}-${progressItem.id}`} className={`plan-progress-item is-${progressItem.status}`}>
+              <span className="plan-progress-status">{progressItem.status === "in_progress" ? "in progress" : progressItem.status}</span>
+              <span className="plan-progress-step">{progressItem.step}</span>
+            </li>
+          ))}
+        </ol>
         {renderDebugEntries()}
       </article>
     )

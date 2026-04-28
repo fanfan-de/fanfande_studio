@@ -10,6 +10,7 @@ import * as db from "#database/Sqlite.ts"
 import * as EventStore from "#session/event-store.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as SessionMemory from "#session/memory-store.ts"
+import * as Progress from "#session/progress.ts"
 
 interface TableRecordMap {
   projects: never
@@ -73,6 +74,7 @@ export const SessionInfo = z
           updatedAt: z.number(),
           approvedAt: z.number().optional(),
         }),
+        progress: Progress.SessionProgressState.optional(),
       })
       .optional(),
     kind: SessionKind.optional(),
@@ -123,6 +125,7 @@ export function normalizeWorkflowState(
       updatedAt: workflow?.plan.updatedAt ?? now,
       approvedAt: workflow?.plan.approvedAt,
     },
+    progress: workflow?.progress,
   }
 }
 

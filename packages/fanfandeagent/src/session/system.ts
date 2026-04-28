@@ -11,6 +11,35 @@ import * as PromptPresets from "#session/prompt-presets.ts"
 //import { Permission } from "@/permission"
 //import { Skill } from "@/skill"
 
+function renderProgressGroup(label: string, steps: string[]) {
+    if (steps.length === 0) return undefined
+    return `- ${label}: ${steps.join("; ")}`
+}
+
+function renderActiveProgress(workflow: Session.SessionInfo["workflow"] | undefined) {
+    const progress = workflow?.progress
+    if (!progress || progress.items.length === 0) return undefined
+
+    const completed = progress.items
+        .filter((item) => item.status === "completed")
+        .map((item) => item.step)
+    const inProgress = progress.items
+        .filter((item) => item.status === "in_progress")
+        .map((item) => item.step)
+    const pending = progress.items
+        .filter((item) => item.status === "pending")
+        .map((item) => item.step)
+
+    return [
+        "<active-progress>",
+        progress.explanation ? `explanation: ${progress.explanation}` : undefined,
+        renderProgressGroup("completed", completed),
+        renderProgressGroup("in_progress", inProgress),
+        renderProgressGroup("pending", pending),
+        "</active-progress>",
+    ].filter((line): line is string => typeof line === "string").join("\n")
+}
+
 export function provider(model: Provider.Model): string[] {
     // if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
     //   return [PROMPT_BEAST]
@@ -55,6 +84,11 @@ export async function defaultPrompt(input?: {
             approvedPlan,
             "</approved-plan>",
         ].join("\n"))
+    }
+
+    const activeProgress = renderActiveProgress(workflow)
+    if (activeProgress) {
+        prompts.push(activeProgress)
     }
 
     return prompts

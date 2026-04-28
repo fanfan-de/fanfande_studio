@@ -35,6 +35,24 @@ export interface SessionWorkflowSummary {
     updatedAt: number
     approvedAt?: number
   }
+  progress?: SessionProgressSummary
+}
+
+export type SessionProgressItemStatus = "pending" | "in_progress" | "completed"
+
+export interface SessionProgressItemSummary {
+  id: string
+  step: string
+  status: SessionProgressItemStatus
+}
+
+export interface SessionProgressSummary {
+  explanation?: string
+  items: SessionProgressItemSummary[]
+  updatedAt: number
+  sourceAssistantMessageID?: string
+  sourceUserMessageID?: string
+  toolCallID?: string
 }
 
 export type SessionKind = "main" | "side-chat"
@@ -517,6 +535,7 @@ export type AssistantTraceItemKind =
   | "step"
   | "retry"
   | "snapshot"
+  | "plan-progress"
   | "error"
 
 export type AssistantTraceSectionKey =
@@ -633,6 +652,8 @@ export interface AssistantTraceItem {
   isStreaming?: boolean
   debugEntries?: AssistantTraceDebugEntry[]
   questionPrompt?: AssistantQuestionPrompt
+  progressItems?: SessionProgressItemSummary[]
+  progressExplanation?: string
 }
 
 export interface AssistantTurn {

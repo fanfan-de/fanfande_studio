@@ -521,7 +521,8 @@
 .trace-kind-subtask,
 .trace-kind-step,
 .trace-kind-retry,
-.trace-kind-snapshot {
+.trace-kind-snapshot,
+.trace-kind-plan-progress {
   background: #f8fbfd;
   border-left-color: rgba(109, 156, 194, 0.68);
 }
@@ -532,8 +533,48 @@
 .trace-kind-subtask::before,
 .trace-kind-step::before,
 .trace-kind-retry::before,
-.trace-kind-snapshot::before {
+.trace-kind-snapshot::before,
+.trace-kind-plan-progress::before {
   background: #6a9ac2;
+}
+
+.plan-progress-list {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-progress-item {
+  display: grid;
+  grid-template-columns: minmax(86px, max-content) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+}
+
+.plan-progress-status {
+  color: #5f7184;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.plan-progress-step {
+  color: #24384c;
+  line-height: 1.55;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan-progress-item.is-completed .plan-progress-status {
+  color: #2a8357;
+}
+
+.plan-progress-item.is-in_progress .plan-progress-status {
+  color: #1669af;
 }
 
 .trace-kind-tool .trace-item-detail {

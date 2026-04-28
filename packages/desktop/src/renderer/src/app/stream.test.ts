@@ -87,6 +87,86 @@ describe("stream trace reducer", () => {
     expect(turn.state).toBe("Backend stream cancelled")
   })
 
+  it("renders plan progress runtime events as checklist trace items", () => {
+    let turn = buildStreamingAssistantTurn("Track progress")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-progress",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "plan.progress.updated",
+        payload: {
+          progress: {
+            toolCallID: "toolcall-progress",
+            updatedAt: 100,
+            items: [
+              { id: "tsk_000000000001aaaaaaaaaaaaaa", step: "Inspect code", status: "completed" },
+              { id: "tsk_000000000002aaaaaaaaaaaaaa", step: "Run tests", status: "in_progress" },
+            ],
+          },
+        },
+      },
+    })
+
+    const progressItem = turn.items.find((item) => item.kind === "plan-progress")
+    expect(progressItem?.title).toBe("1/2 plan steps")
+    expect(progressItem?.progressItems?.map((item) => item.status)).toEqual(["completed", "in_progress"])
+  })
+
+  it("restores plan progress from completed tool history", () => {
+    const [turn] = buildTurnsFromHistory([
+      {
+        info: {
+          id: "msg-progress",
+          sessionID: "session-1",
+          role: "assistant",
+          created: 100,
+          completed: 120,
+          finishReason: "tool-calls",
+        },
+        parts: [
+          {
+            id: "part-progress-tool",
+            type: "tool",
+            tool: "UpdatePlanProgress",
+            callID: "toolcall-progress",
+            state: {
+              status: "completed",
+              input: {},
+              output: "Progress updated",
+              title: "Plan progress updated",
+              metadata: {
+                kind: "plan-progress",
+                progress: {
+                  toolCallID: "toolcall-progress",
+                  updatedAt: 110,
+                  items: [
+                    { id: "tsk_000000000003aaaaaaaaaaaaaa", step: "Implement", status: "completed" },
+                    { id: "tsk_000000000004aaaaaaaaaaaaaa", step: "Verify", status: "pending" },
+                  ],
+                },
+              },
+              time: {
+                start: 101,
+                end: 110,
+              },
+            },
+          },
+        ],
+      },
+    ])
+
+    expect(turn?.kind).toBe("assistant")
+    if (turn?.kind !== "assistant") return
+    const progressItem = turn.items.find((item) => item.kind === "plan-progress")
+    expect(progressItem?.title).toBe("1/2 plan steps")
+    expect(progressItem?.progressItems?.[0]?.step).toBe("Implement")
+  })
+
   it("settles on completed runtime phase even before a terminal event arrives", () => {
     let turn = buildStreamingAssistantTurn("Finish from state")
 

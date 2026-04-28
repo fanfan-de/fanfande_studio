@@ -23,6 +23,7 @@ import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { SpawnSubagentTool } from "#tool/spawn-subagent.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
+import { UpdatePlanProgressTool } from "#tool/update-plan-progress.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
 import * as Mcp from "#mcp/manager.ts"
 
@@ -58,6 +59,7 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     AskUserQuestionTool,
     EnterPlanModeTool,
     ExitPlanModeTool,
+    UpdatePlanProgressTool,
     ReadFileTool,
     ReadBackgroundTaskTool,
     ReadSubagentTool,

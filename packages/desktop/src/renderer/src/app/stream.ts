@@ -12,6 +12,7 @@ import type {
   AssistantTurnPhase,
   AssistantTurnRuntime,
   LoadedSessionHistoryMessage,
+  SessionProgressItemSummary,
   SessionSummary,
   Turn,
   UserTurn,
@@ -546,6 +547,75 @@ function createAskUserQuestionTraceDetail(prompt: AssistantQuestionPrompt) {
   return "Reply in the composer to continue."
 }
 
+function readProgressItem(value: unknown): SessionProgressItemSummary | null {
+  const item = readRecord(value)
+  const id = readString(item?.id)
+  const step = readString(item?.step)
+  const status = readString(item?.status)
+
+  if (!id || !step) return null
+  if (status !== "pending" && status !== "in_progress" && status !== "completed") return null
+
+  return {
+    id,
+    step,
+    status,
+  }
+}
+
+function readPlanProgress(value: unknown) {
+  const progress = readRecord(value)
+  const rawItems = Array.isArray(progress?.items) ? progress.items : []
+  const items = rawItems
+    .map(readProgressItem)
+    .filter((item): item is SessionProgressItemSummary => Boolean(item))
+
+  if (items.length === 0) return null
+
+  return {
+    explanation: readString(progress?.explanation) || undefined,
+    toolCallID: readString(progress?.toolCallID) || undefined,
+    items,
+  }
+}
+
+function readPlanProgressFromToolState(state: Record<string, unknown> | null) {
+  if (!state || readString(state.status) !== "completed") return null
+  const metadata = readRecord(state.metadata)
+  if (readString(metadata?.kind) !== "plan-progress") return null
+  return readPlanProgress(metadata?.progress)
+}
+
+function createPlanProgressTraceItem(input: {
+  sourceID: string
+  progress: NonNullable<ReturnType<typeof readPlanProgress>>
+  debugEntries?: AssistantTraceDebugEntry[]
+}) {
+  const completed = input.progress.items.filter((item) => item.status === "completed").length
+  const active = input.progress.items.find((item) => item.status === "in_progress")
+  const status: AssistantTraceStatus =
+    completed === input.progress.items.length
+      ? "completed"
+      : active
+        ? "running"
+        : "pending"
+
+  return createTraceItem({
+    id: input.sourceID,
+    sourceID: input.sourceID,
+    kind: "plan-progress",
+    label: "Progress",
+    title: `${completed}/${input.progress.items.length} plan steps`,
+    detail: input.progress.explanation,
+    status,
+    section: "workflow",
+    visibilityKey: "workflow",
+    progressItems: input.progress.items,
+    progressExplanation: input.progress.explanation,
+    debugEntries: input.debugEntries,
+  })
+}
+
 function buildToolAttachmentTraceItems(
   sourceID: string,
   state: Record<string, unknown> | null,
@@ -783,6 +853,15 @@ function buildTraceItemFromPart(
     const toolInputText = createToolTraceInputText(status, state)
     const toolOutputText = createToolTraceOutputText(status, state)
     const questionPrompt = status === "completed" ? readAskUserQuestionPrompt(state?.metadata) : null
+    const progress = readPlanProgressFromToolState(state)
+
+    if (progress) {
+      return [createPlanProgressTraceItem({
+        sourceID: `plan-progress:${progress.toolCallID ?? sourceID}`,
+        progress,
+        debugEntries,
+      })]
+    }
 
     if (questionPrompt) {
       return [createTraceItem({
@@ -1914,6 +1993,29 @@ function applyRuntimeEventToTurn(
       },
       {},
       preparedItems.filter((traceItem) => traceItem.sourceID !== partID && traceItem.id !== partID),
+    )
+  }
+
+  if (event.type === "plan.progress.updated") {
+    const progress = readPlanProgress(payload.progress)
+    if (!progress) return turn
+    const sourceID = `plan-progress:${progress.toolCallID ?? event.eventID}`
+    const nextItems = upsertTraceItem(
+      clearStreamingItems(preparedItems),
+      createPlanProgressTraceItem({
+        sourceID,
+        progress,
+        debugEntries,
+      }),
+    )
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: !isSettledAssistantPhase(turn.runtime.phase),
+      },
+      {},
+      nextItems,
     )
   }
 

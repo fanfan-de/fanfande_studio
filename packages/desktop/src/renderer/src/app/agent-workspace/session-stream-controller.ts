@@ -97,6 +97,20 @@ export function isPermissionRequestStreamEvent(streamEvent: { event: string; dat
   return readString(part?.type) === "permission" && readString(part?.action) === "ask"
 }
 
+export function isPlanProgressStreamEvent(streamEvent: { event: string; data: unknown }) {
+  const runtimeType = readRuntimeStreamType(streamEvent)
+  if (runtimeType) return runtimeType === "plan.progress.updated"
+
+  if (streamEvent.event !== "part") return false
+  const data = readRecord(streamEvent.data)
+  const part = readRecord(data?.part)
+  if (readString(part?.type) !== "tool") return false
+
+  const state = readRecord(part?.state)
+  const metadata = readRecord(state?.metadata)
+  return readString(metadata?.kind) === "plan-progress"
+}
+
 function readStreamString(value: unknown) {
   return typeof value === "string" ? value : ""
 }
@@ -676,6 +690,10 @@ export function useSessionStreamController({
       })
     }
 
+    if (isPlanProgressStreamEvent(streamEvent)) {
+      refreshWorkspaceForSession(target.sessionID)
+    }
+
     scheduleRuntimeDebugRefresh(
       target.sessionID,
       target.backendSessionID ?? resolveBackendSessionID(target.sessionID),
@@ -745,6 +763,10 @@ export function useSessionStreamController({
       void loadPendingPermissionRequestsForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
         console.error("[desktop] session stream permission request refresh failed:", error)
       })
+    }
+
+    if (isPlanProgressStreamEvent(streamEvent)) {
+      refreshWorkspaceForSession(uiSessionID)
     }
 
     scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)

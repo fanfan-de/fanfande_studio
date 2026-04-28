@@ -2,6 +2,7 @@ import z from "zod"
 import * as Identifier from "#id/id.ts"
 import * as Permission from "#permission/schema.ts"
 import * as Message from "#session/message.ts"
+import * as Progress from "#session/progress.ts"
 
 const ModelRef = z.object({
   providerID: z.string(),
@@ -133,6 +134,10 @@ const SnapshotCapturedPayload = z.object({
 const RetryScheduledPayload = z.object({
   attempt: z.number().int().positive(),
   reason: z.string().optional(),
+})
+
+const PlanProgressUpdatedPayload = z.object({
+  progress: Progress.SessionProgressState,
 })
 
 export const TurnRuntimePhase = z.enum([
@@ -344,6 +349,11 @@ export const RetryScheduledEvent = RuntimeEventBase.extend({
   payload: RetryScheduledPayload,
 })
 
+export const PlanProgressUpdatedEvent = RuntimeEventBase.extend({
+  type: z.literal("plan.progress.updated"),
+  payload: PlanProgressUpdatedPayload,
+})
+
 export const TurnStateChangedEvent = RuntimeEventBase.extend({
   type: z.literal("turn.state.changed"),
   payload: TurnStateChangedPayload,
@@ -402,6 +412,7 @@ export const RuntimeEvent = z.discriminatedUnion("type", [
   PatchGeneratedEvent,
   SnapshotCapturedEvent,
   RetryScheduledEvent,
+  PlanProgressUpdatedEvent,
 ])
 
 export type RuntimeEvent = z.infer<typeof RuntimeEvent>
@@ -442,6 +453,7 @@ export type RuntimeEventPayloadByType = {
   "patch.generated": z.infer<typeof PatchGeneratedPayload>
   "snapshot.captured": z.infer<typeof SnapshotCapturedPayload>
   "retry.scheduled": z.infer<typeof RetryScheduledPayload>
+  "plan.progress.updated": z.infer<typeof PlanProgressUpdatedPayload>
 }
 
 export function createRuntimeEventFactory(input: {

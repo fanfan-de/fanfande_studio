@@ -105,6 +105,12 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
     case "turn.error.context":
     case "retry.scheduled":
       return
+    case "plan.progress.updated":
+      Session.updateSessionWorkflow(event.sessionID, (workflow) => ({
+        ...workflow,
+        progress: event.payload.progress,
+      }))
+      return
     case "message.recorded":
       Session.upsertMessage(event.payload.message)
       return

@@ -4,11 +4,20 @@ export interface SessionWorkflowBadge {
   description: string
   label: string
   shortLabel: string
-  tone: "planning" | "pending" | "approved"
+  tone: "planning" | "pending" | "approved" | "progress"
 }
 
 function hasPendingPlanApprovalRequest(requests: PermissionRequest[] | null | undefined) {
   return Boolean(requests?.some((request) => Boolean(request.prompt.details?.body?.trim())))
+}
+
+function getProgressLabel(workflow: SessionSummary["workflow"] | null | undefined) {
+  const items = workflow?.progress?.items ?? []
+  if (items.length === 0) return null
+
+  const completed = items.filter((item) => item.status === "completed").length
+  const active = items.find((item) => item.status === "in_progress") ?? items.find((item) => item.status === "pending")
+  return active ? `${completed}/${items.length} · ${active.step}` : `${completed}/${items.length}`
 }
 
 export function getSessionWorkflowBadge(
@@ -18,6 +27,7 @@ export function getSessionWorkflowBadge(
   if (!workflow) return null
 
   const planStatus = workflow.plan.status
+  const progressLabel = getProgressLabel(workflow)
   const pendingApproval =
     planStatus === "pending-approval" ||
     (workflow.mode === "planning" && hasPendingPlanApprovalRequest(pendingPermissionRequests))
@@ -25,8 +35,8 @@ export function getSessionWorkflowBadge(
   if (pendingApproval) {
     return {
       tone: "pending",
-      label: "Plan Pending Approval",
-      shortLabel: "Pending",
+      label: progressLabel ? `Plan Pending Approval · ${progressLabel}` : "Plan Pending Approval",
+      shortLabel: progressLabel ?? "Pending",
       description: "The drafted implementation plan is waiting for approval.",
     }
   }
@@ -34,9 +44,18 @@ export function getSessionWorkflowBadge(
   if (workflow.mode === "planning") {
     return {
       tone: "planning",
-      label: "Planning",
-      shortLabel: "Planning",
+      label: progressLabel ? `Planning · ${progressLabel}` : "Planning",
+      shortLabel: progressLabel ?? "Planning",
       description: "The session is in planning mode and limited to research and plan drafting.",
+    }
+  }
+
+  if (progressLabel) {
+    return {
+      tone: planStatus === "approved" ? "approved" : "progress",
+      label: progressLabel,
+      shortLabel: progressLabel,
+      description: "The session has an active progress checklist.",
     }
   }
 

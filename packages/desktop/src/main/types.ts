@@ -38,6 +38,24 @@ export interface AgentSessionWorkflowSummary {
     updatedAt: number
     approvedAt?: number
   }
+  progress?: AgentSessionProgressSummary
+}
+
+export type AgentSessionProgressItemStatus = "pending" | "in_progress" | "completed"
+
+export interface AgentSessionProgressItemSummary {
+  id: string
+  step: string
+  status: AgentSessionProgressItemStatus
+}
+
+export interface AgentSessionProgressSummary {
+  explanation?: string
+  items: AgentSessionProgressItemSummary[]
+  updatedAt: number
+  sourceAssistantMessageID?: string
+  sourceUserMessageID?: string
+  toolCallID?: string
 }
 
 export type AgentSessionKind = "main" | "side-chat"
