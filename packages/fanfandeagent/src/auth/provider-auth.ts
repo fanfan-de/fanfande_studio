@@ -127,6 +127,14 @@ type ProviderAuthFallbacks = {
   envApiKey?: string
 }
 
+export type ProviderRuntimeCredentialMode = "active" | "manual" | "environment"
+
+export type ProviderRuntimeAuthOptions = {
+  method?: string
+  credentialMode?: ProviderRuntimeCredentialMode
+  transientApiKey?: string | null
+}
+
 type ProviderFlowContext = {
   providerID: string
   method: string
@@ -1326,19 +1334,63 @@ export function createDisconnectedProviderAuthState(providerID: string): Provide
 export async function resolveProviderRuntimeAuth(
   providerID: string,
   fallbacks: ProviderAuthFallbacks = {},
+  options: ProviderRuntimeAuthOptions = {},
 ): Promise<ProviderRuntimeAuth> {
   const capabilities = getCapabilities(providerID)
   const record = await Auth.getProviderRecord(providerID)
-  const fallback = await buildFallbackCredential(providerID, fallbacks)
+  const requestedMethod = normalizeString(options.method)
+  const credentialMode = options.credentialMode ?? "active"
+  const transientApiKey = normalizeString(options.transientApiKey)
 
-  let activeMethod = record?.activeMethod ?? undefined
-  let credential = activeMethod ? record?.credentials[activeMethod] : undefined
-  let credentialSource: Auth.ProviderCredentialDescriptor["source"] | undefined = credential ? "credential_store" : undefined
+  let activeMethod: string | undefined
+  let credential: Auth.CredentialRecord | undefined
+  let credentialSource: Auth.ProviderCredentialDescriptor["source"] | undefined
 
-  if (!credential && fallback) {
-    activeMethod = fallback.method
-    credential = fallback.credential
-    credentialSource = fallback.source
+  if (credentialMode === "manual") {
+    activeMethod = requestedMethod ?? "api-key"
+    if (activeMethod === "api-key" && transientApiKey) {
+      credential = {
+        kind: "api_key",
+        apiKey: transientApiKey,
+      }
+      credentialSource = "credential_store"
+    } else {
+      credential = activeMethod ? record?.credentials[activeMethod] : undefined
+      credentialSource = credential ? "credential_store" : undefined
+    }
+  } else if (credentialMode === "environment") {
+    activeMethod = requestedMethod ?? "api-key"
+    const envFallback = fallbacks.envApiKey
+      ? await buildFallbackCredential(providerID, { envApiKey: fallbacks.envApiKey })
+      : undefined
+    if (envFallback && (!activeMethod || envFallback.method === activeMethod)) {
+      activeMethod = envFallback.method
+      credential = envFallback.credential
+      credentialSource = envFallback.source
+    }
+  } else if (requestedMethod) {
+    activeMethod = requestedMethod
+    credential = record?.credentials[activeMethod]
+    credentialSource = credential ? "credential_store" : undefined
+
+    if (!credential) {
+      const fallback = await buildFallbackCredential(providerID, fallbacks)
+      if (fallback?.method === activeMethod) {
+        credential = fallback.credential
+        credentialSource = fallback.source
+      }
+    }
+  } else {
+    const fallback = await buildFallbackCredential(providerID, fallbacks)
+    activeMethod = record?.activeMethod ?? undefined
+    credential = activeMethod ? record?.credentials[activeMethod] : undefined
+    credentialSource = credential ? "credential_store" : undefined
+
+    if (!credential && fallback) {
+      activeMethod = fallback.method
+      credential = fallback.credential
+      credentialSource = fallback.source
+    }
   }
 
   if (providerID === OPENAI_PROVIDER_ID && credential?.kind === "oauth_session" && credential.expiresAt <= now() + TOKEN_REFRESH_THRESHOLD_MS) {

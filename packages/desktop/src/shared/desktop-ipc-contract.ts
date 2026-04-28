@@ -23,6 +23,7 @@ import type {
   AgentProviderAuthFlow,
   AgentProviderAuthState,
   AgentProviderCatalogItem,
+  AgentProviderConnectionTestResult,
   AgentProviderModel,
   AgentPtySessionInfo,
   AgentSessionArchiveResult,
@@ -79,6 +80,7 @@ export type {
   AgentProviderAuthFlow,
   AgentProviderAuthState,
   AgentProviderCatalogItem,
+  AgentProviderConnectionTestResult,
   AgentProviderModel,
   AgentPtySessionInfo,
   AgentSessionArchiveResult,
@@ -236,6 +238,14 @@ export interface DesktopProviderMutationResult {
 export interface DesktopProviderDeleteResult {
   providerID: string
   selection: AgentProjectModelSelection
+}
+
+export interface DesktopProviderConnectionTestInput {
+  providerID: string
+  method?: string
+  credentialMode?: "active" | "manual" | "environment"
+  apiKey?: string | null
+  baseURL?: string | null
 }
 
 export interface DesktopModelSelectionUpdateInput {
@@ -491,6 +501,10 @@ export interface DesktopIpcContract {
     input: { providerID: string }
     output: AgentProviderAuthState
   }
+  "desktop:test-global-provider-connection": {
+    input: DesktopProviderConnectionTestInput
+    output: AgentProviderConnectionTestResult
+  }
   "desktop:get-global-models": {
     input: void
     output: { items: AgentProviderModel[]; selection: AgentProjectModelSelection }
@@ -510,6 +524,10 @@ export interface DesktopIpcContract {
   "desktop:get-global-mcp-servers": {
     input: void
     output: AgentMcpServerSummary[]
+  }
+  "desktop:get-global-mcp-server-diagnostic": {
+    input: { serverID: string }
+    output: AgentMcpServerDiagnostic
   }
   "desktop:update-global-mcp-server": {
     input: { serverID: string; server: McpServerInput }
@@ -778,11 +796,13 @@ export interface DesktopApiMethods {
   cancelGlobalProviderAuthFlow(input: DesktopIpcInput<"desktop:cancel-global-provider-auth-flow">): Promise<DesktopIpcOutput<"desktop:cancel-global-provider-auth-flow">>
   saveGlobalProviderApiKey(input: DesktopIpcInput<"desktop:save-global-provider-api-key">): Promise<DesktopIpcOutput<"desktop:save-global-provider-api-key">>
   deleteGlobalProviderAuthSession(input: DesktopIpcInput<"desktop:delete-global-provider-auth-session">): Promise<DesktopIpcOutput<"desktop:delete-global-provider-auth-session">>
+  testGlobalProviderConnection(input: DesktopIpcInput<"desktop:test-global-provider-connection">): Promise<DesktopIpcOutput<"desktop:test-global-provider-connection">>
   getGlobalModels(): Promise<DesktopIpcOutput<"desktop:get-global-models">>
   updateGlobalProvider(input: DesktopIpcInput<"desktop:update-global-provider">): Promise<DesktopIpcOutput<"desktop:update-global-provider">>
   deleteGlobalProvider(input: DesktopIpcInput<"desktop:delete-global-provider">): Promise<DesktopIpcOutput<"desktop:delete-global-provider">>
   updateGlobalModelSelection(input: DesktopIpcInput<"desktop:update-global-model-selection">): Promise<DesktopIpcOutput<"desktop:update-global-model-selection">>
   getGlobalMcpServers(): Promise<DesktopIpcOutput<"desktop:get-global-mcp-servers">>
+  getGlobalMcpServerDiagnostic(input: DesktopIpcInput<"desktop:get-global-mcp-server-diagnostic">): Promise<DesktopIpcOutput<"desktop:get-global-mcp-server-diagnostic">>
   updateGlobalMcpServer(input: DesktopIpcInput<"desktop:update-global-mcp-server">): Promise<DesktopIpcOutput<"desktop:update-global-mcp-server">>
   deleteGlobalMcpServer(input: DesktopIpcInput<"desktop:delete-global-mcp-server">): Promise<DesktopIpcOutput<"desktop:delete-global-mcp-server">>
   getBuiltinTools(): Promise<DesktopIpcOutput<"desktop:get-builtin-tools">>

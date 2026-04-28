@@ -167,6 +167,7 @@ export const ProviderInfo = z
     runtimeHeaders: z.record(z.string(), z.string()).optional(),
     credentialKind: z.enum(["api_key", "oauth_session"]).optional(),
     credentialSource: z.enum(["credential_store", "legacy_config", "environment", "external_cache"]).optional(),
+    activeMethod: z.string().optional(),
     authCapabilities: z.array(ProviderAuth.ProviderAuthCapability).optional(),
     authState: ProviderAuth.ProviderAuthState.optional(),
   })
@@ -727,6 +728,7 @@ async function applyProviderConfig(
   baseProvider: ProviderInfo | undefined,
   providerConfig: Config.Provider | undefined,
   env: Record<string, string | undefined>,
+  authOptions?: ProviderAuth.ProviderRuntimeAuthOptions,
 ) {
   if (!baseProvider && !providerConfig) return undefined
 
@@ -737,7 +739,7 @@ async function applyProviderConfig(
   const runtimeAuth = await ProviderAuth.resolveProviderRuntimeAuth(providerID, {
     configApiKey: providerConfig?.options?.apiKey,
     envApiKey: firstNonEmptyString(...provider.env.map((item) => env[item])),
-  })
+  }, authOptions)
 
   const configured = Boolean(providerConfig) || Boolean(runtimeAuth.apiKey) || runtimeAuth.authState.status !== "not_connected"
   if (!configured) return undefined
@@ -752,6 +754,7 @@ async function applyProviderConfig(
   provider.runtimeHeaders = runtimeAuth.runtimeHeaders
   provider.credentialKind = runtimeAuth.credentialKind
   provider.credentialSource = runtimeAuth.credentialSource
+  provider.activeMethod = runtimeAuth.activeMethod ?? undefined
   provider.authCapabilities = runtimeAuth.authCapabilities
   provider.authState = runtimeAuth.authState
 
@@ -946,9 +949,9 @@ function toCatalogItem(
 ): ProviderCatalogItem {
   return {
     id: baseProvider.id,
-    name: baseProvider.name,
+    name: configuredProvider?.name ?? baseProvider.name,
     source: configuredProvider?.source ?? baseProvider.source,
-    env: baseProvider.env,
+    env: configuredProvider?.env ?? baseProvider.env,
     configured: Boolean(configuredProvider),
     available: configuredProvider ? isAvailable(configuredProvider) : baseProvider.env.length === 0,
     apiKeyConfigured: configuredProvider ? hasApiKeyCredential(configuredProvider) : false,
@@ -1006,21 +1009,38 @@ export async function catalog(configID = resolveConfigID()) {
   return sortProviders(items)
 }
 
-export async function validateProviderConfig(providerID: string, providerConfig: Config.Provider, configID = Config.GLOBAL_CONFIG_ID) {
+export type ProviderValidationOptions = {
+  auth?: ProviderAuth.ProviderRuntimeAuthOptions
+  requireCredential?: boolean
+}
+
+export async function validateProviderConfig(
+  providerID: string,
+  providerConfig: Config.Provider,
+  configID = Config.GLOBAL_CONFIG_ID,
+  options: ProviderValidationOptions = {},
+) {
   const [catalog, config] = await Promise.all([catalogMap(), Config.get(configID)])
   const mergedProviderConfig = Config.mergeProviderConfig(config.provider?.[providerID], providerConfig)
-  const provider = await applyProviderConfig(providerID, catalog[providerID], mergedProviderConfig, Env.all())
+  const provider = await applyProviderConfig(providerID, catalog[providerID], mergedProviderConfig, Env.all(), options.auth)
 
   if (!provider) {
     throw new Error(`Provider '${providerID}' could not be resolved from the catalog`)
   }
 
   if (!provider.key && provider.env.length > 0) {
+    if (options.requireCredential) {
+      throw new Error(`Provider '${provider.name}' does not have an available credential for the selected connection method`)
+    }
     return
   }
 
-  if (provider.authState?.activeMethod && isOpenAIChatGPTMethod(provider.authState.activeMethod)) {
+  if (provider.activeMethod && isOpenAIChatGPTMethod(provider.activeMethod)) {
     return
+  }
+
+  if (options.requireCredential && provider.activeMethod === "api-key" && !provider.key) {
+    throw new Error(`Provider '${provider.name}' does not have an available API key for the selected connection method`)
   }
 
   const model = pickValidationModel(provider)

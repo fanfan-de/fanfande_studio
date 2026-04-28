@@ -6,6 +6,8 @@ import {
   CircleCheck,
   CircleX,
   Copy,
+  Eye,
+  EyeOff,
   Expand,
   FilePlus2,
   FileText,
@@ -61,6 +63,8 @@ export const RightSidebarCollapseIcon = createIcon(PanelRightClose)
 export const RightSidebarExpandIcon = createIcon(PanelRightOpen)
 export const ConnectedStatusIcon = createIcon(CircleCheck)
 export const DisconnectedStatusIcon = createIcon(CircleX)
+export const EyeIcon = createIcon(Eye)
+export const EyeOffIcon = createIcon(EyeOff)
 export const DeleteIcon = createIcon(Trash2)
 export const ArchiveIcon = createIcon(Archive)
 export const MinimizeIcon = createIcon(Minus)

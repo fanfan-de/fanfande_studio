@@ -95,7 +95,20 @@ export function SettingsRoutes() {
     ok(c, await SettingsUseCase.deleteProviderSession(c.req.param("providerID"))),
   )
 
+  app.post("/providers/:providerID/auth/test", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.ProviderConnectionTestBody,
+      "Body must contain optional connection test fields.",
+    )
+    return ok(c, await SettingsUseCase.testProviderConnection(c.req.param("providerID"), payload))
+  })
+
   app.get("/mcp/servers", async (c) => ok(c, await SettingsUseCase.listMcpServers()))
+
+  app.get("/mcp/servers/:serverID/diagnostic", async (c) =>
+    ok(c, await SettingsUseCase.getMcpServerDiagnostic(c.req.param("serverID"))),
+  )
 
   app.put("/mcp/servers/:serverID", async (c) => {
     const payload = await parseJsonBody(

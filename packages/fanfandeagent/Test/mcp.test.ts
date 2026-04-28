@@ -393,6 +393,33 @@ describe("mcp integration", () => {
     }
   })
 
+  test("Mcp diagnoseServer should diagnose global stdio servers without a project context", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fanfande-mcp-global-diagnose-"))
+
+    try {
+      const script = await writeMockMcpServer(root)
+      const diagnostic = await Mcp.diagnoseServer({
+        id: "mock-global",
+        name: "Mock Global",
+        transport: "stdio",
+        command: process.execPath,
+        args: [script],
+        cwd: root,
+        enabled: true,
+      })
+
+      expect(diagnostic).toEqual({
+        serverID: "mock-global",
+        enabled: true,
+        ok: true,
+        toolCount: 1,
+        toolNames: ["echo"],
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("Mcp manager should expose filtered remote HTTP tools through the registry shape", async () => {
     const root = await mkdtemp(join(tmpdir(), "fanfande-mcp-remote-manager-"))
     const remote = await startMockHttpMcpServer()

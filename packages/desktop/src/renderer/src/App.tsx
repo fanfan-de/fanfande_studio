@@ -231,7 +231,6 @@ export function App() {
     deleteArchivedSession,
     deleteMcpServer,
     deleteProviderAuthSession,
-    deleteProvider,
     deletingArchivedSessionID,
     deletingMcpServerID,
     deletingPromptPresetID,
@@ -263,9 +262,6 @@ export function App() {
     promptLoadError,
     promptPresets,
     promptPresetSelection,
-    projectID,
-    projectName,
-    projectWorktree,
     providerDrafts,
     createPromptPreset,
     deletePromptPreset,
@@ -287,6 +283,8 @@ export function App() {
     savingMcpServerID,
     savingPromptPresetID,
     savingProviderID,
+    testProviderConnection,
+    testingProviderID,
     selectedPromptPreset,
     setProviderAuthMethod,
     setPromptDraftLabelValue,
@@ -308,9 +306,6 @@ export function App() {
     },
     onMcpUpdated: refreshComposerMcp,
     onProviderModelsUpdated: refreshComposerModels,
-    projectID: selectedWorkspace?.project.id ?? null,
-    projectName: selectedWorkspace?.project.name ?? null,
-    projectWorktree: selectedWorkspace?.project.worktree ?? null,
   })
 
   const isCreatingSession = workbenchPaneStates.some((pane) => pane.isCreatingSession)
@@ -831,9 +826,6 @@ export function App() {
           promptLoadError={promptLoadError}
           promptPresets={promptPresets}
           promptPresetSelection={promptPresetSelection}
-          projectID={projectID}
-          projectName={projectName}
-          projectWorktree={projectWorktree}
           providerDrafts={providerDrafts}
           onCreatePromptPreset={createPromptPreset}
           onDeletePromptPreset={deletePromptPreset}
@@ -844,6 +836,7 @@ export function App() {
           savingPromptPresetID={savingPromptPresetID}
           savingPromptPresetSelectionField={savingPromptPresetSelectionField}
           savingProviderID={savingProviderID}
+          testingProviderID={testingProviderID}
           selectedPromptPreset={selectedPromptPreset}
           selectionDraft={selectionDraft}
           onBrandThemeChange={handleBrandThemeChange}
@@ -862,7 +855,6 @@ export function App() {
           onDeleteArchivedSession={deleteArchivedSession}
           onDeleteMcpServer={deleteMcpServer}
           onDeleteProviderAuthSession={deleteProviderAuthSession}
-          onDeleteProvider={deleteProvider}
           onMcpServerDraftChange={setMcpServerDraftValue}
           onPromptDraftLabelChange={setPromptDraftLabelValue}
           onPromptDraftChange={setPromptDraftValue}
@@ -883,6 +875,7 @@ export function App() {
           onSaveProvider={saveProvider}
           onSaveSelection={saveSelection}
           onSelectionChange={setSelectionDraftValue}
+          onTestProviderConnection={testProviderConnection}
           onStartProviderAuthFlow={startProviderAuthFlow}
           onStartNewMcpServer={startNewMcpServer}
           onCancelProviderAuthFlow={cancelProviderAuthFlow}

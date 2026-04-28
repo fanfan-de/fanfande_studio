@@ -716,11 +716,25 @@ describe("App", () => {
       deleteGlobalSkill: vi.fn(),
       getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
       refreshGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
+      testGlobalProviderConnection: vi.fn().mockResolvedValue({
+        providerID: "deepseek",
+        ok: true,
+        status: "working",
+        checkedAt: 1,
+        message: "连接测试成功。",
+      }),
       getGlobalModels: vi.fn().mockResolvedValue({
         items: [],
         selection: {},
       }),
       getGlobalMcpServers: vi.fn().mockResolvedValue([]),
+      getGlobalMcpServerDiagnostic: vi.fn().mockResolvedValue({
+        serverID: "mock",
+        enabled: true,
+        ok: true,
+        toolCount: 0,
+        toolNames: [],
+      }),
       getPromptPresets: vi.fn().mockResolvedValue(PROMPT_PRESET_FIXTURES),
       getPromptPresetSelection: vi.fn().mockResolvedValue(PROMPT_PRESET_SELECTION_FIXTURE),
       readPromptPreset: vi.fn().mockImplementation(({ presetID }: { presetID: string }) =>
@@ -5894,8 +5908,11 @@ describe("App", () => {
     expect(screen.queryByText("Catalog")).not.toBeInTheDocument()
     expect(screen.queryByText("No known models yet")).not.toBeInTheDocument()
     expect(screen.queryByText("1 known models")).not.toBeInTheDocument()
-    expect(await screen.findByRole("heading", { name: "Shared across the app" })).toBeInTheDocument()
-    expect(screen.getByRole("heading", { name: "Project 2" })).toBeInTheDocument()
+    expect(await screen.findByRole("heading", { name: "DeepSeek" })).toBeInTheDocument()
+    expect(screen.getByText("连接方式")).toBeInTheDocument()
+    expect(screen.getByText("使用环境变量 DEEPSEEK_API_KEY")).toBeInTheDocument()
+    expect(screen.getByText("高级设置")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Provider Models" })).toBeInTheDocument()
     expect(settingsDialog.querySelector(".settings-detail-hero")).toBeNull()
     expect(screen.queryByText("Provider ID")).not.toBeInTheDocument()
     expect(screen.queryByText("Environment")).not.toBeInTheDocument()
@@ -5903,6 +5920,8 @@ describe("App", () => {
     expect(screen.queryByText("Edit the shared credentials and endpoint the app should use when routing to DeepSeek.")).not.toBeInTheDocument()
     expect(screen.queryByText("Reset removes the saved provider configuration and falls back to environment or catalog defaults.")).not.toBeInTheDocument()
     expect(screen.getByLabelText("API key for DeepSeek")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "测试连接" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Save DeepSeek settings" })).toHaveTextContent("保存")
 
     const providerList = screen.getByRole("list", { name: "Provider list" })
     const providerButtons = within(providerList).getAllByRole("button")
@@ -6232,7 +6251,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
   })
 
-  it("edits global MCP servers from settings and keeps diagnostics project-aware", async () => {
+  it("edits global MCP servers from settings and runs global diagnostics", async () => {
     window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([])
     window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
       items: [],
@@ -6256,7 +6275,7 @@ describe("App", () => {
       args: ["-y", "@modelcontextprotocol/server-filesystem"],
       enabled: true,
     })
-    window.desktop!.getProjectMcpServerDiagnostic = vi.fn().mockResolvedValue({
+    window.desktop!.getGlobalMcpServerDiagnostic = vi.fn().mockResolvedValue({
       serverID: "filesystem",
       enabled: true,
       ok: true,
@@ -6271,7 +6290,8 @@ describe("App", () => {
 
     expect(await screen.findByText("Configure reusable local and remote MCP servers once, then enable them per project from the session canvas top menu.")).toBeInTheDocument()
     expect(screen.queryByText("Pick a project first")).not.toBeInTheDocument()
-    expect(screen.getByText("Diagnostic context")).toBeInTheDocument()
+    expect(screen.queryByText("Diagnostic context")).not.toBeInTheDocument()
+    expect(screen.getByText("Global server definitions are shared across projects. Set a working directory on stdio servers when the server expects one.")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: /Filesystem enabled/ }))
     fireEvent.change(screen.getByRole("textbox", { name: "MCP server name" }), {
@@ -6296,8 +6316,7 @@ describe("App", () => {
     })
 
     await waitFor(() => {
-      expect(window.desktop!.getProjectMcpServerDiagnostic).toHaveBeenCalledWith({
-        projectID: "project-2",
+      expect(window.desktop!.getGlobalMcpServerDiagnostic).toHaveBeenCalledWith({
         serverID: "filesystem",
       })
     })
@@ -6755,7 +6774,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
 
     const settingsDialog = await screen.findByRole("dialog", { name: "Settings" })
-    await screen.findByRole("heading", { name: "Shared across the app" })
+    await screen.findByRole("heading", { name: "DeepSeek" })
 
     const detailPanel = settingsDialog.querySelector(".settings-service-detail-panel")
     expect(detailPanel).not.toBeNull()
@@ -6769,6 +6788,182 @@ describe("App", () => {
     expect(
       within(detailPanel as HTMLElement).queryByText("This provider can also inherit credentials from the current environment."),
     ).not.toBeInTheDocument()
+    expect(
+      within(detailPanel as HTMLElement).getByText("当前连接来自环境变量，修改需更新本地环境变量。"),
+    ).toBeInTheDocument()
+    expect((detailPanel as HTMLElement).querySelector(".provider-advanced-settings")).not.toHaveAttribute("open")
+    expect(
+      within(detailPanel as HTMLElement).queryByText("保存全局 provider 的非敏感设置。连接凭据使用全应用共享连接。"),
+    ).not.toBeInTheDocument()
+    expect(within(detailPanel as HTMLElement).getByRole("button", { name: "测试连接" })).toBeInTheDocument()
+  })
+
+  it("tests provider connection from the provider detail page", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "env",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.deepseek.com",
+        modelCount: 1,
+      },
+    ])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [],
+      selection: {},
+    })
+    window.desktop!.testGlobalProviderConnection = vi.fn().mockResolvedValue({
+      providerID: "deepseek",
+      ok: true,
+      status: "working",
+      checkedAt: 1,
+      message: "连接测试成功。",
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("heading", { name: "DeepSeek" })
+    fireEvent.click(screen.getByRole("button", { name: "测试连接" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.testGlobalProviderConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerID: "deepseek",
+          method: "api-key",
+          credentialMode: "environment",
+          baseURL: "https://api.deepseek.com",
+        }),
+      )
+    })
+    expect(await screen.findByText("连接测试成功。")).toBeInTheDocument()
+  })
+
+  it("keeps manual provider drafts after testing the connection", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "deepseek",
+        name: "DeepSeek",
+        source: "api",
+        env: ["DEEPSEEK_API_KEY"],
+        configured: false,
+        available: false,
+        apiKeyConfigured: false,
+        baseURL: "https://api.deepseek.com",
+        modelCount: 1,
+      },
+    ])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [],
+      selection: {},
+    })
+    window.desktop!.testGlobalProviderConnection = vi.fn().mockResolvedValue({
+      providerID: "deepseek",
+      ok: true,
+      status: "working",
+      checkedAt: 1,
+      message: "连接测试成功。",
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("heading", { name: "DeepSeek" })
+
+    const apiKeyInput = screen.getByLabelText("API key for DeepSeek")
+    fireEvent.change(apiKeyInput, {
+      target: {
+        value: "sk-draft-deepseek",
+      },
+    })
+    fireEvent.change(screen.getByLabelText("Base URL for DeepSeek"), {
+      target: {
+        value: "https://draft.deepseek.test/v1",
+      },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "测试连接" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.testGlobalProviderConnection).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerID: "deepseek",
+          method: "api-key",
+          credentialMode: "manual",
+          apiKey: "sk-draft-deepseek",
+          baseURL: "https://draft.deepseek.test/v1",
+        }),
+      )
+    })
+    expect(await screen.findByText("连接测试成功。")).toBeInTheDocument()
+    expect(screen.getByLabelText("API key for DeepSeek")).toHaveValue("sk-draft-deepseek")
+    expect(screen.getByLabelText("Base URL for DeepSeek")).toHaveValue("https://draft.deepseek.test/v1")
+  })
+
+  it("shows every OpenAI connection method as direct radio choices", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "openai",
+        name: "OpenAI",
+        source: "env",
+        env: ["OPENAI_API_KEY"],
+        configured: true,
+        available: true,
+        apiKeyConfigured: true,
+        baseURL: "https://api.openai.com/v1",
+        modelCount: 1,
+        authCapabilities: [
+          {
+            method: "chatgpt-browser",
+            label: "ChatGPT Pro/Plus (browser)",
+            kind: "browser_oauth",
+            recommended: true,
+          },
+          {
+            method: "chatgpt-headless",
+            label: "ChatGPT Pro/Plus (headless)",
+            kind: "device_code",
+          },
+          {
+            method: "api-key",
+            label: "API key",
+            kind: "api_key",
+          },
+        ],
+        authState: {
+          providerID: "openai",
+          scope: "global",
+          activeMethod: "chatgpt-browser",
+          status: "connected",
+          capabilities: [],
+          credentials: [],
+        },
+      },
+    ])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [],
+      selection: {},
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await screen.findByRole("heading", { name: "OpenAI" })
+
+    expect(screen.queryByLabelText("Authentication method for OpenAI")).not.toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "ChatGPT Pro/Plus（浏览器登录）" })).toBeChecked()
+    expect(screen.getByRole("radio", { name: "ChatGPT Pro/Plus（设备码登录）" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "使用环境变量 OPENAI_API_KEY" })).toBeInTheDocument()
+    expect(screen.getByRole("radio", { name: "手动输入 API key" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("radio", { name: "ChatGPT Pro/Plus（设备码登录）" }))
+    expect(screen.getByRole("button", { name: "开始设备登录" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("radio", { name: "手动输入 API key" }))
+    expect(screen.getByLabelText("API key for OpenAI")).toBeInTheDocument()
   })
 
   it("saves provider overrides from the settings page", async () => {
@@ -6900,7 +7095,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
-    await screen.findByRole("heading", { name: "Shared across the app" })
+    await screen.findByRole("heading", { name: "DeepSeek" })
     fireEvent.change(screen.getByLabelText("Base URL for DeepSeek"), {
       target: {
         value: "https://proxy.deepseek.test/v1",
@@ -6926,7 +7121,7 @@ describe("App", () => {
       expect(window.desktop!.getGlobalModels).toHaveBeenCalledTimes(2)
     })
 
-    expect(screen.getByRole("heading", { name: "Shared across the app" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "DeepSeek" })).toBeInTheDocument()
     expect(screen.queryByText("Fetching provider catalog")).not.toBeInTheDocument()
 
     refreshedCatalog.resolve([
@@ -7219,7 +7414,7 @@ describe("App", () => {
     expect(await screen.findByText("Model settings saved.")).toBeInTheDocument()
   })
 
-  it("uses project provider settings APIs when a workspace is selected", async () => {
+  it("uses global provider settings APIs when a workspace is selected", async () => {
     window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
       {
         id: "deepseek",
@@ -7356,33 +7551,36 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
-    await screen.findByRole("dialog", { name: "Settings" })
-
     await waitFor(() => {
-      expect(window.desktop!.getProjectProviderCatalog).toHaveBeenCalledWith({
-        projectID: "project-2",
-      })
       expect(window.desktop!.getProjectModels).toHaveBeenCalledWith({
         projectID: "project-2",
       })
     })
+    const projectModelCallCountBeforeSettings = vi.mocked(window.desktop!.getProjectModels).mock.calls.length
 
-    expect(window.desktop!.getGlobalProviderCatalog).not.toHaveBeenCalled()
-    expect(window.desktop!.getGlobalModels).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    const settingsDialog = await screen.findByRole("dialog", { name: "Settings" })
+
+    await waitFor(() => {
+      expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalled()
+      expect(window.desktop!.getGlobalModels).toHaveBeenCalled()
+    })
+
+    expect(window.desktop!.getProjectProviderCatalog).not.toHaveBeenCalled()
+    expect(window.desktop!.getProjectModels).toHaveBeenCalledTimes(projectModelCallCountBeforeSettings)
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh provider catalog" }))
 
     await waitFor(() => {
-      expect(window.desktop!.refreshProjectProviderCatalog).toHaveBeenCalledWith({
-        projectID: "project-2",
-      })
+      expect(window.desktop!.refreshGlobalProviderCatalog).toHaveBeenCalledTimes(1)
     })
+
+    expect(window.desktop!.refreshProjectProviderCatalog).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: /^Models/ }))
 
-    expect((await screen.findAllByText("GPT-4o mini")).length).toBeGreaterThan(0)
-    expect(screen.queryByText("DeepSeek Reasoner")).not.toBeInTheDocument()
+    expect((await within(settingsDialog).findAllByText("DeepSeek Reasoner")).length).toBeGreaterThan(0)
+    expect(within(settingsDialog).queryByText("GPT-4o mini")).not.toBeInTheDocument()
   })
 
   it("updates the active project model selection from the composer menu", async () => {

@@ -608,6 +608,21 @@ export interface AgentProviderAuthState {
   flow?: AgentProviderAuthFlow
 }
 
+export interface AgentProviderConnectionTestResult {
+  providerID: string
+  ok: boolean
+  status:
+    | "working"
+    | "not_connected"
+    | "auth_error"
+    | "network_error"
+    | "config_error"
+    | "unsupported"
+    | "unknown_error"
+  checkedAt: number
+  message: string
+}
+
 export interface AgentProviderModelCapabilitiesModalities {
   text: boolean
   audio: boolean

@@ -10,6 +10,7 @@ import type {
   AgentProviderAuthFlow,
   AgentProviderAuthState,
   AgentProviderCatalogItem,
+  AgentProviderConnectionTestResult,
   AgentProviderModel,
   AgentSessionBridgeIPCEvent,
   AgentSessionHistoryMessage,
@@ -318,6 +319,14 @@ try {
       invokeDesktop("desktop:save-global-provider-api-key", input) as Promise<AgentProviderAuthState>,
     deleteGlobalProviderAuthSession: (input: { providerID: string }) =>
       invokeDesktop("desktop:delete-global-provider-auth-session", input) as Promise<AgentProviderAuthState>,
+    testGlobalProviderConnection: (input: {
+      providerID: string
+      method?: string
+      credentialMode?: "active" | "manual" | "environment"
+      apiKey?: string | null
+      baseURL?: string | null
+    }) =>
+      invokeDesktop("desktop:test-global-provider-connection", input) as Promise<AgentProviderConnectionTestResult>,
     getGlobalModels: () =>
       invokeDesktop("desktop:get-global-models") as Promise<{
         items: AgentProviderModel[]
@@ -365,6 +374,8 @@ try {
       }>,
     getGlobalMcpServers: () =>
       invokeDesktop("desktop:get-global-mcp-servers") as Promise<McpServerSummary[]>,
+    getGlobalMcpServerDiagnostic: (input: { serverID: string }) =>
+      invokeDesktop("desktop:get-global-mcp-server-diagnostic", input) as Promise<McpServerDiagnostic>,
     updateGlobalMcpServer: (input: {
       serverID: string
       server: McpServerInput

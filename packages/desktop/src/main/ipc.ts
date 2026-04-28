@@ -53,6 +53,7 @@ import type {
   AgentProviderAuthFlow,
   AgentProviderAuthState,
   AgentProviderCatalogItem,
+  AgentProviderConnectionTestResult,
   AgentProviderModel,
   AgentPtySessionInfo,
   AgentSessionArchiveResult,
@@ -1082,6 +1083,38 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
+  handleDesktopIpc(
+    "desktop:test-global-provider-connection",
+    async (
+      _event,
+      input: {
+        providerID: string
+        method?: string
+        credentialMode?: "active" | "manual" | "environment"
+        apiKey?: string | null
+        baseURL?: string | null
+      },
+    ) => {
+      const providerID = input.providerID.trim()
+      const result = await requestAgentJSON<AgentProviderConnectionTestResult>(
+        `/api/providers/${encodeURIComponent(providerID)}/auth/test`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            method: input.method,
+            credentialMode: input.credentialMode,
+            apiKey: input.apiKey ?? undefined,
+            baseURL: input.baseURL ?? undefined,
+          }),
+        },
+      )
+      return result.data
+    },
+  )
+
   handleDesktopIpc("desktop:get-global-models", async () => {
     const result = await requestAgentJSON<{
       items: AgentProviderModel[]
@@ -1167,6 +1200,15 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
   handleDesktopIpc("desktop:get-global-mcp-servers", async () => {
     const result = await requestAgentJSON<AgentMcpServerSummary[]>("/api/mcp/servers")
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-global-mcp-server-diagnostic", async (_event, input: { serverID: string }) => {
+    const serverID = input.serverID.trim()
+    const result = await requestAgentJSON<AgentMcpServerDiagnostic>(
+      `/api/mcp/servers/${encodeURIComponent(serverID)}/diagnostic`,
+    )
 
     return result.data
   })

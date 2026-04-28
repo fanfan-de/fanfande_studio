@@ -25,15 +25,13 @@ interface SettingsMessage {
 
 interface LoadSettingsOptions {
   silent?: boolean
+  preserveProviderDrafts?: boolean
 }
 
 interface UseSettingsPageOptions {
   onArchivedSessionRestored?: (session: LoadedSessionSnapshot) => void | Promise<void>
   onMcpUpdated?: () => void | Promise<void>
   onProviderModelsUpdated?: () => void | Promise<void>
-  projectID: string | null
-  projectName?: string | null
-  projectWorktree?: string | null
 }
 
 type ProviderMutationPayload = {
@@ -91,6 +89,29 @@ function buildProviderDrafts(items: ProviderCatalogItem[]) {
     }
     return result
   }, {})
+}
+
+function mergeProviderDrafts(
+  defaults: Record<string, ProviderDraftState>,
+  current: Record<string, ProviderDraftState>,
+) {
+  return Object.fromEntries(
+    Object.entries(defaults).map(([providerID, draft]) => {
+      const currentDraft = current[providerID]
+      if (!currentDraft) return [providerID, draft]
+
+      return [
+        providerID,
+        {
+          ...draft,
+          apiKey: currentDraft.apiKey,
+          baseURL: currentDraft.baseURL,
+          selectedAuthMethod: currentDraft.selectedAuthMethod ?? draft.selectedAuthMethod,
+          activeFlow: draft.activeFlow ?? currentDraft.activeFlow ?? null,
+        },
+      ]
+    }),
+  )
 }
 
 function normalizeProviderCatalogItem(item: ProviderCatalogItem): ProviderCatalogItem {
@@ -359,6 +380,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [message, setMessage] = useState<SettingsMessage | null>(null)
   const [savingProviderID, setSavingProviderID] = useState<string | null>(null)
   const [deletingProviderID, setDeletingProviderID] = useState<string | null>(null)
+  const [testingProviderID, setTestingProviderID] = useState<string | null>(null)
   const [isRefreshingProviderCatalog, setIsRefreshingProviderCatalog] = useState(false)
   const [isSavingSelection, setIsSavingSelection] = useState(false)
   const [savingMcpServerID, setSavingMcpServerID] = useState<string | null>(null)
@@ -387,24 +409,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     void loadBuiltinTools()
     void loadPromptPresets()
     void loadArchivedSessions()
-  }, [isOpen, options.projectID])
-
-  function resolveProjectProviderSettingsProjectID() {
-    const projectID = options.projectID?.trim()
-    if (!projectID) return null
-
-    if (
-      window.desktop?.getProjectProviderCatalog &&
-      window.desktop?.getProjectModels &&
-      window.desktop?.updateProjectProvider &&
-      window.desktop?.deleteProjectProvider &&
-      window.desktop?.updateProjectModelSelection
-    ) {
-      return projectID
-    }
-
-    return null
-  }
+  }, [isOpen])
 
   async function notifyMcpUpdated() {
     try {
@@ -561,10 +566,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   useEffect(() => {
-    if (!isOpen || !options.projectID || !activeMcpServerID) return
+    if (!isOpen || !activeMcpServerID) return
 
-    void loadMcpServerDiagnostic(options.projectID, activeMcpServerID)
-  }, [activeMcpServerID, isOpen, options.projectID])
+    void loadMcpServerDiagnostic(activeMcpServerID)
+  }, [activeMcpServerID, isOpen])
 
   async function loadArchivedSessions(optionsArg?: LoadSettingsOptions) {
     const listArchivedSessions = window.desktop?.listArchivedSessions
@@ -596,13 +601,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function loadSettingsData(optionsArg?: LoadSettingsOptions) {
-    const projectID = resolveProjectProviderSettingsProjectID()
-    const loadProviderCatalog = projectID
-      ? () => window.desktop!.getProjectProviderCatalog!({ projectID })
-      : window.desktop?.getGlobalProviderCatalog
-    const loadModels = projectID
-      ? () => window.desktop!.getProjectModels!({ projectID })
-      : window.desktop?.getGlobalModels
+    const loadProviderCatalog = window.desktop?.getGlobalProviderCatalog
+    const loadModels = window.desktop?.getGlobalModels
 
     if (!loadProviderCatalog || !loadModels || !window.desktop?.getGlobalMcpServers) {
       setLoadError("Desktop provider settings APIs are unavailable.")
@@ -637,7 +637,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setModels(modelPayload.items)
       setSavedSelection(nextSelection)
       setSelectionDraft(nextSelection)
-      setProviderDrafts(buildProviderDrafts(normalizedCatalog))
+      const nextProviderDrafts = buildProviderDrafts(normalizedCatalog)
+      if (optionsArg?.preserveProviderDrafts) {
+        setProviderDrafts((current) => mergeProviderDrafts(nextProviderDrafts, current))
+      } else {
+        setProviderDrafts(nextProviderDrafts)
+      }
       setMcpServers(nextMcpServers)
       setMcpDiagnostics((current) =>
         Object.fromEntries(
@@ -707,15 +712,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
-  async function loadMcpServerDiagnostic(projectID: string, serverID: string) {
-    if (!window.desktop?.getProjectMcpServerDiagnostic) return null
+  async function loadMcpServerDiagnostic(serverID: string) {
+    if (!window.desktop?.getGlobalMcpServerDiagnostic) return null
 
     const requestID = (mcpDiagnosticRequestIDRef.current[serverID] ?? 0) + 1
     mcpDiagnosticRequestIDRef.current[serverID] = requestID
 
     try {
-      const diagnostic = await window.desktop.getProjectMcpServerDiagnostic({
-        projectID,
+      const diagnostic = await window.desktop.getGlobalMcpServerDiagnostic({
         serverID,
       })
 
@@ -1138,21 +1142,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function saveProvider(providerID: string) {
-    const projectID = resolveProjectProviderSettingsProjectID()
-    const updateProvider = projectID
-      ? (provider: ProviderMutationPayload) =>
-          window.desktop!.updateProjectProvider!({
-            projectID,
-            providerID,
-            provider,
-          })
-      : window.desktop?.updateGlobalProvider
-        ? (provider: ProviderMutationPayload) =>
-            window.desktop!.updateGlobalProvider!({
-              providerID,
-              provider,
-            })
-        : null
+    const updateProvider = window.desktop?.updateGlobalProvider
     if (!updateProvider) return false
 
     const provider = catalog.find((item) => item.id === providerID)
@@ -1165,19 +1155,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       activeFlow: provider.authState.flow ?? null,
     }
     const baseURL = draft.baseURL.trim()
-    const nextProvider: {
-      name?: string
-      env?: string[]
-      options?: {
-        baseURL?: string
-      }
-    } = {
+    const nextProvider: ProviderMutationPayload = {
       name: provider.name,
       env: provider.env,
     }
-    const optionsPayload: {
-      baseURL?: string
-    } = {}
+    const optionsPayload: NonNullable<ProviderMutationPayload["options"]> = {}
 
     if (baseURL !== (provider.baseURL ?? "")) {
       optionsPayload.baseURL = baseURL
@@ -1199,7 +1181,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setMessage(null)
 
     try {
-      await updateProvider(nextProvider)
+      await updateProvider({
+        providerID,
+        provider: nextProvider,
+      })
       await loadSettingsData({ silent: true })
       await notifyProviderModelsUpdated()
       setMessage({
@@ -1416,17 +1401,45 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function testProviderConnection(
+    providerID: string,
+    input: {
+      method?: string
+      credentialMode?: "active" | "manual" | "environment"
+      apiKey?: string | null
+      baseURL?: string | null
+    } = {},
+  ) {
+    if (!window.desktop?.testGlobalProviderConnection) return false
+
+    setTestingProviderID(providerID)
+    setMessage(null)
+
+    try {
+      const result = await window.desktop.testGlobalProviderConnection({
+        providerID,
+        ...input,
+      })
+      await loadSettingsData({ silent: true, preserveProviderDrafts: true })
+      await notifyProviderModelsUpdated()
+      setMessage({
+        tone: result.ok ? "success" : "error",
+        text: result.message,
+      })
+      return result.ok
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setTestingProviderID(null)
+    }
+  }
+
   async function refreshProviderCatalog() {
-    const projectID = resolveProjectProviderSettingsProjectID()
-    const refreshProviderCatalogApi = projectID
-      ? window.desktop?.refreshProjectProviderCatalog
-        ? () => window.desktop!.refreshProjectProviderCatalog!({ projectID })
-        : window.desktop?.refreshGlobalProviderCatalog
-          ? () => window.desktop!.refreshGlobalProviderCatalog!()
-          : null
-      : window.desktop?.refreshGlobalProviderCatalog
-        ? () => window.desktop!.refreshGlobalProviderCatalog!()
-        : null
+    const refreshProviderCatalogApi = window.desktop?.refreshGlobalProviderCatalog
 
     if (!refreshProviderCatalogApi) {
       setMessage({
@@ -1460,26 +1473,16 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function deleteProvider(providerID: string) {
-    const projectID = resolveProjectProviderSettingsProjectID()
-    const removeProvider = projectID
-      ? () =>
-          window.desktop!.deleteProjectProvider!({
-            projectID,
-            providerID,
-          })
-      : window.desktop?.deleteGlobalProvider
-        ? () =>
-            window.desktop!.deleteGlobalProvider!({
-              providerID,
-            })
-        : null
+    const removeProvider = window.desktop?.deleteGlobalProvider
     if (!removeProvider) return
 
     setDeletingProviderID(providerID)
     setMessage(null)
 
     try {
-      await removeProvider()
+      await removeProvider({
+        providerID,
+      })
       await loadSettingsData({ silent: true })
       await notifyProviderModelsUpdated()
       setMessage({
@@ -1497,17 +1500,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function saveSelection() {
-    const projectID = resolveProjectProviderSettingsProjectID()
-    const updateModelSelection = projectID
-      ? (selection: { model?: string | null; small_model?: string | null }) =>
-          window.desktop!.updateProjectModelSelection!({
-            projectID,
-            ...selection,
-          })
-      : window.desktop?.updateGlobalModelSelection
-        ? (selection: { model?: string | null; small_model?: string | null }) =>
-            window.desktop!.updateGlobalModelSelection!(selection)
-        : null
+    const updateModelSelection = window.desktop?.updateGlobalModelSelection
     if (!updateModelSelection) return
 
     setIsSavingSelection(true)
@@ -1579,7 +1572,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       await loadSettingsData({ silent: true })
       await notifyMcpUpdated()
       setActiveMcpServerID(serverID)
-      const diagnostic = options.projectID ? await loadMcpServerDiagnostic(options.projectID, serverID) : null
+      const diagnostic = await loadMcpServerDiagnostic(serverID)
       setMessage(diagnostic ? formatMcpDiagnosticMessage(diagnostic) : {
         tone: "success",
         text: "MCP server saved.",
@@ -1742,9 +1735,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     promptLoadError,
     promptPresets,
     promptPresetSelection,
-    projectID: options.projectID,
-    projectName: options.projectName ?? null,
-    projectWorktree: options.projectWorktree ?? null,
     providerDrafts,
     createPromptPreset,
     deletePromptPreset,
@@ -1765,6 +1755,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     savingMcpServerID,
     savingPromptPresetID,
     savingProviderID,
+    testProviderConnection,
+    testingProviderID,
     selectedPromptPreset,
     setProviderAuthMethod,
     setPromptDraftLabelValue,

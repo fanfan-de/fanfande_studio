@@ -1,6 +1,7 @@
 import z from "zod"
 import * as ProviderAuth from "#auth/provider-auth.ts"
 import * as Config from "#config/config.ts"
+import * as Mcp from "#mcp/manager.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Provider from "#provider/provider.ts"
 import { ApiError } from "#server/error.ts"
@@ -41,6 +42,13 @@ export const ProviderAuthFlowBody = z.object({
 
 export const ProviderAuthApiKeyBody = z.object({
   apiKey: z.string().nullable().optional(),
+})
+
+export const ProviderConnectionTestBody = z.object({
+  method: z.string().optional(),
+  credentialMode: z.enum(["active", "manual", "environment"]).optional(),
+  apiKey: z.string().nullable().optional(),
+  baseURL: z.string().nullable().optional(),
 })
 
 export const PromptPresetCreateBody = z.object({
@@ -118,6 +126,16 @@ async function readProviderAuthState(providerID: string) {
   return ProviderAuth.createDisconnectedProviderAuthState(providerID)
 }
 
+function assertProviderConfigDoesNotContainSecrets(input: Config.Provider) {
+  if (input.options && "apiKey" in input.options) {
+    throw new ApiError(
+      400,
+      "PROVIDER_API_KEY_NOT_ALLOWED",
+      "Provider API keys must be saved through the credential store, not provider config.",
+    )
+  }
+}
+
 export async function listProviderCatalog() {
   return Provider.catalog()
 }
@@ -154,6 +172,8 @@ export async function updateProvider(
   providerID: string,
   input: z.infer<typeof UpdateGlobalProviderBody>,
 ) {
+  assertProviderConfigDoesNotContainSecrets(input)
+
   try {
     await Provider.validateProviderConfig(providerID, input, Config.GLOBAL_CONFIG_ID)
   } catch (error) {
@@ -212,6 +232,189 @@ export async function updateModelSelection(input: z.infer<typeof UpdateGlobalMod
 
 export async function getProviderAuth(providerID: string) {
   return readProviderAuthState(providerID)
+}
+
+function classifyProviderConnectionError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+
+  if (
+    normalized.includes("rejected the api key") ||
+    normalized.includes("401") ||
+    normalized.includes("403") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("forbidden")
+  ) {
+    return {
+      status: "auth_error" as const,
+      message,
+    }
+  }
+
+  if (
+    normalized.includes("could not reach") ||
+    normalized.includes("network") ||
+    normalized.includes("timeout") ||
+    normalized.includes("fetch") ||
+    normalized.includes("enotfound") ||
+    normalized.includes("econnrefused")
+  ) {
+    return {
+      status: "network_error" as const,
+      message,
+    }
+  }
+
+  return {
+    status: "config_error" as const,
+    message,
+  }
+}
+
+function getProviderConnectionCapability(
+  provider: Provider.ProviderCatalogItem,
+  method: string | undefined,
+) {
+  if (!method) return undefined
+  return provider.authCapabilities.find((capability) => capability.method === method)
+}
+
+function hasProviderConnectionCandidate(
+  provider: Provider.ProviderCatalogItem,
+  input: {
+    method?: string
+    credentialMode?: "active" | "manual" | "environment"
+    apiKey?: string
+  },
+) {
+  const capability = getProviderConnectionCapability(provider, input.method)
+  const credentials = provider.authState.credentials
+
+  if (input.method && !capability) return false
+
+  if (capability?.kind === "api_key") {
+    if (input.apiKey) return true
+
+    if (input.credentialMode === "environment") {
+      return credentials.some(
+        (credential) =>
+          credential.method === capability.method &&
+          credential.kind === "api_key" &&
+          credential.source === "environment" &&
+          credential.configured,
+      )
+    }
+
+    if (input.credentialMode === "manual") {
+      return credentials.some(
+        (credential) =>
+          credential.method === capability.method &&
+          credential.kind === "api_key" &&
+          credential.source === "credential_store" &&
+          credential.configured,
+      )
+    }
+
+    return credentials.some(
+      (credential) =>
+        credential.method === capability.method &&
+        credential.kind === "api_key" &&
+        credential.configured,
+    )
+  }
+
+  if (capability) {
+    return credentials.some(
+      (credential) =>
+        credential.method === capability.method &&
+        credential.configured,
+    )
+  }
+
+  return provider.authState.status === "connected" || provider.apiKeyConfigured
+}
+
+export async function testProviderConnection(
+  providerID: string,
+  input: z.infer<typeof ProviderConnectionTestBody>,
+) {
+  const catalog = await Provider.catalog()
+  const provider = catalog.find((entry) => entry.id === providerID)
+
+  if (!provider) {
+    throw new ApiError(404, "PROVIDER_NOT_FOUND", `Provider '${providerID}' not found in the catalog`)
+  }
+
+  const method = input.method?.trim() || provider.authState.activeMethod
+  const credentialMode = input.credentialMode ?? "active"
+  const apiKey = input.apiKey?.trim()
+  const baseURL = input.baseURL?.trim()
+  const capability = getProviderConnectionCapability(provider, method)
+
+  if (method && !capability) {
+    return {
+      providerID,
+      ok: false,
+      status: "unsupported" as const,
+      checkedAt: Date.now(),
+      message: `Provider '${provider.name}' does not support connection method '${method}'.`,
+    }
+  }
+
+  if (!hasProviderConnectionCandidate(provider, { method, credentialMode, apiKey })) {
+    return {
+      providerID,
+      ok: false,
+      status: "not_connected" as const,
+      checkedAt: Date.now(),
+      message: "未找到可用连接。请先配置环境变量、登录账号或保存 API key。",
+    }
+  }
+
+  try {
+    const optionsPayload: {
+      apiKey?: string
+      baseURL?: string
+    } = {}
+
+    if (apiKey) optionsPayload.apiKey = apiKey
+    if (baseURL) optionsPayload.baseURL = baseURL
+
+    await Provider.validateProviderConfig(
+      providerID,
+      {
+        name: provider.name,
+        env: provider.env,
+        options: Object.keys(optionsPayload).length > 0 ? optionsPayload : undefined,
+      },
+      Config.GLOBAL_CONFIG_ID,
+      {
+        auth: {
+          method,
+          credentialMode,
+          transientApiKey: apiKey,
+        },
+        requireCredential: true,
+      },
+    )
+
+    return {
+      providerID,
+      ok: true,
+      status: "working" as const,
+      checkedAt: Date.now(),
+      message: "连接测试成功。",
+    }
+  } catch (error) {
+    const classified = classifyProviderConnectionError(error)
+    return {
+      providerID,
+      ok: false,
+      status: classified.status,
+      checkedAt: Date.now(),
+      message: classified.message,
+    }
+  }
 }
 
 export async function startProviderAuthFlow(input: {
@@ -279,6 +482,15 @@ export async function listMcpServers() {
 
 export async function updateMcpServer(serverID: string, input: z.infer<typeof UpdateMcpServerBody>) {
   return Config.setMcpServer(Config.GLOBAL_CONFIG_ID, serverID, input)
+}
+
+export async function getMcpServerDiagnostic(serverID: string) {
+  const server = await Config.getMcpServer(Config.GLOBAL_CONFIG_ID, serverID)
+  if (!server) {
+    throw new ApiError(404, "MCP_SERVER_NOT_FOUND", `MCP server '${serverID}' is not configured globally`)
+  }
+
+  return Mcp.diagnoseServer(server)
 }
 
 export async function removeMcpServer(serverID: string) {

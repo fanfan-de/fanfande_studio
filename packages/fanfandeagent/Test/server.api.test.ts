@@ -192,6 +192,14 @@ type ProviderAuthFlowEnvelope = JsonEnvelope<{
   }
 }>
 
+type ProviderConnectionTestEnvelope = JsonEnvelope<{
+  providerID: string
+  ok: boolean
+  status: "working" | "not_connected" | "unsupported" | "auth_error" | "network_error" | "config_error"
+  checkedAt: number
+  message: string
+}>
+
 type ProviderListEnvelope = JsonEnvelope<{
   items: Array<{
     id: string
@@ -1378,6 +1386,18 @@ describe("server api", () => {
             true,
           )
 
+          const saveDeepSeekKeyResponse = await app.request("http://localhost/api/providers/deepseek/auth/api-key", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              apiKey: "test-deepseek-key",
+            }),
+          })
+          const saveDeepSeekKeyBody = (await saveDeepSeekKeyResponse.json()) as ProviderAuthStateEnvelope
+
+          expect(saveDeepSeekKeyResponse.status).toBe(200)
+          expect(saveDeepSeekKeyBody.success).toBe(true)
+
           const configureResponse = await app.request("http://localhost/api/providers/deepseek", {
             method: "PUT",
             headers: { "content-type": "application/json" },
@@ -1385,7 +1405,6 @@ describe("server api", () => {
               name: "DeepSeek",
               whitelist: ["deepseek-reasoner"],
               options: {
-                apiKey: "test-deepseek-key",
                 baseURL: "https://api.deepseek.com",
               },
             }),
@@ -1478,7 +1497,12 @@ describe("server api", () => {
 
           expect(compatibilityResponse.status).toBe(200)
           expect(compatibilityBody.data?.selection.model).toBeUndefined()
-          expect(compatibilityBody.data?.items).toHaveLength(0)
+          expect(compatibilityBody.data?.items).toHaveLength(1)
+          expect(compatibilityBody.data?.items[0]).toMatchObject({
+            providerID: "deepseek",
+            id: "deepseek-reasoner",
+            available: true,
+          })
 
           const projectConfigureResponse = await app.request(`http://localhost/api/projects/${projectID}/providers/openai`, {
             method: "PUT",
@@ -1502,12 +1526,21 @@ describe("server api", () => {
           const projectModelsBody = (await projectModelsResponse.json()) as ProjectModelsEnvelope
 
           expect(projectModelsResponse.status).toBe(200)
-          expect(projectModelsBody.data?.items).toHaveLength(1)
-          expect(projectModelsBody.data?.items[0]).toMatchObject({
-            providerID: "openai",
-            id: "gpt-4o-mini",
-            available: true,
-          })
+          expect(projectModelsBody.data?.items).toHaveLength(2)
+          expect(projectModelsBody.data?.items).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                providerID: "deepseek",
+                id: "deepseek-reasoner",
+                available: true,
+              }),
+              expect.objectContaining({
+                providerID: "openai",
+                id: "gpt-4o-mini",
+                available: true,
+              }),
+            ]),
+          )
           expect(projectModelsBody.data?.selection.model).toBeUndefined()
 
           const globalModelsAfterProjectResponse = await app.request("http://localhost/api/models")
@@ -1820,7 +1853,7 @@ describe("server api", () => {
     }
   })
 
-  test("PUT /api/providers/:providerID should reject invalid API keys before saving", async () => {
+  test("provider settings should reject config-stored API keys and invalid manual test keys before saving", async () => {
     const restoreFetch = mockModelsDevFetch(({ url, headers }) => {
       if (url !== "https://api.deepseek.com/models") return undefined
 
@@ -1849,7 +1882,7 @@ describe("server api", () => {
         async () => {
           await resetGlobalProviderState(app)
 
-          const response = await app.request("http://localhost/api/providers/deepseek", {
+          const configResponse = await app.request("http://localhost/api/providers/deepseek", {
             method: "PUT",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -1860,12 +1893,29 @@ describe("server api", () => {
               },
             }),
           })
-          const body = (await response.json()) as JsonEnvelope
+          const configBody = (await configResponse.json()) as JsonEnvelope
 
-          expect(response.status).toBe(400)
-          expect(body.success).toBe(false)
-          expect(body.error?.code).toBe("PROVIDER_VALIDATION_FAILED")
-          expect(body.error?.message).toContain("Invalid API key")
+          expect(configResponse.status).toBe(400)
+          expect(configBody.success).toBe(false)
+          expect(configBody.error?.code).toBe("PROVIDER_API_KEY_NOT_ALLOWED")
+
+          const response = await app.request("http://localhost/api/providers/deepseek/auth/test", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              method: "api-key",
+              credentialMode: "manual",
+              apiKey: "invalid-deepseek-key",
+              baseURL: "https://api.deepseek.com",
+            }),
+          })
+          const body = (await response.json()) as ProviderConnectionTestEnvelope
+
+          expect(response.status).toBe(200)
+          expect(body.success).toBe(true)
+          expect(body.data?.ok).toBe(false)
+          expect(body.data?.status).toBe("auth_error")
+          expect(body.data?.message).toContain("Invalid API key")
 
           const providersResponse = await app.request("http://localhost/api/providers")
           const providersBody = (await providersResponse.json()) as ProviderListEnvelope

@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util"
+import os from "node:os"
 import { isAbsolute, resolve as resolvePath } from "node:path"
 import type { JSONValue } from "@ai-sdk/provider"
 import z from "zod"
@@ -34,6 +35,7 @@ const MCP_STRUCTURED_CONTENT_KEY = "mcpStructuredContent"
 const MCP_IS_ERROR_KEY = "mcpIsError"
 const MCP_SERVER_ID_KEY = "serverID"
 const MCP_TOOL_NAME_KEY = "toolName"
+const GLOBAL_MCP_WORKDIR = os.homedir()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
@@ -455,36 +457,99 @@ export class McpManager {
   }
 
   private filterTools(server: Config.McpServerSummary, tools: McpToolDefinition[]) {
-    if (server.transport !== "remote" || !server.allowedTools) {
-      return tools
-    }
-
-    const allowedTools = server.allowedTools
-    const namedTools = new Set(
-      Array.isArray(allowedTools)
-        ? allowedTools
-        : allowedTools.toolNames ?? [],
-    )
-    const requireReadOnly = !Array.isArray(allowedTools) && allowedTools.readOnly === true
-
-    return tools.filter((tool) => {
-      if (requireReadOnly && tool.annotations?.readOnlyHint !== true) {
-        return false
-      }
-
-      if (namedTools.size > 0 && !namedTools.has(tool.name)) {
-        return false
-      }
-
-      return true
-    })
+    return filterMcpTools(server, tools)
   }
 }
 
 function resolveServerCwd(cwd: string | undefined) {
-  if (!cwd) return Instance.directory
-  if (isAbsolute(cwd)) return cwd
-  return resolvePath(Instance.worktree, cwd)
+  return resolveConfiguredCwd(cwd, GLOBAL_MCP_WORKDIR)
+}
+
+function expandHomePath(value: string) {
+  if (value === "~") return GLOBAL_MCP_WORKDIR
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return resolvePath(GLOBAL_MCP_WORKDIR, value.slice(2))
+  }
+  return value
+}
+
+function resolveConfiguredCwd(cwd: string | undefined, fallbackDirectory: string) {
+  const normalized = cwd?.trim()
+  if (!normalized) return fallbackDirectory
+
+  const expanded = expandHomePath(normalized)
+  if (isAbsolute(expanded)) return expanded
+  return resolvePath(fallbackDirectory, expanded)
+}
+
+function filterMcpTools(server: Config.McpServerSummary, tools: McpToolDefinition[]) {
+  if (server.transport !== "remote" || !server.allowedTools) {
+    return tools
+  }
+
+  const allowedTools = server.allowedTools
+  const namedTools = new Set(
+    Array.isArray(allowedTools)
+      ? allowedTools
+      : allowedTools.toolNames ?? [],
+  )
+  const requireReadOnly = !Array.isArray(allowedTools) && allowedTools.readOnly === true
+
+  return tools.filter((tool) => {
+    if (requireReadOnly && tool.annotations?.readOnlyHint !== true) {
+      return false
+    }
+
+    if (namedTools.size > 0 && !namedTools.has(tool.name)) {
+      return false
+    }
+
+    return true
+  })
+}
+
+export async function diagnoseServer(server: Config.McpServerSummary): Promise<McpServerDiagnostic> {
+  if (!server.enabled) {
+    return {
+      serverID: server.id,
+      enabled: false,
+      ok: false,
+      toolCount: 0,
+      toolNames: [],
+      error: "Server is disabled.",
+    }
+  }
+
+  const timeout = server.timeoutMs ?? (await Config.get(Config.GLOBAL_CONFIG_ID)).experimental?.mcp_timeout ?? 30_000
+  const cwd = server.transport === "stdio" ? resolveConfiguredCwd(server.cwd, GLOBAL_MCP_WORKDIR) : GLOBAL_MCP_WORKDIR
+  const client = new McpClient({
+    cwd,
+    requestTimeoutMs: timeout,
+    server,
+    worktree: cwd,
+  })
+
+  try {
+    const tools = filterMcpTools(server, await client.listTools())
+    return {
+      serverID: server.id,
+      enabled: true,
+      ok: true,
+      toolCount: tools.length,
+      toolNames: tools.map((tool) => tool.name),
+    }
+  } catch (error) {
+    return {
+      serverID: server.id,
+      enabled: true,
+      ok: false,
+      toolCount: 0,
+      toolNames: [],
+      error: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    await client.dispose()
+  }
 }
 
 const managerState = Instance.state(
