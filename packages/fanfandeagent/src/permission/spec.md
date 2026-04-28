@@ -84,11 +84,9 @@ flowchart TD
 当前默认注册的工具来自 `src/tool/registry.ts`，包括：
 
 - `read-file`
-- `write-file`
 - `replace-text`
 - `apply-patch`
 - `list-directory`
-- `search-files`
 - `exec_command`
 - 以及实例态 `custom` 工具
 
@@ -147,7 +145,7 @@ flowchart TD
 
 - `read-file` 会约束 `path/startLine/endLine/maxLines`
 - `exec_command` 会约束 `command/workdir/timeoutMs/maxOutputChars/allowUnsafe`
-- `write-file` 会约束 `path/content`
+- `replace-text` 会约束 `file_path/old_string/new_string/replace_all`
 
 ### 2.2 语义提取：permission 层会做二次归纳
 
@@ -308,8 +306,8 @@ flowchart TD
 8. 否则如果开启 `autoApproveSafeRead` 且是低风险 `read/search`：`allow`
 9. 否则如果 `risk === critical`：默认 `deny`
 10. 否则落到工具类别默认策略：
-   - `read/search -> allow`
-   - `write/exec/other -> ask`
+   - `read/search/interaction -> allow`
+   - `write/exec/workflow/delegation/other -> ask`
 
 ### 3.4 规则来源
 

@@ -72,7 +72,6 @@ export interface WorkbenchShellProps {
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
-  onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
@@ -173,7 +172,6 @@ function WorkbenchNodeView({
         onPaneTabDrop={props.onPaneTabDrop}
         onPermissionRequestResponse={props.onPermissionRequestResponse}
         onPickComposerAttachments={props.onPickComposerAttachments}
-        onToggleComposerPermissionMode={props.onToggleComposerPermissionMode}
         onRegisterPane={props.onRegisterPane}
         onRemoveComposerAttachment={props.onRemoveComposerAttachment}
         onSelectCreateSessionTab={props.onSelectCreateSessionTab}

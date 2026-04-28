@@ -18,25 +18,12 @@ const ResolveBody = Permission.RequestResolution.extend({
 })
 
 const LegacyRespondBody = z.object({
-  scope: Permission.ApprovalScope.optional(),
   reason: z.string().optional(),
   resume: z.boolean().optional(),
 })
 
-function decisionFromLegacy(approved: boolean, scope?: Permission.ApprovalScope): Permission.Decision {
-  if (!approved) return "deny"
-
-  switch (scope) {
-    case "session":
-      return "allow-session"
-    case "project":
-      return "allow-project"
-    case "forever":
-      return "allow-forever"
-    case "once":
-    default:
-      return "allow-once"
-  }
+function decisionFromLegacy(approved: boolean): Permission.Decision {
+  return approved ? "allow" : "deny"
 }
 
 function safeReadSession(sessionID: string) {
@@ -49,45 +36,6 @@ function safeReadSession(sessionID: string) {
 
 export function PermissionsRoutes() {
   const app = new Hono<AppEnv>()
-
-  app.get("/rules", async (c) => {
-    return c.json({
-      success: true,
-      data: await Permission.listRules(),
-      requestId: c.get("requestId"),
-    })
-  })
-
-  app.post("/rules", async (c) => {
-    const payload = Permission.RuleInput.safeParse(await c.req.json().catch(() => undefined))
-    if (!payload.success) {
-      throw new ApiError(400, "INVALID_PAYLOAD", "Body must be a valid permission rule")
-    }
-
-    const rule = await Permission.createRule(payload.data)
-    return c.json(
-      {
-        success: true,
-        data: rule,
-        requestId: c.get("requestId"),
-      },
-      201,
-    )
-  })
-
-  app.delete("/rules/:id", async (c) => {
-    const id = c.req.param("id")
-    const removed = await Permission.deleteRule(id)
-    if (!removed) {
-      throw new ApiError(404, "PERMISSION_RULE_NOT_FOUND", `Permission rule '${id}' not found`)
-    }
-
-    return c.json({
-      success: true,
-      data: removed,
-      requestId: c.get("requestId"),
-    })
-  })
 
   app.get("/requests", async (c) => {
     const query = ListRequestsQuery.safeParse({
@@ -129,8 +77,7 @@ export function PermissionsRoutes() {
     }
 
     const resolved = await Permission.resolveRequest(id, {
-      decision: decisionFromLegacy(true, payload.data.scope),
-      scope: payload.data.scope,
+      decision: decisionFromLegacy(true),
       note: payload.data.reason,
     }).catch((error) => {
       throw new ApiError(400, "PERMISSION_REQUEST_RESOLUTION_FAILED", error instanceof Error ? error.message : String(error))
@@ -168,8 +115,7 @@ export function PermissionsRoutes() {
     }
 
     const resolved = await Permission.resolveRequest(id, {
-      decision: decisionFromLegacy(false, payload.data.scope),
-      scope: payload.data.scope,
+      decision: decisionFromLegacy(false),
       note: payload.data.reason,
     }).catch((error) => {
       throw new ApiError(400, "PERMISSION_REQUEST_RESOLUTION_FAILED", error instanceof Error ? error.message : String(error))
@@ -208,7 +154,6 @@ export function PermissionsRoutes() {
 
     const resolved = await Permission.resolveRequest(id, {
       decision: payload.data.decision,
-      scope: payload.data.scope,
       note: payload.data.note,
     }).catch((error) => {
       throw new ApiError(400, "PERMISSION_REQUEST_RESOLUTION_FAILED", error instanceof Error ? error.message : String(error))

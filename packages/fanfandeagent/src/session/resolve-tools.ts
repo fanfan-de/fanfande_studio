@@ -11,7 +11,6 @@ export type ResolveToolsInput = {
   agent: Agent.AgentInfo
   sessionID: string
   messageID: string
-  permissionMode?: "default" | "full-access"
   abort: AbortSignal
 }
 
@@ -85,6 +84,17 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
     const evaluatePermission = async (args: Record<string, unknown>, toolCallID?: string) => {
       const cached = toolCallID ? decisionCache.get(toolCallID) : undefined
       if (cached) return cached
+      const runtimeContext: Tool.Context = {
+        sessionID: input.sessionID,
+        messageID: input.messageID,
+        cwd: Instance.directory,
+        worktree: Instance.worktree,
+        abort: input.abort,
+        toolCallID,
+      }
+      const intent = runtime.assessPermission
+        ? await runtime.assessPermission(args, runtimeContext)
+        : undefined
 
       // Ask the permission layer to evaluate this tool call with full context.
       const decision = await Permission.evaluate({
@@ -95,7 +105,6 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
         agent: input.agent.name,
         cwd: Instance.directory,
         worktree: Instance.worktree,
-        permissionMode: input.permissionMode ?? "default",
         tool: {
           id: item.id,
           kind: item.capabilities?.kind ?? "other",
@@ -104,6 +113,7 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
           needsShell: item.capabilities?.needsShell ?? false,
         },
         input: args,
+        intent,
       })
 
       // Cache the decision only when the call has a stable toolCallID.
@@ -141,7 +151,7 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
             messageID: input.messageID,
             cwd: Instance.directory,
             worktree: Instance.worktree,
-            abort: options.abortSignal ?? input.abort,
+            abort: input.abort,
             toolCallID: options.toolCallId,
           }),
         )

@@ -257,10 +257,6 @@ function migrateProjectReferences(fromProjectID: string, toProjectID: string) {
 
   migrateProjectConfigReference(fromProjectID, toProjectID)
 
-  if (db.tableExists("permission_rules")) {
-    db.updateMany("permission_rules", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
-  }
-
   if (db.tableExists("permission_requests")) {
     db.updateMany("permission_requests", { projectID: toProjectID }, [{ column: "projectID", value: fromProjectID }])
   }

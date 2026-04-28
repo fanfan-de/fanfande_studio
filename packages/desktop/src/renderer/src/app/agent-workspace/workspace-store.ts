@@ -6,7 +6,6 @@ import { initialConversations, initialSelection, seedWorkspaces } from "../seed-
 import type {
   ComposerAttachment,
   ComposerDraftState,
-  ComposerPermissionMode,
   CreateSessionTab,
   LeftSidebarView,
   PermissionRequest,
@@ -52,7 +51,6 @@ export interface SessionsSliceState {
 export interface ComposerSliceState {
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
   composerDraftStateByTabKey: Record<string, ComposerDraftState>
-  composerPermissionModeByTabKey: Record<string, ComposerPermissionMode>
   composerRefreshVersion: number
   isCreatingSessionByTabKey: Record<string, boolean>
   isSendingByTabKey: Record<string, boolean>
@@ -106,9 +104,6 @@ export interface ComposerSliceActions {
   ) => void
   setComposerDraftStateByTabKey: (
     update: WorkspaceStateUpdater<Record<string, ComposerDraftState>>,
-  ) => void
-  setComposerPermissionModeByTabKey: (
-    update: WorkspaceStateUpdater<Record<string, ComposerPermissionMode>>,
   ) => void
   setComposerRefreshVersion: (update: WorkspaceStateUpdater<number>) => void
   setIsCreatingSessionByTabKey: (update: WorkspaceStateUpdater<Record<string, boolean>>) => void
@@ -210,11 +205,6 @@ export function createWorkspaceStore({
             [initialComposerTabKey]: createComposerDraftStateFromPlainText(
               "Help me align the desktop sidebar with the Pencil design.",
             ),
-          }
-        : {},
-      composerPermissionModeByTabKey: initialComposerTabKey
-        ? {
-            [initialComposerTabKey]: "default",
           }
         : {},
       composerRefreshVersion: 0,
@@ -351,13 +341,6 @@ export function createWorkspaceStore({
           composer: {
             ...state.composer,
             composerDraftStateByTabKey: resolveStateUpdate(state.composer.composerDraftStateByTabKey, update),
-          },
-        })),
-      setComposerPermissionModeByTabKey: (update) =>
-        set((state) => ({
-          composer: {
-            ...state.composer,
-            composerPermissionModeByTabKey: resolveStateUpdate(state.composer.composerPermissionModeByTabKey, update),
           },
         })),
       setComposerRefreshVersion: (update) =>
@@ -523,7 +506,6 @@ export const workspaceStoreSelectors = {
       draftState: tabKey ? state.composer.composerDraftStateByTabKey[tabKey] : undefined,
       isCreatingSession: tabKey ? Boolean(state.composer.isCreatingSessionByTabKey[tabKey]) : false,
       isSending: tabKey ? Boolean(state.composer.isSendingByTabKey[tabKey]) : false,
-      permissionMode: tabKey ? state.composer.composerPermissionModeByTabKey[tabKey] : undefined,
     }),
   workbenchLayout: (state: WorkspaceStore) => state.workbench.workbenchLayout,
 }

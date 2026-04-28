@@ -40,7 +40,6 @@ const PLAN_AGENT_TOOL_POLICY: Record<string, boolean> = {
   "glob": true,
   "grep": true,
   "list-directory": true,
-  "search-files": true,
   "web_fetch": true,
   "lsp_definition": true,
   "lsp_references": true,

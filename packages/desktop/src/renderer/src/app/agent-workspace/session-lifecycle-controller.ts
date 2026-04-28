@@ -6,7 +6,6 @@ import {
   removeConversationSession,
 } from "../conversation-state"
 import type {
-  ComposerPermissionMode,
   CreateSessionTab,
   PendingAgentStream,
   PermissionRequest,
@@ -47,7 +46,6 @@ import {
   createCreateSessionWorkbenchTab,
   createSessionWorkbenchTab,
   findLatestSideChatForAnchor,
-  getWorkbenchTabKey,
   resolveCreateSessionWorkspaceID,
   resolveWorkbenchGroupID,
 } from "./workspace-derived-state"
@@ -89,7 +87,6 @@ interface UseSessionLifecycleControllerOptions {
     dispatch(action: { type: "session.cleanup"; sessionID: string }): void
   }>
   canLoadSessionHistory: boolean
-  composerPermissionModeByTabKey: Record<string, ComposerPermissionMode>
   createSessionTabs: CreateSessionTab[]
   createSessionWorkspaceID: string | null
   deletingSessionID: string | null
@@ -116,7 +113,6 @@ interface UseSessionLifecycleControllerOptions {
   setActiveSideChatSessionIDByParentSessionID: StateSetter<Record<string, string>>
   setAgentSessions: StateSetter<Record<string, string>>
   setCanLoadSessionHistory: StateSetter<boolean>
-  setComposerPermissionModeByTabKey: StateSetter<Record<string, ComposerPermissionMode>>
   setConversations: StateSetter<Record<string, Turn[]>>
   setContextUsageBySession: StateSetter<Record<string, SessionContextUsage>>
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
@@ -155,7 +151,6 @@ export function useSessionLifecycleController({
   activeSideChatSessionIDByParentSessionID,
   activeWorkspace,
   agentSessionStoreRef,
-  composerPermissionModeByTabKey,
   conversationVersionRef,
   createSessionTabs,
   createSessionWorkspaceID,
@@ -182,7 +177,6 @@ export function useSessionLifecycleController({
   setActiveSideChatSessionIDByParentSessionID,
   setAgentSessions,
   setCanLoadSessionHistory,
-  setComposerPermissionModeByTabKey,
   setContextUsageBySession,
   setConversations,
   setCreateSessionTabs,
@@ -352,15 +346,6 @@ export function useSessionLifecycleController({
         ...prev,
         [created.session.id]: created.session.directory,
       }))
-      if (createTabKey) {
-        const nextSessionTabKey = getWorkbenchTabKey(createSessionWorkbenchTab(created.session.id))
-        setComposerPermissionModeByTabKey((current) => {
-          const next = { ...current }
-          next[nextSessionTabKey] = current[createTabKey] ?? "default"
-          delete next[createTabKey]
-          return next
-        })
-      }
       setCanLoadSessionHistory(true)
       if (options?.skipInitialHistoryLoad) {
         skipNextHistoryLoadRef.current[created.session.id] = true
@@ -618,7 +603,6 @@ export function useSessionLifecycleController({
         anchorMessageID,
       })
       const nextSession = mapLoadedSession(created.session, parentSelection.workspace.sessions.length)
-      const nextTabKey = getWorkbenchTabKey(createSessionWorkbenchTab(created.session.id))
 
       setWorkspaces((prev) => upsertSessionInWorkspace(prev, parentSelection.workspace!.id, nextSession))
       setConversations((prev) => ({
@@ -632,10 +616,6 @@ export function useSessionLifecycleController({
       setSessionDirectoryBySession((prev) => ({
         ...prev,
         [created.session.id]: created.session.directory,
-      }))
-      setComposerPermissionModeByTabKey((current) => ({
-        ...current,
-        [nextTabKey]: "default",
       }))
       setCanLoadSessionHistory(true)
       await activateSideChatThread(parentSessionID, created.session.id, parentSelection.workspace.id)

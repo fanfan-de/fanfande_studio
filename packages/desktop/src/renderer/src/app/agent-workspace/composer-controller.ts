@@ -11,7 +11,6 @@ import type {
   ComposerAttachment,
   ComposerCommentReference,
   ComposerDraftState,
-  ComposerPermissionMode,
   CreateSessionTab,
   OpenAIReasoningEffort,
   PendingAgentStream,
@@ -23,7 +22,7 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import { getAgentSessionBridge } from "../agent-session/client"
-import { findSession, findWorkspaceByID, isSideChatSession } from "../workspace"
+import { findSession, findWorkspaceByID } from "../workspace"
 import {
   normalizeQuestionAnswerText,
   sendPromptToSession as sendPromptToSessionService,
@@ -50,7 +49,6 @@ interface UseComposerControllerOptions {
   appendConversationTurns: (sessionID: string, nextTurns: Turn[]) => void
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
   composerDraftStateByTabKey: Record<string, ComposerDraftState>
-  composerPermissionModeByTabKey: Record<string, ComposerPermissionMode>
   createSessionForWorkspace: (
     workspace: WorkspaceGroup,
     options?: {
@@ -78,7 +76,6 @@ interface UseComposerControllerOptions {
   setAgentSessions: StateSetter<Record<string, string>>
   setComposerAttachmentsByTabKey: StateSetter<Record<string, ComposerAttachment[]>>
   setComposerDraftStateByTabKey: StateSetter<Record<string, ComposerDraftState>>
-  setComposerPermissionModeByTabKey: StateSetter<Record<string, ComposerPermissionMode>>
   setIsSendingByTabKey: StateSetter<Record<string, boolean>>
   setPendingPermissionRequestsBySession: StateSetter<Record<string, PermissionRequest[]>>
   setPermissionRequestActionError: StateSetter<string | null>
@@ -103,7 +100,6 @@ export function useComposerController({
   appendConversationTurns,
   composerAttachmentsByTabKey,
   composerDraftStateByTabKey,
-  composerPermissionModeByTabKey,
   createSessionForWorkspace,
   createSessionTabs,
   isSendingByTabKey,
@@ -122,7 +118,6 @@ export function useComposerController({
   setAgentSessions,
   setComposerAttachmentsByTabKey,
   setComposerDraftStateByTabKey,
-  setComposerPermissionModeByTabKey,
   setIsSendingByTabKey,
   setPendingPermissionRequestsBySession,
   setPermissionRequestActionError,
@@ -162,7 +157,6 @@ export function useComposerController({
     backendSessionID?: string | null
     commentReferences?: ComposerCommentReference[]
     displayText?: string
-    permissionMode: ComposerPermissionMode
     preserveComposerState?: boolean
     questionAnswer?: {
       questionID: string
@@ -219,7 +213,6 @@ export function useComposerController({
     const targetSessionID = input?.sessionID ?? activeSessionID
     const targetCreateSessionTabID = input?.createSessionTabID ?? activeCreateSessionTabID
     const attachments = input?.attachmentsOverride ?? (targetTabKey ? composerAttachmentsByTabKey[targetTabKey] ?? [] : [])
-    const permissionMode = targetTabKey ? composerPermissionModeByTabKey[targetTabKey] ?? "default" : "default"
     const draftState = normalizeComposerDraftState(
       input?.draftStateOverride ??
         (targetTabKey ? composerDraftStateByTabKey[targetTabKey] ?? createEmptyComposerDraftState() : createEmptyComposerDraftState()),
@@ -244,7 +237,6 @@ export function useComposerController({
         attachments,
         commentReferences: compiledSubmission.commentReferences,
         displayText: compiledSubmission.displayText,
-        permissionMode,
         preserveComposerState: input?.preserveComposerState,
         questionAnswer: input?.questionAnswer,
         reasoningEffort: input?.selectedReasoningEffort,
@@ -279,7 +271,6 @@ export function useComposerController({
       backendSessionID: created.backendSessionID,
       commentReferences: compiledSubmission.commentReferences,
       displayText: compiledSubmission.displayText,
-      permissionMode,
       preserveComposerState: input?.preserveComposerState,
       questionAnswer: input?.questionAnswer,
       reasoningEffort: input?.selectedReasoningEffort,
@@ -401,21 +392,8 @@ export function useComposerController({
     }))
   }
 
-  function handleComposerPermissionModeToggle(tabKey = activeTabKey) {
-    if (!tabKey) return
-    const tabReference = getWorkbenchTabReferenceFromKey(tabKey)
-    if (tabReference?.kind === "session" && isSideChatSession(findSession(workspaces, tabReference.sessionID).session)) {
-      return
-    }
-    setComposerPermissionModeByTabKey((current) => ({
-      ...current,
-      [tabKey]: current[tabKey] === "full-access" ? "default" : "full-access",
-    }))
-  }
-
   return {
     appendDraftForTab,
-    handleComposerPermissionModeToggle,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleRemoveComposerAttachment,

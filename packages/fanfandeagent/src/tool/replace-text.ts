@@ -7,13 +7,13 @@ import {
 } from "#tool/shared.ts"
 
 const ReplaceTextParameters = z.object({
-  file_path: z.string().min(1).optional().describe("Absolute or project-relative file path."),
+  file_path: z.string().min(1).optional().describe("Single target text file to edit, using an absolute or project-relative path."),
   path: z.string().min(1).optional().describe("Deprecated alias for file_path."),
-  old_string: z.string().optional().describe("Exact text to replace. Use an empty string only when creating a new file."),
+  old_string: z.string().optional().describe("Exact text to replace in one file. Use an empty string only to create one new text file or fill an empty file."),
   search: z.string().optional().describe("Deprecated alias for old_string."),
-  new_string: z.string().optional().describe("Replacement text. Can be empty to delete the matched text."),
+  new_string: z.string().optional().describe("Replacement text, or the complete contents when creating one new text file. Can be empty to delete the matched text."),
   replace: z.string().optional().describe("Deprecated alias for new_string."),
-  replace_all: z.boolean().optional().describe("Replace all matches. When false, the match must be unique."),
+  replace_all: z.boolean().optional().describe("Replace all exact matches in the single target file. When false, the match must be unique."),
   all: z.boolean().optional().describe("Deprecated alias for replace_all."),
 }).superRefine((value, ctx) => {
   if (!value.file_path && !value.path) {
@@ -137,7 +137,7 @@ export const ReplaceTextTool = Tool.define(
   async () => {
     return {
       title: "Replace Text",
-      description: "Edit a single text file by replacing an exact string, using Claude-style old_string/new_string semantics.",
+      description: "Use for focused single-file text edits when you can provide an exact old_string/new_string, or to create one new text file with old_string empty. Prefer apply_patch for coordinated multi-file edits, file moves/deletes, broad structural changes, or when a unified diff is clearer.",
       parameters: ReplaceTextParameters,
       validate: (parameters) => {
         const { oldString, newString } = normalizeParameters(parameters)

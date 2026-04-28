@@ -17,6 +17,11 @@ export const ReadSubagentTool = Tool.define(
       title: "Read Subagent",
       description: "Read the latest status and summarized result of a child agent session.",
       parameters: ReadSubagentParameters,
+      assessPermission: () => ({
+        action: "allow",
+        risk: "low",
+        reason: "Reading subagent status has no side effects.",
+      }),
       execute: async (parameters) => {
         const task = Subtask.readSubtask(parameters.id)
         if (!task) {
@@ -54,7 +59,7 @@ export const ReadSubagentTool = Tool.define(
     title: "Read Subagent",
     aliases: ["read-subagent"],
     capabilities: {
-      kind: "read",
+      kind: "delegation",
       readOnly: true,
       destructive: false,
       concurrency: "safe",

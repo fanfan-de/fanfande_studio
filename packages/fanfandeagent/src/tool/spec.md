@@ -22,8 +22,6 @@
 | `shared.ts` | 提供路径解析、展示路径、文本读写、行范围渲染等公共 helper |
 | `read-file.ts` | 读取文本文件全文或行范围 |
 | `list-directory.ts` | 列出目录内容，可递归 |
-| `search-files.ts` | 在文件或目录范围内做文本搜索 |
-| `write-file.ts` | 写入完整文本文件 |
 | `replace-text.ts` | 对现有文本文件做精确替换 |
 | `apply-patch.ts` | 应用 Git 风格 unified diff |
 | `exec-command.ts` | 在项目边界内执行 Bash 命令 |
@@ -48,6 +46,9 @@
 - `write`
 - `search`
 - `exec`
+- `workflow`
+- `interaction`
+- `delegation`
 - `other`
 
 ### 3.2 内置工具清单
@@ -56,15 +57,25 @@
 | --- | --- | --- | --- | --- |
 | `read-file` | 无 | `read` | `readOnly=true` `destructive=false` `concurrency=safe` | 默认返回前 250 行；支持 `startLine` / `endLine` / `maxLines` |
 | `list-directory` | 无 | `read` | `readOnly=true` `destructive=false` `concurrency=safe` | 默认只列当前层；递归时默认 `maxDepth=3`；默认最多 200 条 |
-| `search-files` | 无 | `search` | `readOnly=true` `destructive=false` `concurrency=safe` | 默认 `maxResults=20`；默认大小写不敏感；目录扫描默认跳过 `.git` 和 `node_modules` |
-| `write-file` | 无 | `write` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 覆盖写入完整文件内容 |
 | `replace-text` | 无 | `write` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 默认只替换首个匹配；`all=true` 时替换所有匹配 |
 | `apply_patch` | `apply-patch` | `write` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 顺序处理多文件 unified diff；支持 create/update/delete/move/unchanged |
+| `AskUserQuestion` | `ask-user-question` `question-tool` `question` | `interaction` | `readOnly=true` `destructive=false` `concurrency=safe` | 向用户展示结构化问题并等待回答 |
+| `EnterPlanMode` | `enter_plan_mode` `enter-plan-mode` | `workflow` | `readOnly=false` `destructive=false` `concurrency=exclusive` | 切换到只读规划工作流 |
+| `ExitPlanMode` | `exit_plan_mode` `exit-plan-mode` | `workflow` | `readOnly=false` `destructive=false` `concurrency=exclusive` | 提交计划并等待批准后回到执行工作流 |
+| `spawn_subagent` | `spawn-subagent` | `delegation` | `readOnly=false` `destructive=false` `concurrency=safe` | 创建子 agent 会话执行委派任务 |
+| `read_subagent` | `read-subagent` | `delegation` | `readOnly=true` `destructive=false` `concurrency=safe` | 读取子 agent 状态和摘要 |
+| `cancel_subagent` | `cancel-subagent` | `delegation` | `readOnly=false` `destructive=true` `concurrency=exclusive` | 取消子 agent 任务 |
 | `exec_command` | `bash` `exec-command` | `exec` | `readOnly=false` `destructive=true` `concurrency=exclusive` `needsShell=true` | 使用 `bash -lc` 执行命令；Windows 下优先解析 Git Bash；默认超时和输出上限来自 `Flag` |
 
 ### 3.3 审批描述能力
 
-当前 7 个内置工具都实现了 `describeApproval()`。权限系统在真正创建审批请求时会优先读取工具提供的审批描述；若工具未实现或运行失败，再退回 permission 层的通用描述。
+会产生审批请求的工具应尽量实现 `describeApproval()`。权限系统在真正创建审批请求时会优先读取工具提供的审批描述；若工具未实现或运行失败，再退回 permission 层的通用描述。
+
+### 3.4 编辑工具选择策略
+
+- `replace-text`：优先用于单文件、精确、范围小的文本编辑；当 `old_string` 为空时，也可用于创建一个新的文本文件。
+- `apply_patch`：优先用于多文件协同修改、创建 / 删除 / 移动文件、结构化重构，或者 diff 上下文比精确字符串替换更清晰的场景。
+- 不建议用 `apply_patch` 处理简单的单文件精确替换；也不建议用 `replace-text` 承担多文件 diff 或文件移动 / 删除。
 
 ## 4. 核心 contract
 
@@ -74,7 +85,7 @@
 | --- | --- | --- | --- |
 | `Metadata` | `tool.ts` | 模块内部别名：`Record<string, unknown>`；被 `ToolOutput` / `ToolAttachment` 等泛型使用，但未单独导出 | 内部 |
 | `Awaitable<T>` | `tool.ts` | `T \| Promise<T>`，统一同步 / 异步 hook 返回值 | 稳定 |
-| `ToolKind` | `tool.ts` | `read` / `write` / `search` / `exec` / `other` | 稳定 |
+| `ToolKind` | `tool.ts` | `read` / `write` / `search` / `exec` / `workflow` / `interaction` / `delegation` / `other` | 稳定 |
 | `ToolConcurrency` | `tool.ts` | `safe` / `exclusive` | 稳定 |
 
 ### 4.2 `ToolCapabilities`
@@ -224,34 +235,18 @@
 - 如果目标路径是文件，不抛错，而是返回“这是一个文件”
 - 遍历顺序直接来自文件系统读取结果，当前未额外排序
 
-### 6.3 `search-files`
-
-- 参数：`query` 必填；`path?`、`glob?`、`caseSensitive?`、`maxResults?`、`includeHidden?`
-- 默认行为：
-  - `path` 默认项目根目录
-  - `glob` 默认 `**/*`
-  - `caseSensitive` 默认 `false`
-  - `maxResults` 默认 `20`
-  - `includeHidden` 默认 `false`
-- 若 `path` 是单文件，只扫描该文件
-- 若 `path` 是目录，使用 `Bun.Glob` 扫描文件，并默认跳过 `.git` 与 `node_modules`
-- 无法按 UTF-8 读取的文件当前会被静默跳过
-
-### 6.4 `write-file`
-
-- 参数：`path`、`content`
-- 当前行为是完整覆盖写入，不做合并或增量编辑
-- 会自动创建缺失的父目录
-
-### 6.5 `replace-text`
+### 6.3 `replace-text`
 
 - 参数：`path`、`search`、`replace`、`all?`
-- `all=true` 时替换全部匹配；否则只替换首个匹配
-- 如果未找到匹配文本，会抛错，不会创建文件
+- 面向单文件精确编辑；需要提供可唯一定位的旧文本与新文本
+- `all=true` 时替换单个文件内全部匹配；否则要求匹配唯一
+- 当文件不存在且旧文本为空时，可创建一个新的文本文件
+- 如果未找到匹配文本，会抛错
 
-### 6.6 `apply_patch`
+### 6.4 `apply_patch`
 
 - 参数只有 `patch`
+- 面向结构化 unified diff，优先用于多文件修改、创建 / 删除 / 移动文件，或需要 diff 上下文的重构
 - 当前支持的 patch 行为：
   - 创建文件
   - 更新文件
@@ -272,7 +267,7 @@
 | `ApplyAction` | 汇总创建、更新、删除、移动、未变更等结果 |
 | `SplitContent` | 保存拆分后的行数组、换行风格和末尾换行状态 |
 
-### 6.7 `exec_command`
+### 6.5 `exec_command`
 
 - 使用 `bash -lc <command>` 执行，不依赖宿主 shell 语义
 - `workdir` 默认当前项目目录
@@ -326,7 +321,8 @@
 当前默认权限策略：
 
 - `read` / `search`：默认 `allow`
-- `write` / `exec` / `other`：默认 `ask`
+- `interaction`：默认 `allow`
+- `write` / `exec` / `workflow` / `delegation` / `other`：默认 `ask`
 - `critical` 风险：默认 `deny`
 
 当模型流里出现 `tool-approval-request` 事件时，`session/processor.ts` 会把工具状态落成 `waiting-approval`，随后 `permission.registerApprovalRequest()` 会：
@@ -385,7 +381,7 @@
 ### P0
 
 - `apply_patch` 的多文件应用目前不是事务性的；中途失败时，前面已经写入的文件不会自动回滚。
-- 现有直接测试覆盖偏向 `exec_command` 和流程层，缺少对 `read-file`、`list-directory`、`search-files`、`write-file`、`replace-text`、`apply_patch` 的细粒度成功 / 失败用例。
+- 现有直接测试覆盖偏向 `exec_command` 和流程层，缺少对 `read-file`、`list-directory`、`replace-text`、`apply_patch` 的细粒度成功 / 失败用例。
 
 ### P1
 
@@ -396,7 +392,7 @@
 ### P2
 
 - 多数工具只返回 `text` / `title`，结构化 `metadata` / `data` 的约定还不统一；后续可以补稳定的 machine-readable 输出。
-- `list-directory` / `search-files` 的输出顺序与截断信息还不够稳定；后续可补排序策略与结构化统计。
+- `list-directory` 的输出顺序与截断信息还不够稳定；后续可补排序策略与结构化统计。
 ## 10. Addendum: `web_fetch`
 
 `web_fetch` is a built-in read-only tool implemented in `src/tool/web-fetch.ts` and registered from `registry.ts`.

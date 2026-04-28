@@ -186,8 +186,8 @@ function createPermissionRequest(overrides: PermissionRequestPromptOverrides = {
         paths: ["README.md"],
         workdir: "C:\\Projects\\fanfande_studio",
       },
-      allowedDecisions: ["deny", "allow-once", "allow-session", "allow-project"],
-      recommendedDecision: "allow-once",
+      allowedDecisions: ["deny", "allow"],
+      recommendedDecision: "allow",
     },
   }
 
@@ -214,12 +214,10 @@ function createPermissionRequest(overrides: PermissionRequestPromptOverrides = {
   const resolution = Object.prototype.hasOwnProperty.call(overrides, "resolution")
     ? overrides.resolution
       ? {
-          decision: overrides.resolution.decision ?? "allow-once",
+          decision: overrides.resolution.decision ?? "allow",
           note: overrides.resolution.note,
           approved: overrides.resolution.approved ?? true,
-          scope: overrides.resolution.scope ?? "once",
           resolvedAt: overrides.resolution.resolvedAt ?? 120,
-          createdRuleID: overrides.resolution.createdRuleID,
         }
       : overrides.resolution
     : base.resolution
@@ -238,9 +236,8 @@ function createPermissionResolveResult(overrides: PermissionRequestPromptOverrid
       ...overrides,
       status: overrides.status ?? "approved",
       resolution: overrides.resolution ?? {
-        decision: "allow-once",
+        decision: "allow",
         approved: true,
-        scope: "once",
         resolvedAt: 120,
       },
     }),
@@ -3502,7 +3499,7 @@ describe("App", () => {
           {
             id: "tool-2",
             type: "tool",
-            tool: "write-file",
+            tool: "replace-text",
             state: {
               status: "completed",
               output: "README updated",
@@ -3569,9 +3566,9 @@ describe("App", () => {
     expect(within(sectionElements[1] as HTMLElement).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
 
     expect(within(sectionElements[2] as HTMLElement).getByText("Evaluating test output.")).toBeInTheDocument()
-    expect(within(sectionElements[2] as HTMLElement).queryByRole("button", { name: /write-file.*completed/i })).not.toBeInTheDocument()
+    expect(within(sectionElements[2] as HTMLElement).queryByRole("button", { name: /replace-text.*completed/i })).not.toBeInTheDocument()
 
-    expect(within(sectionElements[3] as HTMLElement).getByRole("button", { name: /write-file.*completed/i })).toBeInTheDocument()
+    expect(within(sectionElements[3] as HTMLElement).getByRole("button", { name: /replace-text.*completed/i })).toBeInTheDocument()
     expect(within(sectionElements[3] as HTMLElement).queryByText("Evaluating test output.")).not.toBeInTheDocument()
 
     expect(within(sectionElements[4] as HTMLElement).getByText("All checks passed.")).toBeInTheDocument()
@@ -4371,7 +4368,7 @@ describe("App", () => {
     expect(within(approvalPanel).getByRole("heading", { name: "Read repo config" })).toBeInTheDocument()
     expect(within(approvalPanel).getByText("Read README.md")).toBeInTheDocument()
     expect(getComposerSendButton()).toBeDisabled()
-    expect(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" })).toBeInTheDocument()
+    expect(within(approvalPanel).getByRole("button", { name: "Allow Read repo config" })).toBeInTheDocument()
     expect(within(approvalPanel).getByRole("button", { name: "Deny Read repo config" })).toBeInTheDocument()
     await waitFor(() => {
       expect(window.desktop!.agentSession!.loadPermissionRequests).toHaveBeenCalledWith({
@@ -4454,12 +4451,12 @@ describe("App", () => {
     render(<App />)
 
     const approvalPanel = await screen.findByRole("region", { name: "Tool approval request" })
-    fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" }))
+    fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow Read repo config" }))
 
     await waitFor(() => {
       expect(window.desktop!.agentSession!.respondPermissionRequest).toHaveBeenCalledWith({
         requestID: "permission-atlas-1",
-        decision: "allow-once",
+        decision: "allow",
         note: undefined,
         resume: false,
       })
@@ -4696,12 +4693,12 @@ describe("App", () => {
     expect(await screen.findByText("Waiting for permission approval before the tool can continue.")).toBeInTheDocument()
 
     const approvalPanel = await screen.findByRole("region", { name: "Tool approval request" })
-    fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" }))
+    fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow Read repo config" }))
 
     await waitFor(() => {
       expect(window.desktop!.agentSession!.respondPermissionRequest).toHaveBeenCalledWith({
         requestID: "permission-atlas-1",
-        decision: "allow-once",
+        decision: "allow",
         note: undefined,
         resume: false,
       })
@@ -4781,7 +4778,7 @@ describe("App", () => {
     render(<App />)
 
     const approvalPanel = await screen.findByRole("region", { name: "Tool approval request" })
-    fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow once Read repo config" }))
+    fireEvent.click(within(approvalPanel).getByRole("button", { name: "Allow Read repo config" }))
 
     await waitFor(() => {
       expect(screen.queryByRole("region", { name: "Tool approval request" })).not.toBeInTheDocument()

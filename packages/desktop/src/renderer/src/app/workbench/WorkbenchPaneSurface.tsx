@@ -149,7 +149,6 @@ export interface WorkbenchPaneSurfaceProps {
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
-  onToggleComposerPermissionMode: AgentWorkspaceState["handleComposerPermissionModeToggle"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
@@ -190,7 +189,6 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onPaneTabDrop,
   onPermissionRequestResponse,
   onPickComposerAttachments,
-  onToggleComposerPermissionMode,
   onRegisterPane,
   onRemoveComposerAttachment,
   onSelectCreateSessionTab,
@@ -284,7 +282,6 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
                   onMcpToggle={composer.handleMcpToggle}
                   reasoningEffortOptions={composer.reasoningEffortOptions}
-                  permissionMode={pane.composerPermissionMode}
                   selectedMcpServerIDs={composer.selectedMcpServerIDs}
                   selectedModel={composer.selectedModel}
                   selectedModelLabel={composer.selectedModelLabel}
@@ -297,7 +294,6 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
                   workspaceDirectory={pane.workspace?.directory ?? null}
                   onModelChange={composer.handleModelChange}
-                  onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
                   onReasoningEffortChange={composer.handleReasoningEffortChange}
                   onPickAttachments={() =>
                     onPickComposerAttachments({
@@ -326,10 +322,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   contextWindow={composer.contextWindow}
                   gitDirectory={pane.workspace?.directory ?? null}
                   gitProjectID={pane.projectID}
-                  permissionMode={pane.composerPermissionMode}
-                  onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
                   showGitControls
-                  showPermissionToggle
                   usage={null}
                 />
               </div>
@@ -434,7 +427,6 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
                   onMcpToggle={readOnlySideChat ? undefined : composer.handleMcpToggle}
                   reasoningEffortOptions={composer.reasoningEffortOptions}
-                  permissionMode={pane.composerPermissionMode}
                   selectedMcpServerIDs={composer.selectedMcpServerIDs}
                   selectedModel={composer.selectedModel}
                   selectedModelLabel={composer.selectedModelLabel}
@@ -447,7 +439,6 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
                   workspaceDirectory={pane.workspace?.directory ?? null}
                   onModelChange={composer.handleModelChange}
-                  onPermissionModeToggle={readOnlySideChat ? undefined : () => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
                   onReasoningEffortChange={composer.handleReasoningEffortChange}
                   onPickAttachments={() =>
                     onPickComposerAttachments({
@@ -479,10 +470,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   contextWindow={composer.contextWindow}
                   gitDirectory={pane.workspace?.directory ?? null}
                   gitProjectID={pane.projectID}
-                  permissionMode={pane.composerPermissionMode}
-                  onPermissionModeToggle={() => pane.tabKey && onToggleComposerPermissionMode(pane.tabKey)}
                   showGitControls={!readOnlySideChat}
-                  showPermissionToggle={!readOnlySideChat}
                   usage={pane.activeSessionContextUsage}
                 />
               </div>

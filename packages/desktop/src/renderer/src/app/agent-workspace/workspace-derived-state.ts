@@ -2,7 +2,6 @@ import { createEmptyComposerDraftState } from "../composer/draft-state"
 import type {
   ComposerAttachment,
   ComposerDraftState,
-  ComposerPermissionMode,
   CreateSessionTab,
   PermissionRequest,
   SessionContextUsage,
@@ -30,7 +29,6 @@ import {
   type WorkbenchLayoutState,
 } from "../workbench/core"
 import { findSession, findWorkspaceByID, isSideChatSession, isWorkspaceAvailable } from "../workspace"
-import { resolveComposerPermissionModeForSession } from "./composer-send-service"
 import {
   DEFAULT_SESSION_DIFF_STATE,
   DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
@@ -205,7 +203,6 @@ interface BuildWorkspaceDerivedStateInput {
   activeSideChatSessionIDByParentSessionID: Record<string, string>
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
   composerDraftStateByTabKey: Record<string, ComposerDraftState>
-  composerPermissionModeByTabKey: Record<string, ComposerPermissionMode>
   contextUsageBySession: Record<string, SessionContextUsage>
   conversations: Record<string, Turn[]>
   createSessionTabs: CreateSessionTab[]
@@ -233,7 +230,6 @@ export function buildWorkspaceDerivedState({
   activeSideChatSessionIDByParentSessionID,
   composerAttachmentsByTabKey,
   composerDraftStateByTabKey,
-  composerPermissionModeByTabKey,
   contextUsageBySession,
   conversations,
   createSessionTabs,
@@ -357,9 +353,6 @@ export function buildWorkspaceDerivedState({
   const canInsertPreviewCommentsIntoDraft = Boolean(activeTabKey)
   const canInsertWorkspaceFileCommentsIntoDraft = Boolean(activeTabKey)
   const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
-  const composerPermissionMode = activeTabKey
-    ? resolveComposerPermissionModeForSession(activeSession, composerPermissionModeByTabKey[activeTabKey] ?? "default")
-    : "default"
   const isSending = activeTabKey ? Boolean(isSendingByTabKey[activeTabKey]) : false
   const isCreatingSession = activeTabKey ? Boolean(isCreatingSessionByTabKey[activeTabKey]) : false
   const canvasSessionTabs = focusedPane
@@ -471,12 +464,6 @@ export function buildWorkspaceDerivedState({
       activeSessionSelectedDiffFile: currentActiveSessionID ? selectedDiffFileBySession[currentActiveSessionID] ?? null : null,
       activeTurns: currentActiveSessionID ? conversations[currentActiveSessionID] ?? [] : [],
       composerAttachments: currentActiveTabKey ? composerAttachmentsByTabKey[currentActiveTabKey] ?? [] : [],
-      composerPermissionMode: currentActiveTabKey
-        ? resolveComposerPermissionModeForSession(
-            currentSession,
-            composerPermissionModeByTabKey[currentActiveTabKey] ?? "default",
-          )
-        : "default",
       composerProjectID:
         isInitialWorkspaceLoadPending && currentWorkspace && seedWorkspaceIDs.has(currentWorkspace.id)
           ? null
@@ -549,7 +536,6 @@ export function buildWorkspaceDerivedState({
     canInsertPreviewCommentsIntoDraft,
     canInsertWorkspaceFileCommentsIntoDraft,
     composerAttachments,
-    composerPermissionMode,
     createSessionTitle,
     createSessionWorkspaceID,
     draftState,

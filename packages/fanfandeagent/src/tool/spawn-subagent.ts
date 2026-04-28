@@ -2,7 +2,6 @@ import z from "zod"
 import type { JSONValue } from "@ai-sdk/provider"
 import * as Tool from "#tool/tool.ts"
 import * as Subtask from "#session/subtask.ts"
-import * as Message from "#session/message.ts"
 import { renderSubtaskText, toSubtaskModelValue } from "#tool/subagent-shared.ts"
 
 const SpawnSubagentParameters = z.object({
@@ -16,7 +15,6 @@ const SpawnSubagentParameters = z.object({
     })
     .optional()
     .describe("Optional provider/model override for the child session."),
-  permissionMode: Message.PermissionMode.optional().describe("Permission mode for the child session."),
   runInBackground: z.boolean().optional().describe("Run asynchronously and return immediately."),
   system: z.string().optional().describe("Extra system guidance appended to the default subagent instructions."),
   skills: z.array(z.string()).optional().describe("Optional skill ids requested for the child session."),
@@ -45,7 +43,6 @@ export const SpawnSubagentTool = Tool.define(
           prompt: parameters.prompt,
           agent: parameters.agent ?? "default",
           model: parameters.model,
-          permissionMode: parameters.permissionMode,
           runInBackground: parameters.runInBackground,
           system: parameters.system,
           skills: parameters.skills,
@@ -77,7 +74,7 @@ export const SpawnSubagentTool = Tool.define(
     title: "Spawn Subagent",
     aliases: ["spawn-subagent"],
     capabilities: {
-      kind: "other",
+      kind: "delegation",
       readOnly: false,
       destructive: false,
       concurrency: "safe",

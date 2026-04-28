@@ -325,7 +325,7 @@ type BuiltinToolListEnvelope = JsonEnvelope<{
     description: string
     aliases: string[]
     capabilities: {
-      kind?: "read" | "write" | "search" | "exec" | "other"
+      kind?: "read" | "write" | "search" | "exec" | "workflow" | "interaction" | "delegation" | "other"
       readOnly?: boolean
       destructive?: boolean
       concurrency?: "safe" | "exclusive"

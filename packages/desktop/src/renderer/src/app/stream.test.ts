@@ -558,15 +558,16 @@ describe("stream trace reducer", () => {
         part: {
           id: "tool-with-inputs",
           type: "tool",
-          tool: "write-file",
+          tool: "replace-text",
           state: {
             status: "completed",
             input: {
-              path: "notes.txt",
-              content: "input-marker",
+              file_path: "notes.txt",
+              old_string: "old-marker",
+              new_string: "input-marker",
             },
             output: "output-marker",
-            title: "Wrote notes.txt",
+            title: "Updated notes.txt",
           },
         },
       },
@@ -574,10 +575,10 @@ describe("stream trace reducer", () => {
 
     const toolItems = turn.items.filter((item) => item.kind === "tool")
     expect(toolItems).toHaveLength(1)
-    expect(toolItems[0]?.toolInputText).toContain("\"path\": \"notes.txt\"")
-    expect(toolItems[0]?.toolInputText).toContain("\"content\": \"input-marker\"")
+    expect(toolItems[0]?.toolInputText).toContain("\"file_path\": \"notes.txt\"")
+    expect(toolItems[0]?.toolInputText).toContain("\"new_string\": \"input-marker\"")
     expect(toolItems[0]?.toolOutputText).toBe("output-marker")
-    expect(toolItems[0]?.detail).toBe("Wrote notes.txt")
+    expect(toolItems[0]?.detail).toBe("Updated notes.txt")
   })
 
   it("preserves the full streamed tool input while the call is running", () => {

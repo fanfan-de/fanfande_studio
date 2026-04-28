@@ -24,15 +24,12 @@ interface JsonEnvelope<T = Record<string, unknown>> {
 }
 
 type PermissionRequestRecord = z.infer<typeof Permission.Request>
-type PermissionRuleRecord = z.infer<typeof Permission.Rule>
 
 type PermissionRequestResponse = JsonEnvelope<{
   request: PermissionRequestRecord
-  rule?: PermissionRuleRecord
 }>
 
 type PermissionRequestListResponse = JsonEnvelope<PermissionRequestRecord[]>
-type PermissionRuleListResponse = JsonEnvelope<PermissionRuleRecord[]>
 
 async function createGitRepo(root: string, seed: string) {
   await mkdir(root, { recursive: true })
@@ -140,9 +137,7 @@ test("permission api approves a waiting tool request and completes the tool part
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          scope: "once",
-        }),
+        body: JSON.stringify({}),
       },
     )
     const approveBody = (await approveResponse.json()) as PermissionRequestResponse
@@ -177,10 +172,9 @@ test("permission api approves a waiting tool request and completes the tool part
   }
 }, 120000)
 
-test("permission api deny creates a persisted rule and marks the tool part denied", async () => {
+test("permission api deny marks the tool part denied without creating persisted rules", async () => {
   const app = createServerApp()
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-permission-api-deny-"))
-  let createdRuleID: string | undefined
 
   try {
     await createGitRepo(repositoryRoot, "permission-api-deny")
@@ -192,7 +186,6 @@ test("permission api deny creates a persisted rule and marks the tool part denie
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          scope: "project",
           reason: "Need explicit review first.",
         }),
       },
@@ -202,16 +195,7 @@ test("permission api deny creates a persisted rule and marks the tool part denie
     expect(denyResponse.status).toBe(200)
     expect(denyBody.success).toBe(true)
     expect(denyBody.data?.request.status).toBe("denied")
-    expect(denyBody.data?.rule?.scope).toBe("project")
-    expect(denyBody.data?.rule?.effect).toBe("deny")
-
-    createdRuleID = denyBody.data?.rule?.id
-
-    const rulesResponse = await app.request("http://localhost/api/permissions/rules")
-    const rulesBody = (await rulesResponse.json()) as PermissionRuleListResponse
-
-    expect(rulesResponse.status).toBe(200)
-    expect(rulesBody.data?.some((rule) => rule.id === createdRuleID)).toBe(true)
+    expect("rule" in (denyBody.data ?? {})).toBe(false)
 
     const toolPart = findToolPart(seeded.messageID, seeded.toolCallID)
     expect(toolPart?.state.status).toBe("denied")
@@ -219,9 +203,6 @@ test("permission api deny creates a persisted rule and marks the tool part denie
       expect(toolPart.state.reason).toContain("Need explicit review first.")
     }
   } finally {
-    if (createdRuleID) {
-      await Permission.deleteRule(createdRuleID)
-    }
     await rm(repositoryRoot, { recursive: true, force: true })
   }
 }, 120000)
@@ -239,9 +220,7 @@ test("permission api approval keeps tool history consistent when the approved ex
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          scope: "once",
-        }),
+        body: JSON.stringify({}),
       },
     )
     const approveBody = (await approveResponse.json()) as PermissionRequestResponse

@@ -1728,7 +1728,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       _event,
       input: {
         requestID: string
-        decision: "allow-once" | "allow-session" | "allow-project" | "allow-forever" | "deny"
+        decision: "allow" | "deny"
         note?: string
         resume?: boolean
       },
@@ -1755,7 +1755,6 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       text: input.text,
       attachments: input.attachments,
       questionAnswer: input.questionAnswer,
-      permissionMode: input.permissionMode,
       reasoningEffort: input.reasoningEffort,
       system: input.system,
       agent: input.agent,

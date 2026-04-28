@@ -6,20 +6,21 @@ export const Action = z.enum(["allow", "deny", "ask"]).meta({
 })
 export type Action = z.infer<typeof Action>
 
-export const RuleScope = z.enum(["global", "project", "session"]).meta({
-  ref: "PermissionRuleScope",
-})
-export type RuleScope = z.infer<typeof RuleScope>
+export const Decision = z.preprocess((value) => {
+  if (
+    value === "allow-once" ||
+    value === "allow-session" ||
+    value === "allow-project" ||
+    value === "allow-forever"
+  ) {
+    return "allow"
+  }
 
-export const ApprovalScope = z.enum(["once", "session", "project", "forever"]).meta({
-  ref: "PermissionApprovalScope",
-})
-export type ApprovalScope = z.infer<typeof ApprovalScope>
-
-export const Decision = z.enum(["allow-once", "allow-session", "allow-project", "allow-forever", "deny"]).meta({
+  return value
+}, z.enum(["allow", "deny"])).meta({
   ref: "PermissionDecision",
 })
-export type Decision = z.infer<typeof Decision>
+export type Decision = z.output<typeof Decision>
 
 export const RequestStatus = z.enum(["pending", "approved", "denied", "expired"]).meta({
   ref: "PermissionRequestStatus",
@@ -31,65 +32,10 @@ export const Risk = z.enum(["low", "medium", "high", "critical"]).meta({
 })
 export type Risk = z.infer<typeof Risk>
 
-export const ToolKind = z.enum(["read", "write", "search", "exec", "other"]).meta({
+export const ToolKind = z.enum(["read", "write", "search", "exec", "workflow", "interaction", "delegation", "other"]).meta({
   ref: "PermissionToolKind",
 })
 export type ToolKind = z.infer<typeof ToolKind>
-
-export const Rule = z
-  .object({
-    id: Identifier.schema("permission"),
-    scope: RuleScope,
-    projectID: z.string().optional(),
-    sessionID: Identifier.schema("session").optional(),
-    agent: z.string().optional(),
-    effect: Action,
-    tools: z.array(z.string()).optional(),
-    toolKinds: z.array(ToolKind).optional(),
-    paths: z.array(z.string()).optional(),
-    commands: z.array(z.string()).optional(),
-    risk: z.array(Risk).optional(),
-    destructive: z.boolean().optional(),
-    readOnly: z.boolean().optional(),
-    needsShell: z.boolean().optional(),
-    priority: z.number().int().optional(),
-    enabled: z.boolean().optional(),
-    reason: z.string().optional(),
-    createdAt: z.number(),
-    updatedAt: z.number(),
-    createdBy: z.enum(["system", "user", "approval"]).optional(),
-  })
-  .meta({
-    ref: "PermissionRule",
-  })
-export type Rule = z.infer<typeof Rule>
-
-export const RuleInput = Rule.omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-})
-  .partial({
-    enabled: true,
-    priority: true,
-    reason: true,
-    projectID: true,
-    sessionID: true,
-    agent: true,
-    tools: true,
-    toolKinds: true,
-    paths: true,
-    commands: true,
-    risk: true,
-    destructive: true,
-    readOnly: true,
-    needsShell: true,
-    createdBy: true,
-  })
-  .meta({
-    ref: "PermissionRuleInput",
-  })
-export type RuleInput = z.infer<typeof RuleInput>
 
 export const RequestResource = z
   .object({
@@ -136,9 +82,7 @@ export const RequestResolutionRecord = z
     decision: Decision,
     note: z.string().optional(),
     approved: z.boolean(),
-    scope: ApprovalScope.optional(),
     resolvedAt: z.number(),
-    createdRuleID: Identifier.schema("permission").optional(),
   })
   .meta({
     ref: "PermissionRequestResolutionRecord",
@@ -165,7 +109,6 @@ export const Request = z
     runtime: RequestRuntime.optional(),
     createdAt: z.number(),
     resolvedAt: z.number().optional(),
-    resolutionScope: ApprovalScope.optional(),
     resolutionReason: z.string().optional(),
     resolution: RequestResolutionRecord.optional(),
   })
@@ -177,7 +120,6 @@ export type Request = z.infer<typeof Request>
 export const RequestResolution = z
   .object({
     decision: Decision,
-    scope: ApprovalScope.optional(),
     note: z.string().optional(),
   })
   .meta({
@@ -214,8 +156,6 @@ export const Audit = z
     tool: z.string(),
     action: Action,
     reason: z.string(),
-    matchedRuleID: Identifier.schema("permission").optional(),
-    matchedScope: RuleScope.optional(),
     risk: Risk,
     inputSummary: z.string().optional(),
     createdAt: z.number(),
@@ -224,28 +164,3 @@ export const Audit = z
     ref: "PermissionAudit",
   })
 export type Audit = z.infer<typeof Audit>
-
-export const ConfigDefaults = z
-  .object({
-    read: Action.optional(),
-    write: Action.optional(),
-    search: Action.optional(),
-    exec: Action.optional(),
-    other: Action.optional(),
-  })
-  .meta({
-    ref: "PermissionConfigDefaults",
-  })
-export type ConfigDefaults = z.infer<typeof ConfigDefaults>
-
-export const Config = z
-  .object({
-    defaults: ConfigDefaults.optional(),
-    rules: z.array(RuleInput).optional(),
-    autoApproveSafeRead: z.boolean().optional(),
-    rememberApprovalsByDefault: z.boolean().optional(),
-  })
-  .meta({
-    ref: "PermissionConfig",
-  })
-export type Config = z.infer<typeof Config>

@@ -46,7 +46,6 @@ export const StreamSessionMessageBody = z.object({
   system: z.string().optional(),
   agent: z.string().optional(),
   skills: z.array(z.string()).optional(),
-  permissionMode: z.enum(["default", "full-access"]).optional(),
   reasoningEffort: Message.OpenAIReasoningEffort.optional(),
   model: z
     .object({
@@ -560,7 +559,6 @@ export function createMessageStreamResponse(input: {
     questionAnswerOptions: input.payload.questionAnswer?.selectedOptions?.length ?? 0,
     attachmentCount: input.payload.attachments?.length ?? 0,
     attachments: (input.payload.attachments ?? []).map((attachment) => summarizeAttachmentInput(attachment)),
-    permissionMode: input.payload.permissionMode ?? "default",
     reasoningEffort: input.payload.reasoningEffort ?? "default",
     model: input.payload.model ? `${input.payload.model.providerID}/${input.payload.model.modelID}` : "default",
     skillCount: input.payload.skills?.length ?? 0,
@@ -582,7 +580,6 @@ export function createMessageStreamResponse(input: {
             system: input.payload.system,
             agent: input.payload.agent,
             skills: input.payload.skills,
-            permissionMode: input.payload.permissionMode,
             reasoningEffort: input.payload.reasoningEffort,
             model: input.payload.model,
           })

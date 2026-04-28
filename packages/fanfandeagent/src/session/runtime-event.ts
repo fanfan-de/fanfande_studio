@@ -50,7 +50,6 @@ const PermissionRequestedPayload = z.object({
 const PermissionResolvedPayload = z.object({
   request: Permission.Request,
   part: Message.PermissionPart,
-  rule: Permission.Rule.optional(),
 })
 
 const TurnCompletedPayload = z.object({

@@ -366,9 +366,9 @@ export const ApplyPatchTool = Tool.define(
   async () => {
     return {
       title: "Apply Patch",
-      description: "Apply a Git-style unified diff patch to project files.",
+      description: "Use for structured Git-style unified diffs, especially coordinated multi-file edits, creating/deleting/moving files, or changes where patch context is clearer. Prefer replace-text for one small exact single-file replacement.",
       parameters: z.object({
-        patch: z.string().min(1).describe("Unified diff text (Git format) containing one or more file patches."),
+        patch: z.string().min(1).describe("Unified diff text (Git format) containing one or more file patches. Use this for multi-file or structural edits; use replace-text for a simple exact edit in one file."),
       }),
       describeApproval: (parameters, ctx) => {
         const filePatches = parseUnifiedDiff(parameters.patch)

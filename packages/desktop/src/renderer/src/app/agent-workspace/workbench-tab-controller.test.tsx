@@ -80,7 +80,6 @@ function useWorkbenchHarness() {
     activeSideChatSessionIDByParentSessionID: {},
     composerAttachmentsByTabKey: {},
     composerDraftStateByTabKey: {},
-    composerPermissionModeByTabKey: {},
     contextUsageBySession: {},
     conversations: {},
     createSessionTabs,

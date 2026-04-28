@@ -190,7 +190,15 @@ export interface AgentEnvelope<T> {
   }
 }
 
-export type AgentBuiltinToolKind = "read" | "write" | "search" | "exec" | "other"
+export type AgentBuiltinToolKind =
+  | "read"
+  | "write"
+  | "search"
+  | "exec"
+  | "workflow"
+  | "interaction"
+  | "delegation"
+  | "other"
 export type AgentBuiltinToolConcurrency = "safe" | "exclusive"
 
 export interface AgentBuiltinToolCapabilities {
@@ -250,7 +258,6 @@ export interface AgentSessionTurnRequestInput {
   text?: string
   attachments?: AgentSessionComposerAttachmentInput[]
   questionAnswer?: AgentSessionQuestionAnswerInput
-  permissionMode?: "default" | "full-access"
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
   system?: string
   agent?: string

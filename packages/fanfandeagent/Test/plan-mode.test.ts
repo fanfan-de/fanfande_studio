@@ -138,15 +138,16 @@ test("planning mode permissions only allow research tools and route plan submiss
         const writeDecision = await Permission.evaluate({
           ...baseInput,
           tool: {
-            id: "write-file",
+            id: "replace-text",
             kind: "write",
             readOnly: false,
             destructive: true,
             needsShell: false,
           },
           input: {
-            path: "README.md",
-            content: "changed",
+            file_path: "README.md",
+            old_string: "# plan-mode-permissions",
+            new_string: "# changed",
           },
         })
 
@@ -154,7 +155,7 @@ test("planning mode permissions only allow research tools and route plan submiss
           ...baseInput,
           tool: {
             id: "AskUserQuestion",
-            kind: "read",
+            kind: "interaction",
             readOnly: true,
             destructive: false,
             needsShell: false,
@@ -162,20 +163,65 @@ test("planning mode permissions only allow research tools and route plan submiss
           input: {
             question: "Which option should we choose?",
           },
+          intent: {
+            action: "allow",
+            risk: "low",
+            reason: "Asking the user a question is safe in planning mode.",
+          },
         })
 
+        const planBody = "# Plan\n\n## Steps\n1. Do work\n\n## Verification\n- Run tests"
         const exitDecision = await Permission.evaluate({
           ...baseInput,
           tool: {
             id: "ExitPlanMode",
-            kind: "other",
+            kind: "workflow",
             readOnly: false,
             destructive: false,
             needsShell: false,
           },
           input: {
             title: "Implementation plan",
-            body: "# Plan\n\n## Steps\n1. Do work\n\n## Verification\n- Run tests",
+            body: planBody,
+          },
+          intent: {
+            action: "ask",
+            risk: "medium",
+            reason: "Submitting a plan exits planning mode and requires approval.",
+            resource: {
+              body: planBody,
+            },
+            allowInPlanning: true,
+          },
+        })
+
+        const executionSession = await Session.createSession({
+          directory: Instance.directory,
+          projectID: Instance.project.id,
+        })
+        const nonPlanningExitBody = "# Plan\n\n## Steps\n1. Should not submit"
+        const nonPlanningExitDecision = await Permission.evaluate({
+          ...baseInput,
+          sessionID: executionSession.id,
+          tool: {
+            id: "ExitPlanMode",
+            kind: "workflow",
+            readOnly: false,
+            destructive: false,
+            needsShell: false,
+          },
+          input: {
+            title: "Implementation plan",
+            body: nonPlanningExitBody,
+          },
+          intent: {
+            action: "deny",
+            risk: "medium",
+            reason: "ExitPlanMode can only be used while planning mode is active.",
+            resource: {
+              body: nonPlanningExitBody,
+            },
+            allowInPlanning: true,
           },
         })
 
@@ -183,6 +229,7 @@ test("planning mode permissions only allow research tools and route plan submiss
         expect(writeDecision.action).toBe("deny")
         expect(askDecision.action).toBe("allow")
         expect(exitDecision.action).toBe("ask")
+        expect(nonPlanningExitDecision.action).toBe("deny")
       },
     })
   } finally {

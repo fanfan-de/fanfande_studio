@@ -63,7 +63,6 @@ export const PromptInput = z.object({
     system: z.string().optional(),
     skills: z.array(z.string()).optional(),
     variant: z.string().optional(),
-    permissionMode: Message.PermissionMode.optional(),
     reasoningEffort: Message.OpenAIReasoningEffort.optional(),
     parts: z.array(
         z.discriminatedUnion("type", [
@@ -180,17 +179,6 @@ function normalizePromptErrorMessage(error: unknown) {
     }
 
     return String(error)
-}
-
-function effectivePermissionMode(
-    session: Session.SessionInfo,
-    permissionMode: PromptInput["permissionMode"],
-) {
-    if (Session.normalizeSessionInfo(session).policy?.ignoreFullAccess) {
-        return "default" as const
-    }
-
-    return permissionMode ?? "default"
 }
 
 function buildSideChatSystemPrompt(link: Session.SideChatLink) {
@@ -469,7 +457,6 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 agent,
                 sessionID,
                 messageID: assistantMessage.id,
-                permissionMode: effectivePermissionMode(activeSession, lastUser.permissionMode),
                 abort,
             });
 
@@ -610,7 +597,6 @@ export const prompt = fn(PromptInput, async (input) => {
     })
     const nextInput: PromptInput = {
         ...input,
-        permissionMode: effectivePermissionMode(session, input.permissionMode),
         skills: await Skill.resolveTurnSkillIDs({
             projectID: session.projectID,
             projectRoot: Instance.worktree,
@@ -1207,7 +1193,6 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         model: input.model ?? await Provider.getDefaultModelRef(Instance.project.id),
         system: input.system,
         skills: input.skills,
-        permissionMode: input.permissionMode ?? "default",
         reasoningEffort: input.reasoningEffort,
     };
 

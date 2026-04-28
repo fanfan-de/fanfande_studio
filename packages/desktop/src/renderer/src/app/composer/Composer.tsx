@@ -21,7 +21,6 @@ import type {
   ComposerDraftState,
   ComposerMcpOption,
   ComposerModelOption,
-  ComposerPermissionMode,
   ComposerReasoningEffortOption,
   ComposerSkillOption,
   ComposerTagData,
@@ -55,13 +54,11 @@ interface ComposerProps {
   onDraftStateChange: (value: ComposerDraftState) => void
   onMcpToggle?: (value: string) => void | Promise<void>
   onModelChange: (value: string | null) => void | Promise<void>
-  onPermissionModeToggle?: () => void
   onPickAttachments: () => void | Promise<void>
   onReasoningEffortChange: (value: OpenAIReasoningEffort | null) => void
   onRemoveAttachment: (path: string) => void
   onCancelSend?: () => void | Promise<void>
   onSend: (draftStateOverride?: ComposerDraftState) => void | Promise<void>
-  permissionMode?: ComposerPermissionMode
   placeholder?: string
   reasoningEffortOptions: ComposerReasoningEffortOption[]
   selectedMcpServerIDs: string[]
@@ -78,7 +75,7 @@ interface ComposerProps {
 }
 
 type ComposerMenuKey = "model" | "reasoning" | null
-type SlashCommandKey = "attach" | "file" | "mcp" | "model" | "permission" | "reasoning" | "skill"
+type SlashCommandKey = "attach" | "file" | "mcp" | "model" | "reasoning" | "skill"
 
 interface ComposerTriggerMatch {
   end: number
@@ -180,11 +177,6 @@ const SLASH_COMMANDS: Array<{
     value: "reasoning",
     label: "/reasoning",
     description: "Open the reasoning-effort picker.",
-  },
-  {
-    value: "permission",
-    label: "/permission",
-    description: "Toggle the current composer permission mode.",
   },
 ]
 
@@ -499,13 +491,11 @@ export function Composer({
   onDraftStateChange,
   onMcpToggle,
   onModelChange,
-  onPermissionModeToggle,
   onPickAttachments,
   onReasoningEffortChange,
   onRemoveAttachment,
   onCancelSend,
   onSend,
-  permissionMode = "default",
   placeholder = "Describe the UI, implementation task, or review target for the agent.",
   reasoningEffortOptions,
   selectedMcpServerIDs,
@@ -563,7 +553,7 @@ export function Composer({
     return SLASH_COMMANDS
       .filter((command) => command.label.slice(1).includes(query.trim().toLowerCase()))
       .filter((command) => {
-        if ((command.value === "skill" || command.value === "mcp" || command.value === "permission") && !showProjectTagCommands) {
+        if ((command.value === "skill" || command.value === "mcp") && !showProjectTagCommands) {
           return false
         }
 
@@ -878,9 +868,6 @@ export function Composer({
       return
     }
 
-    if (command === "permission") {
-      onPermissionModeToggle?.()
-    }
   }
 
   function handleCommandMenuItemSelect(item: ComposerCommandMenuItem) {

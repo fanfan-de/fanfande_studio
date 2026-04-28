@@ -1,7 +1,15 @@
 export type PermissionRequestStatus = "pending" | "approved" | "denied" | "expired"
 export type PermissionRisk = "low" | "medium" | "high" | "critical"
-export type PermissionToolKind = "read" | "write" | "search" | "exec" | "other"
-export type PermissionDecision = "allow-once" | "allow-session" | "allow-project" | "allow-forever" | "deny"
+export type PermissionToolKind =
+  | "read"
+  | "write"
+  | "search"
+  | "exec"
+  | "workflow"
+  | "interaction"
+  | "delegation"
+  | "other"
+export type PermissionDecision = "allow" | "deny"
 
 export interface PermissionPromptDetails {
   paths?: string[]
@@ -25,9 +33,7 @@ export interface PermissionRequestResolutionRecord {
   decision: PermissionDecision
   note?: string
   approved: boolean
-  scope?: "once" | "session" | "project" | "forever"
   resolvedAt: number
-  createdRuleID?: string
 }
 
 export interface PermissionRequestPrompt {
@@ -53,11 +59,6 @@ export interface PermissionResolveInput {
 
 export interface PermissionResolveResult {
   request?: PermissionRequestPrompt
-  rule?: {
-    id: string
-    scope: "global" | "project" | "session"
-    effect: "allow" | "deny" | "ask"
-  }
   resumed?: unknown
 }
 
@@ -65,20 +66,10 @@ export function isAllowDecision(decision: PermissionDecision) {
   return decision !== "deny"
 }
 
-export function isPersistentAllowDecision(decision: PermissionDecision) {
-  return decision === "allow-session" || decision === "allow-project" || decision === "allow-forever"
-}
-
 export function getPermissionDecisionLabel(decision: PermissionDecision) {
   switch (decision) {
-    case "allow-once":
-      return "Allow once"
-    case "allow-session":
-      return "Allow this session"
-    case "allow-project":
-      return "Allow this project"
-    case "allow-forever":
-      return "Allow always"
+    case "allow":
+      return "Allow"
     case "deny":
       return "Deny"
   }

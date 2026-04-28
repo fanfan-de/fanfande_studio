@@ -413,6 +413,12 @@ function getBuiltinToolGroupLabel(kind: BuiltinToolSummary["capabilities"]["kind
       return "Search"
     case "read":
       return "Read"
+    case "workflow":
+      return "Workflow"
+    case "interaction":
+      return "Interaction"
+    case "delegation":
+      return "Delegation"
     default:
       return "Other"
   }
@@ -420,13 +426,22 @@ function getBuiltinToolGroupLabel(kind: BuiltinToolSummary["capabilities"]["kind
 
 function getBuiltinToolRiskLabel(tool: BuiltinToolSummary) {
   if (tool.capabilities.needsShell || tool.capabilities.kind === "exec") return "Shell access"
+  if (tool.capabilities.kind === "delegation") return tool.capabilities.readOnly ? "Delegation status" : "Delegates work"
+  if (tool.capabilities.kind === "workflow") return "Workflow control"
+  if (tool.capabilities.kind === "interaction") return "User interaction"
   if (tool.capabilities.destructive) return "High risk"
   if (tool.capabilities.readOnly) return "Read-only"
   return "Moderate"
 }
 
 function getBuiltinToolRiskBadgeClassName(tool: BuiltinToolSummary) {
-  if (tool.capabilities.needsShell || tool.capabilities.kind === "exec" || tool.capabilities.destructive) {
+  if (
+    tool.capabilities.needsShell ||
+    tool.capabilities.kind === "exec" ||
+    tool.capabilities.destructive ||
+    (tool.capabilities.kind === "delegation" && !tool.capabilities.readOnly) ||
+    (tool.capabilities.kind === "workflow" && !tool.capabilities.readOnly)
+  ) {
     return "settings-badge is-warning"
   }
   if (tool.capabilities.readOnly) {
@@ -804,7 +819,7 @@ export function SettingsPage({
     const showLoadedState = !isLoading && !loadError
     const showProviderSections = activeSection === "services" || activeSection === "defaults" || activeSection === "mcp"
     const enabledBuiltinToolCount = builtinTools.filter((tool) => tool.enabled).length
-    const builtinToolKindOrder = ["exec", "write", "search", "read", "other"] as const
+    const builtinToolKindOrder = ["exec", "write", "delegation", "workflow", "interaction", "search", "read", "other"] as const
     const builtinToolGroups = builtinToolKindOrder
       .map((kind) => {
         const items = builtinTools.filter((tool) => (tool.capabilities.kind ?? "other") === kind)

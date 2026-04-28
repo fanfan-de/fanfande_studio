@@ -456,7 +456,6 @@ export const PermissionPart = PartBase.extend({
     toolCallID: z.string(),
     tool: z.string(),
     action: Permission.Action,
-    scope: Permission.ApprovalScope.optional(),
     reason: z.string().optional(),
     created: z.number(),
 }).meta({
@@ -551,10 +550,6 @@ const Base = z.object({
     id: z.string(),
     sessionID: z.string(),
 })
-export const PermissionMode = z.enum(["default", "full-access"]).meta({
-    ref: "PermissionMode",
-})
-export type PermissionMode = z.infer<typeof PermissionMode>
 export const OpenAIReasoningEffort = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).meta({
     ref: "OpenAIReasoningEffort",
 })
@@ -585,7 +580,6 @@ export const User = Base.extend({
     skills: z.array(z.string()).optional(),
     tools: z.record(z.string(), z.boolean()).optional(),
     variant: z.string().optional(),
-    permissionMode: PermissionMode.optional(),
     reasoningEffort: OpenAIReasoningEffort.optional(),
 }).meta({
     ref: "UserMessage",

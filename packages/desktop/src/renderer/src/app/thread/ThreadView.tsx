@@ -134,7 +134,7 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
   )
 }
 
-const primaryPermissionDecisions: PermissionDecision[] = ["deny", "allow-once"]
+const primaryPermissionDecisions: PermissionDecision[] = ["deny", "allow"]
 
 function formatPermissionRiskLabel(risk: PermissionRequest["prompt"]["risk"]) {
   return `${risk} risk`
@@ -142,21 +142,11 @@ function formatPermissionRiskLabel(risk: PermissionRequest["prompt"]["risk"]) {
 
 function formatPermissionDecisionLabel(decision: PermissionDecision) {
   switch (decision) {
-    case "allow-once":
-      return "Allow once"
-    case "allow-session":
-      return "Allow this session"
-    case "allow-project":
-      return "Allow this project"
-    case "allow-forever":
-      return "Allow always"
+    case "allow":
+      return "Allow"
     case "deny":
       return "Deny"
   }
-}
-
-function isPersistentAllowDecision(decision: PermissionDecision) {
-  return decision === "allow-session" || decision === "allow-project" || decision === "allow-forever"
 }
 
 function isResponseTraceItem(item: AssistantTraceItem) {
@@ -606,7 +596,6 @@ function InlineSideChatThread({
           isSending={isSending}
           mcpOptions={composer.mcpOptions}
           modelOptions={composer.modelOptions}
-          permissionMode="default"
           reasoningEffortOptions={composer.reasoningEffortOptions}
           selectedMcpServerIDs={composer.selectedMcpServerIDs}
           selectedModel={composer.selectedModel}
@@ -1016,7 +1005,6 @@ function PermissionRequestCard({
   onRespond: PermissionRequestResponseHandler
 }) {
   const title = request.prompt.title.trim()
-  const rememberDecisions = request.prompt.allowedDecisions.filter((decision) => isPersistentAllowDecision(decision))
   const detailBody = request.prompt.details?.body?.trim()
   const detailLines = [
     request.prompt.details?.workdir ? { label: "Workdir", value: request.prompt.details.workdir } : null,
@@ -1053,7 +1041,7 @@ function PermissionRequestCard({
           {primaryPermissionDecisions.map((decision) => (
             <button
               key={decision}
-              className={decision === "allow-once" ? "primary-button" : "secondary-button"}
+              className={decision === "allow" ? "primary-button" : "secondary-button"}
               aria-label={`${formatPermissionDecisionLabel(decision)} ${title}`}
               disabled={isResolving}
               onClick={() => handleRespond(decision)}
@@ -1064,26 +1052,6 @@ function PermissionRequestCard({
           ))}
         </div>
       </div>
-
-      {rememberDecisions.length > 0 ? (
-        <details className="permission-request-disclosure">
-          <summary>Remember this decision</summary>
-          <div className="permission-request-memory-actions">
-            {rememberDecisions.map((decision) => (
-              <button
-                key={decision}
-                className="secondary-button"
-                aria-label={`${formatPermissionDecisionLabel(decision)} ${title}`}
-                disabled={isResolving}
-                onClick={() => handleRespond(decision)}
-                type="button"
-              >
-                {formatPermissionDecisionLabel(decision)}
-              </button>
-            ))}
-          </div>
-        </details>
-      ) : null}
 
       {request.prompt.detailsAvailable && (detailLines.length > 0 || detailBody) ? (
         <details className="permission-request-disclosure">

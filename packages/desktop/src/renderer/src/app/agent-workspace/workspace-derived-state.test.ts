@@ -72,7 +72,6 @@ describe("workspace derived state", () => {
       },
       composerAttachmentsByTabKey: {},
       composerDraftStateByTabKey: {},
-      composerPermissionModeByTabKey: {},
       contextUsageBySession: {},
       conversations: {
         [parentSession.id]: [{ id: "turn-1", kind: "user", text: "hello", timestamp: 1 }],

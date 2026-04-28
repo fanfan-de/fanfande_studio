@@ -13,7 +13,6 @@ import type {
   ComposerAttachment,
   ComposerCommentReference,
   ComposerDraftState,
-  ComposerPermissionMode,
   OpenAIReasoningEffort,
   PendingAgentStream,
   SessionSummary,
@@ -24,13 +23,6 @@ import type {
 import { createID } from "../utils"
 import { isSideChatSession } from "../workspace"
 import type { WorkspaceStateUpdater } from "./workspace-store"
-
-export function resolveComposerPermissionModeForSession(
-  session: Pick<SessionSummary, "kind"> | null | undefined,
-  permissionMode: ComposerPermissionMode,
-) {
-  return isSideChatSession(session) ? "default" : permissionMode
-}
 
 export function resolveComposerSkillSelectionForSession(
   session: Pick<SessionSummary, "kind"> | null | undefined,
@@ -57,7 +49,6 @@ interface SendPromptToSessionInput {
   backendSessionID?: string | null
   commentReferences?: ComposerCommentReference[]
   displayText?: string
-  permissionMode: ComposerPermissionMode
   preserveComposerState?: boolean
   questionAnswer?: {
     questionID: string
@@ -125,7 +116,6 @@ export async function sendPromptToSession(
   const {
     attachments,
     displayText,
-    permissionMode,
     preserveComposerState,
     questionAnswer,
     reasoningEffort,
@@ -144,7 +134,6 @@ export async function sendPromptToSession(
     path: attachment.path,
     name: attachment.name,
   }))
-  const effectivePermissionMode = resolveComposerPermissionModeForSession(session, permissionMode)
   const effectiveSelectedSkillIDs = resolveComposerSkillSelectionForSession(session, selectedSkillIDs)
   const userTurnDisplayText = displayText?.trim() || normalizeQuestionAnswerText(questionAnswer) || undefined
   const userTurn: Turn = buildUserTurn({
@@ -240,7 +229,6 @@ export async function sendPromptToSession(
         ...(normalizedText ? { text: normalizedText } : {}),
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         ...(questionAnswer ? { questionAnswer } : {}),
-        ...(effectivePermissionMode !== "default" ? { permissionMode: effectivePermissionMode } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
         skills: effectiveSelectedSkillIDs,
       })
@@ -254,7 +242,6 @@ export async function sendPromptToSession(
       ...(normalizedText ? { text: normalizedText } : {}),
       ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
       ...(questionAnswer ? { questionAnswer } : {}),
-      ...(effectivePermissionMode !== "default" ? { permissionMode: effectivePermissionMode } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
       skills: effectiveSelectedSkillIDs,
     })

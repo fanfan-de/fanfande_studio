@@ -3,7 +3,6 @@ import z from "zod"
 import * as Log from "#util/log.ts"
 import * as db from "#database/Sqlite.ts"
 import * as Identifier from "#id/id.ts"
-import * as Config from "#config/config.ts"
 import { Flag } from "#flag/flag.ts"
 import { Instance } from "#project/instance.ts"
 import * as Filesystem from "#util/filesystem.ts"
@@ -21,9 +20,6 @@ let permissionTablesGeneration = -1
 function ensurePermissionTables() {
   const generation = db.getDatabaseGeneration()
   if (permissionTablesGeneration === generation && generation > 0) return
-  if (!db.tableExists("permission_rules")) {
-    db.createTableByZodObject("permission_rules", Schema.Rule)
-  }
   if (!db.tableExists("permission_requests")) {
     db.createTableByZodObject("permission_requests", Schema.Request)
   }
@@ -36,11 +32,8 @@ function ensurePermissionTables() {
 
 export {
   Action,
-  ApprovalScope,
   Audit,
-  Config as PermissionConfig,
   Decision,
-  ConfigDefaults as PermissionConfigDefaults,
   Request,
   RequestPrompt,
   RequestPromptView,
@@ -49,13 +42,9 @@ export {
   RequestStatus,
   RequestResource,
   Risk,
-  Rule,
-  RuleInput,
-  RuleScope,
   ToolKind,
 } from "#permission/schema.ts"
 
-type Rule = Schema.Rule
 type Request = Schema.Request
 type Risk = Schema.Risk
 type Action = Schema.Action
@@ -77,18 +66,15 @@ export type EvaluationInput = {
   agent: string
   cwd?: string
   worktree?: string
-  permissionMode?: "default" | "full-access"
   tool: ToolDescriptor
   input: Record<string, unknown>
+  intent?: Tool.ToolPermissionIntent
 }
 
 export type EvaluationResult = {
   action: Action
   reason: string
-  matchedRuleID?: string
-  matchedScope?: Schema.RuleScope
   risk: Risk
-  rememberable: boolean
   derived: {
     paths: string[]
     command?: string
@@ -102,31 +88,16 @@ type RequestFilters = {
   sessionID?: string
 }
 
-const DEFAULT_SCOPE_PRIORITY: Record<Schema.RuleScope | "default", number> = {
-  session: 300,
-  project: 200,
-  global: 100,
-  default: 0,
-}
-
 const DEFAULT_ACTIONS: Record<Tool.ToolKind, Schema.Action> = {
   read: "allow",
   search: "allow",
+  interaction: "allow",
   write: "ask",
   exec: "ask",
+  workflow: "ask",
+  delegation: "ask",
   other: "ask",
 }
-
-const DANGEROUS_COMMAND_PATTERNS = [
-  /\brm\s+-rf\s+\/(\s|$)/i,
-  /\bmkfs(\.[a-z0-9_]+)?\b/i,
-  /\bdd\s+.+\bof=\/dev\//i,
-  /\bshutdown\b/i,
-  /\breboot\b/i,
-  /\bpoweroff\b/i,
-  /\bhalt\b/i,
-  /:\(\)\s*\{\s*:\|:&\s*\};:/,
-]
 
 const SENSITIVE_PATH_PATTERNS = [
   ".env",
@@ -141,16 +112,8 @@ function normalizeToolName(toolID: string) {
   return toolID.trim().toLowerCase().replaceAll("_", "").replaceAll("-", "")
 }
 
-function isEnterPlanModeTool(toolID: string) {
-  return normalizeToolName(toolID) === "enterplanmode"
-}
-
 function isExitPlanModeTool(toolID: string) {
   return normalizeToolName(toolID) === "exitplanmode"
-}
-
-function isAskUserQuestionTool(toolID: string) {
-  return normalizeToolName(toolID) === "askuserquestion"
 }
 
 function asPosix(value: string) {
@@ -224,22 +187,13 @@ function normalizeExecutionError(error: unknown) {
   return String(error)
 }
 
-function defaultActionForKind(kind: Tool.ToolKind, overrides?: Partial<Record<Tool.ToolKind, Schema.Action>>) {
-  return overrides?.[kind] ?? DEFAULT_ACTIONS[kind]
+function defaultActionForKind(kind: Tool.ToolKind) {
+  return DEFAULT_ACTIONS[kind]
 }
 
 function isPermissionDisabled() {
   const value = Flag.FanFande_PERMISSION?.trim().toLowerCase()
   return value === "off" || value === "false" || value === "0" || value === "disabled"
-}
-
-function classifyCommandRisk(command: string | undefined): Risk | undefined {
-  if (!command) return undefined
-  if (DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command))) {
-    return "critical"
-  }
-
-  return "high"
 }
 
 function extractPatchPaths(patch: string) {
@@ -273,7 +227,7 @@ function resolvePathCandidate(inputPath: string, cwd: string, worktree?: string)
   }
 }
 
-function extractPaths(input: Record<string, unknown>, cwd: string, worktree?: string) {
+function collectPathInputs(input: Record<string, unknown>, intent?: Tool.ToolPermissionIntent) {
   const raw = new Set<string>()
 
   for (const key of ["path", "workdir"]) {
@@ -281,6 +235,11 @@ function extractPaths(input: Record<string, unknown>, cwd: string, worktree?: st
     if (typeof value === "string" && value.trim()) {
       raw.add(value.trim())
     }
+  }
+
+  const resourceWorkdir = intent?.resource?.workdir
+  if (typeof resourceWorkdir === "string" && resourceWorkdir.trim()) {
+    raw.add(resourceWorkdir.trim())
   }
 
   const valuePaths = input["paths"]
@@ -297,6 +256,15 @@ function extractPaths(input: Record<string, unknown>, cwd: string, worktree?: st
     }
   }
 
+  for (const item of intent?.resource?.paths ?? []) {
+    if (typeof item === "string" && item.trim()) raw.add(item.trim())
+  }
+
+  return raw
+}
+
+function extractPaths(input: Record<string, unknown>, cwd: string, worktree?: string, intent?: Tool.ToolPermissionIntent) {
+  const raw = collectPathInputs(input, intent)
   const resolved = [...raw].map((value) => resolvePathCandidate(value, cwd, worktree))
   return {
     resolved,
@@ -309,9 +277,18 @@ function isSensitivePath(relativePath: string) {
   return SENSITIVE_PATH_PATTERNS.some((pattern) => matchPattern(pattern, relativePath))
 }
 
-function deriveRisk(input: EvaluationInput, derivedPaths: string[], command?: string) {
-  const commandRisk = classifyCommandRisk(command)
-  if (commandRisk) return commandRisk
+const RISK_ORDER: Record<Risk, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3,
+}
+
+function maxRisk(left: Risk, right: Risk) {
+  return RISK_ORDER[right] > RISK_ORDER[left] ? right : left
+}
+
+function deriveRisk(input: EvaluationInput, derivedPaths: string[]) {
   if (derivedPaths.some(isSensitivePath)) {
     if (input.tool.kind === "write" || input.tool.kind === "exec" || input.tool.destructive) {
       return "critical"
@@ -321,54 +298,13 @@ function deriveRisk(input: EvaluationInput, derivedPaths: string[], command?: st
   }
   if (input.tool.kind === "exec") return "high"
   if (input.tool.kind === "write") return input.tool.destructive ? "high" : "medium"
+  if (input.tool.kind === "delegation") return input.tool.readOnly ? "low" : "medium"
+  if (input.tool.kind === "workflow") return input.tool.destructive ? "medium" : "low"
   return "low"
 }
 
 function decisionToApproved(decision: Decision) {
   return decision !== "deny"
-}
-
-function decisionToScope(decision: Decision): Schema.ApprovalScope | undefined {
-  switch (decision) {
-    case "allow-once":
-      return "once"
-    case "allow-session":
-      return "session"
-    case "allow-project":
-      return "project"
-    case "allow-forever":
-      return "forever"
-    case "deny":
-      return undefined
-  }
-}
-
-function requestedResolutionScope(resolution: Schema.RequestResolution) {
-  return resolution.scope ?? decisionToScope(resolution.decision)
-}
-
-function legacyApprovalToDecision(approved: boolean, scope?: Schema.ApprovalScope): Decision {
-  if (!approved) return "deny"
-
-  switch (scope) {
-    case "session":
-      return "allow-session"
-    case "project":
-      return "allow-project"
-    case "forever":
-      return "allow-forever"
-    case "once":
-    default:
-      return "allow-once"
-  }
-}
-
-function allowedDecisionsFor(decision: EvaluationResult): Decision[] {
-  const allowed: Decision[] = ["deny", "allow-once"]
-  if (decision.rememberable) {
-    allowed.push("allow-session", "allow-project")
-  }
-  return allowed
 }
 
 function summarizeDerivedTarget(derived: EvaluationResult["derived"]) {
@@ -418,8 +354,8 @@ function buildPromptSnapshot(input: {
     details.body ||
     (details.paths?.length ?? 0) > 0,
   )
-  const recommended = input.allowedDecisions.includes(input.recommendedDecision ?? "allow-once")
-    ? (input.recommendedDecision ?? "allow-once")
+  const recommended = input.allowedDecisions.includes(input.recommendedDecision ?? "allow")
+    ? (input.recommendedDecision ?? "allow")
     : (input.allowedDecisions.find((decision) => decision !== "deny") ?? "deny")
 
   return Schema.RequestPrompt.parse({
@@ -508,93 +444,6 @@ async function findStoredRequestForToolCall(toolCallID: string | undefined) {
     })[0]
 }
 
-function ruleMatches(rule: Rule, input: EvaluationInput, derived: EvaluationResult["derived"], risk: Risk) {
-  if (rule.enabled === false) return false
-  if (rule.projectID && rule.projectID !== input.projectID) return false
-  if (rule.sessionID && rule.sessionID !== input.sessionID) return false
-  if (rule.agent && rule.agent !== input.agent) return false
-  if (rule.tools?.length && !rule.tools.some((item) => item === input.tool.id)) return false
-  if (rule.toolKinds?.length && !rule.toolKinds.includes(input.tool.kind)) return false
-  if (rule.risk?.length && !rule.risk.includes(risk)) return false
-  if (rule.destructive !== undefined && rule.destructive !== input.tool.destructive) return false
-  if (rule.readOnly !== undefined && rule.readOnly !== input.tool.readOnly) return false
-  if (rule.needsShell !== undefined && rule.needsShell !== input.tool.needsShell) return false
-  if (rule.paths?.length) {
-    if (derived.paths.length === 0) return false
-    if (!rule.paths.some((pattern) => derived.paths.some((candidate) => matchPattern(pattern, candidate)))) return false
-  }
-  if (rule.commands?.length) {
-    if (!derived.command) return false
-    if (!rule.commands.some((pattern) => matchPattern(pattern, derived.command!))) return false
-  }
-
-  return true
-}
-
-async function loadRuleSet(projectID: string) {
-  ensurePermissionTables()
-  const [globalConfig, projectConfig] = await Promise.all([
-    Config.get(Config.GLOBAL_CONFIG_ID),
-    Config.get(projectID),
-  ])
-  const storedRules = db.findManyWithSchema("permission_rules", Schema.Rule)
-
-  const configRules = [
-    ...(globalConfig.permission?.rules ?? []).map((rule) =>
-      Schema.Rule.parse({
-        id: Identifier.ascending("permission"),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        createdBy: "system",
-        ...rule,
-      }),
-    ),
-    ...(projectConfig.permission?.rules ?? []).map((rule) =>
-      Schema.Rule.parse({
-        id: Identifier.ascending("permission"),
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        createdBy: "system",
-        projectID,
-        ...rule,
-      }),
-    ),
-  ]
-
-  return {
-    rules: [...storedRules, ...configRules],
-    defaults: {
-      ...globalConfig.permission?.defaults,
-      ...projectConfig.permission?.defaults,
-    } satisfies Partial<Record<Tool.ToolKind, Schema.Action>>,
-    autoApproveSafeRead:
-      projectConfig.permission?.autoApproveSafeRead ??
-      globalConfig.permission?.autoApproveSafeRead ??
-      false,
-  }
-}
-
-function chooseMatchingRule(matches: Rule[]) {
-  const scored = matches
-    .map((rule) => ({
-      rule,
-      score: (DEFAULT_SCOPE_PRIORITY[rule.scope] ?? 0) + (rule.priority ?? 0),
-    }))
-    .sort((left, right) => right.score - left.score)
-
-  if (scored.length === 0) return undefined
-
-  const topScore = scored[0]!.score
-  const topRules = scored.filter((item) => item.score === topScore).map((item) => item.rule)
-  const orderedTopRules = topRules.sort((left, right) => {
-    const leftOrder = left.effect === "deny" ? 3 : left.effect === "allow" ? 2 : 1
-    const rightOrder = right.effect === "deny" ? 3 : right.effect === "allow" ? 2 : 1
-    return rightOrder - leftOrder
-  })
-
-  return orderedTopRules[0]
-}
-
 async function audit(input: EvaluationInput, decision: EvaluationResult) {
   ensurePermissionTables()
   const record = Schema.Audit.parse({
@@ -606,8 +455,6 @@ async function audit(input: EvaluationInput, decision: EvaluationResult) {
     tool: input.tool.id,
     action: decision.action,
     reason: decision.reason,
-    matchedRuleID: decision.matchedRuleID,
-    matchedScope: decision.matchedScope,
     risk: decision.risk,
     inputSummary: summarizeInput(input.input),
     createdAt: Date.now(),
@@ -618,28 +465,37 @@ async function audit(input: EvaluationInput, decision: EvaluationResult) {
 
 export async function evaluate(input: EvaluationInput): Promise<EvaluationResult> {
   ensurePermissionTables()
-  const command = typeof input.input.command === "string" ? input.input.command.trim() : undefined
-  const body = typeof input.input.body === "string" ? input.input.body.trim() : undefined
+  const intent = input.intent
+  const command =
+    typeof intent?.resource?.command === "string" && intent.resource.command.trim()
+      ? intent.resource.command.trim()
+      : typeof input.input.command === "string"
+        ? input.input.command.trim()
+        : undefined
+  const body =
+    typeof intent?.resource?.body === "string" && intent.resource.body.trim()
+      ? intent.resource.body.trim()
+      : typeof input.input.body === "string"
+        ? input.input.body.trim()
+        : undefined
   const cwd = input.cwd ?? Instance.directory
   const worktree = input.worktree ?? Instance.worktree
-  const permissionMode = input.permissionMode ?? "default"
   const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null
-  const derivedPaths = extractPaths(input.input, cwd, worktree)
+  const derivedPaths = extractPaths(input.input, cwd, worktree, intent)
   const derived = {
     paths: derivedPaths.relativePaths,
     command,
-    workdir: cwd,
+    workdir: intent?.resource?.workdir || cwd,
     body: body || undefined,
   }
   const workflow = Session.normalizeWorkflowState(session?.workflow)
-  const risk = deriveRisk(input, derived.paths, command)
+  const risk = maxRisk(deriveRisk(input, derived.paths), intent?.risk ?? "low")
 
   if (Session.isSideChatSession(session) && input.tool.readOnly !== true) {
     const result: EvaluationResult = {
       action: "deny",
-      reason: "Side chat sessions are read-only and block tools with side effects, even in full access mode.",
+      reason: "Side chat sessions are read-only and block tools with side effects.",
       risk: risk === "low" ? "medium" : risk,
-      rememberable: false,
       derived,
     }
     await audit(input, result)
@@ -651,7 +507,6 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
       action: "allow",
       reason: "Permission checks are disabled by FanFande_PERMISSION.",
       risk,
-      rememberable: false,
       derived,
     }
     await audit(input, result)
@@ -663,7 +518,6 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
       action: "deny",
       reason: "Tool input referenced a path outside the active project boundary.",
       risk: "critical",
-      rememberable: false,
       derived,
     }
     await audit(input, result)
@@ -676,7 +530,6 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
       action: "allow",
       reason: "Tool execution was approved by the user.",
       risk: storedRequest.risk,
-      rememberable: false,
       derived,
     }
     await audit(input, result)
@@ -688,175 +541,71 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
       action: "deny",
       reason: storedRequest.resolutionReason?.trim() || "Tool execution was denied by the user.",
       risk: storedRequest.risk,
-      rememberable: false,
       derived,
     }
     await audit(input, result)
     return result
   }
 
-  if (isEnterPlanModeTool(input.tool.id)) {
-    const result: EvaluationResult = {
-      action: "allow",
-      reason: "Entering planning mode is allowed without approval.",
-      risk: "low",
-      rememberable: false,
-      derived,
-    }
-    await audit(input, result)
-    return result
-  }
-
-  if (isExitPlanModeTool(input.tool.id) && workflow.mode !== "planning") {
+  if (workflow.mode === "planning" && input.tool.readOnly !== true && intent?.allowInPlanning !== true) {
     const result: EvaluationResult = {
       action: "deny",
-      reason: "ExitPlanMode can only be used while the session is already in planning mode.",
-      risk: "medium",
-      rememberable: false,
+      reason: "Planning mode blocks tools with side effects until the submitted plan is approved.",
+      risk: risk === "critical" ? "critical" : "high",
       derived,
     }
     await audit(input, result)
     return result
   }
 
-  if (workflow.mode === "planning") {
-    let result: EvaluationResult
-
-    if (isEnterPlanModeTool(input.tool.id)) {
-      result = {
-        action: "allow",
-        reason: "The session can enter planning mode immediately.",
-        risk: "low",
-        rememberable: false,
-        derived,
-      }
-    } else if (isExitPlanModeTool(input.tool.id)) {
-      result = {
-        action: "ask",
-        reason: "Submitting a plan requires approval before execution can resume.",
-        risk: "medium",
-        rememberable: false,
-        derived,
-      }
-    } else if (
-      input.tool.kind === "read" ||
-      input.tool.kind === "search" ||
-      isAskUserQuestionTool(input.tool.id)
-    ) {
-      result = {
-        action: "allow",
-        reason: "Planning mode only allows read-only research tools and direct user questions.",
-        risk,
-        rememberable: false,
-        derived,
-      }
-    } else {
-      result = {
-        action: "deny",
-        reason: "Planning mode blocks edits, command execution, and other side effects until a plan is approved.",
-        risk: risk === "critical" ? "critical" : "high",
-        rememberable: false,
-        derived,
-      }
+  if (intent?.action === "deny") {
+    const result: EvaluationResult = {
+      action: "deny",
+      reason: intent.reason?.trim() || "The tool denied this operation.",
+      risk,
+      derived,
     }
-
     await audit(input, result)
     return result
   }
 
-  if (permissionMode === "full-access") {
+  if (intent?.action === "ask") {
+    const result: EvaluationResult = {
+      action: "ask",
+      reason: intent.reason?.trim() || "The tool requires approval for this operation.",
+      risk,
+      derived,
+    }
+    await audit(input, result)
+    return result
+  }
+
+  if (intent?.action === "allow") {
     const result: EvaluationResult = {
       action: "allow",
-      reason: "Full access mode allows tool execution by default.",
+      reason: intent.reason?.trim() || "The tool allows this operation without approval.",
       risk,
-      rememberable: false,
       derived,
     }
     await audit(input, result)
     return result
   }
 
-  const { rules, defaults, autoApproveSafeRead } = await loadRuleSet(input.projectID)
-  const matches = rules.filter((rule) => ruleMatches(rule, input, derived, risk))
-  const matched = chooseMatchingRule(matches)
-
-  let result: EvaluationResult
-  if (matched) {
-    result = {
-      action: matched.effect,
-      reason: matched.reason?.trim() || `Matched permission rule ${matched.id}.`,
-      matchedRuleID: matched.id,
-      matchedScope: matched.scope,
-      risk,
-      rememberable: matched.effect !== "allow",
-      derived,
-    }
-  } else if (autoApproveSafeRead && risk === "low" && (input.tool.kind === "read" || input.tool.kind === "search")) {
-    result = {
-      action: "allow",
-      reason: "Safe read access is auto-approved by project configuration.",
-      risk,
-      rememberable: false,
-      derived,
-    }
-  } else if (risk === "critical") {
-    result = {
-      action: "deny",
-      reason: "Critical-risk tool execution is denied by default.",
-      risk,
-      rememberable: false,
-      derived,
-    }
-  } else {
-    const fallback = defaultActionForKind(input.tool.kind, defaults)
-    result = {
-      action: fallback,
-      reason:
-        fallback === "allow"
-          ? "This tool is allowed by the default permission policy."
-          : fallback === "ask"
-            ? "This tool requires approval by the default permission policy."
-            : "This tool is denied by the default permission policy.",
-      matchedScope: "global",
-      risk,
-      rememberable: fallback !== "allow",
-      derived,
-    }
+  const fallback = defaultActionForKind(input.tool.kind)
+  const result: EvaluationResult = {
+    action: fallback,
+    reason:
+      fallback === "allow"
+        ? "This tool is allowed by the default permission policy."
+        : fallback === "ask"
+          ? "This tool requires approval by the default permission policy."
+          : "This tool is denied by the default permission policy.",
+    risk,
+    derived,
   }
 
   await audit(input, result)
   return result
-}
-
-export async function listRules() {
-  ensurePermissionTables()
-  return db.findManyWithSchema("permission_rules", Schema.Rule, {
-    orderBy: [{ column: "createdAt", direction: "DESC" }],
-  })
-}
-
-export async function createRule(input: Schema.RuleInput) {
-  ensurePermissionTables()
-  const now = Date.now()
-  const record = Schema.Rule.parse({
-    id: Identifier.ascending("permission"),
-    createdAt: now,
-    updatedAt: now,
-    enabled: true,
-    createdBy: "user",
-    ...input,
-  })
-
-  db.insertOneWithSchema("permission_rules", record, Schema.Rule)
-  return record
-}
-
-export async function deleteRule(id: string) {
-  ensurePermissionTables()
-  const existing = db.findById("permission_rules", Schema.Rule, id)
-  if (!existing) return null
-  db.deleteById("permission_rules", id)
-  return existing
 }
 
 export async function listRequests(filters: RequestFilters = {}) {
@@ -903,7 +652,6 @@ function createPermissionPart(input: {
   toolCallID: string
   tool: string
   action: Action
-  scope?: Schema.ApprovalScope
   reason?: string
 }) {
   return Message.PermissionPart.parse({
@@ -915,7 +663,6 @@ function createPermissionPart(input: {
     toolCallID: input.toolCallID,
     tool: input.tool,
     action: input.action,
-    scope: input.scope,
     reason: input.reason,
     created: Date.now(),
   })
@@ -1001,6 +748,28 @@ export async function registerApprovalRequest(input: {
   }
 
   const descriptor = await toolDescriptorForName(input.toolPart.tool)
+  const toolInfo = await ToolRegistry.get(input.toolPart.tool)
+  const agentInfo = (await Agent.get(input.assistant.agent)) ?? Agent.planAgent
+  const runtime = toolInfo ? await toolInfo.init({ agent: agentInfo }) : undefined
+  const runtimeContext: Tool.Context = {
+    sessionID: input.assistant.sessionID,
+    messageID: input.assistant.id,
+    cwd: input.assistant.path.cwd,
+    worktree: input.assistant.path.root,
+    toolCallID: input.toolPart.callID,
+  }
+  let intent: Tool.ToolPermissionIntent | undefined
+  if (runtime?.assessPermission) {
+    try {
+      intent = await runtime.assessPermission(input.toolPart.state.input, runtimeContext)
+    } catch (error) {
+      log.warn("tool-specific permission assessment failed", {
+        tool: input.toolPart.tool,
+        error: normalizeExecutionError(error),
+      })
+    }
+  }
+
   const decision = await evaluate({
     sessionID: input.assistant.sessionID,
     messageID: input.assistant.id,
@@ -1011,21 +780,13 @@ export async function registerApprovalRequest(input: {
     worktree: input.assistant.path.root,
     tool: descriptor,
     input: input.toolPart.state.input,
+    intent,
   })
 
-  const toolInfo = await ToolRegistry.get(input.toolPart.tool)
-  const agentInfo = (await Agent.get(input.assistant.agent)) ?? Agent.planAgent
-  const runtime = toolInfo ? await toolInfo.init({ agent: agentInfo }) : undefined
   let approvalDescriptor: Tool.ToolApprovalDescriptor | undefined
   if (runtime?.describeApproval) {
     try {
-      approvalDescriptor = await runtime.describeApproval(input.toolPart.state.input, {
-        sessionID: input.assistant.sessionID,
-        messageID: input.assistant.id,
-        cwd: input.assistant.path.cwd,
-        worktree: input.assistant.path.root,
-        toolCallID: input.toolPart.callID,
-      })
+      approvalDescriptor = await runtime.describeApproval(input.toolPart.state.input, runtimeContext)
     } catch (error) {
       log.warn("tool-specific approval description failed", {
         tool: input.toolPart.tool,
@@ -1043,8 +804,8 @@ export async function registerApprovalRequest(input: {
     rationale: decision.reason,
     risk: decision.risk,
     derived: decision.derived,
-    allowedDecisions: allowedDecisionsFor(decision),
-    recommendedDecision: "allow-once",
+    allowedDecisions: ["deny", "allow"],
+    recommendedDecision: "allow",
   })
   const runtimeSnapshot = buildRuntimeSnapshot({
     tool: input.toolPart.tool,
@@ -1132,12 +893,11 @@ function ensureRequestResolutionRecord(request: Request): Schema.RequestResoluti
   if (request.resolution) return request.resolution
   if (!request.resolvedAt) return undefined
 
-  const decision = legacyApprovalToDecision(request.status === "approved", request.resolutionScope)
+  const decision: Decision = request.status === "approved" ? "allow" : "deny"
   return Schema.RequestResolutionRecord.parse({
     decision,
     note: request.resolutionReason,
     approved: decisionToApproved(decision),
-    scope: request.resolutionScope ?? decisionToScope(decision),
     resolvedAt: request.resolvedAt,
   })
 }
@@ -1161,8 +921,8 @@ function ensureRequestPrompt(request: Request): Schema.RequestPrompt {
     rationale: "This tool requires approval before it can continue.",
     risk: request.risk,
     derived,
-    allowedDecisions: ["deny", "allow-once", "allow-session", "allow-project"],
-    recommendedDecision: "allow-once",
+    allowedDecisions: ["deny", "allow"],
+    recommendedDecision: "allow",
   })
 }
 
@@ -1179,34 +939,6 @@ function toRequestPromptView(request: Request): Schema.RequestPromptView {
     createdAt: request.createdAt,
     prompt: ensureRequestPrompt(request),
     resolution: ensureRequestResolutionRecord(request),
-  })
-}
-
-function approvalRuleFromRequest(request: Request, resolution: Schema.RequestResolution): Schema.RuleInput | undefined {
-  const scope = requestedResolutionScope(resolution)
-  if (!scope || scope === "once") return undefined
-
-  return Schema.RuleInput.parse({
-    scope:
-      scope === "session"
-        ? "session"
-        : scope === "project"
-          ? "project"
-          : "global",
-    projectID: scope === "project" ? request.projectID : undefined,
-    sessionID: scope === "session" ? request.sessionID : undefined,
-    agent: scope === "session" ? request.agent : undefined,
-    effect: decisionToApproved(resolution.decision) ? "allow" : "deny",
-    tools: [request.tool],
-    toolKinds: request.toolKind ? [request.toolKind] : undefined,
-    paths: request.resource?.paths,
-    commands: request.resource?.command ? [request.resource.command] : undefined,
-    risk: [request.risk],
-    destructive: request.toolKind === "write" || request.toolKind === "exec" ? true : undefined,
-    readOnly: request.toolKind === "read" || request.toolKind === "search" ? true : undefined,
-    needsShell: request.toolKind === "exec" ? true : undefined,
-    reason: resolution.note?.trim() || `Created from approval request ${request.id}.`,
-    createdBy: "approval",
   })
 }
 
@@ -1374,24 +1106,20 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
   if (existing.status !== "pending") {
     return {
       request: existing,
-      rule: undefined,
     }
   }
 
   const approved = decisionToApproved(resolution.decision)
-  const scope = requestedResolutionScope(resolution)
 
   let next = Schema.Request.parse({
     ...existing,
     status: approved ? "approved" : "denied",
     resolvedAt: Date.now(),
-    resolutionScope: scope,
     resolutionReason: resolution.note,
     resolution: {
       decision: resolution.decision,
       note: resolution.note,
       approved,
-      scope,
       resolvedAt: Date.now(),
     },
   })
@@ -1403,21 +1131,8 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
     toolCallID: next.toolCallID,
     tool: next.tool,
     action: approved ? "allow" : "deny",
-    scope,
     reason: resolution.note,
   })
-
-  const derivedRule = approvalRuleFromRequest(next, resolution)
-  const createdRule = derivedRule ? await createRule(derivedRule) : undefined
-  if (createdRule) {
-    next = Schema.Request.parse({
-      ...next,
-      resolution: Schema.RequestResolutionRecord.parse({
-        ...next.resolution,
-        createdRuleID: createdRule.id,
-      }),
-    })
-  }
 
   if (!approved) {
     updatePlanWorkflowForDeniedRequest(next)
@@ -1436,7 +1151,6 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
     handle.turn.emit("permission.resolved", {
       request: next,
       part,
-      rule: createdRule,
     })
 
     if (approved) {
@@ -1462,7 +1176,6 @@ export async function resolveRequest(id: string, resolution: Schema.RequestResol
 
     return {
       request: next,
-      rule: createdRule,
     }
   } catch (error) {
     failManagedTurn(handle, error, assistant, latestToolPart ? [part, latestToolPart] : [part])

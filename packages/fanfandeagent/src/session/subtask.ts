@@ -46,7 +46,6 @@ export const SubtaskRecord = z.object({
   prompt: z.string(),
   agent: z.string(),
   model: ModelRef,
-  permissionMode: Message.PermissionMode,
   runInBackground: z.boolean(),
   system: z.string().optional(),
   skills: z.array(z.string()).optional(),
@@ -77,7 +76,6 @@ export const StartSubtaskInput = z.object({
   prompt: z.string().min(1),
   agent: z.string().min(1).default("default"),
   model: ModelRef.optional(),
-  permissionMode: Message.PermissionMode.optional(),
   runInBackground: z.boolean().optional(),
   system: z.string().optional(),
   skills: z.array(z.string()).optional(),
@@ -470,7 +468,6 @@ async function maybeNotifyParentSession(record: SubtaskRecord) {
         sessionID: record.parentSessionID,
         agent: latestUser.agent,
         model: latestUser.model,
-        permissionMode: latestUser.permissionMode ?? "default",
         skills: latestUser.skills,
         system: buildParentNotificationSystemPrompt(),
         parts: [
@@ -527,7 +524,6 @@ async function runSubtaskLifecycle(input: {
     sessionID: string
     agent: string
     model: ModelRef
-    permissionMode: Message.PermissionMode
     system?: string
     skills?: string[]
     parts: Array<{ type: "text"; text: string }>
@@ -647,7 +643,6 @@ export async function startSubtask(input: StartSubtaskInput): Promise<SubtaskVie
     prompt: input.prompt,
     agent: agent.name,
     model,
-    permissionMode: input.permissionMode ?? "default",
     runInBackground: input.runInBackground ?? false,
     system: input.system,
     skills: input.skills,
@@ -668,7 +663,6 @@ export async function startSubtask(input: StartSubtaskInput): Promise<SubtaskVie
     sessionID: childSession.id,
     agent: agent.name,
     model,
-    permissionMode: record.permissionMode,
     system: buildSubagentSystemPrompt(input.system),
     skills: input.skills,
     parts: [

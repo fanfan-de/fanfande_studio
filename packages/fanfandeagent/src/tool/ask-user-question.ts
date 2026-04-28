@@ -84,6 +84,11 @@ export const AskUserQuestionTool = Tool.define(
       title: "Ask User Question",
       description: "Ask the user a structured clarifying question and wait for their reply before continuing.",
       parameters: Parameters,
+      assessPermission: () => ({
+        action: "allow",
+        risk: "low",
+        reason: "Asking the user a question has no side effects.",
+      }),
       execute: async (parameters, ctx) => {
         const options = normalizeOptions(parameters.options)
         const allowFreeform = parameters.allowFreeform ?? options.length === 0
@@ -142,7 +147,7 @@ export const AskUserQuestionTool = Tool.define(
     title: "Ask User Question",
     aliases: ["ask-user-question", "question-tool", "question"],
     capabilities: {
-      kind: "read",
+      kind: "interaction",
       readOnly: true,
       destructive: false,
       concurrency: "safe",

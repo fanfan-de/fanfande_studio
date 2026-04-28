@@ -1,4 +1,4 @@
-import type { ComposerAttachment, ComposerDraftState, ComposerPermissionMode } from "../types"
+import type { ComposerAttachment, ComposerDraftState } from "../types"
 import { useWorkspaceStoreSelector, type WorkspaceStoreApi } from "./workspace-store"
 
 interface ComposerDraftStateOptions {
@@ -14,10 +14,6 @@ export function useComposerDraftState({ store }: ComposerDraftStateOptions) {
     store,
     (state) => state.composer.composerDraftStateByTabKey as Record<string, ComposerDraftState>,
   )
-  const composerPermissionModeByTabKey = useWorkspaceStoreSelector(
-    store,
-    (state) => state.composer.composerPermissionModeByTabKey as Record<string, ComposerPermissionMode>,
-  )
   const composerRefreshVersion = useWorkspaceStoreSelector(store, (state) => state.composer.composerRefreshVersion)
   const isCreatingSessionByTabKey = useWorkspaceStoreSelector(store, (state) => state.composer.isCreatingSessionByTabKey)
   const isSendingByTabKey = useWorkspaceStoreSelector(store, (state) => state.composer.isSendingByTabKey)
@@ -28,10 +24,6 @@ export function useComposerDraftState({ store }: ComposerDraftStateOptions) {
   const setComposerDraftStateByTabKey = useWorkspaceStoreSelector(
     store,
     (state) => state.composerActions.setComposerDraftStateByTabKey,
-  )
-  const setComposerPermissionModeByTabKey = useWorkspaceStoreSelector(
-    store,
-    (state) => state.composerActions.setComposerPermissionModeByTabKey,
   )
   const setComposerRefreshVersion = useWorkspaceStoreSelector(
     store,
@@ -46,13 +38,11 @@ export function useComposerDraftState({ store }: ComposerDraftStateOptions) {
   return {
     composerAttachmentsByTabKey,
     composerDraftStateByTabKey,
-    composerPermissionModeByTabKey,
     composerRefreshVersion,
     isCreatingSessionByTabKey,
     isSendingByTabKey,
     setComposerAttachmentsByTabKey,
     setComposerDraftStateByTabKey,
-    setComposerPermissionModeByTabKey,
     setComposerRefreshVersion,
     setIsCreatingSessionByTabKey,
     setIsSendingByTabKey,

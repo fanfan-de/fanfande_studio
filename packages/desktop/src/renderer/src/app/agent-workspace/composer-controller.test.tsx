@@ -5,7 +5,6 @@ import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import type {
   ComposerAttachment,
   ComposerDraftState,
-  ComposerPermissionMode,
   PendingAgentStream,
   PermissionRequest,
   SessionSummary,
@@ -59,7 +58,6 @@ function useComposerHarness(input?: {
     "session:session-1": createComposerDraftStateFromPlainText("Existing prompt"),
     "create-session:create-1": createComposerDraftStateFromPlainText("New prompt"),
   })
-  const [permissionModeByTabKey, setPermissionModeByTabKeyState] = useState<Record<string, ComposerPermissionMode>>({})
   const [isSendingByTabKey, setIsSendingByTabKeyState] = useState<Record<string, boolean>>({})
   const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySessionState] = useState<Record<string, PermissionRequest[]>>({})
   const [sessionDirectoryBySession, setSessionDirectoryBySessionState] = useState<Record<string, string>>({})
@@ -89,7 +87,6 @@ function useComposerHarness(input?: {
     },
     composerAttachmentsByTabKey: attachmentsByTabKey,
     composerDraftStateByTabKey: draftsByTabKey,
-    composerPermissionModeByTabKey: permissionModeByTabKey,
     createSessionForWorkspace,
     createSessionTabs: [
       {
@@ -114,7 +111,6 @@ function useComposerHarness(input?: {
     setAgentSessions: (update) => applyUpdate(setAgentSessionsState, agentSessions, update),
     setComposerAttachmentsByTabKey: (update) => applyUpdate(setAttachmentsByTabKeyState, attachmentsByTabKey, update),
     setComposerDraftStateByTabKey: (update) => applyUpdate(setDraftsByTabKeyState, draftsByTabKey, update),
-    setComposerPermissionModeByTabKey: (update) => applyUpdate(setPermissionModeByTabKeyState, permissionModeByTabKey, update),
     setIsSendingByTabKey: (update) => applyUpdate(setIsSendingByTabKeyState, isSendingByTabKey, update),
     setPendingPermissionRequestsBySession: (update) =>
       applyUpdate(setPendingPermissionRequestsBySessionState, pendingPermissionRequestsBySession, update),

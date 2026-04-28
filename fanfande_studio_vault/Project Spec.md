@@ -74,7 +74,7 @@
 ### 4.2 策略 B：原子化工具组 (Atomic Tools)
 为了更细粒度的安全控制，预定义以下工具：
 *   `read_file(path)`: 读取文件内容。
-*   `write_file(path, content)`: **(高危)** 写入文件。
+*   `replace_text(file_path, old_string, new_string)`: 精确替换文本内容。
 *   `list_directory(path)`: 列出目录。
 *   `file_search(pattern)`: 模糊搜索文件。
 *   `git_operation(action, args)`: 执行 git 命令。

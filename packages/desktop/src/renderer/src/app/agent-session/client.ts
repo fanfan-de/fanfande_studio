@@ -6,7 +6,6 @@ import type {
 import type {
   AgentStreamEvent,
   ComposerAttachment,
-  ComposerPermissionMode,
   LoadedSessionHistoryMessage,
   OpenAIReasoningEffort,
 } from "../types"
@@ -43,7 +42,6 @@ export interface AgentSessionTurnInput {
     selectedOptions?: string[]
     freeformText?: string
   }
-  permissionMode?: ComposerPermissionMode
   reasoningEffort?: OpenAIReasoningEffort
   system?: string
   agent?: string

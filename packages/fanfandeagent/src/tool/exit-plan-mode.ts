@@ -33,6 +33,33 @@ export const ExitPlanModeTool = Tool.define(
       description:
         "Submit the completed plan for approval. Once the plan is approved, the session returns to execution mode and continues under the approved plan.",
       parameters: Parameters,
+      assessPermission: (parameters, ctx) => {
+        const session = Session.DataBaseRead("sessions", ctx.sessionID) as Session.SessionInfo | null
+        const workflow = Session.normalizeWorkflowState(session?.workflow)
+        const body = normalizePlanBody(parameters.body)
+
+        if (!session || workflow.mode !== "planning") {
+          return {
+            action: "deny",
+            risk: "medium",
+            reason: "ExitPlanMode can only be used while the session is in planning mode.",
+            resource: {
+              body,
+            },
+            allowInPlanning: true,
+          }
+        }
+
+        return {
+          action: "ask",
+          risk: "medium",
+          reason: "Submitting a plan requires approval before execution can resume.",
+          resource: {
+            body,
+          },
+          allowInPlanning: true,
+        }
+      },
       validate: (parameters, ctx) => {
         const session = Session.DataBaseRead("sessions", ctx.sessionID) as Session.SessionInfo | null
         if (!session) {
@@ -129,7 +156,7 @@ export const ExitPlanModeTool = Tool.define(
     title: "Exit Plan Mode",
     aliases: ["exit_plan_mode", "exit-plan-mode"],
     capabilities: {
-      kind: "other",
+      kind: "workflow",
       readOnly: false,
       destructive: false,
       concurrency: "exclusive",

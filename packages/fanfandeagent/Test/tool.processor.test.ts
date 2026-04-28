@@ -330,14 +330,14 @@ describe("processor tool persistence", () => {
           yield {
             type: "tool-input-start",
             id: "tool-approval",
-            toolName: "write-file",
+            toolName: "replace-text",
           }
           yield {
             type: "tool-call",
             toolCallId: "tool-approval",
-            toolName: "write-file",
-            input: { path: "a.txt", content: "alpha" },
-            title: "Write File",
+            toolName: "replace-text",
+            input: { file_path: "a.txt", old_string: "", new_string: "alpha" },
+            title: "Replace Text",
           }
           yield {
             type: "tool-approval-request",
@@ -402,7 +402,7 @@ describe("processor tool persistence", () => {
     )
     expect(waiting).toBeDefined()
     expect(waiting?.payload.part.state.approvalID).toBe("approval-1")
-    expect(waiting?.payload.part.state.input).toEqual({ path: "a.txt", content: "alpha" })
+    expect(waiting?.payload.part.state.input).toEqual({ file_path: "a.txt", old_string: "", new_string: "alpha" })
 
     const request = recorded.events.find((event) => event.type === "permission.requested")
     expect(request).toBeDefined()
@@ -490,12 +490,12 @@ describe("processor tool persistence", () => {
           yield {
             type: "tool-input-start",
             id: "tool-timeout",
-            toolName: "write-file",
+            toolName: "replace-text",
           }
           yield {
             type: "tool-input-delta",
             id: "tool-timeout",
-            delta: "{\"path\":\"big.txt\",\"content\":\"AAAA",
+            delta: "{\"file_path\":\"big.txt\",\"old_string\":\"\",\"new_string\":\"AAAA",
           }
           yield {
             type: "abort",
@@ -570,14 +570,14 @@ describe("processor tool persistence", () => {
           yield {
             type: "tool-input-start",
             id: "tool-reconciled",
-            toolName: "write-file",
+            toolName: "replace-text",
           }
           yield {
             type: "tool-call",
             toolCallId: "tool-reconciled",
-            toolName: "write-file",
-            input: { path: "a.txt", content: "alpha" },
-            title: "Write File",
+            toolName: "replace-text",
+            input: { file_path: "a.txt", old_string: "", new_string: "alpha" },
+            title: "Replace Text",
           }
           yield {
             type: "finish",
@@ -588,11 +588,11 @@ describe("processor tool persistence", () => {
           {
             type: "tool-result",
             toolCallId: "tool-reconciled",
-            toolName: "write-file",
-            input: { path: "a.txt", content: "alpha" },
+            toolName: "replace-text",
+            input: { file_path: "a.txt", old_string: "", new_string: "alpha" },
             output: {
-              text: "wrote a.txt",
-              title: "Wrote a.txt",
+              text: "created a.txt",
+              title: "Created a.txt",
               metadata: { source: "toolResults" },
             },
           },
@@ -648,8 +648,8 @@ describe("processor tool persistence", () => {
     )
 
     expect(completed).toBeDefined()
-    expect(completed?.payload.part.state.output).toBe("wrote a.txt")
-    expect(completed?.payload.part.state.title).toBe("Wrote a.txt")
+    expect(completed?.payload.part.state.output).toBe("created a.txt")
+    expect(completed?.payload.part.state.title).toBe("Created a.txt")
     expect(completed?.payload.part.state.metadata).toEqual({ source: "toolResults" })
     expect(recorded.events.some((event) => event.type === "tool.call.failed")).toBe(false)
     expect(processor.partFromToolCall("tool-reconciled")?.state.status).toBe("completed")

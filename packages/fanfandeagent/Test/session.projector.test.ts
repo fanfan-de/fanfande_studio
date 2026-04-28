@@ -121,7 +121,7 @@ test("runtime events project messages and parts into the session read model", as
         type: "permission",
         approvalID,
         toolCallID: "tool-approval",
-        tool: "write-file",
+        tool: "replace-text",
         action: "ask",
         created: Date.now(),
       })
@@ -129,7 +129,6 @@ test("runtime events project messages and parts into the session read model", as
         ...permissionAsk,
         id: Identifier.ascending("part"),
         action: "allow",
-        scope: "session",
       })
       const permissionRequest = Permission.Request.parse({
         id: Identifier.ascending("permission"),
@@ -139,7 +138,7 @@ test("runtime events project messages and parts into the session read model", as
         toolCallID: "tool-approval",
         projectID: Instance.project.id,
         agent: "plan",
-        tool: "write-file",
+        tool: "replace-text",
         toolKind: "write",
         risk: "medium",
         status: "pending",
@@ -152,11 +151,9 @@ test("runtime events project messages and parts into the session read model", as
         ...permissionRequest,
         status: "approved",
         resolvedAt: Date.now(),
-        resolutionScope: "session",
         resolution: {
-          decision: "allow-session",
+          decision: "allow",
           approved: true,
-          scope: "session",
           resolvedAt: Date.now(),
         },
       })
@@ -270,7 +267,10 @@ test("runtime events project messages and parts into the session read model", as
       expect(projectedPermissionRequest).toMatchObject({
         id: permissionRequest.id,
         status: "approved",
-        resolutionScope: "session",
+        resolution: {
+          decision: "allow",
+          approved: true,
+        },
       })
 
       const removedPatch = db.findById("parts", Message.Part, patchPart.id)

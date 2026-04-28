@@ -281,7 +281,6 @@ function buildPartDebugEntries(input: unknown) {
   if (type === "permission") {
     appendDebugEntry(entries, "approval.id", readString(part.approvalID))
     appendDebugEntry(entries, "tool.call", readString(part.toolCallID))
-    appendDebugEntry(entries, "approval.scope", readString(part.scope))
     if (typeof part.created === "number") {
       appendDebugEntry(entries, "approval.created", formatDebugTimestamp(part.created))
     }
@@ -916,7 +915,6 @@ function buildTraceItemFromPart(
 
   if (type === "permission") {
     const action = readString(part.action)
-    const scope = readString(part.scope)
     const reason = readString(part.reason)
     const status: AssistantTraceStatus = action === "deny" ? "denied" : action === "ask" ? "pending" : "completed"
     const title =
@@ -928,7 +926,6 @@ function buildTraceItemFromPart(
     const detail = compactText(
       [
         readString(part.tool),
-        scope ? `scope=${scope}` : null,
         reason || null,
       ]
         .filter(Boolean)

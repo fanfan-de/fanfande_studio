@@ -70,7 +70,7 @@ describe("global built-in tool selection", () => {
 
   it("does not let explicit global true bypass the agent allowlist", async () => {
     await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {
-      "write-file": true,
+      "replace-text": true,
     })
 
     await Instance.provide({
@@ -78,7 +78,7 @@ describe("global built-in tool selection", () => {
       async fn() {
         const toolNames = await resolveAgentToolNames("plan")
         expect(toolNames).toContain("read-file")
-        expect(toolNames).not.toContain("write-file")
+        expect(toolNames).not.toContain("replace-text")
       },
     })
   })

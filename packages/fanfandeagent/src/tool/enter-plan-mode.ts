@@ -15,6 +15,12 @@ export const EnterPlanModeTool = Tool.define(
       description:
         "Switch the current session into planning mode. This clears any previously approved plan for the active task and restarts the loop in read-only planning mode.",
       parameters: Parameters,
+      assessPermission: () => ({
+        action: "allow",
+        risk: "low",
+        reason: "Entering planning mode only changes the session workflow state.",
+        allowInPlanning: true,
+      }),
       execute: async (parameters, ctx) => {
         const updated = Session.updateSessionWorkflow(ctx.sessionID, () => ({
           mode: "planning",
@@ -68,7 +74,7 @@ export const EnterPlanModeTool = Tool.define(
     title: "Enter Plan Mode",
     aliases: ["enter_plan_mode", "enter-plan-mode"],
     capabilities: {
-      kind: "other",
+      kind: "workflow",
       readOnly: false,
       destructive: false,
       concurrency: "exclusive",

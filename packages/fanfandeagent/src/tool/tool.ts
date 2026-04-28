@@ -5,7 +5,15 @@ import type * as Agent from "#agent/agent.ts"
 type Metadata = Record<string, unknown>
 export type Awaitable<T> = T | Promise<T>
 
-export type ToolKind = "read" | "write" | "search" | "exec" | "other"
+export type ToolKind =
+  | "read"
+  | "write"
+  | "search"
+  | "exec"
+  | "workflow"
+  | "interaction"
+  | "delegation"
+  | "other"
 export type ToolConcurrency = "safe" | "exclusive"
 
 export interface ToolCapabilities {
@@ -41,6 +49,14 @@ export interface ToolApprovalDetails {
   paths?: string[]
   workdir?: string
   body?: string
+}
+
+export interface ToolPermissionIntent {
+  action?: "allow" | "ask" | "deny"
+  risk?: "low" | "medium" | "high" | "critical"
+  reason?: string
+  resource?: ToolApprovalDetails
+  allowInPlanning?: boolean
 }
 
 export interface ToolApprovalDescriptor {
@@ -87,6 +103,10 @@ export interface ToolRuntime<
   formatValidationError?(error: z.ZodError): string
   validate?(args: z.infer<Parameters>, ctx: Context): Promise<ToolGuardResult> | ToolGuardResult
   authorize?(args: z.infer<Parameters>, ctx: Context): Promise<ToolGuardResult> | ToolGuardResult
+  assessPermission?(
+    args: z.infer<Parameters>,
+    ctx: Context,
+  ): Awaitable<ToolPermissionIntent>
   describeApproval?(
     args: z.infer<Parameters>,
     ctx: Context,
@@ -191,6 +211,7 @@ export function define<Parameters extends z.ZodType, Result extends Metadata, Da
     init: async (initctx): Promise<NormalizedToolRuntime<Parameters, Result, Data>> => {
       const runtime = await init(initctx)
       const execute = runtime.execute
+      const assessPermission = runtime.assessPermission
 
       runtime.execute = async (args, ctx) => {
         const parsed = runtime.parameters.safeParse(args)
@@ -216,6 +237,24 @@ export function define<Parameters extends z.ZodType, Result extends Metadata, Da
         }
 
         return normalizeToolOutput(await execute(parsed.data, ctx))
+      }
+
+      if (assessPermission) {
+        runtime.assessPermission = async (args, ctx) => {
+          const parsed = runtime.parameters.safeParse(args)
+          if (!parsed.success) {
+            if (runtime.formatValidationError) {
+              throw new Error(runtime.formatValidationError(parsed.error), { cause: parsed.error })
+            }
+
+            throw new Error(
+              `The ${id} tool was called with invalid arguments: ${parsed.error.message}. Please rewrite the input so it satisfies the expected schema.`,
+              { cause: parsed.error },
+            )
+          }
+
+          return await assessPermission(parsed.data, ctx)
+        }
       }
 
       return runtime as NormalizedToolRuntime<Parameters, Result, Data>

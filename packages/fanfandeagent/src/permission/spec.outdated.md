@@ -157,7 +157,7 @@ flowchart LR
 
 | 维度 | 示例 |
 | --- | --- |
-| tool | `read-file`、`write-file`、`exec_command` |
+| tool | `read-file`、`replace-text`、`exec_command` |
 | tool kind | `read`、`write`、`search`、`exec` |
 | path | `src/**/*.ts`、`.env`、`package.json` |
 | command | `npm test`、`git status`、`rm -rf` |
@@ -202,7 +202,7 @@ type PermissionRule = {
   }
   resource?: {
     tools?: string[]
-    toolKinds?: Array<"read" | "write" | "search" | "exec" | "other">
+    toolKinds?: Array<"read" | "write" | "search" | "exec" | "workflow" | "interaction" | "delegation" | "other">
     paths?: string[]
     commands?: string[]
     risk?: Array<"low" | "medium" | "high" | "critical">
@@ -266,7 +266,7 @@ type PermissionContext = {
   tool: {
     id: string
     aliases?: string[]
-    kind?: "read" | "write" | "search" | "exec" | "other"
+    kind?: "read" | "write" | "search" | "exec" | "workflow" | "interaction" | "delegation" | "other"
     readOnly?: boolean
     destructive?: boolean
     needsShell?: boolean
@@ -571,8 +571,6 @@ permission?: {
 | --- | --- | --- | --- |
 | `read-file` | read | low | 读取敏感文件时可提升到 high |
 | `list-directory` | read | low | 遍历敏感目录时可提升 |
-| `search-files` | search | low | 大范围搜索可维持 low |
-| `write-file` | write | medium | 覆盖敏感路径时升 high |
 | `replace-text` | write | medium | 多次替换或敏感文件时升 high |
 | `apply_patch` | write | high | 可创建/删除/改名，默认比普通写入更高 |
 | `exec_command` | exec | high | 危险命令直接 critical |
@@ -795,7 +793,7 @@ v1 不做：
 验收标准：
 
 - `read-file` 可自动通过
-- `write-file` 能触发 ask
+- `replace-text` 能触发 ask
 - `exec_command` 危险命令能 deny
 
 ### Phase 3: 审批流

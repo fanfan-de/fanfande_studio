@@ -44,7 +44,7 @@ export const CancelSubagentTool = Tool.define(
     title: "Cancel Subagent",
     aliases: ["cancel-subagent"],
     capabilities: {
-      kind: "other",
+      kind: "delegation",
       readOnly: false,
       destructive: true,
       concurrency: "exclusive",

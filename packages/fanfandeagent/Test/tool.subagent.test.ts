@@ -507,7 +507,7 @@ describe("subagent tools", () => {
         expect(planTools["powershell_command"]).toBeUndefined()
         expect(planTools["cmd_command"]).toBeUndefined()
         expect(planTools["wsl_bash_command"]).toBeUndefined()
-        expect(planTools["write-file"]).toBeUndefined()
+        expect(planTools["replace-text"]).toBeUndefined()
         expect(planTools["spawn_subagent"]).toBeUndefined()
 
         const compactionTools = await ResolveTools.resolveTools({

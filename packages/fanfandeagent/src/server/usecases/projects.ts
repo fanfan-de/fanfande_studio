@@ -489,9 +489,6 @@ export function deleteProject(projectID: string) {
   const deletedSessions = Session.removeProjectSessions(projectID)
   db.deleteById("projects", projectID)
   db.deleteById("project_configs", projectID, "projectID")
-  if (db.tableExists("permission_rules")) {
-    db.deleteMany("permission_rules", [{ column: "projectID", value: projectID }])
-  }
   if (db.tableExists("permission_requests")) {
     db.deleteMany("permission_requests", [{ column: "projectID", value: projectID }])
   }

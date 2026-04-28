@@ -143,21 +143,6 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
       },
     },
     {
-      name: "search-files",
-      toolName: "search-files",
-      setup: async (directory) => {
-        await fs.mkdir(path.join(directory, "search"), { recursive: true })
-        await fs.writeFile(path.join(directory, "search", "one.txt"), "needle on line one", "utf8")
-        await fs.writeFile(path.join(directory, "search", "two.txt"), "nothing here", "utf8")
-      },
-      prompt: "Search the current directory for needle with the search-files tool and mention one.txt.",
-      verify: async (_directory, _assistant, toolPart) => {
-        const completed = toolPart.state as Message.ToolStateCompleted
-        expect(String(completed.output)).toContain("needle")
-        expect(String(completed.output)).toContain("one.txt")
-      },
-    },
-    {
       name: "grep",
       toolName: "grep",
       setup: async (directory) => {
@@ -170,18 +155,6 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
         const completed = toolPart.state as Message.ToolStateCompleted
         expect(String(completed.output)).toContain("needle")
         expect(String(completed.output)).toContain("one.ts")
-      },
-    },
-    {
-      name: "write-file",
-      toolName: "write-file",
-      setup: async () => undefined,
-      prompt: "Create generated/from-llm.txt with the write-file tool and write the exact content created-by-llm.",
-      verify: async (directory, _assistant, toolPart) => {
-        const written = await fs.readFile(path.join(directory, "generated", "from-llm.txt"), "utf8")
-        expect(written).toBe("created-by-llm")
-        const completed = toolPart.state as Message.ToolStateCompleted
-        expect(String(completed.output)).toContain("Wrote")
       },
     },
     {

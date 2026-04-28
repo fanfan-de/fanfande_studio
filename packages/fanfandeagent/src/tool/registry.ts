@@ -21,10 +21,8 @@ import { ReadFileTool } from "#tool/read-file.ts"
 import { ReadSubagentTool } from "#tool/read-subagent.ts"
 import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
-import { SearchFilesTool } from "#tool/search-files.ts"
 import { SpawnSubagentTool } from "#tool/spawn-subagent.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
-import { WriteFileTool } from "#tool/write-file.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
 import * as Mcp from "#mcp/manager.ts"
 
@@ -65,13 +63,11 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     ReadSubagentTool,
     LoadSkillTool,
     ReadSkillResourceTool,
-    WriteFileTool,
     ReplaceTextTool,
     ApplyPatchTool,
     GlobTool,
     GrepTool,
     ListDirectoryTool,
-    SearchFilesTool,
     WebFetchTool,
     SpawnSubagentTool,
     CancelSubagentTool,

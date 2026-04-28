@@ -21,7 +21,7 @@ async function createGitRepo(root: string, seed: string) {
   await $`git commit -m init`.cwd(root).quiet()
 }
 
-test("permission defaults allow reads, ask writes, and deny dangerous commands", async () => {
+test("permission defaults allow reads and ask writes while honoring tool deny intents", async () => {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-permission-defaults-"))
 
   try {
@@ -60,15 +60,16 @@ test("permission defaults allow reads, ask writes, and deny dangerous commands",
           cwd: Instance.directory,
           worktree: Instance.worktree,
           tool: {
-            id: "write-file",
+            id: "replace-text",
             kind: "write",
             readOnly: false,
             destructive: false,
             needsShell: false,
           },
           input: {
-            path: "README.md",
-            content: "changed",
+            file_path: "README.md",
+            old_string: "# permission-defaults",
+            new_string: "# changed",
           },
         })
 
@@ -89,11 +90,160 @@ test("permission defaults allow reads, ask writes, and deny dangerous commands",
           input: {
             command: "rm -rf /",
           },
+          intent: {
+            action: "deny",
+            risk: "critical",
+            reason: "Command matches a critical-risk shell pattern.",
+            resource: {
+              command: "rm -rf /",
+              workdir: ".",
+              paths: ["."],
+            },
+          },
         })
 
         expect(readDecision.action).toBe("allow")
         expect(writeDecision.action).toBe("ask")
         expect(execDecision.action).toBe("deny")
+      },
+    })
+  } finally {
+    await rm(repositoryRoot, { recursive: true, force: true })
+  }
+}, 120000)
+
+test("permission defaults classify workflow, interaction, and delegation tools explicitly", async () => {
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-permission-tool-kinds-"))
+
+  try {
+    await createGitRepo(repositoryRoot, "permission-tool-kinds")
+
+    await Instance.provide({
+      directory: repositoryRoot,
+      async fn() {
+        const baseInput = {
+          sessionID: Identifier.ascending("session"),
+          messageID: Identifier.ascending("message"),
+          projectID: Instance.project.id,
+          agent: "default",
+          cwd: Instance.directory,
+          worktree: Instance.worktree,
+          input: {},
+        }
+
+        await expect(Permission.evaluate({
+          ...baseInput,
+          tool: {
+            id: "AskUserQuestion",
+            kind: "interaction",
+            readOnly: true,
+            destructive: false,
+            needsShell: false,
+          },
+        })).resolves.toMatchObject({
+          action: "allow",
+          risk: "low",
+        })
+
+        await expect(Permission.evaluate({
+          ...baseInput,
+          tool: {
+            id: "EnterPlanMode",
+            kind: "workflow",
+            readOnly: false,
+            destructive: false,
+            needsShell: false,
+          },
+        })).resolves.toMatchObject({
+          action: "ask",
+          risk: "low",
+        })
+
+        await expect(Permission.evaluate({
+          ...baseInput,
+          tool: {
+            id: "spawn_subagent",
+            kind: "delegation",
+            readOnly: false,
+            destructive: false,
+            needsShell: false,
+          },
+        })).resolves.toMatchObject({
+          action: "ask",
+          risk: "medium",
+        })
+      },
+    })
+  } finally {
+    await rm(repositoryRoot, { recursive: true, force: true })
+  }
+}, 120000)
+
+test("permission evaluates tool intents before falling back to tool kind defaults", async () => {
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-permission-intents-"))
+
+  try {
+    await createGitRepo(repositoryRoot, "permission-intents")
+
+    await Instance.provide({
+      directory: repositoryRoot,
+      async fn() {
+        const baseInput = {
+          sessionID: Identifier.ascending("session"),
+          messageID: Identifier.ascending("message"),
+          projectID: Instance.project.id,
+          agent: "plan",
+          cwd: Instance.directory,
+          worktree: Instance.worktree,
+          tool: {
+            id: "intent-tool",
+            kind: "other" as const,
+            readOnly: false,
+            destructive: false,
+            needsShell: false,
+          },
+          input: {},
+        }
+
+        await expect(Permission.evaluate({
+          ...baseInput,
+          toolCallID: "toolcall_intent_allow",
+          intent: {
+            action: "allow",
+            risk: "low",
+            reason: "Tool assessed this call as safe.",
+          },
+        })).resolves.toMatchObject({
+          action: "allow",
+          reason: "Tool assessed this call as safe.",
+        })
+
+        await expect(Permission.evaluate({
+          ...baseInput,
+          toolCallID: "toolcall_intent_ask",
+          intent: {
+            action: "ask",
+            risk: "medium",
+            reason: "Tool requires user confirmation.",
+          },
+        })).resolves.toMatchObject({
+          action: "ask",
+          reason: "Tool requires user confirmation.",
+        })
+
+        await expect(Permission.evaluate({
+          ...baseInput,
+          toolCallID: "toolcall_intent_deny",
+          intent: {
+            action: "deny",
+            risk: "critical",
+            reason: "Tool blocked this operation.",
+          },
+        })).resolves.toMatchObject({
+          action: "deny",
+          reason: "Tool blocked this operation.",
+          risk: "critical",
+        })
       },
     })
   } finally {
@@ -171,7 +321,7 @@ test("permission approval can complete a waiting read-file tool call without res
     })
 
     const resolved = await Permission.resolveRequest(request.id, {
-      decision: "allow-once",
+      decision: "allow",
     })
 
     expect(resolved.request.status).toBe("approved")

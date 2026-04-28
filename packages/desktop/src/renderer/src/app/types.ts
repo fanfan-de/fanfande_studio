@@ -832,7 +832,15 @@ export interface PromptPresetDocument extends PromptPresetSummary {
   content: string
 }
 
-export type BuiltinToolKind = "read" | "write" | "search" | "exec" | "other"
+export type BuiltinToolKind =
+  | "read"
+  | "write"
+  | "search"
+  | "exec"
+  | "workflow"
+  | "interaction"
+  | "delegation"
+  | "other"
 export type BuiltinToolConcurrency = "safe" | "exclusive"
 
 export interface BuiltinToolCapabilities {
@@ -924,7 +932,6 @@ export type ComposerTagData =
 export type ColorMode = "system" | "light" | "dark"
 export type BrandTheme = "terra" | "sage"
 
-export type ComposerPermissionMode = "default" | "full-access"
 export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
 
 export interface ComposerModelOption {

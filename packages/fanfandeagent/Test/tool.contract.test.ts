@@ -13,6 +13,7 @@ import {
   GitBashCommandTool,
   PowerShellCommandTool,
   WslBashCommandTool,
+  assessShellPermission,
   resolveCmdExecutable,
   resolveGitBashExecutable,
   resolvePowerShellExecutable,
@@ -27,7 +28,6 @@ import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
 import * as Tool from "#tool/tool.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
-import { WriteFileTool } from "#tool/write-file.ts"
 
 async function createGitRepo(root: string, seed: string) {
   await mkdir(root, { recursive: true })
@@ -495,6 +495,71 @@ describe("tool contract", () => {
         await Bun.sleep(150)
       },
     })
+  }, 120000)
+
+  it("classifies shell permission intent conservatively for each shell", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-shell-permission-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "shell-permission")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const cases = [
+            {
+              shell: "bash" as const,
+              readonly: "ls -la",
+              writeLike: "rm temporary.txt",
+              dangerous: "rm -rf /",
+              unknown: "custom-task --flag",
+            },
+            {
+              shell: "powershell" as const,
+              readonly: "Get-ChildItem",
+              writeLike: "Set-Content temporary.txt hello",
+              dangerous: "Remove-Item -Recurse -Force C:\\",
+              unknown: "Invoke-Build",
+            },
+            {
+              shell: "cmd" as const,
+              readonly: "dir",
+              writeLike: "del temporary.txt",
+              dangerous: "format c:",
+              unknown: "custom-task /flag",
+            },
+            {
+              shell: "wsl" as const,
+              readonly: "cat README.md",
+              writeLike: "npm install",
+              dangerous: "mkfs.ext4 /dev/sda",
+              unknown: "custom-task --flag",
+            },
+          ]
+
+          for (const item of cases) {
+            expect(assessShellPermission(item.shell, { command: item.readonly }, Instance.directory)).toMatchObject({
+              action: "allow",
+              risk: "low",
+            })
+            expect(assessShellPermission(item.shell, { command: item.dangerous }, Instance.directory)).toMatchObject({
+              action: "deny",
+              risk: "critical",
+            })
+            expect(assessShellPermission(item.shell, { command: item.writeLike }, Instance.directory)).toMatchObject({
+              action: "allow",
+              risk: "low",
+            })
+            expect(assessShellPermission(item.shell, { command: item.unknown }, Instance.directory)).toMatchObject({
+              action: "ask",
+              risk: "medium",
+            })
+          }
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
   }, 120000)
 
   it("exposes four shell tools with distinct schemas and capabilities", async () => {
@@ -1578,150 +1643,6 @@ describe("tool contract", () => {
               },
             ),
           ).rejects.toThrow("appears to be a binary file")
-        },
-      })
-    } finally {
-      await rm(repositoryRoot, { recursive: true, force: true })
-    }
-  })
-
-  it("creates new files with write-file and uses create wording in approval", async () => {
-    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-write-file-create-"))
-
-    try {
-      await createGitRepo(repositoryRoot, "write-file-create")
-
-      await Instance.provide({
-        directory: repositoryRoot,
-        async fn() {
-          const runtime = await WriteFileTool.init()
-          const displayPath = path.join("generated", "from-tool.txt")
-          const ctx = {
-            sessionID: "session-write-file-create",
-            messageID: "message-write-file-create",
-          }
-
-          expect(await runtime.describeApproval?.({
-            path: "generated/from-tool.txt",
-            content: "hello",
-          }, ctx)).toMatchObject({
-            title: `Write ${displayPath}`,
-            summary: `Create ${displayPath} with new file contents.`,
-          })
-
-          const result = Tool.normalizeToolOutput(await runtime.execute(
-            {
-              path: "generated/from-tool.txt",
-              content: "hello",
-            },
-            ctx,
-          ))
-
-          expect(await readFile(path.join(repositoryRoot, "generated", "from-tool.txt"), "utf8")).toBe("hello")
-          expect(result.title).toBe(`Wrote ${displayPath}`)
-          expect(result.text).toBe(`Wrote 5 bytes to ${displayPath}.`)
-        },
-      })
-    } finally {
-      await rm(repositoryRoot, { recursive: true, force: true })
-    }
-  })
-
-  it("overwrites existing text files with write-file and keeps overwrite wording", async () => {
-    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-write-file-overwrite-"))
-
-    try {
-      await createGitRepo(repositoryRoot, "write-file-overwrite")
-      await writeFile(path.join(repositoryRoot, "notes.txt"), "old", "utf8")
-
-      await Instance.provide({
-        directory: repositoryRoot,
-        async fn() {
-          const runtime = await WriteFileTool.init()
-          const ctx = {
-            sessionID: "session-write-file-overwrite",
-            messageID: "message-write-file-overwrite",
-          }
-
-          expect(await runtime.describeApproval?.({
-            path: "notes.txt",
-            content: "new text",
-          }, ctx)).toMatchObject({
-            title: "Write notes.txt",
-            summary: "Overwrite notes.txt with new file contents.",
-          })
-
-          await runtime.execute(
-            {
-              path: "notes.txt",
-              content: "new text",
-            },
-            ctx,
-          )
-
-          expect(await readFile(path.join(repositoryRoot, "notes.txt"), "utf8")).toBe("new text")
-        },
-      })
-    } finally {
-      await rm(repositoryRoot, { recursive: true, force: true })
-    }
-  })
-
-  it("rejects binary files for write-file updates", async () => {
-    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-write-file-binary-"))
-
-    try {
-      await createGitRepo(repositoryRoot, "write-file-binary")
-      await writeFile(path.join(repositoryRoot, "image.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
-
-      await Instance.provide({
-        directory: repositoryRoot,
-        async fn() {
-          const runtime = await WriteFileTool.init()
-
-          await expect(
-            runtime.execute(
-              {
-                path: "image.png",
-                content: "not-a-png",
-              },
-              {
-                sessionID: "session-write-file-binary",
-                messageID: "message-write-file-binary",
-              },
-            ),
-          ).rejects.toThrow("Cannot write image.png because it appears to be a binary file.")
-        },
-      })
-    } finally {
-      await rm(repositoryRoot, { recursive: true, force: true })
-    }
-  })
-
-  it("rejects directory targets for write-file with a clear error", async () => {
-    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-write-file-directory-"))
-
-    try {
-      await createGitRepo(repositoryRoot, "write-file-directory")
-      await mkdir(path.join(repositoryRoot, "nested"))
-
-      await Instance.provide({
-        directory: repositoryRoot,
-        async fn() {
-          const runtime = await WriteFileTool.init()
-
-          await expect(
-            runtime.execute(
-              {
-                path: "nested",
-                content: "hello",
-              },
-              {
-                sessionID: "session-write-file-directory",
-                messageID: "message-write-file-directory",
-              },
-            ),
-          ).rejects.toThrow("Cannot write nested because it is a directory.")
         },
       })
     } finally {

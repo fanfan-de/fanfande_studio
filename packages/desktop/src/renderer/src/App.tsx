@@ -114,7 +114,6 @@ export function App() {
     deletingSessionID,
     expandedFolderID,
     handleCancelSend,
-    handleComposerPermissionModeToggle,
     handleCanvasSessionTabClose,
     handleCanvasSessionTabSelect,
     handleCreateSessionTabSelect,
@@ -701,7 +700,6 @@ export function App() {
                 onPaneTabDrop={handlePaneTabDrop}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
                 onPickComposerAttachments={handlePickComposerAttachments}
-                onToggleComposerPermissionMode={handleComposerPermissionModeToggle}
                 onRegisterPane={handleRegisterPane}
                 onRemoveComposerAttachment={handleRemoveComposerAttachment}
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}

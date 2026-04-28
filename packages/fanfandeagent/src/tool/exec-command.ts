@@ -24,7 +24,27 @@ const DANGEROUS_COMMAND_PATTERNS = [
   /:\(\)\s*\{\s*:\|:&\s*\};:/,
 ]
 
-type ShellCommandInput = {
+const POWERSHELL_DANGEROUS_COMMAND_PATTERNS = [
+  /\bRemove-Item\b[\s\S]*-Recurse\b[\s\S]*-Force\b[\s\S]*(?:\b[A-Z]:\\|\/|\$env:SystemRoot)/i,
+  /\bFormat-Volume\b/i,
+  /\bClear-Disk\b/i,
+  /\bStop-Computer\b/i,
+  /\bRestart-Computer\b/i,
+  /\bSet-ExecutionPolicy\b/i,
+  /(?:\bInvoke-WebRequest\b|\biwr\b|\bcurl\b)[\s\S]*\|[\s\S]*(?:\bInvoke-Expression\b|\biex\b)/i,
+]
+
+const CMD_DANGEROUS_COMMAND_PATTERNS = [
+  /\bformat\b\s+[a-z]:/i,
+  /\bshutdown\b/i,
+  /\brmdir\b[\s\S]*(?:\/s|-\S*s)[\s\S]*(?:\/q|-\S*q)[\s\S]*(?:[a-z]:\\|\\$)/i,
+  /\brd\b[\s\S]*(?:\/s|-\S*s)[\s\S]*(?:\/q|-\S*q)[\s\S]*(?:[a-z]:\\|\\$)/i,
+  /\bdel\b[\s\S]*(?:\/s|-\S*s)[\s\S]*(?:\/q|-\S*q)[\s\S]*(?:[a-z]:\\|\\$)/i,
+]
+
+export type ShellKind = "bash" | "powershell" | "cmd" | "wsl"
+
+export type ShellCommandInput = {
   command: string
   workdir?: string
   timeoutMs?: number
@@ -74,6 +94,7 @@ type ShellInvocation = {
 type ShellToolConfig<Parameters extends z.ZodType> = {
   id: string
   title: string
+  shellKind: ShellKind
   description: string
   parameters: Parameters
   supportsBackground?: boolean
@@ -173,6 +194,176 @@ function resolveCommandCwd(parameters: ShellCommandInput, ctx: Tool.Context) {
   return parameters.workdir
     ? resolveToolPath(parameters.workdir)
     : resolveToolPath(ctx.cwd ?? Instance.directory)
+}
+
+function normalizeCommand(command: string) {
+  return command.trim().replace(/\s+/g, " ")
+}
+
+function shellFirstCommand(command: string) {
+  return normalizeCommand(command)
+    .split(/[;&|]/)[0]
+    ?.trim()
+    .split(/\s+/)[0]
+    ?.toLowerCase()
+}
+
+function isCriticalShellCommand(kind: ShellKind, command: string) {
+  if (kind === "powershell") {
+    return POWERSHELL_DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command))
+  }
+
+  if (kind === "cmd") {
+    return CMD_DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command))
+  }
+
+  return DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command))
+}
+
+function isShellReadOnlyCommand(kind: ShellKind, command: string) {
+  const normalized = normalizeCommand(command).toLowerCase()
+  const first = shellFirstCommand(command)
+
+  if (!first) return false
+
+  if (kind === "powershell") {
+    return [
+      "get-childitem",
+      "gci",
+      "dir",
+      "ls",
+      "get-content",
+      "gc",
+      "select-string",
+      "get-command",
+      "get-location",
+      "pwd",
+      "where-object",
+      "measure-object",
+    ].includes(first)
+  }
+
+  if (kind === "cmd") {
+    return ["dir", "type", "where", "echo", "find", "findstr", "cd"].includes(first)
+  }
+
+  if (["ls", "pwd", "cat", "head", "tail", "grep", "rg", "find", "wc", "which", "type"].includes(first)) {
+    return true
+  }
+
+  return /^git\s+(status|log|show|diff|branch|rev-parse|ls-files|grep)\b/i.test(normalized)
+}
+
+function isShellWriteLikeCommand(kind: ShellKind, command: string) {
+  const normalized = normalizeCommand(command).toLowerCase()
+  const first = shellFirstCommand(command)
+
+  if (!first) return false
+
+  if (kind === "powershell") {
+    return [
+      "set-content",
+      "add-content",
+      "new-item",
+      "copy-item",
+      "move-item",
+      "remove-item",
+      "rename-item",
+      "out-file",
+      "start-process",
+      "npm",
+      "pnpm",
+      "yarn",
+      "bun",
+    ].includes(first) || /\|\s*(set-content|add-content|out-file)\b/i.test(command)
+  }
+
+  if (kind === "cmd") {
+    return [
+      "copy",
+      "xcopy",
+      "move",
+      "ren",
+      "rename",
+      "del",
+      "erase",
+      "mkdir",
+      "md",
+      "rmdir",
+      "rd",
+      "npm",
+      "pnpm",
+      "yarn",
+      "bun",
+    ].includes(first) || /(^|[^>])>(?!>)/.test(command) || />>/.test(command)
+  }
+
+  return [
+    "rm",
+    "mv",
+    "cp",
+    "mkdir",
+    "rmdir",
+    "touch",
+    "chmod",
+    "chown",
+    "npm",
+    "pnpm",
+    "yarn",
+    "bun",
+    "pip",
+    "cargo",
+    "go",
+  ].includes(first) || />|>>|\bsed\s+-i\b|\bgit\s+(add|commit|checkout|switch|reset|clean|merge|rebase|pull|push|apply)\b/i.test(normalized)
+}
+
+function isShellNetworkExecution(command: string) {
+  return /(?:\bcurl\b|\bwget\b|\bInvoke-WebRequest\b|\biwr\b)[\s\S]*\|[\s\S]*(?:\bsh\b|\bbash\b|\biex\b|\bInvoke-Expression\b)/i
+    .test(command)
+}
+
+export function assessShellPermission(kind: ShellKind, input: ShellCommandInput, cwd: string): Tool.ToolPermissionIntent {
+  const command = input.command.trim()
+  const displayCwd = toDisplayPath(cwd)
+  const resource = {
+    command,
+    workdir: displayCwd,
+    paths: [displayCwd],
+  }
+
+  if (isCriticalShellCommand(kind, command) || isShellNetworkExecution(command)) {
+    return {
+      action: "deny",
+      risk: "critical",
+      reason: "Command matches a critical-risk shell pattern.",
+      resource,
+    }
+  }
+
+  if (isShellReadOnlyCommand(kind, command)) {
+    return {
+      action: "allow",
+      risk: "low",
+      reason: "Command appears to be read-only.",
+      resource,
+    }
+  }
+
+  if (isShellWriteLikeCommand(kind, command)) {
+    return {
+      action: "allow",
+      risk: "low",
+      reason: "Command is permitted by the shell write-like command policy.",
+      resource,
+    }
+  }
+
+  return {
+    action: "ask",
+    risk: "medium",
+    reason: "Shell command could not be classified as safely read-only.",
+    resource,
+  }
 }
 
 function quoteBashSingle(value: string) {
@@ -339,10 +530,15 @@ function createShellCommandTool<Parameters extends z.ZodType>(
             },
           }
         },
+        assessPermission: (parameters, ctx) => {
+          const input = shellInput(parameters)
+          const cwd = resolveCommandCwd(input, ctx)
+          return assessShellPermission(config.shellKind, input, cwd)
+        },
         authorize: (parameters) => {
           const input = shellInput(parameters)
           const command = input.command.trim()
-          if (!input.allowUnsafe && DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command))) {
+          if (!input.allowUnsafe && isCriticalShellCommand(config.shellKind, command)) {
             return {
               message:
                 "Command matched a dangerous pattern and was blocked. Set allowUnsafe=true only when this action is explicitly intended.",
@@ -572,6 +768,7 @@ function createShellCommandTool<Parameters extends z.ZodType>(
 export const GitBashCommandTool = createShellCommandTool({
   id: "git_bash_command",
   title: "Git Bash",
+  shellKind: "bash",
   description: "Run a Git Bash/MSYS Bash command inside the current project boundary. Use Bash syntax, but do not assume a full Linux environment.",
   parameters: GitBashCommandParameters,
   supportsBackground: true,
@@ -589,6 +786,7 @@ export const GitBashCommandTool = createShellCommandTool({
 export const PowerShellCommandTool = createShellCommandTool({
   id: "powershell_command",
   title: "PowerShell",
+  shellKind: "powershell",
   description: "Run a Windows PowerShell command inside the current project boundary. Use PowerShell cmdlet syntax, object pipelines, and $env:VAR environment variables.",
   parameters: PowerShellCommandParameters,
   async resolveInvocation(parameters) {
@@ -605,6 +803,7 @@ export const PowerShellCommandTool = createShellCommandTool({
 export const CmdCommandTool = createShellCommandTool({
   id: "cmd_command",
   title: "Command Prompt",
+  shellKind: "cmd",
   description: "Run a Windows Command Prompt command inside the current project boundary. Use CMD syntax such as dir, copy, set VAR=value, and %VAR%.",
   parameters: CmdCommandParameters,
   async resolveInvocation(parameters) {
@@ -621,6 +820,7 @@ export const CmdCommandTool = createShellCommandTool({
 export const WslBashCommandTool = createShellCommandTool({
   id: "wsl_bash_command",
   title: "WSL Bash",
+  shellKind: "wsl",
   description: "Run a WSL Linux Bash command inside the current project boundary. Uses the default WSL distribution unless distro is provided.",
   parameters: WslBashCommandParameters,
   async resolveInvocation(parameters, cwd) {
