@@ -1627,6 +1627,20 @@
   gap: 8px;
 }
 
+.right-sidebar-runtime-task-block {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.right-sidebar-runtime-subheading {
+  color: var(--seg-text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .right-sidebar-runtime-list-copy {
   min-width: 0;
   display: grid;

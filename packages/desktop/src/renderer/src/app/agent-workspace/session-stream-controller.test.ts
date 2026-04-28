@@ -3,7 +3,7 @@ import type { AssistantTurn, Turn, UserTurn } from "../types"
 import {
   isCompletedStreamEvent,
   isPermissionRequestStreamEvent,
-  isPlanProgressStreamEvent,
+  isTaskStateStreamEvent,
   isTerminalStreamEvent,
   mergeConversationTurnsFromHistory,
   readLatestSessionContextUsageFromHistory,
@@ -81,8 +81,8 @@ describe("session stream controller helpers", () => {
         },
       },
     })).toBe(true)
-    expect(isPlanProgressStreamEvent({ event: "runtime", data: createRuntimeEvent("plan.progress.updated") })).toBe(true)
-    expect(isPlanProgressStreamEvent({
+    expect(isTaskStateStreamEvent({ event: "runtime", data: createRuntimeEvent("task.state.updated") })).toBe(true)
+    expect(isTaskStateStreamEvent({
       event: "part",
       data: {
         part: {
@@ -90,7 +90,7 @@ describe("session stream controller helpers", () => {
           state: {
             status: "completed",
             metadata: {
-              kind: "plan-progress",
+              kind: "task-state",
             },
           },
         },

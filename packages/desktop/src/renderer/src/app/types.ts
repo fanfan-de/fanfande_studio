@@ -35,24 +35,72 @@ export interface SessionWorkflowSummary {
     updatedAt: number
     approvedAt?: number
   }
-  progress?: SessionProgressSummary
 }
 
-export type SessionProgressItemStatus = "pending" | "in_progress" | "completed"
+export type SessionTaskStatus = "pending" | "in_progress" | "completed"
 
-export interface SessionProgressItemSummary {
+export interface SessionTaskPeer {
   id: string
-  step: string
-  status: SessionProgressItemStatus
+  subject: string
+  status: SessionTaskStatus
+  owner: string
 }
 
-export interface SessionProgressSummary {
-  explanation?: string
-  items: SessionProgressItemSummary[]
+export interface SessionTaskSummary {
+  id: string
+  sessionID: string
+  subject: string
+  description: string
+  activeForm: string
+  owner: string
+  status: SessionTaskStatus
+  blocks: string[]
+  blockedBy: string[]
+  metadata: Record<string, unknown>
+  createdAt: number
   updatedAt: number
+  startedAt?: number
+  completedAt?: number
   sourceAssistantMessageID?: string
   sourceUserMessageID?: string
   toolCallID?: string
+  isBlocked: boolean
+  blockingTasks: SessionTaskPeer[]
+  blockedTasks: SessionTaskPeer[]
+}
+
+export interface SessionTaskOwnerActivity {
+  owner: string
+  current?: SessionTaskSummary
+  next?: SessionTaskSummary
+}
+
+export interface SessionTaskTeammateActivity {
+  id: string
+  owner: string
+  title: string
+  status: string
+  active: boolean
+  childSessionID?: string
+  updatedAt?: number
+}
+
+export interface SessionTaskListView {
+  sessionID: string
+  generatedAt: number
+  tasks: SessionTaskSummary[]
+  current: SessionTaskSummary[]
+  next: SessionTaskSummary[]
+  blocked: SessionTaskSummary[]
+  owners: SessionTaskOwnerActivity[]
+  teammateActivity: SessionTaskTeammateActivity[]
+  summary: {
+    total: number
+    completed: number
+    pending: number
+    inProgress: number
+    blocked: number
+  }
 }
 
 export type SessionKind = "main" | "side-chat"
@@ -475,6 +523,7 @@ export interface SessionRuntimeDebugSnapshot {
   latestTurn: SessionRuntimeTurnSummary | null
   turns: SessionRuntimeTurnSummary[]
   recentEvents: SessionRuntimeEventSummary[]
+  tasks?: SessionTaskListView
   diagnostics: {
     blockedOnApproval: boolean
     activeToolCount: number
@@ -535,7 +584,7 @@ export type AssistantTraceItemKind =
   | "step"
   | "retry"
   | "snapshot"
-  | "plan-progress"
+  | "task-state"
   | "error"
 
 export type AssistantTraceSectionKey =
@@ -634,6 +683,12 @@ export interface AssistantQuestionPrompt {
   required: boolean
 }
 
+export interface AssistantTraceProgressItem {
+  id: string
+  step: string
+  status: SessionTaskStatus
+}
+
 export interface AssistantTraceItem {
   id: string
   kind: AssistantTraceItemKind
@@ -652,8 +707,7 @@ export interface AssistantTraceItem {
   isStreaming?: boolean
   debugEntries?: AssistantTraceDebugEntry[]
   questionPrompt?: AssistantQuestionPrompt
-  progressItems?: SessionProgressItemSummary[]
-  progressExplanation?: string
+  progressItems?: AssistantTraceProgressItem[]
 }
 
 export interface AssistantTurn {

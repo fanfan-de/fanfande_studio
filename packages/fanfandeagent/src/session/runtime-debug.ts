@@ -3,6 +3,7 @@ import * as EventStore from "#session/event-store.ts"
 import * as RunningState from "#session/running-state.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Session from "#session/session.ts"
+import * as Task from "#session/task.ts"
 import * as Log from "#util/log.ts"
 
 type RuntimeEventTone = "info" | "success" | "warning" | "error"
@@ -152,6 +153,7 @@ export type SessionRuntimeDebugSnapshot = {
   latestTurn: RuntimeTurnSummary | null
   turns: RuntimeTurnSummary[]
   recentEvents: RuntimeEventSummary[]
+  tasks: Task.SessionTaskListView
   diagnostics: {
     blockedOnApproval: boolean
     activeToolCount: number
@@ -628,6 +630,21 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
           reason: event.payload.reason,
         },
       }
+    case "task.state.updated":
+      return {
+        ...base,
+        title: "Task state updated",
+        detail: `${event.payload.state.summary.completed}/${event.payload.state.summary.total} completed`,
+        tone: "info",
+        summary: {
+          action: event.payload.action,
+          changedTaskIDs: event.payload.changedTaskIDs,
+          total: event.payload.state.summary.total,
+          completed: event.payload.state.summary.completed,
+          inProgress: event.payload.state.summary.inProgress,
+          blocked: event.payload.state.summary.blocked,
+        },
+      }
     case "turn.completed":
       return {
         ...base,
@@ -963,6 +980,7 @@ export function getSessionRuntimeDebugSnapshot(input: {
     latestTurn,
     turns: finalizedTurns.slice(0, turnLimit),
     recentEvents,
+    tasks: Task.listSessionTasks(input.sessionID),
     diagnostics: {
       blockedOnApproval: latestTurn?.phase === "waiting_approval" || latestTurn?.status === "blocked",
       activeToolCount: latestTurn?.tools.filter((tool) =>

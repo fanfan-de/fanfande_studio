@@ -97,9 +97,9 @@ export function isPermissionRequestStreamEvent(streamEvent: { event: string; dat
   return readString(part?.type) === "permission" && readString(part?.action) === "ask"
 }
 
-export function isPlanProgressStreamEvent(streamEvent: { event: string; data: unknown }) {
+export function isTaskStateStreamEvent(streamEvent: { event: string; data: unknown }) {
   const runtimeType = readRuntimeStreamType(streamEvent)
-  if (runtimeType) return runtimeType === "plan.progress.updated"
+  if (runtimeType) return runtimeType === "task.state.updated"
 
   if (streamEvent.event !== "part") return false
   const data = readRecord(streamEvent.data)
@@ -108,7 +108,7 @@ export function isPlanProgressStreamEvent(streamEvent: { event: string; data: un
 
   const state = readRecord(part?.state)
   const metadata = readRecord(state?.metadata)
-  return readString(metadata?.kind) === "plan-progress"
+  return readString(metadata?.kind) === "task-state"
 }
 
 function readStreamString(value: unknown) {
@@ -690,7 +690,7 @@ export function useSessionStreamController({
       })
     }
 
-    if (isPlanProgressStreamEvent(streamEvent)) {
+    if (isTaskStateStreamEvent(streamEvent)) {
       refreshWorkspaceForSession(target.sessionID)
     }
 
@@ -765,7 +765,7 @@ export function useSessionStreamController({
       })
     }
 
-    if (isPlanProgressStreamEvent(streamEvent)) {
+    if (isTaskStateStreamEvent(streamEvent)) {
       refreshWorkspaceForSession(uiSessionID)
     }
 

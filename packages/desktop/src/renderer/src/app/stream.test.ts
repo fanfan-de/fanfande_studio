@@ -87,41 +87,87 @@ describe("stream trace reducer", () => {
     expect(turn.state).toBe("Backend stream cancelled")
   })
 
-  it("renders plan progress runtime events as checklist trace items", () => {
-    let turn = buildStreamingAssistantTurn("Track progress")
+  it("renders task state runtime events as workflow trace items", () => {
+    let turn = buildStreamingAssistantTurn("Track tasks")
 
     turn = applyAgentStreamEventToTurn(turn, {
       event: "runtime",
       data: {
-        eventID: "event-progress",
+        eventID: "event-task-state",
         sessionID: "session-runtime",
         turnID: "turn-runtime",
         seq: 1,
         timestamp: 100,
-        type: "plan.progress.updated",
+        type: "task.state.updated",
         payload: {
-          progress: {
-            toolCallID: "toolcall-progress",
-            updatedAt: 100,
-            items: [
-              { id: "tsk_000000000001aaaaaaaaaaaaaa", step: "Inspect code", status: "completed" },
-              { id: "tsk_000000000002aaaaaaaaaaaaaa", step: "Run tests", status: "in_progress" },
+          action: "update",
+          changedTaskIDs: ["1"],
+          state: {
+            sessionID: "session-runtime",
+            generatedAt: 100,
+            tasks: [
+              {
+                id: "1",
+                sessionID: "session-runtime",
+                subject: "Inspect code",
+                description: "Inspect code",
+                activeForm: "Inspecting code",
+                owner: "default",
+                status: "completed",
+                blocks: ["2"],
+                blockedBy: [],
+                metadata: {},
+                createdAt: 90,
+                updatedAt: 100,
+                isBlocked: false,
+                blockingTasks: [],
+                blockedTasks: [],
+              },
+              {
+                id: "2",
+                sessionID: "session-runtime",
+                subject: "Run tests",
+                description: "Run tests",
+                activeForm: "Running tests",
+                owner: "default",
+                status: "in_progress",
+                blocks: [],
+                blockedBy: ["1"],
+                metadata: {},
+                createdAt: 91,
+                updatedAt: 100,
+                isBlocked: false,
+                blockingTasks: [],
+                blockedTasks: [],
+              },
             ],
+            current: [],
+            next: [],
+            blocked: [],
+            owners: [],
+            teammateActivity: [],
+            summary: {
+              total: 2,
+              completed: 1,
+              pending: 0,
+              inProgress: 1,
+              blocked: 0,
+            },
           },
         },
       },
     })
 
-    const progressItem = turn.items.find((item) => item.kind === "plan-progress")
-    expect(progressItem?.title).toBe("1/2 plan steps")
-    expect(progressItem?.progressItems?.map((item) => item.status)).toEqual(["completed", "in_progress"])
+    const taskItem = turn.items.find((item) => item.kind === "task-state")
+    expect(taskItem?.title).toBe("1/2 tasks")
+    expect(taskItem?.progressItems?.map((item) => item.status)).toEqual(["completed", "in_progress"])
   })
 
-  it("restores plan progress from completed tool history", () => {
+  it("restores task state from completed tool history", () => {
     const [turn] = buildTurnsFromHistory([
       {
         info: {
-          id: "msg-progress",
+          id: "msg-task-state",
           sessionID: "session-1",
           role: "assistant",
           created: 100,
@@ -130,24 +176,69 @@ describe("stream trace reducer", () => {
         },
         parts: [
           {
-            id: "part-progress-tool",
+            id: "part-task-tool",
             type: "tool",
-            tool: "UpdatePlanProgress",
-            callID: "toolcall-progress",
+            tool: "TaskUpdate",
+            callID: "toolcall-task",
             state: {
               status: "completed",
               input: {},
-              output: "Progress updated",
-              title: "Plan progress updated",
+              output: "Task updated",
+              title: "Task updated",
               metadata: {
-                kind: "plan-progress",
-                progress: {
-                  toolCallID: "toolcall-progress",
-                  updatedAt: 110,
-                  items: [
-                    { id: "tsk_000000000003aaaaaaaaaaaaaa", step: "Implement", status: "completed" },
-                    { id: "tsk_000000000004aaaaaaaaaaaaaa", step: "Verify", status: "pending" },
+                kind: "task-state",
+                toolCallID: "toolcall-task",
+                state: {
+                  sessionID: "session-1",
+                  generatedAt: 110,
+                  tasks: [
+                    {
+                      id: "1",
+                      sessionID: "session-1",
+                      subject: "Implement",
+                      description: "Implement",
+                      activeForm: "Implementing",
+                      owner: "default",
+                      status: "completed",
+                      blocks: [],
+                      blockedBy: [],
+                      metadata: {},
+                      createdAt: 100,
+                      updatedAt: 110,
+                      isBlocked: false,
+                      blockingTasks: [],
+                      blockedTasks: [],
+                    },
+                    {
+                      id: "2",
+                      sessionID: "session-1",
+                      subject: "Verify",
+                      description: "Verify",
+                      activeForm: "Verifying",
+                      owner: "default",
+                      status: "pending",
+                      blocks: [],
+                      blockedBy: [],
+                      metadata: {},
+                      createdAt: 101,
+                      updatedAt: 110,
+                      isBlocked: false,
+                      blockingTasks: [],
+                      blockedTasks: [],
+                    },
                   ],
+                  current: [],
+                  next: [],
+                  blocked: [],
+                  owners: [],
+                  teammateActivity: [],
+                  summary: {
+                    total: 2,
+                    completed: 1,
+                    pending: 1,
+                    inProgress: 0,
+                    blocked: 0,
+                  },
                 },
               },
               time: {
@@ -162,9 +253,9 @@ describe("stream trace reducer", () => {
 
     expect(turn?.kind).toBe("assistant")
     if (turn?.kind !== "assistant") return
-    const progressItem = turn.items.find((item) => item.kind === "plan-progress")
-    expect(progressItem?.title).toBe("1/2 plan steps")
-    expect(progressItem?.progressItems?.[0]?.step).toBe("Implement")
+    const taskItem = turn.items.find((item) => item.kind === "task-state")
+    expect(taskItem?.title).toBe("1/2 tasks")
+    expect(taskItem?.progressItems?.[0]?.step).toBe("Implement (default)")
   })
 
   it("settles on completed runtime phase even before a terminal event arrives", () => {

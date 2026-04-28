@@ -10,7 +10,7 @@ import * as db from "#database/Sqlite.ts"
 import * as EventStore from "#session/event-store.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as SessionMemory from "#session/memory-store.ts"
-import * as Progress from "#session/progress.ts"
+import * as TaskSchema from "#session/task-schema.ts"
 
 interface TableRecordMap {
   projects: never
@@ -74,7 +74,6 @@ export const SessionInfo = z
           updatedAt: z.number(),
           approvedAt: z.number().optional(),
         }),
-        progress: Progress.SessionProgressState.optional(),
       })
       .optional(),
     kind: SessionKind.optional(),
@@ -125,7 +124,6 @@ export function normalizeWorkflowState(
       updatedAt: workflow?.plan.updatedAt ?? now,
       approvedAt: workflow?.plan.approvedAt,
     },
-    progress: workflow?.progress,
   }
 }
 
@@ -135,6 +133,7 @@ export const ArchivedSessionSnapshot = z
     messages: z.array(Message.MessageInfo),
     parts: z.array(Message.Part),
     events: z.array(RuntimeEvent.RuntimeEvent),
+    tasks: z.array(TaskSchema.SessionTaskRecord).optional(),
     memory: SessionMemory.SessionMemoryRecord.optional(),
   })
   .meta({
@@ -429,11 +428,43 @@ function loadSideChatLinks(input: {
   })
 }
 
+function loadSessionTasks(sessionID: string) {
+  ensureSessionTables()
+  if (!db.tableExists("session_tasks")) return []
+  return db.findManyWithSchema("session_tasks", TaskSchema.SessionTaskRecord, {
+    where: [{ column: "sessionID", value: sessionID }],
+    orderBy: [
+      { column: "createdAt", direction: "ASC" },
+      { column: "id", direction: "ASC" },
+    ],
+  })
+}
+
+function ensureSessionTaskTableForRestore() {
+  if (!db.tableExists("session_tasks")) {
+    db.createTableByZodObject("session_tasks", TaskSchema.SessionTaskRecord)
+  } else {
+    db.syncTableColumnsWithZodObject("session_tasks", TaskSchema.SessionTaskRecord)
+  }
+
+  db.db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "idx_session_tasks_session_id"
+    ON "session_tasks" ("sessionID", "id");
+  `)
+}
+
+function removeSessionTasks(sessionID: string) {
+  if (!db.tableExists("session_tasks")) return 0
+  if (!db.exists("session_tasks", [{ column: "sessionID", value: sessionID }])) return 0
+  return db.deleteMany("session_tasks", [{ column: "sessionID", value: sessionID }])
+}
+
 function buildArchivedSessionRecord(session: SessionInfo): ArchivedSessionRecord {
   const normalizedSession = normalizeSessionInfo(session)
   const messages = loadSessionMessages(normalizedSession.id)
   const parts = loadSessionParts(session.id)
   const events = EventStore.listSessionEvents({ sessionID: normalizedSession.id })
+  const tasks = loadSessionTasks(normalizedSession.id)
   const memory = SessionMemory.readSessionMemory(normalizedSession.id) ?? undefined
   const archivedAt = Date.now()
 
@@ -453,6 +484,7 @@ function buildArchivedSessionRecord(session: SessionInfo): ArchivedSessionRecord
       messages,
       parts,
       events,
+      tasks: tasks.length > 0 ? tasks : undefined,
       memory,
     },
   }
@@ -812,6 +844,7 @@ function removeSession(sessionID: string): SessionInfo | null {
 
   db.deleteMany("parts", [{ column: "sessionID", value: sessionID }])
   db.deleteMany("messages", [{ column: "sessionID", value: sessionID }])
+  removeSessionTasks(sessionID)
   EventStore.deleteSessionEvents(sessionID)
   SessionMemory.deleteSessionMemory(sessionID)
   db.deleteById("sessions", sessionID)
@@ -838,6 +871,7 @@ function archiveSessionCascade(sessionID: string): ArchivedSessionRecord[] {
     for (const record of records) {
       db.deleteMany("parts", [{ column: "sessionID", value: record.sessionID }])
       db.deleteMany("messages", [{ column: "sessionID", value: record.sessionID }])
+      removeSessionTasks(record.sessionID)
       EventStore.deleteSessionEvents(record.sessionID)
       SessionMemory.deleteSessionMemory(record.sessionID)
       db.deleteById("sessions", record.sessionID)
@@ -874,6 +908,14 @@ function restoreArchivedSession(sessionID: string): SessionInfo | null {
 
     for (const event of record.snapshot.events) {
       EventStore.append(event)
+    }
+
+    const tasks = record.snapshot.tasks ?? []
+    if (tasks.length > 0) {
+      ensureSessionTaskTableForRestore()
+    }
+    for (const task of tasks) {
+      db.insertOneWithSchema("session_tasks", task, TaskSchema.SessionTaskRecord)
     }
 
     if (record.snapshot.memory) {

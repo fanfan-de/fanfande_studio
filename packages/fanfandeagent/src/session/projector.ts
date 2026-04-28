@@ -4,6 +4,7 @@ import * as Permission from "#permission/schema.ts"
 import * as Message from "#session/message.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Session from "#session/session.ts"
+import * as Task from "#session/task.ts"
 
 let permissionProjectionGeneration = -1
 
@@ -105,11 +106,11 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
     case "turn.error.context":
     case "retry.scheduled":
       return
-    case "plan.progress.updated":
-      Session.updateSessionWorkflow(event.sessionID, (workflow) => ({
-        ...workflow,
-        progress: event.payload.progress,
-      }))
+    case "task.state.updated":
+      Task.replaceTasksFromState({
+        sessionID: event.sessionID,
+        state: event.payload.state,
+      })
       return
     case "message.recorded":
       Session.upsertMessage(event.payload.message)

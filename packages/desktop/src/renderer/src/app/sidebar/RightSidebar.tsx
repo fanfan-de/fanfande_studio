@@ -18,6 +18,8 @@ import type {
   SessionDiffSummary,
   SessionRuntimeDebugSnapshot,
   SessionRuntimeDebugState,
+  SessionTaskListView,
+  SessionTaskSummary,
   SessionSummary,
   WorkspaceFileReviewState,
   WorkspacePreviewState
@@ -68,6 +70,148 @@ const RIGHT_SIDEBAR_RUNTIME_IDLE_STATE: SessionRuntimeDebugState = {
   errorMessage: null,
   updatedAt: null,
   isStale: false,
+}
+
+function formatTaskStatus(status: SessionTaskSummary["status"]) {
+  return status === "in_progress" ? "in progress" : status
+}
+
+function taskStatusClassName(status: SessionTaskSummary["status"]) {
+  return status === "in_progress" ? "running" : status
+}
+
+function emptyTaskListView(sessionID: string): SessionTaskListView {
+  return {
+    sessionID,
+    generatedAt: Date.now(),
+    tasks: [],
+    current: [],
+    next: [],
+    blocked: [],
+    owners: [],
+    teammateActivity: [],
+    summary: {
+      total: 0,
+      completed: 0,
+      pending: 0,
+      inProgress: 0,
+      blocked: 0,
+    },
+  }
+}
+
+function renderTaskDependencyLabel(task: SessionTaskSummary) {
+  if (task.blockingTasks.length > 0) {
+    return `Blocked by ${task.blockingTasks.map((item) => item.subject || item.id).join(", ")}`
+  }
+  if (task.blocks.length > 0) {
+    return `Unblocks ${task.blocks.join(", ")}`
+  }
+  return task.activeForm
+}
+
+function RuntimeTaskRows({
+  empty,
+  tasks,
+}: {
+  empty: string
+  tasks: SessionTaskSummary[]
+}) {
+  if (tasks.length === 0) {
+    return <p className="right-sidebar-runtime-note">{empty}</p>
+  }
+
+  return (
+    <div className="right-sidebar-runtime-list">
+      {tasks.slice(0, 6).map((task) => (
+        <div key={task.id} className="right-sidebar-runtime-list-row">
+          <div className="right-sidebar-runtime-list-copy">
+            <strong>{task.subject}</strong>
+            <span>
+              {task.owner}
+              {" - "}
+              {renderTaskDependencyLabel(task)}
+            </span>
+          </div>
+          <span className={`settings-badge right-sidebar-runtime-pill is-${taskStatusClassName(task.status)}`}>
+            {formatTaskStatus(task.status)}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function RuntimeTasksPanel({ snapshot }: { snapshot: SessionRuntimeDebugSnapshot }) {
+  const tasks = snapshot.tasks ?? emptyTaskListView(snapshot.session.id)
+  const owners = tasks.owners.filter((owner) => owner.current || owner.next)
+  const activeTasks = owners.flatMap((owner) => owner.current ? [owner.current] : [])
+  const nextTasks = owners.flatMap((owner) => owner.next ? [owner.next] : [])
+
+  return (
+    <section className="right-sidebar-runtime-card">
+      <div className="right-sidebar-runtime-card-header">
+        <div>
+          <span className="label">Tasks</span>
+          <h4>Session task state</h4>
+        </div>
+        <span className="settings-badge right-sidebar-runtime-pill is-ready">
+          {tasks.summary.completed}/{tasks.summary.total}
+        </span>
+      </div>
+
+      <div className="right-sidebar-runtime-card-grid">
+        <div className="right-sidebar-runtime-field">
+          <span>Completed</span>
+          <strong>{`${tasks.summary.completed}/${tasks.summary.total}`}</strong>
+        </div>
+        <div className="right-sidebar-runtime-field">
+          <span>Active Owners</span>
+          <strong>{String(activeTasks.length)}</strong>
+        </div>
+        <div className="right-sidebar-runtime-field">
+          <span>Blocked</span>
+          <strong>{String(tasks.summary.blocked)}</strong>
+        </div>
+      </div>
+
+      <div className="right-sidebar-runtime-task-block">
+        <span className="right-sidebar-runtime-subheading">Current</span>
+        <RuntimeTaskRows empty="No task is currently in progress." tasks={activeTasks} />
+      </div>
+
+      <div className="right-sidebar-runtime-task-block">
+        <span className="right-sidebar-runtime-subheading">Next</span>
+        <RuntimeTaskRows empty="No unblocked pending task is queued." tasks={nextTasks} />
+      </div>
+
+      {tasks.blocked.length > 0 ? (
+        <div className="right-sidebar-runtime-task-block">
+          <span className="right-sidebar-runtime-subheading">Blocked</span>
+          <RuntimeTaskRows empty="No blocked tasks." tasks={tasks.blocked} />
+        </div>
+      ) : null}
+
+      {tasks.teammateActivity.length > 0 ? (
+        <div className="right-sidebar-runtime-task-block">
+          <span className="right-sidebar-runtime-subheading">Teammates</span>
+          <div className="right-sidebar-runtime-list">
+            {tasks.teammateActivity.slice(0, 5).map((item) => (
+              <div key={item.id} className="right-sidebar-runtime-list-row">
+                <div className="right-sidebar-runtime-list-copy">
+                  <strong>{item.title}</strong>
+                  <span>{`${item.owner}${item.active ? " - active" : ""}`}</span>
+                </div>
+                <span className={`settings-badge right-sidebar-runtime-pill is-${item.status}`}>
+                  {item.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
 }
 
 export function RightSidebar({
@@ -228,9 +372,12 @@ export function RightSidebar({
                     </div>
                   </div>
 
-                  {latestRuntimeTurn ? (
+                  {latestRuntimeTurn || (activeSessionRuntimeDebug.tasks?.summary.total ?? 0) > 0 ? (
                     <div className="right-sidebar-runtime-stack">
-                      <section className="right-sidebar-runtime-card">
+                      <RuntimeTasksPanel snapshot={activeSessionRuntimeDebug} />
+
+                      {latestRuntimeTurn ? (
+                        <section className="right-sidebar-runtime-card">
                         <div className="right-sidebar-runtime-card-header">
                           <div>
                             <span className="label">Latest Turn</span>
@@ -268,9 +415,10 @@ export function RightSidebar({
                             {latestRuntimeTurn.errorContext?.error.message ?? latestRuntimeTurn.error?.message}
                           </p>
                         ) : null}
-                      </section>
+                        </section>
+                      ) : null}
 
-                      {latestRuntimeTurn.tools.length > 0 ? (
+                      {latestRuntimeTurn && latestRuntimeTurn.tools.length > 0 ? (
                         <section className="right-sidebar-runtime-card">
                           <div className="right-sidebar-runtime-card-header">
                             <div>
@@ -294,7 +442,7 @@ export function RightSidebar({
                         </section>
                       ) : null}
 
-                      {latestRuntimeTurn.llmCalls.length > 0 ? (
+                      {latestRuntimeTurn && latestRuntimeTurn.llmCalls.length > 0 ? (
                         <section className="right-sidebar-runtime-card">
                           <div className="right-sidebar-runtime-card-header">
                             <div>

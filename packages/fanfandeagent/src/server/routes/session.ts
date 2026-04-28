@@ -54,6 +54,21 @@ export function SessionRoutes() {
 
   app.get("/:id/side-chat-context", (c) => ok(c, SessionUseCase.getSideChatContext(c.req.param("id"))))
 
+  app.get("/:id/tasks", (c) =>
+    ok(
+      c,
+      SessionUseCase.listSessionTasks(c.req.param("id"), {
+        owner: c.req.query("owner"),
+        status: c.req.query("status"),
+        includeCompleted: c.req.query("includeCompleted"),
+      }),
+    ),
+  )
+
+  app.get("/:id/tasks/:taskID", (c) =>
+    ok(c, SessionUseCase.getSessionTask(c.req.param("id"), c.req.param("taskID"))),
+  )
+
   app.get("/:id", (c) => ok(c, SessionUseCase.getSession(c.req.param("id"))))
 
   app.get("/:id/messages", async (c) => ok(c, await SessionUseCase.listSessionMessages(c.req.param("id"))))

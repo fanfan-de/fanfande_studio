@@ -38,24 +38,72 @@ export interface AgentSessionWorkflowSummary {
     updatedAt: number
     approvedAt?: number
   }
-  progress?: AgentSessionProgressSummary
 }
 
-export type AgentSessionProgressItemStatus = "pending" | "in_progress" | "completed"
+export type AgentSessionTaskStatus = "pending" | "in_progress" | "completed"
 
-export interface AgentSessionProgressItemSummary {
+export interface AgentSessionTaskPeer {
   id: string
-  step: string
-  status: AgentSessionProgressItemStatus
+  subject: string
+  status: AgentSessionTaskStatus
+  owner: string
 }
 
-export interface AgentSessionProgressSummary {
-  explanation?: string
-  items: AgentSessionProgressItemSummary[]
+export interface AgentSessionTaskSummary {
+  id: string
+  sessionID: string
+  subject: string
+  description: string
+  activeForm: string
+  owner: string
+  status: AgentSessionTaskStatus
+  blocks: string[]
+  blockedBy: string[]
+  metadata: Record<string, unknown>
+  createdAt: number
   updatedAt: number
+  startedAt?: number
+  completedAt?: number
   sourceAssistantMessageID?: string
   sourceUserMessageID?: string
   toolCallID?: string
+  isBlocked: boolean
+  blockingTasks: AgentSessionTaskPeer[]
+  blockedTasks: AgentSessionTaskPeer[]
+}
+
+export interface AgentSessionTaskOwnerActivity {
+  owner: string
+  current?: AgentSessionTaskSummary
+  next?: AgentSessionTaskSummary
+}
+
+export interface AgentSessionTaskTeammateActivity {
+  id: string
+  owner: string
+  title: string
+  status: string
+  active: boolean
+  childSessionID?: string
+  updatedAt?: number
+}
+
+export interface AgentSessionTaskListView {
+  sessionID: string
+  generatedAt: number
+  tasks: AgentSessionTaskSummary[]
+  current: AgentSessionTaskSummary[]
+  next: AgentSessionTaskSummary[]
+  blocked: AgentSessionTaskSummary[]
+  owners: AgentSessionTaskOwnerActivity[]
+  teammateActivity: AgentSessionTaskTeammateActivity[]
+  summary: {
+    total: number
+    completed: number
+    pending: number
+    inProgress: number
+    blocked: number
+  }
 }
 
 export type AgentSessionKind = "main" | "side-chat"
@@ -532,6 +580,7 @@ export interface AgentSessionRuntimeDebugSnapshot {
   latestTurn: AgentSessionRuntimeTurnSummary | null
   turns: AgentSessionRuntimeTurnSummary[]
   recentEvents: AgentSessionRuntimeEventSummary[]
+  tasks?: AgentSessionTaskListView
   diagnostics: {
     blockedOnApproval: boolean
     activeToolCount: number

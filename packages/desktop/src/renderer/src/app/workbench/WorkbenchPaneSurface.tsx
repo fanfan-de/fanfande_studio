@@ -7,6 +7,7 @@ import {
   ThreadView,
 } from "../components"
 import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
+import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import type { AssistantTraceVisibility, ComposerDraftState } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
@@ -268,6 +269,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 onWorkspaceChange={(workspaceID) => onCreateSessionWorkspaceChange(workspaceID, pane.createSessionTabID)}
               />
               <div className="composer-stack">
+                <ComposerTaskProgress tasks={pane.activeSessionRuntimeDebug?.tasks ?? null} />
                 <Composer
                   attachments={pane.composerAttachments}
                   attachmentButtonTitle={composer.attachmentButtonTitle}
@@ -413,6 +415,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 onPermissionRequestResponse={onPermissionRequestResponse}
               />
               <div className="composer-stack">
+                <ComposerTaskProgress tasks={pane.activeSessionRuntimeDebug?.tasks ?? null} />
                 <Composer
                   attachments={pane.composerAttachments}
                   attachmentButtonTitle={composer.attachmentButtonTitle}

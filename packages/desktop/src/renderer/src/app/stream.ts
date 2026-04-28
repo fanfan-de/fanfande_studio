@@ -12,7 +12,7 @@ import type {
   AssistantTurnPhase,
   AssistantTurnRuntime,
   LoadedSessionHistoryMessage,
-  SessionProgressItemSummary,
+  SessionTaskSummary,
   SessionSummary,
   Turn,
   UserTurn,
@@ -547,71 +547,93 @@ function createAskUserQuestionTraceDetail(prompt: AssistantQuestionPrompt) {
   return "Reply in the composer to continue."
 }
 
-function readProgressItem(value: unknown): SessionProgressItemSummary | null {
-  const item = readRecord(value)
-  const id = readString(item?.id)
-  const step = readString(item?.step)
-  const status = readString(item?.status)
+function readTaskSummary(value: unknown): SessionTaskSummary | null {
+  const task = readRecord(value)
+  const id = readString(task?.id)
+  const sessionID = readString(task?.sessionID)
+  const subject = readString(task?.subject)
+  const description = readString(task?.description)
+  const activeForm = readString(task?.activeForm)
+  const owner = readString(task?.owner)
+  const status = readString(task?.status)
 
-  if (!id || !step) return null
+  if (!id || !sessionID || !subject || !description || !activeForm || !owner) return null
   if (status !== "pending" && status !== "in_progress" && status !== "completed") return null
 
   return {
     id,
-    step,
+    sessionID,
+    subject,
+    description,
+    activeForm,
+    owner,
     status,
+    blocks: Array.isArray(task?.blocks) ? task.blocks.map(readString).filter(Boolean) : [],
+    blockedBy: Array.isArray(task?.blockedBy) ? task.blockedBy.map(readString).filter(Boolean) : [],
+    metadata: readRecord(task?.metadata) ?? {},
+    createdAt: readNumber(task?.createdAt),
+    updatedAt: readNumber(task?.updatedAt),
+    startedAt: typeof task?.startedAt === "number" ? task.startedAt : undefined,
+    completedAt: typeof task?.completedAt === "number" ? task.completedAt : undefined,
+    sourceAssistantMessageID: readString(task?.sourceAssistantMessageID) || undefined,
+    sourceUserMessageID: readString(task?.sourceUserMessageID) || undefined,
+    toolCallID: readString(task?.toolCallID) || undefined,
+    isBlocked: readBoolean(task?.isBlocked),
+    blockingTasks: [],
+    blockedTasks: [],
   }
 }
 
-function readPlanProgress(value: unknown) {
-  const progress = readRecord(value)
-  const rawItems = Array.isArray(progress?.items) ? progress.items : []
-  const items = rawItems
-    .map(readProgressItem)
-    .filter((item): item is SessionProgressItemSummary => Boolean(item))
+function readTaskState(value: unknown) {
+  const rawState = readRecord(value)
+  const rawTasks = Array.isArray(rawState?.tasks) ? rawState.tasks : []
+  const tasks = rawTasks
+    .map(readTaskSummary)
+    .filter((task): task is SessionTaskSummary => Boolean(task))
 
-  if (items.length === 0) return null
+  if (tasks.length === 0) return null
 
   return {
-    explanation: readString(progress?.explanation) || undefined,
-    toolCallID: readString(progress?.toolCallID) || undefined,
-    items,
+    tasks,
+    completed: tasks.filter((task) => task.status === "completed").length,
+    active: tasks.find((task) => task.status === "in_progress"),
   }
 }
 
-function readPlanProgressFromToolState(state: Record<string, unknown> | null) {
+function readTaskStateFromToolState(state: Record<string, unknown> | null) {
   if (!state || readString(state.status) !== "completed") return null
   const metadata = readRecord(state.metadata)
-  if (readString(metadata?.kind) !== "plan-progress") return null
-  return readPlanProgress(metadata?.progress)
+  if (readString(metadata?.kind) !== "task-state") return null
+  return readTaskState(metadata?.state)
 }
 
-function createPlanProgressTraceItem(input: {
+function createTaskStateTraceItem(input: {
   sourceID: string
-  progress: NonNullable<ReturnType<typeof readPlanProgress>>
+  taskState: NonNullable<ReturnType<typeof readTaskState>>
   debugEntries?: AssistantTraceDebugEntry[]
 }) {
-  const completed = input.progress.items.filter((item) => item.status === "completed").length
-  const active = input.progress.items.find((item) => item.status === "in_progress")
   const status: AssistantTraceStatus =
-    completed === input.progress.items.length
+    input.taskState.completed === input.taskState.tasks.length
       ? "completed"
-      : active
+      : input.taskState.active
         ? "running"
         : "pending"
 
   return createTraceItem({
     id: input.sourceID,
     sourceID: input.sourceID,
-    kind: "plan-progress",
-    label: "Progress",
-    title: `${completed}/${input.progress.items.length} plan steps`,
-    detail: input.progress.explanation,
+    kind: "task-state",
+    label: "Tasks",
+    title: `${input.taskState.completed}/${input.taskState.tasks.length} tasks`,
+    detail: input.taskState.active?.activeForm,
     status,
     section: "workflow",
     visibilityKey: "workflow",
-    progressItems: input.progress.items,
-    progressExplanation: input.progress.explanation,
+    progressItems: input.taskState.tasks.map((task) => ({
+      id: task.id,
+      step: `${task.subject} (${task.owner})`,
+      status: task.status,
+    })),
     debugEntries: input.debugEntries,
   })
 }
@@ -853,12 +875,12 @@ function buildTraceItemFromPart(
     const toolInputText = createToolTraceInputText(status, state)
     const toolOutputText = createToolTraceOutputText(status, state)
     const questionPrompt = status === "completed" ? readAskUserQuestionPrompt(state?.metadata) : null
-    const progress = readPlanProgressFromToolState(state)
+    const taskState = readTaskStateFromToolState(state)
 
-    if (progress) {
-      return [createPlanProgressTraceItem({
-        sourceID: `plan-progress:${progress.toolCallID ?? sourceID}`,
-        progress,
+    if (taskState) {
+      return [createTaskStateTraceItem({
+        sourceID: `task-state:${readString(readRecord(state?.metadata)?.toolCallID) || sourceID}`,
+        taskState,
         debugEntries,
       })]
     }
@@ -1996,15 +2018,15 @@ function applyRuntimeEventToTurn(
     )
   }
 
-  if (event.type === "plan.progress.updated") {
-    const progress = readPlanProgress(payload.progress)
-    if (!progress) return turn
-    const sourceID = `plan-progress:${progress.toolCallID ?? event.eventID}`
+  if (event.type === "task.state.updated") {
+    const taskState = readTaskState(payload.state)
+    if (!taskState) return turn
+    const sourceID = `task-state:${event.eventID}`
     const nextItems = upsertTraceItem(
       clearStreamingItems(preparedItems),
-      createPlanProgressTraceItem({
+      createTaskStateTraceItem({
         sourceID,
-        progress,
+        taskState,
         debugEntries,
       }),
     )

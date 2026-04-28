@@ -243,11 +243,6 @@
   color: #1f6c52;
 }
 
-.session-workflow-badge.is-progress {
-  background: rgba(57, 108, 166, 0.12);
-  color: #235f97;
-}
-
 .permission-scope-switch {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

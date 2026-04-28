@@ -9,6 +9,7 @@ import * as Prompt from "#session/prompt.ts"
 import * as RunningState from "#session/running-state.ts"
 import * as Session from "#session/session.ts"
 import * as SessionDiff from "#session/diff.ts"
+import * as Task from "#session/task.ts"
 import * as Log from "#util/log.ts"
 import {
   createSessionEventStream,
@@ -468,6 +469,32 @@ export function getSideChatContext(sessionID: string) {
 
 export function getSession(sessionID: string) {
   return mapSessionSummary(requireSession(sessionID))
+}
+
+export function listSessionTasks(sessionID: string, input?: {
+  owner?: string
+  status?: string
+  includeCompleted?: string
+}) {
+  requireSession(sessionID)
+  const status = Task.SessionTaskStatus.safeParse(input?.status)
+  return Task.listSessionTasks(sessionID, {
+    owner: input?.owner?.trim() || undefined,
+    status: status.success ? status.data : undefined,
+    includeCompleted:
+      input?.includeCompleted === undefined
+        ? undefined
+        : input.includeCompleted !== "false",
+  })
+}
+
+export function getSessionTask(sessionID: string, taskID: string) {
+  requireSession(sessionID)
+  const task = Task.getSessionTask(sessionID, taskID)
+  if (!task) {
+    throw new ApiError(404, "TASK_NOT_FOUND", `Task '${taskID}' not found`)
+  }
+  return task
 }
 
 export async function listSessionMessages(sessionID: string) {

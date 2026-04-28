@@ -171,7 +171,7 @@ function defaultTraceSectionKeyForItem(item: AssistantTraceItem): AssistantTrace
   if (isFileChangeTraceItem(item)) return "file-change"
   if (isToolTraceItem(item)) return "tools"
   if (item.kind === "reasoning") return "reasoning"
-  if (item.kind === "step" || item.kind === "retry" || item.kind === "snapshot" || item.kind === "subtask" || item.kind === "plan-progress") {
+  if (item.kind === "step" || item.kind === "retry" || item.kind === "snapshot" || item.kind === "subtask" || item.kind === "task-state") {
     return "workflow"
   }
   if (item.kind === "system") return "debug"
@@ -852,7 +852,7 @@ function TraceItemView({
     )
   }
 
-  if (item.kind === "plan-progress" && item.progressItems?.length) {
+  if (item.kind === "task-state" && item.progressItems?.length) {
     return (
       <article className={className} data-kind={item.kind}>
         <div className="trace-item-header">
@@ -861,11 +861,11 @@ function TraceItemView({
           {item.status ? <span className={`trace-item-status is-${item.status}`}>{formatTraceStatusText(item.status) ?? item.status}</span> : null}
         </div>
         {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
-        <ol className="plan-progress-list">
+        <ol className="task-progress-list">
           {item.progressItems.map((progressItem) => (
-            <li key={`${item.id}-${progressItem.id}`} className={`plan-progress-item is-${progressItem.status}`}>
-              <span className="plan-progress-status">{progressItem.status === "in_progress" ? "in progress" : progressItem.status}</span>
-              <span className="plan-progress-step">{progressItem.step}</span>
+            <li key={`${item.id}-${progressItem.id}`} className={`task-progress-item is-${progressItem.status}`}>
+              <span className="task-progress-status">{progressItem.status === "in_progress" ? "in progress" : progressItem.status}</span>
+              <span className="task-progress-step">{progressItem.step}</span>
             </li>
           ))}
         </ol>

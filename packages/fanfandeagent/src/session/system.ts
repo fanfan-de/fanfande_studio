@@ -6,37 +6,37 @@ import { Instance } from "../project/instance"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
 import type * as Session from "#session/session.ts"
+import * as Task from "#session/task.ts"
 import * as PromptPresets from "#session/prompt-presets.ts"
 //import type { Agent } from "@/agent/agent"
 //import { Permission } from "@/permission"
 //import { Skill } from "@/skill"
 
-function renderProgressGroup(label: string, steps: string[]) {
-    if (steps.length === 0) return undefined
-    return `- ${label}: ${steps.join("; ")}`
+function renderTaskSummaryGroup(label: string, tasks: Task.SessionTaskView[]) {
+    if (tasks.length === 0) return undefined
+    return `- ${label}: ${tasks.map((task) => `${task.id} ${task.subject} (${task.owner})`).join("; ")}`
 }
 
-function renderActiveProgress(workflow: Session.SessionInfo["workflow"] | undefined) {
-    const progress = workflow?.progress
-    if (!progress || progress.items.length === 0) return undefined
+function renderActiveTasks(session: Session.SessionInfo | null | undefined) {
+    if (!session) return undefined
 
-    const completed = progress.items
-        .filter((item) => item.status === "completed")
-        .map((item) => item.step)
-    const inProgress = progress.items
-        .filter((item) => item.status === "in_progress")
-        .map((item) => item.step)
-    const pending = progress.items
-        .filter((item) => item.status === "pending")
-        .map((item) => item.step)
+    const state = Task.listSessionTasks(session.id, {
+        includeCompleted: false,
+    })
+    if (state.summary.total === 0) return undefined
+
+    const blocked = state.blocked.map((task) => ({
+        ...task,
+        subject: `${task.subject} blocked_by=${task.blockedBy.join(",")}`,
+    }))
 
     return [
-        "<active-progress>",
-        progress.explanation ? `explanation: ${progress.explanation}` : undefined,
-        renderProgressGroup("completed", completed),
-        renderProgressGroup("in_progress", inProgress),
-        renderProgressGroup("pending", pending),
-        "</active-progress>",
+        "<active-tasks>",
+        `completed: ${state.summary.completed}/${Task.listSessionTasks(session.id).summary.total}`,
+        renderTaskSummaryGroup("current", state.current),
+        renderTaskSummaryGroup("next", state.next),
+        renderTaskSummaryGroup("blocked", blocked),
+        "</active-tasks>",
     ].filter((line): line is string => typeof line === "string").join("\n")
 }
 
@@ -86,9 +86,9 @@ export async function defaultPrompt(input?: {
         ].join("\n"))
     }
 
-    const activeProgress = renderActiveProgress(workflow)
-    if (activeProgress) {
-        prompts.push(activeProgress)
+    const activeTasks = renderActiveTasks(input?.session)
+    if (activeTasks) {
+        prompts.push(activeTasks)
     }
 
     return prompts

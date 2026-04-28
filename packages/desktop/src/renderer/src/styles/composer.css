@@ -55,6 +55,130 @@
   padding: 0 var(--pane-content-gutter) 12px;
 }
 
+.composer-task-progress {
+  width: 100%;
+  max-width: var(--pane-content-max-width);
+  margin: 0 auto;
+  padding: 10px 14px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-md);
+  background: var(--mix-seg-panel-muted-88-seg-panel-12);
+  color: var(--seg-text-2);
+}
+
+.composer-task-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.composer-task-progress-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--seg-text-2);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-task-progress-active {
+  flex: 0 0 auto;
+  max-width: 140px;
+  overflow: hidden;
+  color: var(--seg-text-3);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-task-progress-list {
+  max-height: 104px;
+  margin: 7px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.composer-task-progress-row {
+  min-height: 22px;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--seg-text-2);
+  font-size: 13px;
+  line-height: 1.35;
+  list-style: none;
+}
+
+.composer-task-progress-marker {
+  width: 7px;
+  height: 7px;
+  justify-self: center;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--seg-text-3);
+}
+
+.composer-task-progress-copy {
+  min-width: 0;
+  display: flex;
+  gap: 5px;
+}
+
+.composer-task-progress-index {
+  flex: 0 0 auto;
+  color: var(--seg-text-3);
+}
+
+.composer-task-progress-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-task-progress-status {
+  flex: 0 0 auto;
+  color: var(--seg-text-3);
+  font-size: 11px;
+}
+
+.composer-task-progress-row.is-running {
+  color: var(--seg-text-1);
+  font-weight: 650;
+}
+
+.composer-task-progress-row.is-running .composer-task-progress-marker {
+  color: var(--brand-accent-active);
+  background: currentColor;
+}
+
+.composer-task-progress-row.is-completed {
+  color: var(--seg-text-3);
+}
+
+.composer-task-progress-row.is-completed .composer-task-progress-marker {
+  color: var(--seg-success-text);
+  background: currentColor;
+}
+
+.composer-task-progress-row.is-completed .composer-task-progress-title {
+  text-decoration: line-through;
+}
+
+.composer-task-progress-row.is-blocked .composer-task-progress-marker {
+  color: var(--seg-warning-text);
+  background: var(--seg-warning-surface);
+}
+
 .composer-utility-chip {
   width: 34px;
   height: 34px;
