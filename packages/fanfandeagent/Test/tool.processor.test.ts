@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
+import { existsSync } from "node:fs"
+import { readFile } from "node:fs/promises"
 import "./sqlite.cleanup.ts"
 import { Instance } from "#project/instance.ts"
+import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
 
 function createTurnRecorder(sessionID: string) {
   const events: Array<{ type: string; payload: any }> = []
@@ -208,6 +211,117 @@ describe("processor tool persistence", () => {
       expect(processor.partFromToolCall("tool-2")?.state.status).toBe("error")
     } finally {
       Date.now = originalNow
+    }
+  })
+
+  it("persists oversized tool results before emitting completed parts", async () => {
+    const sessionID = "ses_processor_large"
+    const largeOutput = `${"large-output ".repeat(5_000)}tail-marker`
+
+    try {
+      mock.module("#session/llm.ts", () => ({
+        stream: async () => ({
+          fullStream: (async function* () {
+            yield { type: "start" }
+            yield {
+              type: "tool-input-start",
+              id: "tool-large",
+              toolName: "custom",
+            }
+            yield {
+              type: "tool-call",
+              toolCallId: "tool-large",
+              toolName: "custom",
+              input: { path: "large.txt" },
+              title: "Custom Tool",
+              providerMetadata: {
+                stdout: largeOutput,
+              },
+            }
+            yield {
+              type: "tool-result",
+              toolCallId: "tool-large",
+              toolName: "custom",
+              input: { path: "large.txt" },
+              output: {
+                text: largeOutput,
+                title: "Large output",
+                metadata: {
+                  stdout: largeOutput,
+                  keep: "small",
+                },
+              },
+            }
+            yield {
+              type: "finish",
+              finishReason: "stop",
+            }
+          })(),
+        }),
+      }))
+
+      const Processor = await import("#session/processor.ts")
+      const recorded = createTurnRecorder(sessionID)
+
+      const assistant = {
+        id: "assistant-large",
+        sessionID,
+        role: "assistant",
+        created: Date.now(),
+        parentID: "user-large",
+        modelID: "test-model",
+        providerID: "test-provider",
+        agent: "plan",
+        path: {
+          cwd: ".",
+          root: ".",
+        },
+        cost: 0,
+        tokens: {
+          input: 0,
+          output: 0,
+          reasoning: 0,
+          cache: {
+            read: 0,
+            write: 0,
+          },
+        },
+      } as any
+
+      const processor = Processor.create({
+        Assistant: assistant,
+        turn: recorded.turn,
+      })
+
+      expect(await processor.process(createStreamInput())).toBe("continue")
+
+      const completed = recorded.events.find(
+        (event) =>
+          event.type === "tool.call.completed" &&
+          event.payload.part.type === "tool" &&
+          event.payload.part.callID === "tool-large" &&
+          event.payload.part.state?.status === "completed",
+      )
+
+      expect(completed).toBeDefined()
+      const state = completed?.payload.part.state
+      expect(state.output).toContain("<persisted-output>")
+      expect(state.output).not.toContain("tail-marker")
+      expect(state.modelOutput).toBeUndefined()
+      expect(state.metadata.keep).toBe("small")
+      expect(String(state.metadata.stdout)).toContain("omitted from context")
+      expect(String(completed?.payload.part.metadata.stdout)).toContain("omitted from context")
+
+      const persisted = state.metadata.persistedOutput as { path?: string } | undefined
+      expect(persisted?.path).toBeDefined()
+      expect(existsSync(persisted?.path ?? "")).toBe(true)
+      expect(await readFile(persisted?.path ?? "", "utf8")).toContain("tail-marker")
+
+      const stored = processor.partFromToolCall("tool-large")
+      expect(stored?.state.status).toBe("completed")
+      expect((stored?.state as any).output).not.toContain("tail-marker")
+    } finally {
+      ToolResultPersistence.removeSessionOutputDirectory(sessionID)
     }
   })
 

@@ -11,6 +11,7 @@ import * as EventStore from "#session/event-store.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as SessionMemory from "#session/memory-store.ts"
 import * as TaskSchema from "#session/task-schema.ts"
+import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
 
 interface TableRecordMap {
   projects: never
@@ -881,6 +882,7 @@ function removeSession(sessionID: string): SessionInfo | null {
   removeSessionTasks(sessionID)
   EventStore.deleteSessionEvents(sessionID)
   SessionMemory.deleteSessionMemory(sessionID)
+  ToolResultPersistence.removeSessionOutputDirectory(sessionID)
   db.deleteById("sessions", sessionID)
   db.deleteById("side_chat_links", sessionID, "sessionID")
 
@@ -970,6 +972,7 @@ function deleteArchivedSession(sessionID: string): ArchivedSessionRecord | null 
 
   db.deleteById("archived_sessions", sessionID, "sessionID")
   db.deleteById("side_chat_links", sessionID, "sessionID")
+  ToolResultPersistence.removeSessionOutputDirectory(sessionID)
   return archived
 }
 

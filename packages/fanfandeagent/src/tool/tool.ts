@@ -136,6 +136,7 @@ export interface ToolInfo<
   title?: string
   aliases?: string[]
   capabilities?: ToolCapabilities
+  maxResultSizeChars?: number
   init: (ctx?: InitContext) => Promise<NormalizedToolRuntime<Parameters, M, D>>
 }
 

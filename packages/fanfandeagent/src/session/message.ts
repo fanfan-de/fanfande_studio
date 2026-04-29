@@ -28,6 +28,7 @@ import type * as Agent from "#agent/agent.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Permission from "#permission/schema.ts"
 import * as Log from "#util/log.ts"
+import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
 
 export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
 export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
@@ -854,6 +855,16 @@ export async function toModelMessages(
         reason?: string
     }> {
         const state = part.state
+        if (state.status === "completed") {
+            const persisted = ToolResultPersistence.readPersistedOutputMetadata(state.metadata)
+            if (persisted) {
+                return {
+                    type: "text",
+                    value: persisted.replacement,
+                }
+            }
+        }
+
         if (part.providerExecuted && state.status === "completed" && state.modelOutput !== undefined) {
             return state.modelOutput as {
                 type: "text" | "json" | "error-text" | "error-json" | "execution-denied"

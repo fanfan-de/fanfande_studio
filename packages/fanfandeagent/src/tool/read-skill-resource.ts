@@ -69,6 +69,7 @@ export const ReadSkillResourceTool = Tool.define(
   {
     title: "Read Skill Resource",
     aliases: ["read_skill_resource"],
+    maxResultSizeChars: Infinity,
     capabilities: {
       kind: "read",
       readOnly: true,

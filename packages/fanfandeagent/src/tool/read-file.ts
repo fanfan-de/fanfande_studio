@@ -1,6 +1,11 @@
 import z from "zod"
 import * as Tool from "#tool/tool.ts"
-import { readTextFileRange, resolveToolPath, toDisplayPath } from "#tool/shared.ts"
+import { readResolvedTextFileRange, resolveReadableTextFilePath, toDisplayPath } from "#tool/shared.ts"
+import { Instance } from "#project/instance.ts"
+
+function displayPath(resolvedPath: string) {
+  return Instance.containsPath(resolvedPath) ? toDisplayPath(resolvedPath) : resolvedPath
+}
 
 export const ReadFileTool = Tool.define(
   "read-file",
@@ -21,7 +26,7 @@ export const ReadFileTool = Tool.define(
         path: ["endLine"],
       }),
       describeApproval: (parameters, ctx) => {
-        const resolved = resolveToolPath(parameters.path)
+        const resolved = resolveReadableTextFilePath(parameters.path)
         const lines = parameters.startLine != null
           ? parameters.endLine != null
             ? `lines ${parameters.startLine}-${parameters.endLine}`
@@ -29,26 +34,26 @@ export const ReadFileTool = Tool.define(
           : "file contents"
 
         return {
-          title: `Read ${toDisplayPath(resolved)}`,
-          summary: `Read ${lines} from ${toDisplayPath(resolved)}.`,
+          title: `Read ${displayPath(resolved)}`,
+          summary: `Read ${lines} from ${displayPath(resolved)}.`,
           details: {
-            paths: [toDisplayPath(resolved)],
+            paths: [displayPath(resolved)],
             workdir: ctx.cwd,
           },
         }
       },
       execute: async (parameters) => {
-        const resolved = resolveToolPath(parameters.path)
+        const resolved = resolveReadableTextFilePath(parameters.path)
         const maxLines = parameters.maxLines ?? 250
         const startLine = parameters.startLine ?? 1
         const endLine = parameters.endLine ?? (parameters.startLine ? parameters.startLine + maxLines - 1 : maxLines)
-        const excerpt = await readTextFileRange(parameters.path, startLine, endLine)
+        const excerpt = await readResolvedTextFileRange(resolved, startLine, endLine)
         const truncated = excerpt.totalLines > excerpt.endLine
 
         return {
-          title: `Read ${toDisplayPath(resolved)}`,
+          title: `Read ${displayPath(resolved)}`,
           text: [
-            `Path: ${toDisplayPath(resolved)}`,
+            `Path: ${displayPath(resolved)}`,
             `Lines: ${excerpt.startLine}-${excerpt.endLine} of ${excerpt.totalLines}`,
             excerpt.outOfRange ? "Note: the requested line range starts beyond the end of the file." : undefined,
             truncated ? "Note: output was truncated. Use startLine/endLine to inspect more." : undefined,
@@ -61,6 +66,7 @@ export const ReadFileTool = Tool.define(
   },
   {
     title: "Read File",
+    maxResultSizeChars: Infinity,
     capabilities: {
       kind: "read",
       readOnly: true,

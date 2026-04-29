@@ -149,6 +149,18 @@ export function resolveToolPath(inputPath: string): string {
   return normalized
 }
 
+export function resolveReadableTextFilePath(inputPath: string): string {
+  if (!path.isAbsolute(inputPath)) {
+    return resolveToolPath(inputPath)
+  }
+
+  if (isUncPath(inputPath)) {
+    throw new Error(`UNC paths are not supported: ${inputPath}`)
+  }
+
+  return Filesystem.normalizePath(path.resolve(inputPath))
+}
+
 export function toDisplayPath(resolvedPath: string): string {
   const relative = path.relative(Instance.directory, resolvedPath)
   return relative ? relative : "."
@@ -436,6 +448,15 @@ export async function readTextFileRange(
   endLine?: number,
 ) {
   const resolved = resolveToolPath(inputPath)
+  return await readResolvedTextFileRange(resolved, startLine, endLine)
+}
+
+export async function readResolvedTextFileRange(
+  resolvedPath: string,
+  startLine = 1,
+  endLine?: number,
+) {
+  const resolved = Filesystem.normalizePath(path.resolve(resolvedPath))
   await assertReadableTextFile(resolved)
 
   const info = await stat(resolved)
