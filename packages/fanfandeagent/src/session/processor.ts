@@ -11,8 +11,6 @@ import * as Session from "#session/session.ts"
 import { Flag } from "#flag/flag.ts"
 import type { LanguageModelUsage } from "ai"
 import type { TurnContext } from "#session/orchestrator.ts"
-import * as ToolRegistry from "#tool/registry.ts"
-import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
 
 const log = Log.create({ service: "session.processor" })
 const STREAM_PART_PERSIST_INTERVAL_MS = 100
@@ -356,23 +354,6 @@ async function extractToolResultState(
         }
     }
 
-    if (toolPart) {
-        const toolInfo = await ToolRegistry.get(toolPart.tool).catch(() => undefined)
-        const processed = await ToolResultPersistence.maybePersistToolResult({
-            sessionID: toolPart.sessionID,
-            toolCallID: toolPart.callID,
-            toolName: toolPart.tool,
-            output: text,
-            metadata,
-            modelOutput: output,
-            maxResultSizeChars: toolInfo?.maxResultSizeChars,
-        })
-
-        text = processed.output
-        metadata = processed.metadata
-        output = processed.modelOutput
-    }
-
     return {
         output: text,
         title,
@@ -711,9 +692,6 @@ export function create(input: {
                             fallbackMetadata,
                             current,
                         )
-                        const partMetadata = ToolResultPersistence.readPersistedOutputMetadata(normalized.metadata)
-                            ? normalized.metadata
-                            : candidate.providerMetadata ?? current.metadata
                         const match: Message.ToolPart = {
                             ...current,
                             tool: candidate.toolName ?? current.tool,
@@ -737,7 +715,7 @@ export function create(input: {
                                 },
                                 attachments: normalized.attachments,
                             },
-                            metadata: partMetadata,
+                            metadata: candidate.providerMetadata ?? current.metadata,
                         }
 
                         toolcalls[current.callID] = match
@@ -1067,9 +1045,6 @@ export function create(input: {
                                         value.providerMetadata ?? {},
                                         toolcalls[value.toolCallId],
                                     )
-                                    const partMetadata = ToolResultPersistence.readPersistedOutputMetadata(normalized.metadata)
-                                        ? normalized.metadata
-                                        : toolcalls[value.toolCallId]!.metadata
                                     const match: Message.ToolPart = {
                                         ...toolcalls[value.toolCallId]!,
                                         providerExecuted:
@@ -1090,7 +1065,7 @@ export function create(input: {
                                             },
                                             attachments: normalized.attachments,
                                         },
-                                        metadata: partMetadata,
+                                        metadata: toolcalls[value.toolCallId]!.metadata,
                                     }
 
                                     toolcalls[value.toolCallId] = match

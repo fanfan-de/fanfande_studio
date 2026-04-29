@@ -1,16 +1,21 @@
 import { afterEach, expect, test } from "bun:test"
 import { existsSync } from "node:fs"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import z from "zod"
 import "./sqlite.cleanup.ts"
+import * as Agent from "#agent/agent.ts"
 import * as Sqlite from "#database/Sqlite.ts"
 import { Instance } from "#project/instance.ts"
 import * as Identifier from "#id/id.ts"
 import * as Message from "#session/message.ts"
+import { resolveTools } from "#session/resolve-tools.ts"
 import * as Session from "#session/session.ts"
 import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
+import * as Tool from "#tool/tool.ts"
+import * as ToolRegistry from "#tool/registry.ts"
 
 const testModel = {
   id: "test-model",
@@ -98,6 +103,158 @@ test("maybePersistToolResult writes large output and honors Infinity opt-out", a
 
   expect(passthrough.output).toBe(large)
   expect(passthrough.persisted).toBeUndefined()
+})
+
+test("resolveTools persists large tool output before the processor sees it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fanfande-wrapper-persist-"))
+  const sessionID = "ses_wrapper_persist"
+  cleanupSessions.add(sessionID)
+  const large = `${"wrapper-output ".repeat(5_000)}secret-tail`
+  let toModelOutputCalled = false
+
+  try {
+    await Instance.provide({
+      directory: root,
+      async fn() {
+        const registry = await ToolRegistry.state()
+        registry.custom.push(
+          Tool.define(
+            "large-wrapper-tool",
+            async () => ({
+              description: "Test-only large output tool.",
+              parameters: z.object({}),
+              execute: async () => ({
+                text: large,
+                title: "Large Wrapper Tool",
+                metadata: {
+                  stdout: large,
+                  keep: "small",
+                },
+                data: {
+                  leaked: "secret-tail",
+                },
+              }),
+              toModelOutput: async () => {
+                toModelOutputCalled = true
+                return {
+                  type: "json" as const,
+                  value: {
+                    leaked: "secret-tail",
+                  },
+                }
+              },
+            }),
+            {
+              maxResultSizeChars: 1_000,
+              capabilities: {
+                kind: "read",
+                readOnly: true,
+                destructive: false,
+                concurrency: "safe",
+              },
+            },
+          ),
+        )
+
+        const agent = await Agent.get("default")
+        expect(agent).toBeDefined()
+        const tools = await resolveTools({
+          agent: agent!,
+          sessionID,
+          messageID: "msg-wrapper-persist",
+          abort: new AbortController().signal,
+        })
+        const runtimeTool = tools["large-wrapper-tool"] as any
+        const output = await runtimeTool.execute({}, {
+          toolCallId: "tool-wrapper-persist",
+          messages: [],
+        })
+
+        expect(output.text).toContain("<persisted-output>")
+        expect(output.text).not.toContain("secret-tail")
+        expect(output.title).toBe("Large Wrapper Tool")
+        expect(output.data).toBeUndefined()
+        expect(output.metadata.keep).toBe("small")
+        expect(String(output.metadata.stdout)).toContain("omitted from context")
+
+        const persisted = ToolResultPersistence.readPersistedOutputMetadata(output.metadata)
+        expect(persisted?.path).toBeDefined()
+        expect(existsSync(persisted?.path ?? "")).toBe(true)
+        expect(await readFile(persisted?.path ?? "", "utf8")).toContain("secret-tail")
+
+        const modelOutput = await runtimeTool.toModelOutput({
+          toolCallId: "tool-wrapper-persist",
+          input: {},
+          output,
+        })
+        expect(modelOutput).toEqual({
+          type: "text",
+          value: persisted?.replacement,
+        })
+        expect(toModelOutputCalled).toBe(false)
+        expect(JSON.stringify(modelOutput)).not.toContain("secret-tail")
+      },
+    })
+  } finally {
+    await removeTreeWithRetry(root)
+  }
+})
+
+test("resolveTools honors Infinity maxResultSizeChars opt-out", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fanfande-wrapper-passthrough-"))
+  const sessionID = "ses_wrapper_passthrough"
+  cleanupSessions.add(sessionID)
+  const large = `${"passthrough-output ".repeat(5_000)}secret-tail`
+
+  try {
+    await Instance.provide({
+      directory: root,
+      async fn() {
+        const registry = await ToolRegistry.state()
+        registry.custom.push(
+          Tool.define(
+            "passthrough-wrapper-tool",
+            async () => ({
+              description: "Test-only passthrough output tool.",
+              parameters: z.object({}),
+              execute: async () => ({
+                text: large,
+                metadata: {},
+              }),
+            }),
+            {
+              maxResultSizeChars: Infinity,
+              capabilities: {
+                kind: "read",
+                readOnly: true,
+                destructive: false,
+                concurrency: "safe",
+              },
+            },
+          ),
+        )
+
+        const agent = await Agent.get("default")
+        expect(agent).toBeDefined()
+        const tools = await resolveTools({
+          agent: agent!,
+          sessionID,
+          messageID: "msg-wrapper-passthrough",
+          abort: new AbortController().signal,
+        })
+        const output = await (tools["passthrough-wrapper-tool"] as any).execute({}, {
+          toolCallId: "tool-wrapper-passthrough",
+          messages: [],
+        })
+
+        expect(output.text).toBe(large)
+        expect(output.text).toContain("secret-tail")
+        expect(ToolResultPersistence.readPersistedOutputMetadata(output.metadata)).toBeUndefined()
+      },
+    })
+  } finally {
+    await removeTreeWithRetry(root)
+  }
 })
 
 test("toModelMessages replays persisted replacement instead of stored modelOutput", async () => {

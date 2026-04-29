@@ -2,8 +2,10 @@ import { tool, type ToolSet } from "ai"
 import * as Agent from "#agent/agent.ts"
 import * as Config from "#config/config.ts"
 import * as Session from "#session/session.ts"
+import * as Identifier from "#id/id.ts"
 import { Instance } from "#project/instance.ts"
 import * as Permission from "#permission/permission.ts"
+import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
 import * as Tool from "#tool/tool.ts"
 import * as ToolRegistry from "#tool/registry.ts"
 
@@ -81,6 +83,32 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
     // Reuse permission decisions within the same tool call.
     const decisionCache = new Map<string, Awaited<ReturnType<typeof Permission.evaluate>>>()
 
+    const persistOutputIfLarge = async (
+      output: Tool.ToolOutput,
+      toolCallID: string,
+    ): Promise<Tool.ToolOutput> => {
+      const processed = await ToolResultPersistence.maybePersistToolResult({
+        sessionID: input.sessionID,
+        toolCallID,
+        toolName: item.id,
+        output: output.text,
+        metadata: output.metadata ?? {},
+        modelOutput: output,
+        maxResultSizeChars: item.maxResultSizeChars,
+      })
+
+      if (!processed.persisted) {
+        return output
+      }
+
+      return {
+        ...output,
+        text: processed.output,
+        metadata: processed.metadata,
+        data: undefined,
+      }
+    }
+
     const evaluatePermission = async (args: Record<string, unknown>, toolCallID?: string) => {
       const cached = toolCallID ? decisionCache.get(toolCallID) : undefined
       if (cached) return cached
@@ -134,7 +162,8 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
         return decision.action === "ask"
       },
       execute: async (args, options) => {
-        const decision = await evaluatePermission(args as Record<string, unknown>, options.toolCallId)
+        const toolCallID = options.toolCallId ?? Identifier.ascending("tool")
+        const decision = await evaluatePermission(args as Record<string, unknown>, toolCallID)
 
         // Block denied or not-yet-approved calls before running the tool.
         if (decision.action === "deny") {
@@ -145,20 +174,30 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
         }
 
         // Execute with shared session context and normalize the result shape.
-        return Tool.normalizeToolOutput(
+        const output = Tool.normalizeToolOutput(
           await runtime.execute(args, {
             sessionID: input.sessionID,
             messageID: input.messageID,
             cwd: Instance.directory,
             worktree: Instance.worktree,
             abort: input.abort,
-            toolCallID: options.toolCallId,
+            toolCallID,
           }),
         )
+
+        return persistOutputIfLarge(output, toolCallID)
       },
       toModelOutput: async ({ output }) => {
         // Normalize tool output first, then let the runtime customize it if needed.
         const normalized = Tool.normalizeToolOutput(output as Tool.ToolOutput)
+        const persisted = ToolResultPersistence.readPersistedOutputMetadata(normalized.metadata)
+        if (persisted) {
+          return {
+            type: "text" as const,
+            value: persisted.replacement,
+          }
+        }
+
         const modelOutput = runtime.toModelOutput
           ? await runtime.toModelOutput(normalized)
           : normalized.text

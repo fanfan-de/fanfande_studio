@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
 import { existsSync } from "node:fs"
-import { readFile } from "node:fs/promises"
 import "./sqlite.cleanup.ts"
 import { Instance } from "#project/instance.ts"
 import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
@@ -214,7 +213,7 @@ describe("processor tool persistence", () => {
     }
   })
 
-  it("persists oversized tool results before emitting completed parts", async () => {
+  it("does not persist raw oversized tool results that bypass the tool wrapper", async () => {
     const sessionID = "ses_processor_large"
     const largeOutput = `${"large-output ".repeat(5_000)}tail-marker`
 
@@ -305,21 +304,24 @@ describe("processor tool persistence", () => {
 
       expect(completed).toBeDefined()
       const state = completed?.payload.part.state
-      expect(state.output).toContain("<persisted-output>")
-      expect(state.output).not.toContain("tail-marker")
-      expect(state.modelOutput).toBeUndefined()
+      expect(state.output).toBe(largeOutput)
+      expect(state.output).toContain("tail-marker")
+      expect(state.modelOutput).toEqual({
+        text: largeOutput,
+        title: "Large output",
+        metadata: {
+          stdout: largeOutput,
+          keep: "small",
+        },
+      })
       expect(state.metadata.keep).toBe("small")
-      expect(String(state.metadata.stdout)).toContain("omitted from context")
-      expect(String(completed?.payload.part.metadata.stdout)).toContain("omitted from context")
-
-      const persisted = state.metadata.persistedOutput as { path?: string } | undefined
-      expect(persisted?.path).toBeDefined()
-      expect(existsSync(persisted?.path ?? "")).toBe(true)
-      expect(await readFile(persisted?.path ?? "", "utf8")).toContain("tail-marker")
+      expect(state.metadata.stdout).toBe(largeOutput)
+      expect(state.metadata.persistedOutput).toBeUndefined()
+      expect(existsSync(ToolResultPersistence.getSessionDirectory(sessionID))).toBe(false)
 
       const stored = processor.partFromToolCall("tool-large")
       expect(stored?.state.status).toBe("completed")
-      expect((stored?.state as any).output).not.toContain("tail-marker")
+      expect((stored?.state as any).output).toContain("tail-marker")
     } finally {
       ToolResultPersistence.removeSessionOutputDirectory(sessionID)
     }
