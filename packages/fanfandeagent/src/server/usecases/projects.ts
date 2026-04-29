@@ -10,6 +10,11 @@ import * as Project from "#project/project.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Provider from "#provider/provider.ts"
 import { ApiError } from "#server/error.ts"
+import {
+  clearProjectModelListCache,
+  listProjectModelsWithFallback,
+  resolveEffectiveModelWithFallback,
+} from "#server/usecases/model-list-cache.ts"
 import * as Session from "#session/session.ts"
 import * as Skill from "#skill/skill.ts"
 
@@ -231,21 +236,13 @@ export async function listProjectProviders(projectID: string) {
 export async function listProjectModels(projectID: string) {
   safeReadProject(projectID)
 
-  const items = await Provider.listModels(projectID)
-  let effectiveModel: Provider.PublicModel | null = null
-
-  try {
-    const effectiveRef = await Provider.getDefaultModelRef(projectID)
-    effectiveModel =
-      items.find((model) => model.providerID === effectiveRef.providerID && model.id === effectiveRef.modelID) ?? null
-  } catch {
-    effectiveModel = null
-  }
+  const items = await listProjectModelsWithFallback(projectID)
+  const selection = await Provider.getSelection(projectID)
 
   return {
-    effectiveModel,
+    effectiveModel: await resolveEffectiveModelWithFallback(projectID, items, selection.model),
     items,
-    selection: await Provider.getSelection(projectID),
+    selection,
   }
 }
 
@@ -267,6 +264,7 @@ export async function updateProjectProvider(
   }
 
   const providerConfig = await Config.setProvider(projectID, providerID, input)
+  clearProjectModelListCache(projectID)
   const provider = await Provider.getPublicProvider(providerID, projectID)
   if (!provider) {
     throw new ApiError(404, "PROVIDER_NOT_FOUND", `Provider '${providerID}' not found in the catalog`)
@@ -284,6 +282,7 @@ export async function updateProjectProvider(
 export async function removeProjectProvider(projectID: string, providerID: string) {
   safeReadProject(projectID)
   const providerConfig = await Config.removeProvider(projectID, providerID)
+  clearProjectModelListCache(projectID)
 
   return {
     providerID,
@@ -330,6 +329,7 @@ export async function refreshProjectProviderCatalog(projectID: string) {
     )
   }
 
+  clearProjectModelListCache(projectID)
   return Provider.catalog(projectID)
 }
 

@@ -8,6 +8,8 @@ import {
   mergeConversationTurnsFromHistory,
   readLatestSessionContextUsageFromHistory,
   readSessionContextUsageFromDoneEventData,
+  reconcileConversationTurns,
+  resolveStreamMessageID,
   resolveStreamCursor,
   resolveStreamTurnID,
 } from "./session-stream-controller"
@@ -66,6 +68,36 @@ describe("session stream controller helpers", () => {
 
     expect(resolveStreamCursor({ data: { cursor: "legacy-cursor-1", turnID: "legacy-turn-1" } })).toBe("legacy-cursor-1")
     expect(resolveStreamTurnID({ data: { cursor: "legacy-cursor-1", turnID: "legacy-turn-1" } })).toBe("legacy-turn-1")
+  })
+
+  it("resolves assistant message IDs from runtime part and terminal events", () => {
+    expect(resolveStreamMessageID({
+      data: createRuntimeEvent("tool.call.completed", {
+        part: {
+          id: "part-tool-1",
+          messageID: "message-assistant-1",
+          type: "tool",
+        },
+      }),
+    })).toBe("message-assistant-1")
+    expect(resolveStreamMessageID({
+      data: createRuntimeEvent("turn.completed", {
+        message: {
+          id: "message-assistant-2",
+        },
+      }),
+    })).toBe("message-assistant-2")
+    expect(resolveStreamMessageID({
+      data: {
+        parts: [
+          {
+            id: "part-tool-2",
+            messageID: "message-assistant-3",
+            type: "tool",
+          },
+        ],
+      },
+    })).toBe("message-assistant-3")
   })
 
   it("classifies terminal, completed, and permission events across stream formats", () => {
@@ -203,5 +235,97 @@ describe("session stream controller helpers", () => {
         }),
       ],
     })
+  })
+
+  it("reconciles approval-resolution tool updates back into the original assistant message", () => {
+    const originalTurn: AssistantTurn = {
+      id: "assistant-original",
+      messageID: "msg-tool",
+      kind: "assistant",
+      timestamp: 2,
+      runtime: {
+        phase: "waiting_approval",
+        startedAt: 2,
+        updatedAt: 3,
+        toolName: "replace-text",
+        approvalRequestID: "approval-1",
+      },
+      state: "Waiting for permission approval",
+      items: [
+        {
+          id: "trace-tool-local",
+          kind: "tool",
+          label: "Tool",
+          title: "replace-text",
+          status: "waiting-approval",
+          sourceID: "part-tool-html",
+          partID: "part-tool-html",
+          messageID: "msg-tool",
+          toolCallID: "call-html",
+          timestamp: 3,
+        },
+        {
+          id: "assistant-original-blocked",
+          kind: "system",
+          label: "Completion",
+          title: "Approval required",
+          status: "pending",
+          sourceID: "assistant-original:blocked",
+          section: "approvals",
+          visibilityKey: "approvals",
+          timestamp: 4,
+        },
+      ],
+    }
+    const approvalResolutionTurn: AssistantTurn = {
+      id: "assistant-resolution",
+      messageID: "msg-tool",
+      kind: "assistant",
+      timestamp: 5,
+      runtime: {
+        phase: "completed",
+        startedAt: 5,
+        updatedAt: 6,
+      },
+      state: "Backend response received",
+      items: [
+        {
+          id: "trace-tool-resolution",
+          kind: "tool",
+          label: "Tool",
+          title: "replace-text",
+          status: "completed",
+          sourceID: "part-tool-html",
+          partID: "part-tool-html",
+          messageID: "msg-tool",
+          toolCallID: "call-html",
+          toolOutputText: "index.html updated",
+          timestamp: 6,
+        },
+      ],
+    }
+
+    const reconciled = reconcileConversationTurns([originalTurn, approvalResolutionTurn])
+
+    expect(reconciled).toHaveLength(1)
+    expect(reconciled[0]).toMatchObject({
+      id: "assistant-original",
+      kind: "assistant",
+      messageID: "msg-tool",
+      runtime: {
+        phase: "completed",
+        toolName: undefined,
+        approvalRequestID: undefined,
+      },
+      items: [
+        expect.objectContaining({
+          id: "trace-tool-local",
+          sourceID: "part-tool-html",
+          status: "completed",
+          toolOutputText: "index.html updated",
+        }),
+      ],
+    })
+    expect((reconciled[0] as AssistantTurn).items.some((item) => item.title === "Approval required")).toBe(false)
   })
 })

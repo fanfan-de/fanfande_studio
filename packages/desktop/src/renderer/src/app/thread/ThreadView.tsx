@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react"
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
 import { createComposerDraftStateFromPlainText, createEmptyComposerDraftState } from "../composer/draft-state"
@@ -78,6 +78,7 @@ interface ThreadViewProps {
     selectedSkillIDs: string[]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
+  onSessionModelSelectionChange?: (sessionID: string, selection: SessionSummary["modelSelection"] | undefined) => void
   onPermissionRequestResponse: PermissionRequestResponseHandler
 }
 
@@ -94,6 +95,12 @@ type QuestionAnswerHandler = (input: {
   selectedOptions?: string[]
   freeformText?: string
 }) => void | Promise<void>
+
+const THREAD_BOTTOM_LOCK_THRESHOLD_PX = 32
+
+function isThreadColumnPinnedToBottom(threadColumn: HTMLDivElement) {
+  return threadColumn.scrollHeight - threadColumn.scrollTop - threadColumn.clientHeight <= THREAD_BOTTOM_LOCK_THRESHOLD_PX
+}
 
 function UserTurnBubble({ turn }: { turn: UserTurn }) {
   const displayText = turn.displayText?.trim() || ""
@@ -472,6 +479,7 @@ interface InlineSideChatThreadProps {
     selectedSkillIDs: string[]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
+  onSessionModelSelectionChange?: (sessionID: string, selection: SessionSummary["modelSelection"] | undefined) => void
 }
 
 function InlineSideChatThread({
@@ -495,11 +503,14 @@ function InlineSideChatThread({
   onRemoveAttachment,
   onCancelSend,
   onSend,
+  onSessionModelSelectionChange,
 }: InlineSideChatThreadProps) {
   const composer = useProjectComposer({
     attachmentPaths: attachments.map((attachment) => attachment.path),
+    onSessionModelSelectionChange,
     projectID: activeProjectID,
     refreshToken: composerRefreshVersion,
+    sessionModelSelection: session.modelSelection,
     sessionID: session.id,
   })
   const [hydratedTurns, setHydratedTurns] = useState<Turn[]>(turns)
@@ -1243,12 +1254,15 @@ export function ThreadView({
   onSideChatRemoveAttachment,
   onSideChatCancelSend,
   onSideChatSend,
+  onSessionModelSelectionChange,
   onPermissionRequestResponse,
 }: ThreadViewProps) {
   const answeredQuestionIDs = collectAnsweredQuestionIDs(activeTurns)
   const readOnlySideChat = isSideChatSession(activeSession)
   const [copiedResponseTurnID, setCopiedResponseTurnID] = useState<string | null>(null)
   const copiedResponseTimeoutRef = useRef<number | null>(null)
+  const isPinnedToBottomRef = useRef(true)
+  const activeSessionID = activeSession?.id ?? null
 
   useEffect(() => {
     return () => {
@@ -1276,9 +1290,32 @@ export function ThreadView({
     }
   })
 
+  useLayoutEffect(() => {
+    isPinnedToBottomRef.current = true
+
+    const threadColumn = threadColumnRef.current
+    if (!threadColumn) return
+
+    threadColumn.scrollTop = threadColumn.scrollHeight
+  }, [activeSessionID, threadColumnRef])
+
+  useLayoutEffect(() => {
+    const threadColumn = threadColumnRef.current
+    if (!threadColumn || !isPinnedToBottomRef.current) return
+
+    threadColumn.scrollTop = threadColumn.scrollHeight
+  }, [activeTurns, pendingPermissionRequests.length, permissionRequestActionRequestID, threadColumnRef])
+
+  function handleThreadScroll() {
+    const threadColumn = threadColumnRef.current
+    if (!threadColumn) return
+
+    isPinnedToBottomRef.current = isThreadColumnPinnedToBottom(threadColumn)
+  }
+
   return (
     <section className="thread-shell">
-      <div ref={threadColumnRef} className="thread-column">
+      <div ref={threadColumnRef} className="thread-column" onScroll={handleThreadScroll}>
         {!activeSession ? (
           <article className="turn assistant-turn">
             <div className="assistant-shell">
@@ -1441,6 +1478,7 @@ export function ThreadView({
                                   onRemoveAttachment={onSideChatRemoveAttachment}
                                   onCancelSend={onSideChatCancelSend}
                                   onSend={onSideChatSend}
+                                  onSessionModelSelectionChange={onSessionModelSelectionChange}
                                 />
                               ) : null}
                             </div>

@@ -76,6 +76,10 @@ function isSettledAssistantPhase(phase: AssistantTurnPhase) {
   return phase === "completed" || phase === "blocked" || phase === "cancelled" || phase === "failed"
 }
 
+function isTerminalTraceStatus(status: AssistantTraceStatus | undefined) {
+  return status === "completed" || status === "error" || status === "denied"
+}
+
 function isTerminalRuntimeEventType(type: string) {
   return type === "turn.completed" || type === "turn.failed" || type === "turn.cancelled"
 }
@@ -765,13 +769,26 @@ function upsertTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceIt
 
   const firstIndex = matchingIndices[0]
   const existing = items[firstIndex]
-  const merged = {
-    ...existing,
-    ...nextItem,
-    id: existing.id,
-    timestamp: existing.timestamp,
-    debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
-  }
+  const keepsTerminalToolState =
+    existing.kind === "tool" &&
+    nextItem.kind === "tool" &&
+    isTerminalTraceStatus(existing.status) &&
+    !isTerminalTraceStatus(nextItem.status)
+  const merged = keepsTerminalToolState
+    ? {
+        ...existing,
+        messageID: existing.messageID ?? nextItem.messageID,
+        partID: existing.partID ?? nextItem.partID,
+        toolCallID: existing.toolCallID ?? nextItem.toolCallID,
+        debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
+      }
+    : {
+        ...existing,
+        ...nextItem,
+        id: existing.id,
+        timestamp: existing.timestamp,
+        debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
+      }
 
   const duplicateIndices = new Set(matchingIndices.slice(1))
 
@@ -873,6 +890,8 @@ function buildTraceItemFromPart(
                 ? "denied"
                 : "running"
     const toolName = readString(part.tool) || "Tool"
+    const messageID = readString(part.messageID)
+    const toolCallID = readString(part.callID)
     const toolInputText = createToolTraceInputText(status, state)
     const toolOutputText = createToolTraceOutputText(status, state)
     const questionPrompt = status === "completed" ? readAskUserQuestionPrompt(state?.metadata) : null
@@ -915,6 +934,9 @@ function buildTraceItemFromPart(
       toolInputText,
       toolOutputText,
       status,
+      messageID,
+      partID: sourceID,
+      toolCallID,
       section: "tools",
       visibilityKey: "toolCalls",
       isStreaming: status === "running" || status === "pending",

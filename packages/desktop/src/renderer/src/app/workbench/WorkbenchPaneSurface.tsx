@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, type CSSProperties, type ReactNode } from "react"
+import { memo, useRef, type CSSProperties, type ReactNode } from "react"
 import {
   Composer,
   CreateSessionCanvas,
@@ -156,6 +156,7 @@ export interface WorkbenchPaneSurfaceProps {
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onCancelSend: AgentWorkspaceState["handleCancelSend"]
   onSend: AgentWorkspaceState["handleSend"]
+  onSessionModelSelectionChange: AgentWorkspaceState["handleSessionModelSelectionChange"]
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
 }
 
@@ -196,22 +197,19 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onSelectSessionTab,
   onCancelSend,
   onSend,
+  onSessionModelSelectionChange,
   onSetDraft,
 }: WorkbenchPaneSurfaceProps) {
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
   const splitPreviewPosition = draggedTabKey && dropTargetPosition && dropTargetPosition !== "center" ? dropTargetPosition : null
   const splitPreviewStyles = splitPreviewPosition ? getPaneDropPreviewStyles(splitPreviewPosition) : null
 
-  useEffect(() => {
-    const threadColumn = threadColumnRef.current
-    if (!threadColumn) return
-    threadColumn.scrollTop = threadColumn.scrollHeight
-  }, [pane.activeSession?.id, pane.activeTurns, pane.pendingPermissionRequests.length, permissionRequestActionRequestID])
-
   const composer = useProjectComposer({
     attachmentPaths: pane.composerAttachments.map((attachment) => attachment.path),
+    onSessionModelSelectionChange,
     projectID: pane.composerProjectID,
     refreshToken: composerRefreshVersion,
+    sessionModelSelection: pane.activeSession?.modelSelection,
     sessionID: pane.sessionID,
   })
   const readOnlySideChat = isSideChatSession(pane.activeSession)
@@ -355,6 +353,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 sideChatSession={pane.activeSideChatSession}
                 sideChatTurns={pane.activeSideChatTurns}
                 threadColumnRef={threadColumnRef}
+                onSessionModelSelectionChange={onSessionModelSelectionChange}
                 onAskUserQuestionAnswer={(answer) =>
                   void onSend({
                     attachmentsOverride: [],

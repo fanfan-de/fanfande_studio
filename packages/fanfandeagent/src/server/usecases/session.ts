@@ -20,6 +20,11 @@ import {
   parseSinceSeq,
   serializeReplayCursor,
 } from "#server/usecases/session-stream.ts"
+import {
+  findModelByReference,
+  listProjectModelsWithFallback,
+  resolveEffectiveModelWithFallback,
+} from "#server/usecases/model-list-cache.ts"
 
 export { createSessionExecutionStream } from "#server/usecases/session-stream.ts"
 
@@ -547,28 +552,12 @@ async function resolveEffectiveModel(
   items: Provider.PublicModel[],
   selection: Session.SessionModelSelection | undefined,
 ) {
-  const selectedModel = selection?.model
-  if (selectedModel) {
-    try {
-      const selectedRef = parseModelReference(selectedModel)
-      const selected = items.find((model) => model.providerID === selectedRef.providerID && model.id === selectedRef.modelID)
-      if (selected) return selected
-    } catch {
-      // Fall back to the project default if an older stored session selection is malformed.
-    }
-  }
-
-  try {
-    const defaultRef = await Provider.getDefaultModelRef(projectID)
-    return items.find((model) => model.providerID === defaultRef.providerID && model.id === defaultRef.modelID) ?? null
-  } catch {
-    return null
-  }
+  return findModelByReference(items, selection?.model) ?? resolveEffectiveModelWithFallback(projectID, items)
 }
 
 export async function listSessionModels(sessionID: string) {
   const session = requireSession(sessionID)
-  const items = await Provider.listModels(session.projectID)
+  const items = await listProjectModelsWithFallback(session.projectID)
   const selection = Session.getSessionModelSelection(sessionID)
 
   return {

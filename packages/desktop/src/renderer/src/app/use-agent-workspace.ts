@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useRef } from "react"
 import { useComposerController } from "./agent-workspace/composer-controller"
 import { useComposerDraftState } from "./agent-workspace/composer-draft-state"
 import { useReviewPanelController } from "./agent-workspace/review-panel-controller"
@@ -20,7 +20,8 @@ import { useWorkspaceLoadingController } from "./agent-workspace/workspace-loadi
 import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-store"
 import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
 import { initialSelection } from "./seed-data"
-import type { LeftSidebarView, RightSidebarView } from "./types"
+import type { LeftSidebarView, RightSidebarView, SessionModelSelection } from "./types"
+import { updateSessionModelSelectionInWorkspaces } from "./workspace"
 import { createWorkbenchLayoutFromLegacyPanes } from "./workbench/core"
 
 interface UseAgentWorkspaceOptions {
@@ -61,7 +62,6 @@ export function useAgentWorkspace({
   agentDefaultDirectory,
   platform,
 }: UseAgentWorkspaceOptions) {
-  const threadColumnRef = useRef<HTMLDivElement | null>(null)
   const workspaceStoreRef = useRef<WorkspaceStoreApi | null>(null)
   if (!workspaceStoreRef.current) {
     const hasFolderWorkspaceLoader = Boolean(window.desktop?.listFolderWorkspaces)
@@ -553,11 +553,13 @@ export function useAgentWorkspace({
     invalidateProjectComposer()
   }
 
-  useEffect(() => {
-    const threadColumn = threadColumnRef.current
-    if (!threadColumn) return
-    threadColumn.scrollTop = threadColumn.scrollHeight
-  }, [activeSessionID, activeTurns, activePendingPermissionRequests.length, permissionRequestActionRequestID])
+  function handleSessionModelSelectionChange(
+    sessionID: string,
+    selection: SessionModelSelection | undefined,
+  ) {
+    setWorkspaces((current) => updateSessionModelSelectionInWorkspaces(current, sessionID, selection))
+  }
+
   return {
     activeCreateSessionTabID,
     activePreviewState,
@@ -640,6 +642,7 @@ export function useAgentWorkspace({
     handleSessionDelete,
     handleSessionSelect,
     handleSidebarAction,
+    handleSessionModelSelectionChange,
     focusedPaneID,
     hoveredFolderID,
     isCreateSessionTabActive,
@@ -663,7 +666,6 @@ export function useAgentWorkspace({
     setDraft,
     setDraftForTab,
     setHoveredFolderID,
-    threadColumnRef,
     workbenchLayout,
     workbenchPanes,
     workbenchPaneStateByID,

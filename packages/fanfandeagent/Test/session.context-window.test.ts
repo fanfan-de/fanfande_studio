@@ -23,6 +23,7 @@ const baseModel = {
   capabilities: {
     temperature: true,
     reasoning: false,
+    replayAssistantReasoning: false,
     attachment: false,
     toolcall: true,
     input: {

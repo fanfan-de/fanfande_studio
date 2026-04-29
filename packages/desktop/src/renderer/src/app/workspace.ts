@@ -1,4 +1,4 @@
-import type { LoadedFolderWorkspace, LoadedSessionSnapshot, SessionSummary, WorkspaceGroup } from "./types"
+import type { LoadedFolderWorkspace, LoadedSessionSnapshot, SessionModelSelection, SessionSummary, WorkspaceGroup } from "./types"
 
 export function isWorkspaceAvailable(workspace: Pick<WorkspaceGroup, "exists"> | null | undefined) {
   return workspace?.exists !== false
@@ -6,6 +6,46 @@ export function isWorkspaceAvailable(workspace: Pick<WorkspaceGroup, "exists"> |
 
 export function isSideChatSession(session: Pick<SessionSummary, "kind"> | null | undefined) {
   return session?.kind === "side-chat"
+}
+
+export function normalizeSessionModelSelection(
+  selection?: { model?: string | null; small_model?: string | null } | null,
+): SessionModelSelection | undefined {
+  const model = selection?.model?.trim()
+  const smallModel = selection?.small_model?.trim()
+  if (!model && !smallModel) return undefined
+
+  return {
+    ...(model ? { model } : {}),
+    ...(smallModel ? { small_model: smallModel } : {}),
+  }
+}
+
+export function updateSessionModelSelectionInWorkspaces(
+  workspaces: WorkspaceGroup[],
+  sessionID: string,
+  selection?: { model?: string | null; small_model?: string | null } | null,
+) {
+  const nextSelection = normalizeSessionModelSelection(selection)
+
+  return workspaces.map((workspace) => ({
+    ...workspace,
+    sessions: workspace.sessions.map((session) => {
+      if (session.id !== sessionID) return session
+
+      if (!nextSelection) {
+        return {
+          ...session,
+          modelSelection: undefined,
+        }
+      }
+
+      return {
+        ...session,
+        modelSelection: nextSelection,
+      }
+    }),
+  }))
 }
 
 export function getPrimaryWorkspaceSessions<T extends Pick<SessionSummary, "kind">>(sessions: T[]) {

@@ -242,6 +242,11 @@ type ProviderUpdateEnvelope = JsonEnvelope<{
 }>
 
 type ProjectModelsEnvelope = JsonEnvelope<{
+  effectiveModel?: {
+    id: string
+    providerID: string
+    available: boolean
+  } | null
   items: Array<{
     id: string
     providerID: string
@@ -1585,6 +1590,23 @@ describe("server api", () => {
           expect(sessionModelsAfterResponse.status).toBe(200)
           expect(sessionModelsAfterBody.data?.selection.model).toBe("openai/gpt-4o-mini")
           expect(sessionModelsAfterBody.data?.effectiveModel?.id).toBe("gpt-4o-mini")
+
+          const createOtherProjectSessionResponse = await app.request(`http://localhost/api/projects/${projectID}/sessions`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: "Independent session scoped model" }),
+          })
+          const createOtherProjectSessionBody = (await createOtherProjectSessionResponse.json()) as SessionResponseEnvelope
+          const otherSessionID = createOtherProjectSessionBody.data?.id
+
+          expect(createOtherProjectSessionResponse.status).toBe(201)
+          expect(otherSessionID).toBeString()
+
+          const otherSessionModelsResponse = await app.request(`http://localhost/api/sessions/${otherSessionID}/models`)
+          const otherSessionModelsBody = (await otherSessionModelsResponse.json()) as ProjectModelsEnvelope
+
+          expect(otherSessionModelsResponse.status).toBe(200)
+          expect(otherSessionModelsBody.data?.selection.model).toBeUndefined()
 
           const projectModelsAfterSessionResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
           const projectModelsAfterSessionBody = (await projectModelsAfterSessionResponse.json()) as ProjectModelsEnvelope

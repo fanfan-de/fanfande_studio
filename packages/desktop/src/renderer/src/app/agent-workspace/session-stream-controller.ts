@@ -197,6 +197,222 @@ function preserveTraceItemIdentity(
   })
 }
 
+function isTerminalTraceStatus(status: AssistantTraceItem["status"]) {
+  return status === "completed" || status === "error" || status === "denied"
+}
+
+function getToolTraceIdentity(item: AssistantTraceItem) {
+  if (item.kind !== "tool") return null
+  if (item.partID) return `part:${item.partID}`
+  if (item.sourceID) return `source:${item.sourceID}`
+  if (item.messageID && item.toolCallID) return `tool:${item.messageID}:${item.toolCallID}`
+  if (item.toolCallID) return `tool:${item.toolCallID}`
+  return null
+}
+
+function mergeTraceDebugEntries(
+  first: AssistantTraceItem["debugEntries"],
+  second: AssistantTraceItem["debugEntries"],
+) {
+  if (!first?.length) return second
+  if (!second?.length) return first
+
+  const seen = new Set<string>()
+  const merged: NonNullable<AssistantTraceItem["debugEntries"]> = []
+  for (const entry of [...first, ...second]) {
+    const key = `${entry.label}\u0000${entry.value}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(entry)
+  }
+  return merged
+}
+
+function mergeAssistantTraceItem(existing: AssistantTraceItem, nextItem: AssistantTraceItem): AssistantTraceItem {
+  const keepsTerminalToolState =
+    existing.kind === "tool" &&
+    nextItem.kind === "tool" &&
+    isTerminalTraceStatus(existing.status) &&
+    !isTerminalTraceStatus(nextItem.status)
+
+  if (keepsTerminalToolState) {
+    return {
+      ...existing,
+      messageID: existing.messageID ?? nextItem.messageID,
+      partID: existing.partID ?? nextItem.partID,
+      toolCallID: existing.toolCallID ?? nextItem.toolCallID,
+      debugEntries: mergeTraceDebugEntries(existing.debugEntries, nextItem.debugEntries),
+    }
+  }
+
+  return {
+    ...existing,
+    ...nextItem,
+    id: existing.id,
+    timestamp: existing.timestamp,
+    debugEntries: mergeTraceDebugEntries(existing.debugEntries, nextItem.debugEntries),
+  }
+}
+
+function upsertAssistantTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {
+  const nextToolIdentity = getToolTraceIdentity(nextItem)
+  const matchingIndices = items.reduce<number[]>((result, item, index) => {
+    const matchesToolIdentity = nextToolIdentity && getToolTraceIdentity(item) === nextToolIdentity
+    const matchesSource = nextItem.sourceID && item.sourceID && item.sourceID === nextItem.sourceID
+    const matchesID = item.id === nextItem.id
+    if (matchesToolIdentity || matchesSource || matchesID) {
+      result.push(index)
+    }
+    return result
+  }, [])
+
+  if (matchingIndices.length === 0) {
+    return [...items, nextItem]
+  }
+
+  const firstIndex = matchingIndices[0]
+  const existing = items[firstIndex]
+  if (!existing) return items
+
+  const merged = mergeAssistantTraceItem(existing, nextItem)
+  const duplicateIndices = new Set(matchingIndices.slice(1))
+  return items.flatMap((item, index) => {
+    if (index === firstIndex) return [merged]
+    if (duplicateIndices.has(index)) return []
+    return [item]
+  })
+}
+
+function removeStaleApprovalBlockers(items: AssistantTraceItem[]) {
+  const hasWaitingTool = items.some((item) => item.kind === "tool" && item.status === "waiting-approval")
+  if (hasWaitingTool) return items
+
+  return items.filter(
+    (item) =>
+      !(
+        item.title === "Approval required" &&
+        item.status === "pending" &&
+        item.visibilityKey === "approvals"
+      ),
+  )
+}
+
+function mergeAssistantTraceItems(currentItems: AssistantTraceItem[], nextItems: AssistantTraceItem[]) {
+  return removeStaleApprovalBlockers(
+    nextItems.reduce((result, nextItem) => upsertAssistantTraceItem(result, nextItem), currentItems),
+  )
+}
+
+function assistantRuntimeAfterTraceMerge(current: AssistantTurn, incoming: AssistantTurn, items: AssistantTraceItem[]) {
+  const hasWaitingTool = items.some((item) => item.kind === "tool" && item.status === "waiting-approval")
+  const hasActiveTool = items.some(
+    (item) => item.kind === "tool" && (item.status === "pending" || item.status === "running"),
+  )
+  const existingRuntime = current.runtime
+  const nextRuntime = incoming.runtime
+  const updatedAt = Math.max(existingRuntime.updatedAt, nextRuntime.updatedAt)
+
+  if (hasWaitingTool) {
+    const waitingTool = items.find((item) => item.kind === "tool" && item.status === "waiting-approval")
+    return {
+      ...existingRuntime,
+      ...nextRuntime,
+      phase: "waiting_approval" as const,
+      updatedAt,
+      firstVisibleAt: existingRuntime.firstVisibleAt ?? nextRuntime.firstVisibleAt,
+      toolName: waitingTool?.title ?? nextRuntime.toolName ?? existingRuntime.toolName,
+    }
+  }
+
+  if (hasActiveTool) {
+    const activeTool = items.find(
+      (item) => item.kind === "tool" && (item.status === "pending" || item.status === "running"),
+    )
+    return {
+      ...existingRuntime,
+      ...nextRuntime,
+      phase: "tool_running" as const,
+      updatedAt,
+      firstVisibleAt: existingRuntime.firstVisibleAt ?? nextRuntime.firstVisibleAt,
+      toolName: activeTool?.title ?? nextRuntime.toolName ?? existingRuntime.toolName,
+      approvalRequestID: undefined,
+    }
+  }
+
+  if (existingRuntime.phase === "waiting_approval" || nextRuntime.phase === "waiting_approval") {
+    return {
+      ...existingRuntime,
+      ...nextRuntime,
+      phase: "completed" as const,
+      updatedAt,
+      firstVisibleAt: existingRuntime.firstVisibleAt ?? nextRuntime.firstVisibleAt,
+      toolName: undefined,
+      approvalRequestID: undefined,
+      errorMessage: undefined,
+    }
+  }
+
+  return {
+    ...existingRuntime,
+    ...nextRuntime,
+    updatedAt,
+    firstVisibleAt: existingRuntime.firstVisibleAt ?? nextRuntime.firstVisibleAt,
+  }
+}
+
+function mergeAssistantTurnsByMessageID(current: AssistantTurn, incoming: AssistantTurn): AssistantTurn {
+  const items = mergeAssistantTraceItems(current.items, incoming.items)
+  const runtime = assistantRuntimeAfterTraceMerge(current, incoming, items)
+  return {
+    ...current,
+    ...incoming,
+    id: current.id,
+    timestamp: current.timestamp,
+    messageID: current.messageID ?? incoming.messageID,
+    runtime,
+    state:
+      runtime.phase === "completed" && (current.runtime.phase === "waiting_approval" || incoming.runtime.phase === "waiting_approval")
+        ? "Backend response received"
+        : incoming.state || current.state,
+    isStreaming: runtime.phase === "tool_running" || runtime.phase === "waiting_approval"
+      ? incoming.isStreaming
+      : false,
+    items,
+  }
+}
+
+export function reconcileConversationTurns(turns: Turn[]) {
+  const result: Turn[] = []
+  const assistantIndexByMessageID = new Map<string, number>()
+
+  for (const turn of turns) {
+    if (turn.kind !== "assistant" || !turn.messageID) {
+      result.push(turn)
+      continue
+    }
+
+    const existingIndex = assistantIndexByMessageID.get(turn.messageID)
+    if (existingIndex === undefined) {
+      assistantIndexByMessageID.set(turn.messageID, result.length)
+      result.push({
+        ...turn,
+        items: removeStaleApprovalBlockers(turn.items),
+      })
+      continue
+    }
+
+    const existingTurn = result[existingIndex]
+    if (!existingTurn || existingTurn.kind !== "assistant") {
+      result.push(turn)
+      continue
+    }
+
+    result[existingIndex] = mergeAssistantTurnsByMessageID(existingTurn, turn)
+  }
+
+  return result
+}
+
 function getAssistantTurnResponseText(turn: AssistantTurn) {
   return turn.items
     .filter((item) => item.kind === "text" || item.kind === "question")
@@ -357,6 +573,33 @@ export function resolveStreamTurnID(event: { data: unknown }) {
 
   const payload = readStreamRecord(event.data)
   return readStreamString(payload?.turnID) || undefined
+}
+
+function readMessageIDFromStreamPart(value: unknown) {
+  const part = readStreamRecord(value)
+  return readStreamString(part?.messageID) || undefined
+}
+
+export function resolveStreamMessageID(event: { data: unknown }) {
+  const runtimePayload = readRuntimeStreamPayload(event.data)
+  const payload = runtimePayload ?? readStreamRecord(event.data)
+  if (!payload) return undefined
+
+  const partMessageID = readMessageIDFromStreamPart(payload.part)
+  if (partMessageID) return partMessageID
+
+  const message = readStreamRecord(payload.message)
+  const messageID = readStreamString(message?.id)
+  if (messageID) return messageID
+
+  if (Array.isArray(payload.parts)) {
+    for (const part of payload.parts) {
+      const partListMessageID = readMessageIDFromStreamPart(part)
+      if (partListMessageID) return partListMessageID
+    }
+  }
+
+  return undefined
 }
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
@@ -555,6 +798,14 @@ export function useSessionStreamController({
     return agentSessions[sessionID] ?? sessionID
   }
 
+  function findAssistantTurnIDByMessageID(sessionID: string, messageID: string | undefined) {
+    if (!messageID) return undefined
+    const turn = conversations[sessionID]?.find(
+      (candidate): candidate is AssistantTurn => candidate.kind === "assistant" && candidate.messageID === messageID,
+    )
+    return turn?.id
+  }
+
   function cleanupTurnTarget(backendSessionID: string | undefined, turnID: string | undefined) {
     sessionEventRouterRef.current.cleanupTurnTarget(backendSessionID, turnID)
   }
@@ -573,7 +824,7 @@ export function useSessionStreamController({
     bumpConversationVersion(sessionID)
     setConversations((prev) => ({
       ...prev,
-      [sessionID]: nextTurns,
+      [sessionID]: reconcileConversationTurns(nextTurns),
     }))
   }
 
@@ -581,6 +832,7 @@ export function useSessionStreamController({
     bumpConversationVersion(sessionID)
     setConversations((prev) => {
       const next = appendConversationTurnsToMap(prev, sessionID, nextTurns)
+      next[sessionID] = reconcileConversationTurns(next[sessionID] ?? [])
       persistUserTurns(sessionID, next[sessionID] ?? [])
       return next
     })
@@ -592,14 +844,21 @@ export function useSessionStreamController({
     updater: Parameters<typeof updateAssistantTurnInMap>[3],
   ) {
     bumpConversationVersion(sessionID)
-    setConversations((prev) => updateAssistantTurnInMap(prev, sessionID, turnID, updater))
+    setConversations((prev) => {
+      const next = updateAssistantTurnInMap(prev, sessionID, turnID, updater)
+      if (next === prev) return prev
+      return {
+        ...next,
+        [sessionID]: reconcileConversationTurns(next[sessionID] ?? []),
+      }
+    })
   }
 
   function replaceConversationTurnsFromHistory(sessionID: string, nextTurns: Turn[]) {
     bumpConversationVersion(sessionID)
     setConversations((prev) => {
       const previousTurns = prev[sessionID]?.length ? prev[sessionID] : readPersistedUserTurns(sessionID)
-      const mergedTurns = mergeConversationTurnsFromHistory(previousTurns, nextTurns)
+      const mergedTurns = reconcileConversationTurns(mergeConversationTurnsFromHistory(previousTurns, nextTurns))
       persistUserTurns(sessionID, mergedTurns)
       return {
         ...prev,
@@ -661,6 +920,8 @@ export function useSessionStreamController({
     }
 
     const backendTurnID = resolveStreamTurnID(streamEvent)
+    const streamMessageID = resolveStreamMessageID(streamEvent)
+    const messageAssistantTurnID = findAssistantTurnIDByMessageID(target.sessionID, streamMessageID)
     if (backendTurnID) {
       const backendSessionID = target.backendSessionID ?? resolveBackendSessionID(target.sessionID)
       if (sessionEventRouterRef.current.hasBackendTurnSettled(backendSessionID, backendTurnID)) {
@@ -673,12 +934,13 @@ export function useSessionStreamController({
       target.backendTurnID = backendTurnID
       sessionEventRouterRef.current.setTurnTarget(backendSessionID, backendTurnID, {
         sessionID: target.sessionID,
-        assistantTurnID: target.assistantTurnID,
+        assistantTurnID: messageAssistantTurnID ?? target.assistantTurnID,
       })
     }
 
+    const assistantTurnID = messageAssistantTurnID ?? target.assistantTurnID
     startTransition(() => {
-      updateAssistantConversationTurn(target.sessionID, target.assistantTurnID, (turn) =>
+      updateAssistantConversationTurn(target.sessionID, assistantTurnID, (turn) =>
         applyAgentStreamEventToTurn(turn, streamEvent),
       )
     })
@@ -748,11 +1010,19 @@ export function useSessionStreamController({
 
     if (sessionEventRouterRef.current.hasBackendTurnSettled(streamEvent.sessionID, backendTurnID)) return
 
-    const assistantTurnID = ensureAssistantTurnForBackendTurn({
+    const streamMessageID = resolveStreamMessageID(streamEvent)
+    const messageAssistantTurnID = findAssistantTurnIDByMessageID(uiSessionID, streamMessageID)
+    const assistantTurnID = messageAssistantTurnID ?? ensureAssistantTurnForBackendTurn({
       uiSessionID,
       backendSessionID: streamEvent.sessionID,
       turnID: backendTurnID,
     })
+    if (messageAssistantTurnID) {
+      sessionEventRouterRef.current.setTurnTarget(streamEvent.sessionID, backendTurnID, {
+        sessionID: uiSessionID,
+        assistantTurnID: messageAssistantTurnID,
+      })
+    }
 
     startTransition(() => {
       updateAssistantConversationTurn(uiSessionID, assistantTurnID, (turn) => applyAgentStreamEventToTurn(turn, streamEvent))

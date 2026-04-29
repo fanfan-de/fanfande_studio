@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 import type { SessionSummary, WorkspaceGroup } from "./types"
-import { findFirstSession, getPrimaryWorkspaceSessions, selectAfterSessionDelete } from "./workspace"
+import {
+  findFirstSession,
+  getPrimaryWorkspaceSessions,
+  selectAfterSessionDelete,
+  updateSessionModelSelectionInWorkspaces,
+} from "./workspace"
 
 function buildSession(id: string, kind: SessionSummary["kind"], updated = 1): SessionSummary {
   return {
@@ -58,5 +63,18 @@ describe("workspace primary session selection", () => {
 
     expect(selection.workspace?.id).toBe("workspace-1")
     expect(selection.session).toBeNull()
+  })
+
+  it("updates model selection for only the target session", () => {
+    const sessionA = buildSession("session-a", "main")
+    const sessionB = buildSession("session-b", "main")
+    const [workspace] = updateSessionModelSelectionInWorkspaces(
+      [buildWorkspace("workspace-1", [sessionA, sessionB])],
+      "session-a",
+      { model: "openai/gpt-5.4" },
+    )
+
+    expect(workspace?.sessions.find((session) => session.id === "session-a")?.modelSelection?.model).toBe("openai/gpt-5.4")
+    expect(workspace?.sessions.find((session) => session.id === "session-b")?.modelSelection).toBeUndefined()
   })
 })

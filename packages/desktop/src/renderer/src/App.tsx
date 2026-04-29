@@ -154,6 +154,7 @@ export function App() {
     handleSend,
     handleSessionDelete,
     handleSessionSelect,
+    handleSessionModelSelectionChange,
     handleSidebarAction,
     focusedPaneID,
     hoveredFolderID,
@@ -708,6 +709,7 @@ export function App() {
                 onSelectSessionTab={handleCanvasSessionTabSelect}
                 onCancelSend={handleCancelSend}
                 onSend={handleSend}
+                onSessionModelSelectionChange={handleSessionModelSelectionChange}
                 onSetDraft={setDraftForTab}
                 onToggleLeftSidebar={handleSidebarToggle}
                 onToggleRightSidebar={handleRightSidebarToggle}

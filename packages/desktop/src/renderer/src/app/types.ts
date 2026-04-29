@@ -710,6 +710,9 @@ export interface AssistantTraceItem {
   filePaths?: string[]
   status?: AssistantTraceStatus
   sourceID?: string
+  messageID?: string
+  partID?: string
+  toolCallID?: string
   section?: AssistantTraceSectionKey
   visibilityKey?: AssistantTraceVisibilityKey
   isStreaming?: boolean

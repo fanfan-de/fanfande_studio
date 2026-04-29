@@ -78,6 +78,7 @@ export interface WorkbenchShellProps {
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onCancelSend: AgentWorkspaceState["handleCancelSend"]
   onSend: AgentWorkspaceState["handleSend"]
+  onSessionModelSelectionChange: AgentWorkspaceState["handleSessionModelSelectionChange"]
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
   onToggleLeftSidebar: () => void
   onToggleRightSidebar: () => void
@@ -178,6 +179,7 @@ function WorkbenchNodeView({
         onSelectSessionTab={props.onSelectSessionTab}
         onCancelSend={props.onCancelSend}
         onSend={props.onSend}
+        onSessionModelSelectionChange={props.onSessionModelSelectionChange}
         onSetDraft={props.onSetDraft}
       />
     )

@@ -22,7 +22,7 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import { getAgentSessionBridge } from "../agent-session/client"
-import { findSession, findWorkspaceByID } from "../workspace"
+import { findSession, findWorkspaceByID, normalizeSessionModelSelection, updateSessionModelSelectionInWorkspaces } from "../workspace"
 import {
   normalizeQuestionAnswerText,
   sendPromptToSession as sendPromptToSessionService,
@@ -269,13 +269,26 @@ export function useComposerController({
     })
     if (!created) return
 
+    let createdSession = created.session
     if (input?.selectedModel) {
-      await window.desktop?.updateSessionModelSelection?.({
+      const selection = await window.desktop?.updateSessionModelSelection?.({
         sessionID: created.session.id,
         model: input.selectedModel,
       }).catch((error) => {
         console.error("[desktop] updateSessionModelSelection for new session failed:", error)
+        return null
       })
+
+      if (selection) {
+        const modelSelection = normalizeSessionModelSelection(selection)
+        createdSession = {
+          ...created.session,
+          modelSelection,
+        }
+        setWorkspaces((current) =>
+          updateSessionModelSelectionInWorkspaces(current, created.session.id, modelSelection),
+        )
+      }
     }
 
     await sendPromptToSession({
@@ -289,7 +302,7 @@ export function useComposerController({
       references: compiledSubmission.userReferences,
       selectedModel: input?.selectedModel,
       selectedSkillIDs: compiledSubmission.selectedSkillIDs,
-      session: created.session,
+      session: createdSession,
       tabKey: targetTabKey,
       text: effectiveText,
       workspace: created.workspace,
