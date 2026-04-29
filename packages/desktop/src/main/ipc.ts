@@ -119,6 +119,7 @@ function mapSessionInfo(session: AgentSessionInfo) {
     kind: session.kind,
     policy: session.policy,
     origin: session.origin,
+    modelSelection: session.modelSelection,
     created: session.time.created,
     updated: session.time.updated,
     workflow: session.workflow,
@@ -1479,6 +1480,13 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
+  handleDesktopIpc("desktop:get-session-models", async (_event, input: { sessionID: string }) => {
+    const sessionID = input.sessionID.trim()
+    const result = await requestAgentJSON<AgentProjectModelsResult>(`/api/sessions/${encodeURIComponent(sessionID)}/models`)
+
+    return result.data
+  })
+
   handleDesktopIpc(
     "desktop:update-project-provider",
     async (
@@ -1558,6 +1566,35 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
           small_model: input.small_model,
         }),
       },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:update-session-model-selection",
+    async (
+      _event,
+      input: {
+        sessionID: string
+        model?: string | null
+        small_model?: string | null
+      },
+    ) => {
+      const sessionID = input.sessionID.trim()
+      const result = await requestAgentJSON<AgentProjectModelSelection>(
+        `/api/sessions/${encodeURIComponent(sessionID)}/model-selection`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model: input.model,
+            small_model: input.small_model,
+          }),
+        },
       )
 
       return result.data
@@ -1756,6 +1793,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       attachments: input.attachments,
       questionAnswer: input.questionAnswer,
       reasoningEffort: input.reasoningEffort,
+      model: input.model,
       system: input.system,
       agent: input.agent,
       skills: input.skills,

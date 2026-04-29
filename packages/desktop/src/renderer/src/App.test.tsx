@@ -7580,8 +7580,8 @@ describe("App", () => {
     expect(within(settingsDialog).queryByText("GPT-4o mini")).not.toBeInTheDocument()
   })
 
-  it("updates the active project model selection from the composer menu", async () => {
-    window.desktop!.getProjectModels = vi.fn().mockResolvedValue({
+  it("updates the active session model selection from the composer menu", async () => {
+    const modelPayload = {
       items: [
         {
           id: "deepseek-reasoner",
@@ -7650,8 +7650,10 @@ describe("App", () => {
         model: "deepseek/deepseek-reasoner",
         small_model: "deepseek/deepseek-reasoner",
       },
-    })
-    window.desktop!.updateProjectModelSelection = vi.fn().mockResolvedValue({
+    }
+    window.desktop!.getProjectModels = vi.fn().mockResolvedValue(modelPayload)
+    window.desktop!.getSessionModels = vi.fn().mockResolvedValue(modelPayload)
+    window.desktop!.updateSessionModelSelection = vi.fn().mockResolvedValue({
       model: "openai/gpt-4o-mini",
       small_model: "deepseek/deepseek-reasoner",
     })
@@ -7671,10 +7673,9 @@ describe("App", () => {
     fireEvent.click(within(modelList).getByRole("option", { name: "GPT-4o mini" }))
 
     await waitFor(() => {
-      expect(window.desktop!.updateProjectModelSelection).toHaveBeenCalledWith({
-        projectID: "project-2",
+      expect(window.desktop!.updateSessionModelSelection).toHaveBeenCalledWith({
+        sessionID: "session-chat-1",
         model: "openai/gpt-4o-mini",
-        small_model: "deepseek/deepseek-reasoner",
       })
     })
 

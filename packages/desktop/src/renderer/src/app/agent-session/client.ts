@@ -43,6 +43,10 @@ export interface AgentSessionTurnInput {
     freeformText?: string
   }
   reasoningEffort?: OpenAIReasoningEffort
+  model?: {
+    providerID: string
+    modelID: string
+  }
   system?: string
   agent?: string
   skills?: string[]

@@ -144,6 +144,105 @@ test("tasks are isolated per session", async () => {
   expect(Task.getSessionTask(second.id, "1")?.subject).toBe("Second")
 })
 
+test("task lists preserve explicit creation order instead of sorting by generated or custom ids", async () => {
+  await useTempDatabase("task-order")
+  const session = await createSession()
+
+  const result = Task.createSessionTasks({
+    sessionID: session.id,
+    defaultOwner: "default",
+    now: 100,
+    tasks: [
+      {
+        id: "z",
+        subject: "Project initialization",
+        description: "Create files and baseline structure.",
+      },
+      {
+        id: "a",
+        subject: "HTML structure",
+        description: "Build the game surface.",
+        blockedBy: ["z"],
+      },
+      {
+        id: "m",
+        subject: "CSS styling",
+        description: "Style the game surface.",
+        blockedBy: ["a"],
+      },
+    ],
+  })
+
+  expect(result.state.tasks.map((task) => task.id)).toEqual(["z", "a", "m"])
+  expect(result.state.tasks.map((task) => task.sortIndex)).toEqual([0, 1, 2])
+  expect(Task.listSessionTasks(session.id).tasks.map((task) => task.id)).toEqual(["z", "a", "m"])
+})
+
+test("legacy task states with identical sort indexes fall back to dependency order", async () => {
+  await useTempDatabase("task-legacy-order")
+  const session = await createSession()
+
+  Task.replaceTasksFromState({
+    sessionID: session.id,
+    state: {
+      sessionID: session.id,
+      generatedAt: 100,
+      tasks: [
+        {
+          id: "second",
+          sessionID: session.id,
+          subject: "Second",
+          description: "Second",
+          activeForm: "Second",
+          owner: "default",
+          status: "pending",
+          sortIndex: 0,
+          blocks: [],
+          blockedBy: ["first"],
+          metadata: {},
+          createdAt: 100,
+          updatedAt: 100,
+          isBlocked: true,
+          blockingTasks: [],
+          blockedTasks: [],
+        },
+        {
+          id: "first",
+          sessionID: session.id,
+          subject: "First",
+          description: "First",
+          activeForm: "First",
+          owner: "default",
+          status: "pending",
+          sortIndex: 0,
+          blocks: ["second"],
+          blockedBy: [],
+          metadata: {},
+          createdAt: 100,
+          updatedAt: 100,
+          isBlocked: false,
+          blockingTasks: [],
+          blockedTasks: [],
+        },
+      ],
+      current: [],
+      next: [],
+      blocked: [],
+      owners: [],
+      teammateActivity: [],
+      summary: {
+        total: 2,
+        completed: 0,
+        pending: 2,
+        inProgress: 0,
+        blocked: 1,
+      },
+    },
+  })
+
+  expect(Task.listSessionTasks(session.id).tasks.map((task) => task.id)).toEqual(["first", "second"])
+})
+
 test("task validation enforces owner activity, blockers, transitions, self dependencies, and cycles", async () => {
   await useTempDatabase("task-validation")
   const session = await createSession()

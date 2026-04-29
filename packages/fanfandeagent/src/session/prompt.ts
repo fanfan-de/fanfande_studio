@@ -1183,6 +1183,34 @@ function toUserPart(
 }
 
 // 用户输入先落成一条 user message，再拆成多条 part，供模型、UI 和工具链复用。
+function parseSelectedModelReference(value: string | undefined): Provider.ModelReference | undefined {
+    if (!value) return undefined
+    const [providerID, ...rest] = value.split("/")
+    const modelID = rest.join("/")
+    if (!providerID || !modelID) return undefined
+    return {
+        providerID,
+        modelID,
+    }
+}
+
+async function resolvePromptModel(input: PromptInput): Promise<Provider.ModelReference> {
+    if (input.model) return input.model
+
+    const selectedModel = Session.getSessionModelSelection(input.sessionID)?.model
+    const selectedReference = parseSelectedModelReference(selectedModel)
+    if (selectedReference) {
+        try {
+            await Provider.getModel(selectedReference.providerID, selectedReference.modelID, Instance.project.id)
+            return selectedReference
+        } catch {
+            // Fall through to the project default if the stored session model is no longer valid.
+        }
+    }
+
+    return Provider.getDefaultModelRef(Instance.project.id)
+}
+
 async function createUserMessage(input: PromptInput, options?: { snapshot?: string }) {
     const messageinfo: Message.User = {
         id: Identifier.ascending("message"),
@@ -1190,7 +1218,7 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         role: "user",
         created: Date.now(),
         agent: input.agent ?? "default",
-        model: input.model ?? await Provider.getDefaultModelRef(Instance.project.id),
+        model: await resolvePromptModel(input),
         system: input.system,
         skills: input.skills,
         reasoningEffort: input.reasoningEffort,

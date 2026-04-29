@@ -43,6 +43,21 @@ export const SessionPolicy = z
   })
 export type SessionPolicy = z.output<typeof SessionPolicy>
 
+export const SessionModelSelection = z
+  .object({
+    model: z.string().optional(),
+    small_model: z.string().optional(),
+  })
+  .meta({
+    ref: "SessionModelSelection",
+  })
+export type SessionModelSelection = z.output<typeof SessionModelSelection>
+
+export type SessionModelSelectionInput = {
+  model?: string | null
+  small_model?: string | null
+}
+
 export const SessionInfo = z
   .object({
     id: Identifier.schema("session"),
@@ -76,6 +91,7 @@ export const SessionInfo = z
         }),
       })
       .optional(),
+    modelSelection: SessionModelSelection.optional(),
     kind: SessionKind.optional(),
     policy: SessionPolicy.optional(),
     time: z.object({
@@ -248,10 +264,24 @@ function normalizeSessionPolicy(policy: SessionInfo["policy"] | undefined): Sess
   }
 }
 
+function normalizeSessionModelSelection(
+  selection: SessionInfo["modelSelection"] | undefined,
+): SessionInfo["modelSelection"] | undefined {
+  const model = selection?.model?.trim()
+  const smallModel = selection?.small_model?.trim()
+  if (!model && !smallModel) return undefined
+
+  return {
+    ...(model ? { model } : {}),
+    ...(smallModel ? { small_model: smallModel } : {}),
+  }
+}
+
 export function normalizeSessionInfo(session: SessionInfo): SessionInfo {
   return {
     ...session,
     kind: session.kind ?? DEFAULT_SESSION_KIND,
+    modelSelection: normalizeSessionModelSelection(session.modelSelection),
     policy: normalizeSessionPolicy(session.policy),
     workflow: session.workflow ? normalizeWorkflowState(session.workflow, session.time.updated) : session.workflow,
   }
@@ -450,6 +480,10 @@ function ensureSessionTaskTableForRestore() {
   db.db.run(`
     CREATE UNIQUE INDEX IF NOT EXISTS "idx_session_tasks_session_id"
     ON "session_tasks" ("sessionID", "id");
+  `)
+  db.db.run(`
+    CREATE INDEX IF NOT EXISTS "idx_session_tasks_session_sort"
+    ON "session_tasks" ("sessionID", "sortIndex", "createdAt");
   `)
 }
 
@@ -1032,6 +1066,37 @@ function updateSessionWorkflow(
   return next
 }
 
+function getSessionModelSelection(sessionID: string): SessionModelSelection | undefined {
+  const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
+  return normalizeSessionModelSelection(existing?.modelSelection)
+}
+
+function updateSessionModelSelection(
+  sessionID: string,
+  input: SessionModelSelectionInput,
+): SessionInfo | null {
+  const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
+  if (!existing) return null
+
+  const current = normalizeSessionModelSelection(existing.modelSelection) ?? {}
+  const nextSelection = normalizeSessionModelSelection({
+    model: input.model === null ? undefined : input.model ?? current.model,
+    small_model: input.small_model === null ? undefined : input.small_model ?? current.small_model,
+  })
+  const now = Date.now()
+  const next: SessionInfo = {
+    ...existing,
+    modelSelection: nextSelection,
+    time: {
+      ...existing.time,
+      updated: now,
+    },
+  }
+
+  updateSessionRecord(next)
+  return next
+}
+
 export {
   archiveSession,
   archiveSessionCascade,
@@ -1047,6 +1112,7 @@ export {
   DEFAULT_SESSION_TITLE,
   isDefaultSessionTitle,
   getSessionOrigin,
+  getSessionModelSelection,
   getSideChatContext,
   getSideChatLink,
   listArchivableSessions,
@@ -1055,6 +1121,7 @@ export {
   removeSession,
   restoreArchivedSession,
   updateSessionTitle,
+  updateSessionModelSelection,
   updateSessionWorkflow,
   updateMessage,
   updatePart,

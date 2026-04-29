@@ -165,6 +165,7 @@ export function useComposerController({
     }
     reasoningEffort?: OpenAIReasoningEffort | null
     references?: UserTurn["references"]
+    selectedModel?: string | null
     session: SessionSummary
     selectedSkillIDs: string[]
     tabKey: string
@@ -204,6 +205,7 @@ export function useComposerController({
       freeformText?: string
     }
     selectedReasoningEffort?: OpenAIReasoningEffort | null
+    selectedModel?: string | null
     selectedSkillIDs?: string[]
     sessionID?: string | null
     tabKey?: string | null
@@ -241,6 +243,7 @@ export function useComposerController({
         questionAnswer: input?.questionAnswer,
         reasoningEffort: input?.selectedReasoningEffort,
         references: compiledSubmission.userReferences,
+        selectedModel: input?.selectedModel,
         selectedSkillIDs: compiledSubmission.selectedSkillIDs,
         session: nextSelection.session,
         tabKey: targetTabKey,
@@ -266,6 +269,15 @@ export function useComposerController({
     })
     if (!created) return
 
+    if (input?.selectedModel) {
+      await window.desktop?.updateSessionModelSelection?.({
+        sessionID: created.session.id,
+        model: input.selectedModel,
+      }).catch((error) => {
+        console.error("[desktop] updateSessionModelSelection for new session failed:", error)
+      })
+    }
+
     await sendPromptToSession({
       attachments,
       backendSessionID: created.backendSessionID,
@@ -275,6 +287,7 @@ export function useComposerController({
       questionAnswer: input?.questionAnswer,
       reasoningEffort: input?.selectedReasoningEffort,
       references: compiledSubmission.userReferences,
+      selectedModel: input?.selectedModel,
       selectedSkillIDs: compiledSubmission.selectedSkillIDs,
       session: created.session,
       tabKey: targetTabKey,

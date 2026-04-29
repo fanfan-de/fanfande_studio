@@ -568,6 +568,7 @@ function readTaskSummary(value: unknown): SessionTaskSummary | null {
     activeForm,
     owner,
     status,
+    sortIndex: readNumber(task?.sortIndex),
     blocks: Array.isArray(task?.blocks) ? task.blocks.map(readString).filter(Boolean) : [],
     blockedBy: Array.isArray(task?.blockedBy) ? task.blockedBy.map(readString).filter(Boolean) : [],
     metadata: readRecord(task?.metadata) ?? {},

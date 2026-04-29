@@ -57,6 +57,7 @@ export interface AgentSessionTaskSummary {
   activeForm: string
   owner: string
   status: AgentSessionTaskStatus
+  sortIndex: number
   blocks: string[]
   blockedBy: string[]
   metadata: Record<string, unknown>
@@ -120,6 +121,11 @@ export interface AgentSessionOrigin {
   anchorPreview: string
 }
 
+export interface AgentSessionModelSelection {
+  model?: string
+  small_model?: string
+}
+
 export interface AgentSessionInfo {
   id: string
   projectID: string
@@ -130,6 +136,7 @@ export interface AgentSessionInfo {
   policy?: AgentSessionPolicy
   origin?: AgentSessionOrigin
   workflow?: AgentSessionWorkflowSummary
+  modelSelection?: AgentSessionModelSelection
   time: {
     created: number
     updated: number
@@ -147,6 +154,7 @@ export interface AgentWorkspaceSession {
   created: number
   updated: number
   workflow?: AgentSessionWorkflowSummary
+  modelSelection?: AgentSessionModelSelection
 }
 
 export interface AgentProjectWorkspace {
@@ -325,6 +333,10 @@ export interface AgentSessionTurnRequestInput {
   attachments?: AgentSessionComposerAttachmentInput[]
   questionAnswer?: AgentSessionQuestionAnswerInput
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
+  model?: {
+    providerID: string
+    modelID: string
+  }
   system?: string
   agent?: string
   skills?: string[]

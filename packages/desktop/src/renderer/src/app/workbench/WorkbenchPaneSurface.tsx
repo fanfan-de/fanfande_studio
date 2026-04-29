@@ -212,6 +212,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
     attachmentPaths: pane.composerAttachments.map((attachment) => attachment.path),
     projectID: pane.composerProjectID,
     refreshToken: composerRefreshVersion,
+    sessionID: pane.sessionID,
   })
   const readOnlySideChat = isSideChatSession(pane.activeSession)
 
@@ -314,6 +315,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                       draftStateOverride,
                       paneID: pane.id,
                       selectedReasoningEffort: composer.selectedReasoningEffort,
+                      selectedModel: composer.selectedModel,
                       selectedSkillIDs: composer.selectedSkillIDs,
                       tabKey: pane.tabKey,
                       waitForPendingModelSelection: composer.awaitPendingModelSelection,
@@ -367,6 +369,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                         }
                       : undefined,
                     selectedReasoningEffort: composer.selectedReasoningEffort,
+                    selectedModel: composer.selectedModel,
                     selectedSkillIDs: composer.selectedSkillIDs,
                     sessionID: pane.sessionID,
                     tabKey: pane.tabKey,
@@ -406,6 +409,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                     preserveComposerState: Boolean(input.questionAnswer),
                     questionAnswer: input.questionAnswer,
                     selectedReasoningEffort: input.selectedReasoningEffort,
+                    selectedModel: input.selectedModel,
                     selectedSkillIDs: input.selectedSkillIDs,
                     sessionID: pane.activeSideChatSession?.id,
                     tabKey: pane.activeSideChatTabKey,
@@ -462,6 +466,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                       draftStateOverride,
                       paneID: pane.id,
                       selectedReasoningEffort: composer.selectedReasoningEffort,
+                      selectedModel: composer.selectedModel,
                       selectedSkillIDs: composer.selectedSkillIDs,
                       sessionID: pane.sessionID,
                       tabKey: pane.tabKey,

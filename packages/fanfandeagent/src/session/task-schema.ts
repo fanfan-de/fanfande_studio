@@ -15,6 +15,7 @@ export const SessionTaskRecord = z
     activeForm: z.string().min(1),
     owner: z.string().min(1),
     status: SessionTaskStatus,
+    sortIndex: z.number().int().nonnegative().default(0),
     blocks: z.array(z.string().min(1)),
     blockedBy: z.array(z.string().min(1)),
     metadata: z.record(z.string(), z.any()),

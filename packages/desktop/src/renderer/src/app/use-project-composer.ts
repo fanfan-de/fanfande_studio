@@ -167,9 +167,10 @@ export interface UseProjectComposerOptions {
   attachmentPaths: string[]
   projectID: string | null
   refreshToken?: number
+  sessionID?: string | null
 }
 
-export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 0 }: UseProjectComposerOptions) {
+export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 0, sessionID = null }: UseProjectComposerOptions) {
   const [models, setModels] = useState<ProviderModel[]>([])
   const [defaultModel, setDefaultModel] = useState<ProviderModel | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
@@ -194,7 +195,8 @@ export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 
 
   useEffect(() => {
     const getProjectModels = window.desktop?.getProjectModels
-    if (!projectID || !getProjectModels) {
+    const getSessionModels = window.desktop?.getSessionModels
+    if (!projectID || (!getProjectModels && !(sessionID && getSessionModels))) {
       setModels([])
       setDefaultModel(null)
       setSelectedModel(null)
@@ -206,12 +208,23 @@ export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 
     const requestID = ++modelsRequestRef.current
     setIsLoadingModels(true)
 
-    void getProjectModels({ projectID })
+    const isSessionModelRequest = Boolean(sessionID && getSessionModels)
+    const modelRequest =
+      isSessionModelRequest && sessionID && getSessionModels
+        ? getSessionModels({ sessionID })
+        : getProjectModels?.({ projectID })
+
+    if (!modelRequest) {
+      setIsLoadingModels(false)
+      return
+    }
+
+    void modelRequest
       .then((payload) => {
         if (modelsRequestRef.current !== requestID) return
         setModels(payload.items)
         setDefaultModel(payload.effectiveModel ?? null)
-        setSelectedModel(payload.selection?.model ?? null)
+        setSelectedModel(isSessionModelRequest || !getSessionModels ? payload.selection?.model ?? null : null)
         setSmallModel(payload.selection?.small_model ?? null)
       })
       .catch((error) => {
@@ -227,7 +240,7 @@ export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 
           setIsLoadingModels(false)
         }
       })
-  }, [projectID, refreshToken])
+  }, [projectID, refreshToken, sessionID])
 
   useEffect(() => {
     const getProjectSkills = window.desktop?.getProjectSkills
@@ -343,25 +356,24 @@ export function useProjectComposer({ attachmentPaths, projectID, refreshToken = 
   }
 
   async function handleModelChange(value: string | null) {
-    const updateProjectModelSelection = window.desktop?.updateProjectModelSelection
+    const updateSessionModelSelection = window.desktop?.updateSessionModelSelection
     const previousSelection = selectedModel
     setSelectedModel(value)
 
-    if (!projectID || !updateProjectModelSelection) {
+    if (!sessionID || !updateSessionModelSelection) {
       return
     }
 
     const saveTask = (async () => {
       try {
-        const result = await updateProjectModelSelection({
-          projectID,
+        const result = await updateSessionModelSelection({
+          sessionID,
           model: value,
-          small_model: smallModel,
         })
         setSelectedModel(result.model ?? null)
         setSmallModel(result.small_model ?? smallModel)
       } catch (error) {
-        console.error("[desktop] updateProjectComposerModelSelection failed:", error)
+        console.error("[desktop] updateSessionComposerModelSelection failed:", error)
         setSelectedModel(previousSelection)
         throw error
       }

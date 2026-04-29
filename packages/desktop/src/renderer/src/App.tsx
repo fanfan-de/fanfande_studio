@@ -168,6 +168,7 @@ export function App() {
     refreshComposerSkills,
     refreshWorkspaceFromDirectory,
     rightSidebarView,
+    runningSessionIDs,
     selectedWorkspace,
     selectedFolderID,
     setDraftForTab,
@@ -596,6 +597,7 @@ export function App() {
               selectedGlobalSkillFilePath={selectedGlobalSkillFilePath}
               showSidebarToggleButton={!isActivityRailVisible}
               projectRowRefs={projectRowRefs}
+              runningSessionIDs={runningSessionIDs}
               selectedFolderID={selectedFolderID}
               workspaces={workspaces}
               onCreateGlobalSkill={handleCreateGlobalSkill}

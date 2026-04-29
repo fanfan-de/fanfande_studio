@@ -511,6 +511,12 @@ try {
           }
         } | null
       }>,
+    getSessionModels: (input: { sessionID: string }) =>
+      invokeDesktop("desktop:get-session-models", input) as Promise<{
+        items: AgentProviderModel[]
+        selection: AgentProjectModelSelection
+        effectiveModel?: AgentProviderModel | null
+      }>,
     getProjectSkills: (input: { projectID: string }) =>
       invokeDesktop("desktop:get-project-skills", input) as Promise<SkillInfo[]>,
     getProjectSkillSelection: (input: { projectID: string }) =>
@@ -575,6 +581,15 @@ try {
       small_model?: string | null
     }) =>
       invokeDesktop("desktop:update-project-model-selection", input) as Promise<{
+        model?: string
+        small_model?: string
+      }>,
+    updateSessionModelSelection: (input: {
+      sessionID: string
+      model?: string | null
+      small_model?: string | null
+    }) =>
+      invokeDesktop("desktop:update-session-model-selection", input) as Promise<{
         model?: string
         small_model?: string
       }>,

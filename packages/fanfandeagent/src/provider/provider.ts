@@ -47,6 +47,7 @@ export const Model = z
     capabilities: z.object({
       temperature: z.boolean(),
       reasoning: z.boolean(),
+      replayAssistantReasoning: z.boolean(),
       attachment: z.boolean(),
       toolcall: z.boolean(),
       input: z.object({
@@ -117,6 +118,7 @@ export const testDeepSeekModel: Model = {
   capabilities: {
     temperature: true,
     reasoning: false,
+    replayAssistantReasoning: true,
     attachment: false,
     toolcall: true,
     input: {
@@ -453,6 +455,7 @@ function createStaticModel(
     capabilities: {
       temperature: true,
       reasoning: input.reasoning ?? true,
+      replayAssistantReasoning: true,
       attachment: true,
       toolcall: true,
       input: {
@@ -536,6 +539,7 @@ function createBaseModelFromConfig(
     capabilities: {
       temperature: modelConfig.temperature ?? true,
       reasoning: modelConfig.reasoning ?? false,
+      replayAssistantReasoning: modelConfig.replay_assistant_reasoning ?? true,
       attachment: modelConfig.attachment ?? false,
       toolcall: modelConfig.tool_call ?? true,
       input: {
@@ -624,6 +628,8 @@ function mergeModelConfig(
     capabilities: {
       temperature: modelConfig.temperature ?? base.capabilities.temperature,
       reasoning: modelConfig.reasoning ?? base.capabilities.reasoning,
+      replayAssistantReasoning:
+        modelConfig.replay_assistant_reasoning ?? base.capabilities.replayAssistantReasoning,
       attachment: modelConfig.attachment ?? base.capabilities.attachment,
       toolcall: modelConfig.tool_call ?? base.capabilities.toolcall,
       input: {
@@ -1282,6 +1288,7 @@ function fromModelsDevModel(provider: ModelsDev.DevProvider, model: ModelsDev.De
     capabilities: {
       temperature: model.temperature,
       reasoning: model.reasoning,
+      replayAssistantReasoning: model.replay_assistant_reasoning ?? true,
       attachment: model.attachment,
       toolcall: model.tool_call,
       input: {

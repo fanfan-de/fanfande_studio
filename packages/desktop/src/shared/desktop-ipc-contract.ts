@@ -625,6 +625,10 @@ export interface DesktopIpcContract {
     input: { projectID: string }
     output: AgentProjectModelsResult
   }
+  "desktop:get-session-models": {
+    input: { sessionID: string }
+    output: AgentProjectModelsResult
+  }
   "desktop:update-project-provider": {
     input: { projectID: string; providerID: string; provider: DesktopProviderMutationInput }
     output: DesktopProviderMutationResult
@@ -635,6 +639,10 @@ export interface DesktopIpcContract {
   }
   "desktop:update-project-model-selection": {
     input: { projectID: string } & DesktopModelSelectionUpdateInput
+    output: AgentProjectModelSelection
+  }
+  "desktop:update-session-model-selection": {
+    input: { sessionID: string } & DesktopModelSelectionUpdateInput
     output: AgentProjectModelSelection
   }
   "desktop:get-project-skills": {
@@ -827,6 +835,7 @@ export interface DesktopApiMethods {
   getProjectProviderCatalog(input: DesktopIpcInput<"desktop:get-project-provider-catalog">): Promise<DesktopIpcOutput<"desktop:get-project-provider-catalog">>
   refreshProjectProviderCatalog(input: DesktopIpcInput<"desktop:refresh-project-provider-catalog">): Promise<DesktopIpcOutput<"desktop:refresh-project-provider-catalog">>
   getProjectModels(input: DesktopIpcInput<"desktop:get-project-models">): Promise<DesktopIpcOutput<"desktop:get-project-models">>
+  getSessionModels(input: DesktopIpcInput<"desktop:get-session-models">): Promise<DesktopIpcOutput<"desktop:get-session-models">>
   getProjectSkills(input: DesktopIpcInput<"desktop:get-project-skills">): Promise<DesktopIpcOutput<"desktop:get-project-skills">>
   getProjectSkillSelection(input: DesktopIpcInput<"desktop:get-project-skill-selection">): Promise<DesktopIpcOutput<"desktop:get-project-skill-selection">>
   updateProjectSkillSelection(input: DesktopIpcInput<"desktop:update-project-skill-selection">): Promise<DesktopIpcOutput<"desktop:update-project-skill-selection">>
@@ -839,6 +848,7 @@ export interface DesktopApiMethods {
   updateProjectProvider(input: DesktopIpcInput<"desktop:update-project-provider">): Promise<DesktopIpcOutput<"desktop:update-project-provider">>
   deleteProjectProvider(input: DesktopIpcInput<"desktop:delete-project-provider">): Promise<DesktopIpcOutput<"desktop:delete-project-provider">>
   updateProjectModelSelection(input: DesktopIpcInput<"desktop:update-project-model-selection">): Promise<DesktopIpcOutput<"desktop:update-project-model-selection">>
+  updateSessionModelSelection(input: DesktopIpcInput<"desktop:update-session-model-selection">): Promise<DesktopIpcOutput<"desktop:update-session-model-selection">>
   onWorkspaceFileChange(listener: (event: DesktopIpcEventPayload<typeof DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL>) => void): () => void
   onPtyEvent(listener: (event: DesktopIpcEventPayload<typeof DESKTOP_PTY_EVENT_CHANNEL>) => void): () => void
   onWindowStateChange(listener: (state: DesktopIpcEventPayload<typeof DESKTOP_WINDOW_STATE_EVENT_CHANNEL>) => void): () => void

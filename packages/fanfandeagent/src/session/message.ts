@@ -68,30 +68,12 @@ function summarizeModelCapabilitiesForLog(model: Provider.Model) {
         imageInput: model.capabilities.input.image,
         pdfInput: model.capabilities.input.pdf,
         reasoning: model.capabilities.reasoning,
+        replayAssistantReasoning: model.capabilities.replayAssistantReasoning ?? true,
     }
 }
 
 function shouldReplayAssistantReasoning(model: Provider.Model) {
-    const interleaved = model.capabilities.interleaved
-    if (interleaved === true) return true
-    if (interleaved && typeof interleaved === "object") {
-        return interleaved.field === "reasoning_content"
-    }
-
-    // DeepSeek reasoning/tool-call history must echo reasoning_content back on
-    // follow-up requests. Keep a provider-level fallback for older catalog
-    // entries that do not mark the interleaved capability yet.
-    const providerID = typeof model.providerID === "string" ? model.providerID.trim().toLowerCase() : ""
-    const sdkPackage =
-        model.api && typeof model.api.npm === "string"
-            ? model.api.npm.trim().toLowerCase()
-            : ""
-    const apiURL =
-        model.api && typeof model.api.url === "string"
-            ? model.api.url.trim().toLowerCase()
-            : ""
-
-    return providerID === "deepseek" || sdkPackage === "@ai-sdk/deepseek" || apiURL.includes("deepseek")
+    return model.capabilities.replayAssistantReasoning !== false
 }
 
 function summarizeQuestionAnswerForModel(part: TextPart) {
@@ -820,9 +802,8 @@ export async function toModelMessages(
                 }
             case "reasoning":
                 if (!replayAssistantReasoning) {
-                    // Keep reasoning parts available for local UI/debugging, but
-                    // only replay them for providers that explicitly require
-                    // reasoning_content on follow-up requests.
+                    // Keep reasoning parts available for local UI/debugging when
+                    // a provider or model explicitly opts out of replay.
                     return null
                 }
                 return {

@@ -43,6 +43,7 @@ export function mapLoadedSession(session: LoadedSessionSnapshot, sessionIndex: n
     policy: session.policy,
     origin: session.origin,
     workflow: session.workflow,
+    modelSelection: session.modelSelection,
   }
 }
 

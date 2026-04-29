@@ -13,6 +13,7 @@ import {
   FileText,
   Folder,
   LayoutPanelLeft,
+  LoaderCircle,
   MessageSquare,
   Minus,
   Monitor,
@@ -57,6 +58,7 @@ export const SettingsIcon = createIcon(Settings)
 export const LayoutSidebarLeftIcon = createIcon(LayoutPanelLeft)
 export const LayoutSidebarRightIcon = createIcon(PanelRight)
 export const SideChatIcon = createIcon(MessageSquare)
+export const SessionRunningIcon = createIcon(LoaderCircle)
 export const LeftSidebarCollapseIcon = createIcon(PanelLeftClose)
 export const LeftSidebarExpandIcon = createIcon(PanelLeftOpen)
 export const RightSidebarCollapseIcon = createIcon(PanelRightClose)

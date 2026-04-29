@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises"
 import { basename, extname } from "node:path"
 import z from "zod"
+import * as Config from "#config/config.ts"
 import * as Project from "#project/project.ts"
+import * as Provider from "#provider/provider.ts"
 import { Instance } from "#project/instance.ts"
 import { ApiError } from "#server/error.ts"
 import * as Message from "#session/message.ts"
@@ -28,6 +30,8 @@ export const CreateSessionBody = z.object({
 export const CreateSideChatBody = z.object({
   anchorMessageID: z.string().min(1),
 })
+
+export const UpdateSessionModelSelectionBody = Config.ModelSelection
 
 export const StreamSessionAttachmentBody = z.object({
   path: z.string().min(1),
@@ -124,6 +128,19 @@ function normalizeQuestionAnswerText(
   }
 
   return undefined
+}
+
+function parseModelReference(value: string) {
+  const [providerID, ...rest] = value.split("/")
+  const modelID = rest.join("/")
+  if (!providerID || !modelID) {
+    throw new ApiError(400, "INVALID_MODEL_REFERENCE", `Model '${value}' must use the format provider/model`)
+  }
+
+  return {
+    providerID,
+    modelID,
+  }
 }
 
 function buildDataURL(mime: string, buffer: Buffer) {
@@ -516,6 +533,73 @@ export async function getSessionDiff(sessionID: string) {
   })
 
   return diff ?? SessionDiff.buildDetailedDiffSummary([])
+}
+
+function toSessionModelSelectionPayload(selection: Session.SessionModelSelection | undefined) {
+  return {
+    model: selection?.model,
+    small_model: selection?.small_model,
+  }
+}
+
+async function resolveEffectiveModel(
+  projectID: string,
+  items: Provider.PublicModel[],
+  selection: Session.SessionModelSelection | undefined,
+) {
+  const selectedModel = selection?.model
+  if (selectedModel) {
+    try {
+      const selectedRef = parseModelReference(selectedModel)
+      const selected = items.find((model) => model.providerID === selectedRef.providerID && model.id === selectedRef.modelID)
+      if (selected) return selected
+    } catch {
+      // Fall back to the project default if an older stored session selection is malformed.
+    }
+  }
+
+  try {
+    const defaultRef = await Provider.getDefaultModelRef(projectID)
+    return items.find((model) => model.providerID === defaultRef.providerID && model.id === defaultRef.modelID) ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function listSessionModels(sessionID: string) {
+  const session = requireSession(sessionID)
+  const items = await Provider.listModels(session.projectID)
+  const selection = Session.getSessionModelSelection(sessionID)
+
+  return {
+    effectiveModel: await resolveEffectiveModel(session.projectID, items, selection),
+    items,
+    selection: toSessionModelSelectionPayload(selection),
+  }
+}
+
+export async function updateSessionModelSelection(
+  sessionID: string,
+  input: z.infer<typeof UpdateSessionModelSelectionBody>,
+) {
+  const session = requireSession(sessionID)
+
+  if (input.model) {
+    const ref = parseModelReference(input.model)
+    await Provider.getModel(ref.providerID, ref.modelID, session.projectID)
+  }
+
+  if (input.small_model) {
+    const ref = parseModelReference(input.small_model)
+    await Provider.getModel(ref.providerID, ref.modelID, session.projectID)
+  }
+
+  const updated = Session.updateSessionModelSelection(sessionID, input)
+  if (!updated) {
+    throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+  }
+
+  return toSessionModelSelectionPayload(Session.getSessionModelSelection(sessionID))
 }
 
 export function deleteSession(sessionID: string) {

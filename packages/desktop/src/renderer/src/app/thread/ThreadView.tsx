@@ -74,6 +74,7 @@ interface ThreadViewProps {
       freeformText?: string
     }
     selectedReasoningEffort?: OpenAIReasoningEffort | null
+    selectedModel?: string | null
     selectedSkillIDs: string[]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
@@ -467,6 +468,7 @@ interface InlineSideChatThreadProps {
       freeformText?: string
     }
     selectedReasoningEffort?: OpenAIReasoningEffort | null
+    selectedModel?: string | null
     selectedSkillIDs: string[]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
@@ -498,6 +500,7 @@ function InlineSideChatThread({
     attachmentPaths: attachments.map((attachment) => attachment.path),
     projectID: activeProjectID,
     refreshToken: composerRefreshVersion,
+    sessionID: session.id,
   })
   const [hydratedTurns, setHydratedTurns] = useState<Turn[]>(turns)
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
@@ -578,6 +581,7 @@ function InlineSideChatThread({
                   }
                 : undefined,
               selectedReasoningEffort: composer.selectedReasoningEffort,
+              selectedModel: composer.selectedModel,
               selectedSkillIDs: composer.selectedSkillIDs,
               waitForPendingModelSelection: composer.awaitPendingModelSelection,
             })
@@ -626,6 +630,7 @@ function InlineSideChatThread({
               attachmentError: composer.attachmentError,
               draftStateOverride,
               selectedReasoningEffort: composer.selectedReasoningEffort,
+              selectedModel: composer.selectedModel,
               selectedSkillIDs: composer.selectedSkillIDs,
               waitForPendingModelSelection: composer.awaitPendingModelSelection,
             })

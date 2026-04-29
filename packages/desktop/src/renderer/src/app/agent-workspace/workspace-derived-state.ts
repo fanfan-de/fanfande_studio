@@ -199,6 +199,30 @@ export function resolveCreateSessionWorkspaceID(
   return workspaces.find((workspace) => isWorkspaceAvailable(workspace))?.id ?? workspaces[0]?.id ?? null
 }
 
+function getSessionIDFromTabKey(tabKey: string) {
+  return tabKey.startsWith("session:") ? tabKey.slice("session:".length) : null
+}
+
+function getRunningSessionIDs(
+  conversations: Record<string, Turn[]>,
+  isSendingByTabKey: Record<string, boolean>,
+) {
+  const sessionIDs = new Set<string>()
+
+  for (const [tabKey, isSending] of Object.entries(isSendingByTabKey)) {
+    const sessionID = isSending ? getSessionIDFromTabKey(tabKey) : null
+    if (sessionID) sessionIDs.add(sessionID)
+  }
+
+  for (const [sessionID, turns] of Object.entries(conversations)) {
+    if (turns.some((turn) => turn.kind === "assistant" && turn.isStreaming)) {
+      sessionIDs.add(sessionID)
+    }
+  }
+
+  return Array.from(sessionIDs)
+}
+
 interface BuildWorkspaceDerivedStateInput {
   activeSideChatSessionIDByParentSessionID: Record<string, string>
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
@@ -355,6 +379,7 @@ export function buildWorkspaceDerivedState({
   const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
   const isSending = activeTabKey ? Boolean(isSendingByTabKey[activeTabKey]) : false
   const isCreatingSession = activeTabKey ? Boolean(isCreatingSessionByTabKey[activeTabKey]) : false
+  const runningSessionIDs = getRunningSessionIDs(conversations, isSendingByTabKey)
   const canvasSessionTabs = focusedPane
     ? focusedPane.tabs.flatMap((tabID) => {
         const reference = getReferenceForTabId(workbenchLayout, tabID)
@@ -545,6 +570,7 @@ export function buildWorkspaceDerivedState({
     isCreatingSession,
     isSending,
     openCanvasSessionIDs,
+    runningSessionIDs,
     selectedProjectID,
     selectedWorkspace,
     workbenchPanes,

@@ -19,8 +19,18 @@ function getTaskStatusClassName(task: SessionTaskSummary) {
   return "is-pending"
 }
 
+function isTaskListComplete(tasks: SessionTaskListView) {
+  return (
+    tasks.summary.total > 0 &&
+    tasks.summary.completed >= tasks.summary.total &&
+    tasks.summary.inProgress === 0 &&
+    tasks.summary.pending === 0 &&
+    tasks.summary.blocked === 0
+  )
+}
+
 export function ComposerTaskProgress({ tasks }: { tasks?: SessionTaskListView | null }) {
-  if (!tasks || tasks.summary.total === 0) return null
+  if (!tasks || tasks.summary.total === 0 || isTaskListComplete(tasks)) return null
 
   return (
     <section className="composer-task-progress" aria-label="任务进度">

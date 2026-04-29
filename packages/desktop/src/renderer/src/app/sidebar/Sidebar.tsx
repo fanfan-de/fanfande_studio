@@ -9,6 +9,7 @@ import {
   FolderIcon,
   LayoutSidebarLeftIcon,
   NewItemIcon,
+  SessionRunningIcon,
   SettingsIcon,
   SortIcon
 } from "../icons"
@@ -46,6 +47,7 @@ interface SidebarProps {
   selectedGlobalSkillFilePath: string | null
   showSidebarToggleButton: boolean
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
+  runningSessionIDs: string[]
   selectedFolderID: string | null
   workspaces: WorkspaceGroup[]
   onCreateGlobalSkill: () => void | Promise<void>
@@ -117,6 +119,7 @@ interface FolderWorkspaceViewProps {
   isCreatingProject: boolean
   isCreatingSession: boolean
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
+  runningSessionIDs: string[]
   selectedFolderID: string | null
   workspaces: WorkspaceGroup[]
   onHoveredFolderChange: Dispatch<SetStateAction<string | null>>
@@ -136,6 +139,7 @@ function FolderWorkspaceView({
   isCreatingProject,
   isCreatingSession,
   projectRowRefs,
+  runningSessionIDs,
   selectedFolderID,
   workspaces,
   onHoveredFolderChange,
@@ -146,6 +150,8 @@ function FolderWorkspaceView({
   onSessionSelect,
   onSidebarAction,
 }: FolderWorkspaceViewProps) {
+  const runningSessionIDSet = new Set(runningSessionIDs)
+
   return (
     <section className="sidebar-view sidebar-view-workspace" aria-label="Workspace sidebar view">
       <div className="sidebar-actions view-toolbar" aria-label="Workspace view actions">
@@ -243,6 +249,7 @@ function FolderWorkspaceView({
                 <div className="session-tree">
             {workspace.sessions.filter((session) => !isSideChatSession(session)).map((session) => {
               const active = session.id === activeSessionID
+              const isRunning = runningSessionIDSet.has(session.id)
               const workflowBadge = getSessionWorkflowBadge(session.workflow)
 
               return (
@@ -251,6 +258,12 @@ function FolderWorkspaceView({
                     className={active ? "session-row is-active" : "session-row"}
                     onClick={() => onSessionSelect(workspace.id, session.id)}
                   >
+                    <span
+                      className={isRunning ? "session-row-status-icon is-running" : "session-row-status-icon is-complete"}
+                      aria-hidden="true"
+                    >
+                      {isRunning ? <SessionRunningIcon /> : <span className="session-row-status-dot" />}
+                    </span>
                     <span className="session-row-copy">
                       <span className="session-row-label">{session.title}</span>
                       <SessionWorkflowBadge compact workflow={workflowBadge} />
@@ -604,6 +617,7 @@ export function Sidebar({
   selectedGlobalSkillFilePath,
   showSidebarToggleButton,
   projectRowRefs,
+  runningSessionIDs,
   selectedFolderID,
   workspaces,
   onCreateGlobalSkill,
@@ -647,6 +661,7 @@ export function Sidebar({
             isCreatingProject={isCreatingProject}
             isCreatingSession={isCreatingSession}
             projectRowRefs={projectRowRefs}
+            runningSessionIDs={runningSessionIDs}
             selectedFolderID={selectedFolderID}
             workspaces={workspaces}
             onHoveredFolderChange={onHoveredFolderChange}

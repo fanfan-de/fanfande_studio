@@ -930,7 +930,7 @@ describe("tool contract", () => {
     })
   })
 
-  it("does not replay assistant reasoning parts into subsequent model context", async () => {
+  it("replays assistant reasoning parts into subsequent model context by default", async () => {
     const model = {
       capabilities: {
         reasoning: true,
@@ -986,6 +986,91 @@ describe("tool contract", () => {
               id: "assistant-reasoning-part",
               sessionID: "session-reasoning-history",
               messageID: "assistant-reasoning-history",
+              type: "reasoning",
+              text: "Hidden chain-of-thought",
+              time: {
+                start: Date.now(),
+              },
+            } as Message.ReasoningPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      content: [
+        {
+          type: "reasoning",
+          text: "Hidden chain-of-thought",
+        },
+        {
+          type: "text",
+          text: "Final answer",
+        },
+      ],
+    })
+  })
+
+  it("does not replay assistant reasoning when the model explicitly opts out", async () => {
+    const model = {
+      capabilities: {
+        reasoning: true,
+        replayAssistantReasoning: false,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+        interleaved: false,
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "assistant-reasoning-opt-out-history",
+            sessionID: "session-reasoning-opt-out-history",
+            role: "assistant",
+            created: Date.now(),
+            parentID: "user-reasoning-opt-out-history",
+            modelID: "test-model",
+            providerID: "test-provider",
+            agent: "plan",
+            path: {
+              cwd: ".",
+              root: ".",
+            },
+            cost: 0,
+            tokens: {
+              input: 0,
+              output: 0,
+              reasoning: 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            },
+          } as Message.Assistant,
+          parts: [
+            {
+              id: "assistant-reasoning-opt-out-text",
+              sessionID: "session-reasoning-opt-out-history",
+              messageID: "assistant-reasoning-opt-out-history",
+              type: "text",
+              text: "Final answer",
+            } as Message.TextPart,
+            {
+              id: "assistant-reasoning-opt-out-part",
+              sessionID: "session-reasoning-opt-out-history",
+              messageID: "assistant-reasoning-opt-out-history",
               type: "reasoning",
               text: "Hidden chain-of-thought",
               time: {

@@ -28,6 +28,7 @@ const DevModel = z.object({
     release_date: z.string(),
     attachment: z.boolean(),
     reasoning: z.boolean(),
+    replay_assistant_reasoning: z.boolean().optional(),
     temperature: z.boolean(),
     tool_call: z.boolean(),
     interleaved: z

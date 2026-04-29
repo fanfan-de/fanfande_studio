@@ -449,6 +449,56 @@
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
+  gap: 8px;
+}
+
+@keyframes session-row-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.session-row-status-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  color: var(--seg-text-3);
+}
+
+.session-row-status-icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.session-row-status-icon.is-running {
+  color: var(--brand-accent-active);
+  animation: session-row-status-spin 900ms linear infinite;
+}
+
+.session-row-status-icon.is-complete {
+  color: var(--seg-success);
+}
+
+.session-row-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px var(--mix-seg-success-10-transparent-90);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-row-status-icon.is-running {
+    animation: none;
+  }
 }
 
 .project-row-shell .row-action,

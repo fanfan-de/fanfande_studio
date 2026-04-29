@@ -185,72 +185,13 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   const isOpenAIReasoning = isOpenAIReasoningModel(input.model)
   const openAIReasoningEffort = normalizeOpenAIReasoningEffort(input.model, input.reasoningEffort)
 
-  // const variant =
-  //   !input.small && input.model.variants && input.user.variant ? input.model.variants[input.user.variant] : {}
-  // const base = input.small
-  //   ? ProviderTransform.smallOptions(input.model)
-  //   : ProviderTransform.options({
-  //       model: input.model,
-  //       sessionID: input.sessionID,
-  //       providerOptions: provider.options,
-  //     })
-  // const options: Record<string, any> = pipe(
-  //   base,
-  //   mergeDeep(input.model.options),
-  //   mergeDeep(input.agent.options),
-  //   mergeDeep(variant),
-  // )
-  // if (isCodex) {
-  //   options.instructions = SystemPrompt.instructions()
-  // }
-
-  // const params = await Plugin.trigger(
-  //   "chat.params",
-  //   {
-  //     sessionID: input.sessionID,
-  //     agent: input.agent,
-  //     model: input.model,
-  //     provider,
-  //     message: input.user,
-  //   },
-  //   {
-  //     temperature: input.model.capabilities.temperature
-  //       ? (input.agent.temperature ?? ProviderTransform.temperature(input.model))
-  //       : undefined,
-  //     topP: input.agent.topP ?? ProviderTransform.topP(input.model),
-  //     topK: ProviderTransform.topK(input.model),
-  //     options,
-  //   },
-  // )
-
-  // const { headers } = await Plugin.trigger(
-  //   "chat.headers",
-  //   {
-  //     sessionID: input.sessionID,
-  //     agent: input.agent,
-  //     model: input.model,
-  //     provider,
-  //     message: input.user,
-  //   },
-  //   {
-  //     headers: {},
-  //   },
-  // )
-  // 将 AbortController.signal 传给 streamText，用于中断请求。
-  
-
-
-  // const maxOutputTokens = isCodex
-  //   ? undefined
-  //   : ProviderTransform.maxOutputTokens(
-  //       input.model.api.npm,
-  //       params.options,
-  //       input.model.limit.output,
-  //       OUTPUT_TOKEN_MAX,
-  //     )
   // 准备工具集，并解析最终使用的语言模型。
   const tools: ToolSet = input.tools ?? {}
+
+
+  //解析 Vercel AI  SDK 语言模型
   const model = await resolveLanguageModel(input.model)
+
   const totalTimeoutMs =
     Flag.FanFande_EXPERIMENTAL_LLM_TOTAL_TIMEOUT_MS ?? DEFAULT_LLM_TOTAL_TIMEOUT_MS
   const configuredStepTimeoutMs =
@@ -271,67 +212,56 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     },
   })
 
+  //供应商额外设置
   const openAIProviderOptions =
     input.model.providerID === OPENAI_PROVIDER_ID
       ? {
-          ...(isOpenAICodex
-            ? {
-                store: false,
-                ...(systemPrompt
-                  ? {
-                      instructions: systemPrompt,
-                    }
-                  : {}),
+        ...(isOpenAICodex
+          ? {
+            store: false,
+            ...(systemPrompt
+              ? {
+                instructions: systemPrompt,
               }
-            : {}),
-          ...(openAIReasoningEffort
-            ? {
-                reasoningEffort: openAIReasoningEffort,
-              }
-            : {}),
-          ...(isOpenAIReasoning && openAIReasoningEffort !== "none"
-            ? {
-                reasoningSummary: "auto",
-              }
-            : {}),
-        }
+              : {}),
+          }
+          : {}),
+        ...(openAIReasoningEffort
+          ? {
+            reasoningEffort: openAIReasoningEffort,
+          }
+          : {}),
+        ...(isOpenAIReasoning && openAIReasoningEffort !== "none"
+          ? {
+            reasoningSummary: "auto",
+          }
+          : {}),
+      }
       : undefined
 
-  // LiteLLM and some Anthropic proxies require the tools parameter to be present
-  // when message history contains tool calls, even if no tools are being used.
-  // Add a dummy tool that is never called to satisfy this validation.
-  // This is enabled for:
-  // 1. Providers with "litellm" in their ID or API ID (auto-detected)
-  // 2. Providers with explicit "litellmProxy: true" option (opt-in for custom gateways)
-  // const isLiteLLMProxy =
-  //   provider.options?.["litellmProxy"] === true ||
-  //   input.model.providerID.toLowerCase().includes("litellm") ||
-  //   input.model.api.id.toLowerCase().includes("litellm")
 
-  // if (isLiteLLMProxy && Object.keys(tools).length === 0 && hasToolCalls(input.messages)) {
-  //   tools["_noop"] = tool({
-  //     description:
-  //       "Placeholder for LiteLLM/Anthropic proxy compatibility - required when message history contains tool calls but no active tools are needed",
-  //     inputSchema: jsonSchema({ type: "object", properties: {} }),
-  //     execute: async () => ({ output: "", title: "", metadata: {} }),
-  //   })
-  // }
   // 使用 Vercel AI SDK 发起流式请求；如需推理抽取，可在这里接入 middleware。
   return streamText({
     // ------ 回调与网络配置（Callbacks & Network）------
     onError(error) {
-      //console.error("流式请求回调异常：AI SDK onError 捕获到错误", error)
-      //console.log(error)
+      log.error("流式请求回调异常：AI SDK onError 捕获到错误", error)
     },
     onFinish: () => {
-      //console.log("流式请求结束：streamText.onFinish")
+      log.info("流式请求结束：streamText.onFinish")
     },
     onStepFinish: () => {
-      //console.log("流式步骤结束：streamText.onStepFinish")
+      log.info("流式步骤结束：streamText.onStepFinish")
     },
     onAbort: () => {
-      //console.log("流式请求中止：streamText.onAbort")
+      log.info("流式请求中止：streamText.onAbort")
     },
+    //上下文
+    tools,
+    system: isOpenAICodex ? undefined : systemPrompt || undefined,
+    prompt: [
+      ...input.messages,
+    ],
+    model,
     // ------- 基础生成参数 ----------------
     timeout: { totalMs: totalTimeoutMs, stepMs: stepTimeoutMs },// 总超时与单步超时
     abortSignal: input.abort,// 取消信号
@@ -353,8 +283,8 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     providerOptions:
       openAIProviderOptions && Object.keys(openAIProviderOptions).length > 0
         ? {
-            openai: openAIProviderOptions,
-          }
+          openai: openAIProviderOptions,
+        }
         : undefined,
     activeTools: Object.keys(tools).filter((x) => x !== "invalid"),// 过滤掉兜底的 invalid 工具
 
@@ -363,6 +293,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     includeRawChunks: false,// 不返回底层原始分块，减少流式噪声与兼容性问题
     //------------ 实验能力扩展 ----------------
     stopWhen: stepCountIs(1),
+
     //prepareStep:()=>{return {}},              // prepareStep 可在每一步执行前动态调整参数
     //------------ 工具调用修复 ----------------------
     // async experimental_repairToolCall(failed) {
@@ -419,7 +350,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
 
 
 
-    tools,
+
     // headers: {
     //   ...(input.model.providerID.startsWith("opencode")
     //     ? {
@@ -436,10 +367,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //   ...input.model.headers,
     //   ...headers,
     // },
-    system: isOpenAICodex ? undefined : systemPrompt || undefined,
-    prompt: [
-      ...input.messages,
-    ],
+
     // model: wrapLanguageModel({
     //   model: language,
     //   middleware: [
@@ -455,7 +383,6 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //     extractReasoningMiddleware({ tagName: "think", startWithReasoning: false }),
     //   ],
     // }),
-    model,
     //experimental_telemetry: { isEnabled: cfg.experimental?.openTelemetry },
   })
 }

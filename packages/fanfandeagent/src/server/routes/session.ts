@@ -71,6 +71,17 @@ export function SessionRoutes() {
 
   app.get("/:id", (c) => ok(c, SessionUseCase.getSession(c.req.param("id"))))
 
+  app.get("/:id/models", async (c) => ok(c, await SessionUseCase.listSessionModels(c.req.param("id"))))
+
+  app.patch("/:id/model-selection", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SessionUseCase.UpdateSessionModelSelectionBody,
+      "Body must contain nullable 'model' and 'small_model' fields",
+    )
+    return ok(c, await SessionUseCase.updateSessionModelSelection(c.req.param("id"), payload))
+  })
+
   app.get("/:id/messages", async (c) => ok(c, await SessionUseCase.listSessionMessages(c.req.param("id"))))
 
   app.get("/:id/diff", async (c) => ok(c, await SessionUseCase.getSessionDiff(c.req.param("id"))))

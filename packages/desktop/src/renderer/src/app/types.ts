@@ -54,6 +54,7 @@ export interface SessionTaskSummary {
   activeForm: string
   owner: string
   status: SessionTaskStatus
+  sortIndex: number
   blocks: string[]
   blockedBy: string[]
   metadata: Record<string, unknown>
@@ -117,6 +118,11 @@ export interface SessionOrigin {
   anchorPreview: string
 }
 
+export interface SessionModelSelection {
+  model?: string
+  small_model?: string
+}
+
 export interface SideChatSource {
   kind: "url" | "document"
   title: string
@@ -162,6 +168,7 @@ export interface SessionSummary {
   policy?: SessionPolicy
   origin?: SessionOrigin
   workflow?: SessionWorkflowSummary
+  modelSelection?: SessionModelSelection
 }
 
 export interface CreateSessionTab {
@@ -215,6 +222,7 @@ export interface LoadedSessionSnapshot {
   created: number
   updated: number
   workflow?: SessionWorkflowSummary
+  modelSelection?: SessionModelSelection
 }
 
 export interface ArchivedSessionSummary {

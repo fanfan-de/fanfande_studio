@@ -12,6 +12,7 @@ function createTask(input: Partial<SessionTaskSummary> & Pick<SessionTaskSummary
     activeForm: input.activeForm ?? input.subject,
     owner: input.owner ?? "default",
     status: input.status,
+    sortIndex: input.sortIndex ?? 0,
     blocks: input.blocks ?? [],
     blockedBy: input.blockedBy ?? [],
     metadata: input.metadata ?? {},
@@ -85,6 +86,19 @@ describe("ComposerTaskProgress", () => {
     expect(container).toBeEmptyDOMElement()
 
     rerender(<ComposerTaskProgress tasks={createTaskListView([])} />)
+
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it("does not render once every task is completed", () => {
+    const { container } = render(
+      <ComposerTaskProgress
+        tasks={createTaskListView([
+          createTask({ id: "1", subject: "确认演示目标", status: "completed" }),
+          createTask({ id: "2", subject: "创建示例计划", status: "completed" }),
+        ])}
+      />,
+    )
 
     expect(container).toBeEmptyDOMElement()
   })

@@ -114,12 +114,84 @@ describe("workspace derived state", () => {
     expect(derived.activeSideChatCountsByAnchorMessageID).toEqual({ "message-1": 1 })
     expect(derived.activePreviewState.draftUrl).toBe("http://localhost:5173")
     expect(derived.canvasSessionTabs.map((session) => session.id)).toEqual([parentSession.id])
+    expect(derived.runningSessionIDs).toEqual([])
     expect(derived.workbenchPaneStates[0]).toMatchObject({
       id: "pane-1",
       activeTabKey: getWorkbenchTabKey(createSessionWorkbenchTab(parentSession.id)),
       sessionID: parentSession.id,
       workspace,
     })
+  })
+
+  it("derives running sessions from sending tabs and streaming assistant turns", () => {
+    const sendingSession = createSession("session-sending", "Sending")
+    const streamingSession = createSession("session-streaming", "Streaming")
+    const idleSession = createSession("session-idle", "Idle")
+    const workspace = createWorkspace("workspace-1", [sendingSession, streamingSession, idleSession])
+
+    const derived = buildWorkspaceDerivedState({
+      activeSideChatSessionIDByParentSessionID: {},
+      composerAttachmentsByTabKey: {},
+      composerDraftStateByTabKey: {},
+      contextUsageBySession: {},
+      conversations: {
+        [streamingSession.id]: [
+          {
+            id: "assistant-1",
+            kind: "assistant",
+            timestamp: 1,
+            runtime: {
+              phase: "reasoning",
+              startedAt: 1,
+              updatedAt: 1,
+            },
+            state: "Reasoning",
+            items: [],
+            isStreaming: true,
+          },
+        ],
+        [idleSession.id]: [
+          {
+            id: "assistant-2",
+            kind: "assistant",
+            timestamp: 2,
+            runtime: {
+              phase: "completed",
+              startedAt: 2,
+              updatedAt: 2,
+            },
+            state: "Done",
+            items: [],
+            isStreaming: false,
+          },
+        ],
+      },
+      createSessionTabs: [],
+      isCreatingSessionByTabKey: {},
+      isInitialWorkspaceLoadPending: false,
+      isSendingByTabKey: {
+        [`session:${sendingSession.id}`]: true,
+        [`session:${idleSession.id}`]: false,
+        "create-session:create-1": true,
+      },
+      pendingPermissionRequestsBySession: {},
+      platform: "win32",
+      previewByWorkspaceID: {},
+      selectedDiffFileBySession: {},
+      selectedFolderID: workspace.id,
+      sessionDiffBySession: {},
+      sessionDiffStateBySession: {},
+      sessionDirectoryBySession: {},
+      sessionRuntimeDebugBySession: {},
+      sessionRuntimeDebugStateBySession: {},
+      seedWorkspaceIDs: new Set(),
+      workbenchLayout: createWorkbenchLayoutFromLegacyPanes([]),
+      workspaceFileCommentsByTarget: {},
+      workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+      workspaces: [workspace],
+    })
+
+    expect([...derived.runningSessionIDs].sort()).toEqual([sendingSession.id, streamingSession.id].sort())
   })
 
   it("resolves create-session workspace using preferred, selected, active, then available fallback order", () => {

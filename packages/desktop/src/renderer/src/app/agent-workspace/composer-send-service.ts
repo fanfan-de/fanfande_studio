@@ -44,6 +44,17 @@ export function normalizeQuestionAnswerText(input?: {
   return ""
 }
 
+function parseComposerModelValue(value: string | null | undefined) {
+  if (!value) return undefined
+  const [providerID, ...rest] = value.split("/")
+  const modelID = rest.join("/")
+  if (!providerID || !modelID) return undefined
+  return {
+    providerID,
+    modelID,
+  }
+}
+
 interface SendPromptToSessionInput {
   attachments: ComposerAttachment[]
   backendSessionID?: string | null
@@ -57,6 +68,7 @@ interface SendPromptToSessionInput {
   }
   reasoningEffort?: OpenAIReasoningEffort | null
   references?: UserTurn["references"]
+  selectedModel?: string | null
   selectedSkillIDs: string[]
   session: SessionSummary
   tabKey: string
@@ -120,6 +132,7 @@ export async function sendPromptToSession(
     questionAnswer,
     reasoningEffort,
     references = [],
+    selectedModel,
     session,
     selectedSkillIDs,
     tabKey,
@@ -134,6 +147,7 @@ export async function sendPromptToSession(
     path: attachment.path,
     name: attachment.name,
   }))
+  const model = parseComposerModelValue(selectedModel)
   const effectiveSelectedSkillIDs = resolveComposerSkillSelectionForSession(session, selectedSkillIDs)
   const userTurnDisplayText = displayText?.trim() || normalizeQuestionAnswerText(questionAnswer) || undefined
   const userTurn: Turn = buildUserTurn({
@@ -230,6 +244,7 @@ export async function sendPromptToSession(
         ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
         ...(questionAnswer ? { questionAnswer } : {}),
         ...(reasoningEffort ? { reasoningEffort } : {}),
+        ...(model ? { model } : {}),
         skills: effectiveSelectedSkillIDs,
       })
 
@@ -243,6 +258,7 @@ export async function sendPromptToSession(
       ...(attachmentInputs.length > 0 ? { attachments: attachmentInputs } : {}),
       ...(questionAnswer ? { questionAnswer } : {}),
       ...(reasoningEffort ? { reasoningEffort } : {}),
+      ...(model ? { model } : {}),
       skills: effectiveSelectedSkillIDs,
     })
 

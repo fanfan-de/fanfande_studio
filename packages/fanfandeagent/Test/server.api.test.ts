@@ -53,6 +53,10 @@ type ProjectSessionsResponseEnvelope = JsonEnvelope<
     projectID: string
     directory: string
     title: string
+    modelSelection?: {
+      model?: string
+      small_model?: string
+    }
     time: {
       created: number
       updated: number
@@ -1542,6 +1546,59 @@ describe("server api", () => {
             ]),
           )
           expect(projectModelsBody.data?.selection.model).toBeUndefined()
+
+          const createProjectSessionResponse = await app.request(`http://localhost/api/projects/${projectID}/sessions`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: "Session scoped model" }),
+          })
+          const createProjectSessionBody = (await createProjectSessionResponse.json()) as SessionResponseEnvelope
+          const sessionID = createProjectSessionBody.data?.id
+
+          expect(createProjectSessionResponse.status).toBe(201)
+          expect(sessionID).toBeString()
+
+          const sessionModelsBeforeResponse = await app.request(`http://localhost/api/sessions/${sessionID}/models`)
+          const sessionModelsBeforeBody = (await sessionModelsBeforeResponse.json()) as ProjectModelsEnvelope
+
+          expect(sessionModelsBeforeResponse.status).toBe(200)
+          expect(sessionModelsBeforeBody.data?.selection.model).toBeUndefined()
+
+          const sessionSelectionResponse = await app.request(`http://localhost/api/sessions/${sessionID}/model-selection`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              model: "openai/gpt-4o-mini",
+            }),
+          })
+          const sessionSelectionBody = (await sessionSelectionResponse.json()) as JsonEnvelope<{
+            model?: string
+            small_model?: string
+          }>
+
+          expect(sessionSelectionResponse.status).toBe(200)
+          expect(sessionSelectionBody.data?.model).toBe("openai/gpt-4o-mini")
+
+          const sessionModelsAfterResponse = await app.request(`http://localhost/api/sessions/${sessionID}/models`)
+          const sessionModelsAfterBody = (await sessionModelsAfterResponse.json()) as ProjectModelsEnvelope
+
+          expect(sessionModelsAfterResponse.status).toBe(200)
+          expect(sessionModelsAfterBody.data?.selection.model).toBe("openai/gpt-4o-mini")
+          expect(sessionModelsAfterBody.data?.effectiveModel?.id).toBe("gpt-4o-mini")
+
+          const projectModelsAfterSessionResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
+          const projectModelsAfterSessionBody = (await projectModelsAfterSessionResponse.json()) as ProjectModelsEnvelope
+
+          expect(projectModelsAfterSessionResponse.status).toBe(200)
+          expect(projectModelsAfterSessionBody.data?.selection.model).toBeUndefined()
+
+          const sessionsAfterSelectionResponse = await app.request(`http://localhost/api/projects/${projectID}/sessions`)
+          const sessionsAfterSelectionBody = (await sessionsAfterSelectionResponse.json()) as ProjectSessionsResponseEnvelope
+
+          expect(sessionsAfterSelectionResponse.status).toBe(200)
+          expect(
+            sessionsAfterSelectionBody.data?.find((session) => session.id === sessionID)?.modelSelection?.model,
+          ).toBe("openai/gpt-4o-mini")
 
           const globalModelsAfterProjectResponse = await app.request("http://localhost/api/models")
           const globalModelsAfterProjectBody = (await globalModelsAfterProjectResponse.json()) as ProjectModelsEnvelope

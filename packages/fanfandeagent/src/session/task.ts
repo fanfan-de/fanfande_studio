@@ -30,6 +30,7 @@ export type TaskCreateInput = {
   activeForm?: string
   owner?: string
   status?: SessionTaskStatus
+  sortIndex?: number
   blocks?: string[]
   blockedBy?: string[]
   metadata?: Record<string, unknown>
@@ -42,6 +43,7 @@ export type TaskUpdateInput = {
   activeForm?: string
   owner?: string
   status?: SessionTaskStatus
+  sortIndex?: number
   blocks?: string[]
   blockedBy?: string[]
   metadata?: Record<string, unknown>
@@ -93,6 +95,10 @@ function ensureTaskTables() {
     CREATE INDEX IF NOT EXISTS "idx_session_tasks_session_owner"
     ON "session_tasks" ("sessionID", "owner", "status", "updatedAt");
   `)
+  db.db.run(`
+    CREATE INDEX IF NOT EXISTS "idx_session_tasks_session_sort"
+    ON "session_tasks" ("sessionID", "sortIndex", "createdAt");
+  `)
 
   taskTablesGeneration = db.getDatabaseGeneration()
 }
@@ -113,11 +119,75 @@ function normalizeIDList(values: string[] | undefined) {
   return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))]
 }
 
+function normalizeSortIndex(value: number | undefined, fallback: number) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : fallback
+}
+
+function nextSortIndex(tasks: SessionTaskRecord[]) {
+  if (tasks.length === 0) return 0
+  return Math.max(tasks.length, ...tasks.map((task) => task.sortIndex + 1))
+}
+
+function compareTaskOrder(left: SessionTaskRecord, right: SessionTaskRecord) {
+  if (left.sortIndex !== right.sortIndex) return left.sortIndex - right.sortIndex
+  if (left.createdAt !== right.createdAt) return left.createdAt - right.createdAt
+  return left.id.localeCompare(right.id)
+}
+
+function hasMeaningfulSortIndexes(tasks: SessionTaskRecord[]) {
+  return new Set(tasks.map((task) => task.sortIndex)).size > 1
+}
+
+function sortTasksByDependencies(tasks: SessionTaskRecord[]) {
+  const base = [...tasks].sort(compareTaskOrder)
+  const tasksByID = new Map(base.map((task) => [task.id, task]))
+  const baseIndex = new Map(base.map((task, index) => [task.id, index]))
+  const incoming = new Map(base.map((task) => [task.id, 0]))
+  const outgoing = new Map<string, string[]>()
+
+  for (const task of base) {
+    for (const sourceID of task.blockedBy) {
+      if (!tasksByID.has(sourceID)) continue
+      incoming.set(task.id, (incoming.get(task.id) ?? 0) + 1)
+      const targets = outgoing.get(sourceID) ?? []
+      targets.push(task.id)
+      outgoing.set(sourceID, targets)
+    }
+  }
+
+  const compareByBaseIndex = (left: SessionTaskRecord, right: SessionTaskRecord) =>
+    (baseIndex.get(left.id) ?? 0) - (baseIndex.get(right.id) ?? 0)
+  const queue = base
+    .filter((task) => (incoming.get(task.id) ?? 0) === 0)
+    .sort(compareByBaseIndex)
+  const result: SessionTaskRecord[] = []
+
+  while (queue.length > 0) {
+    const task = queue.shift()!
+    result.push(task)
+
+    for (const targetID of outgoing.get(task.id) ?? []) {
+      const nextIncoming = (incoming.get(targetID) ?? 0) - 1
+      incoming.set(targetID, nextIncoming)
+      if (nextIncoming === 0) {
+        const target = tasksByID.get(targetID)
+        if (target) {
+          queue.push(target)
+          queue.sort(compareByBaseIndex)
+        }
+      }
+    }
+  }
+
+  if (result.length === base.length) return result
+
+  const emitted = new Set(result.map((task) => task.id))
+  return [...result, ...base.filter((task) => !emitted.has(task.id))]
+}
+
 function sortTasks(tasks: SessionTaskRecord[]) {
-  return [...tasks].sort((left, right) => {
-    if (left.createdAt !== right.createdAt) return left.createdAt - right.createdAt
-    return left.id.localeCompare(right.id)
-  })
+  const base = [...tasks].sort(compareTaskOrder)
+  return hasMeaningfulSortIndexes(base) ? base : sortTasksByDependencies(base)
 }
 
 function taskPeer(task: SessionTaskRecord): SessionTaskPeer {
@@ -134,6 +204,7 @@ function readStoredTasks(sessionID: string) {
   return sortTasks(db.findManyWithSchema(TABLE_NAME, SessionTaskRecord, {
     where: [{ column: "sessionID", value: sessionID }],
     orderBy: [
+      { column: "sortIndex", direction: "ASC" },
       { column: "createdAt", direction: "ASC" },
       { column: "id", direction: "ASC" },
     ],
@@ -442,8 +513,9 @@ export function createSessionTasks(input: {
   const tasksByID = new Map(existing.map((task) => [task.id, { ...task }]))
   const created: SessionTaskRecord[] = []
   const createdEdges: Array<{ id: string; blocks?: string[]; blockedBy?: string[] }> = []
+  const baseSortIndex = nextSortIndex(existing)
 
-  for (const task of input.tasks) {
+  for (const [index, task] of input.tasks.entries()) {
     const id = task.id?.trim() || Identifier.ascending("task")
     if (tasksByID.has(id)) {
       throw new Error(`Task '${id}' already exists in this session.`)
@@ -459,6 +531,7 @@ export function createSessionTasks(input: {
       activeForm: normalizeText(task.activeForm ?? subject, "activeForm"),
       owner: normalizeOwner(task.owner, input.defaultOwner),
       status,
+      sortIndex: normalizeSortIndex(task.sortIndex, baseSortIndex + index),
       blocks: normalizeIDList(task.blocks),
       blockedBy: normalizeIDList(task.blockedBy),
       metadata: task.metadata ?? {},
@@ -528,6 +601,7 @@ export function updateSessionTask(input: {
     activeForm: input.update.activeForm ? normalizeText(input.update.activeForm, "activeForm") : current.activeForm,
     owner: input.update.owner ? normalizeOwner(input.update.owner, current.owner) : current.owner,
     status: nextStatus,
+    sortIndex: normalizeSortIndex(input.update.sortIndex, current.sortIndex),
     blocks: input.update.blocks ? normalizeIDList(input.update.blocks) : current.blocks,
     blockedBy: input.update.blockedBy ? normalizeIDList(input.update.blockedBy) : current.blockedBy,
     metadata: input.update.metadata ?? current.metadata,
@@ -571,6 +645,7 @@ export function replaceTasksFromState(input: {
     activeForm: task.activeForm,
     owner: task.owner,
     status: task.status,
+    sortIndex: task.sortIndex,
     blocks: task.blocks,
     blockedBy: task.blockedBy,
     metadata: task.metadata,
