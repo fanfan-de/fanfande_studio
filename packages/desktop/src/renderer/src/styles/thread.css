@@ -309,6 +309,27 @@
   color: #526375;
 }
 
+.trace-item-reasoning-toggle {
+  cursor: pointer;
+}
+
+.trace-item-reasoning-toggle:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+  border-radius: var(--seg-radius-xs);
+}
+
+.trace-item-reasoning-body {
+  display: grid;
+  gap: 4px;
+}
+
+.trace-item-collapsed-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .trace-item-toggle {
   width: 100%;
   padding: 0;

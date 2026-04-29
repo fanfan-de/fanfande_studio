@@ -1,7 +1,7 @@
 import { createRef } from "react"
 import { fireEvent, render } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTurn, type SessionSummary, type Turn } from "../types"
+import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTurn, type SessionSummary, type Turn } from "../types"
 import { ThreadView } from "./ThreadView"
 
 const session: SessionSummary = {
@@ -36,6 +36,22 @@ function assistantTurn(id: string, text: string): AssistantTurn {
       },
     ],
     isStreaming: true,
+  }
+}
+
+function assistantTraceTurn(id: string, items: AssistantTraceItem[], isStreaming: boolean): AssistantTurn {
+  return {
+    id,
+    kind: "assistant",
+    timestamp: 1,
+    runtime: {
+      phase: isStreaming ? "responding" : "completed",
+      startedAt: 1,
+      updatedAt: 1,
+    },
+    state: isStreaming ? "responding" : "completed",
+    items,
+    isStreaming,
   }
 }
 
@@ -76,6 +92,88 @@ function setScrollMetrics(element: HTMLElement, input: { clientHeight: number; s
   })
   element.scrollTop = input.scrollTop
 }
+
+describe("ThreadView trace collapse", () => {
+  it("collapses completed reasoning to the first line and expands from the section", () => {
+    const { container, getByText } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: "Inspect files first\nThen compare the rendering states",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    expect(container.textContent).toContain("Inspect files first")
+    expect(container.textContent).not.toContain("Then compare the rendering states")
+
+    const reasoningToggle = getByText("Inspect files first").closest('[role="button"]')
+    expect(reasoningToggle).not.toBeNull()
+
+    fireEvent.click(reasoningToggle!)
+
+    expect(container.textContent).toContain("Then compare the rendering states")
+  })
+
+  it("keeps streaming reasoning open, then collapses reasoning and tool content when the turn completes", () => {
+    const streamingItems: AssistantTraceItem[] = [
+      {
+        id: "reasoning-1",
+        kind: "reasoning",
+        timestamp: 1,
+        label: "Reasoning",
+        text: "Inspect files first\nThen compare the rendering states",
+        status: "running",
+        isStreaming: true,
+      },
+      {
+        id: "tool-1",
+        kind: "tool",
+        timestamp: 1,
+        label: "Tool",
+        title: "Shell",
+        detail: "Get-Content ThreadView.tsx",
+        status: "running",
+        isStreaming: true,
+      },
+    ]
+    const completedItems: AssistantTraceItem[] = [
+      {
+        ...streamingItems[0],
+        status: "completed",
+        isStreaming: false,
+      },
+      {
+        ...streamingItems[1],
+        detail: "Read ThreadView.tsx",
+        status: "completed",
+        isStreaming: false,
+      },
+    ]
+    const { container, getByRole, props, rerender } = renderThread([
+      assistantTraceTurn("assistant-1", streamingItems, true),
+    ])
+
+    expect(container.textContent).toContain("Then compare the rendering states")
+
+    fireEvent.click(getByRole("button", { name: /Shell/ }))
+    expect(container.textContent).toContain("Input")
+
+    rerender(<ThreadView {...props} activeTurns={[assistantTraceTurn("assistant-1", completedItems, false)]} />)
+
+    expect(container.textContent).toContain("Inspect files first")
+    expect(container.textContent).not.toContain("Then compare the rendering states")
+    expect(container.textContent).not.toContain("Input")
+  })
+})
 
 describe("ThreadView auto-scroll", () => {
   it("follows new content while pinned to the bottom", () => {

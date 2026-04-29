@@ -45,6 +45,7 @@ export interface SessionsSliceState {
   leftSidebarView: LeftSidebarView
   rightSidebarView: RightSidebarView
   selectedFolderID: string | null
+  sessionCanvasUnreadBySession: Record<string, boolean>
   workspaces: WorkspaceGroup[]
 }
 
@@ -95,6 +96,9 @@ export interface SessionsSliceActions {
   setLeftSidebarView: (update: WorkspaceStateUpdater<LeftSidebarView>) => void
   setRightSidebarView: (update: WorkspaceStateUpdater<RightSidebarView>) => void
   setSelectedFolderID: (update: WorkspaceStateUpdater<string | null>) => void
+  setSessionCanvasUnreadBySession: (
+    update: WorkspaceStateUpdater<Record<string, boolean>>,
+  ) => void
   setWorkspaces: (update: WorkspaceStateUpdater<WorkspaceGroup[]>) => void
 }
 
@@ -196,6 +200,7 @@ export function createWorkspaceStore({
       leftSidebarView: "workspace",
       rightSidebarView: "changes",
       selectedFolderID: initialWorkspace?.id ?? null,
+      sessionCanvasUnreadBySession: {},
       workspaces: shouldUseSeedData ? seedWorkspaces : [],
     },
     composer: {
@@ -318,6 +323,16 @@ export function createWorkspaceStore({
           sessions: {
             ...state.sessions,
             selectedFolderID: resolveStateUpdate(state.sessions.selectedFolderID, update),
+          },
+        })),
+      setSessionCanvasUnreadBySession: (update) =>
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            sessionCanvasUnreadBySession: resolveStateUpdate(
+              state.sessions.sessionCanvasUnreadBySession,
+              update,
+            ),
           },
         })),
       setWorkspaces: (update) =>

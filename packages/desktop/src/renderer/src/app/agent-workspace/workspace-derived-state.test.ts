@@ -114,6 +114,7 @@ describe("workspace derived state", () => {
     expect(derived.activeSideChatCountsByAnchorMessageID).toEqual({ "message-1": 1 })
     expect(derived.activePreviewState.draftUrl).toBe("http://localhost:5173")
     expect(derived.canvasSessionTabs.map((session) => session.id)).toEqual([parentSession.id])
+    expect(derived.visibleCanvasSessionIDs).toEqual([parentSession.id])
     expect(derived.runningSessionIDs).toEqual([])
     expect(derived.workbenchPaneStates[0]).toMatchObject({
       id: "pane-1",
@@ -192,6 +193,52 @@ describe("workspace derived state", () => {
     })
 
     expect([...derived.runningSessionIDs].sort()).toEqual([sendingSession.id, streamingSession.id].sort())
+  })
+
+  it("separates open canvas sessions from the visible active canvas sessions", () => {
+    const sessionA = createSession("session-a", "A")
+    const sessionB = createSession("session-b", "B")
+    const sessionC = createSession("session-c", "C")
+    const workspace = createWorkspace("workspace-1", [sessionA, sessionB, sessionC])
+    const layout = createWorkbenchLayoutFromLegacyPanes([
+      createWorkbenchPane([
+        createSessionWorkbenchTab(sessionA.id),
+        createSessionWorkbenchTab(sessionB.id),
+      ], "pane-1"),
+      createWorkbenchPane([
+        createSessionWorkbenchTab(sessionC.id),
+      ], "pane-2"),
+    ])
+
+    const derived = buildWorkspaceDerivedState({
+      activeSideChatSessionIDByParentSessionID: {},
+      composerAttachmentsByTabKey: {},
+      composerDraftStateByTabKey: {},
+      contextUsageBySession: {},
+      conversations: {},
+      createSessionTabs: [],
+      isCreatingSessionByTabKey: {},
+      isInitialWorkspaceLoadPending: false,
+      isSendingByTabKey: {},
+      pendingPermissionRequestsBySession: {},
+      platform: "win32",
+      previewByWorkspaceID: {},
+      selectedDiffFileBySession: {},
+      selectedFolderID: workspace.id,
+      sessionDiffBySession: {},
+      sessionDiffStateBySession: {},
+      sessionDirectoryBySession: {},
+      sessionRuntimeDebugBySession: {},
+      sessionRuntimeDebugStateBySession: {},
+      seedWorkspaceIDs: new Set(),
+      workbenchLayout: layout,
+      workspaceFileCommentsByTarget: {},
+      workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+      workspaces: [workspace],
+    })
+
+    expect(derived.openCanvasSessionIDs).toEqual([sessionA.id, sessionB.id, sessionC.id])
+    expect(derived.visibleCanvasSessionIDs).toEqual([sessionA.id, sessionC.id])
   })
 
   it("resolves create-session workspace using preferred, selected, active, then available fallback order", () => {

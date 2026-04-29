@@ -618,6 +618,7 @@ interface UseSessionStreamControllerOptions {
   conversations: Record<string, Turn[]>
   historyRequestRef: MutableRefObject<number>
   openCanvasSessionIDs: string[]
+  onSessionCanvasActivity: (sessionID: string) => void
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
   permissionRequestsRequestRef: MutableRefObject<Record<string, number>>
   platform: string
@@ -657,6 +658,7 @@ export function useSessionStreamController({
   conversations,
   historyRequestRef,
   openCanvasSessionIDs,
+  onSessionCanvasActivity,
   pendingStreamsRef,
   permissionRequestsRequestRef,
   platform,
@@ -919,6 +921,8 @@ export function useSessionStreamController({
       return
     }
 
+    onSessionCanvasActivity(target.sessionID)
+
     const backendTurnID = resolveStreamTurnID(streamEvent)
     const streamMessageID = resolveStreamMessageID(streamEvent)
     const messageAssistantTurnID = findAssistantTurnIDByMessageID(target.sessionID, streamMessageID)
@@ -992,6 +996,8 @@ export function useSessionStreamController({
     if (cursor && sessionEventRouterRef.current.rememberSeenCursor(uiSessionID, cursor)) {
       return
     }
+
+    onSessionCanvasActivity(uiSessionID)
 
     const backendTurnID = resolveStreamTurnID(streamEvent)
     if (!backendTurnID) {

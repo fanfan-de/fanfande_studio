@@ -34,6 +34,10 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
   const leftSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessions.leftSidebarView)
   const rightSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessions.rightSidebarView)
   const selectedFolderID = useWorkspaceStoreSelector(store, (state) => state.sessions.selectedFolderID)
+  const sessionCanvasUnreadBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.sessions.sessionCanvasUnreadBySession,
+  )
   const workspaces = useWorkspaceStoreSelector(store, (state) => state.sessions.workspaces)
   const setActiveSideChatSessionIDByParentSessionID = useWorkspaceStoreSelector(
     store,
@@ -55,6 +59,10 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
   const setLeftSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setLeftSidebarView)
   const setRightSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setRightSidebarView)
   const setSelectedFolderID = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setSelectedFolderID)
+  const setSessionCanvasUnreadBySession = useWorkspaceStoreSelector(
+    store,
+    (state) => state.sessionsActions.setSessionCanvasUnreadBySession,
+  )
   const setWorkspaces = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setWorkspaces)
 
   return {
@@ -84,7 +92,9 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
     setLeftSidebarView,
     setRightSidebarView,
     setSelectedFolderID,
+    setSessionCanvasUnreadBySession,
     setWorkspaces,
+    sessionCanvasUnreadBySession,
     watchedWorkspaceDirectoriesKeyRef,
     workspaceRefreshRequestRef,
     workspaceReloadSuppressedUntilRef,

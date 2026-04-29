@@ -49,6 +49,8 @@ interface SidebarProps {
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
   runningSessionIDs: string[]
   selectedFolderID: string | null
+  sessionCanvasUnreadBySession: Record<string, boolean>
+  visibleCanvasSessionIDs: string[]
   workspaces: WorkspaceGroup[]
   onCreateGlobalSkill: () => void | Promise<void>
   onCreateGlobalSkillDraftCancel: () => void
@@ -121,6 +123,8 @@ interface FolderWorkspaceViewProps {
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
   runningSessionIDs: string[]
   selectedFolderID: string | null
+  sessionCanvasUnreadBySession: Record<string, boolean>
+  visibleCanvasSessionIDs: string[]
   workspaces: WorkspaceGroup[]
   onHoveredFolderChange: Dispatch<SetStateAction<string | null>>
   onProjectClick: (workspace: WorkspaceGroup) => void
@@ -141,6 +145,8 @@ function FolderWorkspaceView({
   projectRowRefs,
   runningSessionIDs,
   selectedFolderID,
+  sessionCanvasUnreadBySession,
+  visibleCanvasSessionIDs,
   workspaces,
   onHoveredFolderChange,
   onProjectClick,
@@ -151,6 +157,7 @@ function FolderWorkspaceView({
   onSidebarAction,
 }: FolderWorkspaceViewProps) {
   const runningSessionIDSet = new Set(runningSessionIDs)
+  const visibleSessionIDSet = new Set(visibleCanvasSessionIDs)
 
   return (
     <section className="sidebar-view sidebar-view-workspace" aria-label="Workspace sidebar view">
@@ -247,28 +254,40 @@ function FolderWorkspaceView({
 
               {isExpanded ? (
                 <div className="session-tree">
-            {workspace.sessions.filter((session) => !isSideChatSession(session)).map((session) => {
-              const active = session.id === activeSessionID
-              const isRunning = runningSessionIDSet.has(session.id)
-              const workflowBadge = getSessionWorkflowBadge(session.workflow)
+                  {workspace.sessions.filter((session) => !isSideChatSession(session)).map((session) => {
+                    const active = session.id === activeSessionID
+                    const isRunning = runningSessionIDSet.has(session.id)
+                    const hasUnreadCanvas =
+                      Boolean(sessionCanvasUnreadBySession[session.id]) && !visibleSessionIDSet.has(session.id)
+                    const workflowBadge = getSessionWorkflowBadge(session.workflow)
 
-              return (
-                <div key={session.id} className="session-row-shell">
-                  <button
-                    className={active ? "session-row is-active" : "session-row"}
-                    onClick={() => onSessionSelect(workspace.id, session.id)}
-                  >
-                    <span
-                      className={isRunning ? "session-row-status-icon is-running" : "session-row-status-icon is-complete"}
-                      aria-hidden="true"
-                    >
-                      {isRunning ? <SessionRunningIcon /> : <span className="session-row-status-dot" />}
-                    </span>
-                    <span className="session-row-copy">
-                      <span className="session-row-label">{session.title}</span>
-                      <SessionWorkflowBadge compact workflow={workflowBadge} />
-                    </span>
-                  </button>
+                    return (
+                      <div key={session.id} className="session-row-shell">
+                        <button
+                          className={active ? "session-row is-active" : "session-row"}
+                          onClick={() => onSessionSelect(workspace.id, session.id)}
+                        >
+                          <span
+                            className={
+                              isRunning
+                                ? "session-row-status-icon is-running"
+                                : hasUnreadCanvas
+                                  ? "session-row-status-icon is-unread"
+                                  : "session-row-status-icon"
+                            }
+                            aria-hidden="true"
+                          >
+                            {isRunning ? (
+                              <SessionRunningIcon />
+                            ) : hasUnreadCanvas ? (
+                              <span className="session-row-status-dot" />
+                            ) : null}
+                          </span>
+                          <span className="session-row-copy">
+                            <span className="session-row-label">{session.title}</span>
+                            <SessionWorkflowBadge compact workflow={workflowBadge} />
+                          </span>
+                        </button>
                         <button
                           className="row-action"
                           aria-label={`Archive session ${session.title}`}
@@ -619,6 +638,8 @@ export function Sidebar({
   projectRowRefs,
   runningSessionIDs,
   selectedFolderID,
+  sessionCanvasUnreadBySession,
+  visibleCanvasSessionIDs,
   workspaces,
   onCreateGlobalSkill,
   onCreateGlobalSkillDraftCancel,
@@ -663,6 +684,8 @@ export function Sidebar({
             projectRowRefs={projectRowRefs}
             runningSessionIDs={runningSessionIDs}
             selectedFolderID={selectedFolderID}
+            sessionCanvasUnreadBySession={sessionCanvasUnreadBySession}
+            visibleCanvasSessionIDs={visibleCanvasSessionIDs}
             workspaces={workspaces}
             onHoveredFolderChange={onHoveredFolderChange}
             onProjectClick={onProjectClick}

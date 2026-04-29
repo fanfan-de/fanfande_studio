@@ -172,8 +172,10 @@ export function App() {
     runningSessionIDs,
     selectedWorkspace,
     selectedFolderID,
+    sessionCanvasUnreadBySession,
     setDraftForTab,
     setHoveredFolderID,
+    visibleCanvasSessionIDs,
     workbenchLayout,
     workbenchPaneStateByID,
     workbenchPaneStates,
@@ -600,6 +602,8 @@ export function App() {
               projectRowRefs={projectRowRefs}
               runningSessionIDs={runningSessionIDs}
               selectedFolderID={selectedFolderID}
+              sessionCanvasUnreadBySession={sessionCanvasUnreadBySession}
+              visibleCanvasSessionIDs={visibleCanvasSessionIDs}
               workspaces={workspaces}
               onCreateGlobalSkill={handleCreateGlobalSkill}
               onCreateGlobalSkillDraftCancel={handleCreateGlobalSkillDraftCancel}

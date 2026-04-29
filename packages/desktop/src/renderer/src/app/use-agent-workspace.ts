@@ -1,4 +1,4 @@
-import { useRef } from "react"
+import { useEffect, useRef } from "react"
 import { useComposerController } from "./agent-workspace/composer-controller"
 import { useComposerDraftState } from "./agent-workspace/composer-draft-state"
 import { useReviewPanelController } from "./agent-workspace/review-panel-controller"
@@ -92,6 +92,7 @@ export function useAgentWorkspace({
     projectRowRefs,
     rightSidebarView,
     selectedFolderID,
+    sessionCanvasUnreadBySession,
     setActiveSideChatSessionIDByParentSessionID,
     setCanLoadSessionHistory,
     setCreateSessionTabs,
@@ -103,6 +104,7 @@ export function useAgentWorkspace({
     setLeftSidebarView,
     setRightSidebarView,
     setSelectedFolderID,
+    setSessionCanvasUnreadBySession,
     setWorkspaces,
     watchedWorkspaceDirectoriesKeyRef,
     workspaceRefreshRequestRef,
@@ -215,6 +217,7 @@ export function useAgentWorkspace({
     runningSessionIDs,
     selectedProjectID,
     selectedWorkspace,
+    visibleCanvasSessionIDs,
     workbenchPanes,
     workbenchPaneStateByID,
     workbenchPaneStates,
@@ -245,6 +248,45 @@ export function useAgentWorkspace({
     workspaces,
   })
 
+  const visibleCanvasSessionKey = visibleCanvasSessionIDs.join("\0")
+
+  useEffect(() => {
+    const visibleSessionIDs = new Set(visibleCanvasSessionIDs)
+    const validSessionIDs = new Set(
+      workspaces.flatMap((workspace) => workspace.sessions.map((session) => session.id)),
+    )
+
+    setSessionCanvasUnreadBySession((current) => {
+      let changed = false
+      const next: Record<string, boolean> = {}
+
+      for (const [sessionID, unread] of Object.entries(current)) {
+        if (!unread || visibleSessionIDs.has(sessionID) || !validSessionIDs.has(sessionID)) {
+          changed = true
+          continue
+        }
+
+        next[sessionID] = unread
+      }
+
+      return changed ? next : current
+    })
+  }, [setSessionCanvasUnreadBySession, visibleCanvasSessionKey, workspaces])
+
+  function markSessionCanvasUnread(sessionID: string) {
+    if (visibleCanvasSessionIDs.includes(sessionID)) return
+    if (!workspaces.some((workspace) => workspace.sessions.some((session) => session.id === sessionID))) return
+
+    setSessionCanvasUnreadBySession((current) => (
+      current[sessionID]
+        ? current
+        : {
+            ...current,
+            [sessionID]: true,
+          }
+    ))
+  }
+
   const streamController = useSessionStreamController({
     activeSessionID,
     agentConnected,
@@ -257,6 +299,7 @@ export function useAgentWorkspace({
     conversations,
     historyRequestRef,
     openCanvasSessionIDs,
+    onSessionCanvasActivity: markSessionCanvasUnread,
     pendingStreamsRef,
     permissionRequestsRequestRef,
     platform,
@@ -663,9 +706,11 @@ export function useAgentWorkspace({
     selectedProjectID,
     selectedWorkspace,
     selectedFolderID,
+    sessionCanvasUnreadBySession,
     setDraft,
     setDraftForTab,
     setHoveredFolderID,
+    visibleCanvasSessionIDs,
     workbenchLayout,
     workbenchPanes,
     workbenchPaneStateByID,

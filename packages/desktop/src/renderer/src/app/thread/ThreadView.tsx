@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react"
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
 import { createComposerDraftStateFromPlainText, createEmptyComposerDraftState } from "../composer/draft-state"
@@ -345,6 +345,21 @@ function summarizeFileChangeItems(items: AssistantTraceItem[]) {
   return latestItem ? [latestItem] : []
 }
 
+function isCollapsibleTraceItem(item: AssistantTraceItem) {
+  return item.kind === "reasoning" || item.kind === "tool"
+}
+
+function firstNonEmptyLine(value?: string) {
+  return value
+    ?.split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean)
+}
+
+function getCollapsedReasoningLine(item: AssistantTraceItem) {
+  return firstNonEmptyLine(item.text) ?? firstNonEmptyLine(item.detail) ?? item.title ?? item.label
+}
+
 function AssistantTraceSection({
   children,
   sectionKey,
@@ -377,6 +392,7 @@ function AssistantTurnSections({
   onFileChangeSelect,
   renderAfterSection,
   showFileChanges,
+  shouldCollapseReasoningAndTools,
   traceVisibility,
   turnID,
 }: {
@@ -391,6 +407,7 @@ function AssistantTurnSections({
     title: string
   }) => ReactNode
   showFileChanges: boolean
+  shouldCollapseReasoningAndTools: boolean
   traceVisibility: AssistantTraceVisibility
   turnID: string
 }) {
@@ -424,6 +441,7 @@ function AssistantTurnSections({
                   isQuestionAnswerDisabled={isQuestionAnswerDisabled}
                   onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                   onFileChangeSelect={onFileChangeSelect}
+                  shouldCollapseAfterTurnCompletion={shouldCollapseReasoningAndTools}
                   traceVisibility={traceVisibility}
                 />
               ))}
@@ -677,6 +695,7 @@ function TraceItemView({
   isQuestionAnswerDisabled = false,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
+  shouldCollapseAfterTurnCompletion = false,
   traceVisibility,
 }: {
   answeredQuestionIDs?: Set<string>
@@ -684,9 +703,11 @@ function TraceItemView({
   isQuestionAnswerDisabled?: boolean
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect?: (file: string) => void
+  shouldCollapseAfterTurnCompletion?: boolean
   traceVisibility: AssistantTraceVisibility
 }) {
-  const [isExpanded, setIsExpanded] = useState(false)
+  const shouldCollapseTraceItem = shouldCollapseAfterTurnCompletion && isCollapsibleTraceItem(item)
+  const [isExpanded, setIsExpanded] = useState(() => item.kind === "reasoning" && !shouldCollapseTraceItem)
   const [isInputExpanded, setIsInputExpanded] = useState(false)
   const [isOutputExpanded, setIsOutputExpanded] = useState(false)
   const [freeformAnswer, setFreeformAnswer] = useState("")
@@ -704,6 +725,13 @@ function TraceItemView({
   const debugEntries = traceVisibility.debugMetadata ? item.debugEntries ?? [] : []
   const hasDebugEntries = debugEntries.length > 0
 
+  useLayoutEffect(() => {
+    if (!shouldCollapseTraceItem) return
+    setIsExpanded(false)
+    setIsInputExpanded(false)
+    setIsOutputExpanded(false)
+  }, [item.id, shouldCollapseTraceItem])
+
   function renderDebugEntries() {
     if (!hasDebugEntries) return null
 
@@ -720,11 +748,47 @@ function TraceItemView({
   }
 
   if (item.kind === "reasoning") {
+    const contentID = `trace-item-reasoning-${item.id}`
+    const collapsedLine = getCollapsedReasoningLine(item)
+
+    function handleReasoningToggle() {
+      setIsExpanded((current) => !current)
+    }
+
+    function handleReasoningKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+      if (event.key !== "Enter" && event.key !== " ") return
+      event.preventDefault()
+      handleReasoningToggle()
+    }
+
     return (
-      <article className={className} data-kind={item.kind}>
-        {item.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={item.text} /> : null}
-        {item.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={item.detail} /> : null}
-        {renderDebugEntries()}
+      <article
+        className={joinClassNames(className, isExpanded ? "is-expanded" : "is-collapsed")}
+        data-kind={item.kind}
+      >
+        <div
+          className="trace-item-reasoning-toggle"
+          role="button"
+          tabIndex={0}
+          aria-expanded={isExpanded}
+          aria-controls={contentID}
+          onClick={handleReasoningToggle}
+          onKeyDown={handleReasoningKeyDown}
+        >
+          {isExpanded ? (
+            <div id={contentID} className="trace-item-reasoning-body">
+              {item.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={item.text} /> : null}
+              {item.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={item.detail} /> : null}
+              {renderDebugEntries()}
+            </div>
+          ) : (
+            <ThreadRichText
+              as="div"
+              className="trace-item-text trace-item-plain-text trace-item-collapsed-line"
+              text={collapsedLine}
+            />
+          )}
+        </div>
       </article>
     )
   }
@@ -1485,6 +1549,7 @@ export function ThreadView({
                           )
                         }}
                         showFileChanges={isCycleFinalTurn && !turn.isStreaming}
+                        shouldCollapseReasoningAndTools={!turn.isStreaming}
                         traceVisibility={assistantTraceVisibility}
                       />
                     )}

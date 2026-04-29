@@ -286,6 +286,13 @@ export function buildWorkspaceDerivedState({
   const openCanvasSessionIDs = getUniqueSessionIDs(
     Object.values(workbenchLayout.docs).flatMap((doc) => (doc.type === "session" ? [doc.sessionID] : [])),
   )
+  const visibleCanvasSessionIDs = getUniqueSessionIDs(
+    orderedWorkbenchGroupIDs.flatMap((groupID) => {
+      const group = getGroupNode(workbenchLayout, groupID)
+      const reference = group?.activeTabId ? getReferenceForTabId(workbenchLayout, group.activeTabId) : null
+      return reference?.kind === "session" ? [reference.sessionID] : []
+    }),
+  )
   const workbenchPanes = buildLegacyWorkbenchPanesFromLayout(workbenchLayout)
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
   const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
@@ -573,6 +580,7 @@ export function buildWorkspaceDerivedState({
     runningSessionIDs,
     selectedProjectID,
     selectedWorkspace,
+    visibleCanvasSessionIDs,
     workbenchPanes,
     workbenchPaneStateByID,
     workbenchPaneStates,
