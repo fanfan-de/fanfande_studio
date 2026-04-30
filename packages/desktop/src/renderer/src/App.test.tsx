@@ -6515,20 +6515,21 @@ describe("App", () => {
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
-    const accentBaseInput = screen.getByLabelText("Accent States Accent Base Light brand-primary") as HTMLInputElement
+    const accentBaseInput = screen.getByLabelText("Accent States Accent Base Light brand-primary hex color") as HTMLInputElement
     const preview = screen.getByLabelText("Current appearance config JSON") as HTMLTextAreaElement
     const saveAppearanceConfig = window.desktop!.saveAppearanceConfig as ReturnType<typeof vi.fn>
 
-    fireEvent.change(accentBaseInput, { target: { value: "#123456" } })
+    fireEvent.change(accentBaseInput, { target: { value: "#ffffff" } })
+    fireEvent.blur(accentBaseInput)
 
     await waitFor(() => {
-      expect(document.documentElement.style.getPropertyValue("--brand-primary")).toBe("#123456")
+      expect(document.documentElement.style.getPropertyValue("--brand-primary")).toBe("#ffffff")
     })
     await waitFor(() => {
       expect(saveAppearanceConfig).toHaveBeenCalled()
     })
     await waitFor(() => {
-      expect(preview.value).toContain("#123456")
+      expect(preview.value).toContain("#ffffff")
     })
   })
 

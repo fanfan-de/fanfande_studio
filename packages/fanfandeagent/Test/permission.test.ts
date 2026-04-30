@@ -21,7 +21,7 @@ async function createGitRepo(root: string, seed: string) {
   await $`git commit -m init`.cwd(root).quiet()
 }
 
-test("permission defaults allow reads and ask writes while honoring tool deny intents", async () => {
+test("permission defaults auto-run safe reads and writes while honoring tool deny intents", async () => {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-permission-defaults-"))
 
   try {
@@ -103,7 +103,7 @@ test("permission defaults allow reads and ask writes while honoring tool deny in
         })
 
         expect(readDecision.action).toBe("allow")
-        expect(writeDecision.action).toBe("ask")
+        expect(writeDecision.action).toBe("allow")
         expect(writeDecision.derived.paths).toContain("README.md")
         expect(execDecision.action).toBe("deny")
       },
@@ -211,7 +211,7 @@ test("permission defaults classify workflow, interaction, and delegation tools e
             needsShell: false,
           },
         })).resolves.toMatchObject({
-          action: "ask",
+          action: "allow",
           risk: "low",
         })
 
@@ -225,7 +225,7 @@ test("permission defaults classify workflow, interaction, and delegation tools e
             needsShell: false,
           },
         })).resolves.toMatchObject({
-          action: "ask",
+          action: "allow",
           risk: "medium",
         })
       },
@@ -283,8 +283,8 @@ test("permission evaluates tool intents before falling back to tool kind default
             reason: "Tool requires user confirmation.",
           },
         })).resolves.toMatchObject({
-          action: "ask",
-          reason: "Tool requires user confirmation.",
+          action: "deny",
+          reason: "Tool request was not auto-run because it could not be classified as safe without approval. Original approval rationale: Tool requires user confirmation.",
         })
 
         await expect(Permission.evaluate({

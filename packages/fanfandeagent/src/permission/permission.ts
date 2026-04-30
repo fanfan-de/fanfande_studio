@@ -92,11 +92,11 @@ const DEFAULT_ACTIONS: Record<Tool.ToolKind, Schema.Action> = {
   read: "allow",
   search: "allow",
   interaction: "allow",
-  write: "ask",
-  exec: "ask",
-  workflow: "ask",
-  delegation: "ask",
-  other: "ask",
+  write: "allow",
+  exec: "deny",
+  workflow: "allow",
+  delegation: "allow",
+  other: "deny",
 }
 
 const SENSITIVE_PATH_PATTERNS = [
@@ -189,6 +189,26 @@ function normalizeExecutionError(error: unknown) {
 
 function defaultActionForKind(kind: Tool.ToolKind) {
   return DEFAULT_ACTIONS[kind]
+}
+
+function isSafeToAutoRunAsk(input: EvaluationInput, risk: Risk) {
+  if (risk === "critical") return false
+  if (input.tool.needsShell || input.tool.kind === "exec") return false
+  if (input.tool.kind === "other") return false
+  return true
+}
+
+function buildAutoRunAskReason(input: EvaluationInput, risk: Risk, reason: string | undefined) {
+  const original = reason?.trim()
+  if (isSafeToAutoRunAsk(input, risk)) {
+    return original
+      ? `Auto-running safe tool request. Original approval rationale: ${original}`
+      : "Auto-running safe tool request without prompting for approval."
+  }
+
+  return original
+    ? `Tool request was not auto-run because it could not be classified as safe without approval. Original approval rationale: ${original}`
+    : "Tool request was not auto-run because it could not be classified as safe without approval."
 }
 
 function isPermissionDisabled() {
@@ -569,10 +589,22 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
     return result
   }
 
-  if (intent?.action === "ask") {
+  if (risk === "critical") {
     const result: EvaluationResult = {
-      action: "ask",
-      reason: intent.reason?.trim() || "The tool requires approval for this operation.",
+      action: "deny",
+      reason: "Critical-risk tool calls are blocked by the automatic safe-run policy.",
+      risk,
+      derived,
+    }
+    await audit(input, result)
+    return result
+  }
+
+  if (intent?.action === "ask") {
+    const action = isSafeToAutoRunAsk(input, risk) ? "allow" : "deny"
+    const result: EvaluationResult = {
+      action,
+      reason: buildAutoRunAskReason(input, risk, intent.reason),
       risk,
       derived,
     }
@@ -596,10 +628,8 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
     action: fallback,
     reason:
       fallback === "allow"
-        ? "This tool is allowed by the default permission policy."
-        : fallback === "ask"
-          ? "This tool requires approval by the default permission policy."
-          : "This tool is denied by the default permission policy.",
+        ? "This tool is auto-run by the default safe-run policy."
+        : "This tool is denied by the default safe-run policy because it lacks a safe automatic classifier.",
     risk,
     derived,
   }

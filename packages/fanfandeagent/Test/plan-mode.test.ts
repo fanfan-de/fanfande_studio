@@ -90,7 +90,7 @@ test("plan mode tools switch workflow state and persist the approved plan", asyn
   }
 }, 120000)
 
-test("planning mode permissions only allow research tools and route plan submission through approval", async () => {
+test("planning mode permissions only allow research tools and auto-run plan submission", async () => {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-plan-mode-permissions-"))
 
   try {
@@ -185,9 +185,9 @@ test("planning mode permissions only allow research tools and route plan submiss
             body: planBody,
           },
           intent: {
-            action: "ask",
+            action: "allow",
             risk: "medium",
-            reason: "Submitting a plan exits planning mode and requires approval.",
+            reason: "Submitting a plan only changes the session workflow state before execution resumes.",
             resource: {
               body: planBody,
             },
@@ -228,7 +228,7 @@ test("planning mode permissions only allow research tools and route plan submiss
         expect(readDecision.action).toBe("allow")
         expect(writeDecision.action).toBe("deny")
         expect(askDecision.action).toBe("allow")
-        expect(exitDecision.action).toBe("ask")
+        expect(exitDecision.action).toBe("allow")
         expect(nonPlanningExitDecision.action).toBe("deny")
       },
     })

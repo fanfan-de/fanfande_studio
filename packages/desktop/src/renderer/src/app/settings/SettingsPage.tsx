@@ -20,6 +20,7 @@ import {
   SunIcon,
   TerminalIcon
 } from "../icons"
+import { normalizeAppearanceColorInputValue } from "../appearance-theme"
 import { writeTextToClipboard } from "../shared-ui"
 import type {
   ArchivedSessionSummary,
@@ -142,6 +143,54 @@ function ProviderLogo({ provider, className = "" }: { provider: ProviderCatalogI
         }}
       />
     </span>
+  )
+}
+
+function AppearanceColorTextInput({
+  label,
+  onCommit,
+  value,
+}: {
+  label: string
+  onCommit: (value: string) => void
+  value: string
+}) {
+  const [draftValue, setDraftValue] = useState(value)
+
+  useEffect(() => {
+    setDraftValue(value)
+  }, [value])
+
+  function commitDraftValue() {
+    const normalizedValue = normalizeAppearanceColorInputValue(draftValue, value)
+    setDraftValue(normalizedValue)
+    onCommit(normalizedValue)
+  }
+
+  return (
+    <input
+      aria-label={`${label} hex color`}
+      className="settings-theme-color-input"
+      inputMode="text"
+      spellCheck={false}
+      type="text"
+      value={draftValue}
+      onBlur={commitDraftValue}
+      onChange={(event) => setDraftValue(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault()
+          event.currentTarget.blur()
+          return
+        }
+
+        if (event.key === "Escape") {
+          event.preventDefault()
+          setDraftValue(value)
+          event.currentTarget.blur()
+        }
+      }}
+    />
   )
 }
 
@@ -1676,6 +1725,8 @@ export function SettingsPage({
                           const isLightCustomized = Boolean(appearanceOverrides[row.lightToken])
                           const isDarkCustomized = Boolean(appearanceOverrides[row.darkToken])
                           const isCustomized = isLightCustomized || isDarkCustomized
+                          const lightColorLabel = `${group.label} ${row.label} Light ${row.lightToken}`
+                          const darkColorLabel = `${group.label} ${row.label} Dark ${row.darkToken}`
 
                           return (
                             <article
@@ -1695,24 +1746,32 @@ export function SettingsPage({
                                 <div className="settings-theme-token-mode">
                                   <span>Light</span>
                                   <input
-                                    aria-label={`${group.label} ${row.label} Light ${row.lightToken}`}
+                                    aria-label={lightColorLabel}
                                     className="settings-theme-color-picker"
                                     type="color"
                                     value={appearanceTokenValues[row.lightToken]}
                                     onChange={(event) => onAppearanceTokenChange(row.lightToken, event.target.value)}
                                   />
-                                  <code>{appearanceTokenValues[row.lightToken]}</code>
+                                  <AppearanceColorTextInput
+                                    label={lightColorLabel}
+                                    value={appearanceTokenValues[row.lightToken]}
+                                    onCommit={(value) => onAppearanceTokenChange(row.lightToken, value)}
+                                  />
                                 </div>
                                 <div className="settings-theme-token-mode">
                                   <span>Dark</span>
                                   <input
-                                    aria-label={`${group.label} ${row.label} Dark ${row.darkToken}`}
+                                    aria-label={darkColorLabel}
                                     className="settings-theme-color-picker"
                                     type="color"
                                     value={appearanceTokenValues[row.darkToken]}
                                     onChange={(event) => onAppearanceTokenChange(row.darkToken, event.target.value)}
                                   />
-                                  <code>{appearanceTokenValues[row.darkToken]}</code>
+                                  <AppearanceColorTextInput
+                                    label={darkColorLabel}
+                                    value={appearanceTokenValues[row.darkToken]}
+                                    onCommit={(value) => onAppearanceTokenChange(row.darkToken, value)}
+                                  />
                                 </div>
                                 <button
                                   aria-label={`Use preset for ${group.label} ${row.label}`}

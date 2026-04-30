@@ -1403,7 +1403,7 @@
 
   50% {
     opacity: 1;
-    box-shadow: inset 3px 0 0 var(--mix-brand-accent-active-48-transparent-52);
+    box-shadow: none;
   }
 }
 
@@ -1602,9 +1602,71 @@
 
 .assistant-shell.is-sectioned .assistant-section.is-reasoning .trace-item,
 .assistant-shell.is-sectioned .assistant-section.is-tools .trace-item,
+.assistant-shell.is-sectioned .assistant-section.is-workflow .trace-item,
 .assistant-shell.is-sectioned .assistant-section.is-file-change .trace-item,
 .assistant-shell.is-sectioned .assistant-ephemeral-state {
   border: 0;
   background: transparent;
   box-shadow: none;
+}
+
+/* Compact thread density for scan-heavy conversations. */
+.thread-shell > .thread-column {
+  gap: 7px;
+  padding-top: 10px;
+}
+
+.thread-column .turn {
+  gap: 4px;
+}
+
+.assistant-shell.is-sectioned {
+  gap: 1px;
+}
+
+.assistant-section.is-response {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.assistant-section.is-reasoning,
+.assistant-section.is-tools {
+  gap: 2px;
+}
+
+.assistant-section-body,
+.assistant-section-list,
+.assistant-reasoning-stack,
+.assistant-response-stack,
+.assistant-file-change-stack {
+  gap: 4px;
+}
+
+.assistant-section.is-tools .trace-item,
+.assistant-section.is-reasoning .trace-item {
+  padding: 1px 8px;
+}
+
+.trace-item-toggle-summary,
+.trace-item-subsection-toggle {
+  gap: 4px;
+}
+
+.trace-item-toggle-icon {
+  margin-top: 2px;
+}
+
+.trace-item-toggle-line {
+  line-height: 1.38;
+}
+
+.trace-item-text,
+.trace-item-detail,
+.assistant-section.is-response .trace-item-text,
+.assistant-section.is-response .trace-item-detail {
+  line-height: 1.55;
+}
+
+.inline-side-chat-thread .thread-column {
+  gap: 7px;
 }
