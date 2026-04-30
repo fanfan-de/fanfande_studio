@@ -9,7 +9,7 @@ import { fn } from "#util/fn.ts"
 import * as db from "#database/Sqlite.ts"
 import * as EventStore from "#session/event-store.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
-import * as SessionMemory from "#session/memory-store.ts"
+import * as SessionCompaction from "#session/compaction-store.ts"
 import * as TaskSchema from "#session/task-schema.ts"
 import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
 
@@ -151,7 +151,6 @@ export const ArchivedSessionSnapshot = z
     parts: z.array(Message.Part),
     events: z.array(RuntimeEvent.RuntimeEvent),
     tasks: z.array(TaskSchema.SessionTaskRecord).optional(),
-    memory: SessionMemory.SessionMemoryRecord.optional(),
   })
   .meta({
     ref: "ArchivedSessionSnapshot",
@@ -500,7 +499,6 @@ function buildArchivedSessionRecord(session: SessionInfo): ArchivedSessionRecord
   const parts = loadSessionParts(session.id)
   const events = EventStore.listSessionEvents({ sessionID: normalizedSession.id })
   const tasks = loadSessionTasks(normalizedSession.id)
-  const memory = SessionMemory.readSessionMemory(normalizedSession.id) ?? undefined
   const archivedAt = Date.now()
 
   return {
@@ -520,7 +518,6 @@ function buildArchivedSessionRecord(session: SessionInfo): ArchivedSessionRecord
       parts,
       events,
       tasks: tasks.length > 0 ? tasks : undefined,
-      memory,
     },
   }
 }
@@ -881,7 +878,7 @@ function removeSession(sessionID: string): SessionInfo | null {
   db.deleteMany("messages", [{ column: "sessionID", value: sessionID }])
   removeSessionTasks(sessionID)
   EventStore.deleteSessionEvents(sessionID)
-  SessionMemory.deleteSessionMemory(sessionID)
+  SessionCompaction.deleteSessionCompactions(sessionID)
   ToolResultPersistence.removeSessionOutputDirectory(sessionID)
   db.deleteById("sessions", sessionID)
   db.deleteById("side_chat_links", sessionID, "sessionID")
@@ -909,7 +906,7 @@ function archiveSessionCascade(sessionID: string): ArchivedSessionRecord[] {
       db.deleteMany("messages", [{ column: "sessionID", value: record.sessionID }])
       removeSessionTasks(record.sessionID)
       EventStore.deleteSessionEvents(record.sessionID)
-      SessionMemory.deleteSessionMemory(record.sessionID)
+      SessionCompaction.deleteSessionCompactions(record.sessionID)
       db.deleteById("sessions", record.sessionID)
     }
   })
@@ -952,10 +949,6 @@ function restoreArchivedSession(sessionID: string): SessionInfo | null {
     }
     for (const task of tasks) {
       db.insertOneWithSchema("session_tasks", task, TaskSchema.SessionTaskRecord)
-    }
-
-    if (record.snapshot.memory) {
-      SessionMemory.upsertSessionMemory(record.snapshot.memory)
     }
 
     db.deleteById("archived_sessions", record.sessionID, "sessionID")

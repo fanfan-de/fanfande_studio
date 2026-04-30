@@ -282,6 +282,11 @@ export type AgentPart = z.infer<typeof AgentPart>
 export const CompactionPart = PartBase.extend({
     type: z.literal("compaction"),
     auto: z.boolean(),
+    compactionID: z.string().optional(),
+    compactedFromMessageID: z.string().optional(),
+    compactedToMessageID: z.string().optional(),
+    summaryVersion: z.number().int().positive().optional(),
+    createdAt: z.number().int().nonnegative().optional(),
 }).meta({
     ref: "CompactionPart",
 })
@@ -843,6 +848,7 @@ export async function toModelMessages(
                 }
             case "tool":
             case "permission":
+            case "compaction":
                 return null
             default:
                 return null

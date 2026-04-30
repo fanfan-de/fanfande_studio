@@ -1,5 +1,4 @@
 import { Instance } from "#project/instance.ts"
-import { CompactionPart } from "#session/message.ts"
 import z from "zod"
 
 

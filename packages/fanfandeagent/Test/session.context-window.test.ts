@@ -8,7 +8,7 @@ import { Instance } from "#project/instance.ts"
 import * as Identifier from "#id/id.ts"
 import * as Message from "#session/message.ts"
 import * as Session from "#session/session.ts"
-import * as SessionMemory from "#session/memory-store.ts"
+import * as SessionCompaction from "#session/compaction-store.ts"
 import * as ContextWindow from "#session/context-window.ts"
 
 const baseModel = {
@@ -61,7 +61,7 @@ const baseModel = {
   release_date: "2026-01-01",
 }
 
-test("preparePromptContext compacts early turns into session memory", async () => {
+test("preparePromptContext compacts early turns behind an internal boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "fanfande-context-window-"))
   const databaseFile = join(root, "context-window.db")
 
@@ -179,10 +179,17 @@ test("preparePromptContext compacts early turns into session memory", async () =
           ].join("\n"),
         })
 
-        const memory = SessionMemory.readSessionMemory(session.id)
-        expect(memory).not.toBeNull()
-        expect(memory?.watermarkMessageID).toBe(compactedBoundaryIDs[1])
-        expect(prepared.system.join("\n")).toContain("<session_memory>")
+        const compaction = SessionCompaction.readLatestSessionCompaction(session.id)
+        expect(compaction).not.toBeNull()
+        expect(compaction?.compactedToMessageID).toBe(compactedBoundaryIDs[1])
+        expect(prepared.compaction?.id).toBe(compaction?.id)
+        expect(prepared.system.join("\n")).not.toContain("<compacted_history>")
+        expect(prepared.system.join("\n")).not.toContain("Earlier turns were compacted.")
+        expect(prepared.messages[0]?.parts[0]?.type).toBe("text")
+        if (prepared.messages[0]?.parts[0]?.type === "text") {
+          expect(prepared.messages[0].parts[0].text).toContain("<compacted_history>")
+          expect(prepared.messages[0].parts[0].text).toContain("Earlier turns were compacted.")
+        }
         expect(prepared.messages.some((message) => message.info.id === allMessages[0]?.info.id)).toBe(false)
       },
     })
@@ -324,9 +331,63 @@ test("preparePromptContext prunes oversized tool outputs when compaction cannot 
   }
 })
 
-test("archiving and restoring a session preserves session memory", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fanfande-context-archive-"))
-  const databaseFile = join(root, "context-archive.db")
+test("CompactionPart is internal and is not sent to the model", async () => {
+  const user = Message.User.parse({
+    id: Identifier.ascending("message"),
+    sessionID: "ses_compaction_part_internal",
+    role: "user",
+    created: Date.now(),
+    agent: "default",
+    model: {
+      providerID: baseModel.providerID,
+      modelID: baseModel.id,
+    },
+  })
+  const text = Message.TextPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID: user.sessionID,
+    messageID: user.id,
+    type: "text",
+    text: "Use the visible text only.",
+  })
+  const compactionPart = Message.CompactionPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID: user.sessionID,
+    messageID: user.id,
+    type: "compaction",
+    auto: true,
+    compactionID: Identifier.ascending("compaction"),
+    compactedFromMessageID: "msg-start",
+    compactedToMessageID: "msg-end",
+    summaryVersion: SessionCompaction.CURRENT_SUMMARY_VERSION,
+    createdAt: Date.now(),
+  })
+
+  const modelMessages = await Message.toModelMessages(
+    [
+      {
+        info: user,
+        parts: [text, compactionPart],
+      },
+    ],
+    baseModel,
+  )
+
+  expect(modelMessages).toHaveLength(1)
+  const content = modelMessages[0]?.content
+  expect(Array.isArray(content)).toBe(true)
+  if (Array.isArray(content)) {
+    expect(content).toHaveLength(1)
+    expect(content[0]).toMatchObject({
+      type: "text",
+      text: "Use the visible text only.",
+    })
+  }
+})
+
+test("removing or archiving a session deletes compaction records", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fanfande-context-delete-"))
+  const databaseFile = join(root, "context-delete.db")
 
   try {
     Sqlite.setDatabaseFile(databaseFile)
@@ -339,25 +400,52 @@ test("archiving and restoring a session preserves session memory", async () => {
           projectID: Instance.project.id,
         })
 
-        SessionMemory.upsertSessionMemory(
-          SessionMemory.SessionMemoryRecord.parse({
+        SessionCompaction.insertSessionCompaction(
+          SessionCompaction.SessionCompactionRecord.parse({
+            id: Identifier.ascending("compaction"),
             sessionID: session.id,
-            watermarkMessageID: "message-watermark",
-            summaryText: "archived memory",
+            compactedFromMessageID: "msg-start",
+            compactedToMessageID: "msg-end",
+            summaryText: "compacted history",
+            summaryVersion: SessionCompaction.CURRENT_SUMMARY_VERSION,
+            sourceMessageCount: 3,
             estimatedTokens: 12,
-            turnCount: 3,
-            updatedAt: Date.now(),
+            createdAt: Date.now(),
             modelProviderID: baseModel.providerID,
             modelID: baseModel.id,
           }),
         )
 
-        const archived = Session.archiveSession(session.id)
-        expect(archived?.snapshot.memory?.summaryText).toBe("archived memory")
-        expect(SessionMemory.readSessionMemory(session.id)).toBeNull()
+        expect(SessionCompaction.readLatestSessionCompaction(session.id)?.summaryText).toBe("compacted history")
+        Session.removeSession(session.id)
+        expect(SessionCompaction.readLatestSessionCompaction(session.id)).toBeNull()
 
-        Session.restoreArchivedSession(session.id)
-        expect(SessionMemory.readSessionMemory(session.id)?.summaryText).toBe("archived memory")
+        const archivedSession = await Session.createSession({
+          directory: Instance.directory,
+          projectID: Instance.project.id,
+        })
+        SessionCompaction.insertSessionCompaction(
+          SessionCompaction.SessionCompactionRecord.parse({
+            id: Identifier.ascending("compaction"),
+            sessionID: archivedSession.id,
+            compactedFromMessageID: "msg-start",
+            compactedToMessageID: "msg-end",
+            summaryText: "archived compacted history",
+            summaryVersion: SessionCompaction.CURRENT_SUMMARY_VERSION,
+            sourceMessageCount: 3,
+            estimatedTokens: 12,
+            createdAt: Date.now(),
+            modelProviderID: baseModel.providerID,
+            modelID: baseModel.id,
+          }),
+        )
+
+        const archived = Session.archiveSession(archivedSession.id)
+        expect(archived?.snapshot).not.toHaveProperty("memory")
+        expect(SessionCompaction.readLatestSessionCompaction(archivedSession.id)).toBeNull()
+
+        Session.restoreArchivedSession(archivedSession.id)
+        expect(SessionCompaction.readLatestSessionCompaction(archivedSession.id)).toBeNull()
       },
     })
   } finally {

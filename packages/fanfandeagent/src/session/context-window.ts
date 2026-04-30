@@ -4,8 +4,9 @@ import { Flag } from "#flag/flag.ts"
 import * as Log from "#util/log.ts"
 import * as Message from "#session/message.ts"
 import * as Provider from "#provider/provider.ts"
-import * as SessionMemory from "#session/memory-store.ts"
+import * as SessionCompaction from "#session/compaction-store.ts"
 import { Instance } from "#project/instance.ts"
+import * as Identifier from "#id/id.ts"
 
 const log = Log.create({ service: "session.context-window" })
 
@@ -54,7 +55,7 @@ type SummaryGenerator = (input: {
 export type PreparedPromptContext = {
   system: string[]
   messages: Message.WithParts[]
-  memory: SessionMemory.SessionMemoryRecord | null
+  compaction: SessionCompaction.SessionCompactionRecord | null
   estimatedTokens: number
   budget: PromptBudget
 }
@@ -68,9 +69,9 @@ export async function preparePromptContext(input: {
   disableCompaction?: boolean
 }): Promise<PreparedPromptContext> {
   const autoCompact = input.disableCompaction ? false : await isAutoCompactionEnabled()
-  let memory = SessionMemory.readSessionMemory(input.sessionID) ?? null
+  let compaction = SessionCompaction.readLatestSessionCompaction(input.sessionID) ?? null
   if (input.disableCompaction) {
-    memory = null
+    compaction = null
   }
   const summaryGenerator = input.generateSummary ?? generateCompactionSummary
 
@@ -78,7 +79,7 @@ export async function preparePromptContext(input: {
     const window = buildPromptWindow({
       system: input.system,
       messages: input.messages,
-      memory,
+      compaction,
       model: input.model,
       allowTurnDropping: false,
     })
@@ -87,55 +88,56 @@ export async function preparePromptContext(input: {
       return {
         system: window.system,
         messages: window.messages,
-        memory,
+        compaction,
         estimatedTokens: window.estimatedTokens,
         budget: window.budget,
       }
     }
 
-    const turns = turnsAfterWatermark(input.messages, memory?.watermarkMessageID)
+    const turns = turnsAfterCompactionBoundary(input.messages, compaction?.compactedToMessageID)
     const selectedTurns = selectTurnsForCompaction(turns, window.budget)
     if (selectedTurns.length === 0) {
       return {
         system: window.system,
         messages: window.messages,
-        memory,
+        compaction,
         estimatedTokens: window.estimatedTokens,
         budget: window.budget,
       }
     }
 
     const compactionModel = await resolveCompactionModel(input.model)
-    const nextMemory = await compactTurns({
+    const nextCompaction = await compactTurns({
       sessionID: input.sessionID,
-      existing: memory,
+      existing: compaction,
       turns: selectedTurns,
       model: compactionModel,
       generateSummary: summaryGenerator,
     })
 
-    SessionMemory.upsertSessionMemory(nextMemory)
-    memory = nextMemory
+    SessionCompaction.insertSessionCompaction(nextCompaction)
+    compaction = nextCompaction
 
-    log.info("session memory compacted", {
+    log.info("session history compacted", {
       sessionID: input.sessionID,
-      watermarkMessageID: nextMemory.watermarkMessageID,
-      turnCount: nextMemory.turnCount,
-      estimatedTokens: nextMemory.estimatedTokens,
+      compactionID: nextCompaction.id,
+      compactedToMessageID: nextCompaction.compactedToMessageID,
+      sourceMessageCount: nextCompaction.sourceMessageCount,
+      estimatedTokens: nextCompaction.estimatedTokens,
     })
   }
 
   const window = buildPromptWindow({
     system: input.system,
     messages: input.messages,
-    memory,
+    compaction,
     model: input.model,
   })
 
   return {
     system: window.system,
     messages: window.messages,
-    memory,
+    compaction,
     estimatedTokens: window.estimatedTokens,
     budget: window.budget,
   }
@@ -144,25 +146,28 @@ export async function preparePromptContext(input: {
 function buildPromptWindow(input: {
   system: string[]
   messages: Message.WithParts[]
-  memory: SessionMemory.SessionMemoryRecord | null
+  compaction: SessionCompaction.SessionCompactionRecord | null
   model: Provider.Model
   allowTurnDropping?: boolean
 }): BuiltPromptWindow {
   const budget = resolvePromptBudget(input.model)
-  const rawTurns = turnsAfterWatermark(input.messages, input.memory?.watermarkMessageID)
+  const rawTurns = turnsAfterCompactionBoundary(input.messages, input.compaction?.compactedToMessageID)
   let activeTurns = rawTurns
   let activeMessages = flattenTurns(activeTurns)
-  let system = appendMemoryBlock(input.system, input.memory?.summaryText)
-  let estimatedTokens = estimatePromptTokens(system, activeMessages)
+  let summaryText = input.compaction?.summaryText
+  let messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+  let estimatedTokens = estimatePromptTokens(input.system, messages)
 
   if (estimatedTokens > budget.hardThreshold) {
     activeMessages = pruneToolOutputsInMessages(activeMessages, PRUNED_TOOL_OUTPUT_CHARS)
-    estimatedTokens = estimatePromptTokens(system, activeMessages)
+    messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+    estimatedTokens = estimatePromptTokens(input.system, messages)
   }
 
   if (estimatedTokens > budget.hardThreshold) {
     activeMessages = pruneToolOutputsInMessages(activeMessages, EMERGENCY_TOOL_OUTPUT_CHARS)
-    estimatedTokens = estimatePromptTokens(system, activeMessages)
+    messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+    estimatedTokens = estimatePromptTokens(input.system, messages)
   }
 
   if (input.allowTurnDropping !== false && estimatedTokens > budget.hardThreshold && activeTurns.length > 0) {
@@ -171,41 +176,85 @@ function buildPromptWindow(input: {
       activeTurns = activeTurns.slice(1)
       activeMessages = flattenTurns(activeTurns)
       activeMessages = pruneToolOutputsInMessages(activeMessages, EMERGENCY_TOOL_OUTPUT_CHARS)
-      estimatedTokens = estimatePromptTokens(system, activeMessages)
+      messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+      estimatedTokens = estimatePromptTokens(input.system, messages)
     }
   }
 
-  if (estimatedTokens > budget.hardThreshold && input.memory?.summaryText) {
-    const shrunkSummary = shrinkSummaryText({
-      baseSystem: input.system,
+  if (estimatedTokens > budget.hardThreshold && input.compaction?.summaryText) {
+    summaryText = shrinkSummaryText({
+      system: input.system,
       messages: activeMessages,
-      summaryText: input.memory.summaryText,
+      compaction: input.compaction,
+      summaryText: input.compaction.summaryText,
       budget,
     })
-    system = appendMemoryBlock(input.system, shrunkSummary)
-    estimatedTokens = estimatePromptTokens(system, activeMessages)
+    messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+    estimatedTokens = estimatePromptTokens(input.system, messages)
   }
 
   return {
-    system,
-    messages: activeMessages,
+    system: [...input.system],
+    messages,
     estimatedTokens,
     budget,
   }
 }
 
-function appendMemoryBlock(system: string[], summaryText?: string) {
-  if (!summaryText?.trim()) return [...system]
+function prependCompactedHistoryMessage(
+  messages: Message.WithParts[],
+  compaction: SessionCompaction.SessionCompactionRecord | null,
+  summaryText?: string,
+) {
+  const trimmedSummary = summaryText?.trim()
+  if (!compaction || !trimmedSummary) return messages
+
   return [
-    ...system,
-    [
-      "<session_memory>",
-      "The following block is a rolling summary of earlier session history.",
-      "Treat it as durable memory for messages that are no longer replayed verbatim.",
-      summaryText.trim(),
-      "</session_memory>",
-    ].join("\n"),
+    createCompactedHistoryMessage(compaction, trimmedSummary),
+    ...messages,
   ]
+}
+
+function createCompactedHistoryMessage(
+  compaction: SessionCompaction.SessionCompactionRecord,
+  summaryText: string,
+): Message.WithParts {
+  const messageID = `msg_compacted_${compaction.id}`
+  return {
+    info: {
+      id: messageID,
+      sessionID: compaction.sessionID,
+      role: "user",
+      created: compaction.createdAt,
+      agent: "system",
+      model: {
+        providerID: compaction.modelProviderID ?? "internal",
+        modelID: compaction.modelID ?? "compaction",
+      },
+    },
+    parts: [
+      {
+        id: `prt_compacted_${compaction.id}`,
+        sessionID: compaction.sessionID,
+        messageID,
+        type: "text",
+        synthetic: true,
+        metadata: {
+          kind: "compacted-history",
+          compactionID: compaction.id,
+          compactedFromMessageID: compaction.compactedFromMessageID,
+          compactedToMessageID: compaction.compactedToMessageID,
+          summaryVersion: compaction.summaryVersion,
+        },
+        text: [
+          "<compacted_history>",
+          "The following is a durable summary of earlier session history. Recent raw messages that follow are more authoritative if there is any conflict.",
+          summaryText,
+          "</compacted_history>",
+        ].join("\n"),
+      },
+    ],
+  }
 }
 
 function resolvePromptBudget(model: Provider.Model): PromptBudget {
@@ -240,7 +289,7 @@ async function isAutoCompactionEnabled() {
 
 async function compactTurns(input: {
   sessionID: string
-  existing: SessionMemory.SessionMemoryRecord | null
+  existing: SessionCompaction.SessionCompactionRecord | null
   turns: SessionTurn[]
   model: Provider.Model
   generateSummary: SummaryGenerator
@@ -252,17 +301,23 @@ async function compactTurns(input: {
     model: input.model,
   })
 
-  const watermarkMessageID = input.turns[input.turns.length - 1]!.lastMessageID
-  const turnCount = (input.existing?.turnCount ?? 0) + input.turns.length
+  const compactedFromMessageID = input.existing?.compactedFromMessageID ?? input.turns[0]!.userMessageID
+  const compactedToMessageID = input.turns[input.turns.length - 1]!.lastMessageID
+  const sourceMessageCount =
+    (input.existing?.sourceMessageCount ?? 0) +
+    input.turns.reduce((total, turn) => total + turn.messages.length, 0)
   const normalizedSummaryText = summaryText.trim().slice(0, MEMORY_BLOCK_MAX_CHARS * 2)
 
-  return SessionMemory.SessionMemoryRecord.parse({
+  return SessionCompaction.SessionCompactionRecord.parse({
+    id: Identifier.ascending("compaction"),
     sessionID: input.sessionID,
-    watermarkMessageID,
+    compactedFromMessageID,
+    compactedToMessageID,
     summaryText: normalizedSummaryText,
+    summaryVersion: SessionCompaction.CURRENT_SUMMARY_VERSION,
+    sourceMessageCount,
     estimatedTokens: estimateStringTokens(normalizedSummaryText),
-    turnCount,
-    updatedAt: Date.now(),
+    createdAt: Date.now(),
     modelProviderID: input.model.providerID,
     modelID: input.model.id,
   })
@@ -279,22 +334,22 @@ async function generateCompactionSummary(input: {
       model: languageModel,
       temperature: 0,
       system: [
-        "You compress coding-agent conversation history into durable session memory.",
-        "Keep only facts that matter for continuing the task.",
-        "Preserve goals, repository state, important files, decisions, errors, tool outcomes, and the next likely steps.",
+        "You compress coding-agent conversation history into durable continuation context.",
+        "Keep only facts that matter for continuing the task after older raw messages are no longer replayed.",
+        "Preserve goals, repository state, important files, code details, decisions, errors, tool outcomes, current progress, and the next likely steps.",
         "Do not mention that content was omitted. Do not invent facts.",
         "Write concise Markdown with these headings only:",
-        "## Goal",
-        "## Current State",
-        "## Important Files",
-        "## Decisions",
-        "## Open Issues",
-        "## Next Useful Context",
+        "## 用户原始需求",
+        "## 做过哪些修改",
+        "## 关键文件和代码",
+        "## 遇到的错误",
+        "## 当前工作进度",
+        "## 下一步应该做什么",
       ].join("\n"),
       prompt: [
         input.existingSummary?.trim()
-          ? `Existing memory:\n${input.existingSummary.trim()}`
-          : "Existing memory:\n(none)",
+          ? `Existing compacted summary:\n${input.existingSummary.trim()}`
+          : "Existing compacted summary:\n(none)",
         `New transcript to merge:\n${input.transcript}`,
       ].join("\n\n"),
     })
@@ -315,22 +370,22 @@ function buildFallbackSummary(existingSummary: string | undefined, transcript: s
   const existing = existingSummary?.trim()
   const transcriptExcerpt = transcript.trim().slice(0, MEMORY_BLOCK_MAX_CHARS)
   return [
-    "## Goal",
-    existing ? "Continue the existing task based on the prior memory below." : "Continue the active coding task.",
+    "## 用户原始需求",
+    existing ? "Continue the existing task based on the prior compacted summary below." : "Continue the active coding task.",
     "",
-    "## Current State",
+    "## 做过哪些修改",
     existing ? existing.slice(0, Math.floor(MEMORY_BLOCK_MAX_CHARS / 2)) : "(no prior summary)",
     "",
-    "## Important Files",
+    "## 关键文件和代码",
     "- Review the compacted transcript excerpt below when reconstructing file context.",
     "",
-    "## Decisions",
+    "## 遇到的错误",
+    "- Unknown from fallback compaction unless shown in the transcript excerpt.",
+    "",
+    "## 当前工作进度",
     "- Use the preserved summary plus the latest raw turns as the source of truth.",
     "",
-    "## Open Issues",
-    "- Some detail may have been compacted from earlier turns.",
-    "",
-    "## Next Useful Context",
+    "## 下一步应该做什么",
     transcriptExcerpt || "(empty transcript)",
   ].join("\n")
 }
@@ -381,11 +436,11 @@ function partitionTurns(messages: Message.WithParts[]) {
   return turns
 }
 
-function turnsAfterWatermark(messages: Message.WithParts[], watermarkMessageID?: string) {
+function turnsAfterCompactionBoundary(messages: Message.WithParts[], compactedToMessageID?: string) {
   const turns = partitionTurns(messages)
-  if (!watermarkMessageID) return turns
+  if (!compactedToMessageID) return turns
 
-  return turns.filter((turn) => turn.userMessageID > watermarkMessageID)
+  return turns.filter((turn) => turn.userMessageID > compactedToMessageID)
 }
 
 function selectTurnsForCompaction(turns: SessionTurn[], budget: PromptBudget) {
@@ -526,20 +581,21 @@ function prunePartForContext(part: Message.Part, maxChars: number): Message.Part
 }
 
 function shrinkSummaryText(input: {
-  baseSystem: string[]
+  system: string[]
   messages: Message.WithParts[]
+  compaction: SessionCompaction.SessionCompactionRecord
   summaryText: string
   budget: PromptBudget
 }) {
   let summaryText = input.summaryText
-  let system = appendMemoryBlock(input.baseSystem, summaryText)
-  let estimatedTokens = estimatePromptTokens(system, input.messages)
+  let messages = prependCompactedHistoryMessage(input.messages, input.compaction, summaryText)
+  let estimatedTokens = estimatePromptTokens(input.system, messages)
 
   while (summaryText.length > MEMORY_BLOCK_MIN_CHARS && estimatedTokens > input.budget.hardThreshold) {
     const nextLength = Math.max(MEMORY_BLOCK_MIN_CHARS, Math.floor(summaryText.length * 0.85))
     summaryText = truncateText(summaryText, nextLength)
-    system = appendMemoryBlock(input.baseSystem, summaryText)
-    estimatedTokens = estimatePromptTokens(system, input.messages)
+    messages = prependCompactedHistoryMessage(input.messages, input.compaction, summaryText)
+    estimatedTokens = estimatePromptTokens(input.system, messages)
   }
 
   return summaryText

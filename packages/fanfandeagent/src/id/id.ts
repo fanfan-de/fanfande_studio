@@ -10,6 +10,7 @@ const prefixes = {
   message: "msg",
   permission: "per",
   question: "que",
+  compaction: "cmp",
   user: "usr",
   part: "prt",
   pty: "pty",
