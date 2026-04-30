@@ -31,6 +31,8 @@ import type {
   AgentSessionDeleteResult,
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
+  AgentSessionQuestionAnswerInput,
+  AgentSessionQuestionAnswerResult,
   AgentSessionRuntimeDebugSnapshot,
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
@@ -88,6 +90,8 @@ export type {
   AgentSessionDeleteResult,
   AgentSessionDiffSummary,
   AgentSessionHistoryMessage,
+  AgentSessionQuestionAnswerInput,
+  AgentSessionQuestionAnswerResult,
   AgentSessionRuntimeDebugSnapshot,
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
@@ -697,6 +701,10 @@ export interface DesktopIpcContract {
     input: { clientTurnID: string; backendSessionID: string }
     output: DesktopAgentSessionCancelTurnResult
   }
+  "desktop:agent-session-answer-question": {
+    input: { backendSessionID: string } & AgentSessionQuestionAnswerInput
+    output: AgentSessionQuestionAnswerResult
+  }
   "desktop:agent-session-subscribe": {
     input: { uiSessionID?: string; backendSessionID: string }
     output: DesktopAgentSessionSubscriptionResult
@@ -733,6 +741,7 @@ export interface DesktopAgentSessionApi {
   sendTurn(input: DesktopIpcInput<"desktop:agent-session-send-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-send-turn">>
   resumeTurn(input: DesktopIpcInput<"desktop:agent-session-resume-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-resume-turn">>
   cancelTurn(input: DesktopIpcInput<"desktop:agent-session-cancel-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-cancel-turn">>
+  answerQuestion(input: DesktopIpcInput<"desktop:agent-session-answer-question">): Promise<DesktopIpcOutput<"desktop:agent-session-answer-question">>
   subscribe(input: DesktopIpcInput<"desktop:agent-session-subscribe">): Promise<DesktopIpcOutput<"desktop:agent-session-subscribe">>
   unsubscribe(input: DesktopIpcInput<"desktop:agent-session-unsubscribe">): Promise<DesktopIpcOutput<"desktop:agent-session-unsubscribe">>
   loadPermissionRequests(input: DesktopIpcInput<"desktop:agent-session-load-permission-requests">): Promise<DesktopIpcOutput<"desktop:agent-session-load-permission-requests">>

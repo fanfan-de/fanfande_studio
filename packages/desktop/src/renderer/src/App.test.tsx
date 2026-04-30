@@ -842,6 +842,19 @@ describe("App", () => {
           localRequestAborted: false,
           backendCancelled: false,
         })),
+        answerQuestion: vi.fn().mockImplementation(async (input: {
+          backendSessionID: string
+          questionID: string
+          selectedOptions?: string[]
+          freeformText?: string
+        }) => ({
+          sessionID: input.backendSessionID,
+          questionID: input.questionID,
+          selectedOptions: input.selectedOptions,
+          freeformText: input.freeformText,
+          answerText: input.freeformText ?? input.selectedOptions?.join(", ") ?? "",
+          answeredAt: Date.now(),
+        })),
         subscribe: vi.fn().mockResolvedValue({
           backendSessionID: "session-default",
         }),
@@ -4290,31 +4303,27 @@ describe("App", () => {
     fireEvent.click(within(questionCard).getByRole("button", { name: "Vercel" }))
 
     await waitFor(() => {
-      expect(window.desktop!.agentSession!.sendTurn).toHaveBeenCalled()
+      expect(window.desktop!.agentSession!.answerQuestion).toHaveBeenCalled()
     })
 
-    const sendAgentMessage = window.desktop!.agentSession!.sendTurn
-    expect(sendAgentMessage).toBeDefined()
-    if (!sendAgentMessage) throw new Error("Expected sendAgentMessage mock")
+    const answerQuestion = window.desktop!.agentSession!.answerQuestion
+    expect(answerQuestion).toBeDefined()
+    if (!answerQuestion) throw new Error("Expected answerQuestion mock")
 
-    const sendInput = vi.mocked(sendAgentMessage).mock.calls.at(-1)?.[0]
-    expect(sendInput).toBeDefined()
-    if (!sendInput) throw new Error("Expected sendAgentMessage payload")
+    const answerInput = vi.mocked(answerQuestion).mock.calls.at(-1)?.[0]
+    expect(answerInput).toBeDefined()
+    if (!answerInput) throw new Error("Expected answerQuestion payload")
 
-    expect(sendInput).toEqual(expect.objectContaining({
+    expect(answerInput).toEqual(expect.objectContaining({
       backendSessionID: "session-atlas-review",
-      skills: [],
-      text: "vercel",
-      questionAnswer: expect.objectContaining({
-        questionID: "que_deploy_target",
-        selectedOptions: ["vercel"],
-      }),
+      questionID: "que_deploy_target",
+      selectedOptions: ["vercel"],
     }))
-    expect(sendInput).not.toHaveProperty("attachments")
+    expect(answerInput).not.toHaveProperty("attachments")
     expect(screen.getByText("brief.pdf")).toBeInTheDocument()
     expectComposerDraftValue(draftInput, "keep this draft")
-    expect(await screen.findByText("vercel")).toBeInTheDocument()
-    expect(within(questionCard).getByText("Answered.")).toBeInTheDocument()
+    expect(screen.queryByText(/^vercel$/)).not.toBeInTheDocument()
+    expect(within(questionCard).queryByText("Answered.")).not.toBeInTheDocument()
   })
 
   it("shows pending permission requests for the active session and blocks sending until resolved", async () => {
@@ -6516,20 +6525,27 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
 
     const accentBaseInput = screen.getByLabelText("Accent States Accent Base Light brand-primary hex color") as HTMLInputElement
+    const questionCardInput = screen.getByLabelText(
+      "Question Card Surface Light semantic-question-card-surface-light hex color",
+    ) as HTMLInputElement
     const preview = screen.getByLabelText("Current appearance config JSON") as HTMLTextAreaElement
     const saveAppearanceConfig = window.desktop!.saveAppearanceConfig as ReturnType<typeof vi.fn>
 
     fireEvent.change(accentBaseInput, { target: { value: "#ffffff" } })
     fireEvent.blur(accentBaseInput)
+    fireEvent.change(questionCardInput, { target: { value: "#123456" } })
+    fireEvent.blur(questionCardInput)
 
     await waitFor(() => {
       expect(document.documentElement.style.getPropertyValue("--brand-primary")).toBe("#ffffff")
+      expect(document.documentElement.style.getPropertyValue("--semantic-question-card-surface-light")).toBe("#123456")
     })
     await waitFor(() => {
       expect(saveAppearanceConfig).toHaveBeenCalled()
     })
     await waitFor(() => {
       expect(preview.value).toContain("#ffffff")
+      expect(preview.value).toContain("#123456")
     })
   })
 
@@ -7664,7 +7680,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Add attachments" })).toBeDisabled()
     fireEvent.click(await screen.findByRole("button", { name: "Select model: DeepSeek Reasoner" }))
     const modelList = screen.getByRole("listbox", { name: "Model selection" })
-    expect(within(modelList).queryByRole("option", { name: /^Model default/ })).not.toBeInTheDocument()
+    expect(within(modelList).queryByRole("option", { name: "Use server default" })).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole("searchbox", { name: "Search models" }), {
       target: {
         value: "gpt",
@@ -9782,7 +9798,8 @@ describe("App", () => {
 
   it("styles assistant turns as three stacked panels with call separators", () => {
     expect(styles).toMatch(/\.permission-request-card\s*\{[^}]*border-left-color:\s*var\(--seg-warning-strong\);[^}]*background:\s*var\(--mix-seg-warning-surface-84-surface-trace-16\);/s)
-    expect(styles).toMatch(/\.ask-user-question-card\s*\{[^}]*border-left-color:\s*var\(--seg-accent\);[^}]*background:\s*var\(--mix-seg-accent-soft-72-surface-trace-28\);/s)
+    expect(styles).toMatch(/\.ask-user-question-card\s*\{[^}]*border:\s*0;[^}]*background:\s*var\(--semantic-question-card-surface\);/s)
+    expect(styles).toMatch(/\.assistant-section\.is-response\s+\.ask-user-question-card\s*\{[^}]*border:\s*0;[^}]*background:\s*var\(--semantic-question-card-surface\);/s)
     expect(styles).toMatch(/\.assistant-shell\.is-sectioned\s*\{[^}]*border:\s*0;[^}]*padding:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(
       /\.assistant-section\.is-reasoning,\s*\.assistant-section\.is-response,\s*\.assistant-section\.is-tools\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*padding:\s*0;/s,

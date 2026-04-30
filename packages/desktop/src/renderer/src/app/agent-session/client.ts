@@ -73,6 +73,19 @@ export interface AgentSessionBridge {
   sendTurn(input: AgentSessionTurnInput): Promise<AgentSessionSendTurnResult>
   resumeTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionSendTurnResult>
   cancelTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionCancelTurnResult>
+  answerQuestion(input: {
+    backendSessionID: string
+    questionID: string
+    selectedOptions?: string[]
+    freeformText?: string
+  }): Promise<{
+    sessionID: string
+    questionID: string
+    selectedOptions?: string[]
+    freeformText?: string
+    answerText: string
+    answeredAt: number
+  }>
   subscribe(input: { uiSessionID: string; backendSessionID: string }): Promise<{
     backendSessionID: string
     lastEventID?: string
@@ -97,6 +110,7 @@ function createModernAgentSessionBridge(desktop: NonNullable<Window["desktop"]>)
     sendTurn: modern.sendTurn,
     resumeTurn: modern.resumeTurn,
     cancelTurn: modern.cancelTurn,
+    answerQuestion: modern.answerQuestion,
     subscribe: (input) => modern.subscribe(input),
     unsubscribe: modern.unsubscribe,
     loadPermissionRequests: modern.loadPermissionRequests,

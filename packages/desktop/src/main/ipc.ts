@@ -1949,6 +1949,41 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
   )
 
   handleDesktopIpc(
+    "desktop:agent-session-answer-question",
+    async (_event, input: {
+      backendSessionID: string
+      questionID: string
+      selectedOptions?: string[]
+      freeformText?: string
+    }) => {
+      const backendSessionID = input.backendSessionID.trim()
+      const result = await requestAgentJSON<{
+        sessionID: string
+        questionID: string
+        selectedOptions?: string[]
+        freeformText?: string
+        answerText: string
+        answeredAt: number
+      }>(
+        `/api/sessions/${encodeURIComponent(backendSessionID)}/questions/answer`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            questionID: input.questionID,
+            selectedOptions: input.selectedOptions,
+            freeformText: input.freeformText,
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
     "desktop:agent-session-subscribe",
     async (event, input: { uiSessionID?: string; backendSessionID: string }) => {
       const backendSessionID = input.backendSessionID.trim()

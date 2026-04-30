@@ -108,6 +108,8 @@ export const APPEARANCE_TOKEN_NAMES = [
   "semantic-left-sidebar-top-menu-surface-dark",
   "semantic-right-sidebar-top-menu-surface-light",
   "semantic-right-sidebar-top-menu-surface-dark",
+  "semantic-question-card-surface-light",
+  "semantic-question-card-surface-dark",
   "semantic-sidebar-tree-row-text-light",
   "semantic-sidebar-tree-row-text-dark",
   "semantic-sidebar-tree-row-text-hover-light",
@@ -619,6 +621,20 @@ export const APPEARANCE_TOKEN_GROUPS = [
     ],
   },
   {
+    id: "component-question-card",
+    label: "Question Card",
+    description: "Dedicated semantic color for agent question cards.",
+    rows: [
+      {
+        id: "semantic-question-card-surface",
+        label: "Surface",
+        description: "Background fill for question cards shown by the agent.",
+        lightToken: "semantic-question-card-surface-light",
+        darkToken: "semantic-question-card-surface-dark",
+      },
+    ],
+  },
+  {
     id: "component-sidebar-tree-rows",
     label: "Sidebar Tree Rows",
     description: "Dedicated row tokens for the left sidebar workspace and skills trees.",
@@ -818,6 +834,10 @@ const LEGACY_APPEARANCE_TOKEN_MIGRATIONS: Record<string, readonly AppearanceToke
   "semantic-dropdown-menu-surface": [
     "semantic-dropdown-menu-surface-light",
     "semantic-dropdown-menu-surface-dark",
+  ],
+  "semantic-question-card-surface": [
+    "semantic-question-card-surface-light",
+    "semantic-question-card-surface-dark",
   ],
   "semantic-composer-button-surface": [
     "semantic-composer-button-surface-light",

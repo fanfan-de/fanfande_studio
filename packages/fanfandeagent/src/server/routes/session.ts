@@ -88,6 +88,15 @@ export function SessionRoutes() {
 
   app.post("/:id/cancel", (c) => ok(c, SessionUseCase.cancelSession(c.req.param("id"))))
 
+  app.post("/:id/questions/answer", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SessionUseCase.AnswerSessionQuestionBody,
+      "Body must include a questionID and an answer",
+    )
+    return ok(c, SessionUseCase.answerSessionQuestion(c.req.param("id"), payload))
+  })
+
   app.delete("/:id", (c) => ok(c, SessionUseCase.deleteSession(c.req.param("id"))))
 
   app.get("/:id/events/stream", (c) =>

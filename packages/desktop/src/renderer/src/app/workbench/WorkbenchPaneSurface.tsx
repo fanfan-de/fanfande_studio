@@ -6,7 +6,6 @@ import {
   SessionCanvasTopMenu,
   ThreadView,
 } from "../components"
-import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import type { AssistantTraceVisibility, ComposerDraftState } from "../types"
@@ -148,6 +147,7 @@ export interface WorkbenchPaneSurfaceProps {
   onPaneTabPointerDragMove: (clientX: number, clientY: number) => void
   onPaneTabPointerDrop: (clientX: number, clientY: number) => void
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
+  onAskUserQuestionAnswer: AgentWorkspaceState["handleAskUserQuestionAnswer"]
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
@@ -189,6 +189,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onPaneTabPointerDragMove,
   onPaneTabPointerDrop,
   onPaneTabDrop,
+  onAskUserQuestionAnswer,
   onPermissionRequestResponse,
   onPickComposerAttachments,
   onRegisterPane,
@@ -355,24 +356,13 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 threadColumnRef={threadColumnRef}
                 onSessionModelSelectionChange={onSessionModelSelectionChange}
                 onAskUserQuestionAnswer={(answer) =>
-                  void onSend({
-                    attachmentsOverride: [],
-                    draftStateOverride: createComposerDraftStateFromPlainText(answer.text),
-                    paneID: pane.id,
-                    preserveComposerState: true,
-                    questionAnswer: answer.questionID
-                      ? {
-                          questionID: answer.questionID,
-                          selectedOptions: answer.selectedOptions,
-                          freeformText: answer.freeformText,
-                        }
-                      : undefined,
-                    selectedReasoningEffort: composer.selectedReasoningEffort,
-                    selectedModel: composer.selectedModel,
-                    selectedSkillIDs: composer.selectedSkillIDs,
+                  void onAskUserQuestionAnswer({
+                    freeformText: answer.freeformText,
+                    questionID: answer.questionID,
+                    selectedOptions: answer.selectedOptions,
                     sessionID: pane.sessionID,
                     tabKey: pane.tabKey,
-                    waitForPendingModelSelection: composer.awaitPendingModelSelection,
+                    text: answer.text,
                   })
                 }
                 onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}

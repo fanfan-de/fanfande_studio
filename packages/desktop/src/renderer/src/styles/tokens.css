@@ -195,6 +195,8 @@
   --semantic-composer-surface-dark: #292524;
   --semantic-dropdown-menu-surface-light: #ffffff;
   --semantic-dropdown-menu-surface-dark: #302a28;
+  --semantic-question-card-surface-light: #f8eeeb;
+  --semantic-question-card-surface-dark: #332623;
   --semantic-pane-tab-bar-surface: var(--semantic-pane-tab-bar-surface-light);
   --semantic-left-sidebar-top-menu-surface: var(--semantic-left-sidebar-top-menu-surface-light);
   --semantic-right-sidebar-top-menu-surface: var(--semantic-right-sidebar-top-menu-surface-light);
@@ -206,6 +208,7 @@
   --semantic-sidebar-tree-row-leading-active: var(--semantic-sidebar-tree-row-leading-active-light);
   --semantic-composer-surface: var(--semantic-composer-surface-light);
   --semantic-dropdown-menu-surface: var(--semantic-dropdown-menu-surface-light);
+  --semantic-question-card-surface: var(--semantic-question-card-surface-light);
   --semantic-composer-button-surface-light: #f0f1ff;
   --semantic-composer-button-surface-strong-light: #e5e7ff;
   --semantic-composer-button-text-light: #4f46e5;
@@ -599,6 +602,7 @@
   --color-info-surface-strong: var(--semantic-info-surface-strong);
   --color-composer-surface: var(--semantic-composer-surface);
   --color-dropdown-menu-surface: var(--semantic-dropdown-menu-surface);
+  --color-question-card-surface: var(--semantic-question-card-surface);
   --color-composer-button-surface: var(--semantic-composer-button-surface);
   --color-composer-button-surface-strong: var(--semantic-composer-button-surface-strong);
   --color-composer-button-text: var(--semantic-composer-button-text);
@@ -647,6 +651,7 @@
   --ui-info-surface-strong: var(--semantic-info-surface-strong);
   --ui-composer-surface: var(--semantic-composer-surface);
   --ui-dropdown-menu-surface: var(--semantic-dropdown-menu-surface);
+  --ui-question-card-surface: var(--semantic-question-card-surface);
   --ui-composer-button-surface: var(--semantic-composer-button-surface);
   --ui-composer-button-surface-strong: var(--semantic-composer-button-surface-strong);
   --ui-composer-button-text: var(--semantic-composer-button-text);
@@ -706,6 +711,7 @@
   --seg-info-surface-strong: var(--semantic-info-surface-strong);
   --seg-composer-surface: var(--semantic-composer-surface);
   --seg-dropdown-menu-surface: var(--semantic-dropdown-menu-surface);
+  --seg-question-card-surface: var(--semantic-question-card-surface);
   --seg-composer-button-surface: var(--semantic-composer-button-surface);
   --seg-composer-button-surface-strong: var(--semantic-composer-button-surface-strong);
   --seg-composer-button-text: var(--semantic-composer-button-text);
@@ -835,6 +841,8 @@
   --semantic-composer-surface-dark: #1e293b;
   --semantic-dropdown-menu-surface-light: #ffffff;
   --semantic-dropdown-menu-surface-dark: #223047;
+  --semantic-question-card-surface-light: #e8f7f4;
+  --semantic-question-card-surface-dark: #153344;
   --semantic-composer-button-surface-light: #e8f7fc;
   --semantic-composer-button-surface-strong-light: #d5f0fa;
   --semantic-composer-button-text-light: #0369a1;
@@ -1109,6 +1117,7 @@
     --semantic-right-sidebar-top-menu-surface: var(--semantic-right-sidebar-top-menu-surface-dark);
     --semantic-composer-surface: var(--semantic-composer-surface-dark);
     --semantic-dropdown-menu-surface: var(--semantic-dropdown-menu-surface-dark);
+    --semantic-question-card-surface: var(--semantic-question-card-surface-dark);
     --semantic-composer-button-surface: var(--semantic-composer-button-surface-dark);
     --semantic-composer-button-surface-strong: var(--semantic-composer-button-surface-strong-dark);
     --semantic-composer-button-text: var(--semantic-composer-button-text-dark);
@@ -1284,6 +1293,7 @@
   --semantic-sidebar-tree-row-leading-active: var(--semantic-sidebar-tree-row-leading-active-dark);
   --semantic-composer-surface: var(--semantic-composer-surface-dark);
   --semantic-dropdown-menu-surface: var(--semantic-dropdown-menu-surface-dark);
+  --semantic-question-card-surface: var(--semantic-question-card-surface-dark);
   --semantic-composer-button-surface: var(--semantic-composer-button-surface-dark);
   --semantic-composer-button-surface-strong: var(--semantic-composer-button-surface-strong-dark);
   --semantic-composer-button-text: var(--semantic-composer-button-text-dark);

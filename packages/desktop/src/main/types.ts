@@ -326,6 +326,12 @@ export interface AgentSessionQuestionAnswerInput {
   freeformText?: string
 }
 
+export interface AgentSessionQuestionAnswerResult extends AgentSessionQuestionAnswerInput {
+  sessionID: string
+  answerText: string
+  answeredAt: number
+}
+
 export interface AgentSessionTurnRequestInput {
   clientTurnID: string
   backendSessionID: string

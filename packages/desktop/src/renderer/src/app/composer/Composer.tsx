@@ -1125,15 +1125,6 @@ export function Composer({
                     />
                   </div>
                   <div className="composer-menu-options" role="listbox" aria-label="Model selection">
-                    <button
-                      aria-selected={selectedModel === null}
-                      className={selectedModel === null ? "composer-menu-option is-selected" : "composer-menu-option"}
-                      onClick={() => handleModelSelect(null)}
-                      role="option"
-                      type="button"
-                    >
-                      <span>Use server default</span>
-                    </button>
                     {visibleModelOptions.length > 0 ? (
                       visibleModelOptions.map((option) => (
                         <button

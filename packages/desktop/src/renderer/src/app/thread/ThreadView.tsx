@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
-import { createComposerDraftStateFromPlainText, createEmptyComposerDraftState } from "../composer/draft-state"
+import { createEmptyComposerDraftState } from "../composer/draft-state"
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -92,6 +92,7 @@ type PermissionRequestResponseHandler = (input: {
 type QuestionAnswerHandler = (input: {
   text: string
   questionID?: string
+  sessionID?: string | null
   selectedOptions?: string[]
   freeformText?: string
 }) => void | Promise<void>
@@ -179,6 +180,7 @@ function defaultTraceSectionKeyForItem(item: AssistantTraceItem): AssistantTrace
   if (isFileChangeTraceItem(item)) return "file-change"
   if (isToolTraceItem(item)) return "tools"
   if (item.kind === "reasoning") return "reasoning"
+  if (item.kind === "compaction") return "workflow"
   if (item.kind === "step" || item.kind === "retry" || item.kind === "snapshot" || item.kind === "subtask" || item.kind === "task-state") {
     return "workflow"
   }
@@ -188,6 +190,7 @@ function defaultTraceSectionKeyForItem(item: AssistantTraceItem): AssistantTrace
 
 function traceVisibilityKeyForItem(item: AssistantTraceItem): AssistantTraceVisibilityKey | null {
   if (item.kind === "error") return null
+  if (item.kind === "compaction") return null
   if (item.visibilityKey) return item.visibilityKey
 
   const sectionKey = traceSectionKeyForItem(item)
@@ -476,6 +479,7 @@ interface InlineSideChatThreadProps {
   turns: Turn[]
   onDraftStateChange: (value: ComposerDraftState) => void
   onHide: () => void
+  onAskUserQuestionAnswer: QuestionAnswerHandler
   onPermissionRequestResponse: PermissionRequestResponseHandler
   onPickAttachments: (input: {
     allowImage: boolean
@@ -516,6 +520,7 @@ function InlineSideChatThread({
   turns,
   onDraftStateChange,
   onHide,
+  onAskUserQuestionAnswer,
   onPermissionRequestResponse,
   onPickAttachments,
   onRemoveAttachment,
@@ -600,19 +605,9 @@ function InlineSideChatThread({
           sideChatCountsByAnchorMessageID={{}}
           threadColumnRef={threadColumnRef}
           onAskUserQuestionAnswer={(answer) =>
-            void onSend({
-              draftStateOverride: createComposerDraftStateFromPlainText(answer.text),
-              questionAnswer: answer.questionID
-                ? {
-                    questionID: answer.questionID,
-                    selectedOptions: answer.selectedOptions,
-                    freeformText: answer.freeformText,
-                  }
-                : undefined,
-              selectedReasoningEffort: composer.selectedReasoningEffort,
-              selectedModel: composer.selectedModel,
-              selectedSkillIDs: composer.selectedSkillIDs,
-              waitForPendingModelSelection: composer.awaitPendingModelSelection,
+            void onAskUserQuestionAnswer({
+              ...answer,
+              sessionID: session.id,
             })
           }
           onPermissionRequestResponse={onPermissionRequestResponse}
@@ -793,10 +788,27 @@ function TraceItemView({
     )
   }
 
+  if (item.kind === "compaction") {
+    return (
+      <article className={className} data-kind={item.kind} aria-label={item.title || "Context compacted"}>
+        <div className="trace-compaction-separator">
+          <span className="trace-compaction-rule" aria-hidden="true" />
+          <span className="trace-compaction-label">
+            <span className="trace-compaction-glyph" aria-hidden="true" />
+            {item.title || "Context compacted"}
+          </span>
+          <span className="trace-compaction-rule" aria-hidden="true" />
+        </div>
+        {item.detail ? <ThreadRichText className="trace-item-detail trace-compaction-detail" text={item.detail} /> : null}
+        {renderDebugEntries()}
+      </article>
+    )
+  }
+
   if (item.kind === "question" && item.questionPrompt) {
     const prompt = item.questionPrompt
-    const isQuestionAnswered = Boolean(prompt.questionID && answeredQuestionIDs?.has(prompt.questionID))
-    const isAnswerDisabled = isQuestionAnswerDisabled || isQuestionAnswered
+    const isQuestionAnswered = Boolean(prompt.answered || (prompt.questionID && answeredQuestionIDs?.has(prompt.questionID)))
+    const isAnswerDisabled = isQuestionAnswered || isQuestionAnswerDisabled
     const canSubmitAnswer = Boolean(onAskUserQuestionAnswer)
     const canUseOptionButtons = prompt.options.length > 0 && !prompt.multiple && canSubmitAnswer
     const canUseMultipleSelection = prompt.options.length > 0 && prompt.multiple && canSubmitAnswer
@@ -804,9 +816,7 @@ function TraceItemView({
     const hasSelectedOptions = selectedQuestionOptions.length > 0
     const canSubmitStructuredAnswer = canSubmitAnswer && !isAnswerDisabled && (hasSelectedOptions || Boolean(trimmedFreeformAnswer))
     const note = isQuestionAnswered
-      ? "Answered."
-      : isQuestionAnswerDisabled
-      ? "Wait for the current request to finish before answering."
+      ? prompt.answerText ? `Answered: ${prompt.answerText}` : "Answered."
       : canUseMultipleSelection && prompt.allowFreeform
         ? "Select one or more options or add a custom answer."
         : canUseMultipleSelection
@@ -851,23 +861,18 @@ function TraceItemView({
 
     return (
       <article className={`${className} ask-user-question-card`} data-kind={item.kind} role="region" aria-label={item.title || "Agent question"}>
-        <header className="ask-user-question-header">
-          <div>
-            <span className="label">Agent Question</span>
-            <h3>{item.title || "Question for you"}</h3>
-          </div>
-        </header>
-
         <div className="ask-user-question-body">
           <ThreadRichText className="ask-user-question-text" text={prompt.question} />
 
           {prompt.options.length > 0 ? (
-            <div className="ask-user-question-options">
+            <ol className="ask-user-question-options">
               {prompt.options.map((option, index) => (
-                <div key={`${item.id}-${option.value}-${index}`} className="ask-user-question-option">
+                <li key={`${item.id}-${option.value}-${index}`} className="ask-user-question-option">
+                  <span className="ask-user-question-option-number" aria-hidden="true">{index + 1}.</span>
                   {canUseOptionButtons ? (
                     <button
-                      className={index === 0 ? "primary-button" : "secondary-button"}
+                      aria-label={option.label}
+                      className="ask-user-question-option-button"
                       disabled={isAnswerDisabled}
                       onClick={() =>
                         void onAskUserQuestionAnswer?.({
@@ -877,7 +882,8 @@ function TraceItemView({
                         })}
                       type="button"
                     >
-                      {option.label}
+                      <span className="ask-user-question-option-label">{option.label}</span>
+                      {option.description ? <ThreadRichText as="span" className="ask-user-question-option-description" text={option.description} /> : null}
                     </button>
                   ) : canUseMultipleSelection ? (
                     <label className="ask-user-question-option-choice">
@@ -889,28 +895,36 @@ function TraceItemView({
                         type="checkbox"
                       />
                       <span className="ask-user-question-option-label">{option.label}</span>
+                      {option.description ? <ThreadRichText as="span" className="ask-user-question-option-description" text={option.description} /> : null}
                     </label>
                   ) : (
-                    <div className="ask-user-question-option-label">{option.label}</div>
+                    <div className="ask-user-question-option-static">
+                      <span className="ask-user-question-option-label">{option.label}</span>
+                      {option.description ? <ThreadRichText as="span" className="ask-user-question-option-description" text={option.description} /> : null}
+                    </div>
                   )}
-                  {option.description ? <ThreadRichText className="ask-user-question-option-description" text={option.description} /> : null}
-                </div>
+                </li>
               ))}
-            </div>
+            </ol>
           ) : null}
 
           {canUseMultipleSelection || (prompt.allowFreeform && canSubmitAnswer) ? (
             <form className="ask-user-question-response-form" onSubmit={handleStructuredAnswerSubmit}>
               {prompt.allowFreeform ? (
-                <input
-                  aria-label="Custom answer"
-                  className="ask-user-question-freeform-input"
-                  disabled={isAnswerDisabled}
-                  onChange={(event) => setFreeformAnswer(event.target.value)}
-                  placeholder={prompt.placeholder || "Type your answer"}
-                  type="text"
-                  value={freeformAnswer}
-                />
+                <label className="ask-user-question-freeform-row">
+                  {prompt.options.length > 0 ? (
+                    <span className="ask-user-question-option-number" aria-hidden="true">{prompt.options.length + 1}.</span>
+                  ) : null}
+                  <input
+                    aria-label="Custom answer"
+                    className="ask-user-question-freeform-input"
+                    disabled={isAnswerDisabled}
+                    onChange={(event) => setFreeformAnswer(event.target.value)}
+                    placeholder={prompt.placeholder || "Type your answer"}
+                    type="text"
+                    value={freeformAnswer}
+                  />
+                </label>
               ) : null}
 
               <div className="ask-user-question-actions">
@@ -919,7 +933,7 @@ function TraceItemView({
                   disabled={!canSubmitStructuredAnswer}
                   type="submit"
                 >
-                  Submit answer
+                  Submit
                 </button>
               </div>
             </form>
@@ -1537,6 +1551,7 @@ export function ThreadView({
                                   turns={sideChatTurns}
                                   onDraftStateChange={onSideChatDraftStateChange}
                                   onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
+                                  onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                                   onPermissionRequestResponse={onPermissionRequestResponse}
                                   onPickAttachments={onSideChatPickAttachments}
                                   onRemoveAttachment={onSideChatRemoveAttachment}

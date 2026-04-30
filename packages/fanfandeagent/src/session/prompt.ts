@@ -237,7 +237,8 @@ function isAskUserQuestionPart(part: Message.Part): part is Message.ToolPart & {
         metadata &&
         typeof metadata === "object" &&
         !Array.isArray(metadata) &&
-        metadata.kind === "ask-user-question",
+        metadata.kind === "ask-user-question" &&
+        metadata.answered !== true,
     )
 }
 

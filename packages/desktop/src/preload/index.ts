@@ -277,6 +277,15 @@ try {
           backendCancelled: boolean
           backendCancelError?: string
         }>,
+      answerQuestion: (input: { backendSessionID: string; questionID: string; selectedOptions?: string[]; freeformText?: string }) =>
+        invokeDesktop("desktop:agent-session-answer-question", input) as Promise<{
+          sessionID: string
+          questionID: string
+          selectedOptions?: string[]
+          freeformText?: string
+          answerText: string
+          answeredAt: number
+        }>,
       subscribe: (input: { uiSessionID?: string; backendSessionID: string }) =>
         invokeDesktop("desktop:agent-session-subscribe", input) as Promise<{
           backendSessionID: string

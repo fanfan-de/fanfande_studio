@@ -7,7 +7,7 @@ import path from "node:path"
 import z from "zod"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/message.ts"
-import { AskUserQuestionTool } from "#tool/ask-user-question.ts"
+import { AskUserQuestionTool, answerAskUserQuestion } from "#tool/ask-user-question.ts"
 import {
   CmdCommandTool,
   GitBashCommandTool,
@@ -159,39 +159,51 @@ describe("tool contract", () => {
 
   it("shapes AskUserQuestion output for the user and the model", async () => {
     const runtime = await AskUserQuestionTool.init()
+    const toolCallID = "tool-call-ask-1"
+    const questionID = "que_tool_call_ask_1"
+    const pendingOutput = runtime.execute(
+      {
+        header: "Deployment target",
+        question: "Where should I deploy this app?",
+        options: [
+          {
+            label: "Vercel",
+            description: "Best fit for the current setup.",
+          },
+          {
+            label: "Cloudflare",
+            value: "cloudflare",
+          },
+        ],
+        allowFreeform: true,
+      },
+      {
+        sessionID: "session-ask-question",
+        messageID: "message-ask-question",
+        toolCallID,
+      },
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    answerAskUserQuestion({
+      sessionID: "session-ask-question",
+      questionID,
+      selectedOptions: ["Vercel"],
+    })
+
     const output = Tool.normalizeToolOutput(
-      await runtime.execute(
-        {
-          header: "Deployment target",
-          question: "Where should I deploy this app?",
-          options: [
-            {
-              label: "Vercel",
-              description: "Best fit for the current setup.",
-            },
-            {
-              label: "Cloudflare",
-              value: "cloudflare",
-            },
-          ],
-          allowFreeform: true,
-        },
-        {
-          sessionID: "session-ask-question",
-          messageID: "message-ask-question",
-          toolCallID: "tool-call-ask-1",
-        },
-      ),
+      await pendingOutput,
     )
 
     expect(output.title).toBe("Deployment target")
     expect(output.text).toContain("Question: Where should I deploy this app?")
-    expect(output.text).toContain("The question has been shown to the user.")
+    expect(output.text).toContain("User answer received:")
     expect(output.metadata).toMatchObject({
       kind: "ask-user-question",
       version: 1,
-      questionID: expect.stringMatching(/^que_/),
-      toolCallID: "tool-call-ask-1",
+      questionID,
+      toolCallID,
       header: "Deployment target",
       question: "Where should I deploy this app?",
       options: [
@@ -210,6 +222,9 @@ describe("tool contract", () => {
       placeholder: undefined,
       multiple: false,
       required: true,
+      answered: true,
+      answerText: "Vercel",
+      selectedOptions: ["Vercel"],
     })
 
     const modelOutput = Tool.normalizeToolModelOutput(await runtime.toModelOutput?.(output)!)
@@ -220,7 +235,8 @@ describe("tool contract", () => {
     expect(modelOutput.value).toMatchObject({
       kind: "ask-user-question",
       shownToUser: true,
-      toolCallID: "tool-call-ask-1",
+      answered: true,
+      toolCallID,
       header: "Deployment target",
       question: "Where should I deploy this app?",
       options: [
@@ -238,7 +254,9 @@ describe("tool contract", () => {
       allowFreeform: true,
       multiple: false,
       required: true,
-      instruction: "Stop after this tool call and wait for the user's response before taking any further action.",
+      answerText: "Vercel",
+      selectedOptions: ["Vercel"],
+      instruction: "The user answered this question. Continue using the answer.",
     })
   })
 
@@ -301,6 +319,122 @@ describe("tool contract", () => {
     expect(serializedMessage).toContain("question_id: que_deploy_target")
     expect(serializedMessage).toContain("selected_options: vercel")
     expect(serializedMessage).toContain("answer: vercel")
+  })
+
+  it("does not replay AskUserQuestion UI metadata as provider options", async () => {
+    const model = {
+      capabilities: {
+        reasoning: false,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+      },
+    } as any
+
+    const questionMetadata = {
+      openai: {
+        itemId: "item-1",
+      },
+      kind: "ask-user-question",
+      version: 1,
+      questionID: "que_call_ask",
+      toolCallID: "call-ask",
+      header: "Question",
+      question: "What next?",
+      options: [{ label: "Feature", value: "feature" }],
+      allowFreeform: true,
+      multiple: false,
+      required: true,
+    }
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "assistant-question",
+            sessionID: "session-question-provider-options",
+            role: "assistant",
+            created: Date.now(),
+            agent: "plan",
+            model: {
+              providerID: "test-provider",
+              modelID: "test-model",
+            },
+          } as Message.Assistant,
+          parts: [
+            {
+              id: "part-question-tool",
+              sessionID: "session-question-provider-options",
+              messageID: "assistant-question",
+              type: "tool",
+              callID: "call-ask",
+              tool: "AskUserQuestion",
+              providerExecuted: true,
+              metadata: questionMetadata,
+              state: {
+                status: "completed",
+                input: {
+                  header: "Question",
+                  question: "What next?",
+                  options: [{ label: "Feature", value: "feature" }],
+                  allowFreeform: true,
+                },
+                output: "User answer received:\nfeature",
+                modelOutput: {
+                  type: "json",
+                  value: {
+                    answered: true,
+                    answerText: "feature",
+                  },
+                },
+                title: "Question",
+                metadata: {
+                  ...questionMetadata,
+                  answered: true,
+                  answerText: "feature",
+                  selectedOptions: ["feature"],
+                },
+                time: {
+                  start: 1,
+                  end: 2,
+                },
+              },
+            } as Message.ToolPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    const assistantMessage = messages.find((item) => item.role === "assistant") as any
+    expect(assistantMessage?.content[0]).toMatchObject({
+      type: "tool-call",
+      toolCallId: "call-ask",
+      toolName: "AskUserQuestion",
+      providerOptions: {
+        openai: {
+          itemId: "item-1",
+        },
+      },
+    })
+    expect(JSON.stringify(assistantMessage?.content[0]?.providerOptions)).not.toContain("questionID")
+    expect(assistantMessage?.content[1]).toMatchObject({
+      type: "tool-result",
+      toolCallId: "call-ask",
+      toolName: "AskUserQuestion",
+      providerOptions: {
+        openai: {
+          itemId: "item-1",
+        },
+      },
+    })
+    expect(JSON.stringify(assistantMessage?.content[1]?.providerOptions)).not.toContain("questionID")
   })
 
   it("exposes git_bash_command runtime hooks with structured behavior", async () => {

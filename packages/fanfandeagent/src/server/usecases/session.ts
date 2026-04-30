@@ -25,6 +25,7 @@ import {
   listProjectModelsWithFallback,
   resolveEffectiveModelWithFallback,
 } from "#server/usecases/model-list-cache.ts"
+import { answerAskUserQuestion } from "#tool/ask-user-question.ts"
 
 export { createSessionExecutionStream } from "#server/usecases/session-stream.ts"
 
@@ -48,6 +49,8 @@ export const StreamSessionQuestionAnswerBody = z.object({
   selectedOptions: z.array(z.string().min(1)).optional(),
   freeformText: z.string().optional(),
 })
+
+export const AnswerSessionQuestionBody = StreamSessionQuestionAnswerBody
 
 export const StreamSessionMessageBody = z.object({
   text: z.string().optional(),
@@ -609,6 +612,28 @@ export function cancelSession(sessionID: string) {
   return {
     sessionID,
     cancelled: Prompt.cancel(sessionID),
+  }
+}
+
+export function answerSessionQuestion(
+  sessionID: string,
+  input: z.infer<typeof AnswerSessionQuestionBody>,
+) {
+  requireSession(sessionID)
+
+  try {
+    return answerAskUserQuestion({
+      sessionID,
+      questionID: input.questionID,
+      selectedOptions: input.selectedOptions,
+      freeformText: input.freeformText,
+    })
+  } catch (error) {
+    throw new ApiError(
+      409,
+      "QUESTION_NOT_WAITING",
+      error instanceof Error ? error.message : String(error),
+    )
   }
 }
 

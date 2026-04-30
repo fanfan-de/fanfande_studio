@@ -11,6 +11,10 @@ import * as Session from "#session/session.ts"
 import { Flag } from "#flag/flag.ts"
 import type { LanguageModelUsage } from "ai"
 import type { TurnContext } from "#session/orchestrator.ts"
+import {
+    createAskUserQuestionMetadataFromInput,
+    isAnsweredAskUserQuestionMetadata,
+} from "#tool/ask-user-question.ts"
 
 const log = Log.create({ service: "session.processor" })
 const STREAM_PART_PERSIST_INTERVAL_MS = 100
@@ -366,7 +370,14 @@ async function extractToolResultState(
 function isAskUserQuestionToolResult(
     metadata: Record<string, unknown> | undefined,
 ) {
-    return Boolean(metadata && metadata.kind === "ask-user-question")
+    return Boolean(metadata && metadata.kind === "ask-user-question" && !isAnsweredAskUserQuestionMetadata(metadata))
+}
+
+function isAskUserQuestionToolName(toolName: string | undefined) {
+    return toolName === "AskUserQuestion" ||
+        toolName === "ask-user-question" ||
+        toolName === "question-tool" ||
+        toolName === "question"
 }
 
 function isWorkflowControlToolResult(
@@ -995,6 +1006,12 @@ export function create(input: {
                                 // value.toolName 宸ュ叿鍚嶇О
                                 // value.args 宸ュ叿鍙傛暟
                                 const match = toolcalls[value.toolCallId]
+                                const askUserQuestionMetadata = isAskUserQuestionToolName(value.toolName)
+                                    ? createAskUserQuestionMetadataFromInput(value.input, {
+                                        toolCallID: value.toolCallId,
+                                    })
+                                    : undefined
+                                const runningStateMetadata = askUserQuestionMetadata ?? value.providerMetadata
                                 const part: Message.ToolPart = {
                                     ...(match ?? {
                                         id: Identifier.ascending("part"),
@@ -1010,7 +1027,7 @@ export function create(input: {
                                         input: value.input,
                                         raw: readToolRaw(match?.state),
                                         title: value.title,
-                                        metadata: value.providerMetadata,
+                                        metadata: runningStateMetadata,
                                         time: {
                                             start:
                                                 match?.state.status === "running"

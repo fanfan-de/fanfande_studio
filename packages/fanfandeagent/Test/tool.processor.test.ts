@@ -213,6 +213,122 @@ describe("processor tool persistence", () => {
     }
   })
 
+  it("keeps AskUserQuestion UI metadata out of provider metadata", async () => {
+    mock.module("#session/llm.ts", () => ({
+      stream: async () => ({
+        fullStream: (async function* () {
+          yield { type: "start" }
+          yield {
+            type: "tool-call",
+            toolCallId: "call-ask",
+            toolName: "AskUserQuestion",
+            input: {
+              header: "Question",
+              question: "What next?",
+              options: [{ label: "Feature", value: "feature" }],
+              allowFreeform: true,
+            },
+            providerMetadata: {
+              openai: {
+                itemId: "item-1",
+              },
+            },
+          }
+          yield {
+            type: "tool-result",
+            toolCallId: "call-ask",
+            toolName: "AskUserQuestion",
+            input: {
+              header: "Question",
+              question: "What next?",
+              options: [{ label: "Feature", value: "feature" }],
+              allowFreeform: true,
+            },
+            output: {
+              text: "User answer received:\nfeature",
+              title: "Question",
+              metadata: {
+                kind: "ask-user-question",
+                version: 1,
+                questionID: "que_call_ask",
+                toolCallID: "call-ask",
+                header: "Question",
+                question: "What next?",
+                options: [{ label: "Feature", value: "feature" }],
+                allowFreeform: true,
+                multiple: false,
+                required: true,
+                answered: true,
+                answerText: "feature",
+                selectedOptions: ["feature"],
+              },
+            },
+          }
+          yield {
+            type: "finish",
+            finishReason: "tool-calls",
+          }
+        })(),
+      }),
+    }))
+
+    const Processor = await import("#session/processor.ts")
+    const recorded = createTurnRecorder("session-question-metadata")
+
+    const processor = Processor.create({
+      Assistant: {
+        id: "assistant-question-metadata",
+        sessionID: "session-question-metadata",
+        role: "assistant",
+        created: Date.now(),
+        parentID: "user-question-metadata",
+        modelID: "test-model",
+        providerID: "test-provider",
+        agent: "plan",
+        path: {
+          cwd: ".",
+          root: ".",
+        },
+        cost: 0,
+        tokens: {
+          input: 0,
+          output: 0,
+          reasoning: 0,
+          cache: {
+            read: 0,
+            write: 0,
+          },
+        },
+      } as any,
+      turn: recorded.turn,
+    })
+
+    expect(await processor.process(createStreamInput())).toBe("continue")
+
+    const started = recorded.events.find((event) => event.type === "tool.call.started")
+    expect(started?.payload.part.metadata).toEqual({
+      openai: {
+        itemId: "item-1",
+      },
+    })
+    expect(started?.payload.part.state.metadata).toMatchObject({
+      kind: "ask-user-question",
+      questionID: "que_call_ask",
+    })
+
+    const completed = recorded.events.find((event) => event.type === "tool.call.completed")
+    expect(completed?.payload.part.metadata).toEqual({
+      openai: {
+        itemId: "item-1",
+      },
+    })
+    expect(completed?.payload.part.state.metadata).toMatchObject({
+      kind: "ask-user-question",
+      answered: true,
+      answerText: "feature",
+    })
+  })
+
   it("does not persist raw oversized tool results that bypass the tool wrapper", async () => {
     const sessionID = "ses_processor_large"
     const largeOutput = `${"large-output ".repeat(5_000)}tail-marker`

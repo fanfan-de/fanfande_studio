@@ -77,6 +77,20 @@ function shouldReplayAssistantReasoning(model: Provider.Model) {
     return model.capabilities.replayAssistantReasoning !== false
 }
 
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+    return Boolean(value && typeof value === "object" && !Array.isArray(value))
+}
+
+function providerOptionsFromMetadata(metadata: Record<string, unknown> | undefined) {
+    if (!metadata) return undefined
+
+    const providerOptions = Object.fromEntries(
+        Object.entries(metadata).filter(([, value]) => isRecordValue(value)),
+    )
+
+    return Object.keys(providerOptions).length > 0 ? providerOptions : undefined
+}
+
 function summarizeQuestionAnswerForModel(part: TextPart) {
     const metadata = part.metadata
     if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
@@ -812,10 +826,11 @@ export async function toModelMessages(
                     // a provider or model explicitly opts out of replay.
                     return null
                 }
+                const reasoningProviderOptions = providerOptionsFromMetadata(part.metadata)
                 return {
                     type: "reasoning" as const,
                     text: part.text,
-                    ...(part.metadata ? { providerOptions: part.metadata } : {}),
+                    ...(reasoningProviderOptions ? { providerOptions: reasoningProviderOptions } : {}),
                 }
             case "file":
                 {
@@ -960,13 +975,14 @@ export async function toModelMessages(
                     state.status === "error" ||
                     state.status === "denied"
                 ) {
+                    const toolCallProviderOptions = providerOptionsFromMetadata(part.metadata)
                     assistantContent.push({
                         type: "tool-call" as const,
                         toolCallId: part.callID,
                         toolName: part.tool,
                         input: state.input,
                         ...(part.providerExecuted ? { providerExecuted: true } : {}),
-                        ...(part.metadata ? { providerOptions: part.metadata } : {}),
+                        ...(toolCallProviderOptions ? { providerOptions: toolCallProviderOptions } : {}),
                     })
 
                     if (approvalRequest) {
@@ -978,12 +994,13 @@ export async function toModelMessages(
                     }
 
                     if (part.providerExecuted && (state.status === "completed" || state.status === "error")) {
+                        const toolResultProviderOptions = providerOptionsFromMetadata(state.metadata)
                         assistantContent.push({
                             type: "tool-result" as const,
                             toolCallId: part.callID,
                             toolName: part.tool,
                             output: await resolveToolModelOutput(part),
-                            ...(state.metadata ? { providerOptions: state.metadata } : {}),
+                            ...(toolResultProviderOptions ? { providerOptions: toolResultProviderOptions } : {}),
                         })
                     }
                     if (approvalRequest && approvalResponse) {

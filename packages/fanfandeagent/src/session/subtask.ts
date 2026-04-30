@@ -178,7 +178,8 @@ function isAskUserQuestionPart(
     part.state.metadata &&
       typeof part.state.metadata === "object" &&
       !Array.isArray(part.state.metadata) &&
-      part.state.metadata.kind === "ask-user-question",
+      part.state.metadata.kind === "ask-user-question" &&
+      part.state.metadata.answered !== true,
   )
 }
 

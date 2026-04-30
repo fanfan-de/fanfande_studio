@@ -130,6 +130,7 @@ export function App() {
     handleSplitResize: handleWorkbenchPaneResize,
     handlePaneTabDrop: handleWorkbenchTabDrop,
     handlePermissionRequestResponse,
+    handleAskUserQuestionAnswer,
     handlePickComposerAttachments,
     handlePreviewAddComment,
     handlePreviewDeleteComment,
@@ -706,6 +707,7 @@ export function App() {
                 onPaneTabPointerDrop={handlePaneTabPointerDrop}
                 onPaneTabDrop={handlePaneTabDrop}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
+                onAskUserQuestionAnswer={handleAskUserQuestionAnswer}
                 onPickComposerAttachments={handlePickComposerAttachments}
                 onRegisterPane={handleRegisterPane}
                 onRemoveComposerAttachment={handleRemoveComposerAttachment}

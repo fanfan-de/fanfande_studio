@@ -70,6 +70,7 @@ export interface WorkbenchShellProps {
   onPaneTabPointerDragMove: (clientX: number, clientY: number) => void
   onPaneTabPointerDrop: (clientX: number, clientY: number) => void
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
+  onAskUserQuestionAnswer: AgentWorkspaceState["handleAskUserQuestionAnswer"]
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
@@ -171,6 +172,7 @@ function WorkbenchNodeView({
         onPaneTabPointerDragMove={props.onPaneTabPointerDragMove}
         onPaneTabPointerDrop={props.onPaneTabPointerDrop}
         onPaneTabDrop={props.onPaneTabDrop}
+        onAskUserQuestionAnswer={props.onAskUserQuestionAnswer}
         onPermissionRequestResponse={props.onPermissionRequestResponse}
         onPickComposerAttachments={props.onPickComposerAttachments}
         onRegisterPane={props.onRegisterPane}

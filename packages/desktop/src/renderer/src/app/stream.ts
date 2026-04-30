@@ -327,6 +327,9 @@ function buildPartDebugEntries(input: unknown) {
 
   if (type === "compaction") {
     appendDebugEntry(entries, "compaction.auto", Boolean(part.auto))
+    appendDebugEntry(entries, "compaction.from", readString(part.compactedFromMessageID))
+    appendDebugEntry(entries, "compaction.to", readString(part.compactedToMessageID))
+    appendDebugEntry(entries, "compaction.version", part.summaryVersion)
   }
 
   return entries.length > 0 ? entries : undefined
@@ -377,6 +380,7 @@ function buildRuntimeEventDebugEntries(
 
 function isVisibleAssistantTraceItem(item: AssistantTraceItem) {
   if (item.kind === "error") return true
+  if (item.kind === "compaction") return true
   if (item.visibilityKey === "debugMetadata" || item.section === "debug") return false
   return item.kind !== "system" || Boolean(item.section)
 }
@@ -530,6 +534,15 @@ function readAskUserQuestionPrompt(value: unknown): AssistantQuestionPrompt | nu
     placeholder: readString(metadata.placeholder) || undefined,
     multiple: readBoolean(metadata.multiple),
     required: metadata.required !== false,
+    answered: readBoolean(metadata.answered),
+    answerText: readString(metadata.answerText) || undefined,
+    selectedOptions: Array.isArray(metadata.selectedOptions)
+      ? metadata.selectedOptions
+          .map((value) => readString(value).trim())
+          .filter(Boolean)
+      : undefined,
+    freeformText: readString(metadata.freeformText) || undefined,
+    answeredAt: readNumber(metadata.answeredAt) || undefined,
   }
 }
 
@@ -670,6 +683,23 @@ function buildToolAttachmentTraceItems(
         debugEntries,
       })
     })
+}
+
+function createCompactionTraceItem(input: {
+  sourceID: string
+  auto?: boolean
+  debugEntries?: AssistantTraceDebugEntry[]
+}) {
+  return createTraceItem({
+    id: input.sourceID,
+    sourceID: input.sourceID,
+    kind: "compaction",
+    label: "Context",
+    title: input.auto ? "Context auto-compacted" : "Context compacted",
+    status: "completed",
+    section: "workflow",
+    debugEntries: input.debugEntries,
+  })
 }
 
 function createAssistantTurnRuntime(input: {
@@ -894,7 +924,7 @@ function buildTraceItemFromPart(
     const toolCallID = readString(part.callID)
     const toolInputText = createToolTraceInputText(status, state)
     const toolOutputText = createToolTraceOutputText(status, state)
-    const questionPrompt = status === "completed" ? readAskUserQuestionPrompt(state?.metadata) : null
+    const questionPrompt = readAskUserQuestionPrompt(state?.metadata)
     const taskState = readTaskStateFromToolState(state)
 
     if (taskState) {
@@ -905,7 +935,7 @@ function buildTraceItemFromPart(
       })]
     }
 
-    if (questionPrompt) {
+    if (questionPrompt && !questionPrompt.answered) {
       return [createTraceItem({
         id: sourceID,
         sourceID,
@@ -914,7 +944,7 @@ function buildTraceItemFromPart(
         title: questionPrompt.header || "Question for you",
         text: questionPrompt.question,
         detail: createAskUserQuestionTraceDetail(questionPrompt),
-        status: "completed",
+        status,
         section: "response",
         visibilityKey: "response",
         debugEntries,
@@ -1162,18 +1192,9 @@ function buildTraceItemFromPart(
   }
 
   if (type === "compaction") {
-    return [createTraceItem({
-      id: sourceID,
+    return [createCompactionTraceItem({
       sourceID,
-      kind: "system",
-      label: "Compaction",
-      title: part.auto ? "Automatic compaction" : "Compaction recorded",
-      detail: part.auto
-        ? "The backend compacted the conversation context automatically."
-        : "The backend recorded a compaction event for this turn.",
-      status: "completed",
-      section: "workflow",
-      visibilityKey: "workflow",
+      auto: readBoolean(part.auto),
       debugEntries,
     })]
   }
@@ -1567,15 +1588,103 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
   } satisfies Turn
 }
 
+function isInternalHistoryMessage(message: LoadedSessionHistoryMessage) {
+  return readBoolean(message.info.internal)
+}
+
+function isCompactionHistoryMessage(message: LoadedSessionHistoryMessage) {
+  if (!isInternalHistoryMessage(message)) return false
+  if (readString(message.info.agent) === "compaction") return true
+  return message.parts.some((part) => readString(readRecord(part)?.type) === "compaction")
+}
+
+function buildCompactionItemsFromHistory(message: LoadedSessionHistoryMessage) {
+  const compactionParts = message.parts.filter((part) => readString(readRecord(part)?.type) === "compaction")
+  const items = mergeTraceParts([], compactionParts)
+  if (items.length > 0) return items
+
+  return [
+    createCompactionTraceItem({
+      sourceID: `${message.info.id || createID("trace")}:compaction`,
+      auto: true,
+    }),
+  ]
+}
+
+function prependAssistantItems(turn: AssistantTurn, items: AssistantTraceItem[]) {
+  if (items.length === 0) return turn
+  const nextItems = upsertTraceItems(items, turn.items)
+  return {
+    ...turn,
+    items: nextItems,
+    runtime: {
+      ...turn.runtime,
+      firstVisibleAt: turn.runtime.firstVisibleAt ?? turn.runtime.startedAt,
+    },
+  }
+}
+
+function buildCompactionMarkerTurn(message: LoadedSessionHistoryMessage, items: AssistantTraceItem[]) {
+  const createdAt = readNumber(message.info.created) || Date.now()
+  const nextItems = items.length > 0
+    ? items
+    : [
+        createCompactionTraceItem({
+          sourceID: `${message.info.id || createID("trace")}:compaction`,
+          auto: true,
+        }),
+      ]
+
+  return {
+    id: message.info.id || createID("assistant"),
+    messageID: message.info.id || undefined,
+    kind: "assistant",
+    timestamp: createdAt,
+    runtime: createAssistantTurnRuntime({
+      phase: "completed",
+      startedAt: createdAt,
+      updatedAt: createdAt,
+      items: nextItems,
+    }),
+    state: "Context compacted",
+    items: nextItems,
+    isStreaming: false,
+  } satisfies AssistantTurn
+}
+
 export function buildTurnsFromHistory(messages: LoadedSessionHistoryMessage[]) {
-  return [...messages]
+  const turns: Turn[] = []
+  let pendingCompactionItems: AssistantTraceItem[] = []
+
+  for (const message of [...messages]
     .sort((left, right) => {
       const leftCreated = readNumber(left.info.created)
       const rightCreated = readNumber(right.info.created)
       if (leftCreated !== rightCreated) return leftCreated - rightCreated
       return left.info.id.localeCompare(right.info.id)
-    })
-    .map((message) => (message.info.role === "user" ? buildUserTurnFromHistory(message) : buildAssistantTurnFromHistory(message)))
+    })) {
+    if (isCompactionHistoryMessage(message)) {
+      pendingCompactionItems = upsertTraceItems(pendingCompactionItems, buildCompactionItemsFromHistory(message))
+      continue
+    }
+
+    if (isInternalHistoryMessage(message)) continue
+
+    if (message.info.role === "user") {
+      turns.push(buildUserTurnFromHistory(message))
+      continue
+    }
+
+    const assistantTurn = buildAssistantTurnFromHistory(message)
+    turns.push(prependAssistantItems(assistantTurn, pendingCompactionItems))
+    pendingCompactionItems = []
+  }
+
+  if (pendingCompactionItems.length > 0) {
+    turns.push(buildCompactionMarkerTurn(messages[messages.length - 1]!, pendingCompactionItems))
+  }
+
+  return turns
 }
 
 export function buildStreamingAssistantTurn(prompt: string): AssistantTurn {
@@ -2053,6 +2162,27 @@ function applyRuntimeEventToTurn(
         debugEntries,
       }),
     )
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        isStreaming: !isSettledAssistantPhase(turn.runtime.phase),
+      },
+      {},
+      nextItems,
+    )
+  }
+
+  if (event.type === "part.recorded") {
+    const partRecord = readRecord(payload.part)
+    if (readString(partRecord?.type) !== "compaction") return turn
+
+    const traceItems = buildTraceItemFromPart(partRecord, {
+      debugEntries,
+    })
+    if (traceItems.length === 0) return turn
+
+    const nextItems = upsertTraceItems(clearStreamingItems(preparedItems), traceItems)
 
     return updateAssistantTurnLifecycle(
       {

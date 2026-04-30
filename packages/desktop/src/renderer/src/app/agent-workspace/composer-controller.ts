@@ -22,6 +22,7 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import { getAgentSessionBridge } from "../agent-session/client"
+import { buildFailureTurn } from "../stream"
 import { findSession, findWorkspaceByID, normalizeSessionModelSelection, updateSessionModelSelectionInWorkspaces } from "../workspace"
 import {
   normalizeQuestionAnswerText,
@@ -340,6 +341,44 @@ export function useComposerController({
     }
   }
 
+  async function handleAskUserQuestionAnswer(input: {
+    freeformText?: string
+    questionID?: string
+    selectedOptions?: string[]
+    sessionID?: string | null
+    tabKey?: string | null
+    text: string
+  }) {
+    const sessionID = input.sessionID ?? activeSessionID
+    const tabKey = input.tabKey ?? activeTabKey
+    const questionID = input.questionID?.trim()
+    if (!sessionID || !tabKey || !questionID) return
+
+    const agentSession = getAgentSessionBridge()
+    const backendSessionID = agentSessions[sessionID]
+    if (!agentSession?.answerQuestion || !backendSessionID) {
+      console.error("[desktop] Cannot answer question because the backend session is unavailable.")
+      return
+    }
+
+    const selectedOptions = (input.selectedOptions ?? []).map((value) => value.trim()).filter(Boolean)
+    const freeformText = input.freeformText?.trim()
+    const answerText = input.text.trim() || freeformText || selectedOptions.join(", ")
+    if (!answerText) return
+
+    try {
+      await agentSession.answerQuestion({
+        backendSessionID,
+        questionID,
+        ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
+        ...(freeformText ? { freeformText } : {}),
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      appendConversationTurns(sessionID, [buildFailureTurn(message)])
+    }
+  }
+
   async function handlePermissionRequestResponse(input: {
     sessionID: string
     request: PermissionRequest
@@ -423,6 +462,7 @@ export function useComposerController({
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleRemoveComposerAttachment,
+    handleAskUserQuestionAnswer,
     handleCancelSend,
     handleSend,
     sendPromptToSession,

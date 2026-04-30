@@ -589,6 +589,7 @@ export type AssistantTraceItemKind =
   | "image"
   | "patch"
   | "subtask"
+  | "compaction"
   | "step"
   | "retry"
   | "snapshot"
@@ -689,6 +690,11 @@ export interface AssistantQuestionPrompt {
   placeholder?: string
   multiple: boolean
   required: boolean
+  answered?: boolean
+  answerText?: string
+  selectedOptions?: string[]
+  freeformText?: string
+  answeredAt?: number
 }
 
 export interface AssistantTraceProgressItem {

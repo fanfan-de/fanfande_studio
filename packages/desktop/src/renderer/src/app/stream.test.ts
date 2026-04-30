@@ -606,6 +606,44 @@ describe("stream trace reducer", () => {
     expect(turn.isStreaming).toBe(true)
   })
 
+  it("surfaces runtime compaction records as visible workflow status", () => {
+    let turn = buildStreamingAssistantTurn("Trigger compaction")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-compaction",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "part.recorded",
+        payload: {
+          part: {
+            id: "part-compaction",
+            messageID: "message-compaction",
+            type: "compaction",
+            auto: true,
+            compactedFromMessageID: "message-oldest",
+            compactedToMessageID: "message-boundary",
+            summaryVersion: 1,
+          },
+        },
+      },
+    })
+
+    const compactionItem = turn.items.find((item) => item.kind === "compaction")
+    expect(compactionItem).toMatchObject({
+      kind: "compaction",
+      title: "Context auto-compacted",
+      section: "workflow",
+      status: "completed",
+    })
+    expect(compactionItem?.visibilityKey).toBeUndefined()
+    expect(compactionItem?.debugEntries?.some((entry) => entry.label === "compaction.to" && entry.value === "message-boundary")).toBe(true)
+    expect(turn.isStreaming).toBe(true)
+  })
+
   it("surfaces the response text while the stream is still running", () => {
     let turn = buildStreamingAssistantTurn("Show live trace")
     expect(turn.runtime.phase).toBe("waiting_first_event")
@@ -690,6 +728,79 @@ describe("stream trace reducer", () => {
     expect(toolItems[0]?.status).toBe("completed")
     expect(toolItems[0]?.toolOutputText).toContain("\"fixed\": 3")
     expect(toolItems[0]?.text).toContain("\"fixed\": 3")
+  })
+
+  it("renders unanswered ask-user-question tools as question prompts", () => {
+    let turn = buildStreamingAssistantTurn("Ask a question")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "part",
+      data: {
+        part: {
+          id: "tool-question",
+          type: "tool",
+          tool: "AskUserQuestion",
+          state: {
+            status: "completed",
+            metadata: {
+              kind: "ask-user-question",
+              questionID: "que_target",
+              header: "Deploy target",
+              question: "Where should I deploy?",
+              options: [{ label: "Vercel", value: "vercel" }],
+              allowFreeform: true,
+              multiple: false,
+              required: true,
+            },
+          },
+        },
+      },
+    })
+
+    const questionItems = turn.items.filter((item) => item.kind === "question")
+    expect(questionItems).toHaveLength(1)
+    expect(questionItems[0]?.questionPrompt?.questionID).toBe("que_target")
+  })
+
+  it("renders answered ask-user-question tools as normal tool trace items", () => {
+    let turn = buildStreamingAssistantTurn("Answer a question")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "part",
+      data: {
+        part: {
+          id: "tool-question",
+          type: "tool",
+          tool: "AskUserQuestion",
+          state: {
+            status: "completed",
+            output: "Question answered.",
+            metadata: {
+              kind: "ask-user-question",
+              questionID: "que_target",
+              header: "Deploy target",
+              question: "Where should I deploy?",
+              options: [{ label: "Vercel", value: "vercel" }],
+              allowFreeform: true,
+              multiple: false,
+              required: true,
+              answered: true,
+              answerText: "vercel",
+              selectedOptions: ["vercel"],
+            },
+          },
+        },
+      },
+    })
+
+    expect(turn.items.some((item) => item.kind === "question")).toBe(false)
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(toolItems[0]).toMatchObject({
+      kind: "tool",
+      title: "AskUserQuestion",
+      text: "Question answered.",
+    })
   })
 
   it("preserves the full completed tool output for disclosure views", () => {
@@ -1058,6 +1169,77 @@ describe("stream trace reducer", () => {
     })
     expect(turns[1]?.kind === "assistant" ? turns[1].runtime.phase : null).toBe("completed")
     expect(turns[1]?.kind === "assistant" ? turns[1].items.map((item) => item.kind) : []).toEqual(["reasoning", "text", "system"])
+  })
+
+  it("restores internal compaction history as a status marker without leaking summary text", () => {
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "msg-user-1",
+          sessionID: "session-1",
+          role: "user",
+          created: 10,
+        },
+        parts: [{ id: "part-user-1", type: "text", text: "Keep going" }],
+      },
+      {
+        info: {
+          id: "msg-compaction",
+          sessionID: "session-1",
+          role: "user",
+          created: 11,
+          internal: true,
+          agent: "compaction",
+        },
+        parts: [
+          {
+            id: "part-compacted-history",
+            type: "text",
+            text: "<compacted_history>\nSecret compacted summary\n</compacted_history>",
+            metadata: {
+              kind: "compacted-history",
+            },
+          },
+          {
+            id: "part-compaction",
+            type: "compaction",
+            auto: true,
+            compactedFromMessageID: "msg-user-1",
+            compactedToMessageID: "msg-assistant-old",
+            summaryVersion: 1,
+          },
+        ],
+      },
+      {
+        info: {
+          id: "msg-assistant-1",
+          sessionID: "session-1",
+          role: "assistant",
+          created: 12,
+          completed: 13,
+        },
+        parts: [{ id: "part-text-1", type: "text", text: "Continuing after compaction." }],
+      },
+    ])
+
+    expect(turns).toHaveLength(2)
+    expect(turns[0]).toMatchObject({
+      id: "msg-user-1",
+      kind: "user",
+      text: "Keep going",
+    })
+
+    const assistantTurn = turns[1]
+    expect(assistantTurn?.kind).toBe("assistant")
+    if (assistantTurn?.kind !== "assistant") return
+
+    expect(assistantTurn.items.map((item) => item.kind)).toEqual(["compaction", "text", "system"])
+    expect(assistantTurn.items[0]).toMatchObject({
+      kind: "compaction",
+      title: "Context auto-compacted",
+    })
+    expect(JSON.stringify(turns)).not.toContain("Secret compacted summary")
+    expect(JSON.stringify(turns)).not.toContain("<compacted_history>")
   })
 
   it("restores referenced file tags from persisted user history", () => {
