@@ -1,6 +1,6 @@
 {
   "name": "fanfande_studio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -11,6 +11,7 @@
     "dev:error": "corepack pnpm --filter fanfande-desktop-agent dev:error",
     "build": "corepack pnpm --filter fanfande-desktop-agent build",
     "dist": "corepack pnpm --filter fanfande-desktop-agent dist",
+    "dist:publish": "corepack pnpm --filter fanfande-desktop-agent dist:publish",
     "site:build": "corepack pnpm --filter fanfande-site build",
     "site:dev": "corepack pnpm --filter fanfande-site dev",
     "site:preview": "corepack pnpm --filter fanfande-site preview",

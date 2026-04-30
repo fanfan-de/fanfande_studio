@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from "react"
 import { APPEARANCE_TOKEN_GROUPS, type AppearanceTokenMap, type AppearanceTokenName } from "../../../../shared/appearance"
+import type { DesktopAppUpdateSettings } from "../../../../shared/desktop-ipc-contract"
 import {
   ArchiveIcon,
   CloseIcon,
@@ -42,7 +43,12 @@ import type {
   ProviderModel
 } from "../types"
 import { clamp, formatTime } from "../utils"
-import { openExternalUrl } from "./client"
+import {
+  checkForAppUpdates,
+  getAppUpdateSettings,
+  openExternalUrl,
+  setAutomaticUpdatesEnabled,
+} from "./client"
 
 const assistantTraceVisibilityOptions: Array<{
   key: AssistantTraceVisibilityKey
@@ -499,7 +505,12 @@ function getBuiltinToolRiskBadgeClassName(tool: BuiltinToolSummary) {
   return "settings-badge"
 }
 
-type SettingsSectionKey = "services" | "defaults" | "mcp" | "tools" | "prompts" | "appearance" | "developer" | "archive"
+type SettingsSectionKey = "general" | "services" | "defaults" | "mcp" | "tools" | "prompts" | "appearance" | "developer" | "archive"
+
+type AppUpdateStatus = {
+  tone: "success" | "error" | "muted"
+  text: string
+}
 
 const SETTINGS_PAGE_DRAG_MARGIN = 16
 
@@ -773,7 +784,11 @@ export function SettingsPage({
   onCancelProviderAuthFlow,
 }: SettingsPageProps) {
   {
-    const [activeSection, setActiveSection] = useState<SettingsSectionKey>("services")
+    const [activeSection, setActiveSection] = useState<SettingsSectionKey>("general")
+    const [appUpdateSettings, setAppUpdateSettings] = useState<DesktopAppUpdateSettings | null>(null)
+    const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null)
+    const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(false)
+    const [isSavingAutomaticUpdates, setIsSavingAutomaticUpdates] = useState(false)
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
     const [providerApiKeyModes, setProviderApiKeyModes] = useState<Record<string, ProviderApiKeyMode>>({})
@@ -867,6 +882,8 @@ export function SettingsPage({
     const mcpServerCanSave = !mcpServerValidationError
     const showLoadedState = !isLoading && !loadError
     const showProviderSections = activeSection === "services" || activeSection === "defaults" || activeSection === "mcp"
+    const appVersionLabel = appUpdateSettings?.version ? `Version ${appUpdateSettings.version}` : "Version ..."
+    const automaticUpdatesEnabled = appUpdateSettings?.automaticUpdates ?? true
     const enabledBuiltinToolCount = builtinTools.filter((tool) => tool.enabled).length
     const builtinToolKindOrder = ["exec", "write", "delegation", "workflow", "interaction", "search", "read", "other"] as const
     const builtinToolGroups = builtinToolKindOrder
@@ -895,9 +912,33 @@ export function SettingsPage({
       )
     useEffect(() => {
       if (!isOpen) {
-        setActiveSection("services")
+        setActiveSection("general")
         setSelectedProviderID(null)
         setProviderSearch("")
+        setAppUpdateStatus(null)
+      }
+    }, [isOpen])
+
+    useEffect(() => {
+      if (!isOpen) return
+
+      let disposed = false
+      void getAppUpdateSettings()
+        .then((settings) => {
+          if (disposed || !settings) return
+          setAppUpdateSettings(settings)
+        })
+        .catch((error: unknown) => {
+          if (disposed) return
+          const message = error instanceof Error ? error.message : String(error)
+          setAppUpdateStatus({
+            tone: "error",
+            text: `Unable to load update settings. ${message}`,
+          })
+        })
+
+      return () => {
+        disposed = true
       }
     }, [isOpen])
 
@@ -1060,6 +1101,81 @@ export function SettingsPage({
       onClose()
     }
 
+    async function refreshAppUpdateSettings() {
+      const settings = await getAppUpdateSettings()
+      if (settings) {
+        setAppUpdateSettings(settings)
+      }
+      return settings
+    }
+
+    function getManualUpdateCheckStatusText(result: Awaited<ReturnType<typeof checkForAppUpdates>> | null) {
+      if (!result) return "Update check requested."
+      if (!result.ok) return result.error ? `Update check failed. ${result.error}` : "Update check failed."
+      if (result.reason === "not-packaged") return "Update checks run in packaged builds."
+      if (result.reason === "already-checking") return "An update check is already in progress."
+      return "Update check started."
+    }
+
+    async function handleCheckForUpdates() {
+      if (isCheckingAppUpdate) return
+
+      setIsCheckingAppUpdate(true)
+      setAppUpdateStatus({
+        tone: "muted",
+        text: "Checking for updates...",
+      })
+
+      try {
+        const result = await checkForAppUpdates()
+        setAppUpdateStatus({
+          tone: result?.ok === false ? "error" : "success",
+          text: getManualUpdateCheckStatusText(result),
+        })
+        await refreshAppUpdateSettings()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setAppUpdateStatus({
+          tone: "error",
+          text: `Update check failed. ${message}`,
+        })
+      } finally {
+        setIsCheckingAppUpdate(false)
+      }
+    }
+
+    async function handleAutomaticUpdatesToggle() {
+      if (!appUpdateSettings || isSavingAutomaticUpdates) return
+
+      const enabled = !appUpdateSettings.automaticUpdates
+      setIsSavingAutomaticUpdates(true)
+      setAppUpdateStatus(null)
+
+      try {
+        const settings = await setAutomaticUpdatesEnabled(enabled)
+        if (settings) {
+          setAppUpdateSettings(settings)
+        } else {
+          setAppUpdateSettings({
+            ...appUpdateSettings,
+            automaticUpdates: enabled,
+          })
+        }
+        setAppUpdateStatus({
+          tone: "success",
+          text: enabled ? "Automatic updates enabled." : "Automatic updates disabled.",
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setAppUpdateStatus({
+          tone: "error",
+          text: `Unable to save automatic update setting. ${message}`,
+        })
+      } finally {
+        setIsSavingAutomaticUpdates(false)
+      }
+    }
+
     function setProviderApiKeyMode(providerID: string, mode: ProviderApiKeyMode) {
       setProviderApiKeyModes((current) => ({
         ...current,
@@ -1164,6 +1280,7 @@ export function SettingsPage({
       {
         label: "\u9009\u9879",
         items: [
+          { key: "general" as const, label: "关于", Icon: MonitorIcon },
           { key: "services" as const, label: "Provider", Icon: SettingsIcon },
           { key: "defaults" as const, label: "Models", Icon: ConnectedStatusIcon },
           { key: "mcp" as const, label: "MCP", Icon: FolderIcon },
@@ -1297,7 +1414,56 @@ export function SettingsPage({
                 </article>
               ) : null}
 
-              {activeSection === "tools" ? (
+              {activeSection === "general" ? (
+                <div className="settings-general-layout">
+                  <section className="settings-panel settings-about-panel" aria-label="About Fanfande Studio">
+                    <div className="settings-about-row settings-about-version-row">
+                      <div className="settings-about-copy">
+                        <span className="label">About</span>
+                        <h3>{appVersionLabel}</h3>
+                        <p>Fanfande Studio desktop application.</p>
+                      </div>
+                      <button
+                        className="primary-button settings-about-check-button"
+                        type="button"
+                        disabled={isCheckingAppUpdate}
+                        onClick={() => void handleCheckForUpdates()}
+                      >
+                        {isCheckingAppUpdate ? "Checking..." : "Check for updates"}
+                      </button>
+                    </div>
+
+                    <div className="settings-about-divider" />
+
+                    <button
+                      className={
+                        automaticUpdatesEnabled
+                          ? "settings-about-toggle-row is-active"
+                          : "settings-about-toggle-row"
+                      }
+                      type="button"
+                      role="switch"
+                      aria-checked={automaticUpdatesEnabled}
+                      disabled={!appUpdateSettings || isSavingAutomaticUpdates}
+                      onClick={() => void handleAutomaticUpdatesToggle()}
+                    >
+                      <span className="settings-about-copy">
+                        <span className="settings-about-title">Automatic updates</span>
+                        <span className="settings-about-description">
+                          Turn this off to prevent the app from checking for updates.
+                        </span>
+                      </span>
+                      <span className="settings-toggle-control" aria-hidden="true">
+                        <span className="settings-toggle-thumb" />
+                      </span>
+                    </button>
+
+                    {appUpdateStatus ? (
+                      <p className={`settings-about-status is-${appUpdateStatus.tone}`}>{appUpdateStatus.text}</p>
+                    ) : null}
+                  </section>
+                </div>
+              ) : activeSection === "tools" ? (
                 isLoadingBuiltinTools ? null : (
                   <section className="settings-panel settings-tools-panel" aria-label="Built-in tools">
                     <div className="settings-tools-header">

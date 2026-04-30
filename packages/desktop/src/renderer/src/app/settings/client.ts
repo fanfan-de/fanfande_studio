@@ -1,3 +1,20 @@
+import type { DesktopIpcInput, DesktopIpcOutput } from "../../../../shared/desktop-ipc-contract"
+
 export async function openExternalUrl(url: string) {
   await window.desktop?.openExternalUrl?.({ url })
+}
+
+export async function getAppUpdateSettings(): Promise<DesktopIpcOutput<"desktop:get-app-update-settings"> | null> {
+  return window.desktop?.getAppUpdateSettings?.() ?? null
+}
+
+export async function setAutomaticUpdatesEnabled(
+  enabled: boolean,
+): Promise<DesktopIpcOutput<"desktop:set-automatic-updates-enabled"> | null> {
+  const input: DesktopIpcInput<"desktop:set-automatic-updates-enabled"> = { enabled }
+  return window.desktop?.setAutomaticUpdatesEnabled?.(input) ?? null
+}
+
+export async function checkForAppUpdates(): Promise<DesktopIpcOutput<"desktop:check-for-app-updates"> | null> {
+  return window.desktop?.checkForAppUpdates?.() ?? null
 }

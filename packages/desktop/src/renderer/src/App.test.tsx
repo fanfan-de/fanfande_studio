@@ -7748,7 +7748,8 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Select reasoning effort: Model default" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Select reasoning effort: Medium" }))
+    expect(screen.queryByRole("option", { name: "Model default" })).not.toBeInTheDocument()
     expect(screen.queryByText("Spend more compute on harder or more ambiguous tasks.")).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole("option", { name: /^High/ }))
 

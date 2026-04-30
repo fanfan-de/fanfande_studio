@@ -22,6 +22,8 @@ import type {
   AppearanceConfigSnapshot,
   BuiltinToolSelection,
   BuiltinToolsPayload,
+  DesktopAppUpdateCheckResult,
+  DesktopAppUpdateSettings,
   DesktopIpcChannel,
   DesktopIpcInput,
   DesktopIpcOutput,
@@ -100,6 +102,12 @@ try {
         chrome: string
         node: string
       }>,
+    getAppUpdateSettings: () =>
+      invokeDesktop("desktop:get-app-update-settings") as Promise<DesktopAppUpdateSettings>,
+    setAutomaticUpdatesEnabled: (input: { enabled: boolean }) =>
+      invokeDesktop("desktop:set-automatic-updates-enabled", input) as Promise<DesktopAppUpdateSettings>,
+    checkForAppUpdates: () =>
+      invokeDesktop("desktop:check-for-app-updates") as Promise<DesktopAppUpdateCheckResult>,
     getWindowState: () =>
       invokeDesktop("desktop:get-window-state") as Promise<{
         isMaximized: boolean

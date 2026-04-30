@@ -801,7 +801,7 @@ export function Composer({
     void onModelChange(value)
   }
 
-  function handleReasoningEffortSelect(value: OpenAIReasoningEffort | null) {
+  function handleReasoningEffortSelect(value: OpenAIReasoningEffort) {
     setOpenMenu(null)
     onReasoningEffortChange(value)
   }
@@ -1163,15 +1163,6 @@ export function Composer({
 
               {openMenu === "reasoning" ? (
                 <div className="composer-menu-panel is-scrollbar-hidden" role="listbox" aria-label="Reasoning effort selection">
-                  <button
-                    aria-selected={selectedReasoningEffort === null}
-                    className={selectedReasoningEffort === null ? "composer-menu-option is-selected" : "composer-menu-option"}
-                    onClick={() => handleReasoningEffortSelect(null)}
-                    role="option"
-                    type="button"
-                  >
-                    <span>Model default</span>
-                  </button>
                   {reasoningEffortOptions.map((option) => (
                     <button
                       key={option.value}

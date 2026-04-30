@@ -2,7 +2,12 @@ appId: com.fanfande.studio
 productName: Fanfande Studio
 artifactName: ${productName}-${version}-${arch}.${ext}
 asar: true
+electronUpdaterCompatibility: ">=2.16"
 afterPack: ./scripts/after-pack-icon.cjs
+publish:
+  provider: github
+  owner: fanfan-de
+  repo: fanfande_studio
 directories:
   buildResources: build
   output: dist

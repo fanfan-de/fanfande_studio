@@ -1,4 +1,4 @@
-import { createRef } from "react"
+import { createRef, type ComponentProps } from "react"
 import { fireEvent, render } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTurn, type SessionSummary, type Turn } from "../types"
@@ -55,15 +55,14 @@ function assistantTraceTurn(id: string, items: AssistantTraceItem[], isStreaming
   }
 }
 
-function renderThread(activeTurns: Turn[]) {
+function renderThread(activeTurns: Turn[], overrides: Partial<ComponentProps<typeof ThreadView>> = {}) {
   const threadColumnRef = createRef<HTMLDivElement | null>()
-  const props = {
+  const props: ComponentProps<typeof ThreadView> = {
     activeSession: session,
     activeTurns,
     assistantTraceVisibility: DEFAULT_ASSISTANT_TRACE_VISIBILITY,
     isAgentDebugTraceEnabled: false,
     isResolvingPermissionRequest: false,
-    isSendingQuestionAnswer: false,
     pendingPermissionRequests: [],
     permissionRequestActionError: null,
     permissionRequestActionRequestID: null,
@@ -71,6 +70,7 @@ function renderThread(activeTurns: Turn[]) {
     threadColumnRef,
     onAskUserQuestionAnswer: vi.fn(),
     onPermissionRequestResponse: vi.fn(),
+    ...overrides,
   }
   const view = render(<ThreadView {...props} />)
 
@@ -92,6 +92,45 @@ function setScrollMetrics(element: HTMLElement, input: { clientHeight: number; s
   })
   element.scrollTop = input.scrollTop
 }
+
+describe("ThreadView question prompts", () => {
+  it("keeps option buttons clickable while the assistant turn is waiting for an answer", () => {
+    const onAskUserQuestionAnswer = vi.fn().mockResolvedValue(undefined)
+    const questionItem: AssistantTraceItem = {
+      id: "question-1",
+      kind: "question",
+      timestamp: 1,
+      label: "Question",
+      status: "running",
+      section: "response",
+      visibilityKey: "response",
+      isStreaming: true,
+      questionPrompt: {
+        questionID: "que_target",
+        question: "Where should I deploy?",
+        options: [{ label: "Vercel", value: "vercel", description: "Recommended" }],
+        allowFreeform: false,
+        multiple: false,
+        required: true,
+      },
+    }
+    const { getByRole } = renderThread(
+      [assistantTraceTurn("assistant-1", [questionItem], true)],
+      { onAskUserQuestionAnswer },
+    )
+
+    const optionButton = getByRole("button", { name: "Vercel" }) as HTMLButtonElement
+    expect(optionButton.disabled).toBe(false)
+
+    fireEvent.click(optionButton)
+
+    expect(onAskUserQuestionAnswer).toHaveBeenCalledWith({
+      questionID: "que_target",
+      selectedOptions: ["vercel"],
+      text: "vercel",
+    })
+  })
+})
 
 describe("ThreadView trace collapse", () => {
   it("collapses completed reasoning to the first line and expands from the section", () => {

@@ -185,6 +185,19 @@ export interface DesktopInfo {
   node: string
 }
 
+export interface DesktopAppUpdateSettings {
+  version: string
+  automaticUpdates: boolean
+  updateChecksSupported: boolean
+}
+
+export interface DesktopAppUpdateCheckResult {
+  ok: boolean
+  skipped?: boolean
+  reason?: string
+  error?: string
+}
+
 export interface DesktopWindowState {
   isMaximized: boolean
 }
@@ -284,6 +297,18 @@ export interface DesktopIpcContract {
   "desktop:get-info": {
     input: void
     output: DesktopInfo
+  }
+  "desktop:get-app-update-settings": {
+    input: void
+    output: DesktopAppUpdateSettings
+  }
+  "desktop:set-automatic-updates-enabled": {
+    input: { enabled: boolean }
+    output: DesktopAppUpdateSettings
+  }
+  "desktop:check-for-app-updates": {
+    input: void
+    output: DesktopAppUpdateCheckResult
   }
   "desktop:get-window-state": {
     input: void
@@ -757,6 +782,11 @@ export interface DesktopApiBase {
 
 export interface DesktopApiMethods {
   getInfo(): Promise<DesktopIpcOutput<"desktop:get-info">>
+  getAppUpdateSettings(): Promise<DesktopIpcOutput<"desktop:get-app-update-settings">>
+  setAutomaticUpdatesEnabled(
+    input: DesktopIpcInput<"desktop:set-automatic-updates-enabled">,
+  ): Promise<DesktopIpcOutput<"desktop:set-automatic-updates-enabled">>
+  checkForAppUpdates(): Promise<DesktopIpcOutput<"desktop:check-for-app-updates">>
   getWindowState(): Promise<DesktopIpcOutput<"desktop:get-window-state">>
   getAppearanceConfig(): Promise<DesktopIpcOutput<"desktop:get-appearance-config">>
   saveAppearanceConfig(input: DesktopIpcInput<"desktop:save-appearance-config">): Promise<DesktopIpcOutput<"desktop:save-appearance-config">>

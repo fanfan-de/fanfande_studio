@@ -1,8 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ComponentProps } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type McpServerDraftState } from "../types"
 import { SettingsPage } from "./SettingsPage"
+
+function setDesktopMock(value: unknown) {
+  Object.defineProperty(window, "desktop", {
+    configurable: true,
+    writable: true,
+    value,
+  })
+}
 
 function createMcpDraft(): McpServerDraftState {
   return {
@@ -164,6 +172,48 @@ function createSettingsPageProps(
 }
 
 describe("SettingsPage built-in tools", () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete (window as typeof window & { desktop?: unknown }).desktop
+  })
+
+  it("renders about update controls and saves the automatic update setting", async () => {
+    const getAppUpdateSettings = vi.fn().mockResolvedValue({
+      version: "1.2.3",
+      automaticUpdates: true,
+      updateChecksSupported: true,
+    })
+    const checkForAppUpdates = vi.fn().mockResolvedValue({ ok: true })
+    const setAutomaticUpdatesEnabled = vi.fn().mockResolvedValue({
+      version: "1.2.3",
+      automaticUpdates: false,
+      updateChecksSupported: true,
+    })
+
+    setDesktopMock({
+      getAppUpdateSettings,
+      checkForAppUpdates,
+      setAutomaticUpdatesEnabled,
+    })
+
+    render(<SettingsPage {...createSettingsPageProps()} />)
+
+    expect(await screen.findByText("Version 1.2.3")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Check for updates" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }))
+    await waitFor(() => expect(checkForAppUpdates).toHaveBeenCalledTimes(1))
+
+    const automaticUpdatesSwitch = screen.getByRole("switch", { name: /Automatic updates/i })
+    expect(automaticUpdatesSwitch).toHaveAttribute("aria-checked", "true")
+
+    fireEvent.click(automaticUpdatesSwitch)
+    await waitFor(() => expect(setAutomaticUpdatesEnabled).toHaveBeenCalledWith({ enabled: false }))
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: /Automatic updates/i })).toHaveAttribute("aria-checked", "false"),
+    )
+  })
+
   it("renders a dismiss button for settings messages", () => {
     const onDismissMessage = vi.fn()
 

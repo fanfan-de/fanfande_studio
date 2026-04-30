@@ -108,6 +108,50 @@ function resolveComposerReasoningEffortOptions(model: ProviderModel | null): Com
   }))
 }
 
+function resolveDefaultOpenAIReasoningEffort(
+  model: ProviderModel | null,
+  options: ComposerReasoningEffortOption[],
+): OpenAIReasoningEffort | null {
+  if (!isOpenAIReasoningModel(model) || options.length === 0) return null
+
+  const supported = new Set(options.map((option) => option.value))
+  const normalized = model.id.trim().toLowerCase()
+
+  if (normalized.startsWith("gpt-5-pro") && supported.has("high")) {
+    return "high"
+  }
+
+  if (normalized.startsWith("gpt-5.1") && supported.has("none")) {
+    return "none"
+  }
+
+  if (normalized.startsWith("gpt-5.2") && supported.has("none")) {
+    return "none"
+  }
+
+  if (normalized.startsWith("gpt-5.3-codex-spark") && supported.has("high")) {
+    return "high"
+  }
+
+  if (supported.has("medium")) {
+    return "medium"
+  }
+
+  return options[0]?.value ?? null
+}
+
+function resolveSelectedOpenAIReasoningEffort(
+  selectedReasoningEffort: OpenAIReasoningEffort | null,
+  defaultReasoningEffort: OpenAIReasoningEffort | null,
+  options: ComposerReasoningEffortOption[],
+) {
+  if (selectedReasoningEffort && options.some((option) => option.value === selectedReasoningEffort)) {
+    return selectedReasoningEffort
+  }
+
+  return defaultReasoningEffort
+}
+
 function resolveComposerEffectiveModel(
   selectedModel: string | null,
   models: ProviderModel[],
@@ -160,7 +204,7 @@ function resolveComposerReasoningEffortLabel(
   selectedReasoningEffort: OpenAIReasoningEffort | null,
   options: ComposerReasoningEffortOption[],
 ) {
-  if (!selectedReasoningEffort) return "Model default"
+  if (!selectedReasoningEffort) return ""
   return options.find((option) => option.value === selectedReasoningEffort)?.label ?? OPENAI_REASONING_EFFORT_COPY[selectedReasoningEffort].label
 }
 
@@ -389,8 +433,14 @@ export function useProjectComposer({
   const selectedMcpLabel = resolveComposerMcpLabel(selectedMcpServerIDs, mcpServers, isLoadingMcp)
   const contextWindow = effectiveModel?.limit.context ?? null
   const reasoningEffortOptions = resolveComposerReasoningEffortOptions(effectiveModel)
-  const selectedReasoningEffortLabel = resolveComposerReasoningEffortLabel(
+  const defaultReasoningEffort = resolveDefaultOpenAIReasoningEffort(effectiveModel, reasoningEffortOptions)
+  const effectiveReasoningEffort = resolveSelectedOpenAIReasoningEffort(
     selectedReasoningEffort,
+    defaultReasoningEffort,
+    reasoningEffortOptions,
+  )
+  const selectedReasoningEffortLabel = resolveComposerReasoningEffortLabel(
+    effectiveReasoningEffort,
     reasoningEffortOptions,
   )
 
@@ -540,7 +590,7 @@ export function useProjectComposer({
     selectedMcpServerIDs,
     selectedModel,
     selectedModelLabel,
-    selectedReasoningEffort,
+    selectedReasoningEffort: effectiveReasoningEffort,
     selectedReasoningEffortLabel,
     selectedSkillIDs,
     selectedSkillLabel,

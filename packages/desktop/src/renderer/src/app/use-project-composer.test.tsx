@@ -24,7 +24,7 @@ function createDeferred<T>(): Deferred<T> {
   }
 }
 
-function createModel(providerID: string, id: string): ProviderModel {
+function createModel(providerID: string, id: string, input?: { reasoning?: boolean }): ProviderModel {
   return {
     id,
     providerID,
@@ -33,7 +33,7 @@ function createModel(providerID: string, id: string): ProviderModel {
     available: true,
     capabilities: {
       temperature: true,
-      reasoning: false,
+      reasoning: input?.reasoning ?? false,
       attachment: false,
       toolcall: true,
       input: {
@@ -204,5 +204,33 @@ describe("useProjectComposer model selection", () => {
     await waitFor(() => expect(errorSpy).toHaveBeenCalled())
 
     expect(result.current.selectedModel).toBe("openai/gpt-5.4")
+  })
+
+  it("shows a concrete default reasoning effort for OpenAI reasoning models", async () => {
+    const reasoningModel = createModel("openai", "gpt-5.4", { reasoning: true })
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        getProjectModels: vi.fn(async () => ({
+          effectiveModel: reasoningModel,
+          items: [reasoningModel],
+          selection: {
+            model: "openai/gpt-5.4",
+          },
+        })),
+      } as unknown as typeof window.desktop,
+    })
+
+    const { result } = renderHook(() =>
+      useProjectComposer({
+        attachmentPaths: [],
+        projectID: "project-reasoning-default",
+      }),
+    )
+
+    await waitFor(() => expect(result.current.selectedReasoningEffort).toBe("medium"))
+
+    expect(result.current.selectedReasoningEffortLabel).toBe("Medium")
   })
 })

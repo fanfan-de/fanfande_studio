@@ -5,6 +5,7 @@ import { registerIpcHandlers } from "./ipc"
 import { ensureManagedAgentRunning, stopManagedAgent } from "./managed-agent"
 import { createApplicationMenus } from "./menu"
 import { safeError } from "./safe-console"
+import { checkForAppUpdates, initializeAutoUpdater } from "./updater"
 import { createWindow } from "./window"
 
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
@@ -16,11 +17,19 @@ void app.whenReady().then(async () => {
     safeError("[desktop] failed to start managed agent", error)
   }
 
-  const menus = createApplicationMenus()
+  const menus = createApplicationMenus({
+    onCheckForUpdates: () => {
+      void checkForAppUpdates({ manual: true })
+    },
+  })
   Menu.setApplicationMenu(menus.applicationMenu)
   registerIpcHandlers(menus)
 
   createWindow(mainDir)
+  initializeAutoUpdater()
+  setTimeout(() => {
+    void checkForAppUpdates()
+  }, 3000)
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(mainDir)

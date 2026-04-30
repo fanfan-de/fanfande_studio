@@ -39,7 +39,6 @@ interface ThreadViewProps {
   composerRefreshVersion?: number
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
-  isSendingQuestionAnswer: boolean
   showSessionBanner?: boolean
   onFileChangeSelect?: (file: string) => void
   onOpenSideChat?: (anchorMessageID: string) => void | Promise<void>
@@ -597,7 +596,6 @@ function InlineSideChatThread({
           composerRefreshVersion={composerRefreshVersion}
           isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
           isResolvingPermissionRequest={isResolvingPermissionRequest}
-          isSendingQuestionAnswer={isSending}
           pendingPermissionRequests={pendingPermissionRequests}
           permissionRequestActionError={permissionRequestActionError}
           permissionRequestActionRequestID={permissionRequestActionRequestID}
@@ -605,7 +603,7 @@ function InlineSideChatThread({
           sideChatCountsByAnchorMessageID={{}}
           threadColumnRef={threadColumnRef}
           onAskUserQuestionAnswer={(answer) =>
-            void onAskUserQuestionAnswer({
+            onAskUserQuestionAnswer({
               ...answer,
               sessionID: session.id,
             })
@@ -705,6 +703,7 @@ function TraceItemView({
   const [isExpanded, setIsExpanded] = useState(() => item.kind === "reasoning" && !shouldCollapseTraceItem)
   const [isInputExpanded, setIsInputExpanded] = useState(false)
   const [isOutputExpanded, setIsOutputExpanded] = useState(false)
+  const [isSubmittingQuestionAnswer, setIsSubmittingQuestionAnswer] = useState(false)
   const [freeformAnswer, setFreeformAnswer] = useState("")
   const [selectedQuestionOptions, setSelectedQuestionOptions] = useState<string[]>([])
   const className = [
@@ -726,6 +725,10 @@ function TraceItemView({
     setIsInputExpanded(false)
     setIsOutputExpanded(false)
   }, [item.id, shouldCollapseTraceItem])
+
+  useEffect(() => {
+    setIsSubmittingQuestionAnswer(false)
+  }, [item.id])
 
   function renderDebugEntries() {
     if (!hasDebugEntries) return null
@@ -807,9 +810,10 @@ function TraceItemView({
 
   if (item.kind === "question" && item.questionPrompt) {
     const prompt = item.questionPrompt
-    const isQuestionAnswered = Boolean(prompt.answered || (prompt.questionID && answeredQuestionIDs?.has(prompt.questionID)))
-    const isAnswerDisabled = isQuestionAnswered || isQuestionAnswerDisabled
-    const canSubmitAnswer = Boolean(onAskUserQuestionAnswer)
+    const questionID = prompt.questionID
+    const isQuestionAnswered = Boolean(prompt.answered || (questionID && answeredQuestionIDs?.has(questionID)))
+    const canSubmitAnswer = Boolean(onAskUserQuestionAnswer && questionID)
+    const isAnswerDisabled = isQuestionAnswered || isQuestionAnswerDisabled || isSubmittingQuestionAnswer || !questionID
     const canUseOptionButtons = prompt.options.length > 0 && !prompt.multiple && canSubmitAnswer
     const canUseMultipleSelection = prompt.options.length > 0 && prompt.multiple && canSubmitAnswer
     const trimmedFreeformAnswer = freeformAnswer.trim()
@@ -839,18 +843,37 @@ function TraceItemView({
       )
     }
 
+    async function submitQuestionAnswer(input: {
+      text: string
+      selectedOptions?: string[]
+      freeformText?: string
+    }) {
+      if (!onAskUserQuestionAnswer || isAnswerDisabled || !questionID) return
+
+      setIsSubmittingQuestionAnswer(true)
+      try {
+        await onAskUserQuestionAnswer({
+          text: input.text,
+          questionID,
+          ...(input.selectedOptions && input.selectedOptions.length > 0 ? { selectedOptions: input.selectedOptions } : {}),
+          ...(input.freeformText ? { freeformText: input.freeformText } : {}),
+        })
+      } finally {
+        setIsSubmittingQuestionAnswer(false)
+      }
+    }
+
     function handleStructuredAnswerSubmit(event: FormEvent<HTMLFormElement>) {
       event.preventDefault()
-      if (!onAskUserQuestionAnswer || isAnswerDisabled) return
+      if (isAnswerDisabled) return
 
       const selectedOptions = selectedQuestionOptions.map((value) => value.trim()).filter(Boolean)
       const nextFreeformAnswer = freeformAnswer.trim()
       const answerText = nextFreeformAnswer || selectedOptions.join(", ")
       if (!answerText) return
 
-      void onAskUserQuestionAnswer({
+      void submitQuestionAnswer({
         text: answerText,
-        questionID: prompt.questionID,
         ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
         ...(nextFreeformAnswer ? { freeformText: nextFreeformAnswer } : {}),
       })
@@ -875,9 +898,8 @@ function TraceItemView({
                       className="ask-user-question-option-button"
                       disabled={isAnswerDisabled}
                       onClick={() =>
-                        void onAskUserQuestionAnswer?.({
+                        void submitQuestionAnswer({
                           text: option.value,
-                          questionID: prompt.questionID,
                           selectedOptions: [option.value],
                         })}
                       type="button"
@@ -1309,7 +1331,6 @@ export function ThreadView({
   composerRefreshVersion = 0,
   isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
-  isSendingQuestionAnswer,
   showSessionBanner = true,
   onFileChangeSelect,
   onOpenSideChat,
@@ -1474,7 +1495,7 @@ export function ThreadView({
                     ) : (
                       <AssistantTurnSections
                         answeredQuestionIDs={answeredQuestionIDs}
-                        isQuestionAnswerDisabled={isSendingQuestionAnswer || isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
+                        isQuestionAnswerDisabled={isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
                         turnID={turn.id}
                         items={traceItems}
                         onAskUserQuestionAnswer={onAskUserQuestionAnswer}

@@ -1,12 +1,16 @@
 import { app, Menu, type MenuItemConstructorOptions } from "electron"
 import type { MenuKey } from "./types"
 
+export interface ApplicationMenuOptions {
+  onCheckForUpdates?: () => void
+}
+
 export interface ApplicationMenus {
   applicationMenu: Menu
   popupMenus: Record<MenuKey, Menu>
 }
 
-export function createApplicationMenus(): ApplicationMenus {
+export function createApplicationMenus(options: ApplicationMenuOptions = {}): ApplicationMenus {
   const isMac = process.platform === "darwin"
   const appMenu: MenuItemConstructorOptions[] = [
     { role: "about" },
@@ -44,6 +48,13 @@ export function createApplicationMenus(): ApplicationMenus {
     ? [{ role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" }]
     : [{ role: "minimize" }, { role: "close" }]
   const helpMenu: MenuItemConstructorOptions[] = [
+    {
+      label: "Check for Updates...",
+      click: () => {
+        options.onCheckForUpdates?.()
+      },
+    },
+    { type: "separator" },
     {
       label: "About Fanfande Desktop",
       click: () => {

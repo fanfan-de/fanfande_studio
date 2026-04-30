@@ -493,6 +493,7 @@ body.is-dragging-settings-page {
 .settings-service-list-panel,
 .settings-service-detail-panel,
 .settings-default-layout,
+.settings-general-layout,
 .settings-appearance-layout,
 .settings-developer-layout,
 .settings-archive-layout {
@@ -520,6 +521,107 @@ body.is-dragging-settings-page {
 .settings-provider-search-row .secondary-button {
   min-width: 86px;
   white-space: nowrap;
+}
+
+.settings-about-panel {
+  gap: 0;
+}
+
+.settings-about-row,
+.settings-about-toggle-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.settings-about-version-row {
+  min-height: 82px;
+}
+
+.settings-about-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.settings-about-copy h3 {
+  margin: 0;
+  color: var(--seg-text-1);
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 650;
+}
+
+.settings-about-copy p,
+.settings-about-description {
+  margin: 0;
+  color: var(--seg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.settings-about-title {
+  color: var(--seg-text-1);
+  font-size: 18px;
+  line-height: 1.28;
+  font-weight: 640;
+}
+
+.settings-about-divider {
+  height: 1px;
+  margin: 16px 0 18px;
+  background: var(--seg-border);
+}
+
+.settings-about-check-button {
+  flex: 0 0 auto;
+  min-width: 148px;
+}
+
+.settings-about-toggle-row {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-about-toggle-row:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.settings-about-toggle-row:focus-visible {
+  outline: 2px solid var(--mix-seg-accent-42-seg-border-58);
+  outline-offset: 6px;
+}
+
+.settings-about-toggle-row.is-active .settings-toggle-control {
+  border-color: var(--seg-accent);
+  background: var(--seg-accent);
+}
+
+.settings-about-toggle-row.is-active .settings-toggle-thumb {
+  transform: translateX(20px);
+}
+
+.settings-about-status {
+  margin: 18px 0 0;
+  color: var(--seg-text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.settings-about-status.is-success {
+  color: var(--seg-success-text);
+}
+
+.settings-about-status.is-error {
+  color: var(--seg-danger-text);
 }
 
 .settings-prompt-library-panel {
@@ -1136,6 +1238,16 @@ body.is-dragging-settings-page {
 }
 
 @media (max-width: 900px) {
+  .settings-about-row,
+  .settings-about-toggle-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .settings-about-check-button {
+    width: 100%;
+  }
+
   .settings-tools-header {
     flex-direction: column;
   }

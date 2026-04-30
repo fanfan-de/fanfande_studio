@@ -27,6 +27,11 @@ import {
 import type { ApplicationMenus } from "./menu"
 import { PtyProxyManager } from "./pty-proxy"
 import { safeWarn } from "./safe-console"
+import {
+  checkForAppUpdates,
+  getAppUpdateSettingsSnapshot,
+  setAutomaticAppUpdatesEnabled,
+} from "./updater"
 import type {
   AgentArchivedSessionDeleteResult,
   AgentArchivedSessionSummary,
@@ -417,6 +422,14 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     chrome: process.versions.chrome,
     node: process.versions.node,
   }))
+
+  handleDesktopIpc("desktop:get-app-update-settings", async () => getAppUpdateSettingsSnapshot())
+
+  handleDesktopIpc("desktop:set-automatic-updates-enabled", async (_event, input: { enabled: boolean }) =>
+    setAutomaticAppUpdatesEnabled(input.enabled),
+  )
+
+  handleDesktopIpc("desktop:check-for-app-updates", async () => checkForAppUpdates({ manual: true }))
 
   handleDesktopIpc("desktop:get-window-state", (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)

@@ -338,7 +338,6 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 assistantTraceVisibility={assistantTraceVisibility}
                 composerRefreshVersion={composerRefreshVersion}
                 isResolvingPermissionRequest={isResolvingPermissionRequest}
-                isSendingQuestionAnswer={pane.isSending}
                 isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
                 pendingPermissionRequests={pane.pendingPermissionRequests}
                 permissionRequestActionError={permissionRequestActionError}
@@ -356,7 +355,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 threadColumnRef={threadColumnRef}
                 onSessionModelSelectionChange={onSessionModelSelectionChange}
                 onAskUserQuestionAnswer={(answer) =>
-                  void onAskUserQuestionAnswer({
+                  onAskUserQuestionAnswer({
                     freeformText: answer.freeformText,
                     questionID: answer.questionID,
                     selectedOptions: answer.selectedOptions,
