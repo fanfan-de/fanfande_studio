@@ -470,3 +470,19 @@ All three tools return standard `ToolOutput` text plus JSON metadata with:
 - optional `parentNotification` with `status`, `updatedAt`, and optional `reason`
 
 `toModelOutput()` for these tools always returns structured JSON so the parent agent can reason about child-task state without reparsing raw prose.
+
+## 12. Addendum: read-file budget and structured output
+
+`read-file` now treats `file_path` as the primary path field and keeps `path` only as a deprecated compatibility alias. When both are provided, they must match.
+
+The tool supports project-relative paths and explicit absolute paths outside the active project. Relative paths still resolve through the project boundary helper, so project-relative symlink escapes remain blocked.
+
+Read output is bounded inside the tool instead of relying on large-result persistence:
+
+- `maxLines` is capped at 2000.
+- Missing `endLine` defaults to the first 250 lines from `startLine`.
+- Explicit `endLine` ranges are still capped by `maxLines` or the 2000-line hard limit.
+- `maxOutputChars` defaults to 25000 and is capped at 50000.
+- `maxResultSizeChars` remains `Infinity` for this tool, so read-file does not spill large results into session tool-result files.
+
+The tool still returns human-readable `text`, but the same bounded result is also returned in `metadata` and `data` with `kind: "text"`, file stat data, line range data, budget/truncation flags, and bounded numbered-line content. `toModelOutput()` serializes that structured object as JSON. The `kind` field is reserved as the future multimodal discriminator; currently only `text` is emitted, with `image`, `pdf`, `notebook`, and `parts` reserved for later expansion.

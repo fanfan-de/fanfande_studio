@@ -257,6 +257,54 @@ test("resolveTools honors Infinity maxResultSizeChars opt-out", async () => {
   }
 })
 
+test("read-file caps output before the persistence layer", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fanfande-read-file-no-persist-"))
+  const sessionID = "ses_read_file_no_persist"
+  cleanupSessions.add(sessionID)
+
+  try {
+    await writeFile(
+      join(root, "large.txt"),
+      Array.from({ length: 400 }, (_, index) =>
+        `line ${index + 1} ${"x".repeat(120)}`,
+      ).join("\n"),
+    )
+
+    await Instance.provide({
+      directory: root,
+      async fn() {
+        const agent = await Agent.get("default")
+        expect(agent).toBeDefined()
+        const tools = await resolveTools({
+          agent: agent!,
+          sessionID,
+          messageID: "msg-read-file-no-persist",
+          abort: new AbortController().signal,
+        })
+
+        const output = await (tools["read-file"] as any).execute({
+          file_path: "large.txt",
+          startLine: 1,
+          endLine: 400,
+          maxOutputChars: 1_000,
+        }, {
+          toolCallId: "tool-read-file-no-persist",
+          messages: [],
+        })
+
+        expect(output.text).toContain("content output was truncated")
+        expect(output.text).not.toContain("<persisted-output>")
+        expect(output.metadata.budget.truncatedByLineBudget).toBe(false)
+        expect(output.metadata.budget.truncatedByCharBudget).toBe(true)
+        expect(output.metadata.budget.resultPersistence).toBe("disabled")
+        expect(ToolResultPersistence.readPersistedOutputMetadata(output.metadata)).toBeUndefined()
+      },
+    })
+  } finally {
+    await removeTreeWithRetry(root)
+  }
+})
+
 test("toModelMessages replays persisted replacement instead of stored modelOutput", async () => {
   const sessionID = "ses_replay_unit"
   cleanupSessions.add(sessionID)

@@ -104,11 +104,67 @@ test("permission defaults allow reads and ask writes while honoring tool deny in
 
         expect(readDecision.action).toBe("allow")
         expect(writeDecision.action).toBe("ask")
+        expect(writeDecision.derived.paths).toContain("README.md")
         expect(execDecision.action).toBe("deny")
       },
     })
   } finally {
     await rm(repositoryRoot, { recursive: true, force: true })
+  }
+}, 120000)
+
+test("permission allows read-only tools to reference outside paths", async () => {
+  const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-permission-read-outside-"))
+  const outsideRoot = await mkdtemp(path.join(tmpdir(), "fanfande-permission-read-outside-target-"))
+
+  try {
+    await createGitRepo(repositoryRoot, "permission-read-outside")
+
+    await Instance.provide({
+      directory: repositoryRoot,
+      async fn() {
+        const outsideFile = path.join(outsideRoot, "outside.txt")
+        const base = {
+          sessionID: Identifier.ascending("session"),
+          messageID: Identifier.ascending("message"),
+          projectID: Instance.project.id,
+          agent: "default",
+          cwd: Instance.directory,
+          worktree: Instance.worktree,
+          input: {
+            file_path: outsideFile,
+          },
+        }
+
+        const readDecision = await Permission.evaluate({
+          ...base,
+          tool: {
+            id: "read-file",
+            kind: "read",
+            readOnly: true,
+            destructive: false,
+            needsShell: false,
+          },
+        })
+        const writeDecision = await Permission.evaluate({
+          ...base,
+          tool: {
+            id: "replace-text",
+            kind: "write",
+            readOnly: false,
+            destructive: false,
+            needsShell: false,
+          },
+        })
+
+        expect(readDecision.action).toBe("allow")
+        expect(writeDecision.action).toBe("deny")
+        expect(readDecision.derived.paths).toContain(outsideFile.replaceAll("\\", "/"))
+      },
+    })
+  } finally {
+    await rm(repositoryRoot, { recursive: true, force: true })
+    await rm(outsideRoot, { recursive: true, force: true })
   }
 }, 120000)
 

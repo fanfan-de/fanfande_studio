@@ -1705,6 +1705,92 @@ describe("tool contract", () => {
     }
   }, 120000)
 
+  it("returns structured read-file data and caps explicit ranges", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-read-file-budget-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "read-file-budget")
+      const text = Array.from({ length: 10 }, (_, index) =>
+        `line ${index + 1} ${"x".repeat(32)}`,
+      ).join("\n")
+      await writeFile(path.join(repositoryRoot, "budget.txt"), text)
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await ReadFileTool.init()
+          const result = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              file_path: "budget.txt",
+              startLine: 1,
+              endLine: 8,
+              maxLines: 3,
+              maxOutputChars: 120,
+            },
+            {
+              sessionID: "session-read-file-budget",
+              messageID: "message-read-file-budget",
+            },
+          ))
+
+          expect(result.title).toBe("Read budget.txt")
+          expect(result.text).toContain("Lines: 1-3 of 10")
+          expect(result.text).toContain("line output was truncated")
+          expect(result.text).not.toContain("4 | line 4")
+          expect(result.metadata?.kind).toBe("text")
+          expect(result.metadata?.contentFormat).toBe("numbered-lines")
+          expect((result.metadata?.budget as any)?.resultPersistence).toBe("disabled")
+
+          const modelOutput = await runtime.toModelOutput?.(result)
+          expect(modelOutput).toMatchObject({
+            type: "json",
+            value: {
+              kind: "text",
+              displayPath: "budget.txt",
+            },
+          })
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+    }
+  }, 120000)
+
+  it("reads explicit absolute text files outside the project", async () => {
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-read-outside-project-"))
+    const outsideRoot = await mkdtemp(path.join(tmpdir(), "fanfande-read-outside-source-"))
+
+    try {
+      await createGitRepo(repositoryRoot, "read-outside-project")
+      const outsideFile = path.join(outsideRoot, "outside.txt")
+      await writeFile(outsideFile, "outside project\n")
+
+      await Instance.provide({
+        directory: repositoryRoot,
+        async fn() {
+          const runtime = await ReadFileTool.init()
+          const result = Tool.normalizeToolOutput(await runtime.execute(
+            {
+              file_path: outsideFile,
+            },
+            {
+              sessionID: "session-read-outside",
+              messageID: "message-read-outside",
+            },
+          ))
+
+          expect(result.title).toBe(`Read ${outsideFile}`)
+          expect(result.text).toContain("outside project")
+          expect(result.metadata?.path).toBe(outsideFile)
+          expect(result.metadata?.displayPath).toBe(outsideFile)
+        },
+      })
+    } finally {
+      await rm(repositoryRoot, { recursive: true, force: true })
+      await rm(outsideRoot, { recursive: true, force: true })
+    }
+  }, 120000)
+
   it("rejects binary files for text reads", async () => {
     const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-read-binary-"))
 

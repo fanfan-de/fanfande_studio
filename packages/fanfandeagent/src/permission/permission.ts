@@ -230,7 +230,7 @@ function resolvePathCandidate(inputPath: string, cwd: string, worktree?: string)
 function collectPathInputs(input: Record<string, unknown>, intent?: Tool.ToolPermissionIntent) {
   const raw = new Set<string>()
 
-  for (const key of ["path", "workdir"]) {
+  for (const key of ["path", "file_path", "workdir"]) {
     const value = input[key]
     if (typeof value === "string" && value.trim()) {
       raw.add(value.trim())
@@ -513,10 +513,10 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
     return result
   }
 
-  if (derivedPaths.hasOutsidePath) {
+  if (derivedPaths.hasOutsidePath && input.tool.readOnly !== true) {
     const result: EvaluationResult = {
       action: "deny",
-      reason: "Tool input referenced a path outside the active project boundary.",
+      reason: "Tool input referenced a path outside the active project boundary for a tool with side effects.",
       risk: "critical",
       derived,
     }
