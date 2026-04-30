@@ -9,7 +9,6 @@ import { fn } from "#util/fn.ts"
 import * as db from "#database/Sqlite.ts"
 import * as EventStore from "#session/event-store.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
-import * as SessionCompaction from "#session/compaction-store.ts"
 import * as TaskSchema from "#session/task-schema.ts"
 import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
 
@@ -657,7 +656,7 @@ function snapshotFromAnchorMessage(input: {
   const anchorMessage = messages[anchorIndex]!
   const anchorUserMessage = [...messages.slice(0, anchorIndex)]
     .reverse()
-    .find((message) => message.info.role === "user")
+    .find((message) => message.info.role === "user" && !message.info.internal)
 
   const assistantText = anchorMessage.parts
     .filter((part): part is Message.TextPart => part.type === "text")
@@ -878,7 +877,6 @@ function removeSession(sessionID: string): SessionInfo | null {
   db.deleteMany("messages", [{ column: "sessionID", value: sessionID }])
   removeSessionTasks(sessionID)
   EventStore.deleteSessionEvents(sessionID)
-  SessionCompaction.deleteSessionCompactions(sessionID)
   ToolResultPersistence.removeSessionOutputDirectory(sessionID)
   db.deleteById("sessions", sessionID)
   db.deleteById("side_chat_links", sessionID, "sessionID")
@@ -906,7 +904,6 @@ function archiveSessionCascade(sessionID: string): ArchivedSessionRecord[] {
       db.deleteMany("messages", [{ column: "sessionID", value: record.sessionID }])
       removeSessionTasks(record.sessionID)
       EventStore.deleteSessionEvents(record.sessionID)
-      SessionCompaction.deleteSessionCompactions(record.sessionID)
       db.deleteById("sessions", record.sessionID)
     }
   })

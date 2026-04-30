@@ -1,10 +1,10 @@
-import { generateText } from "ai"
+import { generateText, type ModelMessage, type ToolSet } from "ai"
 import * as Config from "#config/config.ts"
 import { Flag } from "#flag/flag.ts"
 import * as Log from "#util/log.ts"
 import * as Message from "#session/message.ts"
 import * as Provider from "#provider/provider.ts"
-import * as SessionCompaction from "#session/compaction-store.ts"
+import * as Session from "#session/session.ts"
 import { Instance } from "#project/instance.ts"
 import * as Identifier from "#id/id.ts"
 
@@ -24,6 +24,20 @@ const PRUNED_TOOL_OUTPUT_CHARS = 1_200
 const EMERGENCY_TOOL_OUTPUT_CHARS = 320
 const MEMORY_BLOCK_MAX_CHARS = 10_000
 const MEMORY_BLOCK_MIN_CHARS = 1_500
+export const CURRENT_SUMMARY_VERSION = 1
+const OPENAI_PROVIDER_ID = "openai"
+const OPENAI_CODEX_API_SEGMENT = "/backend-api/codex"
+const DEFAULT_OPENAI_REASONING_EFFORTS: Message.OpenAIReasoningEffort[] = ["low", "medium", "high"]
+
+const COMPACTION_COMMAND = [
+  "<compaction_instruction>",
+  "Compress the prior conversation messages into durable continuation context.",
+  "Return only the content that belongs inside <compacted_history>; do not include the XML tags themselves.",
+  "Preserve facts needed to continue the task: goals, repository state, important files and code details, decisions, errors, tool outcomes, current progress, and next steps.",
+  "The latest raw messages retained outside this request will be more authoritative than this compacted history if there is a conflict.",
+  "Use the language that best matches the conversation. Do not invent facts.",
+  "</compaction_instruction>",
+].join("\n")
 
 type SessionTurn = {
   messages: Message.WithParts[]
@@ -42,20 +56,28 @@ type PromptBudget = {
 type BuiltPromptWindow = {
   system: string[]
   messages: Message.WithParts[]
+  compactedHistory: Message.WithParts | null
   estimatedTokens: number
   budget: PromptBudget
 }
 
 type SummaryGenerator = (input: {
-  existingSummary?: string
-  transcript: string
+  system: string[]
+  messages: Message.WithParts[]
   model: Provider.Model
+  reasoningEffort?: Message.OpenAIReasoningEffort
+  tools?: ToolSet
 }) => Promise<string>
+
+type CompactionMessageRecorder = (input: {
+  message: Message.User
+  parts: Message.Part[]
+}) => Promise<void> | void
 
 export type PreparedPromptContext = {
   system: string[]
   messages: Message.WithParts[]
-  compaction: SessionCompaction.SessionCompactionRecord | null
+  compactedHistory: Message.WithParts | null
   estimatedTokens: number
   budget: PromptBudget
 }
@@ -65,21 +87,20 @@ export async function preparePromptContext(input: {
   model: Provider.Model
   system: string[]
   messages: Message.WithParts[]
+  reasoningEffort?: Message.OpenAIReasoningEffort
+  tools?: ToolSet
   generateSummary?: SummaryGenerator
+  recordCompactionMessage?: CompactionMessageRecorder
   disableCompaction?: boolean
 }): Promise<PreparedPromptContext> {
   const autoCompact = input.disableCompaction ? false : await isAutoCompactionEnabled()
-  let compaction = SessionCompaction.readLatestSessionCompaction(input.sessionID) ?? null
-  if (input.disableCompaction) {
-    compaction = null
-  }
   const summaryGenerator = input.generateSummary ?? generateCompactionSummary
+  let workingMessages = [...input.messages]
 
   for (let attempt = 0; autoCompact && attempt < MAX_COMPACTION_ATTEMPTS; attempt += 1) {
     const window = buildPromptWindow({
       system: input.system,
-      messages: input.messages,
-      compaction,
+      messages: workingMessages,
       model: input.model,
       allowTurnDropping: false,
     })
@@ -88,56 +109,62 @@ export async function preparePromptContext(input: {
       return {
         system: window.system,
         messages: window.messages,
-        compaction,
+        compactedHistory: window.compactedHistory,
         estimatedTokens: window.estimatedTokens,
         budget: window.budget,
       }
     }
 
-    const turns = turnsAfterCompactionBoundary(input.messages, compaction?.compactedToMessageID)
+    const rawMessages = filterRawConversationMessages(workingMessages)
+    const compactedBoundary = window.compactedHistory
+      ? readCompactionBoundary(window.compactedHistory)?.compactedToMessageID
+      : undefined
+    const turns = turnsAfterCompactionBoundary(rawMessages, compactedBoundary)
     const selectedTurns = selectTurnsForCompaction(turns, window.budget)
     if (selectedTurns.length === 0) {
       return {
         system: window.system,
         messages: window.messages,
-        compaction,
+        compactedHistory: window.compactedHistory,
         estimatedTokens: window.estimatedTokens,
         budget: window.budget,
       }
     }
 
-    const compactionModel = await resolveCompactionModel(input.model)
-    const nextCompaction = await compactTurns({
+    const compactedHistory = await compactTurns({
       sessionID: input.sessionID,
-      existing: compaction,
+      existing: window.compactedHistory,
       turns: selectedTurns,
-      model: compactionModel,
+      system: input.system,
+      model: input.model,
+      reasoningEffort: input.reasoningEffort,
+      tools: input.tools,
       generateSummary: summaryGenerator,
     })
 
-    SessionCompaction.insertSessionCompaction(nextCompaction)
-    compaction = nextCompaction
+    await recordCompactedHistoryMessage(compactedHistory, input.recordCompactionMessage)
+    workingMessages = [...workingMessages, compactedHistory]
 
+    const boundary = readCompactionBoundary(compactedHistory)
     log.info("session history compacted", {
       sessionID: input.sessionID,
-      compactionID: nextCompaction.id,
-      compactedToMessageID: nextCompaction.compactedToMessageID,
-      sourceMessageCount: nextCompaction.sourceMessageCount,
-      estimatedTokens: nextCompaction.estimatedTokens,
+      compactionID: boundary?.compactionID,
+      compactedToMessageID: boundary?.compactedToMessageID,
+      sourceMessageCount: selectedTurns.reduce((total, turn) => total + turn.messages.length, 0),
+      estimatedTokens: estimateMessagesTokens([compactedHistory]),
     })
   }
 
   const window = buildPromptWindow({
     system: input.system,
-    messages: input.messages,
-    compaction,
+    messages: workingMessages,
     model: input.model,
   })
 
   return {
     system: window.system,
     messages: window.messages,
-    compaction,
+    compactedHistory: window.compactedHistory,
     estimatedTokens: window.estimatedTokens,
     budget: window.budget,
   }
@@ -146,27 +173,31 @@ export async function preparePromptContext(input: {
 function buildPromptWindow(input: {
   system: string[]
   messages: Message.WithParts[]
-  compaction: SessionCompaction.SessionCompactionRecord | null
   model: Provider.Model
   allowTurnDropping?: boolean
 }): BuiltPromptWindow {
   const budget = resolvePromptBudget(input.model)
-  const rawTurns = turnsAfterCompactionBoundary(input.messages, input.compaction?.compactedToMessageID)
+  const compactedHistory = readLatestCompactedHistoryMessage(input.messages)
+  const compactedBoundary = compactedHistory
+    ? readCompactionBoundary(compactedHistory)?.compactedToMessageID
+    : undefined
+  const rawMessages = filterRawConversationMessages(input.messages)
+  const rawTurns = turnsAfterCompactionBoundary(rawMessages, compactedBoundary)
   let activeTurns = rawTurns
   let activeMessages = flattenTurns(activeTurns)
-  let summaryText = input.compaction?.summaryText
-  let messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+  let activeCompactedHistory = compactedHistory
+  let messages = prependCompactedHistoryMessage(activeMessages, activeCompactedHistory)
   let estimatedTokens = estimatePromptTokens(input.system, messages)
 
   if (estimatedTokens > budget.hardThreshold) {
     activeMessages = pruneToolOutputsInMessages(activeMessages, PRUNED_TOOL_OUTPUT_CHARS)
-    messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+    messages = prependCompactedHistoryMessage(activeMessages, activeCompactedHistory)
     estimatedTokens = estimatePromptTokens(input.system, messages)
   }
 
   if (estimatedTokens > budget.hardThreshold) {
     activeMessages = pruneToolOutputsInMessages(activeMessages, EMERGENCY_TOOL_OUTPUT_CHARS)
-    messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+    messages = prependCompactedHistoryMessage(activeMessages, activeCompactedHistory)
     estimatedTokens = estimatePromptTokens(input.system, messages)
   }
 
@@ -176,85 +207,92 @@ function buildPromptWindow(input: {
       activeTurns = activeTurns.slice(1)
       activeMessages = flattenTurns(activeTurns)
       activeMessages = pruneToolOutputsInMessages(activeMessages, EMERGENCY_TOOL_OUTPUT_CHARS)
-      messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+      messages = prependCompactedHistoryMessage(activeMessages, activeCompactedHistory)
       estimatedTokens = estimatePromptTokens(input.system, messages)
     }
   }
 
-  if (estimatedTokens > budget.hardThreshold && input.compaction?.summaryText) {
-    summaryText = shrinkSummaryText({
+  if (estimatedTokens > budget.hardThreshold && activeCompactedHistory) {
+    activeCompactedHistory = shrinkCompactedHistoryMessage({
       system: input.system,
       messages: activeMessages,
-      compaction: input.compaction,
-      summaryText: input.compaction.summaryText,
+      compactedHistory: activeCompactedHistory,
       budget,
     })
-    messages = prependCompactedHistoryMessage(activeMessages, input.compaction, summaryText)
+    messages = prependCompactedHistoryMessage(activeMessages, activeCompactedHistory)
     estimatedTokens = estimatePromptTokens(input.system, messages)
   }
 
   return {
     system: [...input.system],
     messages,
+    compactedHistory: activeCompactedHistory,
     estimatedTokens,
     budget,
   }
 }
 
-function prependCompactedHistoryMessage(
-  messages: Message.WithParts[],
-  compaction: SessionCompaction.SessionCompactionRecord | null,
-  summaryText?: string,
-) {
-  const trimmedSummary = summaryText?.trim()
-  if (!compaction || !trimmedSummary) return messages
-
-  return [
-    createCompactedHistoryMessage(compaction, trimmedSummary),
-    ...messages,
-  ]
+function isInternalUserMessage(message: Message.WithParts) {
+  return message.info.role === "user" && message.info.internal === true
 }
 
-function createCompactedHistoryMessage(
-  compaction: SessionCompaction.SessionCompactionRecord,
-  summaryText: string,
-): Message.WithParts {
-  const messageID = `msg_compacted_${compaction.id}`
-  return {
-    info: {
-      id: messageID,
-      sessionID: compaction.sessionID,
-      role: "user",
-      created: compaction.createdAt,
-      agent: "system",
-      model: {
-        providerID: compaction.modelProviderID ?? "internal",
-        modelID: compaction.modelID ?? "compaction",
-      },
-    },
-    parts: [
-      {
-        id: `prt_compacted_${compaction.id}`,
-        sessionID: compaction.sessionID,
-        messageID,
-        type: "text",
-        synthetic: true,
-        metadata: {
-          kind: "compacted-history",
-          compactionID: compaction.id,
-          compactedFromMessageID: compaction.compactedFromMessageID,
-          compactedToMessageID: compaction.compactedToMessageID,
-          summaryVersion: compaction.summaryVersion,
-        },
-        text: [
-          "<compacted_history>",
-          "The following is a durable summary of earlier session history. Recent raw messages that follow are more authoritative if there is any conflict.",
-          summaryText,
-          "</compacted_history>",
-        ].join("\n"),
-      },
-    ],
+function readCompactedHistoryTextPart(message: Message.WithParts) {
+  return message.parts.find((part): part is Message.TextPart => {
+    if (part.type !== "text") return false
+    const metadata = part.metadata
+    return Boolean(
+      metadata &&
+        typeof metadata === "object" &&
+        !Array.isArray(metadata) &&
+        metadata.kind === "compacted-history",
+    )
+  })
+}
+
+function readCompactionBoundary(message: Message.WithParts) {
+  return message.parts.find((part): part is Message.CompactionPart => part.type === "compaction")
+}
+
+function isCompactedHistoryMessage(message: Message.WithParts) {
+  if (!isInternalUserMessage(message)) return false
+  return Boolean(readCompactedHistoryTextPart(message) && readCompactionBoundary(message))
+}
+
+function isLegacyCompactionAssistantMessage(message: Message.WithParts) {
+  return message.info.role === "assistant" && message.parts.some((part) => part.type === "compaction")
+}
+
+function readLatestCompactedHistoryMessage(messages: Message.WithParts[]) {
+  let latest: Message.WithParts | null = null
+  for (const message of messages) {
+    if (!isCompactedHistoryMessage(message)) continue
+    if (!latest) {
+      latest = message
+      continue
+    }
+
+    const messageCreated = readCompactionBoundary(message)?.createdAt ?? message.info.created
+    const latestCreated = readCompactionBoundary(latest)?.createdAt ?? latest.info.created
+    if (messageCreated > latestCreated || (messageCreated === latestCreated && message.info.id > latest.info.id)) {
+      latest = message
+    }
   }
+
+  return latest
+}
+
+function filterRawConversationMessages(messages: Message.WithParts[]) {
+  return messages.filter(
+    (message) => !isInternalUserMessage(message) && !isLegacyCompactionAssistantMessage(message),
+  )
+}
+
+function prependCompactedHistoryMessage(
+  messages: Message.WithParts[],
+  compactedHistory: Message.WithParts | null,
+) {
+  if (!compactedHistory) return messages
+  return [compactedHistory, ...messages]
 }
 
 function resolvePromptBudget(model: Provider.Model): PromptBudget {
@@ -289,127 +327,332 @@ async function isAutoCompactionEnabled() {
 
 async function compactTurns(input: {
   sessionID: string
-  existing: SessionCompaction.SessionCompactionRecord | null
+  existing: Message.WithParts | null
   turns: SessionTurn[]
+  system: string[]
   model: Provider.Model
+  reasoningEffort?: Message.OpenAIReasoningEffort
+  tools?: ToolSet
   generateSummary: SummaryGenerator
 }) {
-  const transcript = renderTurnsForSummary(input.turns)
-  const summaryText = await input.generateSummary({
-    existingSummary: input.existing?.summaryText,
-    transcript,
+  const sourceMessages = [
+    ...(input.existing ? [input.existing] : []),
+    ...flattenTurns(input.turns),
+  ]
+  const generatedSummary = await input.generateSummary({
+    system: input.system,
+    messages: sourceMessages,
     model: input.model,
+    reasoningEffort: input.reasoningEffort,
+    tools: input.tools,
   })
 
-  const compactedFromMessageID = input.existing?.compactedFromMessageID ?? input.turns[0]!.userMessageID
+  const existingBoundary = input.existing ? readCompactionBoundary(input.existing) : undefined
+  const compactedFromMessageID = existingBoundary?.compactedFromMessageID ?? input.turns[0]!.userMessageID
   const compactedToMessageID = input.turns[input.turns.length - 1]!.lastMessageID
-  const sourceMessageCount =
-    (input.existing?.sourceMessageCount ?? 0) +
-    input.turns.reduce((total, turn) => total + turn.messages.length, 0)
-  const normalizedSummaryText = summaryText.trim().slice(0, MEMORY_BLOCK_MAX_CHARS * 2)
+  const summaryText = normalizeCompactedHistoryBody(generatedSummary) || buildFallbackSummary(sourceMessages)
 
-  return SessionCompaction.SessionCompactionRecord.parse({
-    id: Identifier.ascending("compaction"),
+  return createCompactedHistoryMessage({
     sessionID: input.sessionID,
+    model: input.model,
+    summaryText,
     compactedFromMessageID,
     compactedToMessageID,
-    summaryText: normalizedSummaryText,
-    summaryVersion: SessionCompaction.CURRENT_SUMMARY_VERSION,
-    sourceMessageCount,
-    estimatedTokens: estimateStringTokens(normalizedSummaryText),
-    createdAt: Date.now(),
-    modelProviderID: input.model.providerID,
-    modelID: input.model.id,
   })
 }
 
-async function generateCompactionSummary(input: {
-  existingSummary?: string
-  transcript: string
+function createCompactedHistoryMessage(input: {
+  sessionID: string
   model: Provider.Model
+  summaryText: string
+  compactedFromMessageID: string
+  compactedToMessageID: string
+}): Message.WithParts {
+  const createdAt = Date.now()
+  const compactionID = Identifier.ascending("compaction")
+  const message = Message.User.parse({
+    id: Identifier.ascending("message"),
+    sessionID: input.sessionID,
+    role: "user",
+    created: createdAt,
+    agent: "compaction",
+    internal: true,
+    model: {
+      providerID: input.model.providerID,
+      modelID: input.model.id,
+    },
+  })
+
+  const text = Message.TextPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID: input.sessionID,
+    messageID: message.id,
+    type: "text",
+    synthetic: true,
+    metadata: {
+      kind: "compacted-history",
+      compactionID,
+      compactedFromMessageID: input.compactedFromMessageID,
+      compactedToMessageID: input.compactedToMessageID,
+      summaryVersion: CURRENT_SUMMARY_VERSION,
+    },
+    text: wrapCompactedHistoryText(input.summaryText),
+  })
+
+  const marker = Message.CompactionPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID: input.sessionID,
+    messageID: message.id,
+    type: "compaction",
+    auto: true,
+    compactionID,
+    compactedFromMessageID: input.compactedFromMessageID,
+    compactedToMessageID: input.compactedToMessageID,
+    summaryVersion: CURRENT_SUMMARY_VERSION,
+    createdAt,
+  })
+
+  return {
+    info: message,
+    parts: [text, marker],
+  }
+}
+
+async function recordCompactedHistoryMessage(
+  compactedHistory: Message.WithParts,
+  recorder?: CompactionMessageRecorder,
+) {
+  const message = compactedHistory.info
+  if (message.role !== "user") {
+    throw new Error("Compacted history must be recorded as a user message.")
+  }
+
+  if (recorder) {
+    await recorder({ message, parts: compactedHistory.parts })
+    return
+  }
+
+  Session.upsertMessage(message)
+  for (const part of compactedHistory.parts) {
+    Session.upsertPart(part)
+  }
+}
+
+async function generateCompactionSummary(input: {
+  system: string[]
+  messages: Message.WithParts[]
+  model: Provider.Model
+  reasoningEffort?: Message.OpenAIReasoningEffort
+  tools?: ToolSet
 }) {
   try {
     const languageModel = await Provider.getLanguage(input.model, Instance.project.id)
-    const result = await generateText({
-      model: languageModel,
-      temperature: 0,
-      system: [
-        "You compress coding-agent conversation history into durable continuation context.",
-        "Keep only facts that matter for continuing the task after older raw messages are no longer replayed.",
-        "Preserve goals, repository state, important files, code details, decisions, errors, tool outcomes, current progress, and the next likely steps.",
-        "Do not mention that content was omitted. Do not invent facts.",
-        "Write concise Markdown with these headings only:",
-        "## 用户原始需求",
-        "## 做过哪些修改",
-        "## 关键文件和代码",
-        "## 遇到的错误",
-        "## 当前工作进度",
-        "## 下一步应该做什么",
-      ].join("\n"),
-      prompt: [
-        input.existingSummary?.trim()
-          ? `Existing compacted summary:\n${input.existingSummary.trim()}`
-          : "Existing compacted summary:\n(none)",
-        `New transcript to merge:\n${input.transcript}`,
-      ].join("\n\n"),
+    const modelMessages = await Message.toModelMessages(input.messages, input.model)
+    const systemPrompt = input.system.join("\n")
+    const providerOptions = buildProviderOptions({
+      model: input.model,
+      systemPrompt,
+      reasoningEffort: input.reasoningEffort,
     })
+    const prompt: ModelMessage[] = [
+      ...modelMessages,
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: COMPACTION_COMMAND,
+          },
+        ],
+      } as ModelMessage,
+    ]
 
-    if (result.text.trim()) return result.text.trim()
+    try {
+      const withTools = await callCompactionModel({
+        languageModel,
+        system: isOpenAICodexModel(input.model) ? undefined : systemPrompt || undefined,
+        providerOptions,
+        prompt,
+        tools: input.tools,
+        useTools: true,
+      })
+      if (withTools.trim()) return normalizeCompactedHistoryBody(withTools)
+    } catch (toolError) {
+      if (!input.tools || Object.keys(input.tools).length === 0) {
+        throw toolError
+      }
+
+      log.warn("llm compaction with tools failed, retrying without tools", {
+        providerID: input.model.providerID,
+        modelID: input.model.id,
+        error: toolError instanceof Error ? toolError.message : String(toolError),
+      })
+
+      const withoutTools = await callCompactionModel({
+        languageModel,
+        system: isOpenAICodexModel(input.model) ? undefined : systemPrompt || undefined,
+        providerOptions,
+        prompt,
+        useTools: false,
+      })
+      if (withoutTools.trim()) return normalizeCompactedHistoryBody(withoutTools)
+    }
   } catch (error) {
-    log.warn("llm compaction failed, using fallback summary", {
+    log.warn("llm compaction failed", {
       providerID: input.model.providerID,
       modelID: input.model.id,
       error: error instanceof Error ? error.message : String(error),
     })
   }
 
-  return buildFallbackSummary(input.existingSummary, input.transcript)
+  return buildFallbackSummary(input.messages)
 }
 
-function buildFallbackSummary(existingSummary: string | undefined, transcript: string) {
-  const existing = existingSummary?.trim()
-  const transcriptExcerpt = transcript.trim().slice(0, MEMORY_BLOCK_MAX_CHARS)
+async function callCompactionModel(input: {
+  languageModel: unknown
+  system?: string
+  providerOptions?: Record<string, unknown>
+  prompt: ModelMessage[]
+  tools?: ToolSet
+  useTools: boolean
+}) {
+  const settings: Record<string, unknown> = {
+    model: input.languageModel,
+    temperature: 0,
+    system: input.system,
+    prompt: input.prompt,
+    providerOptions: input.providerOptions,
+  }
+
+  if (input.useTools && input.tools && Object.keys(input.tools).length > 0) {
+    settings.tools = input.tools
+    settings.toolChoice = "none"
+  }
+
+  const result = await generateText(settings as any)
+  if (hasToolCalls(result)) {
+    throw new Error("Compaction model returned tool calls.")
+  }
+
+  return result.text.trim()
+}
+
+function hasToolCalls(result: unknown) {
+  const candidate = result as { toolCalls?: unknown }
+  return Array.isArray(candidate.toolCalls) && candidate.toolCalls.length > 0
+}
+
+function isOpenAICodexModel(model: Provider.Model) {
+  return model.providerID === OPENAI_PROVIDER_ID && model.api.url.includes(OPENAI_CODEX_API_SEGMENT)
+}
+
+function isOpenAIReasoningModel(model: Provider.Model) {
+  return model.providerID === OPENAI_PROVIDER_ID && model.capabilities.reasoning
+}
+
+function getSupportedOpenAIReasoningEfforts(modelID: string): Message.OpenAIReasoningEffort[] {
+  const normalized = modelID.trim().toLowerCase()
+  if (!normalized) return DEFAULT_OPENAI_REASONING_EFFORTS
+
+  if (normalized.startsWith("gpt-5-pro")) {
+    return ["high"]
+  }
+
+  if (normalized.startsWith("gpt-5.4-pro") || normalized.startsWith("gpt-5.2-pro")) {
+    return ["medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.4") || normalized.startsWith("gpt-5.2")) {
+    return ["none", "low", "medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.3-codex")) {
+    return ["low", "medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.1-codex-max")) {
+    return ["none", "medium", "high", "xhigh"]
+  }
+
+  if (normalized.startsWith("gpt-5.1")) {
+    return ["none", "low", "medium", "high"]
+  }
+
+  if (normalized.startsWith("gpt-5")) {
+    return ["minimal", "low", "medium", "high"]
+  }
+
+  return DEFAULT_OPENAI_REASONING_EFFORTS
+}
+
+function normalizeOpenAIReasoningEffort(
+  model: Provider.Model,
+  reasoningEffort?: Message.OpenAIReasoningEffort,
+) {
+  if (!reasoningEffort || !isOpenAIReasoningModel(model)) return undefined
+
+  const supported = getSupportedOpenAIReasoningEfforts(model.id)
+  if (supported.includes(reasoningEffort)) {
+    return reasoningEffort
+  }
+
+  log.warn("ignoring unsupported OpenAI reasoning effort for compaction", {
+    modelID: model.id,
+    providerID: model.providerID,
+    reasoningEffort,
+    supported,
+  })
+  return undefined
+}
+
+function buildProviderOptions(input: {
+  model: Provider.Model
+  systemPrompt: string
+  reasoningEffort?: Message.OpenAIReasoningEffort
+}) {
+  if (input.model.providerID !== OPENAI_PROVIDER_ID) return undefined
+
+  const openAIReasoningEffort = normalizeOpenAIReasoningEffort(input.model, input.reasoningEffort)
+  const isOpenAICodex = isOpenAICodexModel(input.model)
+  const isOpenAIReasoning = isOpenAIReasoningModel(input.model)
+  const openAIProviderOptions = {
+    ...(isOpenAICodex
+      ? {
+          store: false,
+          ...(input.systemPrompt
+            ? {
+                instructions: input.systemPrompt,
+              }
+            : {}),
+        }
+      : {}),
+    ...(openAIReasoningEffort
+      ? {
+          reasoningEffort: openAIReasoningEffort,
+        }
+      : {}),
+    ...(isOpenAIReasoning && openAIReasoningEffort !== "none"
+      ? {
+          reasoningSummary: "auto",
+        }
+      : {}),
+  }
+
+  if (Object.keys(openAIProviderOptions).length === 0) return undefined
+  return {
+    openai: openAIProviderOptions,
+  }
+}
+
+function buildFallbackSummary(messages: Message.WithParts[]) {
+  const transcriptExcerpt = renderMessagesForSummary(messages).trim().slice(0, MEMORY_BLOCK_MAX_CHARS)
   return [
-    "## 用户原始需求",
-    existing ? "Continue the existing task based on the prior compacted summary below." : "Continue the active coding task.",
+    "Continue the active task based on the compacted transcript excerpt below.",
     "",
-    "## 做过哪些修改",
-    existing ? existing.slice(0, Math.floor(MEMORY_BLOCK_MAX_CHARS / 2)) : "(no prior summary)",
+    "Use the preserved summary plus the latest raw turns as the source of truth. Reconstruct file context from the transcript excerpt when needed.",
     "",
-    "## 关键文件和代码",
-    "- Review the compacted transcript excerpt below when reconstructing file context.",
-    "",
-    "## 遇到的错误",
-    "- Unknown from fallback compaction unless shown in the transcript excerpt.",
-    "",
-    "## 当前工作进度",
-    "- Use the preserved summary plus the latest raw turns as the source of truth.",
-    "",
-    "## 下一步应该做什么",
     transcriptExcerpt || "(empty transcript)",
   ].join("\n")
-}
-
-async function resolveCompactionModel(fallbackModel: Provider.Model) {
-  try {
-    const selection = await Provider.getSelection(Instance.project.id)
-    const reference = parseModelReference(selection.small_model)
-    if (!reference) return fallbackModel
-    return await Provider.getModel(reference.providerID, reference.modelID, Instance.project.id)
-  } catch {
-    return fallbackModel
-  }
-}
-
-function parseModelReference(value?: string) {
-  if (!value) return
-  const [providerID, ...rest] = value.split("/")
-  const modelID = rest.join("/")
-  if (!providerID || !modelID) return
-  return {
-    providerID,
-    modelID,
-  }
 }
 
 function partitionTurns(messages: Message.WithParts[]) {
@@ -439,6 +682,11 @@ function partitionTurns(messages: Message.WithParts[]) {
 function turnsAfterCompactionBoundary(messages: Message.WithParts[], compactedToMessageID?: string) {
   const turns = partitionTurns(messages)
   if (!compactedToMessageID) return turns
+
+  const boundaryIndex = turns.findIndex((turn) =>
+    turn.messages.some((message) => message.info.id === compactedToMessageID),
+  )
+  if (boundaryIndex >= 0) return turns.slice(boundaryIndex + 1)
 
   return turns.filter((turn) => turn.userMessageID > compactedToMessageID)
 }
@@ -471,13 +719,8 @@ function flattenTurns(turns: SessionTurn[]) {
   return turns.flatMap((turn) => turn.messages)
 }
 
-function renderTurnsForSummary(turns: SessionTurn[]) {
-  return turns
-    .map((turn, index) => {
-      const renderedMessages = turn.messages.map(renderMessageForSummary).join("\n")
-      return [`[Turn ${index + 1}]`, renderedMessages].join("\n")
-    })
-    .join("\n\n")
+function renderMessagesForSummary(messages: Message.WithParts[]) {
+  return messages.map(renderMessageForSummary).join("\n\n")
 }
 
 function renderMessageForSummary(message: Message.WithParts) {
@@ -508,6 +751,8 @@ function renderPartForSummary(part: Message.Part) {
       return `- patch: ${part.files.join(", ")}`
     case "tool":
       return renderToolPartForSummary(part)
+    case "compaction":
+      return ""
     default:
       return ""
   }
@@ -580,25 +825,64 @@ function prunePartForContext(part: Message.Part, maxChars: number): Message.Part
   return part
 }
 
-function shrinkSummaryText(input: {
+function shrinkCompactedHistoryMessage(input: {
   system: string[]
   messages: Message.WithParts[]
-  compaction: SessionCompaction.SessionCompactionRecord
-  summaryText: string
+  compactedHistory: Message.WithParts
   budget: PromptBudget
 }) {
-  let summaryText = input.summaryText
-  let messages = prependCompactedHistoryMessage(input.messages, input.compaction, summaryText)
+  let body = extractCompactedHistoryBody(input.compactedHistory)
+  let compactedHistory = input.compactedHistory
+  let messages = prependCompactedHistoryMessage(input.messages, compactedHistory)
   let estimatedTokens = estimatePromptTokens(input.system, messages)
 
-  while (summaryText.length > MEMORY_BLOCK_MIN_CHARS && estimatedTokens > input.budget.hardThreshold) {
-    const nextLength = Math.max(MEMORY_BLOCK_MIN_CHARS, Math.floor(summaryText.length * 0.85))
-    summaryText = truncateText(summaryText, nextLength)
-    messages = prependCompactedHistoryMessage(input.messages, input.compaction, summaryText)
+  while (body.length > MEMORY_BLOCK_MIN_CHARS && estimatedTokens > input.budget.hardThreshold) {
+    const nextLength = Math.max(MEMORY_BLOCK_MIN_CHARS, Math.floor(body.length * 0.85))
+    body = truncateText(body, nextLength)
+    compactedHistory = replaceCompactedHistoryBody(compactedHistory, body)
+    messages = prependCompactedHistoryMessage(input.messages, compactedHistory)
     estimatedTokens = estimatePromptTokens(input.system, messages)
   }
 
-  return summaryText
+  return compactedHistory
+}
+
+function replaceCompactedHistoryBody(message: Message.WithParts, body: string): Message.WithParts {
+  const textPart = readCompactedHistoryTextPart(message)
+  if (!textPart) return message
+
+  return {
+    ...message,
+    parts: message.parts.map((part) =>
+      part.id === textPart.id
+        ? {
+            ...part,
+            text: wrapCompactedHistoryText(body),
+          }
+        : part,
+    ),
+  }
+}
+
+function extractCompactedHistoryBody(message: Message.WithParts) {
+  const textPart = readCompactedHistoryTextPart(message)
+  if (!textPart) return ""
+  return normalizeCompactedHistoryBody(textPart.text)
+}
+
+function normalizeCompactedHistoryBody(value: string) {
+  const trimmed = value.trim()
+  const match = trimmed.match(/^<compacted_history>\s*([\s\S]*?)\s*<\/compacted_history>$/i)
+  const body = (match ? match[1] ?? "" : trimmed).trim()
+  return body.slice(0, MEMORY_BLOCK_MAX_CHARS * 2)
+}
+
+function wrapCompactedHistoryText(summaryText: string) {
+  return [
+    "<compacted_history>",
+    normalizeCompactedHistoryBody(summaryText),
+    "</compacted_history>",
+  ].join("\n")
 }
 
 function estimatePromptTokens(system: string[], messages: Message.WithParts[]) {
@@ -618,6 +902,7 @@ function estimateMessageTokens(message: Message.WithParts) {
 function estimatePartTokens(part: Message.Part): number {
   switch (part.type) {
     case "text":
+      if (part.ignored) return 0
       return estimateStringTokens(part.text) + 4
     case "reasoning":
       return 0
@@ -635,6 +920,8 @@ function estimatePartTokens(part: Message.Part): number {
       return estimateStringTokens(part.prompt) + estimateStringTokens(part.description) + 12
     case "tool":
       return estimateToolPartTokens(part)
+    case "compaction":
+      return 0
     default:
       return 6
   }

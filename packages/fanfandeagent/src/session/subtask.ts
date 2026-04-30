@@ -341,7 +341,7 @@ function latestUserMessage(sessionID: string): Message.User | undefined {
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    if (message?.role === "user") {
+    if (message?.role === "user" && !message.internal) {
       return message
     }
   }
@@ -356,7 +356,7 @@ function resolveParentUserMessageID(
   parentMessage: Message.MessageInfo | null,
 ) {
   if (!parentMessage) return undefined
-  if (parentMessage.role === "user") return parentMessage.id
+  if (parentMessage.role === "user") return parentMessage.internal ? undefined : parentMessage.id
   if (parentMessage.role !== "assistant") return undefined
   if (isMessageID(parentMessage.parentID)) {
     return parentMessage.parentID
@@ -376,7 +376,7 @@ function resolveParentUserMessageID(
 
   for (let index = parentIndex - 1; index >= 0; index -= 1) {
     const candidate = messages[index]
-    if (candidate?.role === "user") {
+    if (candidate?.role === "user" && !candidate.internal) {
       return candidate.id
     }
   }

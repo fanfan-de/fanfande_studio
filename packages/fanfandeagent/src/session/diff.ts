@@ -68,6 +68,7 @@ export function findLatestUserMessageWithSnapshot(sessionID: string): {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index]
         if (!message || message.role !== "user") continue
+        if (message.internal) continue
         const snapshot = snapshotsByMessageID.get(message.id)
         if (!snapshot) continue
         return {

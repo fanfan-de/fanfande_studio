@@ -567,6 +567,7 @@ export const User = Base.extend({
     system: z.string().optional(),
     skills: z.array(z.string()).optional(),
     tools: z.record(z.string(), z.boolean()).optional(),
+    internal: z.boolean().optional(),
     variant: z.string().optional(),
     reasoningEffort: OpenAIReasoningEffort.optional(),
 }).meta({
@@ -595,7 +596,6 @@ export const Assistant = Base.extend({
         cwd: z.string(),
         root: z.string(),
     }),
-    summary: z.boolean().optional(),
     cost: z.number(),
     tokens: z.object({
         input: z.number(),

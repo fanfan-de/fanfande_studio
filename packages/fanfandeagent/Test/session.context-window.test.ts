@@ -8,7 +8,6 @@ import { Instance } from "#project/instance.ts"
 import * as Identifier from "#id/id.ts"
 import * as Message from "#session/message.ts"
 import * as Session from "#session/session.ts"
-import * as SessionCompaction from "#session/compaction-store.ts"
 import * as ContextWindow from "#session/context-window.ts"
 
 const baseModel = {
@@ -61,7 +60,68 @@ const baseModel = {
   release_date: "2026-01-01",
 }
 
-test("preparePromptContext compacts early turns behind an internal boundary", async () => {
+function compactedHistoryMessage(
+  sessionID: string,
+  input: {
+    text?: string
+    compactedFromMessageID: string
+    compactedToMessageID: string
+    created?: number
+  },
+): Message.WithParts {
+  const created = input.created ?? Date.now()
+  const message = Message.User.parse({
+    id: Identifier.ascending("message"),
+    sessionID,
+    role: "user",
+    created,
+    agent: "compaction",
+    internal: true,
+    model: {
+      providerID: baseModel.providerID,
+      modelID: baseModel.id,
+    },
+  })
+  const compactionID = Identifier.ascending("compaction")
+  const text = Message.TextPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID,
+    messageID: message.id,
+    type: "text",
+    synthetic: true,
+    metadata: {
+      kind: "compacted-history",
+      compactionID,
+      compactedFromMessageID: input.compactedFromMessageID,
+      compactedToMessageID: input.compactedToMessageID,
+      summaryVersion: ContextWindow.CURRENT_SUMMARY_VERSION,
+    },
+    text: [
+      "<compacted_history>",
+      input.text ?? "Earlier turns were compacted.",
+      "</compacted_history>",
+    ].join("\n"),
+  })
+  const marker = Message.CompactionPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID,
+    messageID: message.id,
+    type: "compaction",
+    auto: true,
+    compactionID,
+    compactedFromMessageID: input.compactedFromMessageID,
+    compactedToMessageID: input.compactedToMessageID,
+    summaryVersion: ContextWindow.CURRENT_SUMMARY_VERSION,
+    createdAt: created,
+  })
+
+  return {
+    info: message,
+    parts: [text, marker],
+  }
+}
+
+test("preparePromptContext compacts early turns into an internal user message", async () => {
   const root = await mkdtemp(join(tmpdir(), "fanfande-context-window-"))
   const databaseFile = join(root, "context-window.db")
 
@@ -78,13 +138,14 @@ test("preparePromptContext compacts early turns behind an internal boundary", as
 
         const allMessages: Message.WithParts[] = []
         const compactedBoundaryIDs: string[] = []
+        const baseTime = Date.now()
 
         for (let index = 0; index < 8; index += 1) {
           const user = Message.User.parse({
             id: Identifier.ascending("message"),
             sessionID: session.id,
             role: "user",
-            created: Date.now() + index,
+            created: baseTime + index * 2,
             agent: "default",
             model: {
               providerID: baseModel.providerID,
@@ -96,14 +157,14 @@ test("preparePromptContext compacts early turns behind an internal boundary", as
             sessionID: session.id,
             messageID: user.id,
             type: "text",
-            text: `user-${index} ` + "context ".repeat(10),
+            text: `user-${index} ` + "context ".repeat(3),
           })
 
           const assistant = Message.Assistant.parse({
             id: Identifier.ascending("message"),
             sessionID: session.id,
             role: "assistant",
-            created: Date.now() + 100 + index,
+            created: baseTime + index * 2 + 1,
             parentID: user.id,
             modelID: baseModel.id,
             providerID: baseModel.providerID,
@@ -129,7 +190,7 @@ test("preparePromptContext compacts early turns behind an internal boundary", as
             sessionID: session.id,
             messageID: assistant.id,
             type: "text",
-            text: `assistant-${index} ` + "result ".repeat(12),
+            text: `assistant-${index} ` + "result ".repeat(4),
           })
 
           Session.upsertMessage(user)
@@ -153,44 +214,83 @@ test("preparePromptContext compacts early turns behind an internal boundary", as
           }
         }
 
+        const summaryInputs: Array<{
+          system: string[]
+          messages: Message.WithParts[]
+          tools?: unknown
+        }> = []
         const prepared = await ContextWindow.preparePromptContext({
           sessionID: session.id,
           model: baseModel,
           system: ["base-system"],
           messages: allMessages,
-          generateSummary: async () => [
-            "## Goal",
-            "Continue the coding task.",
-            "",
-            "## Current State",
-            "Earlier turns were compacted.",
-            "",
-            "## Important Files",
-            "- src/session/prompt.ts",
-            "",
-            "## Decisions",
-            "- Use rolling memory.",
-            "",
-            "## Open Issues",
-            "- None.",
-            "",
-            "## Next Useful Context",
-            "Keep the latest raw turns verbatim.",
-          ].join("\n"),
+          generateSummary: async (summaryInput) => {
+            summaryInputs.push(summaryInput)
+            return "Earlier turns were compacted."
+          },
         })
 
-        const compaction = SessionCompaction.readLatestSessionCompaction(session.id)
-        expect(compaction).not.toBeNull()
-        expect(compaction?.compactedToMessageID).toBe(compactedBoundaryIDs[1])
-        expect(prepared.compaction?.id).toBe(compaction?.id)
-        expect(prepared.system.join("\n")).not.toContain("<compacted_history>")
-        expect(prepared.system.join("\n")).not.toContain("Earlier turns were compacted.")
-        expect(prepared.messages[0]?.parts[0]?.type).toBe("text")
-        if (prepared.messages[0]?.parts[0]?.type === "text") {
-          expect(prepared.messages[0].parts[0].text).toContain("<compacted_history>")
-          expect(prepared.messages[0].parts[0].text).toContain("Earlier turns were compacted.")
+        expect(summaryInputs).toHaveLength(1)
+        expect(summaryInputs[0]?.system).toEqual(["base-system"])
+        expect(summaryInputs[0]?.messages.some((message) => message.info.id === allMessages[0]?.info.id)).toBe(true)
+        expect(summaryInputs[0]?.messages.some((message) => message.info.id === allMessages[15]?.info.id)).toBe(false)
+
+        const persistedMessages: Message.WithParts[] = []
+        for await (const message of Message.stream(session.id)) {
+          persistedMessages.push(message)
         }
+
+        const compactedMessage = persistedMessages.find(
+          (message) => message.info.role === "user" && message.info.internal === true,
+        )
+        expect(compactedMessage).toBeDefined()
+        expect(compactedMessage?.info).toMatchObject({
+          role: "user",
+          agent: "compaction",
+          internal: true,
+        })
+
+        const textPart = compactedMessage?.parts.find((part): part is Message.TextPart => part.type === "text")
+        expect(textPart?.text).toContain("<compacted_history>")
+        expect(textPart?.text).toContain("Earlier turns were compacted.")
+        expect(textPart?.text).toContain("</compacted_history>")
+
+        const compactionPart = compactedMessage?.parts.find(
+          (part): part is Message.CompactionPart => part.type === "compaction",
+        )
+        expect(compactionPart).toMatchObject({
+          compactedFromMessageID: allMessages[0]?.info.id,
+          compactedToMessageID: compactedBoundaryIDs[1],
+          summaryVersion: ContextWindow.CURRENT_SUMMARY_VERSION,
+        })
+
+        expect(prepared.compactedHistory?.info.id).toBe(compactedMessage?.info.id)
+        expect(prepared.system.join("\n")).not.toContain("<compacted_history>")
+        expect(prepared.messages[0]?.info.id).toBe(compactedMessage?.info.id)
         expect(prepared.messages.some((message) => message.info.id === allMessages[0]?.info.id)).toBe(false)
+        expect(prepared.messages.some((message) => message.info.id === allMessages[2]?.info.id)).toBe(false)
+
+        const preparedFromPersistedHistory = await ContextWindow.preparePromptContext({
+          sessionID: session.id,
+          model: {
+            ...baseModel,
+            limit: {
+              context: 4_096,
+              input: 3_000,
+              output: 512,
+            },
+          },
+          system: ["base-system"],
+          messages: persistedMessages,
+          disableCompaction: true,
+        })
+        expect(preparedFromPersistedHistory.messages[0]?.info.id).toBe(compactedMessage?.info.id)
+        expect(
+          preparedFromPersistedHistory.messages.some((message) => message.info.id === allMessages[0]?.info.id),
+        ).toBe(false)
+        expect(
+          preparedFromPersistedHistory.messages.some((message) => message.info.id === allMessages[4]?.info.id),
+        ).toBe(true)
       },
     })
   } finally {
@@ -332,46 +432,13 @@ test("preparePromptContext prunes oversized tool outputs when compaction cannot 
 })
 
 test("CompactionPart is internal and is not sent to the model", async () => {
-  const user = Message.User.parse({
-    id: Identifier.ascending("message"),
-    sessionID: "ses_compaction_part_internal",
-    role: "user",
-    created: Date.now(),
-    agent: "default",
-    model: {
-      providerID: baseModel.providerID,
-      modelID: baseModel.id,
-    },
-  })
-  const text = Message.TextPart.parse({
-    id: Identifier.ascending("part"),
-    sessionID: user.sessionID,
-    messageID: user.id,
-    type: "text",
-    text: "Use the visible text only.",
-  })
-  const compactionPart = Message.CompactionPart.parse({
-    id: Identifier.ascending("part"),
-    sessionID: user.sessionID,
-    messageID: user.id,
-    type: "compaction",
-    auto: true,
-    compactionID: Identifier.ascending("compaction"),
+  const compacted = compactedHistoryMessage("ses_compaction_part_internal", {
     compactedFromMessageID: "msg-start",
     compactedToMessageID: "msg-end",
-    summaryVersion: SessionCompaction.CURRENT_SUMMARY_VERSION,
-    createdAt: Date.now(),
+    text: "Use the visible compacted history text only.",
   })
 
-  const modelMessages = await Message.toModelMessages(
-    [
-      {
-        info: user,
-        parts: [text, compactionPart],
-      },
-    ],
-    baseModel,
-  )
+  const modelMessages = await Message.toModelMessages([compacted], baseModel)
 
   expect(modelMessages).toHaveLength(1)
   const content = modelMessages[0]?.content
@@ -380,14 +447,18 @@ test("CompactionPart is internal and is not sent to the model", async () => {
     expect(content).toHaveLength(1)
     expect(content[0]).toMatchObject({
       type: "text",
-      text: "Use the visible text only.",
+      text: [
+        "<compacted_history>",
+        "Use the visible compacted history text only.",
+        "</compacted_history>",
+      ].join("\n"),
     })
   }
 })
 
-test("removing or archiving a session deletes compaction records", async () => {
-  const root = await mkdtemp(join(tmpdir(), "fanfande-context-delete-"))
-  const databaseFile = join(root, "context-delete.db")
+test("archived compacted history is preserved as an ordinary message", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fanfande-context-archive-"))
+  const databaseFile = join(root, "context-archive.db")
 
   try {
     Sqlite.setDatabaseFile(databaseFile)
@@ -400,52 +471,26 @@ test("removing or archiving a session deletes compaction records", async () => {
           projectID: Instance.project.id,
         })
 
-        SessionCompaction.insertSessionCompaction(
-          SessionCompaction.SessionCompactionRecord.parse({
-            id: Identifier.ascending("compaction"),
-            sessionID: session.id,
-            compactedFromMessageID: "msg-start",
-            compactedToMessageID: "msg-end",
-            summaryText: "compacted history",
-            summaryVersion: SessionCompaction.CURRENT_SUMMARY_VERSION,
-            sourceMessageCount: 3,
-            estimatedTokens: 12,
-            createdAt: Date.now(),
-            modelProviderID: baseModel.providerID,
-            modelID: baseModel.id,
-          }),
-        )
-
-        expect(SessionCompaction.readLatestSessionCompaction(session.id)?.summaryText).toBe("compacted history")
-        Session.removeSession(session.id)
-        expect(SessionCompaction.readLatestSessionCompaction(session.id)).toBeNull()
-
-        const archivedSession = await Session.createSession({
-          directory: Instance.directory,
-          projectID: Instance.project.id,
+        const compacted = compactedHistoryMessage(session.id, {
+          compactedFromMessageID: "msg-start",
+          compactedToMessageID: "msg-end",
+          text: "Archived compacted history.",
         })
-        SessionCompaction.insertSessionCompaction(
-          SessionCompaction.SessionCompactionRecord.parse({
-            id: Identifier.ascending("compaction"),
-            sessionID: archivedSession.id,
-            compactedFromMessageID: "msg-start",
-            compactedToMessageID: "msg-end",
-            summaryText: "archived compacted history",
-            summaryVersion: SessionCompaction.CURRENT_SUMMARY_VERSION,
-            sourceMessageCount: 3,
-            estimatedTokens: 12,
-            createdAt: Date.now(),
-            modelProviderID: baseModel.providerID,
-            modelID: baseModel.id,
-          }),
-        )
+        Session.upsertMessage(compacted.info)
+        for (const part of compacted.parts) {
+          Session.upsertPart(part)
+        }
 
-        const archived = Session.archiveSession(archivedSession.id)
-        expect(archived?.snapshot).not.toHaveProperty("memory")
-        expect(SessionCompaction.readLatestSessionCompaction(archivedSession.id)).toBeNull()
+        const archived = Session.archiveSession(session.id)
+        expect(archived?.snapshot.messages.some((message) => message.id === compacted.info.id)).toBe(true)
+        expect(archived?.snapshot.parts.some((part) => part.messageID === compacted.info.id)).toBe(true)
 
-        Session.restoreArchivedSession(archivedSession.id)
-        expect(SessionCompaction.readLatestSessionCompaction(archivedSession.id)).toBeNull()
+        Session.restoreArchivedSession(session.id)
+        const restoredMessages: Message.WithParts[] = []
+        for await (const message of Message.stream(session.id)) {
+          restoredMessages.push(message)
+        }
+        expect(restoredMessages.some((message) => message.info.id === compacted.info.id)).toBe(true)
       },
     })
   } finally {

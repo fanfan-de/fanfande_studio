@@ -326,6 +326,14 @@ type AssistantWithParts = Message.WithParts & {
     info: Message.Assistant
 }
 
+function isInternalUserMessage(message: Message.WithParts) {
+    return message.info.role === "user" && message.info.internal === true
+}
+
+function isLegacyCompactionAssistantMessage(message: Message.WithParts) {
+    return message.info.role === "assistant" && message.parts.some((part) => part.type === "compaction")
+}
+
 // ---------------------------------------------------------------------------
 // 推理循环
 // ---------------------------------------------------------------------------
@@ -358,15 +366,15 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             for (let i = messages.length - 1; i >= 0; i--) {
                 const message = messages[i]!;
 
-                if (!lastUser && message.info.role === "user") {
+                if (!lastUser && message.info.role === "user" && !isInternalUserMessage(message)) {
                     lastUser = message.info as Message.User;
                 }
 
-                if (!lastAssistant && message.info.role === "assistant") {
+                if (!lastAssistant && message.info.role === "assistant" && !isLegacyCompactionAssistantMessage(message)) {
                     lastAssistant = message.info as Message.Assistant;
                 }
 
-                if (!lastFinished && message.info.role === "assistant" && message.info.finishReason) {
+                if (!lastFinished && message.info.role === "assistant" && !isLegacyCompactionAssistantMessage(message) && message.info.finishReason) {
                     lastFinished = message.info as Message.Assistant;
                 }
 
@@ -449,14 +457,12 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 Instance.project.id,
             );
 
-            const assistantMessage = createAssistantMessage(sessionID, lastUser, model, agent.name);
-            currentAssistant = assistantMessage;
-            await persistMessageRecord(assistantMessage, turn);
+            const assistantMessageID = Identifier.ascending("message")
 
             const tools = await resolveTools({
                 agent,
                 sessionID,
-                messageID: assistantMessage.id,
+                messageID: assistantMessageID,
                 abort,
             });
 
@@ -477,8 +483,24 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 model,
                 system,
                 messages,
+                reasoningEffort: lastUser.reasoningEffort,
+                tools,
+                recordCompactionMessage: async ({ message, parts }) => {
+                    await persistMessageRecord(message, turn)
+                    for (const part of parts) {
+                        if (turn) {
+                            turn.emit("part.recorded", { part })
+                        } else {
+                            await Session.updatePart(part)
+                        }
+                    }
+                },
                 disableCompaction: Session.isSideChatSession(activeSession),
             })
+
+            const assistantMessage = createAssistantMessage(sessionID, lastUser, model, agent.name, assistantMessageID);
+            currentAssistant = assistantMessage;
+            await persistMessageRecord(assistantMessage, turn);
 
             const processor = Processor.create({
                 Assistant: assistantMessage,
@@ -911,6 +933,7 @@ function findBlockingAssistantInteractionAfterUser(
         }
 
         if (message.info.role !== "assistant") continue;
+        if (isLegacyCompactionAssistantMessage(message)) continue;
 
         const toolPart = message.parts.find(
             (part): part is Message.ToolPart =>
@@ -958,6 +981,7 @@ async function recoverDanglingToolCallsAfterUser(
         }
 
         if (message.info.role !== "assistant") continue
+        if (isLegacyCompactionAssistantMessage(message)) continue
 
         for (const part of message.parts) {
             if (part.type !== "tool") continue
@@ -1013,7 +1037,7 @@ function latestAssistantWithParts(sessionID: string): Message.WithParts | undefi
     const messages = loadMessagesWithParts(sessionID);
     for (let index = messages.length - 1; index >= 0; index--) {
         const item = messages[index]!;
-        if (item.info.role === "assistant") return item;
+        if (item.info.role === "assistant" && !isLegacyCompactionAssistantMessage(item)) return item;
     }
 }
 
@@ -1033,7 +1057,7 @@ function latestAssistantWithPartsAfter(
             continue
         }
 
-        if (message.info.role === "assistant") {
+        if (message.info.role === "assistant" && !isLegacyCompactionAssistantMessage(message)) {
             latestAssistant = message
         }
     }
@@ -1114,9 +1138,10 @@ function createAssistantMessage(
     lastUser: Message.User,
     model: Provider.Model,
     agentName: string,
+    messageID: string = Identifier.ascending("message"),
 ): Message.Assistant {
     return {
-        id: Identifier.ascending("message"),
+        id: messageID,
         sessionID,
         role: "assistant",
         created: Date.now(),
