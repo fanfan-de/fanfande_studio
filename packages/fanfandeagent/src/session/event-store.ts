@@ -3,9 +3,6 @@ import * as db from "#database/Sqlite.ts"
 import * as LiveStreamHub from "#session/live-stream-hub.ts"
 import * as Projector from "#session/projector.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
-import * as Log from "#util/log.ts"
-
-const log = Log.create({ service: "session.event-store" })
 
 const SessionEventRecord = z.object({
   eventID: z.string(),
@@ -22,7 +19,6 @@ const subscribers = new Set<(event: RuntimeEvent.RuntimeEvent) => void>()
 const FAST_PATH_EVENT_ID_CACHE_LIMIT = 5_000
 const fastPathEventIDs = new Set<string>()
 const fastPathEventIDOrder: string[] = []
-let fastPathWriteQueue = Promise.resolve()
 
 function ensureEventStoreTables() {
   const generation = db.getDatabaseGeneration()
@@ -93,7 +89,7 @@ function notify(event: RuntimeEvent.RuntimeEvent) {
   }
 }
 
-function isAsyncRuntimeEvent(event: RuntimeEvent.RuntimeEvent) {
+function isTransientStreamEvent(event: RuntimeEvent.RuntimeEvent) {
   return event.type.startsWith("text.part.") || event.type.startsWith("reasoning.part.")
 }
 
@@ -113,26 +109,6 @@ function rememberFastPathEventID(eventID: string) {
   }
 
   return true
-}
-
-function enqueueFastPathWrite(event: RuntimeEvent.RuntimeEvent) {
-  fastPathWriteQueue = fastPathWriteQueue
-    .then(() => {
-      ensureEventStoreTables()
-      if (hasEvent(event.eventID)) return
-
-      db.insertOneWithSchema("session_events", toStoredRecord(event), SessionEventRecord)
-      Projector.project(event)
-    })
-    .catch((error) => {
-      log.error("failed to persist async runtime event", {
-        eventID: event.eventID,
-        type: event.type,
-        error,
-      })
-    })
-
-  return fastPathWriteQueue
 }
 
 export function subscribe(subscriber: (event: RuntimeEvent.RuntimeEvent) => void) {
@@ -156,11 +132,10 @@ export function hasEvent(eventID: string) {
 }
 
 export function appendAndProject(event: RuntimeEvent.RuntimeEvent) {
-  if (isAsyncRuntimeEvent(event)) {
+  if (isTransientStreamEvent(event)) {
     if (rememberFastPathEventID(event.eventID)) {
       LiveStreamHub.publish(event)
       notify(event)
-      void enqueueFastPathWrite(event)
     }
 
     return event

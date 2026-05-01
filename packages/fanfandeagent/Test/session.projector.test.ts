@@ -350,3 +350,43 @@ test("appendAndProject is idempotent and publishes only committed events", async
     },
   })
 })
+
+test("stream text runtime events publish immediately without event-store persistence", async () => {
+  await Instance.provide({
+    directory: process.cwd(),
+    async fn() {
+      const sessionID = Identifier.ascending("session")
+      const turnID = Identifier.ascending("turn")
+      const factory = RuntimeEvent.createRuntimeEventFactory({
+        sessionID,
+        turnID,
+      })
+      const deltaEvent = factory.next("text.part.delta", {
+        messageID: Identifier.ascending("message"),
+        partID: Identifier.ascending("part"),
+        kind: "text",
+        delta: "hello",
+      })
+      const subscription = LiveStreamHub.subscribe({
+        sessionID,
+        turnID,
+        closeOnTerminalTurn: false,
+      })
+
+      try {
+        EventStore.appendAndProject(deltaEvent)
+
+        const published = await subscription.next()
+        expect(published?.eventID).toBe(deltaEvent.eventID)
+
+        const replayed = EventStore.listTurnEvents({
+          sessionID,
+          turnID,
+        })
+        expect(replayed.map((event) => event.eventID)).not.toContain(deltaEvent.eventID)
+      } finally {
+        subscription.close()
+      }
+    },
+  })
+})
