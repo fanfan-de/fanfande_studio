@@ -176,8 +176,9 @@ describe("processor tool persistence", () => {
 
       const textUpdates = recorded.events.filter((event) => event.type === "text.part.delta")
       expect(textUpdates).toHaveLength(3)
-      expect(textUpdates[0]?.payload.text).toBe("hel")
-      expect(textUpdates[2]?.payload.text).toBe("hello!")
+      expect(textUpdates.map((event) => event.payload.delta)).toEqual(["hel", "lo", "!"])
+      expect(textUpdates[0]?.payload.text).toBeUndefined()
+      expect(textUpdates[2]?.payload.text).toBeUndefined()
 
       const completedText = recorded.events.find((event) => event.type === "text.part.completed")
       expect(completedText?.payload.part.text).toBe("hello!")

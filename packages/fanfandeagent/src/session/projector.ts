@@ -7,9 +7,54 @@ import * as Session from "#session/session.ts"
 import * as Task from "#session/task.ts"
 
 let permissionProjectionGeneration = -1
+const STREAM_PART_PROJECTION_INTERVAL_MS = 250
+
+type StreamPartProjectionBuffer = {
+  lastProjectedAt: number
+  part: Message.TextPart | Message.ReasoningPart
+}
+
+const streamPartProjectionBuffers = new Map<string, StreamPartProjectionBuffer>()
 
 function currentStreamPart(partID: string) {
   return Session.DataBaseRead("parts", partID) as Message.Part | null
+}
+
+function streamPartBufferKey(sessionID: string, partID: string) {
+  return `${sessionID}:${partID}`
+}
+
+function readBufferedStreamPart(sessionID: string, partID: string) {
+  return streamPartProjectionBuffers.get(streamPartBufferKey(sessionID, partID))?.part
+}
+
+function projectStreamPart(
+  part: Message.TextPart | Message.ReasoningPart,
+  force = false,
+) {
+  const key = streamPartBufferKey(part.sessionID, part.id)
+  const current = streamPartProjectionBuffers.get(key)
+  const now = Date.now()
+  const lastProjectedAt = current?.lastProjectedAt ?? 0
+
+  streamPartProjectionBuffers.set(key, {
+    part,
+    lastProjectedAt,
+  })
+
+  if (!force && now - lastProjectedAt < STREAM_PART_PROJECTION_INTERVAL_MS) {
+    return
+  }
+
+  Session.upsertPart(part)
+  streamPartProjectionBuffers.set(key, {
+    part,
+    lastProjectedAt: now,
+  })
+}
+
+function clearStreamPartProjection(sessionID: string, partID: string) {
+  streamPartProjectionBuffers.delete(streamPartBufferKey(sessionID, partID))
 }
 
 function ensurePermissionProjectionTables() {
@@ -38,13 +83,17 @@ function projectTextPart(
     | z.infer<typeof RuntimeEvent.TextPartStartedEvent>
     | z.infer<typeof RuntimeEvent.TextPartDeltaEvent>,
 ) {
-  const existing = currentStreamPart(event.payload.partID)
+  const existing = readBufferedStreamPart(event.sessionID, event.payload.partID) ?? currentStreamPart(event.payload.partID)
+  const text =
+    event.type === "text.part.delta"
+      ? event.payload.text ?? `${existing?.type === "text" ? existing.text : ""}${event.payload.delta}`
+      : event.payload.text
   const next = Message.TextPart.parse({
     id: event.payload.partID,
     sessionID: event.sessionID,
     messageID: event.payload.messageID,
     type: "text",
-    text: event.payload.text,
+    text,
     time: {
       start:
         existing?.type === "text"
@@ -54,7 +103,7 @@ function projectTextPart(
     metadata: event.payload.metadata,
   })
 
-  Session.upsertPart(next)
+  projectStreamPart(next, event.type === "text.part.started")
 }
 
 function projectReasoningPart(
@@ -62,13 +111,17 @@ function projectReasoningPart(
     | z.infer<typeof RuntimeEvent.ReasoningPartStartedEvent>
     | z.infer<typeof RuntimeEvent.ReasoningPartDeltaEvent>,
 ) {
-  const existing = currentStreamPart(event.payload.partID)
+  const existing = readBufferedStreamPart(event.sessionID, event.payload.partID) ?? currentStreamPart(event.payload.partID)
+  const text =
+    event.type === "reasoning.part.delta"
+      ? event.payload.text ?? `${existing?.type === "reasoning" ? existing.text : ""}${event.payload.delta}`
+      : event.payload.text
   const next = Message.ReasoningPart.parse({
     id: event.payload.partID,
     sessionID: event.sessionID,
     messageID: event.payload.messageID,
     type: "reasoning",
-    text: event.payload.text,
+    text,
     time: {
       start:
         existing?.type === "reasoning"
@@ -78,7 +131,7 @@ function projectReasoningPart(
     metadata: event.payload.metadata,
   })
 
-  Session.upsertPart(next)
+  projectStreamPart(next, event.type === "reasoning.part.started")
 }
 
 function projectTerminalState(
@@ -92,6 +145,7 @@ function projectTerminalState(
   }
 
   for (const part of event.payload.parts ?? []) {
+    clearStreamPartProjection(event.sessionID, part.id)
     Session.upsertPart(part)
   }
 }
@@ -119,6 +173,7 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
       Session.upsertPart(event.payload.part)
       return
     case "part.removed":
+      clearStreamPartProjection(event.sessionID, event.payload.partID)
       Session.deletePart(event.payload.partID)
       return
     case "permission.requested":
@@ -131,6 +186,7 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
       projectTextPart(event)
       return
     case "text.part.completed":
+      clearStreamPartProjection(event.sessionID, event.payload.part.id)
       Session.upsertPart(event.payload.part)
       return
     case "reasoning.part.started":
@@ -138,6 +194,7 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
       projectReasoningPart(event)
       return
     case "reasoning.part.completed":
+      clearStreamPartProjection(event.sessionID, event.payload.part.id)
       Session.upsertPart(event.payload.part)
       return
     case "tool.call.pending":

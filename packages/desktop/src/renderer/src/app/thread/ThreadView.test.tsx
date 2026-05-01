@@ -306,7 +306,7 @@ describe("ThreadView assistant response markdown", () => {
     expect(container.textContent).toContain("## Tool output")
   })
 
-  it("keeps the streaming response caret target on markdown responses", () => {
+  it("keeps streaming responses on the lightweight rich text path", () => {
     const { container } = renderThread([
       assistantTraceTurn(
         "assistant-1",
@@ -325,11 +325,12 @@ describe("ThreadView assistant response markdown", () => {
       ),
     ])
     const streamingResponse = container.querySelector(
-      ".assistant-section.is-response .trace-item.is-streaming .trace-item-text.thread-markdown",
+      ".assistant-section.is-response .trace-item.is-streaming .trace-item-text",
     )
 
     expect(streamingResponse).not.toBeNull()
-    expect(streamingResponse?.querySelector("strong")?.textContent).toBe("Streaming")
+    expect(streamingResponse).not.toHaveClass("thread-markdown")
+    expect(streamingResponse?.textContent).toContain("**Streaming**")
   })
 })
 

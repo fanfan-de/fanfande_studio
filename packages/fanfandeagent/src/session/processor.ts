@@ -843,7 +843,6 @@ export function create(input: {
                                         partID: currentText.id,
                                         kind: "text",
                                         delta: value.text,
-                                        text: currentText.text,
                                         metadata: currentText.metadata,
                                     })
 
@@ -912,7 +911,6 @@ export function create(input: {
                                         partID: part!.id,
                                         kind: "reasoning",
                                         delta: value.text,
-                                        text: part!.text,
                                         metadata: part!.metadata,
                                     })
                                     await streamPartPersister.persist(part!)

@@ -86,8 +86,9 @@ const TextPartStartedPayload = z.object({
   metadata: z.record(z.string(), z.any()).optional(),
 })
 
-const TextPartDeltaPayload = TextPartStartedPayload.extend({
+const TextPartDeltaPayload = TextPartStartedPayload.omit({ text: true }).extend({
   delta: z.string(),
+  text: z.string().optional(),
 })
 
 const TextPartCompletedPayload = z.object({
@@ -102,8 +103,9 @@ const ReasoningPartStartedPayload = z.object({
   metadata: z.record(z.string(), z.any()).optional(),
 })
 
-const ReasoningPartDeltaPayload = ReasoningPartStartedPayload.extend({
+const ReasoningPartDeltaPayload = ReasoningPartStartedPayload.omit({ text: true }).extend({
   delta: z.string(),
+  text: z.string().optional(),
 })
 
 const ReasoningPartCompletedPayload = z.object({

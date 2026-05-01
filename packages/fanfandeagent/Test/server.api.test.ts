@@ -3358,7 +3358,6 @@ describe("server api", () => {
       partID,
       kind: "text",
       delta: "new answer",
-      text: "new answer",
     })
     const completedEvent = factory.next("turn.completed", {
       status: "completed",

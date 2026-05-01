@@ -1112,14 +1112,14 @@ function TraceItemView({
         {item.status ? <span className={`trace-item-status is-${item.status}`}>{item.status}</span> : null}
       </div>
       {item.text ? (
-        isResponseItem ? (
+        isResponseItem && !item.isStreaming ? (
           <ThreadMarkdown className="trace-item-text thread-markdown" text={item.text} />
         ) : (
           <ThreadRichText className="trace-item-text" text={item.text} />
         )
       ) : null}
       {item.detail ? (
-        isResponseItem ? (
+        isResponseItem && !item.isStreaming ? (
           <ThreadMarkdown className="trace-item-detail thread-markdown" text={item.detail} />
         ) : (
           <ThreadRichText className="trace-item-detail" text={item.detail} />

@@ -189,7 +189,6 @@ test("runtime events project messages and parts into the session read model", as
           partID: streamedTextID,
           kind: "text",
           delta: "world",
-          text: "world",
           metadata: {
             source: "projector-test",
           },
