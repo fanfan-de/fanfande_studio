@@ -1,5 +1,6 @@
 ﻿import * as Provider from "#provider/provider.ts";
 import * as  Log from "#util/log.ts"
+import * as Bus from "#bus/project-bus.ts"
 import * as LLM from '#session/llm.ts';
 import * as Message from "#session/message.ts"
 import * as  Identifier from "#id/id.ts";
@@ -11,6 +12,7 @@ import * as Session from "#session/session.ts"
 import { Flag } from "#flag/flag.ts"
 import type { LanguageModelUsage } from "ai"
 import type { TurnContext } from "#session/orchestrator.ts"
+import * as StreamEvents from "#session/stream-events.ts"
 import {
     createAskUserQuestionMetadataFromInput,
     isAnsweredAskUserQuestionMetadata,
@@ -103,6 +105,28 @@ function normalizeToolError(error: unknown): string {
 function writeStreamDebug(value: string) {
     if (!ENABLE_STREAM_STDOUT_DEBUG) return
     process.stdout.write(value)
+}
+
+function deferSideEffect(action: () => PromiseLike<unknown> | unknown) {
+    return new Promise<void>((resolve, reject) => {
+        setTimeout(() => {
+            Promise.resolve()
+                .then(action)
+                .then(
+                    () => resolve(),
+                    (error) => reject(error),
+                )
+        }, 0)
+    })
+}
+
+function hasProjectBusContext() {
+    try {
+        void Instance.directory
+        return true
+    } catch {
+        return false
+    }
 }
 
 function applyUsageToAssistantMessage(
@@ -713,6 +737,122 @@ export function create(input: {
             return toolcalls[toolCallID]
         },
         async process(streamInput: LLM.StreamInput) {
+            const pendingStreamSideEffects = new Set<Promise<void>>()
+            const busAvailable = hasProjectBusContext()
+            const unsubscribeStreamSideEffects: Array<() => void> = []
+
+            const trackStreamSideEffect = (promise: Promise<void>) => {
+                let tracked: Promise<void>
+                tracked = promise.finally(() => {
+                    pendingStreamSideEffects.delete(tracked)
+                })
+                pendingStreamSideEffects.add(tracked)
+                return tracked
+            }
+
+            const flushStreamSideEffects = async () => {
+                while (pendingStreamSideEffects.size > 0) {
+                    await Promise.all([...pendingStreamSideEffects])
+                }
+            }
+
+            const publishStreamChunk = (value: { type?: unknown } & Record<string, unknown>) => {
+                if (!busAvailable) return
+
+                Bus.publishDetached(
+                    StreamEvents.Event.ChunkReceived,
+                    {
+                        sessionID: input.Assistant.sessionID,
+                        turnID: input.turn?.turnID,
+                        messageID: input.Assistant.id,
+                        iteration: attempt,
+                        chunkType: typeof value.type === "string" ? value.type : "unknown",
+                        chunk: value,
+                    },
+                    { silent: true, global: false },
+                )
+            }
+
+            const requestPartPersistence = (part: Message.Part) => {
+                const persist = () => persistPart(part)
+                if (!busAvailable) {
+                    trackStreamSideEffect(deferSideEffect(persist))
+                    return
+                }
+
+                trackStreamSideEffect(
+                    Bus.publishDeferred(
+                        StreamEvents.Event.PartPersistenceRequested,
+                        {
+                            sessionID: input.Assistant.sessionID,
+                            messageID: input.Assistant.id,
+                            part,
+                        },
+                        { silent: true, global: false },
+                    ),
+                )
+            }
+
+            const requestToolApprovalRegistration = (toolPart: Message.ToolPart) => {
+                const register = () =>
+                    Permission.registerApprovalRequest({
+                        assistant: {
+                            ...input.Assistant,
+                            path: {
+                                cwd: input.Assistant.path.cwd || Instance.directory,
+                                root: input.Assistant.path.root || Instance.worktree,
+                            },
+                        },
+                        toolPart,
+                        turn: input.turn,
+                    })
+
+                if (!busAvailable) {
+                    trackStreamSideEffect(deferSideEffect(register))
+                    return
+                }
+
+                trackStreamSideEffect(
+                    Bus.publishDeferred(
+                        StreamEvents.Event.ToolApprovalRegistrationRequested,
+                        {
+                            sessionID: input.Assistant.sessionID,
+                            messageID: input.Assistant.id,
+                            assistant: input.Assistant,
+                            toolPart,
+                            turn: input.turn,
+                        },
+                        { silent: true, global: false },
+                    ),
+                )
+            }
+
+            if (busAvailable) {
+                unsubscribeStreamSideEffects.push(
+                    Bus.subscribe(StreamEvents.Event.PartPersistenceRequested, async (event) => {
+                        if (event.properties.sessionID !== input.Assistant.sessionID) return
+                        if (event.properties.messageID !== input.Assistant.id) return
+                        await persistPart(event.properties.part)
+                    }),
+                    Bus.subscribe(StreamEvents.Event.ToolApprovalRegistrationRequested, async (event) => {
+                        if (event.properties.sessionID !== input.Assistant.sessionID) return
+                        if (event.properties.messageID !== input.Assistant.id) return
+                        await Permission.registerApprovalRequest({
+                            assistant: {
+                                ...event.properties.assistant,
+                                path: {
+                                    cwd: event.properties.assistant.path.cwd || Instance.directory,
+                                    root: event.properties.assistant.path.root || Instance.worktree,
+                                },
+                            },
+                            toolPart: event.properties.toolPart,
+                            turn: event.properties.turn,
+                        })
+                    }),
+                )
+            }
+
+            try {
             const failOpenToolCalls = async (reason: string) => {
                 const end = Date.now()
 
@@ -1045,6 +1185,7 @@ export function create(input: {
                         const value = streamValue as typeof streamValue | (
                             { type: "source-url" | "source-document" } & Record<string, unknown>
                         )
+                        publishStreamChunk(value as { type?: unknown } & Record<string, unknown>)
                         switch (value.type) {
                             case "text-start":
                                 emitRuntimePhase("responding", {
@@ -1290,16 +1431,7 @@ export function create(input: {
                                 emitRuntimeEvent?.("tool.call.started", {
                                     part,
                                 })
-                                try {
-                                    await persistPart(part)
-                                } catch (error) {
-                                    log.error("failed to persist tool-call part", {
-                                        callID: part.callID,
-                                        tool: part.tool,
-                                        error: normalizeToolError(error),
-                                    })
-                                    throw error
-                                }
+                                requestPartPersistence(part)
                                 break;
                             case 'tool-result':
                                 if (toolcalls[value.toolCallId] && toolcalls[value.toolCallId]?.state.status === "running") {
@@ -1338,16 +1470,7 @@ export function create(input: {
                                     emitRuntimeEvent?.("tool.call.completed", {
                                         part: match,
                                     })
-                                    try {
-                                        await persistPart(match)
-                                    } catch (error) {
-                                        log.error("failed to persist tool-result part", {
-                                            callID: match.callID,
-                                            tool: match.tool,
-                                            error: normalizeToolError(error),
-                                        })
-                                        throw error
-                                    }
+                                    requestPartPersistence(match)
 
                                     if (isAskUserQuestionToolResult(normalized.metadata)) {
                                         blocked = true
@@ -1383,16 +1506,7 @@ export function create(input: {
                                     emitRuntimeEvent?.("tool.call.failed", {
                                         part: match,
                                     })
-                                    try {
-                                        await persistPart(match)
-                                    } catch (error) {
-                                        log.error("failed to persist tool-error part", {
-                                            callID: match.callID,
-                                            tool: match.tool,
-                                            error: normalizeToolError(error),
-                                        })
-                                        throw error
-                                    }
+                                    requestPartPersistence(match)
                                 }
                                 break;
                             case "tool-output-denied":
@@ -1435,7 +1549,7 @@ export function create(input: {
                                     emitRuntimeEvent?.("tool.call.denied", {
                                         part: match,
                                     })
-                                    await persistPart(match)
+                                    requestPartPersistence(match)
                                 }
                                 break;
                             case "start-step":
@@ -1586,18 +1700,8 @@ export function create(input: {
                                     emitRuntimeEvent?.("tool.call.waiting_approval", {
                                         part: waiting,
                                     })
-                                    await persistPart(waiting)
-                                    await Permission.registerApprovalRequest({
-                                        assistant: {
-                                            ...input.Assistant,
-                                            path: {
-                                                cwd: input.Assistant.path.cwd || Instance.directory,
-                                                root: input.Assistant.path.root || Instance.worktree,
-                                            },
-                                        },
-                                        toolPart: waiting,
-                                        turn: input.turn,
-                                    })
+                                    requestPartPersistence(waiting)
+                                    requestToolApprovalRegistration(waiting)
                                     blocked = true
                                 }
                                 break;
@@ -1696,6 +1800,15 @@ export function create(input: {
                 if (blocked) return "stop"
                 if (input.Assistant.error) return "stop"
                 return "continue"
+            }
+            } finally {
+                try {
+                    await flushStreamSideEffects()
+                } finally {
+                    for (const unsubscribe of unsubscribeStreamSideEffects.splice(0)) {
+                        unsubscribe()
+                    }
+                }
             }
         }
     }
