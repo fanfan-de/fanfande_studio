@@ -101,6 +101,10 @@ interface CreateSessionCanvasProps {
   onWorkspaceChange: (workspaceID: string) => void
 }
 
+function CreateSessionLogo() {
+  return <span className="create-session-logo" role="img" aria-label="Fanfande Studio logo" />
+}
+
 export function CreateSessionCanvas({
   isCreatingSession,
   selectedWorkspaceID,
@@ -113,7 +117,7 @@ export function CreateSessionCanvas({
     return (
       <section className="thread-shell create-session-shell">
         <article className="create-session-card">
-          <img className="create-session-logo" src="/create-session-logo.svg" alt="Fanfande Studio logo" />
+          <CreateSessionLogo />
           <select className="create-session-native-select" aria-label="Session project" disabled value="">
             <option value="">No project available</option>
           </select>
@@ -125,7 +129,7 @@ export function CreateSessionCanvas({
   return (
     <section className="thread-shell create-session-shell">
       <article className="create-session-card">
-        <img className="create-session-logo" src="/create-session-logo.svg" alt="Fanfande Studio logo" />
+        <CreateSessionLogo />
         <select
           className="create-session-native-select"
           aria-label="Session project"

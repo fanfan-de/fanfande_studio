@@ -10,6 +10,7 @@ import {
 } from "../icons"
 import { joinClassNames, writeTextToClipboard } from "../shared-ui"
 import { buildTurnsFromHistory } from "../stream"
+import { ThreadMarkdown } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
 import type {
   AssistantTraceItem,
@@ -1101,6 +1102,8 @@ function TraceItemView({
     )
   }
 
+  const isResponseItem = traceSectionKeyForItem(item) === "response"
+
   return (
     <article className={className} data-kind={item.kind}>
       <div className="trace-item-header">
@@ -1108,8 +1111,20 @@ function TraceItemView({
         {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
         {item.status ? <span className={`trace-item-status is-${item.status}`}>{item.status}</span> : null}
       </div>
-      {item.text ? <ThreadRichText className="trace-item-text" text={item.text} /> : null}
-      {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
+      {item.text ? (
+        isResponseItem ? (
+          <ThreadMarkdown className="trace-item-text thread-markdown" text={item.text} />
+        ) : (
+          <ThreadRichText className="trace-item-text" text={item.text} />
+        )
+      ) : null}
+      {item.detail ? (
+        isResponseItem ? (
+          <ThreadMarkdown className="trace-item-detail thread-markdown" text={item.detail} />
+        ) : (
+          <ThreadRichText className="trace-item-detail" text={item.detail} />
+        )
+      ) : null}
       {selectableFilePaths.length > 0 && onFileChangeSelect ? (
         <div className="trace-item-file-actions">
           {selectableFilePaths.map((filePath) => (

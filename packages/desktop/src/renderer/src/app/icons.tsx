@@ -5,6 +5,7 @@ import {
   ChevronRight,
   CircleCheck,
   CircleX,
+  Code2,
   Copy,
   Eye,
   EyeOff,
@@ -13,6 +14,7 @@ import {
   FileText,
   Folder,
   LayoutPanelLeft,
+  ListChecks,
   LoaderCircle,
   MessageSquare,
   Minus,
@@ -58,6 +60,8 @@ export const SettingsIcon = createIcon(Settings)
 export const LayoutSidebarLeftIcon = createIcon(LayoutPanelLeft)
 export const LayoutSidebarRightIcon = createIcon(PanelRight)
 export const SideChatIcon = createIcon(MessageSquare)
+export const CoworkModeIcon = createIcon(ListChecks)
+export const CodeModeIcon = createIcon(Code2)
 export const SessionRunningIcon = createIcon(LoaderCircle)
 export const LeftSidebarCollapseIcon = createIcon(PanelLeftClose)
 export const LeftSidebarExpandIcon = createIcon(PanelLeftOpen)

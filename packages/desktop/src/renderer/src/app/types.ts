@@ -22,7 +22,8 @@ export type {
 
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project" | "sort" | "new"
-export type LeftSidebarView = "workspace" | "skills"
+export type LeftSidebarView = "workspace" | "skills" | "prompts"
+export type WorkspaceMode = "chat" | "cowork" | "code"
 export type RightSidebarView = "changes" | "runtime" | "preview" | "files"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"

@@ -214,6 +214,104 @@ describe("ThreadView trace collapse", () => {
   })
 })
 
+describe("ThreadView assistant response markdown", () => {
+  it("renders assistant response markdown as semantic elements", () => {
+    const { container, getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: [
+              "## Release notes",
+              "",
+              "**Ready** to ship.",
+              "",
+              "| File | Status |",
+              "| --- | --- |",
+              "| `ThreadView.tsx` | done |",
+            ].join("\n"),
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ])
+
+    expect(getByRole("heading", { name: "Release notes" })).toBeInTheDocument()
+    expect(container.querySelector("strong")?.textContent).toBe("Ready")
+    expect(getByRole("table")).toBeInTheDocument()
+    expect(container.querySelector(".assistant-section.is-response .thread-markdown")).not.toBeNull()
+  })
+
+  it("keeps reasoning and tool markdown-like content as plain rich text", () => {
+    const { container, getByRole, queryByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: "## Thinking\n\n**Plain reasoning**",
+            status: "running",
+            isStreaming: true,
+          },
+          {
+            id: "tool-1",
+            kind: "tool",
+            timestamp: 1,
+            label: "Tool",
+            title: "Shell",
+            detail: "## Tool output\n\n**Plain tool output**",
+            status: "completed",
+          },
+        ],
+        true,
+      ),
+    ])
+
+    expect(queryByRole("heading", { name: "Thinking" })).toBeNull()
+    expect(container.textContent).toContain("## Thinking")
+
+    fireEvent.click(getByRole("button", { name: /Shell/ }))
+    fireEvent.click(getByRole("button", { name: /Shell output/ }))
+
+    expect(queryByRole("heading", { name: "Tool output" })).toBeNull()
+    expect(container.textContent).toContain("## Tool output")
+  })
+
+  it("keeps the streaming response caret target on markdown responses", () => {
+    const { container } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "**Streaming**",
+            status: "running",
+            isStreaming: true,
+          },
+        ],
+        true,
+      ),
+    ])
+    const streamingResponse = container.querySelector(
+      ".assistant-section.is-response .trace-item.is-streaming .trace-item-text.thread-markdown",
+    )
+
+    expect(streamingResponse).not.toBeNull()
+    expect(streamingResponse?.querySelector("strong")?.textContent).toBe("Streaming")
+  })
+})
+
 describe("ThreadView auto-scroll", () => {
   it("follows new content while pinned to the bottom", () => {
     const { rerender, props, threadColumn } = renderThread([assistantTurn("assistant-1", "Working")])

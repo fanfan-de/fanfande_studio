@@ -29,6 +29,7 @@ interface LoadSettingsOptions {
 }
 
 interface UseSettingsPageOptions {
+  isPromptPresetEditorOpen?: boolean
   onArchivedSessionRestored?: (session: LoadedSessionSnapshot) => void | Promise<void>
   onMcpUpdated?: () => void | Promise<void>
   onProviderModelsUpdated?: () => void | Promise<void>
@@ -338,6 +339,7 @@ function getMcpServerValidationError(draft: McpServerDraftState) {
 }
 
 export function useSettingsPage(options: UseSettingsPageOptions) {
+  const isPromptPresetEditorOpen = options.isPromptPresetEditorOpen ?? false
   const [isOpen, setIsOpen] = useState(false)
   const [catalog, setCatalog] = useState<ProviderCatalogItem[]>([])
   const [models, setModels] = useState<ProviderModel[]>([])
@@ -407,9 +409,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
     void loadSettingsData()
     void loadBuiltinTools()
-    void loadPromptPresets()
     void loadArchivedSessions()
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isPromptPresetEditorOpen) return
+
+    void loadPromptPresets()
+  }, [isPromptPresetEditorOpen])
 
   async function notifyMcpUpdated() {
     try {

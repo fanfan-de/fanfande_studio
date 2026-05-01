@@ -42,6 +42,13 @@ function getComposerSendButton() {
   return screen.getByRole("button", { name: /^(Send|Sending|Stop) task$|^Resolve approval first$/ })
 }
 
+async function openProviderSettingsSection() {
+  fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+  const settingsDialog = await screen.findByRole("dialog", { name: "Settings" })
+  fireEvent.click(screen.getByRole("button", { name: "Provider" }))
+  return settingsDialog
+}
+
 function setComposerDraftValue(input: HTMLElement, value: string) {
   if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
     fireEvent.change(input, {
@@ -995,7 +1002,8 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Split pane" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" }).closest(".pane-tab-bar")).toHaveClass("window-drag-region")
     expect(await screen.findByRole("button", { name: "Git" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Workspace" })).toBeInTheDocument()
+    expect(within(leftSidebarTopMenu).getByRole("group", { name: "Workspace mode" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Artifacts" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument()
@@ -1020,6 +1028,41 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^Select model:/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
+  })
+
+  it("switches Chat and Cowork placeholders without rendering code workspace surfaces", async () => {
+    render(<App />)
+
+    expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByLabelText("Session canvas top menu")).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Toggle terminal panel" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }))
+
+    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("heading", { name: "Chat workspace" })).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "Chat mode sidebar" })).toBeInTheDocument()
+    expect(screen.queryByLabelText("Session canvas top menu")).not.toBeInTheDocument()
+    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Changes" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Toggle terminal panel" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Cowork" }))
+
+    expect(screen.getByRole("button", { name: "Cowork" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("heading", { name: "Cowork workspace" })).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "Cowork mode sidebar" })).toBeInTheDocument()
+    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Code" }))
+
+    expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByLabelText("Session canvas top menu")).toBeInTheDocument()
+    expect(screen.getByRole("complementary", { name: "Inspector sidebar" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
   })
 
   it("shows the runtime inspector when the runtime tab is selected", async () => {
@@ -1786,7 +1829,11 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Skills" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+
+    expect(screen.getByLabelText("Skills top menu")).toBeInTheDocument()
+    expect(screen.queryByLabelText("Left sidebar top menu")).not.toBeInTheDocument()
+    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
 
     await screen.findByText("No global skills exist yet. Use the add button to create the first one.")
 
@@ -1868,7 +1915,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Skills" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
 
     const oldDirectoryButton = await screen.findByRole("button", { name: "layout-review" })
     fireEvent.doubleClick(oldDirectoryButton)
@@ -5898,7 +5945,8 @@ describe("App", () => {
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
     expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(8)
     expect(screen.getByText("\u9009\u9879")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Provider" })).toBeInTheDocument()
+    const providerNavButton = screen.getByRole("button", { name: "Provider" })
+    expect(providerNavButton).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Models" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Tools" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Archived Sessions" })).toBeInTheDocument()
@@ -5907,6 +5955,7 @@ describe("App", () => {
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
     expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
     expect(screen.queryByText("Search providers")).not.toBeInTheDocument()
+    fireEvent.click(providerNavButton)
     expect(await screen.findByRole("button", { name: "Refresh provider catalog" })).toBeInTheDocument()
     expect(await screen.findByRole("textbox", { name: "Search providers" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /DeepSeek.*Connected/ })).toBeInTheDocument()
@@ -5949,7 +5998,7 @@ describe("App", () => {
     })
   })
 
-  it("edits prompt presets from settings", async () => {
+  it("edits prompt presets from the prompts page", async () => {
     let promptPresetSelection = { ...PROMPT_PRESET_SELECTION_FIXTURE }
     let promptPresetDocuments = [
       createPromptPresetDocument("system-default"),
@@ -6030,9 +6079,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
-    await screen.findByRole("dialog", { name: "Settings" })
-    fireEvent.click(screen.getByRole("button", { name: /^Prompts/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Open prompts" }))
 
     await screen.findByRole("list", { name: "Prompt presets" })
     expect(screen.getByRole("button", { name: "System Prompt" })).toBeInTheDocument()
@@ -6211,8 +6258,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
-    await screen.findByRole("dialog", { name: "Settings" })
+    await openProviderSettingsSection()
 
     const refreshButton = screen.getByRole("button", { name: "Refresh provider catalog" })
     fireEvent.click(refreshButton)
@@ -6335,7 +6381,11 @@ describe("App", () => {
 
     expect(appShell).not.toBeNull()
     expect(getLeftActivityRail()).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse left sidebar" }).closest(".activity-rail")).not.toBeNull()
+    const railCollapseButton = screen.getByRole("button", { name: "Collapse left sidebar" })
+    const railTopMenu = railCollapseButton.closest(".activity-rail-top-menu")
+    expect(railCollapseButton.closest(".activity-rail")).not.toBeNull()
+    expect(railTopMenu).not.toBeNull()
+    expect(getLeftActivityRail()!.firstElementChild).toBe(railTopMenu)
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
@@ -6785,9 +6835,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
-
-    const settingsDialog = await screen.findByRole("dialog", { name: "Settings" })
+    const settingsDialog = await openProviderSettingsSection()
     await screen.findByRole("heading", { name: "DeepSeek" })
 
     const detailPanel = settingsDialog.querySelector(".settings-service-detail-panel")
@@ -6840,7 +6888,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await openProviderSettingsSection()
     await screen.findByRole("heading", { name: "DeepSeek" })
     fireEvent.click(screen.getByRole("button", { name: "测试连接" }))
 
@@ -6885,7 +6933,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await openProviderSettingsSection()
     await screen.findByRole("heading", { name: "DeepSeek" })
 
     const apiKeyInput = screen.getByLabelText("API key for DeepSeek")
@@ -6964,7 +7012,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
+    await openProviderSettingsSection()
     await screen.findByRole("heading", { name: "OpenAI" })
 
     expect(screen.queryByLabelText("Authentication method for OpenAI")).not.toBeInTheDocument()
@@ -7107,8 +7155,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
-    await screen.findByRole("dialog", { name: "Settings" })
+    await openProviderSettingsSection()
     await screen.findByRole("heading", { name: "DeepSeek" })
     fireEvent.change(screen.getByLabelText("Base URL for DeepSeek"), {
       target: {
@@ -7572,8 +7619,7 @@ describe("App", () => {
     })
     const projectModelCallCountBeforeSettings = vi.mocked(window.desktop!.getProjectModels).mock.calls.length
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
-    const settingsDialog = await screen.findByRole("dialog", { name: "Settings" })
+    const settingsDialog = await openProviderSettingsSection()
 
     await waitFor(() => {
       expect(window.desktop!.getGlobalProviderCatalog).toHaveBeenCalled()
@@ -9523,6 +9569,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.panel-toolbar\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*padding:\s*0;[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.panel-toolbar\.window-drag-region\s*\{[^}]*-webkit-app-region:\s*drag;/s)
     expect(styles).toMatch(/\.shell-top-menu\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;/s)
+    expect(styles).not.toMatch(/\.shell-top-menu,\s*\.right-sidebar-section-header,\s*\.right-sidebar-list-row\s*\{[^}]*align-items:\s*flex-start;/s)
     expect(styles).toMatch(/\.shell-top-menu\.is-three-column\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto;/s)
     expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*bottom:\s*0;[^}]*-webkit-app-region:\s*no-drag;/s)
     expect(styles).toMatch(/\.panel-toolbar-window-controls-spacer\.is-canvas\s*\{[^}]*width:\s*var\(--window-controls-canvas-clearance\);/s)
@@ -9726,6 +9773,9 @@ describe("App", () => {
     expect(styles).toMatch(/\.session-canvas-top-menu\s+\.canvas-top-menu-editor-menu-button\.is-active,[\s\S]*?\.session-canvas-top-menu\s+\.canvas-top-menu-editor-menu-button\.is-active:focus-visible\s*\{[^}]*color:\s*var\(--semantic-accent-icon-active\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.pane-tab-bar\s*\{[^}]*--pane-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background:\s*var\(--pane-tab-bar-bg\);/s)
     expect(styles).toMatch(/\.left-sidebar-top-menu\s*\{[^}]*background:\s*var\(--seg-left-sidebar-top-menu-surface\);/s)
+    expect(styles).toMatch(/\.activity-rail\s*\{[^}]*padding:\s*0 0 14px;/s)
+    expect(styles).toMatch(/\.activity-rail-top-menu\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*background:\s*var\(--seg-left-sidebar-top-menu-surface\);/s)
+    expect(styles).toMatch(/\.activity-rail-top-menu::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--mix-seg-border-76-transparent-24\);/s)
     expect(styles).toMatch(/\.right-sidebar-top-menu\s*\{[^}]*background:\s*var\(--seg-right-sidebar-top-menu-surface\);/s)
     expect(styles).toMatch(/--semantic-composer-surface-light:\s*#ffffff;/i)
     expect(styles).toMatch(/--semantic-composer-surface:\s*var\(--semantic-composer-surface-light\);/s)

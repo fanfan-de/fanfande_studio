@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import {
   ActivityRail,
-  CanvasRegionUtilityMenu,
-  GlobalSkillsCanvas,
+  GlobalSkillsPage,
+  PromptPresetsPage,
   RightSidebar,
   SettingsPage,
   Sidebar,
@@ -10,6 +10,7 @@ import {
   WindowChrome,
 } from "./app/components"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
+import type { WorkspaceMode } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
@@ -17,6 +18,7 @@ import { useSettingsPage } from "./app/use-settings-page"
 import { clamp } from "./app/utils"
 import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
 import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
+import { WorkspaceModeCanvasPlaceholder, WorkspaceModeRightPlaceholder } from "./app/workspace-mode/WorkspaceModePlaceholder"
 
 const MIN_WORKBENCH_PANE_WIDTH = 320
 const MIN_WORKBENCH_PANE_HEIGHT = 240
@@ -234,6 +236,7 @@ export function App() {
     closeSettings,
     deleteArchivedSession,
     deleteMcpServer,
+    deleteProvider,
     deleteProviderAuthSession,
     deletingArchivedSessionID,
     deletingMcpServerID,
@@ -305,6 +308,7 @@ export function App() {
     startNewMcpServer,
     cancelProviderAuthFlow,
   } = useSettingsPage({
+    isPromptPresetEditorOpen: leftSidebarView === "prompts",
     onArchivedSessionRestored: async (session) => {
       await refreshWorkspaceFromDirectory(session.directory)
     },
@@ -320,6 +324,7 @@ export function App() {
   const [paneDropTarget, setPaneDropTarget] = useState<PaneDropTarget | null>(null)
   const [activePaneResize, setActivePaneResize] = useState<ActivePaneResize | null>(null)
   const [activityRailTerminalSlot, setActivityRailTerminalSlot] = useState<HTMLDivElement | null>(null)
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code")
   const firstPaneID = workbenchPaneStates[0]?.id ?? null
   const lastPaneID = workbenchPaneStates[workbenchPaneStates.length - 1]?.id ?? null
   const focusedWorkbenchPane = focusedPaneID ? workbenchPaneStateByID[focusedPaneID] ?? null : null
@@ -560,6 +565,11 @@ export function App() {
   ]
     .filter(Boolean)
     .join(" ")
+  const isPromptEditorView = leftSidebarView === "prompts"
+  const isGlobalSkillsView = leftSidebarView === "skills"
+  const isFullSurfaceView = isPromptEditorView || isGlobalSkillsView
+  const placeholderWorkspaceMode: Exclude<WorkspaceMode, "code"> | null =
+    leftSidebarView === "workspace" && workspaceMode !== "code" ? workspaceMode : null
   const windowControls = (
     <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
   )
@@ -569,14 +579,16 @@ export function App() {
       <main ref={appShellRef} className="app-shell" style={appShellStyle}>
         {isActivityRailVisible ? (
           <ActivityRail
-            bottomSlotRef={leftSidebarView === "skills" ? undefined : setActivityRailTerminalSlot}
+            activeView={leftSidebarView}
+            bottomSlotRef={leftSidebarView === "workspace" ? setActivityRailTerminalSlot : undefined}
             isSidebarCollapsed={isSidebarCollapsed}
+            onViewChange={handleLeftSidebarViewChange}
             onToggleSidebar={handleSidebarToggle}
             side="left"
           />
         ) : null}
 
-        {!isSidebarCollapsed ? (
+        {!isSidebarCollapsed && !isFullSurfaceView ? (
           <>
             <Sidebar
               activeSessionID={activeSession?.id ?? null}
@@ -606,6 +618,7 @@ export function App() {
               sessionCanvasUnreadBySession={sessionCanvasUnreadBySession}
               visibleCanvasSessionIDs={visibleCanvasSessionIDs}
               workspaces={workspaces}
+              workspaceMode={workspaceMode}
               onCreateGlobalSkill={handleCreateGlobalSkill}
               onCreateGlobalSkillDraftCancel={handleCreateGlobalSkillDraftCancel}
               onCreateGlobalSkillDraftChange={handleCreateGlobalSkillDraftChange}
@@ -627,6 +640,7 @@ export function App() {
               onSidebarAction={handleSidebarAction}
               onToggleSidebar={handleSidebarToggle}
               onViewChange={handleLeftSidebarViewChange}
+              onWorkspaceModeChange={setWorkspaceMode}
             />
 
             <SidebarResizer
@@ -641,33 +655,89 @@ export function App() {
           </>
         ) : null}
 
-        <section className={leftSidebarView === "skills" ? "canvas" : "canvas is-workbench"}>
-          {leftSidebarView === "skills" ? (
-            <div className="canvas-top-stack">
-              <CanvasRegionUtilityMenu
-                isRightSidebarCollapsed={isRightSidebarCollapsed}
-                label="Global Skills"
-                onToggleLeftSidebar={handleSidebarToggle}
-                onToggleRightSidebar={handleRightSidebarToggle}
-                showLeftSidebarToggleButton={!isActivityRailVisible && isSidebarCollapsed}
-                windowControls={isRightSidebarCollapsed ? windowControls : null}
-              />
-            </div>
-          ) : null}
-          {leftSidebarView === "skills" ? (
-            <GlobalSkillsCanvas
+        <section
+          className={
+            isPromptEditorView
+              ? "canvas is-workbench is-full-surface"
+              : isGlobalSkillsView
+                ? "canvas is-workbench is-full-surface"
+                : placeholderWorkspaceMode
+                  ? "canvas is-workbench is-workspace-mode-placeholder"
+                  : "canvas is-workbench"
+          }
+        >
+          {isPromptEditorView ? (
+            <PromptPresetsPage
+              deletingPromptPresetID={deletingPromptPresetID}
+              isCreatingPromptPreset={isCreatingPromptPreset}
+              isLoadingPromptPreset={isLoadingPromptPreset}
+              isLoadingPrompts={isLoadingPrompts}
+              isPlanModePromptPresetDirty={isPlanModePromptPresetDirty}
+              isPromptDirty={isPromptDirty}
+              isSavingPromptPresetSelection={isSavingPromptPresetSelection}
+              isSystemPromptPresetDirty={isSystemPromptPresetDirty}
+              message={message}
+              promptDraftContent={promptDraftContent}
+              promptDraftLabel={promptDraftLabel}
+              promptLoadError={promptLoadError}
+              promptPresets={promptPresets}
+              promptPresetSelection={promptPresetSelection}
+              resettingPromptPresetID={resettingPromptPresetID}
+              savingPromptPresetID={savingPromptPresetID}
+              savingPromptPresetSelectionField={savingPromptPresetSelectionField}
+              selectedPromptPreset={selectedPromptPreset}
+              windowControls={windowControls}
+              onCreatePromptPreset={createPromptPreset}
+              onDeletePromptPreset={deletePromptPreset}
+              onDismissMessage={dismissMessage}
+              onPromptDraftChange={setPromptDraftValue}
+              onPromptDraftLabelChange={setPromptDraftLabelValue}
+              onPromptPresetSelect={selectPromptPreset}
+              onPromptPresetSelectionChange={setPromptPresetSelectionValue}
+              onResetPromptPreset={resetPromptPreset}
+              onSavePromptPreset={savePromptPreset}
+              onSavePromptPresetSelection={savePromptPresetSelection}
+            />
+          ) : isGlobalSkillsView ? (
+            <GlobalSkillsPage
+              creatingGlobalSkillName={creatingGlobalSkillName}
               deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
+              expandedSkillPaths={expandedSkillPaths}
               globalSkillsMessage={globalSkillsMessage}
               globalSkillsRoot={globalSkillsRoot}
+              globalSkillsTree={globalSkillsTree}
+              isCreateGlobalSkillDraftVisible={isCreateGlobalSkillDraftVisible}
+              isCreatingGlobalSkill={isCreatingGlobalSkill}
               isDirty={isDirtyGlobalSkillFile}
               isLoadingFile={isLoadingGlobalSkillFile}
+              isLoadingSkillsTree={isLoadingGlobalSkillsTree}
               isSavingFile={isSavingGlobalSkillFile}
+              renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
+              renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
+              renamingGlobalSkillName={renamingGlobalSkillName}
               selectedFileContent={selectedGlobalSkillFileContent}
               selectedFilePath={selectedGlobalSkillFilePath}
               selectedSkillDirectoryName={selectedGlobalSkillDirectory?.name ?? null}
+              windowControls={windowControls}
               onChange={handleGlobalSkillDraftChange}
+              onCreateGlobalSkill={handleCreateGlobalSkill}
+              onCreateGlobalSkillDraftCancel={handleCreateGlobalSkillDraftCancel}
+              onCreateGlobalSkillDraftChange={handleCreateGlobalSkillDraftChange}
+              onCreateGlobalSkillDraftStart={handleCreateGlobalSkillDraftStart}
               onDelete={handleDeleteGlobalSkill}
+              onDeleteGlobalSkill={handleDeleteGlobalSkill}
+              onGlobalSkillDirectoryToggle={handleGlobalSkillDirectoryToggle}
+              onGlobalSkillFileSelect={handleGlobalSkillFileSelect}
+              onRenameGlobalSkill={handleRenameGlobalSkill}
+              onRenameGlobalSkillDraftCancel={handleRenameGlobalSkillDraftCancel}
+              onRenameGlobalSkillDraftChange={handleRenameGlobalSkillDraftChange}
+              onRenameGlobalSkillDraftStart={handleRenameGlobalSkillDraftStart}
               onSave={handleSaveGlobalSkillFile}
+            />
+          ) : placeholderWorkspaceMode ? (
+            <WorkspaceModeCanvasPlaceholder
+              mode={placeholderWorkspaceMode}
+              windowControls={isRightSidebarCollapsed ? windowControls : null}
             />
           ) : (
             <>
@@ -732,7 +802,7 @@ export function App() {
           )}
         </section>
 
-        {!isRightSidebarCollapsed ? (
+        {!isFullSurfaceView && !isRightSidebarCollapsed ? (
           <>
             <SidebarResizer
               isSidebarResizing={isRightSidebarResizing}
@@ -744,44 +814,48 @@ export function App() {
               onPointerDown={handleRightSidebarResizerPointerDown}
             />
 
-            <RightSidebar
-              activeWorkspaceFileScopeDirectory={activeWorkspaceFileScopeDirectory}
-              activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
-              activeWorkspaceFileState={activeWorkspaceFileState}
-              activeSessionDirectory={leftSidebarView === "skills" ? null : activeSessionDirectory}
-              activePreviewState={activePreviewState}
-              activeSession={leftSidebarView === "skills" ? null : activeSession}
-              activeSessionDiff={leftSidebarView === "skills" ? null : activeSessionDiff}
-              activeSessionDiffState={leftSidebarView === "skills" ? undefined : activeSessionDiffState}
-              activeSessionRuntimeDebug={leftSidebarView === "skills" ? null : activeSessionRuntimeDebug}
-              activeSessionRuntimeDebugState={leftSidebarView === "skills" ? undefined : activeSessionRuntimeDebugState}
-              canInsertPreviewCommentsIntoDraft={canInsertPreviewCommentsIntoDraft}
-              canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
-              previewWorkspaceDirectory={selectedWorkspace?.directory ?? null}
-              previewWorkspaceName={selectedWorkspace?.name ?? null}
-              selectedDiffFile={leftSidebarView === "skills" ? null : activeSessionSelectedDiffFile}
-              activeView={rightSidebarView}
-              onDiffFileSelect={handleActiveSessionDiffFileSelect}
-              onDiffFileRestore={handleActiveSessionDiffFileRestore}
-              onPreviewAddComment={handlePreviewAddComment}
-              onPreviewDeleteComment={handlePreviewDeleteComment}
-              onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
-              onPreviewInsertCommentsIntoDraft={handlePreviewInsertCommentsIntoDraft}
-              onPreviewModeChange={handlePreviewModeChange}
-              onPreviewOpen={handlePreviewOpen}
-              onPreviewOpenExternal={handlePreviewOpenExternal}
-              onPreviewReload={handlePreviewReload}
-              onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
-              onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
-              onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
-              onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
-              onWorkspaceFileCommentSubmit={handleWorkspaceFileCommentSubmit}
-              onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
-              onWorkspaceFileSelect={handleWorkspaceFileSelect}
-              onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
-              onViewChange={handleRightSidebarViewChange}
-              windowControls={windowControls}
-            />
+            {placeholderWorkspaceMode ? (
+              <WorkspaceModeRightPlaceholder mode={placeholderWorkspaceMode} windowControls={windowControls} />
+            ) : (
+              <RightSidebar
+                activeWorkspaceFileScopeDirectory={activeWorkspaceFileScopeDirectory}
+                activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
+                activeWorkspaceFileState={activeWorkspaceFileState}
+                activeSessionDirectory={activeSessionDirectory}
+                activePreviewState={activePreviewState}
+                activeSession={activeSession}
+                activeSessionDiff={activeSessionDiff}
+                activeSessionDiffState={activeSessionDiffState}
+                activeSessionRuntimeDebug={activeSessionRuntimeDebug}
+                activeSessionRuntimeDebugState={activeSessionRuntimeDebugState}
+                canInsertPreviewCommentsIntoDraft={canInsertPreviewCommentsIntoDraft}
+                canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
+                previewWorkspaceDirectory={selectedWorkspace?.directory ?? null}
+                previewWorkspaceName={selectedWorkspace?.name ?? null}
+                selectedDiffFile={activeSessionSelectedDiffFile}
+                activeView={rightSidebarView}
+                onDiffFileSelect={handleActiveSessionDiffFileSelect}
+                onDiffFileRestore={handleActiveSessionDiffFileRestore}
+                onPreviewAddComment={handlePreviewAddComment}
+                onPreviewDeleteComment={handlePreviewDeleteComment}
+                onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
+                onPreviewInsertCommentsIntoDraft={handlePreviewInsertCommentsIntoDraft}
+                onPreviewModeChange={handlePreviewModeChange}
+                onPreviewOpen={handlePreviewOpen}
+                onPreviewOpenExternal={handlePreviewOpenExternal}
+                onPreviewReload={handlePreviewReload}
+                onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
+                onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
+                onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
+                onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
+                onWorkspaceFileCommentSubmit={handleWorkspaceFileCommentSubmit}
+                onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
+                onWorkspaceFileSelect={handleWorkspaceFileSelect}
+                onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
+                onViewChange={handleRightSidebarViewChange}
+                windowControls={windowControls}
+              />
+            )}
           </>
         ) : null}
 
@@ -795,7 +869,6 @@ export function App() {
           catalog={catalog}
           deletingArchivedSessionID={deletingArchivedSessionID}
           deletingMcpServerID={deletingMcpServerID}
-          deletingPromptPresetID={deletingPromptPresetID}
           deletingProviderID={deletingProviderID}
           appearanceConfigError={appearanceConfigError}
           appearanceConfigPath={appearanceConfigPath}
@@ -805,23 +878,16 @@ export function App() {
           assistantTraceVisibility={assistantTraceVisibility}
           brandTheme={brandTheme}
           colorMode={colorMode}
-          isCreatingPromptPreset={isCreatingPromptPreset}
           isActivityRailVisible={isActivityRailVisible}
           isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
           isDebugLineColorsEnabled={isDebugLineColorsEnabled}
           isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
           isLoading={isLoading}
           isLoadingBuiltinTools={isLoadingBuiltinTools}
-          isLoadingPromptPreset={isLoadingPromptPreset}
-          isLoadingPrompts={isLoadingPrompts}
           isLoadingArchivedSessions={isLoadingArchivedSessions}
           isOpen={isOpen}
-          isPromptDirty={isPromptDirty}
           isBuiltinToolSelectionDirty={isBuiltinToolSelectionDirty}
-          isSystemPromptPresetDirty={isSystemPromptPresetDirty}
-          isPlanModePromptPresetDirty={isPlanModePromptPresetDirty}
           isRefreshingProviderCatalog={isRefreshingProviderCatalog}
-          isSavingPromptPresetSelection={isSavingPromptPresetSelection}
           isSavingBuiltinTools={isSavingBuiltinTools}
           isSavingSelection={isSavingSelection}
           loadError={loadError}
@@ -829,23 +895,12 @@ export function App() {
           mcpServers={mcpServers}
           message={message}
           models={models}
-          promptDraftLabel={promptDraftLabel}
-          promptDraftContent={promptDraftContent}
-          promptLoadError={promptLoadError}
-          promptPresets={promptPresets}
-          promptPresetSelection={promptPresetSelection}
           providerDrafts={providerDrafts}
-          onCreatePromptPreset={createPromptPreset}
-          onDeletePromptPreset={deletePromptPreset}
-          resettingPromptPresetID={resettingPromptPresetID}
           restoringArchivedSessionID={restoringArchivedSessionID}
           savedSelection={savedSelection}
           savingMcpServerID={savingMcpServerID}
-          savingPromptPresetID={savingPromptPresetID}
-          savingPromptPresetSelectionField={savingPromptPresetSelectionField}
           savingProviderID={savingProviderID}
           testingProviderID={testingProviderID}
-          selectedPromptPreset={selectedPromptPreset}
           selectionDraft={selectionDraft}
           onBrandThemeChange={handleBrandThemeChange}
           onColorModeChange={handleColorModeChange}
@@ -862,23 +917,17 @@ export function App() {
           onBuiltinToolToggle={setBuiltinToolEnabled}
           onDeleteArchivedSession={deleteArchivedSession}
           onDeleteMcpServer={deleteMcpServer}
+          onDeleteProvider={deleteProvider}
           onDeleteProviderAuthSession={deleteProviderAuthSession}
           onMcpServerDraftChange={setMcpServerDraftValue}
-          onPromptDraftLabelChange={setPromptDraftLabelValue}
-          onPromptDraftChange={setPromptDraftValue}
-          onPromptPresetSelectionChange={setPromptPresetSelectionValue}
-          onSavePromptPresetSelection={savePromptPresetSelection}
-          onPromptPresetSelect={selectPromptPreset}
           onMcpServerSelect={selectMcpServer}
           onProviderAuthMethodChange={setProviderAuthMethod}
           onProviderDraftChange={setProviderDraftValue}
           onRefreshProviderCatalog={refreshProviderCatalog}
           onResetBuiltinTools={resetBuiltinTools}
-          onResetPromptPreset={resetPromptPreset}
           onRestoreArchivedSession={restoreArchivedSession}
           onSaveBuiltinTools={saveBuiltinTools}
           onSaveMcpServer={saveMcpServer}
-          onSavePromptPreset={savePromptPreset}
           onSaveProviderApiKey={saveProviderApiKey}
           onSaveProvider={saveProvider}
           onSaveSelection={saveSelection}

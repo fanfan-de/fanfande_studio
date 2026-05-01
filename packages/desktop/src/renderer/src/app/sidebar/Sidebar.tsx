@@ -4,25 +4,35 @@ import {
   ArchiveIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  CodeModeIcon,
+  CoworkModeIcon,
   DeleteIcon,
   FileTextIcon,
   FolderIcon,
-  LayoutSidebarLeftIcon,
   NewItemIcon,
   SessionRunningIcon,
   SettingsIcon,
+  SideChatIcon,
   SortIcon
 } from "../icons"
 import { getSessionWorkflowBadge } from "../session-workflow"
-import { SessionWorkflowBadge, ShellTopMenu, SidebarToggleButton, TopMenuViewButton } from "../shared-ui"
+import { SessionWorkflowBadge, ShellTopMenu, SidebarToggleButton } from "../shared-ui"
 import type {
   GlobalSkillTreeNode,
   LeftSidebarView,
   SessionSummary,
   SidebarActionKey,
+  WorkspaceMode,
   WorkspaceGroup
 } from "../types"
 import { isSideChatSession } from "../workspace"
+import { WorkspaceModeSidebarPlaceholder } from "../workspace-mode/WorkspaceModePlaceholder"
+
+const workspaceModeOptions = [
+  { mode: "chat" as const, label: "Chat", Icon: SideChatIcon },
+  { mode: "cowork" as const, label: "Cowork", Icon: CoworkModeIcon },
+  { mode: "code" as const, label: "Code", Icon: CodeModeIcon },
+]
 
 interface SidebarProps {
   activeSessionID: string | null
@@ -52,6 +62,7 @@ interface SidebarProps {
   sessionCanvasUnreadBySession: Record<string, boolean>
   visibleCanvasSessionIDs: string[]
   workspaces: WorkspaceGroup[]
+  workspaceMode: WorkspaceMode
   onCreateGlobalSkill: () => void | Promise<void>
   onCreateGlobalSkillDraftCancel: () => void
   onCreateGlobalSkillDraftChange: (value: string) => void
@@ -73,20 +84,25 @@ interface SidebarProps {
   onSidebarAction: (action: SidebarActionKey) => void | Promise<void>
   onToggleSidebar: () => void
   onViewChange: (view: LeftSidebarView) => void
+  onWorkspaceModeChange: (mode: WorkspaceMode) => void
 }
 
 interface LeftSidebarTopMenuProps {
   activeView: LeftSidebarView
   showSidebarToggleButton: boolean
+  workspaceMode: WorkspaceMode
   onToggleSidebar: () => void
   onViewChange: (view: LeftSidebarView) => void
+  onWorkspaceModeChange: (mode: WorkspaceMode) => void
 }
 
 function LeftSidebarTopMenu({
   activeView,
   showSidebarToggleButton,
+  workspaceMode,
   onToggleSidebar,
   onViewChange,
+  onWorkspaceModeChange,
 }: LeftSidebarTopMenuProps) {
   return (
     <ShellTopMenu
@@ -95,14 +111,24 @@ function LeftSidebarTopMenu({
       className="left-sidebar-top-menu"
       contentClassName="left-sidebar-top-menu-tabs"
       content={(
-        <>
-          <TopMenuViewButton active={activeView === "workspace"} label="Workspace" onClick={() => onViewChange("workspace")}>
-            <LayoutSidebarLeftIcon />
-          </TopMenuViewButton>
-          <TopMenuViewButton active={activeView === "skills"} label="Skills" onClick={() => onViewChange("skills")}>
-            <FileTextIcon />
-          </TopMenuViewButton>
-        </>
+        <div className="workspace-mode-selector" role="group" aria-label="Workspace mode">
+          {workspaceModeOptions.map(({ mode, label, Icon }) => (
+            <button
+              key={mode}
+              className={workspaceMode === mode && activeView === "workspace" ? "workspace-mode-selector-button is-active" : "workspace-mode-selector-button"}
+              aria-pressed={workspaceMode === mode && activeView === "workspace"}
+              title={label}
+              type="button"
+              onClick={() => {
+                onWorkspaceModeChange(mode)
+                onViewChange("workspace")
+              }}
+            >
+              <Icon />
+              <span className="workspace-mode-selector-label">{label}</span>
+            </button>
+          ))}
+        </div>
       )}
       dragRegion
       trailing={showSidebarToggleButton ? (
@@ -641,6 +667,7 @@ export function Sidebar({
   sessionCanvasUnreadBySession,
   visibleCanvasSessionIDs,
   workspaces,
+  workspaceMode,
   onCreateGlobalSkill,
   onCreateGlobalSkillDraftCancel,
   onCreateGlobalSkillDraftChange,
@@ -662,39 +689,46 @@ export function Sidebar({
   onSidebarAction,
   onToggleSidebar,
   onViewChange,
+  onWorkspaceModeChange,
 }: SidebarProps) {
   return (
     <aside id="app-sidebar" className="sidebar" aria-label="Primary sidebar">
       <LeftSidebarTopMenu
         activeView={activeView}
         showSidebarToggleButton={showSidebarToggleButton}
+        workspaceMode={workspaceMode}
         onToggleSidebar={onToggleSidebar}
         onViewChange={onViewChange}
+        onWorkspaceModeChange={onWorkspaceModeChange}
       />
 
       <div className="sidebar-view-host">
         {activeView === "workspace" ? (
-          <FolderWorkspaceView
-            activeSessionID={activeSessionID}
-            deletingSessionID={deletingSessionID}
-            expandedFolderID={expandedFolderID}
-            hoveredFolderID={hoveredFolderID}
-            isCreatingProject={isCreatingProject}
-            isCreatingSession={isCreatingSession}
-            projectRowRefs={projectRowRefs}
-            runningSessionIDs={runningSessionIDs}
-            selectedFolderID={selectedFolderID}
-            sessionCanvasUnreadBySession={sessionCanvasUnreadBySession}
-            visibleCanvasSessionIDs={visibleCanvasSessionIDs}
-            workspaces={workspaces}
-            onHoveredFolderChange={onHoveredFolderChange}
-            onProjectClick={onProjectClick}
-            onProjectCreateSession={onProjectCreateSession}
-            onProjectRemove={onProjectRemove}
-            onSessionDelete={onSessionDelete}
-            onSessionSelect={onSessionSelect}
-            onSidebarAction={onSidebarAction}
-          />
+          workspaceMode === "code" ? (
+            <FolderWorkspaceView
+              activeSessionID={activeSessionID}
+              deletingSessionID={deletingSessionID}
+              expandedFolderID={expandedFolderID}
+              hoveredFolderID={hoveredFolderID}
+              isCreatingProject={isCreatingProject}
+              isCreatingSession={isCreatingSession}
+              projectRowRefs={projectRowRefs}
+              runningSessionIDs={runningSessionIDs}
+              selectedFolderID={selectedFolderID}
+              sessionCanvasUnreadBySession={sessionCanvasUnreadBySession}
+              visibleCanvasSessionIDs={visibleCanvasSessionIDs}
+              workspaces={workspaces}
+              onHoveredFolderChange={onHoveredFolderChange}
+              onProjectClick={onProjectClick}
+              onProjectCreateSession={onProjectCreateSession}
+              onProjectRemove={onProjectRemove}
+              onSessionDelete={onSessionDelete}
+              onSessionSelect={onSessionSelect}
+              onSidebarAction={onSidebarAction}
+            />
+          ) : (
+            <WorkspaceModeSidebarPlaceholder mode={workspaceMode} />
+          )
         ) : null}
         {activeView === "skills" ? (
           <SkillsSidebarView

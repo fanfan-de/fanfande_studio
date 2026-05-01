@@ -203,6 +203,83 @@
   display: none;
 }
 
+.workspace-mode-selector {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--mix-seg-border-76-transparent-24);
+  border-radius: 13px;
+  background: var(--mix-seg-panel-muted-72-seg-panel-28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  -webkit-app-region: no-drag;
+}
+
+.workspace-mode-selector-button {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--seg-text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.workspace-mode-selector-button svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.workspace-mode-selector-button:hover,
+.workspace-mode-selector-button:focus-visible {
+  color: var(--seg-text-1);
+  background: var(--mix-seg-panel-muted-74-seg-panel-26);
+  outline: none;
+}
+
+.workspace-mode-selector-button:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus-outline-color);
+}
+
+.workspace-mode-selector-button.is-active,
+.workspace-mode-selector-button.is-active:hover,
+.workspace-mode-selector-button.is-active:focus-visible {
+  border-color: #000;
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.workspace-mode-selector-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .left-sidebar-top-menu-actions {
   justify-content: flex-end;
 }
@@ -733,6 +810,68 @@
 .sidebar-settings.is-active {
   background: var(--mix-seg-accent-soft-84-transparent-16);
   color: var(--seg-accent-strong);
+}
+
+.workspace-mode-sidebar-placeholder {
+  justify-content: center;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 6px 2px;
+}
+
+.workspace-mode-placeholder-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--seg-accent-strong);
+  background: var(--mix-seg-accent-soft-78-seg-panel-22);
+}
+
+.workspace-mode-placeholder-mark svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.workspace-mode-placeholder-copy {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.workspace-mode-placeholder-copy .label {
+  color: var(--seg-text-3);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.workspace-mode-placeholder-copy h3,
+.workspace-mode-placeholder-copy h2,
+.workspace-mode-placeholder-copy p {
+  margin: 0;
+}
+
+.workspace-mode-placeholder-copy h3 {
+  color: var(--seg-text-1);
+  font-size: 15px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.workspace-mode-placeholder-copy p {
+  color: var(--seg-text-2);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .sidebar-toggle-button.is-top-menu svg {

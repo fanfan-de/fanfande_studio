@@ -1,6 +1,6 @@
 {
   "name": "fanfande-desktop-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Electron AI agent workspace inspired by Anybox",
   "type": "module",
@@ -13,9 +13,9 @@
     "dev:error": "node ./scripts/dev.mjs --agent-log-level=ERROR",
     "build:agent-runtime": "node ./scripts/prepare-agent-runtime.mjs",
     "build": "corepack pnpm run build:agent-runtime && electron-vite build",
-    "dist": "corepack pnpm run build && node ./node_modules/electron-builder/cli.js",
+    "dist": "corepack pnpm run build && node ./node_modules/electron-builder/cli.js --publish never",
     "dist:publish": "corepack pnpm run build && node ./node_modules/electron-builder/cli.js --publish always",
-    "dist:dir": "corepack pnpm run build && node ./node_modules/electron-builder/cli.js --dir",
+    "dist:dir": "corepack pnpm run build && node ./node_modules/electron-builder/cli.js --dir --publish never",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run"
@@ -32,6 +32,8 @@
     "lucide-react": "^1.8.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

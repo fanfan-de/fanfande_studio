@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { describe, expect, it, vi } from "vitest"
 import type { SessionSummary, WorkspaceGroup } from "../types"
@@ -65,6 +65,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     showSidebarToggleButton: false,
     visibleCanvasSessionIDs: [],
     workspaces: [createWorkspace()],
+    workspaceMode: "code",
     onCreateGlobalSkill: vi.fn(),
     onCreateGlobalSkillDraftCancel: vi.fn(),
     onCreateGlobalSkillDraftChange: vi.fn(),
@@ -86,6 +87,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     onSidebarAction: vi.fn(),
     onToggleSidebar: vi.fn(),
     onViewChange: vi.fn(),
+    onWorkspaceModeChange: vi.fn(),
     ...overrides,
   }
 
@@ -93,6 +95,48 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
 }
 
 describe("Sidebar", () => {
+  it("renders the workspace mode selector with Code active by default", () => {
+    renderSidebar()
+
+    expect(screen.getByRole("group", { name: "Workspace mode" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-pressed", "false")
+    expect(screen.getByRole("button", { name: "Cowork" })).toHaveAttribute("aria-pressed", "false")
+    expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("requests workspace mode changes from the segmented selector", () => {
+    const onWorkspaceModeChange = vi.fn()
+    renderSidebar({ onWorkspaceModeChange })
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat" }))
+    fireEvent.click(screen.getByRole("button", { name: "Cowork" }))
+
+    expect(onWorkspaceModeChange).toHaveBeenNthCalledWith(1, "chat")
+    expect(onWorkspaceModeChange).toHaveBeenNthCalledWith(2, "cowork")
+  })
+
+  it("keeps the code workspace tree in Code mode", () => {
+    renderSidebar({ workspaceMode: "code" })
+
+    expect(screen.getByRole("button", { name: "Workspace" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Unread" })).toBeInTheDocument()
+  })
+
+  it("replaces the code workspace tree with Chat and Cowork placeholders", () => {
+    const { unmount } = renderSidebar({ workspaceMode: "chat" })
+
+    expect(screen.getByText("Chat projects")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Unread" })).not.toBeInTheDocument()
+
+    unmount()
+    renderSidebar({ workspaceMode: "cowork" })
+
+    expect(screen.getByText("Cowork projects")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Unread" })).not.toBeInTheDocument()
+  })
+
   it("shows the green dot only for unread session canvases that are not visible", () => {
     renderSidebar({
       activeSessionID: "session-visible",

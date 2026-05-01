@@ -36,6 +36,10 @@
     grid-row: 1;
   }
 
+  .canvas.is-full-surface {
+    grid-column: 2;
+  }
+
   .sidebar-resizer {
     display: none;
   }
