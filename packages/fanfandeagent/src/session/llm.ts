@@ -59,6 +59,8 @@ export type StreamInput = {
   retries?: number,
 }
 
+// AI SDK streaming result handle returned by streamText; callers consume its
+// stream/promise properties instead of receiving a completed text string.
 export type StreamOutput = StreamTextResult<ToolSet, never>
 
 function summarizeModelMessages(messages: ModelMessage[]) {
@@ -157,6 +159,9 @@ function normalizeOpenAIReasoningEffort(
   return undefined
 }
 
+/**
+ * Starts a text-generation stream and returns the AI SDK stream handle.
+ */
 export async function stream(input: StreamInput): Promise<StreamOutput> {
   const l = log
     .clone()
