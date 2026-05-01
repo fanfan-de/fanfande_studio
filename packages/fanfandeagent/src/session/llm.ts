@@ -7,6 +7,7 @@ import {
   Output,
   wrapLanguageModel,
   type ModelMessage,
+  type OnFinishEvent,
   type StreamTextResult,
   type ToolSet,
   extractReasoningMiddleware,
@@ -38,6 +39,7 @@ const DEFAULT_LLM_STEP_TIMEOUT_MS = 10 * 60 * 1000
 const OPENAI_PROVIDER_ID = "openai"
 const OPENAI_CODEX_API_SEGMENT = "/backend-api/codex"
 const DEFAULT_OPENAI_REASONING_EFFORTS: Message.OpenAIReasoningEffort[] = ["low", "medium", "high"]
+type StreamLifecycleCallback<TEvent> = (event: TEvent) => PromiseLike<void> | void
 
 //export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
 
@@ -57,6 +59,9 @@ export type StreamInput = {
   small?: boolean,
   tools?: ToolSet,
   retries?: number,
+  onFinish?: StreamLifecycleCallback<OnFinishEvent<ToolSet>>,
+  onAbort?: StreamLifecycleCallback<{ readonly steps: unknown[] }>,
+  onError?: StreamLifecycleCallback<{ error: unknown }>,
 }
 
 // AI SDK streaming result handle returned by streamText; callers consume its
@@ -236,7 +241,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
             reasoningEffort: openAIReasoningEffort,
           }
           : {}),
-        ...(isOpenAIReasoning && openAIReasoningEffort !== "none"
+        ...(isOpenAIReasoning && openAIReasoningEffort && openAIReasoningEffort !== "none"
           ? {
             reasoningSummary: "auto",
           }
@@ -248,17 +253,20 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   // 使用 Vercel AI SDK 发起流式请求；如需推理抽取，可在这里接入 middleware。
   return streamText({
     // ------ 回调与网络配置（Callbacks & Network）------
-    onError(error) {
-      log.error("流式请求回调异常：AI SDK onError 捕获到错误", error)
+    async onError(error) {
+      log.error("streamText.onError", error)
+      await input.onError?.(error)
     },
-    onFinish: () => {
-      log.info("流式请求结束：streamText.onFinish")
+    onFinish: async (event) => {
+      log.info("streamText.onFinish")
+      await input.onFinish?.(event)
     },
     onStepFinish: () => {
-      log.info("流式步骤结束：streamText.onStepFinish")
+      log.info("streamText.onStepFinish")
     },
-    onAbort: () => {
-      log.info("流式请求中止：streamText.onAbort")
+    onAbort: async (event) => {
+      log.info("streamText.onAbort")
+      await input.onAbort?.(event)
     },
     //上下文
     tools,

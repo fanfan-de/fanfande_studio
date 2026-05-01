@@ -25,7 +25,7 @@ describe("prompt loop limit", () => {
     }))
 
     mock.module("#session/llm.ts", () => ({
-      stream: async () => {
+      stream: async (input: any) => {
         streamCalls += 1
         const isFinalCall = streamCalls === 17
 
@@ -43,6 +43,11 @@ describe("prompt loop limit", () => {
               type: "finish",
               finishReason: isFinalCall ? "stop" : "unknown",
             }
+            await input.onFinish?.({
+              finishReason: isFinalCall ? "stop" : "unknown",
+              text: isFinalCall ? "done" : "",
+              totalUsage: {},
+            })
           })(),
         }
       },

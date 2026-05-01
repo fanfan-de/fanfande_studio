@@ -17,55 +17,67 @@ import {
 } from "#tool/ask-user-question.ts"
 
 const log = Log.create({ service: "session.processor" })
-const STREAM_PART_PERSIST_INTERVAL_MS = 100
 const ENABLE_STREAM_STDOUT_DEBUG = Flag.FanFande_DEBUG_STREAM_STDOUT
 
-type StreamPersistedPart = Message.TextPart | Message.ReasoningPart
+type AssistantOutputDraftPart =
+    | Message.TextPart
+    | Message.ReasoningPart
+    | Message.SourceUrlPart
+    | Message.SourceDocumentPart
+    | Message.FilePart
+    | Message.ImagePart
+    | Message.StepStartPart
+    | Message.StepFinishPart
 
-function createStreamPartPersister(input: {
-    persist: (part: StreamPersistedPart) => Promise<void>
-}) {
-    const state = new Map<string, {
-        dirty: boolean
-        lastPersistedAt: number
-    }>()
+function createAssistantOutputDraft() {
+    const order: string[] = []
+    const parts = new Map<string, AssistantOutputDraftPart>()
 
-    async function flush(part: StreamPersistedPart) {
-        const current = state.get(part.id)
-        if (!current?.dirty) {
-            return
+    function remember<T extends AssistantOutputDraftPart>(part: T) {
+        if (!parts.has(part.id)) {
+            order.push(part.id)
         }
-
-        await input.persist(part)
-        current.dirty = false
-        current.lastPersistedAt = Date.now()
-        state.set(part.id, current)
+        parts.set(part.id, part)
+        return part
     }
 
-    async function persist(part: StreamPersistedPart, force = false) {
-        const current = state.get(part.id) ?? {
-            dirty: false,
-            lastPersistedAt: 0,
-        }
-
-        current.dirty = true
-        state.set(part.id, current)
-
-        if (!force && Date.now() - current.lastPersistedAt < STREAM_PART_PERSIST_INTERVAL_MS) {
-            return
-        }
-
-        await flush(part)
+    function snapshot() {
+        return order
+            .map((partID) => parts.get(partID))
+            .filter((part): part is AssistantOutputDraftPart => Boolean(part))
     }
 
-    function clear(partID: string) {
-        state.delete(partID)
+    function textParts() {
+        return snapshot().filter((part): part is Message.TextPart => part.type === "text")
+    }
+
+    function reasoningParts() {
+        return snapshot().filter((part): part is Message.ReasoningPart => part.type === "reasoning")
+    }
+
+    function hasSource(sourceID: string) {
+        return snapshot().some(
+            (part) =>
+                (part.type === "source-url" || part.type === "source-document") &&
+                part.sourceID === sourceID,
+        )
+    }
+
+    function hasFile(url: string) {
+        return snapshot().some(
+            (part) =>
+                (part.type === "file" || part.type === "image") &&
+                part.url === url,
+        )
     }
 
     return {
-        persist,
-        flush,
-        clear,
+        remember,
+        snapshot,
+        textParts,
+        reasoningParts,
+        hasSource,
+        hasFile,
     }
 }
 
@@ -223,7 +235,18 @@ function toGeneratedFilePart(
             : typeof candidate.mime === "string"
                 ? candidate.mime
                 : ""
-    const url = typeof candidate.url === "string" ? candidate.url : ""
+    const base64 =
+        typeof candidate.base64 === "string"
+            ? candidate.base64
+            : candidate.uint8Array instanceof Uint8Array
+                ? Buffer.from(candidate.uint8Array).toString("base64")
+                : ""
+    const url =
+        typeof candidate.url === "string"
+            ? candidate.url
+            : mime && base64
+                ? `data:${mime};base64,${base64}`
+                : ""
 
     if (!mime || !url) {
         return undefined
@@ -319,6 +342,123 @@ function toSourcePart(
     }
 
     return undefined
+}
+
+function applyFinalStreamResultToDraft(
+    draft: ReturnType<typeof createAssistantOutputDraft>,
+    event: unknown,
+    assistant: Message.Assistant,
+) {
+    if (!isRecord(event)) {
+        return
+    }
+
+    const textParts = draft.textParts()
+    if (typeof event.text === "string") {
+        if (textParts.length === 1) {
+            const textPart = textParts[0]
+            if (!textPart) return
+            textPart.text = event.text.trimEnd()
+            textPart.time = {
+                ...(textPart.time ?? { start: Date.now() }),
+                end: textPart.time?.end ?? Date.now(),
+            }
+        } else if (textParts.length === 0 && event.text.length > 0) {
+            draft.remember({
+                id: Identifier.ascending("part"),
+                sessionID: assistant.sessionID,
+                messageID: assistant.id,
+                type: "text",
+                text: event.text.trimEnd(),
+                time: {
+                    start: Date.now(),
+                    end: Date.now(),
+                },
+            })
+        }
+    }
+
+    const reasoningParts = draft.reasoningParts()
+    const reasoning = Array.isArray(event.reasoning) ? event.reasoning : []
+    if (reasoning.length > 0) {
+        reasoning.forEach((item, index) => {
+            if (!isRecord(item) || typeof item.text !== "string") {
+                return
+            }
+
+            const existing = reasoningParts[index]
+            if (existing) {
+                existing.text = item.text.trimEnd()
+                existing.time = {
+                    ...existing.time,
+                    end: existing.time.end ?? Date.now(),
+                }
+                if (isRecord(item.providerMetadata)) {
+                    existing.metadata = item.providerMetadata
+                }
+                return
+            }
+
+            draft.remember({
+                id: Identifier.ascending("part"),
+                sessionID: assistant.sessionID,
+                messageID: assistant.id,
+                type: "reasoning",
+                text: item.text.trimEnd(),
+                time: {
+                    start: Date.now(),
+                    end: Date.now(),
+                },
+                metadata: isRecord(item.providerMetadata) ? item.providerMetadata : undefined,
+            })
+        })
+    } else if (typeof event.reasoningText === "string" && event.reasoningText.length > 0 && reasoningParts.length === 0) {
+        draft.remember({
+            id: Identifier.ascending("part"),
+            sessionID: assistant.sessionID,
+            messageID: assistant.id,
+            type: "reasoning",
+            text: event.reasoningText.trimEnd(),
+            time: {
+                start: Date.now(),
+                end: Date.now(),
+            },
+        })
+    }
+
+    if (Array.isArray(event.sources)) {
+        for (const source of event.sources) {
+            if (!isRecord(source)) {
+                continue
+            }
+            const sourceID =
+                typeof source.id === "string"
+                    ? source.id
+                    : typeof source.sourceId === "string"
+                        ? source.sourceId
+                        : ""
+            if (sourceID && draft.hasSource(sourceID)) {
+                continue
+            }
+
+            const sourcePart = toSourcePart(source, assistant)
+            if (sourcePart) {
+                draft.remember(sourcePart)
+            }
+        }
+    }
+
+    if (Array.isArray(event.files)) {
+        for (const file of event.files) {
+            const filePart = toGeneratedFilePart(file, assistant)
+            if (filePart && draft.hasFile(filePart.url)) {
+                continue
+            }
+            if (filePart) {
+                draft.remember(filePart)
+            }
+        }
+    }
 }
 
 async function extractToolResultState(
@@ -523,6 +663,22 @@ export function create(input: {
         }
 
         await Session.updatePart(part)
+    }
+    const persistCanonicalPart = async (part: Message.Part) => {
+        if (emitRuntimeEvent) {
+            emitRuntimeEvent("part.recorded", { part })
+            return
+        }
+
+        await Session.updatePart(part)
+    }
+    const persistAssistantMessage = async () => {
+        if (emitRuntimeEvent) {
+            emitRuntimeEvent("message.recorded", { message: input.Assistant })
+            return
+        }
+
+        await Session.updateMessage(input.Assistant)
     }
 
     const emitRuntimePhase = (
@@ -761,6 +917,7 @@ export function create(input: {
                 let llmSummary = summarizeLlmCallInput(streamInput)
                 let llmCallSettled = false
                 let streamAbortReason: string | undefined
+                let persistPartialDraftOnce: ((reason: string) => Promise<void>) | undefined
                 try {
                     attempt += 1
                     emitRuntimePhase("waiting_llm", {
@@ -778,13 +935,112 @@ export function create(input: {
                         hasAttachments: llmSummary.hasAttachments,
                     })
 
-                    const stream = await LLM.stream(streamInput)
-                    const streamPartPersister = createStreamPartPersister({
-                        persist: persistPart,
-                    })
+                    const draft = createAssistantOutputDraft()
                     let currentText: Message.TextPart | undefined = undefined
                     // 鏌愪簺妯″瀷锛堝 Claude銆丟emini锛夋敮鎸佸涓苟琛屾帹鐞嗛摼鎴栧祵濂楁帹鐞嗭紝鎸?id 鍒嗗紑璺熻釜
                     let reasoningMap: Record<string, Message.ReasoningPart> = {}
+                    let outputDraftPersisted = false
+                    let lifecyclePersistence: Promise<void> | undefined
+
+                    const persistDraftParts = async () => {
+                        for (const part of draft.snapshot()) {
+                            await persistCanonicalPart(part)
+                        }
+                    }
+
+                    const persistSuccessfulDraft = async (event: unknown) => {
+                        if (outputDraftPersisted) {
+                            return
+                        }
+
+                        outputDraftPersisted = true
+                        applyFinalStreamResultToDraft(draft, event, input.Assistant)
+
+                        if (isRecord(event)) {
+                            const finishReason =
+                                typeof event.finishReason === "string"
+                                    ? event.finishReason
+                                    : this.message.finishReason
+                            if (finishReason) {
+                                this.message.finishReason = finishReason
+                            }
+                            applyUsageToAssistantMessage(
+                                this.message,
+                                event.totalUsage as LanguageModelUsage | undefined,
+                                "preserve",
+                            )
+                        }
+
+                        this.message.completed = this.message.completed ?? Date.now()
+                        await persistDraftParts()
+                        await persistAssistantMessage()
+                    }
+
+                    persistPartialDraftOnce = async (reason: string) => {
+                        if (outputDraftPersisted) {
+                            return
+                        }
+
+                        outputDraftPersisted = true
+                        const now = Date.now()
+                        for (const part of draft.snapshot()) {
+                            if (part.type === "text") {
+                                part.text = part.text.trimEnd()
+                                part.time = {
+                                    ...(part.time ?? { start: now }),
+                                    end: part.time?.end ?? now,
+                                }
+                            }
+                            if (part.type === "reasoning") {
+                                part.text = part.text.trimEnd()
+                                part.time = {
+                                    ...part.time,
+                                    end: part.time.end ?? now,
+                                }
+                            }
+                        }
+
+                        input.Assistant.error = input.Assistant.error ?? {
+                            name: "UnknownError",
+                            data: {
+                                message: reason,
+                            },
+                        } as Message.Assistant["error"]
+                        input.Assistant.completed = input.Assistant.completed ?? now
+                        await persistDraftParts()
+                        await persistAssistantMessage()
+                    }
+
+                    const stream = await LLM.stream({
+                        ...streamInput,
+                        onFinish: (event) => {
+                            lifecyclePersistence = persistSuccessfulDraft(event)
+                            return lifecyclePersistence
+                        },
+                        onAbort: () => {
+                            const reason = "The model stream was aborted."
+                            streamAbortReason = streamAbortReason ?? reason
+                            input.Assistant.error = input.Assistant.error ?? {
+                                name: "MessageAbortedError",
+                                data: {
+                                    message: streamAbortReason,
+                                },
+                            } as Message.Assistant["error"]
+                            lifecyclePersistence = persistPartialDraftOnce!(streamAbortReason)
+                            return lifecyclePersistence
+                        },
+                        onError: (event) => {
+                            const reason = normalizeToolError(event.error)
+                            input.Assistant.error = {
+                                name: "UnknownError",
+                                data: {
+                                    message: reason,
+                                },
+                            } as Message.Assistant["error"]
+                            lifecyclePersistence = persistPartialDraftOnce!(reason)
+                            return lifecyclePersistence
+                        },
+                    })
                     for await (const streamValue of stream.fullStream) {
                         const value = streamValue as typeof streamValue | (
                             { type: "source-url" | "source-document" } & Record<string, unknown>
@@ -806,6 +1062,7 @@ export function create(input: {
                                     },
                                     metadata: value.providerMetadata,
                                 }
+                                draft.remember(currentText)
                                 emitRuntimeEvent?.("text.part.started", {
                                     messageID: currentText.messageID,
                                     partID: currentText.id,
@@ -825,9 +1082,6 @@ export function create(input: {
                                     emitRuntimeEvent?.("text.part.completed", {
                                         part: currentText,
                                     })
-                                    // 灏?part 鍐欏叆瀛樺偍
-                                    await streamPartPersister.persist(currentText, true)
-                                    streamPartPersister.clear(currentText.id)
                                     currentText = undefined
                                     writeStreamDebug("\n")
 
@@ -846,7 +1100,6 @@ export function create(input: {
                                         metadata: currentText.metadata,
                                     })
 
-                                    await streamPartPersister.persist(currentText)
                                     writeStreamDebug(value.text)
                                 }
                                 break;
@@ -868,6 +1121,7 @@ export function create(input: {
                                     metadata: value.providerMetadata,
                                 }
                                 reasoningMap[value.id] = reasoningPart
+                                draft.remember(reasoningPart)
                                 emitRuntimeEvent?.("reasoning.part.started", {
                                     messageID: reasoningPart.messageID,
                                     partID: reasoningPart.id,
@@ -894,9 +1148,7 @@ export function create(input: {
                                             part: part!,
                                         })
 
-                                        await streamPartPersister.persist(part, true)
-                                        streamPartPersister.clear(part.id)
-                                        delete reasoningMap[value.id] // 宸茬粡瀛樼洏锛屽唴瀛樺彲浠ュ垹闄や簡
+                                        delete reasoningMap[value.id]
                                     }
                                 }
                                 writeStreamDebug("\n")
@@ -913,7 +1165,6 @@ export function create(input: {
                                         delta: value.text,
                                         metadata: part!.metadata,
                                     })
-                                    await streamPartPersister.persist(part!)
                                     writeStreamDebug(value.text)
                                 }
                                 break
@@ -978,7 +1229,7 @@ export function create(input: {
                                 emitRuntimeEvent?.("source.recorded", {
                                     part: sourcePart,
                                 })
-                                await persistPart(sourcePart)
+                                draft.remember(sourcePart)
                                 break
                             }
                             case "file": {
@@ -990,7 +1241,7 @@ export function create(input: {
                                 emitRuntimeEvent?.("file.generated", {
                                     part: filePart,
                                 })
-                                await persistPart(filePart)
+                                draft.remember(filePart)
                                 break
                             }
                             case 'tool-call':
@@ -1198,10 +1449,7 @@ export function create(input: {
                                             ? (value as unknown as { snapshot: string }).snapshot
                                             : undefined,
                                 }
-                                emitRuntimeEvent?.("part.recorded", {
-                                    part: stepStartPart,
-                                })
-                                await persistPart(stepStartPart)
+                                draft.remember(stepStartPart)
                                 break;
                             case "start":
                                 //SessionStatus.set(input.sessionID, { type: "busy" })
@@ -1262,6 +1510,7 @@ export function create(input: {
                                 })
                                 llmCallSettled = true
                                 log.error("stream error", { error: value.error })
+                                await persistPartialDraftOnce?.(streamErrorMessage)
                                 break;
                             case "finish-step":
                                 // 鎺ユ敹鍒拌繖涓?value锛岃鏄?LLM 鍒ゆ柇缁撴潫 React loop
@@ -1283,10 +1532,7 @@ export function create(input: {
                                     cost: 0,
                                     tokens: buildStepTokens(value.usage),
                                 }
-                                emitRuntimeEvent?.("part.recorded", {
-                                    part: stepFinishPart,
-                                })
-                                await persistPart(stepFinishPart)
+                                draft.remember(stepFinishPart)
 
                                 break;
                             case "tool-approval-request":
@@ -1363,11 +1609,19 @@ export function create(input: {
                     }
 
                     if (currentText) {
-                        await streamPartPersister.flush(currentText)
+                        currentText.text = currentText.text.trimEnd()
+                        currentText.time = {
+                            ...(currentText.time ?? { start: Date.now() }),
+                            end: currentText.time?.end ?? Date.now(),
+                        }
                     }
 
                     for (const part of Object.values(reasoningMap)) {
-                        await streamPartPersister.flush(part)
+                        part.text = part.text.trimEnd()
+                        part.time = {
+                            ...part.time,
+                            end: part.time.end ?? Date.now(),
+                        }
                     }
 
                     if (!llmCallSettled && streamAbortReason) {
@@ -1384,6 +1638,17 @@ export function create(input: {
                             retryable: false,
                         })
                         llmCallSettled = true
+                        input.Assistant.error = input.Assistant.error ?? {
+                            name: "MessageAbortedError",
+                            data: {
+                                message: streamAbortReason,
+                            },
+                        } as Message.Assistant["error"]
+                        await persistPartialDraftOnce?.(streamAbortReason)
+                    }
+
+                    if (lifecyclePersistence) {
+                        await lifecyclePersistence
                     }
 
                     await reconcileOpenToolCalls(stream)
@@ -1418,6 +1683,7 @@ export function create(input: {
                             retryable: Boolean(e?.isRetryable === true),
                         })
                     }
+                    await persistPartialDraftOnce?.(normalizeToolError(e))
                     await failOpenToolCalls(normalizeToolError(e))
                     log.error("processor failure", { error: e.message, stack: e.stack })
                     throw e  // 閲嶆柊鎶涘嚭閿欒

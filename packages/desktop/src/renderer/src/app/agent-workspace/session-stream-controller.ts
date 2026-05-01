@@ -70,6 +70,13 @@ function readRuntimeStreamType(streamEvent: { event: string; data: unknown }) {
   return readString(readRuntimeStreamEvent(streamEvent.data)?.type)
 }
 
+export function shouldRefreshRuntimeDebugForStreamEvent(streamEvent: { event: string; data: unknown }) {
+  const runtimeType = readRuntimeStreamType(streamEvent)
+  if (runtimeType === "text.part.delta" || runtimeType === "reasoning.part.delta") return false
+  if (!runtimeType && streamEvent.event === "delta") return false
+  return true
+}
+
 export function isTerminalStreamEvent(streamEvent: { event: string; data: unknown }) {
   const runtimeType = readRuntimeStreamType(streamEvent)
   if (runtimeType) {
@@ -960,10 +967,12 @@ export function useSessionStreamController({
       refreshWorkspaceForSession(target.sessionID)
     }
 
-    scheduleRuntimeDebugRefresh(
-      target.sessionID,
-      target.backendSessionID ?? resolveBackendSessionID(target.sessionID),
-    )
+    if (shouldRefreshRuntimeDebugForStreamEvent(streamEvent)) {
+      scheduleRuntimeDebugRefresh(
+        target.sessionID,
+        target.backendSessionID ?? resolveBackendSessionID(target.sessionID),
+      )
+    }
 
     if (isTerminalStreamEvent(streamEvent)) {
       if (isCompletedStreamEvent(streamEvent)) {
@@ -1006,7 +1015,9 @@ export function useSessionStreamController({
           updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
         }
         refreshWorkspaceForSession(uiSessionID)
-        scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)
+        if (shouldRefreshRuntimeDebugForStreamEvent(streamEvent)) {
+          scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)
+        }
         void reloadSessionHistoryForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
           console.error("[desktop] session stream history refresh failed:", error)
         })
@@ -1045,7 +1056,9 @@ export function useSessionStreamController({
       refreshWorkspaceForSession(uiSessionID)
     }
 
-    scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)
+    if (shouldRefreshRuntimeDebugForStreamEvent(streamEvent)) {
+      scheduleRuntimeDebugRefresh(uiSessionID, streamEvent.sessionID)
+    }
 
     if (isTerminalStreamEvent(streamEvent)) {
       if (isCompletedStreamEvent(streamEvent)) {

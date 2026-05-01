@@ -631,7 +631,7 @@ function buildProviderOptions(input: {
           reasoningEffort: openAIReasoningEffort,
         }
       : {}),
-    ...(isOpenAIReasoning && openAIReasoningEffort !== "none"
+    ...(isOpenAIReasoning && openAIReasoningEffort && openAIReasoningEffort !== "none"
       ? {
           reasoningSummary: "auto",
         }

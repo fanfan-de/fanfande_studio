@@ -205,6 +205,22 @@ test("runtime events project messages and parts into the session read model", as
         turn.emit("file.generated", {
           part: generatedFilePart,
         })
+        expect(db.findById("parts", Message.Part, streamedText.id)).toBeNull()
+        expect(db.findById("parts", Message.Part, sourcePart.id)).toBeNull()
+        expect(db.findById("parts", Message.Part, generatedFilePart.id)).toBeNull()
+
+        turn.emit("message.recorded", {
+          message: completedAssistant,
+        })
+        turn.emit("part.recorded", {
+          part: streamedText,
+        })
+        turn.emit("part.recorded", {
+          part: sourcePart,
+        })
+        turn.emit("part.recorded", {
+          part: generatedFilePart,
+        })
         turn.emit("permission.requested", {
           request: permissionRequest,
           part: permissionAsk,

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
 import { existsSync } from "node:fs"
 import "./sqlite.cleanup.ts"
+import * as db from "#database/Sqlite.ts"
 import { Instance } from "#project/instance.ts"
+import * as Message from "#session/message.ts"
+import * as Session from "#session/session.ts"
 import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
 
 function createTurnRecorder(sessionID: string) {
@@ -50,6 +53,103 @@ function createStreamInput() {
 describe("processor tool persistence", () => {
   afterEach(() => {
     mock.restore()
+  })
+
+  it("persists assistant output only from streamText onFinish", async () => {
+    let assistantID = ""
+    let partsDuringDelta = -1
+
+    mock.module("#session/llm.ts", () => ({
+      stream: async (input: any) => ({
+        fullStream: (async function* () {
+          yield { type: "start" }
+          yield { type: "text-start" }
+          yield { type: "text-delta", text: "hel" }
+          partsDuringDelta = db.findManyWithSchema("parts", Message.Part, {
+            where: [{ column: "messageID", value: assistantID }],
+          }).length
+          yield { type: "text-delta", text: "lo!" }
+          yield { type: "text-end" }
+          yield {
+            type: "finish",
+            finishReason: "stop",
+            totalUsage: {
+              inputTokens: 1,
+              outputTokens: 2,
+            },
+          }
+          await input.onFinish?.({
+            finishReason: "stop",
+            text: "hello!",
+            totalUsage: {
+              inputTokens: 1,
+              outputTokens: 2,
+            },
+          })
+        })(),
+      }),
+    }))
+
+    const Processor = await import("#session/processor.ts")
+
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const session = await Session.createSession({
+          directory: Instance.directory,
+          projectID: Instance.project.id,
+        })
+        const assistant = Message.Assistant.parse({
+          id: `assistant-onfinish-${session.id}`,
+          sessionID: session.id,
+          role: "assistant",
+          created: Date.now(),
+          parentID: "user-onfinish",
+          modelID: "test-model",
+          providerID: "test-provider",
+          agent: "plan",
+          path: {
+            cwd: Instance.directory,
+            root: Instance.worktree,
+          },
+          cost: 0,
+          tokens: {
+            input: 0,
+            output: 0,
+            reasoning: 0,
+            cache: {
+              read: 0,
+              write: 0,
+            },
+          },
+        })
+        assistantID = assistant.id
+
+        const processor = Processor.create({
+          Assistant: assistant,
+        })
+
+        expect(await processor.process(createStreamInput())).toBe("continue")
+        expect(partsDuringDelta).toBe(0)
+
+        const persistedParts = db.findManyWithSchema("parts", Message.Part, {
+          where: [{ column: "messageID", value: assistant.id }],
+        })
+        expect(persistedParts).toHaveLength(1)
+        expect(persistedParts[0]).toMatchObject({
+          type: "text",
+          text: "hello!",
+        })
+        expect(Session.DataBaseRead("messages", assistant.id)).toMatchObject({
+          id: assistant.id,
+          finishReason: "stop",
+          tokens: {
+            input: 1,
+            output: 2,
+          },
+        })
+      },
+    })
   })
 
   it("emits structured tool results and tool errors as runtime events", async () => {

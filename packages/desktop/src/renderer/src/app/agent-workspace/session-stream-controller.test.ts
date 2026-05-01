@@ -12,6 +12,7 @@ import {
   resolveStreamMessageID,
   resolveStreamCursor,
   resolveStreamTurnID,
+  shouldRefreshRuntimeDebugForStreamEvent,
 } from "./session-stream-controller"
 
 function createUserTurn(id: string, text: string): UserTurn {
@@ -127,6 +128,29 @@ describe("session stream controller helpers", () => {
           },
         },
       },
+    })).toBe(true)
+  })
+
+  it("skips runtime debug refreshes for high-frequency text deltas", () => {
+    expect(shouldRefreshRuntimeDebugForStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("text.part.delta"),
+    })).toBe(false)
+    expect(shouldRefreshRuntimeDebugForStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("reasoning.part.delta"),
+    })).toBe(false)
+    expect(shouldRefreshRuntimeDebugForStreamEvent({
+      event: "delta",
+      data: { kind: "text", delta: "token" },
+    })).toBe(false)
+    expect(shouldRefreshRuntimeDebugForStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("turn.state.changed"),
+    })).toBe(true)
+    expect(shouldRefreshRuntimeDebugForStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("turn.completed"),
     })).toBe(true)
   })
 

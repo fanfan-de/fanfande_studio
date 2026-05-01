@@ -139,4 +139,22 @@ describe("llm codex request shaping", () => {
     })
     expect(capturedRequests[0]?.system).toBe("alpha\nbeta")
   })
+
+  it("does not request OpenAI reasoning summaries unless reasoning effort is explicit", async () => {
+    const { stream } = await llmModulePromise
+
+    await stream(
+      createInput(
+        createModel({
+          providerID: "openai",
+          url: "https://api.openai.com/v1",
+          reasoning: true,
+        }),
+      ),
+    )
+
+    expect(capturedRequests).toHaveLength(1)
+    expect(capturedRequests[0]?.providerOptions).toBeUndefined()
+    expect(capturedRequests[0]?.system).toBe("alpha\nbeta")
+  })
 })

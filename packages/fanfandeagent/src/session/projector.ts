@@ -1,60 +1,15 @@
 import z from "zod"
 import * as db from "#database/Sqlite.ts"
 import * as Permission from "#permission/schema.ts"
-import * as Message from "#session/message.ts"
 import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Session from "#session/session.ts"
 import * as Task from "#session/task.ts"
 
 let permissionProjectionGeneration = -1
-const STREAM_PART_PROJECTION_INTERVAL_MS = 250
-
-type StreamPartProjectionBuffer = {
-  lastProjectedAt: number
-  part: Message.TextPart | Message.ReasoningPart
-}
-
-const streamPartProjectionBuffers = new Map<string, StreamPartProjectionBuffer>()
-
-function currentStreamPart(partID: string) {
-  return Session.DataBaseRead("parts", partID) as Message.Part | null
-}
-
-function streamPartBufferKey(sessionID: string, partID: string) {
-  return `${sessionID}:${partID}`
-}
-
-function readBufferedStreamPart(sessionID: string, partID: string) {
-  return streamPartProjectionBuffers.get(streamPartBufferKey(sessionID, partID))?.part
-}
-
-function projectStreamPart(
-  part: Message.TextPart | Message.ReasoningPart,
-  force = false,
-) {
-  const key = streamPartBufferKey(part.sessionID, part.id)
-  const current = streamPartProjectionBuffers.get(key)
-  const now = Date.now()
-  const lastProjectedAt = current?.lastProjectedAt ?? 0
-
-  streamPartProjectionBuffers.set(key, {
-    part,
-    lastProjectedAt,
-  })
-
-  if (!force && now - lastProjectedAt < STREAM_PART_PROJECTION_INTERVAL_MS) {
-    return
-  }
-
-  Session.upsertPart(part)
-  streamPartProjectionBuffers.set(key, {
-    part,
-    lastProjectedAt: now,
-  })
-}
 
 function clearStreamPartProjection(sessionID: string, partID: string) {
-  streamPartProjectionBuffers.delete(streamPartBufferKey(sessionID, partID))
+  void sessionID
+  void partID
 }
 
 function ensurePermissionProjectionTables() {
@@ -78,75 +33,18 @@ function upsertPermissionRequest(request: Permission.Request) {
   db.insertOneWithSchema("permission_requests", request, Permission.Request)
 }
 
-function projectTextPart(
-  event:
-    | z.infer<typeof RuntimeEvent.TextPartStartedEvent>
-    | z.infer<typeof RuntimeEvent.TextPartDeltaEvent>,
-) {
-  const existing = readBufferedStreamPart(event.sessionID, event.payload.partID) ?? currentStreamPart(event.payload.partID)
-  const text =
-    event.type === "text.part.delta"
-      ? event.payload.text ?? `${existing?.type === "text" ? existing.text : ""}${event.payload.delta}`
-      : event.payload.text
-  const next = Message.TextPart.parse({
-    id: event.payload.partID,
-    sessionID: event.sessionID,
-    messageID: event.payload.messageID,
-    type: "text",
-    text,
-    time: {
-      start:
-        existing?.type === "text"
-          ? existing.time?.start ?? event.timestamp
-          : event.timestamp,
-    },
-    metadata: event.payload.metadata,
-  })
-
-  projectStreamPart(next, event.type === "text.part.started")
-}
-
-function projectReasoningPart(
-  event:
-    | z.infer<typeof RuntimeEvent.ReasoningPartStartedEvent>
-    | z.infer<typeof RuntimeEvent.ReasoningPartDeltaEvent>,
-) {
-  const existing = readBufferedStreamPart(event.sessionID, event.payload.partID) ?? currentStreamPart(event.payload.partID)
-  const text =
-    event.type === "reasoning.part.delta"
-      ? event.payload.text ?? `${existing?.type === "reasoning" ? existing.text : ""}${event.payload.delta}`
-      : event.payload.text
-  const next = Message.ReasoningPart.parse({
-    id: event.payload.partID,
-    sessionID: event.sessionID,
-    messageID: event.payload.messageID,
-    type: "reasoning",
-    text,
-    time: {
-      start:
-        existing?.type === "reasoning"
-          ? existing.time.start
-          : event.timestamp,
-    },
-    metadata: event.payload.metadata,
-  })
-
-  projectStreamPart(next, event.type === "reasoning.part.started")
-}
-
 function projectTerminalState(
   event:
     | z.infer<typeof RuntimeEvent.TurnCompletedEvent>
     | z.infer<typeof RuntimeEvent.TurnFailedEvent>
     | z.infer<typeof RuntimeEvent.TurnCancelledEvent>,
 ) {
-  if (event.payload.message) {
+  if (event.payload.message && event.payload.message.role !== "assistant") {
     Session.upsertMessage(event.payload.message)
   }
 
   for (const part of event.payload.parts ?? []) {
     clearStreamPartProjection(event.sessionID, part.id)
-    Session.upsertPart(part)
   }
 }
 
@@ -183,19 +81,15 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
       return
     case "text.part.started":
     case "text.part.delta":
-      projectTextPart(event)
       return
     case "text.part.completed":
       clearStreamPartProjection(event.sessionID, event.payload.part.id)
-      Session.upsertPart(event.payload.part)
       return
     case "reasoning.part.started":
     case "reasoning.part.delta":
-      projectReasoningPart(event)
       return
     case "reasoning.part.completed":
       clearStreamPartProjection(event.sessionID, event.payload.part.id)
-      Session.upsertPart(event.payload.part)
       return
     case "tool.call.pending":
     case "tool.call.started":
@@ -204,8 +98,11 @@ export function project(event: RuntimeEvent.RuntimeEvent) {
     case "tool.call.denied":
     case "tool.call.completed":
     case "tool.call.failed":
+      Session.upsertPart(event.payload.part)
+      return
     case "source.recorded":
     case "file.generated":
+      return
     case "patch.generated":
     case "snapshot.captured":
       Session.upsertPart(event.payload.part)
