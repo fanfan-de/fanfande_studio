@@ -143,12 +143,27 @@ export function normalizeWorkflowState(
   }
 }
 
+const ArchivedRuntimeEvent = z.union([
+  RuntimeEvent.RuntimeEvent,
+  z
+    .object({
+      eventID: z.string().optional(),
+      sessionID: z.string().optional(),
+      turnID: z.string().optional(),
+      seq: z.number().optional(),
+      timestamp: z.number().optional(),
+      type: z.string().optional(),
+      payload: z.unknown().optional(),
+    })
+    .passthrough(),
+])
+
 export const ArchivedSessionSnapshot = z
   .object({
     session: SessionInfo,
     messages: z.array(Message.MessageInfo),
     parts: z.array(Message.Part),
-    events: z.array(RuntimeEvent.RuntimeEvent),
+    events: z.array(ArchivedRuntimeEvent),
     tasks: z.array(TaskSchema.SessionTaskRecord).optional(),
   })
   .meta({
@@ -936,8 +951,20 @@ function restoreArchivedSession(sessionID: string): SessionInfo | null {
       db.insertOneWithSchema("parts", part, Message.Part)
     }
 
+    let skippedEventCount = 0
     for (const event of record.snapshot.events) {
-      EventStore.append(event)
+      const parsed = RuntimeEvent.RuntimeEvent.safeParse(event)
+      if (parsed.success) {
+        EventStore.append(parsed.data)
+      } else {
+        skippedEventCount += 1
+      }
+    }
+    if (skippedEventCount > 0) {
+      log.warn("skipped unsupported archived runtime events during restore", {
+        sessionID: record.sessionID,
+        skippedEventCount,
+      })
     }
 
     const tasks = record.snapshot.tasks ?? []

@@ -6,9 +6,15 @@ import type { PtyEvent, TerminalSessionRecord, TerminalStreamEvent, TerminalWork
 const MIN_PANEL_HEIGHT = 220
 const MAX_PANEL_HEIGHT = 560
 const RECONNECT_DELAYS_MS = [600, 1_000, 1_600, 2_400, 3_600]
+export const TERMINAL_LIVE_BUFFER_MAX_CHARS = 200_000
 
 function clampPanelHeight(value: number) {
   return Math.max(MIN_PANEL_HEIGHT, Math.min(MAX_PANEL_HEIGHT, value))
+}
+
+export function trimTerminalLiveBuffer(buffer: string, maxChars = TERMINAL_LIVE_BUFFER_MAX_CHARS) {
+  if (buffer.length <= maxChars) return buffer
+  return buffer.slice(-maxChars)
 }
 
 function orderedSessions(state: TerminalWorkspaceState) {
@@ -92,11 +98,20 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
 
   function readLiveSessionSnapshot(ptyID: string, fallback?: Pick<TerminalSessionRecord, "buffer" | "cursor">) {
     const existing = liveSessionsRef.current[ptyID]
-    if (existing) return existing
+    if (existing) {
+      const trimmedBuffer = trimTerminalLiveBuffer(existing.buffer)
+      if (trimmedBuffer !== existing.buffer) {
+        liveSessionsRef.current[ptyID] = {
+          ...existing,
+          buffer: trimmedBuffer,
+        }
+      }
+      return liveSessionsRef.current[ptyID]!
+    }
 
     const session = workspaceRef.current.sessions[ptyID]
     const nextSnapshot = {
-      buffer: fallback?.buffer ?? session?.buffer ?? "",
+      buffer: trimTerminalLiveBuffer(fallback?.buffer ?? session?.buffer ?? ""),
       cursor: fallback?.cursor ?? session?.cursor ?? 0,
       scrollTop: session?.scrollTop ?? 0,
     }
@@ -110,7 +125,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
   ) {
     const current = readLiveSessionSnapshot(ptyID)
     const nextSnapshot = {
-      buffer: input.buffer ?? current.buffer,
+      buffer: trimTerminalLiveBuffer(input.buffer ?? current.buffer),
       cursor: input.cursor ?? current.cursor,
       scrollTop: input.scrollTop ?? current.scrollTop,
     }
@@ -425,23 +440,23 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
           const replayBuffer =
             event.replay.mode === "reset" ? event.replay.buffer : `${previous.buffer}${event.replay.buffer}`
 
-          writeLiveSessionSnapshot(event.ptyID, {
+          const nextLiveSnapshot = writeLiveSessionSnapshot(event.ptyID, {
             buffer: replayBuffer,
             cursor: event.replay.cursor,
           })
 
-          if (event.replay.mode === "reset") {
+          if (event.replay.mode === "reset" || nextLiveSnapshot.buffer !== replayBuffer) {
             emitTerminalStreamEvent(event.ptyID, {
               type: "replace",
-              buffer: replayBuffer,
-              cursor: event.replay.cursor,
+              buffer: nextLiveSnapshot.buffer,
+              cursor: nextLiveSnapshot.cursor,
               scrollTop: workspaceRef.current.sessions[event.ptyID]?.scrollTop ?? 0,
             })
           } else if (event.replay.buffer) {
             emitTerminalStreamEvent(event.ptyID, {
               type: "append",
               data: event.replay.buffer,
-              cursor: event.replay.cursor,
+              cursor: nextLiveSnapshot.cursor,
             })
           }
 
@@ -462,15 +477,26 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
         }
 
         if (event.type === "output") {
-          writeLiveSessionSnapshot(event.ptyID, {
-            buffer: `${readLiveSessionSnapshot(event.ptyID).buffer}${event.data}`,
+          const previous = readLiveSessionSnapshot(event.ptyID)
+          const nextBuffer = `${previous.buffer}${event.data}`
+          const nextLiveSnapshot = writeLiveSessionSnapshot(event.ptyID, {
+            buffer: nextBuffer,
             cursor: event.cursor,
           })
-          emitTerminalStreamEvent(event.ptyID, {
-            type: "append",
-            data: event.data,
-            cursor: event.cursor,
-          })
+          if (nextLiveSnapshot.buffer === nextBuffer) {
+            emitTerminalStreamEvent(event.ptyID, {
+              type: "append",
+              data: event.data,
+              cursor: nextLiveSnapshot.cursor,
+            })
+          } else {
+            emitTerminalStreamEvent(event.ptyID, {
+              type: "replace",
+              buffer: nextLiveSnapshot.buffer,
+              cursor: nextLiveSnapshot.cursor,
+              scrollTop: workspaceRef.current.sessions[event.ptyID]?.scrollTop ?? 0,
+            })
+          }
           return
         }
 

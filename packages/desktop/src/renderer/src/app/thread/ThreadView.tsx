@@ -575,7 +575,7 @@ function InlineSideChatThread({
     <section className="inline-side-chat-thread" aria-label="Nested side chat">
       <header className="inline-side-chat-header">
         <div className="inline-side-chat-copy">
-          <strong title={session.origin?.anchorPreview || session.title}>{session.origin?.anchorPreview || session.title}</strong>
+          <strong>Side chat</strong>
         </div>
         <button
           aria-label="Hide side chat"
@@ -1462,7 +1462,7 @@ export function ThreadView({
               <article className="thread-session-banner">
                 <div className="thread-session-banner-copy">
                   <span className="label">Side chat</span>
-                  <strong>{activeSession.origin?.anchorPreview || "Anchored reply snapshot"}</strong>
+                  <strong>Linked reply thread</strong>
                   <p>Scoped discussion linked to one assistant reply. It stays out of the main session context.</p>
                 </div>
                 <span className="thread-session-banner-pill">Isolated</span>

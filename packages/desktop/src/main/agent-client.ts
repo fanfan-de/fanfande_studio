@@ -158,14 +158,13 @@ export function consumeSSEBuffer(raw: string, flush = false) {
 export async function readAgentSSEStream(
   response: Response,
   onEvent: (event: AgentSSEEvent) => void,
-): Promise<AgentSSEEvent[]> {
+): Promise<void> {
   const reader = response.body?.getReader()
   if (!reader) {
     throw new Error("Agent stream body is unavailable")
   }
 
   const decoder = new TextDecoder()
-  const events: AgentSSEEvent[] = []
   let buffer = ""
 
   while (true) {
@@ -177,7 +176,6 @@ export async function readAgentSSEStream(
     buffer = parsed.remainder
 
     for (const event of parsed.events) {
-      events.push(event)
       onEvent(event)
     }
   }
@@ -185,9 +183,6 @@ export async function readAgentSSEStream(
   buffer += decoder.decode()
   const trailing = consumeSSEBuffer(buffer, true)
   for (const event of trailing.events) {
-    events.push(event)
     onEvent(event)
   }
-
-  return events
 }

@@ -93,6 +93,27 @@ function setScrollMetrics(element: HTMLElement, input: { clientHeight: number; s
   element.scrollTop = input.scrollTop
 }
 
+describe("ThreadView side chat banner", () => {
+  it("does not render the anchored response preview as banner copy", () => {
+    const { getByText, queryByText } = renderThread([], {
+      activeSession: {
+        ...session,
+        title: "Side chat: Raw markdown response",
+        kind: "side-chat",
+        origin: {
+          parentSessionID: "session-parent",
+          anchorMessageID: "assistant-message-1",
+          anchorPreview: "Raw markdown response",
+        },
+      },
+      showSessionBanner: true,
+    })
+
+    expect(getByText("Linked reply thread")).toBeInTheDocument()
+    expect(queryByText("Raw markdown response")).not.toBeInTheDocument()
+  })
+})
+
 describe("ThreadView question prompts", () => {
   it("keeps option buttons clickable while the assistant turn is waiting for an answer", () => {
     const onAskUserQuestionAnswer = vi.fn().mockResolvedValue(undefined)

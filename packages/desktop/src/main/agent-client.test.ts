@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { consumeSSEBuffer, parseSSE } from "./agent-client"
+import { consumeSSEBuffer, parseSSE, readAgentSSEStream } from "./agent-client"
 
 describe("agent SSE parsing", () => {
   it("ignores keepalive comment blocks in completed responses", () => {
@@ -86,6 +86,35 @@ describe("agent SSE parsing", () => {
         data: {
           kind: "text",
           delta: "Recovered chunk",
+        },
+      },
+    ])
+  })
+
+  it("streams events through the callback without returning an accumulated event array", async () => {
+    const encoder = new TextEncoder()
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode("event: delta\n"))
+          controller.enqueue(encoder.encode('data: {"kind":"text","delta":"chunk"}\n\n'))
+          controller.close()
+        },
+      }),
+    )
+    const events: ReturnType<typeof parseSSE> = []
+
+    const result = await readAgentSSEStream(response, (event) => {
+      events.push(event)
+    })
+
+    expect(result).toBeUndefined()
+    expect(events).toEqual([
+      {
+        event: "delta",
+        data: {
+          kind: "text",
+          delta: "chunk",
         },
       },
     ])

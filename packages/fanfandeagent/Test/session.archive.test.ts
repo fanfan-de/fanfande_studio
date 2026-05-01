@@ -5,7 +5,9 @@ import { join } from "node:path"
 import "./sqlite.cleanup.ts"
 import * as Sqlite from "#database/Sqlite.ts"
 import * as Identifier from "#id/id.ts"
+import * as EventStore from "#session/event-store.ts"
 import * as Message from "#session/message.ts"
+import * as RuntimeEvent from "#session/runtime-event.ts"
 import * as Session from "#session/session.ts"
 
 const baseModel = {
@@ -13,10 +15,11 @@ const baseModel = {
   modelID: "test-model",
 }
 
-async function removeWithRetry(target: string, attempts = 5) {
+async function removeWithRetry(target: string, attempts = 10) {
   let lastError: unknown
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
+      Bun.gc(true)
       await rm(target, { recursive: true, force: true })
       return
     } catch (error) {
@@ -107,6 +110,72 @@ test("archiveSessionCascade archives derived side chats with the parent session"
     expect(Session.readArchivedSession(parentSession.id)?.snapshot.session.id).toBe(parentSession.id)
     expect(Session.readArchivedSession(sideChat.id)?.snapshot.session.id).toBe(sideChat.id)
     expect(Session.listSideChats(parentSession.id).map((link) => link.sessionID)).toEqual([sideChat.id])
+  } finally {
+    Sqlite.closeDatabase()
+    Sqlite.setDatabaseFile(undefined)
+    await removeWithRetry(root)
+  }
+})
+
+test("archived sessions tolerate unsupported legacy runtime event types", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fanfande-session-archive-legacy-"))
+  const databaseFile = join(root, "archive.db")
+
+  try {
+    Sqlite.setDatabaseFile(databaseFile)
+
+    const session = await Session.createSession({
+      directory: root,
+      projectID: "project_archive_legacy",
+    })
+    const factory = RuntimeEvent.createRuntimeEventFactory({
+      sessionID: session.id,
+      turnID: Identifier.ascending("turn"),
+      timestamp: () => Date.now(),
+    })
+    const knownEvent = factory.next("turn.started", {})
+    EventStore.append(knownEvent)
+
+    const archived = Session.archiveSession(session.id)
+    expect(archived?.sessionID).toBe(session.id)
+
+    const selectSnapshot = Sqlite.db.query(`SELECT snapshot FROM archived_sessions WHERE sessionID = ?`)
+    const raw = selectSnapshot.get(session.id) as { snapshot: string } | null
+    selectSnapshot.finalize()
+    expect(raw).not.toBeNull()
+
+    const snapshot = JSON.parse(raw!.snapshot)
+    snapshot.events.push({
+      ...knownEvent,
+      eventID: Identifier.ascending("event"),
+      seq: knownEvent.seq + 1,
+      type: "tool.call.input.delta",
+      payload: {
+        callID: "call-legacy",
+        delta: "{\"command\":\"pwd\"}",
+      },
+    })
+    const updateSnapshot = Sqlite.db.prepare(
+      `UPDATE archived_sessions SET snapshot = ?, eventCount = ? WHERE sessionID = ?`,
+    )
+    updateSnapshot.run(JSON.stringify(snapshot), snapshot.events.length, session.id)
+    updateSnapshot.finalize()
+
+    const listed = Session.listArchivedSessions()
+    expect(listed).toHaveLength(1)
+    expect(listed[0]!.snapshot.events).toHaveLength(2)
+
+    const restored = Session.restoreArchivedSession(session.id)
+    expect(restored?.id).toBe(session.id)
+
+    const selectRestoredEventTypes = Sqlite.db.query(
+      `SELECT type FROM session_events WHERE sessionID = ? ORDER BY seq ASC`,
+    )
+    const restoredEventTypes = selectRestoredEventTypes
+      .all(session.id)
+      .map((row) => (row as { type: string }).type)
+    selectRestoredEventTypes.finalize()
+    expect(restoredEventTypes).toEqual(["turn.started"])
   } finally {
     Sqlite.closeDatabase()
     Sqlite.setDatabaseFile(undefined)

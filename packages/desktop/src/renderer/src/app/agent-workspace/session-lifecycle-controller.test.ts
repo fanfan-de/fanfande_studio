@@ -3,6 +3,7 @@ import type { PendingAgentStream } from "../types"
 import {
   filterSideChatMappingForCleanup,
   removePendingStreamsForSessions,
+  removeSubscribedSessionStreamsForCleanup,
 } from "./session-lifecycle-controller"
 
 describe("session lifecycle cleanup helpers", () => {
@@ -45,6 +46,35 @@ describe("session lifecycle cleanup helpers", () => {
         sessionID: "session-2",
         assistantTurnID: "assistant-2",
       },
+    })
+  })
+
+  it("collects and removes subscribed streams by UI session id", () => {
+    const subscribed = {
+      "ui-session-1": "backend-session-1",
+      "ui-session-2": "backend-session-2",
+    }
+
+    const backendSessionIDs = removeSubscribedSessionStreamsForCleanup(subscribed, new Set(["ui-session-1"]))
+
+    expect([...backendSessionIDs]).toEqual(["backend-session-1"])
+    expect(subscribed).toEqual({
+      "ui-session-2": "backend-session-2",
+    })
+  })
+
+  it("collects and removes subscribed streams by backend session id without duplicates", () => {
+    const subscribed = {
+      "ui-session-1": "backend-session-1",
+      "backend-session-1": "backend-session-1",
+      "ui-session-2": "backend-session-2",
+    }
+
+    const backendSessionIDs = removeSubscribedSessionStreamsForCleanup(subscribed, new Set(["backend-session-1"]))
+
+    expect([...backendSessionIDs]).toEqual(["backend-session-1"])
+    expect(subscribed).toEqual({
+      "ui-session-2": "backend-session-2",
     })
   })
 })

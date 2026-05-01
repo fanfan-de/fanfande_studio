@@ -1,4 +1,5 @@
 import type { MouseEvent, MutableRefObject } from "react"
+import { getAgentSessionBridge } from "../agent-session/client"
 import {
   ensureAgentSessions,
   ensureConversationSessions,
@@ -75,6 +76,23 @@ export function removePendingStreamsForSessions(
       delete pendingStreams[streamID]
     }
   }
+}
+
+export function removeSubscribedSessionStreamsForCleanup(
+  subscribedSessionStreams: Record<string, string>,
+  sessionIDs: Set<string>,
+) {
+  const backendSessionIDs = new Set<string>()
+
+  for (const [uiSessionID, backendSessionID] of Object.entries(subscribedSessionStreams)) {
+    if (!sessionIDs.has(uiSessionID) && !sessionIDs.has(backendSessionID)) continue
+    if (backendSessionID.trim()) {
+      backendSessionIDs.add(backendSessionID)
+    }
+    delete subscribedSessionStreams[uiSessionID]
+  }
+
+  return backendSessionIDs
 }
 
 interface UseSessionLifecycleControllerOptions {
@@ -300,7 +318,16 @@ export function useSessionLifecycleController({
         type: "session.cleanup",
         sessionID,
       })
-      delete subscribedSessionStreamsRef.current[sessionID]
+    }
+
+    const agentSession = getAgentSessionBridge()
+    const backendSessionIDs = removeSubscribedSessionStreamsForCleanup(subscribedSessionStreamsRef.current, sessionIDs)
+    if (agentSession) {
+      for (const backendSessionID of backendSessionIDs) {
+        void agentSession.unsubscribe({ backendSessionID }).catch((error) => {
+          console.error("[desktop] agentSession.unsubscribe failed during session cleanup:", error)
+        })
+      }
     }
 
     removePendingStreamsForSessions(pendingStreamsRef.current, sessionIDs)

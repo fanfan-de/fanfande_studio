@@ -1129,7 +1129,8 @@ describe("App", () => {
 
     expect(currentSessionTab).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to session Chat 1 / Side chat" })).not.toBeInTheDocument()
-    expect(within(nestedSideChat).getByText("Anchored reply snapshot")).toBeInTheDocument()
+    expect(within(nestedSideChat).getByText("Side chat")).toBeInTheDocument()
+    expect(within(nestedSideChat).queryByText("Anchored reply snapshot")).not.toBeInTheDocument()
     expect(within(nestedSideChat).queryByText("Scoped")).not.toBeInTheDocument()
     expect(
       within(nestedSideChat).queryByText("Focused on this reply only. Messages here stay outside the main thread context."),
@@ -8200,6 +8201,67 @@ describe("App", () => {
       })
     })
     expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
+  })
+
+  it("unsubscribes a live session stream when archiving a session", async () => {
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
+      {
+        id: "C:\\Projects\\Project 2",
+        directory: "C:\\Projects\\Project 2",
+        name: "Project 2",
+        created: 1,
+        updated: 20,
+        project: {
+          id: "project-2",
+          name: "Project 2",
+          worktree: "C:\\Projects\\Project 2",
+        },
+        sessions: [
+          {
+            id: "session-chat-1",
+            projectID: "project-2",
+            directory: "C:\\Projects\\Project 2",
+            title: "Chat 1",
+            created: 10,
+            updated: 20,
+          },
+        ],
+      },
+    ])
+    window.desktop!.agentSession!.subscribe = vi.fn().mockResolvedValue({
+      backendSessionID: "session-chat-1",
+    })
+    window.desktop!.agentSession!.unsubscribe = vi.fn().mockResolvedValue({
+      backendSessionID: "session-chat-1",
+      removed: true,
+    })
+    window.desktop!.archiveAgentSession = vi.fn().mockResolvedValue({
+      sessionID: "session-chat-1",
+      projectID: "project-2",
+      directory: "C:\\Projects\\Project 2",
+      archivedAt: 1,
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.subscribe).toHaveBeenCalledWith({
+        uiSessionID: "session-chat-1",
+        backendSessionID: "session-chat-1",
+      })
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive session Chat 1" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.unsubscribe).toHaveBeenCalledWith({
+        backendSessionID: "session-chat-1",
+      })
+    })
   })
 
   it("removes inline side chats when archiving a parent session cascade", async () => {

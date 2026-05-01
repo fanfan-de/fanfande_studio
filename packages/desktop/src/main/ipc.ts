@@ -173,8 +173,30 @@ type ActiveAgentSessionRequest = {
   controller: AbortController
 }
 
+type DisposableSessionStreamSubscription = {
+  dispose(): void
+}
+
 function sessionStreamSubscriptionKey(webContentsID: number, sessionID: string) {
   return `${webContentsID}:${sessionID}`
+}
+
+function isSessionStreamSubscriptionKeyForWebContents(key: string, webContentsID: number) {
+  return key.startsWith(`${webContentsID}:`)
+}
+
+function disposeSessionStreamSubscriptionsForWebContents<TSubscription extends DisposableSessionStreamSubscription>(
+  subscriptions: Map<string, TSubscription>,
+  webContentsID: number,
+) {
+  let disposedCount = 0
+  for (const [key, streamSubscription] of [...subscriptions.entries()]) {
+    if (!isSessionStreamSubscriptionKeyForWebContents(key, webContentsID)) continue
+    streamSubscription.dispose()
+    subscriptions.delete(key)
+    disposedCount += 1
+  }
+  return disposedCount
 }
 
 function agentSessionRequestKey(webContentsID: number, clientTurnID: string) {
@@ -2020,11 +2042,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       if (!sessionStreamCleanupTargets.has(target.id)) {
         sessionStreamCleanupTargets.add(target.id)
         target.once("destroyed", () => {
-          for (const [key, streamSubscription] of [...sessionStreamSubscriptions.entries()]) {
-            if (!key.includes(`:${target.id}:`)) continue
-            streamSubscription.dispose()
-            sessionStreamSubscriptions.delete(key)
-          }
+          disposeSessionStreamSubscriptionsForWebContents(sessionStreamSubscriptions, target.id)
           sessionStreamCleanupTargets.delete(target.id)
         })
       }
@@ -2046,4 +2064,9 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     }),
   )
 
+}
+
+export const internal = {
+  disposeSessionStreamSubscriptionsForWebContents,
+  isSessionStreamSubscriptionKeyForWebContents,
 }

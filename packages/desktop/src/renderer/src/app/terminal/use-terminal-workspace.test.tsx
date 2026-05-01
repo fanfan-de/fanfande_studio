@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { act } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PtyEvent } from "./types"
-import { useTerminalWorkspace } from "./use-terminal-workspace"
+import { TERMINAL_LIVE_BUFFER_MAX_CHARS, useTerminalWorkspace } from "./use-terminal-workspace"
 
 function Harness() {
   const terminal = useTerminalWorkspace({
@@ -325,6 +325,73 @@ describe("useTerminalWorkspace", () => {
 
     expect(setItemSpy).not.toHaveBeenCalled()
     setItemSpy.mockRestore()
+  })
+
+  it("caps live terminal output while preserving the latest cursor", async () => {
+    render(<Harness />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+
+    await waitFor(() => {
+      expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
+        id: "pty-1",
+        cursor: 0,
+      })
+    })
+
+    const output = "x".repeat(TERMINAL_LIVE_BUFFER_MAX_CHARS + 25)
+    act(() => {
+      ptyListener?.({
+        ptyID: "pty-1",
+        type: "output",
+        id: "out-large",
+        data: output,
+        cursor: output.length,
+      })
+      ptyListener?.({
+        ptyID: "pty-1",
+        type: "state",
+        session: {
+          id: "pty-1",
+          title: "Terminal 1",
+          cwd: "C:\\Projects\\fanfande_studio",
+          shell: "powershell.exe",
+          rows: 24,
+          cols: 80,
+          status: "running",
+          exitCode: null,
+          createdAt: 1,
+          updatedAt: 2,
+          cursor: output.length,
+        },
+      })
+    })
+
+    await waitFor(() => {
+      const renderedBuffer = screen.getByTestId("session-buffers").textContent?.replace(/^pty-1:/, "") ?? ""
+      expect(renderedBuffer).toHaveLength(TERMINAL_LIVE_BUFFER_MAX_CHARS)
+      expect(renderedBuffer).toBe(output.slice(-TERMINAL_LIVE_BUFFER_MAX_CHARS))
+    })
+
+    act(() => {
+      ptyListener?.({
+        ptyID: "pty-1",
+        type: "transport",
+        state: "disconnected",
+        userInitiated: false,
+      })
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 700))
+    })
+
+    await waitFor(() => {
+      expect(window.desktop?.attachPtySession).toHaveBeenLastCalledWith({
+        id: "pty-1",
+        cursor: output.length,
+      })
+    })
   })
 
   it("persists terminal scroll position from the live snapshot path", async () => {
