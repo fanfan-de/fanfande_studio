@@ -4,7 +4,7 @@ import z from "zod"
 import * as Agent from "#agent/agent.ts"
 import * as Config from "#config/config.ts"
 import { Instance } from "#project/instance.ts"
-import { resolveTools } from "#session/resolve-tools.ts"
+import { resolveTools } from "#session/core/resolve-tools.ts"
 import * as ToolRegistry from "#tool/registry.ts"
 import * as Tool from "#tool/tool.ts"
 

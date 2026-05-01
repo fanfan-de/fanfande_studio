@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildDetailedDiffSummary, buildDiffSummary, summarizeSnapshotFileDiffs } from "#session/diff-summary.ts"
+import { buildDetailedDiffSummary, buildDiffSummary, summarizeSnapshotFileDiffs } from "#session/diff/diff-summary.ts"
 
 describe("session diff summary", () => {
   test("maps snapshot file diffs into compact file summaries", () => {

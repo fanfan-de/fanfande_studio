@@ -1,8 +1,8 @@
 import z from "zod"
 import * as Identifier from "#id/id.ts"
 import * as Permission from "#permission/schema.ts"
-import * as Message from "#session/message.ts"
-import * as Task from "#session/task-schema.ts"
+import * as Message from "#session/core/message.ts"
+import * as Task from "#session/tasks/task-schema.ts"
 
 const ModelRef = z.object({
   providerID: z.string(),
@@ -423,6 +423,13 @@ export type RuntimeEvent = z.infer<typeof RuntimeEvent>
 export type RuntimeEventType = RuntimeEvent["type"]
 export type RuntimeEventCursor = z.infer<typeof RuntimeEventCursor>
 export type TurnRuntimePhase = z.infer<typeof TurnRuntimePhase>
+export type TransientStreamEventType =
+  | "text.part.started"
+  | "text.part.delta"
+  | "text.part.completed"
+  | "reasoning.part.started"
+  | "reasoning.part.delta"
+  | "reasoning.part.completed"
 
 export type RuntimeEventPayloadByType = {
   "turn.started": z.infer<typeof TurnStartedPayload>

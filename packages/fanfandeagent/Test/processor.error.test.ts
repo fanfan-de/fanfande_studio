@@ -49,7 +49,7 @@ describe("processor stream error persistence", () => {
   })
 
   it("records stream-only errors on the assistant message", async () => {
-    mock.module("#session/llm.ts", () => ({
+    mock.module("#session/core/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
           yield { type: "start" }
@@ -61,7 +61,7 @@ describe("processor stream error persistence", () => {
       }),
     }))
 
-    const Processor = await import("#session/processor.ts")
+    const Processor = await import("#session/core/processor.ts")
     const recorded = createTurnRecorder("session-1")
     const assistant = {
       id: "assistant-1",

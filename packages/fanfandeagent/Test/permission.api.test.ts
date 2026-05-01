@@ -9,8 +9,8 @@ import { createServerApp } from "#server/server.ts"
 import { Instance } from "#project/instance.ts"
 import * as Identifier from "#id/id.ts"
 import * as Permission from "#permission/permission.ts"
-import * as Message from "#session/message.ts"
-import * as Session from "#session/session.ts"
+import * as Message from "#session/core/message.ts"
+import * as Session from "#session/core/session.ts"
 import * as db from "#database/Sqlite.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {

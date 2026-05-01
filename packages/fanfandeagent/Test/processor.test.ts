@@ -1,15 +1,15 @@
 // import { test, expect, mock } from "bun:test"
-// import type { StreamInput } from "#session/llm.ts"
+// import type { StreamInput } from "#session/core/llm.ts"
 // import type { Model } from "#provider/provider.ts"
 // import type { AgentInfo } from "#agent/agent.ts"
-// import * as Message from "#session/message.ts" 
+// import * as Message from "#session/core/message.ts"
 // import * as testobject from "./testobject.test"
 
 // // 模拟 LLM.stream 返回一个简单的文本流
 
 
 // // 现在导入 processor（必须在模拟之后）
-// import * as Processor from "#session/processor.ts"
+// import * as Processor from "#session/core/processor.ts"
 
 
 
@@ -58,7 +58,7 @@
 // //     }
 // //   })
 
-// //   mock.module("#session/llm.ts", () => ({
+// //   mock.module("#session/core/llm.ts", () => ({
 // //     stream: mockStreamWithReasoning,
 // //   }))
 
@@ -89,7 +89,7 @@
 // //     }
 // //   })
 
-// //   mock.module("#session/llm.ts", () => ({
+// //   mock.module("#session/core/llm.ts", () => ({
 // //     stream: mockStreamWithToolCall,
 // //   }))
 

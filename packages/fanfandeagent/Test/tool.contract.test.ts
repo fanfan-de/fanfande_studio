@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import z from "zod"
 import { Instance } from "#project/instance.ts"
-import * as Message from "#session/message.ts"
+import * as Message from "#session/core/message.ts"
 import { AskUserQuestionTool, answerAskUserQuestion } from "#tool/ask-user-question.ts"
 import {
   CmdCommandTool,

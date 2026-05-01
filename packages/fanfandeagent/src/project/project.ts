@@ -9,7 +9,7 @@ import { fn } from "#util/fn.ts"
 import * as BusEvent from "#bus/bus-event.ts"
 import { GlobalBus } from "#bus/global.ts"
 import { existsSync } from "fs"
-import * as Session from "#session/session.ts"
+import * as Session from "#session/core/session.ts"
 import * as Identifier from "#id/id.ts"
 
 const log = Log.create({ service: "project" })

@@ -1,6 +1,6 @@
 // import { test, expect } from "bun:test"
-// import * as Processor from "#session/processor.ts"
-// import * as Message from "#session/message.ts"
+// import * as Processor from "#session/core/processor.ts"
+// import * as Message from "#session/core/message.ts"
 
 
 // test("create returns processor with correct message getter", () => {

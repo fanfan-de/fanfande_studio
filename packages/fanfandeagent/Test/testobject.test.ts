@@ -1,6 +1,6 @@
-import * as Message from "#session/message.ts"
-import { stream, type StreamInput } from '#session/llm.ts'; // 替换为实际路径
-import { PromptInput } from "#session/prompt.ts"
+import * as Message from "#session/core/message.ts"
+import { stream, type StreamInput } from '#session/core/llm.ts'; // 替换为实际路径
+import { PromptInput } from "#session/core/prompt.ts"
 import * as Provider from "#provider/provider.ts";
 import * as Agent from "#agent/agent.ts"
 import z from 'zod';

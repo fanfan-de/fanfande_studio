@@ -35,7 +35,7 @@ test("prompt auto-generates and persists a session title for the first user mess
     getLanguage: async (model: Record<string, unknown>) => model,
   }))
 
-  mock.module("#session/llm.ts", () => ({
+  mock.module("#session/core/llm.ts", () => ({
     stream: async () => ({
       fullStream: (async function* () {
         yield { type: "start" }
@@ -57,8 +57,8 @@ test("prompt auto-generates and persists a session title for the first user mess
     }),
   }))
 
-  const Session = await import("#session/session.ts")
-  const Prompt = await import("#session/prompt.ts")
+  const Session = await import("#session/core/session.ts")
+  const Prompt = await import("#session/core/prompt.ts")
 
   try {
     await Instance.provide({

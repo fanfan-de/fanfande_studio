@@ -1,6 +1,6 @@
 import z from "zod"
 import * as BusEvent from "#bus/bus-event.ts"
-import * as Message from "#session/message.ts"
+import * as Message from "#session/core/message.ts"
 
 const ChunkReceived = BusEvent.define(
   "session.stream.chunk.received",

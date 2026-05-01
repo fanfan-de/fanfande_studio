@@ -2,7 +2,7 @@ import z from "zod"
 import type { JSONValue } from "@ai-sdk/provider"
 import * as Identifier from "#id/id.ts"
 import * as Tool from "#tool/tool.ts"
-import * as Subtask from "#session/subtask.ts"
+import * as Subtask from "#session/tasks/subtask.ts"
 import { renderSubtaskText, toSubtaskModelValue } from "#tool/subagent-shared.ts"
 
 const ReadSubagentParameters = z.object({

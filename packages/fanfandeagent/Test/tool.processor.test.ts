@@ -3,9 +3,9 @@ import { existsSync } from "node:fs"
 import "./sqlite.cleanup.ts"
 import * as db from "#database/Sqlite.ts"
 import { Instance } from "#project/instance.ts"
-import * as Message from "#session/message.ts"
-import * as Session from "#session/session.ts"
-import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
+import * as Message from "#session/core/message.ts"
+import * as Session from "#session/core/session.ts"
+import * as ToolResultPersistence from "#session/support/tool-result-persistence.ts"
 
 function createTurnRecorder(sessionID: string) {
   const events: Array<{ type: string; payload: any }> = []
@@ -59,7 +59,7 @@ describe("processor tool persistence", () => {
     let assistantID = ""
     let partsDuringDelta = -1
 
-    mock.module("#session/llm.ts", () => ({
+    mock.module("#session/core/llm.ts", () => ({
       stream: async (input: any) => ({
         fullStream: (async function* () {
           yield { type: "start" }
@@ -90,7 +90,7 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    const Processor = await import("#session/processor.ts")
+    const Processor = await import("#session/core/processor.ts")
 
     await Instance.provide({
       directory: process.cwd(),
@@ -157,7 +157,7 @@ describe("processor tool persistence", () => {
     Date.now = () => 1000
 
     try {
-      mock.module("#session/llm.ts", () => ({
+      mock.module("#session/core/llm.ts", () => ({
         stream: async () => ({
           fullStream: (async function* () {
             yield { type: "start" }
@@ -239,7 +239,7 @@ describe("processor tool persistence", () => {
         }),
       }))
 
-      const Processor = await import("#session/processor.ts")
+      const Processor = await import("#session/core/processor.ts")
       const recorded = createTurnRecorder("session-1")
 
       const assistant = {
@@ -315,7 +315,7 @@ describe("processor tool persistence", () => {
   })
 
   it("keeps AskUserQuestion UI metadata out of provider metadata", async () => {
-    mock.module("#session/llm.ts", () => ({
+    mock.module("#session/core/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
           yield { type: "start" }
@@ -373,7 +373,7 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    const Processor = await import("#session/processor.ts")
+    const Processor = await import("#session/core/processor.ts")
     const recorded = createTurnRecorder("session-question-metadata")
 
     const processor = Processor.create({
@@ -435,7 +435,7 @@ describe("processor tool persistence", () => {
     const largeOutput = `${"large-output ".repeat(5_000)}tail-marker`
 
     try {
-      mock.module("#session/llm.ts", () => ({
+      mock.module("#session/core/llm.ts", () => ({
         stream: async () => ({
           fullStream: (async function* () {
             yield { type: "start" }
@@ -476,7 +476,7 @@ describe("processor tool persistence", () => {
         }),
       }))
 
-      const Processor = await import("#session/processor.ts")
+      const Processor = await import("#session/core/processor.ts")
       const recorded = createTurnRecorder(sessionID)
 
       const assistant = {
@@ -545,7 +545,7 @@ describe("processor tool persistence", () => {
   })
 
   it("emits provider-executed tool calls without a prior input-start event", async () => {
-    mock.module("#session/llm.ts", () => ({
+    mock.module("#session/core/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
           yield { type: "start" }
@@ -581,7 +581,7 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    const Processor = await import("#session/processor.ts")
+    const Processor = await import("#session/core/processor.ts")
     const recorded = createTurnRecorder("session-remote")
 
     const assistant = {
@@ -656,7 +656,7 @@ describe("processor tool persistence", () => {
   })
 
   it("stops the loop and emits waiting approval state when approval is requested", async () => {
-    mock.module("#session/llm.ts", () => ({
+    mock.module("#session/core/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
           yield { type: "start" }
@@ -685,7 +685,7 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    const Processor = await import("#session/processor.ts")
+    const Processor = await import("#session/core/processor.ts")
     const recorded = createTurnRecorder("session-approval")
 
     await Instance.provide({
@@ -743,7 +743,7 @@ describe("processor tool persistence", () => {
   })
 
   it("stops and fails dangling tool calls when the stream ends without a result", async () => {
-    mock.module("#session/llm.ts", () => ({
+    mock.module("#session/core/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
           yield { type: "start" }
@@ -767,7 +767,7 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    const Processor = await import("#session/processor.ts")
+    const Processor = await import("#session/core/processor.ts")
     const recorded = createTurnRecorder("session-stuck")
 
     const assistant = {
@@ -816,7 +816,7 @@ describe("processor tool persistence", () => {
   })
 
   it("surfaces stream timeout aborts when tool input never becomes a tool call", async () => {
-    mock.module("#session/llm.ts", () => ({
+    mock.module("#session/core/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
           yield { type: "start" }
@@ -841,7 +841,7 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    const Processor = await import("#session/processor.ts")
+    const Processor = await import("#session/core/processor.ts")
     const recorded = createTurnRecorder("session-timeout")
 
     const assistant = {
@@ -896,7 +896,7 @@ describe("processor tool persistence", () => {
   })
 
   it("reconciles dangling tool calls from final stream metadata when fullStream misses tool-result", async () => {
-    mock.module("#session/llm.ts", () => ({
+    mock.module("#session/core/llm.ts", () => ({
       stream: async () => ({
         fullStream: (async function* () {
           yield { type: "start" }
@@ -937,7 +937,7 @@ describe("processor tool persistence", () => {
       }),
     }))
 
-    const Processor = await import("#session/processor.ts")
+    const Processor = await import("#session/core/processor.ts")
     const recorded = createTurnRecorder("session-reconciled")
 
     const assistant = {

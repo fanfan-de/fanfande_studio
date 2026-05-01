@@ -2,7 +2,7 @@
 // import { Instance } from "@/project/instance";
 // import z from "zod"
 // import * as prompt from "./prompt"
-// import * as Session from "#session/session.ts"
+// import * as Session from "#session/core/session.ts"
 
 
 // //#region Types & Interfaces

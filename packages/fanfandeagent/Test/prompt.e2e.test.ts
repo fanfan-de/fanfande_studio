@@ -16,8 +16,8 @@ test("prompt flow from directory entry to assistant reply", async () => {
 
   try {
     const { Instance } = await import("#project/instance.ts")
-    const Session = await import("#session/session.ts")
-    const { prompt } = await import("#session/prompt.ts")
+    const Session = await import("#session/core/session.ts")
+    const { prompt } = await import("#session/core/prompt.ts")
 
     const result = await Instance.provide({
       directory: targetDirectory,

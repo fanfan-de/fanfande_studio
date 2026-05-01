@@ -1,4 +1,4 @@
-import type { SubtaskView } from "#session/subtask.ts"
+import type { SubtaskView } from "#session/tasks/subtask.ts"
 
 const DEFAULT_SUMMARY_PREVIEW_CHARS = 4_000
 

@@ -26,7 +26,7 @@ mock.module("#provider/provider.ts", () => ({
   getLanguage: async () => ({ id: "language-model" }),
 }))
 
-const llmModulePromise = import("#session/llm.ts")
+const llmModulePromise = import("#session/core/llm.ts")
 
 function createModel(input: { providerID: string; url: string; id?: string; reasoning?: boolean }) {
   return {

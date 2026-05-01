@@ -6,9 +6,9 @@ import "./sqlite.cleanup.ts"
 import * as Sqlite from "#database/Sqlite.ts"
 import { Instance } from "#project/instance.ts"
 import * as Identifier from "#id/id.ts"
-import * as Message from "#session/message.ts"
-import * as Session from "#session/session.ts"
-import * as ContextWindow from "#session/context-window.ts"
+import * as Message from "#session/core/message.ts"
+import * as Session from "#session/core/session.ts"
+import * as ContextWindow from "#session/core/context-window.ts"
 
 const baseModel = {
   id: "test-model",

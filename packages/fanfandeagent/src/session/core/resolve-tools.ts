@@ -1,11 +1,11 @@
 import { tool, type ToolSet } from "ai"
 import * as Agent from "#agent/agent.ts"
 import * as Config from "#config/config.ts"
-import * as Session from "#session/session.ts"
+import * as Session from "#session/core/session.ts"
 import * as Identifier from "#id/id.ts"
 import { Instance } from "#project/instance.ts"
 import * as Permission from "#permission/permission.ts"
-import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
+import * as ToolResultPersistence from "#session/support/tool-result-persistence.ts"
 import * as Tool from "#tool/tool.ts"
 import * as ToolRegistry from "#tool/registry.ts"
 

@@ -1,5 +1,5 @@
 import * as Log from "#util/log.ts"
-import * as Message from "#session/message.ts"
+import * as Message from "#session/core/message.ts"
 import type { Model as ProviderModel } from "#provider/provider.ts"
 
 const log = Log.create({ service: "session.title" })
@@ -8,7 +8,7 @@ const SESSION_TITLE_TIMEOUT_MS = 5_000
 let cachedTitlePrompt: Promise<string> | undefined
 
 async function loadTitlePrompt() {
-  cachedTitlePrompt ??= Bun.file(new URL("../prompts/title.txt", import.meta.url)).text()
+  cachedTitlePrompt ??= Bun.file(new URL("../../prompts/title.txt", import.meta.url)).text()
   return cachedTitlePrompt
 }
 

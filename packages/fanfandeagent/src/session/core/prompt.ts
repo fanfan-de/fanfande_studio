@@ -3,22 +3,22 @@ import * as Log from "#util/log.ts";
 import z from "zod";
 import * as Identifier from "#id/id.ts";
 import { fn } from "#util/fn.ts";
-import * as Status from "#session/status.ts";
-import * as Session from "#session/session.ts";
-import * as Processor from "#session/processor.ts";
+import * as Status from "#session/runtime/status.ts";
+import * as Session from "#session/core/session.ts";
+import * as Processor from "#session/core/processor.ts";
 import * as Provider from "#provider/provider.ts";
 import * as db from "#database/Sqlite.ts";
 import * as Agent from "#agent/agent.ts";
-import * as SystemPrompt from "#session/system.ts"
+import * as SystemPrompt from "#session/core/system.ts"
 import * as Skill from "#skill/skill.ts"
 import * as Snapshot  from "#snapshot/snapshot.ts"
-import * as SessionDiff from "#session/diff.ts"
+import * as SessionDiff from "#session/diff/diff.ts"
 import { Flag } from "#flag/flag.ts"
-import * as Orchestrator from "#session/orchestrator.ts"
-import * as RunningState from "#session/running-state.ts"
-import * as ContextWindow from "#session/context-window.ts"
-import * as RuntimeEvent from "#session/runtime-event.ts"
-import * as SessionTitle from "#session/title.ts"
+import * as Orchestrator from "#session/runtime/orchestrator.ts"
+import * as RunningState from "#session/runtime/running-state.ts"
+import * as ContextWindow from "#session/core/context-window.ts"
+import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
+import * as SessionTitle from "#session/support/title.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";

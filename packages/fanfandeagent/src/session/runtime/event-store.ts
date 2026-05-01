@@ -1,8 +1,8 @@
 import z from "zod"
 import * as db from "#database/Sqlite.ts"
-import * as LiveStreamHub from "#session/live-stream-hub.ts"
-import * as Projector from "#session/projector.ts"
-import * as RuntimeEvent from "#session/runtime-event.ts"
+import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
+import * as Projector from "#session/runtime/projector.ts"
+import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 
 const SessionEventRecord = z.object({
   eventID: z.string(),

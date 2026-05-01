@@ -5,9 +5,9 @@ import * as Identifier from "#id/id.ts"
 import { Instance } from "#project/instance.ts"
 import * as Agent from "#agent/agent.ts"
 import * as Provider from "#provider/provider.ts"
-import * as Session from "#session/session.ts"
-import * as Message from "#session/message.ts"
-import * as RunningState from "#session/running-state.ts"
+import * as Session from "#session/core/session.ts"
+import * as Message from "#session/core/message.ts"
+import * as RunningState from "#session/runtime/running-state.ts"
 
 const log = Log.create({ service: "session.subtask" })
 const MAX_STORED_SUMMARY_CHARS = 12_000
@@ -461,7 +461,7 @@ async function maybeNotifyParentSession(record: SubtaskRecord) {
     }))
   }
 
-  const Prompt = await import("#session/prompt.ts")
+  const Prompt = await import("#session/core/prompt.ts")
   try {
     await Instance.provide({
       directory: parentSession.directory,
@@ -532,7 +532,7 @@ async function runSubtaskLifecycle(input: {
 }) {
   let finalized: SubtaskRecord | null = null
   try {
-    const Prompt = await import("#session/prompt.ts")
+    const Prompt = await import("#session/core/prompt.ts")
     const latest = await Instance.provide({
       directory: input.directory,
       fn: () => Prompt.prompt(input.promptInput),
@@ -719,7 +719,7 @@ export async function cancelSubtask(id: string): Promise<SubtaskView> {
     return toView(current)
   }
 
-  const Prompt = await import("#session/prompt.ts")
+  const Prompt = await import("#session/core/prompt.ts")
   const cancelled = Prompt.cancel(current.childSessionID)
   const now = Date.now()
   const next = updateStoredSubtask(id, (record) => ({

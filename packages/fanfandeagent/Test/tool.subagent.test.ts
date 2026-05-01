@@ -46,7 +46,7 @@ mock.module("#provider/provider.ts", () => ({
   getLanguage: async (model: Record<string, unknown>) => model,
 }))
 
-mock.module("#session/llm.ts", () => ({
+mock.module("#session/core/llm.ts", () => ({
   stream: (input: StreamInput) => streamHandler(input),
 }))
 
@@ -81,7 +81,7 @@ describe("subagent tools", () => {
       })(),
     })
 
-    const Session = await import("#session/session.ts")
+    const Session = await import("#session/core/session.ts")
     const { SpawnSubagentTool } = await import("#tool/spawn-subagent.ts")
     const { ReadSubagentTool } = await import("#tool/read-subagent.ts")
 
@@ -163,7 +163,7 @@ describe("subagent tools", () => {
       }
     }
 
-    const Session = await import("#session/session.ts")
+    const Session = await import("#session/core/session.ts")
     const { SpawnSubagentTool } = await import("#tool/spawn-subagent.ts")
     const { ReadSubagentTool } = await import("#tool/read-subagent.ts")
 
@@ -264,7 +264,7 @@ describe("subagent tools", () => {
       }
     }
 
-    const Session = await import("#session/session.ts")
+    const Session = await import("#session/core/session.ts")
     const { SpawnSubagentTool } = await import("#tool/spawn-subagent.ts")
     const { ReadSubagentTool } = await import("#tool/read-subagent.ts")
     const { CancelSubagentTool } = await import("#tool/cancel-subagent.ts")
@@ -379,9 +379,9 @@ describe("subagent tools", () => {
       }
     }
 
-    const Session = await import("#session/session.ts")
-    const Prompt = await import("#session/prompt.ts")
-    const Message = await import("#session/message.ts")
+    const Session = await import("#session/core/session.ts")
+    const Prompt = await import("#session/core/prompt.ts")
+    const Message = await import("#session/core/message.ts")
     const { SpawnSubagentTool } = await import("#tool/spawn-subagent.ts")
     const { ReadSubagentTool } = await import("#tool/read-subagent.ts")
 
@@ -482,7 +482,7 @@ describe("subagent tools", () => {
     })
 
     const Agent = await import("#agent/agent.ts")
-    const ResolveTools = await import("#session/resolve-tools.ts")
+    const ResolveTools = await import("#session/core/resolve-tools.ts")
 
     await Instance.provide({
       directory: process.cwd(),

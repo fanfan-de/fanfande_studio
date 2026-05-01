@@ -1,12 +1,12 @@
 import * as db from "#database/Sqlite.ts"
-import * as Message from "#session/message.ts"
+import * as Message from "#session/core/message.ts"
 import * as  Snapshot  from "#snapshot/snapshot.ts"
 import {
     buildDiffSummary as buildCompactDiffSummary,
     buildDetailedDiffSummary as buildDetailedDiffSummaryBase,
     summarizeSnapshotFileDiffs,
     type CompactFileDiff,
-} from "#session/diff-summary.ts"
+} from "#session/diff/diff-summary.ts"
 
 export type DiffSummary = NonNullable<Message.User["diffSummary"]>
 export interface DetailedDiffSummary extends Omit<DiffSummary, "diffs"> {

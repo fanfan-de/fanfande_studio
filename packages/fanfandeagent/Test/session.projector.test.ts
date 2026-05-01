@@ -4,12 +4,12 @@ import { Instance } from "#project/instance.ts"
 import * as db from "#database/Sqlite.ts"
 import * as Identifier from "#id/id.ts"
 import * as Permission from "#permission/schema.ts"
-import * as EventStore from "#session/event-store.ts"
-import * as LiveStreamHub from "#session/live-stream-hub.ts"
-import * as Message from "#session/message.ts"
-import * as Orchestrator from "#session/orchestrator.ts"
-import * as RuntimeEvent from "#session/runtime-event.ts"
-import * as Session from "#session/session.ts"
+import * as EventStore from "#session/runtime/event-store.ts"
+import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
+import * as Message from "#session/core/message.ts"
+import * as Orchestrator from "#session/runtime/orchestrator.ts"
+import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
+import * as Session from "#session/core/session.ts"
 
 test("runtime events project messages and parts into the session read model", async () => {
   await Instance.provide({

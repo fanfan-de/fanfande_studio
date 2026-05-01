@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { Instance } from "#project/instance.ts"
-import * as Session from "#session/session.ts"
+import * as Session from "#session/core/session.ts"
 
 async function createGitRepo(root: string, seed: string) {
   await mkdir(root, { recursive: true })

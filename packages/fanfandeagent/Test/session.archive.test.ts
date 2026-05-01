@@ -5,10 +5,10 @@ import { join } from "node:path"
 import "./sqlite.cleanup.ts"
 import * as Sqlite from "#database/Sqlite.ts"
 import * as Identifier from "#id/id.ts"
-import * as EventStore from "#session/event-store.ts"
-import * as Message from "#session/message.ts"
-import * as RuntimeEvent from "#session/runtime-event.ts"
-import * as Session from "#session/session.ts"
+import * as EventStore from "#session/runtime/event-store.ts"
+import * as Message from "#session/core/message.ts"
+import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
+import * as Session from "#session/core/session.ts"
 
 const baseModel = {
   providerID: "test-provider",

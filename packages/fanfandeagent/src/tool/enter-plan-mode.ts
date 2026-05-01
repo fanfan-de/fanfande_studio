@@ -1,5 +1,5 @@
 import z from "zod"
-import * as Session from "#session/session.ts"
+import * as Session from "#session/core/session.ts"
 import * as Tool from "#tool/tool.ts"
 
 const Parameters = z.object({

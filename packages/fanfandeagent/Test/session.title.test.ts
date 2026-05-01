@@ -31,8 +31,8 @@ mock.module("#provider/provider.ts", () => ({
   getLanguage: async (model: Record<string, unknown>) => model,
 }))
 
-const SessionTitle = await import("#session/title.ts")
-const Session = await import("#session/session.ts")
+const SessionTitle = await import("#session/support/title.ts")
+const Session = await import("#session/core/session.ts")
 
 beforeEach(() => {
   capturedGenerateInput = null

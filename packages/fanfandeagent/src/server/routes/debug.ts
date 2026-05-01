@@ -1,10 +1,10 @@
 import { Hono, type Context } from "hono"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
-import * as EventStore from "#session/event-store.ts"
-import * as RunningState from "#session/running-state.ts"
-import { getSessionRuntimeDebugSnapshot } from "#session/runtime-debug.ts"
-import * as Session from "#session/session.ts"
+import * as EventStore from "#session/runtime/event-store.ts"
+import * as RunningState from "#session/runtime/running-state.ts"
+import { getSessionRuntimeDebugSnapshot } from "#session/runtime/runtime-debug.ts"
+import * as Session from "#session/core/session.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "server.debug" })

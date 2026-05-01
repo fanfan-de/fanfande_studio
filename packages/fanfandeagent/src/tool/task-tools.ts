@@ -1,9 +1,9 @@
 import z from "zod"
 import * as db from "#database/Sqlite.ts"
-import * as Message from "#session/message.ts"
-import * as Orchestrator from "#session/orchestrator.ts"
-import * as Session from "#session/session.ts"
-import * as Task from "#session/task.ts"
+import * as Message from "#session/core/message.ts"
+import * as Orchestrator from "#session/runtime/orchestrator.ts"
+import * as Session from "#session/core/session.ts"
+import * as Task from "#session/tasks/task.ts"
 import * as Tool from "#tool/tool.ts"
 
 const Metadata = z.record(z.string(), z.any())

@@ -235,7 +235,7 @@ GET /api/sessions/:id/events/stream
 - route：`routes/session.ts`
 - usecase：`usecases/session.ts`
 - stream engine：`usecases/session-stream.ts`
-- event source：`#session/live-stream-hub.ts`、`#session/event-store.ts`
+- event source：`#session/runtime/live-stream-hub.ts`、`#session/runtime/event-store.ts`
 - event mapping：`#session/stream-mapper.ts`
 
 ### Execution stream

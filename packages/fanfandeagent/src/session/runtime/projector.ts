@@ -1,9 +1,9 @@
 import z from "zod"
 import * as db from "#database/Sqlite.ts"
 import * as Permission from "#permission/schema.ts"
-import * as RuntimeEvent from "#session/runtime-event.ts"
-import * as Session from "#session/session.ts"
-import * as Task from "#session/task.ts"
+import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
+import * as Session from "#session/core/session.ts"
+import * as Task from "#session/tasks/task.ts"
 
 let permissionProjectionGeneration = -1
 

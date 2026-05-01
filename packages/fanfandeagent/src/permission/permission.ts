@@ -9,9 +9,9 @@ import * as Filesystem from "#util/filesystem.ts"
 import * as Tool from "#tool/tool.ts"
 import * as ToolRegistry from "#tool/registry.ts"
 import * as Agent from "#agent/agent.ts"
-import * as Message from "#session/message.ts"
-import * as Orchestrator from "#session/orchestrator.ts"
-import * as Session from "#session/session.ts"
+import * as Message from "#session/core/message.ts"
+import * as Orchestrator from "#session/runtime/orchestrator.ts"
+import * as Session from "#session/core/session.ts"
 import * as Schema from "#permission/schema.ts"
 
 const log = Log.create({ service: "permission" })

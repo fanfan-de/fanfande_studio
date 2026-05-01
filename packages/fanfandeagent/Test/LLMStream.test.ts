@@ -1,9 +1,9 @@
 
 import { describe, it, expect, mock } from 'bun:test';
-import { stream, type StreamInput } from '#session/llm.ts'; // 替换为实际路径
+import { stream, type StreamInput } from '#session/core/llm.ts'; // 替换为实际路径
 import * as Provider from "#provider/provider.ts";
 import { simulateReadableStream } from 'ai'; // 模拟流工具
-import * as Message from "#session/message.ts"
+import * as Message from "#session/core/message.ts"
 import * as Agent from "#agent/agent.ts"
 import z from 'zod';
 

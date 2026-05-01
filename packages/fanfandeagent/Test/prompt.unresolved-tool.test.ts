@@ -25,7 +25,7 @@ describe("prompt loop unresolved tool guard", () => {
       getLanguage: async (model: Record<string, unknown>) => model,
     }))
 
-    mock.module("#session/llm.ts", () => ({
+    mock.module("#session/core/llm.ts", () => ({
       stream: async () => {
         streamCalls += 1
         return {
@@ -43,9 +43,9 @@ describe("prompt loop unresolved tool guard", () => {
       },
     }))
 
-    const Session = await import("#session/session.ts")
-    const Prompt = await import("#session/prompt.ts")
-    const Message = await import("#session/message.ts")
+    const Session = await import("#session/core/session.ts")
+    const Prompt = await import("#session/core/prompt.ts")
+    const Message = await import("#session/core/message.ts")
 
     await Instance.provide({
       directory: process.cwd(),

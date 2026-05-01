@@ -21,7 +21,7 @@ import { clone, mergeDeep, pipe } from "remeda"
 //import { ProviderTransform } from "@/provider/transform"
 import * as  Config from "#config/config.ts"
 import * as  Agent from "#agent/agent.ts"
-import * as  Message from '#session/message.ts'
+import * as  Message from '#session/core/message.ts'
 //import { Plugin } from "@/plugin"
 ///import { SystemPrompt } from "./system"
 import { Flag } from "@/flag/flag"

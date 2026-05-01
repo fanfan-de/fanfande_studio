@@ -3,9 +3,9 @@ import "./sqlite.cleanup.ts"
 import * as Sqlite from "#database/Sqlite.ts"
 import * as Parser from "#database/parser.ts"
 import { z } from "zod"
-import * as Session from"#session/session.ts"
+import * as Session from"#session/core/session.ts"
 import * as testobject from "./testobject.test"
-import * as Message from "#session/message.ts"
+import * as Message from "#session/core/message.ts"
 
 //测试用的 schema
 const TestSchema = z.object({

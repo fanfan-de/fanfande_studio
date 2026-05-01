@@ -1,6 +1,16 @@
 import * as Identifier from "#id/id.ts"
-import * as EventStore from "#session/event-store.ts"
-import * as RuntimeEvent from "#session/runtime-event.ts"
+import * as EventStore from "#session/runtime/event-store.ts"
+import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
+import * as Log from "#util/log.ts"
+
+const log = Log.create({ service: "session.orchestrator" })
+
+type PendingStreamEvent = {
+  [TType in RuntimeEvent.TransientStreamEventType]: {
+    type: TType
+    payload: RuntimeEvent.RuntimeEventPayloadByType[TType]
+  }
+}[RuntimeEvent.TransientStreamEventType]
 
 export interface TurnContext {
   readonly sessionID: string
@@ -9,6 +19,11 @@ export interface TurnContext {
     type: TType,
     payload: RuntimeEvent.RuntimeEventPayloadByType[TType],
   ): RuntimeEvent.RuntimeEvent
+  emitStream<TType extends RuntimeEvent.TransientStreamEventType>(
+    type: TType,
+    payload: RuntimeEvent.RuntimeEventPayloadByType[TType],
+  ): void
+  flushStreamEvents(): void
   close(): void
 }
 
@@ -18,6 +33,8 @@ class TurnRuntime implements TurnContext {
   readonly sessionID: string
   readonly turnID: string
   private readonly factory: ReturnType<typeof RuntimeEvent.createRuntimeEventFactory>
+  private readonly pendingStreamEvents: PendingStreamEvent[] = []
+  private streamFlushScheduled = false
   private closed = false
   private terminalEvent: RuntimeEvent.RuntimeEvent | undefined
 
@@ -42,8 +59,8 @@ class TurnRuntime implements TurnContext {
       return this.terminalEvent
     }
 
-    const event = this.factory.next(type, payload)
-    EventStore.appendAndProject(event)
+    this.flushStreamEvents()
+    const event = this.emitNow(type, payload)
 
     if (RuntimeEvent.isTerminalRuntimeEvent(event)) {
       this.terminalEvent = event
@@ -52,14 +69,59 @@ class TurnRuntime implements TurnContext {
     return event
   }
 
+  emitStream<TType extends RuntimeEvent.TransientStreamEventType>(
+    type: TType,
+    payload: RuntimeEvent.RuntimeEventPayloadByType[TType],
+  ) {
+    if (this.closed || this.terminalEvent) return
+
+    this.pendingStreamEvents.push({ type, payload } as PendingStreamEvent)
+    this.scheduleStreamFlush()
+  }
+
+  flushStreamEvents() {
+    this.streamFlushScheduled = false
+
+    while (!this.terminalEvent && this.pendingStreamEvents.length > 0) {
+      const pending = this.pendingStreamEvents.shift()!
+      this.emitNow(
+        pending.type as RuntimeEvent.TransientStreamEventType,
+        pending.payload as RuntimeEvent.RuntimeEventPayloadByType[RuntimeEvent.TransientStreamEventType],
+      )
+    }
+  }
+
   close() {
     if (this.closed) return
+    this.flushStreamEvents()
     this.closed = true
 
     const current = activeTurns.get(this.sessionID)
     if (current?.turnID === this.turnID) {
       activeTurns.delete(this.sessionID)
     }
+  }
+
+  private emitNow<TType extends RuntimeEvent.RuntimeEventType>(
+    type: TType,
+    payload: RuntimeEvent.RuntimeEventPayloadByType[TType],
+  ) {
+    const event = this.factory.next(type, payload)
+    EventStore.appendAndProject(event)
+    return event
+  }
+
+  private scheduleStreamFlush() {
+    if (this.streamFlushScheduled) return
+    this.streamFlushScheduled = true
+
+    setTimeout(() => {
+      try {
+        this.flushStreamEvents()
+      } catch (error) {
+        log.error("failed to flush stream runtime events", { error })
+      }
+    }, 0)
   }
 }
 

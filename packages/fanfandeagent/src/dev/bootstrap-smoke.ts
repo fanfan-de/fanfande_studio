@@ -1,7 +1,7 @@
 import path from "path"
 
 import { Instance } from "#project/instance.ts"
-import * as Session from "#session/session.ts"
+import * as Session from "#session/core/session.ts"
 
 const directory = process.argv[2] ? path.resolve(process.argv[2]) : process.cwd()
 

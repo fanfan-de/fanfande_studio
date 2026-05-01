@@ -15,7 +15,7 @@ import {
   listProjectModelsWithFallback,
   resolveEffectiveModelWithFallback,
 } from "#server/usecases/model-list-cache.ts"
-import * as Session from "#session/session.ts"
+import * as Session from "#session/core/session.ts"
 import * as Skill from "#skill/skill.ts"
 
 export const CreateProjectBody = z.object({

@@ -1,4 +1,4 @@
-import * as RuntimeEvent from "#session/runtime-event.ts"
+import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 
 type SubscriberOptions = {
   sessionID: string

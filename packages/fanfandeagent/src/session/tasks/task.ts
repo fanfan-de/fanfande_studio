@@ -9,7 +9,7 @@ import {
   SessionTaskTeammateActivity,
   SessionTaskView,
   type SessionTaskPeer,
-} from "#session/task-schema.ts"
+} from "#session/tasks/task-schema.ts"
 
 export {
   SessionTaskListView,

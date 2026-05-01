@@ -2,12 +2,12 @@
 
 //import { Ripgrep } from "../file/ripgrep"
 
-import { Instance } from "../project/instance"
+import { Instance } from "#project/instance.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Skill from "#skill/skill.ts"
-import type * as Session from "#session/session.ts"
-import * as Task from "#session/task.ts"
-import * as PromptPresets from "#session/prompt-presets.ts"
+import type * as Session from "#session/core/session.ts"
+import * as Task from "#session/tasks/task.ts"
+import * as PromptPresets from "#session/support/prompt-presets.ts"
 //import type { Agent } from "@/agent/agent"
 //import { Permission } from "@/permission"
 //import { Skill } from "@/skill"

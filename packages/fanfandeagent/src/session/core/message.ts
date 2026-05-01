@@ -28,7 +28,7 @@ import type * as Agent from "#agent/agent.ts"
 import * as Provider from "#provider/provider.ts"
 import * as Permission from "#permission/schema.ts"
 import * as Log from "#util/log.ts"
-import * as ToolResultPersistence from "#session/tool-result-persistence.ts"
+import * as ToolResultPersistence from "#session/support/tool-result-persistence.ts"
 
 export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
 export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))

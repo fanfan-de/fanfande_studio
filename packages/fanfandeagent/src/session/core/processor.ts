@@ -1,18 +1,18 @@
-﻿import * as Provider from "#provider/provider.ts";
+import * as Provider from "#provider/provider.ts";
 import * as  Log from "#util/log.ts"
 import * as Bus from "#bus/project-bus.ts"
-import * as LLM from '#session/llm.ts';
-import * as Message from "#session/message.ts"
+import * as LLM from '#session/core/llm.ts';
+import * as Message from "#session/core/message.ts"
 import * as  Identifier from "#id/id.ts";
 import { Instance } from "#project/instance.ts"
 import * as Permission from "#permission/permission.ts"
 import { ZodDate } from "zod";
 import { matchedRoutes } from "hono/route";
-import * as Session from "#session/session.ts"
+import * as Session from "#session/core/session.ts"
 import { Flag } from "#flag/flag.ts"
 import type { LanguageModelUsage } from "ai"
-import type { TurnContext } from "#session/orchestrator.ts"
-import * as StreamEvents from "#session/stream-events.ts"
+import type { TurnContext } from "#session/runtime/orchestrator.ts"
+import * as StreamEvents from "#session/runtime/stream-events.ts"
 import {
     createAskUserQuestionMetadataFromInput,
     isAnsweredAskUserQuestionMetadata,
@@ -663,8 +663,8 @@ function collectResponseToolResultCandidates(response: unknown): FinalToolResult
 }
 
 /**
- * create a  processor锛坔andle single LLM prompt锛宯ot loop锛?
- * 涓嶄粎浠呮槸LLM绔殑stream杈撳嚭杩囩▼锛岃繕鍖呮嫭宸ュ叿鐨勬墽琛岃繃绋?
+ * create a processor (handle single LLM prompt, not loop)
+ * Handles both the LLM stream output and the tool execution process.
  * @param input 
  * @returns 
  */
@@ -680,6 +680,7 @@ export function create(input: {
     let attempt = 0
     let needsCompaction = false
     const emitRuntimeEvent = input.turn?.emit.bind(input.turn)
+    const emitStreamRuntimeEvent = input.turn?.emitStream?.bind(input.turn) ?? emitRuntimeEvent
     let currentPhase: string | undefined
     const persistPart = async (part: Message.Part) => {
         if (emitRuntimeEvent) {
@@ -1077,7 +1078,7 @@ export function create(input: {
 
                     const draft = createAssistantOutputDraft()
                     let currentText: Message.TextPart | undefined = undefined
-                    // 鏌愪簺妯″瀷锛堝 Claude銆丟emini锛夋敮鎸佸涓苟琛屾帹鐞嗛摼鎴栧祵濂楁帹鐞嗭紝鎸?id 鍒嗗紑璺熻釜
+                    // Some models, such as Claude and Gemini, can stream multiple reasoning chains; track them by id.
                     let reasoningMap: Record<string, Message.ReasoningPart> = {}
                     let outputDraftPersisted = false
                     let lifecyclePersistence: Promise<void> | undefined
@@ -1204,7 +1205,7 @@ export function create(input: {
                                     metadata: value.providerMetadata,
                                 }
                                 draft.remember(currentText)
-                                emitRuntimeEvent?.("text.part.started", {
+                                emitStreamRuntimeEvent?.("text.part.started", {
                                     messageID: currentText.messageID,
                                     partID: currentText.id,
                                     kind: "text",
@@ -1220,7 +1221,7 @@ export function create(input: {
                                         currentText.time.end = Date.now()
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
-                                    emitRuntimeEvent?.("text.part.completed", {
+                                    emitStreamRuntimeEvent?.("text.part.completed", {
                                         part: currentText,
                                     })
                                     currentText = undefined
@@ -1233,7 +1234,7 @@ export function create(input: {
                                     currentText.text += value.text
                                     if (value.providerMetadata)
                                         currentText.metadata = value.providerMetadata
-                                    emitRuntimeEvent?.("text.part.delta", {
+                                    emitStreamRuntimeEvent?.("text.part.delta", {
                                         messageID: currentText.messageID,
                                         partID: currentText.id,
                                         kind: "text",
@@ -1263,7 +1264,7 @@ export function create(input: {
                                 }
                                 reasoningMap[value.id] = reasoningPart
                                 draft.remember(reasoningPart)
-                                emitRuntimeEvent?.("reasoning.part.started", {
+                                emitStreamRuntimeEvent?.("reasoning.part.started", {
                                     messageID: reasoningPart.messageID,
                                     partID: reasoningPart.id,
                                     kind: "reasoning",
@@ -1285,7 +1286,7 @@ export function create(input: {
                                             end: Date.now(),
                                         }
                                         if (value.providerMetadata) part!.metadata = value.providerMetadata
-                                        emitRuntimeEvent?.("reasoning.part.completed", {
+                                        emitStreamRuntimeEvent?.("reasoning.part.completed", {
                                             part: part!,
                                         })
 
@@ -1299,7 +1300,7 @@ export function create(input: {
                                     const part = reasoningMap[value.id]
                                     part!.text += value.text
                                     if (value.providerMetadata) part!.metadata = value.providerMetadata
-                                    emitRuntimeEvent?.("reasoning.part.delta", {
+                                    emitStreamRuntimeEvent?.("reasoning.part.delta", {
                                         messageID: part!.messageID,
                                         partID: part!.id,
                                         kind: "reasoning",
@@ -1330,7 +1331,7 @@ export function create(input: {
                                     part: pendingPart,
                                 })
 
-                                //杩欎釜闃舵鏃犻渶钀界洏锛屽彧闇€缁存姢鍐呭瓨鐘舵€?
+                                // This stage only maintains in-memory state; persistence happens after the tool call starts.
                                 // try {
                                 //     await Session.updatePart(pendingPart)
                                 // } catch (error) {
@@ -1392,9 +1393,9 @@ export function create(input: {
                                     toolName: value.toolName,
                                     iteration: attempt,
                                 })
-                                // value.toolCallId 宸ュ叿璋冪敤 ID
-                                // value.toolName 宸ュ叿鍚嶇О
-                                // value.args 宸ュ叿鍙傛暟
+                                // value.toolCallId 工具调用 ID
+                                // value.toolName 工具名称
+                                // value.args 工具参数
                                 const match = toolcalls[value.toolCallId]
                                 const askUserQuestionMetadata = isAskUserQuestionToolName(value.toolName)
                                     ? createAskUserQuestionMetadataFromInput(value.input, {
@@ -1571,13 +1572,13 @@ export function create(input: {
                                 break;
                             case 'finish':
 
-                                // 澶勭悊瀹屾垚浜嬩欢
-                                // value.finishReason 瀹屾垚鍘熷洜
-                                // value.usage 浣跨敤缁熻锛坱oken 鏁伴噺绛夛級
-                                // TODO: 鏇存柊娑堟伅鐨勫畬鎴愮姸鎬佸拰鏃堕棿
-                                // TODO: 璁板綍浣跨敤缁熻鍜岃璐逛俊鎭?
-                                // TODO: 鍙戦€佸畬鎴愪簨浠堕€氱煡 UI
-                                // TODO: 鍙兘闇€瑕佽Е鍙戞秷鎭帇缂╋紙compaction锛?
+                                // 处理完成事件
+                                // value.finishReason 完成原因
+                                // value.usage 使用统计（token 数量等）
+                                // TODO: 更新消息的完成状态和时间
+                                // TODO: Record usage and billing data.
+                                // TODO: 发送完成事件通知 UI
+                                // TODO: Maybe trigger message compaction.
                                 this.message.finishReason = value.finishReason
                                 applyUsageToAssistantMessage(this.message, value.totalUsage, "preserve")
                                 emitRuntimeEvent?.("llm.call.completed", {
@@ -1627,7 +1628,7 @@ export function create(input: {
                                 await persistPartialDraftOnce?.(streamErrorMessage)
                                 break;
                             case "finish-step":
-                                // 鎺ユ敹鍒拌繖涓?value锛岃鏄?LLM 鍒ゆ柇缁撴潫 React loop
+                                // This value means the LLM step has finished.
                                 this.message.finishReason = value.finishReason
                                 applyUsageToAssistantMessage(this.message, value.usage, "peak")
                                 const stepFinishPart: Message.StepFinishPart = {
@@ -1706,7 +1707,7 @@ export function create(input: {
                                 }
                                 break;
                             default:
-                                // 澶勭悊鏈煡浜嬩欢绫诲瀷
+                                // 处理未知事件类型
                                 log.warn(`Unknown stream value type: ${(value as any).type}`);
                                 break;
                         }
@@ -1790,7 +1791,7 @@ export function create(input: {
                     await persistPartialDraftOnce?.(normalizeToolError(e))
                     await failOpenToolCalls(normalizeToolError(e))
                     log.error("processor failure", { error: e.message, stack: e.stack })
-                    throw e  // 閲嶆柊鎶涘嚭閿欒
+                    throw e  // 重新抛出错误
                 }
                 if (needsCompaction) return "compact"
                 if (restartLoop) {
@@ -1803,6 +1804,7 @@ export function create(input: {
             }
             } finally {
                 try {
+                    input.turn?.flushStreamEvents?.()
                     await flushStreamSideEffects()
                 } finally {
                     for (const unsubscribe of unsubscribeStreamSideEffects.splice(0)) {
