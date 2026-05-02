@@ -9,6 +9,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+mindmap/
 
 # Local Obsidian workspace state
 .obsidian/workspace.json
