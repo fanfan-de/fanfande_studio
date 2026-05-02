@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { AssistantTurn, Turn, UserTurn } from "../types"
 import {
   isCompletedStreamEvent,
+  isHighFrequencyDeltaStreamEvent,
   isPermissionRequestStreamEvent,
   isTaskStateStreamEvent,
   isTerminalStreamEvent,
@@ -141,6 +142,10 @@ describe("session stream controller helpers", () => {
       data: createRuntimeEvent("reasoning.part.delta"),
     })).toBe(false)
     expect(shouldRefreshRuntimeDebugForStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("tool.input.delta"),
+    })).toBe(false)
+    expect(shouldRefreshRuntimeDebugForStreamEvent({
       event: "delta",
       data: { kind: "text", delta: "token" },
     })).toBe(false)
@@ -152,6 +157,37 @@ describe("session stream controller helpers", () => {
       event: "runtime",
       data: createRuntimeEvent("turn.completed"),
     })).toBe(true)
+  })
+
+  it("classifies only text delta events as high-frequency batch candidates", () => {
+    expect(isHighFrequencyDeltaStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("text.part.delta"),
+    })).toBe(true)
+    expect(isHighFrequencyDeltaStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("reasoning.part.delta"),
+    })).toBe(true)
+    expect(isHighFrequencyDeltaStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("tool.input.delta"),
+    })).toBe(true)
+    expect(isHighFrequencyDeltaStreamEvent({
+      event: "delta",
+      data: { kind: "text", delta: "token" },
+    })).toBe(true)
+    expect(isHighFrequencyDeltaStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("text.part.started"),
+    })).toBe(false)
+    expect(isHighFrequencyDeltaStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("tool.call.pending"),
+    })).toBe(false)
+    expect(isHighFrequencyDeltaStreamEvent({
+      event: "runtime",
+      data: createRuntimeEvent("turn.completed"),
+    })).toBe(false)
   })
 
   it("reads context usage from stream completion payloads and history messages", () => {

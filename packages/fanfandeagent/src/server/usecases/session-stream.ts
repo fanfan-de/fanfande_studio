@@ -8,6 +8,8 @@ import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "server.session" })
 const STREAM_HEARTBEAT_INTERVAL_MS = 3000
+const STREAM_BACKPRESSURE_TIMEOUT_MS = 30_000
+const STREAM_BACKPRESSURE_POLL_MS = 25
 
 type SessionStreamResult = {
   info: Message.MessageInfo
@@ -74,11 +76,37 @@ function runtimeEventSSEID(event: RuntimeEvent.RuntimeEvent) {
   return RuntimeEvent.serializeCursor(RuntimeEvent.cursorOf(event))
 }
 
-function sendRuntimeEvent(
-  send: (event: string, data: unknown, id?: string) => void,
+async function waitForControllerCapacity(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  input: {
+    sessionID: string
+    requestId?: string
+    streamType: "event" | "execution"
+  },
+) {
+  if ((controller.desiredSize ?? 1) > 0) return true
+
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < STREAM_BACKPRESSURE_TIMEOUT_MS) {
+    await sleep(STREAM_BACKPRESSURE_POLL_MS)
+    if ((controller.desiredSize ?? 1) > 0) return true
+  }
+
+  log.warn("closing slow session stream client", {
+    sessionID: input.sessionID,
+    requestId: input.requestId,
+    streamType: input.streamType,
+    desiredSize: controller.desiredSize,
+    timeoutMs: STREAM_BACKPRESSURE_TIMEOUT_MS,
+  })
+  return false
+}
+
+async function sendRuntimeEvent(
+  send: (event: string, data: unknown, id?: string) => Promise<boolean>,
   event: RuntimeEvent.RuntimeEvent,
 ) {
-  send("runtime", event, runtimeEventSSEID(event))
+  return send("runtime", event, runtimeEventSSEID(event))
 }
 
 function createTransportTerminalEvent(input: {
@@ -148,18 +176,45 @@ export function createSessionEventStream(input: {
       const encoder = new TextEncoder()
       let lastChunkAt = Date.now()
 
-      const enqueue = (chunk: string) => {
-        if (cancelled) return
-        controller.enqueue(encoder.encode(chunk))
+      const closeSlowClient = () => {
+        cancelled = true
+        subscription.close()
+        try {
+          controller.close()
+        } catch {
+          // The stream may already be closed by the runtime.
+        }
+      }
+
+      const enqueue = async (chunk: string) => {
+        if (cancelled) return false
+        if (!await waitForControllerCapacity(controller, {
+          sessionID: input.sessionID,
+          requestId: input.requestId,
+          streamType: "event",
+        })) {
+          closeSlowClient()
+          return false
+        }
+
+        try {
+          controller.enqueue(encoder.encode(chunk))
+        } catch {
+          cancelled = true
+          subscription.close()
+          return false
+        }
+
         lastChunkAt = Date.now()
+        return true
       }
 
       const send = (event: string, data: unknown, id?: string) => {
-        enqueue(toSSE(event, data, id))
+        return enqueue(toSSE(event, data, id))
       }
 
       const sendKeepalive = () => {
-        enqueue(`: keepalive ${Date.now()}\n\n`)
+        return enqueue(`: keepalive ${Date.now()}\n\n`)
       }
 
       void (async () => {
@@ -173,7 +228,7 @@ export function createSessionEventStream(input: {
           ])
 
           if (next.type === "heartbeat") {
-            sendKeepalive()
+            if (!await sendKeepalive()) break
             continue
           }
 
@@ -183,18 +238,18 @@ export function createSessionEventStream(input: {
             break
           }
 
-          sendRuntimeEvent(send, next.event)
+          if (!await sendRuntimeEvent(send, next.event)) break
         }
 
         subscription.close()
         if (!cancelled) controller.close()
-      })().catch((error) => {
+      })().catch(async (error) => {
         log.error("session event stream crashed", {
           sessionID: input.sessionID,
           requestId: input.requestId,
           error: normalizeLogError(error),
         })
-        sendRuntimeEvent(send, createTransportTerminalEvent({
+        await sendRuntimeEvent(send, createTransportTerminalEvent({
           sessionID: input.sessionID,
           type: "turn.failed",
           payload: {
@@ -250,18 +305,45 @@ export function createSessionExecutionStream(input: {
       const encoder = new TextEncoder()
       let lastChunkAt = Date.now()
 
-      const enqueue = (chunk: string) => {
-        if (cancelled) return
-        controller.enqueue(encoder.encode(chunk))
+      const closeSlowClient = () => {
+        cancelled = true
+        subscription.close()
+        try {
+          controller.close()
+        } catch {
+          // The stream may already be closed by the runtime.
+        }
+      }
+
+      const enqueue = async (chunk: string) => {
+        if (cancelled) return false
+        if (!await waitForControllerCapacity(controller, {
+          sessionID: input.sessionID,
+          requestId: input.requestId,
+          streamType: "execution",
+        })) {
+          closeSlowClient()
+          return false
+        }
+
+        try {
+          controller.enqueue(encoder.encode(chunk))
+        } catch {
+          cancelled = true
+          subscription.close()
+          return false
+        }
+
         lastChunkAt = Date.now()
+        return true
       }
 
       const send = (event: string, data: unknown, id?: string) => {
-        enqueue(toSSE(event, data, id))
+        return enqueue(toSSE(event, data, id))
       }
 
       const sendKeepalive = () => {
-        enqueue(`: keepalive ${Date.now()}\n\n`)
+        return enqueue(`: keepalive ${Date.now()}\n\n`)
       }
 
       void (async () => {
@@ -294,7 +376,7 @@ export function createSessionExecutionStream(input: {
             if (executionDone) {
               break
             }
-            sendKeepalive()
+            if (!await sendKeepalive()) break
             continue
           }
 
@@ -306,7 +388,7 @@ export function createSessionExecutionStream(input: {
 
           observedTurnID = next.event.turnID
           observedSeq = Math.max(observedSeq, next.event.seq)
-          sendRuntimeEvent(send, next.event)
+          if (!await sendRuntimeEvent(send, next.event)) break
 
           if (RuntimeEvent.isTerminalRuntimeEvent(next.event)) {
             terminalEvent = next.event
@@ -314,7 +396,9 @@ export function createSessionExecutionStream(input: {
           }
         }
 
-        await execution
+        if (!cancelled) {
+          await execution
+        }
 
         if (!cancelled) {
           if (terminalEvent) {
@@ -325,7 +409,7 @@ export function createSessionExecutionStream(input: {
               requestId: input.requestId,
               error: normalizeLogError(failed),
             })
-            sendRuntimeEvent(send, createTransportTerminalEvent({
+            await sendRuntimeEvent(send, createTransportTerminalEvent({
               sessionID: input.sessionID,
               turnID: observedTurnID,
               seq: observedSeq + 1,
@@ -343,7 +427,7 @@ export function createSessionExecutionStream(input: {
               assistantMessageID: resolved.info.id,
               partCount: resolved.parts.length,
             })
-            sendRuntimeEvent(send, createTransportTerminalEvent({
+            await sendRuntimeEvent(send, createTransportTerminalEvent({
               sessionID: input.sessionID,
               turnID: observedTurnID,
               seq: observedSeq + 1,
@@ -359,7 +443,7 @@ export function createSessionExecutionStream(input: {
               sessionID: input.sessionID,
               requestId: input.requestId,
             })
-            sendRuntimeEvent(send, createTransportTerminalEvent({
+            await sendRuntimeEvent(send, createTransportTerminalEvent({
               sessionID: input.sessionID,
               turnID: observedTurnID,
               seq: observedSeq + 1,
@@ -375,13 +459,13 @@ export function createSessionExecutionStream(input: {
 
         subscription.close()
         if (!cancelled) controller.close()
-      })().catch((error) => {
+      })().catch(async (error) => {
         log.error("session execution stream crashed", {
           sessionID: input.sessionID,
           requestId: input.requestId,
           error: normalizeLogError(error),
         })
-        sendRuntimeEvent(send, createTransportTerminalEvent({
+        await sendRuntimeEvent(send, createTransportTerminalEvent({
           sessionID: input.sessionID,
           turnID: input.replayTurnID,
           type: "turn.failed",

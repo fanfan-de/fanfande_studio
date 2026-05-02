@@ -90,7 +90,11 @@ function notify(event: RuntimeEvent.RuntimeEvent) {
 }
 
 function isTransientStreamEvent(event: RuntimeEvent.RuntimeEvent) {
-  return event.type.startsWith("text.part.") || event.type.startsWith("reasoning.part.")
+  return (
+    event.type.startsWith("text.part.") ||
+    event.type.startsWith("reasoning.part.") ||
+    event.type === "tool.input.delta"
+  )
 }
 
 function rememberFastPathEventID(eventID: string) {

@@ -17,6 +17,8 @@ import {
 
 const log = Log.create({ service: "session.processor" })
 const ENABLE_STREAM_STDOUT_DEBUG = Flag.FanFande_DEBUG_STREAM_STDOUT
+const SLOW_FULLSTREAM_CHUNK_HANDLE_MS = 100
+const SLOW_FULLSTREAM_CHUNK_WAIT_MS = 10_000
 
 type AssistantOutputDraftPart =
     | Message.TextPart
@@ -102,6 +104,45 @@ function normalizeToolError(error: unknown): string {
 function writeStreamDebug(value: string) {
     if (!ENABLE_STREAM_STDOUT_DEBUG) return
     process.stdout.write(value)
+}
+
+function isFullStreamChunkProbeEnabled() {
+    const value = process.env["FanFande_DEBUG_FULLSTREAM_PROBE"]?.toLowerCase()
+    return Flag.FanFande_DEBUG_FULLSTREAM_PROBE || value === "true" || value === "1"
+}
+
+type FullStreamProbeValue = { type?: unknown } & Record<string, unknown>
+
+function roundProbeMs(value: number) {
+    return Math.round(value * 100) / 100
+}
+
+function readProbeString(value: FullStreamProbeValue, key: string) {
+    const raw = value[key]
+    return typeof raw === "string" && raw.length > 0 ? raw : undefined
+}
+
+function summarizeFullStreamProbeValue(value: FullStreamProbeValue) {
+    const chunkType = readProbeString(value, "type") ?? "unknown"
+    const text =
+        readProbeString(value, "text") ??
+        readProbeString(value, "delta") ??
+        readProbeString(value, "argsTextDelta")
+    const toolCallID =
+        readProbeString(value, "toolCallId") ??
+        readProbeString(value, "id")
+    const extra: Record<string, unknown> = {
+        chunkType,
+    }
+
+    if (text) extra.textLength = text.length
+    if (toolCallID) extra.toolCallID = toolCallID
+    const toolName = readProbeString(value, "toolName")
+    if (toolName) extra.toolName = toolName
+    const finishReason = readProbeString(value, "finishReason")
+    if (finishReason) extra.finishReason = finishReason
+
+    return extra
 }
 
 function deferSideEffect(action: () => PromiseLike<unknown> | unknown) {
@@ -671,6 +712,8 @@ export function create(input: {
     turn?: TurnContext
 }) {
     const toolcalls: Record<string, Message.ToolPart> = {}
+    const pendingToolInputChunks: Record<string, string[]> = {}
+    const pendingToolInputLengths: Record<string, number> = {}
     let snapshot: string | undefined
     let blocked = false
     let restartLoop = false
@@ -825,6 +868,44 @@ export function create(input: {
                 )
             }
 
+            const flushPendingToolInput = (toolCallID: string, options?: { emitPending?: boolean }) => {
+                const current = toolcalls[toolCallID]
+                const pendingState = Message.ToolStatePending.safeParse(current?.state)
+                const chunks = pendingToolInputChunks[toolCallID]
+
+                if (!current || !pendingState.success) {
+                    delete pendingToolInputChunks[toolCallID]
+                    delete pendingToolInputLengths[toolCallID]
+                    return current
+                }
+
+                const raw = chunks && chunks.length > 0
+                    ? chunks.join("")
+                    : pendingState.data.raw
+                delete pendingToolInputChunks[toolCallID]
+                delete pendingToolInputLengths[toolCallID]
+
+                const pendingPart: Message.ToolPart =
+                    raw === pendingState.data.raw
+                        ? current
+                        : {
+                            ...current,
+                            state: {
+                                ...pendingState.data,
+                                raw,
+                            },
+                        }
+
+                toolcalls[toolCallID] = pendingPart
+                if (options?.emitPending) {
+                    emitRuntimeEvent?.("tool.call.pending", {
+                        part: pendingPart,
+                    })
+                }
+
+                return pendingPart
+            }
+
             if (busAvailable) {
                 unsubscribeStreamSideEffects.push(
                     Bus.subscribe(StreamEvents.Event.PartPersistenceRequested, async (event) => {
@@ -854,7 +935,8 @@ export function create(input: {
             const failOpenToolCalls = async (reason: string) => {
                 const end = Date.now()
 
-                for (const [toolCallID, current] of Object.entries(toolcalls)) {
+                for (const [toolCallID, original] of Object.entries(toolcalls)) {
+                    const current = flushPendingToolInput(toolCallID) ?? original
                     if (
                         current.state.status === "completed" ||
                         current.state.status === "error" ||
@@ -874,6 +956,7 @@ export function create(input: {
                         state: {
                             status: "error",
                             input: current.state.input,
+                            raw: readToolRaw(current.state),
                             error: reason,
                             metadata:
                                 current.state.status === "running"
@@ -895,11 +978,16 @@ export function create(input: {
             }
 
             const listActiveToolCalls = () =>
-                Object.values(toolcalls).filter(
-                    (part) =>
-                        part.state.status === "pending" ||
-                        part.state.status === "running",
-                )
+                Object.keys(toolcalls)
+                    .map((toolCallID) => flushPendingToolInput(toolCallID) ?? toolcalls[toolCallID])
+                    .filter(
+                        (part): part is Message.ToolPart =>
+                            Boolean(part) &&
+                            (
+                                part.state.status === "pending" ||
+                                part.state.status === "running"
+                            ),
+                    )
 
             const describeOpenToolCallFailure = (
                 activeToolCalls: Message.ToolPart[],
@@ -1179,10 +1267,28 @@ export function create(input: {
                             return lifecyclePersistence
                         },
                     })
+                    const fullStreamProbeBase = {
+                        sessionID: input.Assistant.sessionID,
+                        messageID: input.Assistant.id,
+                        providerID: streamInput.model.providerID,
+                        modelID: streamInput.model.id,
+                        agent: streamInput.agent.name,
+                        iteration: attempt,
+                    }
+                    const fullStreamProbeStartedAt = performance.now()
+                    let fullStreamProbeLastHandledAt = fullStreamProbeStartedAt
+                    let fullStreamProbeChunkCount = 0
+                    log.debug("fullStream.consume.started", fullStreamProbeBase)
                     for await (const streamValue of stream.fullStream) {
+                        const fullStreamProbePulledAt = performance.now()
+                        const fullStreamProbeSequence = fullStreamProbeChunkCount
+                        const fullStreamProbeWaitMs = fullStreamProbePulledAt - fullStreamProbeLastHandledAt
+                        let fullStreamProbeValue: FullStreamProbeValue | undefined
+                        try {
                         const value = streamValue as typeof streamValue | (
                             { type: "source-url" | "source-document" } & Record<string, unknown>
                         )
+                        fullStreamProbeValue = value as FullStreamProbeValue
                         publishStreamChunk(value as { type?: unknown } & Record<string, unknown>)
                         switch (value.type) {
                             case "text-start":
@@ -1324,6 +1430,8 @@ export function create(input: {
                                     metadata: value.providerMetadata,
                                 }
                                 toolcalls[value.id] = pendingPart
+                                pendingToolInputChunks[value.id] = []
+                                pendingToolInputLengths[value.id] = 0
                                 emitRuntimeEvent?.("tool.call.pending", {
                                     part: pendingPart,
                                 })
@@ -1337,22 +1445,26 @@ export function create(input: {
                                 // }
                                 break;
                             case "tool-input-end":
+                                flushPendingToolInput(value.id, { emitPending: true })
                                 break;
                             case "tool-input-delta":
-                                if (value.id in toolcalls) {
+                                if (value.id in toolcalls && typeof value.delta === "string") {
                                     const current = toolcalls[value.id]
                                     const pendingState = Message.ToolStatePending.safeParse(current?.state)
                                     if (current && pendingState.success) {
-                                        const pendingPart: Message.ToolPart = {
-                                            ...current,
-                                            state: {
-                                                ...pendingState.data,
-                                                raw: pendingState.data.raw + value.delta,
-                                            },
-                                        }
-                                        toolcalls[value.id] = pendingPart
-                                        emitRuntimeEvent?.("tool.call.pending", {
-                                            part: pendingPart,
+                                        const chunks = pendingToolInputChunks[value.id] ?? []
+                                        chunks.push(value.delta)
+                                        pendingToolInputChunks[value.id] = chunks
+                                        const rawLength = (pendingToolInputLengths[value.id] ?? pendingState.data.raw.length) + value.delta.length
+                                        pendingToolInputLengths[value.id] = rawLength
+                                        emitStreamRuntimeEvent?.("tool.input.delta", {
+                                            messageID: current.messageID,
+                                            partID: current.id,
+                                            toolCallID: current.callID,
+                                            toolName: current.tool,
+                                            delta: value.delta,
+                                            rawLength,
+                                            metadata: current.metadata,
                                         })
                                     }
                                 }
@@ -1393,7 +1505,7 @@ export function create(input: {
                                 // value.toolCallId 工具调用 ID
                                 // value.toolName 工具名称
                                 // value.args 工具参数
-                                const match = toolcalls[value.toolCallId]
+                                const match = flushPendingToolInput(value.toolCallId)
                                 const askUserQuestionMetadata = isAskUserQuestionToolName(value.toolName)
                                     ? createAskUserQuestionMetadataFromInput(value.input, {
                                         toolCallID: value.toolCallId,
@@ -1663,6 +1775,7 @@ export function create(input: {
                                     })
                                     break
                                 }
+                                flushPendingToolInput(approvalToolCallID, { emitPending: true })
                                 if (
                                     toolcalls[approvalToolCallID] &&
                                     (
@@ -1708,7 +1821,38 @@ export function create(input: {
                                 log.warn(`Unknown stream value type: ${(value as any).type}`);
                                 break;
                         }
+                        } finally {
+                            const fullStreamProbeHandledAt = performance.now()
+                            const fullStreamProbeHandleMs = fullStreamProbeHandledAt - fullStreamProbePulledAt
+                            const fullStreamProbeSummary = {
+                                ...fullStreamProbeBase,
+                                sequence: fullStreamProbeSequence,
+                                waitMs: roundProbeMs(fullStreamProbeWaitMs),
+                                handleMs: roundProbeMs(fullStreamProbeHandleMs),
+                                elapsedMs: roundProbeMs(fullStreamProbeHandledAt - fullStreamProbeStartedAt),
+                                pendingSideEffects: pendingStreamSideEffects.size,
+                                ...(fullStreamProbeValue
+                                    ? summarizeFullStreamProbeValue(fullStreamProbeValue)
+                                    : { chunkType: "unknown" }),
+                            }
+                            if (isFullStreamChunkProbeEnabled()) {
+                                log.debug("fullStream.chunk.consumed", fullStreamProbeSummary)
+                            } else if (
+                                fullStreamProbeHandleMs >= SLOW_FULLSTREAM_CHUNK_HANDLE_MS ||
+                                fullStreamProbeWaitMs >= SLOW_FULLSTREAM_CHUNK_WAIT_MS
+                            ) {
+                                log.warn("fullStream.chunk.slow", fullStreamProbeSummary)
+                            }
+                            fullStreamProbeLastHandledAt = performance.now()
+                            fullStreamProbeChunkCount = fullStreamProbeSequence + 1
+                        }
                     }
+                    log.debug("fullStream.consume.completed", {
+                        ...fullStreamProbeBase,
+                        chunkCount: fullStreamProbeChunkCount,
+                        totalMs: roundProbeMs(performance.now() - fullStreamProbeStartedAt),
+                        pendingSideEffects: pendingStreamSideEffects.size,
+                    })
 
                     if (currentText) {
                         currentText.text = currentText.text.trimEnd()

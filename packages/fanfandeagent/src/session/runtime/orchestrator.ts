@@ -12,6 +12,44 @@ type PendingStreamEvent = {
   }
 }[RuntimeEvent.TransientStreamEventType]
 
+type PendingDeltaStreamEventType = "text.part.delta" | "reasoning.part.delta" | "tool.input.delta"
+
+type PendingDeltaStreamEvent = PendingStreamEvent & {
+  type: PendingDeltaStreamEventType
+  payload: RuntimeEvent.RuntimeEventPayloadByType[PendingDeltaStreamEventType]
+}
+
+function isPendingDeltaStreamEvent(event: PendingStreamEvent): event is PendingDeltaStreamEvent {
+  return event.type === "text.part.delta" || event.type === "reasoning.part.delta" || event.type === "tool.input.delta"
+}
+
+function canCoalescePendingStreamEvent(current: PendingStreamEvent, next: PendingStreamEvent) {
+  if (!isPendingDeltaStreamEvent(current) || !isPendingDeltaStreamEvent(next)) return false
+  if (current.type !== next.type) return false
+  if (current.type === "tool.input.delta" && next.type === "tool.input.delta") {
+    return (
+      current.payload.messageID === next.payload.messageID &&
+      current.payload.partID === next.payload.partID &&
+      current.payload.toolCallID === next.payload.toolCallID
+    )
+  }
+
+  return (
+    current.payload.messageID === next.payload.messageID &&
+    current.payload.partID === next.payload.partID
+  )
+}
+
+function coalescePendingStreamEvent(current: PendingDeltaStreamEvent, next: PendingDeltaStreamEvent): PendingDeltaStreamEvent {
+  return {
+    type: next.type,
+    payload: {
+      ...next.payload,
+      delta: current.payload.delta + next.payload.delta,
+    },
+  } as PendingDeltaStreamEvent
+}
+
 export interface TurnContext {
   readonly sessionID: string
   readonly turnID: string
@@ -75,7 +113,16 @@ class TurnRuntime implements TurnContext {
   ) {
     if (this.closed || this.terminalEvent) return
 
-    this.pendingStreamEvents.push({ type, payload } as PendingStreamEvent)
+    const next = { type, payload } as PendingStreamEvent
+    const previous = this.pendingStreamEvents[this.pendingStreamEvents.length - 1]
+    if (previous && canCoalescePendingStreamEvent(previous, next)) {
+      this.pendingStreamEvents[this.pendingStreamEvents.length - 1] = coalescePendingStreamEvent(
+        previous as PendingDeltaStreamEvent,
+        next as PendingDeltaStreamEvent,
+      )
+    } else {
+      this.pendingStreamEvents.push(next)
+    }
     this.scheduleStreamFlush()
   }
 

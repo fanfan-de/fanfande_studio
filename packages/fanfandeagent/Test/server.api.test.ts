@@ -811,6 +811,12 @@ describe("server api", () => {
       runningSessions: {
         count: number
       }
+      streams: {
+        activeSubscriptions: number
+        totals: {
+          maxQueueLength: number
+        }
+      }
       recentErrors: Log.LogEntry[]
     }>
 
@@ -825,6 +831,8 @@ describe("server api", () => {
     expect(body.data?.logging.services).toContain("monitor-test-status")
     expect(body.data?.logging.services).toContain("server.debug")
     expect(body.data?.runningSessions.count).toBeNumber()
+    expect(body.data?.streams.activeSubscriptions).toBeNumber()
+    expect(body.data?.streams.totals.maxQueueLength).toBeNumber()
     const statusLog = body.data?.recentErrors.find((entry) => entry.message === message)
     expect(statusLog?.requestId).toBe("req_monitor_status")
     expect(statusLog?.extra?.token).toBe("[REDACTED]")
@@ -909,6 +917,18 @@ describe("server api", () => {
     expect(raw).toContain("\"status\"")
     expect(raw).toContain("\"runtime\"")
     expect(raw).toContain(message)
+  })
+
+  test("GET /api/debug/status/stream should omit runtime snapshots when disabled", async () => {
+    const app = createServerApp()
+    const response = await app.request("http://localhost/api/debug/status/stream?runtime=0")
+    const raw = await readStreamUntil(response, ["event: status", "\"status\""])
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    expect(raw).toContain("event: status")
+    expect(raw).toContain("\"status\"")
+    expect(raw).not.toContain("\"runtime\"")
   })
 
   test("GET /api/debug/status/stream should keep pushing snapshots while idle", async () => {

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useEffectEvent, type MutableRefObject } from "react"
+import { startTransition, useEffect, useEffectEvent, useRef, type MutableRefObject } from "react"
 import { getAgentSessionBridge, type AgentSessionBridgeEvent } from "../agent-session/client"
 import { AgentSessionEventRouter } from "../agent-session/event-router"
 import {
@@ -45,6 +45,18 @@ import { useAgentSessionStreamEffects } from "./session-stream-hooks"
 import { refreshWorkspaceFromDirectory as refreshWorkspaceFromDirectoryService } from "./workspace-loading-hooks"
 import type { WorkspaceStateUpdater } from "./workspace-store"
 
+const STREAM_DELTA_FLUSH_INTERVAL_MS = 32
+
+type StreamEventUpdateTarget = {
+  assistantTurnID: string
+  sessionID: string
+}
+
+type PendingStreamDeltaUpdate = {
+  event: AgentSessionStreamIPCEvent | AgentStreamIPCEvent
+  target: StreamEventUpdateTarget
+}
+
 function readRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
@@ -72,9 +84,15 @@ function readRuntimeStreamType(streamEvent: { event: string; data: unknown }) {
 
 export function shouldRefreshRuntimeDebugForStreamEvent(streamEvent: { event: string; data: unknown }) {
   const runtimeType = readRuntimeStreamType(streamEvent)
-  if (runtimeType === "text.part.delta" || runtimeType === "reasoning.part.delta") return false
+  if (runtimeType === "text.part.delta" || runtimeType === "reasoning.part.delta" || runtimeType === "tool.input.delta") return false
   if (!runtimeType && streamEvent.event === "delta") return false
   return true
+}
+
+export function isHighFrequencyDeltaStreamEvent(streamEvent: { event: string; data: unknown }) {
+  const runtimeType = readRuntimeStreamType(streamEvent)
+  if (runtimeType === "text.part.delta" || runtimeType === "reasoning.part.delta" || runtimeType === "tool.input.delta") return true
+  return !runtimeType && streamEvent.event === "delta"
 }
 
 export function isTerminalStreamEvent(streamEvent: { event: string; data: unknown }) {
@@ -693,6 +711,9 @@ export function useSessionStreamController({
   workspaceRefreshRequestRef,
   workspaces,
 }: UseSessionStreamControllerOptions) {
+  const pendingDeltaUpdatesRef = useRef<PendingStreamDeltaUpdate[]>([])
+  const pendingDeltaFlushTimerRef = useRef<number | null>(null)
+
   function updateSessionContextUsage(sessionID: string, usage: SessionContextUsage | null) {
     setContextUsageBySession((prev) => {
       if (!usage) {
@@ -863,6 +884,90 @@ export function useSessionStreamController({
     })
   }
 
+  function clearPendingDeltaFlushTimer() {
+    if (pendingDeltaFlushTimerRef.current === null) return
+    window.clearTimeout(pendingDeltaFlushTimerRef.current)
+    pendingDeltaFlushTimerRef.current = null
+  }
+
+  function flushPendingDeltaUpdates() {
+    const pendingUpdates = pendingDeltaUpdatesRef.current
+    if (pendingUpdates.length === 0) {
+      clearPendingDeltaFlushTimer()
+      return
+    }
+
+    pendingDeltaUpdatesRef.current = []
+    clearPendingDeltaFlushTimer()
+
+    const groupedUpdates: Array<{
+      events: PendingStreamDeltaUpdate["event"][]
+      target: StreamEventUpdateTarget
+    }> = []
+
+    for (const update of pendingUpdates) {
+      const previousGroup = groupedUpdates[groupedUpdates.length - 1]
+      if (
+        previousGroup &&
+        previousGroup.target.sessionID === update.target.sessionID &&
+        previousGroup.target.assistantTurnID === update.target.assistantTurnID
+      ) {
+        previousGroup.events.push(update.event)
+        continue
+      }
+
+      groupedUpdates.push({
+        target: update.target,
+        events: [update.event],
+      })
+    }
+
+    startTransition(() => {
+      for (const group of groupedUpdates) {
+        updateAssistantConversationTurn(group.target.sessionID, group.target.assistantTurnID, (turn) =>
+          group.events.reduce(
+            (nextTurn, streamEvent) => applyAgentStreamEventToTurn(nextTurn, streamEvent),
+            turn,
+          ),
+        )
+      }
+    })
+  }
+
+  function schedulePendingDeltaFlush() {
+    if (pendingDeltaFlushTimerRef.current !== null) return
+
+    pendingDeltaFlushTimerRef.current = window.setTimeout(() => {
+      pendingDeltaFlushTimerRef.current = null
+      flushPendingDeltaUpdates()
+    }, STREAM_DELTA_FLUSH_INTERVAL_MS)
+  }
+
+  function applyStreamEventToAssistantTurn(
+    target: StreamEventUpdateTarget,
+    streamEvent: AgentSessionStreamIPCEvent | AgentStreamIPCEvent,
+  ) {
+    if (isHighFrequencyDeltaStreamEvent(streamEvent)) {
+      pendingDeltaUpdatesRef.current.push({ target, event: streamEvent })
+      schedulePendingDeltaFlush()
+      return
+    }
+
+    flushPendingDeltaUpdates()
+    startTransition(() => {
+      updateAssistantConversationTurn(target.sessionID, target.assistantTurnID, (turn) =>
+        applyAgentStreamEventToTurn(turn, streamEvent),
+      )
+    })
+  }
+
+  useEffect(() => {
+    return () => {
+      pendingDeltaUpdatesRef.current = []
+      clearPendingDeltaFlushTimer()
+    }
+  }, [])
+
   function replaceConversationTurnsFromHistory(sessionID: string, nextTurns: Turn[]) {
     bumpConversationVersion(sessionID)
     setConversations((prev) => {
@@ -950,11 +1055,13 @@ export function useSessionStreamController({
     }
 
     const assistantTurnID = messageAssistantTurnID ?? target.assistantTurnID
-    startTransition(() => {
-      updateAssistantConversationTurn(target.sessionID, assistantTurnID, (turn) =>
-        applyAgentStreamEventToTurn(turn, streamEvent),
-      )
-    })
+    applyStreamEventToAssistantTurn(
+      {
+        sessionID: target.sessionID,
+        assistantTurnID,
+      },
+      streamEvent,
+    )
 
     if (isPermissionRequestStreamEvent(streamEvent)) {
       refreshWorkspaceForSession(target.sessionID)
@@ -1041,9 +1148,13 @@ export function useSessionStreamController({
       })
     }
 
-    startTransition(() => {
-      updateAssistantConversationTurn(uiSessionID, assistantTurnID, (turn) => applyAgentStreamEventToTurn(turn, streamEvent))
-    })
+    applyStreamEventToAssistantTurn(
+      {
+        sessionID: uiSessionID,
+        assistantTurnID,
+      },
+      streamEvent,
+    )
 
     if (isPermissionRequestStreamEvent(streamEvent)) {
       refreshWorkspaceForSession(uiSessionID)

@@ -65,4 +65,68 @@ describe("turn stream events", () => {
       Orchestrator.finishTurn(turn)
     }
   })
+
+  it("coalesces same-tick text, reasoning, and tool input deltas for the same part", async () => {
+    const turn = Orchestrator.startTurn({
+      sessionID: Identifier.ascending("session"),
+    })
+    const observed: Array<{ type: string; delta?: string }> = []
+    const unsubscribe = EventStore.subscribe((event) => {
+      if (event.turnID !== turn.turnID) return
+      if (event.type === "text.part.delta" || event.type === "reasoning.part.delta" || event.type === "tool.input.delta") {
+        observed.push({
+          type: event.type,
+          delta: event.payload.delta,
+        })
+      }
+    })
+
+    try {
+      turn.emitStream("text.part.delta", {
+        messageID: "assistant-1",
+        partID: "part-1",
+        kind: "text",
+        delta: "hel",
+      })
+      turn.emitStream("text.part.delta", {
+        messageID: "assistant-1",
+        partID: "part-1",
+        kind: "text",
+        delta: "lo",
+      })
+      turn.emitStream("reasoning.part.delta", {
+        messageID: "assistant-1",
+        partID: "reasoning-1",
+        kind: "reasoning",
+        delta: "why",
+      })
+      turn.emitStream("tool.input.delta", {
+        messageID: "assistant-1",
+        partID: "tool-part-1",
+        toolCallID: "call-1",
+        toolName: "write",
+        delta: "{\"p",
+        rawLength: 3,
+      })
+      turn.emitStream("tool.input.delta", {
+        messageID: "assistant-1",
+        partID: "tool-part-1",
+        toolCallID: "call-1",
+        toolName: "write",
+        delta: "\":1}",
+        rawLength: 7,
+      })
+
+      await sleep(1)
+
+      expect(observed).toEqual([
+        { type: "text.part.delta", delta: "hello" },
+        { type: "reasoning.part.delta", delta: "why" },
+        { type: "tool.input.delta", delta: "{\"p\":1}" },
+      ])
+    } finally {
+      unsubscribe()
+      Orchestrator.finishTurn(turn)
+    }
+  })
 })

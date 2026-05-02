@@ -116,6 +116,16 @@ const ToolCallPayload = z.object({
   part: Message.ToolPart,
 })
 
+const ToolInputDeltaPayload = z.object({
+  messageID: z.string(),
+  partID: z.string(),
+  toolCallID: z.string(),
+  toolName: z.string().optional(),
+  delta: z.string(),
+  rawLength: z.number().int().nonnegative().optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
+})
+
 const SourceRecordedPayload = z.object({
   part: z.union([Message.SourceUrlPart, Message.SourceDocumentPart]),
 })
@@ -303,6 +313,11 @@ export const ToolCallPendingEvent = RuntimeEventBase.extend({
   payload: ToolCallPayload,
 })
 
+export const ToolInputDeltaEvent = RuntimeEventBase.extend({
+  type: z.literal("tool.input.delta"),
+  payload: ToolInputDeltaPayload,
+})
+
 export const ToolCallWaitingApprovalEvent = RuntimeEventBase.extend({
   type: z.literal("tool.call.waiting_approval"),
   payload: ToolCallPayload,
@@ -404,6 +419,7 @@ export const RuntimeEvent = z.discriminatedUnion("type", [
   ReasoningPartStartedEvent,
   ReasoningPartDeltaEvent,
   ReasoningPartCompletedEvent,
+  ToolInputDeltaEvent,
   ToolCallPendingEvent,
   ToolCallStartedEvent,
   ToolCallWaitingApprovalEvent,
@@ -430,6 +446,7 @@ export type TransientStreamEventType =
   | "reasoning.part.started"
   | "reasoning.part.delta"
   | "reasoning.part.completed"
+  | "tool.input.delta"
 
 export type RuntimeEventPayloadByType = {
   "turn.started": z.infer<typeof TurnStartedPayload>
@@ -452,6 +469,7 @@ export type RuntimeEventPayloadByType = {
   "reasoning.part.started": z.infer<typeof ReasoningPartStartedPayload>
   "reasoning.part.delta": z.infer<typeof ReasoningPartDeltaPayload>
   "reasoning.part.completed": z.infer<typeof ReasoningPartCompletedPayload>
+  "tool.input.delta": z.infer<typeof ToolInputDeltaPayload>
   "tool.call.pending": z.infer<typeof ToolCallPayload>
   "tool.call.started": z.infer<typeof ToolCallPayload>
   "tool.call.waiting_approval": z.infer<typeof ToolCallPayload>

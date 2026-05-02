@@ -59,6 +59,7 @@ type MonitorStatus = {
     path: string | null
     services?: string[]
   }
+  streams?: StreamHubSnapshot
   runningSessions: {
     count: number
     items: Array<{
@@ -69,6 +70,22 @@ type MonitorStatus = {
     }>
   }
   recentErrors: LogEntry[]
+}
+
+type StreamHubSnapshot = {
+  activeSubscriptions: number
+  sessions: Array<{
+    sessionID: string
+    subscriptions: number
+    queuedEvents: number
+    maxQueueLength: number
+  }>
+  totals: {
+    coalescedEvents: number
+    droppedEvents: number
+    closedSlowClients: number
+    maxQueueLength: number
+  }
 }
 
 type RuntimeSnapshot = {
@@ -102,7 +119,7 @@ type RuntimeSession = {
 
 type StatusStreamPayload = {
   status: MonitorStatus
-  runtime: RuntimeSnapshot
+  runtime?: RuntimeSnapshot
 }
 
 type JsonEnvelope<T> =
@@ -538,7 +555,7 @@ export function App() {
     setLastStatusReceivedAt(undefined)
     setStatusEventCount(0)
 
-    const source = new EventSource(resolveURL(baseURL, "/api/debug/status/stream"))
+    const source = new EventSource(resolveURL(baseURL, "/api/debug/status/stream", { runtime: "0" }))
 
     source.addEventListener("open", () => {
       setStatusStreamState("live")
@@ -547,7 +564,7 @@ export function App() {
       try {
         const payload = JSON.parse(event.data) as StatusStreamPayload
         setStatus(payload.status)
-        setRuntime(payload.runtime)
+        if (payload.runtime) setRuntime(payload.runtime)
         setLoadState("ready")
         setStatusStreamState("live")
         setLastStatusReceivedAt(Date.now())
@@ -566,6 +583,36 @@ export function App() {
     })
 
     return () => source.close()
+  }, [baseURL])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const refreshRuntime = async () => {
+      try {
+        const nextRuntime = await requestJSON<RuntimeSnapshot>(baseURL, "/api/debug/runtime", {
+          limit: "6",
+          turns: "1",
+        })
+        if (!cancelled) {
+          setRuntime(nextRuntime)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(error instanceof Error ? error.message : String(error))
+        }
+      }
+    }
+
+    void refreshRuntime()
+    const interval = window.setInterval(() => {
+      void refreshRuntime()
+    }, 5000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
   }, [baseURL])
 
   useEffect(() => {
@@ -642,6 +689,11 @@ export function App() {
 
   const runningSessions = runtime?.runningSessions ?? []
   const recentErrors = status?.recentErrors ?? []
+  const streamSnapshot = status?.streams
+  const activeStreamSubscriptions = streamSnapshot?.activeSubscriptions ?? 0
+  const queuedStreamEvents = streamSnapshot?.sessions.reduce((sum, session) => sum + session.queuedEvents, 0) ?? 0
+  const maxStreamQueueLength = streamSnapshot?.totals.maxQueueLength ?? 0
+  const closedSlowClients = streamSnapshot?.totals.closedSlowClients ?? 0
   const selectedServiceSet = new Set(selectedServices)
   const isAllServicesSelected = knownServices.length > 0 && knownServices.every((service) => selectedServiceSet.has(service))
   const isNoServiceSelected = selectedServices.length === 0
@@ -703,6 +755,10 @@ export function App() {
         <MetricCard label="Running sessions" value={String(status?.runningSessions.count ?? runningSessions.length)} />
         <MetricCard label="Uptime" value={formatDuration(status?.process.uptimeMs)} />
         <MetricCard label="Heap used" value={formatBytes(status?.process.memory.heapUsed)} tone="warn" />
+        <MetricCard label="Stream clients" value={String(activeStreamSubscriptions)} tone={closedSlowClients > 0 ? "warn" : "neutral"} />
+        <MetricCard label="Queued stream events" value={String(queuedStreamEvents)} tone={queuedStreamEvents > 0 ? "warn" : "neutral"} />
+        <MetricCard label="Max stream queue" value={String(maxStreamQueueLength)} tone={maxStreamQueueLength > 0 ? "warn" : "neutral"} />
+        <MetricCard label="Slow clients closed" value={String(closedSlowClients)} tone={closedSlowClients > 0 ? "bad" : "neutral"} />
       </section>
 
       <section className="main-grid">

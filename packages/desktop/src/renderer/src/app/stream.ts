@@ -877,6 +877,52 @@ function appendTraceDelta(
   )
 }
 
+function appendToolInputDelta(
+  items: AssistantTraceItem[],
+  input: {
+    delta: string
+    sourceID: string
+    messageID?: string
+    toolCallID?: string
+    toolName?: string
+    debugEntries?: AssistantTraceDebugEntry[]
+  },
+) {
+  const nextItems = clearStreamingItems(items)
+  const existing = nextItems.find((item) =>
+    item.kind === "tool" &&
+    (
+      item.sourceID === input.sourceID ||
+      (input.toolCallID ? item.toolCallID === input.toolCallID : false)
+    )
+  )
+  const nextToolInputText = `${existing?.toolInputText ?? ""}${input.delta}`
+  const status = existing?.kind === "tool" && existing.status && !isTerminalTraceStatus(existing.status)
+    ? existing.status
+    : "pending"
+  const nextItem = createTraceItem({
+    id: existing?.id ?? input.sourceID,
+    sourceID: existing?.sourceID ?? input.sourceID,
+    kind: "tool",
+    label: "Tool",
+    title: input.toolName || existing?.title || "Tool",
+    text: existing?.toolOutputText ?? nextToolInputText,
+    detail: existing?.detail || "Preparing tool call.",
+    toolInputText: nextToolInputText,
+    toolOutputText: existing?.toolOutputText,
+    status,
+    messageID: input.messageID || existing?.messageID,
+    partID: existing?.partID ?? input.sourceID,
+    toolCallID: input.toolCallID || existing?.toolCallID,
+    section: "tools",
+    visibilityKey: "toolCalls",
+    isStreaming: status === "running" || status === "pending",
+    debugEntries: input.debugEntries,
+  })
+
+  return upsertTraceItem(nextItems, nextItem)
+}
+
 function buildTraceItemFromPart(
   input: unknown,
   options?: {
@@ -2131,6 +2177,42 @@ function applyRuntimeEventToTurn(
         debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
           "message.id": readString(payload.messageID),
           "part.id": readString(payload.partID),
+        }),
+      }),
+    )
+  }
+
+  if (event.type === "tool.input.delta") {
+    const messageID = resolvePayloadMessageID(payload) || turn.messageID
+    const toolCallID = readString(payload.toolCallID)
+    const partID = readString(payload.partID)
+    const sourceID = partID || (toolCallID ? `tool-input:${toolCallID}` : "")
+    const delta = readString(payload.delta)
+    if (!sourceID || !delta) return turn
+    const rawLength = readNumber(payload.rawLength)
+
+    return updateAssistantTurnLifecycle(
+      {
+        ...turn,
+        messageID,
+        isStreaming: true,
+      },
+      {
+        phase: "tool_running",
+        state: "Preparing tool call",
+        toolName: readString(payload.toolName) || null,
+      },
+      appendToolInputDelta(preparedItems, {
+        delta,
+        sourceID,
+        messageID,
+        toolCallID,
+        toolName: readString(payload.toolName),
+        debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
+          "message.id": readString(payload.messageID),
+          "part.id": partID,
+          "tool.call": toolCallID,
+          "tool.raw.length": rawLength > 0 ? rawLength : undefined,
         }),
       }),
     )

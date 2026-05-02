@@ -890,6 +890,65 @@ describe("stream trace reducer", () => {
     expect(toolItems[0]?.toolInputText?.endsWith("...")).toBe(false)
   })
 
+  it("renders runtime tool input deltas without waiting for a full pending tool event", () => {
+    let turn = buildStreamingAssistantTurn("Inspect live tool input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-tool-input-1",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-part",
+          toolCallID: "call-live-input",
+          toolName: "write",
+          delta: "{\"path\"",
+          rawLength: 7,
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-tool-input-2",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-part",
+          toolCallID: "call-live-input",
+          toolName: "write",
+          delta: ":\"README.md\"}",
+          rawLength: 20,
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(turn.runtime.phase).toBe("tool_running")
+    expect(turn.state).toBe("Preparing tool call")
+    expect(toolItems[0]).toMatchObject({
+      kind: "tool",
+      title: "write",
+      status: "pending",
+      sourceID: "tool-input-part",
+      toolCallID: "call-live-input",
+      toolInputText: "{\"path\":\"README.md\"}",
+      text: "{\"path\":\"README.md\"}",
+      isStreaming: true,
+    })
+  })
+
   it("derives source and attachment trace items from assistant parts", () => {
     const turns = buildTurnsFromHistory([
       {

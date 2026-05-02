@@ -48,6 +48,7 @@ export namespace Flag {
   export const FanFande_EXPERIMENTAL_LSP_TY = truthy("FanFande_EXPERIMENTAL_LSP_TY")
   export const FanFande_EXPERIMENTAL_LSP_TOOL = FanFande_EXPERIMENTAL || truthy("FanFande_EXPERIMENTAL_LSP_TOOL")
   export const FanFande_DEBUG_STREAM_STDOUT = truthy("FanFande_DEBUG_STREAM_STDOUT")
+  export const FanFande_DEBUG_FULLSTREAM_PROBE = truthy("FanFande_DEBUG_FULLSTREAM_PROBE")
   export const FanFande_DISABLE_FILETIME_CHECK = truthy("FanFande_DISABLE_FILETIME_CHECK")
   export const FanFande_EXPERIMENTAL_PLAN_MODE = FanFande_EXPERIMENTAL || truthy("FanFande_EXPERIMENTAL_PLAN_MODE")
   export const FanFande_MODELS_URL = process.env["OPENCODE_MODELS_URL"]

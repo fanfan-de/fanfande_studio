@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
 import * as EventStore from "#session/runtime/event-store.ts"
+import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
 import { getSessionRuntimeDebugSnapshot } from "#session/runtime/runtime-debug.ts"
 import * as Session from "#session/core/session.ts"
@@ -56,6 +57,7 @@ function buildStatusPayload() {
       memory,
     },
     logging: Log.status(),
+    streams: LiveStreamHub.snapshot(),
     runningSessions: {
       count: runningSessions.length,
       items: runningSessions,
@@ -92,11 +94,19 @@ function buildRuntimePayload(input?: {
   }
 }
 
-function buildStatusStreamPayload() {
-  return {
+function buildStatusStreamPayload(input?: { includeRuntime?: boolean }) {
+  const payload: {
+    status: ReturnType<typeof buildStatusPayload>
+    runtime?: ReturnType<typeof buildRuntimePayload>
+  } = {
     status: buildStatusPayload(),
-    runtime: buildRuntimePayload(),
   }
+
+  if (input?.includeRuntime ?? true) {
+    payload.runtime = buildRuntimePayload()
+  }
+
+  return payload
 }
 
 function createLogStream(input: {
@@ -150,6 +160,7 @@ function createLogStream(input: {
 
 function createStatusStream(input: {
   requestId?: string
+  includeRuntime?: boolean
 }) {
   let cancelled = false
   let pending = false
@@ -173,7 +184,7 @@ function createStatusStream(input: {
 
       const pushSnapshot = () => {
         if (cancelled) return
-        enqueue(toSSE("status", buildStatusStreamPayload()))
+        enqueue(toSSE("status", buildStatusStreamPayload({ includeRuntime: input.includeRuntime })))
       }
 
       const scheduleSnapshot = () => {
@@ -228,6 +239,7 @@ export function DebugRoutes() {
   app.get("/status/stream", (c) =>
     createStatusStream({
       requestId: c.get("requestId"),
+      includeRuntime: c.req.query("runtime") !== "0",
     }),
   )
 
