@@ -10,9 +10,9 @@ import * as Log from "#util/log.ts"
 import { PackageRegistry } from "#bun/registry.ts"
 
 const log = Log.create({ service: "bun" })
-const cacheDir = path.join(Global.Path.cache, "runtime-node_modules")
-const packageJSONPath = path.join(cacheDir, "package.json")
-const installLockKey = `bun.install:${cacheDir}`
+let cacheDir = path.join(Global.Path.cache, "runtime-node_modules")
+let packageJSONPath = path.join(cacheDir, "package.json")
+let installLockKey = `bun.install:${cacheDir}`
 
 type CachePackageJSON = {
   name: string
@@ -72,6 +72,12 @@ function createCachePackageJSON(): CachePackageJSON {
     type: "module",
     dependencies: {},
   }
+}
+
+function setRuntimeCacheDir(dir: string) {
+  cacheDir = dir
+  packageJSONPath = path.join(cacheDir, "package.json")
+  installLockKey = `bun.install:${cacheDir}`
 }
 
 async function ensureCacheProject() {
@@ -194,6 +200,19 @@ export namespace BunProc {
   export const Cache = {
     dir: cacheDir,
     packageJSON: packageJSONPath,
+  }
+
+  export function setCacheDirForTesting(dir: string) {
+    const previous = cacheDir
+    setRuntimeCacheDir(dir)
+    Cache.dir = cacheDir
+    Cache.packageJSON = packageJSONPath
+
+    return () => {
+      setRuntimeCacheDir(previous)
+      Cache.dir = cacheDir
+      Cache.packageJSON = packageJSONPath
+    }
   }
 
   export async function run(

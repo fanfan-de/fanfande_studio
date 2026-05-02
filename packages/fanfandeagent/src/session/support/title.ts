@@ -20,6 +20,27 @@ async function getGenerateText() {
   return (await import("ai")).generateText
 }
 
+const defaultRuntimeDependencies = {
+  getProviderModule,
+  getGenerateText,
+  loadTitlePrompt,
+}
+let runtimeDependencies = defaultRuntimeDependencies
+
+export function setRuntimeDependenciesForTesting(
+  overrides: Partial<typeof defaultRuntimeDependencies>,
+) {
+  const previous = runtimeDependencies
+  runtimeDependencies = {
+    ...previous,
+    ...overrides,
+  }
+
+  return () => {
+    runtimeDependencies = previous
+  }
+}
+
 function parseModelReference(value?: string) {
   if (!value) return
   const [providerID, ...rest] = value.split("/")
@@ -112,7 +133,7 @@ function buildFallbackTitle(parts: Message.Part[]) {
 }
 
 async function resolveTitleModel(projectID: string, fallbackModel: ProviderModel) {
-  const Provider = await getProviderModule()
+  const Provider = await runtimeDependencies.getProviderModule()
 
   try {
     const selection = await Provider.getSelection(projectID)
@@ -153,10 +174,10 @@ export async function generateSessionTitle(input: {
 
   try {
     const [system, model, Provider, generateText] = await Promise.all([
-      loadTitlePrompt(),
+      runtimeDependencies.loadTitlePrompt(),
       resolveTitleModel(input.projectID, input.fallbackModel),
-      getProviderModule(),
-      getGenerateText(),
+      runtimeDependencies.getProviderModule(),
+      runtimeDependencies.getGenerateText(),
     ])
     const languageModel = await Provider.getLanguage(model, input.projectID)
     const result = await withTimeout(

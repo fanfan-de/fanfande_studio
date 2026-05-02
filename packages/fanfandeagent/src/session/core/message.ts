@@ -551,6 +551,7 @@ export type Part = z.infer<typeof Part>
 const Base = z.object({
     id: z.string(),
     sessionID: z.string(),
+    turnID: Identifier.schema("turn").optional(),
 })
 export const OpenAIReasoningEffort = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).meta({
     ref: "OpenAIReasoningEffort",
@@ -1053,5 +1054,4 @@ export async function toModelMessages(
 
     return result
 }
-
 

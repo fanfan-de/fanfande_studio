@@ -1,31 +1,49 @@
-import { describe, expect, it, mock } from "bun:test"
+import { describe, expect, it } from "bun:test"
 import "./sqlite.cleanup.ts"
 import { Instance } from "#project/instance.ts"
+import * as LLM from "#session/core/llm.ts"
+import * as Provider from "#provider/provider.ts"
+
+function createTestModel(): Provider.Model {
+  return {
+    ...Provider.testDeepSeekModel,
+    id: "test-model",
+    providerID: "test-provider",
+    api: {
+      ...Provider.testDeepSeekModel.api,
+      id: "test-model",
+      url: "https://example.test/v1",
+    },
+    capabilities: {
+      ...Provider.testDeepSeekModel.capabilities,
+      toolcall: false,
+      input: {
+        ...Provider.testDeepSeekModel.capabilities.input,
+      },
+      output: {
+        ...Provider.testDeepSeekModel.capabilities.output,
+      },
+    },
+  }
+}
 
 describe("prompt loop limit", () => {
   it("allows long-running turns to exceed 16 iterations before a final response", async () => {
     let streamCalls = 0
 
-    mock.module("#provider/provider.ts", () => ({
+    const restoreProvider = Provider.setProviderFunctionOverridesForTesting({
       getDefaultModelRef: async () => ({
         providerID: "test-provider",
         modelID: "test-model",
       }),
       getSelection: async () => ({}),
-      getModel: async () => ({
-        id: "test-model",
-        providerID: "test-provider",
-        capabilities: {
-          reasoning: false,
-          attachment: false,
-          toolcall: false,
-        },
-      }),
-      getLanguage: async (model: Record<string, unknown>) => model,
-    }))
+      getModel: async () => createTestModel(),
+      getLanguage: async (model) => model as never,
+    })
 
-    mock.module("#session/core/llm.ts", () => ({
-      stream: async (input: any) => {
+    const restoreLLM = LLM.setRuntimeDependenciesForTesting({
+      getLanguage: async (model) => model as never,
+      streamText: ((input: any) => {
         streamCalls += 1
         const isFinalCall = streamCalls === 17
 
@@ -50,52 +68,57 @@ describe("prompt loop limit", () => {
             })
           })(),
         }
-      },
-    }))
-
-    const Session = await import("#session/core/session.ts")
-    const Prompt = await import("#session/core/prompt.ts")
-    const Message = await import("#session/core/message.ts")
-
-    await Instance.provide({
-      directory: process.cwd(),
-      async fn() {
-        const session = await Session.createSession({
-          directory: Instance.directory,
-          projectID: Instance.project.id,
-        })
-
-        const result = await Prompt.prompt({
-          sessionID: session.id,
-          model: {
-            providerID: "test-provider",
-            modelID: "test-model",
-          },
-          parts: [
-            {
-              type: "text",
-              text: "keep going until you are done",
-            },
-          ],
-        })
-
-        expect(streamCalls).toBe(17)
-        expect(result.info.role).toBe("assistant")
-        expect(result.info.finishReason).toBe("stop")
-        expect(
-          result.parts.some(
-            (part: { type: string; text?: string }) => part.type === "text" && part.text === "done",
-          ),
-        ).toBe(true)
-
-        const assistants: string[] = []
-        for await (const item of Message.stream(session.id)) {
-          if (item.info.role !== "assistant") continue
-          assistants.push(item.info.id)
-        }
-
-        expect(assistants).toHaveLength(17)
-      },
+      }) as never,
     })
+
+    try {
+      const Session = await import("#session/core/session.ts")
+      const Prompt = await import("#session/core/prompt.ts")
+      const Message = await import("#session/core/message.ts")
+
+      await Instance.provide({
+        directory: process.cwd(),
+        async fn() {
+          const session = await Session.createSession({
+            directory: Instance.directory,
+            projectID: Instance.project.id,
+          })
+
+          const result = await Prompt.prompt({
+            sessionID: session.id,
+            model: {
+              providerID: "test-provider",
+              modelID: "test-model",
+            },
+            parts: [
+              {
+                type: "text",
+                text: "keep going until you are done",
+              },
+            ],
+          })
+
+          expect(streamCalls).toBe(17)
+          expect(result.info.role).toBe("assistant")
+          expect(result.info.finishReason).toBe("stop")
+          expect(
+            result.parts.some(
+              (part: { type: string; text?: string }) => part.type === "text" && part.text === "done",
+            ),
+          ).toBe(true)
+
+          const assistants: string[] = []
+          for await (const item of Message.stream(session.id)) {
+            if (item.info.role !== "assistant") continue
+            assistants.push(item.info.id)
+          }
+
+          expect(assistants).toHaveLength(17)
+        },
+      })
+    } finally {
+      restoreLLM()
+      restoreProvider()
+    }
   })
 })

@@ -5,6 +5,7 @@ import { Instance } from "#project/instance.ts"
 type StreamInput = {
   sessionID: string
   abort: AbortSignal
+  onFinish?: (event: Record<string, unknown>) => PromiseLike<void> | void
 }
 
 type StreamResult = Promise<{
@@ -47,7 +48,25 @@ mock.module("#provider/provider.ts", () => ({
 }))
 
 mock.module("#session/core/llm.ts", () => ({
-  stream: (input: StreamInput) => streamHandler(input),
+  stream: async (input: StreamInput) => {
+    const result = await streamHandler(input)
+    return {
+      ...result,
+      fullStream: (async function* () {
+        let text = ""
+        for await (const chunk of result.fullStream) {
+          if (chunk.type === "text-delta" && typeof chunk.text === "string") {
+            text += chunk.text
+          }
+          yield chunk
+        }
+        await input.onFinish?.({
+          finishReason: "stop",
+          text,
+        })
+      })(),
+    }
+  },
 }))
 
 async function waitFor(

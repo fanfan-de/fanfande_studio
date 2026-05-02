@@ -1,32 +1,11 @@
-import { afterEach, beforeAll, describe, expect, it, mock } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import {
+  setRuntimeDependenciesForTesting,
+  stream,
+} from "#session/core/llm.ts"
 
 const capturedRequests: Array<Record<string, unknown>> = []
-
-mock.module("ai", () => ({
-  streamText(options: Record<string, unknown>) {
-    capturedRequests.push(options)
-    return {
-      fullStream: (async function* () {
-        yield { type: "start" }
-        yield { type: "finish", finishReason: "stop" }
-      })(),
-    }
-  },
-  Output: {
-    text() {
-      return { type: "text" }
-    },
-  },
-  stepCountIs() {
-    return undefined
-  },
-}))
-
-mock.module("#provider/provider.ts", () => ({
-  getLanguage: async () => ({ id: "language-model" }),
-}))
-
-const llmModulePromise = import("#session/core/llm.ts")
+let restoreRuntimeDependencies: (() => void) | undefined
 
 function createModel(input: { providerID: string; url: string; id?: string; reasoning?: boolean }) {
   return {
@@ -69,17 +48,34 @@ function createInput(model: ReturnType<typeof createModel>) {
 }
 
 describe("llm codex request shaping", () => {
-  beforeAll(async () => {
-    await llmModulePromise
+  beforeEach(() => {
+    restoreRuntimeDependencies = setRuntimeDependenciesForTesting({
+      streamText(options: Record<string, unknown>) {
+        capturedRequests.push(options)
+        return {
+          fullStream: (async function* () {
+            yield { type: "start" }
+            yield { type: "finish", finishReason: "stop" }
+          })(),
+        }
+      },
+      getLanguage: async () => ({
+        id: "language-model",
+      }),
+      outputText: () => ({
+        type: "text",
+      }),
+      stepCountIs: () => undefined,
+    } as any)
   })
 
   afterEach(() => {
+    restoreRuntimeDependencies?.()
+    restoreRuntimeDependencies = undefined
     capturedRequests.length = 0
   })
 
   it("sends OpenAI Codex system prompts as provider instructions", async () => {
-    const { stream } = await llmModulePromise
-
     await stream(
       createInput(
         createModel({
@@ -100,8 +96,6 @@ describe("llm codex request shaping", () => {
   })
 
   it("keeps non-Codex providers on the normal system field", async () => {
-    const { stream } = await llmModulePromise
-
     await stream(
       createInput(
         createModel({
@@ -117,8 +111,6 @@ describe("llm codex request shaping", () => {
   })
 
   it("requests OpenAI reasoning summaries for reasoning models", async () => {
-    const { stream } = await llmModulePromise
-
     await stream({
       ...createInput(
         createModel({
@@ -141,8 +133,6 @@ describe("llm codex request shaping", () => {
   })
 
   it("does not request OpenAI reasoning summaries unless reasoning effort is explicit", async () => {
-    const { stream } = await llmModulePromise
-
     await stream(
       createInput(
         createModel({

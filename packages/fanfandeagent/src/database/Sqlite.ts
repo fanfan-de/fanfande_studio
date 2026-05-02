@@ -159,6 +159,47 @@ function createTableByZodObject<T extends z.ZodObject>(
   db.run(toCreateTableSQL(tableName, columedefs))
 }
 
+function commonSchemaFromZodDiscriminatedUnion<
+  Options extends z.ZodObject<any, any>[],
+  Discriminator extends string
+>(
+  schema: z.ZodDiscriminatedUnion<Options, Discriminator>
+): z.ZodObject<any, any> {
+  const options = schema.options as z.ZodObject<any, any>[]
+  if (!options || options.length === 0) {
+    throw new Error("Invalid discriminated union schema")
+  }
+
+  const allKeySets = options.map((opt) => new Set(Object.keys(opt.shape)))
+  const commonKeys = allKeySets.reduce(
+    (acc, set) => new Set([...acc].filter((key) => set.has(key)))
+  )
+  const commonShape = Object.fromEntries(
+    [...commonKeys].map((key) => [key, options[0]!.shape[key]])
+  ) as z.ZodRawShape
+
+  return z.object(commonShape)
+}
+
+function zodDiscriminatedUnionToColumnDefs<
+  Options extends z.ZodObject<any, any>[],
+  Discriminator extends string
+>(
+  schema: z.ZodDiscriminatedUnion<Options, Discriminator>
+): Record<string, SQLiteColumnDef> {
+  return {
+    ...zodObjectToColumnDefs(commonSchemaFromZodDiscriminatedUnion(schema)),
+    data: {
+      name: "data",
+      type: "TEXT",
+      nullable: true,
+      primaryKey: false,
+      defaultValue: undefined,
+      unique: false,
+    },
+  }
+}
+
 /**联合类型建表函数
  * @param tableName  表名
  * @param schema  ZodDiscriminatedUnion 联合对象
@@ -170,6 +211,9 @@ function createTableByZodDiscriminatedUnion<
   tableName: string,
   schema: z.ZodDiscriminatedUnion<Options, Discriminator>
 ): void {
+  db.run(toCreateTableSQL(tableName, zodDiscriminatedUnionToColumnDefs(schema)))
+  return
+  /*
   const options = schema.options as z.ZodObject<any, any>[]
   if (!options)
     return
@@ -179,6 +223,7 @@ function createTableByZodDiscriminatedUnion<
   const commonKeys = allKeySets.reduce(
     (acc, set) => new Set([...acc].filter((key) => set.has(key)))
   )
+  const commonShape = Object.fromEntries(
   // 3. 用 Object.fromEntries 构建共有 shape（避免写入 Readonly 对象）
   const commonShape = Object.fromEntries(
     [...commonKeys].map((key) => [key, options[0]!.shape[key]])
@@ -199,6 +244,7 @@ function createTableByZodDiscriminatedUnion<
 
   // 6. 建表
   db.run(toCreateTableSQL(tableName, columnDefs))
+  */
 }
 
 /** 检测某张表是否已存在
@@ -267,6 +313,27 @@ function syncTableColumnsWithZodObject<T extends z.ZodRawShape>(
 
   const existing = new Set(tableColumns(tableName).map((column) => column.toLowerCase()))
   const definitions = zodObjectToColumnDefs(schema)
+
+  for (const column of Object.values(definitions)) {
+    if (existing.has(column.name.toLowerCase())) continue
+    db.run(toAddColumnSQL(tableName, column))
+  }
+}
+
+function syncTableColumnsWithZodDiscriminatedUnion<
+  Options extends z.ZodObject<any, any>[],
+  Discriminator extends string
+>(
+  tableName: string,
+  schema: z.ZodDiscriminatedUnion<Options, Discriminator>,
+): void {
+  if (!tableExists(tableName)) {
+    createTableByZodDiscriminatedUnion(tableName, schema)
+    return
+  }
+
+  const existing = new Set(tableColumns(tableName).map((column) => column.toLowerCase()))
+  const definitions = zodDiscriminatedUnionToColumnDefs(schema)
 
   for (const column of Object.values(definitions)) {
     if (existing.has(column.name.toLowerCase())) continue
@@ -413,6 +480,20 @@ function fromSQLiteRecord<T extends z.ZodType>(
   schema: T,
   record: Record<string, SQLiteValue>,
 ): z.output<T> {
+  if (isZodDiscriminatedUnion(schema)) {
+    const { data: rawData, ...rawCommonFields } = record
+    const rawVariantData = typeof rawData === "string" ? rawData : ""
+    const rawCommonSchema = commonSchemaFromZodDiscriminatedUnion(schema)
+    const normalizedRawCommonFields = normalizeRecordKeys(rawCommonFields as Record<string, unknown>, rawCommonSchema.shape)
+    const restoredRawCommonFields: Record<string, unknown> = {}
+
+    for (const [key, value] of Object.entries(normalizedRawCommonFields)) {
+      const fieldSchema = rawCommonSchema.shape[key] as z.ZodTypeAny | undefined
+      restoredRawCommonFields[key] = fieldSchema ? restoreValue(fieldSchema, value) : value
+    }
+
+    return schema.parse(mergeUnionData(schema, restoredRawCommonFields, rawVariantData))
+  }
   // 支持 ZodDiscriminatedUnion 类型
   if (isZodDiscriminatedUnion(schema)) {
     // 从记录中提取 data 字段
@@ -1218,6 +1299,7 @@ export {
   createTableByZodObject,
   createTableByZodDiscriminatedUnion,
   syncTableColumnsWithZodObject,
+  syncTableColumnsWithZodDiscriminatedUnion,
   tableExists,
 
   insertOne,

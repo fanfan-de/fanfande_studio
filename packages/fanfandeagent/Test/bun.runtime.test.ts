@@ -9,18 +9,7 @@ test("BunProc reuses a cached SDK package without running bun add", async () => 
   const runtimeDir = path.join(cache, "runtime-node_modules")
   const packageRoot = path.join(runtimeDir, "node_modules", "@ai-sdk", "openai-compatible")
   const outdatedChecks: Array<{ pkg: string; version: string }> = []
-
-  mock.module("#global/global.ts", () => ({
-    Path: {
-      home: root,
-      data: root,
-      bin: root,
-      log: root,
-      cache,
-      config: root,
-      state: root,
-    },
-  }))
+  let restoreCacheDir: (() => void) | undefined
 
   mock.module("#bun/registry.ts", () => ({
     PackageRegistry: {
@@ -60,6 +49,7 @@ test("BunProc reuses a cached SDK package without running bun add", async () => 
     )
 
     const { BunProc } = await import("#bun/index.ts")
+    restoreCacheDir = BunProc.setCacheDirForTesting(runtimeDir)
 
     const exact = await BunProc.install("@ai-sdk/openai-compatible", "2.0.38")
     expect(exact.version).toBe("2.0.38")
@@ -93,6 +83,7 @@ test("BunProc reuses a cached SDK package without running bun add", async () => 
     expect(manifest.name).toBe("fanfandeagent-runtime-cache")
     expect(manifest.dependencies ?? {}).toEqual({})
   } finally {
+    restoreCacheDir?.()
     mock.restore()
     await rm(root, { recursive: true, force: true })
   }

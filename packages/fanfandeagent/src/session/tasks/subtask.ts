@@ -47,6 +47,7 @@ export const SubtaskRecord = z.object({
   agent: z.string(),
   model: ModelRef,
   runInBackground: z.boolean(),
+  permissionMode: z.string().default("default"),
   system: z.string().optional(),
   skills: z.array(z.string()).optional(),
   status: SubtaskStatus,

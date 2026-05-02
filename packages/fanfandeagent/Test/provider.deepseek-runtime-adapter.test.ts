@@ -1,4 +1,6 @@
-import { expect, mock, test } from "bun:test"
+import { expect, test } from "bun:test"
+import { Instance } from "#project/instance.ts"
+import * as Provider from "#provider/provider.ts"
 
 test("provider routes built-in DeepSeek models through the OpenAI-compatible adapter", async () => {
   const deepseekLanguageModel = {
@@ -8,26 +10,8 @@ test("provider routes built-in DeepSeek models through the OpenAI-compatible ada
   const capturedImports: Array<{ pkg: string; version?: string }> = []
   const capturedFactoryInputs: Array<Record<string, unknown>> = []
 
-  mock.module("#project/instance.ts", () => ({
-    Instance: {
-      state<S>(init: () => S) {
-        let value: S | undefined
-        let initialized = false
-
-        return () => {
-          if (!initialized) {
-            value = init()
-            initialized = true
-          }
-
-          return value as S
-        }
-      },
-    },
-  }))
-
-  mock.module("#provider/modelsdev.ts", () => ({
-    get: async () => ({
+  const restoreProvider = Provider.setProviderRuntimeDependenciesForTesting({
+    getModelsDev: async () => ({
       deepseek: {
         id: "deepseek",
         name: "DeepSeek",
@@ -58,81 +42,73 @@ test("provider routes built-in DeepSeek models through the OpenAI-compatible ada
           },
         },
       },
-    }),
-  }))
-
-  mock.module("#config/config.ts", () => ({
-    GLOBAL_CONFIG_ID: "global",
-    get: async () => ({}),
-  }))
-
-  mock.module("#env/env.ts", () => ({
-    all: () => ({
+    }) as never,
+    getConfig: async () => ({}) as never,
+    getEnvAll: () => ({
       DEEPSEEK_API_KEY: "test-deepseek-env-key",
     }),
-  }))
+    importPackage: async (pkg: string, version?: string) => {
+      capturedImports.push({ pkg, version })
 
-  mock.module("#bun/index.ts", () => ({
-    BunProc: {
-      importPackage: async (pkg: string, version?: string) => {
-        capturedImports.push({ pkg, version })
-
-        if (pkg === "@ai-sdk/openai-compatible") {
-          return {
-            name: pkg,
-            version: version ?? "test-version",
-            entry: `${pkg}/index.js`,
-            root: pkg,
-            module: {
-              createOpenAICompatible(options: Record<string, unknown>) {
-                capturedFactoryInputs.push(options)
-                return {
-                  languageModel() {
-                    return deepseekLanguageModel
-                  },
-                }
-              },
-            },
-          }
-        }
-
+      if (pkg === "@ai-sdk/openai-compatible") {
         return {
           name: pkg,
           version: version ?? "test-version",
           entry: `${pkg}/index.js`,
           root: pkg,
           module: {
-            createDeepSeek() {
-              throw new Error("DeepSeek adapter should not be used for runtime requests")
+            createOpenAICompatible(options: Record<string, unknown>) {
+              capturedFactoryInputs.push(options)
+              return {
+                languageModel() {
+                  return deepseekLanguageModel
+                },
+              }
             },
           },
         }
-      },
+      }
+
+      return {
+        name: pkg,
+        version: version ?? "test-version",
+        entry: `${pkg}/index.js`,
+        root: pkg,
+        module: {
+          createDeepSeek() {
+            throw new Error("DeepSeek adapter should not be used for runtime requests")
+          },
+        },
+      }
     },
-  }))
+  })
 
   try {
-    const Provider = await import("#provider/provider.ts")
-    const model = await Provider.getModel("deepseek", "deepseek-reasoner")
-    const language = await Provider.getLanguage(model)
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const model = await Provider.getModel("deepseek", "deepseek-reasoner")
+        const language = await Provider.getLanguage(model)
 
-    expect(model.api.npm).toBe("@ai-sdk/deepseek")
-    expect(language).toMatchObject(deepseekLanguageModel)
-    expect(capturedImports).toEqual([
-      {
-        pkg: "@ai-sdk/openai-compatible",
-        version: "2.0.38",
+        expect(model.api.npm).toBe("@ai-sdk/deepseek")
+        expect(language).toMatchObject(deepseekLanguageModel)
+        expect(capturedImports).toEqual([
+          {
+            pkg: "@ai-sdk/openai-compatible",
+            version: "2.0.38",
+          },
+        ])
+        expect(capturedFactoryInputs).toEqual([
+          {
+            name: "deepseek",
+            apiKey: "test-deepseek-env-key",
+            baseURL: "https://api.deepseek.com",
+            headers: undefined,
+          },
+        ])
       },
-    ])
-    expect(capturedFactoryInputs).toEqual([
-      {
-        name: "deepseek",
-        apiKey: "test-deepseek-env-key",
-        baseURL: "https://api.deepseek.com",
-        headers: undefined,
-      },
-    ])
+    })
   } finally {
-    mock.restore()
+    restoreProvider()
   }
 })

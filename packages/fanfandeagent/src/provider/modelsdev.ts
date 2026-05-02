@@ -10,11 +10,15 @@ const MODELS_DEV_URL = "https://models.dev"
 const REQUEST_TIMEOUT_MS = 10 * 1000
 
 const log = Log.create({ service: "models.dev" })
-const filepath = path.join(Global.Path.cache, "models.json")
+let cacheFilePathOverride: string | undefined
 type DevCatalog = Record<string, DevProvider>
 type CacheSnapshot = {
     data: DevCatalog
     signature?: string
+}
+
+function cacheFilePath() {
+    return cacheFilePathOverride ?? path.join(Global.Path.cache, "models.json")
 }
 
 // -----------------------------------------------------------------------------
@@ -97,6 +101,7 @@ function apiURL(pathname: string) {
 }
 
 async function readCache() {
+    const filepath = cacheFilePath()
     const signature = await fs
         .stat(filepath)
         .then((stat) => `${stat.mtimeMs}:${stat.size}`)
@@ -121,6 +126,7 @@ let loadedCacheSignature: string | undefined
 async function invalidateIfCacheChanged() {
     if (!loadedCacheSignature) return
 
+    const filepath = cacheFilePath()
     const currentSignature = await fs
         .stat(filepath)
         .then((stat) => `${stat.mtimeMs}:${stat.size}`)
@@ -136,6 +142,7 @@ async function invalidateIfCacheChanged() {
 }
 
 async function fetchRemote() {
+    const filepath = cacheFilePath()
     const response = await fetch(apiURL("/api.json"), {
         headers: {
             "User-Agent": Installation.USER_AGENT,
@@ -166,6 +173,19 @@ const DevData = lazy.lazy(async () => {
     }
     return fetchRemote()
 })
+
+function setCacheFilePathForTesting(filepath: string | undefined) {
+    const previous = cacheFilePathOverride
+    cacheFilePathOverride = filepath
+    loadedCacheSignature = undefined
+    DevData.reset()
+
+    return () => {
+        cacheFilePathOverride = previous
+        loadedCacheSignature = undefined
+        DevData.reset()
+    }
+}
 
 // -----------------------------------------------------------------------------
 // 对外 API
@@ -215,5 +235,6 @@ export {
     DevModel,
     DevProvider,
     get,
-    refresh
+    refresh,
+    setCacheFilePathForTesting,
 }

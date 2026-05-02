@@ -15,6 +15,7 @@ import * as ToolResultPersistence from "#session/support/tool-result-persistence
 interface TableRecordMap {
   projects: never
   sessions: SessionInfo
+  turns: TurnInfo
   archived_sessions: ArchivedSessionRecord
   side_chat_links: SideChatLink
   messages: Message.MessageInfo
@@ -57,6 +58,59 @@ export type SessionModelSelectionInput = {
   model?: string | null
   small_model?: string | null
 }
+
+export const TurnStatus = z.enum(["running", "completed", "blocked", "failed", "cancelled"]).meta({
+  ref: "TurnStatus",
+})
+export type TurnStatus = z.output<typeof TurnStatus>
+
+export const TurnModelReference = z
+  .object({
+    providerID: z.string(),
+    modelID: z.string(),
+  })
+  .meta({
+    ref: "TurnModelReference",
+  })
+export type TurnModelReference = z.output<typeof TurnModelReference>
+
+export const TurnInfo = z
+  .object({
+    id: Identifier.schema("turn"),
+    sessionID: Identifier.schema("session"),
+    projectID: z.string(),
+    userMessageID: Identifier.schema("message").optional(),
+    resume: z.boolean().optional(),
+    agent: z.string().optional(),
+    model: TurnModelReference.optional(),
+    status: TurnStatus,
+    phase: z.string().optional(),
+    lastMessageID: Identifier.schema("message").optional(),
+    finishReason: z.string().optional(),
+    error: z.string().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+    completedAt: z.number().optional(),
+  })
+  .meta({
+    ref: "Turn",
+  })
+export type TurnInfo = z.output<typeof TurnInfo>
+
+export type CreateTurnInput = {
+  id?: string
+  sessionID: string
+  projectID: string
+  userMessageID?: string
+  resume?: boolean
+  agent?: string
+  model?: TurnModelReference
+  phase?: string
+}
+
+export type UpdateTurnInput = Partial<
+  Pick<TurnInfo, "status" | "phase" | "lastMessageID" | "finishReason" | "error" | "completedAt">
+>
 
 export const SessionInfo = z
   .object({
@@ -161,6 +215,7 @@ const ArchivedRuntimeEvent = z.union([
 export const ArchivedSessionSnapshot = z
   .object({
     session: SessionInfo,
+    turns: z.array(TurnInfo).optional(),
     messages: z.array(Message.MessageInfo),
     parts: z.array(Message.Part),
     events: z.array(ArchivedRuntimeEvent),
@@ -251,6 +306,7 @@ export type SideChatContext = {
 
 const TableSchemaMap = {
   sessions: SessionInfo,
+  turns: TurnInfo,
   archived_sessions: ArchivedSessionRecord,
   side_chat_links: SideChatLink,
   messages: Message.MessageInfo,
@@ -315,6 +371,12 @@ function ensureSessionTables() {
     db.syncTableColumnsWithZodObject("sessions", SessionInfo)
   }
 
+  if (!db.tableExists("turns")) {
+    db.createTableByZodObject("turns", TurnInfo)
+  } else {
+    db.syncTableColumnsWithZodObject("turns", TurnInfo)
+  }
+
   if (!db.tableExists("archived_sessions")) {
     db.createTableByZodObject("archived_sessions", ArchivedSessionRecord)
   } else {
@@ -329,12 +391,24 @@ function ensureSessionTables() {
 
   if (!db.tableExists("messages")) {
     db.createTableByZodDiscriminatedUnion("messages", Message.MessageInfo)
+  } else {
+    db.syncTableColumnsWithZodDiscriminatedUnion("messages", Message.MessageInfo)
   }
 
   if (!db.tableExists("parts")) {
     db.createTableByZodDiscriminatedUnion("parts", Message.Part)
+  } else {
+    db.syncTableColumnsWithZodDiscriminatedUnion("parts", Message.Part)
   }
 
+  db.db.run(`
+    CREATE INDEX IF NOT EXISTS "idx_turns_session_created"
+    ON "turns" ("sessionID", "createdAt", "id");
+  `)
+  db.db.run(`
+    CREATE INDEX IF NOT EXISTS "idx_turns_session_user_message"
+    ON "turns" ("sessionID", "userMessageID", "createdAt");
+  `)
   db.db.run(`
     CREATE INDEX IF NOT EXISTS "idx_archived_sessions_project_archived"
     ON "archived_sessions" ("projectID", "archivedAt");
@@ -432,6 +506,17 @@ function loadSessionParts(sessionID: string) {
   })
 }
 
+function loadSessionTurns(sessionID: string) {
+  ensureSessionTables()
+  return db.findManyWithSchema("turns", TurnInfo, {
+    where: [{ column: "sessionID", value: sessionID }],
+    orderBy: [
+      { column: "createdAt", direction: "ASC" },
+      { column: "id", direction: "ASC" },
+    ],
+  })
+}
+
 function loadMessagesWithParts(sessionID: string): Message.WithParts[] {
   const messages = loadSessionMessages(sessionID)
   const parts = loadSessionParts(sessionID)
@@ -509,6 +594,7 @@ function removeSessionTasks(sessionID: string) {
 
 function buildArchivedSessionRecord(session: SessionInfo): ArchivedSessionRecord {
   const normalizedSession = normalizeSessionInfo(session)
+  const turns = loadSessionTurns(normalizedSession.id)
   const messages = loadSessionMessages(normalizedSession.id)
   const parts = loadSessionParts(session.id)
   const events = EventStore.listSessionEvents({ sessionID: normalizedSession.id })
@@ -528,6 +614,7 @@ function buildArchivedSessionRecord(session: SessionInfo): ArchivedSessionRecord
     eventCount: events.length,
     snapshot: {
       session: normalizedSession,
+      turns: turns.length > 0 ? turns : undefined,
       messages,
       parts,
       events,
@@ -595,6 +682,64 @@ async function createSession(input: {
   log.info("create", result)
   DataBaseCreate("sessions", result)
   return result
+}
+
+function createTurn(input: CreateTurnInput): TurnInfo {
+  ensureSessionTables()
+  const now = Date.now()
+  const turn = TurnInfo.parse({
+    id: Identifier.ascending("turn", input.id),
+    sessionID: input.sessionID,
+    projectID: input.projectID,
+    userMessageID: input.userMessageID,
+    resume: input.resume,
+    agent: input.agent,
+    model: input.model,
+    status: "running",
+    phase: input.phase ?? "preparing",
+    lastMessageID: input.userMessageID,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  const existing = db.findById("turns", TurnInfo, turn.id)
+  if (existing) {
+    db.updateByIdWithSchema("turns", turn.id, turn, TurnInfo)
+    return turn
+  }
+
+  db.insertOneWithSchema("turns", turn, TurnInfo)
+  return turn
+}
+
+function updateTurn(turnID: string | undefined, input: UpdateTurnInput): TurnInfo | null {
+  if (!turnID) return null
+  ensureSessionTables()
+  const existing = DataBaseRead("turns", turnID) as TurnInfo | null
+  if (!existing) return null
+
+  const now = Date.now()
+  const nextStatus = input.status ?? existing.status
+  const completedAt =
+    input.completedAt ??
+    existing.completedAt ??
+    (nextStatus === "completed" || nextStatus === "blocked" || nextStatus === "failed" || nextStatus === "cancelled"
+      ? now
+      : undefined)
+  const next = TurnInfo.parse({
+    ...existing,
+    ...input,
+    status: nextStatus,
+    completedAt,
+    updatedAt: now,
+  })
+
+  db.updateByIdWithSchema("turns", next.id, next, TurnInfo)
+  return next
+}
+
+function listTurns(sessionID: string): TurnInfo[] {
+  return loadSessionTurns(sessionID)
 }
 
 function buildSideChatTitle(anchorPreview: string) {
@@ -890,6 +1035,7 @@ function removeSession(sessionID: string): SessionInfo | null {
 
   db.deleteMany("parts", [{ column: "sessionID", value: sessionID }])
   db.deleteMany("messages", [{ column: "sessionID", value: sessionID }])
+  db.deleteMany("turns", [{ column: "sessionID", value: sessionID }])
   removeSessionTasks(sessionID)
   EventStore.deleteSessionEvents(sessionID)
   ToolResultPersistence.removeSessionOutputDirectory(sessionID)
@@ -917,6 +1063,7 @@ function archiveSessionCascade(sessionID: string): ArchivedSessionRecord[] {
     for (const record of records) {
       db.deleteMany("parts", [{ column: "sessionID", value: record.sessionID }])
       db.deleteMany("messages", [{ column: "sessionID", value: record.sessionID }])
+      db.deleteMany("turns", [{ column: "sessionID", value: record.sessionID }])
       removeSessionTasks(record.sessionID)
       EventStore.deleteSessionEvents(record.sessionID)
       db.deleteById("sessions", record.sessionID)
@@ -942,6 +1089,10 @@ function restoreArchivedSession(sessionID: string): SessionInfo | null {
 
   const commitRestore = db.db.transaction((record: ArchivedSessionRecord, session: SessionInfo) => {
     db.insertOneWithSchema("sessions", session, SessionInfo)
+
+    for (const turn of record.snapshot.turns ?? []) {
+      db.insertOneWithSchema("turns", turn, TurnInfo)
+    }
 
     for (const message of record.snapshot.messages) {
       db.insertOneWithSchema("messages", message, Message.MessageInfo)
@@ -1122,6 +1273,7 @@ export {
   archiveSessionCascade,
   createSession,
   createSideChat,
+  createTurn,
   deleteArchivedSession,
   DataBaseCreate,
   DataBaseRead,
@@ -1129,6 +1281,7 @@ export {
   listArchivedSessions,
   listByProject,
   listSideChats,
+  listTurns,
   DEFAULT_SESSION_TITLE,
   isDefaultSessionTitle,
   getSessionOrigin,
@@ -1141,6 +1294,7 @@ export {
   removeSession,
   restoreArchivedSession,
   updateSessionTitle,
+  updateTurn,
   updateSessionModelSelection,
   updateSessionWorkflow,
   updateMessage,

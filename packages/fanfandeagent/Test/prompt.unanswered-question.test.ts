@@ -1,13 +1,15 @@
-import { describe, expect, it, mock } from "bun:test"
+import { describe, expect, it } from "bun:test"
 import "./sqlite.cleanup.ts"
 import * as Identifier from "#id/id.ts"
 import { Instance } from "#project/instance.ts"
+import * as LLM from "#session/core/llm.ts"
+import * as Provider from "#provider/provider.ts"
 
 describe("prompt loop unanswered question guard", () => {
   it("returns the latest assistant without creating a new step when a user question is waiting for an answer", async () => {
     let streamCalls = 0
 
-    mock.module("#provider/provider.ts", () => ({
+    const restoreProvider = Provider.setProviderFunctionOverridesForTesting({
       getDefaultModelRef: async () => ({
         providerID: "test-provider",
         modelID: "test-model",
@@ -16,25 +18,27 @@ describe("prompt loop unanswered question guard", () => {
       getModel: async () => {
         throw new Error("getModel should not be called while an unanswered question is blocking the loop")
       },
-      getLanguage: async (model: Record<string, unknown>) => model,
-    }))
+      getLanguage: async (model) => model as never,
+    })
 
-    mock.module("#session/core/llm.ts", () => ({
-      stream: async () => {
+    const restoreLLM = LLM.setRuntimeDependenciesForTesting({
+      getLanguage: async (model) => model as never,
+      streamText: (() => {
         streamCalls += 1
         return {
           fullStream: (async function* () {})(),
         }
-      },
-    }))
+      }) as never,
+    })
 
-    const Session = await import("#session/core/session.ts")
-    const Prompt = await import("#session/core/prompt.ts")
-    const Message = await import("#session/core/message.ts")
+    try {
+      const Session = await import("#session/core/session.ts")
+      const Prompt = await import("#session/core/prompt.ts")
+      const Message = await import("#session/core/message.ts")
 
-    await Instance.provide({
-      directory: process.cwd(),
-      async fn() {
+      await Instance.provide({
+        directory: process.cwd(),
+        async fn() {
         const session = await Session.createSession({
           directory: Instance.directory,
           projectID: Instance.project.id,
@@ -132,7 +136,11 @@ describe("prompt loop unanswered question guard", () => {
         }
 
         expect(assistants).toEqual([assistant.id])
-      },
-    })
+        },
+      })
+    } finally {
+      restoreLLM()
+      restoreProvider()
+    }
   })
 })

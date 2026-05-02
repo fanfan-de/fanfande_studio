@@ -361,12 +361,25 @@ describe("tool contract", () => {
             sessionID: "session-question-provider-options",
             role: "assistant",
             created: Date.now(),
+            parentID: "user-question",
+            modelID: "test-model",
+            providerID: "test-provider",
             agent: "plan",
-            model: {
-              providerID: "test-provider",
-              modelID: "test-model",
+            path: {
+              cwd: ".",
+              root: ".",
             },
-          } as Message.Assistant,
+            cost: 0,
+            tokens: {
+              input: 0,
+              output: 0,
+              reasoning: 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            },
+          } satisfies Message.Assistant,
           parts: [
             {
               id: "part-question-tool",

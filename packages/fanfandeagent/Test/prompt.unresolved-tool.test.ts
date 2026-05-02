@@ -1,32 +1,50 @@
-import { describe, expect, it, mock } from "bun:test"
+import { describe, expect, it } from "bun:test"
 import "./sqlite.cleanup.ts"
 import * as Identifier from "#id/id.ts"
 import { Instance } from "#project/instance.ts"
+import * as LLM from "#session/core/llm.ts"
+import * as Provider from "#provider/provider.ts"
+
+function createTestModel(): Provider.Model {
+  return {
+    ...Provider.testDeepSeekModel,
+    id: "test-model",
+    providerID: "test-provider",
+    api: {
+      ...Provider.testDeepSeekModel.api,
+      id: "test-model",
+      url: "https://example.test/v1",
+    },
+    capabilities: {
+      ...Provider.testDeepSeekModel.capabilities,
+      toolcall: false,
+      input: {
+        ...Provider.testDeepSeekModel.capabilities.input,
+      },
+      output: {
+        ...Provider.testDeepSeekModel.capabilities.output,
+      },
+    },
+  }
+}
 
 describe("prompt loop unresolved tool guard", () => {
   it("repairs dangling tool calls and continues the loop", async () => {
     let streamCalls = 0
 
-    mock.module("#provider/provider.ts", () => ({
+    const restoreProvider = Provider.setProviderFunctionOverridesForTesting({
       getDefaultModelRef: async () => ({
         providerID: "test-provider",
         modelID: "test-model",
       }),
       getSelection: async () => ({}),
-      getModel: async () => ({
-        id: "test-model",
-        providerID: "test-provider",
-        capabilities: {
-          reasoning: false,
-          attachment: false,
-          toolcall: false,
-        },
-      }),
-      getLanguage: async (model: Record<string, unknown>) => model,
-    }))
+      getModel: async () => createTestModel(),
+      getLanguage: async (model) => model as never,
+    })
 
-    mock.module("#session/core/llm.ts", () => ({
-      stream: async () => {
+    const restoreLLM = LLM.setRuntimeDependenciesForTesting({
+      getLanguage: async (model) => model as never,
+      streamText: ((input: any) => {
         streamCalls += 1
         return {
           fullStream: (async function* () {
@@ -38,18 +56,24 @@ describe("prompt loop unresolved tool guard", () => {
               type: "finish",
               finishReason: "stop",
             }
+            await input.onFinish?.({
+              finishReason: "stop",
+              text: "resumed",
+              totalUsage: {},
+            })
           })(),
         }
-      },
-    }))
+      }) as never,
+    })
 
-    const Session = await import("#session/core/session.ts")
-    const Prompt = await import("#session/core/prompt.ts")
-    const Message = await import("#session/core/message.ts")
+    try {
+      const Session = await import("#session/core/session.ts")
+      const Prompt = await import("#session/core/prompt.ts")
+      const Message = await import("#session/core/message.ts")
 
-    await Instance.provide({
-      directory: process.cwd(),
-      async fn() {
+      await Instance.provide({
+        directory: process.cwd(),
+        async fn() {
         const session = await Session.createSession({
           directory: Instance.directory,
           projectID: Instance.project.id,
@@ -143,7 +167,11 @@ describe("prompt loop unresolved tool guard", () => {
           throw new Error("expected dangling tool call to be repaired as an error")
         }
         expect(recoveredTool.state.error).toContain("interrupted run")
-      },
-    })
+        },
+      })
+    } finally {
+      restoreLLM()
+      restoreProvider()
+    }
   })
 })

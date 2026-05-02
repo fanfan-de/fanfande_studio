@@ -1,24 +1,15 @@
-import { expect, mock, test } from "bun:test"
+import { expect, test } from "bun:test"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import * as ModelsDev from "#provider/modelsdev.ts"
 
 test("models.dev cache is reloaded when models.json changes on disk", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "fanfande-modelsdev-"))
   const cache = path.join(root, "cache")
   const modelsPath = path.join(cache, "models.json")
 
-  mock.module("#global/global.ts", () => ({
-    Path: {
-      home: root,
-      data: root,
-      bin: root,
-      log: root,
-      cache,
-      config: root,
-      state: root,
-    },
-  }))
+  const restoreCachePath = ModelsDev.setCacheFilePathForTesting(modelsPath)
 
   try {
     await mkdir(cache, { recursive: true })
@@ -53,7 +44,6 @@ test("models.dev cache is reloaded when models.json changes on disk", async () =
       }),
     )
 
-    const ModelsDev = await import("#provider/modelsdev.ts")
     const initial = await ModelsDev.get()
     expect(initial["alibaba-cn"]?.models["qwen-vl-max"]?.modalities?.input).toEqual(["text"])
 
@@ -91,7 +81,7 @@ test("models.dev cache is reloaded when models.json changes on disk", async () =
     const updated = await ModelsDev.get()
     expect(updated["alibaba-cn"]?.models["qwen-vl-max"]?.modalities?.input).toEqual(["text", "image"])
   } finally {
-    mock.restore()
+    restoreCachePath()
     await rm(root, { recursive: true, force: true })
   }
 })

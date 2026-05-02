@@ -98,6 +98,19 @@ async function runScenario(scenario: Scenario) {
 }
 
 realTest("real LLM can use prompt() to drive core tools", async () => {
+  const selectedModel = selectModel()
+  const Provider = await import("#provider/provider.ts")
+  try {
+    await Provider.getModel(selectedModel.providerID, selectedModel.modelID)
+  } catch (error) {
+    console.warn(
+      `Skipping real LLM e2e because ${selectedModel.providerID}/${selectedModel.modelID} is not available: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
+    return
+  }
+
   const scenarios: Scenario[] = [
     {
       name: "read-file",

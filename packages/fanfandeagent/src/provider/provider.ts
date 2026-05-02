@@ -235,6 +235,30 @@ export type ProviderCatalogItem = z.infer<typeof ProviderCatalogItem>
 const sdkState = Instance.state(() => new Map<string, SDKProvider>())
 const languageState = Instance.state(() => new Map<string, LanguageModel>())
 
+type ProviderFunctionOverrides = {
+  getSelection?: (configID?: string) => Promise<{
+    model?: string
+    small_model?: string
+  }>
+  getDefaultModelRef?: (configID?: string) => Promise<ModelReference>
+  getModel?: (providerID: string, modelID: string, configID?: string) => Promise<Model>
+  getLanguage?: (model: Model, configID?: string) => Promise<LanguageModel>
+}
+
+let providerFunctionOverrides: ProviderFunctionOverrides = {}
+
+export function setProviderFunctionOverridesForTesting(overrides: ProviderFunctionOverrides) {
+  const previous = providerFunctionOverrides
+  providerFunctionOverrides = {
+    ...previous,
+    ...overrides,
+  }
+
+  return () => {
+    providerFunctionOverrides = previous
+  }
+}
+
 type SDKFactoryInput = {
   provider: ProviderInfo
   apiKey: string | undefined
@@ -243,6 +267,38 @@ type SDKFactoryInput = {
 }
 
 type SDKModuleFactory = (options: Record<string, unknown>) => Provider
+
+type ProviderRuntimeDependencies = {
+  getModelsDev: typeof ModelsDev.get
+  getConfig: typeof Config.get
+  getEnvAll: typeof Env.all
+  importPackage: (pkg: string, version?: string) => Promise<{
+    module: Record<string, unknown>
+    version?: string
+  }>
+}
+
+const defaultProviderRuntimeDependencies: ProviderRuntimeDependencies = {
+  getModelsDev: ModelsDev.get,
+  getConfig: Config.get,
+  getEnvAll: Env.all,
+  importPackage: BunProc.importPackage,
+}
+let providerRuntimeDependencies = defaultProviderRuntimeDependencies
+
+export function setProviderRuntimeDependenciesForTesting(
+  overrides: Partial<ProviderRuntimeDependencies>,
+) {
+  const previous = providerRuntimeDependencies
+  providerRuntimeDependencies = {
+    ...previous,
+    ...overrides,
+  }
+
+  return () => {
+    providerRuntimeDependencies = previous
+  }
+}
 
 const SDK_ADAPTERS = {
   [DEEPSEEK_SDK_PACKAGE]: {
@@ -770,7 +826,7 @@ async function applyProviderConfig(
 }
 
 async function catalogMap():Promise<Record<string,ProviderInfo>> {
-  const providers = await ModelsDev.get()
+  const providers = await providerRuntimeDependencies.getModelsDev()
   return mapValues(providers, fromModelsDevProvider)
 }
 
@@ -790,9 +846,9 @@ async function resolveProjectProviders(configID = resolveConfigID()) {
   // 读取共享 catalog。这里提供“系统已知”的 provider 基础骨架。
   const catalog = await catalogMap()
   // 读取当前项目配置，里面可能会覆盖 provider 名称、模型、开关等。
-  const config = await Config.get(configID)
+  const config = await providerRuntimeDependencies.getConfig(configID)
   // 读取当前实例环境变量，用于补全 API Key 等运行时字段。
-  const env = Env.all()
+  const env = providerRuntimeDependencies.getEnvAll()
 
   // 候选 provider ID 来自两个地方：
   // 1. catalog 中已有的 provider
@@ -1026,9 +1082,15 @@ export async function validateProviderConfig(
   configID = Config.GLOBAL_CONFIG_ID,
   options: ProviderValidationOptions = {},
 ) {
-  const [catalog, config] = await Promise.all([catalogMap(), Config.get(configID)])
+  const [catalog, config] = await Promise.all([catalogMap(), providerRuntimeDependencies.getConfig(configID)])
   const mergedProviderConfig = Config.mergeProviderConfig(config.provider?.[providerID], providerConfig)
-  const provider = await applyProviderConfig(providerID, catalog[providerID], mergedProviderConfig, Env.all(), options.auth)
+  const provider = await applyProviderConfig(
+    providerID,
+    catalog[providerID],
+    mergedProviderConfig,
+    providerRuntimeDependencies.getEnvAll(),
+    options.auth,
+  )
 
   if (!provider) {
     throw new Error(`Provider '${providerID}' could not be resolved from the catalog`)
@@ -1120,6 +1182,10 @@ export async function getPublicProvider(providerID: string, configID = resolveCo
 }
 
 async function getModel(providerID: string, modelID: string, configID = resolveConfigID()) {
+  if (providerFunctionOverrides.getModel) {
+    return providerFunctionOverrides.getModel(providerID, modelID, configID)
+  }
+
   const providers = await list(configID)
   const provider = providers[providerID]
   if (!provider) {
@@ -1143,7 +1209,11 @@ async function getModel(providerID: string, modelID: string, configID = resolveC
 }
 
 export async function getSelection(configID = resolveConfigID()) {
-  const config = await Config.get(configID)
+  if (providerFunctionOverrides.getSelection) {
+    return providerFunctionOverrides.getSelection(configID)
+  }
+
+  const config = await providerRuntimeDependencies.getConfig(configID)
   return {
     model: config.model,
     small_model: config.small_model,
@@ -1157,6 +1227,10 @@ export async function getSelection(configID = resolveConfigID()) {
  * 3. 如果连可用模型都没有，直接抛错，要求调用方显式配置 provider / model。
  */
 export async function getDefaultModelRef(configID = resolveConfigID()): Promise<ModelReference> {
+  if (providerFunctionOverrides.getDefaultModelRef) {
+    return providerFunctionOverrides.getDefaultModelRef(configID)
+  }
+
   const selection = await getSelection(configID)
   const parsed = parseModelReference(selection.model)
   if (parsed) {
@@ -1188,6 +1262,10 @@ export async function getDefaultModelRef(configID = resolveConfigID()): Promise<
 // -----------------------------------------------------------------------------
 
 export async function getLanguage(model: Model, configID = resolveConfigID()): Promise<LanguageModel> {
+  if (providerFunctionOverrides.getLanguage) {
+    return providerFunctionOverrides.getLanguage(model, configID)
+  }
+
   const provider = await requireRuntimeProvider(model.providerID, configID)
 
   const key = runtimeKey(provider, model)
@@ -1203,7 +1281,7 @@ export async function getLanguage(model: Model, configID = resolveConfigID()): P
 
 async function loadSDKFactory(npmPackage: SupportedSDKPackage) {
   const adapter = SDK_ADAPTERS[npmPackage]
-  const loaded = await BunProc.importPackage<Record<string, unknown>>(npmPackage, adapter.version)
+  const loaded = await providerRuntimeDependencies.importPackage(npmPackage, adapter.version)
   const factory = loaded.module[adapter.exportName]
   if (typeof factory !== "function") {
     throw new Error(`SDK package '${npmPackage}' is missing export '${adapter.exportName}'`)

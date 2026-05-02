@@ -16,6 +16,13 @@ interface JsonEnvelope {
   }
 }
 
+function isRuntimeEventData(value: unknown): value is {
+  type: string
+  payload?: Record<string, unknown>
+} {
+  return Boolean(value && typeof value === "object" && "type" in value)
+}
+
 function parseSSE(input: string): SSEEvent[] {
   const blocks = input.split(/\r?\n\r?\n/).map((x) => x.trim()).filter(Boolean)
   const result: SSEEvent[] = []
@@ -80,11 +87,17 @@ test("api e2e: create and send message with streaming assistant response", async
 
   const errorEvent = events.find((event) => event.event === "error")
   expect(errorEvent).toBeUndefined()
-  expect(events.some((event) => event.event === "started")).toBe(true)
-  expect(events.some((event) => event.event === "done")).toBe(true)
-  expect(events.some((event) => event.event === "delta" || event.event === "part")).toBe(true)
+  const runtimeEvents = events
+    .filter((event) => event.event === "runtime" && isRuntimeEventData(event.data))
+    .map((event) => event.data as { type: string; payload?: Record<string, unknown> })
 
-  const done = [...events].reverse().find((event) => event.event === "done")
-  const doneData = done?.data as { message?: { role?: string } } | undefined
-  expect(doneData?.message?.role).toBe("assistant")
+  expect(runtimeEvents.some((event) => event.type === "turn.started")).toBe(true)
+  expect(runtimeEvents.some((event) => event.type === "turn.completed")).toBe(true)
+  expect(
+    runtimeEvents.some((event) => event.type === "text.part.delta" || event.type === "part.recorded"),
+  ).toBe(true)
+
+  const completed = [...runtimeEvents].reverse().find((event) => event.type === "turn.completed")
+  const completedPayload = completed?.payload as { message?: { role?: string } } | undefined
+  expect(completedPayload?.message?.role).toBe("assistant")
 }, 240000)

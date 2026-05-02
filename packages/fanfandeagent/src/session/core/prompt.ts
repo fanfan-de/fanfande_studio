@@ -304,6 +304,11 @@ function emitTurnFailureContext(input: {
 export function cancel(sessionID: string) {
     const turn = Orchestrator.activeTurn(sessionID)
     if (turn) {
+        Session.updateTurn(turn.turnID, {
+            status: "cancelled",
+            phase: "cancelled",
+            error: "Prompt cancellation requested.",
+        })
         turn.emit("turn.state.changed", {
             phase: "cancelled",
             reason: "Prompt cancellation requested.",
@@ -499,9 +504,13 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 disableCompaction: Session.isSideChatSession(activeSession),
             })
 
-            const assistantMessage = createAssistantMessage(sessionID, lastUser, model, agent.name, assistantMessageID);
+            const assistantMessage = createAssistantMessage(sessionID, lastUser, model, agent.name, assistantMessageID, turn.turnID);
             currentAssistant = assistantMessage;
             await persistMessageRecord(assistantMessage, turn);
+            Session.updateTurn(turn.turnID, {
+                phase: "waiting_llm",
+                lastMessageID: assistantMessage.id,
+            })
 
             const processor = Processor.create({
                 Assistant: assistantMessage,
@@ -657,6 +666,19 @@ export const prompt = fn(PromptInput, async (input) => {
             agent: userMessage.messageinfo.agent,
             model: userMessage.messageinfo.model,
         })
+        Session.createTurn({
+            id: turn.turnID,
+            sessionID: input.sessionID,
+            projectID: session.projectID,
+            userMessageID: userMessage.messageinfo.id,
+            agent: userMessage.messageinfo.agent,
+            model: userMessage.messageinfo.model,
+            phase: "preparing",
+        })
+        userMessage.messageinfo = {
+            ...userMessage.messageinfo,
+            turnID: turn.turnID,
+        }
 
         turn.emit("turn.state.changed", {
             phase: "preparing",
@@ -703,6 +725,13 @@ export const prompt = fn(PromptInput, async (input) => {
         })
         await sessionTitlePromise
 
+        Session.updateTurn(turn.turnID, {
+            status: result.status === "blocked" ? "blocked" : "completed",
+            phase: result.status === "blocked" ? "blocked" : "completed",
+            lastMessageID: result.latest.info.id,
+            finishReason: result.finishReason,
+        })
+
         turn.emit("turn.state.changed", {
             phase: result.status === "blocked" ? "blocked" : "completed",
             reason: result.finishReason,
@@ -737,6 +766,13 @@ export const prompt = fn(PromptInput, async (input) => {
         await sessionTitlePromise
 
         if (turn) {
+            const status = controller.signal.aborted ? "cancelled" : "failed"
+            Session.updateTurn(turn.turnID, {
+                status,
+                phase: status,
+                error: normalizePromptErrorMessage(error),
+                lastMessageID: latestAssistant?.info.id,
+            })
             emitTurnFailureContext({
                 turn,
                 error,
@@ -797,6 +833,16 @@ export const resume = fn(ResumeInput, async (input) => {
             model: latestUser?.message.model,
             resume: true,
         })
+        Session.createTurn({
+            id: turn.turnID,
+            sessionID: input.sessionID,
+            projectID: session.projectID,
+            userMessageID: latestUser?.message.id,
+            resume: true,
+            agent: latestUser?.message.agent,
+            model: latestUser?.message.model,
+            phase: "preparing",
+        })
 
         turn.emit("turn.state.changed", {
             phase: "preparing",
@@ -822,6 +868,13 @@ export const resume = fn(ResumeInput, async (input) => {
                 sessionID: input.sessionID,
                 error: error instanceof Error ? error.message : String(error),
             })
+        })
+
+        Session.updateTurn(turn.turnID, {
+            status: result.status === "blocked" ? "blocked" : "completed",
+            phase: result.status === "blocked" ? "blocked" : "completed",
+            lastMessageID: result.latest.info.id,
+            finishReason: result.finishReason,
         })
 
         turn.emit("turn.state.changed", {
@@ -857,6 +910,13 @@ export const resume = fn(ResumeInput, async (input) => {
         })
 
         if (turn) {
+            const status = controller.signal.aborted ? "cancelled" : "failed"
+            Session.updateTurn(turn.turnID, {
+                status,
+                phase: status,
+                error: normalizePromptErrorMessage(error),
+                lastMessageID: latestAssistant?.info.id,
+            })
             emitTurnFailureContext({
                 turn,
                 error,
@@ -1140,10 +1200,12 @@ function createAssistantMessage(
     model: Provider.Model,
     agentName: string,
     messageID: string = Identifier.ascending("message"),
+    turnID?: string,
 ): Message.Assistant {
     return {
         id: messageID,
         sessionID,
+        turnID,
         role: "assistant",
         created: Date.now(),
         parentID: "",

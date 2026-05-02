@@ -40,6 +40,26 @@ const OPENAI_PROVIDER_ID = "openai"
 const OPENAI_CODEX_API_SEGMENT = "/backend-api/codex"
 const DEFAULT_OPENAI_REASONING_EFFORTS: Message.OpenAIReasoningEffort[] = ["low", "medium", "high"]
 type StreamLifecycleCallback<TEvent> = (event: TEvent) => PromiseLike<void> | void
+const defaultRuntimeDependencies = {
+  streamText,
+  getLanguage: Provider.getLanguage,
+  outputText: () => Output.text(),
+  stepCountIs,
+}
+let runtimeDependencies = defaultRuntimeDependencies
+
+export function setRuntimeDependenciesForTesting(
+  overrides: Partial<typeof defaultRuntimeDependencies>,
+) {
+  runtimeDependencies = {
+    ...defaultRuntimeDependencies,
+    ...overrides,
+  }
+
+  return () => {
+    runtimeDependencies = defaultRuntimeDependencies
+  }
+}
 
 //export const OUTPUT_TOKEN_MAX = Flag.FanFande_EXPERIMENTAL_OUTPUT_TOKEN_MAX || 32_000
 
@@ -168,6 +188,7 @@ function normalizeOpenAIReasoningEffort(
  * Starts a text-generation stream and returns the AI SDK stream handle.
  */
 export async function stream(input: StreamInput): Promise<StreamOutput> {
+  const runtime = runtimeDependencies
   const l = log
     .clone()
     .tag("providerID", input.model.providerID)
@@ -251,7 +272,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
 
 
   // 使用 Vercel AI SDK 发起流式请求；如需推理抽取，可在这里接入 middleware。
-  return streamText({
+  return runtime.streamText({
     // ------ 回调与网络配置（Callbacks & Network）------
     async onError(error) {
       log.error("streamText.onError", error)
@@ -281,7 +302,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     maxRetries: input.retries ?? 0,// 最大重试次数
     //headers:       //Additional HTTP headers to be sent with the request. Only applicable for HTTP-based providers.
     //----------- 输出与采样参数 --------------------
-    output: Output.text(),// 输出纯文本
+    output: runtime.outputText(),// 输出纯文本
     ///temperature: params.temperature,
     temperature: isOpenAICodex || isOpenAIReasoning ? undefined : 1,
     ///topP: params.topP,
@@ -305,7 +326,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     ///seed:123124,// 固定随机种子，便于结果复现
     includeRawChunks: false,// 不返回底层原始分块，减少流式噪声与兼容性问题
     //------------ 实验能力扩展 ----------------
-    stopWhen: stepCountIs(1),
+    stopWhen: runtime.stepCountIs(1),
 
     //prepareStep:()=>{return {}},              // prepareStep 可在每一步执行前动态调整参数
     //------------ 工具调用修复 ----------------------
@@ -401,7 +422,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
 }
 
 async function resolveLanguageModel(model: Provider.Model) {
-  return Provider.getLanguage(model)
+  return runtimeDependencies.getLanguage(model)
 }
 
 // Check if messages contain any tool-call content
@@ -415,5 +436,3 @@ export function hasToolCalls(messages: ModelMessage[]): boolean {
   }
   return false
 }
-
-

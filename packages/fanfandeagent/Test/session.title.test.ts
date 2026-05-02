@@ -1,38 +1,38 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import "./sqlite.cleanup.ts"
+import * as Provider from "#provider/provider.ts"
+import * as SessionTitle from "#session/support/title.ts"
+import * as Session from "#session/core/session.ts"
 
 let capturedGenerateInput: Record<string, unknown> | null = null
 let capturedModelLookups: Array<{ providerID: string; modelID: string; configID?: string }> = []
 let generateTextResult = `"Session rename pipeline"\nextra`
 let generateTextError: Error | null = null
 let selectedSmallModel: string | undefined = "small/small-model"
+let restoreProvider: (() => void) | undefined
+let restoreTitle: (() => void) | undefined
 
-mock.module("ai", () => ({
-  generateText: async (input: Record<string, unknown>) => {
-    capturedGenerateInput = input
-    if (generateTextError) throw generateTextError
-    return {
-      text: generateTextResult,
-    }
-  },
-}))
-
-mock.module("#provider/provider.ts", () => ({
-  getSelection: async () => ({
-    small_model: selectedSmallModel,
-  }),
-  getModel: async (providerID: string, modelID: string, configID?: string) => {
-    capturedModelLookups.push({ providerID, modelID, configID })
-    return {
-      providerID,
+function createTestModel(providerID: string, modelID: string): Provider.Model {
+  return {
+    ...Provider.testDeepSeekModel,
+    providerID,
+    id: modelID,
+    api: {
+      ...Provider.testDeepSeekModel.api,
       id: modelID,
-    }
-  },
-  getLanguage: async (model: Record<string, unknown>) => model,
-}))
-
-const SessionTitle = await import("#session/support/title.ts")
-const Session = await import("#session/core/session.ts")
+      url: "https://example.test/v1",
+    },
+    capabilities: {
+      ...Provider.testDeepSeekModel.capabilities,
+      input: {
+        ...Provider.testDeepSeekModel.capabilities.input,
+      },
+      output: {
+        ...Provider.testDeepSeekModel.capabilities.output,
+      },
+    },
+  }
+}
 
 beforeEach(() => {
   capturedGenerateInput = null
@@ -40,6 +40,32 @@ beforeEach(() => {
   generateTextResult = `"Session rename pipeline"\nextra`
   generateTextError = null
   selectedSmallModel = "small/small-model"
+  restoreProvider = Provider.setProviderFunctionOverridesForTesting({
+    getSelection: async () => ({
+      small_model: selectedSmallModel,
+    }),
+    getModel: async (providerID: string, modelID: string, configID?: string) => {
+      capturedModelLookups.push({ providerID, modelID, configID })
+      return createTestModel(providerID, modelID)
+    },
+    getLanguage: async (model) => model as never,
+  })
+  restoreTitle = SessionTitle.setRuntimeDependenciesForTesting({
+    getGenerateText: async () => async (input: Record<string, unknown>) => {
+      capturedGenerateInput = input
+      if (generateTextError) throw generateTextError
+      return {
+        text: generateTextResult,
+      } as never
+    },
+  })
+})
+
+afterEach(() => {
+  restoreTitle?.()
+  restoreProvider?.()
+  restoreTitle = undefined
+  restoreProvider = undefined
 })
 
 describe("session title generation", () => {

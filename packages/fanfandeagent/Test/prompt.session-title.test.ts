@@ -1,21 +1,44 @@
-import { expect, mock, test } from "bun:test"
+import { expect, test } from "bun:test"
 import "./sqlite.cleanup.ts"
 import { Instance } from "#project/instance.ts"
+import * as LLM from "#session/core/llm.ts"
+import * as Provider from "#provider/provider.ts"
+import * as SessionTitle from "#session/support/title.ts"
+
+function createTestModel(modelID: string): Provider.Model {
+  return {
+    ...Provider.testDeepSeekModel,
+    id: modelID,
+    providerID: "test-provider",
+    api: {
+      ...Provider.testDeepSeekModel.api,
+      id: modelID,
+      url: "https://example.test/v1",
+    },
+    capabilities: {
+      ...Provider.testDeepSeekModel.capabilities,
+      input: {
+        ...Provider.testDeepSeekModel.capabilities.input,
+      },
+      output: {
+        ...Provider.testDeepSeekModel.capabilities.output,
+      },
+    },
+  }
+}
 
 test("prompt auto-generates and persists a session title for the first user message", async () => {
   let generatedTitleCalls = 0
 
-  mock.module("ai", () => ({
-    generateText: async () => {
+  const restoreTitle = SessionTitle.setRuntimeDependenciesForTesting({
+    getGenerateText: async () => async () => {
       generatedTitleCalls += 1
       return {
         text: "Repo config investigation",
-      }
+      } as never
     },
-    tool: (definition: Record<string, unknown>) => definition,
-  }))
-
-  mock.module("#provider/provider.ts", () => ({
+  })
+  const restoreProvider = Provider.setProviderFunctionOverridesForTesting({
     getDefaultModelRef: async () => ({
       providerID: "test-provider",
       modelID: "test-model",
@@ -23,20 +46,13 @@ test("prompt auto-generates and persists a session title for the first user mess
     getSelection: async () => ({
       small_model: "test-provider/test-small-model",
     }),
-    getModel: async (_providerID: string, modelID: string) => ({
-      id: modelID,
-      providerID: "test-provider",
-      capabilities: {
-        reasoning: false,
-        attachment: false,
-        toolcall: true,
-      },
-    }),
-    getLanguage: async (model: Record<string, unknown>) => model,
-  }))
+    getModel: async (_providerID: string, modelID: string) => createTestModel(modelID),
+    getLanguage: async (model) => model as never,
+  })
 
-  mock.module("#session/core/llm.ts", () => ({
-    stream: async () => ({
+  const restoreLLM = LLM.setRuntimeDependenciesForTesting({
+    getLanguage: async (model) => model as never,
+    streamText: ((input: any) => ({
       fullStream: (async function* () {
         yield { type: "start" }
         yield {
@@ -53,9 +69,14 @@ test("prompt auto-generates and persists a session title for the first user mess
           type: "finish",
           finishReason: "stop",
         }
+        await input.onFinish?.({
+          finishReason: "stop",
+          text: "done",
+          totalUsage: {},
+        })
       })(),
-    }),
-  }))
+    })) as never,
+  })
 
   const Session = await import("#session/core/session.ts")
   const Prompt = await import("#session/core/prompt.ts")
@@ -89,6 +110,8 @@ test("prompt auto-generates and persists a session title for the first user mess
       },
     })
   } finally {
-    mock.restore()
+    restoreLLM()
+    restoreProvider()
+    restoreTitle()
   }
 })
