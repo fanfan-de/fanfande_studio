@@ -272,6 +272,7 @@ export function App() {
     isBuiltinToolSelectionDirty,
     isSystemPromptPresetDirty,
     isPlanModePromptPresetDirty,
+    isSideChatPromptPresetDirty,
     isRefreshingProviderCatalog,
     isSavingPromptPresetSelection,
     isSavingBuiltinTools,
@@ -759,6 +760,7 @@ export function App() {
               isPlanModePromptPresetDirty={isPlanModePromptPresetDirty}
               isPromptDirty={isPromptDirty}
               isSavingPromptPresetSelection={isSavingPromptPresetSelection}
+              isSideChatPromptPresetDirty={isSideChatPromptPresetDirty}
               isSystemPromptPresetDirty={isSystemPromptPresetDirty}
               message={message}
               promptDraftContent={promptDraftContent}

@@ -415,6 +415,15 @@ const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
     sourcePath: "src/session/prompt/plan.txt",
   },
   {
+    id: "side-chat",
+    label: "Side Chat Prompt",
+    description: "Additional instructions appended when a side chat session is active.",
+    source: "bundled" as const,
+    hasOverride: false,
+    editable: true,
+    sourcePath: "src/session/prompt/side-chat.txt",
+  },
+  {
     id: "provider-gpt",
     label: "GPT Provider Prompt",
     description: "Reserved provider-specific prompt for GPT-family models.",
@@ -428,6 +437,7 @@ const PROMPT_PRESET_FIXTURES: PromptPresetFixture[] = [
 const PROMPT_PRESET_SELECTION_FIXTURE = {
   systemPromptPresetID: "system-default",
   planModePromptPresetID: "plan-mode",
+  sideChatPromptPresetID: "side-chat",
 }
 
 function createPromptPresetSummary(
@@ -465,6 +475,8 @@ function createPromptPresetDocument(
       ? "You are Anybox, an interactive tool that helps users with software engineering tasks."
       : presetID === "plan-mode"
         ? "<system-reminder>\n# Plan Mode - System Reminder"
+        : presetID === "side-chat"
+          ? "This session is a side chat anchored to a single assistant reply from another session."
         : preset.source === "custom"
           ? ""
         : "GPT provider prompt placeholder. This preset is currently inactive."
@@ -6033,6 +6045,7 @@ describe("App", () => {
     let promptPresetDocuments = [
       createPromptPresetDocument("system-default"),
       createPromptPresetDocument("plan-mode"),
+      createPromptPresetDocument("side-chat"),
       createPromptPresetDocument("provider-gpt"),
     ]
 
@@ -6103,6 +6116,7 @@ describe("App", () => {
       promptPresetSelection = {
         systemPromptPresetID: "system-default",
         planModePromptPresetID: promptPresetSelection.planModePromptPresetID,
+        sideChatPromptPresetID: promptPresetSelection.sideChatPromptPresetID,
       }
       return Promise.resolve(promptPresetSelection)
     })
@@ -6114,9 +6128,11 @@ describe("App", () => {
     await screen.findByRole("list", { name: "Prompt presets" })
     expect(screen.getByRole("button", { name: "System Prompt" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Plan Mode Prompt" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Side Chat Prompt" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "GPT Provider Prompt" })).toBeInTheDocument()
     expect(screen.getByLabelText("System prompt preset")).toHaveValue("system-default")
     expect(screen.getByLabelText("Plan mode prompt preset")).toHaveValue("plan-mode")
+    expect(screen.getByLabelText("Side chat prompt preset")).toHaveValue("side-chat")
 
     fireEvent.change(screen.getByLabelText("System prompt preset"), {
       target: {
@@ -6129,6 +6145,7 @@ describe("App", () => {
       expect(window.desktop!.updatePromptPresetSelection).toHaveBeenCalledWith({
         systemPromptPresetID: "provider-gpt",
         planModePromptPresetID: "plan-mode",
+        sideChatPromptPresetID: "side-chat",
       })
     })
 
@@ -6169,6 +6186,7 @@ describe("App", () => {
       expect(window.desktop!.updatePromptPresetSelection).toHaveBeenLastCalledWith({
         systemPromptPresetID: "custom-untitled-preset",
         planModePromptPresetID: "plan-mode",
+        sideChatPromptPresetID: "side-chat",
       })
     })
 

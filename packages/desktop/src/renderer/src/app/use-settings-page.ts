@@ -1181,6 +1181,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       return {
         systemPromptPresetID: field === "systemPromptPresetID" ? value : selectedPromptPresetID ?? value,
         planModePromptPresetID: field === "planModePromptPresetID" ? value : selectedPromptPresetID ?? value,
+        sideChatPromptPresetID: field === "sideChatPromptPresetID" ? value : selectedPromptPresetID ?? value,
       }
     })
   }
@@ -1204,6 +1205,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
               field === "planModePromptPresetID"
                 ? promptPresetSelection.planModePromptPresetID
                 : savedPromptPresetSelection.planModePromptPresetID,
+            sideChatPromptPresetID:
+              field === "sideChatPromptPresetID"
+                ? promptPresetSelection.sideChatPromptPresetID
+                : savedPromptPresetSelection.sideChatPromptPresetID,
           }
         : promptPresetSelection
 
@@ -1221,6 +1226,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
             field === "systemPromptPresetID" ? selection.systemPromptPresetID : current.systemPromptPresetID,
           planModePromptPresetID:
             field === "planModePromptPresetID" ? selection.planModePromptPresetID : current.planModePromptPresetID,
+          sideChatPromptPresetID:
+            field === "sideChatPromptPresetID" ? selection.sideChatPromptPresetID : current.sideChatPromptPresetID,
         }
       })
       setSavedPromptPresetSelection(selection)
@@ -1231,6 +1238,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
             ? "System prompt updated."
             : field === "planModePromptPresetID"
               ? "Plan prompt updated."
+              : field === "sideChatPromptPresetID"
+                ? "Side chat prompt updated."
               : "Prompt assignments updated.",
       })
       return true
@@ -1383,6 +1392,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
 
       const nextPresetID =
         remainingPromptPresets.find((preset) => preset.id === nextSelection.systemPromptPresetID)?.id ??
+        remainingPromptPresets.find((preset) => preset.id === nextSelection.sideChatPromptPresetID)?.id ??
         remainingPromptPresets[0]?.id ??
         null
 
@@ -2179,6 +2189,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     promptPresetSelection !== null &&
     savedPromptPresetSelection !== null &&
     promptPresetSelection.planModePromptPresetID !== savedPromptPresetSelection.planModePromptPresetID
+  const isSideChatPromptPresetDirty =
+    promptPresetSelection !== null &&
+    savedPromptPresetSelection !== null &&
+    promptPresetSelection.sideChatPromptPresetID !== savedPromptPresetSelection.sideChatPromptPresetID
   const isBuiltinToolSelectionDirty =
     stableSelectionKey(builtinToolSelection) !== stableSelectionKey(savedBuiltinToolSelection)
 
@@ -2224,6 +2238,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     isBuiltinToolSelectionDirty,
     isSystemPromptPresetDirty,
     isPlanModePromptPresetDirty,
+    isSideChatPromptPresetDirty,
     isRefreshingProviderCatalog,
     isSavingPromptPresetSelection,
     isSavingBuiltinTools,

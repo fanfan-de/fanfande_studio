@@ -806,6 +806,7 @@ export type AgentPromptPresetSource = "bundled" | "custom"
 export interface AgentPromptPresetSelection {
   systemPromptPresetID: string
   planModePromptPresetID: string
+  sideChatPromptPresetID: string
 }
 
 export interface AgentPromptPresetSummary {

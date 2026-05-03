@@ -8,14 +8,16 @@ import PROMPT_GPT from "../prompt/gpt.txt"
 import PROMPT_KIMI from "../prompt/kimi.txt"
 import PROMPT_PLAN_REMINDER_ANTHROPIC from "../prompt/plan-reminder-anthropic.txt"
 import PROMPT_PLAN from "../prompt/plan.txt"
+import PROMPT_SIDE_CHAT from "../prompt/side-chat.txt"
 import PROMPT_TRINITY from "../prompt/trinity.txt"
 
 export type PromptPresetSource = "bundled" | "custom"
-export type PromptPresetTarget = "system" | "plan"
+export type PromptPresetTarget = "system" | "plan" | "side-chat"
 
 export interface PromptPresetSelection {
   systemPromptPresetID: string
   planModePromptPresetID: string
+  sideChatPromptPresetID: string
 }
 
 export interface PromptPresetSummary {
@@ -55,6 +57,7 @@ interface PromptPresetDefinition {
 const DEFAULT_PROMPT_PRESET_SELECTION: PromptPresetSelection = {
   systemPromptPresetID: "system-default",
   planModePromptPresetID: "plan-mode",
+  sideChatPromptPresetID: "side-chat",
 }
 
 const PROMPT_PRESET_DEFINITIONS: PromptPresetDefinition[] = [
@@ -71,6 +74,13 @@ const PROMPT_PRESET_DEFINITIONS: PromptPresetDefinition[] = [
     description: "Additional instructions appended when the plan agent is active.",
     sourcePath: "src/session/prompt/plan.txt",
     bundledContent: PROMPT_PLAN,
+  },
+  {
+    id: "side-chat",
+    label: "Side Chat Prompt",
+    description: "Additional instructions appended when a side chat session is active.",
+    sourcePath: "src/session/prompt/side-chat.txt",
+    bundledContent: PROMPT_SIDE_CHAT,
   },
   {
     id: "provider-anthropic",
@@ -270,10 +280,16 @@ export async function getResolvedPromptPresetContent(
 export async function getPromptPresetSelection(
   configID = Config.GLOBAL_CONFIG_ID,
 ): Promise<PromptPresetSelection> {
-  const [availablePresetIDs, selectedSystemPromptPresetID, selectedPlanModePromptPresetID] = await Promise.all([
+  const [
+    availablePresetIDs,
+    selectedSystemPromptPresetID,
+    selectedPlanModePromptPresetID,
+    selectedSideChatPromptPresetID,
+  ] = await Promise.all([
     listAvailablePromptPresetIDs(configID),
     Config.getSelectedSystemPromptPresetID(configID),
     Config.getSelectedPlanModePromptPresetID(configID),
+    Config.getSelectedSideChatPromptPresetID(configID),
   ])
 
   return {
@@ -287,6 +303,11 @@ export async function getPromptPresetSelection(
       availablePresetIDs,
       DEFAULT_PROMPT_PRESET_SELECTION.planModePromptPresetID,
     ),
+    sideChatPromptPresetID: normalizePromptPresetSelectionValue(
+      selectedSideChatPromptPresetID,
+      availablePresetIDs,
+      DEFAULT_PROMPT_PRESET_SELECTION.sideChatPromptPresetID,
+    ),
   }
 }
 
@@ -298,6 +319,7 @@ export async function updatePromptPresetSelection(
   const normalizedSelection: PromptPresetSelection = {
     systemPromptPresetID: selection.systemPromptPresetID.trim(),
     planModePromptPresetID: selection.planModePromptPresetID.trim(),
+    sideChatPromptPresetID: selection.sideChatPromptPresetID.trim(),
   }
 
   if (!availablePresetIDs.has(normalizedSelection.systemPromptPresetID)) {
@@ -306,6 +328,10 @@ export async function updatePromptPresetSelection(
 
   if (!availablePresetIDs.has(normalizedSelection.planModePromptPresetID)) {
     throw new Error(`Unknown prompt preset '${selection.planModePromptPresetID}'.`)
+  }
+
+  if (!availablePresetIDs.has(normalizedSelection.sideChatPromptPresetID)) {
+    throw new Error(`Unknown prompt preset '${selection.sideChatPromptPresetID}'.`)
   }
 
   return persistPromptPresetSelection(normalizedSelection, configID)
@@ -434,6 +460,10 @@ export async function deletePromptPreset(
       resolvedSelection.planModePromptPresetID === presetID
         ? DEFAULT_PROMPT_PRESET_SELECTION.planModePromptPresetID
         : resolvedSelection.planModePromptPresetID,
+    sideChatPromptPresetID:
+      resolvedSelection.sideChatPromptPresetID === presetID
+        ? DEFAULT_PROMPT_PRESET_SELECTION.sideChatPromptPresetID
+        : resolvedSelection.sideChatPromptPresetID,
   }
 
   return persistPromptPresetSelection(nextSelection, configID)

@@ -6,7 +6,7 @@ export const AgentInfo = z
   .object({
     name: z.string(),
     description: z.string().optional(),
-    mode: z.enum(["subagent", "primary", "all"]),
+    mode: z.enum(["subagent", "primary", "all", "side-chat"]),
     native: z.boolean().optional(),
     hidden: z.boolean().optional(),
     topP: z.number().optional(),
@@ -22,11 +22,13 @@ export const AgentInfo = z
     prompt: z.string().optional(),
     options: z.record(z.string(), z.any()),
     steps: z.number().int().positive().optional(),
+    toolPolicy: z.enum(["default", "read-only"]).optional(),
     tools: z.record(z.string(), z.boolean()).optional(),
   })
   .meta({ ref: "AgentInfo", description: "Information about the agent" })
 
 export type AgentInfo = z.infer<typeof AgentInfo>
+export const SIDECHAT_AGENT_NAME = "sidechat"
 
 const PLAN_AGENT_TOOL_POLICY: Record<string, boolean> = {
   AskUserQuestion: true,
@@ -52,6 +54,26 @@ const PLAN_AGENT_TOOL_POLICY: Record<string, boolean> = {
 
 const COMPACTION_AGENT_TOOL_POLICY: Record<string, boolean> = {}
 
+export const planAgent: AgentInfo = {
+  name: "plan",
+  description: "Plan mode. Disallows all edit tools.",
+  mode: "primary",
+  native: true,
+  options: {},
+  steps: Infinity,
+  tools: PLAN_AGENT_TOOL_POLICY,
+}
+
+export const sideChatAgent: AgentInfo = {
+  name: SIDECHAT_AGENT_NAME,
+  description: "Side chat mode. Answers from an anchored assistant reply without side effects.",
+  mode: "side-chat",
+  native: true,
+  hidden: true,
+  options: {},
+  toolPolicy: "read-only",
+}
+
 
 const state = Instance.state(async () => {
   const result: Record<string, AgentInfo> = {
@@ -62,15 +84,8 @@ const state = Instance.state(async () => {
       options: {},
       native: true,
     },
-    plan: {
-      name: "plan",
-      description: "Plan mode. Disallows all edit tools.",
-      mode: "primary",
-      native: true,
-      options: {},
-      steps: Infinity,
-      tools: PLAN_AGENT_TOOL_POLICY,
-    },
+    plan: planAgent,
+    [SIDECHAT_AGENT_NAME]: sideChatAgent,
     compaction:{
       name: "compaction",
       mode: "subagent",
@@ -119,19 +134,3 @@ export async function defaultAgent() {
 //     sortBy([(x) => (cfg.default_agent ? x.name === cfg.default_agent : x.name === "build"), "desc"]),
 //   )
 // }
-
-
-//在这里创建一个agent（该文件中定义的类型）的实例，并导出
-export const planAgent: AgentInfo = {
-  name: "plan",
-  description: "Plan mode. Disallows all edit tools.",
-  mode: "primary",
-  native: true,
-  options: {},
-  steps: Infinity,
-  tools: PLAN_AGENT_TOOL_POLICY,
-}
-
-
-
-

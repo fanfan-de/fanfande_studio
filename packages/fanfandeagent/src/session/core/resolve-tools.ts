@@ -63,7 +63,8 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
   ])
   const builtinToolIDs = new Set(builtinRegistry.map((tool) => tool.id))
   const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null
-  const sideChatReadOnly = Session.isSideChatSession(session)
+  const readOnlyToolsOnly =
+    Session.isSideChatSession(session) || input.agent.toolPolicy === "read-only"
   const tools: ToolSet = {}
 
   for (const item of registry) {
@@ -73,7 +74,7 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
     if (!isToolAllowedForAgent(item, input.agent)) {
       continue
     }
-    if (sideChatReadOnly && item.capabilities?.readOnly !== true) {
+    if (readOnlyToolsOnly && item.capabilities?.readOnly !== true) {
       continue
     }
 

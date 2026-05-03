@@ -377,6 +377,7 @@ type PromptPresetDocumentEnvelope = JsonEnvelope<{
 type PromptPresetSelectionEnvelope = JsonEnvelope<{
   systemPromptPresetID: string
   planModePromptPresetID: string
+  sideChatPromptPresetID: string
 }>
 
 const modelsDevFixture = {
@@ -2370,6 +2371,7 @@ describe("server api", () => {
       await Config.setSelectedPromptPresetIDs(Config.GLOBAL_CONFIG_ID, {
         systemPromptPresetID: "system-default",
         planModePromptPresetID: "plan-mode",
+        sideChatPromptPresetID: "side-chat",
       })
 
       const listResponse = await app.request("http://localhost/api/prompts")
@@ -2390,6 +2392,11 @@ describe("server api", () => {
             hasOverride: false,
           }),
           expect.objectContaining({
+            id: "side-chat",
+            source: "bundled",
+            hasOverride: false,
+          }),
+          expect.objectContaining({
             id: "provider-gpt",
             source: "bundled",
             hasOverride: false,
@@ -2405,6 +2412,7 @@ describe("server api", () => {
       expect(selectionBody.data).toEqual({
         systemPromptPresetID: "system-default",
         planModePromptPresetID: "plan-mode",
+        sideChatPromptPresetID: "side-chat",
       })
 
       const createResponse = await app.request("http://localhost/api/prompts", {
@@ -2434,6 +2442,7 @@ describe("server api", () => {
         body: JSON.stringify({
           systemPromptPresetID: customPresetIDValue,
           planModePromptPresetID: "plan-mode",
+          sideChatPromptPresetID: "side-chat",
         }),
       })
       const updateSelectionBody = (await updateSelectionResponse.json()) as PromptPresetSelectionEnvelope
@@ -2443,6 +2452,7 @@ describe("server api", () => {
       expect(updateSelectionBody.data).toEqual({
         systemPromptPresetID: customPresetIDValue,
         planModePromptPresetID: "plan-mode",
+        sideChatPromptPresetID: "side-chat",
       })
 
       const runtimeWithCustomSystemPrompt = await SystemPrompt.defaultPrompt()
@@ -2501,6 +2511,14 @@ describe("server api", () => {
       })
       expect(runtimePrompt.some((section) => section?.includes(customPlanPrompt) === true)).toBe(true)
       expect(runtimePrompt.some((section) => section?.includes(`${customSystemPrompt}\nupdated`) === true)).toBe(true)
+      const sideChatRuntimePrompt = await SystemPrompt.defaultPrompt({
+        agent: {
+          name: "sidechat",
+        },
+      })
+      expect(
+        sideChatRuntimePrompt.some((section) => section?.includes("This session is a side chat anchored") === true),
+      ).toBe(true)
 
       const blankOverrideResponse = await app.request("http://localhost/api/prompts/provider-gpt", {
         method: "PUT",
@@ -2549,6 +2567,7 @@ describe("server api", () => {
       expect(deleteCustomBody.data).toEqual({
         systemPromptPresetID: "system-default",
         planModePromptPresetID: "plan-mode",
+        sideChatPromptPresetID: "side-chat",
       })
 
       const runtimeAfterDelete = await SystemPrompt.defaultPrompt()
@@ -2569,6 +2588,7 @@ describe("server api", () => {
       await Config.setSelectedPromptPresetIDs(Config.GLOBAL_CONFIG_ID, {
         systemPromptPresetID: "system-default",
         planModePromptPresetID: "plan-mode",
+        sideChatPromptPresetID: "side-chat",
       })
     }
   })

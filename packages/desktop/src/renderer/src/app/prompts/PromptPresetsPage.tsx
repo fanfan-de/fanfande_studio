@@ -20,6 +20,7 @@ interface PromptPresetsPageProps {
   isPlanModePromptPresetDirty: boolean
   isPromptDirty: boolean
   isSavingPromptPresetSelection: boolean
+  isSideChatPromptPresetDirty: boolean
   isSystemPromptPresetDirty: boolean
   message: PromptEditorMessage | null
   promptDraftContent: string
@@ -61,6 +62,9 @@ function getPromptPresetUsageLabels(
   if (selection.planModePromptPresetID === presetID) {
     labels.push("Plan")
   }
+  if (selection.sideChatPromptPresetID === presetID) {
+    labels.push("Side chat")
+  }
 
   return labels
 }
@@ -73,6 +77,7 @@ export function PromptPresetsPage({
   isPlanModePromptPresetDirty,
   isPromptDirty,
   isSavingPromptPresetSelection,
+  isSideChatPromptPresetDirty,
   isSystemPromptPresetDirty,
   message,
   promptDraftContent,
@@ -255,6 +260,42 @@ export function PromptPresetsPage({
                         onClick={() => void onSavePromptPresetSelection("planModePromptPresetID")}
                       >
                         {savingPromptPresetSelectionField === "planModePromptPresetID" ? "Saving..." : "Confirm"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="settings-prompt-assignment-row">
+                  <div className="settings-prompt-assignment-copy">
+                    <span className="settings-prompt-assignment-title">Side chat</span>
+                    <span className="settings-prompt-assignment-note">Side chat only</span>
+                  </div>
+
+                  <div className="settings-prompt-assignment-control">
+                    <div className="settings-prompt-assignment-actions">
+                      <select
+                        id="settings-side-chat-prompt-preset"
+                        aria-label="Side chat prompt preset"
+                        value={promptPresetSelection?.sideChatPromptPresetID ?? ""}
+                        disabled={!promptPresetSelection || isSavingPromptPresetSelection}
+                        onChange={(event) =>
+                          onPromptPresetSelectionChange("sideChatPromptPresetID", event.target.value)
+                        }
+                      >
+                        {promptPresetOptions.map((preset) => (
+                          <option key={`side-chat-${preset.id}`} value={preset.id}>
+                            {preset.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        aria-label="Confirm side chat prompt preset"
+                        disabled={!isSideChatPromptPresetDirty || isSavingPromptPresetSelection}
+                        onClick={() => void onSavePromptPresetSelection("sideChatPromptPresetID")}
+                      >
+                        {savingPromptPresetSelectionField === "sideChatPromptPresetID" ? "Saving..." : "Confirm"}
                       </button>
                     </div>
                   </div>

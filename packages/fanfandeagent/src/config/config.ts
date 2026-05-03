@@ -141,6 +141,11 @@ const SelectedPlanModePromptPresetField = z
   .optional()
   .describe("Selected preset id for the runtime plan-mode prompt")
 
+const SelectedSideChatPromptPresetField = z
+  .string()
+  .optional()
+  .describe("Selected preset id for the runtime side-chat prompt")
+
 export const McpServerTransport = z.enum(["stdio", "remote"]).meta({
   ref: "McpServerTransport",
 })
@@ -375,6 +380,7 @@ export const Info = z
     custom_prompt_presets: CustomPromptPresetsField,
     selected_system_prompt_preset: SelectedSystemPromptPresetField,
     selected_plan_mode_prompt_preset: SelectedPlanModePromptPresetField,
+    selected_side_chat_prompt_preset: SelectedSideChatPromptPresetField,
     enterprise: z
       .object({
         url: z.string().optional().describe("Enterprise URL"),
@@ -905,21 +911,28 @@ export async function getSelectedPlanModePromptPresetID(configID = GLOBAL_CONFIG
   return normalizePromptPresetID(readConfig(normalizeConfigID(configID)).selected_plan_mode_prompt_preset)
 }
 
+export async function getSelectedSideChatPromptPresetID(configID = GLOBAL_CONFIG_ID) {
+  return normalizePromptPresetID(readConfig(normalizeConfigID(configID)).selected_side_chat_prompt_preset)
+}
+
 export async function setSelectedPromptPresetIDs(
   configID: string,
   selection: {
     systemPromptPresetID?: string | null
     planModePromptPresetID?: string | null
+    sideChatPromptPresetID?: string | null
   },
 ) {
   const normalizedConfigID = normalizeConfigID(configID)
   const current = readConfig(normalizedConfigID)
   const systemPromptPresetID = normalizePromptPresetID(selection.systemPromptPresetID)
   const planModePromptPresetID = normalizePromptPresetID(selection.planModePromptPresetID)
+  const sideChatPromptPresetID = normalizePromptPresetID(selection.sideChatPromptPresetID)
   const next: Info = {
     ...current,
     selected_system_prompt_preset: systemPromptPresetID,
     selected_plan_mode_prompt_preset: planModePromptPresetID,
+    selected_side_chat_prompt_preset: sideChatPromptPresetID,
   }
 
   return writeConfig(normalizedConfigID, Info.parse(next))

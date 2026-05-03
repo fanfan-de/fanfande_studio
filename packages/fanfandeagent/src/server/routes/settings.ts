@@ -223,7 +223,7 @@ export function SettingsRoutes() {
     const payload = await parseJsonBody(
       c,
       SettingsUseCase.PromptPresetSelectionBody,
-      "Body must contain non-empty 'systemPromptPresetID' and 'planModePromptPresetID' fields.",
+      "Body must contain non-empty 'systemPromptPresetID', 'planModePromptPresetID', and 'sideChatPromptPresetID' fields.",
     )
     return ok(c, await SettingsUseCase.updatePromptPresetSelection(payload))
   })

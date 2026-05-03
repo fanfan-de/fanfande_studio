@@ -62,12 +62,20 @@ export function provider(model: Provider.Model): string[] {
 export async function defaultPrompt(input?: {
     agent?: {
         name?: string
+        prompt?: string
     }
     session?: Session.SessionInfo | null
 })
 {
     const selection = await PromptPresets.getPromptPresetSelection()
     const prompts = [await PromptPresets.getResolvedPromptPresetContent(selection.systemPromptPresetID)]
+    const agentPrompt = input?.agent?.prompt?.trim()
+    if (agentPrompt) {
+        prompts.push(agentPrompt)
+    }
+    if (input?.agent?.name === "sidechat") {
+        prompts.push(await PromptPresets.getResolvedPromptPresetContent(selection.sideChatPromptPresetID))
+    }
     if (input?.agent?.name === "plan") {
         prompts.push(await PromptPresets.getResolvedPromptPresetContent(selection.planModePromptPresetID))
     }

@@ -911,6 +911,7 @@ export type PromptPresetSource = "bundled" | "custom"
 export interface PromptPresetSelection {
   systemPromptPresetID: string
   planModePromptPresetID: string
+  sideChatPromptPresetID: string
 }
 
 export interface PromptPresetSummary {

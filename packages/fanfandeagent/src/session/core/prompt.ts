@@ -184,9 +184,6 @@ function normalizePromptErrorMessage(error: unknown) {
 function buildSideChatSystemPrompt(link: Session.SideChatLink) {
     const lines = [
         "<side_chat_context>",
-        "This session is a side chat anchored to a single assistant reply from another session.",
-        "Use only the snapshot below as the parent-session context. Do not assume any other main-session history exists.",
-        "This side chat is strictly read-only. Do not attempt edits, command execution, git writes, or any other side effects.",
     ]
 
     if (link.snapshot.userText?.trim()) {
@@ -215,6 +212,31 @@ function buildSideChatSystemPrompt(link: Session.SideChatLink) {
 
     lines.push("</side_chat_context>")
     return lines.join("\n")
+}
+
+function resolveUserMessageAgentName(session: Session.SessionInfo, requestedAgentName?: string) {
+    if (Session.isSideChatSession(session)) {
+        return Agent.SIDECHAT_AGENT_NAME
+    }
+
+    if (requestedAgentName === Agent.SIDECHAT_AGENT_NAME) {
+        throw new Error("Agent 'sidechat' can only be used by side chat sessions.")
+    }
+
+    return requestedAgentName ?? "default"
+}
+
+function resolveRuntimeAgentName(session: Session.SessionInfo, requestedAgentName?: string) {
+    if (Session.isSideChatSession(session)) {
+        return Agent.SIDECHAT_AGENT_NAME
+    }
+
+    if (requestedAgentName === Agent.SIDECHAT_AGENT_NAME) {
+        throw new Error("Agent 'sidechat' can only be used by side chat sessions.")
+    }
+
+    const workflow = Session.normalizeWorkflowState(session.workflow)
+    return workflow.mode === "planning" ? "plan" : requestedAgentName ?? "default"
 }
 
 function summarizeRuntimeTool(part: Message.ToolPart) {
@@ -396,9 +418,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 throw new Error(`Session '${sessionID}' was not found.`);
             }
 
-            const requestedAgentName = lastUser.agent ?? "default";
-            const workflow = Session.normalizeWorkflowState(activeSession.workflow);
-            const effectiveAgentName = workflow.mode === "planning" ? "plan" : requestedAgentName;
+            const effectiveAgentName = resolveRuntimeAgentName(activeSession, lastUser.agent);
             const agent = (await Agent.get(effectiveAgentName)) ?? Agent.planAgent;
             const maxLoopIterations = resolvePromptLoopLimit(agent);
             iteration += 1;
@@ -610,6 +630,7 @@ export const prompt = fn(PromptInput, async (input) => {
     const shouldAutoGenerateTitle =
         Session.isDefaultSessionTitle(session.title) &&
         existingMessages.length === 0
+    const agentName = resolveUserMessageAgentName(session, input.agent)
 
     if (state()[input.sessionID]) {
         throw new Error(`Session '${input.sessionID}' is already running.`);
@@ -629,6 +650,7 @@ export const prompt = fn(PromptInput, async (input) => {
     })
     const nextInput: PromptInput = {
         ...input,
+        agent: agentName,
         skills: await Skill.resolveTurnSkillIDs({
             projectID: session.projectID,
             projectRoot: Instance.worktree,

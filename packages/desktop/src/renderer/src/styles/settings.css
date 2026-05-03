@@ -2476,6 +2476,100 @@ body.is-dragging-settings-page {
   transform: none;
 }
 
+.session-canvas-top-menu .canvas-top-menu-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-color: transparent;
+  border-radius: var(--seg-radius-xs);
+  background: transparent;
+  color: var(--seg-text-2);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  gap: 8px;
+  transform: none;
+}
+
+.session-canvas-top-menu .canvas-top-menu-button:hover,
+.session-canvas-top-menu .canvas-top-menu-button:focus-visible,
+.session-canvas-top-menu .canvas-top-menu-button.is-active,
+.session-canvas-top-menu .canvas-top-menu-button[aria-expanded="true"] {
+  border-color: transparent;
+  background: var(--seg-composer-button-surface);
+  color: var(--seg-composer-button-text);
+  box-shadow: none;
+  transform: none;
+}
+
+.session-canvas-top-menu .canvas-top-menu-button:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.session-canvas-top-menu .canvas-top-menu-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.session-canvas-top-menu .canvas-top-menu-button svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
+}
+
+.session-canvas-top-menu .external-editor-split-button {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--seg-radius-xs);
+}
+
+.session-canvas-top-menu .canvas-top-menu-editor-launch-button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  border-radius: var(--seg-radius-xs) 0 0 var(--seg-radius-xs);
+}
+
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button {
+  width: 24px;
+  min-width: 24px;
+  padding: 0;
+  border-radius: 0 var(--seg-radius-xs) var(--seg-radius-xs) 0;
+}
+
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button::before {
+  top: 9px;
+  bottom: 9px;
+  background: var(--seg-border);
+}
+
+.session-canvas-top-menu .canvas-top-menu-editor-launch-button:hover + .canvas-top-menu-editor-menu-button::before,
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button:hover::before,
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button:focus-visible::before,
+.session-canvas-top-menu .canvas-top-menu-editor-menu-button.is-active::before {
+  background: var(--seg-composer-button-text);
+  opacity: 0.28;
+}
+
+.session-canvas-top-menu .canvas-top-menu-permission-trigger,
+.session-canvas-top-menu .canvas-top-menu-mcp-trigger,
+.session-canvas-top-menu .canvas-top-menu-skill-trigger {
+  max-width: min(180px, 24vw);
+}
+
+.session-canvas-top-menu .canvas-top-menu-git-trigger {
+  gap: 8px;
+}
+
+.canvas-top-menu-selector-panel,
+.canvas-top-menu-quick-panel {
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-dropdown-menu-surface);
+  box-shadow: 0 14px 34px rgba(46, 81, 118, 0.12);
+}
+
 /* Sage / Teal & Slate theme overrides */
 
 .settings-page-overlay,
