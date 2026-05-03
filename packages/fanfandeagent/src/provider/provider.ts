@@ -302,7 +302,7 @@ export function setProviderRuntimeDependenciesForTesting(
 
 const SDK_ADAPTERS = {
   [DEEPSEEK_SDK_PACKAGE]: {
-    version: "2.0.26",
+    version: "2.0.32",
     exportName: "createDeepSeek",
     create(input: SDKFactoryInput, factory: SDKModuleFactory) {
       return factory({
@@ -363,14 +363,6 @@ function resolveSDKPackage(model: Model): SupportedSDKPackage {
     throw new Error(
       `Unsupported SDK package '${requested}'. Add it to the SDK adapter allowlist before using it in provider.npm or model.provider.npm.`,
     )
-  }
-
-  // DeepSeek's dedicated AI SDK adapter drops reasoning_content for assistant
-  // turns before the latest user message, which breaks follow-up calls in
-  // thinking mode. Route DeepSeek models through the OpenAI-compatible adapter
-  // instead so full reasoning history is preserved.
-  if (requested === DEEPSEEK_SDK_PACKAGE) {
-    return OPENAI_COMPATIBLE_SDK_PACKAGE
   }
 
   return requested

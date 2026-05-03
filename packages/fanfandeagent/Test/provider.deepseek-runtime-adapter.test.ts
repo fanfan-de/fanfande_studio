@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { Instance } from "#project/instance.ts"
 import * as Provider from "#provider/provider.ts"
 
-test("provider routes built-in DeepSeek models through the OpenAI-compatible adapter", async () => {
+test("provider uses the dedicated DeepSeek adapter for built-in DeepSeek models", async () => {
   const deepseekLanguageModel = {
     doGenerate() {},
     doStream() {},
@@ -50,14 +50,14 @@ test("provider routes built-in DeepSeek models through the OpenAI-compatible ada
     importPackage: async (pkg: string, version?: string) => {
       capturedImports.push({ pkg, version })
 
-      if (pkg === "@ai-sdk/openai-compatible") {
+      if (pkg === "@ai-sdk/deepseek") {
         return {
           name: pkg,
           version: version ?? "test-version",
           entry: `${pkg}/index.js`,
           root: pkg,
           module: {
-            createOpenAICompatible(options: Record<string, unknown>) {
+            createDeepSeek(options: Record<string, unknown>) {
               capturedFactoryInputs.push(options)
               return {
                 languageModel() {
@@ -75,8 +75,8 @@ test("provider routes built-in DeepSeek models through the OpenAI-compatible ada
         entry: `${pkg}/index.js`,
         root: pkg,
         module: {
-          createDeepSeek() {
-            throw new Error("DeepSeek adapter should not be used for runtime requests")
+          createOpenAICompatible() {
+            throw new Error("OpenAI-compatible adapter should not be used for DeepSeek runtime requests")
           },
         },
       }
@@ -94,13 +94,12 @@ test("provider routes built-in DeepSeek models through the OpenAI-compatible ada
         expect(language).toMatchObject(deepseekLanguageModel)
         expect(capturedImports).toEqual([
           {
-            pkg: "@ai-sdk/openai-compatible",
-            version: "2.0.38",
+            pkg: "@ai-sdk/deepseek",
+            version: "2.0.32",
           },
         ])
         expect(capturedFactoryInputs).toEqual([
           {
-            name: "deepseek",
             apiKey: "test-deepseek-env-key",
             baseURL: "https://api.deepseek.com",
             headers: undefined,
