@@ -15,6 +15,7 @@ import {
   MonitorIcon,
   MoonIcon,
   PaletteIcon,
+  PlusIcon,
   ResetIcon,
   SettingsIcon,
   SunIcon,
@@ -2297,8 +2298,19 @@ export function SettingsPage({
                             </article>
                           )}
 
-                          <button className="secondary-button mcp-servers-new-button" onClick={onStartNewMcpServer} type="button">
-                            New server
+                          <button
+                            aria-label="New server"
+                            aria-pressed={!activeMcpServer}
+                            className={
+                              activeMcpServer
+                                ? "settings-service-item mcp-servers-new-button"
+                                : "settings-service-item mcp-servers-new-button is-active"
+                            }
+                            onClick={onStartNewMcpServer}
+                            title="New server"
+                            type="button"
+                          >
+                            <PlusIcon />
                           </button>
                         </div>
                       </div>
@@ -2326,16 +2338,38 @@ export function SettingsPage({
                         </div>
 
                         <div className="settings-panel">
-                          <div className="settings-section-header">
+                          <div className="settings-section-header mcp-server-configuration-header">
                             <div>
                               <span className="label">Definition</span>
                               <h3>Server Configuration</h3>
                             </div>
-                            <p>
-                              {mcpServerDraft.transport === "stdio"
-                                ? "Use one argument per line and one environment variable per line in KEY=value format."
-                                : "Connect a remote MCP server over HTTP. Headers are sent by the local agent, and tool approval stays in the local permission system."}
-                            </p>
+                            <div className="mcp-server-configuration-header-side">
+                              <p>
+                                {mcpServerDraft.transport === "stdio"
+                                  ? "Use one argument per line and one environment variable per line in KEY=value format."
+                                  : "Connect a remote MCP server over HTTP. Headers are sent by the local agent, and tool approval stays in the local permission system."}
+                              </p>
+                              <div className="settings-inline-actions mcp-server-configuration-actions">
+                                {activeMcpServer ? (
+                                  <button
+                                    className="secondary-button"
+                                    disabled={mcpServerBusy}
+                                    onClick={() => void onDeleteMcpServer(activeMcpServer.id)}
+                                    type="button"
+                                  >
+                                    {deletingMcpServerID === activeMcpServer.id ? "Removing..." : "Remove"}
+                                  </button>
+                                ) : null}
+                                <button
+                                  className="primary-button"
+                                  disabled={mcpServerBusy || !mcpServerCanSave}
+                                  onClick={() => void onSaveMcpServer()}
+                                  type="button"
+                                >
+                                  {savingMcpServerID === (activeMcpServerID ?? mcpServerDraft.id.trim()) ? "Saving..." : mcpSaveLabel}
+                                </button>
+                              </div>
+                            </div>
                           </div>
 
                           {activeMcpServerDiagnostic ? (
@@ -2537,26 +2571,6 @@ export function SettingsPage({
                                     ? "Remote MCP servers are connected locally over HTTP. Approval still flows through the existing permission system."
                                     : "Servers start lazily when a project enables them and the agent resolves tools. Tool approval still flows through the existing permission system."}
                               </span>
-                              <div className="settings-inline-actions">
-                                {activeMcpServer ? (
-                                  <button
-                                    className="secondary-button"
-                                    disabled={mcpServerBusy}
-                                    onClick={() => void onDeleteMcpServer(activeMcpServer.id)}
-                                    type="button"
-                                  >
-                                    {deletingMcpServerID === activeMcpServer.id ? "Removing..." : "Remove"}
-                                  </button>
-                                ) : null}
-                                <button
-                                  className="primary-button"
-                                  disabled={mcpServerBusy || !mcpServerCanSave}
-                                  onClick={() => void onSaveMcpServer()}
-                                  type="button"
-                                >
-                                  {savingMcpServerID === (activeMcpServerID ?? mcpServerDraft.id.trim()) ? "Saving..." : mcpSaveLabel}
-                                </button>
-                              </div>
                             </div>
                           </div>
                         </>

@@ -398,6 +398,29 @@ body.is-dragging-settings-page {
   max-width: 520px;
 }
 
+.mcp-server-configuration-header {
+  gap: 16px;
+}
+
+.mcp-server-configuration-header-side {
+  min-width: min(100%, 560px);
+  margin-left: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.mcp-server-configuration-header-side p {
+  max-width: 520px;
+}
+
+.mcp-server-configuration-actions {
+  flex: 0 0 auto;
+  margin-left: 0;
+}
+
 .settings-field-grid,
 .provider-grid {
   display: grid;
@@ -453,34 +476,83 @@ body.is-dragging-settings-page {
 }
 
 .mcp-tool-policy-card {
-  padding: 14px;
+  padding: 12px 14px;
   border: 1px solid var(--seg-border);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.76);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
   gap: 14px;
+  align-items: center;
+}
+
+.mcp-tool-policy-card.is-expanded {
   align-items: start;
 }
 
 .mcp-tool-policy-main {
   min-width: 0;
-  display: grid;
-  gap: 10px;
 }
 
 .mcp-tool-policy-heading {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  align-items: flex-start;
+  align-items: center;
 }
 
-.mcp-tool-policy-heading h4 {
+.mcp-tool-policy-toggle {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  flex: 1 1 auto;
+  gap: 8px;
+  align-items: flex-start;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mcp-tool-policy-toggle:hover .mcp-tool-policy-title,
+.mcp-tool-policy-toggle:focus-visible .mcp-tool-policy-title {
+  color: #153a5f;
+}
+
+.mcp-tool-policy-toggle:focus-visible {
+  outline: 2px solid rgba(58, 116, 176, 0.35);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.mcp-tool-policy-toggle-icon {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  color: #41586f;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.mcp-tool-policy-toggle-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.mcp-tool-policy-title-group {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.mcp-tool-policy-title {
   margin: 0;
   color: var(--seg-text-1);
   font-size: 15px;
+  font-weight: 700;
   line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .mcp-tool-policy-heading code {
@@ -490,7 +562,7 @@ body.is-dragging-settings-page {
   word-break: break-word;
 }
 
-.mcp-tool-policy-card p {
+.mcp-tool-policy-details p {
   margin: 0;
   color: var(--seg-text-2);
   font-size: 13px;
@@ -504,10 +576,18 @@ body.is-dragging-settings-page {
 .mcp-tool-policy-details {
   grid-column: 1 / -1;
   min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(163, 184, 205, 0.32);
 }
 
-.mcp-tool-policy-details summary {
-  cursor: pointer;
+.mcp-tool-policy-schema {
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-tool-policy-details-label {
   color: #41586f;
   font-size: 12px;
   font-weight: 600;
@@ -515,7 +595,7 @@ body.is-dragging-settings-page {
 
 .mcp-tool-policy-details pre {
   max-height: 240px;
-  margin: 10px 0 0;
+  margin: 0;
   padding: 12px;
   overflow: auto;
   border: 1px solid rgba(163, 184, 205, 0.42);
@@ -756,8 +836,14 @@ body.is-dragging-settings-page {
 }
 
 .mcp-servers-new-button {
-  justify-self: start;
-  min-width: 112px;
+  min-height: 56px;
+  place-items: center;
+}
+
+.mcp-servers-new-button svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.2;
 }
 
 .settings-service-item,

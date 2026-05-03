@@ -111,9 +111,11 @@ describe("McpServersPage tool policies", () => {
     expect(screen.getByText("resolve-library-id")).toBeInTheDocument()
     expect(screen.getByText("get-library-docs")).toBeInTheDocument()
     expect(screen.getByText("read-only")).toBeInTheDocument()
+    expect(screen.queryByText("Resolve a package name to a Context7 library id.")).not.toBeInTheDocument()
+    expect(screen.queryByText("Input schema")).not.toBeInTheDocument()
 
     const docsPolicy = screen.getByLabelText("Policy for get-library-docs") as HTMLSelectElement
-    expect(docsPolicy.value).toBe("ask")
+    expect(docsPolicy.value).toBe("auto")
 
     fireEvent.change(docsPolicy, {
       target: {
@@ -122,6 +124,16 @@ describe("McpServersPage tool policies", () => {
     })
 
     expect(onMcpToolPolicyChange).toHaveBeenCalledWith("get-library-docs", "disabled")
+
+    const resolveDetailsButton = screen.getByRole("button", { name: "Show details for resolve-library-id" })
+    expect(resolveDetailsButton).toHaveAttribute("aria-expanded", "false")
+
+    fireEvent.click(resolveDetailsButton)
+
+    expect(resolveDetailsButton).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByText("Resolve a package name to a Context7 library id.")).toBeInTheDocument()
+    expect(screen.getByText("Input schema")).toBeInTheDocument()
+    expect(screen.getByText(/"libraryName"/)).toBeInTheDocument()
   })
 
   it("shows the tools policy section for stdio MCP servers", () => {
@@ -165,6 +177,7 @@ describe("McpServersPage tool policies", () => {
 
     expect(screen.getByText("Tool Permissions")).toBeInTheDocument()
     expect(screen.getAllByText("batch_design")).toHaveLength(2)
+    expect((screen.getByLabelText("Policy for batch_design") as HTMLSelectElement).value).toBe("auto")
   })
 
   it("maps legacy remote read-only filters to understandable tool policy defaults", () => {

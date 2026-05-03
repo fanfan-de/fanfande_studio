@@ -1,3 +1,5 @@
+import { useState } from "react"
+import { ChevronDownIcon, ChevronRightIcon } from "../icons"
 import type {
   McpServerDiagnostic,
   McpServerDraftState,
@@ -11,6 +13,8 @@ const TOOL_POLICY_LABELS: Record<McpToolPolicyValue, string> = {
   ask: "Ask every time",
   auto: "Auto allow",
 }
+
+const EMPTY_TOOL_NAME_SET: ReadonlySet<string> = new Set()
 
 function formatJson(value: unknown) {
   if (value === undefined) return "{}"
@@ -31,10 +35,19 @@ function toolBadges(tool: McpToolDiagnostic) {
   return badges
 }
 
+function getToolDetailsID(toolName: string, index: number) {
+  return `mcp-tool-policy-details-${index}-${toolName.replace(/[^a-zA-Z0-9_-]+/g, "-")}`
+}
+
 interface McpToolsPolicyPanelProps {
   diagnostic: McpServerDiagnostic | null
   draft: McpServerDraftState
   onPolicyChange: (toolName: string, policy: McpToolPolicyValue) => void
+}
+
+interface ExpandedToolState {
+  serverID: string | null
+  names: ReadonlySet<string>
 }
 
 export function McpToolsPolicyPanel({
@@ -42,8 +55,31 @@ export function McpToolsPolicyPanel({
   draft,
   onPolicyChange,
 }: McpToolsPolicyPanelProps) {
+  const [expandedToolState, setExpandedToolState] = useState<ExpandedToolState>(() => ({
+    serverID: null,
+    names: EMPTY_TOOL_NAME_SET,
+  }))
+
   if (!diagnostic?.ok) return null
   const tools = diagnostic.tools ?? []
+  const activeServerID = diagnostic.serverID
+  const expandedToolNames = expandedToolState.serverID === activeServerID ? expandedToolState.names : EMPTY_TOOL_NAME_SET
+
+  function toggleToolDetails(toolName: string) {
+    setExpandedToolState((current) => {
+      const currentNames = current.serverID === activeServerID ? current.names : EMPTY_TOOL_NAME_SET
+      const next = new Set(currentNames)
+      if (next.has(toolName)) {
+        next.delete(toolName)
+      } else {
+        next.add(toolName)
+      }
+      return {
+        serverID: activeServerID,
+        names: next,
+      }
+    })
+  }
 
   return (
     <section className="mcp-tools-policy-panel" aria-label="MCP tool permissions">
@@ -57,17 +93,35 @@ export function McpToolsPolicyPanel({
 
       {tools.length > 0 ? (
         <div className="mcp-tools-policy-list">
-          {tools.map((tool) => {
+          {tools.map((tool, index) => {
             const policy = resolveMcpToolPolicy(tool, draft)
+            const isExpanded = expandedToolNames.has(tool.name)
+            const detailsID = getToolDetailsID(tool.name, index)
 
             return (
-              <article className="mcp-tool-policy-card" key={tool.name}>
+              <article
+                className={isExpanded ? "mcp-tool-policy-card is-expanded" : "mcp-tool-policy-card"}
+                key={tool.name}
+              >
                 <div className="mcp-tool-policy-main">
                   <div className="mcp-tool-policy-heading">
-                    <div>
-                      <h4>{tool.displayName || tool.title || tool.name}</h4>
-                      <code>{tool.name}</code>
-                    </div>
+                    <button
+                      aria-controls={detailsID}
+                      aria-expanded={isExpanded}
+                      aria-label={`${isExpanded ? "Hide" : "Show"} details for ${tool.name}`}
+                      className="mcp-tool-policy-toggle"
+                      onClick={() => toggleToolDetails(tool.name)}
+                      title={`${isExpanded ? "Hide" : "Show"} tool details`}
+                      type="button"
+                    >
+                      <span className="mcp-tool-policy-toggle-icon">
+                        {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                      </span>
+                      <span className="mcp-tool-policy-title-group">
+                        <span className="mcp-tool-policy-title">{tool.displayName || tool.title || tool.name}</span>
+                        <code>{tool.name}</code>
+                      </span>
+                    </button>
                     <div className="provider-row-statuses">
                       {toolBadges(tool).map((badge) => (
                         <span
@@ -79,12 +133,9 @@ export function McpToolsPolicyPanel({
                       ))}
                     </div>
                   </div>
-
-                  {tool.description ? <p>{tool.description}</p> : null}
                 </div>
 
                 <label className="settings-field mcp-tool-policy-select">
-                  <span className="settings-field-label">Policy</span>
                   <select
                     aria-label={`Policy for ${tool.name}`}
                     value={policy}
@@ -96,13 +147,18 @@ export function McpToolsPolicyPanel({
                   </select>
                 </label>
 
-                <details className="mcp-tool-policy-details">
-                  <summary>Input schema</summary>
-                  <pre>{formatJson({
-                    inputSchema: tool.inputSchema ?? {},
-                    annotations: tool.annotations ?? {},
-                  })}</pre>
-                </details>
+                {isExpanded ? (
+                  <div className="mcp-tool-policy-details" id={detailsID}>
+                    {tool.description ? <p>{tool.description}</p> : null}
+                    <div className="mcp-tool-policy-schema">
+                      <span className="mcp-tool-policy-details-label">Input schema</span>
+                      <pre>{formatJson({
+                        inputSchema: tool.inputSchema ?? {},
+                        annotations: tool.annotations ?? {},
+                      })}</pre>
+                    </div>
+                  </div>
+                ) : null}
               </article>
             )
           })}

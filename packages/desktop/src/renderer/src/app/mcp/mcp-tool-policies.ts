@@ -38,7 +38,7 @@ export function defaultMcpToolPolicyForDraft(
     }
   }
 
-  return recommendedMcpToolPolicy(tool)
+  return "auto"
 }
 
 export function resolveMcpToolPolicy(

@@ -631,20 +631,24 @@
 .thread-markdown pre {
   max-width: 100%;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
   padding: 10px 12px;
   border: 1px solid var(--seg-border);
   border-radius: var(--seg-radius-xs);
   background: var(--seg-panel-muted);
   color: var(--seg-text-1);
+  white-space: pre-wrap;
 }
 
 .thread-markdown pre code {
   display: block;
+  max-width: 100%;
   padding: 0;
   border: 0;
   background: transparent;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .thread-markdown table {

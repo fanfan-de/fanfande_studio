@@ -10234,6 +10234,13 @@ describe("App", () => {
     )
   })
 
+  it("wraps response markdown code blocks without horizontal scrolling", () => {
+    expect(styles).toMatch(/\.thread-markdown pre\s*\{[^}]*overflow:\s*hidden;[^}]*white-space:\s*pre-wrap;/s)
+    expect(styles).toMatch(
+      /\.thread-markdown pre code\s*\{[^}]*max-width:\s*100%;[^}]*white-space:\s*pre-wrap;[^}]*overflow-wrap:\s*anywhere;[^}]*word-break:\s*break-word;/s,
+    )
+  })
+
   it("gives composer and user body text a slightly larger size than tag text", () => {
     expect(styles).toMatch(
       /\.composer-editor-input\s*\{[^}]*font-size:\s*16px;[^}]*line-height:\s*1\.65;/s,
