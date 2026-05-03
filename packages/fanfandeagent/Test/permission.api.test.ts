@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import z from "zod"
 import { createServerApp } from "#server/server.ts"
+import * as Config from "#config/config.ts"
 import { Instance } from "#project/instance.ts"
 import * as Identifier from "#id/id.ts"
 import * as Permission from "#permission/permission.ts"
@@ -30,6 +31,9 @@ type PermissionRequestResponse = JsonEnvelope<{
 }>
 
 type PermissionRequestListResponse = JsonEnvelope<PermissionRequestRecord[]>
+type ToolPermissionModeResponse = JsonEnvelope<{
+  mode: "default" | "full_access"
+}>
 
 async function createGitRepo(root: string, seed: string) {
   await mkdir(root, { recursive: true })
@@ -236,5 +240,43 @@ test("permission api approval keeps tool history consistent when the approved ex
     }
   } finally {
     await rm(repositoryRoot, { recursive: true, force: true })
+  }
+}, 120000)
+
+test("settings api reads, updates, and validates the tool permission mode", async () => {
+  const app = createServerApp()
+
+  try {
+    await Config.setPermissionMode(Config.GLOBAL_CONFIG_ID, "default")
+
+    const defaultResponse = await app.request("http://localhost/api/tools/permission-mode")
+    const defaultBody = (await defaultResponse.json()) as ToolPermissionModeResponse
+
+    expect(defaultResponse.status).toBe(200)
+    expect(defaultBody.success).toBe(true)
+    expect(defaultBody.data?.mode).toBe("default")
+
+    const updateResponse = await app.request("http://localhost/api/tools/permission-mode", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "full_access" }),
+    })
+    const updateBody = (await updateResponse.json()) as ToolPermissionModeResponse
+
+    expect(updateResponse.status).toBe(200)
+    expect(updateBody.success).toBe(true)
+    expect(updateBody.data?.mode).toBe("full_access")
+
+    const invalidResponse = await app.request("http://localhost/api/tools/permission-mode", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode: "unknown" }),
+    })
+    const invalidBody = (await invalidResponse.json()) as JsonEnvelope
+
+    expect(invalidResponse.status).toBe(400)
+    expect(invalidBody.success).toBe(false)
+  } finally {
+    await Config.setPermissionMode(Config.GLOBAL_CONFIG_ID, "default")
   }
 }, 120000)

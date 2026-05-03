@@ -7,6 +7,8 @@ import type {
   PermissionResolveResult as AgentPermissionResolveResult,
   PermissionRisk as AgentPermissionRisk,
   PermissionToolKind as AgentPermissionToolKind,
+  ToolPermissionMode as AgentToolPermissionMode,
+  ToolPermissionModePayload as AgentToolPermissionModePayload,
 } from "../shared/permission"
 
 export type MenuKey = "file" | "edit" | "view" | "window" | "help"
@@ -616,7 +618,9 @@ export type {
   AgentPermissionRequestStatus,
   AgentPermissionResolveResult,
   AgentPermissionRisk,
-  AgentPermissionToolKind
+  AgentPermissionToolKind,
+  AgentToolPermissionMode,
+  AgentToolPermissionModePayload
 }
 
 export interface AgentProviderCatalogItem {
@@ -771,7 +775,7 @@ export interface AgentSkillInfo {
   name: string
   description: string
   path: string
-  scope: "project" | "user"
+  scope: "project" | "user" | "plugin"
 }
 
 export interface AgentGlobalSkillTreeNode {
@@ -871,6 +875,150 @@ export interface AgentMcpServerDiagnostic {
   toolCount: number
   toolNames: string[]
   error?: string
+}
+
+export type AgentPluginCategory = "Code" | "Browser" | "Git" | "Database" | "Docs" | "Automation" | "Design"
+export type AgentPluginRisk = "low" | "medium" | "high" | "critical"
+
+export interface AgentPluginToolPreview {
+  name: string
+  title?: string
+  description: string
+  readOnly?: boolean
+  destructive?: boolean
+}
+
+export interface AgentPluginConfigField {
+  key: string
+  label: string
+  type?: "text" | "password" | "url" | "path"
+  required?: boolean
+  secret?: boolean
+  placeholder?: string
+  defaultValue?: string
+  description?: string
+}
+
+export interface AgentPluginStdioRuntime {
+  transport: "stdio"
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  timeoutMs?: number
+}
+
+export interface AgentPluginRemoteRuntime {
+  transport: "remote"
+  provider?: "openai"
+  serverUrl?: string
+  connectorId?: string
+  authorization?: string
+  headers?: Record<string, string>
+  serverDescription?: string
+  allowedTools?: AgentMcpAllowedTools
+  requireApproval?: AgentMcpRequireApproval
+  timeoutMs?: number
+}
+
+export type AgentPluginRuntimeTemplate = AgentPluginStdioRuntime | AgentPluginRemoteRuntime
+
+export interface AgentPluginMcpServerCatalogEntry {
+  id: string
+  name: string
+  description?: string
+  risk?: AgentPluginRisk
+  permissions?: string[]
+  tools: AgentPluginToolPreview[]
+  configFields?: AgentPluginConfigField[]
+  runtime: AgentPluginRuntimeTemplate
+  installReview?: string[]
+}
+
+export interface AgentPluginSkillPreview {
+  id: string
+  name: string
+  description: string
+  directory: string
+}
+
+export interface AgentPluginAppConnector {
+  appID: string
+  name: string
+  description?: string
+  icon?: string
+  risk?: AgentPluginRisk
+  permissions?: string[]
+  tools?: AgentPluginToolPreview[]
+  credential: AgentPluginConfigField
+  runtime: AgentPluginRemoteRuntime
+  installReview?: string[]
+}
+
+export interface AgentPluginCatalogItem {
+  id: string
+  name: string
+  description: string
+  version: string
+  publisher: string
+  category: AgentPluginCategory
+  icon?: string
+  homepage?: string
+  documentationUrl?: string
+  risk: AgentPluginRisk
+  permissions: string[]
+  tools: AgentPluginToolPreview[]
+  configFields: AgentPluginConfigField[]
+  runtime?: AgentPluginRuntimeTemplate
+  mcpServers: AgentPluginMcpServerCatalogEntry[]
+  skills: AgentPluginSkillPreview[]
+  apps: AgentPluginAppConnector[]
+  installReview?: string[]
+}
+
+export interface AgentInstalledPlugin {
+  pluginID: string
+  version: string
+  enabled: boolean
+  mcpServerID?: string
+  mcpServerIDs: string[]
+  skillIDs: string[]
+  connectorIDs: string[]
+  config: Record<string, string>
+  installedAt: number
+  updatedAt: number
+  lastDiagnostic?: AgentMcpServerDiagnostic
+  lastConnectorDiagnostics?: Record<string, AgentMcpServerDiagnostic>
+}
+
+export interface AgentPluginInstallInput {
+  pluginID: string
+  config?: Record<string, string>
+  enabled?: boolean
+}
+
+export interface AgentPluginUpdateInput {
+  pluginID: string
+  config?: Record<string, string>
+  enabled?: boolean
+}
+
+export interface AgentPluginDeleteResult {
+  pluginID: string
+  mcpServerID?: string
+  mcpServerIDs: string[]
+  connectorIDs: string[]
+  removed: boolean
+}
+
+export interface AgentPluginConnectorStatus {
+  pluginID: string
+  appID: string
+  connectorID: string
+  connected: boolean
+  credentialLabel?: string
+  generatedMcpServerID: string
+  lastDiagnostic?: AgentMcpServerDiagnostic
 }
 
 export interface AgentPtySessionInfo {

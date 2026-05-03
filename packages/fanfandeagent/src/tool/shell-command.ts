@@ -418,9 +418,6 @@ export async function resolveGitBashExecutable(options?: ResolverOptions) {
   )
 }
 
-// Backward-compatible export name for older tests and internal callers.
-export const resolveExecCommandBashExecutable = resolveGitBashExecutable
-
 export async function resolvePowerShellExecutable(options?: ResolverOptions) {
   const { env, platform, whichCommand, isFile } = getResolverParts(options)
   const fromPath = whichCommand("powershell.exe", env) ?? whichCommand("powershell", env)
@@ -843,5 +840,3 @@ export const WslBashCommandTool = createShellCommandTool({
   },
 })
 
-// Backward-compatible export name. The legacy id is no longer model-visible.
-export const ExecCommandTool = GitBashCommandTool

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { Instance } from "#project/instance.ts"
 import * as Identifier from "#id/id.ts"
+import * as Config from "#config/config.ts"
 import * as Permission from "#permission/permission.ts"
 import * as Message from "#session/core/message.ts"
 import * as Session from "#session/core/session.ts"
@@ -168,7 +169,7 @@ test("permission allows read-only tools to reference outside paths", async () =>
   }
 }, 120000)
 
-test("permission defaults classify workflow, interaction, and delegation tools explicitly", async () => {
+test("permission defaults allow workflow, interaction, delegation, exec, and other tools explicitly", async () => {
   const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-permission-tool-kinds-"))
 
   try {
@@ -228,6 +229,34 @@ test("permission defaults classify workflow, interaction, and delegation tools e
           action: "allow",
           risk: "medium",
         })
+
+        await expect(Permission.evaluate({
+          ...baseInput,
+          tool: {
+            id: "git_bash_command",
+            kind: "exec",
+            readOnly: false,
+            destructive: true,
+            needsShell: true,
+          },
+        })).resolves.toMatchObject({
+          action: "allow",
+          risk: "high",
+        })
+
+        await expect(Permission.evaluate({
+          ...baseInput,
+          tool: {
+            id: "custom_unknown_tool",
+            kind: "other",
+            readOnly: false,
+            destructive: false,
+            needsShell: false,
+          },
+        })).resolves.toMatchObject({
+          action: "allow",
+          risk: "low",
+        })
       },
     })
   } finally {
@@ -244,6 +273,7 @@ test("permission evaluates tool intents before falling back to tool kind default
     await Instance.provide({
       directory: repositoryRoot,
       async fn() {
+        await Config.setPermissionMode(Config.GLOBAL_CONFIG_ID, "default")
         const baseInput = {
           sessionID: Identifier.ascending("session"),
           messageID: Identifier.ascending("message"),
@@ -283,8 +313,22 @@ test("permission evaluates tool intents before falling back to tool kind default
             reason: "Tool requires user confirmation.",
           },
         })).resolves.toMatchObject({
-          action: "deny",
-          reason: "Tool request was not auto-run because it could not be classified as safe without approval. Original approval rationale: Tool requires user confirmation.",
+          action: "ask",
+          reason: "Tool requires approval before it can continue. Original approval rationale: Tool requires user confirmation.",
+        })
+
+        await Config.setPermissionMode(Config.GLOBAL_CONFIG_ID, "full_access")
+        await expect(Permission.evaluate({
+          ...baseInput,
+          toolCallID: "toolcall_intent_ask_full_access",
+          intent: {
+            action: "ask",
+            risk: "medium",
+            reason: "Tool requires user confirmation.",
+          },
+        })).resolves.toMatchObject({
+          action: "allow",
+          reason: "Full access mode approved this approval-required tool call. Original approval rationale: Tool requires user confirmation.",
         })
 
         await expect(Permission.evaluate({
@@ -300,9 +344,24 @@ test("permission evaluates tool intents before falling back to tool kind default
           reason: "Tool blocked this operation.",
           risk: "critical",
         })
+
+        await expect(Permission.evaluate({
+          ...baseInput,
+          toolCallID: "toolcall_intent_ask_critical",
+          intent: {
+            action: "ask",
+            risk: "critical",
+            reason: "Critical request still needs approval.",
+          },
+        })).resolves.toMatchObject({
+          action: "deny",
+          risk: "critical",
+          reason: "Critical-risk tool calls are blocked by the automatic safe-run policy.",
+        })
       },
     })
   } finally {
+    await Config.setPermissionMode(Config.GLOBAL_CONFIG_ID, "default")
     await rm(repositoryRoot, { recursive: true, force: true })
   }
 }, 120000)

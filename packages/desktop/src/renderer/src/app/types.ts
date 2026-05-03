@@ -7,6 +7,7 @@ import type {
   PermissionRequestStatus,
   PermissionRisk,
   PermissionToolKind,
+  ToolPermissionMode,
 } from "../../../shared/permission"
 
 export type {
@@ -17,12 +18,13 @@ export type {
   PermissionRequestResolutionRecord,
   PermissionRequestStatus,
   PermissionRisk,
-  PermissionToolKind
+  PermissionToolKind,
+  ToolPermissionMode
 }
 
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project" | "sort" | "new"
-export type LeftSidebarView = "workspace" | "skills" | "prompts"
+export type LeftSidebarView = "workspace" | "skills" | "prompts" | "mcp" | "plugins"
 export type WorkspaceMode = "chat" | "cowork" | "code"
 export type RightSidebarView = "changes" | "runtime" | "preview" | "files"
 export type AppMode = "Autopilot" | "Review"
@@ -1062,7 +1064,7 @@ export interface SkillInfo {
   name: string
   description: string
   path: string
-  scope: "project" | "user"
+  scope: "project" | "user" | "plugin"
 }
 
 export interface GlobalSkillTreeNode {
@@ -1135,6 +1137,136 @@ export interface McpServerDiagnostic {
   toolCount: number
   toolNames: string[]
   error?: string
+}
+
+export type PluginCategory = "Code" | "Browser" | "Git" | "Database" | "Docs" | "Automation" | "Design"
+export type PluginRisk = "low" | "medium" | "high" | "critical"
+
+export interface PluginToolPreview {
+  name: string
+  title?: string
+  description: string
+  readOnly?: boolean
+  destructive?: boolean
+}
+
+export interface PluginConfigField {
+  key: string
+  label: string
+  type?: "text" | "password" | "url" | "path"
+  required?: boolean
+  secret?: boolean
+  placeholder?: string
+  defaultValue?: string
+  description?: string
+}
+
+export interface PluginStdioRuntime {
+  transport: "stdio"
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  timeoutMs?: number
+}
+
+export interface PluginRemoteRuntime {
+  transport: "remote"
+  provider?: "openai"
+  serverUrl?: string
+  connectorId?: string
+  authorization?: string
+  headers?: Record<string, string>
+  serverDescription?: string
+  allowedTools?: McpAllowedTools
+  requireApproval?: McpRequireApproval
+  timeoutMs?: number
+}
+
+export type PluginRuntimeTemplate = PluginStdioRuntime | PluginRemoteRuntime
+
+export interface PluginMcpServerCatalogEntry {
+  id: string
+  name: string
+  description?: string
+  risk?: PluginRisk
+  permissions?: string[]
+  tools: PluginToolPreview[]
+  configFields?: PluginConfigField[]
+  runtime: PluginRuntimeTemplate
+  installReview?: string[]
+}
+
+export interface PluginSkillPreview {
+  id: string
+  name: string
+  description: string
+  directory: string
+}
+
+export interface PluginAppConnector {
+  appID: string
+  name: string
+  description?: string
+  icon?: string
+  risk?: PluginRisk
+  permissions?: string[]
+  tools?: PluginToolPreview[]
+  credential: PluginConfigField
+  runtime: PluginRemoteRuntime
+  installReview?: string[]
+}
+
+export interface PluginCatalogItem {
+  id: string
+  name: string
+  description: string
+  version: string
+  publisher: string
+  category: PluginCategory
+  icon?: string
+  homepage?: string
+  documentationUrl?: string
+  risk: PluginRisk
+  permissions: string[]
+  tools: PluginToolPreview[]
+  configFields: PluginConfigField[]
+  runtime?: PluginRuntimeTemplate
+  mcpServers: PluginMcpServerCatalogEntry[]
+  skills: PluginSkillPreview[]
+  apps: PluginAppConnector[]
+  installReview?: string[]
+}
+
+export interface InstalledPlugin {
+  pluginID: string
+  version: string
+  enabled: boolean
+  mcpServerID?: string
+  mcpServerIDs: string[]
+  skillIDs: string[]
+  connectorIDs: string[]
+  config: Record<string, string>
+  installedAt: number
+  updatedAt: number
+  lastDiagnostic?: McpServerDiagnostic
+  lastConnectorDiagnostics?: Record<string, McpServerDiagnostic>
+}
+
+export interface PluginConnectorStatus {
+  pluginID: string
+  appID: string
+  connectorID: string
+  connected: boolean
+  credentialLabel?: string
+  generatedMcpServerID: string
+  lastDiagnostic?: McpServerDiagnostic
+}
+
+export interface PluginDraftState {
+  pluginID: string | null
+  config: Record<string, string>
+  appApiKeys: Record<string, string>
 }
 
 export interface McpServerDraftState {

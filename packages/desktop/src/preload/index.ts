@@ -34,11 +34,17 @@ import type {
   GitCapabilities,
   GlobalSkillFileDocument,
   GlobalSkillTree,
+  InstalledPlugin,
   McpServerDiagnostic,
   McpServerInput,
   McpServerSummary,
   MenuAnchor,
   MenuKey,
+  PluginCatalogItem,
+  PluginConnectorStatus,
+  PluginDeleteResult,
+  PluginInstallInput,
+  PluginUpdateInput,
   PermissionRequestPrompt,
   PermissionResolveInput,
   PermissionResolveResult,
@@ -50,6 +56,7 @@ import type {
   PtyIPCEvent,
   PtySessionInfo,
   SkillInfo,
+  ToolPermissionModePayload,
   WindowAction,
   WorkspaceFileChangeIPCEvent,
   WorkspaceFileDocument,
@@ -403,10 +410,34 @@ try {
         serverID: string
         removed: boolean
       }>,
+    getPluginCatalog: () =>
+      invokeDesktop("desktop:get-plugin-catalog") as Promise<PluginCatalogItem[]>,
+    getInstalledPlugins: () =>
+      invokeDesktop("desktop:get-installed-plugins") as Promise<InstalledPlugin[]>,
+    installPlugin: (input: PluginInstallInput) =>
+      invokeDesktop("desktop:install-plugin", input) as Promise<InstalledPlugin>,
+    updateInstalledPlugin: (input: PluginUpdateInput) =>
+      invokeDesktop("desktop:update-installed-plugin", input) as Promise<InstalledPlugin>,
+    deleteInstalledPlugin: (input: { pluginID: string }) =>
+      invokeDesktop("desktop:delete-installed-plugin", input) as Promise<PluginDeleteResult>,
+    getInstalledPluginDiagnostic: (input: { pluginID: string }) =>
+      invokeDesktop("desktop:get-installed-plugin-diagnostic", input) as Promise<McpServerDiagnostic>,
+    getInstalledPluginConnectors: (input: { pluginID: string }) =>
+      invokeDesktop("desktop:get-installed-plugin-connectors", input) as Promise<PluginConnectorStatus[]>,
+    saveInstalledPluginConnectorApiKey: (input: { pluginID: string; appID: string; apiKey?: string | null }) =>
+      invokeDesktop("desktop:save-installed-plugin-connector-api-key", input) as Promise<PluginConnectorStatus>,
+    deleteInstalledPluginConnectorApiKey: (input: { pluginID: string; appID: string }) =>
+      invokeDesktop("desktop:delete-installed-plugin-connector-api-key", input) as Promise<PluginConnectorStatus>,
+    getInstalledPluginConnectorDiagnostic: (input: { pluginID: string; appID: string }) =>
+      invokeDesktop("desktop:get-installed-plugin-connector-diagnostic", input) as Promise<McpServerDiagnostic>,
     getBuiltinTools: () =>
       invokeDesktop("desktop:get-builtin-tools") as Promise<BuiltinToolsPayload>,
     updateBuiltinToolSelection: (input: BuiltinToolSelection) =>
       invokeDesktop("desktop:update-builtin-tool-selection", input) as Promise<BuiltinToolSelection>,
+    getToolPermissionMode: () =>
+      invokeDesktop("desktop:get-tool-permission-mode") as Promise<ToolPermissionModePayload>,
+    updateToolPermissionMode: (input: ToolPermissionModePayload) =>
+      invokeDesktop("desktop:update-tool-permission-mode", input) as Promise<ToolPermissionModePayload>,
     getGlobalSkills: () =>
       invokeDesktop("desktop:get-global-skills") as Promise<SkillInfo[]>,
     getPromptPresets: () =>

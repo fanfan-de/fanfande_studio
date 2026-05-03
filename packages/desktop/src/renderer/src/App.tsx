@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import {
   ActivityRail,
   GlobalSkillsPage,
+  McpServersPage,
+  PluginsPage,
   PromptPresetsPage,
   RightSidebar,
   SettingsPage,
@@ -10,7 +12,7 @@ import {
   WindowChrome,
 } from "./app/components"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
-import type { WorkspaceMode } from "./app/types"
+import type { ToolPermissionMode, WorkspaceMode } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
@@ -46,6 +48,10 @@ interface ActivePaneResize {
   leftIndex: number
   splitID: string
   totalSize: number
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
 }
 
 
@@ -228,6 +234,7 @@ export function App() {
   const {
     activeMcpServerID,
     activeMcpServerDiagnostic,
+    activePluginID,
     archivedSessions,
     archivedSessionsError,
     builtinTools,
@@ -235,17 +242,28 @@ export function App() {
     catalog,
     closeSettings,
     deleteArchivedSession,
+    deleteInstalledPlugin,
+    deleteInstalledPluginConnectorApiKey,
     deleteMcpServer,
     deleteProvider,
     deleteProviderAuthSession,
     deletingArchivedSessionID,
     deletingMcpServerID,
+    deletingPluginID,
     deletingPromptPresetID,
     deletingProviderID,
+    diagnoseInstalledPlugin,
+    diagnoseInstalledPluginConnector,
+    diagnosingPluginID,
+    diagnosingPluginConnectorID,
     dismissMessage,
+    installPlugin,
+    installingPluginID,
+    installedPlugins,
     isCreatingPromptPreset,
     isLoading,
     isLoadingBuiltinTools,
+    isLoadingPlugins,
     isLoadingPromptPreset,
     isLoadingPrompts,
     isLoadingArchivedSessions,
@@ -264,6 +282,11 @@ export function App() {
     message,
     models,
     openSettings,
+    pluginCatalog,
+    pluginConnectorStatuses,
+    pluginDiagnostics,
+    pluginDraft,
+    pluginsError,
     promptDraftLabel,
     promptDraftContent,
     promptLoadError,
@@ -280,6 +303,8 @@ export function App() {
     savedSelection,
     restoreArchivedSession,
     saveBuiltinTools,
+    saveInstalledPluginConfig,
+    saveInstalledPluginConnectorApiKey,
     saveMcpServer,
     savePromptPreset,
     savePromptPresetSelection,
@@ -290,6 +315,7 @@ export function App() {
     savingMcpServerID,
     savingPromptPresetID,
     savingProviderID,
+    savingPluginConnectorID,
     testProviderConnection,
     testingProviderID,
     selectedPromptPreset,
@@ -298,8 +324,12 @@ export function App() {
     setPromptPresetSelectionValue,
     selectPromptPreset,
     selectMcpServer,
+    selectPlugin,
     selectionDraft,
+    setInstalledPluginEnabled,
     setMcpServerDraftValue,
+    setPluginDraftAppApiKey,
+    setPluginDraftConfigValue,
     setBuiltinToolEnabled,
     setPromptDraftValue,
     setProviderDraftValue,
@@ -307,12 +337,16 @@ export function App() {
     startProviderAuthFlow,
     startNewMcpServer,
     cancelProviderAuthFlow,
+    updatingPluginID,
   } = useSettingsPage({
+    isMcpServersPageOpen: leftSidebarView === "mcp",
+    isPluginsPageOpen: leftSidebarView === "plugins",
     isPromptPresetEditorOpen: leftSidebarView === "prompts",
     onArchivedSessionRestored: async (session) => {
       await refreshWorkspaceFromDirectory(session.directory)
     },
     onMcpUpdated: refreshComposerMcp,
+    onSkillsUpdated: refreshComposerSkills,
     onProviderModelsUpdated: refreshComposerModels,
   })
 
@@ -325,10 +359,54 @@ export function App() {
   const [activePaneResize, setActivePaneResize] = useState<ActivePaneResize | null>(null)
   const [activityRailTerminalSlot, setActivityRailTerminalSlot] = useState<HTMLDivElement | null>(null)
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code")
+  const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
+  const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
+  const [isSavingToolPermissionMode, setIsSavingToolPermissionMode] = useState(false)
   const firstPaneID = workbenchPaneStates[0]?.id ?? null
   const lastPaneID = workbenchPaneStates[workbenchPaneStates.length - 1]?.id ?? null
   const focusedWorkbenchPane = focusedPaneID ? workbenchPaneStateByID[focusedPaneID] ?? null : null
   const terminalWorkspaceDirectory = focusedWorkbenchPane?.workspace?.directory ?? selectedWorkspace?.directory ?? null
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadToolPermissionMode() {
+      try {
+        const result = await window.desktop?.getToolPermissionMode?.()
+        if (cancelled || !result) return
+        setToolPermissionMode(result.mode)
+        setToolPermissionModeError(null)
+      } catch (error) {
+        if (cancelled) return
+        setToolPermissionModeError(getErrorMessage(error))
+      }
+    }
+
+    void loadToolPermissionMode()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleToolPermissionModeChange(mode: ToolPermissionMode) {
+    if (mode === toolPermissionMode || isSavingToolPermissionMode) return
+    const previousMode = toolPermissionMode
+
+    setToolPermissionMode(mode)
+    setToolPermissionModeError(null)
+    setIsSavingToolPermissionMode(true)
+
+    try {
+      const result = await window.desktop?.updateToolPermissionMode?.({ mode })
+      setToolPermissionMode(result?.mode ?? mode)
+    } catch (error) {
+      setToolPermissionMode(previousMode)
+      setToolPermissionModeError(getErrorMessage(error))
+    } finally {
+      setIsSavingToolPermissionMode(false)
+    }
+  }
 
   function handleInspectFileInSidebar(file: string | null, sessionID: string | null, paneID: string) {
     if (isRightSidebarCollapsed) {
@@ -567,7 +645,9 @@ export function App() {
     .join(" ")
   const isPromptEditorView = leftSidebarView === "prompts"
   const isGlobalSkillsView = leftSidebarView === "skills"
-  const isFullSurfaceView = isPromptEditorView || isGlobalSkillsView
+  const isMcpServersView = leftSidebarView === "mcp"
+  const isPluginsView = leftSidebarView === "plugins"
+  const isFullSurfaceView = isPromptEditorView || isGlobalSkillsView || isMcpServersView || isPluginsView
   const placeholderWorkspaceMode: Exclude<WorkspaceMode, "code"> | null =
     leftSidebarView === "workspace" && workspaceMode !== "code" ? workspaceMode : null
   const windowControls = (
@@ -661,9 +741,13 @@ export function App() {
               ? "canvas is-workbench is-full-surface"
               : isGlobalSkillsView
                 ? "canvas is-workbench is-full-surface"
-                : placeholderWorkspaceMode
-                  ? "canvas is-workbench is-workspace-mode-placeholder"
-                  : "canvas is-workbench"
+                : isMcpServersView
+                  ? "canvas is-workbench is-full-surface"
+                  : isPluginsView
+                    ? "canvas is-workbench is-full-surface"
+                    : placeholderWorkspaceMode
+                      ? "canvas is-workbench is-workspace-mode-placeholder"
+                      : "canvas is-workbench"
           }
         >
           {isPromptEditorView ? (
@@ -734,6 +818,56 @@ export function App() {
               onRenameGlobalSkillDraftStart={handleRenameGlobalSkillDraftStart}
               onSave={handleSaveGlobalSkillFile}
             />
+          ) : isMcpServersView ? (
+            <McpServersPage
+              activeMcpServerID={activeMcpServerID}
+              activeMcpServerDiagnostic={activeMcpServerDiagnostic}
+              deletingMcpServerID={deletingMcpServerID}
+              isLoading={isLoading}
+              loadError={loadError}
+              mcpServerDraft={mcpServerDraft}
+              mcpServers={mcpServers}
+              message={message}
+              savingMcpServerID={savingMcpServerID}
+              windowControls={windowControls}
+              onDeleteMcpServer={deleteMcpServer}
+              onDismissMessage={dismissMessage}
+              onMcpServerDraftChange={setMcpServerDraftValue}
+              onMcpServerSelect={selectMcpServer}
+              onSaveMcpServer={saveMcpServer}
+              onStartNewMcpServer={startNewMcpServer}
+            />
+          ) : isPluginsView ? (
+            <PluginsPage
+              activePluginID={activePluginID}
+              deletingPluginID={deletingPluginID}
+              diagnosingPluginConnectorID={diagnosingPluginConnectorID}
+              diagnosingPluginID={diagnosingPluginID}
+              installingPluginID={installingPluginID}
+              installedPlugins={installedPlugins}
+              isLoading={isLoadingPlugins}
+              loadError={pluginsError}
+              message={message}
+              pluginCatalog={pluginCatalog}
+              pluginConnectorStatuses={pluginConnectorStatuses}
+              pluginDiagnostics={pluginDiagnostics}
+              pluginDraft={pluginDraft}
+              updatingPluginID={updatingPluginID}
+              windowControls={windowControls}
+              onDeleteInstalledPlugin={deleteInstalledPlugin}
+              onDeleteInstalledPluginConnectorApiKey={deleteInstalledPluginConnectorApiKey}
+              onDiagnoseInstalledPlugin={diagnoseInstalledPlugin}
+              onDiagnoseInstalledPluginConnector={diagnoseInstalledPluginConnector}
+              onDismissMessage={dismissMessage}
+              onInstallPlugin={installPlugin}
+              onPluginDraftAppApiKeyChange={setPluginDraftAppApiKey}
+              onPluginDraftConfigChange={setPluginDraftConfigValue}
+              onPluginSelect={selectPlugin}
+              onSaveInstalledPluginConnectorApiKey={saveInstalledPluginConnectorApiKey}
+              onSaveInstalledPluginConfig={saveInstalledPluginConfig}
+              onSetInstalledPluginEnabled={setInstalledPluginEnabled}
+              savingPluginConnectorID={savingPluginConnectorID}
+            />
           ) : placeholderWorkspaceMode ? (
             <WorkspaceModeCanvasPlaceholder
               mode={placeholderWorkspaceMode}
@@ -749,6 +883,7 @@ export function App() {
                 isActivityRailVisible={isActivityRailVisible}
                 isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
                 isResolvingPermissionRequest={isResolvingPermissionRequest}
+                isSavingToolPermissionMode={isSavingToolPermissionMode}
                 isRightSidebarCollapsed={isRightSidebarCollapsed}
                 isSidebarCollapsed={isSidebarCollapsed}
                 lastPaneID={lastPaneID}
@@ -760,6 +895,8 @@ export function App() {
                 paneStateByID={workbenchPaneStateByID}
                 permissionRequestActionError={permissionRequestActionError}
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
+                toolPermissionMode={toolPermissionMode}
+                toolPermissionModeError={toolPermissionModeError}
                 workspaces={workspaces}
                 onCloseCreateSessionTab={handleCloseCreateSessionTab}
                 onCloseSessionTab={handleCanvasSessionTabClose}
@@ -777,6 +914,7 @@ export function App() {
                 onPaneTabPointerDrop={handlePaneTabPointerDrop}
                 onPaneTabDrop={handlePaneTabDrop}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
+                onToolPermissionModeChange={handleToolPermissionModeChange}
                 onAskUserQuestionAnswer={handleAskUserQuestionAnswer}
                 onPickComposerAttachments={handlePickComposerAttachments}
                 onRegisterPane={handleRegisterPane}

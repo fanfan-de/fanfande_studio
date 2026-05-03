@@ -1,6 +1,6 @@
 import { Fragment, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { SidebarToggleButton } from "../shared-ui"
-import type { AssistantTraceVisibility, ComposerDraftState } from "../types"
+import type { AssistantTraceVisibility, ComposerDraftState, ToolPermissionMode } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { WorkbenchPaneSurface, type PaneDropPosition } from "./WorkbenchPaneSurface"
 
@@ -43,6 +43,7 @@ export interface WorkbenchShellProps {
   isActivityRailVisible: boolean
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
+  isSavingToolPermissionMode: boolean
   isRightSidebarCollapsed: boolean
   isSidebarCollapsed: boolean
   lastPaneID: string | null
@@ -54,6 +55,8 @@ export interface WorkbenchShellProps {
   paneStateByID: WorkbenchPaneStateByID
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
+  toolPermissionMode: ToolPermissionMode
+  toolPermissionModeError: string | null
   workspaces: AgentWorkspaceState["workspaces"]
   onCloseCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
   onCloseSessionTab: (sessionID: string, paneID?: string) => void
@@ -72,6 +75,7 @@ export interface WorkbenchShellProps {
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
   onAskUserQuestionAnswer: AgentWorkspaceState["handleAskUserQuestionAnswer"]
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
+  onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
@@ -134,6 +138,7 @@ function WorkbenchNodeView({
         dropTargetPosition={props.paneDropTarget?.paneID === pane.id ? props.paneDropTarget.position : null}
         isResolvingPermissionRequest={props.isResolvingPermissionRequest}
         isAgentDebugTraceEnabled={props.isAgentDebugTraceEnabled}
+        isSavingToolPermissionMode={props.isSavingToolPermissionMode}
         isTopRow={isTopRow}
         leadingAccessory={
           node.id === props.firstPaneID && !props.isActivityRailVisible && props.isSidebarCollapsed ? (
@@ -144,6 +149,8 @@ function WorkbenchNodeView({
         permissionRequestActionError={props.permissionRequestActionError}
         permissionRequestActionRequestID={props.permissionRequestActionRequestID}
         style={style}
+        toolPermissionMode={props.toolPermissionMode}
+        toolPermissionModeError={props.toolPermissionModeError}
         trailingAccessory={
           node.id === props.lastPaneID ? (
             <>
@@ -174,6 +181,7 @@ function WorkbenchNodeView({
         onPaneTabDrop={props.onPaneTabDrop}
         onAskUserQuestionAnswer={props.onAskUserQuestionAnswer}
         onPermissionRequestResponse={props.onPermissionRequestResponse}
+        onToolPermissionModeChange={props.onToolPermissionModeChange}
         onPickComposerAttachments={props.onPickComposerAttachments}
         onRegisterPane={props.onRegisterPane}
         onRemoveComposerAttachment={props.onRemoveComposerAttachment}

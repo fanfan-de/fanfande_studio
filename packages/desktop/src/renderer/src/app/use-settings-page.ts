@@ -3,11 +3,15 @@ import type {
   ArchivedSessionSummary,
   BuiltinToolSelection,
   BuiltinToolSummary,
+  InstalledPlugin,
   LoadedSessionSnapshot,
   McpAllowedTools,
   McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
+  PluginCatalogItem,
+  PluginConnectorStatus,
+  PluginDraftState,
   ProjectModelSelection,
   PromptPresetDocument,
   PromptPresetSelection,
@@ -29,9 +33,12 @@ interface LoadSettingsOptions {
 }
 
 interface UseSettingsPageOptions {
+  isMcpServersPageOpen?: boolean
+  isPluginsPageOpen?: boolean
   isPromptPresetEditorOpen?: boolean
   onArchivedSessionRestored?: (session: LoadedSessionSnapshot) => void | Promise<void>
   onMcpUpdated?: () => void | Promise<void>
+  onSkillsUpdated?: () => void | Promise<void>
   onProviderModelsUpdated?: () => void | Promise<void>
 }
 
@@ -253,6 +260,27 @@ function toMcpDraft(server?: McpServerSummary): McpServerDraftState {
   }
 }
 
+function buildPluginDraft(plugin: PluginCatalogItem | undefined, installed?: InstalledPlugin | null): PluginDraftState {
+  if (!plugin) {
+    return {
+      pluginID: null,
+      config: {},
+      appApiKeys: {},
+    }
+  }
+
+  return {
+    pluginID: plugin.id,
+    config: Object.fromEntries(
+      plugin.configFields.map((field) => [
+        field.key,
+        installed?.config[field.key] ?? field.defaultValue ?? "",
+      ]),
+    ),
+    appApiKeys: Object.fromEntries((plugin.apps ?? []).map((app) => [app.appID, ""])),
+  }
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
@@ -339,6 +367,8 @@ function getMcpServerValidationError(draft: McpServerDraftState) {
 }
 
 export function useSettingsPage(options: UseSettingsPageOptions) {
+  const isMcpServersPageOpen = options.isMcpServersPageOpen ?? false
+  const isPluginsPageOpen = options.isPluginsPageOpen ?? false
   const isPromptPresetEditorOpen = options.isPromptPresetEditorOpen ?? false
   const [isOpen, setIsOpen] = useState(false)
   const [catalog, setCatalog] = useState<ProviderCatalogItem[]>([])
@@ -356,6 +386,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [mcpDiagnostics, setMcpDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
   const [activeMcpServerID, setActiveMcpServerID] = useState<string | null>(null)
   const [mcpServerDraft, setMcpServerDraft] = useState<McpServerDraftState>(() => toMcpDraft())
+  const [pluginCatalog, setPluginCatalog] = useState<PluginCatalogItem[]>([])
+  const [installedPlugins, setInstalledPlugins] = useState<InstalledPlugin[]>([])
+  const [pluginDiagnostics, setPluginDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
+  const [pluginConnectorStatuses, setPluginConnectorStatuses] = useState<Record<string, PluginConnectorStatus[]>>({})
+  const [activePluginID, setActivePluginID] = useState<string | null>(null)
+  const [pluginDraft, setPluginDraft] = useState<PluginDraftState>(() => buildPluginDraft(undefined))
   const [builtinTools, setBuiltinTools] = useState<BuiltinToolSummary[]>([])
   const [builtinToolSelection, setBuiltinToolSelection] = useState<BuiltinToolSelection>(EMPTY_BUILTIN_TOOL_SELECTION)
   const [savedBuiltinToolSelection, setSavedBuiltinToolSelection] =
@@ -387,6 +423,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [isSavingSelection, setIsSavingSelection] = useState(false)
   const [savingMcpServerID, setSavingMcpServerID] = useState<string | null>(null)
   const [deletingMcpServerID, setDeletingMcpServerID] = useState<string | null>(null)
+  const [isLoadingPlugins, setIsLoadingPlugins] = useState(false)
+  const [pluginsError, setPluginsError] = useState<string | null>(null)
+  const [installingPluginID, setInstallingPluginID] = useState<string | null>(null)
+  const [updatingPluginID, setUpdatingPluginID] = useState<string | null>(null)
+  const [deletingPluginID, setDeletingPluginID] = useState<string | null>(null)
+  const [diagnosingPluginID, setDiagnosingPluginID] = useState<string | null>(null)
+  const [savingPluginConnectorID, setSavingPluginConnectorID] = useState<string | null>(null)
+  const [diagnosingPluginConnectorID, setDiagnosingPluginConnectorID] = useState<string | null>(null)
   const [isSavingBuiltinTools, setIsSavingBuiltinTools] = useState(false)
   const [isCreatingPromptPreset, setIsCreatingPromptPreset] = useState(false)
   const [isSavingPromptPresetSelection, setIsSavingPromptPresetSelection] = useState(false)
@@ -400,7 +444,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const requestIDRef = useRef(0)
   const builtinToolsRequestIDRef = useRef(0)
   const archivedSessionsRequestIDRef = useRef(0)
+  const mcpServersRequestIDRef = useRef(0)
   const mcpDiagnosticRequestIDRef = useRef<Record<string, number>>({})
+  const pluginsRequestIDRef = useRef(0)
+  const pluginDiagnosticRequestIDRef = useRef<Record<string, number>>({})
+  const pluginConnectorsRequestIDRef = useRef<Record<string, number>>({})
   const promptPresetsRequestIDRef = useRef(0)
   const promptPresetDocumentRequestIDRef = useRef(0)
 
@@ -411,6 +459,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     void loadBuiltinTools()
     void loadArchivedSessions()
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isMcpServersPageOpen) return
+
+    void loadMcpServers()
+  }, [isMcpServersPageOpen])
+
+  useEffect(() => {
+    if (!isPluginsPageOpen) return
+
+    void loadPlugins()
+  }, [isPluginsPageOpen])
 
   useEffect(() => {
     if (!isPromptPresetEditorOpen) return
@@ -424,6 +484,18 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     } catch (error) {
       console.error("[desktop] global MCP sync failed:", error)
     }
+  }
+
+  async function notifySkillsUpdated() {
+    try {
+      await options.onSkillsUpdated?.()
+    } catch (error) {
+      console.error("[desktop] composer skills sync failed:", error)
+    }
+  }
+
+  async function notifyPluginCapabilitiesUpdated() {
+    await Promise.all([notifyMcpUpdated(), notifySkillsUpdated()])
   }
 
   async function notifyProviderModelsUpdated() {
@@ -573,10 +645,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   useEffect(() => {
-    if (!isOpen || !activeMcpServerID) return
+    if ((!isOpen && !isMcpServersPageOpen) || !activeMcpServerID) return
 
     void loadMcpServerDiagnostic(activeMcpServerID)
-  }, [activeMcpServerID, isOpen])
+  }, [activeMcpServerID, isMcpServersPageOpen, isOpen])
 
   async function loadArchivedSessions(optionsArg?: LoadSettingsOptions) {
     const listArchivedSessions = window.desktop?.listArchivedSessions
@@ -611,15 +683,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     const loadProviderCatalog = window.desktop?.getGlobalProviderCatalog
     const loadModels = window.desktop?.getGlobalModels
 
-    if (!loadProviderCatalog || !loadModels || !window.desktop?.getGlobalMcpServers) {
+    if (!loadProviderCatalog || !loadModels) {
       setLoadError("Desktop provider settings APIs are unavailable.")
       setCatalog([])
       setModels([])
       setProviderDrafts({})
-      setMcpServers([])
-      setMcpDiagnostics({})
-      setMcpServerDraft(toMcpDraft())
-      setActiveMcpServerID(null)
       return
     }
 
@@ -630,10 +698,9 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setLoadError(null)
 
     try {
-      const [nextCatalog, modelPayload, nextMcpServers] = await Promise.all([
+      const [nextCatalog, modelPayload] = await Promise.all([
         loadProviderCatalog(),
         loadModels(),
-        window.desktop.getGlobalMcpServers(),
       ])
       const normalizedCatalog = nextCatalog.map((item) => normalizeProviderCatalogItem(item))
 
@@ -650,6 +717,40 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       } else {
         setProviderDrafts(nextProviderDrafts)
       }
+    } catch (error) {
+      if (requestIDRef.current !== requestID) return
+      setCatalog([])
+      setModels([])
+      setProviderDrafts({})
+      setLoadError(getErrorMessage(error))
+    } finally {
+      if (requestIDRef.current === requestID) {
+        setIsLoading(false)
+      }
+    }
+  }
+
+  async function loadMcpServers(optionsArg?: LoadSettingsOptions) {
+    const getGlobalMcpServers = window.desktop?.getGlobalMcpServers
+    if (!getGlobalMcpServers) {
+      setLoadError("Desktop MCP settings APIs are unavailable.")
+      setMcpServers([])
+      setMcpDiagnostics({})
+      setMcpServerDraft(toMcpDraft())
+      setActiveMcpServerID(null)
+      return
+    }
+
+    const requestID = ++mcpServersRequestIDRef.current
+    if (!optionsArg?.silent) {
+      setIsLoading(true)
+    }
+    setLoadError(null)
+
+    try {
+      const nextMcpServers = await getGlobalMcpServers()
+      if (mcpServersRequestIDRef.current !== requestID) return
+
       setMcpServers(nextMcpServers)
       setMcpDiagnostics((current) =>
         Object.fromEntries(
@@ -666,18 +767,79 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         return updated ? toMcpDraft(updated) : toMcpDraft()
       })
     } catch (error) {
-      if (requestIDRef.current !== requestID) return
-      setCatalog([])
-      setModels([])
-      setProviderDrafts({})
+      if (mcpServersRequestIDRef.current !== requestID) return
       setMcpServers([])
       setMcpDiagnostics({})
       setMcpServerDraft(toMcpDraft())
       setActiveMcpServerID(null)
       setLoadError(getErrorMessage(error))
     } finally {
-      if (requestIDRef.current === requestID) {
+      if (mcpServersRequestIDRef.current === requestID) {
         setIsLoading(false)
+      }
+    }
+  }
+
+  async function loadPlugins(optionsArg?: LoadSettingsOptions) {
+    const getPluginCatalog = window.desktop?.getPluginCatalog
+    const getInstalledPlugins = window.desktop?.getInstalledPlugins
+    if (!getPluginCatalog || !getInstalledPlugins) {
+      setPluginCatalog([])
+      setInstalledPlugins([])
+      setPluginDiagnostics({})
+      setPluginConnectorStatuses({})
+      setActivePluginID(null)
+      setPluginDraft(buildPluginDraft(undefined))
+      setPluginsError("Desktop plugin APIs are unavailable.")
+      return
+    }
+
+    const requestID = ++pluginsRequestIDRef.current
+    if (!optionsArg?.silent) {
+      setIsLoadingPlugins(true)
+    }
+    setPluginsError(null)
+
+    try {
+      const [nextCatalog, nextInstalled] = await Promise.all([
+        getPluginCatalog(),
+        getInstalledPlugins(),
+      ])
+      if (pluginsRequestIDRef.current !== requestID) return
+      const nextConnectorStatuses = await loadPluginConnectorStatusesForInstalled(nextInstalled)
+      if (pluginsRequestIDRef.current !== requestID) return
+
+      setPluginCatalog(nextCatalog)
+      setInstalledPlugins(nextInstalled)
+      setPluginConnectorStatuses(nextConnectorStatuses)
+      setPluginDiagnostics((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([pluginID]) =>
+            nextInstalled.some((plugin) => plugin.pluginID === pluginID),
+          ),
+        ),
+      )
+
+      const preferredPluginID =
+        (activePluginID && nextCatalog.some((plugin) => plugin.id === activePluginID)
+          ? activePluginID
+          : nextCatalog[0]?.id) ?? null
+      setActivePluginID(preferredPluginID)
+      const nextActivePlugin = nextCatalog.find((plugin) => plugin.id === preferredPluginID)
+      const nextInstalledPlugin = nextInstalled.find((plugin) => plugin.pluginID === preferredPluginID) ?? null
+      setPluginDraft(buildPluginDraft(nextActivePlugin, nextInstalledPlugin))
+    } catch (error) {
+      if (pluginsRequestIDRef.current !== requestID) return
+      setPluginCatalog([])
+      setInstalledPlugins([])
+      setPluginDiagnostics({})
+      setPluginConnectorStatuses({})
+      setActivePluginID(null)
+      setPluginDraft(buildPluginDraft(undefined))
+      setPluginsError(getErrorMessage(error))
+    } finally {
+      if (pluginsRequestIDRef.current === requestID) {
+        setIsLoadingPlugins(false)
       }
     }
   }
@@ -757,6 +919,80 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function loadPluginDiagnostic(pluginID: string) {
+    if (!window.desktop?.getInstalledPluginDiagnostic) return null
+
+    const requestID = (pluginDiagnosticRequestIDRef.current[pluginID] ?? 0) + 1
+    pluginDiagnosticRequestIDRef.current[pluginID] = requestID
+
+    try {
+      const diagnostic = await window.desktop.getInstalledPluginDiagnostic({
+        pluginID,
+      })
+
+      if (pluginDiagnosticRequestIDRef.current[pluginID] !== requestID) return null
+
+      setPluginDiagnostics((current) => ({
+        ...current,
+        [pluginID]: diagnostic,
+      }))
+
+      return diagnostic
+    } catch (error) {
+      if (pluginDiagnosticRequestIDRef.current[pluginID] !== requestID) return null
+
+      const diagnostic: McpServerDiagnostic = {
+        serverID: `plugin.${pluginID}`,
+        enabled: true,
+        ok: false,
+        toolCount: 0,
+        toolNames: [],
+        error: getErrorMessage(error),
+      }
+      setPluginDiagnostics((current) => ({
+        ...current,
+        [pluginID]: diagnostic,
+      }))
+      return diagnostic
+    }
+  }
+
+  async function loadPluginConnectorStatusesForInstalled(items: InstalledPlugin[]) {
+    const getInstalledPluginConnectors = window.desktop?.getInstalledPluginConnectors
+    if (!getInstalledPluginConnectors) return {}
+
+    const entries = await Promise.all(
+      items.map(async (plugin) => {
+        try {
+          const statuses = await getInstalledPluginConnectors({
+            pluginID: plugin.pluginID,
+          })
+          return [plugin.pluginID, statuses] as const
+        } catch {
+          return [plugin.pluginID, []] as const
+        }
+      }),
+    )
+
+    return Object.fromEntries(entries)
+  }
+
+  async function loadPluginConnectorStatuses(pluginID: string) {
+    if (!window.desktop?.getInstalledPluginConnectors) return []
+
+    const requestID = (pluginConnectorsRequestIDRef.current[pluginID] ?? 0) + 1
+    pluginConnectorsRequestIDRef.current[pluginID] = requestID
+
+    const statuses = await window.desktop.getInstalledPluginConnectors({ pluginID })
+    if (pluginConnectorsRequestIDRef.current[pluginID] !== requestID) return []
+
+    setPluginConnectorStatuses((current) => ({
+      ...current,
+      [pluginID]: statuses,
+    }))
+    return statuses
+  }
+
   function openSettings() {
     setMessage(null)
     setIsOpen(true)
@@ -820,6 +1056,35 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setMcpServerDraft((current) => ({
       ...current,
       [field]: value,
+    }))
+  }
+
+  function selectPlugin(pluginID: string) {
+    const plugin = pluginCatalog.find((item) => item.id === pluginID)
+    if (!plugin) return
+
+    const installed = installedPlugins.find((item) => item.pluginID === pluginID) ?? null
+    setActivePluginID(pluginID)
+    setPluginDraft(buildPluginDraft(plugin, installed))
+  }
+
+  function setPluginDraftConfigValue(key: string, value: string) {
+    setPluginDraft((current) => ({
+      ...current,
+      config: {
+        ...current.config,
+        [key]: value,
+      },
+    }))
+  }
+
+  function setPluginDraftAppApiKey(appID: string, value: string) {
+    setPluginDraft((current) => ({
+      ...current,
+      appApiKeys: {
+        ...current.appApiKeys,
+        [appID]: value,
+      },
     }))
   }
 
@@ -1576,7 +1841,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
                 timeoutMs: mcpServerDraft.timeoutMs.trim() ? Number(mcpServerDraft.timeoutMs.trim()) : undefined,
               },
       })
-      await loadSettingsData({ silent: true })
+      await loadMcpServers({ silent: true })
       await notifyMcpUpdated()
       setActiveMcpServerID(serverID)
       const diagnostic = await loadMcpServerDiagnostic(serverID)
@@ -1606,7 +1871,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       await window.desktop.deleteGlobalMcpServer({
         serverID,
       })
-      await loadSettingsData({ silent: true })
+      await loadMcpServers({ silent: true })
       await notifyMcpUpdated()
       if (activeMcpServerID === serverID) {
         startNewMcpServer()
@@ -1627,6 +1892,226 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       })
     } finally {
       setDeletingMcpServerID(null)
+    }
+  }
+
+  async function installPlugin(pluginID: string) {
+    if (!window.desktop?.installPlugin) return false
+
+    const plugin = pluginCatalog.find((item) => item.id === pluginID)
+    if (!plugin) return false
+
+    setInstallingPluginID(pluginID)
+    setMessage(null)
+
+    try {
+      const installed = await window.desktop.installPlugin({
+        pluginID,
+        config: pluginDraft.pluginID === pluginID ? pluginDraft.config : buildPluginDraft(plugin).config,
+        enabled: true,
+      })
+      await loadPlugins({ silent: true })
+      await notifyPluginCapabilitiesUpdated()
+      setActivePluginID(pluginID)
+      setPluginDraft(buildPluginDraft(plugin, installed))
+      setMessage({
+        tone: "success",
+        text: `${plugin.name} installed. Enable it for a project from the MCP picker when needed.`,
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setInstallingPluginID(null)
+    }
+  }
+
+  async function updateInstalledPlugin(pluginID: string, update?: { config?: Record<string, string>; enabled?: boolean }) {
+    if (!window.desktop?.updateInstalledPlugin) return false
+
+    const plugin = pluginCatalog.find((item) => item.id === pluginID)
+    if (!plugin) return false
+
+    setUpdatingPluginID(pluginID)
+    setMessage(null)
+
+    try {
+      const installed = await window.desktop.updateInstalledPlugin({
+        pluginID,
+        ...update,
+      })
+      await loadPlugins({ silent: true })
+      await notifyPluginCapabilitiesUpdated()
+      setActivePluginID(pluginID)
+      setPluginDraft(buildPluginDraft(plugin, installed))
+      setMessage({
+        tone: "success",
+        text: `${plugin.name} updated.`,
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setUpdatingPluginID(null)
+    }
+  }
+
+  async function saveInstalledPluginConfig(pluginID: string) {
+    return updateInstalledPlugin(pluginID, {
+      config: pluginDraft.config,
+    })
+  }
+
+  async function setInstalledPluginEnabled(pluginID: string, enabled: boolean) {
+    return updateInstalledPlugin(pluginID, {
+      enabled,
+    })
+  }
+
+  async function deleteInstalledPlugin(pluginID: string) {
+    if (!window.desktop?.deleteInstalledPlugin) return false
+
+    setDeletingPluginID(pluginID)
+    setMessage(null)
+
+    try {
+      await window.desktop.deleteInstalledPlugin({
+        pluginID,
+      })
+      await loadPlugins({ silent: true })
+      await notifyPluginCapabilitiesUpdated()
+      setPluginDiagnostics((current) => {
+        const next = { ...current }
+        delete next[pluginID]
+        return next
+      })
+      setPluginConnectorStatuses((current) => {
+        const next = { ...current }
+        delete next[pluginID]
+        return next
+      })
+      const nextPlugin = pluginCatalog.find((plugin) => plugin.id !== pluginID) ?? pluginCatalog[0]
+      setActivePluginID(nextPlugin?.id ?? null)
+      setPluginDraft(buildPluginDraft(nextPlugin))
+      setMessage({
+        tone: "success",
+        text: "Plugin removed.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setDeletingPluginID(null)
+    }
+  }
+
+  async function diagnoseInstalledPlugin(pluginID: string) {
+    setDiagnosingPluginID(pluginID)
+    setMessage(null)
+
+    try {
+      const diagnostic = await loadPluginDiagnostic(pluginID)
+      if (!diagnostic) return false
+      await loadPlugins({ silent: true })
+      setMessage(formatMcpDiagnosticMessage(diagnostic))
+      return diagnostic.ok
+    } finally {
+      setDiagnosingPluginID(null)
+    }
+  }
+
+  async function saveInstalledPluginConnectorApiKey(pluginID: string, appID: string) {
+    if (!window.desktop?.saveInstalledPluginConnectorApiKey) return false
+
+    const connectorKey = `${pluginID}:${appID}`
+    const apiKey = pluginDraft.appApiKeys[appID]?.trim() ?? ""
+    setSavingPluginConnectorID(connectorKey)
+    setMessage(null)
+
+    try {
+      await window.desktop.saveInstalledPluginConnectorApiKey({
+        pluginID,
+        appID,
+        apiKey: apiKey || null,
+      })
+      await loadPluginConnectorStatuses(pluginID)
+      await notifyMcpUpdated()
+      setPluginDraftAppApiKey(appID, "")
+      setMessage({
+        tone: "success",
+        text: apiKey ? "App connector API key saved." : "App connector API key cleared.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingPluginConnectorID(null)
+    }
+  }
+
+  async function deleteInstalledPluginConnectorApiKey(pluginID: string, appID: string) {
+    if (!window.desktop?.deleteInstalledPluginConnectorApiKey) return false
+
+    const connectorKey = `${pluginID}:${appID}`
+    setSavingPluginConnectorID(connectorKey)
+    setMessage(null)
+
+    try {
+      await window.desktop.deleteInstalledPluginConnectorApiKey({ pluginID, appID })
+      await loadPluginConnectorStatuses(pluginID)
+      await notifyMcpUpdated()
+      setMessage({
+        tone: "success",
+        text: "App connector disconnected.",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setSavingPluginConnectorID(null)
+    }
+  }
+
+  async function diagnoseInstalledPluginConnector(pluginID: string, appID: string) {
+    if (!window.desktop?.getInstalledPluginConnectorDiagnostic) return false
+
+    const connectorKey = `${pluginID}:${appID}`
+    setDiagnosingPluginConnectorID(connectorKey)
+    setMessage(null)
+
+    try {
+      const diagnostic = await window.desktop.getInstalledPluginConnectorDiagnostic({ pluginID, appID })
+      await loadPluginConnectorStatuses(pluginID)
+      setMessage(formatMcpDiagnosticMessage(diagnostic))
+      return diagnostic.ok
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setDiagnosingPluginConnectorID(null)
     }
   }
 
@@ -1700,6 +2185,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   return {
     activeMcpServerID,
     activeMcpServerDiagnostic: activeMcpServerID ? mcpDiagnostics[activeMcpServerID] ?? null : null,
+    activePluginID,
     archivedSessions,
     archivedSessionsError,
     builtinTools,
@@ -1709,16 +2195,27 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     closeSettings,
     dismissMessage,
     deleteArchivedSession,
+    deleteInstalledPlugin,
     deleteProviderAuthSession,
     deleteMcpServer,
     deleteProvider,
     deletingArchivedSessionID,
     deletingMcpServerID,
+    deletingPluginID,
     deletingPromptPresetID,
     deletingProviderID,
+    deleteInstalledPluginConnectorApiKey,
+    diagnoseInstalledPlugin,
+    diagnoseInstalledPluginConnector,
+    diagnosingPluginID,
+    diagnosingPluginConnectorID,
+    installPlugin,
+    installingPluginID,
+    installedPlugins,
     isCreatingPromptPreset,
     isLoading,
     isLoadingBuiltinTools,
+    isLoadingPlugins,
     isLoadingPromptPreset,
     isLoadingPrompts,
     isLoadingArchivedSessions,
@@ -1737,6 +2234,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     message,
     models,
     openSettings,
+    pluginCatalog,
+    pluginConnectorStatuses,
+    pluginDiagnostics,
+    pluginDraft,
+    pluginsError,
     promptDraftLabel,
     promptDraftContent,
     promptLoadError,
@@ -1753,6 +2255,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     savedSelection,
     saveMcpServer,
     saveBuiltinTools,
+    saveInstalledPluginConfig,
+    saveInstalledPluginConnectorApiKey,
     savePromptPreset,
     savePromptPresetSelection,
     savingPromptPresetSelectionField,
@@ -1760,6 +2264,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     saveProvider,
     saveSelection,
     savingMcpServerID,
+    savingPluginConnectorID,
     savingPromptPresetID,
     savingProviderID,
     testProviderConnection,
@@ -1770,8 +2275,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setPromptPresetSelectionValue,
     selectPromptPreset,
     selectMcpServer,
+    selectPlugin,
     selectionDraft,
     setMcpServerDraftValue,
+    setInstalledPluginEnabled,
+    setPluginDraftAppApiKey,
+    setPluginDraftConfigValue,
     setPromptDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
@@ -1779,5 +2288,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     startProviderAuthFlow,
     startNewMcpServer,
     restoreArchivedSession,
+    updatingPluginID,
   }
 }

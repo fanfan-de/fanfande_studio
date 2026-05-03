@@ -5,6 +5,7 @@ import * as db from "#database/Sqlite.ts"
 import * as Identifier from "#id/id.ts"
 import { Flag } from "#flag/flag.ts"
 import { Instance } from "#project/instance.ts"
+import * as Config from "#config/config.ts"
 import * as Filesystem from "#util/filesystem.ts"
 import * as Tool from "#tool/tool.ts"
 import * as ToolRegistry from "#tool/registry.ts"
@@ -93,10 +94,10 @@ const DEFAULT_ACTIONS: Record<Tool.ToolKind, Schema.Action> = {
   search: "allow",
   interaction: "allow",
   write: "allow",
-  exec: "deny",
+  exec: "allow",
   workflow: "allow",
   delegation: "allow",
-  other: "deny",
+  other: "allow",
 }
 
 const SENSITIVE_PATH_PATTERNS = [
@@ -191,24 +192,18 @@ function defaultActionForKind(kind: Tool.ToolKind) {
   return DEFAULT_ACTIONS[kind]
 }
 
-function isSafeToAutoRunAsk(input: EvaluationInput, risk: Risk) {
-  if (risk === "critical") return false
-  if (input.tool.needsShell || input.tool.kind === "exec") return false
-  if (input.tool.kind === "other") return false
-  return true
+function buildAskPermissionReason(reason: string | undefined) {
+  const original = reason?.trim()
+  return original
+    ? `Tool requires approval before it can continue. Original approval rationale: ${original}`
+    : "Tool requires approval before it can continue."
 }
 
-function buildAutoRunAskReason(input: EvaluationInput, risk: Risk, reason: string | undefined) {
+function buildFullAccessReason(reason: string | undefined) {
   const original = reason?.trim()
-  if (isSafeToAutoRunAsk(input, risk)) {
-    return original
-      ? `Auto-running safe tool request. Original approval rationale: ${original}`
-      : "Auto-running safe tool request without prompting for approval."
-  }
-
   return original
-    ? `Tool request was not auto-run because it could not be classified as safe without approval. Original approval rationale: ${original}`
-    : "Tool request was not auto-run because it could not be classified as safe without approval."
+    ? `Full access mode approved this approval-required tool call. Original approval rationale: ${original}`
+    : "Full access mode approved this approval-required tool call."
 }
 
 function isPermissionDisabled() {
@@ -601,10 +596,13 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
   }
 
   if (intent?.action === "ask") {
-    const action = isSafeToAutoRunAsk(input, risk) ? "allow" : "deny"
+    const permissionMode = await Config.getPermissionMode(Config.GLOBAL_CONFIG_ID)
+    const action: Action = permissionMode.mode === "full_access" ? "allow" : "ask"
     const result: EvaluationResult = {
       action,
-      reason: buildAutoRunAskReason(input, risk, intent.reason),
+      reason: action === "allow"
+        ? buildFullAccessReason(intent.reason)
+        : buildAskPermissionReason(intent.reason),
       risk,
       derived,
     }

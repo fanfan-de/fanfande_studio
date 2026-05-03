@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "generate:git-activity": "node scripts/generate-git-activity.mjs",
+    "dev": "node scripts/generate-git-activity.mjs && vite",
+    "build": "node scripts/generate-git-activity.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "node scripts/generate-git-activity.mjs && tsc --noEmit"
   },
   "dependencies": {
     "react": "^19.2.0",

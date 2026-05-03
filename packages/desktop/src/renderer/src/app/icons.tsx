@@ -28,6 +28,7 @@ import {
   PanelRightOpen,
   Paperclip,
   Plus,
+  Puzzle,
   RotateCcw,
   Settings,
   SortAsc,
@@ -57,6 +58,7 @@ export const SortIcon = createIcon(SortAsc)
 export const NewItemIcon = createIcon(FilePlus2)
 export const PlusIcon = createIcon(Plus)
 export const SettingsIcon = createIcon(Settings)
+export const PluginIcon = createIcon(Puzzle)
 export const LayoutSidebarLeftIcon = createIcon(LayoutPanelLeft)
 export const LayoutSidebarRightIcon = createIcon(PanelRight)
 export const SideChatIcon = createIcon(MessageSquare)

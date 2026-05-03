@@ -392,7 +392,8 @@
   font-size: 14px;
 }
 
-.prompt-presets-page {
+.prompt-presets-page,
+.mcp-servers-page {
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -434,7 +435,8 @@
   align-items: center;
 }
 
-.prompt-presets-page-main {
+.prompt-presets-page-main,
+.mcp-servers-page-main {
   min-height: 0;
 }
 
@@ -444,6 +446,14 @@
 
 .settings-services-layout.global-skills-page-layout {
   grid-template-columns: 340px minmax(0, 1fr);
+}
+
+.settings-services-layout.mcp-servers-page-layout {
+  grid-template-columns: 340px minmax(0, 1fr);
+}
+
+.settings-service-list-panel.mcp-servers-list-panel {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .settings-service-list-panel.global-skills-library-panel {
@@ -499,6 +509,7 @@
 }
 
 @media (max-width: 1280px) {
+  .settings-services-layout.mcp-servers-page-layout,
   .settings-services-layout.global-skills-page-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1554,12 +1565,14 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   gap: 6px;
 }
 
+.canvas-top-menu-permission-trigger,
 .canvas-top-menu-mcp-trigger,
 .canvas-top-menu-skill-trigger {
   gap: 4px;
   max-width: min(128px, 22vw);
 }
 
+.canvas-top-menu-permission-trigger span,
 .canvas-top-menu-mcp-trigger span,
 .canvas-top-menu-skill-trigger span {
   min-width: 0;

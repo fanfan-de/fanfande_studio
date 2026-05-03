@@ -1,5 +1,6 @@
 export type PermissionRequestStatus = "pending" | "approved" | "denied" | "expired"
 export type PermissionRisk = "low" | "medium" | "high" | "critical"
+export type ToolPermissionMode = "default" | "full_access"
 export type PermissionToolKind =
   | "read"
   | "write"
@@ -60,6 +61,10 @@ export interface PermissionResolveInput {
 export interface PermissionResolveResult {
   request?: PermissionRequestPrompt
   resumed?: unknown
+}
+
+export interface ToolPermissionModePayload {
+  mode: ToolPermissionMode
 }
 
 export function isAllowDecision(decision: PermissionDecision) {

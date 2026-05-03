@@ -123,6 +123,76 @@ export function SettingsRoutes() {
     ok(c, await SettingsUseCase.removeMcpServer(c.req.param("serverID"))),
   )
 
+  app.get("/plugins/catalog", async (c) => ok(c, SettingsUseCase.listPluginCatalog()))
+
+  app.get("/plugins/installed", async (c) => ok(c, SettingsUseCase.listInstalledPlugins()))
+
+  app.put("/plugins/installed/:pluginID", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.InstallPluginBody,
+      "Body must contain optional plugin configuration and enabled state.",
+    )
+    return ok(c, await SettingsUseCase.installPlugin(c.req.param("pluginID"), payload))
+  })
+
+  app.patch("/plugins/installed/:pluginID", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.UpdateInstalledPluginBody,
+      "Body must contain optional plugin configuration and enabled state.",
+    )
+    return ok(c, await SettingsUseCase.updateInstalledPlugin(c.req.param("pluginID"), payload))
+  })
+
+  app.delete("/plugins/installed/:pluginID", async (c) =>
+    ok(c, await SettingsUseCase.removeInstalledPlugin(c.req.param("pluginID"))),
+  )
+
+  app.get("/plugins/installed/:pluginID/diagnostic", async (c) =>
+    ok(c, await SettingsUseCase.getInstalledPluginDiagnostic(c.req.param("pluginID"))),
+  )
+
+  app.get("/plugins/installed/:pluginID/connectors", async (c) =>
+    ok(c, await SettingsUseCase.listInstalledPluginConnectors(c.req.param("pluginID"))),
+  )
+
+  app.put("/plugins/installed/:pluginID/connectors/:appID/api-key", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.SavePluginConnectorApiKeyBody,
+      "Body must contain an optional nullable 'apiKey' field.",
+    )
+    return ok(
+      c,
+      await SettingsUseCase.saveInstalledPluginConnectorApiKey(
+        c.req.param("pluginID"),
+        c.req.param("appID"),
+        payload,
+      ),
+    )
+  })
+
+  app.delete("/plugins/installed/:pluginID/connectors/:appID/api-key", async (c) =>
+    ok(
+      c,
+      await SettingsUseCase.deleteInstalledPluginConnectorApiKey(
+        c.req.param("pluginID"),
+        c.req.param("appID"),
+      ),
+    ),
+  )
+
+  app.get("/plugins/installed/:pluginID/connectors/:appID/diagnostic", async (c) =>
+    ok(
+      c,
+      await SettingsUseCase.getInstalledPluginConnectorDiagnostic(
+        c.req.param("pluginID"),
+        c.req.param("appID"),
+      ),
+    ),
+  )
+
   app.get("/tools/builtins", async (c) => ok(c, await SettingsUseCase.listBuiltinTools()))
 
   app.put("/tools/builtins/selection", async (c) => {
@@ -132,6 +202,17 @@ export function SettingsRoutes() {
       "Body must contain a tools object keyed by built-in tool id.",
     )
     return ok(c, await SettingsUseCase.updateBuiltinToolSelection(payload))
+  })
+
+  app.get("/tools/permission-mode", async (c) => ok(c, await SettingsUseCase.getToolPermissionMode()))
+
+  app.put("/tools/permission-mode", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.UpdateToolPermissionModeBody,
+      "Body must contain mode 'default' or 'full_access'.",
+    )
+    return ok(c, await SettingsUseCase.updateToolPermissionMode(payload))
   })
 
   app.get("/prompts", async (c) => ok(c, await SettingsUseCase.listPromptPresets()))

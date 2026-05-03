@@ -2579,3 +2579,170 @@ body.is-dragging-settings-page {
   border-color: var(--seg-accent);
   background: var(--seg-accent);
 }
+
+/* Plugins marketplace */
+
+.plugins-page,
+.plugins-page-main {
+  min-width: 0;
+  min-height: 0;
+}
+
+.plugins-page {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--seg-shell);
+}
+
+.plugins-page-main {
+  overflow: hidden;
+}
+
+.plugins-page-layout {
+  grid-template-columns: minmax(340px, 0.36fr) minmax(0, 1fr);
+}
+
+.plugins-list-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.plugins-market-panel,
+.plugins-detail-panel {
+  min-width: 0;
+}
+
+.plugins-market-toolbar {
+  display: grid;
+  gap: 12px;
+}
+
+.plugins-search-field {
+  width: 100%;
+}
+
+.plugins-category-filter,
+.plugins-list-meta,
+.plugins-review-list,
+.plugins-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.plugins-category-filter .settings-badge {
+  cursor: pointer;
+}
+
+.plugins-list-meta {
+  margin-top: 12px;
+  color: var(--seg-text-3);
+  font-size: 12px;
+}
+
+.plugins-detail-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.plugins-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.plugins-tool-list {
+  display: grid;
+  gap: 10px;
+}
+
+.plugins-tool-row {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel-muted);
+  display: grid;
+  gap: 8px;
+}
+
+.plugins-tool-row > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.plugins-tool-row strong,
+.plugins-tool-row span,
+.plugins-tool-row p,
+.plugins-review-list span,
+.plugins-runtime-code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plugins-tool-row span,
+.plugins-tool-row p,
+.plugins-review-list span {
+  color: var(--seg-text-3);
+}
+
+.plugins-tool-row p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.plugins-review-list {
+  align-items: flex-start;
+}
+
+.plugins-review-list span {
+  padding: 8px 10px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.plugins-runtime-code {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel-muted);
+  color: var(--seg-text-1);
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.plugins-config-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.settings-field small {
+  color: var(--seg-text-3);
+  line-height: 1.4;
+}
+
+.settings-badge.is-danger {
+  border-color: rgba(197, 78, 78, 0.28);
+  background: rgba(197, 78, 78, 0.1);
+  color: #8f3127;
+}
+
+.secondary-button.is-danger {
+  color: #8f3127;
+}
+
+@media (max-width: 1100px) {
+  .plugins-page-layout,
+  .plugins-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -19,7 +19,7 @@ import {
   resolvePowerShellExecutable,
   resolveWslExecutable,
   waitForProcessExit,
-} from "#tool/exec-command.ts"
+} from "#tool/shell-command.ts"
 import { GlobTool } from "#tool/glob.ts"
 import { GrepTool } from "#tool/grep.ts"
 import { ReadBackgroundTaskTool } from "#tool/read-background-task.ts"
@@ -451,18 +451,18 @@ describe("tool contract", () => {
   })
 
   it("exposes git_bash_command runtime hooks with structured behavior", async () => {
-    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-exec-command-"))
+    const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-shell-command-"))
 
     try {
-      await createGitRepo(repositoryRoot, "exec-command")
+      await createGitRepo(repositoryRoot, "shell-command")
 
       await Instance.provide({
         directory: repositoryRoot,
         async fn() {
           const runtime = await GitBashCommandTool.init()
           const ctx = {
-            sessionID: "session-exec-command",
-            messageID: "message-exec-command",
+            sessionID: "session-shell-command",
+            messageID: "message-shell-command",
           }
 
           expect(runtime.formatValidationError).toBeTypeOf("function")
@@ -884,47 +884,12 @@ describe("tool contract", () => {
                     messageID: "assistant-history",
                     type: "tool",
                     callID: "call-history",
-                    tool: "exec_command",
+                    tool: "git_bash_command",
                     state: {
                       status: "completed",
                       input: { command: "printf hello" },
                       output: "Command: printf hello",
-                      title: "exec_command: printf hello",
-                      metadata: {
-                        command: "printf hello",
-                        shell: "/bin/bash",
-                        cwd: repositoryRoot,
-                        displayCwd: ".",
-                        timeoutMs: 60_000,
-                        exitCode: 0,
-                        signal: null,
-                        timedOut: false,
-                        aborted: false,
-                        stdoutTruncated: false,
-                        stderrTruncated: false,
-                        stdout: "hello",
-                        stderr: "",
-                        runInBackground: false,
-                        backgroundTaskId: null,
-                      },
-                      time: {
-                        start: 1,
-                        end: 2,
-                      },
-                    },
-                  } as Message.ToolPart,
-                  {
-                    id: "tool-history-bash",
-                    sessionID: "session-history",
-                    messageID: "assistant-history",
-                    type: "tool",
-                    callID: "call-history-bash",
-                    tool: "bash",
-                    state: {
-                      status: "completed",
-                      input: { command: "printf hello" },
-                      output: "Command: printf hello",
-                      title: "Bash: printf hello",
+                      title: "git_bash_command: printf hello",
                       metadata: {
                         command: "printf hello",
                         shell: "/bin/bash",
@@ -956,25 +921,11 @@ describe("tool contract", () => {
 
           const toolMessage = messages.find((item) => item.role === "tool") as any
           expect(toolMessage).toBeDefined()
-          expect(toolMessage.content).toHaveLength(2)
-          expect(toolMessage.content.find((item: any) => item.toolName === "exec_command")).toMatchObject({
+          expect(toolMessage.content).toHaveLength(1)
+          expect(toolMessage.content.find((item: any) => item.toolName === "git_bash_command")).toMatchObject({
             type: "tool-result",
             toolCallId: "call-history",
-            toolName: "exec_command",
-            output: {
-              type: "json",
-              value: {
-                status: "ok",
-                stdout: "hello",
-                runInBackground: false,
-                backgroundTaskId: null,
-              },
-            },
-          })
-          expect(toolMessage.content.find((item: any) => item.toolName === "bash")).toMatchObject({
-            type: "tool-result",
-            toolCallId: "call-history-bash",
-            toolName: "bash",
+            toolName: "git_bash_command",
             output: {
               type: "json",
               value: {

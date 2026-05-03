@@ -8,23 +8,151 @@ import type {
   ComposerMcpOption,
   ComposerSkillOption,
   PermissionRequest,
-  SessionSummary
+  SessionSummary,
+  ToolPermissionMode,
 } from "../types"
 import { isSideChatSession } from "../workspace"
+
+const TOOL_PERMISSION_MODE_OPTIONS: Array<{
+  value: ToolPermissionMode
+  label: string
+  description: string
+}> = [
+  {
+    value: "default",
+    label: "默认权限",
+    description: "ask 进入审批，allow 直接执行，deny 拒绝。",
+  },
+  {
+    value: "full_access",
+    label: "完全访问权限",
+    description: "ask 自动通过，deny 仍然拒绝。",
+  },
+]
+
+function getToolPermissionModeLabel(mode: ToolPermissionMode) {
+  return TOOL_PERMISSION_MODE_OPTIONS.find((option) => option.value === mode)?.label ?? "默认权限"
+}
 
 interface SessionCanvasTopMenuProps {
   activeSession: SessionSummary | null
   gitProjectID: string | null
   gitDirectory: string | null
+  isSavingToolPermissionMode: boolean
   mcpOptions: ComposerMcpOption[]
   pendingPermissionRequests: PermissionRequest[]
   selectedMcpServerIDs: string[]
   selectedMcpServerLabel: string
   onMcpServerToggle: (value: string) => void | Promise<void>
+  toolPermissionMode: ToolPermissionMode
+  toolPermissionModeError: string | null
+  onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
   skillOptions: ComposerSkillOption[]
   selectedSkillIDs: string[]
   selectedSkillLabel: string
   onSkillToggle: (value: string) => void
+}
+
+function ToolPermissionModeMenuButton({
+  isSaving,
+  mode,
+  error,
+  onModeChange,
+}: {
+  isSaving: boolean
+  mode: ToolPermissionMode
+  error: string | null
+  onModeChange: (mode: ToolPermissionMode) => void | Promise<void>
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const selectedLabel = getToolPermissionModeLabel(mode)
+  const title = error
+    ? `工具权限：${selectedLabel}。保存失败：${error}`
+    : `工具权限：${selectedLabel}`
+
+  useEffect(() => {
+    if (!isMenuOpen) return
+
+    const handlePointerDown = (event: globalThis.PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menuRef.current?.contains(target) || buttonRef.current?.contains(target)) return
+      setIsMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMenuOpen(false)
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isMenuOpen])
+
+  function handleOptionClick(nextMode: ToolPermissionMode) {
+    if (nextMode === mode || isSaving) return
+    setIsMenuOpen(false)
+    void onModeChange(nextMode)
+  }
+
+  return (
+    <div className="canvas-top-menu-selector-anchor">
+      <button
+        ref={buttonRef}
+        type="button"
+        className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-permission-trigger is-active" : "canvas-top-menu-button canvas-top-menu-permission-trigger"}
+        aria-controls="canvas-top-menu-permission-menu"
+        aria-expanded={isMenuOpen}
+        aria-haspopup="dialog"
+        aria-label={`工具权限：${selectedLabel}`}
+        title={title}
+        disabled={isSaving}
+        onClick={() => setIsMenuOpen((current) => !current)}
+      >
+        <span>{selectedLabel}</span>
+        <ChevronDownIcon />
+      </button>
+
+      {isMenuOpen ? (
+        <div
+          ref={menuRef}
+          id="canvas-top-menu-permission-menu"
+          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel"
+          role="dialog"
+          aria-label="工具权限模式选择"
+        >
+          {TOOL_PERMISSION_MODE_OPTIONS.map((option) => {
+            const isSelected = option.value === mode
+
+            return (
+              <button
+                key={option.value}
+                className={isSelected ? "composer-menu-option canvas-top-menu-segmented-option is-selected" : "composer-menu-option canvas-top-menu-segmented-option"}
+                disabled={isSaving}
+                onClick={() => handleOptionClick(option.value)}
+                type="button"
+              >
+                <span className="composer-menu-option-copy">
+                  <strong>{option.label}</strong>
+                  <small>{option.description}</small>
+                </span>
+                <span className="composer-menu-option-check">{isSelected ? "已选择" : "切换"}</span>
+              </button>
+            )
+          })}
+          {error ? <p className="canvas-top-menu-quick-status is-error">{error}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function ProjectMcpMenuButton({
@@ -217,11 +345,15 @@ export function SessionCanvasTopMenu({
   activeSession,
   gitProjectID,
   gitDirectory,
+  isSavingToolPermissionMode,
   mcpOptions,
   pendingPermissionRequests,
   selectedMcpServerIDs,
   selectedMcpServerLabel,
   onMcpServerToggle,
+  toolPermissionMode,
+  toolPermissionModeError,
+  onToolPermissionModeChange,
   skillOptions,
   selectedSkillIDs,
   selectedSkillLabel,
@@ -254,6 +386,12 @@ export function SessionCanvasTopMenu({
           <ExternalEditorMenuButton directory={gitDirectory} />
           {!readOnlySideChat ? (
             <>
+              <ToolPermissionModeMenuButton
+                error={toolPermissionModeError}
+                isSaving={isSavingToolPermissionMode}
+                mode={toolPermissionMode}
+                onModeChange={onToolPermissionModeChange}
+              />
               <ProjectMcpMenuButton
                 mcpOptions={mcpOptions}
                 selectedMcpServerIDs={selectedMcpServerIDs}

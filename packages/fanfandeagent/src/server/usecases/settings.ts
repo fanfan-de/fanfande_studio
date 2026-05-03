@@ -2,6 +2,7 @@ import z from "zod"
 import * as ProviderAuth from "#auth/provider-auth.ts"
 import * as Config from "#config/config.ts"
 import * as Mcp from "#mcp/manager.ts"
+import * as Plugin from "#plugin/plugin.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Provider from "#provider/provider.ts"
 import { ApiError } from "#server/error.ts"
@@ -35,6 +36,9 @@ export const DeleteSkillQuery = z.object({
 export const UpdateMcpServerBody = Config.McpServerInput
 export const UpdateGlobalProviderBody = Config.Provider
 export const UpdateGlobalModelSelectionBody = Config.ModelSelection
+export const InstallPluginBody = Plugin.InstallPluginInput
+export const UpdateInstalledPluginBody = Plugin.UpdateInstalledPluginInput
+export const SavePluginConnectorApiKeyBody = Plugin.SavePluginConnectorApiKeyInput
 
 export const ProviderAuthFlowBody = z.object({
   method: z.string().min(1),
@@ -71,6 +75,12 @@ export const PromptPresetSelectionBody = z.object({
 export const UpdateBuiltinToolSelectionBody = z
   .object({
     tools: z.record(z.string(), z.boolean()),
+  })
+  .strict()
+
+export const UpdateToolPermissionModeBody = z
+  .object({
+    mode: Config.PermissionMode,
   })
   .strict()
 
@@ -114,6 +124,25 @@ function toPromptPresetApiError(error: unknown) {
 
   if (error.message.includes("cannot be reset") || error.message.includes("cannot be deleted")) {
     return new ApiError(400, "PROMPT_PRESET_ACTION_NOT_ALLOWED", error.message)
+  }
+
+  return error
+}
+
+function toPluginApiError(error: unknown) {
+  if (error instanceof Plugin.PluginError) {
+    switch (error.code) {
+      case "PLUGIN_NOT_FOUND":
+      case "INSTALLED_PLUGIN_NOT_FOUND":
+      case "PLUGIN_CONNECTOR_NOT_FOUND":
+        return new ApiError(404, error.code, error.message)
+      case "PLUGIN_ALREADY_INSTALLED":
+        return new ApiError(409, error.code, error.message)
+      case "PLUGIN_CONFIG_INVALID":
+      case "PLUGIN_RISK_NOT_ALLOWED":
+      case "PLUGIN_CONNECTOR_NOT_CONNECTED":
+        return new ApiError(400, error.code, error.message)
+    }
   }
 
   return error
@@ -500,6 +529,82 @@ export async function removeMcpServer(serverID: string) {
   }
 }
 
+export function listPluginCatalog() {
+  return Plugin.listCatalog()
+}
+
+export function listInstalledPlugins() {
+  return Plugin.listInstalled()
+}
+
+export async function installPlugin(pluginID: string, input: z.infer<typeof InstallPluginBody>) {
+  try {
+    return await Plugin.install(pluginID, input)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function updateInstalledPlugin(pluginID: string, input: z.infer<typeof UpdateInstalledPluginBody>) {
+  try {
+    return await Plugin.update(pluginID, input)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function removeInstalledPlugin(pluginID: string) {
+  try {
+    return await Plugin.remove(pluginID)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function getInstalledPluginDiagnostic(pluginID: string) {
+  try {
+    return await Plugin.diagnose(pluginID)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function listInstalledPluginConnectors(pluginID: string) {
+  try {
+    return await Plugin.listConnectorStatuses(pluginID)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function saveInstalledPluginConnectorApiKey(
+  pluginID: string,
+  appID: string,
+  input: z.infer<typeof SavePluginConnectorApiKeyBody>,
+) {
+  try {
+    return await Plugin.saveConnectorApiKey(pluginID, appID, input)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function deleteInstalledPluginConnectorApiKey(pluginID: string, appID: string) {
+  try {
+    return await Plugin.removeConnectorApiKey(pluginID, appID)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
+export async function getInstalledPluginConnectorDiagnostic(pluginID: string, appID: string) {
+  try {
+    return await Plugin.diagnoseConnector(pluginID, appID)
+  } catch (error) {
+    throw toPluginApiError(error)
+  }
+}
+
 export async function listBuiltinTools() {
   const [items, selection] = await Promise.all([
     ToolRegistry.builtinTools(),
@@ -543,6 +648,14 @@ export async function updateBuiltinToolSelection(input: z.infer<typeof UpdateBui
   }
 
   return Config.setToolSelection(Config.GLOBAL_CONFIG_ID, tools)
+}
+
+export async function getToolPermissionMode() {
+  return Config.getPermissionMode(Config.GLOBAL_CONFIG_ID)
+}
+
+export async function updateToolPermissionMode(input: z.infer<typeof UpdateToolPermissionModeBody>) {
+  return Config.setPermissionMode(Config.GLOBAL_CONFIG_ID, input.mode)
 }
 
 export async function listPromptPresets() {

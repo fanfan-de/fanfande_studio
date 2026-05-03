@@ -43,6 +43,10 @@ import type {
   AgentGlobalSkillTree,
   AgentMcpServerDiagnostic,
   AgentMcpServerSummary,
+  AgentInstalledPlugin,
+  AgentPluginCatalogItem,
+  AgentPluginConnectorStatus,
+  AgentPluginDeleteResult,
   AgentPermissionRequest,
   AgentPermissionResolveResult,
   AgentProjectDeleteResult,
@@ -71,6 +75,7 @@ import type {
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
   AgentSkillInfo,
+  AgentToolPermissionModePayload,
   AgentWorkspaceFileDocument,
   AgentWorkspaceFileSearchResult,
   MenuAnchor,
@@ -155,6 +160,25 @@ async function listFolderWorkspaces() {
   const result = await requestAgentJSON<AgentProjectInfo[]>("/api/projects")
   const projectWorkspaces = await Promise.all(result.data.map((project) => loadProjectWorkspace(project)))
   return buildFolderWorkspaces(result.data, projectWorkspaces)
+}
+
+async function getToolPermissionMode() {
+  const result = await requestAgentJSON<AgentToolPermissionModePayload>("/api/tools/permission-mode")
+  return result.data
+}
+
+async function updateToolPermissionMode(input: AgentToolPermissionModePayload) {
+  const result = await requestAgentJSON<AgentToolPermissionModePayload>("/api/tools/permission-mode", {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      mode: input.mode,
+    }),
+  })
+
+  return result.data
 }
 
 type SessionStreamSubscription = {
@@ -1283,6 +1307,143 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
+  handleDesktopIpc("desktop:get-plugin-catalog", async () => {
+    const result = await requestAgentJSON<AgentPluginCatalogItem[]>("/api/plugins/catalog")
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-installed-plugins", async () => {
+    const result = await requestAgentJSON<AgentInstalledPlugin[]>("/api/plugins/installed")
+
+    return result.data
+  })
+
+  handleDesktopIpc(
+    "desktop:install-plugin",
+    async (_event, input: { pluginID: string; config?: Record<string, string>; enabled?: boolean }) => {
+      const pluginID = input.pluginID.trim()
+      const result = await requestAgentJSON<AgentInstalledPlugin>(
+        `/api/plugins/installed/${encodeURIComponent(pluginID)}`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            config: input.config,
+            enabled: input.enabled,
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:update-installed-plugin",
+    async (_event, input: { pluginID: string; config?: Record<string, string>; enabled?: boolean }) => {
+      const pluginID = input.pluginID.trim()
+      const result = await requestAgentJSON<AgentInstalledPlugin>(
+        `/api/plugins/installed/${encodeURIComponent(pluginID)}`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            config: input.config,
+            enabled: input.enabled,
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc("desktop:delete-installed-plugin", async (_event, input: { pluginID: string }) => {
+    const pluginID = input.pluginID.trim()
+    const result = await requestAgentJSON<AgentPluginDeleteResult>(
+      `/api/plugins/installed/${encodeURIComponent(pluginID)}`,
+      {
+        method: "DELETE",
+      },
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-installed-plugin-diagnostic", async (_event, input: { pluginID: string }) => {
+    const pluginID = input.pluginID.trim()
+    const result = await requestAgentJSON<AgentMcpServerDiagnostic>(
+      `/api/plugins/installed/${encodeURIComponent(pluginID)}/diagnostic`,
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:get-installed-plugin-connectors", async (_event, input: { pluginID: string }) => {
+    const pluginID = input.pluginID.trim()
+    const result = await requestAgentJSON<AgentPluginConnectorStatus[]>(
+      `/api/plugins/installed/${encodeURIComponent(pluginID)}/connectors`,
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc(
+    "desktop:save-installed-plugin-connector-api-key",
+    async (_event, input: { pluginID: string; appID: string; apiKey?: string | null }) => {
+      const pluginID = input.pluginID.trim()
+      const appID = input.appID.trim()
+      const result = await requestAgentJSON<AgentPluginConnectorStatus>(
+        `/api/plugins/installed/${encodeURIComponent(pluginID)}/connectors/${encodeURIComponent(appID)}/api-key`,
+        {
+          method: "PUT",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            apiKey: input.apiKey ?? null,
+          }),
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:delete-installed-plugin-connector-api-key",
+    async (_event, input: { pluginID: string; appID: string }) => {
+      const pluginID = input.pluginID.trim()
+      const appID = input.appID.trim()
+      const result = await requestAgentJSON<AgentPluginConnectorStatus>(
+        `/api/plugins/installed/${encodeURIComponent(pluginID)}/connectors/${encodeURIComponent(appID)}/api-key`,
+        {
+          method: "DELETE",
+        },
+      )
+
+      return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:get-installed-plugin-connector-diagnostic",
+    async (_event, input: { pluginID: string; appID: string }) => {
+      const pluginID = input.pluginID.trim()
+      const appID = input.appID.trim()
+      const result = await requestAgentJSON<AgentMcpServerDiagnostic>(
+        `/api/plugins/installed/${encodeURIComponent(pluginID)}/connectors/${encodeURIComponent(appID)}/diagnostic`,
+      )
+
+      return result.data
+    },
+  )
+
   handleDesktopIpc("desktop:get-builtin-tools", async () => {
     const result = await requestAgentJSON<AgentBuiltinToolsPayload>("/api/tools/builtins")
 
@@ -1302,6 +1463,12 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
     return result.data
   })
+
+  handleDesktopIpc("desktop:get-tool-permission-mode", async () => getToolPermissionMode())
+
+  handleDesktopIpc("desktop:update-tool-permission-mode", async (_event, input: AgentToolPermissionModePayload) =>
+    updateToolPermissionMode(input),
+  )
 
   handleDesktopIpc("desktop:get-global-skills", async () => {
     const result = await requestAgentJSON<AgentSkillInfo[]>("/api/skills")
@@ -2068,5 +2235,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
 export const internal = {
   disposeSessionStreamSubscriptionsForWebContents,
+  getToolPermissionMode,
   isSessionStreamSubscriptionKeyForWebContents,
+  updateToolPermissionMode,
 }

@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import matter from "gray-matter"
 import z from "zod"
 import * as Config from "#config/config.ts"
+import * as Plugin from "#plugin/plugin.ts"
 import { Instance } from "#project/instance.ts"
 import * as Filesystem from "#util/filesystem.ts"
 import * as Log from "#util/log.ts"
@@ -15,7 +16,7 @@ const skillSessionState = Instance.state(() => new Map<string, {
   loadedSkillIDs: Set<string>
 }>())
 
-export const SkillScope = z.enum(["project", "user"]).meta({
+export const SkillScope = z.enum(["project", "user", "plugin"]).meta({
   ref: "SkillScope",
 })
 export type SkillScope = z.infer<typeof SkillScope>
@@ -46,6 +47,10 @@ const SkillFrontmatter = z
 
 function buildSkillID(scope: SkillScope, directoryName: string) {
   return `${scope}:${directoryName}`
+}
+
+function buildPluginSkillID(pluginID: string, directoryName: string) {
+  return `plugin:${pluginID}:${directoryName}`
 }
 
 function firstParagraph(markdown: string) {
@@ -139,7 +144,13 @@ function toPromptSkillSummary(skill: SkillInfo) {
   ].join("\n")
 }
 
-async function readSkillDocument(scope: SkillScope, directoryPath: string): Promise<SkillDocument | undefined> {
+async function readSkillDocument(
+  scope: SkillScope,
+  directoryPath: string,
+  options?: {
+    pluginID?: string
+  },
+): Promise<SkillDocument | undefined> {
   const path = join(directoryPath, SKILL_FILENAME)
   if (!(await Filesystem.exists(path))) return undefined
 
@@ -151,7 +162,9 @@ async function readSkillDocument(scope: SkillScope, directoryPath: string): Prom
   const description = (frontmatter.description?.trim() || firstParagraph(body) || directoryName).trim()
 
   return {
-    id: buildSkillID(scope, directoryName),
+    id: scope === "plugin" && options?.pluginID
+      ? buildPluginSkillID(options.pluginID, directoryName)
+      : buildSkillID(scope, directoryName),
     name: (frontmatter.name?.trim() || directoryName).trim(),
     description,
     path,
@@ -173,9 +186,34 @@ async function discoverInRoot(scope: SkillScope, root: string): Promise<SkillDoc
   return documents.filter((item): item is SkillDocument => Boolean(item))
 }
 
+async function discoverPluginDocuments(): Promise<SkillDocument[]> {
+  const roots = Plugin.listInstalledPluginSkillRoots()
+  const items = await Promise.all(
+    roots.map(async (root) => {
+      if (!(await Filesystem.isDir(root.root))) return []
+
+      const entries = await readdir(root.root, { withFileTypes: true })
+      const documents = await Promise.all(
+        entries
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => readSkillDocument("plugin", join(root.root, entry.name), {
+            pluginID: root.pluginID,
+          })),
+      )
+
+      return documents.filter((item): item is SkillDocument => Boolean(item))
+    }),
+  )
+
+  return items.flat()
+}
+
 async function discoverDocuments(projectRoot: string): Promise<SkillDocument[]> {
   const roots = skillRoots(projectRoot)
-  const items = await Promise.all(roots.map((item) => discoverInRoot(item.scope, item.root)))
+  const items = await Promise.all([
+    ...roots.map((item) => discoverInRoot(item.scope, item.root)),
+    discoverPluginDocuments(),
+  ])
 
   return items
     .flat()

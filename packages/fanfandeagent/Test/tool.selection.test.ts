@@ -44,6 +44,9 @@ describe("global built-in tool selection", () => {
         expect(toolNames).not.toContain("exec_command")
         expect(toolNames).not.toContain("bash")
         expect(toolNames).not.toContain("exec-command")
+        expect(await ToolRegistry.get("exec_command")).toBeUndefined()
+        expect(await ToolRegistry.get("bash")).toBeUndefined()
+        expect(await ToolRegistry.get("exec-command")).toBeUndefined()
       },
     })
   })

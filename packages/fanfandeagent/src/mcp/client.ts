@@ -62,7 +62,10 @@ function resolveAuthorizationHeader(authorization: string | undefined) {
   return `Bearer ${authorization}`
 }
 
-function buildRemoteHeaders(server: Extract<McpServerSummary, { transport: "remote" }>) {
+function buildRemoteHeaders(server: {
+  authorization?: string
+  headers?: Record<string, string>
+}) {
   const authorization = resolveAuthorizationHeader(server.authorization)
   const headers: Record<string, string> = {
     ...(server.headers ?? {}),
@@ -224,7 +227,7 @@ export class McpClient {
           })),
       }))
 
-      const transport = this.createTransport()
+      const transport = await this.createTransport()
       transport.onerror = (error) => {
         if (this.closed) return
         log.warn("mcp transport error", {
@@ -274,17 +277,29 @@ export class McpClient {
     await this.transport.close().catch(() => undefined)
   }
 
-  private createTransport() {
+  private async createTransport() {
     if (this.options.server.transport === "remote") {
-      if (!this.options.server.serverUrl) {
+      const connectorRuntime = this.options.server.connectorId
+        ? await this.resolveConnectorRuntime(this.options.server.connectorId)
+        : undefined
+      const serverUrl = this.options.server.serverUrl ?? connectorRuntime?.serverUrl
+      if (!serverUrl) {
         throw new Error(
-          `MCP server '${this.options.server.id}' is missing serverUrl. Connector-based remote MCP configs are no longer executable by the local HTTP client.`,
+          `MCP server '${this.options.server.id}' is missing serverUrl and has no resolvable connector runtime.`,
         )
       }
 
-      return new StreamableHTTPClientTransport(new URL(this.options.server.serverUrl), {
+      const remoteServer = {
+        authorization: connectorRuntime?.authorization ?? this.options.server.authorization,
+        headers: {
+          ...(this.options.server.headers ?? {}),
+          ...(connectorRuntime?.headers ?? {}),
+        },
+      }
+
+      return new StreamableHTTPClientTransport(new URL(serverUrl), {
         requestInit: (() => {
-          const headers = buildRemoteHeaders(this.options.server)
+          const headers = buildRemoteHeaders(remoteServer)
           return headers ? { headers } : undefined
         })(),
       })
@@ -299,6 +314,11 @@ export class McpClient {
     })
     this.captureStderr(transport.stderr)
     return transport
+  }
+
+  private async resolveConnectorRuntime(connectorId: string) {
+    const pluginModule = await import("#plugin/plugin.ts")
+    return pluginModule.resolveConnectorRemoteServer(connectorId)
   }
 
   private captureStderr(stream: Stream | null) {

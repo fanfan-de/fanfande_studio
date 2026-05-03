@@ -11,6 +11,12 @@ import type {
   AgentGlobalSkillTree,
   AgentMcpServerDiagnostic,
   AgentMcpServerSummary,
+  AgentInstalledPlugin,
+  AgentPluginCatalogItem,
+  AgentPluginConnectorStatus,
+  AgentPluginDeleteResult,
+  AgentPluginInstallInput,
+  AgentPluginUpdateInput,
   AgentProjectDeleteResult,
   AgentProjectMcpSelection,
   AgentProjectModelSelection,
@@ -37,6 +43,7 @@ import type {
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
   AgentSkillInfo,
+  AgentToolPermissionModePayload,
   AgentWorkspaceFileDocument,
   AgentWorkspaceFileSearchResult,
   AgentWorkspaceSession,
@@ -70,6 +77,12 @@ export type {
   AgentGlobalSkillTree,
   AgentMcpServerDiagnostic,
   AgentMcpServerSummary,
+  AgentInstalledPlugin,
+  AgentPluginCatalogItem,
+  AgentPluginConnectorStatus,
+  AgentPluginDeleteResult,
+  AgentPluginInstallInput,
+  AgentPluginUpdateInput,
   AgentProjectDeleteResult,
   AgentProjectMcpSelection,
   AgentProjectModelSelection,
@@ -96,6 +109,7 @@ export type {
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
   AgentSkillInfo,
+  AgentToolPermissionModePayload,
   AgentWorkspaceFileDocument,
   AgentWorkspaceFileSearchResult,
   AgentWorkspaceSession,
@@ -160,6 +174,12 @@ export type McpServerInput = AgentMcpServerSummary extends infer Server
   : never
 export type ProjectMcpSelection = AgentProjectMcpSelection
 export type ProjectSkillSelection = AgentProjectSkillSelection
+export type PluginCatalogItem = AgentPluginCatalogItem
+export type InstalledPlugin = AgentInstalledPlugin
+export type PluginConnectorStatus = AgentPluginConnectorStatus
+export type PluginInstallInput = AgentPluginInstallInput
+export type PluginUpdateInput = AgentPluginUpdateInput
+export type PluginDeleteResult = AgentPluginDeleteResult
 export type PtyIPCEvent = PtyTransportIPCEvent
 export type PtySessionInfo = AgentPtySessionInfo
 export type SkillInfo = AgentSkillInfo
@@ -177,6 +197,7 @@ export type PromptPresetSummary = AgentPromptPresetSummary
 export type BuiltinToolSummary = AgentBuiltinToolSummary
 export type BuiltinToolSelection = AgentBuiltinToolSelection
 export type BuiltinToolsPayload = AgentBuiltinToolsPayload
+export type ToolPermissionModePayload = AgentToolPermissionModePayload
 
 export interface DesktopInfo {
   platform: string
@@ -566,6 +587,46 @@ export interface DesktopIpcContract {
     input: { serverID: string }
     output: { serverID: string; removed: boolean }
   }
+  "desktop:get-plugin-catalog": {
+    input: void
+    output: AgentPluginCatalogItem[]
+  }
+  "desktop:get-installed-plugins": {
+    input: void
+    output: AgentInstalledPlugin[]
+  }
+  "desktop:install-plugin": {
+    input: AgentPluginInstallInput
+    output: AgentInstalledPlugin
+  }
+  "desktop:update-installed-plugin": {
+    input: AgentPluginUpdateInput
+    output: AgentInstalledPlugin
+  }
+  "desktop:delete-installed-plugin": {
+    input: { pluginID: string }
+    output: AgentPluginDeleteResult
+  }
+  "desktop:get-installed-plugin-diagnostic": {
+    input: { pluginID: string }
+    output: AgentMcpServerDiagnostic
+  }
+  "desktop:get-installed-plugin-connectors": {
+    input: { pluginID: string }
+    output: AgentPluginConnectorStatus[]
+  }
+  "desktop:save-installed-plugin-connector-api-key": {
+    input: { pluginID: string; appID: string; apiKey?: string | null }
+    output: AgentPluginConnectorStatus
+  }
+  "desktop:delete-installed-plugin-connector-api-key": {
+    input: { pluginID: string; appID: string }
+    output: AgentPluginConnectorStatus
+  }
+  "desktop:get-installed-plugin-connector-diagnostic": {
+    input: { pluginID: string; appID: string }
+    output: AgentMcpServerDiagnostic
+  }
   "desktop:get-builtin-tools": {
     input: void
     output: AgentBuiltinToolsPayload
@@ -573,6 +634,14 @@ export interface DesktopIpcContract {
   "desktop:update-builtin-tool-selection": {
     input: AgentBuiltinToolSelection
     output: AgentBuiltinToolSelection
+  }
+  "desktop:get-tool-permission-mode": {
+    input: void
+    output: AgentToolPermissionModePayload
+  }
+  "desktop:update-tool-permission-mode": {
+    input: AgentToolPermissionModePayload
+    output: AgentToolPermissionModePayload
   }
   "desktop:get-global-skills": {
     input: void
@@ -852,8 +921,20 @@ export interface DesktopApiMethods {
   getGlobalMcpServerDiagnostic(input: DesktopIpcInput<"desktop:get-global-mcp-server-diagnostic">): Promise<DesktopIpcOutput<"desktop:get-global-mcp-server-diagnostic">>
   updateGlobalMcpServer(input: DesktopIpcInput<"desktop:update-global-mcp-server">): Promise<DesktopIpcOutput<"desktop:update-global-mcp-server">>
   deleteGlobalMcpServer(input: DesktopIpcInput<"desktop:delete-global-mcp-server">): Promise<DesktopIpcOutput<"desktop:delete-global-mcp-server">>
+  getPluginCatalog(): Promise<DesktopIpcOutput<"desktop:get-plugin-catalog">>
+  getInstalledPlugins(): Promise<DesktopIpcOutput<"desktop:get-installed-plugins">>
+  installPlugin(input: DesktopIpcInput<"desktop:install-plugin">): Promise<DesktopIpcOutput<"desktop:install-plugin">>
+  updateInstalledPlugin(input: DesktopIpcInput<"desktop:update-installed-plugin">): Promise<DesktopIpcOutput<"desktop:update-installed-plugin">>
+  deleteInstalledPlugin(input: DesktopIpcInput<"desktop:delete-installed-plugin">): Promise<DesktopIpcOutput<"desktop:delete-installed-plugin">>
+  getInstalledPluginDiagnostic(input: DesktopIpcInput<"desktop:get-installed-plugin-diagnostic">): Promise<DesktopIpcOutput<"desktop:get-installed-plugin-diagnostic">>
+  getInstalledPluginConnectors(input: DesktopIpcInput<"desktop:get-installed-plugin-connectors">): Promise<DesktopIpcOutput<"desktop:get-installed-plugin-connectors">>
+  saveInstalledPluginConnectorApiKey(input: DesktopIpcInput<"desktop:save-installed-plugin-connector-api-key">): Promise<DesktopIpcOutput<"desktop:save-installed-plugin-connector-api-key">>
+  deleteInstalledPluginConnectorApiKey(input: DesktopIpcInput<"desktop:delete-installed-plugin-connector-api-key">): Promise<DesktopIpcOutput<"desktop:delete-installed-plugin-connector-api-key">>
+  getInstalledPluginConnectorDiagnostic(input: DesktopIpcInput<"desktop:get-installed-plugin-connector-diagnostic">): Promise<DesktopIpcOutput<"desktop:get-installed-plugin-connector-diagnostic">>
   getBuiltinTools(): Promise<DesktopIpcOutput<"desktop:get-builtin-tools">>
   updateBuiltinToolSelection(input: DesktopIpcInput<"desktop:update-builtin-tool-selection">): Promise<DesktopIpcOutput<"desktop:update-builtin-tool-selection">>
+  getToolPermissionMode(): Promise<DesktopIpcOutput<"desktop:get-tool-permission-mode">>
+  updateToolPermissionMode(input: DesktopIpcInput<"desktop:update-tool-permission-mode">): Promise<DesktopIpcOutput<"desktop:update-tool-permission-mode">>
   getGlobalSkills(): Promise<DesktopIpcOutput<"desktop:get-global-skills">>
   getPromptPresets(): Promise<DesktopIpcOutput<"desktop:get-prompt-presets">>
   getPromptPresetSelection(): Promise<DesktopIpcOutput<"desktop:get-prompt-preset-selection">>

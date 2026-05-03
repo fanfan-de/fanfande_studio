@@ -144,8 +144,8 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
         intent,
       })
 
-      // Cache the decision only when the call has a stable toolCallID.
-      if (toolCallID) {
+      // Cache final decisions only. Approval-required calls can later become approved or denied.
+      if (toolCallID && decision.action !== "ask") {
         decisionCache.set(toolCallID, decision)
       }
       return decision

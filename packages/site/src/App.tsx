@@ -5,6 +5,10 @@ import {
   surfaceItems,
   workflowSteps,
 } from "./content"
+import { GitActivitySection } from "./GitActivity"
+
+const brandLogoBlack = "/brand-logo-black.svg"
+const brandLogoWhite = "/brand-logo-white.svg"
 
 function NavigationLink({
   href,
@@ -29,21 +33,21 @@ function NavigationLink({
 
 function BrandLockup() {
   return (
-    <a className="brand-lockup" href="#top" aria-label="Fanfande Studio 首页">
-      <img src="/brand-mark.svg" alt="" />
-      <span>Fanfande Studio</span>
+    <a className="brand-lockup" href="#top" aria-label="Anybox 首页">
+      <img src={brandLogoBlack} alt="" />
+      <span>Anybox</span>
     </a>
   )
 }
 
 function ProductPreview() {
   return (
-    <figure className="product-preview" aria-label="Fanfande Studio 产品界面预览">
+    <figure className="product-preview" aria-label="Anybox 产品界面预览">
       <div className="preview-toolbar">
-        <span>workspace/fanfande_studio</span>
+        <span>workspace/anybox</span>
         <span>Agent connected</span>
       </div>
-      <img src="/product-preview.png" alt="Fanfande Studio 桌面工作台界面" />
+      <img src="/product-preview.png" alt="Anybox 桌面工作台界面" />
     </figure>
   )
 }
@@ -144,9 +148,12 @@ export function App() {
 
       <section className="hero-section">
         <div className="hero-copy">
-          <h1>Fanfande Studio</h1>
+          <div className="hero-brand">
+            <img className="hero-mark" src={brandLogoBlack} alt="" />
+            <h1>Anybox</h1>
+          </div>
           <p>
-            面向本地项目工作的 AI Agent 桌面工作台。把项目目录、会话、终端、权限确认和工具调用放进同一个产品界面里。
+            开源通用 Agent
           </p>
           <div className="hero-actions">
             <a className="button button-primary" href="#workflow">
@@ -157,13 +164,16 @@ export function App() {
             </a>
           </div>
         </div>
-        <ProductPreview />
+        <div className="hero-visual-grid">
+          <GitActivitySection />
+          <ProductPreview />
+        </div>
         <ProofList />
       </section>
 
       <section className="intro-section" id="capabilities">
         <p className="section-kicker">The best way to work with local agents</p>
-        <h2>不是再叠一个聊天窗口，而是重做开发者和 Agent 协作的桌面节奏。</h2>
+        <h2>不是再叠一个聊天窗口，而是把开发者和 Agent 协作收进稳定的桌面节奏。</h2>
       </section>
 
       <section className="feature-section" aria-label="核心能力">
@@ -187,9 +197,9 @@ export function App() {
       <section className="surfaces-section" id="surfaces">
         <div className="surfaces-copy">
           <p className="section-kicker">Connected surfaces</p>
-          <h2>把桌面壳、Agent 运行时和工具系统接成一个可持续工作的产品。</h2>
+          <h2>把桌面壳、Agent 运行时和工具系统接成 Anybox 的持续工作面。</h2>
           <p>
-            官网先讲清楚产品方向：本地优先、过程可见、执行闭环。后续可以在这里接入下载、内测表单、演示预约或版本更新。
+            Anybox 的产品方向很清晰：本地优先、过程可见、执行闭环。后续可以在这里接入下载、内测表单、演示预约或版本更新。
           </p>
         </div>
         <div className="surface-list">
@@ -200,9 +210,13 @@ export function App() {
       </section>
 
       <section className="launch-section" id="download">
-        <h2>先把本地 AI 工作台用起来。</h2>
+        <div className="launch-brand" aria-hidden="true">
+          <img src={brandLogoWhite} alt="" />
+          <span>Anybox</span>
+        </div>
+        <h2>先把 Anybox 用起来。</h2>
         <p>
-          下一步可以把这里替换成真实下载地址、内测申请表或演示预约入口。当前页面已经适合继续打磨成公开产品官网。
+          下一步可以为 Anybox 接入真实下载地址、内测申请表或演示预约入口。当前页面已经适合继续打磨成公开产品官网。
         </p>
         <a className="button button-primary" href="#top">
           回到顶部
@@ -210,7 +224,7 @@ export function App() {
       </section>
 
       <footer className="site-footer">
-        <span>© {year} Fanfande Studio</span>
+        <span>© {year} Anybox</span>
         <a href="#top">Back to top</a>
       </footer>
     </main>

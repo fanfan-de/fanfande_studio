@@ -8,7 +8,7 @@ import {
 } from "../components"
 import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
-import type { AssistantTraceVisibility, ComposerDraftState } from "../types"
+import type { AssistantTraceVisibility, ComposerDraftState, ToolPermissionMode } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { useProjectComposer } from "../use-project-composer"
 import { isSideChatSession } from "../workspace"
@@ -125,12 +125,15 @@ export interface WorkbenchPaneSurfaceProps {
   dropTargetPosition: PaneDropPosition | null
   isResolvingPermissionRequest: boolean
   isAgentDebugTraceEnabled: boolean
+  isSavingToolPermissionMode: boolean
   isTopRow: boolean
   leadingAccessory: ReactNode
   pane: WorkbenchPaneState
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
   style?: CSSProperties
+  toolPermissionMode: ToolPermissionMode
+  toolPermissionModeError: string | null
   trailingAccessory: ReactNode
   workspaces: AgentWorkspaceState["workspaces"]
   onCloseCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
@@ -149,6 +152,7 @@ export interface WorkbenchPaneSurfaceProps {
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
   onAskUserQuestionAnswer: AgentWorkspaceState["handleAskUserQuestionAnswer"]
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
+  onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
@@ -167,12 +171,15 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   dropTargetPosition,
   isResolvingPermissionRequest,
   isAgentDebugTraceEnabled,
+  isSavingToolPermissionMode,
   isTopRow,
   leadingAccessory,
   pane,
   permissionRequestActionError,
   permissionRequestActionRequestID,
   style,
+  toolPermissionMode,
+  toolPermissionModeError,
   trailingAccessory,
   workspaces,
   onCloseCreateSessionTab,
@@ -191,6 +198,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onPaneTabDrop,
   onAskUserQuestionAnswer,
   onPermissionRequestResponse,
+  onToolPermissionModeChange,
   onPickComposerAttachments,
   onRegisterPane,
   onRemoveComposerAttachment,
@@ -250,11 +258,15 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
             activeSession={pane.activeSession}
             gitProjectID={pane.projectID}
             gitDirectory={pane.workspace?.directory ?? null}
+            isSavingToolPermissionMode={isSavingToolPermissionMode}
             mcpOptions={composer.mcpOptions}
             pendingPermissionRequests={pane.pendingPermissionRequests}
             selectedMcpServerIDs={composer.selectedMcpServerIDs}
             selectedMcpServerLabel={composer.selectedMcpLabel}
             onMcpServerToggle={composer.handleMcpToggle}
+            toolPermissionMode={toolPermissionMode}
+            toolPermissionModeError={toolPermissionModeError}
+            onToolPermissionModeChange={onToolPermissionModeChange}
             skillOptions={composer.skillOptions}
             selectedSkillIDs={composer.selectedSkillIDs}
             selectedSkillLabel={composer.selectedSkillLabel}

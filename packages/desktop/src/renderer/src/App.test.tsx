@@ -575,6 +575,12 @@ describe("App", () => {
         baseURL: "http://127.0.0.1:4096",
         defaultDirectory: "C:\\Projects\\fanfande_studio",
       }),
+      getToolPermissionMode: vi.fn().mockResolvedValue({
+        mode: "default",
+      }),
+      updateToolPermissionMode: vi.fn().mockResolvedValue({
+        mode: "full_access",
+      }),
       getAgentHealth: vi.fn().mockResolvedValue({
         ok: false,
         baseURL: "http://127.0.0.1:4096",
@@ -1028,6 +1034,28 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /^Select model:/ })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /^Agent mode:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
+  })
+
+  it("reverts the global tool permission mode and shows the save error when saving fails", async () => {
+    window.desktop!.updateToolPermissionMode = vi.fn().mockRejectedValue(new Error("Could not save mode"))
+
+    render(<App />)
+
+    const trigger = await screen.findByRole("button", { name: "工具权限：默认权限" })
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole("button", { name: /完全访问权限/ }))
+
+    await waitFor(() => {
+      expect(window.desktop!.updateToolPermissionMode).toHaveBeenCalledWith({
+        mode: "full_access",
+      })
+    })
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "工具权限：默认权限" })).toHaveAttribute(
+        "title",
+        expect.stringContaining("Could not save mode"),
+      )
+    })
   })
 
   it("switches Chat and Cowork placeholders without rendering code workspace surfaces", async () => {
@@ -5944,7 +5972,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Close settings" })).toBeInTheDocument()
     expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
-    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(8)
+    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(7)
     expect(screen.getByText("\u9009\u9879")).toBeInTheDocument()
     const providerNavButton = screen.getByRole("button", { name: "Provider" })
     expect(providerNavButton).toBeInTheDocument()
@@ -5953,6 +5981,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Archived Sessions" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Appearance" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Developer Mode" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "MCP" })).not.toBeInTheDocument()
     expect(screen.queryByText("Choose a provider on the left, then edit the shared credentials and endpoint used across the app.")).not.toBeInTheDocument()
     expect(screen.queryByText("Providers discovered from the catalog, environment, and saved config.")).not.toBeInTheDocument()
     expect(screen.queryByText("Search providers")).not.toBeInTheDocument()
@@ -6304,7 +6333,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
   })
 
-  it("edits global MCP servers from settings and runs global diagnostics", async () => {
+  it("edits global MCP servers from the activity rail and runs global diagnostics", async () => {
     window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([])
     window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
       items: [],
@@ -6338,10 +6367,11 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
-    fireEvent.click(await screen.findByRole("button", { name: /^MCP/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Open MCP" }))
 
+    expect(screen.getByLabelText("MCP top menu")).toBeInTheDocument()
     expect(await screen.findByText("Configure reusable local and remote MCP servers once, then enable them per project from the session canvas top menu.")).toBeInTheDocument()
+    expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument()
     expect(screen.queryByText("Pick a project first")).not.toBeInTheDocument()
     expect(screen.queryByText("Diagnostic context")).not.toBeInTheDocument()
     expect(screen.getByText("Global server definitions are shared across projects. Set a working directory on stdio servers when the server expects one.")).toBeInTheDocument()
@@ -9583,8 +9613,8 @@ describe("App", () => {
     expect(srcFolderLeading).toHaveAttribute("data-icon", "folder")
   })
 
-  it("keeps session rows aligned with folder labels and gives them the same hover treatment", () => {
-    expect(styles).toMatch(/\.session-tree\s*\{[^}]*padding-left:\s*calc\(8px \+ 24px \+ 7px\);/s)
+  it("keeps session rows aligned with folder rows and gives them the same hover treatment", () => {
+    expect(styles).toMatch(/\.session-tree\s*\{[^}]*padding-left:\s*0;/s)
     expect(styles).toMatch(/\.project-row\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(/\.session-row\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(

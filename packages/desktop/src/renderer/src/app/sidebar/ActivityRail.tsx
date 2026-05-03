@@ -1,4 +1,4 @@
-import { FileTextIcon, LayoutSidebarLeftIcon, SideChatIcon } from "../icons"
+import { FileTextIcon, FolderIcon, LayoutSidebarLeftIcon, PluginIcon, SideChatIcon } from "../icons"
 import { SidebarToggleButton, type SidebarSide } from "../shared-ui"
 import type { LeftSidebarView } from "../types"
 
@@ -15,6 +15,8 @@ const leftRailViews = [
   { view: "workspace" as const, label: "Open workspace", Icon: LayoutSidebarLeftIcon },
   { view: "skills" as const, label: "Open skills", Icon: FileTextIcon },
   { view: "prompts" as const, label: "Open prompts", Icon: SideChatIcon },
+  { view: "mcp" as const, label: "Open MCP", Icon: FolderIcon },
+  { view: "plugins" as const, label: "Open plugins", Icon: PluginIcon },
 ]
 
 export function ActivityRail({

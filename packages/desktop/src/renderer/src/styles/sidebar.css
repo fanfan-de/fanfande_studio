@@ -623,7 +623,7 @@
 .session-tree {
   display: grid;
   gap: 4px;
-  padding-left: calc(8px + 24px + 7px);
+  padding-left: 0;
 }
 
 .sidebar-path-copy small {

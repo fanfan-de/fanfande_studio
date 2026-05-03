@@ -1,6 +1,7 @@
 export const navigationItems = [
   { href: "#top", label: "简介" },
   { href: "#capabilities", label: "功能" },
+  { href: "#updates", label: "更新" },
   { href: "#workflow", label: "学习" },
   { href: "#download", label: "下载" },
   {
@@ -19,7 +20,7 @@ export const proofPoints = [
 export const featureStories = [
   {
     title: "为真实工程任务准备的本地工作台",
-    body: "Fanfande Studio 从项目目录开始组织上下文，把文件、会话、终端和模型配置放在同一条工作流里。你不需要反复解释项目结构，也不需要在多个窗口之间搬运信息。",
+    body: "Anybox 从项目目录开始组织上下文，把文件、会话、终端和模型配置放在同一条工作流里。你不需要反复解释项目结构，也不需要在多个窗口之间搬运信息。",
     mediaTitle: "Workspace context",
     mediaItems: ["项目目录", "会话历史", "模型配置", "文件反馈"],
   },

@@ -123,13 +123,13 @@ describe("prompt loop unresolved tool guard", () => {
           messageID: assistant.id,
           type: "tool",
           callID: "call-stuck",
-          tool: "bash",
+          tool: "removed_shell_tool",
           state: {
             status: "running",
             input: {
               command: "pwd",
             },
-            title: "Bash",
+            title: "Removed Shell Tool",
             time: {
               start: Date.now() + 2,
             },

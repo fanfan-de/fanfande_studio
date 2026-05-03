@@ -8,6 +8,12 @@ import { DevModel, DevProvider } from "#provider/modelsdev.ts"
 const log = Log.create({ service: "config" })
 export const GLOBAL_CONFIG_ID = "__global__"
 
+export const PermissionMode = z.enum(["default", "full_access"]).meta({
+  ref: "PermissionMode",
+})
+export type PermissionMode = z.infer<typeof PermissionMode>
+export const DEFAULT_PERMISSION_MODE: PermissionMode = "default"
+
 export const Provider = DevProvider.partial()
   .extend({
     whitelist: z.array(z.string()).optional(),
@@ -361,6 +367,7 @@ export const Info = z
       .optional(),
     instructions: z.array(z.string()).optional().describe("Additional instruction files or patterns to include"),
     tools: z.record(z.string(), z.boolean()).optional(),
+    permission_mode: PermissionMode.optional().describe("Global tool permission mode"),
     mcp: McpConfigField,
     selected_mcp_servers: SelectedMcpServersField,
     selected_skills: SelectedSkillsField,
@@ -775,6 +782,27 @@ export async function setToolSelection(configID: string, tools: Record<string, b
   const config = writeConfig(normalizedConfigID, Info.parse(next))
   return {
     tools: config.tools ? normalizeToolSelection(config.tools) : {},
+  }
+}
+
+export async function getPermissionMode(configID = GLOBAL_CONFIG_ID): Promise<{ mode: PermissionMode }> {
+  const config = readConfig(normalizeConfigID(configID))
+  return {
+    mode: config.permission_mode ?? DEFAULT_PERMISSION_MODE,
+  }
+}
+
+export async function setPermissionMode(configID: string, mode: PermissionMode) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const next: Info = {
+    ...current,
+    permission_mode: PermissionMode.parse(mode),
+  }
+
+  const config = writeConfig(normalizedConfigID, Info.parse(next))
+  return {
+    mode: config.permission_mode ?? DEFAULT_PERMISSION_MODE,
   }
 }
 

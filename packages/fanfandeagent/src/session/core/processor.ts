@@ -981,12 +981,11 @@ export function create(input: {
                 Object.keys(toolcalls)
                     .map((toolCallID) => flushPendingToolInput(toolCallID) ?? toolcalls[toolCallID])
                     .filter(
-                        (part): part is Message.ToolPart =>
-                            Boolean(part) &&
-                            (
-                                part.state.status === "pending" ||
-                                part.state.status === "running"
-                            ),
+                        (part): part is Message.ToolPart => {
+                            if (!part) return false
+
+                            return part.state.status === "pending" || part.state.status === "running"
+                        },
                     )
 
             const describeOpenToolCallFailure = (
