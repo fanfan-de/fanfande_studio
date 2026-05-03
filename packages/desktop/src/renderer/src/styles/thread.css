@@ -1170,6 +1170,10 @@
   min-width: 0;
 }
 
+.ask-user-question-freeform-row.is-standalone {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .ask-user-question-option-number {
   color: var(--seg-text-3);
   font-size: 16px;
@@ -1245,20 +1249,20 @@
 .ask-user-question-freeform-input {
   width: 100%;
   min-width: 0;
-  min-height: 26px;
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid transparent;
-  background: transparent;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: var(--surface-elevated);
   color: var(--seg-text-1);
   font: inherit;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
 .ask-user-question-freeform-input:focus-visible {
-  border-bottom-color: var(--seg-accent);
-  box-shadow: none;
+  border-color: var(--seg-accent);
+  box-shadow: 0 0 0 2px var(--mix-seg-accent-soft-84-seg-panel-16);
 }
 
 .ask-user-question-actions {

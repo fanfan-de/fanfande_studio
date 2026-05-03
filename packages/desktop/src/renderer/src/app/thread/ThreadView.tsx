@@ -308,12 +308,13 @@ function filterRenderedAssistantTraceItems(
   })
 }
 
-function hasResponseTraceItems(items: AssistantTraceItem[]) {
-  return items.some((item) => traceSectionKeyForItem(item) === "response")
+function hasAssistantResponseContent(items: AssistantTraceItem[]) {
+  return items.some((item) => traceSectionKeyForItem(item) === "response" && item.kind === "text" && Boolean(item.text?.trim()))
 }
 
 function buildAssistantResponseCopyText(items: AssistantTraceItem[]) {
   return items
+    .filter((item) => item.kind === "text")
     .map((item) => {
       const segments = [item.title, item.text, item.detail]
         .map((value) => value?.trim())
@@ -943,7 +944,10 @@ function TraceItemView({
           {canUseMultipleSelection || (prompt.allowFreeform && canSubmitAnswer) ? (
             <form className="ask-user-question-response-form" onSubmit={handleStructuredAnswerSubmit}>
               {prompt.allowFreeform ? (
-                <label className="ask-user-question-freeform-row">
+                <label className={joinClassNames(
+                  "ask-user-question-freeform-row",
+                  prompt.options.length === 0 && "is-standalone",
+                )}>
                   {prompt.options.length > 0 ? (
                     <span className="ask-user-question-option-number" aria-hidden="true">{prompt.options.length + 1}.</span>
                   ) : null}
@@ -1550,7 +1554,7 @@ export function ThreadView({
               if (renderedItems.length === 0 && !ephemeralHint) return null
               const sideChatAnchorMessageID = turn.messageID ?? turn.id
               const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
-              const canOpenSideChat = !readOnlySideChat && !turn.isStreaming && hasResponseTraceItems(traceItems) && Boolean(onOpenSideChat)
+              const canOpenSideChat = !readOnlySideChat && !turn.isStreaming && hasAssistantResponseContent(traceItems) && Boolean(onOpenSideChat)
               const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
 
               return (

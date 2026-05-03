@@ -160,6 +160,33 @@ describe("ThreadView question prompts", () => {
       text: "vercel",
     })
   })
+
+  it("uses the full response width for freeform-only questions", () => {
+    const questionItem: AssistantTraceItem = {
+      id: "question-freeform",
+      kind: "question",
+      timestamp: 1,
+      label: "Question",
+      status: "completed",
+      section: "response",
+      visibilityKey: "response",
+      questionPrompt: {
+        questionID: "que_skill_type",
+        question: "What kind of skill do you want to create?",
+        options: [],
+        allowFreeform: true,
+        multiple: false,
+        required: true,
+      },
+    }
+    const { getByLabelText, queryByRole } = renderThread(
+      [assistantTraceTurn("assistant-1", [questionItem], false)],
+      { onAskUserQuestionAnswer: vi.fn().mockResolvedValue(undefined) },
+    )
+
+    expect(getByLabelText("Custom answer").closest(".ask-user-question-freeform-row")).toHaveClass("is-standalone")
+    expect(queryByRole("button", { name: "Copy assistant response" })).not.toBeInTheDocument()
+  })
 })
 
 describe("ThreadView trace collapse", () => {

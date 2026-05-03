@@ -1,4 +1,0 @@
-WithParts{
-	info
-	parts:[]
-}
