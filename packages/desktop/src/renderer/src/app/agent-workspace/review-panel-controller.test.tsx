@@ -34,7 +34,6 @@ function applyUpdate<T>(setValue: (value: T) => void, current: T, update: T | ((
 
 describe("review panel controller", () => {
   it("inserts committed preview comments into the active composer draft", () => {
-    const appendedDrafts: Array<{ tabKey: string; value: string }> = []
     const workspace = createWorkspace()
     const previewState: WorkspacePreviewState = {
       draftUrl: "http://localhost:5173",
@@ -61,24 +60,23 @@ describe("review panel controller", () => {
       const [workspaceFileCommentsByTarget, setWorkspaceFileCommentsByTargetState] = useState<Record<string, WorkspaceFileComment[]>>({})
       const [workspaceFileReviewState, setWorkspaceFileReviewStateState] =
         useState<WorkspaceFileReviewState>(DEFAULT_WORKSPACE_FILE_REVIEW_STATE)
-      const [, setComposerDraftStateByTabKeyState] = useState<Record<string, ComposerDraftState>>({})
+      const [composerDraftStateByTabKey, setComposerDraftStateByTabKeyState] = useState<Record<string, ComposerDraftState>>({})
       const [, setRightSidebarViewState] = useState<RightSidebarView>("changes")
       const [, setSelectedDiffFileBySessionState] = useState<Record<string, string | null>>({})
       const workspaceFileReadRequestRef = useRef(0)
       const workspaceFileSearchRequestRef = useRef(0)
 
-      return useReviewPanelController({
+      const controller = useReviewPanelController({
         activeSessionDirectory: workspace.directory,
         activeSessionID: "session-1",
         activeTabKey: "session:session-1",
         activeWorkspaceFileScopeDirectory: workspace.directory,
-        appendDraftForTab: (tabKey, value) => appendedDrafts.push({ tabKey, value }),
         loadSessionDiffForSession: vi.fn(async () => undefined),
         loadSessionRuntimeDebugForSession: vi.fn(async () => undefined),
         platform: "win32",
         previewByWorkspaceID,
         selectedWorkspace: workspace,
-        setComposerDraftStateByTabKey: (update) => applyUpdate(setComposerDraftStateByTabKeyState, {}, update),
+        setComposerDraftStateByTabKey: setComposerDraftStateByTabKeyState,
         setPreviewByWorkspaceID: (update) => applyUpdate(setPreviewByWorkspaceIDState, previewByWorkspaceID, update),
         setRightSidebarView: (update) => applyUpdate(setRightSidebarViewState, "changes", update),
         setSelectedDiffFileBySession: (update) => applyUpdate(setSelectedDiffFileBySessionState, {}, update),
@@ -90,15 +88,16 @@ describe("review panel controller", () => {
         workspaceFileReviewState,
         workspaceFileSearchRequestRef,
       })
+
+      return { composerDraftStateByTabKey, controller }
     })
 
     act(() => {
-      result.current.handlePreviewInsertCommentsIntoDraft()
+      result.current.controller.handlePreviewInsertCommentsIntoDraft()
     })
 
-    expect(appendedDrafts).toHaveLength(1)
-    expect(appendedDrafts[0]?.tabKey).toBe("session:session-1")
-    expect(appendedDrafts[0]?.value).toContain("Button is misaligned")
-    expect(appendedDrafts[0]?.value).toContain("http://localhost:5173")
+    const draftState = result.current.composerDraftStateByTabKey["session:session-1"]
+    expect(draftState?.plainText).toContain("@preview:localhost:5173#1")
+    expect(draftState?.plainText).not.toContain("Button is misaligned")
   })
 })

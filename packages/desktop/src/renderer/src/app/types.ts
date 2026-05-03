@@ -308,13 +308,26 @@ export interface SessionDiffState {
 export interface PreviewComment {
   id: string
   url: string
+  pageUrl?: string
   x: number
   y: number
   text: string
   createdAt: number
+  frame?: string
+  nodePosition?: string
+  screenshotPath?: string | null
   anchor?: {
     type: "coordinate" | "element"
     label?: string
+    path?: string
+    rect?: {
+      bottom?: number
+      height: number
+      left: number
+      right?: number
+      top: number
+      width: number
+    }
     selector?: string
     tagName?: string
     text?: string
@@ -970,7 +983,8 @@ export interface ComposerAttachment {
   name: string
 }
 
-export interface ComposerCommentReference {
+export interface ComposerFileCommentReference {
+  source: "file"
   id: string
   filePath: string
   startLineNumber: number
@@ -979,6 +993,20 @@ export interface ComposerCommentReference {
   title: string
   prompt: string
 }
+
+export interface ComposerPreviewCommentReference {
+  source: "preview"
+  id: string
+  label: string
+  title: string
+  prompt: string
+  comment: PreviewComment
+  pageUrl: string
+}
+
+export type ComposerCommentReference =
+  | ComposerFileCommentReference
+  | ComposerPreviewCommentReference
 
 export interface ComposerDraftState {
   lexicalJSON: string
@@ -992,8 +1020,9 @@ export interface ComposerFileTagData {
   filePath: string
 }
 
-export interface ComposerCommentTagData {
+export interface ComposerFileCommentTagData {
   kind: "comment"
+  source: "file"
   id: string
   label: string
   filePath: string
@@ -1002,6 +1031,21 @@ export interface ComposerCommentTagData {
   title: string
   prompt: string
 }
+
+export interface ComposerPreviewCommentTagData {
+  kind: "comment"
+  source: "preview"
+  id: string
+  label: string
+  title: string
+  prompt: string
+  comment: PreviewComment
+  pageUrl: string
+}
+
+export type ComposerCommentTagData =
+  | ComposerFileCommentTagData
+  | ComposerPreviewCommentTagData
 
 export interface ComposerSkillTagData {
   kind: "skill"
@@ -1092,6 +1136,12 @@ export type McpAllowedTools =
       toolNames?: string[]
     }
 
+export type McpToolPolicyValue = "disabled" | "ask" | "auto"
+
+export type McpToolPolicies = Record<string, {
+  policy: McpToolPolicyValue
+}>
+
 export type McpRequireApproval =
   | "always"
   | "never"
@@ -1109,6 +1159,7 @@ export interface StdioMcpServerSummary {
   args?: string[]
   env?: Record<string, string>
   cwd?: string
+  toolPolicies?: McpToolPolicies
   enabled: boolean
   timeoutMs?: number
 }
@@ -1124,6 +1175,7 @@ export interface RemoteMcpServerSummary {
   headers?: Record<string, string>
   serverDescription?: string
   allowedTools?: McpAllowedTools
+  toolPolicies?: McpToolPolicies
   requireApproval?: McpRequireApproval
   enabled: boolean
   timeoutMs?: number
@@ -1131,12 +1183,31 @@ export interface RemoteMcpServerSummary {
 
 export type McpServerSummary = StdioMcpServerSummary | RemoteMcpServerSummary
 
+export interface McpToolDiagnostic {
+  name: string
+  title?: string
+  displayName: string
+  description?: string
+  inputSchema?: unknown
+  annotations?: {
+    title?: string
+    readOnlyHint?: boolean
+    destructiveHint?: boolean
+    idempotentHint?: boolean
+    openWorldHint?: boolean
+  }
+  riskHint: "read-only" | "destructive" | "open-world" | "unknown"
+  recommendedPolicy: McpToolPolicyValue
+  configuredPolicy?: McpToolPolicyValue
+}
+
 export interface McpServerDiagnostic {
   serverID: string
   enabled: boolean
   ok: boolean
   toolCount: number
   toolNames: string[]
+  tools: McpToolDiagnostic[]
   error?: string
 }
 
@@ -1168,6 +1239,7 @@ export interface PluginStdioRuntime {
   args?: string[]
   env?: Record<string, string>
   cwd?: string
+  toolPolicies?: McpToolPolicies
   timeoutMs?: number
 }
 
@@ -1180,6 +1252,7 @@ export interface PluginRemoteRuntime {
   headers?: Record<string, string>
   serverDescription?: string
   allowedTools?: McpAllowedTools
+  toolPolicies?: McpToolPolicies
   requireApproval?: McpRequireApproval
   timeoutMs?: number
 }
@@ -1283,6 +1356,7 @@ export interface McpServerDraftState {
   headers: string
   allowedToolsMode: "all" | "names" | "read-only" | "read-only-names"
   allowedToolNames: string
+  toolPolicies: Record<string, McpToolPolicyValue>
   enabled: boolean
   timeoutMs: string
 }

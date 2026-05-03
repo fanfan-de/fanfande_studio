@@ -374,12 +374,28 @@ describe("mcp integration", () => {
         fn: async () => {
           const diagnostic = await Mcp.diagnose("mock")
 
-          expect(diagnostic).toEqual({
+          expect(diagnostic).toMatchObject({
             serverID: "mock",
             enabled: true,
             ok: true,
             toolCount: 1,
             toolNames: ["echo"],
+          })
+          expect(diagnostic.tools).toEqual([
+            expect.objectContaining({
+              name: "echo",
+              title: "Echo",
+              displayName: "Mock/Echo",
+              description: "Echo back the provided value",
+              annotations: {
+                readOnlyHint: true,
+              },
+              riskHint: "read-only",
+              recommendedPolicy: "auto",
+            }),
+          ])
+          expect(diagnostic.tools[0]?.inputSchema).toMatchObject({
+            type: "object",
           })
         },
       })
@@ -408,13 +424,22 @@ describe("mcp integration", () => {
         enabled: true,
       })
 
-      expect(diagnostic).toEqual({
+      expect(diagnostic).toMatchObject({
         serverID: "mock-global",
         enabled: true,
         ok: true,
         toolCount: 1,
         toolNames: ["echo"],
       })
+      expect(diagnostic.tools).toEqual([
+        expect.objectContaining({
+          name: "echo",
+          title: "Echo",
+          displayName: "Mock Global/Echo",
+          riskHint: "read-only",
+          recommendedPolicy: "auto",
+        }),
+      ])
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -451,6 +476,116 @@ describe("mcp integration", () => {
 
           expect(tools.find((item) => item.id === "mcp__remote__echo")).toBeDefined()
           expect(tools.find((item) => item.id === "mcp__remote__write")).toBeUndefined()
+        },
+      })
+    } finally {
+      await Instance.disposeAll()
+      await remote.close()
+      if (projectID) {
+        db.deleteMany("project_configs", [{ column: "projectID", value: projectID }])
+        db.deleteMany("projects", [{ column: "id", value: projectID }])
+      }
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("Mcp manager should filter disabled stdio tools with tool policies", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fanfande-mcp-stdio-policy-"))
+    let projectID: string | undefined
+
+    try {
+      await createGitRepo(root, "mcp-stdio-policy")
+      const script = await writeMockMcpServer(root)
+      const { project } = await Project.fromDirectory(root)
+      projectID = project.id
+
+      await Config.setMcpServer(project.id, "mock", {
+        name: "Mock",
+        command: process.execPath,
+        args: [script],
+        toolPolicies: {
+          echo: {
+            policy: "disabled",
+          },
+        },
+        enabled: true,
+      })
+
+      await Instance.provide({
+        directory: root,
+        fn: async () => {
+          const diagnostic = await Mcp.diagnose("mock")
+          expect(diagnostic.toolNames).toEqual([])
+          expect(diagnostic.tools.map((tool) => tool.name)).toEqual(["echo"])
+          expect(diagnostic.tools[0]?.configuredPolicy).toBe("disabled")
+
+          const tools = await Mcp.tools()
+          expect(tools.find((item) => item.id === "mcp__mock__echo")).toBeUndefined()
+        },
+      })
+    } finally {
+      await Instance.disposeAll()
+      if (projectID) {
+        db.deleteMany("project_configs", [{ column: "projectID", value: projectID }])
+        db.deleteMany("projects", [{ column: "id", value: projectID }])
+      }
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("Mcp manager should use tool policies for MCP permission intents", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fanfande-mcp-policy-permission-"))
+    const remote = await startMockHttpMcpServer()
+    let projectID: string | undefined
+
+    try {
+      await createGitRepo(root, "mcp-policy-permission")
+      const { project } = await Project.fromDirectory(root)
+      projectID = project.id
+
+      await Config.setMcpServer(project.id, "remote", {
+        name: "Remote",
+        transport: "remote",
+        serverUrl: remote.url,
+        toolPolicies: {
+          echo: {
+            policy: "ask",
+          },
+          write: {
+            policy: "auto",
+          },
+        },
+        enabled: true,
+      })
+
+      await Instance.provide({
+        directory: root,
+        fn: async () => {
+          const tools = await Mcp.tools()
+          const echo = tools.find((item) => item.id === "mcp__remote__echo")
+          const write = tools.find((item) => item.id === "mcp__remote__write")
+
+          expect(echo).toBeDefined()
+          expect(write).toBeDefined()
+
+          const context = {
+            sessionID: "session_test",
+            messageID: "message_test",
+          }
+          const echoRuntime = await echo!.init()
+          const writeRuntime = await write!.init()
+
+          expect(echoRuntime.assessPermission).toBeDefined()
+          expect(writeRuntime.assessPermission).toBeDefined()
+          await expect(echoRuntime.assessPermission!({ value: "hello" }, context)).resolves.toMatchObject({
+            action: "ask",
+            forceAsk: true,
+            risk: "low",
+          })
+          await expect(writeRuntime.assessPermission!({ value: "hello" }, context)).resolves.toMatchObject({
+            action: "allow",
+            risk: "medium",
+          })
         },
       })
     } finally {

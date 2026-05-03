@@ -3,6 +3,7 @@ import { ipcRenderer } from "electron"
 type PreviewMode = "browse" | "comment"
 
 const HIGHLIGHT_ID = "__desktop-preview-highlight__"
+const INSPECTOR_TOOLTIP_ID = "__desktop-preview-inspector-tooltip__"
 const FIT_STYLE_ID = "__desktop-preview-fit__"
 const MIN_SCALE = 0.04
 const SCALE_EPSILON = 0.001
@@ -17,8 +18,34 @@ function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), maximum)
 }
 
+function escapeHTML(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
 function isElement(value: EventTarget | null): value is Element {
-  return value instanceof Element
+  if (!value || typeof value !== "object") return false
+
+  const candidate = value as Partial<Element> & { nodeType?: unknown; tagName?: unknown }
+  return (
+    candidate.nodeType === 1 &&
+    typeof candidate.tagName === "string" &&
+    typeof candidate.closest === "function"
+  )
+}
+
+function isNode(value: EventTarget | null): value is Node {
+  return Boolean(value && typeof value === "object" && typeof (value as Partial<Node>).nodeType === "number")
+}
+
+function resolveElementTarget(target: EventTarget | null) {
+  if (isElement(target)) return target
+  if (isNode(target) && isElement(target.parentElement)) return target.parentElement
+  return null
 }
 
 function getHighlightElement() {
@@ -29,10 +56,11 @@ function getHighlightElement() {
   highlightElement.id = HIGHLIGHT_ID
   highlightElement.setAttribute("aria-hidden", "true")
   Object.assign(highlightElement.style, {
-    background: "rgba(23, 66, 98, 0.08)",
-    border: "2px solid rgba(23, 66, 98, 0.88)",
-    borderRadius: "8px",
-    boxShadow: "0 12px 24px rgba(23, 66, 98, 0.18)",
+    background: "rgba(10, 132, 255, 0.18)",
+    border: "2px solid rgba(10, 132, 255, 0.95)",
+    borderRadius: "2px",
+    boxSizing: "border-box",
+    boxShadow: "0 0 0 1px rgba(255, 255, 255, 0.52)",
     display: "none",
     left: "0",
     pointerEvents: "none",
@@ -45,10 +73,45 @@ function getHighlightElement() {
   return highlightElement
 }
 
+function getInspectorTooltipElement() {
+  let tooltipElement = document.getElementById(INSPECTOR_TOOLTIP_ID)
+  if (tooltipElement) return tooltipElement
+
+  tooltipElement = document.createElement("div")
+  tooltipElement.id = INSPECTOR_TOOLTIP_ID
+  tooltipElement.setAttribute("aria-hidden", "true")
+  Object.assign(tooltipElement.style, {
+    background: "rgba(255, 255, 255, 0.96)",
+    border: "1px solid rgba(174, 181, 190, 0.72)",
+    borderRadius: "10px",
+    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.18)",
+    color: "#17232f",
+    display: "none",
+    font: "12px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    left: "0",
+    maxWidth: "260px",
+    minWidth: "220px",
+    padding: "9px 11px",
+    pointerEvents: "none",
+    position: "fixed",
+    top: "0",
+    transform: "translateZ(0)",
+    zIndex: "2147483647",
+  })
+  document.documentElement.appendChild(tooltipElement)
+  return tooltipElement
+}
+
 function hideHighlight() {
   const highlightElement = document.getElementById(HIGHLIGHT_ID)
-  if (!highlightElement) return
-  highlightElement.style.display = "none"
+  if (highlightElement) {
+    highlightElement.style.display = "none"
+  }
+
+  const tooltipElement = document.getElementById(INSPECTOR_TOOLTIP_ID)
+  if (tooltipElement) {
+    tooltipElement.style.display = "none"
+  }
 }
 
 function ensureFitStyle() {
@@ -160,12 +223,13 @@ function isInteractiveElement(element: Element) {
 }
 
 function resolveInspectableElement(target: EventTarget | null) {
-  if (!isElement(target)) return null
+  const targetElement = resolveElementTarget(target)
+  if (!targetElement) return null
 
   const highlightElement = document.getElementById(HIGHLIGHT_ID)
-  if (highlightElement?.contains(target)) return null
+  if (highlightElement?.contains(targetElement)) return null
 
-  return target.closest(
+  return targetElement.closest(
     "a, button, summary, label, input, select, textarea, [role='button'], section, article, nav, header, footer, main, h1, h2, h3, h4, h5, h6, p, img, video, svg, div, span",
   )
 }
@@ -184,6 +248,26 @@ function getElementText(element: Element) {
     .trim()
 
   return rawText.slice(0, 96) || undefined
+}
+
+function formatCssColor(value: string) {
+  const match = value.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i)
+  if (!match) return value || "transparent"
+
+  const [, red, green, blue] = match
+  return [red, green, blue]
+    .map((channel) => Number(channel).toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase()
+    .replace(/^/, "#")
+}
+
+function formatFontFamily(value: string) {
+  const firstFamily = value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)[0]
+  return firstFamily || "inherit"
 }
 
 function getElementClassTokens(element: Element) {
@@ -227,6 +311,22 @@ function buildElementSelector(element: Element) {
   return segments.join(" > ")
 }
 
+function buildElementPath(element: Element) {
+  const segments: string[] = []
+  let current: Element | null = element
+
+  while (current && segments.length < 8) {
+    const tagName = current.tagName.toLowerCase()
+    const siblingIndex = current.parentElement
+      ? Array.from(current.parentElement.children).indexOf(current) + 1
+      : 1
+    segments.unshift(`${tagName}:nth-child(${siblingIndex})`)
+    current = current.parentElement
+  }
+
+  return segments.join(" > ")
+}
+
 function reportPreviewError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   ipcRenderer.sendToHost("preview:error", { message })
@@ -248,7 +348,48 @@ function formatElementLabel(element: Element) {
   return `<${tagName}>`
 }
 
-function highlightElement(element: Element | null) {
+function updateInspectorTooltip(element: Element, rect: DOMRect, pointer: { clientX: number; clientY: number }) {
+  const tooltipElement = getInspectorTooltipElement()
+  const computedStyle = window.getComputedStyle(element)
+  const tagName = element.tagName.toLowerCase()
+  const dimension = `${Math.round(rect.width)}x${Math.round(rect.height)}`
+  const color = formatCssColor(computedStyle.color)
+  const fontSize = computedStyle.fontSize || "inherit"
+  const fontFamily = formatFontFamily(computedStyle.fontFamily)
+
+  tooltipElement.innerHTML = `
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:baseline;">
+      <strong style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(tagName)}</strong>
+      <strong style="font-family:'IBM Plex Mono','JetBrains Mono',Consolas,monospace;font-weight:600;">${escapeHTML(dimension)}</strong>
+      <span style="color:#6b7280;">color</span>
+      <strong style="font-family:'IBM Plex Mono','JetBrains Mono',Consolas,monospace;font-weight:600;">${escapeHTML(color)}</strong>
+      <span style="color:#6b7280;">font</span>
+      <strong style="font-family:'IBM Plex Mono','JetBrains Mono',Consolas,monospace;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHTML(`${fontSize} ${fontFamily}`)}</strong>
+    </div>
+  `
+
+  const tooltipWidth = 260
+  const tooltipHeight = 88
+  const cursorOffset = 12
+  const viewportPadding = 8
+  const maxLeft = Math.max(viewportPadding, window.innerWidth - tooltipWidth - viewportPadding)
+  const preferredLeft = pointer.clientX + cursorOffset
+  const preferredTop = pointer.clientY + cursorOffset
+  const left = preferredLeft + tooltipWidth > window.innerWidth - viewportPadding
+    ? clamp(pointer.clientX - tooltipWidth - cursorOffset, viewportPadding, maxLeft)
+    : clamp(preferredLeft, viewportPadding, maxLeft)
+  const top = preferredTop + tooltipHeight > window.innerHeight - viewportPadding
+    ? Math.max(viewportPadding, pointer.clientY - tooltipHeight - cursorOffset)
+    : preferredTop
+
+  Object.assign(tooltipElement.style, {
+    display: "block",
+    left: `${left}px`,
+    top: `${top}px`,
+  })
+}
+
+function highlightElement(element: Element | null, pointer?: { clientX: number; clientY: number }) {
   if (currentMode !== "comment" || !element) {
     hideHighlight()
     return
@@ -268,6 +409,7 @@ function highlightElement(element: Element | null) {
     top: `${rect.top}px`,
     width: `${rect.width}px`,
   })
+  updateInspectorTooltip(element, rect, pointer ?? { clientX: rect.left, clientY: rect.bottom })
 }
 
 function sendPageMeta() {
@@ -277,17 +419,27 @@ function sendPageMeta() {
   })
 }
 
+function sendCoordinateCommentTarget(clientX: number, clientY: number) {
+  const x = clamp((clientX / Math.max(window.innerWidth, 1)) * 100, 0, 100)
+  const y = clamp((clientY / Math.max(window.innerHeight, 1)) * 100, 0, 100)
+
+  ipcRenderer.sendToHost("preview:comment-target", {
+    anchor: {
+      type: "coordinate",
+    },
+    x,
+    y,
+  })
+}
+
 function handleDocumentClick(event: MouseEvent) {
   try {
     const element = resolveInspectableElement(event.target)
-    if (!element || !isInteractiveElement(element)) {
-      if (currentMode !== "comment") return
-    }
 
-    event.preventDefault()
-    event.stopPropagation()
-
-    if (currentMode !== "comment" || !element) {
+    if (currentMode !== "comment") {
+      if (!element || !isInteractiveElement(element)) return
+      event.preventDefault()
+      event.stopPropagation()
       const href = element?.closest("a[href]")?.getAttribute("href")
       if (href) {
         ipcRenderer.sendToHost("preview:navigation-blocked", {
@@ -297,14 +449,32 @@ function handleDocumentClick(event: MouseEvent) {
       return
     }
 
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (!element) {
+      sendCoordinateCommentTarget(event.clientX, event.clientY)
+      return
+    }
+
+    const x = clamp((event.clientX / Math.max(window.innerWidth, 1)) * 100, 0, 100)
+    const y = clamp((event.clientY / Math.max(window.innerHeight, 1)) * 100, 0, 100)
+
     const rect = element.getBoundingClientRect()
-    const x = clamp(((rect.left + rect.width / 2) / Math.max(window.innerWidth, 1)) * 100, 0, 100)
-    const y = clamp(((rect.top + rect.height / 2) / Math.max(window.innerHeight, 1)) * 100, 0, 100)
 
     ipcRenderer.sendToHost("preview:comment-target", {
       anchor: {
         type: "element",
         label: formatElementLabel(element),
+        path: buildElementPath(element),
+        rect: {
+          bottom: rect.bottom,
+          height: rect.height,
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          width: rect.width,
+        },
         selector: buildElementSelector(element),
         tagName: element.tagName.toLowerCase(),
         text: getElementText(element),
@@ -334,7 +504,10 @@ function handleDocumentKeyDown(event: KeyboardEvent) {
 
 function handleDocumentMouseMove(event: MouseEvent) {
   try {
-    highlightElement(resolveInspectableElement(event.target))
+    highlightElement(resolveInspectableElement(event.target), {
+      clientX: event.clientX,
+      clientY: event.clientY,
+    })
   } catch (error) {
     reportPreviewError(error)
   }

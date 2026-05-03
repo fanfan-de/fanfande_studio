@@ -830,6 +830,12 @@ export type AgentMcpAllowedTools =
       toolNames?: string[]
     }
 
+export type AgentMcpToolPolicyValue = "disabled" | "ask" | "auto"
+
+export type AgentMcpToolPolicies = Record<string, {
+  policy: AgentMcpToolPolicyValue
+}>
+
 export type AgentMcpRequireApproval =
   | "always"
   | "never"
@@ -847,6 +853,7 @@ export interface AgentStdioMcpServerSummary {
   args?: string[]
   env?: Record<string, string>
   cwd?: string
+  toolPolicies?: AgentMcpToolPolicies
   enabled: boolean
   timeoutMs?: number
 }
@@ -862,6 +869,7 @@ export interface AgentRemoteMcpServerSummary {
   headers?: Record<string, string>
   serverDescription?: string
   allowedTools?: AgentMcpAllowedTools
+  toolPolicies?: AgentMcpToolPolicies
   requireApproval?: AgentMcpRequireApproval
   enabled: boolean
   timeoutMs?: number
@@ -869,12 +877,31 @@ export interface AgentRemoteMcpServerSummary {
 
 export type AgentMcpServerSummary = AgentStdioMcpServerSummary | AgentRemoteMcpServerSummary
 
+export interface AgentMcpToolDiagnostic {
+  name: string
+  title?: string
+  displayName: string
+  description?: string
+  inputSchema?: unknown
+  annotations?: {
+    title?: string
+    readOnlyHint?: boolean
+    destructiveHint?: boolean
+    idempotentHint?: boolean
+    openWorldHint?: boolean
+  }
+  riskHint: "read-only" | "destructive" | "open-world" | "unknown"
+  recommendedPolicy: AgentMcpToolPolicyValue
+  configuredPolicy?: AgentMcpToolPolicyValue
+}
+
 export interface AgentMcpServerDiagnostic {
   serverID: string
   enabled: boolean
   ok: boolean
   toolCount: number
   toolNames: string[]
+  tools: AgentMcpToolDiagnostic[]
   error?: string
 }
 
@@ -906,6 +933,7 @@ export interface AgentPluginStdioRuntime {
   args?: string[]
   env?: Record<string, string>
   cwd?: string
+  toolPolicies?: AgentMcpToolPolicies
   timeoutMs?: number
 }
 
@@ -918,6 +946,7 @@ export interface AgentPluginRemoteRuntime {
   headers?: Record<string, string>
   serverDescription?: string
   allowedTools?: AgentMcpAllowedTools
+  toolPolicies?: AgentMcpToolPolicies
   requireApproval?: AgentMcpRequireApproval
   timeoutMs?: number
 }

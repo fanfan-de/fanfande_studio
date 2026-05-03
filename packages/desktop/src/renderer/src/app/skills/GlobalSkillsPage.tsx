@@ -11,6 +11,7 @@ import {
   ChevronRightIcon,
   DeleteIcon,
   FileTextIcon,
+  FolderIcon,
   NewItemIcon,
 } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
@@ -48,6 +49,7 @@ interface GlobalSkillsPageProps {
   onDeleteGlobalSkill: (directoryPath?: string) => void | Promise<void>
   onGlobalSkillDirectoryToggle: (path: string) => void
   onGlobalSkillFileSelect: (path: string) => void | Promise<void>
+  onOpenGlobalSkillsFolder: () => void | Promise<void>
   onRenameGlobalSkill: () => void | Promise<void>
   onRenameGlobalSkillDraftCancel: () => void
   onRenameGlobalSkillDraftChange: (value: string) => void
@@ -75,6 +77,7 @@ interface GlobalSkillsNavigatorProps {
   onDeleteGlobalSkill: (directoryPath?: string) => void | Promise<void>
   onGlobalSkillDirectoryToggle: (path: string) => void
   onGlobalSkillFileSelect: (path: string) => void | Promise<void>
+  onOpenGlobalSkillsFolder: () => void | Promise<void>
   onRenameGlobalSkill: () => void | Promise<void>
   onRenameGlobalSkillDraftCancel: () => void
   onRenameGlobalSkillDraftChange: (value: string) => void
@@ -265,6 +268,7 @@ function GlobalSkillsNavigator({
   onDeleteGlobalSkill,
   onGlobalSkillDirectoryToggle,
   onGlobalSkillFileSelect,
+  onOpenGlobalSkillsFolder,
   onRenameGlobalSkill,
   onRenameGlobalSkillDraftCancel,
   onRenameGlobalSkillDraftChange,
@@ -284,21 +288,30 @@ function GlobalSkillsNavigator({
   return (
     <section className="global-skills-navigator" aria-label="Global skills library">
       <div className="settings-prompt-section-bar global-skills-section-bar">
-        <div className="global-skills-root-copy">
-          <h3>Global Skills</h3>
-          <small title={globalSkillsRoot}>{globalSkillsRoot || "Loading global skills root..."}</small>
+        <div className="global-skills-section-actions">
+          <button
+            className="secondary-button global-skills-open-folder-button"
+            aria-label="打开文件位置"
+            disabled={!globalSkillsRoot}
+            title={globalSkillsRoot ? `打开文件位置: ${globalSkillsRoot}` : "Skills folder is loading"}
+            type="button"
+            onClick={() => void onOpenGlobalSkillsFolder()}
+          >
+            <FolderIcon />
+            <span>打开文件位置</span>
+          </button>
+          <button
+            className="secondary-button global-skills-new-button"
+            aria-label="Create global skill"
+            disabled={isCreatingGlobalSkill || isCreateGlobalSkillDraftVisible || Boolean(renamingGlobalSkillDraftDirectory || renamingGlobalSkillDirectory)}
+            title="Create global skill"
+            type="button"
+            onClick={onCreateGlobalSkillDraftStart}
+          >
+            <NewItemIcon />
+            <span>New</span>
+          </button>
         </div>
-        <button
-          className="secondary-button global-skills-new-button"
-          aria-label="Create global skill"
-          disabled={isCreatingGlobalSkill || isCreateGlobalSkillDraftVisible || Boolean(renamingGlobalSkillDraftDirectory || renamingGlobalSkillDirectory)}
-          title="Create global skill"
-          type="button"
-          onClick={onCreateGlobalSkillDraftStart}
-        >
-          <NewItemIcon />
-          <span>New</span>
-        </button>
       </div>
 
       {isCreateGlobalSkillDraftVisible ? (
@@ -327,7 +340,7 @@ function GlobalSkillsNavigator({
 
       <div className="skills-tree-root">
         {isLoadingSkillsTree && globalSkillsTree.length === 0 ? (
-          <p className="skills-tree-empty">Loading global skills...</p>
+          <p className="skills-tree-empty">Loading skills...</p>
         ) : globalSkillsTree.length > 0 ? (
           globalSkillsTree.map((node) => (
             <GlobalSkillsTreeNodeRow
@@ -349,7 +362,7 @@ function GlobalSkillsNavigator({
             />
           ))
         ) : (
-          <p className="skills-tree-empty">No global skills exist yet. Use the add button to create the first one.</p>
+          <p className="skills-tree-empty">No skills exist yet. Use New to create the first one.</p>
         )}
       </div>
     </section>
@@ -385,6 +398,7 @@ export function GlobalSkillsPage({
   onDeleteGlobalSkill,
   onGlobalSkillDirectoryToggle,
   onGlobalSkillFileSelect,
+  onOpenGlobalSkillsFolder,
   onRenameGlobalSkill,
   onRenameGlobalSkillDraftCancel,
   onRenameGlobalSkillDraftChange,
@@ -433,6 +447,7 @@ export function GlobalSkillsPage({
               onDeleteGlobalSkill={onDeleteGlobalSkill}
               onGlobalSkillDirectoryToggle={onGlobalSkillDirectoryToggle}
               onGlobalSkillFileSelect={onGlobalSkillFileSelect}
+              onOpenGlobalSkillsFolder={onOpenGlobalSkillsFolder}
               onRenameGlobalSkill={onRenameGlobalSkill}
               onRenameGlobalSkillDraftCancel={onRenameGlobalSkillDraftCancel}
               onRenameGlobalSkillDraftChange={onRenameGlobalSkillDraftChange}

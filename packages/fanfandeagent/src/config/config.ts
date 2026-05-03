@@ -170,6 +170,29 @@ export const McpAllowedTools = z
   })
 export type McpAllowedTools = z.infer<typeof McpAllowedTools>
 
+export const McpToolPolicyValue = z.enum(["disabled", "ask", "auto"]).meta({
+  ref: "McpToolPolicyValue",
+})
+export type McpToolPolicyValue = z.infer<typeof McpToolPolicyValue>
+
+export const McpToolPolicy = z
+  .object({
+    policy: McpToolPolicyValue,
+  })
+  .strict()
+  .meta({
+    ref: "McpToolPolicy",
+  })
+export type McpToolPolicy = z.infer<typeof McpToolPolicy>
+
+export const McpToolPolicies = z
+  .record(z.string(), McpToolPolicy)
+  .optional()
+  .meta({
+    ref: "McpToolPolicies",
+  })
+export type McpToolPolicies = z.infer<typeof McpToolPolicies>
+
 export const McpRequireApproval = z
   .union([
     z.enum(["always", "never"]),
@@ -192,6 +215,7 @@ const McpServerBaseFields = {
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   timeoutMs: z.number().int().positive().optional(),
+  toolPolicies: McpToolPolicies,
 } as const
 
 export const McpStdioServerConfig = z
@@ -220,6 +244,7 @@ export const McpRemoteServerConfig = z
     headers: z.record(z.string(), z.string()).optional(),
     serverDescription: z.string().min(1).optional(),
     allowedTools: McpAllowedTools,
+    toolPolicies: McpToolPolicies,
     requireApproval: McpRequireApproval,
   })
   .strict()
@@ -257,6 +282,7 @@ export const McpRemoteServerInput = z
     headers: z.record(z.string(), z.string()).optional(),
     serverDescription: z.string().min(1).optional(),
     allowedTools: McpAllowedTools,
+    toolPolicies: McpToolPolicies,
     requireApproval: McpRequireApproval,
   })
   .strict()
@@ -296,6 +322,7 @@ export const McpRemoteServerSummary = z
     headers: z.record(z.string(), z.string()).optional(),
     serverDescription: z.string().min(1).optional(),
     allowedTools: McpAllowedTools,
+    toolPolicies: McpToolPolicies,
     requireApproval: McpRequireApproval,
   })
   .strict()
@@ -522,6 +549,7 @@ function normalizeMcpServer(config: McpServerConfig): McpServerSummary {
       authorization: remote.authorization,
       headers: remote.headers,
       allowedTools: remote.allowedTools,
+      toolPolicies: remote.toolPolicies,
       requireApproval: remote.requireApproval,
       provider: remote.provider,
       connectorId: remote.connectorId,

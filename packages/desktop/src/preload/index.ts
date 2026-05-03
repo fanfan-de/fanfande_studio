@@ -169,6 +169,8 @@ try {
     pickProjectDirectory: () => invokeDesktop("desktop:pick-project-directory") as Promise<string | null>,
     pickComposerAttachments: (input?: { allowImage?: boolean; allowPdf?: boolean }) =>
       invokeDesktop("desktop:pick-composer-attachments", input) as Promise<string[]>,
+    capturePreviewScreenshot: (input: { bounds: { x: number; y: number; width: number; height: number }; url?: string }) =>
+      invokeDesktop("desktop:capture-preview-screenshot", input) as Promise<{ path: string }>,
     gitGetCapabilities: (input: { projectID: string; directory: string }) =>
       invokeDesktop("desktop:git-get-capabilities", input) as Promise<GitCapabilities>,
     gitCommit: (input: { projectID: string; directory: string; message: string; stageAll?: boolean }) =>

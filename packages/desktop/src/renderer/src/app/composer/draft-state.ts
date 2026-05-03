@@ -139,20 +139,50 @@ function collectComposerTagData() {
   return collectComposerTagNodes().map((node) => node.getTagData())
 }
 
-function buildComposerCommentReferences(tags: ComposerTagData[]) {
-  return tags.flatMap((tag) =>
-    tag.kind === "comment"
-      ? [{
-          id: tag.id,
-          filePath: tag.filePath,
-          startLineNumber: tag.startLineNumber,
-          endLineNumber: tag.endLineNumber,
-          label: tag.label,
-          title: tag.title,
-          prompt: tag.prompt,
-        } satisfies ComposerCommentReference]
-      : [],
-  )
+function isPreviewCommentTag(
+  tag: ComposerTagData,
+): tag is Extract<ComposerTagData, { kind: "comment"; source: "preview" }> {
+  return tag.kind === "comment" && (tag as { source?: string }).source === "preview"
+}
+
+function isPreviewCommentReference(
+  reference: ComposerCommentReference,
+): reference is Extract<ComposerCommentReference, { source: "preview" }> {
+  return reference.source === "preview"
+}
+
+function buildComposerCommentReferences(tags: ComposerTagData[]): ComposerCommentReference[] {
+  const references: ComposerCommentReference[] = []
+
+  for (const tag of tags) {
+    if (tag.kind !== "comment") continue
+
+    if (isPreviewCommentTag(tag)) {
+      references.push({
+        id: tag.id,
+        label: tag.label,
+        title: tag.title,
+        prompt: tag.prompt,
+        source: "preview",
+        comment: tag.comment,
+        pageUrl: tag.pageUrl,
+      })
+      continue
+    }
+
+    references.push({
+      id: tag.id,
+      filePath: tag.filePath,
+      startLineNumber: tag.startLineNumber,
+      endLineNumber: tag.endLineNumber,
+      label: tag.label,
+      title: tag.title,
+      prompt: tag.prompt,
+      source: "file",
+    })
+  }
+
+  return references
 }
 
 function buildComposerUserReferences(tags: ComposerTagData[]) {
@@ -200,6 +230,82 @@ function getComposerTagIdentity(tag: ComposerTagData) {
     case "skill":
       return `skill:${tag.skillID}`
   }
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function stripComposerTagTokens(text: string, tags: ComposerTagData[]) {
+  let nextText = text
+  const tokens = [...new Set(tags.map((tag) => `@${tag.label}`).filter((token) => token.trim().length > 1))]
+    .sort((left, right) => right.length - left.length)
+
+  for (const token of tokens) {
+    nextText = nextText.replace(new RegExp(`(^|\\s)${escapeRegExp(token)}(?=\\s|$)`, "g"), "$1")
+  }
+
+  return nextText
+    .replace(/[ \t]+/g, " ")
+    .replace(/[ \t]*\n[ \t]*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+function readPreviewCommentValue(value: string | null | undefined) {
+  const trimmedValue = value?.trim()
+  return trimmedValue ? trimmedValue : "Unavailable"
+}
+
+function formatPreviewCommentPosition(comment: ComposerCommentReference & { source: "preview" }) {
+  const explicitPosition = comment.comment.nodePosition?.trim()
+  if (explicitPosition) return explicitPosition
+  return `${Math.round(comment.comment.x)}%, ${Math.round(comment.comment.y)}%`
+}
+
+function buildPreviewCommentContext(
+  previewCommentReferences: Array<ComposerCommentReference & { source: "preview" }>,
+  requestText: string,
+) {
+  if (previewCommentReferences.length === 0) return ""
+
+  const lines = ["# Diff comments:", ""]
+  for (const [index, reference] of previewCommentReferences.entries()) {
+    const comment = reference.comment
+    const pageUrl = readPreviewCommentValue(comment.pageUrl ?? comment.url ?? reference.pageUrl)
+    const anchor = comment.anchor
+
+    lines.push(
+      `## Comment ${index + 1}`,
+      `Node position: ${formatPreviewCommentPosition(reference)}`,
+      `Page URL: ${pageUrl}`,
+      `Frame: ${readPreviewCommentValue(comment.frame)}`,
+      `Target: ${readPreviewCommentValue(anchor?.label ?? anchor?.tagName)}`,
+      `Target selector: ${readPreviewCommentValue(anchor?.selector)}`,
+      `Target path: ${readPreviewCommentValue(anchor?.path)}`,
+      `Saved marker screenshot: ${readPreviewCommentValue(comment.screenshotPath)}`,
+      "Comment:",
+      comment.text.trim(),
+      "",
+    )
+  }
+
+  const currentUrl = readPreviewCommentValue(
+    previewCommentReferences.at(-1)?.comment.pageUrl ??
+      previewCommentReferences.at(-1)?.comment.url ??
+      previewCommentReferences.at(-1)?.pageUrl,
+  )
+
+  lines.push(
+    "# In app browser:",
+    "- The user has the in-app browser open.",
+    `- Current URL: ${currentUrl}`,
+    "",
+    "## User request:",
+    requestText,
+  )
+
+  return lines.join("\n").trim()
 }
 
 function createParagraphFromText(text: string) {
@@ -340,8 +446,22 @@ export function createComposerFileTagData(filePath: string, label = filePath): C
 }
 
 export function createComposerCommentTagData(reference: ComposerCommentReference): ComposerTagData {
+  if (reference.source === "preview") {
+    return {
+      kind: "comment",
+      source: "preview",
+      id: reference.id,
+      label: reference.label,
+      title: reference.title,
+      prompt: reference.prompt,
+      comment: reference.comment,
+      pageUrl: reference.pageUrl,
+    }
+  }
+
   return {
     kind: "comment",
+    source: "file",
     id: reference.id,
     label: reference.label,
     filePath: reference.filePath,
@@ -408,6 +528,8 @@ export function compileComposerSubmission(input: {
   const normalizedDraftState = normalizeComposerDraftState(input.draftState)
   const tags = readComposerTagsFromDraftState(normalizedDraftState)
   const commentReferences = buildComposerCommentReferences(tags)
+  const previewCommentReferences = commentReferences.filter(isPreviewCommentReference)
+  const fileCommentReferences = commentReferences.filter((reference) => !isPreviewCommentReference(reference))
   const userReferences = buildComposerUserReferences(tags)
   const taggedFilePaths = [...new Set(tags.flatMap((tag) => (tag.kind === "file" ? [tag.filePath] : [])))]
   const taggedMcpServerIDs = [...new Set(tags.flatMap((tag) => (tag.kind === "mcp" ? [tag.serverID] : [])))]
@@ -423,7 +545,7 @@ export function compileComposerSubmission(input: {
     transportSections.push(`Referenced files:\n${taggedFilePaths.map((filePath) => `- ${filePath}`).join("\n")}`)
   }
 
-  const commentPrompt = commentReferences
+  const commentPrompt = fileCommentReferences
     .map((reference) => reference.prompt.trim())
     .filter(Boolean)
     .join("\n\n")
@@ -432,6 +554,12 @@ export function compileComposerSubmission(input: {
   }
 
   const displayText = normalizedDraftState.plainText.trim()
+  const requestText = stripComposerTagTokens(displayText, tags)
+  const previewCommentPrompt = buildPreviewCommentContext(previewCommentReferences, requestText)
+  if (previewCommentPrompt) {
+    transportSections.push(previewCommentPrompt)
+  }
+  const leadingText = previewCommentReferences.length > 0 ? "" : displayText
 
   return {
     commentReferences,
@@ -440,7 +568,7 @@ export function compileComposerSubmission(input: {
     taggedFilePaths,
     taggedMcpServerIDs,
     userReferences,
-    transportText: [displayText, ...transportSections].filter(Boolean).join("\n\n"),
+    transportText: [leadingText, ...transportSections].filter(Boolean).join("\n\n"),
   } satisfies CompiledComposerSubmission
 }
 

@@ -5,7 +5,9 @@ import type {
   McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
+  McpToolPolicyValue,
 } from "../types"
+import { McpToolsPolicyPanel } from "./McpToolsPolicyPanel"
 
 interface McpServersMessage {
   tone: "success" | "error"
@@ -26,17 +28,10 @@ interface McpServersPageProps {
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
   onDismissMessage: () => void
   onMcpServerDraftChange: (field: keyof McpServerDraftState, value: string | boolean) => void
+  onMcpToolPolicyChange: (toolName: string, policy: McpToolPolicyValue) => void
   onMcpServerSelect: (serverID: string) => void
   onSaveMcpServer: () => boolean | Promise<boolean>
   onStartNewMcpServer: () => void
-}
-
-function getMcpServerSummaryLine(server: McpServerSummary) {
-  if (server.transport === "stdio") {
-    return server.command
-  }
-
-  return server.serverUrl ?? server.connectorId ?? "Remote HTTP MCP"
 }
 
 function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServerDraftState["transport"]) {
@@ -81,6 +76,7 @@ export function McpServersPage({
   onDeleteMcpServer,
   onDismissMessage,
   onMcpServerDraftChange,
+  onMcpToolPolicyChange,
   onMcpServerSelect,
   onSaveMcpServer,
   onStartNewMcpServer,
@@ -141,29 +137,10 @@ export function McpServersPage({
         ) : (
           <section className="settings-services-layout mcp-servers-page-layout" aria-label="MCP server layout">
             <div className="settings-service-list-panel mcp-servers-list-panel">
-              <div className="settings-panel">
-                <div className="settings-section-header">
-                  <div>
-                    <span className="label">Global</span>
-                    <h3>MCP Servers</h3>
-                  </div>
-                  <p>Configure reusable local and remote MCP servers once, then enable them per project from the session canvas top menu.</p>
-                </div>
-
-                <div className="settings-actions-row">
-                  <span className="settings-helper-text">
-                    Global server definitions are shared across projects. Set a working directory on stdio servers when the server expects one.
-                  </span>
-                  <button className="secondary-button" onClick={onStartNewMcpServer} type="button">
-                    New server
-                  </button>
-                </div>
-              </div>
-
               <div className="settings-service-list-body">
-                {mcpServers.length > 0 ? (
-                  <div className="settings-service-list" role="list" aria-label="MCP servers">
-                    {mcpServers.map((server) => {
+                <div className="settings-service-list mcp-servers-list-stack" role="list" aria-label="MCP servers">
+                  {mcpServers.length > 0 ? (
+                    mcpServers.map((server) => {
                       const isActive = server.id === activeMcpServerID
 
                       return (
@@ -183,18 +160,21 @@ export function McpServersPage({
                               </span>
                             </div>
                           </div>
-                          <span className="settings-service-item-copy">{getMcpServerSummaryLine(server)}</span>
                         </button>
                       )
-                    })}
-                  </div>
-                ) : (
-                  <article className="settings-empty-state settings-service-list-empty-state">
-                    <span className="label">No Servers</span>
-                    <h3>No global MCP servers configured yet</h3>
-                    <p>Create a reusable local or remote server here, then enable it from a project when needed.</p>
-                  </article>
-                )}
+                    })
+                  ) : (
+                    <article className="settings-empty-state settings-service-list-empty-state">
+                      <span className="label">No Servers</span>
+                      <h3>No global MCP servers configured yet</h3>
+                      <p>Create a reusable local or remote server here, then enable it from a project when needed.</p>
+                    </article>
+                  )}
+
+                  <button className="secondary-button mcp-servers-new-button" onClick={onStartNewMcpServer} type="button">
+                    New server
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -415,6 +395,12 @@ export function McpServersPage({
                     </div>
                   </>
                 )}
+
+                <McpToolsPolicyPanel
+                  diagnostic={activeMcpServerDiagnostic}
+                  draft={mcpServerDraft}
+                  onPolicyChange={onMcpToolPolicyChange}
+                />
 
                 <div className="settings-actions-row">
                   <span className="settings-helper-text">

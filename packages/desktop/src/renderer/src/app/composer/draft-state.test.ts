@@ -36,6 +36,7 @@ const MCP_OPTIONS: ComposerMcpOption[] = [
 
 function createCommentReference(): ComposerCommentReference {
   return {
+    source: "file",
     id: "comment-1",
     filePath: "src/App.tsx",
     startLineNumber: 10,
@@ -43,6 +44,43 @@ function createCommentReference(): ComposerCommentReference {
     label: "App.tsx:10-14",
     title: "src/App.tsx (lines 10-14)",
     prompt: "Review the selected lines before making changes.",
+  }
+}
+
+function createPreviewCommentReference(): ComposerCommentReference {
+  return {
+    source: "preview",
+    id: "preview-comment-1",
+    label: "preview:localhost:5174#1",
+    title: "button.cta - http://localhost:5174/",
+    prompt: "Preview feedback for http://localhost:5174/",
+    pageUrl: "http://localhost:5174/",
+    comment: {
+      id: "preview-comment-1",
+      url: "http://localhost:5174/",
+      pageUrl: "http://localhost:5174/",
+      x: 42,
+      y: 35,
+      text: "The CTA overlaps the header.",
+      createdAt: 1,
+      frame: "iframe",
+      nodePosition: "42%, 35%; target rect 120, 80, 240x48",
+      screenshotPath: "C:\\Users\\codex\\preview-comment-screenshots\\marker.png",
+      anchor: {
+        type: "element",
+        label: "button.cta",
+        selector: "button.cta",
+        path: "html > body > main > button:nth-of-type(1)",
+        rect: {
+          height: 48,
+          left: 120,
+          top: 80,
+          width: 240,
+        },
+        tagName: "button",
+        text: "Launch",
+      },
+    },
   }
 }
 
@@ -82,6 +120,31 @@ describe("composer draft-state", () => {
     expect(compiled.selectedSkillIDs).toEqual(["existing-skill", SKILL_OPTION.value])
     expect(compiled.transportText).toContain("Referenced files:\n- src/app/components.tsx")
     expect(compiled.transportText).toContain("Review the selected lines before making changes.")
+  })
+
+  it("compiles preview comment tags into browser context while stripping the visible token from the request", () => {
+    const previewReference = createPreviewCommentReference()
+    let draftState = createComposerDraftStateFromPlainText("Please fix the header.")
+    draftState = appendComposerTagToDraftState(draftState, createComposerCommentTagData(previewReference))
+
+    const compiled = compileComposerSubmission({ draftState })
+
+    expect(compiled.displayText).toContain("@preview:localhost:5174#1")
+    expect(compiled.transportText).not.toContain("@preview:localhost:5174#1")
+    expect(compiled.transportText).toContain("# Diff comments:")
+    expect(compiled.transportText).toContain("Node position: 42%, 35%; target rect 120, 80, 240x48")
+    expect(compiled.transportText).toContain("Page URL: http://localhost:5174/")
+    expect(compiled.transportText).toContain("Frame: iframe")
+    expect(compiled.transportText).toContain("Target: button.cta")
+    expect(compiled.transportText).toContain("Target selector: button.cta")
+    expect(compiled.transportText).toContain("Target path: html > body > main > button:nth-of-type(1)")
+    expect(compiled.transportText).toContain(
+      "Saved marker screenshot: C:\\Users\\codex\\preview-comment-screenshots\\marker.png",
+    )
+    expect(compiled.transportText).toContain("Comment:\nThe CTA overlaps the header.")
+    expect(compiled.transportText).toContain("# In app browser:")
+    expect(compiled.transportText).toContain("- Current URL: http://localhost:5174/")
+    expect(compiled.transportText).toContain("## User request:\nPlease fix the header.")
   })
 
   it("keeps file tag labels short while compiling absolute file paths into transport text", () => {

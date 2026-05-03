@@ -10,7 +10,11 @@ import {
   formatWorkspaceFileLineRangeLabel,
   normalizeWorkspaceFileLineRange,
 } from "../files/utils"
-import { buildPreviewCommentDraft, normalizePreviewUrlInput } from "../preview/utils"
+import {
+  buildPreviewCommentReferenceLabel,
+  buildPreviewCommentReferenceTitle,
+  normalizePreviewUrlInput,
+} from "../preview/utils"
 import type {
   ComposerCommentReference,
   ComposerDraftState,
@@ -39,7 +43,6 @@ interface UseReviewPanelControllerOptions {
   activeSessionID: string | null
   activeTabKey: string | null
   activeWorkspaceFileScopeDirectory: string | null
-  appendDraftForTab: (tabKey: string, value: string) => void
   loadSessionDiffForSession: (sessionID: string) => Promise<void>
   loadSessionRuntimeDebugForSession: (sessionID: string) => Promise<void>
   platform: string
@@ -62,7 +65,6 @@ export function useReviewPanelController({
   activeSessionID,
   activeTabKey,
   activeWorkspaceFileScopeDirectory,
-  appendDraftForTab,
   loadSessionDiffForSession,
   loadSessionRuntimeDebugForSession,
   platform,
@@ -156,6 +158,10 @@ export function useReviewPanelController({
 
   function handlePreviewAddComment(
     input: {
+      frame?: string
+      nodePosition?: string
+      pageUrl?: string
+      screenshotPath?: string | null
       x: number
       y: number
       text: string
@@ -163,20 +169,30 @@ export function useReviewPanelController({
     },
     workspaceID = selectedWorkspace?.id ?? null,
   ) {
-    setRightSidebarView("preview")
-    updatePreviewState((current) => {
-      const trimmedText = input.text.trim()
-      if (!current.committedUrl || !trimmedText) return current
+    const scopeID = resolvePreviewScopeID(workspaceID)
+    const previewState = previewByWorkspaceID[scopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    const trimmedText = input.text.trim()
 
-      const nextComment: PreviewComment = {
-        id: createID("preview-comment"),
-        url: current.committedUrl,
-        x: input.x,
-        y: input.y,
-        text: trimmedText,
-        createdAt: Date.now(),
-        anchor: input.anchor,
-      }
+    setRightSidebarView("preview")
+    if (!previewState.committedUrl || !trimmedText) return
+
+    const nextComment: PreviewComment = {
+      id: createID("preview-comment"),
+      url: previewState.committedUrl,
+      pageUrl: input.pageUrl ?? previewState.committedUrl,
+      x: input.x,
+      y: input.y,
+      text: trimmedText,
+      createdAt: Date.now(),
+      frame: input.frame,
+      nodePosition: input.nodePosition,
+      screenshotPath: input.screenshotPath ?? null,
+      anchor: input.anchor,
+    }
+    const commentIndex = previewState.comments.filter((comment) => comment.url === nextComment.url).length + 1
+
+    updatePreviewState((current) => {
+      if (current.committedUrl !== nextComment.url) return current
 
       return {
         ...current,
@@ -184,6 +200,26 @@ export function useReviewPanelController({
         errorMessage: null,
       }
     }, workspaceID)
+
+    if (activeTabKey) {
+      const nextReference: ComposerCommentReference = {
+        source: "preview",
+        id: createID("composer-preview-comment-reference"),
+        label: buildPreviewCommentReferenceLabel(nextComment.url, commentIndex),
+        title: buildPreviewCommentReferenceTitle(nextComment),
+        prompt: `Preview feedback for ${nextComment.pageUrl ?? nextComment.url}`,
+        comment: nextComment,
+        pageUrl: nextComment.pageUrl ?? nextComment.url,
+      }
+
+      setComposerDraftStateByTabKey((current) => ({
+        ...current,
+        [activeTabKey]: appendComposerTagToDraftState(
+          current[activeTabKey] ?? createEmptyComposerDraftState(),
+          createComposerCommentTagData(nextReference),
+        ),
+      }))
+    }
   }
 
   function handlePreviewDeleteComment(commentID: string, workspaceID = selectedWorkspace?.id ?? null) {
@@ -203,10 +239,28 @@ export function useReviewPanelController({
     if (!previewState.committedUrl) return
 
     const relevantComments = previewState.comments.filter((comment) => comment.url === previewState.committedUrl)
-    const commentDraft = buildPreviewCommentDraft(previewState.committedUrl, relevantComments)
-    if (!commentDraft) return
+    if (relevantComments.length === 0) return
 
-    appendDraftForTab(activeTabKey, commentDraft)
+    setComposerDraftStateByTabKey((current) => {
+      let nextDraftState = current[activeTabKey] ?? createEmptyComposerDraftState()
+      relevantComments.forEach((comment, index) => {
+        const nextReference: ComposerCommentReference = {
+          source: "preview",
+          id: createID("composer-preview-comment-reference"),
+          label: buildPreviewCommentReferenceLabel(comment.url, index + 1),
+          title: buildPreviewCommentReferenceTitle(comment),
+          prompt: `Preview feedback for ${comment.pageUrl ?? comment.url}`,
+          comment,
+          pageUrl: comment.pageUrl ?? comment.url,
+        }
+        nextDraftState = appendComposerTagToDraftState(nextDraftState, createComposerCommentTagData(nextReference))
+      })
+
+      return {
+        ...current,
+        [activeTabKey]: nextDraftState,
+      }
+    })
   }
 
   async function handlePreviewOpenExternal(workspaceID = selectedWorkspace?.id ?? null) {
@@ -420,6 +474,7 @@ export function useReviewPanelController({
       )
 
       const nextReference: ComposerCommentReference = {
+        source: "file",
         id: createID("composer-comment-reference"),
         filePath: selectedFilePath,
         startLineNumber: nextComment.startLineNumber,

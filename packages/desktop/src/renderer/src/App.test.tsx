@@ -642,6 +642,9 @@ describe("App", () => {
       writePtyInput: vi.fn().mockResolvedValue(undefined),
       pickProjectDirectory: vi.fn().mockResolvedValue(null),
       pickComposerAttachments: vi.fn().mockResolvedValue([]),
+      capturePreviewScreenshot: vi.fn().mockResolvedValue({
+        path: "C:\\Users\\codex\\preview-comment-screenshots\\marker.png",
+      }),
       gitGetCapabilities: vi.fn().mockResolvedValue({
         directory: "C:\\Projects\\Project 2",
         root: "C:\\Projects\\Project 2",
@@ -1320,16 +1323,17 @@ describe("App", () => {
     })
   })
 
-  it("opens a local preview, captures comments, and inserts them into the draft", async () => {
+  it("opens a local preview and inserts saved comments as composer tags", async () => {
     render(<App />)
 
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
     fireEvent.click(within(inspector).getByRole("button", { name: "Preview" }))
 
-    fireEvent.change(within(inspector).getByRole("textbox", { name: "Preview URL" }), {
+    const previewUrlInput = within(inspector).getByRole("textbox", { name: "Preview URL" })
+    fireEvent.change(previewUrlInput, {
       target: { value: "localhost:3000" },
     })
-    fireEvent.click(within(inspector).getByRole("button", { name: "Open" }))
+    fireEvent.submit(previewUrlInput.closest("form")!)
 
     expect(await within(inspector).findByTitle("Preview of http://localhost:3000/")).toBeInTheDocument()
 
@@ -1350,6 +1354,68 @@ describe("App", () => {
         toJSON: () => ({}),
       }),
     })
+
+    const iframe = within(inspector).getByTitle("Preview of http://localhost:3000/") as HTMLIFrameElement
+    Object.defineProperty(iframe, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: 300,
+        height: 300,
+        left: 0,
+        right: 400,
+        top: 0,
+        width: 400,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+    const hoverElement = document.createElement("p")
+    hoverElement.textContent = "Hero copy"
+    Object.defineProperty(hoverElement, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: 54,
+        height: 24,
+        left: 20,
+        right: 220,
+        top: 30,
+        width: 200,
+        x: 20,
+        y: 30,
+        toJSON: () => ({}),
+      }),
+    })
+    const frameDocument = {
+      elementFromPoint: vi.fn(() => hoverElement),
+    }
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      value: frameDocument,
+    })
+    fireEvent.mouseMove(overlay, { clientX: 40, clientY: 48 })
+
+    expect(within(inspector).getByText("p")).toBeInTheDocument()
+    expect(within(inspector).getByText("200x24")).toBeInTheDocument()
+    const hoverTooltip = inspector.querySelector(".preview-hover-tooltip") as HTMLElement | null
+    expect(hoverTooltip?.style.getPropertyValue("--preview-hover-tooltip-left")).toBe("52px")
+    expect(hoverTooltip?.style.getPropertyValue("--preview-hover-tooltip-top")).toBe("60px")
+
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      get: () => {
+        throw new DOMException("Blocked cross-origin frame access", "SecurityError")
+      },
+    })
+    fireEvent.mouseMove(overlay, { clientX: 100, clientY: 90 })
+    expect(within(inspector).getByText("point")).toBeInTheDocument()
+    expect(within(inspector).getByText("25%, 30%")).toBeInTheDocument()
+
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      value: frameDocument,
+    })
+
     fireEvent.click(overlay, { clientX: 200, clientY: 150 })
 
     fireEvent.change(within(inspector).getByRole("textbox", { name: "Preview comment" }), {
@@ -1357,12 +1423,21 @@ describe("App", () => {
     })
     fireEvent.click(within(inspector).getByRole("button", { name: "Save" }))
 
-    expect(within(inspector).getByText("Comment 1")).toBeInTheDocument()
-
-    fireEvent.click(within(inspector).getByRole("button", { name: "Use in chat" }))
     await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).toContain("Tighten hero spacing")
+      expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).toContain("@preview:localhost:3000#1")
     })
+    expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).not.toContain("Tighten hero spacing")
+    expect(window.desktop!.capturePreviewScreenshot).toHaveBeenCalledWith({
+      bounds: {
+        height: 300,
+        width: 400,
+        x: 0,
+        y: 0,
+      },
+      url: "http://localhost:3000/",
+    })
+    expect(within(inspector).queryByRole("button", { name: "Use in chat" })).not.toBeInTheDocument()
+    expect(within(inspector).queryByText("Review notes")).not.toBeInTheDocument()
 
     fireEvent.click(within(inspector).getByRole("button", { name: "Open External" }))
     await waitFor(() => {
@@ -1370,6 +1445,100 @@ describe("App", () => {
         url: "http://localhost:3000/",
       })
     })
+  })
+
+  it("keeps saving preview comment tags when screenshot capture fails", async () => {
+    window.desktop!.capturePreviewScreenshot = vi.fn().mockRejectedValueOnce(new Error("capture failed"))
+
+    render(<App />)
+
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(within(inspector).getByRole("button", { name: "Preview" }))
+
+    const previewUrlInput = within(inspector).getByRole("textbox", { name: "Preview URL" })
+    fireEvent.change(previewUrlInput, {
+      target: { value: "localhost:3000" },
+    })
+    fireEvent.submit(previewUrlInput.closest("form")!)
+
+    expect(await within(inspector).findByTitle("Preview of http://localhost:3000/")).toBeInTheDocument()
+    fireEvent.click(within(inspector).getByRole("button", { name: "Comment" }))
+
+    const overlay = within(inspector).getByTestId("preview-comment-overlay")
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: 300,
+        height: 300,
+        left: 0,
+        right: 400,
+        top: 0,
+        width: 400,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+    fireEvent.click(overlay, { clientX: 120, clientY: 150 })
+    fireEvent.change(within(inspector).getByRole("textbox", { name: "Preview comment" }), {
+      target: { value: "Screenshot capture should not block save" },
+    })
+    fireEvent.click(within(inspector).getByRole("button", { name: "Save" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).toContain("@preview:localhost:3000#1")
+    })
+    expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).not.toContain(
+      "Screenshot capture should not block save",
+    )
+  })
+
+  it("keeps preview comment fallback active over Electron webviews", async () => {
+    const userAgentSpy = vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(
+      "Mozilla/5.0 Electron/39.0.0",
+    )
+    window.desktop!.previewGuestPreloadPath = "file:///C:/Projects/fanfande_studio/packages/desktop/out/preload/preview-webview.mjs"
+
+    render(<App />)
+
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    fireEvent.click(within(inspector).getByRole("button", { name: "Preview" }))
+
+    const previewUrlInput = within(inspector).getByRole("textbox", { name: "Preview URL" })
+    fireEvent.change(previewUrlInput, {
+      target: { value: "localhost:3000" },
+    })
+    fireEvent.submit(previewUrlInput.closest("form")!)
+
+    await waitFor(() => {
+      expect(document.querySelector("webview.preview-frame")).toBeInTheDocument()
+    })
+    fireEvent.click(within(inspector).getByRole("button", { name: "Comment" }))
+
+    const overlay = within(inspector).getByTestId("preview-comment-overlay")
+    Object.defineProperty(overlay, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        bottom: 300,
+        height: 300,
+        left: 0,
+        right: 400,
+        top: 0,
+        width: 400,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    })
+
+    fireEvent.mouseMove(overlay, { clientX: 100, clientY: 90 })
+    expect(within(inspector).getByText("point")).toBeInTheDocument()
+    expect(within(inspector).getByText("25%, 30%")).toBeInTheDocument()
+
+    fireEvent.click(overlay, { clientX: 120, clientY: 120 })
+    expect(within(inspector).getByRole("textbox", { name: "Preview comment" })).toBeInTheDocument()
+
+    userAgentSpy.mockRestore()
   })
 
   it("searches files in the focused workspace and loads text content in the files inspector", async () => {
@@ -1876,7 +2045,7 @@ describe("App", () => {
     expect(screen.queryByLabelText("Left sidebar top menu")).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
 
-    await screen.findByText("No global skills exist yet. Use the add button to create the first one.")
+    await screen.findByText("No skills exist yet. Use New to create the first one.")
 
     fireEvent.click(screen.getByRole("button", { name: "Create global skill" }))
 
@@ -1891,6 +2060,91 @@ describe("App", () => {
     await screen.findByRole("button", { name: "SKILL.md" })
     expect(screen.queryByRole("textbox", { name: "New global skill name" })).not.toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
+  })
+
+  it("opens the global skills folder from the skills page", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    window.desktop!.getGlobalSkillsTree = vi.fn().mockResolvedValue({
+      root,
+      items: [],
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+
+    const openLocationButton = await screen.findByRole("button", { name: "打开文件位置" })
+    await waitFor(() => {
+      expect(openLocationButton).not.toBeDisabled()
+    })
+    expect(screen.queryByText(root)).not.toBeInTheDocument()
+
+    fireEvent.click(openLocationButton)
+
+    await waitFor(() => {
+      expect(window.desktop!.openInExternalEditor).toHaveBeenCalledWith({
+        targetPath: root,
+        editorID: "explorer",
+      })
+    })
+  })
+
+  it("switches the global skill editor between edit and markdown preview", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    const directoryPath = `${root}\\layout-review`
+    const filePath = `${directoryPath}\\SKILL.md`
+    const content = ["# Preview Heading", "", "- First task", "- Second task"].join("\n")
+
+    window.desktop!.getGlobalSkillsTree = vi.fn().mockResolvedValue({
+      root,
+      items: [
+        {
+          name: "layout-review",
+          path: directoryPath,
+          kind: "directory",
+          children: [
+            {
+              name: "SKILL.md",
+              path: filePath,
+              kind: "file",
+            },
+          ],
+        },
+      ],
+    })
+    window.desktop!.readGlobalSkillFile = vi.fn().mockResolvedValue({
+      path: filePath,
+      content,
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+
+    const editor = await screen.findByRole("textbox", { name: "Global skill editor" })
+    expect(editor).toHaveValue(content)
+    await waitFor(() => {
+      expect(editor).toHaveFocus()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }))
+
+    expect(screen.queryByRole("textbox", { name: "Global skill editor" })).not.toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Preview Heading" })).toBeInTheDocument()
+    expect(screen.getByText("First task")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+
+    const reopenedEditor = screen.getByRole("textbox", { name: "Global skill editor" })
+    expect(reopenedEditor).toHaveValue(content)
+    await waitFor(() => {
+      expect(reopenedEditor).toHaveFocus()
+    })
+
+    fireEvent.change(reopenedEditor, { target: { value: `${content}\n\nEditable note` } })
+
+    expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(`${content}\n\nEditable note`)
+    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled()
   })
 
   it("renames a global skill from the tree with double click", async () => {
@@ -6134,6 +6388,25 @@ describe("App", () => {
     expect(screen.getByLabelText("Plan mode prompt preset")).toHaveValue("plan-mode")
     expect(screen.getByLabelText("Side chat prompt preset")).toHaveValue("side-chat")
 
+    fireEvent.click(screen.getByRole("button", { name: "Plan Mode Prompt" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.readPromptPreset).toHaveBeenCalledWith({
+        presetID: "plan-mode",
+      })
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }))
+
+    const planPreview = screen.getByRole("region", { name: "Plan Mode Prompt markdown preview" })
+    expect(planPreview).toHaveTextContent("<system-reminder>")
+    expect(within(planPreview).getByRole("heading", { name: "Plan Mode - System Reminder" })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    expect(screen.getByRole("textbox", { name: "Plan Mode Prompt content" })).toHaveValue(
+      "<system-reminder>\n# Plan Mode - System Reminder",
+    )
+
     fireEvent.change(screen.getByLabelText("System prompt preset"), {
       target: {
         value: "provider-gpt",
@@ -6388,13 +6661,16 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open MCP" }))
 
     expect(screen.getByLabelText("MCP top menu")).toBeInTheDocument()
-    expect(await screen.findByText("Configure reusable local and remote MCP servers once, then enable them per project from the session canvas top menu.")).toBeInTheDocument()
+    const filesystemButton = await screen.findByRole("button", { name: /Filesystem enabled/ })
+    const newServerButton = screen.getByRole("button", { name: "New server" })
+    const pageButtons = screen.getAllByRole("button")
+    expect(pageButtons.indexOf(filesystemButton)).toBeLessThan(pageButtons.indexOf(newServerButton))
+    expect(screen.queryByText("npx")).not.toBeInTheDocument()
     expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument()
     expect(screen.queryByText("Pick a project first")).not.toBeInTheDocument()
     expect(screen.queryByText("Diagnostic context")).not.toBeInTheDocument()
-    expect(screen.getByText("Global server definitions are shared across projects. Set a working directory on stdio servers when the server expects one.")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: /Filesystem enabled/ }))
+    fireEvent.click(filesystemButton)
     fireEvent.change(screen.getByRole("textbox", { name: "MCP server name" }), {
       target: { value: "Filesystem Tools" },
     })
@@ -9648,6 +9924,19 @@ describe("App", () => {
     expect(styles).toMatch(
       /\.canvas-region-top-menu\s+\.session-tab\s*\{[^}]*border-radius:\s*var\(--canvas-region-tab-cap-radius\) var\(--canvas-region-tab-cap-radius\) 0 0;/s,
     )
+  })
+
+  it("keeps preview comment hover highlight visibly blue across theme overrides", () => {
+    const hoverHighlightBlocks = Array.from(
+      styles.matchAll(/\.preview-hover-highlight\s*\{([^}]*)\}/g),
+      (match) => match[1],
+    )
+    expect(hoverHighlightBlocks.length).toBeGreaterThan(0)
+    const finalHoverHighlightBlock = hoverHighlightBlocks[hoverHighlightBlocks.length - 1] ?? ""
+
+    expect(finalHoverHighlightBlock).toContain("border-color: #0a84ff;")
+    expect(finalHoverHighlightBlock).toContain("background: rgba(10, 132, 255, 0.18);")
+    expect(finalHoverHighlightBlock).not.toContain("border-color: var(--seg-accent)")
   })
 
   it("keeps the canvas tabs separate from the session top menu", () => {

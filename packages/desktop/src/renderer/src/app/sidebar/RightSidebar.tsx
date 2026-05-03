@@ -37,18 +37,22 @@ interface RightSidebarProps {
   activeSessionRuntimeDebug?: SessionRuntimeDebugSnapshot | null
   activeSessionRuntimeDebugState?: SessionRuntimeDebugState
   activePreviewState: WorkspacePreviewState
-  canInsertPreviewCommentsIntoDraft: boolean
   canInsertWorkspaceFileCommentsIntoDraft: boolean
-  previewWorkspaceDirectory: string | null
-  previewWorkspaceName: string | null
   selectedDiffFile: string | null
   activeView: RightSidebarView
   onDiffFileSelect: (file: string | null) => void
   onDiffFileRestore: (file: string) => void | Promise<void>
-  onPreviewAddComment: (input: { x: number; y: number; text: string; anchor?: PreviewComment["anchor"] }) => void
-  onPreviewDeleteComment: (commentID: string) => void
+  onPreviewAddComment: (input: {
+    frame?: string
+    nodePosition?: string
+    pageUrl?: string
+    screenshotPath?: string | null
+    x: number
+    y: number
+    text: string
+    anchor?: PreviewComment["anchor"]
+  }) => void
   onPreviewDraftUrlChange: (value: string) => void
-  onPreviewInsertCommentsIntoDraft: () => void
   onPreviewModeChange: (mode: PreviewMode) => void
   onPreviewOpen: () => void
   onPreviewOpenExternal: () => void | Promise<void>
@@ -225,18 +229,13 @@ export function RightSidebar({
   activeSessionRuntimeDebug,
   activeSessionRuntimeDebugState,
   activePreviewState,
-  canInsertPreviewCommentsIntoDraft,
   canInsertWorkspaceFileCommentsIntoDraft,
-  previewWorkspaceDirectory,
-  previewWorkspaceName,
   selectedDiffFile,
   activeView,
   onDiffFileSelect,
   onDiffFileRestore,
   onPreviewAddComment,
-  onPreviewDeleteComment,
   onPreviewDraftUrlChange,
-  onPreviewInsertCommentsIntoDraft,
   onPreviewModeChange,
   onPreviewOpen,
   onPreviewOpenExternal,
@@ -520,14 +519,9 @@ export function RightSidebar({
 
         {activeView === "preview" ? (
           <PreviewPanel
-            canInsertCommentsIntoDraft={canInsertPreviewCommentsIntoDraft}
             state={activePreviewState}
-            workspaceDirectory={previewWorkspaceDirectory}
-            workspaceName={previewWorkspaceName}
             onAddComment={onPreviewAddComment}
-            onDeleteComment={onPreviewDeleteComment}
             onDraftUrlChange={onPreviewDraftUrlChange}
-            onInsertCommentsIntoDraft={onPreviewInsertCommentsIntoDraft}
             onModeChange={onPreviewModeChange}
             onOpen={onPreviewOpen}
             onOpenExternal={onPreviewOpenExternal}

@@ -230,6 +230,20 @@ export interface DesktopAgentHealth {
   error?: string
 }
 
+export interface DesktopPreviewScreenshotCaptureInput {
+  bounds: {
+    height: number
+    width: number
+    x: number
+    y: number
+  }
+  url?: string
+}
+
+export interface DesktopPreviewScreenshotCaptureResult {
+  path: string
+}
+
 export interface DesktopSessionMutationResult {
   session: AgentSessionSummary
   requestId?: string
@@ -422,6 +436,10 @@ export interface DesktopIpcContract {
   "desktop:pick-composer-attachments": {
     input: { allowImage?: boolean; allowPdf?: boolean } | undefined
     output: string[]
+  }
+  "desktop:capture-preview-screenshot": {
+    input: DesktopPreviewScreenshotCaptureInput
+    output: DesktopPreviewScreenshotCaptureResult
   }
   "desktop:git-get-capabilities": {
     input: { projectID: string; directory: string }
@@ -876,6 +894,7 @@ export interface DesktopApiMethods {
   writePtyInput(input: DesktopIpcInput<"desktop:write-pty-input">): Promise<DesktopIpcOutput<"desktop:write-pty-input">>
   pickProjectDirectory(): Promise<DesktopIpcOutput<"desktop:pick-project-directory">>
   pickComposerAttachments(input?: DesktopIpcInput<"desktop:pick-composer-attachments">): Promise<DesktopIpcOutput<"desktop:pick-composer-attachments">>
+  capturePreviewScreenshot(input: DesktopIpcInput<"desktop:capture-preview-screenshot">): Promise<DesktopIpcOutput<"desktop:capture-preview-screenshot">>
   gitGetCapabilities(input: DesktopIpcInput<"desktop:git-get-capabilities">): Promise<DesktopIpcOutput<"desktop:git-get-capabilities">>
   gitCommit(input: DesktopIpcInput<"desktop:git-commit">): Promise<DesktopIpcOutput<"desktop:git-commit">>
   gitPush(input: DesktopIpcInput<"desktop:git-push">): Promise<DesktopIpcOutput<"desktop:git-push">>

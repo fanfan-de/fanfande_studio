@@ -9,6 +9,8 @@ import type {
   McpServerDiagnostic,
   McpServerDraftState,
   McpServerSummary,
+  McpToolPolicies,
+  McpToolPolicyValue,
   PluginCatalogItem,
   PluginConnectorStatus,
   PluginDraftState,
@@ -21,6 +23,7 @@ import type {
   ProviderDraftState,
   ProviderModel,
 } from "./types"
+import { mergeMcpToolPolicyDefaults } from "./mcp/mcp-tool-policies"
 
 interface SettingsMessage {
   tone: "success" | "error"
@@ -241,6 +244,14 @@ function resolveAllowedToolsMode(allowedTools?: McpAllowedTools): McpServerDraft
   return "all"
 }
 
+function normalizeToolPolicyDraft(policies?: McpToolPolicies): Record<string, McpToolPolicyValue> {
+  return Object.fromEntries(
+    Object.entries(policies ?? {})
+      .filter(([toolName, policy]) => toolName.trim() && policy?.policy)
+      .map(([toolName, policy]) => [toolName, policy.policy]),
+  )
+}
+
 function toMcpDraft(server?: McpServerSummary): McpServerDraftState {
   return {
     id: server?.id ?? "",
@@ -255,6 +266,7 @@ function toMcpDraft(server?: McpServerSummary): McpServerDraftState {
     headers: server?.transport === "remote" ? stringifyKeyValueEntries(server.headers) : "",
     allowedToolsMode: server?.transport === "remote" ? resolveAllowedToolsMode(server.allowedTools) : "all",
     allowedToolNames: server?.transport === "remote" ? stringifyAllowedToolNames(server.allowedTools) : "",
+    toolPolicies: normalizeToolPolicyDraft(server?.toolPolicies),
     enabled: server?.enabled ?? true,
     timeoutMs: typeof server?.timeoutMs === "number" ? String(server.timeoutMs) : "",
   }
@@ -339,6 +351,14 @@ function buildAllowedTools(draft: McpServerDraftState): McpAllowedTools | undefi
         ...(toolNames.length > 0 ? { toolNames } : {}),
       }
   }
+}
+
+function buildToolPolicies(draft: McpServerDraftState): McpToolPolicies | undefined {
+  const entries = Object.entries(draft.toolPolicies)
+    .filter(([toolName]) => toolName.trim())
+    .map(([toolName, policy]) => [toolName, { policy }] as const)
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
 }
 
 function getMcpServerValidationError(draft: McpServerDraftState) {
@@ -898,6 +918,9 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         ...current,
         [serverID]: diagnostic,
       }))
+      setMcpServerDraft((current) => (
+        current.id.trim() === serverID ? mergeMcpToolPolicyDefaults(current, diagnostic) : current
+      ))
 
       return diagnostic
     } catch (error) {
@@ -909,6 +932,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         ok: false,
         toolCount: 0,
         toolNames: [],
+        tools: [],
         error: getErrorMessage(error),
       }
       setMcpDiagnostics((current) => ({
@@ -947,6 +971,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         ok: false,
         toolCount: 0,
         toolNames: [],
+        tools: [],
         error: getErrorMessage(error),
       }
       setPluginDiagnostics((current) => ({
@@ -1056,6 +1081,16 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setMcpServerDraft((current) => ({
       ...current,
       [field]: value,
+    }))
+  }
+
+  function setMcpToolPolicy(toolName: string, policy: McpToolPolicyValue) {
+    setMcpServerDraft((current) => ({
+      ...current,
+      toolPolicies: {
+        ...current.toolPolicies,
+        [toolName]: policy,
+      },
     }))
   }
 
@@ -1837,6 +1872,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
                 args: parseLineList(mcpServerDraft.args),
                 env: parseMcpKeyValue(mcpServerDraft.env, "environment"),
                 cwd: mcpServerDraft.cwd.trim() || undefined,
+                toolPolicies: buildToolPolicies(mcpServerDraft),
                 enabled: mcpServerDraft.enabled,
                 timeoutMs: mcpServerDraft.timeoutMs.trim() ? Number(mcpServerDraft.timeoutMs.trim()) : undefined,
               }
@@ -1847,6 +1883,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
                 authorization: mcpServerDraft.authorization.trim() || undefined,
                 headers: parseMcpKeyValue(mcpServerDraft.headers, "header"),
                 allowedTools: buildAllowedTools(mcpServerDraft),
+                toolPolicies: buildToolPolicies(mcpServerDraft),
                 enabled: mcpServerDraft.enabled,
                 timeoutMs: mcpServerDraft.timeoutMs.trim() ? Number(mcpServerDraft.timeoutMs.trim()) : undefined,
               },
@@ -2293,6 +2330,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     selectPlugin,
     selectionDraft,
     setMcpServerDraftValue,
+    setMcpToolPolicy,
     setInstalledPluginEnabled,
     setPluginDraftAppApiKey,
     setPluginDraftConfigValue,

@@ -483,7 +483,6 @@ export function useAgentWorkspace({
   })
 
   const {
-    appendDraftForTab,
     handleCancelSend,
     handlePermissionRequestResponse,
     handleAskUserQuestionAnswer,
@@ -555,7 +554,6 @@ export function useAgentWorkspace({
     activeSessionID,
     activeTabKey,
     activeWorkspaceFileScopeDirectory,
-    appendDraftForTab,
     loadSessionDiffForSession,
     loadSessionRuntimeDebugForSession,
     platform,

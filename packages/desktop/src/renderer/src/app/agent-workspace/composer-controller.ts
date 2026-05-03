@@ -1,7 +1,6 @@
 import type { MutableRefObject } from "react"
 import { buildComposerAttachment, isComposerAttachmentSupported } from "../composer/attachment-utils"
 import {
-  appendTextToComposerDraftState,
   compileComposerSubmission,
   createEmptyComposerDraftState,
   normalizeComposerDraftState,
@@ -138,19 +137,6 @@ export function useComposerController({
   function setDraft(value: ComposerDraftState) {
     if (!activeTabKey) return
     setDraftForTab(activeTabKey, value)
-  }
-
-  function appendDraftForTab(tabKey: string, value: string) {
-    const trimmedValue = value.trim()
-    if (!trimmedValue) return
-
-    setComposerDraftStateByTabKey((current) => {
-      const existingDraft = current[tabKey] ?? createEmptyComposerDraftState()
-      return {
-        ...current,
-        [tabKey]: appendTextToComposerDraftState(existingDraft, trimmedValue),
-      }
-    })
   }
 
   async function sendPromptToSession(input: {
@@ -458,7 +444,6 @@ export function useComposerController({
   }
 
   return {
-    appendDraftForTab,
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
     handleRemoveComposerAttachment,

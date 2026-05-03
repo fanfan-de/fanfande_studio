@@ -477,6 +477,33 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     }
   }
 
+  async function handleOpenGlobalSkillsFolder() {
+    const openInExternalEditor = window.desktop?.openInExternalEditor
+    if (!globalSkillsRoot.trim()) return
+
+    setGlobalSkillsMessage(null)
+
+    if (!openInExternalEditor) {
+      setGlobalSkillsMessage({
+        tone: "error",
+        text: "Opening the skills folder is unavailable in this desktop shell.",
+      })
+      return
+    }
+
+    try {
+      await openInExternalEditor({
+        targetPath: globalSkillsRoot,
+        editorID: "explorer",
+      })
+    } catch (error) {
+      setGlobalSkillsMessage({
+        tone: "error",
+        text: formatError(error),
+      })
+    }
+  }
+
   async function handleDeleteGlobalSkill(directoryPath?: string) {
     const deleteGlobalSkill = window.desktop?.deleteGlobalSkill
     const targetDirectory =
@@ -526,6 +553,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     handleGlobalSkillDirectoryToggle,
     handleGlobalSkillDraftChange,
     handleGlobalSkillFileSelect,
+    handleOpenGlobalSkillsFolder,
     handleRenameGlobalSkill,
     handleRenameGlobalSkillDraftCancel,
     handleRenameGlobalSkillDraftChange,

@@ -442,6 +442,91 @@ body.is-dragging-settings-page {
   font: inherit;
 }
 
+.mcp-tools-policy-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.mcp-tools-policy-list {
+  display: grid;
+  gap: 12px;
+}
+
+.mcp-tool-policy-card {
+  padding: 14px;
+  border: 1px solid var(--seg-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.76);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 220px);
+  gap: 14px;
+  align-items: start;
+}
+
+.mcp-tool-policy-main {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.mcp-tool-policy-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.mcp-tool-policy-heading h4 {
+  margin: 0;
+  color: var(--seg-text-1);
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.mcp-tool-policy-heading code {
+  color: #5f7285;
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.mcp-tool-policy-card p {
+  margin: 0;
+  color: var(--seg-text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mcp-tool-policy-select select {
+  width: 100%;
+}
+
+.mcp-tool-policy-details {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.mcp-tool-policy-details summary {
+  cursor: pointer;
+  color: #41586f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mcp-tool-policy-details pre {
+  max-height: 240px;
+  margin: 10px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid rgba(163, 184, 205, 0.42);
+  background: rgba(246, 249, 252, 0.9);
+  color: #26394b;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .settings-field input::placeholder,
 .settings-field textarea::placeholder {
   color: #8da0b4;
@@ -509,6 +594,10 @@ body.is-dragging-settings-page {
 
 .settings-provider-list-panel {
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.settings-service-list-panel.mcp-servers-list-panel {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .settings-provider-search-row {
@@ -656,6 +745,19 @@ body.is-dragging-settings-page {
 .settings-service-list-empty-state {
   min-height: 100%;
   align-content: center;
+}
+
+.mcp-servers-list-stack {
+  align-content: start;
+}
+
+.mcp-servers-list-stack .settings-service-list-empty-state {
+  min-height: auto;
+}
+
+.mcp-servers-new-button {
+  justify-self: start;
+  min-width: 112px;
 }
 
 .settings-service-item,
@@ -1039,9 +1141,9 @@ body.is-dragging-settings-page {
 
 .settings-prompt-slots-panel {
   gap: 0;
-  padding: 10px 22px;
+  padding: 12px;
   border-color: rgba(196, 205, 214, 0.72);
-  border-radius: 18px;
+  border-radius: var(--seg-radius-sm);
   background: #fcfbf8;
   box-shadow: 0 8px 24px rgba(22, 34, 48, 0.03);
 }
@@ -1070,64 +1172,72 @@ body.is-dragging-settings-page {
 
 .settings-prompt-assignment-list {
   display: grid;
-  gap: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .settings-prompt-assignment-row {
-  padding: 18px 0;
+  min-width: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 24px;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
 }
 
 .settings-prompt-assignment-row + .settings-prompt-assignment-row {
-  border-top: 1px solid var(--seg-border);
+  border-top: 0;
 }
 
 .settings-prompt-assignment-copy {
+  min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .settings-prompt-assignment-title {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--seg-text-1);
   letter-spacing: -0.01em;
 }
 
 .settings-prompt-assignment-note {
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.35;
   color: #728392;
+  white-space: nowrap;
 }
 
 .settings-prompt-assignment-control {
+  min-width: 0;
   display: flex;
   justify-content: flex-end;
 }
 
 .settings-prompt-assignment-actions {
+  min-width: 0;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
 }
 
 .settings-prompt-assignment-control select {
-  width: 224px;
-  min-width: 224px;
-  min-height: 40px;
-  padding: 0 14px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 12px;
   border-color: rgba(195, 204, 214, 0.82);
-  border-radius: 10px;
+  border-radius: var(--seg-radius-xs);
   background: #ffffff;
   box-shadow: 0 1px 2px rgba(24, 37, 50, 0.08);
 }
 
 .settings-prompt-assignment-actions .secondary-button {
-  min-width: 88px;
+  min-width: 78px;
+  min-height: 36px;
   border-color: rgba(195, 204, 214, 0.82);
   background: #ffffff;
   color: #33485d;
@@ -1178,6 +1288,61 @@ body.is-dragging-settings-page {
   gap: 0;
 }
 
+.settings-prompt-editor-toolbar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-prompt-editor-toolbar .settings-inline-actions {
+  margin-left: 0;
+}
+
+.settings-prompt-editor-mode-switch {
+  min-height: 34px;
+  padding: 3px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-panel-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.settings-prompt-editor-mode-button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--seg-text-2);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.settings-prompt-editor-mode-button:hover,
+.settings-prompt-editor-mode-button:focus-visible {
+  background: #ffffff;
+  color: var(--seg-text-1);
+}
+
+.settings-prompt-editor-mode-button:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+}
+
+.settings-prompt-editor-mode-button.is-active {
+  background: #ffffff;
+  color: var(--seg-text-1);
+  box-shadow: 0 1px 2px rgba(24, 37, 50, 0.08);
+}
+
 .settings-prompt-name-input {
   width: 100%;
   min-height: 36px;
@@ -1206,6 +1371,39 @@ body.is-dragging-settings-page {
   line-height: 1.65;
   white-space: pre-wrap;
   resize: none;
+}
+
+.settings-prompt-preview-surface {
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding: 16px 18px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: #ffffff;
+  color: var(--seg-text-1);
+}
+
+.settings-prompt-markdown-preview {
+  color: var(--seg-text-1);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.settings-prompt-markdown-preview h1 {
+  font-size: 20px;
+}
+
+.settings-prompt-markdown-preview h2 {
+  font-size: 18px;
+}
+
+.settings-prompt-preview-empty {
+  margin: 0;
+  color: var(--seg-text-3);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .settings-prompt-source-path {
@@ -1271,6 +1469,7 @@ body.is-dragging-settings-page {
   .settings-prompt-assignment-row {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
+    gap: 8px;
   }
 
   .settings-prompt-assignment-control {

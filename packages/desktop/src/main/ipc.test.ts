@@ -99,3 +99,46 @@ describe("ipc tool permission mode helpers", () => {
     })
   })
 })
+
+describe("ipc preview screenshot helpers", () => {
+  it("captures the requested bounds and writes a marker screenshot under user data", async () => {
+    const pngBuffer = Buffer.from("preview-marker")
+    const capturePage = vi.fn().mockResolvedValue({
+      toPNG: () => pngBuffer,
+    })
+    const makeDirectory = vi.fn().mockResolvedValue(undefined)
+    const writeImageFile = vi.fn().mockResolvedValue(undefined)
+
+    const result = await internal.capturePreviewScreenshotFromWindow(
+      { capturePage },
+      {
+        bounds: {
+          height: 0,
+          width: 320.4,
+          x: -8.2,
+          y: 12.6,
+        },
+        url: "http://localhost:5174/page?a=1",
+      },
+      {
+        makeDirectory,
+        now: new Date("2026-05-03T01:02:03.004Z"),
+        userDataPath: "C:\\Users\\codex\\AppData\\Roaming\\Desktop",
+        writeImageFile,
+      },
+    )
+
+    expect(capturePage).toHaveBeenCalledWith({
+      height: 1,
+      width: 320,
+      x: 0,
+      y: 13,
+    })
+    expect(result.path).toContain("preview-comment-screenshots")
+    expect(result.path).toContain("2026-05-03T01-02-03-004Z-localhost-5174-page-a-1.png")
+    expect(makeDirectory).toHaveBeenCalledWith(expect.stringContaining("preview-comment-screenshots"), {
+      recursive: true,
+    })
+    expect(writeImageFile).toHaveBeenCalledWith(result.path, pngBuffer)
+  })
+})

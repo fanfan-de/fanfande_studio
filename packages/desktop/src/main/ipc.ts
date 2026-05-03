@@ -1,4 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type WebContents } from "electron"
+import { mkdir, writeFile } from "node:fs/promises"
+import path from "node:path"
 import type { AppearanceConfigDocument } from "../shared/appearance"
 import type {
   DesktopIpcChannel,
@@ -160,6 +162,51 @@ async function listFolderWorkspaces() {
   const result = await requestAgentJSON<AgentProjectInfo[]>("/api/projects")
   const projectWorkspaces = await Promise.all(result.data.map((project) => loadProjectWorkspace(project)))
   return buildFolderWorkspaces(result.data, projectWorkspaces)
+}
+
+function sanitizeScreenshotFileSegment(value: string) {
+  return value
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "preview"
+}
+
+type PreviewScreenshotCaptureInput = DesktopIpcInput<"desktop:capture-preview-screenshot">
+
+interface PreviewScreenshotCaptureOptions {
+  makeDirectory?: (directory: string, options: { recursive: true }) => Promise<unknown>
+  now?: Date
+  userDataPath?: string
+  writeImageFile?: (filePath: string, data: Buffer) => Promise<unknown>
+}
+
+async function capturePreviewScreenshotFromWindow(
+  win: Pick<BrowserWindow, "capturePage">,
+  input: PreviewScreenshotCaptureInput,
+  options: PreviewScreenshotCaptureOptions = {},
+) {
+  const bounds = input.bounds
+  const rect = {
+    height: Math.max(1, Math.round(bounds.height)),
+    width: Math.max(1, Math.round(bounds.width)),
+    x: Math.max(0, Math.round(bounds.x)),
+    y: Math.max(0, Math.round(bounds.y)),
+  }
+  const image = await win.capturePage(rect)
+  const screenshotDirectory = path.join(
+    options.userDataPath ?? app.getPath("userData"),
+    "preview-comment-screenshots",
+  )
+  const timestamp = (options.now ?? new Date()).toISOString().replace(/[:.]/g, "-")
+  const urlSegment = sanitizeScreenshotFileSegment(input.url ?? "preview")
+  const screenshotPath = path.join(screenshotDirectory, `${timestamp}-${urlSegment}.png`)
+
+  await (options.makeDirectory ?? mkdir)(screenshotDirectory, { recursive: true })
+  await (options.writeImageFile ?? writeFile)(screenshotPath, image.toPNG())
+
+  return { path: screenshotPath }
 }
 
 async function getToolPermissionMode() {
@@ -769,6 +816,15 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       return result.canceled ? [] : result.filePaths
     },
   )
+
+  handleDesktopIpc("desktop:capture-preview-screenshot", async (event, input) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) {
+      throw new Error("Preview screenshot capture requires an active window.")
+    }
+
+    return capturePreviewScreenshotFromWindow(win, input)
+  })
 
   handleDesktopIpc("desktop:git-get-capabilities", async (_event, input: { projectID: string; directory: string }) =>
     getGitCapabilities(input),
@@ -2234,6 +2290,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 }
 
 export const internal = {
+  capturePreviewScreenshotFromWindow,
   disposeSessionStreamSubscriptionsForWebContents,
   getToolPermissionMode,
   isSessionStreamSubscriptionKeyForWebContents,

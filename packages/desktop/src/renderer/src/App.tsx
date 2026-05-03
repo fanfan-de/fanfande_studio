@@ -116,7 +116,6 @@ export function App() {
     activeSessionRuntimeDebug,
     activeSessionRuntimeDebugState,
     activeSessionSelectedDiffFile,
-    canInsertPreviewCommentsIntoDraft,
     canInsertWorkspaceFileCommentsIntoDraft,
     composerRefreshVersion,
     deletingSessionID,
@@ -141,9 +140,7 @@ export function App() {
     handleAskUserQuestionAnswer,
     handlePickComposerAttachments,
     handlePreviewAddComment,
-    handlePreviewDeleteComment,
     handlePreviewDraftUrlChange,
-    handlePreviewInsertCommentsIntoDraft,
     handlePreviewModeChange,
     handlePreviewOpen,
     handlePreviewOpenExternal,
@@ -210,6 +207,7 @@ export function App() {
     handleGlobalSkillDirectoryToggle,
     handleGlobalSkillDraftChange,
     handleGlobalSkillFileSelect,
+    handleOpenGlobalSkillsFolder,
     handleRenameGlobalSkill,
     handleRenameGlobalSkillDraftCancel,
     handleRenameGlobalSkillDraftChange,
@@ -329,6 +327,7 @@ export function App() {
     selectionDraft,
     setInstalledPluginEnabled,
     setMcpServerDraftValue,
+    setMcpToolPolicy,
     setPluginDraftAppApiKey,
     setPluginDraftConfigValue,
     setBuiltinToolEnabled,
@@ -814,6 +813,7 @@ export function App() {
               onDeleteGlobalSkill={handleDeleteGlobalSkill}
               onGlobalSkillDirectoryToggle={handleGlobalSkillDirectoryToggle}
               onGlobalSkillFileSelect={handleGlobalSkillFileSelect}
+              onOpenGlobalSkillsFolder={handleOpenGlobalSkillsFolder}
               onRenameGlobalSkill={handleRenameGlobalSkill}
               onRenameGlobalSkillDraftCancel={handleRenameGlobalSkillDraftCancel}
               onRenameGlobalSkillDraftChange={handleRenameGlobalSkillDraftChange}
@@ -835,6 +835,7 @@ export function App() {
               onDeleteMcpServer={deleteMcpServer}
               onDismissMessage={dismissMessage}
               onMcpServerDraftChange={setMcpServerDraftValue}
+              onMcpToolPolicyChange={setMcpToolPolicy}
               onMcpServerSelect={selectMcpServer}
               onSaveMcpServer={saveMcpServer}
               onStartNewMcpServer={startNewMcpServer}
@@ -968,18 +969,13 @@ export function App() {
                 activeSessionDiffState={activeSessionDiffState}
                 activeSessionRuntimeDebug={activeSessionRuntimeDebug}
                 activeSessionRuntimeDebugState={activeSessionRuntimeDebugState}
-                canInsertPreviewCommentsIntoDraft={canInsertPreviewCommentsIntoDraft}
                 canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
-                previewWorkspaceDirectory={selectedWorkspace?.directory ?? null}
-                previewWorkspaceName={selectedWorkspace?.name ?? null}
                 selectedDiffFile={activeSessionSelectedDiffFile}
                 activeView={rightSidebarView}
                 onDiffFileSelect={handleActiveSessionDiffFileSelect}
                 onDiffFileRestore={handleActiveSessionDiffFileRestore}
                 onPreviewAddComment={handlePreviewAddComment}
-                onPreviewDeleteComment={handlePreviewDeleteComment}
                 onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
-                onPreviewInsertCommentsIntoDraft={handlePreviewInsertCommentsIntoDraft}
                 onPreviewModeChange={handlePreviewModeChange}
                 onPreviewOpen={handlePreviewOpen}
                 onPreviewOpenExternal={handlePreviewOpenExternal}
@@ -1060,6 +1056,7 @@ export function App() {
           onDeleteProvider={deleteProvider}
           onDeleteProviderAuthSession={deleteProviderAuthSession}
           onMcpServerDraftChange={setMcpServerDraftValue}
+          onMcpToolPolicyChange={setMcpToolPolicy}
           onMcpServerSelect={selectMcpServer}
           onProviderAuthMethodChange={setProviderAuthMethod}
           onProviderDraftChange={setProviderDraftValue}

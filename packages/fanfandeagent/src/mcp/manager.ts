@@ -26,7 +26,20 @@ export interface McpServerDiagnostic {
   ok: boolean
   toolCount: number
   toolNames: string[]
+  tools: McpToolDiagnostic[]
   error?: string
+}
+
+export interface McpToolDiagnostic {
+  name: string
+  title?: string
+  displayName: string
+  description?: string
+  inputSchema?: unknown
+  annotations?: McpToolDefinition["annotations"]
+  riskHint: "read-only" | "destructive" | "open-world" | "unknown"
+  recommendedPolicy: Config.McpToolPolicyValue
+  configuredPolicy?: Config.McpToolPolicyValue
 }
 
 type LiteralValue = string | number | bigint | boolean | null | undefined
@@ -274,6 +287,7 @@ export class McpManager {
         ok: false,
         toolCount: 0,
         toolNames: [],
+        tools: [],
         error: "Server is disabled.",
       }
     }
@@ -286,18 +300,21 @@ export class McpManager {
         ok: false,
         toolCount: 0,
         toolNames: [],
+        tools: [],
         error: "Server handle is unavailable.",
       }
     }
 
     try {
-      const tools = this.filterTools(server, await this.serverTools(handle))
+      const listedTools = await this.serverTools(handle)
+      const tools = this.filterTools(server, listedTools)
       return {
         serverID,
         enabled: true,
         ok: true,
         toolCount: tools.length,
         toolNames: tools.map((tool) => tool.name),
+        tools: listedTools.map((tool) => mcpToolDiagnostic(server, tool)),
       }
     } catch (error) {
       return {
@@ -306,6 +323,7 @@ export class McpManager {
         ok: false,
         toolCount: 0,
         toolNames: [],
+        tools: [],
         error: error instanceof Error ? error.message : String(error),
       }
     }
@@ -342,76 +360,103 @@ export class McpManager {
         ? definition.inputSchema
         : { type: "object", additionalProperties: true },
     )
+    const policy = effectiveToolPolicy(server, definition)
 
     return Tool.define(
       id,
-      async () => ({
-        title: getMcpToolDisplayName(server, definition),
-        description: definition.description ?? `${definition.name} (from MCP server ${server.name ?? server.id})`,
-        parameters,
-        execute: async (args, ctx) => {
-          const result = await this.call(server.id, definition.name, args as Record<string, unknown>, ctx.abort)
-          const summary = summarizeToolCallResult(result)
-          const metadata: Record<string, unknown> = {
-            [MCP_SERVER_ID_KEY]: server.id,
-            [MCP_TOOL_NAME_KEY]: definition.name,
-            [MCP_IS_ERROR_KEY]: summary.isError,
-          }
+      async () => {
+        const displayName = getMcpToolDisplayName(server, definition)
+        const runtime: Tool.ToolRuntime<typeof parameters> = {
+          title: displayName,
+          description: definition.description ?? `${definition.name} (from MCP server ${server.name ?? server.id})`,
+          parameters,
+          execute: async (args, ctx) => {
+            const result = await this.call(server.id, definition.name, args as Record<string, unknown>, ctx.abort)
+            const summary = summarizeToolCallResult(result)
+            const metadata: Record<string, unknown> = {
+              [MCP_SERVER_ID_KEY]: server.id,
+              [MCP_TOOL_NAME_KEY]: definition.name,
+              [MCP_IS_ERROR_KEY]: summary.isError,
+            }
 
-          if (isRecord(result.structuredContent)) {
-            metadata[MCP_STRUCTURED_CONTENT_KEY] = result.structuredContent
-          }
+            if (isRecord(result.structuredContent)) {
+              metadata[MCP_STRUCTURED_CONTENT_KEY] = result.structuredContent
+            }
 
-          return {
-            title: getMcpToolDisplayName(server, definition),
-            text: summary.text,
-            metadata,
-            data: isRecord(result.structuredContent)
-              ? {
-                  structuredContent: result.structuredContent,
-                  isError: summary.isError,
+            return {
+              title: displayName,
+              text: summary.text,
+              metadata,
+              data: isRecord(result.structuredContent)
+                ? {
+                    structuredContent: result.structuredContent,
+                    isError: summary.isError,
+                  }
+                : undefined,
+              attachments: toAttachments(result),
+            }
+          },
+          toModelOutput: (output) => {
+            const metadata = isRecord(output.metadata) ? output.metadata : undefined
+            const data = isRecord(output.data) ? output.data : undefined
+            const structuredContent = isRecord(metadata?.[MCP_STRUCTURED_CONTENT_KEY])
+              ? (metadata[MCP_STRUCTURED_CONTENT_KEY] as Record<string, unknown>)
+              : isRecord(data?.structuredContent)
+                ? (data.structuredContent as Record<string, unknown>)
+                : undefined
+            const isError = Boolean(metadata?.[MCP_IS_ERROR_KEY] ?? data?.isError)
+
+            if (structuredContent) {
+              if (isError) {
+                return {
+                  type: "error-json" as const,
+                  value: structuredContent as JSONValue,
                 }
-              : undefined,
-            attachments: toAttachments(result),
-          }
-        },
-        toModelOutput: (output) => {
-          const metadata = isRecord(output.metadata) ? output.metadata : undefined
-          const data = isRecord(output.data) ? output.data : undefined
-          const structuredContent = isRecord(metadata?.[MCP_STRUCTURED_CONTENT_KEY])
-            ? (metadata[MCP_STRUCTURED_CONTENT_KEY] as Record<string, unknown>)
-            : isRecord(data?.structuredContent)
-              ? (data.structuredContent as Record<string, unknown>)
-              : undefined
-          const isError = Boolean(metadata?.[MCP_IS_ERROR_KEY] ?? data?.isError)
+              }
 
-          if (structuredContent) {
-            if (isError) {
               return {
-                type: "error-json" as const,
+                type: "json" as const,
                 value: structuredContent as JSONValue,
               }
             }
 
-            return {
-              type: "json" as const,
-              value: structuredContent as JSONValue,
+            if (isError) {
+              return {
+                type: "error-text" as const,
+                value: output.text,
+              }
             }
-          }
 
-          if (isError) {
             return {
-              type: "error-text" as const,
+              type: "text" as const,
               value: output.text,
             }
-          }
+          },
+        }
 
-          return {
-            type: "text" as const,
-            value: output.text,
-          }
-        },
-      }),
+        if (policy) {
+          runtime.assessPermission = async (_args, ctx) => ({
+            action: policy === "disabled" ? "deny" : policy === "auto" ? "allow" : "ask",
+            risk: mcpToolPermissionRisk(definition),
+            reason: mcpToolPolicyReason(server, definition, policy),
+            forceAsk: policy === "ask" ? true : undefined,
+            resource: {
+              workdir: ctx.cwd,
+              body: `MCP server: ${server.name ?? server.id}\nTool: ${definition.name}`,
+            },
+          })
+          runtime.describeApproval = async (args, ctx) => ({
+            title: displayName,
+            summary: `Run MCP tool ${definition.name} from ${server.name ?? server.id}.`,
+            details: {
+              workdir: ctx.cwd,
+              body: summarizeMcpToolArguments(args as Record<string, unknown>),
+            },
+          })
+        }
+
+        return runtime
+      },
       {
         title: getMcpToolDisplayName(server, definition),
         capabilities: toolCapabilities(definition),
@@ -482,7 +527,87 @@ function resolveConfiguredCwd(cwd: string | undefined, fallbackDirectory: string
   return resolvePath(fallbackDirectory, expanded)
 }
 
+function configuredToolPolicies(server: Config.McpServerSummary) {
+  const policies = server.toolPolicies
+  return policies && Object.keys(policies).length > 0 ? policies : undefined
+}
+
+function configuredToolPolicy(server: Config.McpServerSummary, toolName: string) {
+  return configuredToolPolicies(server)?.[toolName]?.policy
+}
+
+function recommendedToolPolicy(tool: McpToolDefinition): Config.McpToolPolicyValue {
+  return tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true ? "auto" : "ask"
+}
+
+function effectiveToolPolicy(
+  server: Config.McpServerSummary,
+  tool: McpToolDefinition,
+): Config.McpToolPolicyValue | undefined {
+  const policies = configuredToolPolicies(server)
+  if (!policies) return undefined
+  return policies[tool.name]?.policy ?? "ask"
+}
+
+function mcpToolRiskHint(tool: McpToolDefinition): McpToolDiagnostic["riskHint"] {
+  if (tool.annotations?.destructiveHint === true) return "destructive"
+  if (tool.annotations?.openWorldHint === true) return "open-world"
+  if (tool.annotations?.readOnlyHint === true) return "read-only"
+  return "unknown"
+}
+
+function mcpToolPermissionRisk(tool: McpToolDefinition): Tool.ToolPermissionIntent["risk"] {
+  if (tool.annotations?.destructiveHint === true) return "high"
+  if (tool.annotations?.readOnlyHint === true && tool.annotations?.openWorldHint !== true) return "low"
+  return "medium"
+}
+
+function mcpToolPolicyReason(
+  server: Config.McpServerSummary,
+  tool: McpToolDefinition,
+  policy: Config.McpToolPolicyValue,
+) {
+  const serverName = server.name ?? server.id
+  switch (policy) {
+    case "disabled":
+      return `MCP tool '${tool.name}' from '${serverName}' is disabled by configuration.`
+    case "auto":
+      return `MCP tool '${tool.name}' from '${serverName}' is auto-allowed by configuration.`
+    case "ask":
+      return `MCP tool '${tool.name}' from '${serverName}' requires approval by configuration.`
+  }
+}
+
+function summarizeMcpToolArguments(args: Record<string, unknown>) {
+  try {
+    const serialized = JSON.stringify(args, null, 2)
+    if (!serialized) return undefined
+    return serialized.length > 2_000 ? `${serialized.slice(0, 2_000)}...` : serialized
+  } catch {
+    return undefined
+  }
+}
+
+function mcpToolDiagnostic(server: Config.McpServerSummary, tool: McpToolDefinition): McpToolDiagnostic {
+  return {
+    name: tool.name,
+    title: tool.title,
+    displayName: getMcpToolDisplayName(server, tool),
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    annotations: tool.annotations,
+    riskHint: mcpToolRiskHint(tool),
+    recommendedPolicy: recommendedToolPolicy(tool),
+    configuredPolicy: configuredToolPolicy(server, tool.name),
+  }
+}
+
 function filterMcpTools(server: Config.McpServerSummary, tools: McpToolDefinition[]) {
+  const policies = configuredToolPolicies(server)
+  if (policies) {
+    return tools.filter((tool) => policies[tool.name]?.policy !== "disabled")
+  }
+
   if (server.transport !== "remote" || !server.allowedTools) {
     return tools
   }
@@ -516,6 +641,7 @@ export async function diagnoseServer(server: Config.McpServerSummary): Promise<M
       ok: false,
       toolCount: 0,
       toolNames: [],
+      tools: [],
       error: "Server is disabled.",
     }
   }
@@ -530,13 +656,15 @@ export async function diagnoseServer(server: Config.McpServerSummary): Promise<M
   })
 
   try {
-    const tools = filterMcpTools(server, await client.listTools())
+    const listedTools = await client.listTools()
+    const tools = filterMcpTools(server, listedTools)
     return {
       serverID: server.id,
       enabled: true,
       ok: true,
       toolCount: tools.length,
       toolNames: tools.map((tool) => tool.name),
+      tools: listedTools.map((tool) => mcpToolDiagnostic(server, tool)),
     }
   } catch (error) {
     return {
@@ -545,6 +673,7 @@ export async function diagnoseServer(server: Config.McpServerSummary): Promise<M
       ok: false,
       toolCount: 0,
       toolNames: [],
+      tools: [],
       error: error instanceof Error ? error.message : String(error),
     }
   } finally {

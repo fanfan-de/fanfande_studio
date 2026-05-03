@@ -1,11 +1,14 @@
-import { type ChangeEvent, type ReactNode } from "react"
+import { type ChangeEvent, type ReactNode, useState } from "react"
 import { CloseIcon, FileTextIcon } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
+import { ThreadMarkdown } from "../thread-markdown"
 import type {
   PromptPresetDocument,
   PromptPresetSelection,
   PromptPresetSummary,
 } from "../types"
+
+type PromptEditorMode = "edit" | "preview"
 
 interface PromptEditorMessage {
   tone: "success" | "error"
@@ -69,6 +72,10 @@ function getPromptPresetUsageLabels(
   return labels
 }
 
+function getPromptMarkdownPreviewText(value: string) {
+  return value.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
 export function PromptPresetsPage({
   deletingPromptPresetID,
   isCreatingPromptPreset,
@@ -118,6 +125,7 @@ export function PromptPresetsPage({
   const selectedPromptPresetUsageLabels = selectedPromptPreset
     ? getPromptPresetUsageLabels(selectedPromptPreset.id, promptPresetSelection)
     : []
+  const [promptEditorMode, setPromptEditorMode] = useState<PromptEditorMode>("edit")
 
   function handlePromptPresetSelection(presetID: string) {
     if (presetID === selectedPromptPreset?.id) return
@@ -392,46 +400,92 @@ export function PromptPresetsPage({
                         </div>
                       </div>
 
-                      <div className="settings-inline-actions">
-                        {selectedPromptPreset.source === "custom" ? (
+                      <div className="settings-prompt-editor-toolbar">
+                        <div className="settings-prompt-editor-mode-switch" aria-label="Prompt editor mode">
                           <button
-                            className="secondary-button"
+                            className={
+                              promptEditorMode === "edit"
+                                ? "settings-prompt-editor-mode-button is-active"
+                                : "settings-prompt-editor-mode-button"
+                            }
                             type="button"
-                            disabled={selectedPromptPresetBusy || isLoadingPromptPreset}
-                            onClick={() => void onDeletePromptPreset()}
+                            aria-pressed={promptEditorMode === "edit"}
+                            onClick={() => setPromptEditorMode("edit")}
                           >
-                            {deletingPromptPresetID === selectedPromptPreset.id ? "Deleting..." : "Delete"}
+                            Edit
                           </button>
-                        ) : (
                           <button
-                            className="secondary-button"
+                            className={
+                              promptEditorMode === "preview"
+                                ? "settings-prompt-editor-mode-button is-active"
+                                : "settings-prompt-editor-mode-button"
+                            }
                             type="button"
-                            disabled={!selectedPromptPreset.hasOverride || selectedPromptPresetBusy || isLoadingPromptPreset}
-                            onClick={() => void onResetPromptPreset()}
+                            aria-pressed={promptEditorMode === "preview"}
+                            onClick={() => setPromptEditorMode("preview")}
                           >
-                            {resettingPromptPresetID === selectedPromptPreset.id ? "Resetting..." : "Reset"}
+                            Preview
                           </button>
-                        )}
-                        <button
-                          className="primary-button"
-                          type="button"
-                          disabled={!isPromptDirty || selectedPromptPresetBusy || isLoadingPromptPreset}
-                          onClick={() => void onSavePromptPreset()}
-                        >
-                          {savingPromptPresetID === selectedPromptPreset.id ? "Saving..." : "Save"}
-                        </button>
+                        </div>
+
+                        <div className="settings-inline-actions">
+                          {selectedPromptPreset.source === "custom" ? (
+                            <button
+                              className="secondary-button"
+                              type="button"
+                              disabled={selectedPromptPresetBusy || isLoadingPromptPreset}
+                              onClick={() => void onDeletePromptPreset()}
+                            >
+                              {deletingPromptPresetID === selectedPromptPreset.id ? "Deleting..." : "Delete"}
+                            </button>
+                          ) : (
+                            <button
+                              className="secondary-button"
+                              type="button"
+                              disabled={!selectedPromptPreset.hasOverride || selectedPromptPresetBusy || isLoadingPromptPreset}
+                              onClick={() => void onResetPromptPreset()}
+                            >
+                              {resettingPromptPresetID === selectedPromptPreset.id ? "Resetting..." : "Reset"}
+                            </button>
+                          )}
+                          <button
+                            className="primary-button"
+                            type="button"
+                            disabled={!isPromptDirty || selectedPromptPresetBusy || isLoadingPromptPreset}
+                            onClick={() => void onSavePromptPreset()}
+                          >
+                            {savingPromptPresetID === selectedPromptPreset.id ? "Saving..." : "Save"}
+                          </button>
+                        </div>
                       </div>
                     </div>
 
-                    <label className="settings-field settings-prompt-editor-field">
-                      <textarea
-                        className="settings-prompt-editor"
-                        aria-label={`${selectedPromptPreset.label} content`}
-                        value={promptDraftContent}
-                        readOnly={!selectedPromptPreset.editable || isLoadingPromptPreset}
-                        onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onPromptDraftChange(event.target.value)}
-                      />
-                    </label>
+                    <div className="settings-field settings-prompt-editor-field">
+                      {promptEditorMode === "edit" ? (
+                        <textarea
+                          className="settings-prompt-editor"
+                          aria-label={`${selectedPromptPreset.label} content`}
+                          value={promptDraftContent}
+                          readOnly={!selectedPromptPreset.editable || isLoadingPromptPreset}
+                          onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onPromptDraftChange(event.target.value)}
+                        />
+                      ) : (
+                        <div
+                          className="settings-prompt-preview-surface"
+                          role="region"
+                          aria-label={`${selectedPromptPreset.label} markdown preview`}
+                        >
+                          {promptDraftContent.trim() ? (
+                            <ThreadMarkdown
+                              className="thread-markdown settings-prompt-markdown-preview"
+                              text={getPromptMarkdownPreviewText(promptDraftContent)}
+                            />
+                          ) : (
+                            <p className="settings-prompt-preview-empty">No prompt content.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                     {selectedPromptPreset.sourcePath ? (
                       <p className="settings-helper-text settings-prompt-source-path">

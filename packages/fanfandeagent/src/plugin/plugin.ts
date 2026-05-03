@@ -67,6 +67,7 @@ export type PluginConfigField = z.infer<typeof PluginConfigField>
 
 const PluginRuntimeBase = {
   timeoutMs: z.number().int().positive().optional(),
+  toolPolicies: Config.McpToolPolicies,
 } as const
 
 export const PluginStdioRuntime = z
@@ -1024,6 +1025,7 @@ function runtimeBindingForMcpServer(
       args: server.runtime.args?.map((arg) => replacePlaceholders(arg, installed.config)),
       env: replaceRecordPlaceholders(server.runtime.env, installed.config),
       cwd: replaceOptionalPlaceholders(server.runtime.cwd, installed.config),
+      toolPolicies: server.runtime.toolPolicies,
       enabled,
       timeoutMs: server.runtime.timeoutMs,
     }
@@ -1039,6 +1041,7 @@ function runtimeBindingForMcpServer(
     headers: replaceRecordPlaceholders(server.runtime.headers, installed.config),
     serverDescription: server.runtime.serverDescription,
     allowedTools: server.runtime.allowedTools,
+    toolPolicies: server.runtime.toolPolicies,
     requireApproval: server.runtime.requireApproval,
     enabled,
     timeoutMs: server.runtime.timeoutMs,
@@ -1057,6 +1060,7 @@ function runtimeBindingForAppConnector(
     connectorId: connectorIDForPluginApp(plugin.id, app.appID),
     serverDescription: app.runtime.serverDescription,
     allowedTools: app.runtime.allowedTools,
+    toolPolicies: app.runtime.toolPolicies,
     requireApproval: app.runtime.requireApproval,
     enabled: installed.enabled,
     timeoutMs: app.runtime.timeoutMs,

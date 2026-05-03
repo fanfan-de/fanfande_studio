@@ -597,7 +597,7 @@ export async function evaluate(input: EvaluationInput): Promise<EvaluationResult
 
   if (intent?.action === "ask") {
     const permissionMode = await Config.getPermissionMode(Config.GLOBAL_CONFIG_ID)
-    const action: Action = permissionMode.mode === "full_access" ? "allow" : "ask"
+    const action: Action = permissionMode.mode === "full_access" && intent.forceAsk !== true ? "allow" : "ask"
     const result: EvaluationResult = {
       action,
       reason: action === "allow"

@@ -26,6 +26,7 @@ function createMcpDraft(): McpServerDraftState {
     headers: "",
     allowedToolsMode: "all",
     allowedToolNames: "",
+    toolPolicies: {},
     enabled: true,
     timeoutMs: "",
   }
@@ -117,6 +118,7 @@ function createSettingsPageProps(
     onDeleteProvider: vi.fn(),
     onDeleteProviderAuthSession: vi.fn(),
     onMcpServerDraftChange: vi.fn(),
+    onMcpToolPolicyChange: vi.fn(),
     onMcpServerSelect: vi.fn(),
     onRefreshProviderCatalog: vi.fn(),
     onResetBuiltinTools: vi.fn(),

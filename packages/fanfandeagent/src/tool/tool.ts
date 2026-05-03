@@ -57,6 +57,7 @@ export interface ToolPermissionIntent {
   reason?: string
   resource?: ToolApprovalDetails
   allowInPlanning?: boolean
+  forceAsk?: boolean
 }
 
 export interface ToolApprovalDescriptor {

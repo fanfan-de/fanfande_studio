@@ -1,7 +1,23 @@
 import type { PreviewComment } from "../types"
 
-function formatCommentCoordinate(value: number) {
-  return `${Math.round(value)}%`
+function getPreviewHostLabel(url: string) {
+  try {
+    return new URL(url).host || "page"
+  } catch {
+    return "page"
+  }
+}
+
+function readPreviewTargetLabel(comment: PreviewComment) {
+  return comment.anchor?.label?.trim() || comment.anchor?.tagName?.trim() || "Preview target"
+}
+
+export function buildPreviewCommentReferenceLabel(url: string, commentIndex: number) {
+  return `preview:${getPreviewHostLabel(url)}#${Math.max(1, commentIndex)}`
+}
+
+export function buildPreviewCommentReferenceTitle(comment: PreviewComment) {
+  return `${readPreviewTargetLabel(comment)} - ${comment.pageUrl ?? comment.url}`
 }
 
 export function normalizePreviewUrlInput(input: string) {
@@ -39,19 +55,4 @@ export function normalizePreviewUrlInput(input: string) {
       normalizedUrl: null,
     }
   }
-}
-
-export function buildPreviewCommentDraft(url: string, comments: PreviewComment[]) {
-  if (comments.length === 0) return ""
-
-  const lines = comments.map((comment) => {
-    const anchorLabel = comment.anchor?.label?.trim()
-    if (anchorLabel) {
-      return `- ${anchorLabel}: ${comment.text.trim()}`
-    }
-
-    return `- At ${formatCommentCoordinate(comment.x)}, ${formatCommentCoordinate(comment.y)}: ${comment.text.trim()}`
-  })
-
-  return [`Preview feedback for ${url}`, ...lines].join("\n")
 }
