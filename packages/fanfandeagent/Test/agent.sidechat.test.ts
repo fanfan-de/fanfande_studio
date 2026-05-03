@@ -1,16 +1,15 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import "./sqlite.cleanup.ts"
 import { Instance } from "#project/instance.ts"
+import * as Provider from "#provider/provider.ts"
+import * as LLM from "#session/core/llm.ts"
 
-type StreamInput = {
-  agent: {
-    name: string
-    mode: string
-  }
-  system?: string[]
+type StreamTextInput = {
+  system?: string
+  tools?: Record<string, unknown>
   onFinish?: (event: Record<string, unknown>) => PromiseLike<void> | void
 }
 
@@ -19,53 +18,77 @@ const baseModel = {
   modelID: "test-model",
 }
 
-const streamInputs: StreamInput[] = []
+const streamTextInputs: StreamTextInput[] = []
+let restoreProvider: (() => void) | undefined
+let restoreLLM: (() => void) | undefined
 
-mock.module("#provider/provider.ts", () => ({
-  getDefaultModelRef: async () => baseModel,
-  getSelection: async () => ({}),
-  getModel: async () => ({
+function createTestModel(): Provider.Model {
+  return {
+    ...Provider.testDeepSeekModel,
     id: baseModel.modelID,
     providerID: baseModel.providerID,
+    api: {
+      ...Provider.testDeepSeekModel.api,
+      id: baseModel.modelID,
+      url: "https://example.test/v1",
+    },
     capabilities: {
+      ...Provider.testDeepSeekModel.capabilities,
       reasoning: false,
       attachment: false,
       toolcall: true,
       input: {
+        ...Provider.testDeepSeekModel.capabilities.input,
         text: true,
         audio: false,
         image: false,
         video: false,
         pdf: false,
       },
+      output: {
+        ...Provider.testDeepSeekModel.capabilities.output,
+      },
     },
-  }),
-  getLanguage: async (model: Record<string, unknown>) => model,
-}))
-
-mock.module("#session/core/llm.ts", () => ({
-  stream: async (input: StreamInput) => {
-    streamInputs.push(input)
-    return {
-      fullStream: (async function* () {
-        let text = ""
-        yield { type: "start" }
-        yield { type: "text-start" }
-        text = "sidechat response"
-        yield { type: "text-delta", text }
-        yield { type: "text-end" }
-        yield { type: "finish", finishReason: "stop" }
-        await input.onFinish?.({
-          finishReason: "stop",
-          text,
-        })
-      })(),
-    }
-  },
-}))
+  }
+}
 
 beforeEach(() => {
-  streamInputs.length = 0
+  streamTextInputs.length = 0
+  restoreProvider = Provider.setProviderFunctionOverridesForTesting({
+    getDefaultModelRef: async () => baseModel,
+    getSelection: async () => ({}),
+    getModel: async () => createTestModel(),
+    getLanguage: async (model) => model as never,
+  })
+  restoreLLM = LLM.setRuntimeDependenciesForTesting({
+    getLanguage: async (model) => model as never,
+    streamText: ((input: StreamTextInput) => {
+      streamTextInputs.push(input)
+      return {
+        fullStream: (async function* () {
+          let text = ""
+          yield { type: "start" }
+          yield { type: "text-start" }
+          text = "sidechat response"
+          yield { type: "text-delta", text }
+          yield { type: "text-end" }
+          yield { type: "finish", finishReason: "stop" }
+          await input.onFinish?.({
+            finishReason: "stop",
+            text,
+            totalUsage: {},
+          })
+        })(),
+      }
+    }) as never,
+  })
+})
+
+afterEach(() => {
+  restoreLLM?.()
+  restoreProvider?.()
+  restoreLLM = undefined
+  restoreProvider = undefined
 })
 
 async function removeWithRetry(target: string, attempts = 10) {
@@ -170,6 +193,26 @@ async function createAnchoredSideChat(root: string) {
   })
 }
 
+async function withSelectedSideChatPrompt<T>(content: string, fn: () => Promise<T>) {
+  const PromptPresets = await import("#session/support/prompt-presets.ts")
+  const previousSelection = await PromptPresets.getPromptPresetSelection()
+  const customPreset = await PromptPresets.createPromptPreset({
+    label: "Side chat test prompt",
+    content,
+  })
+
+  try {
+    await PromptPresets.updatePromptPresetSelection({
+      ...previousSelection,
+      sideChatPromptPresetID: customPreset.id,
+    })
+    return await fn()
+  } finally {
+    await PromptPresets.updatePromptPresetSelection(previousSelection).catch(() => undefined)
+    await PromptPresets.deletePromptPreset(customPreset.id).catch(() => undefined)
+  }
+}
+
 describe("sidechat agent", () => {
   test("registers a hidden native sidechat profile", async () => {
     await Instance.provide({
@@ -193,11 +236,14 @@ describe("sidechat agent", () => {
       const Prompt = await import("#session/core/prompt.ts")
       const Session = await import("#session/core/session.ts")
       const sideChat = await createAnchoredSideChat(root)
+      const customPrompt = "Side chat test prompt: new side-chat messages use this configured preset."
 
-      await Prompt.prompt({
-        sessionID: sideChat.id,
-        model: baseModel,
-        parts: [{ type: "text", text: "Can you clarify this?" }],
+      await withSelectedSideChatPrompt(customPrompt, async () => {
+        await Prompt.prompt({
+          sessionID: sideChat.id,
+          model: baseModel,
+          parts: [{ type: "text", text: "Can you clarify this?" }],
+        })
       })
 
       const context = Session.getSideChatContext(sideChat.id)
@@ -206,35 +252,27 @@ describe("sidechat agent", () => {
         .filter((message) => message.role === "user" && !message.internal)
 
       expect(userMessages?.at(-1)?.agent).toBe("sidechat")
-      expect(streamInputs.at(-1)?.agent.name).toBe("sidechat")
-      expect(streamInputs.at(-1)?.agent.mode).toBe("side-chat")
+      expect(streamTextInputs.at(-1)?.system).toContain(customPrompt)
+      expect(streamTextInputs.at(-1)?.tools?.["read-file"]).toBeDefined()
+      expect(streamTextInputs.at(-1)?.tools?.["replace-text"]).toBeUndefined()
     })
   })
 
   test("uses the selected side-chat prompt preset in side-chat system prompts", async () => {
     await withTempDb("fanfande-sidechat-agent-preset-", async (root) => {
       const Prompt = await import("#session/core/prompt.ts")
-      const PromptPresets = await import("#session/support/prompt-presets.ts")
       const sideChat = await createAnchoredSideChat(root)
       const customPrompt = "Custom side chat prompt: answer from the configured preset only."
 
-      const customPreset = await PromptPresets.createPromptPreset({
-        label: "Side chat custom",
-        content: customPrompt,
-      })
-      const currentSelection = await PromptPresets.getPromptPresetSelection()
-      await PromptPresets.updatePromptPresetSelection({
-        ...currentSelection,
-        sideChatPromptPresetID: customPreset.id,
+      await withSelectedSideChatPrompt(customPrompt, async () => {
+        await Prompt.prompt({
+          sessionID: sideChat.id,
+          model: baseModel,
+          parts: [{ type: "text", text: "Which prompt is active?" }],
+        })
       })
 
-      await Prompt.prompt({
-        sessionID: sideChat.id,
-        model: baseModel,
-        parts: [{ type: "text", text: "Which prompt is active?" }],
-      })
-
-      expect(streamInputs.at(-1)?.system?.some((item) => item.includes(customPrompt))).toBe(true)
+      expect(streamTextInputs.at(-1)?.system).toContain(customPrompt)
     })
   })
 
@@ -245,6 +283,7 @@ describe("sidechat agent", () => {
       const Prompt = await import("#session/core/prompt.ts")
       const Session = await import("#session/core/session.ts")
       const sideChat = await createAnchoredSideChat(root)
+      const customPrompt = "Side chat legacy prompt: default-agent history resolves to sidechat."
 
       const legacyUser = Message.User.parse({
         id: Identifier.ascending("message"),
@@ -265,10 +304,11 @@ describe("sidechat agent", () => {
       Session.updateMessage(legacyUser)
       Session.updatePart(legacyPart)
 
-      await Prompt.resume({ sessionID: sideChat.id })
+      await withSelectedSideChatPrompt(customPrompt, async () => {
+        await Prompt.resume({ sessionID: sideChat.id })
+      })
 
-      expect(streamInputs.at(-1)?.agent.name).toBe("sidechat")
-      expect(streamInputs.at(-1)?.agent.mode).toBe("side-chat")
+      expect(streamTextInputs.at(-1)?.system).toContain(customPrompt)
     })
   })
 

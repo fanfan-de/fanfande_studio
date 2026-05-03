@@ -1151,7 +1151,7 @@ describe("App", () => {
   it("opens side chat inline under the assistant response without replacing the current session tab", async () => {
     render(<App />)
 
-    const threadSideChatButton = await screen.findByRole("button", { name: "Sidechat" })
+    const threadSideChatButton = await screen.findByRole("button", { name: "Open side chat" })
     const currentSessionTab = screen.getByRole("button", { name: "Switch to session Chat 1" })
 
     expect(currentSessionTab).toHaveAttribute("aria-pressed", "true")
@@ -1183,7 +1183,7 @@ describe("App", () => {
   it("keeps the response action row persistent after hiding an existing side chat", async () => {
     render(<App />)
 
-    const threadSideChatButton = await screen.findByRole("button", { name: "Sidechat" })
+    const threadSideChatButton = await screen.findByRole("button", { name: "Open side chat" })
     const assistantTurn = threadSideChatButton.closest(".assistant-turn") as HTMLElement | null
 
     expect(assistantTurn).not.toBeNull()
@@ -1201,7 +1201,7 @@ describe("App", () => {
 
     expect(responseActionRow).not.toBeNull()
     expect(responseActionRow).toHaveClass("is-persistent")
-    expect(within(responseActionRow as HTMLElement).getByRole("button", { name: "Sidechat" })).toHaveAttribute(
+    expect(within(responseActionRow as HTMLElement).getByRole("button", { name: "Open side chat (1)" })).toHaveAttribute(
       "title",
       "1 side chat thread",
     )
@@ -1216,13 +1216,13 @@ describe("App", () => {
 
     expect(assistantTurn).not.toBeNull()
 
-    fireEvent.click(within(assistantTurn as HTMLElement).getByRole("button", { name: "复制" }))
+    fireEvent.click(within(assistantTurn as HTMLElement).getByRole("button", { name: "Copy assistant response" }))
 
     await waitFor(() => {
       expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith(responseText)
     })
 
-    expect(within(assistantTurn as HTMLElement).getByRole("button", { name: "已复制" })).toBeInTheDocument()
+    expect(within(assistantTurn as HTMLElement).getByRole("button", { name: "Copied assistant response" })).toBeInTheDocument()
   })
 
   it("renders full assistant sections inside inline side chat", async () => {
@@ -1282,7 +1282,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Sidechat" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
 
     await waitFor(() => {
       expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
@@ -1306,7 +1306,7 @@ describe("App", () => {
   it("clears the inline side chat draft after sending a prompt", async () => {
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Sidechat" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
 
     const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
     const sideChatDraft = within(nestedSideChat).getByRole("textbox", { name: "Task draft" })
@@ -8323,7 +8323,7 @@ describe("App", () => {
 
     render(<App />)
 
-    fireEvent.click(await screen.findByRole("button", { name: "Sidechat" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
     expect(await screen.findByRole("region", { name: "Nested side chat" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Archive session Chat 1" }))

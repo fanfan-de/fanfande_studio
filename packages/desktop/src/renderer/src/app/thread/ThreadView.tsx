@@ -6,7 +6,9 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
-  PaperclipIcon
+  CopyIcon,
+  PaperclipIcon,
+  SideChatIcon
 } from "../icons"
 import { joinClassNames, writeTextToClipboard } from "../shared-ui"
 import { buildTurnsFromHistory } from "../stream"
@@ -103,12 +105,19 @@ function isThreadColumnPinnedToBottom(threadColumn: HTMLDivElement) {
   return threadColumn.scrollHeight - threadColumn.scrollTop - threadColumn.clientHeight <= THREAD_BOTTOM_LOCK_THRESHOLD_PX
 }
 
+function getUserTurnBodyText(turn: UserTurn) {
+  const displayText = turn.displayText?.trim() || ""
+  const references = turn.references ?? []
+
+  return displayText || (references.length > 0 ? references.map((reference) => `@${reference.label}`).join(" ") : turn.text)
+}
+
 function UserTurnBubble({ turn }: { turn: UserTurn }) {
   const displayText = turn.displayText?.trim() || ""
   const references = turn.references ?? []
   const attachments = turn.attachments ?? []
   const hasStructuredContent = Boolean(displayText) || references.length > 0 || attachments.length > 0
-  const bodyText = displayText || (references.length > 0 ? references.map((reference) => `@${reference.label}`).join(" ") : turn.text)
+  const bodyText = getUserTurnBodyText(turn)
 
   if (!hasStructuredContent) {
     return (
@@ -1374,7 +1383,9 @@ export function ThreadView({
   const answeredQuestionIDs = collectAnsweredQuestionIDs(activeTurns)
   const readOnlySideChat = isSideChatSession(activeSession)
   const [copiedResponseTurnID, setCopiedResponseTurnID] = useState<string | null>(null)
+  const [copiedUserTurnID, setCopiedUserTurnID] = useState<string | null>(null)
   const copiedResponseTimeoutRef = useRef<number | null>(null)
+  const copiedUserTimeoutRef = useRef<number | null>(null)
   const isPinnedToBottomRef = useRef(true)
   const activeSessionID = activeSession?.id ?? null
 
@@ -1382,6 +1393,9 @@ export function ThreadView({
     return () => {
       if (copiedResponseTimeoutRef.current !== null) {
         window.clearTimeout(copiedResponseTimeoutRef.current)
+      }
+      if (copiedUserTimeoutRef.current !== null) {
+        window.clearTimeout(copiedUserTimeoutRef.current)
       }
     }
   }, [])
@@ -1401,6 +1415,24 @@ export function ThreadView({
       }, 1600)
     } catch (error) {
       console.error("[desktop] Failed to copy assistant response:", error)
+    }
+  })
+
+  const handleCopyUserMessage = useEffectEvent(async (turnID: string, text: string) => {
+    try {
+      await writeTextToClipboard(text)
+      setCopiedUserTurnID(turnID)
+
+      if (copiedUserTimeoutRef.current !== null) {
+        window.clearTimeout(copiedUserTimeoutRef.current)
+      }
+
+      copiedUserTimeoutRef.current = window.setTimeout(() => {
+        setCopiedUserTurnID((current) => (current === turnID ? null : current))
+        copiedUserTimeoutRef.current = null
+      }, 1600)
+    } catch (error) {
+      console.error("[desktop] Failed to copy user message:", error)
     }
   })
 
@@ -1470,6 +1502,9 @@ export function ThreadView({
             ) : null}
             {activeTurns.map((turn, turnIndex) => {
               if (turn.kind === "user") {
+                const userCopyText = getUserTurnBodyText(turn).trim()
+                const isUserCopied = copiedUserTurnID === turn.id
+
                 return (
                   <article key={turn.id} className="turn user-turn">
                     <div className="turn-meta">
@@ -1477,6 +1512,22 @@ export function ThreadView({
                       <time>{formatTime(turn.timestamp)}</time>
                     </div>
                     <UserTurnBubble turn={turn} />
+                    {userCopyText ? (
+                      <div className="user-message-actions">
+                        <button
+                          className={joinClassNames(
+                            "message-action-icon-button user-message-action-button",
+                            isUserCopied && "is-active",
+                          )}
+                          type="button"
+                          aria-label={isUserCopied ? "Copied user message" : "Copy user message"}
+                          title={isUserCopied ? "Copied" : "Copy"}
+                          onClick={() => void handleCopyUserMessage(turn.id, userCopyText)}
+                        >
+                          <CopyIcon />
+                        </button>
+                      </div>
+                    ) : null}
                   </article>
                 )
               }
@@ -1535,22 +1586,31 @@ export function ThreadView({
                                 {responseCopyText ? (
                                   <button
                                     className={joinClassNames(
-                                      "assistant-response-action-button",
+                                      "assistant-response-action-button message-action-icon-button",
                                       copiedResponseTurnID === turn.id && "is-active",
                                     )}
                                     type="button"
+                                    aria-label={copiedResponseTurnID === turn.id ? "Copied assistant response" : "Copy assistant response"}
+                                    title={copiedResponseTurnID === turn.id ? "Copied" : "Copy"}
                                     onClick={() => void handleCopyAssistantResponse(turn.id, responseCopyText)}
                                   >
-                                    {copiedResponseTurnID === turn.id ? "已复制" : "复制"}
+                                    <CopyIcon />
                                   </button>
                                 ) : null}
                                 {canOpenSideChat ? (
                                   <button
                                     className={joinClassNames(
-                                      "assistant-response-action-button",
+                                      "assistant-response-action-button message-action-icon-button",
                                       activeInlineSideChat && "is-active",
                                     )}
                                     type="button"
+                                    aria-label={
+                                      activeInlineSideChat
+                                        ? "Hide this side chat"
+                                        : existingSideChatCount > 0
+                                          ? `Open side chat (${existingSideChatCount})`
+                                          : "Open side chat"
+                                    }
                                     aria-pressed={Boolean(activeInlineSideChat)}
                                     title={
                                       activeInlineSideChat
@@ -1561,7 +1621,7 @@ export function ThreadView({
                                     }
                                     onClick={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
                                   >
-                                    Sidechat
+                                    <SideChatIcon />
                                   </button>
                                 ) : null}
                               </div>

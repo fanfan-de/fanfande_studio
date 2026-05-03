@@ -1,7 +1,7 @@
 import { createRef, type ComponentProps } from "react"
 import { fireEvent, render } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTurn, type SessionSummary, type Turn } from "../types"
+import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTurn, type SessionSummary, type Turn, type UserTurn } from "../types"
 import { ThreadView } from "./ThreadView"
 
 const session: SessionSummary = {
@@ -52,6 +52,15 @@ function assistantTraceTurn(id: string, items: AssistantTraceItem[], isStreaming
     state: isStreaming ? "responding" : "completed",
     items,
     isStreaming,
+  }
+}
+
+function userTurn(id: string, text: string): UserTurn {
+  return {
+    id,
+    kind: "user",
+    text,
+    timestamp: 1,
   }
 }
 
@@ -331,6 +340,52 @@ describe("ThreadView assistant response markdown", () => {
     expect(streamingResponse).not.toBeNull()
     expect(streamingResponse).not.toHaveClass("thread-markdown")
     expect(streamingResponse?.textContent).toContain("**Streaming**")
+  })
+})
+
+describe("ThreadView message actions", () => {
+  it("copies user message text from the user turn action", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+
+    const { getByRole } = renderThread([userTurn("user-1", "Hello from user")])
+
+    fireEvent.click(getByRole("button", { name: "Copy user message" }))
+
+    expect(writeText).toHaveBeenCalledWith("Hello from user")
+  })
+
+  it("renders assistant copy and side chat actions as icon buttons", () => {
+    const onOpenSideChat = vi.fn()
+    const { getByRole, queryByText } = renderThread(
+      [
+        assistantTraceTurn(
+          "assistant-1",
+          [
+            {
+              id: "response-1",
+              kind: "text",
+              timestamp: 1,
+              label: "Assistant",
+              text: "Done",
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+      ],
+      { onOpenSideChat },
+    )
+
+    expect(getByRole("button", { name: "Copy assistant response" })).toBeInTheDocument()
+    expect(queryByText("Sidechat")).toBeNull()
+
+    fireEvent.click(getByRole("button", { name: "Open side chat" }))
+
+    expect(onOpenSideChat).toHaveBeenCalledWith("assistant-1")
   })
 })
 
