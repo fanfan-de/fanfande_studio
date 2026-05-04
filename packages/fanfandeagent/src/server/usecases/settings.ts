@@ -7,6 +7,7 @@ import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Provider from "#provider/provider.ts"
 import { ApiError } from "#server/error.ts"
 import * as PromptPresets from "#session/support/prompt-presets.ts"
+import * as SkillGitInstall from "#skill/git-install.ts"
 import * as Skill from "#skill/skill.ts"
 import * as SkillManager from "#skill/manage.ts"
 import * as ToolRegistry from "#tool/registry.ts"
@@ -31,6 +32,15 @@ export const RenameSkillBody = z.object({
 
 export const DeleteSkillQuery = z.object({
   directory: z.string().min(1),
+})
+
+export const PreviewSkillGitInstallBody = z.object({
+  source: z.string().min(1),
+})
+
+export const InstallSkillGitPreviewBody = z.object({
+  previewID: z.string().min(1),
+  skillIDs: z.array(z.string().min(1)),
 })
 
 export const UpdateMcpServerBody = Config.McpServerInput
@@ -105,6 +115,18 @@ function toSkillApiError(error: unknown) {
     }
 
     if (error.code === "SKILL_ALREADY_EXISTS") {
+      return new ApiError(409, error.code, error.message)
+    }
+
+    return new ApiError(400, error.code, error.message)
+  }
+
+  if (error instanceof SkillGitInstall.SkillGitInstallError) {
+    if (error.code === "SKILL_GIT_PREVIEW_NOT_FOUND") {
+      return new ApiError(404, error.code, error.message)
+    }
+
+    if (error.code === "SKILL_ALREADY_EXISTS" || error.code === "SKILL_GIT_SKILL_UNAVAILABLE") {
       return new ApiError(409, error.code, error.message)
     }
 
@@ -762,6 +784,22 @@ export async function deleteSkill(input: z.infer<typeof DeleteSkillQuery>) {
       directory: input.directory,
       removed: true,
     }
+  } catch (error) {
+    throw toSkillApiError(error)
+  }
+}
+
+export async function previewSkillGitInstall(input: z.infer<typeof PreviewSkillGitInstallBody>) {
+  try {
+    return await SkillGitInstall.previewGlobalSkillGitInstall(input.source)
+  } catch (error) {
+    throw toSkillApiError(error)
+  }
+}
+
+export async function installSkillGitPreview(input: z.infer<typeof InstallSkillGitPreviewBody>) {
+  try {
+    return await SkillGitInstall.installGlobalSkillsFromGitPreview(input)
   } catch (error) {
     throw toSkillApiError(error)
   }

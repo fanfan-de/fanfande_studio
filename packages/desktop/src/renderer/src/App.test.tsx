@@ -737,6 +737,8 @@ describe("App", () => {
       }),
       updateGlobalSkillFile: vi.fn(),
       createGlobalSkill: vi.fn(),
+      previewGlobalSkillGitInstall: vi.fn(),
+      installGlobalSkillsFromGit: vi.fn(),
       renameGlobalSkill: vi.fn(),
       deleteGlobalSkill: vi.fn(),
       getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
@@ -2045,7 +2047,7 @@ describe("App", () => {
     expect(screen.queryByLabelText("Left sidebar top menu")).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
 
-    await screen.findByText("No skills exist yet. Use New to create the first one.")
+    await screen.findByText("No skills exist yet. Use + to create the first one.")
 
     fireEvent.click(screen.getByRole("button", { name: "Create global skill" }))
 
@@ -2087,6 +2089,112 @@ describe("App", () => {
         editorID: "explorer",
       })
     })
+  })
+
+  it("previews and installs global skills from a Git repository", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    const directoryPath = `${root}\\layout-review`
+    const filePath = `${directoryPath}\\SKILL.md`
+    const content = ["---", "name: Layout Review", "description: Review layouts.", "---", "", "# Layout Review"].join("\n")
+
+    window.desktop!.getGlobalSkillsTree = vi
+      .fn()
+      .mockResolvedValueOnce({
+        root,
+        items: [],
+      })
+      .mockResolvedValueOnce({
+        root,
+        items: [
+          {
+            name: "layout-review",
+            path: directoryPath,
+            kind: "directory",
+            children: [
+              {
+                name: "SKILL.md",
+                path: filePath,
+                kind: "file",
+              },
+            ],
+          },
+        ],
+      })
+    window.desktop!.previewGlobalSkillGitInstall = vi.fn().mockResolvedValue({
+      previewID: "preview-1",
+      source: "owner/repo",
+      cloneUrl: "https://github.com/owner/repo.git",
+      skills: [
+        {
+          id: "skills/layout-review",
+          name: "Layout Review",
+          description: "Review layouts.",
+          relativePath: "skills/layout-review",
+          directoryName: "layout-review",
+          targetDirectory: directoryPath,
+          available: true,
+          filePath,
+        },
+        {
+          id: "skills/existing",
+          name: "Existing",
+          description: "Already installed.",
+          relativePath: "skills/existing",
+          directoryName: "existing",
+          targetDirectory: `${root}\\existing`,
+          available: false,
+          reason: "Skill 'existing' already exists.",
+          filePath: `${root}\\existing\\SKILL.md`,
+        },
+      ],
+    })
+    window.desktop!.installGlobalSkillsFromGit = vi.fn().mockResolvedValue({
+      installed: [
+        {
+          id: "skills/layout-review",
+          name: "Layout Review",
+          directory: directoryPath,
+          filePath,
+        },
+      ],
+    })
+    window.desktop!.readGlobalSkillFile = vi.fn().mockResolvedValue({
+      path: filePath,
+      content,
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Install skill from Git" }))
+
+    const dialog = await screen.findByRole("dialog", { name: "Install skills from Git" })
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "Git skill repository" }), {
+      target: { value: "owner/repo" },
+    })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.previewGlobalSkillGitInstall).toHaveBeenCalledWith({ source: "owner/repo" })
+    })
+
+    expect(await within(dialog).findByRole("checkbox", { name: /Layout Review/ })).toBeChecked()
+    expect(within(dialog).getByRole("checkbox", { name: /Existing/ })).toBeDisabled()
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Install (1)" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.installGlobalSkillsFromGit).toHaveBeenCalledWith({
+        previewID: "preview-1",
+        skillIDs: ["skills/layout-review"],
+      })
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Install skills from Git" })).not.toBeInTheDocument()
+    })
+    expect(await screen.findByRole("button", { name: "SKILL.md" })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
   })
 
   it("switches the global skill editor between edit and markdown preview", async () => {

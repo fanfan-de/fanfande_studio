@@ -801,6 +801,38 @@ export interface AgentGlobalSkillRenameResult {
   filePath: string | null
 }
 
+export interface AgentSkillInstallCandidate {
+  id: string
+  name: string
+  description: string
+  relativePath: string
+  directoryName: string
+  targetDirectory: string
+  available: boolean
+  reason?: string
+  filePath: string
+}
+
+export interface AgentSkillGitInstallPreview {
+  previewID: string
+  source: string
+  cloneUrl: string
+  ref?: string
+  subpath?: string
+  skills: AgentSkillInstallCandidate[]
+}
+
+export interface AgentInstalledGlobalSkill {
+  id: string
+  name: string
+  directory: string
+  filePath: string
+}
+
+export interface AgentSkillGitInstallResult {
+  installed: AgentInstalledGlobalSkill[]
+}
+
 export type AgentPromptPresetSource = "bundled" | "custom"
 
 export interface AgentPromptPresetSelection {

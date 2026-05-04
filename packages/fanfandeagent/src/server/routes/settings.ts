@@ -262,6 +262,24 @@ export function SettingsRoutes() {
 
   app.get("/skills/tree", async (c) => ok(c, await SettingsUseCase.getSkillTree()))
 
+  app.post("/skills/git/preview", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.PreviewSkillGitInstallBody,
+      "Body must contain a non-empty 'source'.",
+    )
+    return ok(c, await SettingsUseCase.previewSkillGitInstall(payload))
+  })
+
+  app.post("/skills/git/install", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.InstallSkillGitPreviewBody,
+      "Body must contain a non-empty 'previewID' and a 'skillIDs' string array.",
+    )
+    return ok(c, await SettingsUseCase.installSkillGitPreview(payload))
+  })
+
   app.get("/skills/file", async (c) => {
     const payload = parseQuery(
       { path: c.req.query("path") },

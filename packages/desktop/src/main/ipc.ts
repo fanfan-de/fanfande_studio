@@ -43,6 +43,8 @@ import type {
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
+  AgentSkillGitInstallPreview,
+  AgentSkillGitInstallResult,
   AgentMcpServerDiagnostic,
   AgentMcpServerSummary,
   AgentInstalledPlugin,
@@ -1678,6 +1680,35 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       },
       body: JSON.stringify({
         name: input.name,
+      }),
+    })
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:preview-global-skill-git-install", async (_event, input: { source: string }) => {
+    const result = await requestAgentJSON<AgentSkillGitInstallPreview>("/api/skills/git/preview", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        source: input.source,
+      }),
+    })
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:install-global-skills-from-git", async (_event, input: { previewID: string; skillIDs: string[] }) => {
+    const result = await requestAgentJSON<AgentSkillGitInstallResult>("/api/skills/git/install", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        previewID: input.previewID,
+        skillIDs: input.skillIDs,
       }),
     })
 

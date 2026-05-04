@@ -1,8 +1,87 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { GlobalSkillTreeNode } from "./types"
+import type {
+  GlobalSkillFileDocument,
+  GlobalSkillTree,
+  GlobalSkillTreeNode,
+  SkillGitInstallPreview,
+  SkillGitInstallResult,
+} from "./types"
 
 interface UseGlobalSkillsOptions {
   onSkillsUpdated?: () => void | Promise<void>
+}
+
+type AgentEnvelope<T> =
+  | {
+      success: true
+      data: T
+    }
+  | {
+      success: false
+      error?: {
+        message?: string
+      }
+    }
+
+const FALLBACK_AGENT_BASE_URL = "http://127.0.0.1:4096"
+
+function resolveFallbackAgentURL(pathname: string) {
+  return new URL(pathname, FALLBACK_AGENT_BASE_URL).toString()
+}
+
+async function requestFallbackAgentJSON<T>(pathname: string, init?: RequestInit): Promise<T> {
+  let response: Response
+  try {
+    response = await fetch(resolveFallbackAgentURL(pathname), init)
+  } catch (error) {
+    throw new Error(
+      `Desktop bridge is unavailable and the local agent API could not be reached. ${formatError(error)}`,
+    )
+  }
+
+  const envelope = (await response.json().catch(() => null)) as AgentEnvelope<T> | null
+  if (!response.ok || !envelope) {
+    throw new Error(`Agent API request failed (${response.status}).`)
+  }
+  if (envelope.success !== true) {
+    throw new Error(envelope.error?.message || `Agent API request failed (${response.status}).`)
+  }
+
+  return envelope.data
+}
+
+function getGlobalSkillsTreeClient() {
+  return window.desktop?.getGlobalSkillsTree ?? (() => requestFallbackAgentJSON<GlobalSkillTree>("/api/skills/tree"))
+}
+
+function getReadGlobalSkillFileClient() {
+  return window.desktop?.readGlobalSkillFile ??
+    ((input: { path: string }) =>
+      requestFallbackAgentJSON<GlobalSkillFileDocument>(`/api/skills/file?path=${encodeURIComponent(input.path.trim())}`))
+}
+
+function getPreviewGlobalSkillGitInstallClient() {
+  return window.desktop?.previewGlobalSkillGitInstall ??
+    ((input: { source: string }) =>
+      requestFallbackAgentJSON<SkillGitInstallPreview>("/api/skills/git/preview", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input),
+      }))
+}
+
+function getInstallGlobalSkillsFromGitClient() {
+  return window.desktop?.installGlobalSkillsFromGit ??
+    ((input: { previewID: string; skillIDs: string[] }) =>
+      requestFallbackAgentJSON<SkillGitInstallResult>("/api/skills/git/install", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(input),
+      }))
 }
 
 function findFirstSkillFile(nodes: GlobalSkillTreeNode[]): string | null {
@@ -146,6 +225,16 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
   const [isSavingGlobalSkillFile, setIsSavingGlobalSkillFile] = useState(false)
   const [isCreatingGlobalSkill, setIsCreatingGlobalSkill] = useState(false)
   const [deletingGlobalSkillDirectory, setDeletingGlobalSkillDirectory] = useState<string | null>(null)
+  const [isGitInstallDialogOpen, setIsGitInstallDialogOpen] = useState(false)
+  const [gitInstallSource, setGitInstallSource] = useState("")
+  const [gitInstallPreview, setGitInstallPreview] = useState<SkillGitInstallPreview | null>(null)
+  const [selectedGitInstallSkillIDs, setSelectedGitInstallSkillIDs] = useState<string[]>([])
+  const [isPreviewingGitInstall, setIsPreviewingGitInstall] = useState(false)
+  const [isInstallingGitSkills, setIsInstallingGitSkills] = useState(false)
+  const [gitInstallMessage, setGitInstallMessage] = useState<{
+    tone: "success" | "error"
+    text: string
+  } | null>(null)
   const [globalSkillsMessage, setGlobalSkillsMessage] = useState<{
     tone: "success" | "error"
     text: string
@@ -179,8 +268,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
   }
 
   async function loadGlobalSkillFile(path: string, options?: { rootPath?: string; tree?: GlobalSkillTreeNode[] }) {
-    const readGlobalSkillFile = window.desktop?.readGlobalSkillFile
-    if (!readGlobalSkillFile) return
+    const readGlobalSkillFile = getReadGlobalSkillFileClient()
 
     const requestID = ++fileRequestRef.current
     setIsLoadingGlobalSkillFile(true)
@@ -208,12 +296,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
   }
 
   async function refreshGlobalSkillsTree(preferredFilePath?: string | null) {
-    const getGlobalSkillsTree = window.desktop?.getGlobalSkillsTree
-    if (!getGlobalSkillsTree) {
-      setGlobalSkillsRoot("")
-      setGlobalSkillsTree([])
-      return
-    }
+    const getGlobalSkillsTree = getGlobalSkillsTreeClient()
 
     const requestID = ++treeRequestRef.current
     setIsLoadingGlobalSkillsTree(true)
@@ -294,6 +377,119 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     setGlobalSkillsMessage(null)
     setCreatingGlobalSkillName(suggestNextSkillName(globalSkillsTree))
     setIsCreateGlobalSkillDraftVisible(true)
+  }
+
+  function resetGitInstallDialog() {
+    setGitInstallSource("")
+    setGitInstallPreview(null)
+    setSelectedGitInstallSkillIDs([])
+    setGitInstallMessage(null)
+  }
+
+  function handleGitInstallDialogOpen() {
+    if (isPreviewingGitInstall || isInstallingGitSkills) return
+    resetGitInstallDialog()
+    setIsGitInstallDialogOpen(true)
+  }
+
+  function handleGitInstallDialogClose() {
+    if (isPreviewingGitInstall || isInstallingGitSkills) return
+    setIsGitInstallDialogOpen(false)
+    resetGitInstallDialog()
+  }
+
+  function handleGitInstallSourceChange(value: string) {
+    setGitInstallSource(value)
+    setGitInstallPreview(null)
+    setSelectedGitInstallSkillIDs([])
+    setGitInstallMessage(null)
+  }
+
+  function handleGitInstallSkillToggle(skillID: string) {
+    setSelectedGitInstallSkillIDs((current) =>
+      current.includes(skillID) ? current.filter((item) => item !== skillID) : [...current, skillID],
+    )
+  }
+
+  async function handlePreviewGitSkillInstall() {
+    const previewGlobalSkillGitInstall = getPreviewGlobalSkillGitInstallClient()
+    if (isPreviewingGitInstall || isInstallingGitSkills) return
+
+    const source = gitInstallSource.trim()
+    if (!source) {
+      setGitInstallMessage({
+        tone: "error",
+        text: "Enter a GitHub repository or Git URL.",
+      })
+      return
+    }
+
+    setIsPreviewingGitInstall(true)
+    setGitInstallMessage(null)
+    setGitInstallPreview(null)
+    setSelectedGitInstallSkillIDs([])
+
+    try {
+      const preview = await previewGlobalSkillGitInstall({ source })
+      const availableSkillIDs = preview.skills.filter((skill) => skill.available).map((skill) => skill.id)
+      setGitInstallPreview(preview)
+      setSelectedGitInstallSkillIDs(availableSkillIDs)
+      setGitInstallMessage(
+        preview.skills.length === 0
+          ? {
+              tone: "error",
+              text: "No skills were found in this repository.",
+            }
+          : null,
+      )
+    } catch (error) {
+      setGitInstallMessage({
+        tone: "error",
+        text: formatError(error),
+      })
+    } finally {
+      setIsPreviewingGitInstall(false)
+    }
+  }
+
+  async function handleInstallGitSkills() {
+    const installGlobalSkillsFromGit = getInstallGlobalSkillsFromGitClient()
+    if (!gitInstallPreview || isPreviewingGitInstall || isInstallingGitSkills) return
+
+    if (selectedGitInstallSkillIDs.length === 0) {
+      setGitInstallMessage({
+        tone: "error",
+        text: "Select at least one skill to install.",
+      })
+      return
+    }
+    if (!confirmDiscardChanges("install skills from Git")) return
+
+    setIsInstallingGitSkills(true)
+    setGitInstallMessage(null)
+
+    try {
+      const result = await installGlobalSkillsFromGit({
+        previewID: gitInstallPreview.previewID,
+        skillIDs: selectedGitInstallSkillIDs,
+      })
+      const firstInstalledFile = result.installed[0]?.filePath ?? null
+      await refreshGlobalSkillsTree(firstInstalledFile)
+      setIsGitInstallDialogOpen(false)
+      resetGitInstallDialog()
+      setGlobalSkillsMessage({
+        tone: "success",
+        text: `Installed ${result.installed.length} skill${result.installed.length === 1 ? "" : "s"}.`,
+      })
+      await notifySkillsUpdated()
+    } catch (error) {
+      setGitInstallMessage({
+        tone: "error",
+        text: formatError(error),
+      })
+    } finally {
+      setIsInstallingGitSkills(false)
+    }
   }
 
   function handleCreateGlobalSkillDraftChange(value: string) {
@@ -545,15 +741,24 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     globalSkillsMessage,
     globalSkillsRoot,
     globalSkillsTree,
+    gitInstallMessage,
+    gitInstallPreview,
+    gitInstallSource,
     handleCreateGlobalSkill,
     handleCreateGlobalSkillDraftCancel,
     handleCreateGlobalSkillDraftChange,
     handleCreateGlobalSkillDraftStart,
     handleDeleteGlobalSkill,
+    handleGitInstallDialogClose,
+    handleGitInstallDialogOpen,
+    handleGitInstallSkillToggle,
+    handleGitInstallSourceChange,
     handleGlobalSkillDirectoryToggle,
     handleGlobalSkillDraftChange,
     handleGlobalSkillFileSelect,
+    handleInstallGitSkills,
     handleOpenGlobalSkillsFolder,
+    handlePreviewGitSkillInstall,
     handleRenameGlobalSkill,
     handleRenameGlobalSkillDraftCancel,
     handleRenameGlobalSkillDraftChange,
@@ -562,8 +767,11 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     isCreateGlobalSkillDraftVisible,
     isCreatingGlobalSkill,
     isDirtyGlobalSkillFile,
+    isGitInstallDialogOpen,
+    isInstallingGitSkills,
     isLoadingGlobalSkillFile,
     isLoadingGlobalSkillsTree,
+    isPreviewingGitInstall,
     isSavingGlobalSkillFile,
     renamingGlobalSkillDirectory,
     renamingGlobalSkillDraftDirectory,
@@ -572,5 +780,6 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     selectedGlobalSkillDirectory,
     selectedGlobalSkillFileContent,
     selectedGlobalSkillFilePath,
+    selectedGitInstallSkillIDs,
   }
 }

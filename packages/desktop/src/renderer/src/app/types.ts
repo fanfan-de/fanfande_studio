@@ -1129,6 +1129,38 @@ export interface GlobalSkillFileDocument {
   content: string
 }
 
+export interface SkillInstallCandidate {
+  id: string
+  name: string
+  description: string
+  relativePath: string
+  directoryName: string
+  targetDirectory: string
+  available: boolean
+  reason?: string
+  filePath: string
+}
+
+export interface SkillGitInstallPreview {
+  previewID: string
+  source: string
+  cloneUrl: string
+  ref?: string
+  subpath?: string
+  skills: SkillInstallCandidate[]
+}
+
+export interface InstalledGlobalSkill {
+  id: string
+  name: string
+  directory: string
+  filePath: string
+}
+
+export interface SkillGitInstallResult {
+  installed: InstalledGlobalSkill[]
+}
+
 export type McpAllowedTools =
   | string[]
   | {

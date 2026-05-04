@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import "./sqlite.cleanup.ts"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Config from "#config/config.ts"
 import { Instance } from "#project/instance.ts"
+import * as SkillGitInstall from "#skill/git-install.ts"
 import * as Skill from "#skill/skill.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
 import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
@@ -240,5 +241,141 @@ describe("skill discovery", () => {
         ).rejects.toThrow("outside the skill directory")
       },
     })
+  })
+})
+
+describe("git skill install", () => {
+  let fakeHome = ""
+  let previewRoot = ""
+  let repoRoot = ""
+  const envBackup = new Map<string, string | undefined>()
+
+  beforeEach(async () => {
+    fakeHome = await mkdtemp(join(tmpdir(), "fanfande-skill-git-home-"))
+    previewRoot = await mkdtemp(join(tmpdir(), "fanfande-skill-git-preview-"))
+    repoRoot = join(previewRoot, "repo")
+    await mkdir(repoRoot, { recursive: true })
+
+    for (const key of ENV_KEYS) {
+      envBackup.set(key, process.env[key])
+    }
+
+    process.env.HOME = fakeHome
+    process.env.USERPROFILE = fakeHome
+    delete process.env.HOMEDRIVE
+    delete process.env.HOMEPATH
+  })
+
+  afterEach(async () => {
+    for (const key of ENV_KEYS) {
+      const value = envBackup.get(key)
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+
+    await rm(fakeHome, { recursive: true, force: true })
+    await rm(previewRoot, { recursive: true, force: true })
+  })
+
+  test("parseGitSkillSource supports shorthand, HTTPS, tree paths, and SSH", () => {
+    expect(SkillGitInstall.parseGitSkillSource("owner/repo")).toMatchObject({
+      cloneUrl: "https://github.com/owner/repo.git",
+      repoName: "repo",
+    })
+    expect(SkillGitInstall.parseGitSkillSource("https://github.com/owner/repo")).toMatchObject({
+      cloneUrl: "https://github.com/owner/repo.git",
+      repoName: "repo",
+    })
+    expect(SkillGitInstall.parseGitSkillSource("https://github.com/owner/repo/tree/main/skills/review")).toMatchObject({
+      cloneUrl: "https://github.com/owner/repo.git",
+      repoName: "repo",
+      ref: "main",
+      subpath: "skills/review",
+    })
+    expect(SkillGitInstall.parseGitSkillSource("git@github.com:owner/repo.git")).toMatchObject({
+      cloneUrl: "git@github.com:owner/repo.git",
+      repoName: "repo",
+    })
+  })
+
+  test("discovers root and skills directory candidates", async () => {
+    await writeFile(
+      join(repoRoot, "SKILL.md"),
+      ["---", "name: Root Skill", "description: Root workflow", "---", "", "# Root"].join("\n"),
+    )
+    await mkdir(join(repoRoot, "skills", "review"), { recursive: true })
+    await writeFile(
+      join(repoRoot, "skills", "review", "SKILL.md"),
+      ["---", "name: Review Skill", "description: Review workflow", "---", "", "# Review"].join("\n"),
+    )
+
+    const parsed = SkillGitInstall.parseGitSkillSource("owner/repo")
+    const candidates = await SkillGitInstall.discoverSkillInstallCandidates(parsed, repoRoot)
+
+    expect(candidates.map((item) => item.id)).toEqual([".", "skills/review"])
+    expect(candidates.find((item) => item.id === ".")).toMatchObject({
+      name: "Root Skill",
+      directoryName: "repo",
+      available: true,
+    })
+    expect(candidates.find((item) => item.id === "skills/review")).toMatchObject({
+      name: "Review Skill",
+      directoryName: "review",
+      available: true,
+    })
+  })
+
+  test("marks existing target directories unavailable and rejects installation", async () => {
+    await mkdir(join(fakeHome, ".anybox", "skills", "review"), { recursive: true })
+    await mkdir(join(repoRoot, "skills", "review"), { recursive: true })
+    await writeFile(
+      join(repoRoot, "skills", "review", "SKILL.md"),
+      ["---", "name: Review Skill", "description: Review workflow", "---", "", "# Review"].join("\n"),
+    )
+
+    const parsed = SkillGitInstall.parseGitSkillSource("owner/repo")
+    const preview = await SkillGitInstall.registerGlobalSkillGitInstallPreview(parsed, repoRoot, previewRoot)
+
+    expect(preview.skills[0]).toMatchObject({
+      id: "skills/review",
+      available: false,
+    })
+    await expect(
+      SkillGitInstall.installGlobalSkillsFromGitPreview({
+        previewID: preview.previewID,
+        skillIDs: ["skills/review"],
+      }),
+    ).rejects.toThrow("already exists")
+  })
+
+  test("installs selected skills with resources and skips git metadata", async () => {
+    await mkdir(join(repoRoot, "skills", "review", "scripts"), { recursive: true })
+    await mkdir(join(repoRoot, "skills", "review", ".git"), { recursive: true })
+    await writeFile(
+      join(repoRoot, "skills", "review", "SKILL.md"),
+      ["---", "name: Review Skill", "description: Review workflow", "---", "", "# Review"].join("\n"),
+    )
+    await writeFile(join(repoRoot, "skills", "review", "scripts", "checklist.md"), "Check carefully.\n")
+    await writeFile(join(repoRoot, "skills", "review", ".git", "config"), "[core]\n")
+
+    const parsed = SkillGitInstall.parseGitSkillSource("owner/repo")
+    const preview = await SkillGitInstall.registerGlobalSkillGitInstallPreview(parsed, repoRoot, previewRoot)
+    const result = await SkillGitInstall.installGlobalSkillsFromGitPreview({
+      previewID: preview.previewID,
+      skillIDs: ["skills/review"],
+    })
+
+    const installed = result.installed[0]
+    expect(installed).toMatchObject({
+      name: "Review Skill",
+      filePath: join(fakeHome, ".anybox", "skills", "review", "SKILL.md"),
+    })
+    await expect(readFile(join(fakeHome, ".anybox", "skills", "review", "scripts", "checklist.md"), "utf8")).resolves.toContain(
+      "Check carefully.",
+    )
+    await expect(stat(join(fakeHome, ".anybox", "skills", "review", ".git")).catch(() => null)).resolves.toBeNull()
   })
 })

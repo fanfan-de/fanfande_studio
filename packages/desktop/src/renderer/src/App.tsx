@@ -199,15 +199,24 @@ export function App() {
     globalSkillsMessage,
     globalSkillsRoot,
     globalSkillsTree,
+    gitInstallMessage,
+    gitInstallPreview,
+    gitInstallSource,
     handleCreateGlobalSkill,
     handleCreateGlobalSkillDraftCancel,
     handleCreateGlobalSkillDraftChange,
     handleCreateGlobalSkillDraftStart,
     handleDeleteGlobalSkill,
+    handleGitInstallDialogClose,
+    handleGitInstallDialogOpen,
+    handleGitInstallSkillToggle,
+    handleGitInstallSourceChange,
     handleGlobalSkillDirectoryToggle,
     handleGlobalSkillDraftChange,
     handleGlobalSkillFileSelect,
+    handleInstallGitSkills,
     handleOpenGlobalSkillsFolder,
+    handlePreviewGitSkillInstall,
     handleRenameGlobalSkill,
     handleRenameGlobalSkillDraftCancel,
     handleRenameGlobalSkillDraftChange,
@@ -216,8 +225,11 @@ export function App() {
     isCreateGlobalSkillDraftVisible,
     isCreatingGlobalSkill,
     isDirtyGlobalSkillFile,
+    isGitInstallDialogOpen,
+    isInstallingGitSkills,
     isLoadingGlobalSkillFile,
     isLoadingGlobalSkillsTree,
+    isPreviewingGitInstall,
     isSavingGlobalSkillFile,
     renamingGlobalSkillDirectory,
     renamingGlobalSkillDraftDirectory,
@@ -225,6 +237,7 @@ export function App() {
     selectedGlobalSkillDirectory,
     selectedGlobalSkillFileContent,
     selectedGlobalSkillFilePath,
+    selectedGitInstallSkillIDs,
   } = useGlobalSkills({
     onSkillsUpdated: refreshComposerSkills,
   })
@@ -791,17 +804,24 @@ export function App() {
               globalSkillsMessage={globalSkillsMessage}
               globalSkillsRoot={globalSkillsRoot}
               globalSkillsTree={globalSkillsTree}
+              gitInstallMessage={gitInstallMessage}
+              gitInstallPreview={gitInstallPreview}
+              gitInstallSource={gitInstallSource}
               isCreateGlobalSkillDraftVisible={isCreateGlobalSkillDraftVisible}
               isCreatingGlobalSkill={isCreatingGlobalSkill}
               isDirty={isDirtyGlobalSkillFile}
+              isGitInstallDialogOpen={isGitInstallDialogOpen}
+              isInstallingGitSkills={isInstallingGitSkills}
               isLoadingFile={isLoadingGlobalSkillFile}
               isLoadingSkillsTree={isLoadingGlobalSkillsTree}
+              isPreviewingGitInstall={isPreviewingGitInstall}
               isSavingFile={isSavingGlobalSkillFile}
               renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
               renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
               renamingGlobalSkillName={renamingGlobalSkillName}
               selectedFileContent={selectedGlobalSkillFileContent}
               selectedFilePath={selectedGlobalSkillFilePath}
+              selectedGitInstallSkillIDs={selectedGitInstallSkillIDs}
               selectedSkillDirectoryName={selectedGlobalSkillDirectory?.name ?? null}
               windowControls={windowControls}
               onChange={handleGlobalSkillDraftChange}
@@ -811,9 +831,15 @@ export function App() {
               onCreateGlobalSkillDraftStart={handleCreateGlobalSkillDraftStart}
               onDelete={handleDeleteGlobalSkill}
               onDeleteGlobalSkill={handleDeleteGlobalSkill}
+              onGitInstallDialogClose={handleGitInstallDialogClose}
+              onGitInstallDialogOpen={handleGitInstallDialogOpen}
+              onGitInstallSkillToggle={handleGitInstallSkillToggle}
+              onGitInstallSourceChange={handleGitInstallSourceChange}
               onGlobalSkillDirectoryToggle={handleGlobalSkillDirectoryToggle}
               onGlobalSkillFileSelect={handleGlobalSkillFileSelect}
+              onInstallGitSkills={handleInstallGitSkills}
               onOpenGlobalSkillsFolder={handleOpenGlobalSkillsFolder}
+              onPreviewGitSkillInstall={handlePreviewGitSkillInstall}
               onRenameGlobalSkill={handleRenameGlobalSkill}
               onRenameGlobalSkillDraftCancel={handleRenameGlobalSkillDraftCancel}
               onRenameGlobalSkillDraftChange={handleRenameGlobalSkillDraftChange}

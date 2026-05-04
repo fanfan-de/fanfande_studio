@@ -9,13 +9,15 @@ import { GlobalSkillsCanvas } from "../canvas/CreateSessionCanvas"
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  CloseIcon,
   DeleteIcon,
+  DownloadIcon,
   FileTextIcon,
   FolderIcon,
-  NewItemIcon,
+  PlusIcon,
 } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
-import type { GlobalSkillTreeNode } from "../types"
+import type { GlobalSkillTreeNode, SkillGitInstallPreview } from "../types"
 
 interface GlobalSkillsPageProps {
   creatingGlobalSkillName: string
@@ -27,17 +29,27 @@ interface GlobalSkillsPageProps {
   } | null
   globalSkillsRoot: string
   globalSkillsTree: GlobalSkillTreeNode[]
+  gitInstallMessage: {
+    tone: "success" | "error"
+    text: string
+  } | null
+  gitInstallPreview: SkillGitInstallPreview | null
+  gitInstallSource: string
   isCreateGlobalSkillDraftVisible: boolean
   isCreatingGlobalSkill: boolean
   isDirty: boolean
+  isGitInstallDialogOpen: boolean
+  isInstallingGitSkills: boolean
   isLoadingFile: boolean
   isLoadingSkillsTree: boolean
+  isPreviewingGitInstall: boolean
   isSavingFile: boolean
   renamingGlobalSkillDirectory: string | null
   renamingGlobalSkillDraftDirectory: string | null
   renamingGlobalSkillName: string
   selectedFileContent: string
   selectedFilePath: string | null
+  selectedGitInstallSkillIDs: string[]
   selectedSkillDirectoryName: string | null
   windowControls?: ReactNode
   onChange: (value: string) => void
@@ -47,9 +59,15 @@ interface GlobalSkillsPageProps {
   onCreateGlobalSkillDraftStart: () => void
   onDelete: () => void | Promise<void>
   onDeleteGlobalSkill: (directoryPath?: string) => void | Promise<void>
+  onGitInstallDialogClose: () => void
+  onGitInstallDialogOpen: () => void
+  onGitInstallSkillToggle: (skillID: string) => void
+  onGitInstallSourceChange: (value: string) => void
   onGlobalSkillDirectoryToggle: (path: string) => void
   onGlobalSkillFileSelect: (path: string) => void | Promise<void>
+  onInstallGitSkills: () => void | Promise<void>
   onOpenGlobalSkillsFolder: () => void | Promise<void>
+  onPreviewGitSkillInstall: () => void | Promise<void>
   onRenameGlobalSkill: () => void | Promise<void>
   onRenameGlobalSkillDraftCancel: () => void
   onRenameGlobalSkillDraftChange: (value: string) => void
@@ -75,6 +93,7 @@ interface GlobalSkillsNavigatorProps {
   onCreateGlobalSkillDraftChange: (value: string) => void
   onCreateGlobalSkillDraftStart: () => void
   onDeleteGlobalSkill: (directoryPath?: string) => void | Promise<void>
+  onGitInstallDialogOpen: () => void
   onGlobalSkillDirectoryToggle: (path: string) => void
   onGlobalSkillFileSelect: (path: string) => void | Promise<void>
   onOpenGlobalSkillsFolder: () => void | Promise<void>
@@ -82,6 +101,23 @@ interface GlobalSkillsNavigatorProps {
   onRenameGlobalSkillDraftCancel: () => void
   onRenameGlobalSkillDraftChange: (value: string) => void
   onRenameGlobalSkillDraftStart: (directoryPath: string) => void
+}
+
+interface GlobalSkillGitInstallDialogProps {
+  gitInstallMessage: {
+    tone: "success" | "error"
+    text: string
+  } | null
+  gitInstallPreview: SkillGitInstallPreview | null
+  gitInstallSource: string
+  isInstallingGitSkills: boolean
+  isPreviewingGitInstall: boolean
+  selectedGitInstallSkillIDs: string[]
+  onClose: () => void
+  onInstall: () => void | Promise<void>
+  onPreview: () => void | Promise<void>
+  onSourceChange: (value: string) => void
+  onToggleSkill: (skillID: string) => void
 }
 
 function GlobalSkillsTreeNodeRow({
@@ -266,6 +302,7 @@ function GlobalSkillsNavigator({
   onCreateGlobalSkillDraftChange,
   onCreateGlobalSkillDraftStart,
   onDeleteGlobalSkill,
+  onGitInstallDialogOpen,
   onGlobalSkillDirectoryToggle,
   onGlobalSkillFileSelect,
   onOpenGlobalSkillsFolder,
@@ -301,42 +338,18 @@ function GlobalSkillsNavigator({
             <span>打开文件位置</span>
           </button>
           <button
-            className="secondary-button global-skills-new-button"
-            aria-label="Create global skill"
+            className="secondary-button global-skills-install-button"
+            aria-label="Install skill from Git"
             disabled={isCreatingGlobalSkill || isCreateGlobalSkillDraftVisible || Boolean(renamingGlobalSkillDraftDirectory || renamingGlobalSkillDirectory)}
-            title="Create global skill"
+            title="Install skill from Git"
             type="button"
-            onClick={onCreateGlobalSkillDraftStart}
+            onClick={onGitInstallDialogOpen}
           >
-            <NewItemIcon />
-            <span>New</span>
+            <DownloadIcon />
+            <span>Install</span>
           </button>
         </div>
       </div>
-
-      {isCreateGlobalSkillDraftVisible ? (
-        <form className="skills-create-form" aria-label="Create global skill form" onSubmit={handleCreateSkillSubmit}>
-          <input
-            autoFocus
-            className="skills-create-input"
-            aria-label="New global skill name"
-            disabled={isCreatingGlobalSkill}
-            placeholder="new-skill"
-            type="text"
-            value={creatingGlobalSkillName}
-            onChange={(event) => onCreateGlobalSkillDraftChange(event.target.value)}
-            onKeyDown={handleCreateSkillKeyDown}
-          />
-          <div className="skills-create-actions">
-            <button disabled={isCreatingGlobalSkill} type="submit">
-              Create
-            </button>
-            <button disabled={isCreatingGlobalSkill} type="button" onClick={onCreateGlobalSkillDraftCancel}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      ) : null}
 
       <div className="skills-tree-root">
         {isLoadingSkillsTree && globalSkillsTree.length === 0 ? (
@@ -362,10 +375,172 @@ function GlobalSkillsNavigator({
             />
           ))
         ) : (
-          <p className="skills-tree-empty">No skills exist yet. Use New to create the first one.</p>
+          <p className="skills-tree-empty">No skills exist yet. Use + to create the first one.</p>
+        )}
+
+        {isCreateGlobalSkillDraftVisible ? (
+          <form className="skills-create-form" aria-label="Create global skill form" onSubmit={handleCreateSkillSubmit}>
+            <input
+              autoFocus
+              className="skills-create-input"
+              aria-label="New global skill name"
+              disabled={isCreatingGlobalSkill}
+              placeholder="new-skill"
+              type="text"
+              value={creatingGlobalSkillName}
+              onChange={(event) => onCreateGlobalSkillDraftChange(event.target.value)}
+              onKeyDown={handleCreateSkillKeyDown}
+            />
+            <div className="skills-create-actions">
+              <button disabled={isCreatingGlobalSkill} type="submit">
+                Create
+              </button>
+              <button disabled={isCreatingGlobalSkill} type="button" onClick={onCreateGlobalSkillDraftCancel}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button
+            className="secondary-button global-skills-new-button"
+            aria-label="Create global skill"
+            disabled={isCreatingGlobalSkill || Boolean(renamingGlobalSkillDraftDirectory || renamingGlobalSkillDirectory)}
+            title="Create global skill"
+            type="button"
+            onClick={onCreateGlobalSkillDraftStart}
+          >
+            <PlusIcon />
+          </button>
         )}
       </div>
     </section>
+  )
+}
+
+function GlobalSkillGitInstallDialog({
+  gitInstallMessage,
+  gitInstallPreview,
+  gitInstallSource,
+  isInstallingGitSkills,
+  isPreviewingGitInstall,
+  selectedGitInstallSkillIDs,
+  onClose,
+  onInstall,
+  onPreview,
+  onSourceChange,
+  onToggleSkill,
+}: GlobalSkillGitInstallDialogProps) {
+  const isBusy = isPreviewingGitInstall || isInstallingGitSkills
+  const selectedCount = selectedGitInstallSkillIDs.length
+
+  function handlePreviewSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void onPreview()
+  }
+
+  return (
+    <div className="global-skills-git-install-overlay">
+      <section className="global-skills-git-install-modal" role="dialog" aria-modal="true" aria-label="Install skills from Git">
+        <header className="global-skills-git-install-header">
+          <div>
+            <h3>Install Skills from Git</h3>
+            <p>Preview the repository, then select the skills to install.</p>
+          </div>
+          <button
+            className="row-action global-skills-git-install-close"
+            aria-label="Close Git skill install"
+            disabled={isBusy}
+            title="Close"
+            type="button"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        </header>
+
+        <form className="global-skills-git-install-form" onSubmit={handlePreviewSubmit}>
+          <label className="global-skills-git-install-label" htmlFor="global-skills-git-source">
+            Repository
+          </label>
+          <input
+            id="global-skills-git-source"
+            className="global-skills-git-install-input"
+            aria-label="Git skill repository"
+            disabled={isBusy}
+            placeholder="user/repo or https://github.com/user/repo"
+            type="text"
+            value={gitInstallSource}
+            onChange={(event) => onSourceChange(event.target.value)}
+          />
+          <div className="global-skills-git-install-help">
+            <span>Supported formats:</span>
+            <code>user/repo</code>
+            <code>https://github.com/user/repo</code>
+            <code>https://github.com/user/repo/tree/main/skills/my-skill</code>
+            <code>git@github.com:user/repo.git</code>
+          </div>
+          <div className="global-skills-git-install-actions">
+            <button className="secondary-button" disabled={isBusy || !gitInstallSource.trim()} type="submit">
+              {isPreviewingGitInstall ? "Previewing..." : "Preview"}
+            </button>
+          </div>
+        </form>
+
+        {gitInstallMessage ? (
+          <p className={`global-skills-git-install-message is-${gitInstallMessage.tone}`} role={gitInstallMessage.tone === "error" ? "alert" : "status"}>
+            {gitInstallMessage.text}
+          </p>
+        ) : null}
+
+        {gitInstallPreview ? (
+          <section className="global-skills-git-install-preview" aria-label="Git skill install preview">
+            <div className="global-skills-git-install-preview-meta">
+              <span>{gitInstallPreview.cloneUrl}</span>
+              {gitInstallPreview.ref ? <span>branch: {gitInstallPreview.ref}</span> : null}
+              {gitInstallPreview.subpath ? <span>path: {gitInstallPreview.subpath}</span> : null}
+            </div>
+            <div className="global-skills-git-install-list">
+              {gitInstallPreview.skills.map((skill) => {
+                const checked = selectedGitInstallSkillIDs.includes(skill.id)
+                return (
+                  <label
+                    key={skill.id}
+                    className={skill.available ? "global-skills-git-install-skill" : "global-skills-git-install-skill is-disabled"}
+                  >
+                    <input
+                      checked={checked}
+                      disabled={!skill.available || isBusy}
+                      type="checkbox"
+                      onChange={() => onToggleSkill(skill.id)}
+                    />
+                    <span className="global-skills-git-install-skill-body">
+                      <strong>{skill.name}</strong>
+                      <span>{skill.description}</span>
+                      <code>{skill.relativePath}</code>
+                      {skill.reason ? <em>{skill.reason}</em> : null}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        <footer className="global-skills-git-install-footer">
+          <button className="secondary-button" disabled={isBusy} type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="primary-button"
+            disabled={!gitInstallPreview || selectedCount === 0 || isBusy}
+            type="button"
+            onClick={() => void onInstall()}
+          >
+            {isInstallingGitSkills ? "Installing..." : `Install${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+          </button>
+        </footer>
+      </section>
+    </div>
   )
 }
 
@@ -376,17 +551,24 @@ export function GlobalSkillsPage({
   globalSkillsMessage,
   globalSkillsRoot,
   globalSkillsTree,
+  gitInstallMessage,
+  gitInstallPreview,
+  gitInstallSource,
   isCreateGlobalSkillDraftVisible,
   isCreatingGlobalSkill,
   isDirty,
+  isGitInstallDialogOpen,
+  isInstallingGitSkills,
   isLoadingFile,
   isLoadingSkillsTree,
+  isPreviewingGitInstall,
   isSavingFile,
   renamingGlobalSkillDirectory,
   renamingGlobalSkillDraftDirectory,
   renamingGlobalSkillName,
   selectedFileContent,
   selectedFilePath,
+  selectedGitInstallSkillIDs,
   selectedSkillDirectoryName,
   windowControls,
   onChange,
@@ -396,9 +578,15 @@ export function GlobalSkillsPage({
   onCreateGlobalSkillDraftStart,
   onDelete,
   onDeleteGlobalSkill,
+  onGitInstallDialogClose,
+  onGitInstallDialogOpen,
+  onGitInstallSkillToggle,
+  onGitInstallSourceChange,
   onGlobalSkillDirectoryToggle,
   onGlobalSkillFileSelect,
+  onInstallGitSkills,
   onOpenGlobalSkillsFolder,
+  onPreviewGitSkillInstall,
   onRenameGlobalSkill,
   onRenameGlobalSkillDraftCancel,
   onRenameGlobalSkillDraftChange,
@@ -445,6 +633,7 @@ export function GlobalSkillsPage({
               onCreateGlobalSkillDraftChange={onCreateGlobalSkillDraftChange}
               onCreateGlobalSkillDraftStart={onCreateGlobalSkillDraftStart}
               onDeleteGlobalSkill={onDeleteGlobalSkill}
+              onGitInstallDialogOpen={onGitInstallDialogOpen}
               onGlobalSkillDirectoryToggle={onGlobalSkillDirectoryToggle}
               onGlobalSkillFileSelect={onGlobalSkillFileSelect}
               onOpenGlobalSkillsFolder={onOpenGlobalSkillsFolder}
@@ -473,6 +662,22 @@ export function GlobalSkillsPage({
           </div>
         </section>
       </div>
+
+      {isGitInstallDialogOpen ? (
+        <GlobalSkillGitInstallDialog
+          gitInstallMessage={gitInstallMessage}
+          gitInstallPreview={gitInstallPreview}
+          gitInstallSource={gitInstallSource}
+          isInstallingGitSkills={isInstallingGitSkills}
+          isPreviewingGitInstall={isPreviewingGitInstall}
+          selectedGitInstallSkillIDs={selectedGitInstallSkillIDs}
+          onClose={onGitInstallDialogClose}
+          onInstall={onInstallGitSkills}
+          onPreview={onPreviewGitSkillInstall}
+          onSourceChange={onGitInstallSourceChange}
+          onToggleSkill={onGitInstallSkillToggle}
+        />
+      ) : null}
     </section>
   )
 }

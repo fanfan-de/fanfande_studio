@@ -9,6 +9,7 @@ import type {
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
+  AgentInstalledGlobalSkill,
   AgentMcpServerDiagnostic,
   AgentMcpServerSummary,
   AgentInstalledPlugin,
@@ -42,7 +43,10 @@ import type {
   AgentSessionRuntimeDebugSnapshot,
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
+  AgentSkillGitInstallPreview,
   AgentSkillInfo,
+  AgentSkillInstallCandidate,
+  AgentSkillGitInstallResult,
   AgentToolPermissionModePayload,
   AgentWorkspaceFileDocument,
   AgentWorkspaceFileSearchResult,
@@ -75,6 +79,7 @@ export type {
   AgentGlobalSkillFileDocument,
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
+  AgentInstalledGlobalSkill,
   AgentMcpServerDiagnostic,
   AgentMcpServerSummary,
   AgentInstalledPlugin,
@@ -108,7 +113,10 @@ export type {
   AgentSessionRuntimeDebugSnapshot,
   AgentSessionTurnRequestInput,
   AgentSideChatLink,
+  AgentSkillGitInstallPreview,
   AgentSkillInfo,
+  AgentSkillInstallCandidate,
+  AgentSkillGitInstallResult,
   AgentToolPermissionModePayload,
   AgentWorkspaceFileDocument,
   AgentWorkspaceFileSearchResult,
@@ -183,6 +191,10 @@ export type PluginDeleteResult = AgentPluginDeleteResult
 export type PtyIPCEvent = PtyTransportIPCEvent
 export type PtySessionInfo = AgentPtySessionInfo
 export type SkillInfo = AgentSkillInfo
+export type SkillInstallCandidate = AgentSkillInstallCandidate
+export type SkillGitInstallPreview = AgentSkillGitInstallPreview
+export type InstalledGlobalSkill = AgentInstalledGlobalSkill
+export type SkillGitInstallResult = AgentSkillGitInstallResult
 export type WorkspaceFileChangeIPCEvent = {
   directory: string
   paths: string[]
@@ -721,6 +733,14 @@ export interface DesktopIpcContract {
     input: { name: string }
     output: { directory: string; file: AgentGlobalSkillFileDocument }
   }
+  "desktop:preview-global-skill-git-install": {
+    input: { source: string }
+    output: AgentSkillGitInstallPreview
+  }
+  "desktop:install-global-skills-from-git": {
+    input: { previewID: string; skillIDs: string[] }
+    output: AgentSkillGitInstallResult
+  }
   "desktop:rename-global-skill": {
     input: { directory: string; name: string }
     output: AgentGlobalSkillRenameResult
@@ -969,6 +989,8 @@ export interface DesktopApiMethods {
   resetPromptPreset(input: DesktopIpcInput<"desktop:reset-prompt-preset">): Promise<DesktopIpcOutput<"desktop:reset-prompt-preset">>
   deletePromptPreset(input: DesktopIpcInput<"desktop:delete-prompt-preset">): Promise<DesktopIpcOutput<"desktop:delete-prompt-preset">>
   createGlobalSkill(input: DesktopIpcInput<"desktop:create-global-skill">): Promise<DesktopIpcOutput<"desktop:create-global-skill">>
+  previewGlobalSkillGitInstall(input: DesktopIpcInput<"desktop:preview-global-skill-git-install">): Promise<DesktopIpcOutput<"desktop:preview-global-skill-git-install">>
+  installGlobalSkillsFromGit(input: DesktopIpcInput<"desktop:install-global-skills-from-git">): Promise<DesktopIpcOutput<"desktop:install-global-skills-from-git">>
   renameGlobalSkill(input: DesktopIpcInput<"desktop:rename-global-skill">): Promise<DesktopIpcOutput<"desktop:rename-global-skill">>
   deleteGlobalSkill(input: DesktopIpcInput<"desktop:delete-global-skill">): Promise<DesktopIpcOutput<"desktop:delete-global-skill">>
   getProjectProviderCatalog(input: DesktopIpcInput<"desktop:get-project-provider-catalog">): Promise<DesktopIpcOutput<"desktop:get-project-provider-catalog">>

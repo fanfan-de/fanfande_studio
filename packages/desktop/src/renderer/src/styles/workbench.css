@@ -463,6 +463,7 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   background: var(--seg-shell);
@@ -544,7 +545,7 @@
   min-height: 0;
   height: 100%;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -562,18 +563,230 @@
   flex-wrap: wrap;
 }
 
-.global-skills-new-button,
+.global-skills-install-button,
 .global-skills-open-folder-button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.global-skills-new-button svg,
+.global-skills-install-button svg,
 .global-skills-open-folder-button svg {
   width: 15px;
   height: 15px;
   stroke-width: 2;
+}
+
+.global-skills-new-button {
+  justify-self: start;
+  width: calc(100% - 32px);
+  min-width: 0;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--semantic-sidebar-tree-row-text);
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.global-skills-new-button:hover,
+.global-skills-new-button:focus-visible {
+  transform: none;
+  background: var(--semantic-sidebar-tree-row-surface-hover);
+  border: 0;
+  color: var(--semantic-sidebar-tree-row-text-hover);
+  box-shadow: none;
+  outline: none;
+}
+
+.global-skills-new-button svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
+}
+
+.global-skills-git-install-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 28, 38, 0.32);
+}
+
+.global-skills-git-install-modal {
+  width: min(100%, 620px);
+  max-height: min(100%, 680px);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding: 22px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel);
+  box-shadow: 0 18px 50px rgba(17, 24, 39, 0.2);
+  display: grid;
+  gap: 18px;
+}
+
+.global-skills-git-install-header,
+.global-skills-git-install-footer,
+.global-skills-git-install-actions {
+  display: flex;
+  align-items: center;
+}
+
+.global-skills-git-install-header {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.global-skills-git-install-header h3,
+.global-skills-git-install-header p,
+.global-skills-git-install-message {
+  margin: 0;
+}
+
+.global-skills-git-install-header h3 {
+  color: var(--seg-text-1);
+  font-size: 19px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.global-skills-git-install-header p,
+.global-skills-git-install-help,
+.global-skills-git-install-preview-meta,
+.global-skills-git-install-skill span,
+.global-skills-git-install-skill em {
+  color: var(--seg-text-3);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.global-skills-git-install-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.global-skills-git-install-form {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.global-skills-git-install-label {
+  color: var(--seg-text-2);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.global-skills-git-install-input {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--seg-accent);
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  font-size: 14px;
+  outline: none;
+}
+
+.global-skills-git-install-input:focus {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+}
+
+.global-skills-git-install-help,
+.global-skills-git-install-preview,
+.global-skills-git-install-skill-body {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.global-skills-git-install-help code,
+.global-skills-git-install-preview-meta code,
+.global-skills-git-install-skill code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--seg-text-2);
+  font-size: 12px;
+}
+
+.global-skills-git-install-actions,
+.global-skills-git-install-footer {
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.global-skills-git-install-message {
+  padding: 10px 12px;
+  border-radius: var(--seg-radius-xs);
+  font-size: 13px;
+}
+
+.global-skills-git-install-message.is-error {
+  border: 1px solid rgba(185, 28, 28, 0.24);
+  background: rgba(254, 242, 242, 0.9);
+  color: #991b1b;
+}
+
+.global-skills-git-install-message.is-success {
+  border: 1px solid rgba(21, 128, 61, 0.24);
+  background: rgba(240, 253, 244, 0.9);
+  color: #166534;
+}
+
+.global-skills-git-install-preview-meta {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.global-skills-git-install-list {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.global-skills-git-install-skill {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.global-skills-git-install-skill.is-disabled {
+  opacity: 0.68;
+}
+
+.global-skills-git-install-skill input {
+  margin-top: 2px;
+}
+
+.global-skills-git-install-skill strong {
+  color: var(--seg-text-1);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.global-skills-git-install-skill em {
+  color: #991b1b;
+  font-style: normal;
 }
 
 @media (max-width: 1280px) {

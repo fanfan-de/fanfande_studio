@@ -7,6 +7,7 @@ import {
   CircleX,
   Code2,
   Copy,
+  Download,
   Eye,
   EyeOff,
   Expand,
@@ -50,6 +51,7 @@ function createIcon(Icon: LucideIcon, defaults: LucideProps = {}) {
 export const FolderIcon = createIcon(Folder)
 export const PaperclipIcon = createIcon(Paperclip)
 export const CopyIcon = createIcon(Copy)
+export const DownloadIcon = createIcon(Download)
 export const ChevronDownIcon = createIcon(ChevronDown)
 export const ChevronRightIcon = createIcon(ChevronRight)
 export const ExpandIcon = createIcon(Expand)

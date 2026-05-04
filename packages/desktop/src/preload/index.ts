@@ -55,6 +55,8 @@ import type {
   PromptPresetSummary,
   PtyIPCEvent,
   PtySessionInfo,
+  SkillGitInstallPreview,
+  SkillGitInstallResult,
   SkillInfo,
   ToolPermissionModePayload,
   WindowAction,
@@ -473,6 +475,10 @@ try {
         directory: string
         file: GlobalSkillFileDocument
       }>,
+    previewGlobalSkillGitInstall: (input: { source: string }) =>
+      invokeDesktop("desktop:preview-global-skill-git-install", input) as Promise<SkillGitInstallPreview>,
+    installGlobalSkillsFromGit: (input: { previewID: string; skillIDs: string[] }) =>
+      invokeDesktop("desktop:install-global-skills-from-git", input) as Promise<SkillGitInstallResult>,
     renameGlobalSkill: (input: { directory: string; name: string }) =>
       invokeDesktop("desktop:rename-global-skill", input) as Promise<{
         previousDirectory: string
