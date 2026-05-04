@@ -3,12 +3,14 @@ import type { AssistantTurn, Turn, UserTurn } from "../types"
 import {
   isCompletedStreamEvent,
   isHighFrequencyDeltaStreamEvent,
+  isLlmCompletedStreamEvent,
   isPermissionRequestStreamEvent,
   isTaskStateStreamEvent,
   isTerminalStreamEvent,
   mergeConversationTurnsFromHistory,
   readLatestSessionContextUsageFromHistory,
   readSessionContextUsageFromDoneEventData,
+  readSessionContextUsageFromLlmCompletedEventData,
   reconcileConversationTurns,
   resolveStreamMessageID,
   resolveStreamCursor,
@@ -56,6 +58,7 @@ function createRuntimeEvent(type: string, payload: Record<string, unknown> = {})
     eventID: "runtime-cursor-1",
     sessionID: "backend-session-1",
     turnID: "backend-turn-1",
+    timestamp: 456,
     payload,
   }
 }
@@ -105,6 +108,7 @@ describe("session stream controller helpers", () => {
   it("classifies terminal, completed, and permission events across stream formats", () => {
     expect(isTerminalStreamEvent({ event: "runtime", data: createRuntimeEvent("turn.failed") })).toBe(true)
     expect(isCompletedStreamEvent({ event: "runtime", data: createRuntimeEvent("turn.completed") })).toBe(true)
+    expect(isLlmCompletedStreamEvent({ event: "runtime", data: createRuntimeEvent("llm.call.completed") })).toBe(true)
     expect(isPermissionRequestStreamEvent({ event: "runtime", data: createRuntimeEvent("permission.requested") })).toBe(true)
     expect(isPermissionRequestStreamEvent({
       event: "part",
@@ -188,6 +192,32 @@ describe("session stream controller helpers", () => {
       event: "runtime",
       data: createRuntimeEvent("turn.completed"),
     })).toBe(false)
+  })
+
+  it("reads context usage from in-turn LLM completion events", () => {
+    expect(readSessionContextUsageFromLlmCompletedEventData(createRuntimeEvent("llm.call.completed", {
+      usage: {
+        inputTokens: 64_000,
+        outputTokens: 800,
+        reasoningTokens: 120,
+        cacheReadTokens: 32_000,
+        cacheWriteTokens: 16,
+      },
+    }))).toEqual({
+      inputTokens: 64_000,
+      outputTokens: 800,
+      totalTokens: 64_800,
+      reasoningTokens: 120,
+      cacheReadTokens: 32_000,
+      cacheWriteTokens: 16,
+      measuredAt: 456,
+    })
+
+    expect(readSessionContextUsageFromLlmCompletedEventData(createRuntimeEvent("turn.completed", {
+      usage: {
+        inputTokens: 64_000,
+      },
+    }))).toBeNull()
   })
 
   it("reads context usage from stream completion payloads and history messages", () => {

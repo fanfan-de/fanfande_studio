@@ -1330,6 +1330,7 @@
 }
 
 .thread-shell.create-session-shell {
+  align-items: center;
   justify-content: center;
 }
 

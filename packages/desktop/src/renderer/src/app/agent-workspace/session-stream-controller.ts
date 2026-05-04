@@ -110,6 +110,10 @@ export function isCompletedStreamEvent(streamEvent: { event: string; data: unkno
   return streamEvent.event === "done"
 }
 
+export function isLlmCompletedStreamEvent(streamEvent: { event: string; data: unknown }) {
+  return readRuntimeStreamType(streamEvent) === "llm.call.completed"
+}
+
 export function isPermissionRequestStreamEvent(streamEvent: { event: string; data: unknown }) {
   const runtimeType = readRuntimeStreamType(streamEvent)
   if (runtimeType) {
@@ -569,6 +573,36 @@ export function readSessionContextUsageFromDoneEventData(value: unknown) {
 
   const payload = readStreamRecord(value)
   return readSessionContextUsageFromMessageInfo(payload?.message)
+}
+
+export function readSessionContextUsageFromLlmCompletedEventData(value: unknown): SessionContextUsage | null {
+  const runtimeEvent = readRuntimeStreamEvent(value)
+  if (!runtimeEvent || readStreamString(runtimeEvent.type) !== "llm.call.completed") return null
+
+  const payload = readStreamRecord(runtimeEvent.payload)
+  const usage = readStreamRecord(payload?.usage)
+  if (!usage) return null
+
+  const inputTokens = readStreamNumber(usage.inputTokens) ?? 0
+  const outputTokens = readStreamNumber(usage.outputTokens) ?? 0
+  const reasoningTokens = readStreamNumber(usage.reasoningTokens) ?? 0
+  const cacheReadTokens = readStreamNumber(usage.cacheReadTokens) ?? 0
+  const cacheWriteTokens = readStreamNumber(usage.cacheWriteTokens) ?? 0
+  const totalTokens = inputTokens + outputTokens
+
+  if (inputTokens <= 0 && outputTokens <= 0 && reasoningTokens <= 0 && cacheReadTokens <= 0 && cacheWriteTokens <= 0) {
+    return null
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    reasoningTokens,
+    cacheReadTokens,
+    cacheWriteTokens,
+    measuredAt: readStreamNumber(runtimeEvent.timestamp) ?? Date.now(),
+  }
 }
 
 export function readLatestSessionContextUsageFromHistory(messages: LoadedSessionHistoryMessage[]) {
@@ -1063,6 +1097,13 @@ export function useSessionStreamController({
       streamEvent,
     )
 
+    if (isLlmCompletedStreamEvent(streamEvent)) {
+      const usage = readSessionContextUsageFromLlmCompletedEventData(streamEvent.data)
+      if (usage) {
+        updateSessionContextUsage(target.sessionID, usage)
+      }
+    }
+
     if (isPermissionRequestStreamEvent(streamEvent)) {
       refreshWorkspaceForSession(target.sessionID)
       void loadPendingPermissionRequestsForSession(target.sessionID).catch((error) => {
@@ -1155,6 +1196,13 @@ export function useSessionStreamController({
       },
       streamEvent,
     )
+
+    if (isLlmCompletedStreamEvent(streamEvent)) {
+      const usage = readSessionContextUsageFromLlmCompletedEventData(streamEvent.data)
+      if (usage) {
+        updateSessionContextUsage(uiSessionID, usage)
+      }
+    }
 
     if (isPermissionRequestStreamEvent(streamEvent)) {
       refreshWorkspaceForSession(uiSessionID)
