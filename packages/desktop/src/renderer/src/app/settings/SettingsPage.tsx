@@ -17,6 +17,7 @@ import {
   PaletteIcon,
   PlusIcon,
   ResetIcon,
+  SearchIcon,
   SettingsIcon,
   SunIcon,
   TerminalIcon
@@ -424,6 +425,23 @@ function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServ
   return transport === "remote" ? "http" : "stdio"
 }
 
+function doesMcpServerMatchSearch(server: McpServerSummary, rawQuery: string) {
+  const query = rawQuery.trim().toLowerCase()
+  if (!query) return true
+
+  const haystack = [
+    server.id,
+    server.name ?? "",
+    getMcpTransportLabel(server.transport),
+    server.enabled ? "enabled" : "disabled",
+    server.transport === "stdio" ? server.command ?? "" : server.serverUrl ?? "",
+  ]
+    .join(" ")
+    .toLowerCase()
+
+  return haystack.includes(query)
+}
+
 function getBuiltinToolKindLabel(tool: BuiltinToolSummary) {
   return getBuiltinToolGroupLabel(tool.capabilities.kind ?? "other")
 }
@@ -713,6 +731,7 @@ export function SettingsPage({
     const [isSavingAutomaticUpdates, setIsSavingAutomaticUpdates] = useState(false)
     const [selectedProviderID, setSelectedProviderID] = useState<string | null>(null)
     const [providerSearch, setProviderSearch] = useState("")
+    const [mcpServerSearchQuery, setMcpServerSearchQuery] = useState("")
     const [providerApiKeyModes, setProviderApiKeyModes] = useState<Record<string, ProviderApiKeyMode>>({})
     const [visibleProviderApiKeys, setVisibleProviderApiKeys] = useState<Record<string, boolean>>({})
     const settingsOverlayRef = useRef<HTMLElement | null>(null)
@@ -733,6 +752,7 @@ export function SettingsPage({
     const connectedProviderIDs = new Set(catalog.filter((item) => item.available).map((item) => item.id))
     const visibleModels = models.filter((model) => model.available && connectedProviderIDs.has(model.providerID))
     const filteredCatalog = getVisibleProvidersForSettings(catalog, providerSearch)
+    const filteredMcpServers = mcpServers.filter((server) => doesMcpServerMatchSearch(server, mcpServerSearchQuery))
     const activeProvider = selectedProviderID ? catalog.find((item) => item.id === selectedProviderID) ?? null : null
     const activeProviderDraft = activeProvider
       ? (providerDrafts[activeProvider.id] ?? {
@@ -2264,10 +2284,30 @@ export function SettingsPage({
                 ) : activeSection === "mcp" ? (
                   <section className="settings-services-layout" aria-label="MCP server layout">
                     <div className="settings-service-list-panel mcp-servers-list-panel">
+                      <div className="mcp-servers-search-row" role="search">
+                        <SearchIcon />
+                        <input
+                          aria-label="Search MCP servers"
+                          type="search"
+                          value={mcpServerSearchQuery}
+                          placeholder="Search servers"
+                          onChange={(event) => setMcpServerSearchQuery(event.target.value)}
+                        />
+                        {mcpServerSearchQuery ? (
+                          <button
+                            aria-label="Clear MCP server search"
+                            title="Clear search"
+                            type="button"
+                            onClick={() => setMcpServerSearchQuery("")}
+                          >
+                            <CloseIcon />
+                          </button>
+                        ) : null}
+                      </div>
                       <div className="settings-service-list-body">
                         <div className="settings-service-list mcp-servers-list-stack" role="list" aria-label="MCP servers">
-                          {mcpServers.length > 0 ? (
-                            mcpServers.map((server) => {
+                          {filteredMcpServers.length > 0 ? (
+                            filteredMcpServers.map((server) => {
                               const isActive = server.id === activeMcpServerID
 
                               return (
@@ -2290,6 +2330,11 @@ export function SettingsPage({
                                 </button>
                               )
                             })
+                          ) : mcpServers.length > 0 ? (
+                            <article className="settings-empty-state settings-service-list-empty-state">
+                              <span className="label">No Match</span>
+                              <h3>No MCP servers match this search</h3>
+                            </article>
                           ) : (
                             <article className="settings-empty-state settings-service-list-empty-state">
                               <span className="label">No Servers</span>
@@ -2344,11 +2389,6 @@ export function SettingsPage({
                               <h3>Server Configuration</h3>
                             </div>
                             <div className="mcp-server-configuration-header-side">
-                              <p>
-                                {mcpServerDraft.transport === "stdio"
-                                  ? "Use one argument per line and one environment variable per line in KEY=value format."
-                                  : "Connect a remote MCP server over HTTP. Headers are sent by the local agent, and tool approval stays in the local permission system."}
-                              </p>
                               <div className="settings-inline-actions mcp-server-configuration-actions">
                                 {activeMcpServer ? (
                                   <button
@@ -2563,15 +2603,15 @@ export function SettingsPage({
                               onPolicyChange={onMcpToolPolicyChange}
                             />
 
-                            <div className="settings-actions-row">
-                              <span className="settings-helper-text">
-                                {mcpServerValidationError
-                                  ? mcpServerValidationError
-                                  : mcpServerDraft.transport === "remote"
-                                    ? "Remote MCP servers are connected locally over HTTP. Approval still flows through the existing permission system."
-                                    : "Servers start lazily when a project enables them and the agent resolves tools. Tool approval still flows through the existing permission system."}
-                              </span>
-                            </div>
+                            {mcpServerValidationError || mcpServerDraft.transport === "remote" ? (
+                              <div className="settings-actions-row">
+                                <span className="settings-helper-text">
+                                  {mcpServerValidationError
+                                    ? mcpServerValidationError
+                                    : "Remote MCP servers are connected locally over HTTP. Approval still flows through the existing permission system."}
+                                </span>
+                              </div>
+                            ) : null}
                           </div>
                         </>
                       </div>

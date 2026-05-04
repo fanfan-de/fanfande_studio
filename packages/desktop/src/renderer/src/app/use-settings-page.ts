@@ -24,6 +24,7 @@ import type {
   ProviderModel,
 } from "./types"
 import { mergeMcpToolPolicyDefaults } from "./mcp/mcp-tool-policies"
+import { parseMcpConfigJson } from "./mcp/mcp-config-import"
 
 interface SettingsMessage {
   tone: "success" | "error"
@@ -443,6 +444,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [isSavingSelection, setIsSavingSelection] = useState(false)
   const [savingMcpServerID, setSavingMcpServerID] = useState<string | null>(null)
   const [deletingMcpServerID, setDeletingMcpServerID] = useState<string | null>(null)
+  const [isImportingMcpConfigJson, setIsImportingMcpConfigJson] = useState(false)
   const [isLoadingPlugins, setIsLoadingPlugins] = useState(false)
   const [pluginsError, setPluginsError] = useState<string | null>(null)
   const [installingPluginID, setInstallingPluginID] = useState<string | null>(null)
@@ -1908,6 +1910,62 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
+  async function importMcpConfigJson(input: string) {
+    if (!window.desktop?.updateGlobalMcpServer) return false
+
+    let parsed: ReturnType<typeof parseMcpConfigJson>
+    try {
+      parsed = parseMcpConfigJson(input)
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    }
+
+    setIsImportingMcpConfigJson(true)
+    setMessage(null)
+
+    try {
+      for (const imported of parsed.servers) {
+        await window.desktop.updateGlobalMcpServer({
+          serverID: imported.id,
+          server: imported.server,
+        })
+      }
+
+      await loadMcpServers({ silent: true })
+      await notifyMcpUpdated()
+
+      const activeImported = parsed.servers[parsed.servers.length - 1]
+      if (activeImported) {
+        setActiveMcpServerID(activeImported.id)
+        setMcpServerDraft(toMcpDraft({
+          id: activeImported.id,
+          ...activeImported.server,
+        } as McpServerSummary))
+      }
+
+      const warningText = parsed.warnings.length > 0
+        ? ` ${parsed.warnings.slice(0, 2).join(" ")}${parsed.warnings.length > 2 ? " ..." : ""}`
+        : ""
+      setMessage({
+        tone: "success",
+        text: `Imported ${parsed.servers.length} MCP server${parsed.servers.length === 1 ? "" : "s"}.${warningText}`,
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsImportingMcpConfigJson(false)
+    }
+  }
+
   async function deleteMcpServer(serverID: string) {
     if (!window.desktop?.deleteGlobalMcpServer) return
 
@@ -2261,9 +2319,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     diagnosingPluginID,
     diagnosingPluginConnectorID,
     installPlugin,
+    importMcpConfigJson,
     installingPluginID,
     installedPlugins,
     isCreatingPromptPreset,
+    isImportingMcpConfigJson,
     isLoading,
     isLoadingBuiltinTools,
     isLoadingPlugins,

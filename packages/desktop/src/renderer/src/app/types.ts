@@ -1116,6 +1116,7 @@ export interface GlobalSkillTreeNode {
   name: string
   path: string
   kind: "directory" | "file"
+  role?: "folder" | "skill" | "resource"
   children?: GlobalSkillTreeNode[]
 }
 

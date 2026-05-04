@@ -41,6 +41,9 @@ import type {
   AgentBuiltinToolsPayload,
   AgentEnvelope,
   AgentGlobalSkillFileDocument,
+  AgentGlobalSkillFolderRenameResult,
+  AgentGlobalSkillFolderResult,
+  AgentGlobalSkillMoveResult,
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
   AgentSkillGitInstallPreview,
@@ -1669,7 +1672,7 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     return result.data
   })
 
-  handleDesktopIpc("desktop:create-global-skill", async (_event, input: { name: string }) => {
+  handleDesktopIpc("desktop:create-global-skill", async (_event, input: { name: string; parentDirectory?: string | null }) => {
     const result = await requestAgentJSON<{
       directory: string
       file: AgentGlobalSkillFileDocument
@@ -1680,13 +1683,14 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       },
       body: JSON.stringify({
         name: input.name,
+        parentDirectory: input.parentDirectory,
       }),
     })
 
     return result.data
   })
 
-  handleDesktopIpc("desktop:preview-global-skill-git-install", async (_event, input: { source: string }) => {
+  handleDesktopIpc("desktop:preview-global-skill-git-install", async (_event, input: { source: string; parentDirectory?: string | null }) => {
     const result = await requestAgentJSON<AgentSkillGitInstallPreview>("/api/skills/git/preview", {
       method: "POST",
       headers: {
@@ -1694,13 +1698,14 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       },
       body: JSON.stringify({
         source: input.source,
+        parentDirectory: input.parentDirectory,
       }),
     })
 
     return result.data
   })
 
-  handleDesktopIpc("desktop:install-global-skills-from-git", async (_event, input: { previewID: string; skillIDs: string[] }) => {
+  handleDesktopIpc("desktop:install-global-skills-from-git", async (_event, input: { previewID: string; skillIDs: string[]; parentDirectory?: string | null }) => {
     const result = await requestAgentJSON<AgentSkillGitInstallResult>("/api/skills/git/install", {
       method: "POST",
       headers: {
@@ -1709,6 +1714,39 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       body: JSON.stringify({
         previewID: input.previewID,
         skillIDs: input.skillIDs,
+        parentDirectory: input.parentDirectory,
+      }),
+    })
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:install-global-skill-from-local-file", async (event, input?: { parentDirectory?: string | null }) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const options = {
+      title: "Select SKILL.md",
+      filters: [
+        {
+          name: "Skill Markdown",
+          extensions: ["md"],
+        },
+      ],
+      properties: ["openFile"] as Array<"openFile">,
+    }
+    const selection = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    if (selection.canceled) return null
+
+    const sourcePath = selection.filePaths[0]
+    if (!sourcePath) return null
+
+    const result = await requestAgentJSON<AgentSkillGitInstallResult>("/api/skills/local/install", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        sourcePath,
+        parentDirectory: input?.parentDirectory,
       }),
     })
 
@@ -1737,6 +1775,62 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
         method: "DELETE",
       },
     )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:create-global-skill-folder", async (_event, input: { name: string; parentDirectory?: string | null }) => {
+    const result = await requestAgentJSON<AgentGlobalSkillFolderResult>("/api/skills/folders", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        name: input.name,
+        parentDirectory: input.parentDirectory,
+      }),
+    })
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:rename-global-skill-folder", async (_event, input: { directory: string; name: string }) => {
+    const result = await requestAgentJSON<AgentGlobalSkillFolderRenameResult>("/api/skills/folders", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        directory: input.directory,
+        name: input.name,
+      }),
+    })
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:delete-global-skill-folder", async (_event, input: { directory: string }) => {
+    const result = await requestAgentJSON<{ directory: string; removed: boolean }>(
+      `/api/skills/folders?directory=${encodeURIComponent(input.directory.trim())}`,
+      {
+        method: "DELETE",
+      },
+    )
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:move-global-skill-directory", async (_event, input: { directory: string; parentDirectory?: string | null }) => {
+    const result = await requestAgentJSON<AgentGlobalSkillMoveResult>("/api/skills/move", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        directory: input.directory,
+        parentDirectory: input.parentDirectory,
+      }),
+    })
 
     return result.data
   })

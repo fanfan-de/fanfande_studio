@@ -1,8 +1,8 @@
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { basename, isAbsolute, join, relative, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import matter from "gray-matter"
-import { globalSkillRoot, ensureGlobalSkillRoot } from "#skill/manage.ts"
+import { globalSkillRoot, resolveGlobalSkillFolderTarget } from "#skill/manage.ts"
 
 const SKILL_FILENAME = "SKILL.md"
 const PREVIEW_TTL_MS = 30 * 60 * 1000
@@ -85,6 +85,53 @@ function normalizeSubpath(input: string[]) {
   return joined
 }
 
+function normalizePastedGitSource(input: string) {
+  let normalized = input.trim()
+  normalized = normalized.replace(/^git\+(https?:\/\/)/i, "$1")
+  normalized = normalized.replace(/^git\+ssh:\/\//i, "ssh://")
+  if (/^(?:www\.)?github\.com\//i.test(normalized)) {
+    normalized = `https://${normalized}`
+  }
+
+  return normalized
+}
+
+function normalizeBlobSkillSubpath(pathSegments: string[]) {
+  const subpath = normalizeSubpath(pathSegments)
+  if (!subpath) {
+    throw new SkillGitInstallError("SKILL_GIT_INVALID_SOURCE", "GitHub blob URLs must point to a SKILL.md file.")
+  }
+
+  const segments = subpath.split("/")
+  const fileName = segments.at(-1)
+  if (fileName?.toLowerCase() !== SKILL_FILENAME.toLowerCase()) {
+    throw new SkillGitInstallError("SKILL_GIT_INVALID_SOURCE", "GitHub blob URLs must point to a SKILL.md file.")
+  }
+
+  const directorySegments = segments.slice(0, -1)
+  return directorySegments.length > 0 ? normalizeSubpath(directorySegments) : undefined
+}
+
+function parseDirectGitCloneUrl(source: string, url: URL): ParsedGitSkillSource | null {
+  const path = url.pathname.replace(/\/+$/g, "")
+  if (!path.toLowerCase().endsWith(".git")) return null
+
+  const segments = path.split("/").filter(Boolean)
+  const rawRepo = segments.at(-1)
+  if (!rawRepo) return null
+
+  const cloneProtocol = url.protocol === "git+ssh:" ? "ssh:" : url.protocol
+  const username = url.username ? `${decodeURIComponent(url.username)}@` : ""
+  const repoName = normalizeRepoName(decodeURIComponent(rawRepo))
+  const cloneUrl = `${cloneProtocol}//${username}${url.host}${path}`
+
+  return {
+    source,
+    cloneUrl,
+    repoName,
+  }
+}
+
 export function parseGitSkillSource(source: string): ParsedGitSkillSource {
   const trimmed = requireNonEmptySource(source)
   const shorthandMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/)
@@ -111,15 +158,40 @@ export function parseGitSkillSource(source: string): ParsedGitSkillSource {
     }
   }
 
+  const normalizedSource = normalizePastedGitSource(trimmed)
   let url: URL
   try {
-    url = new URL(trimmed)
+    url = new URL(normalizedSource)
   } catch {
     throw new SkillGitInstallError("SKILL_GIT_INVALID_SOURCE", "Unsupported Git source format.")
   }
 
-  if (!["http:", "https:"].includes(url.protocol) || url.hostname.toLowerCase() !== "github.com") {
-    throw new SkillGitInstallError("SKILL_GIT_INVALID_SOURCE", "Only GitHub repository URLs are supported.")
+  const hostname = url.hostname.toLowerCase()
+  const isGithubHost = hostname === "github.com" || hostname === "www.github.com"
+  if (!isGithubHost) {
+    const directGit = parseDirectGitCloneUrl(trimmed, url)
+    if (directGit && ["http:", "https:", "ssh:"].includes(url.protocol)) return directGit
+
+    throw new SkillGitInstallError("SKILL_GIT_INVALID_SOURCE", "Only GitHub repository URLs or direct Git clone URLs are supported.")
+  }
+
+  if (url.protocol === "ssh:" || url.protocol === "git+ssh:") {
+    const segments = url.pathname.split("/").filter(Boolean)
+    const [owner, rawRepo] = segments
+    if (!owner || !rawRepo || segments.length !== 2) {
+      throw new SkillGitInstallError("SKILL_GIT_INVALID_SOURCE", "GitHub SSH URL must include owner and repository.")
+    }
+
+    const repoName = normalizeRepoName(decodeURIComponent(rawRepo))
+    return {
+      source: trimmed,
+      cloneUrl: `git@github.com:${decodeURIComponent(owner)}/${repoName}.git`,
+      repoName,
+    }
+  }
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new SkillGitInstallError("SKILL_GIT_INVALID_SOURCE", "Only GitHub repository URLs or direct Git clone URLs are supported.")
   }
 
   const segments = url.pathname.split("/").filter(Boolean)
@@ -136,12 +208,12 @@ export function parseGitSkillSource(source: string): ParsedGitSkillSource {
   }
 
   if (marker) {
-    if (marker !== "tree" || !ref) {
-      throw new SkillGitInstallError("SKILL_GIT_INVALID_SOURCE", "GitHub URL paths must use /tree/<branch>/<path>.")
+    if (!["tree", "blob"].includes(marker) || !ref) {
+      throw new SkillGitInstallError("SKILL_GIT_INVALID_SOURCE", "GitHub URL paths must use /tree/<branch>/<path> or /blob/<branch>/<path>/SKILL.md.")
     }
 
     result.ref = decodeURIComponent(ref)
-    result.subpath = normalizeSubpath(pathSegments)
+    result.subpath = marker === "blob" ? normalizeBlobSkillSubpath(pathSegments) : normalizeSubpath(pathSegments)
   }
 
   return result
@@ -331,8 +403,9 @@ async function discoverImmediateSkillDirectories(directory: string) {
 export async function discoverSkillInstallCandidates(
   parsed: ParsedGitSkillSource,
   repoRoot: string,
+  parentDirectory?: string | null,
 ): Promise<SkillInstallCandidate[]> {
-  const targetRoot = await ensureGlobalSkillRoot()
+  const targetRoot = await resolveGlobalSkillFolderTarget(parentDirectory)
   await ensureInside(repoRoot, repoRoot)
 
   let sources: Array<{ directoryPath: string; directoryName: string; missing?: boolean }> = []
@@ -391,7 +464,7 @@ function publicPreview(record: PreviewRecord): SkillGitPreview {
   }
 }
 
-export async function previewGlobalSkillGitInstall(source: string): Promise<SkillGitPreview> {
+export async function previewGlobalSkillGitInstall(source: string, parentDirectory?: string | null): Promise<SkillGitPreview> {
   cleanupExpiredPreviews()
   const parsed = parseGitSkillSource(source)
   const previewRoot = await mkdtemp(join(tmpdir(), "fanfande-skill-git-"))
@@ -399,7 +472,7 @@ export async function previewGlobalSkillGitInstall(source: string): Promise<Skil
 
   try {
     await runGitClone(parsed, repoRoot)
-    return await registerGlobalSkillGitInstallPreview(parsed, repoRoot, previewRoot)
+    return await registerGlobalSkillGitInstallPreview(parsed, repoRoot, previewRoot, parentDirectory)
   } catch (error) {
     await rm(previewRoot, { recursive: true, force: true })
     throw error
@@ -410,9 +483,10 @@ export async function registerGlobalSkillGitInstallPreview(
   parsed: ParsedGitSkillSource,
   repoRoot: string,
   previewRoot: string,
+  parentDirectory?: string | null,
 ): Promise<SkillGitPreview> {
   cleanupExpiredPreviews()
-  const skills = await discoverSkillInstallCandidates(parsed, repoRoot)
+  const skills = await discoverSkillInstallCandidates(parsed, repoRoot, parentDirectory)
   const previewID = crypto.randomUUID()
   const record: PreviewRecord = {
     previewID,
@@ -471,6 +545,7 @@ async function copySkillDirectory(sourceDirectory: string, targetDirectory: stri
 export async function installGlobalSkillsFromGitPreview(input: {
   previewID: string
   skillIDs: string[]
+  parentDirectory?: string | null
 }): Promise<{ installed: InstalledGlobalSkill[] }> {
   const preview = requirePreview(input.previewID)
   const skillIDs = [...new Set(input.skillIDs.map((item) => item.trim()).filter(Boolean))]
@@ -491,7 +566,6 @@ export async function installGlobalSkillsFromGitPreview(input: {
     return candidate
   })
 
-  const targetRoot = await ensureGlobalSkillRoot()
   const installed: InstalledGlobalSkill[] = []
   const stagedDirectories: string[] = []
 
@@ -499,13 +573,13 @@ export async function installGlobalSkillsFromGitPreview(input: {
     for (const candidate of selected) {
       const sourceDirectory = resolve(preview.repoRoot, candidate.relativePath)
       await ensureInside(preview.repoRoot, sourceDirectory)
-      const targetDirectory = join(targetRoot, candidate.directoryName)
+      const targetDirectory = candidate.targetDirectory
       const targetExists = await pathExists(targetDirectory)
       if (targetExists) {
         throw new SkillGitInstallError("SKILL_ALREADY_EXISTS", `Skill '${candidate.directoryName}' already exists.`)
       }
 
-      const stagingDirectory = join(targetRoot, `.installing-${candidate.directoryName}-${crypto.randomUUID()}`)
+      const stagingDirectory = join(dirname(targetDirectory), `.installing-${candidate.directoryName}-${crypto.randomUUID()}`)
       stagedDirectories.push(stagingDirectory)
       await copySkillDirectory(sourceDirectory, stagingDirectory)
       await rename(stagingDirectory, targetDirectory)
@@ -531,6 +605,77 @@ export async function installGlobalSkillsFromGitPreview(input: {
   }
 
   return { installed }
+}
+
+async function resolveLocalSkillDirectory(sourcePath: string) {
+  const trimmed = sourcePath.trim()
+  if (!trimmed) {
+    throw new SkillGitInstallError("SKILL_LOCAL_INVALID_SOURCE", "Select a local SKILL.md file.")
+  }
+
+  const resolvedPath = resolve(trimmed)
+  const info = await lstat(resolvedPath).catch(() => null)
+  if (!info) {
+    throw new SkillGitInstallError("SKILL_LOCAL_NOT_FOUND", "Local skill file was not found.")
+  }
+  if (info.isSymbolicLink()) {
+    throw new SkillGitInstallError("SKILL_GIT_UNSAFE_SOURCE", "Skill source must not be a symbolic link.")
+  }
+
+  if (info.isDirectory()) {
+    if (!await pathExists(join(resolvedPath, SKILL_FILENAME))) {
+      throw new SkillGitInstallError("SKILL_LOCAL_INVALID_SOURCE", "Selected folder must contain SKILL.md.")
+    }
+
+    return resolvedPath
+  }
+
+  if (!info.isFile() || basename(resolvedPath).toLowerCase() !== SKILL_FILENAME.toLowerCase()) {
+    throw new SkillGitInstallError("SKILL_LOCAL_INVALID_SOURCE", "Select a SKILL.md file.")
+  }
+
+  return dirname(resolvedPath)
+}
+
+export async function installGlobalSkillFromLocalPath(sourcePath: string, parentDirectory?: string | null): Promise<{ installed: InstalledGlobalSkill[] }> {
+  const sourceDirectory = await resolveLocalSkillDirectory(sourcePath)
+  const targetRoot = await resolveGlobalSkillFolderTarget(parentDirectory)
+  const candidate = await buildCandidate({
+    repoRoot: sourceDirectory,
+    directoryPath: sourceDirectory,
+    directoryName: basename(sourceDirectory),
+    targetRoot,
+  })
+
+  if (!candidate.available) {
+    throw new SkillGitInstallError("SKILL_GIT_SKILL_UNAVAILABLE", candidate.reason || `Skill '${candidate.name}' cannot be installed.`)
+  }
+
+  const targetDirectory = candidate.targetDirectory
+  if (await pathExists(targetDirectory)) {
+    throw new SkillGitInstallError("SKILL_ALREADY_EXISTS", `Skill '${candidate.directoryName}' already exists.`)
+  }
+
+  const stagingDirectory = join(dirname(targetDirectory), `.installing-${candidate.directoryName}-${crypto.randomUUID()}`)
+  try {
+    await copySkillDirectory(sourceDirectory, stagingDirectory)
+    await rename(stagingDirectory, targetDirectory)
+  } catch (error) {
+    await rm(stagingDirectory, { recursive: true, force: true })
+    await rm(targetDirectory, { recursive: true, force: true })
+    throw error
+  }
+
+  return {
+    installed: [
+      {
+        id: candidate.id,
+        name: candidate.name,
+        directory: targetDirectory,
+        filePath: join(targetDirectory, SKILL_FILENAME),
+      },
+    ],
+  }
 }
 
 export function getGlobalSkillInstallTargetRoot() {

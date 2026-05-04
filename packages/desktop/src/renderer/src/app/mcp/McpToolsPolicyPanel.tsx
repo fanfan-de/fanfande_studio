@@ -88,7 +88,6 @@ export function McpToolsPolicyPanel({
           <span className="label">Tools</span>
           <h3>Tool Permissions</h3>
         </div>
-        <p>Review discovered MCP tools and choose whether the agent can call each one.</p>
       </div>
 
       {tools.length > 0 ? (

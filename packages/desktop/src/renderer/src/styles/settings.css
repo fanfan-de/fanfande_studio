@@ -421,6 +421,76 @@ body.is-dragging-settings-page {
   margin-left: 0;
 }
 
+.mcp-config-import-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: var(--surface-overlay);
+}
+
+.mcp-config-import-modal {
+  width: min(100%, 640px);
+  max-height: min(100%, 680px);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  padding: 22px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-panel);
+  box-shadow: var(--shadow-md);
+  display: grid;
+  gap: 16px;
+}
+
+.mcp-config-import-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mcp-config-import-header h3 {
+  margin: 4px 0 0;
+}
+
+.mcp-config-import-example {
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.mcp-config-import-example summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  color: var(--seg-text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mcp-config-import-example pre {
+  margin: 0;
+  padding: 0 12px 12px;
+  overflow: auto;
+  color: var(--seg-text-1);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.mcp-config-import-warnings {
+  display: grid;
+  gap: 6px;
+  color: var(--seg-warning-text);
+  font-size: 12px;
+}
+
+.mcp-config-import-actions {
+  justify-content: flex-end;
+}
+
 .settings-field-grid,
 .provider-grid {
   display: grid;
@@ -651,8 +721,16 @@ body.is-dragging-settings-page {
   height: 100%;
   overflow: hidden;
   display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 14px;
+  grid-template-areas:
+    "library slots"
+    "library detail";
+  gap: 14px 18px;
+}
+
+.settings-prompts-shell > .settings-prompts-layout {
+  display: contents;
 }
 
 .settings-service-list-panel,
@@ -677,7 +755,7 @@ body.is-dragging-settings-page {
 }
 
 .settings-service-list-panel.mcp-servers-list-panel {
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .settings-provider-search-row {
@@ -794,10 +872,12 @@ body.is-dragging-settings-page {
 }
 
 .settings-prompt-library-panel {
+  grid-area: library;
   grid-template-rows: auto minmax(0, 1fr);
 }
 
 .settings-prompt-detail-panel {
+  grid-area: detail;
   height: 100%;
   grid-template-rows: minmax(0, 1fr);
   align-content: stretch;
@@ -810,6 +890,71 @@ body.is-dragging-settings-page {
 .settings-service-list-body {
   min-height: 0;
   overflow: hidden;
+}
+
+.mcp-servers-search-row {
+  min-width: 0;
+  margin-right: 4px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.mcp-servers-search-row svg {
+  width: 15px;
+  height: 15px;
+  color: var(--seg-text-3);
+  stroke-width: 2;
+}
+
+.mcp-servers-search-row input {
+  min-width: 0;
+  width: 100%;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-1);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.mcp-servers-search-row input::placeholder {
+  color: var(--seg-text-3);
+}
+
+.mcp-servers-search-row:focus-within {
+  border-color: var(--mix-seg-accent-42-seg-border-58);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88);
+}
+
+.mcp-servers-search-row button {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--seg-text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.mcp-servers-search-row button:hover,
+.mcp-servers-search-row button:focus-visible {
+  background: rgba(33, 51, 72, 0.08);
+  color: var(--seg-text-1);
+  outline: none;
 }
 
 .settings-service-list {
@@ -1225,7 +1370,78 @@ body.is-dragging-settings-page {
   gap: 8px;
 }
 
+.prompt-presets-navigator-bar {
+  align-items: center;
+}
+
+.prompt-presets-new-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.prompt-presets-new-button svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+.prompt-presets-tree-body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.prompt-presets-tree {
+  height: 100%;
+}
+
+.prompt-tree-folder .skill-tree-row {
+  font-weight: 600;
+}
+
+.prompt-tree-file .skill-tree-row {
+  padding-right: 6px;
+}
+
+.prompt-tree-count {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--seg-panel-muted);
+  color: var(--seg-text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.prompt-tree-row-badges {
+  margin-left: auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.prompt-tree-row-badges .settings-badge {
+  min-height: 18px;
+  padding: 0 6px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.prompt-tree-empty {
+  padding: 2px 8px 6px 26px;
+  font-size: 12px;
+}
+
 .settings-prompt-slots-panel {
+  grid-area: slots;
   gap: 0;
   padding: 12px;
   border-color: rgba(196, 205, 214, 0.72);
@@ -1522,6 +1738,16 @@ body.is-dragging-settings-page {
 }
 
 @media (max-width: 900px) {
+  .settings-prompts-shell {
+    overflow: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "library"
+      "slots"
+      "detail";
+  }
+
   .settings-about-row,
   .settings-about-toggle-row {
     align-items: flex-start;

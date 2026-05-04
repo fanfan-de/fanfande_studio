@@ -23,6 +23,7 @@ export const SkillFileBody = z.object({
 
 export const CreateSkillBody = z.object({
   name: z.string().min(1),
+  parentDirectory: z.string().min(1).nullable().optional(),
 })
 
 export const RenameSkillBody = z.object({
@@ -34,13 +35,39 @@ export const DeleteSkillQuery = z.object({
   directory: z.string().min(1),
 })
 
+export const CreateSkillFolderBody = z.object({
+  name: z.string().min(1),
+  parentDirectory: z.string().min(1).nullable().optional(),
+})
+
+export const RenameSkillFolderBody = z.object({
+  directory: z.string().min(1),
+  name: z.string().min(1),
+})
+
+export const DeleteSkillFolderQuery = z.object({
+  directory: z.string().min(1),
+})
+
+export const MoveSkillDirectoryBody = z.object({
+  directory: z.string().min(1),
+  parentDirectory: z.string().min(1).nullable().optional(),
+})
+
 export const PreviewSkillGitInstallBody = z.object({
   source: z.string().min(1),
+  parentDirectory: z.string().min(1).nullable().optional(),
 })
 
 export const InstallSkillGitPreviewBody = z.object({
   previewID: z.string().min(1),
   skillIDs: z.array(z.string().min(1)),
+  parentDirectory: z.string().min(1).nullable().optional(),
+})
+
+export const InstallSkillLocalFileBody = z.object({
+  sourcePath: z.string().min(1),
+  parentDirectory: z.string().min(1).nullable().optional(),
 })
 
 export const UpdateMcpServerBody = Config.McpServerInput
@@ -763,7 +790,7 @@ export async function writeSkillFile(input: z.infer<typeof SkillFileBody>) {
 
 export async function createSkill(input: z.infer<typeof CreateSkillBody>) {
   try {
-    return await SkillManager.createGlobalSkill(input.name)
+    return await SkillManager.createGlobalSkill(input)
   } catch (error) {
     throw toSkillApiError(error)
   }
@@ -789,9 +816,45 @@ export async function deleteSkill(input: z.infer<typeof DeleteSkillQuery>) {
   }
 }
 
+export async function createSkillFolder(input: z.infer<typeof CreateSkillFolderBody>) {
+  try {
+    return await SkillManager.createGlobalSkillFolder(input)
+  } catch (error) {
+    throw toSkillApiError(error)
+  }
+}
+
+export async function renameSkillFolder(input: z.infer<typeof RenameSkillFolderBody>) {
+  try {
+    return await SkillManager.renameGlobalSkillFolder(input)
+  } catch (error) {
+    throw toSkillApiError(error)
+  }
+}
+
+export async function deleteSkillFolder(input: z.infer<typeof DeleteSkillFolderQuery>) {
+  try {
+    await SkillManager.deleteGlobalSkillFolder(input.directory)
+    return {
+      directory: input.directory,
+      removed: true,
+    }
+  } catch (error) {
+    throw toSkillApiError(error)
+  }
+}
+
+export async function moveSkillDirectory(input: z.infer<typeof MoveSkillDirectoryBody>) {
+  try {
+    return await SkillManager.moveGlobalSkillDirectory(input)
+  } catch (error) {
+    throw toSkillApiError(error)
+  }
+}
+
 export async function previewSkillGitInstall(input: z.infer<typeof PreviewSkillGitInstallBody>) {
   try {
-    return await SkillGitInstall.previewGlobalSkillGitInstall(input.source)
+    return await SkillGitInstall.previewGlobalSkillGitInstall(input.source, input.parentDirectory)
   } catch (error) {
     throw toSkillApiError(error)
   }
@@ -800,6 +863,14 @@ export async function previewSkillGitInstall(input: z.infer<typeof PreviewSkillG
 export async function installSkillGitPreview(input: z.infer<typeof InstallSkillGitPreviewBody>) {
   try {
     return await SkillGitInstall.installGlobalSkillsFromGitPreview(input)
+  } catch (error) {
+    throw toSkillApiError(error)
+  }
+}
+
+export async function installSkillLocalFile(input: z.infer<typeof InstallSkillLocalFileBody>) {
+  try {
+    return await SkillGitInstall.installGlobalSkillFromLocalPath(input.sourcePath, input.parentDirectory)
   } catch (error) {
     throw toSkillApiError(error)
   }

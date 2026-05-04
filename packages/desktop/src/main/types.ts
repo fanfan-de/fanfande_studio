@@ -782,6 +782,7 @@ export interface AgentGlobalSkillTreeNode {
   name: string
   path: string
   kind: "directory" | "file"
+  role: "folder" | "skill" | "resource"
   children?: AgentGlobalSkillTreeNode[]
 }
 
@@ -796,6 +797,21 @@ export interface AgentGlobalSkillFileDocument {
 }
 
 export interface AgentGlobalSkillRenameResult {
+  previousDirectory: string
+  directory: string
+  filePath: string | null
+}
+
+export interface AgentGlobalSkillFolderResult {
+  directory: string
+}
+
+export interface AgentGlobalSkillFolderRenameResult {
+  previousDirectory: string
+  directory: string
+}
+
+export interface AgentGlobalSkillMoveResult {
   previousDirectory: string
   directory: string
   filePath: string | null

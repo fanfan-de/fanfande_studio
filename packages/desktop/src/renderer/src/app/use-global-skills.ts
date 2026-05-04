@@ -11,6 +11,13 @@ interface UseGlobalSkillsOptions {
   onSkillsUpdated?: () => void | Promise<void>
 }
 
+type CreateGlobalSkillDraftKind = "skill" | "folder"
+
+export interface GlobalSkillFolderOption {
+  label: string
+  path: string | null
+}
+
 type AgentEnvelope<T> =
   | {
       success: true
@@ -62,7 +69,7 @@ function getReadGlobalSkillFileClient() {
 
 function getPreviewGlobalSkillGitInstallClient() {
   return window.desktop?.previewGlobalSkillGitInstall ??
-    ((input: { source: string }) =>
+    ((input: { source: string; parentDirectory?: string | null }) =>
       requestFallbackAgentJSON<SkillGitInstallPreview>("/api/skills/git/preview", {
         method: "POST",
         headers: {
@@ -74,7 +81,7 @@ function getPreviewGlobalSkillGitInstallClient() {
 
 function getInstallGlobalSkillsFromGitClient() {
   return window.desktop?.installGlobalSkillsFromGit ??
-    ((input: { previewID: string; skillIDs: string[] }) =>
+    ((input: { previewID: string; skillIDs: string[]; parentDirectory?: string | null }) =>
       requestFallbackAgentJSON<SkillGitInstallResult>("/api/skills/git/install", {
         method: "POST",
         headers: {
@@ -107,6 +114,14 @@ function findFirstSkillFile(nodes: GlobalSkillTreeNode[]): string | null {
   return null
 }
 
+function getDirectoryRole(node: GlobalSkillTreeNode): "folder" | "skill" | "resource" {
+  if (node.kind !== "directory") return "resource"
+  if (node.role) return node.role
+  return (node.children ?? []).some((child) => child.kind === "file" && child.name.toLowerCase() === "skill.md")
+    ? "skill"
+    : "folder"
+}
+
 function findDirectoryAncestors(
   nodes: GlobalSkillTreeNode[],
   targetPath: string,
@@ -130,19 +145,36 @@ function findDirectoryAncestors(
   return null
 }
 
+function findDirectoryNode(nodes: GlobalSkillTreeNode[], targetPath: string | null): GlobalSkillTreeNode | null {
+  if (!targetPath) return null
+
+  for (const node of nodes) {
+    if (node.kind !== "directory") continue
+    if (node.path === targetPath) return node
+    const nested = findDirectoryNode(node.children ?? [], targetPath)
+    if (nested) return nested
+  }
+
+  return null
+}
+
 function containsPath(node: GlobalSkillTreeNode, targetPath: string): boolean {
   if (node.path === targetPath) return true
   if (node.kind !== "directory") return false
   return (node.children ?? []).some((child) => containsPath(child, targetPath))
 }
 
-function findSelectedSkillDirectory(nodes: GlobalSkillTreeNode[], targetPath: string | null) {
+function findSelectedSkillDirectory(nodes: GlobalSkillTreeNode[], targetPath: string | null): GlobalSkillTreeNode | null {
   if (!targetPath) return null
 
   for (const node of nodes) {
-    if (node.kind === "directory" && containsPath(node, targetPath)) {
+    if (node.kind !== "directory" || !containsPath(node, targetPath)) continue
+    if (getDirectoryRole(node) === "skill") {
       return node
     }
+
+    const nested = findSelectedSkillDirectory(node.children ?? [], targetPath)
+    if (nested) return nested
   }
 
   return null
@@ -169,21 +201,81 @@ function replaceDirectoryPrefix(path: string, from: string, to: string) {
   return path
 }
 
-function suggestNextSkillName(nodes: GlobalSkillTreeNode[]) {
+function getChildrenForParent(nodes: GlobalSkillTreeNode[], parentPath: string | null) {
+  if (!parentPath) return nodes
+  const parent = findDirectoryNode(nodes, parentPath)
+  return parent?.children ?? []
+}
+
+function hasDuplicateChildName(nodes: GlobalSkillTreeNode[], parentPath: string | null, input: string) {
+  const normalized = input.trim().toLowerCase()
+  return getChildrenForParent(nodes, parentPath).some((node) => node.name.trim().toLowerCase() === normalized)
+}
+
+function hasDuplicateChildNameExcept(
+  nodes: GlobalSkillTreeNode[],
+  parentPath: string | null,
+  input: string,
+  ignoredPath: string,
+) {
+  const normalized = input.trim().toLowerCase()
+  return getChildrenForParent(nodes, parentPath).some((node) => {
+    if (node.path === ignoredPath) return false
+    return node.name.trim().toLowerCase() === normalized
+  })
+}
+
+function getParentDirectoryPath(nodes: GlobalSkillTreeNode[], targetPath: string) {
+  const ancestors = findDirectoryAncestors(nodes, targetPath)
+  if (!ancestors || ancestors.length < 2) return null
+  return ancestors[ancestors.length - 2] ?? null
+}
+
+function suggestNextDirectoryName(nodes: GlobalSkillTreeNode[], parentPath: string | null, kind: CreateGlobalSkillDraftKind) {
+  const baseName = kind === "skill" ? "new-skill" : "new-folder"
   const existing = new Set(
-    nodes
-      .filter((node) => node.kind === "directory")
-      .map((node) => node.name.toLowerCase()),
+    getChildrenForParent(nodes, parentPath).map((node) => node.name.toLowerCase()),
   )
 
-  if (!existing.has("new-skill")) return "new-skill"
+  if (!existing.has(baseName)) return baseName
 
   let index = 2
-  while (existing.has(`new-skill-${index}`)) {
+  while (existing.has(`${baseName}-${index}`)) {
     index += 1
   }
 
-  return `new-skill-${index}`
+  return `${baseName}-${index}`
+}
+
+function collectFolderOptions(nodes: GlobalSkillTreeNode[], trail: string[] = []): GlobalSkillFolderOption[] {
+  const options: GlobalSkillFolderOption[] = []
+  for (const node of nodes) {
+    if (node.kind !== "directory" || getDirectoryRole(node) !== "folder") continue
+    const nextTrail = [...trail, node.name]
+    options.push({
+      path: node.path,
+      label: nextTrail.join(" / "),
+    })
+    options.push(...collectFolderOptions(node.children ?? [], nextTrail))
+  }
+
+  return options
+}
+
+function getMoveTargetOptions(nodes: GlobalSkillTreeNode[], sourcePath: string | null): GlobalSkillFolderOption[] {
+  const options: GlobalSkillFolderOption[] = [
+    {
+      path: null,
+      label: "Root",
+    },
+    ...collectFolderOptions(nodes),
+  ]
+
+  if (!sourcePath) return options
+  return options.filter((option) => {
+    if (!option.path) return true
+    return option.path !== sourcePath && !isPathWithinDirectory(option.path, sourcePath)
+  })
 }
 
 function formatError(error: unknown) {
@@ -203,16 +295,13 @@ function validateSkillNameInput(input: string) {
   return null
 }
 
-function hasDuplicateTopLevelSkillName(nodes: GlobalSkillTreeNode[], input: string) {
-  const normalized = input.trim().toLowerCase()
-  return nodes.some((node) => node.kind === "directory" && node.name.trim().toLowerCase() === normalized)
-}
-
 export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}) {
   const [globalSkillsRoot, setGlobalSkillsRoot] = useState("")
   const [globalSkillsTree, setGlobalSkillsTree] = useState<GlobalSkillTreeNode[]>([])
   const [expandedSkillPaths, setExpandedSkillPaths] = useState<string[]>([])
   const [creatingGlobalSkillName, setCreatingGlobalSkillName] = useState("")
+  const [creatingGlobalSkillDraftKind, setCreatingGlobalSkillDraftKind] = useState<CreateGlobalSkillDraftKind>("skill")
+  const [creatingGlobalSkillParentDirectory, setCreatingGlobalSkillParentDirectory] = useState<string | null>(null)
   const [isCreateGlobalSkillDraftVisible, setIsCreateGlobalSkillDraftVisible] = useState(false)
   const [renamingGlobalSkillDraftDirectory, setRenamingGlobalSkillDraftDirectory] = useState<string | null>(null)
   const [renamingGlobalSkillName, setRenamingGlobalSkillName] = useState("")
@@ -231,6 +320,14 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
   const [selectedGitInstallSkillIDs, setSelectedGitInstallSkillIDs] = useState<string[]>([])
   const [isPreviewingGitInstall, setIsPreviewingGitInstall] = useState(false)
   const [isInstallingGitSkills, setIsInstallingGitSkills] = useState(false)
+  const [isInstallingLocalSkill, setIsInstallingLocalSkill] = useState(false)
+  const [isLocalInstallDialogOpen, setIsLocalInstallDialogOpen] = useState(false)
+  const [gitInstallTargetDirectory, setGitInstallTargetDirectory] = useState<string | null>(null)
+  const [localInstallTargetDirectory, setLocalInstallTargetDirectory] = useState<string | null>(null)
+  const [movingGlobalSkillDirectory, setMovingGlobalSkillDirectory] = useState<string | null>(null)
+  const [movingGlobalSkillTargetDirectory, setMovingGlobalSkillTargetDirectory] = useState<string | null>(null)
+  const [isMoveGlobalSkillDialogOpen, setIsMoveGlobalSkillDialogOpen] = useState(false)
+  const [isMovingGlobalSkillDirectory, setIsMovingGlobalSkillDirectory] = useState(false)
   const [gitInstallMessage, setGitInstallMessage] = useState<{
     tone: "success" | "error"
     text: string
@@ -246,6 +343,20 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
   const selectedGlobalSkillDirectory = useMemo(
     () => findSelectedSkillDirectory(globalSkillsTree, selectedGlobalSkillFilePath),
     [globalSkillsTree, selectedGlobalSkillFilePath],
+  )
+  const globalSkillFolderOptions = useMemo<GlobalSkillFolderOption[]>(
+    () => [
+      {
+        path: null,
+        label: "Root",
+      },
+      ...collectFolderOptions(globalSkillsTree),
+    ],
+    [globalSkillsTree],
+  )
+  const moveGlobalSkillTargetOptions = useMemo<GlobalSkillFolderOption[]>(
+    () => getMoveTargetOptions(globalSkillsTree, movingGlobalSkillDirectory),
+    [globalSkillsTree, movingGlobalSkillDirectory],
   )
 
   async function notifySkillsUpdated() {
@@ -371,11 +482,16 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     )
   }
 
-  function handleCreateGlobalSkillDraftStart() {
+  function handleCreateGlobalSkillDraftStart(kind: CreateGlobalSkillDraftKind = "skill", parentDirectory: string | null = null) {
     if (isCreatingGlobalSkill || isCreateGlobalSkillDraftVisible || renamingGlobalSkillDraftDirectory || renamingGlobalSkillDirectory) return
 
     setGlobalSkillsMessage(null)
-    setCreatingGlobalSkillName(suggestNextSkillName(globalSkillsTree))
+    setCreatingGlobalSkillDraftKind(kind)
+    setCreatingGlobalSkillParentDirectory(parentDirectory)
+    setCreatingGlobalSkillName(suggestNextDirectoryName(globalSkillsTree, parentDirectory, kind))
+    if (parentDirectory) {
+      setExpandedSkillPaths((current) => uniquePaths([...current, parentDirectory]))
+    }
     setIsCreateGlobalSkillDraftVisible(true)
   }
 
@@ -384,16 +500,17 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     setGitInstallPreview(null)
     setSelectedGitInstallSkillIDs([])
     setGitInstallMessage(null)
+    setGitInstallTargetDirectory(null)
   }
 
   function handleGitInstallDialogOpen() {
-    if (isPreviewingGitInstall || isInstallingGitSkills) return
+    if (isPreviewingGitInstall || isInstallingGitSkills || isInstallingLocalSkill) return
     resetGitInstallDialog()
     setIsGitInstallDialogOpen(true)
   }
 
   function handleGitInstallDialogClose() {
-    if (isPreviewingGitInstall || isInstallingGitSkills) return
+    if (isPreviewingGitInstall || isInstallingGitSkills || isInstallingLocalSkill) return
     setIsGitInstallDialogOpen(false)
     resetGitInstallDialog()
   }
@@ -405,6 +522,30 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     setGitInstallMessage(null)
   }
 
+  function handleGitInstallTargetDirectoryChange(value: string | null) {
+    setGitInstallTargetDirectory(value)
+    setGitInstallPreview(null)
+    setSelectedGitInstallSkillIDs([])
+    setGitInstallMessage(null)
+  }
+
+  function handleLocalInstallDialogOpen() {
+    if (isPreviewingGitInstall || isInstallingGitSkills || isInstallingLocalSkill) return
+    setLocalInstallTargetDirectory(null)
+    setGlobalSkillsMessage(null)
+    setIsLocalInstallDialogOpen(true)
+  }
+
+  function handleLocalInstallDialogClose() {
+    if (isInstallingLocalSkill) return
+    setIsLocalInstallDialogOpen(false)
+    setLocalInstallTargetDirectory(null)
+  }
+
+  function handleLocalInstallTargetDirectoryChange(value: string | null) {
+    setLocalInstallTargetDirectory(value)
+  }
+
   function handleGitInstallSkillToggle(skillID: string) {
     setSelectedGitInstallSkillIDs((current) =>
       current.includes(skillID) ? current.filter((item) => item !== skillID) : [...current, skillID],
@@ -413,7 +554,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
   async function handlePreviewGitSkillInstall() {
     const previewGlobalSkillGitInstall = getPreviewGlobalSkillGitInstallClient()
-    if (isPreviewingGitInstall || isInstallingGitSkills) return
+    if (isPreviewingGitInstall || isInstallingGitSkills || isInstallingLocalSkill) return
 
     const source = gitInstallSource.trim()
     if (!source) {
@@ -430,7 +571,10 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     setSelectedGitInstallSkillIDs([])
 
     try {
-      const preview = await previewGlobalSkillGitInstall({ source })
+      const preview = await previewGlobalSkillGitInstall({
+        source,
+        parentDirectory: gitInstallTargetDirectory,
+      })
       const availableSkillIDs = preview.skills.filter((skill) => skill.available).map((skill) => skill.id)
       setGitInstallPreview(preview)
       setSelectedGitInstallSkillIDs(availableSkillIDs)
@@ -454,7 +598,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
   async function handleInstallGitSkills() {
     const installGlobalSkillsFromGit = getInstallGlobalSkillsFromGitClient()
-    if (!gitInstallPreview || isPreviewingGitInstall || isInstallingGitSkills) return
+    if (!gitInstallPreview || isPreviewingGitInstall || isInstallingGitSkills || isInstallingLocalSkill) return
 
     if (selectedGitInstallSkillIDs.length === 0) {
       setGitInstallMessage({
@@ -472,6 +616,7 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
       const result = await installGlobalSkillsFromGit({
         previewID: gitInstallPreview.previewID,
         skillIDs: selectedGitInstallSkillIDs,
+        parentDirectory: gitInstallTargetDirectory,
       })
       const firstInstalledFile = result.installed[0]?.filePath ?? null
       await refreshGlobalSkillsTree(firstInstalledFile)
@@ -492,6 +637,46 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     }
   }
 
+  async function handleInstallLocalSkillFile() {
+    const installGlobalSkillFromLocalFile = window.desktop?.installGlobalSkillFromLocalFile
+    if (isPreviewingGitInstall || isInstallingGitSkills || isInstallingLocalSkill) return
+
+    if (!installGlobalSkillFromLocalFile) {
+      setGlobalSkillsMessage({
+        tone: "error",
+        text: "Installing from a local file is unavailable in this desktop shell.",
+      })
+      return
+    }
+    if (!confirmDiscardChanges("install a skill from a local file")) return
+
+    setIsInstallingLocalSkill(true)
+    setGlobalSkillsMessage(null)
+
+    try {
+      const result = await installGlobalSkillFromLocalFile({
+        parentDirectory: localInstallTargetDirectory,
+      })
+      if (!result) return
+
+      const firstInstalledFile = result.installed[0]?.filePath ?? null
+      await refreshGlobalSkillsTree(firstInstalledFile)
+      setIsLocalInstallDialogOpen(false)
+      setGlobalSkillsMessage({
+        tone: "success",
+        text: `Installed ${result.installed.length} skill${result.installed.length === 1 ? "" : "s"}.`,
+      })
+      await notifySkillsUpdated()
+    } catch (error) {
+      setGlobalSkillsMessage({
+        tone: "error",
+        text: formatError(error),
+      })
+    } finally {
+      setIsInstallingLocalSkill(false)
+    }
+  }
+
   function handleCreateGlobalSkillDraftChange(value: string) {
     setGlobalSkillsMessage(null)
     setCreatingGlobalSkillName(value)
@@ -502,14 +687,18 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
     setGlobalSkillsMessage(null)
     setCreatingGlobalSkillName("")
+    setCreatingGlobalSkillDraftKind("skill")
+    setCreatingGlobalSkillParentDirectory(null)
     setIsCreateGlobalSkillDraftVisible(false)
   }
 
   function handleRenameGlobalSkillDraftStart(directoryPath: string) {
     if (isCreatingGlobalSkill || isCreateGlobalSkillDraftVisible || renamingGlobalSkillDirectory) return
 
-    const targetDirectory = findSelectedSkillDirectory(globalSkillsTree, directoryPath)
+    const targetDirectory = findDirectoryNode(globalSkillsTree, directoryPath)
     if (!targetDirectory || targetDirectory.path !== directoryPath) return
+    const role = getDirectoryRole(targetDirectory)
+    if (role !== "skill" && role !== "folder") return
 
     setGlobalSkillsMessage(null)
     setRenamingGlobalSkillDraftDirectory(targetDirectory.path)
@@ -531,7 +720,10 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
   async function handleCreateGlobalSkill() {
     const createGlobalSkill = window.desktop?.createGlobalSkill
-    if (!createGlobalSkill || isCreatingGlobalSkill || !isCreateGlobalSkillDraftVisible) return
+    const createGlobalSkillFolder = window.desktop?.createGlobalSkillFolder
+    if (isCreatingGlobalSkill || !isCreateGlobalSkillDraftVisible) return
+    if (creatingGlobalSkillDraftKind === "skill" && !createGlobalSkill) return
+    if (creatingGlobalSkillDraftKind === "folder" && !createGlobalSkillFolder) return
 
     const validationError = validateSkillNameInput(creatingGlobalSkillName)
     if (validationError) {
@@ -543,23 +735,37 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     }
 
     const name = creatingGlobalSkillName.trim()
-    if (hasDuplicateTopLevelSkillName(globalSkillsTree, name)) {
+    if (hasDuplicateChildName(globalSkillsTree, creatingGlobalSkillParentDirectory, name)) {
       setGlobalSkillsMessage({
         tone: "error",
-        text: `Skill '${name}' already exists.`,
+        text: `${creatingGlobalSkillDraftKind === "skill" ? "Skill" : "Folder"} '${name}' already exists.`,
       })
       return
     }
 
-    if (!confirmDiscardChanges("create a new skill")) return
+    if (!confirmDiscardChanges(`create a new ${creatingGlobalSkillDraftKind}`)) return
 
     setIsCreatingGlobalSkill(true)
     setGlobalSkillsMessage(null)
 
     try {
-      const created = await createGlobalSkill({ name })
-      await refreshGlobalSkillsTree(created.file.path)
+      if (creatingGlobalSkillDraftKind === "folder") {
+        const created = await createGlobalSkillFolder!({
+          name,
+          parentDirectory: creatingGlobalSkillParentDirectory,
+        })
+        await refreshGlobalSkillsTree()
+        setExpandedSkillPaths((current) => uniquePaths([...current, created.directory]))
+      } else {
+        const created = await createGlobalSkill!({
+          name,
+          parentDirectory: creatingGlobalSkillParentDirectory,
+        })
+        await refreshGlobalSkillsTree(created.file.path)
+      }
       setCreatingGlobalSkillName("")
+      setCreatingGlobalSkillDraftKind("skill")
+      setCreatingGlobalSkillParentDirectory(null)
       setIsCreateGlobalSkillDraftVisible(false)
       setGlobalSkillsMessage({
         tone: "success",
@@ -578,12 +784,17 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
   async function handleRenameGlobalSkill() {
     const renameGlobalSkill = window.desktop?.renameGlobalSkill
+    const renameGlobalSkillFolder = window.desktop?.renameGlobalSkillFolder
     const targetDirectory =
       (renamingGlobalSkillDraftDirectory
-        ? findSelectedSkillDirectory(globalSkillsTree, renamingGlobalSkillDraftDirectory)
+        ? findDirectoryNode(globalSkillsTree, renamingGlobalSkillDraftDirectory)
         : null) ?? null
 
-    if (!renameGlobalSkill || !targetDirectory || renamingGlobalSkillDirectory) return
+    if (!targetDirectory || renamingGlobalSkillDirectory) return
+    const targetRole = getDirectoryRole(targetDirectory)
+    if (targetRole !== "skill" && targetRole !== "folder") return
+    if (targetRole === "skill" && !renameGlobalSkill) return
+    if (targetRole === "folder" && !renameGlobalSkillFolder) return
 
     const validationError = validateSkillNameInput(renamingGlobalSkillName)
     if (validationError) {
@@ -600,10 +811,11 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
       return
     }
 
-    if (hasDuplicateTopLevelSkillName(globalSkillsTree, name)) {
+    const parentDirectoryPath = getParentDirectoryPath(globalSkillsTree, targetDirectory.path)
+    if (hasDuplicateChildNameExcept(globalSkillsTree, parentDirectoryPath, name, targetDirectory.path)) {
       setGlobalSkillsMessage({
         tone: "error",
-        text: `Skill '${name}' already exists.`,
+        text: `${targetRole === "skill" ? "Skill" : "Folder"} '${name}' already exists.`,
       })
       return
     }
@@ -618,14 +830,21 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     setGlobalSkillsMessage(null)
 
     try {
-      const renamed = await renameGlobalSkill({
-        directory: targetDirectory.path,
-        name,
-      })
+      const renamed: { directory: string; filePath?: string | null } = targetRole === "folder"
+        ? await renameGlobalSkillFolder!({
+            directory: targetDirectory.path,
+            name,
+          })
+        : await renameGlobalSkill!({
+            directory: targetDirectory.path,
+            name,
+          })
       const preferredFilePath =
         selectedGlobalSkillFilePath && isPathWithinDirectory(selectedGlobalSkillFilePath, targetDirectory.path)
           ? replaceDirectoryPrefix(selectedGlobalSkillFilePath, targetDirectory.path, renamed.directory)
-          : renamed.filePath
+          : "filePath" in renamed
+            ? renamed.filePath
+            : null
       await refreshGlobalSkillsTree(preferredFilePath)
       setRenamingGlobalSkillDraftDirectory(null)
       setRenamingGlobalSkillName("")
@@ -702,12 +921,22 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
 
   async function handleDeleteGlobalSkill(directoryPath?: string) {
     const deleteGlobalSkill = window.desktop?.deleteGlobalSkill
+    const deleteGlobalSkillFolder = window.desktop?.deleteGlobalSkillFolder
     const targetDirectory =
-      (directoryPath ? findSelectedSkillDirectory(globalSkillsTree, directoryPath) : null) ?? selectedGlobalSkillDirectory
-    if (!deleteGlobalSkill || !targetDirectory || deletingGlobalSkillDirectory) return
+      (directoryPath ? findDirectoryNode(globalSkillsTree, directoryPath) : null) ?? selectedGlobalSkillDirectory
+    if (!targetDirectory || deletingGlobalSkillDirectory) return
 
-    const skillName = targetDirectory.name
-    if (typeof window.confirm === "function" && !window.confirm(`Delete global skill '${skillName}'?`)) {
+    const targetRole = getDirectoryRole(targetDirectory)
+    if (targetRole === "skill" && !deleteGlobalSkill) return
+    if (targetRole === "folder" && !deleteGlobalSkillFolder) return
+    if (targetRole !== "skill" && targetRole !== "folder") return
+
+    const targetName = targetDirectory.name
+    const confirmMessage =
+      targetRole === "folder"
+        ? `Delete empty folder '${targetName}'?`
+        : `Delete global skill '${targetName}'?`
+    if (typeof window.confirm === "function" && !window.confirm(confirmMessage)) {
       return
     }
 
@@ -715,13 +944,19 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     setGlobalSkillsMessage(null)
 
     try {
-      await deleteGlobalSkill({
-        directory: targetDirectory.path,
-      })
+      if (targetRole === "folder") {
+        await deleteGlobalSkillFolder!({
+          directory: targetDirectory.path,
+        })
+      } else {
+        await deleteGlobalSkill!({
+          directory: targetDirectory.path,
+        })
+      }
       await refreshGlobalSkillsTree()
       setGlobalSkillsMessage({
         tone: "success",
-        text: `Deleted ${skillName}.`,
+        text: `Deleted ${targetName}.`,
       })
       await notifySkillsUpdated()
     } catch (error) {
@@ -734,13 +969,89 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     }
   }
 
+  function handleMoveGlobalSkillDirectoryStart(directoryPath: string) {
+    if (isMoveGlobalSkillDialogOpen || isMovingGlobalSkillDirectory) return
+
+    const targetDirectory = findDirectoryNode(globalSkillsTree, directoryPath)
+    if (!targetDirectory) return
+    const targetRole = getDirectoryRole(targetDirectory)
+    if (targetRole !== "skill" && targetRole !== "folder") return
+
+    setGlobalSkillsMessage(null)
+    setMovingGlobalSkillDirectory(targetDirectory.path)
+    setMovingGlobalSkillTargetDirectory(getParentDirectoryPath(globalSkillsTree, targetDirectory.path))
+    setIsMoveGlobalSkillDialogOpen(true)
+  }
+
+  function handleMoveGlobalSkillDirectoryCancel() {
+    if (isMovingGlobalSkillDirectory) return
+    setIsMoveGlobalSkillDialogOpen(false)
+    setMovingGlobalSkillDirectory(null)
+    setMovingGlobalSkillTargetDirectory(null)
+  }
+
+  function handleMoveGlobalSkillTargetDirectoryChange(value: string | null) {
+    setMovingGlobalSkillTargetDirectory(value)
+    setGlobalSkillsMessage(null)
+  }
+
+  async function handleMoveGlobalSkillDirectory() {
+    const moveGlobalSkillDirectory = window.desktop?.moveGlobalSkillDirectory
+    if (!moveGlobalSkillDirectory || !movingGlobalSkillDirectory || isMovingGlobalSkillDirectory) return
+
+    const sourceDirectory = findDirectoryNode(globalSkillsTree, movingGlobalSkillDirectory)
+    if (!sourceDirectory) return
+    const sourceRole = getDirectoryRole(sourceDirectory)
+    if (sourceRole !== "skill" && sourceRole !== "folder") return
+
+    if (selectedGlobalSkillFilePath && isDirtyGlobalSkillFile && isPathWithinDirectory(selectedGlobalSkillFilePath, sourceDirectory.path)) {
+      if (!confirmDiscardChanges(`move this ${sourceRole}`)) {
+        return
+      }
+    }
+
+    setIsMovingGlobalSkillDirectory(true)
+    setGlobalSkillsMessage(null)
+
+    try {
+      const moved = await moveGlobalSkillDirectory({
+        directory: sourceDirectory.path,
+        parentDirectory: movingGlobalSkillTargetDirectory,
+      })
+      const preferredFilePath =
+        selectedGlobalSkillFilePath && isPathWithinDirectory(selectedGlobalSkillFilePath, sourceDirectory.path)
+          ? replaceDirectoryPrefix(selectedGlobalSkillFilePath, sourceDirectory.path, moved.directory)
+          : moved.filePath
+      await refreshGlobalSkillsTree(preferredFilePath)
+      setIsMoveGlobalSkillDialogOpen(false)
+      setMovingGlobalSkillDirectory(null)
+      setMovingGlobalSkillTargetDirectory(null)
+      setGlobalSkillsMessage({
+        tone: "success",
+        text: `Moved ${sourceDirectory.name}.`,
+      })
+      await notifySkillsUpdated()
+    } catch (error) {
+      setGlobalSkillsMessage({
+        tone: "error",
+        text: formatError(error),
+      })
+    } finally {
+      setIsMovingGlobalSkillDirectory(false)
+    }
+  }
+
   return {
     creatingGlobalSkillName,
+    creatingGlobalSkillDraftKind,
+    creatingGlobalSkillParentDirectory,
     deletingGlobalSkillDirectory,
     expandedSkillPaths,
+    globalSkillFolderOptions,
     globalSkillsMessage,
     globalSkillsRoot,
     globalSkillsTree,
+    gitInstallTargetDirectory,
     gitInstallMessage,
     gitInstallPreview,
     gitInstallSource,
@@ -753,10 +1064,19 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     handleGitInstallDialogOpen,
     handleGitInstallSkillToggle,
     handleGitInstallSourceChange,
+    handleGitInstallTargetDirectoryChange,
     handleGlobalSkillDirectoryToggle,
     handleGlobalSkillDraftChange,
     handleGlobalSkillFileSelect,
     handleInstallGitSkills,
+    handleInstallLocalSkillFile,
+    handleLocalInstallDialogClose,
+    handleLocalInstallDialogOpen,
+    handleLocalInstallTargetDirectoryChange,
+    handleMoveGlobalSkillDirectory,
+    handleMoveGlobalSkillDirectoryCancel,
+    handleMoveGlobalSkillDirectoryStart,
+    handleMoveGlobalSkillTargetDirectoryChange,
     handleOpenGlobalSkillsFolder,
     handlePreviewGitSkillInstall,
     handleRenameGlobalSkill,
@@ -769,10 +1089,18 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     isDirtyGlobalSkillFile,
     isGitInstallDialogOpen,
     isInstallingGitSkills,
+    isInstallingLocalSkill,
+    isLocalInstallDialogOpen,
     isLoadingGlobalSkillFile,
     isLoadingGlobalSkillsTree,
+    isMoveGlobalSkillDialogOpen,
+    isMovingGlobalSkillDirectory,
     isPreviewingGitInstall,
     isSavingGlobalSkillFile,
+    localInstallTargetDirectory,
+    moveGlobalSkillTargetOptions,
+    movingGlobalSkillDirectory,
+    movingGlobalSkillTargetDirectory,
     renamingGlobalSkillDirectory,
     renamingGlobalSkillDraftDirectory,
     renamingGlobalSkillName,

@@ -49,6 +49,68 @@ function renderTopMenu(
   }
 }
 
+describe("SessionCanvasTopMenu project skills", () => {
+  const skillOptions = [
+    {
+      value: "skill-layout-review",
+      label: "layout-review",
+      description: "Review the current layout against the desktop shell spec.",
+    },
+    {
+      value: "skill-code-review",
+      label: "code-review",
+      description: "Review code changes before sending them.",
+    },
+    {
+      value: "skill-browser-use",
+      label: "browser-use",
+      description: "Automate browser checks for local targets.",
+    },
+  ]
+
+  it("renders skill names only and keeps selected skills first", () => {
+    const onSkillToggle = vi.fn()
+    renderTopMenu({
+      onSkillToggle,
+      selectedSkillIDs: ["skill-code-review"],
+      selectedSkillLabel: "code-review",
+      skillOptions,
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Select project skills: code-review" }))
+
+    const menu = screen.getByRole("dialog", { name: "Project skill selection" })
+    expect(within(menu).getByRole("searchbox", { name: "Search skills" })).toHaveFocus()
+
+    const options = within(menu).getAllByRole("option")
+    expect(options.map((option) => option.textContent)).toEqual(["code-review", "layout-review", "browser-use"])
+    expect(options[0]).toHaveAttribute("aria-selected", "true")
+    expect(within(menu).queryByText("Review code changes before sending them.")).not.toBeInTheDocument()
+    expect(within(menu).queryByText("Selected")).not.toBeInTheDocument()
+    expect(within(menu).queryByText("Add")).not.toBeInTheDocument()
+
+    fireEvent.click(options[1]!)
+    expect(onSkillToggle).toHaveBeenCalledWith("skill-layout-review")
+  })
+
+  it("filters skills by name while keeping selected matches first", () => {
+    renderTopMenu({
+      selectedSkillIDs: ["skill-code-review"],
+      selectedSkillLabel: "code-review",
+      skillOptions,
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Select project skills: code-review" }))
+    const menu = screen.getByRole("dialog", { name: "Project skill selection" })
+    fireEvent.change(within(menu).getByRole("searchbox", { name: "Search skills" }), {
+      target: { value: "review" },
+    })
+
+    expect(within(menu).getAllByRole("option").map((option) => option.textContent)).toEqual(["code-review", "layout-review"])
+    expect(within(menu).queryByRole("option", { name: "browser-use" })).not.toBeInTheDocument()
+  })
+})
+
 describe("SessionCanvasTopMenu tool permission mode", () => {
   it("renders both permission modes and emits mode changes", () => {
     const onToolPermissionModeChange = vi.fn()

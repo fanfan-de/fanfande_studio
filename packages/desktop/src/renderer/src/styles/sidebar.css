@@ -645,6 +645,77 @@
   padding-right: 4px;
 }
 
+.skills-tree-search-row {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.skills-tree-search-row svg {
+  width: 15px;
+  height: 15px;
+  color: var(--seg-text-3);
+  stroke-width: 2;
+}
+
+.skills-tree-search-row input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-1);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.skills-tree-search-row input::placeholder {
+  color: var(--seg-text-3);
+}
+
+.skills-tree-search-row input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.skills-tree-search-row:focus-within {
+  border-color: var(--mix-seg-accent-42-seg-border-58);
+  box-shadow: 0 0 0 3px var(--mix-seg-accent-12-transparent-88);
+}
+
+.skills-tree-search-row button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--seg-text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.skills-tree-search-row button:hover,
+.skills-tree-search-row button:focus-visible {
+  background: var(--semantic-sidebar-tree-row-surface-hover);
+  color: var(--semantic-sidebar-tree-row-text-hover);
+  outline: none;
+}
+
 .skills-create-form {
   display: grid;
   gap: 8px;
@@ -757,7 +828,26 @@
   flex: 0 0 18px;
 }
 
+.skill-tree-role-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  color: var(--seg-text-3);
+}
+
+.skill-tree-role-icon.is-folder {
+  color: #5f7488;
+}
+
+.skill-tree-role-icon.is-skill {
+  color: var(--seg-accent-strong);
+}
+
 .skill-tree-leading svg,
+.skill-tree-role-icon svg,
 .skill-tree-row-action svg {
   width: 15px;
   height: 15px;
@@ -779,6 +869,22 @@
   min-width: 28px;
   padding: 0;
   flex: 0 0 28px;
+}
+
+.skill-tree-row-action.is-open {
+  background: var(--mix-seg-accent-soft-68-seg-panel-32);
+  color: var(--seg-accent-strong);
+}
+
+.skill-tree-menu-shell {
+  position: relative;
+  display: inline-flex;
+}
+
+.skill-tree-row-menu {
+  left: auto;
+  right: 0;
+  min-width: 184px;
 }
 
 .skill-tree-rename-form {
@@ -988,8 +1094,44 @@
   box-shadow: none;
 }
 
-.project-row.is-active .project-row-leading {
+.project-row.is-active .project-row-leading,
+.skill-tree-row.is-active .skill-tree-leading {
   color: var(--semantic-sidebar-tree-row-leading-active);
+}
+
+.skill-tree-row.is-active .skill-tree-label {
+  color: inherit;
+  font-weight: 650;
+}
+
+.skill-tree-row.has-leading-disclosure {
+  position: relative;
+  background: transparent;
+}
+
+.skill-tree-row.has-leading-disclosure::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 34px;
+  border-radius: 8px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.skill-tree-row.has-leading-disclosure > * {
+  position: relative;
+  z-index: 1;
+}
+
+.skill-tree-row.has-leading-disclosure:hover,
+.skill-tree-row.has-leading-disclosure:focus-visible {
+  background: transparent;
+}
+
+.skill-tree-row.has-leading-disclosure:hover::before,
+.skill-tree-row.has-leading-disclosure:focus-visible::before {
+  background: var(--semantic-sidebar-tree-row-surface-hover);
+  opacity: 1;
 }
 
 .project-row-meta,

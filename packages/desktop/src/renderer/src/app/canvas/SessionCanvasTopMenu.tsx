@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ExternalEditorMenuButton } from "../external-editor/ExternalEditorMenuButton"
 import { GitQuickMenuButton } from "../git/GitQuickMenuButton"
 import { ChevronDownIcon } from "../icons"
@@ -262,6 +262,18 @@ function ProjectSkillsMenuButton({
   const menuRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [skillSearchQuery, setSkillSearchQuery] = useState("")
+  const visibleSkillOptions = useMemo(() => {
+    const normalizedQuery = skillSearchQuery.trim().toLocaleLowerCase()
+    const selectedSkillIDSet = new Set(selectedSkillIDs)
+    const matchingOptions = normalizedQuery
+      ? skillOptions.filter((option) => option.label.toLocaleLowerCase().includes(normalizedQuery))
+      : skillOptions
+    const selectedOptions = matchingOptions.filter((option) => selectedSkillIDSet.has(option.value))
+    const unselectedOptions = matchingOptions.filter((option) => !selectedSkillIDSet.has(option.value))
+
+    return [...selectedOptions, ...unselectedOptions]
+  }, [selectedSkillIDs, skillOptions, skillSearchQuery])
 
   useEffect(() => {
     if (!isMenuOpen) return
@@ -309,32 +321,43 @@ function ProjectSkillsMenuButton({
         <div
           ref={menuRef}
           id="canvas-top-menu-skill-menu"
-          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel"
+          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel canvas-top-menu-skill-selector-panel"
           role="dialog"
           aria-label="Project skill selection"
         >
-          {skillOptions.length > 0 ? (
-            skillOptions.map((option) => {
-              const isSelected = selectedSkillIDs.includes(option.value)
+          <div className="composer-menu-search" role="presentation">
+            <input
+              aria-label="Search skills"
+              autoFocus
+              className="composer-menu-search-input"
+              onChange={(event) => setSkillSearchQuery(event.currentTarget.value)}
+              placeholder="Search skills"
+              type="search"
+              value={skillSearchQuery}
+            />
+          </div>
+          <div className="composer-menu-options" role="listbox" aria-label="Skill selection" aria-multiselectable="true">
+            {visibleSkillOptions.length > 0 ? (
+              visibleSkillOptions.map((option) => {
+                const isSelected = selectedSkillIDs.includes(option.value)
 
-              return (
-                <button
-                  key={option.value}
-                  className={isSelected ? "composer-menu-option canvas-top-menu-segmented-option is-selected" : "composer-menu-option canvas-top-menu-segmented-option"}
-                  onClick={() => onSkillToggle(option.value)}
-                  type="button"
-                >
-                  <span className="composer-menu-option-copy">
-                    <strong>{option.label}</strong>
-                    <small>{option.description}</small>
-                  </span>
-                  <span className="composer-menu-option-check">{isSelected ? "Selected" : "Add"}</span>
-                </button>
-              )
-            })
-          ) : (
-            <p className="composer-menu-empty">No project skills are available yet.</p>
-          )}
+                return (
+                  <button
+                    key={option.value}
+                    aria-selected={isSelected}
+                    className={isSelected ? "composer-menu-option canvas-top-menu-segmented-option canvas-top-menu-skill-option is-selected" : "composer-menu-option canvas-top-menu-segmented-option canvas-top-menu-skill-option"}
+                    onClick={() => onSkillToggle(option.value)}
+                    role="option"
+                    type="button"
+                  >
+                    <span>{option.label}</span>
+                  </button>
+                )
+              })
+            ) : (
+              <p className="composer-menu-empty">{skillOptions.length > 0 ? "No skills match your search." : "No project skills are available yet."}</p>
+            )}
+          </div>
         </div>
       ) : null}
     </div>

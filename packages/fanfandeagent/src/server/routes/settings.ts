@@ -280,6 +280,52 @@ export function SettingsRoutes() {
     return ok(c, await SettingsUseCase.installSkillGitPreview(payload))
   })
 
+  app.post("/skills/local/install", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.InstallSkillLocalFileBody,
+      "Body must contain a non-empty 'sourcePath'.",
+    )
+    return ok(c, await SettingsUseCase.installSkillLocalFile(payload))
+  })
+
+  app.post("/skills/folders", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.CreateSkillFolderBody,
+      "Body must contain a non-empty 'name'.",
+    )
+    return ok(c, await SettingsUseCase.createSkillFolder(payload), 201)
+  })
+
+  app.patch("/skills/folders", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.RenameSkillFolderBody,
+      "Body must contain non-empty 'directory' and 'name' fields.",
+    )
+    return ok(c, await SettingsUseCase.renameSkillFolder(payload))
+  })
+
+  app.delete("/skills/folders", async (c) => {
+    const payload = parseQuery(
+      { directory: c.req.query("directory") },
+      SettingsUseCase.DeleteSkillFolderQuery,
+      "INVALID_QUERY",
+      "Query parameter 'directory' must be a non-empty string.",
+    )
+    return ok(c, await SettingsUseCase.deleteSkillFolder(payload))
+  })
+
+  app.patch("/skills/move", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.MoveSkillDirectoryBody,
+      "Body must contain a non-empty 'directory' field.",
+    )
+    return ok(c, await SettingsUseCase.moveSkillDirectory(payload))
+  })
+
   app.get("/skills/file", async (c) => {
     const payload = parseQuery(
       { path: c.req.query("path") },

@@ -739,8 +739,13 @@ describe("App", () => {
       createGlobalSkill: vi.fn(),
       previewGlobalSkillGitInstall: vi.fn(),
       installGlobalSkillsFromGit: vi.fn(),
+      installGlobalSkillFromLocalFile: vi.fn(),
       renameGlobalSkill: vi.fn(),
       deleteGlobalSkill: vi.fn(),
+      createGlobalSkillFolder: vi.fn(),
+      renameGlobalSkillFolder: vi.fn(),
+      deleteGlobalSkillFolder: vi.fn(),
+      moveGlobalSkillDirectory: vi.fn(),
       getGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
       refreshGlobalProviderCatalog: vi.fn().mockResolvedValue([]),
       testGlobalProviderConnection: vi.fn().mockResolvedValue({
@@ -2049,19 +2054,229 @@ describe("App", () => {
 
     await screen.findByText("No skills exist yet. Use + to create the first one.")
 
-    fireEvent.click(screen.getByRole("button", { name: "Create global skill" }))
+    fireEvent.click(screen.getByRole("button", { name: "Create global skill or folder" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "New skill" }))
 
     const nameInput = screen.getByRole("textbox", { name: "New global skill name" })
     fireEvent.change(nameInput, { target: { value: "layout-review" } })
     fireEvent.click(screen.getByRole("button", { name: "Create" }))
 
     await waitFor(() => {
-      expect(window.desktop!.createGlobalSkill).toHaveBeenCalledWith({ name: "layout-review" })
+      expect(window.desktop!.createGlobalSkill).toHaveBeenCalledWith({
+        name: "layout-review",
+        parentDirectory: null,
+      })
     })
 
     await screen.findByRole("button", { name: "SKILL.md" })
     expect(screen.queryByRole("textbox", { name: "New global skill name" })).not.toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
+  })
+
+  it("creates a global skill folder and a nested skill from the tree menu", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    const folderPath = `${root}\\frontend`
+    const directoryPath = `${folderPath}\\review`
+    const filePath = `${directoryPath}\\SKILL.md`
+    const content = ["---", "name: review", "description: Describe when this skill should be used.", "---", "", "# review"].join("\n")
+
+    window.desktop!.getGlobalSkillsTree = vi
+      .fn()
+      .mockResolvedValueOnce({
+        root,
+        items: [],
+      })
+      .mockResolvedValueOnce({
+        root,
+        items: [
+          {
+            name: "frontend",
+            path: folderPath,
+            kind: "directory",
+            role: "folder",
+            children: [],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        root,
+        items: [
+          {
+            name: "frontend",
+            path: folderPath,
+            kind: "directory",
+            role: "folder",
+            children: [
+              {
+                name: "review",
+                path: directoryPath,
+                kind: "directory",
+                role: "skill",
+                children: [
+                  {
+                    name: "SKILL.md",
+                    path: filePath,
+                    kind: "file",
+                    role: "resource",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    window.desktop!.createGlobalSkillFolder = vi.fn().mockResolvedValue({
+      directory: folderPath,
+    })
+    window.desktop!.createGlobalSkill = vi.fn().mockResolvedValue({
+      directory: directoryPath,
+      file: {
+        path: filePath,
+        content,
+      },
+    })
+    window.desktop!.readGlobalSkillFile = vi.fn().mockResolvedValue({
+      path: filePath,
+      content,
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    await screen.findByText("No skills exist yet. Use + to create the first one.")
+
+    fireEvent.click(screen.getByRole("button", { name: "Create global skill or folder" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "New folder" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "New global skill name" }), {
+      target: { value: "frontend" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Create" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.createGlobalSkillFolder).toHaveBeenCalledWith({
+        name: "frontend",
+        parentDirectory: null,
+      })
+    })
+    await screen.findByRole("button", { name: "frontend" })
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for frontend" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "New skill here" }))
+    fireEvent.change(screen.getByRole("textbox", { name: "New global skill name" }), {
+      target: { value: "review" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Create" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.createGlobalSkill).toHaveBeenCalledWith({
+        name: "review",
+        parentDirectory: folderPath,
+      })
+    })
+    expect(await screen.findByRole("button", { name: "SKILL.md" })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
+  })
+
+  it("moves a global skill into a selected folder", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    const folderPath = `${root}\\frontend`
+    const oldDirectoryPath = `${root}\\review`
+    const oldFilePath = `${oldDirectoryPath}\\SKILL.md`
+    const nextDirectoryPath = `${folderPath}\\review`
+    const nextFilePath = `${nextDirectoryPath}\\SKILL.md`
+    const content = ["---", "name: review", "description: Move me.", "---", "", "# review"].join("\n")
+
+    window.desktop!.getGlobalSkillsTree = vi
+      .fn()
+      .mockResolvedValueOnce({
+        root,
+        items: [
+          {
+            name: "frontend",
+            path: folderPath,
+            kind: "directory",
+            role: "folder",
+            children: [],
+          },
+          {
+            name: "review",
+            path: oldDirectoryPath,
+            kind: "directory",
+            role: "skill",
+            children: [
+              {
+                name: "SKILL.md",
+                path: oldFilePath,
+                kind: "file",
+                role: "resource",
+              },
+            ],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        root,
+        items: [
+          {
+            name: "frontend",
+            path: folderPath,
+            kind: "directory",
+            role: "folder",
+            children: [
+              {
+                name: "review",
+                path: nextDirectoryPath,
+                kind: "directory",
+                role: "skill",
+                children: [
+                  {
+                    name: "SKILL.md",
+                    path: nextFilePath,
+                    kind: "file",
+                    role: "resource",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      })
+    window.desktop!.readGlobalSkillFile = vi.fn().mockImplementation(async ({ path }: { path: string }) => ({
+      path,
+      content,
+    }))
+    window.desktop!.moveGlobalSkillDirectory = vi.fn().mockResolvedValue({
+      previousDirectory: oldDirectoryPath,
+      directory: nextDirectoryPath,
+      filePath: nextFilePath,
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    expect(await screen.findByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for review" }))
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Move to folder..." }))
+
+    const dialog = await screen.findByRole("dialog", { name: "Move skill or folder" })
+    fireEvent.change(within(dialog).getByRole("combobox", { name: "Move destination" }), {
+      target: { value: folderPath },
+    })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.moveGlobalSkillDirectory).toHaveBeenCalledWith({
+        directory: oldDirectoryPath,
+        parentDirectory: folderPath,
+      })
+    })
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Move skill or folder" })).not.toBeInTheDocument()
+    })
+    expect(await screen.findByRole("button", { name: "SKILL.md" })).toBeInTheDocument()
+    expect(window.desktop!.readGlobalSkillFile).toHaveBeenLastCalledWith({ path: nextFilePath })
   })
 
   it("opens the global skills folder from the skills page", async () => {
@@ -2166,7 +2381,8 @@ describe("App", () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
-    fireEvent.click(await screen.findByRole("button", { name: "Install skill from Git" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Install skill" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "From URL" }))
 
     const dialog = await screen.findByRole("dialog", { name: "Install skills from Git" })
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Git skill repository" }), {
@@ -2175,7 +2391,10 @@ describe("App", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }))
 
     await waitFor(() => {
-      expect(window.desktop!.previewGlobalSkillGitInstall).toHaveBeenCalledWith({ source: "owner/repo" })
+      expect(window.desktop!.previewGlobalSkillGitInstall).toHaveBeenCalledWith({
+        source: "owner/repo",
+        parentDirectory: null,
+      })
     })
 
     expect(await within(dialog).findByRole("checkbox", { name: /Layout Review/ })).toBeChecked()
@@ -2187,6 +2406,7 @@ describe("App", () => {
       expect(window.desktop!.installGlobalSkillsFromGit).toHaveBeenCalledWith({
         previewID: "preview-1",
         skillIDs: ["skills/layout-review"],
+        parentDirectory: null,
       })
     })
 
@@ -2195,6 +2415,161 @@ describe("App", () => {
     })
     expect(await screen.findByRole("button", { name: "SKILL.md" })).toBeInTheDocument()
     expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
+  })
+
+  it("installs a global skill from a local SKILL.md file", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    const directoryPath = `${root}\\local-review`
+    const filePath = `${directoryPath}\\SKILL.md`
+    const content = ["---", "name: Local Review", "description: Review local layouts.", "---", "", "# Local Review"].join("\n")
+
+    window.desktop!.getGlobalSkillsTree = vi
+      .fn()
+      .mockResolvedValueOnce({
+        root,
+        items: [],
+      })
+      .mockResolvedValueOnce({
+        root,
+        items: [
+          {
+            name: "local-review",
+            path: directoryPath,
+            kind: "directory",
+            children: [
+              {
+                name: "SKILL.md",
+                path: filePath,
+                kind: "file",
+              },
+            ],
+          },
+        ],
+      })
+    window.desktop!.installGlobalSkillFromLocalFile = vi.fn().mockResolvedValue({
+      installed: [
+        {
+          id: ".",
+          name: "Local Review",
+          directory: directoryPath,
+          filePath,
+        },
+      ],
+    })
+    window.desktop!.readGlobalSkillFile = vi.fn().mockResolvedValue({
+      path: filePath,
+      content,
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Install skill" }))
+    fireEvent.click(await screen.findByRole("menuitem", { name: "From local file" }))
+
+    const dialog = await screen.findByRole("dialog", { name: "Install local skill" })
+    fireEvent.click(within(dialog).getByRole("button", { name: "Choose SKILL.md" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.installGlobalSkillFromLocalFile).toHaveBeenCalledWith({
+        parentDirectory: null,
+      })
+    })
+
+    expect(await screen.findByRole("button", { name: "SKILL.md" })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
+  })
+
+  it("filters the global skills tree from the fixed search row", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    const algorithmicDirectoryPath = `${root}\\algorithmic-art`
+    const algorithmicFilePath = `${algorithmicDirectoryPath}\\SKILL.md`
+    const frontendFolderPath = `${root}\\frontend`
+    const reviewDirectoryPath = `${frontendFolderPath}\\review`
+    const reviewFilePath = `${reviewDirectoryPath}\\SKILL.md`
+
+    window.desktop!.getGlobalSkillsTree = vi.fn().mockResolvedValue({
+      root,
+      items: [
+        {
+          name: "algorithmic-art",
+          path: algorithmicDirectoryPath,
+          kind: "directory",
+          children: [
+            {
+              name: "SKILL.md",
+              path: algorithmicFilePath,
+              kind: "file",
+            },
+          ],
+        },
+        {
+          name: "frontend",
+          path: frontendFolderPath,
+          kind: "directory",
+          role: "folder",
+          children: [
+            {
+              name: "review",
+              path: reviewDirectoryPath,
+              kind: "directory",
+              children: [
+                {
+                  name: "SKILL.md",
+                  path: reviewFilePath,
+                  kind: "file",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    window.desktop!.readGlobalSkillFile = vi.fn().mockResolvedValue({
+      path: algorithmicFilePath,
+      content: "# Algorithmic Art",
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+
+    const search = await screen.findByRole("searchbox", { name: "Search skills" })
+    expect(search.closest(".skills-tree-search-row")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "algorithmic-art" })).toBeInTheDocument()
+    const algorithmicSkillRow = screen.getByRole("button", { name: "algorithmic-art" })
+    const frontendFolderRow = screen.getByRole("button", { name: "frontend" })
+    expect(algorithmicSkillRow).toHaveClass("has-leading-disclosure")
+    expect(frontendFolderRow).not.toHaveClass("has-leading-disclosure")
+    expect(algorithmicSkillRow.firstElementChild).toHaveClass("skill-tree-leading")
+    expect(algorithmicSkillRow.querySelector(".skill-tree-role-icon")).not.toBeInTheDocument()
+    expect(algorithmicSkillRow.querySelector(".lucide-file-text")).not.toBeInTheDocument()
+    expect(frontendFolderRow.firstElementChild).toHaveClass("skill-tree-role-icon", "is-folder")
+    expect(frontendFolderRow.querySelector(".lucide-folder")).toBeInTheDocument()
+    expect(frontendFolderRow.querySelector(".lucide-folder-open")).not.toBeInTheDocument()
+    expect(Array.from(frontendFolderRow.children).some((child) => child.classList.contains("skill-tree-leading"))).toBe(false)
+
+    fireEvent.change(search, { target: { value: "review" } })
+
+    expect(screen.queryByRole("button", { name: "algorithmic-art" })).not.toBeInTheDocument()
+    const expandedFrontendFolderRow = screen.getByRole("button", { name: "frontend" })
+    expect(expandedFrontendFolderRow).toBeInTheDocument()
+    expect(expandedFrontendFolderRow.querySelector(".lucide-folder-open")).toBeInTheDocument()
+    expect(expandedFrontendFolderRow.querySelector(".lucide-folder")).not.toBeInTheDocument()
+    const reviewSkillRow = screen.getByRole("button", { name: "review" })
+    expect(reviewSkillRow.querySelector(".skill-tree-role-icon")).not.toBeInTheDocument()
+    expect(reviewSkillRow.querySelector(".lucide-file-text")).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "SKILL.md" }).querySelector(".lucide-file-text")).toBeInTheDocument()
+
+    fireEvent.change(search, { target: { value: "missing" } })
+
+    expect(screen.getByText("No skills match your search.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "review" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear skills search" }))
+
+    expect(search).toHaveValue("")
+    expect(screen.getByRole("button", { name: "algorithmic-art" })).toBeInTheDocument()
   })
 
   it("switches the global skill editor between edit and markdown preview", async () => {
@@ -2253,6 +2628,79 @@ describe("App", () => {
 
     expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(`${content}\n\nEditable note`)
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled()
+  })
+
+  it("renders global skill frontmatter as structured preview metadata", async () => {
+    const root = "C:\\Users\\19128\\.anybox\\skills"
+    const directoryPath = `${root}\\agent-browser`
+    const filePath = `${directoryPath}\\SKILL.md`
+    const content = [
+      "---",
+      "name: agent-browser",
+      "description: Browser automation CLI for AI agents.",
+      "allowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*)",
+      "hidden: true",
+      "---",
+      "",
+      "# agent-browser",
+      "",
+      "Fast browser automation CLI for AI agents.",
+    ].join("\n")
+
+    window.desktop!.getGlobalSkillsTree = vi.fn().mockResolvedValue({
+      root,
+      items: [
+        {
+          name: "agent-browser",
+          path: directoryPath,
+          kind: "directory",
+          children: [
+            {
+              name: "SKILL.md",
+              path: filePath,
+              kind: "file",
+            },
+          ],
+        },
+      ],
+    })
+    window.desktop!.readGlobalSkillFile = vi.fn().mockResolvedValue({
+      path: filePath,
+      content,
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
+
+    expect(await screen.findByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
+    const agentBrowserRow = screen.getByRole("button", { name: "agent-browser" })
+    const skillFileRow = screen.getByRole("button", { name: "SKILL.md" })
+    expect(agentBrowserRow).not.toHaveClass("is-active")
+    expect(skillFileRow).toHaveClass("is-active")
+    expect(document.querySelectorAll(".skill-tree-row.is-active")).toHaveLength(1)
+
+    fireEvent.click(agentBrowserRow)
+
+    expect(agentBrowserRow).toHaveClass("is-active")
+    expect(screen.queryByRole("button", { name: "SKILL.md" })).not.toBeInTheDocument()
+    expect(document.querySelectorAll(".skill-tree-row.is-active")).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }))
+
+    const metadata = screen.getByRole("region", { name: "Skill metadata" })
+    expect(within(metadata).getByText("Skill Metadata")).toBeInTheDocument()
+    expect(within(metadata).getByText("Browser automation CLI for AI agents.")).toBeInTheDocument()
+    expect(within(metadata).getByText("Hidden")).toBeInTheDocument()
+    expect(within(metadata).getByText("Bash(agent-browser:*)")).toBeInTheDocument()
+    expect(within(metadata).getByText("Bash(npx agent-browser:*)")).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "agent-browser" })).toBeInTheDocument()
+    expect(screen.queryByText(/name: agent-browser/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/allowed-tools:/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+
+    expect(screen.getByRole("textbox", { name: "Global skill editor" })).toHaveValue(content)
   })
 
   it("renames a global skill from the tree with double click", async () => {
@@ -8293,7 +8741,8 @@ describe("App", () => {
     fireEvent.click(skillButton)
 
     const skillMenu = screen.getByRole("dialog", { name: "Project skill selection" })
-    fireEvent.click(await within(skillMenu).findByRole("button", { name: /layout-review/i }))
+    expect(within(skillMenu).getByRole("searchbox", { name: "Search skills" })).toBeInTheDocument()
+    fireEvent.click(await within(skillMenu).findByRole("option", { name: "layout-review" }))
 
     await waitFor(() => {
       expect(window.desktop!.updateProjectSkillSelection).toHaveBeenCalledWith({
@@ -10385,6 +10834,16 @@ describe("App", () => {
     )
     expect(styles).toMatch(/\.settings-page-body,\s*\.settings-page-shell\s*\{[^}]*grid-template-columns:\s*220px minmax\(0,\s*1fr\);/s)
     expect(styles).toMatch(/\.settings-services-layout\s*\{[^}]*grid-template-columns:\s*320px minmax\(0,\s*1fr\);/s)
+  })
+
+  it("keeps global skill row menus inside the list column", () => {
+    expect(styles).toMatch(
+      /\.global-skills-install-menu\.skill-tree-row-menu\s*\{[^}]*left:\s*auto;[^}]*right:\s*0;/s,
+    )
+  })
+
+  it("keeps the global skills search row pinned to the top of the tree", () => {
+    expect(styles).toMatch(/\.skills-tree-search-row\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;/s)
   })
 
   it("scopes provider scrolling to the column layout", () => {

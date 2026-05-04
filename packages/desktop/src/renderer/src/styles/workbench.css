@@ -190,6 +190,10 @@
   user-select: text;
 }
 
+.global-skills-editor-shell.is-preview {
+  cursor: default;
+}
+
 .global-skills-editor {
   display: block;
   width: 100%;
@@ -221,6 +225,126 @@
   color: var(--seg-text-1);
   font-size: 14px;
   line-height: 1.65;
+}
+
+.global-skills-metadata-panel {
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 1px solid rgba(166, 186, 208, 0.42);
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-panel-muted);
+  display: grid;
+  gap: 12px;
+}
+
+.global-skills-metadata-summary {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.global-skills-metadata-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.global-skills-metadata-copy strong {
+  color: var(--seg-text-1);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.global-skills-metadata-copy p {
+  margin: 0;
+  color: var(--seg-text-2);
+  font-size: 13px;
+  line-height: 1.5;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.global-skills-metadata-badge {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid rgba(166, 186, 208, 0.6);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--seg-text-2);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.global-skills-metadata-tools {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.global-skills-metadata-tools > span {
+  color: var(--seg-text-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.global-skills-metadata-tools > div {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.global-skills-metadata-tools code {
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid rgba(166, 186, 208, 0.52);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--seg-text-1);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.global-skills-metadata-details {
+  color: var(--seg-text-2);
+  font-size: 12px;
+}
+
+.global-skills-metadata-details summary {
+  cursor: pointer;
+  color: var(--seg-text-2);
+  font-weight: 650;
+}
+
+.global-skills-metadata-details dl {
+  margin: 10px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.global-skills-metadata-details div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(88px, auto) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.global-skills-metadata-details dt {
+  color: var(--seg-text-3);
+  font-weight: 700;
+}
+
+.global-skills-metadata-details dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .global-skills-empty-state {
@@ -454,6 +578,7 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   background: var(--seg-shell);
@@ -570,11 +695,64 @@
   gap: 8px;
 }
 
+.global-skills-install-menu-shell {
+  position: relative;
+  display: inline-flex;
+}
+
 .global-skills-install-button svg,
 .global-skills-open-folder-button svg {
   width: 15px;
   height: 15px;
   stroke-width: 2;
+}
+
+.global-skills-install-button.is-open {
+  border-color: var(--seg-accent);
+  background: var(--mix-ui-accent-strong-14-transparent-86);
+  color: var(--ui-accent-strong);
+}
+
+.global-skills-install-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
+  min-width: 176px;
+  padding: 6px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-dropdown-menu-surface);
+  box-shadow: 0 12px 28px rgba(17, 24, 39, 0.14);
+  display: grid;
+  gap: 2px;
+}
+
+.global-skills-install-menu.skill-tree-row-menu {
+  left: auto;
+  right: 0;
+}
+
+.global-skills-install-menu-item {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--seg-text-1);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+}
+
+.global-skills-install-menu-item:hover,
+.global-skills-install-menu-item:focus-visible {
+  background: var(--semantic-sidebar-tree-row-surface-hover);
+  color: var(--semantic-sidebar-tree-row-text-hover);
+  outline: none;
 }
 
 .global-skills-new-button {
@@ -595,14 +773,29 @@
   gap: 8px;
 }
 
+.global-skills-new-menu-shell {
+  position: relative;
+  justify-self: start;
+  width: 100%;
+  min-width: 0;
+  display: grid;
+}
+
 .global-skills-new-button:hover,
-.global-skills-new-button:focus-visible {
+.global-skills-new-button:focus-visible,
+.global-skills-new-button.is-open {
   transform: none;
   background: var(--semantic-sidebar-tree-row-surface-hover);
   border: 0;
   color: var(--semantic-sidebar-tree-row-text-hover);
   box-shadow: none;
   outline: none;
+}
+
+.global-skills-new-menu {
+  left: 0;
+  bottom: calc(100% + 6px);
+  top: auto;
 }
 
 .global-skills-new-button svg {
@@ -633,6 +826,10 @@
   box-shadow: 0 18px 50px rgba(17, 24, 39, 0.2);
   display: grid;
   gap: 18px;
+}
+
+.global-skills-git-install-modal.is-compact {
+  width: min(100%, 420px);
 }
 
 .global-skills-git-install-header,
@@ -700,7 +897,21 @@
   outline: none;
 }
 
-.global-skills-git-install-input:focus {
+.global-skills-target-select {
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  font-size: 13px;
+  outline: none;
+}
+
+.global-skills-git-install-input:focus,
+.global-skills-target-select:focus-visible {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
 }
 
@@ -1924,6 +2135,33 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   border-color: transparent;
   color: #1d2a35;
   box-shadow: none;
+}
+
+.canvas-top-menu-skill-selector-panel {
+  min-width: 220px;
+  max-width: min(280px, calc(100vw - 64px));
+  padding: 8px;
+  gap: 4px;
+}
+
+.canvas-top-menu-skill-selector-panel .composer-menu-search {
+  background: var(--seg-dropdown-menu-surface);
+}
+
+.canvas-top-menu-skill-option {
+  justify-content: flex-start;
+}
+
+.canvas-top-menu-skill-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-top-menu-skill-option.is-selected {
+  background: var(--seg-composer-button-surface-strong);
+  color: var(--seg-composer-button-text-strong);
 }
 
 .canvas-top-menu-quick-field {

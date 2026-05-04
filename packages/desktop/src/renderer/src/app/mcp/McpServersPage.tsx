@@ -1,5 +1,5 @@
-import { type ReactNode } from "react"
-import { CloseIcon, FolderIcon, PlusIcon } from "../icons"
+import { useMemo, useState, type ReactNode } from "react"
+import { CloseIcon, DownloadIcon, FolderIcon, PlusIcon, SearchIcon } from "../icons"
 import { ShellTopMenu } from "../shared-ui"
 import type {
   McpServerDiagnostic,
@@ -7,6 +7,7 @@ import type {
   McpServerSummary,
   McpToolPolicyValue,
 } from "../types"
+import { parseMcpConfigJson } from "./mcp-config-import"
 import { McpToolsPolicyPanel } from "./McpToolsPolicyPanel"
 
 interface McpServersMessage {
@@ -24,9 +25,11 @@ interface McpServersPageProps {
   mcpServers: McpServerSummary[]
   message: McpServersMessage | null
   savingMcpServerID: string | null
+  isImportingMcpConfigJson?: boolean
   windowControls?: ReactNode
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
   onDismissMessage: () => void
+  onImportMcpConfigJson: (input: string) => boolean | Promise<boolean>
   onMcpServerDraftChange: (field: keyof McpServerDraftState, value: string | boolean) => void
   onMcpToolPolicyChange: (toolName: string, policy: McpToolPolicyValue) => void
   onMcpServerSelect: (serverID: string) => void
@@ -37,6 +40,39 @@ interface McpServersPageProps {
 function getMcpTransportLabel(transport: McpServerSummary["transport"] | McpServerDraftState["transport"]) {
   return transport === "remote" ? "http" : "stdio"
 }
+
+function doesMcpServerMatchSearch(server: McpServerSummary, rawQuery: string) {
+  const query = rawQuery.trim().toLowerCase()
+  if (!query) return true
+
+  const haystack = [
+    server.id,
+    server.name ?? "",
+    getMcpTransportLabel(server.transport),
+    server.enabled ? "enabled" : "disabled",
+    server.transport === "stdio" ? server.command ?? "" : server.serverUrl ?? "",
+  ]
+    .join(" ")
+    .toLowerCase()
+
+  return haystack.includes(query)
+}
+
+const MCP_CONFIG_IMPORT_EXAMPLE = `{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\\\Projects"]
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
+  }
+}`
 
 function getMcpServerValidationError(draft: McpServerDraftState) {
   if (!draft.id.trim()) {
@@ -72,15 +108,20 @@ export function McpServersPage({
   mcpServers,
   message,
   savingMcpServerID,
+  isImportingMcpConfigJson = false,
   windowControls,
   onDeleteMcpServer,
   onDismissMessage,
+  onImportMcpConfigJson,
   onMcpServerDraftChange,
   onMcpToolPolicyChange,
   onMcpServerSelect,
   onSaveMcpServer,
   onStartNewMcpServer,
 }: McpServersPageProps) {
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [importConfigJson, setImportConfigJson] = useState("")
+  const [mcpServerSearchQuery, setMcpServerSearchQuery] = useState("")
   const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
   const mcpSaveLabel = activeMcpServer ? "Save server" : "Create server"
   const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
@@ -90,6 +131,37 @@ export function McpServersPage({
   )
   const mcpServerValidationError = getMcpServerValidationError(mcpServerDraft)
   const mcpServerCanSave = !mcpServerValidationError
+  const filteredMcpServers = useMemo(
+    () => mcpServers.filter((server) => doesMcpServerMatchSearch(server, mcpServerSearchQuery)),
+    [mcpServerSearchQuery, mcpServers],
+  )
+  const importPreview = useMemo(() => {
+    if (!importConfigJson.trim()) return null
+
+    try {
+      return {
+        tone: "success" as const,
+        result: parseMcpConfigJson(importConfigJson),
+      }
+    } catch (error) {
+      return {
+        tone: "error" as const,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }, [importConfigJson])
+  const importServerCount = importPreview?.tone === "success" ? importPreview.result.servers.length : 0
+  const canImportConfigJson = importServerCount > 0 && !isImportingMcpConfigJson
+
+  async function handleImportConfigJson() {
+    if (!canImportConfigJson) return
+
+    const didImport = await onImportMcpConfigJson(importConfigJson)
+    if (!didImport) return
+
+    setIsImportDialogOpen(false)
+    setImportConfigJson("")
+  }
 
   return (
     <section className="mcp-servers-page" aria-label="MCP servers">
@@ -137,10 +209,30 @@ export function McpServersPage({
         ) : (
           <section className="settings-services-layout mcp-servers-page-layout" aria-label="MCP server layout">
             <div className="settings-service-list-panel mcp-servers-list-panel">
+              <div className="mcp-servers-search-row" role="search">
+                <SearchIcon />
+                <input
+                  aria-label="Search MCP servers"
+                  type="search"
+                  value={mcpServerSearchQuery}
+                  placeholder="Search servers"
+                  onChange={(event) => setMcpServerSearchQuery(event.target.value)}
+                />
+                {mcpServerSearchQuery ? (
+                  <button
+                    aria-label="Clear MCP server search"
+                    title="Clear search"
+                    type="button"
+                    onClick={() => setMcpServerSearchQuery("")}
+                  >
+                    <CloseIcon />
+                  </button>
+                ) : null}
+              </div>
               <div className="settings-service-list-body">
                 <div className="settings-service-list mcp-servers-list-stack" role="list" aria-label="MCP servers">
-                  {mcpServers.length > 0 ? (
-                    mcpServers.map((server) => {
+                  {filteredMcpServers.length > 0 ? (
+                    filteredMcpServers.map((server) => {
                       const isActive = server.id === activeMcpServerID
 
                       return (
@@ -163,6 +255,11 @@ export function McpServersPage({
                         </button>
                       )
                     })
+                  ) : mcpServers.length > 0 ? (
+                    <article className="settings-empty-state settings-service-list-empty-state">
+                      <span className="label">No Match</span>
+                      <h3>No MCP servers match this search</h3>
+                    </article>
                   ) : (
                     <article className="settings-empty-state settings-service-list-empty-state">
                       <span className="label">No Servers</span>
@@ -216,12 +313,16 @@ export function McpServersPage({
                     <h3>Server Configuration</h3>
                   </div>
                   <div className="mcp-server-configuration-header-side">
-                    <p>
-                      {mcpServerDraft.transport === "stdio"
-                        ? "Use one argument per line and one environment variable per line in KEY=value format."
-                        : "Connect a remote MCP server over HTTP. Headers are sent by the local agent, and tool approval stays in the local permission system."}
-                    </p>
                     <div className="settings-inline-actions mcp-server-configuration-actions">
+                      <button
+                        className="secondary-button"
+                        disabled={mcpServerBusy || isImportingMcpConfigJson}
+                        onClick={() => setIsImportDialogOpen(true)}
+                        type="button"
+                      >
+                        <DownloadIcon />
+                        Import JSON
+                      </button>
                       {activeMcpServer ? (
                         <button
                           className="secondary-button"
@@ -435,20 +536,103 @@ export function McpServersPage({
                   onPolicyChange={onMcpToolPolicyChange}
                 />
 
-                <div className="settings-actions-row">
-                  <span className="settings-helper-text">
-                    {mcpServerValidationError
-                      ? mcpServerValidationError
-                      : mcpServerDraft.transport === "remote"
-                        ? "Remote MCP servers are connected locally over HTTP. Approval still flows through the existing permission system."
-                        : "Servers start lazily when a project enables them and the agent resolves tools. Tool approval still flows through the existing permission system."}
-                  </span>
-                </div>
+                {mcpServerValidationError || mcpServerDraft.transport === "remote" ? (
+                  <div className="settings-actions-row">
+                    <span className="settings-helper-text">
+                      {mcpServerValidationError
+                        ? mcpServerValidationError
+                        : "Remote MCP servers are connected locally over HTTP. Approval still flows through the existing permission system."}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
           </section>
         )}
       </div>
+
+      {isImportDialogOpen ? (
+        <div className="mcp-config-import-overlay">
+          <section
+            className="mcp-config-import-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mcp-config-import-title"
+          >
+            <div className="mcp-config-import-header">
+              <div>
+                <span className="label">Import</span>
+                <h3 id="mcp-config-import-title">Install from MCP JSON</h3>
+                <p className="settings-page-copy">
+                  Paste a Cursor, Claude Desktop, or Claude Code MCP JSON configuration.
+                </p>
+              </div>
+              <button
+                className="settings-page-close-button"
+                type="button"
+                aria-label="Close MCP JSON import"
+                onClick={() => setIsImportDialogOpen(false)}
+              >
+                <CloseIcon />
+              </button>
+            </div>
+
+            <details className="mcp-config-import-example">
+              <summary>View example</summary>
+              <pre>{MCP_CONFIG_IMPORT_EXAMPLE}</pre>
+            </details>
+
+            <label className="settings-field">
+              <span className="settings-field-label">MCP configuration JSON</span>
+              <textarea
+                aria-label="MCP configuration JSON"
+                rows={12}
+                value={importConfigJson}
+                placeholder="Paste MCP configuration JSON..."
+                onChange={(event) => setImportConfigJson(event.target.value)}
+              />
+            </label>
+
+            {importPreview ? (
+              importPreview.tone === "success" ? (
+                <div className="settings-banner is-success">
+                  Detected {importServerCount} MCP server{importServerCount === 1 ? "" : "s"}:{" "}
+                  {importPreview.result.servers.map((server) => server.id).join(", ")}
+                </div>
+              ) : (
+                <div className="settings-banner is-error">{importPreview.errorMessage}</div>
+              )
+            ) : null}
+
+            {importPreview?.tone === "success" && importPreview.result.warnings.length > 0 ? (
+              <div className="mcp-config-import-warnings">
+                {importPreview.result.warnings.map((warning) => (
+                  <span key={warning}>{warning}</span>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="settings-inline-actions mcp-config-import-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={isImportingMcpConfigJson}
+                onClick={() => setIsImportDialogOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={!canImportConfigJson}
+                onClick={() => void handleImportConfigJson()}
+              >
+                {isImportingMcpConfigJson ? "Importing..." : "Import"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   )
 }

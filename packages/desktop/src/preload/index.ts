@@ -470,15 +470,17 @@ try {
       invokeDesktop("desktop:reset-prompt-preset", input) as Promise<PromptPresetDocument>,
     deletePromptPreset: (input: { presetID: string }) =>
       invokeDesktop("desktop:delete-prompt-preset", input) as Promise<PromptPresetSelection>,
-    createGlobalSkill: (input: { name: string }) =>
+    createGlobalSkill: (input: { name: string; parentDirectory?: string | null }) =>
       invokeDesktop("desktop:create-global-skill", input) as Promise<{
         directory: string
         file: GlobalSkillFileDocument
       }>,
-    previewGlobalSkillGitInstall: (input: { source: string }) =>
+    previewGlobalSkillGitInstall: (input: { source: string; parentDirectory?: string | null }) =>
       invokeDesktop("desktop:preview-global-skill-git-install", input) as Promise<SkillGitInstallPreview>,
-    installGlobalSkillsFromGit: (input: { previewID: string; skillIDs: string[] }) =>
+    installGlobalSkillsFromGit: (input: { previewID: string; skillIDs: string[]; parentDirectory?: string | null }) =>
       invokeDesktop("desktop:install-global-skills-from-git", input) as Promise<SkillGitInstallResult>,
+    installGlobalSkillFromLocalFile: (input?: { parentDirectory?: string | null }) =>
+      invokeDesktop("desktop:install-global-skill-from-local-file", input) as Promise<SkillGitInstallResult | null>,
     renameGlobalSkill: (input: { directory: string; name: string }) =>
       invokeDesktop("desktop:rename-global-skill", input) as Promise<{
         previousDirectory: string
@@ -489,6 +491,26 @@ try {
       invokeDesktop("desktop:delete-global-skill", input) as Promise<{
         directory: string
         removed: boolean
+      }>,
+    createGlobalSkillFolder: (input: { name: string; parentDirectory?: string | null }) =>
+      invokeDesktop("desktop:create-global-skill-folder", input) as Promise<{
+        directory: string
+      }>,
+    renameGlobalSkillFolder: (input: { directory: string; name: string }) =>
+      invokeDesktop("desktop:rename-global-skill-folder", input) as Promise<{
+        previousDirectory: string
+        directory: string
+      }>,
+    deleteGlobalSkillFolder: (input: { directory: string }) =>
+      invokeDesktop("desktop:delete-global-skill-folder", input) as Promise<{
+        directory: string
+        removed: boolean
+      }>,
+    moveGlobalSkillDirectory: (input: { directory: string; parentDirectory?: string | null }) =>
+      invokeDesktop("desktop:move-global-skill-directory", input) as Promise<{
+        previousDirectory: string
+        directory: string
+        filePath: string | null
       }>,
     getProjectProviderCatalog: (input: { projectID: string }) =>
       invokeDesktop("desktop:get-project-provider-catalog", input) as Promise<AgentProviderCatalogItem[]>,

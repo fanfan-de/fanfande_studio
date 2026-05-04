@@ -14,6 +14,7 @@ import {
   FilePlus2,
   FileText,
   Folder,
+  FolderOpen,
   LayoutPanelLeft,
   ListChecks,
   LoaderCircle,
@@ -21,6 +22,7 @@ import {
   Minus,
   Monitor,
   Moon,
+  MoreHorizontal,
   Palette,
   PanelLeftClose,
   PanelLeftOpen,
@@ -31,6 +33,7 @@ import {
   Plus,
   Puzzle,
   RotateCcw,
+  Search,
   Settings,
   SortAsc,
   Square,
@@ -49,6 +52,7 @@ function createIcon(Icon: LucideIcon, defaults: LucideProps = {}) {
 }
 
 export const FolderIcon = createIcon(Folder)
+export const FolderOpenIcon = createIcon(FolderOpen)
 export const PaperclipIcon = createIcon(Paperclip)
 export const CopyIcon = createIcon(Copy)
 export const DownloadIcon = createIcon(Download)
@@ -77,6 +81,7 @@ export const DisconnectedStatusIcon = createIcon(CircleX)
 export const EyeIcon = createIcon(Eye)
 export const EyeOffIcon = createIcon(EyeOff)
 export const DeleteIcon = createIcon(Trash2)
+export const MoreIcon = createIcon(MoreHorizontal)
 export const ArchiveIcon = createIcon(Archive)
 export const MinimizeIcon = createIcon(Minus)
 export const MaximizeIcon = createIcon(Square)
@@ -87,6 +92,7 @@ export const ArrowUpIcon = createIcon(ArrowUp)
 export const StopIcon = createIcon(Square, { fill: "currentColor", strokeWidth: 0 })
 export const PaletteIcon = createIcon(Palette)
 export const ResetIcon = createIcon(RotateCcw)
+export const SearchIcon = createIcon(Search)
 export const SunIcon = createIcon(Sun)
 export const MoonIcon = createIcon(Moon)
 export const MonitorIcon = createIcon(Monitor)

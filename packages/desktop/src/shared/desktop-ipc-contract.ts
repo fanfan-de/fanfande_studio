@@ -7,6 +7,9 @@ import type {
   AgentConfig,
   AgentFolderWorkspace,
   AgentGlobalSkillFileDocument,
+  AgentGlobalSkillFolderRenameResult,
+  AgentGlobalSkillFolderResult,
+  AgentGlobalSkillMoveResult,
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
   AgentInstalledGlobalSkill,
@@ -77,6 +80,9 @@ export type {
   AgentConfig,
   AgentFolderWorkspace,
   AgentGlobalSkillFileDocument,
+  AgentGlobalSkillFolderRenameResult,
+  AgentGlobalSkillFolderResult,
+  AgentGlobalSkillMoveResult,
   AgentGlobalSkillRenameResult,
   AgentGlobalSkillTree,
   AgentInstalledGlobalSkill,
@@ -730,16 +736,20 @@ export interface DesktopIpcContract {
     output: AgentGlobalSkillFileDocument
   }
   "desktop:create-global-skill": {
-    input: { name: string }
+    input: { name: string; parentDirectory?: string | null }
     output: { directory: string; file: AgentGlobalSkillFileDocument }
   }
   "desktop:preview-global-skill-git-install": {
-    input: { source: string }
+    input: { source: string; parentDirectory?: string | null }
     output: AgentSkillGitInstallPreview
   }
   "desktop:install-global-skills-from-git": {
-    input: { previewID: string; skillIDs: string[] }
+    input: { previewID: string; skillIDs: string[]; parentDirectory?: string | null }
     output: AgentSkillGitInstallResult
+  }
+  "desktop:install-global-skill-from-local-file": {
+    input: { parentDirectory?: string | null } | undefined
+    output: AgentSkillGitInstallResult | null
   }
   "desktop:rename-global-skill": {
     input: { directory: string; name: string }
@@ -748,6 +758,22 @@ export interface DesktopIpcContract {
   "desktop:delete-global-skill": {
     input: { directory: string }
     output: { directory: string; removed: boolean }
+  }
+  "desktop:create-global-skill-folder": {
+    input: { name: string; parentDirectory?: string | null }
+    output: AgentGlobalSkillFolderResult
+  }
+  "desktop:rename-global-skill-folder": {
+    input: { directory: string; name: string }
+    output: AgentGlobalSkillFolderRenameResult
+  }
+  "desktop:delete-global-skill-folder": {
+    input: { directory: string }
+    output: { directory: string; removed: boolean }
+  }
+  "desktop:move-global-skill-directory": {
+    input: { directory: string; parentDirectory?: string | null }
+    output: AgentGlobalSkillMoveResult
   }
   "desktop:get-project-provider-catalog": {
     input: { projectID: string }
@@ -991,8 +1017,13 @@ export interface DesktopApiMethods {
   createGlobalSkill(input: DesktopIpcInput<"desktop:create-global-skill">): Promise<DesktopIpcOutput<"desktop:create-global-skill">>
   previewGlobalSkillGitInstall(input: DesktopIpcInput<"desktop:preview-global-skill-git-install">): Promise<DesktopIpcOutput<"desktop:preview-global-skill-git-install">>
   installGlobalSkillsFromGit(input: DesktopIpcInput<"desktop:install-global-skills-from-git">): Promise<DesktopIpcOutput<"desktop:install-global-skills-from-git">>
+  installGlobalSkillFromLocalFile(input?: DesktopIpcInput<"desktop:install-global-skill-from-local-file">): Promise<DesktopIpcOutput<"desktop:install-global-skill-from-local-file">>
   renameGlobalSkill(input: DesktopIpcInput<"desktop:rename-global-skill">): Promise<DesktopIpcOutput<"desktop:rename-global-skill">>
   deleteGlobalSkill(input: DesktopIpcInput<"desktop:delete-global-skill">): Promise<DesktopIpcOutput<"desktop:delete-global-skill">>
+  createGlobalSkillFolder(input: DesktopIpcInput<"desktop:create-global-skill-folder">): Promise<DesktopIpcOutput<"desktop:create-global-skill-folder">>
+  renameGlobalSkillFolder(input: DesktopIpcInput<"desktop:rename-global-skill-folder">): Promise<DesktopIpcOutput<"desktop:rename-global-skill-folder">>
+  deleteGlobalSkillFolder(input: DesktopIpcInput<"desktop:delete-global-skill-folder">): Promise<DesktopIpcOutput<"desktop:delete-global-skill-folder">>
+  moveGlobalSkillDirectory(input: DesktopIpcInput<"desktop:move-global-skill-directory">): Promise<DesktopIpcOutput<"desktop:move-global-skill-directory">>
   getProjectProviderCatalog(input: DesktopIpcInput<"desktop:get-project-provider-catalog">): Promise<DesktopIpcOutput<"desktop:get-project-provider-catalog">>
   refreshProjectProviderCatalog(input: DesktopIpcInput<"desktop:refresh-project-provider-catalog">): Promise<DesktopIpcOutput<"desktop:refresh-project-provider-catalog">>
   getProjectModels(input: DesktopIpcInput<"desktop:get-project-models">): Promise<DesktopIpcOutput<"desktop:get-project-models">>

@@ -2,6 +2,11 @@ import { type ChangeEvent, type PointerEvent, useEffect, useRef, useState } from
 import { ThreadMarkdown } from "../thread-markdown"
 import type { WorkspaceGroup } from "../types"
 
+interface SkillMetadataField {
+  key: string
+  value: string | string[]
+}
+
 interface GlobalSkillsCanvasProps {
   deletingGlobalSkillDirectory: string | null
   globalSkillsMessage: {
@@ -18,6 +23,169 @@ interface GlobalSkillsCanvasProps {
   onChange: (value: string) => void
   onDelete: () => void | Promise<void>
   onSave: () => void | Promise<void>
+}
+
+function stripYamlValueQuotes(value: string) {
+  const trimmed = value.trim()
+  if (trimmed.length < 2) return trimmed
+
+  const first = trimmed[0]
+  const last = trimmed[trimmed.length - 1]
+  if ((first === "\"" && last === "\"") || (first === "'" && last === "'")) {
+    return trimmed.slice(1, -1)
+  }
+
+  return trimmed
+}
+
+function parseSkillMetadata(rawMetadata: string) {
+  const metadata: SkillMetadataField[] = []
+  let currentField: SkillMetadataField | null = null
+  let isCollectingBlockScalar = false
+
+  for (const line of rawMetadata.split(/\r?\n/)) {
+    if (!line.trim() || line.trimStart().startsWith("#")) continue
+
+    const fieldMatch = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line)
+    if (fieldMatch) {
+      const value = stripYamlValueQuotes(fieldMatch[2])
+      currentField = {
+        key: fieldMatch[1],
+        value: value === ">" || value === "|" ? "" : value,
+      }
+      isCollectingBlockScalar = value === ">" || value === "|"
+      metadata.push(currentField)
+      continue
+    }
+
+    const listItemMatch = /^\s*-\s+(.+)$/.exec(line)
+    if (listItemMatch && currentField) {
+      const nextValue = stripYamlValueQuotes(listItemMatch[1])
+      currentField.value = Array.isArray(currentField.value)
+        ? [...currentField.value, nextValue]
+        : currentField.value
+          ? [currentField.value, nextValue]
+          : [nextValue]
+      isCollectingBlockScalar = false
+      continue
+    }
+
+    const continuationMatch = /^\s+(.+)$/.exec(line)
+    if (continuationMatch && currentField && typeof currentField.value === "string") {
+      const separator = isCollectingBlockScalar ? "\n" : " "
+      currentField.value = currentField.value
+        ? `${currentField.value}${separator}${continuationMatch[1].trim()}`
+        : continuationMatch[1].trim()
+    }
+  }
+
+  return metadata.filter((field) => Array.isArray(field.value) ? field.value.length > 0 : field.value.trim().length > 0)
+}
+
+function parseSkillMarkdownPreview(markdown: string) {
+  const content = markdown.startsWith("\ufeff") ? markdown.slice(1) : markdown
+  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(content)
+
+  if (!match) {
+    return {
+      body: markdown,
+      metadata: [] as SkillMetadataField[],
+    }
+  }
+
+  return {
+    body: content.slice(match[0].length),
+    metadata: parseSkillMetadata(match[1]),
+  }
+}
+
+function getSkillMetadataValue(metadata: SkillMetadataField[], key: string) {
+  const field = metadata.find((item) => item.key.toLowerCase() === key)
+  if (!field) return null
+
+  if (Array.isArray(field.value)) {
+    return field.value.join(", ")
+  }
+
+  return field.value
+}
+
+function getSkillMetadataList(metadata: SkillMetadataField[], key: string) {
+  const field = metadata.find((item) => item.key.toLowerCase() === key)
+  if (!field) return []
+
+  if (Array.isArray(field.value)) {
+    return field.value
+  }
+
+  return field.value.split(",").map((item) => item.trim()).filter(Boolean)
+}
+
+function isTruthyMetadataValue(value: string | null) {
+  return value ? ["1", "true", "yes"].includes(value.trim().toLowerCase()) : false
+}
+
+function SkillMetadataPanel({ metadata }: { metadata: SkillMetadataField[] }) {
+  if (metadata.length === 0) return null
+
+  const name = getSkillMetadataValue(metadata, "name")
+  const description = getSkillMetadataValue(metadata, "description")
+  const allowedTools = getSkillMetadataList(metadata, "allowed-tools")
+  const hidden = isTruthyMetadataValue(getSkillMetadataValue(metadata, "hidden"))
+  const reservedKeys = new Set(["name", "description", "allowed-tools", "hidden"])
+  const extraMetadata = metadata.filter((field) => !reservedKeys.has(field.key.toLowerCase()))
+
+  return (
+    <section className="global-skills-metadata-panel" aria-label="Skill metadata">
+      <div className="global-skills-metadata-summary">
+        <div className="global-skills-metadata-copy">
+          <span className="label">Skill Metadata</span>
+          {name ? <strong>{name}</strong> : null}
+          {description ? <p title={description}>{description}</p> : null}
+        </div>
+        {hidden ? <span className="global-skills-metadata-badge">Hidden</span> : null}
+      </div>
+
+      {allowedTools.length > 0 ? (
+        <div className="global-skills-metadata-tools" aria-label="Allowed tools">
+          <span>Tools</span>
+          <div>
+            {allowedTools.map((tool) => (
+              <code key={tool}>{tool}</code>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {extraMetadata.length > 0 ? (
+        <details className="global-skills-metadata-details">
+          <summary>More metadata</summary>
+          <dl>
+            {extraMetadata.map((field) => (
+              <div key={field.key}>
+                <dt>{field.key}</dt>
+                <dd>{Array.isArray(field.value) ? field.value.join(", ") : field.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      ) : null}
+    </section>
+  )
+}
+
+function SkillMarkdownPreview({ text }: { text: string }) {
+  const { body, metadata } = parseSkillMarkdownPreview(text)
+
+  return (
+    <div className="global-skills-markdown-preview">
+      <SkillMetadataPanel metadata={metadata} />
+      <ThreadMarkdown
+        className="thread-markdown global-skills-markdown-body"
+        text={body}
+      />
+    </div>
+  )
 }
 
 export function GlobalSkillsCanvas({
@@ -60,6 +228,10 @@ export function GlobalSkillsCanvas({
       </section>
     )
   }
+
+  const editorShellClassName = viewMode === "preview"
+    ? "global-skills-editor-shell is-preview"
+    : "global-skills-editor-shell"
 
   return (
     <section className="global-skills-canvas">
@@ -105,7 +277,7 @@ export function GlobalSkillsCanvas({
         </div>
       </div>
 
-      <div className="global-skills-editor-shell" onPointerDown={handleEditorShellPointerDown}>
+      <div className={editorShellClassName} onPointerDown={handleEditorShellPointerDown}>
         {isLoadingFile ? (
           <div className="global-skills-empty-state global-skills-editor-empty-state">
             <span className="label">Loading</span>
@@ -122,10 +294,7 @@ export function GlobalSkillsCanvas({
             onChange={(event) => onChange(event.target.value)}
           />
         ) : (
-          <ThreadMarkdown
-            className="thread-markdown global-skills-markdown-preview"
-            text={selectedFileContent}
-          />
+          <SkillMarkdownPreview text={selectedFileContent} />
         )}
       </div>
     </section>

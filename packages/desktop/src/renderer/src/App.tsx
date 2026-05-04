@@ -194,11 +194,15 @@ export function App() {
 
   const {
     creatingGlobalSkillName,
+    creatingGlobalSkillDraftKind,
+    creatingGlobalSkillParentDirectory,
     deletingGlobalSkillDirectory,
     expandedSkillPaths,
+    globalSkillFolderOptions,
     globalSkillsMessage,
     globalSkillsRoot,
     globalSkillsTree,
+    gitInstallTargetDirectory,
     gitInstallMessage,
     gitInstallPreview,
     gitInstallSource,
@@ -211,10 +215,19 @@ export function App() {
     handleGitInstallDialogOpen,
     handleGitInstallSkillToggle,
     handleGitInstallSourceChange,
+    handleGitInstallTargetDirectoryChange,
     handleGlobalSkillDirectoryToggle,
     handleGlobalSkillDraftChange,
     handleGlobalSkillFileSelect,
     handleInstallGitSkills,
+    handleInstallLocalSkillFile,
+    handleLocalInstallDialogClose,
+    handleLocalInstallDialogOpen,
+    handleLocalInstallTargetDirectoryChange,
+    handleMoveGlobalSkillDirectory,
+    handleMoveGlobalSkillDirectoryCancel,
+    handleMoveGlobalSkillDirectoryStart,
+    handleMoveGlobalSkillTargetDirectoryChange,
     handleOpenGlobalSkillsFolder,
     handlePreviewGitSkillInstall,
     handleRenameGlobalSkill,
@@ -227,10 +240,18 @@ export function App() {
     isDirtyGlobalSkillFile,
     isGitInstallDialogOpen,
     isInstallingGitSkills,
+    isInstallingLocalSkill,
+    isLocalInstallDialogOpen,
     isLoadingGlobalSkillFile,
     isLoadingGlobalSkillsTree,
+    isMoveGlobalSkillDialogOpen,
+    isMovingGlobalSkillDirectory,
     isPreviewingGitInstall,
     isSavingGlobalSkillFile,
+    localInstallTargetDirectory,
+    moveGlobalSkillTargetOptions,
+    movingGlobalSkillDirectory,
+    movingGlobalSkillTargetDirectory,
     renamingGlobalSkillDirectory,
     renamingGlobalSkillDraftDirectory,
     renamingGlobalSkillName,
@@ -269,9 +290,11 @@ export function App() {
     diagnosingPluginConnectorID,
     dismissMessage,
     installPlugin,
+    importMcpConfigJson,
     installingPluginID,
     installedPlugins,
     isCreatingPromptPreset,
+    isImportingMcpConfigJson,
     isLoading,
     isLoadingBuiltinTools,
     isLoadingPlugins,
@@ -799,11 +822,15 @@ export function App() {
           ) : isGlobalSkillsView ? (
             <GlobalSkillsPage
               creatingGlobalSkillName={creatingGlobalSkillName}
+              creatingGlobalSkillDraftKind={creatingGlobalSkillDraftKind}
+              creatingGlobalSkillParentDirectory={creatingGlobalSkillParentDirectory}
               deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
               expandedSkillPaths={expandedSkillPaths}
+              globalSkillFolderOptions={globalSkillFolderOptions}
               globalSkillsMessage={globalSkillsMessage}
               globalSkillsRoot={globalSkillsRoot}
               globalSkillsTree={globalSkillsTree}
+              gitInstallTargetDirectory={gitInstallTargetDirectory}
               gitInstallMessage={gitInstallMessage}
               gitInstallPreview={gitInstallPreview}
               gitInstallSource={gitInstallSource}
@@ -812,10 +839,18 @@ export function App() {
               isDirty={isDirtyGlobalSkillFile}
               isGitInstallDialogOpen={isGitInstallDialogOpen}
               isInstallingGitSkills={isInstallingGitSkills}
+              isInstallingLocalSkill={isInstallingLocalSkill}
+              isLocalInstallDialogOpen={isLocalInstallDialogOpen}
               isLoadingFile={isLoadingGlobalSkillFile}
               isLoadingSkillsTree={isLoadingGlobalSkillsTree}
+              isMoveGlobalSkillDialogOpen={isMoveGlobalSkillDialogOpen}
+              isMovingGlobalSkillDirectory={isMovingGlobalSkillDirectory}
               isPreviewingGitInstall={isPreviewingGitInstall}
               isSavingFile={isSavingGlobalSkillFile}
+              localInstallTargetDirectory={localInstallTargetDirectory}
+              moveGlobalSkillTargetOptions={moveGlobalSkillTargetOptions}
+              movingGlobalSkillDirectory={movingGlobalSkillDirectory}
+              movingGlobalSkillTargetDirectory={movingGlobalSkillTargetDirectory}
               renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
               renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
               renamingGlobalSkillName={renamingGlobalSkillName}
@@ -835,9 +870,18 @@ export function App() {
               onGitInstallDialogOpen={handleGitInstallDialogOpen}
               onGitInstallSkillToggle={handleGitInstallSkillToggle}
               onGitInstallSourceChange={handleGitInstallSourceChange}
+              onGitInstallTargetDirectoryChange={handleGitInstallTargetDirectoryChange}
               onGlobalSkillDirectoryToggle={handleGlobalSkillDirectoryToggle}
               onGlobalSkillFileSelect={handleGlobalSkillFileSelect}
               onInstallGitSkills={handleInstallGitSkills}
+              onInstallLocalSkillFile={handleInstallLocalSkillFile}
+              onLocalInstallDialogClose={handleLocalInstallDialogClose}
+              onLocalInstallDialogOpen={handleLocalInstallDialogOpen}
+              onLocalInstallTargetDirectoryChange={handleLocalInstallTargetDirectoryChange}
+              onMoveGlobalSkillDirectory={handleMoveGlobalSkillDirectory}
+              onMoveGlobalSkillDirectoryCancel={handleMoveGlobalSkillDirectoryCancel}
+              onMoveGlobalSkillDirectoryStart={handleMoveGlobalSkillDirectoryStart}
+              onMoveGlobalSkillTargetDirectoryChange={handleMoveGlobalSkillTargetDirectoryChange}
               onOpenGlobalSkillsFolder={handleOpenGlobalSkillsFolder}
               onPreviewGitSkillInstall={handlePreviewGitSkillInstall}
               onRenameGlobalSkill={handleRenameGlobalSkill}
@@ -857,9 +901,11 @@ export function App() {
               mcpServers={mcpServers}
               message={message}
               savingMcpServerID={savingMcpServerID}
+              isImportingMcpConfigJson={isImportingMcpConfigJson}
               windowControls={windowControls}
               onDeleteMcpServer={deleteMcpServer}
               onDismissMessage={dismissMessage}
+              onImportMcpConfigJson={importMcpConfigJson}
               onMcpServerDraftChange={setMcpServerDraftValue}
               onMcpToolPolicyChange={setMcpToolPolicy}
               onMcpServerSelect={selectMcpServer}

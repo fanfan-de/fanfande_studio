@@ -45,8 +45,13 @@ const SkillFrontmatter = z
   })
   .passthrough()
 
-function buildSkillID(scope: SkillScope, directoryName: string) {
-  return `${scope}:${directoryName}`
+function normalizeSkillPathID(root: string, directoryPath: string) {
+  const relativePath = relative(root, directoryPath).replace(/\\/g, "/")
+  return relativePath || basename(directoryPath)
+}
+
+function buildSkillID(scope: SkillScope, skillPathID: string) {
+  return `${scope}:${skillPathID}`
 }
 
 function buildPluginSkillID(pluginID: string, directoryName: string) {
@@ -149,6 +154,7 @@ async function readSkillDocument(
   directoryPath: string,
   options?: {
     pluginID?: string
+    root?: string
   },
 ): Promise<SkillDocument | undefined> {
   const path = join(directoryPath, SKILL_FILENAME)
@@ -158,13 +164,14 @@ async function readSkillDocument(
   const parsed = matter(raw)
   const frontmatter = SkillFrontmatter.parse(parsed.data ?? {})
   const directoryName = basename(directoryPath)
+  const skillPathID = options?.root ? normalizeSkillPathID(options.root, directoryPath) : directoryName
   const body = parsed.content.trim()
   const description = (frontmatter.description?.trim() || firstParagraph(body) || directoryName).trim()
 
   return {
     id: scope === "plugin" && options?.pluginID
-      ? buildPluginSkillID(options.pluginID, directoryName)
-      : buildSkillID(scope, directoryName),
+      ? buildPluginSkillID(options.pluginID, skillPathID)
+      : buildSkillID(scope, skillPathID),
     name: (frontmatter.name?.trim() || directoryName).trim(),
     description,
     path,
@@ -173,17 +180,25 @@ async function readSkillDocument(
   }
 }
 
-async function discoverInRoot(scope: SkillScope, root: string): Promise<SkillDocument[]> {
-  if (!(await Filesystem.isDir(root))) return []
-
-  const entries = await readdir(root, { withFileTypes: true })
+async function discoverInDirectory(scope: SkillScope, root: string, directory: string): Promise<SkillDocument[]> {
+  const entries = await readdir(directory, { withFileTypes: true })
   const documents = await Promise.all(
     entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => readSkillDocument(scope, join(root, entry.name))),
+      .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+      .map(async (entry) => {
+        const directoryPath = join(directory, entry.name)
+        const document = await readSkillDocument(scope, directoryPath, { root })
+        if (document) return [document]
+        return discoverInDirectory(scope, root, directoryPath)
+      }),
   )
 
-  return documents.filter((item): item is SkillDocument => Boolean(item))
+  return documents.flat()
+}
+
+async function discoverInRoot(scope: SkillScope, root: string): Promise<SkillDocument[]> {
+  if (!(await Filesystem.isDir(root))) return []
+  return discoverInDirectory(scope, root, root)
 }
 
 async function discoverPluginDocuments(): Promise<SkillDocument[]> {

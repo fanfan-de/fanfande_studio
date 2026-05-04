@@ -6,6 +6,7 @@ import { join } from "node:path"
 import * as Config from "#config/config.ts"
 import { Instance } from "#project/instance.ts"
 import * as SkillGitInstall from "#skill/git-install.ts"
+import * as SkillManager from "#skill/manage.ts"
 import * as Skill from "#skill/skill.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
 import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
@@ -86,6 +87,33 @@ describe("skill discovery", () => {
       description: "Notes",
       scope: "user",
     })
+  })
+
+  test("list should recursively discover nested skills with path based ids", async () => {
+    await mkdir(join(fakeHome, ".anybox", "skills", "frontend", "review", "scripts"), { recursive: true })
+    await writeFile(
+      join(fakeHome, ".anybox", "skills", "frontend", "review", "SKILL.md"),
+      [
+        "---",
+        "name: Frontend Review",
+        "description: Review nested frontend work",
+        "---",
+        "",
+        "# Frontend Review",
+        "",
+      ].join("\n"),
+    )
+    await writeFile(join(fakeHome, ".anybox", "skills", "frontend", "review", "scripts", "checklist.md"), "Check UI.\n")
+
+    const skills = await Skill.list(projectRoot)
+
+    expect(skills.find((item) => item.id === "user:frontend/review")).toMatchObject({
+      name: "Frontend Review",
+      description: "Review nested frontend work",
+      scope: "user",
+    })
+    expect(skills.some((item) => item.id === "user:frontend")).toBe(false)
+    expect(skills.some((item) => item.id === "user:frontend/review/scripts")).toBe(false)
   })
 
   test("loadPromptCatalogSections should only include selected skill metadata", async () => {
@@ -244,6 +272,105 @@ describe("skill discovery", () => {
   })
 })
 
+describe("global skill folder management", () => {
+  let fakeHome = ""
+  const envBackup = new Map<string, string | undefined>()
+
+  beforeEach(async () => {
+    fakeHome = await mkdtemp(join(tmpdir(), "fanfande-skill-manager-home-"))
+
+    for (const key of ENV_KEYS) {
+      envBackup.set(key, process.env[key])
+    }
+
+    process.env.HOME = fakeHome
+    process.env.USERPROFILE = fakeHome
+    delete process.env.HOMEDRIVE
+    delete process.env.HOMEPATH
+  })
+
+  afterEach(async () => {
+    for (const key of ENV_KEYS) {
+      const value = envBackup.get(key)
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+
+    await rm(fakeHome, { recursive: true, force: true })
+  })
+
+  test("tree roles and directory operations follow the real folder layout", async () => {
+    const frontend = await SkillManager.createGlobalSkillFolder({ name: "frontend" })
+    const empty = await SkillManager.createGlobalSkillFolder({
+      name: "empty",
+      parentDirectory: frontend.directory,
+    })
+    const nested = await SkillManager.createGlobalSkill({
+      name: "review",
+      parentDirectory: frontend.directory,
+    })
+    await mkdir(join(nested.directory, "scripts"), { recursive: true })
+    await writeFile(join(nested.directory, "scripts", "checklist.md"), "Review checklist.\n")
+    const notes = await SkillManager.createGlobalSkill({ name: "notes" })
+
+    const tree = await SkillManager.getGlobalSkillTree()
+    const frontendNode = tree.items.find((item) => item.name === "frontend")
+    const notesNode = tree.items.find((item) => item.name === "notes")
+    const reviewNode = frontendNode?.children?.find((item) => item.name === "review")
+    const scriptsNode = reviewNode?.children?.find((item) => item.name === "scripts")
+
+    expect(frontendNode).toMatchObject({ kind: "directory", role: "folder" })
+    expect(notesNode).toMatchObject({ kind: "directory", role: "skill" })
+    expect(reviewNode).toMatchObject({ kind: "directory", role: "skill" })
+    expect(scriptsNode).toMatchObject({ kind: "directory", role: "resource" })
+
+    const movedSkill = await SkillManager.moveGlobalSkillDirectory({
+      directory: notes.directory,
+      parentDirectory: frontend.directory,
+    })
+    expect(movedSkill).toMatchObject({
+      previousDirectory: notes.directory,
+      directory: join(frontend.directory, "notes"),
+      filePath: join(frontend.directory, "notes", "SKILL.md"),
+    })
+
+    await SkillManager.deleteGlobalSkillFolder(empty.directory)
+    await expect(stat(empty.directory).catch(() => null)).resolves.toBeNull()
+  })
+
+  test("rejects unsafe folder management operations", async () => {
+    const frontend = await SkillManager.createGlobalSkillFolder({ name: "frontend" })
+    const child = await SkillManager.createGlobalSkillFolder({
+      name: "child",
+      parentDirectory: frontend.directory,
+    })
+    const review = await SkillManager.createGlobalSkill({
+      name: "review",
+      parentDirectory: frontend.directory,
+    })
+
+    await expect(
+      SkillManager.createGlobalSkillFolder({
+        name: "inside-skill",
+        parentDirectory: review.directory,
+      }),
+    ).rejects.toThrow("cannot be used as management folders")
+
+    await expect(
+      SkillManager.moveGlobalSkillDirectory({
+        directory: frontend.directory,
+        parentDirectory: child.directory,
+      }),
+    ).rejects.toThrow("cannot be moved into itself")
+
+    await expect(SkillManager.deleteGlobalSkillFolder(frontend.directory)).rejects.toThrow("not empty")
+    await expect(SkillManager.deleteGlobalSkillFolder(join(fakeHome, "..", "outside"))).rejects.toThrow("outside the global skills root")
+  })
+})
+
 describe("git skill install", () => {
   let fakeHome = ""
   let previewRoot = ""
@@ -289,7 +416,21 @@ describe("git skill install", () => {
       cloneUrl: "https://github.com/owner/repo.git",
       repoName: "repo",
     })
+    expect(SkillGitInstall.parseGitSkillSource("github.com/owner/repo")).toMatchObject({
+      cloneUrl: "https://github.com/owner/repo.git",
+      repoName: "repo",
+    })
+    expect(SkillGitInstall.parseGitSkillSource("git+https://github.com/owner/repo.git")).toMatchObject({
+      cloneUrl: "https://github.com/owner/repo.git",
+      repoName: "repo",
+    })
     expect(SkillGitInstall.parseGitSkillSource("https://github.com/owner/repo/tree/main/skills/review")).toMatchObject({
+      cloneUrl: "https://github.com/owner/repo.git",
+      repoName: "repo",
+      ref: "main",
+      subpath: "skills/review",
+    })
+    expect(SkillGitInstall.parseGitSkillSource("https://github.com/owner/repo/blob/main/skills/review/SKILL.md")).toMatchObject({
       cloneUrl: "https://github.com/owner/repo.git",
       repoName: "repo",
       ref: "main",
@@ -297,6 +438,14 @@ describe("git skill install", () => {
     })
     expect(SkillGitInstall.parseGitSkillSource("git@github.com:owner/repo.git")).toMatchObject({
       cloneUrl: "git@github.com:owner/repo.git",
+      repoName: "repo",
+    })
+    expect(SkillGitInstall.parseGitSkillSource("ssh://git@github.com/owner/repo.git")).toMatchObject({
+      cloneUrl: "git@github.com:owner/repo.git",
+      repoName: "repo",
+    })
+    expect(SkillGitInstall.parseGitSkillSource("https://git.example.com/team/repo.git")).toMatchObject({
+      cloneUrl: "https://git.example.com/team/repo.git",
       repoName: "repo",
     })
   })
@@ -351,6 +500,26 @@ describe("git skill install", () => {
     ).rejects.toThrow("already exists")
   })
 
+  test("checks Git install conflicts inside the selected target folder", async () => {
+    const targetFolder = join(fakeHome, ".anybox", "skills", "frontend")
+    await mkdir(targetFolder, { recursive: true })
+    await mkdir(join(fakeHome, ".anybox", "skills", "review"), { recursive: true })
+    await mkdir(join(repoRoot, "skills", "review"), { recursive: true })
+    await writeFile(
+      join(repoRoot, "skills", "review", "SKILL.md"),
+      ["---", "name: Review Skill", "description: Review workflow", "---", "", "# Review"].join("\n"),
+    )
+
+    const parsed = SkillGitInstall.parseGitSkillSource("owner/repo")
+    const preview = await SkillGitInstall.registerGlobalSkillGitInstallPreview(parsed, repoRoot, previewRoot, targetFolder)
+
+    expect(preview.skills[0]).toMatchObject({
+      id: "skills/review",
+      targetDirectory: join(targetFolder, "review"),
+      available: true,
+    })
+  })
+
   test("installs selected skills with resources and skips git metadata", async () => {
     await mkdir(join(repoRoot, "skills", "review", "scripts"), { recursive: true })
     await mkdir(join(repoRoot, "skills", "review", ".git"), { recursive: true })
@@ -377,5 +546,49 @@ describe("git skill install", () => {
       "Check carefully.",
     )
     await expect(stat(join(fakeHome, ".anybox", "skills", "review", ".git")).catch(() => null)).resolves.toBeNull()
+  })
+
+  test("installs selected Git skills into a target folder", async () => {
+    const targetFolder = join(fakeHome, ".anybox", "skills", "frontend")
+    await mkdir(targetFolder, { recursive: true })
+    await mkdir(join(repoRoot, "skills", "review"), { recursive: true })
+    await writeFile(
+      join(repoRoot, "skills", "review", "SKILL.md"),
+      ["---", "name: Review Skill", "description: Review workflow", "---", "", "# Review"].join("\n"),
+    )
+
+    const parsed = SkillGitInstall.parseGitSkillSource("owner/repo")
+    const preview = await SkillGitInstall.registerGlobalSkillGitInstallPreview(parsed, repoRoot, previewRoot, targetFolder)
+    const result = await SkillGitInstall.installGlobalSkillsFromGitPreview({
+      previewID: preview.previewID,
+      skillIDs: ["skills/review"],
+    })
+
+    expect(result.installed[0]).toMatchObject({
+      name: "Review Skill",
+      filePath: join(targetFolder, "review", "SKILL.md"),
+    })
+  })
+
+  test("installs a local SKILL.md file with sibling resources", async () => {
+    const localSkillDirectory = join(repoRoot, "local-review")
+    await mkdir(join(localSkillDirectory, "scripts"), { recursive: true })
+    await writeFile(
+      join(localSkillDirectory, "SKILL.md"),
+      ["---", "name: Local Review", "description: Review local files", "---", "", "# Local Review"].join("\n"),
+    )
+    await writeFile(join(localSkillDirectory, "scripts", "checklist.md"), "Check locally.\n")
+
+    const result = await SkillGitInstall.installGlobalSkillFromLocalPath(join(localSkillDirectory, "SKILL.md"))
+    const installed = result.installed[0]
+
+    expect(installed).toMatchObject({
+      id: ".",
+      name: "Local Review",
+      filePath: join(fakeHome, ".anybox", "skills", "local-review", "SKILL.md"),
+    })
+    await expect(readFile(join(fakeHome, ".anybox", "skills", "local-review", "scripts", "checklist.md"), "utf8")).resolves.toContain(
+      "Check locally.",
+    )
   })
 })

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { describe, expect, it, vi } from "vitest"
 import type { McpServerDiagnostic, McpServerDraftState } from "../types"
@@ -90,8 +90,10 @@ function createProps(
     ],
     message: null,
     savingMcpServerID: null,
+    isImportingMcpConfigJson: false,
     onDeleteMcpServer: vi.fn(),
     onDismissMessage: vi.fn(),
+    onImportMcpConfigJson: vi.fn(),
     onMcpServerDraftChange: vi.fn(),
     onMcpToolPolicyChange: vi.fn(),
     onMcpServerSelect: vi.fn(),
@@ -180,6 +182,44 @@ describe("McpServersPage tool policies", () => {
     expect((screen.getByLabelText("Policy for batch_design") as HTMLSelectElement).value).toBe("auto")
   })
 
+  it("filters the MCP server list from the search field", () => {
+    render(
+      <McpServersPage
+        {...createProps({
+          mcpServers: [
+            {
+              id: "context7",
+              name: "Context7",
+              transport: "remote",
+              serverUrl: "https://mcp.context7.com/mcp",
+              enabled: true,
+            },
+            {
+              id: "pencil",
+              name: "Pencil",
+              transport: "stdio",
+              command: "pencil-mcp.exe",
+              enabled: true,
+            },
+          ],
+        })}
+      />,
+    )
+
+    const list = screen.getByRole("list", { name: "MCP servers" })
+    expect(within(list).getByRole("button", { name: "Context7 enabled" })).toBeInTheDocument()
+    expect(within(list).getByRole("button", { name: "Pencil enabled" })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search MCP servers" }), {
+      target: {
+        value: "pencil",
+      },
+    })
+
+    expect(within(list).queryByRole("button", { name: "Context7 enabled" })).not.toBeInTheDocument()
+    expect(within(list).getByRole("button", { name: "Pencil enabled" })).toBeInTheDocument()
+  })
+
   it("maps legacy remote read-only filters to understandable tool policy defaults", () => {
     render(
       <McpServersPage
@@ -208,5 +248,31 @@ describe("McpServersPage tool policies", () => {
 
     expect((screen.getByLabelText("Policy for resolve-library-id") as HTMLSelectElement).value).toBe("auto")
     expect((screen.getByLabelText("Policy for write-docs") as HTMLSelectElement).value).toBe("disabled")
+  })
+
+  it("previews and submits imported MCP JSON", async () => {
+    const onImportMcpConfigJson = vi.fn().mockResolvedValue(true)
+
+    render(<McpServersPage {...createProps({ onImportMcpConfigJson })} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Import JSON" }))
+    fireEvent.change(screen.getByLabelText("MCP configuration JSON"), {
+      target: {
+        value: JSON.stringify({
+          mcpServers: {
+            filesystem: {
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-filesystem"],
+            },
+          },
+        }),
+      },
+    })
+
+    expect(screen.getByText(/Detected 1 MCP server/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Import" }))
+
+    expect(onImportMcpConfigJson).toHaveBeenCalledWith(expect.stringContaining("filesystem"))
   })
 })

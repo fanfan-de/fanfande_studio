@@ -96,6 +96,14 @@ interface LeftSidebarTopMenuProps {
   onWorkspaceModeChange: (mode: WorkspaceMode) => void
 }
 
+function containsSkillTreePath(node: GlobalSkillTreeNode, targetPath: string | null): boolean {
+  if (!targetPath) return false
+  if (node.path === targetPath) return true
+  if (node.kind !== "directory") return false
+
+  return (node.children ?? []).some((child) => containsSkillTreePath(child, targetPath))
+}
+
 function LeftSidebarTopMenu({
   activeView,
   showSidebarToggleButton,
@@ -390,6 +398,7 @@ function SkillsTreeNodeRow({
   }
 
   const isExpanded = expandedSkillPaths.includes(node.path)
+  const isActiveDirectory = containsSkillTreePath(node, selectedGlobalSkillFilePath)
   const showDeleteAction = depth === 0
   const isRenameDraftVisible = depth === 0 && renamingGlobalSkillDraftDirectory === node.path
   const isRenamePending = renamingGlobalSkillDirectory === node.path
@@ -445,7 +454,7 @@ function SkillsTreeNodeRow({
           </form>
         ) : (
           <button
-            className="skill-tree-row"
+            className={isActiveDirectory ? "skill-tree-row is-active" : "skill-tree-row"}
             aria-expanded={isExpanded}
             title={depth === 0 ? `${node.path}\nDouble-click to rename` : node.path}
             type="button"

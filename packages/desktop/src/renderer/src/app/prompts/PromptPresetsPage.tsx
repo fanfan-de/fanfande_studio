@@ -1,5 +1,13 @@
 import { type ChangeEvent, type ReactNode, useState } from "react"
-import { CloseIcon, FileTextIcon } from "../icons"
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  FileTextIcon,
+  FolderIcon,
+  PlusIcon,
+  SearchIcon,
+} from "../icons"
 import { ShellTopMenu } from "../shared-ui"
 import { ThreadMarkdown } from "../thread-markdown"
 import type {
@@ -9,6 +17,7 @@ import type {
 } from "../types"
 
 type PromptEditorMode = "edit" | "preview"
+type PromptPresetFolderID = PromptPresetSummary["source"]
 
 interface PromptEditorMessage {
   tone: "success" | "error"
@@ -52,6 +61,14 @@ function getPromptPresetSourceLabel(source: PromptPresetSummary["source"]) {
   return source === "custom" ? "Custom" : "Bundled"
 }
 
+function getPromptPresetFolderLabel(source: PromptPresetSummary["source"]) {
+  return source === "custom" ? "Custom" : "Bundled"
+}
+
+function getPromptPresetPathLabel(preset: PromptPresetSummary) {
+  return preset.sourcePath ?? (preset.source === "custom" ? "Custom preset" : "Bundled preset")
+}
+
 function getPromptPresetUsageLabels(
   presetID: string,
   selection: PromptPresetSelection | null,
@@ -74,6 +91,25 @@ function getPromptPresetUsageLabels(
 
 function getPromptMarkdownPreviewText(value: string) {
   return value.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+function normalizePromptSearchTerm(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function doesPromptPresetMatchSearch(
+  preset: PromptPresetSummary,
+  normalizedSearchTerm: string,
+) {
+  if (!normalizedSearchTerm) return true
+
+  return [
+    preset.label,
+    preset.description,
+    preset.id,
+    preset.sourcePath ?? "",
+    getPromptPresetSourceLabel(preset.source),
+  ].some((value) => value.toLowerCase().includes(normalizedSearchTerm))
 }
 
 export function PromptPresetsPage({
@@ -108,6 +144,12 @@ export function PromptPresetsPage({
   onSavePromptPreset,
   onSavePromptPresetSelection,
 }: PromptPresetsPageProps) {
+  const [promptEditorMode, setPromptEditorMode] = useState<PromptEditorMode>("edit")
+  const [promptSearchTerm, setPromptSearchTerm] = useState("")
+  const [expandedPromptPresetFolders, setExpandedPromptPresetFolders] = useState<PromptPresetFolderID[]>([
+    "bundled",
+    "custom",
+  ])
   const promptPresetOptions = [...promptPresets].sort((left, right) => {
     if (left.source !== right.source) {
       return left.source === "bundled" ? -1 : 1
@@ -125,7 +167,33 @@ export function PromptPresetsPage({
   const selectedPromptPresetUsageLabels = selectedPromptPreset
     ? getPromptPresetUsageLabels(selectedPromptPreset.id, promptPresetSelection)
     : []
-  const [promptEditorMode, setPromptEditorMode] = useState<PromptEditorMode>("edit")
+  const normalizedPromptSearchTerm = normalizePromptSearchTerm(promptSearchTerm)
+  const promptPresetFolderDefinitions: Array<{
+    id: PromptPresetFolderID
+    label: string
+    presets: PromptPresetSummary[]
+  }> = [
+    {
+      id: "bundled",
+      label: getPromptPresetFolderLabel("bundled"),
+      presets: promptPresetOptions.filter((preset) => preset.source === "bundled"),
+    },
+    {
+      id: "custom",
+      label: getPromptPresetFolderLabel("custom"),
+      presets: promptPresetOptions.filter((preset) => preset.source === "custom"),
+    },
+  ]
+  const promptPresetFolders = promptPresetFolderDefinitions.map((folder) => ({
+    ...folder,
+    presets: folder.presets.filter((preset) =>
+      doesPromptPresetMatchSearch(preset, normalizedPromptSearchTerm),
+    ),
+  }))
+  const visiblePromptPresetFolders = promptPresetFolders.filter((folder) =>
+    normalizedPromptSearchTerm ? folder.presets.length > 0 : true,
+  )
+  const isPromptSearchActive = normalizedPromptSearchTerm.length > 0
 
   function handlePromptPresetSelection(presetID: string) {
     if (presetID === selectedPromptPreset?.id) return
@@ -150,6 +218,15 @@ export function PromptPresetsPage({
     }
 
     void onCreatePromptPreset()
+  }
+
+  function handlePromptFolderToggle(folderID: PromptPresetFolderID) {
+    if (isPromptSearchActive) return
+    setExpandedPromptPresetFolders((current) =>
+      current.includes(folderID)
+        ? current.filter((item) => item !== folderID)
+        : [...current, folderID],
+    )
   }
 
   return (
@@ -313,59 +390,117 @@ export function PromptPresetsPage({
 
             <div className="settings-services-layout settings-prompts-layout">
               <div className="settings-service-list-panel settings-prompt-library-panel">
-                <div className="settings-prompt-section-bar">
-                  <h3>Presets</h3>
+                <div className="settings-prompt-section-bar prompt-presets-navigator-bar">
+                  <h3>Files</h3>
                   <button
-                    className="secondary-button"
+                    className="secondary-button prompt-presets-new-button"
                     type="button"
+                    aria-label="New"
                     disabled={isCreatingPromptPreset}
                     onClick={handlePromptPresetCreate}
                   >
-                    {isCreatingPromptPreset ? "Creating..." : "New"}
+                    <PlusIcon />
+                    <span>{isCreatingPromptPreset ? "Creating..." : "New"}</span>
                   </button>
                 </div>
 
-                <div className="settings-service-list-body">
-                  {promptPresetOptions.length > 0 ? (
-                    <div className="settings-service-list settings-prompt-library" role="list" aria-label="Prompt presets">
-                      {promptPresetOptions.map((preset) => {
-                        const isActive = preset.id === selectedPromptPreset?.id
-                        const usageLabels = getPromptPresetUsageLabels(preset.id, promptPresetSelection)
+                <div className="settings-service-list-body prompt-presets-tree-body">
+                  <div className="skills-tree-root prompt-presets-tree" role="list" aria-label="Prompt presets">
+                    <div className="skills-tree-search-row" aria-label="Prompt presets search" role="search">
+                      <SearchIcon />
+                      <input
+                        aria-label="Search prompts"
+                        placeholder="搜索 prompts"
+                        type="search"
+                        value={promptSearchTerm}
+                        onChange={(event) => setPromptSearchTerm(event.target.value)}
+                      />
+                      {promptSearchTerm.trim() ? (
+                        <button
+                          aria-label="Clear prompt search"
+                          title="Clear"
+                          type="button"
+                          onClick={() => setPromptSearchTerm("")}
+                        >
+                          <CloseIcon />
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {visiblePromptPresetFolders.length > 0 ? (
+                      visiblePromptPresetFolders.map((folder) => {
+                        const isExpanded = isPromptSearchActive || expandedPromptPresetFolders.includes(folder.id)
 
                         return (
-                          <button
-                            key={preset.id}
-                            className={
-                              isActive
-                                ? "settings-service-item settings-prompt-library-item is-active"
-                                : "settings-service-item settings-prompt-library-item"
-                            }
-                            aria-label={preset.label}
-                            aria-pressed={isActive}
-                            type="button"
-                            onClick={() => handlePromptPresetSelection(preset.id)}
-                          >
-                            <div className="settings-service-item-header">
-                              <strong>{preset.label}</strong>
-                              <span className="settings-badge">{getPromptPresetSourceLabel(preset.source)}</span>
-                            </div>
-                            <div className="settings-prompt-item-statuses">
-                              {usageLabels.map((label) => (
-                                <span key={`${preset.id}-${label}`} className="settings-badge is-highlight">
-                                  {label}
+                          <div key={folder.id} className="skill-tree-item prompt-tree-folder">
+                            <div className="skill-tree-row-shell">
+                              <button
+                                className="skill-tree-row"
+                                aria-expanded={isExpanded}
+                                aria-label={`${folder.label} prompt folder`}
+                                type="button"
+                                onClick={() => handlePromptFolderToggle(folder.id)}
+                              >
+                                <span className="skill-tree-leading" aria-hidden="true">
+                                  {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
                                 </span>
-                              ))}
-                              {preset.hasOverride ? <span className="settings-badge is-warning">Edited</span> : null}
+                                <span className="skill-tree-role-icon is-folder" aria-hidden="true">
+                                  <FolderIcon />
+                                </span>
+                                <span className="skill-tree-label">{folder.label}</span>
+                                <span className="prompt-tree-count">{folder.presets.length}</span>
+                              </button>
                             </div>
-                          </button>
+
+                            {isExpanded ? (
+                              <div className="skill-tree-children">
+                                {folder.presets.length > 0 ? (
+                                  folder.presets.map((preset) => {
+                                    const isActive = preset.id === selectedPromptPreset?.id
+                                    const usageLabels = getPromptPresetUsageLabels(preset.id, promptPresetSelection)
+
+                                    return (
+                                      <div key={preset.id} className="skill-tree-item skill-tree-item-file prompt-tree-file">
+                                        <button
+                                          className={isActive ? "skill-tree-row is-active" : "skill-tree-row"}
+                                          aria-label={preset.label}
+                                          aria-pressed={isActive}
+                                          title={getPromptPresetPathLabel(preset)}
+                                          type="button"
+                                          onClick={() => handlePromptPresetSelection(preset.id)}
+                                        >
+                                          <span className="skill-tree-role-icon is-skill" aria-hidden="true">
+                                            <FileTextIcon />
+                                          </span>
+                                          <span className="skill-tree-label">{preset.label}</span>
+                                          <span className="prompt-tree-row-badges" aria-hidden="true">
+                                            {usageLabels.map((label) => (
+                                              <span key={`${preset.id}-${label}`} className="settings-badge is-highlight">
+                                                {label}
+                                              </span>
+                                            ))}
+                                            {preset.hasOverride ? <span className="settings-badge is-warning">Edited</span> : null}
+                                          </span>
+                                        </button>
+                                      </div>
+                                    )
+                                  })
+                                ) : (
+                                  <p className="skills-tree-empty prompt-tree-empty">
+                                    {folder.id === "custom" ? "No custom prompts yet." : "No bundled prompts."}
+                                  </p>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
                         )
-                      })}
-                    </div>
-                  ) : (
-                    <article className="settings-empty-state settings-service-list-empty-state">
-                      <h3>No presets</h3>
-                    </article>
-                  )}
+                      })
+                    ) : promptPresetOptions.length > 0 ? (
+                      <p className="skills-tree-empty">No prompts match your search.</p>
+                    ) : (
+                      <p className="skills-tree-empty">No prompt files found.</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
