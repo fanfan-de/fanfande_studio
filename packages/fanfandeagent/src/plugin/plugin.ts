@@ -101,6 +101,19 @@ export type PluginRemoteRuntime = z.infer<typeof PluginRemoteRuntime>
 export const PluginRuntimeTemplate = z.union([PluginStdioRuntime, PluginRemoteRuntime])
 export type PluginRuntimeTemplate = z.infer<typeof PluginRuntimeTemplate>
 
+const PluginDiagnosticTool = z
+  .object({
+    name: z.string().min(1),
+    title: z.string().min(1).optional(),
+    displayName: z.string().min(1),
+    description: z.string().optional(),
+    inputSchema: z.unknown().optional(),
+    annotations: z.record(z.string(), z.unknown()).optional(),
+    riskHint: z.enum(["read-only", "destructive", "open-world", "unknown"]),
+    recommendedPolicy: Config.McpToolPolicyValue,
+  })
+  .strict()
+
 const PluginDiagnostic = z
   .object({
     serverID: z.string(),
@@ -108,6 +121,7 @@ const PluginDiagnostic = z
     ok: z.boolean(),
     toolCount: z.number(),
     toolNames: z.array(z.string()),
+    tools: z.array(PluginDiagnosticTool),
     error: z.string().optional(),
   })
   .strict()
