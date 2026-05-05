@@ -1,16 +1,9 @@
 import { useEffect, useState } from "react"
 import type { MouseEvent } from "react"
-import {
-  featureStories,
-  navigationItems,
-  proofPoints,
-  surfaceItems,
-  workflowSteps,
-} from "./content"
+import { navigationItems, proofPoints } from "./content"
 import { GitActivitySection } from "./GitActivity"
 
 const brandLogoBlack = "/brand-logo-black.svg"
-const brandLogoWhite = "/brand-logo-white.svg"
 const repositoryUrl = "https://github.com/fanfan-de/fanfande_studio"
 const latestReleaseApiUrl =
   "https://api.github.com/repos/fanfan-de/fanfande_studio/releases/latest"
@@ -215,74 +208,7 @@ function ProofList() {
   )
 }
 
-function FeatureStory({
-  title,
-  body,
-  mediaTitle,
-  mediaItems,
-}: {
-  title: string
-  body: string
-  mediaTitle: string
-  mediaItems: string[]
-}) {
-  return (
-    <article className="feature-story">
-      <div>
-        <h3>{title}</h3>
-        <p>{body}</p>
-      </div>
-      <div className="feature-console" aria-hidden="true">
-        <div className="console-title">{mediaTitle}</div>
-        <div className="console-list">
-          {mediaItems.map((item) => (
-            <span key={item}>{item}</span>
-          ))}
-        </div>
-      </div>
-    </article>
-  )
-}
-
-function WorkflowStep({
-  index,
-  title,
-  body,
-}: {
-  index: string
-  title: string
-  body: string
-}) {
-  return (
-    <article className="workflow-step">
-      <span>{index}</span>
-      <h3>{title}</h3>
-      <p>{body}</p>
-    </article>
-  )
-}
-
-function SurfaceItem({
-  label,
-  title,
-  detail,
-}: {
-  label: string
-  title: string
-  detail: string
-}) {
-  return (
-    <article className="surface-item">
-      <p>{label}</p>
-      <h3>{title}</h3>
-      <span>{detail}</span>
-    </article>
-  )
-}
-
 export function App() {
-  const year = new Date().getFullYear()
-
   return (
     <main className="page-shell" id="top">
       <header className="site-header">
@@ -325,67 +251,6 @@ export function App() {
         </div>
         <ProofList />
       </section>
-
-      <section className="intro-section" id="capabilities">
-        <p className="section-kicker">The best way to work with local agents</p>
-        <h2>从配置自由度、模型供应商到 Skills 管理，把 Agent 协作收进一套可掌控的桌面工作流。</h2>
-      </section>
-
-      <section className="feature-section" aria-label="核心能力">
-        {featureStories.map((story) => (
-          <FeatureStory key={story.title} {...story} />
-        ))}
-      </section>
-
-      <section className="workflow-section" id="workflow">
-        <div className="section-header">
-          <p className="section-kicker">One surface, one rhythm</p>
-          <h2>从进入项目，到执行任务，再到检查输出，尽量不离开当前桌面。</h2>
-        </div>
-        <div className="workflow-grid">
-          {workflowSteps.map((step) => (
-            <WorkflowStep key={step.index} {...step} />
-          ))}
-        </div>
-      </section>
-
-      <section className="surfaces-section" id="surfaces">
-        <div className="surfaces-copy">
-          <p className="section-kicker">Connected surfaces</p>
-          <h2>把桌面壳、Agent 运行时和工具系统接成 Anybox 的持续工作面。</h2>
-          <p>
-            Anybox 的产品方向很清晰：本地优先、配置开放、多供应商可接入，并把 Skills 作为团队经验沉淀和复用的核心模块。
-          </p>
-        </div>
-        <div className="surface-list">
-          {surfaceItems.map((item) => (
-            <SurfaceItem key={item.label} {...item} />
-          ))}
-        </div>
-      </section>
-
-      <section className="launch-section" id="download">
-        <div className="launch-brand" aria-hidden="true">
-          <img src={brandLogoWhite} alt="" />
-          <span>Anybox</span>
-        </div>
-        <h2>下载 Anybox Windows EA。</h2>
-        <p>
-          当前 Windows x64 安装包从 GitHub 最新 Release 获取；mac 和 linux 版本仍在开发中。
-        </p>
-        <a
-          className="button button-primary"
-          href={windowsInstallerFallbackUrl}
-          onClick={downloadLatestWindowsInstaller}
-        >
-          下载 Windows 安装包
-        </a>
-      </section>
-
-      <footer className="site-footer">
-        <span>© {year} Anybox</span>
-        <a href="#top">Back to top</a>
-      </footer>
     </main>
   )
 }
