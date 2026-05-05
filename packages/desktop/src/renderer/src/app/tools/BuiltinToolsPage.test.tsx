@@ -61,8 +61,8 @@ function renderBuiltinToolsPage(overrides: Partial<Parameters<typeof BuiltinTool
     ...overrides,
   }
 
-  render(<BuiltinToolsPage {...props} />)
-  return props
+  const renderResult = render(<BuiltinToolsPage {...props} />)
+  return { ...props, container: renderResult.container }
 }
 
 describe("BuiltinToolsPage", () => {
@@ -80,6 +80,7 @@ describe("BuiltinToolsPage", () => {
     expect(screen.getByRole("button", { name: "Read tools, 0 of 1 enabled" })).toBeInTheDocument()
     expect(screen.getByText("Git Bash")).toBeInTheDocument()
     expect(screen.getByText("Shell access")).toBeInTheDocument()
+    expect(props.container.querySelector("[class*='settings-']")).toBeNull()
     expect(screen.queryByText("Run a Git Bash/MSYS Bash command inside the current project boundary.")).not.toBeInTheDocument()
     expect(screen.queryByText("Read File")).not.toBeInTheDocument()
 
@@ -132,7 +133,7 @@ describe("BuiltinToolsPage", () => {
     expect(screen.getByText("Built-in tool settings saved.")).toBeInTheDocument()
     expect(screen.getByText("Unable to read tools.")).toBeInTheDocument()
     expect(screen.getByText("No built-in tools")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss settings message" }))
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss tools message" }))
     expect(onDismissMessage).toHaveBeenCalledTimes(1)
 
     rerender(

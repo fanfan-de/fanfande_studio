@@ -65,12 +65,12 @@ function getBuiltinToolRiskBadgeClassName(tool: BuiltinToolSummary) {
     (tool.capabilities.kind === "delegation" && !tool.capabilities.readOnly) ||
     (tool.capabilities.kind === "workflow" && !tool.capabilities.readOnly)
   ) {
-    return "settings-badge is-warning"
+    return "tools-badge is-warning"
   }
   if (tool.capabilities.readOnly) {
-    return "settings-badge is-highlight"
+    return "tools-badge is-highlight"
   }
-  return "settings-badge"
+  return "tools-badge"
 }
 
 const builtinToolKindOrder = ["exec", "write", "delegation", "workflow", "interaction", "search", "read", "other"] as const
@@ -161,10 +161,10 @@ export function BuiltinToolsPage({
       <ShellTopMenu
         as="header"
         ariaLabel="Tools top menu"
-        className="canvas-region-top-menu builtin-tools-top-menu"
+        className="canvas-region-top-menu tools-top-menu"
         contentClassName="canvas-region-top-menu-tabs-shell"
         content={(
-          <div className="prompt-presets-top-menu-label">
+          <div className="tools-top-menu-label">
             <ToolsIcon />
             <span>Tools</span>
           </div>
@@ -172,17 +172,17 @@ export function BuiltinToolsPage({
         dragRegion
         layout="three-column"
         trailing={windowControls}
-        trailingClassName="prompt-presets-top-menu-window-controls"
+        trailingClassName="tools-top-menu-window-controls"
       />
 
-      <div className="settings-page-main is-services builtin-tools-page-main">
+      <div className="tools-page-main">
         {message ? (
-          <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
-            <span className="settings-banner-text">{message.text}</span>
+          <div className={message.tone === "success" ? "tools-banner is-success" : "tools-banner is-error"}>
+            <span className="tools-banner-text">{message.text}</span>
             <button
-              className="settings-banner-dismiss"
+              className="tools-banner-dismiss"
               type="button"
-              aria-label="Dismiss settings message"
+              aria-label="Dismiss tools message"
               title="Dismiss"
               onClick={onDismissMessage}
             >
@@ -191,36 +191,36 @@ export function BuiltinToolsPage({
           </div>
         ) : null}
 
-        {builtinToolsError ? <div className="settings-banner is-error">{builtinToolsError}</div> : null}
+        {builtinToolsError ? <div className="tools-banner is-error">{builtinToolsError}</div> : null}
 
         {isLoadingBuiltinTools ? (
-          <article className="settings-empty-state">
+          <article className="tools-empty-state">
             <span className="label">Loading</span>
             <h3>Fetching built-in tools</h3>
             <p>Reading the built-in registry and saved global availability limits.</p>
           </article>
         ) : (
-          <section className="settings-services-layout builtin-tools-page-layout" aria-label="Built-in tools">
-            <div className="settings-service-list-panel builtin-tools-category-panel">
-              <div className="settings-service-list-body">
-                <div className="settings-service-list builtin-tools-category-list" role="list" aria-label="Tool categories">
+          <section className="tools-layout" aria-label="Built-in tools">
+            <div className="tools-category-panel">
+              <div className="tools-category-body">
+                <div className="tools-category-list" role="list" aria-label="Tool categories">
                   {builtinToolGroups.map((group) => {
                     const isActive = group.kind === activeToolGroup?.kind
 
                     return (
                       <button
                         key={group.kind}
-                        className={isActive ? "settings-service-item builtin-tools-category-item is-active" : "settings-service-item builtin-tools-category-item"}
+                        className={isActive ? "tools-category-item is-active" : "tools-category-item"}
                         aria-label={`${group.label} tools, ${group.enabledCount} of ${group.items.length} enabled`}
                         aria-pressed={isActive}
                         type="button"
                         onClick={() => setActiveToolKind(group.kind)}
                       >
-                        <div className="settings-service-item-header">
+                        <div className="tools-category-item-header">
                           <strong>{group.label}</strong>
-                          <span className="settings-badge">{group.items.length}</span>
+                          <span className="tools-badge">{group.items.length}</span>
                         </div>
-                        <span className="settings-service-item-copy">
+                        <span className="tools-category-item-copy">
                           {group.enabledCount} of {group.items.length} enabled
                         </span>
                       </button>
@@ -230,30 +230,30 @@ export function BuiltinToolsPage({
               </div>
             </div>
 
-            <div className="settings-service-detail-panel builtin-tools-detail-panel">
+            <div className="tools-detail-panel">
               {activeToolGroup ? (
                 <>
-                  <div className="settings-detail-hero builtin-tools-detail-hero">
+                  <div className="tools-detail-hero">
                     <div>
                       <span className="label">Built-in tools</span>
                       <h3>{activeToolGroup.label}</h3>
-                      <p className="settings-page-copy">
+                      <p className="tools-page-copy">
                         {getBuiltinToolGroupDescription(activeToolGroup.label)}
                       </p>
                     </div>
 
-                    <div className="provider-row-statuses builtin-tools-detail-statuses">
-                      <span className="settings-badge">
+                    <div className="tools-detail-statuses">
+                      <span className="tools-badge">
                         {activeToolGroup.enabledCount}/{activeToolGroup.items.length} enabled
                       </span>
-                      <span className="settings-badge">
+                      <span className="tools-badge">
                         {enabledBuiltinToolCount}/{builtinTools.length} total enabled
                       </span>
                     </div>
                   </div>
 
-                  <section className="settings-panel settings-tools-panel builtin-tools-detail-section" aria-label={`${activeToolGroup.label} tools`}>
-                    <div className="settings-tools-header builtin-tools-detail-header">
+                  <section className="tools-panel tools-detail-section" aria-label={`${activeToolGroup.label} tools`}>
+                    <div className="tools-detail-header">
                       <div>
                         <span className="label">Availability</span>
                         <h2>Global tool availability</h2>
@@ -261,7 +261,7 @@ export function BuiltinToolsPage({
                           {enabledBuiltinToolCount} of {builtinTools.length} built-in tools enabled.
                         </p>
                       </div>
-                      <div className="settings-tools-actions builtin-tools-detail-actions">
+                      <div className="tools-detail-actions">
                         <button
                           className="secondary-button"
                           type="button"
@@ -281,7 +281,7 @@ export function BuiltinToolsPage({
                       </div>
                     </div>
 
-                    <div className="settings-tool-list builtin-tools-detail-list">
+                    <div className="tools-card-list">
                       {activeToolGroup.items.map((tool) => {
                         const isExpanded = expandedToolIDs.has(tool.id)
                         const detailsID = `builtin-tool-details-${tool.id}`
@@ -290,56 +290,56 @@ export function BuiltinToolsPage({
                           <article
                             key={tool.id}
                             className={[
-                              "settings-toggle-card",
-                              "settings-tool-card",
-                              "settings-tool-accordion",
+                              "tools-toggle-card",
+                              "tools-card",
+                              "tools-card-accordion",
                               tool.enabled ? "is-active" : "",
                               isExpanded ? "is-expanded" : "",
                             ].filter(Boolean).join(" ")}
                           >
-                            <div className="settings-tool-card-row">
+                            <div className="tools-card-row">
                               <button
-                                className="settings-tool-expander"
+                                className="tools-card-expander"
                                 type="button"
                                 aria-expanded={isExpanded}
                                 aria-controls={detailsID}
                                 aria-label={`${isExpanded ? "Hide" : "Show"} details for ${tool.title}`}
                                 onClick={() => toggleExpandedTool(tool.id)}
                               >
-                                <span className="settings-tool-expander-icon" aria-hidden="true">
+                                <span className="tools-card-expander-icon" aria-hidden="true">
                                   {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
                                 </span>
-                                <strong className="settings-tool-title">{tool.title}</strong>
-                                <span className="settings-tool-id">{tool.id}</span>
+                                <strong className="tools-card-title">{tool.title}</strong>
+                                <span className="tools-card-id">{tool.id}</span>
                               </button>
-                              <div className="settings-tool-row-actions">
-                                <span className="settings-tool-meta settings-tool-meta-inline">
-                                  <span className="settings-badge">{getBuiltinToolKindLabel(tool)}</span>
+                              <div className="tools-card-row-actions">
+                                <span className="tools-card-meta tools-card-meta-inline">
+                                  <span className="tools-badge">{getBuiltinToolKindLabel(tool)}</span>
                                   <span className={getBuiltinToolRiskBadgeClassName(tool)}>
                                     {getBuiltinToolRiskLabel(tool)}
                                   </span>
                                   {tool.aliases.length > 0 ? (
-                                    <span className="settings-badge">{tool.aliases.length} aliases</span>
+                                    <span className="tools-badge">{tool.aliases.length} aliases</span>
                                   ) : null}
                                 </span>
                                 <button
-                                  className="settings-tool-toggle-button"
+                                  className="tools-card-toggle-button"
                                   type="button"
                                   aria-pressed={tool.enabled}
                                   aria-label={`${tool.enabled ? "Disable" : "Enable"} ${tool.title}`}
                                   onClick={() => onBuiltinToolToggle(tool.id, !tool.enabled)}
                                 >
-                                  <span className="settings-toggle-control" aria-hidden="true">
-                                    <span className="settings-toggle-thumb" />
+                                  <span className="tools-toggle-control" aria-hidden="true">
+                                    <span className="tools-toggle-thumb" />
                                   </span>
                                 </button>
                               </div>
                             </div>
 
                             {isExpanded ? (
-                              <div className="settings-tool-card-details" id={detailsID}>
+                              <div className="tools-card-details" id={detailsID}>
                                 <p>{tool.description}</p>
-                                <dl className="settings-tool-detail-grid">
+                                <dl className="tools-card-detail-grid">
                                   <div>
                                     <dt>Tool ID</dt>
                                     <dd>{tool.id}</dd>
@@ -362,7 +362,7 @@ export function BuiltinToolsPage({
                   </section>
                 </>
               ) : (
-                <article className="settings-empty-state settings-detail-empty-state">
+                <article className="tools-empty-state tools-detail-empty-state">
                   <h3>No built-in tools</h3>
                   <p>The agent registry did not return any built-in tools.</p>
                 </article>

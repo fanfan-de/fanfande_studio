@@ -80,18 +80,6 @@ function groupDaysByDate(days: ActivityDay[]) {
   return grouped
 }
 
-function getAvailableYears(days: ActivityDay[]) {
-  const years = new Set<number>([new Date().getFullYear()])
-
-  for (const day of days) {
-    if (day.count > 0) {
-      years.add(Number(day.date.slice(0, 4)))
-    }
-  }
-
-  return Array.from(years).sort((a, b) => b - a)
-}
-
 function getMonthLabels(weeks: Date[][], year: number) {
   return weeks.flatMap((week, weekIndex) => {
     const monthStart = week.find(
@@ -202,17 +190,7 @@ export function GitActivitySection() {
     () => groupDaysByDate(activity.days),
     [activity.days],
   )
-  const yearOptions = useMemo(
-    () => getAvailableYears(activity.days),
-    [activity.days],
-  )
-  const [selectedYear, setSelectedYear] = useState(yearOptions[0])
-
-  useEffect(() => {
-    if (!yearOptions.includes(selectedYear)) {
-      setSelectedYear(yearOptions[0])
-    }
-  }, [selectedYear, yearOptions])
+  const selectedYear = new Date().getFullYear()
 
   const daysInYear = useMemo(
     () =>
@@ -271,17 +249,8 @@ export function GitActivitySection() {
               <strong>{activity.ownerLabel}</strong>
               <span className={syncClassName}>{syncLabel}</span>
             </div>
-            <div className="year-switcher" aria-label="选择年份">
-              {yearOptions.map((year) => (
-                <button
-                  className={year === selectedYear ? "is-active" : ""}
-                  key={year}
-                  onClick={() => setSelectedYear(year)}
-                  type="button"
-                >
-                  {year}
-                </button>
-              ))}
+            <div className="year-switcher" aria-label="当前年份">
+              <span className="is-active">{selectedYear}</span>
             </div>
           </div>
 

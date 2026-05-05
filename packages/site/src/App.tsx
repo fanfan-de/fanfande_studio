@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react"
+import type { MouseEvent } from "react"
 import {
   featureStories,
   navigationItems,
@@ -9,6 +11,156 @@ import { GitActivitySection } from "./GitActivity"
 
 const brandLogoBlack = "/brand-logo-black.svg"
 const brandLogoWhite = "/brand-logo-white.svg"
+const repositoryUrl = "https://github.com/fanfan-de/fanfande_studio"
+const latestReleaseApiUrl =
+  "https://api.github.com/repos/fanfan-de/fanfande_studio/releases/latest"
+const windowsInstallerFallbackUrl = `${repositoryUrl}/releases/latest/download/Fanfande-Studio-0.1.3-x64.exe`
+
+type GitHubReleaseAsset = {
+  browser_download_url?: unknown
+  name?: unknown
+}
+
+type GitHubRelease = {
+  assets?: unknown
+}
+
+function getGitHubRepoApiUrl(href: string) {
+  const match = href.match(/^https:\/\/github\.com\/([^/]+)\/([^/#?]+)/)
+
+  if (!match) return undefined
+
+  return `https://api.github.com/repos/${match[1]}/${match[2]}`
+}
+
+function getWindowsInstallerUrl(release: GitHubRelease) {
+  if (!Array.isArray(release.assets)) return undefined
+
+  const installer = release.assets.find((asset): asset is GitHubReleaseAsset => {
+    if (!asset || typeof asset !== "object") return false
+
+    const { browser_download_url: downloadUrl, name } =
+      asset as GitHubReleaseAsset
+
+    if (typeof downloadUrl !== "string" || typeof name !== "string") {
+      return false
+    }
+
+    const normalizedName = name.toLowerCase()
+
+    return (
+      normalizedName.endsWith(".exe") &&
+      normalizedName.includes("fanfande-studio") &&
+      normalizedName.includes("x64")
+    )
+  })
+
+  return typeof installer?.browser_download_url === "string"
+    ? installer.browser_download_url
+    : undefined
+}
+
+async function resolveLatestWindowsInstallerUrl() {
+  const response = await fetch(latestReleaseApiUrl, {
+    cache: "no-store",
+    headers: {
+      Accept: "application/vnd.github+json",
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`GitHub release request failed: ${response.status}`)
+  }
+
+  const downloadUrl = getWindowsInstallerUrl(
+    (await response.json()) as GitHubRelease,
+  )
+
+  if (!downloadUrl) {
+    throw new Error("No Windows installer asset found in latest release")
+  }
+
+  return downloadUrl
+}
+
+async function downloadLatestWindowsInstaller(
+  event: MouseEvent<HTMLAnchorElement>,
+) {
+  event.preventDefault()
+
+  try {
+    window.location.assign(await resolveLatestWindowsInstallerUrl())
+  } catch {
+    window.location.assign(windowsInstallerFallbackUrl)
+  }
+}
+
+function formatStarCount(count: number) {
+  if (count < 1000) return String(count)
+  if (count < 10000) return `${(count / 1000).toFixed(1)}K`
+
+  return `${Math.round(count / 1000)}K`
+}
+
+function StarIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="nav-star-icon"
+      focusable="false"
+      viewBox="0 0 24 24"
+    >
+      <path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2Z" />
+    </svg>
+  )
+}
+
+function GitHubStarCount({ href }: { href: string }) {
+  const [starCount, setStarCount] = useState<number | undefined>()
+
+  useEffect(() => {
+    const apiUrl = getGitHubRepoApiUrl(href)
+
+    if (!apiUrl) return
+
+    const controller = new AbortController()
+
+    fetch(apiUrl, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/vnd.github+json",
+      },
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`GitHub star request failed: ${response.status}`)
+        }
+
+        return response.json()
+      })
+      .then((data: { stargazers_count?: unknown }) => {
+        if (typeof data.stargazers_count === "number") {
+          setStarCount(data.stargazers_count)
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      controller.abort()
+    }
+  }, [href])
+
+  if (starCount === undefined) return null
+
+  return (
+    <span className="nav-star-count" aria-label={`${starCount} GitHub stars`}>
+      <span>[{formatStarCount(starCount)}</span>
+      <StarIcon />
+      <span>]</span>
+    </span>
+  )
+}
 
 function NavigationLink({
   href,
@@ -26,7 +178,8 @@ function NavigationLink({
       rel={external ? "noreferrer" : undefined}
       target={external ? "_blank" : undefined}
     >
-      {label}
+      <span>{label}</span>
+      {label === "GitHub" ? <GitHubStarCount href={href} /> : null}
     </a>
   )
 }
@@ -152,16 +305,18 @@ export function App() {
             <img className="hero-mark" src={brandLogoBlack} alt="" />
             <h1>Anybox</h1>
           </div>
-          <p>
-            开源通用 Agent
-          </p>
+          <p>开源，灵活的通用agent</p>
           <div className="hero-actions">
-            <a className="button button-primary" href="#workflow">
-              查看工作流
+            <a
+              className="button button-primary"
+              href={windowsInstallerFallbackUrl}
+              onClick={downloadLatestWindowsInstaller}
+            >
+              win下载
             </a>
-            <a className="button button-secondary" href="#capabilities">
-              了解能力
-            </a>
+            <p className="hero-platform-note">
+              当前为EA版本；mac，linux版本开发中
+            </p>
           </div>
         </div>
         <div className="hero-visual-grid">
@@ -173,7 +328,7 @@ export function App() {
 
       <section className="intro-section" id="capabilities">
         <p className="section-kicker">The best way to work with local agents</p>
-        <h2>不是再叠一个聊天窗口，而是把开发者和 Agent 协作收进稳定的桌面节奏。</h2>
+        <h2>从配置自由度、模型供应商到 Skills 管理，把 Agent 协作收进一套可掌控的桌面工作流。</h2>
       </section>
 
       <section className="feature-section" aria-label="核心能力">
@@ -199,7 +354,7 @@ export function App() {
           <p className="section-kicker">Connected surfaces</p>
           <h2>把桌面壳、Agent 运行时和工具系统接成 Anybox 的持续工作面。</h2>
           <p>
-            Anybox 的产品方向很清晰：本地优先、过程可见、执行闭环。后续可以在这里接入下载、内测表单、演示预约或版本更新。
+            Anybox 的产品方向很清晰：本地优先、配置开放、多供应商可接入，并把 Skills 作为团队经验沉淀和复用的核心模块。
           </p>
         </div>
         <div className="surface-list">
@@ -214,12 +369,16 @@ export function App() {
           <img src={brandLogoWhite} alt="" />
           <span>Anybox</span>
         </div>
-        <h2>先把 Anybox 用起来。</h2>
+        <h2>下载 Anybox Windows EA。</h2>
         <p>
-          下一步可以为 Anybox 接入真实下载地址、内测申请表或演示预约入口。当前页面已经适合继续打磨成公开产品官网。
+          当前 Windows x64 安装包从 GitHub 最新 Release 获取；mac 和 linux 版本仍在开发中。
         </p>
-        <a className="button button-primary" href="#top">
-          回到顶部
+        <a
+          className="button button-primary"
+          href={windowsInstallerFallbackUrl}
+          onClick={downloadLatestWindowsInstaller}
+        >
+          下载 Windows 安装包
         </a>
       </section>
 

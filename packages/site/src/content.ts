@@ -1,8 +1,7 @@
 export const navigationItems = [
-  { href: "#top", label: "简介" },
   { href: "#capabilities", label: "功能" },
-  { href: "#updates", label: "更新" },
-  { href: "#workflow", label: "学习" },
+  { href: "#updates", label: "更新日志" },
+  { href: "#workflow", label: "文档" },
   { href: "#download", label: "下载" },
   {
     href: "https://github.com/fanfan-de/fanfande_studio",
@@ -12,29 +11,29 @@ export const navigationItems = [
 ]
 
 export const proofPoints = [
-  "本地项目上下文",
-  "Agent 执行过程可见",
-  "终端与权限闭环",
+  "高可配置，高自由度",
+  "多供应商支持",
+  "Skills 创建与管理",
 ]
 
 export const featureStories = [
   {
-    title: "为真实工程任务准备的本地工作台",
-    body: "Anybox 从项目目录开始组织上下文，把文件、会话、终端和模型配置放在同一条工作流里。你不需要反复解释项目结构，也不需要在多个窗口之间搬运信息。",
-    mediaTitle: "Workspace context",
-    mediaItems: ["项目目录", "会话历史", "模型配置", "文件反馈"],
+    title: "高可配置，高自由度的 Agent 工作台",
+    body: "Anybox 把模型、工具、权限、终端和项目上下文拆成可配置的模块。你可以按项目习惯调整工作流，选择需要开放给 Agent 的能力，并在关键步骤随时接管。",
+    mediaTitle: "Configurable workspace",
+    mediaItems: ["模型配置", "工具开关", "权限策略", "项目上下文"],
   },
   {
-    title: "把 Agent 的执行过程变成可检查的界面",
-    body: "不只显示最终回答。思考、工具调用、补丁、错误和权限确认都会留在桌面工作区里，方便你随时接管、追问或撤回。",
-    mediaTitle: "Execution trace",
-    mediaItems: ["reasoning", "tool call", "permission", "patch"],
+    title: "多供应商支持，不被单一模型入口锁住",
+    body: "通过统一的供应商配置层，Anybox 可以接入不同模型服务和运行环境。团队能在同一套桌面体验里切换、测试和组合模型，根据任务成本、速度和效果选择合适后端。",
+    mediaTitle: "Provider layer",
+    mediaItems: ["供应商目录", "模型列表", "连接测试", "项目级配置"],
   },
   {
-    title: "让终端、权限和多工具协作保持一个节奏",
-    body: "当命令行输出、审批链路和 Agent 会话在同一块界面里发生，开发者可以更快判断下一步，而不是被切换成本打断。",
-    mediaTitle: "Local runtime",
-    mediaItems: ["PTY terminal", "MCP tools", "Skills", "Git"],
+    title: "内置 Skills 创建和管理模块",
+    body: "Skills 可以把团队经验、项目约定和常用流程沉淀成可复用能力。Anybox 提供创建、编辑、预览、选择和管理入口，让 Agent 在不同项目里带着合适的上下文工作。",
+    mediaTitle: "Skills manager",
+    mediaItems: ["创建 Skill", "元数据预览", "项目选择", "全局管理"],
   },
 ]
 

@@ -99,12 +99,30 @@ a {
 }
 
 .nav-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   transition: color 160ms ease;
 }
 
 .nav-link:hover,
 .nav-link:focus-visible {
   color: var(--text);
+}
+
+.nav-star-count {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.92em;
+  font-weight: 500;
+}
+
+.nav-star-icon {
+  width: 0.82em;
+  height: 0.82em;
+  margin-left: 2px;
+  fill: currentColor;
 }
 
 .header-action {
@@ -174,6 +192,17 @@ a {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 24px;
+}
+
+.hero-actions .hero-platform-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.96rem;
+  font-weight: 650;
+  line-height: 1.5;
 }
 
 .button {
@@ -533,7 +562,8 @@ a {
   gap: 6px;
 }
 
-.year-switcher button {
+.year-switcher button,
+.year-switcher span {
   min-height: 34px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -543,12 +573,16 @@ a {
   font: inherit;
   font-size: 0.86rem;
   font-weight: 720;
+}
+
+.year-switcher button {
   cursor: pointer;
 }
 
 .year-switcher button:hover,
 .year-switcher button:focus-visible,
-.year-switcher button.is-active {
+.year-switcher button.is-active,
+.year-switcher span.is-active {
   border-color: var(--text);
   background: var(--text);
   color: var(--bg);
