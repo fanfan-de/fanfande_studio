@@ -27,6 +27,7 @@ import { createWorkbenchLayoutFromLegacyPanes } from "./workbench/core"
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
   agentDefaultDirectory: string
+  isRuntimeDebugEnabled: boolean
   platform: string
 }
 
@@ -60,6 +61,7 @@ function createInitialWorkspaceState(shouldUseSeedData: boolean) {
 export function useAgentWorkspace({
   agentConnected,
   agentDefaultDirectory,
+  isRuntimeDebugEnabled,
   platform,
 }: UseAgentWorkspaceOptions) {
   const workspaceStoreRef = useRef<WorkspaceStoreApi | null>(null)
@@ -298,6 +300,7 @@ export function useAgentWorkspace({
     conversationVersionRef,
     conversations,
     historyRequestRef,
+    isRuntimeDebugEnabled,
     openCanvasSessionIDs,
     onSessionCanvasActivity: markSessionCanvasUnread,
     pendingStreamsRef,
@@ -534,18 +537,20 @@ export function useAgentWorkspace({
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handlePreviewAddComment,
+    handlePreviewBack,
     handlePreviewDeleteComment,
     handlePreviewDraftUrlChange,
+    handlePreviewForward,
     handlePreviewInsertCommentsIntoDraft,
     handlePreviewModeChange,
     handlePreviewOpen,
     handlePreviewOpenExternal,
+    handlePreviewOpenUrl,
     handlePreviewReload,
     handleWorkspaceFileCommentCancel,
     handleWorkspaceFileCommentChange,
     handleWorkspaceFileCommentConfirm,
     handleWorkspaceFileCommentStart,
-    handleWorkspaceFileCommentSubmit,
     handleWorkspaceFileQueryChange,
     handleWorkspaceFileSelect,
     handleActiveSessionDiffFileRestore,
@@ -662,18 +667,20 @@ export function useAgentWorkspace({
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handlePreviewAddComment,
+    handlePreviewBack,
     handlePreviewDeleteComment,
     handlePreviewDraftUrlChange,
+    handlePreviewForward,
     handlePreviewInsertCommentsIntoDraft,
     handlePreviewModeChange,
     handlePreviewOpen,
     handlePreviewOpenExternal,
+    handlePreviewOpenUrl,
     handlePreviewReload,
     handleWorkspaceFileCommentCancel,
     handleWorkspaceFileCommentChange,
     handleWorkspaceFileCommentConfirm,
     handleWorkspaceFileCommentStart,
-    handleWorkspaceFileCommentSubmit,
     handleWorkspaceFileQueryChange,
     handleWorkspaceFileSelect,
     handleProjectCreateSession,

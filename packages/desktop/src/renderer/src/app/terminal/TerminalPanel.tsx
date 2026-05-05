@@ -10,6 +10,7 @@ interface TerminalPanelProps {
   colorMode: ColorMode
   isOpen: boolean
   panelHeight: number
+  showToggleButton?: boolean
   sessions: TerminalSessionRecord[]
   onCloseTerminal: (ptyID: string) => void | Promise<void>
   onCreateTerminal: () => void | Promise<void>
@@ -35,6 +36,7 @@ export const TerminalPanel = memo(function TerminalPanel({
   colorMode,
   isOpen,
   panelHeight,
+  showToggleButton = true,
   sessions,
   onCloseTerminal,
   onCreateTerminal,
@@ -141,6 +143,7 @@ export const TerminalPanel = memo(function TerminalPanel({
 
       <TerminalTabs
         activePtyID={activeSession?.ptyID ?? null}
+        showToggleButton={showToggleButton}
         sessions={sessions}
         onCloseTerminal={onCloseTerminal}
         onCreateTerminal={onCreateTerminal}

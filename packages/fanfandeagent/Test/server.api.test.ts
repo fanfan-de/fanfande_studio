@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import "./sqlite.cleanup.ts"
 import { $ } from "bun"
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServerApp } from "#server/server.ts"
@@ -360,6 +360,8 @@ type PromptPresetSummaryEnvelope = JsonEnvelope<
     hasOverride: boolean
     editable: boolean
     sourcePath?: string
+    filePath?: string
+    root?: string
   }>
 >
 
@@ -371,6 +373,8 @@ type PromptPresetDocumentEnvelope = JsonEnvelope<{
   hasOverride: boolean
   editable: boolean
   sourcePath?: string
+  filePath?: string
+  root?: string
   content: string
 }>
 
@@ -379,6 +383,23 @@ type PromptPresetSelectionEnvelope = JsonEnvelope<{
   planModePromptPresetID: string
   sideChatPromptPresetID: string
 }>
+
+async function withTempPromptRoot<T>(fn: (root: string) => Promise<T>) {
+  const previousPromptRoot = process.env.FanFande_PROMPTS_ROOT
+  const root = await mkdtemp(join(tmpdir(), "fanfande-prompts-"))
+  process.env.FanFande_PROMPTS_ROOT = root
+
+  try {
+    return await fn(root)
+  } finally {
+    if (previousPromptRoot === undefined) {
+      delete process.env.FanFande_PROMPTS_ROOT
+    } else {
+      process.env.FanFande_PROMPTS_ROOT = previousPromptRoot
+    }
+    await rm(root, { recursive: true, force: true })
+  }
+}
 
 const modelsDevFixture = {
   deepseek: {
@@ -2359,7 +2380,56 @@ describe("server api", () => {
     }
   })
 
+  test("prompt preset routes should lazily migrate legacy prompt config into files", async () => {
+    await withTempPromptRoot(async (promptRoot) => {
+      const app = createServerApp()
+      const legacyCustomPresetID = "custom-legacy-prompt"
+      const legacyPlanPrompt = "Legacy plan prompt migrated from config."
+      const legacyCustomPrompt = "Legacy custom prompt migrated from config."
+
+      try {
+        await Config.setPromptOverride(Config.GLOBAL_CONFIG_ID, "plan-mode", legacyPlanPrompt)
+        await Config.setCustomPromptPreset(Config.GLOBAL_CONFIG_ID, legacyCustomPresetID, {
+          label: "Legacy prompt",
+          content: legacyCustomPrompt,
+          description: "Migrated legacy custom prompt.",
+        })
+
+        const listResponse = await app.request("http://localhost/api/prompts")
+        const listBody = (await listResponse.json()) as PromptPresetSummaryEnvelope
+
+        expect(listResponse.status).toBe(200)
+        expect(listBody.success).toBe(true)
+        const planPreset = listBody.data?.find((preset) => preset.id === "plan-mode")
+        const customPreset = listBody.data?.find((preset) => preset.id === legacyCustomPresetID)
+        expect(planPreset).toMatchObject({
+          id: "plan-mode",
+          source: "bundled",
+          hasOverride: true,
+          root: promptRoot,
+          filePath: join(promptRoot, "bundled", "plan-mode.md"),
+        })
+        expect(customPreset).toMatchObject({
+          id: legacyCustomPresetID,
+          label: "Legacy prompt",
+          source: "custom",
+          root: promptRoot,
+        })
+        expect(customPreset?.filePath).toContain(join("custom", "custom-legacy-prompt.md"))
+
+        expect(await readFile(planPreset!.filePath!, "utf8")).toContain(legacyPlanPrompt)
+        expect(await readFile(customPreset!.filePath!, "utf8")).toContain(legacyCustomPrompt)
+        expect(await Config.getPromptOverrides(Config.GLOBAL_CONFIG_ID)).toEqual({})
+        expect(await Config.getCustomPromptPresets(Config.GLOBAL_CONFIG_ID)).toEqual({})
+      } finally {
+        await Config.clearPromptOverride(Config.GLOBAL_CONFIG_ID, "plan-mode")
+        await Config.removeCustomPromptPreset(Config.GLOBAL_CONFIG_ID, legacyCustomPresetID)
+      }
+    })
+  })
+
   test("prompt preset routes should manage assignments, custom presets, resets, and runtime overrides", async () => {
+    await withTempPromptRoot(async (promptRoot) => {
     const app = createServerApp()
     const customPlanPrompt = "Custom plan-mode prompt for runtime verification."
     const customSystemPrompt = "Custom system prompt selected from the preset library."
@@ -2385,6 +2455,8 @@ describe("server api", () => {
             id: "system-default",
             source: "bundled",
             hasOverride: false,
+            root: promptRoot,
+            filePath: join(promptRoot, "bundled", "system-default.md"),
           }),
           expect.objectContaining({
             id: "plan-mode",
@@ -2403,6 +2475,9 @@ describe("server api", () => {
           }),
         ]),
       )
+      const systemPreset = listBody.data?.find((preset) => preset.id === "system-default")
+      expect(systemPreset?.sourcePath).toBe(systemPreset?.filePath)
+      expect(await readFile(systemPreset!.filePath!, "utf8")).toContain("id: system-default")
 
       const selectionResponse = await app.request("http://localhost/api/prompts/selection")
       const selectionBody = (await selectionResponse.json()) as PromptPresetSelectionEnvelope
@@ -2431,7 +2506,9 @@ describe("server api", () => {
         label: "Focus preset",
         source: "custom",
         content: customSystemPrompt,
+        root: promptRoot,
       })
+      expect(createBody.data?.filePath).toContain(join("custom", "custom-focus-preset.md"))
       customPresetID = createBody.data?.id ?? null
       expect(customPresetID).toBeTruthy()
       const customPresetIDValue = customPresetID!
@@ -2591,6 +2668,7 @@ describe("server api", () => {
         sideChatPromptPresetID: "side-chat",
       })
     }
+    })
   })
 
   test("POST /api/projects should track extra git worktrees in sandboxes", async () => {

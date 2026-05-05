@@ -1,4 +1,10 @@
-import type { PreviewComment } from "../types"
+import type { PreviewComment, PreviewErrorKind } from "../types"
+
+export interface PreviewUrlNormalizeResult {
+  errorKind: PreviewErrorKind | null
+  errorMessage: string | null
+  normalizedUrl: string | null
+}
 
 function getPreviewHostLabel(url: string) {
   try {
@@ -20,10 +26,11 @@ export function buildPreviewCommentReferenceTitle(comment: PreviewComment) {
   return `${readPreviewTargetLabel(comment)} - ${comment.pageUrl ?? comment.url}`
 }
 
-export function normalizePreviewUrlInput(input: string) {
+export function normalizePreviewUrlInput(input: string): PreviewUrlNormalizeResult {
   const trimmedInput = input.trim()
   if (!trimmedInput) {
     return {
+      errorKind: "empty-url",
       errorMessage: "Enter a preview URL such as http://localhost:3000 or https://example.com.",
       normalizedUrl: null,
     }
@@ -40,17 +47,20 @@ export function normalizePreviewUrlInput(input: string) {
     const parsedUrl = new URL(candidate)
     if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
       return {
+        errorKind: "unsupported-protocol",
         errorMessage: "Preview only supports http:// or https:// URLs.",
         normalizedUrl: null,
       }
     }
 
     return {
+      errorKind: null,
       errorMessage: null,
       normalizedUrl: parsedUrl.toString(),
     }
   } catch {
     return {
+      errorKind: "invalid-url",
       errorMessage: "That preview URL could not be parsed.",
       normalizedUrl: null,
     }

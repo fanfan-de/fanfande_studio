@@ -237,6 +237,24 @@ export function SettingsRoutes() {
     return ok(c, await SettingsUseCase.createPromptPreset(payload))
   })
 
+  app.post("/prompts/url/preview", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.PreviewPromptUrlInstallBody,
+      "Body must contain a non-empty 'source'.",
+    )
+    return ok(c, await SettingsUseCase.previewPromptUrlInstall(payload))
+  })
+
+  app.post("/prompts/url/install", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SettingsUseCase.InstallPromptUrlPreviewBody,
+      "Body must contain a non-empty 'previewID' and a 'promptIDs' string array.",
+    )
+    return ok(c, await SettingsUseCase.installPromptUrlPreview(payload))
+  })
+
   app.get("/prompts/:presetID", async (c) =>
     ok(c, await SettingsUseCase.readPromptPreset(c.req.param("presetID"))),
   )

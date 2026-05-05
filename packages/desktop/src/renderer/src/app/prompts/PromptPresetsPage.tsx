@@ -1,10 +1,12 @@
-import { type ChangeEvent, type ReactNode, useState } from "react"
+import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useRef, useState } from "react"
 import {
   ChevronDownIcon,
-  ChevronRightIcon,
   CloseIcon,
+  DeleteIcon,
+  DownloadIcon,
   FileTextIcon,
   FolderIcon,
+  FolderOpenIcon,
   PlusIcon,
   SearchIcon,
 } from "../icons"
@@ -14,6 +16,7 @@ import type {
   PromptPresetDocument,
   PromptPresetSelection,
   PromptPresetSummary,
+  PromptUrlInstallPreview,
 } from "../types"
 
 type PromptEditorMode = "edit" | "preview"
@@ -27,34 +30,44 @@ interface PromptEditorMessage {
 interface PromptPresetsPageProps {
   deletingPromptPresetID: string | null
   isCreatingPromptPreset: boolean
+  isInstallingPromptUrlPrompts: boolean
   isLoadingPromptPreset: boolean
   isLoadingPrompts: boolean
-  isPlanModePromptPresetDirty: boolean
+  isPreviewingPromptUrlInstall: boolean
   isPromptDirty: boolean
+  isPromptUrlInstallDialogOpen: boolean
   isSavingPromptPresetSelection: boolean
-  isSideChatPromptPresetDirty: boolean
-  isSystemPromptPresetDirty: boolean
   message: PromptEditorMessage | null
   promptDraftContent: string
   promptDraftLabel: string
   promptLoadError: string | null
+  promptRoot: string
   promptPresets: PromptPresetSummary[]
   promptPresetSelection: PromptPresetSelection | null
+  promptUrlInstallMessage: PromptEditorMessage | null
+  promptUrlInstallPreview: PromptUrlInstallPreview | null
+  promptUrlInstallSource: string
   resettingPromptPresetID: string | null
   savingPromptPresetID: string | null
-  savingPromptPresetSelectionField: keyof PromptPresetSelection | null
   selectedPromptPreset: PromptPresetDocument | null
+  selectedPromptUrlInstallIDs: string[]
   windowControls?: ReactNode
   onCreatePromptPreset: () => boolean | Promise<boolean>
-  onDeletePromptPreset: () => boolean | Promise<boolean>
+  onDeletePromptPreset: (presetID?: string) => boolean | Promise<boolean>
   onDismissMessage: () => void
+  onInstallPromptsFromUrl: () => boolean | Promise<boolean>
   onPromptDraftChange: (value: string) => void
   onPromptDraftLabelChange: (value: string) => void
   onPromptPresetSelect: (presetID: string) => boolean | Promise<boolean>
-  onPromptPresetSelectionChange: (field: keyof PromptPresetSelection, value: string) => void
+  onPromptPresetSelectionChange: (field: keyof PromptPresetSelection, value: string) => boolean | Promise<boolean>
+  onPromptUrlInstallDialogClose: () => void
+  onPromptUrlInstallDialogOpen: () => void
+  onPromptUrlInstallPromptToggle: (promptID: string) => void
+  onPromptUrlInstallSourceChange: (value: string) => void
+  onPreviewPromptUrlInstall: () => boolean | Promise<boolean>
+  onOpenPromptFolder: () => boolean | Promise<boolean>
   onResetPromptPreset: () => boolean | Promise<boolean>
   onSavePromptPreset: () => boolean | Promise<boolean>
-  onSavePromptPresetSelection: (field?: keyof PromptPresetSelection) => boolean | Promise<boolean>
 }
 
 function getPromptPresetSourceLabel(source: PromptPresetSummary["source"]) {
@@ -66,7 +79,7 @@ function getPromptPresetFolderLabel(source: PromptPresetSummary["source"]) {
 }
 
 function getPromptPresetPathLabel(preset: PromptPresetSummary) {
-  return preset.sourcePath ?? (preset.source === "custom" ? "Custom preset" : "Bundled preset")
+  return preset.filePath ?? preset.sourcePath ?? (preset.source === "custom" ? "Custom preset" : "Bundled preset")
 }
 
 function getPromptPresetUsageLabels(
@@ -107,45 +120,199 @@ function doesPromptPresetMatchSearch(
     preset.label,
     preset.description,
     preset.id,
+    preset.filePath ?? "",
     preset.sourcePath ?? "",
+    preset.root ?? "",
     getPromptPresetSourceLabel(preset.source),
   ].some((value) => value.toLowerCase().includes(normalizedSearchTerm))
+}
+
+interface PromptUrlInstallDialogProps {
+  installMessage: PromptEditorMessage | null
+  installPreview: PromptUrlInstallPreview | null
+  installSource: string
+  isInstalling: boolean
+  isPreviewing: boolean
+  selectedPromptIDs: string[]
+  onClose: () => void
+  onInstall: () => boolean | Promise<boolean>
+  onPreview: () => boolean | Promise<boolean>
+  onSourceChange: (value: string) => void
+  onTogglePrompt: (promptID: string) => void
+}
+
+function PromptUrlInstallDialog({
+  installMessage,
+  installPreview,
+  installSource,
+  isInstalling,
+  isPreviewing,
+  selectedPromptIDs,
+  onClose,
+  onInstall,
+  onPreview,
+  onSourceChange,
+  onTogglePrompt,
+}: PromptUrlInstallDialogProps) {
+  const isBusy = isPreviewing || isInstalling
+  const selectedCount = selectedPromptIDs.length
+
+  function handlePreviewSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void onPreview()
+  }
+
+  return (
+    <div className="global-skills-git-install-overlay">
+      <section className="global-skills-git-install-modal" role="dialog" aria-modal="true" aria-label="Install prompts from URL">
+        <header className="global-skills-git-install-header">
+          <div>
+            <h3>Install Prompts from URL</h3>
+            <p>Preview the URL, then select the prompts to install.</p>
+          </div>
+          <button
+            className="row-action global-skills-git-install-close"
+            aria-label="Close prompt URL install"
+            disabled={isBusy}
+            title="Close"
+            type="button"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        </header>
+
+        <form className="global-skills-git-install-form" onSubmit={handlePreviewSubmit}>
+          <label className="global-skills-git-install-label" htmlFor="prompt-url-install-source">
+            URL
+          </label>
+          <input
+            id="prompt-url-install-source"
+            className="global-skills-git-install-input"
+            aria-label="Prompt resource URL"
+            autoComplete="off"
+            disabled={isBusy}
+            placeholder="github.com/user/repo, GitHub tree URL, or direct .md/.txt URL"
+            type="text"
+            value={installSource}
+            onChange={(event) => onSourceChange(event.target.value)}
+          />
+          <div className="global-skills-git-install-help">
+            <span>Supported formats:</span>
+            <code>github.com/user/repo</code>
+            <code>https://github.com/user/repo/tree/main/prompts</code>
+            <code>https://github.com/user/repo/blob/main/prompts/system.md</code>
+            <code>https://example.com/prompts/system.md</code>
+          </div>
+          <div className="global-skills-git-install-actions">
+            <button className="secondary-button" disabled={isBusy || !installSource.trim()} type="submit">
+              {isPreviewing ? "Previewing..." : "Preview"}
+            </button>
+          </div>
+        </form>
+
+        {installMessage ? (
+          <p className={`global-skills-git-install-message is-${installMessage.tone}`} role={installMessage.tone === "error" ? "alert" : "status"}>
+            {installMessage.text}
+          </p>
+        ) : null}
+
+        {installPreview ? (
+          <section className="global-skills-git-install-preview" aria-label="Prompt URL install preview">
+            <div className="global-skills-git-install-preview-meta">
+              <span>{installPreview.source}</span>
+            </div>
+            <div className="global-skills-git-install-list">
+              {installPreview.prompts.map((prompt) => {
+                const checked = selectedPromptIDs.includes(prompt.id)
+                return (
+                  <label
+                    key={prompt.id}
+                    className={prompt.available ? "global-skills-git-install-skill" : "global-skills-git-install-skill is-disabled"}
+                  >
+                    <input
+                      checked={checked}
+                      disabled={!prompt.available || isBusy}
+                      type="checkbox"
+                      onChange={() => onTogglePrompt(prompt.id)}
+                    />
+                    <span className="global-skills-git-install-skill-body">
+                      <strong>{prompt.label}</strong>
+                      <span>{prompt.description}</span>
+                      <code>{prompt.sourcePath}</code>
+                      {prompt.reason ? <em>{prompt.reason}</em> : null}
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        <footer className="global-skills-git-install-footer">
+          <button className="secondary-button" disabled={isBusy} type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="primary-button"
+            disabled={!installPreview || selectedCount === 0 || isBusy}
+            type="button"
+            onClick={() => void onInstall()}
+          >
+            {isInstalling ? "Installing..." : `Install${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+          </button>
+        </footer>
+      </section>
+    </div>
+  )
 }
 
 export function PromptPresetsPage({
   deletingPromptPresetID,
   isCreatingPromptPreset,
+  isInstallingPromptUrlPrompts,
   isLoadingPromptPreset,
   isLoadingPrompts,
-  isPlanModePromptPresetDirty,
+  isPreviewingPromptUrlInstall,
   isPromptDirty,
+  isPromptUrlInstallDialogOpen,
   isSavingPromptPresetSelection,
-  isSideChatPromptPresetDirty,
-  isSystemPromptPresetDirty,
   message,
   promptDraftContent,
   promptDraftLabel,
   promptLoadError,
+  promptRoot,
   promptPresets,
   promptPresetSelection,
+  promptUrlInstallMessage,
+  promptUrlInstallPreview,
+  promptUrlInstallSource,
   resettingPromptPresetID,
   savingPromptPresetID,
-  savingPromptPresetSelectionField,
   selectedPromptPreset,
+  selectedPromptUrlInstallIDs,
   windowControls,
   onCreatePromptPreset,
   onDeletePromptPreset,
   onDismissMessage,
+  onInstallPromptsFromUrl,
   onPromptDraftChange,
   onPromptDraftLabelChange,
   onPromptPresetSelect,
   onPromptPresetSelectionChange,
+  onPromptUrlInstallDialogClose,
+  onPromptUrlInstallDialogOpen,
+  onPromptUrlInstallPromptToggle,
+  onPromptUrlInstallSourceChange,
+  onPreviewPromptUrlInstall,
+  onOpenPromptFolder,
   onResetPromptPreset,
   onSavePromptPreset,
-  onSavePromptPresetSelection,
 }: PromptPresetsPageProps) {
   const [promptEditorMode, setPromptEditorMode] = useState<PromptEditorMode>("edit")
   const [promptSearchTerm, setPromptSearchTerm] = useState("")
+  const [isInstallMenuOpen, setIsInstallMenuOpen] = useState(false)
+  const installMenuRef = useRef<HTMLDivElement | null>(null)
   const [expandedPromptPresetFolders, setExpandedPromptPresetFolders] = useState<PromptPresetFolderID[]>([
     "bundled",
     "custom",
@@ -194,6 +361,28 @@ export function PromptPresetsPage({
     normalizedPromptSearchTerm ? folder.presets.length > 0 : true,
   )
   const isPromptSearchActive = normalizedPromptSearchTerm.length > 0
+  const isInstallButtonDisabled = isCreatingPromptPreset || isPreviewingPromptUrlInstall || isInstallingPromptUrlPrompts
+
+  useEffect(() => {
+    if (!isInstallMenuOpen) return
+
+    function handlePointerDown(event: globalThis.PointerEvent) {
+      if (installMenuRef.current?.contains(event.target as Node | null)) return
+      setIsInstallMenuOpen(false)
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return
+      setIsInstallMenuOpen(false)
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown)
+    window.addEventListener("keydown", handleKeyDown)
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown)
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [isInstallMenuOpen])
 
   function handlePromptPresetSelection(presetID: string) {
     if (presetID === selectedPromptPreset?.id) return
@@ -218,6 +407,16 @@ export function PromptPresetsPage({
     }
 
     void onCreatePromptPreset()
+  }
+
+  function handleInstallMenuToggle() {
+    if (isInstallButtonDisabled) return
+    setIsInstallMenuOpen((current) => !current)
+  }
+
+  function handleInstallFromUrl() {
+    setIsInstallMenuOpen(false)
+    onPromptUrlInstallDialogOpen()
   }
 
   function handlePromptFolderToggle(folderID: PromptPresetFolderID) {
@@ -292,7 +491,7 @@ export function PromptPresetsPage({
                         value={promptPresetSelection?.systemPromptPresetID ?? ""}
                         disabled={!promptPresetSelection || isSavingPromptPresetSelection}
                         onChange={(event) =>
-                          onPromptPresetSelectionChange("systemPromptPresetID", event.target.value)
+                          void onPromptPresetSelectionChange("systemPromptPresetID", event.target.value)
                         }
                       >
                         {promptPresetOptions.map((preset) => (
@@ -301,15 +500,6 @@ export function PromptPresetsPage({
                           </option>
                         ))}
                       </select>
-                      <button
-                        className="secondary-button"
-                        type="button"
-                        aria-label="Confirm system prompt preset"
-                        disabled={!isSystemPromptPresetDirty || isSavingPromptPresetSelection}
-                        onClick={() => void onSavePromptPresetSelection("systemPromptPresetID")}
-                      >
-                        {savingPromptPresetSelectionField === "systemPromptPresetID" ? "Saving..." : "Confirm"}
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -328,7 +518,7 @@ export function PromptPresetsPage({
                         value={promptPresetSelection?.planModePromptPresetID ?? ""}
                         disabled={!promptPresetSelection || isSavingPromptPresetSelection}
                         onChange={(event) =>
-                          onPromptPresetSelectionChange("planModePromptPresetID", event.target.value)
+                          void onPromptPresetSelectionChange("planModePromptPresetID", event.target.value)
                         }
                       >
                         {promptPresetOptions.map((preset) => (
@@ -337,15 +527,6 @@ export function PromptPresetsPage({
                           </option>
                         ))}
                       </select>
-                      <button
-                        className="secondary-button"
-                        type="button"
-                        aria-label="Confirm plan mode prompt preset"
-                        disabled={!isPlanModePromptPresetDirty || isSavingPromptPresetSelection}
-                        onClick={() => void onSavePromptPresetSelection("planModePromptPresetID")}
-                      >
-                        {savingPromptPresetSelectionField === "planModePromptPresetID" ? "Saving..." : "Confirm"}
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -364,7 +545,7 @@ export function PromptPresetsPage({
                         value={promptPresetSelection?.sideChatPromptPresetID ?? ""}
                         disabled={!promptPresetSelection || isSavingPromptPresetSelection}
                         onChange={(event) =>
-                          onPromptPresetSelectionChange("sideChatPromptPresetID", event.target.value)
+                          void onPromptPresetSelectionChange("sideChatPromptPresetID", event.target.value)
                         }
                       >
                         {promptPresetOptions.map((preset) => (
@@ -373,15 +554,6 @@ export function PromptPresetsPage({
                           </option>
                         ))}
                       </select>
-                      <button
-                        className="secondary-button"
-                        type="button"
-                        aria-label="Confirm side chat prompt preset"
-                        disabled={!isSideChatPromptPresetDirty || isSavingPromptPresetSelection}
-                        onClick={() => void onSavePromptPresetSelection("sideChatPromptPresetID")}
-                      >
-                        {savingPromptPresetSelectionField === "sideChatPromptPresetID" ? "Saving..." : "Confirm"}
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -390,18 +562,56 @@ export function PromptPresetsPage({
 
             <div className="settings-services-layout settings-prompts-layout">
               <div className="settings-service-list-panel settings-prompt-library-panel">
-                <div className="settings-prompt-section-bar prompt-presets-navigator-bar">
-                  <h3>Files</h3>
-                  <button
-                    className="secondary-button prompt-presets-new-button"
-                    type="button"
-                    aria-label="New"
-                    disabled={isCreatingPromptPreset}
-                    onClick={handlePromptPresetCreate}
-                  >
-                    <PlusIcon />
-                    <span>{isCreatingPromptPreset ? "Creating..." : "New"}</span>
-                  </button>
+                <div className="settings-prompt-section-bar prompt-presets-navigator-bar global-skills-section-bar">
+                  <div className="prompt-presets-navigator-actions global-skills-section-actions">
+                    <button
+                      className="secondary-button global-skills-open-folder-button prompt-presets-open-button"
+                      type="button"
+                      aria-label="Open prompts folder"
+                      title={promptRoot || "Prompts folder"}
+                      disabled={!promptRoot.trim()}
+                      onClick={() => void onOpenPromptFolder()}
+                    >
+                      <FolderIcon />
+                      <span>打开文件位置</span>
+                    </button>
+                    <div className="global-skills-install-menu-shell" ref={installMenuRef}>
+                      <button
+                        className={
+                          isInstallMenuOpen
+                            ? "secondary-button global-skills-install-button prompt-presets-install-button is-open"
+                            : "secondary-button global-skills-install-button prompt-presets-install-button"
+                        }
+                        aria-expanded={isInstallMenuOpen}
+                        aria-haspopup="menu"
+                        aria-label="Install prompt"
+                        disabled={isInstallButtonDisabled}
+                        title="Install prompt"
+                        type="button"
+                        onClick={handleInstallMenuToggle}
+                      >
+                        <DownloadIcon />
+                        <span>{isInstallingPromptUrlPrompts ? "Installing..." : "Install"}</span>
+                        <ChevronDownIcon />
+                      </button>
+                      {isInstallMenuOpen ? (
+                        <div
+                          className="global-skills-install-menu prompt-presets-install-menu"
+                          role="menu"
+                          aria-label="Install prompt options"
+                        >
+                          <button
+                            className="global-skills-install-menu-item"
+                            role="menuitem"
+                            type="button"
+                            onClick={handleInstallFromUrl}
+                          >
+                            From URL
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="settings-service-list-body prompt-presets-tree-body">
@@ -441,11 +651,8 @@ export function PromptPresetsPage({
                                 type="button"
                                 onClick={() => handlePromptFolderToggle(folder.id)}
                               >
-                                <span className="skill-tree-leading" aria-hidden="true">
-                                  {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                                </span>
                                 <span className="skill-tree-role-icon is-folder" aria-hidden="true">
-                                  <FolderIcon />
+                                  {isExpanded ? <FolderOpenIcon /> : <FolderIcon />}
                                 </span>
                                 <span className="skill-tree-label">{folder.label}</span>
                                 <span className="prompt-tree-count">{folder.presets.length}</span>
@@ -458,30 +665,48 @@ export function PromptPresetsPage({
                                   folder.presets.map((preset) => {
                                     const isActive = preset.id === selectedPromptPreset?.id
                                     const usageLabels = getPromptPresetUsageLabels(preset.id, promptPresetSelection)
+                                    const isDeleting = deletingPromptPresetID === preset.id
 
                                     return (
                                       <div key={preset.id} className="skill-tree-item skill-tree-item-file prompt-tree-file">
-                                        <button
-                                          className={isActive ? "skill-tree-row is-active" : "skill-tree-row"}
-                                          aria-label={preset.label}
-                                          aria-pressed={isActive}
-                                          title={getPromptPresetPathLabel(preset)}
-                                          type="button"
-                                          onClick={() => handlePromptPresetSelection(preset.id)}
-                                        >
-                                          <span className="skill-tree-role-icon is-skill" aria-hidden="true">
-                                            <FileTextIcon />
-                                          </span>
-                                          <span className="skill-tree-label">{preset.label}</span>
-                                          <span className="prompt-tree-row-badges" aria-hidden="true">
-                                            {usageLabels.map((label) => (
-                                              <span key={`${preset.id}-${label}`} className="settings-badge is-highlight">
-                                                {label}
-                                              </span>
-                                            ))}
-                                            {preset.hasOverride ? <span className="settings-badge is-warning">Edited</span> : null}
-                                          </span>
-                                        </button>
+                                        <div className="skill-tree-row-shell">
+                                          <button
+                                            className={isActive ? "skill-tree-row is-active" : "skill-tree-row"}
+                                            aria-label={preset.label}
+                                            aria-pressed={isActive}
+                                            title={getPromptPresetPathLabel(preset)}
+                                            type="button"
+                                            onClick={() => handlePromptPresetSelection(preset.id)}
+                                          >
+                                            <span className="skill-tree-role-icon is-skill" aria-hidden="true">
+                                              <FileTextIcon />
+                                            </span>
+                                            <span className="skill-tree-label">{preset.label}</span>
+                                            <span className="prompt-tree-row-badges" aria-hidden="true">
+                                              {usageLabels.map((label) => (
+                                                <span key={`${preset.id}-${label}`} className="settings-badge is-highlight">
+                                                  {label}
+                                                </span>
+                                              ))}
+                                              {preset.hasOverride ? <span className="settings-badge is-warning">Edited</span> : null}
+                                            </span>
+                                          </button>
+                                          {preset.source === "custom" ? (
+                                            <button
+                                              className="row-action skill-tree-row-action prompt-tree-delete-button"
+                                              aria-label={`Delete prompt ${preset.label}`}
+                                              disabled={deletingPromptPresetID !== null}
+                                              title={isDeleting ? `Deleting ${preset.label}` : `Delete ${preset.label}`}
+                                              type="button"
+                                              onClick={(event) => {
+                                                event.stopPropagation()
+                                                void onDeletePromptPreset(preset.id)
+                                              }}
+                                            >
+                                              <DeleteIcon />
+                                            </button>
+                                          ) : null}
+                                        </div>
                                       </div>
                                     )
                                   })
@@ -500,6 +725,19 @@ export function PromptPresetsPage({
                     ) : (
                       <p className="skills-tree-empty">No prompt files found.</p>
                     )}
+
+                    <div className="global-skills-new-menu-shell prompt-presets-new-menu-shell">
+                      <button
+                        className="global-skills-new-button prompt-presets-new-button"
+                        type="button"
+                        aria-label="New"
+                        disabled={isCreatingPromptPreset}
+                        title={isCreatingPromptPreset ? "Creating..." : "New prompt"}
+                        onClick={handlePromptPresetCreate}
+                      >
+                        <PlusIcon />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -638,6 +876,22 @@ export function PromptPresetsPage({
           </section>
         )}
       </div>
+
+      {isPromptUrlInstallDialogOpen ? (
+        <PromptUrlInstallDialog
+          installMessage={promptUrlInstallMessage}
+          installPreview={promptUrlInstallPreview}
+          installSource={promptUrlInstallSource}
+          isInstalling={isInstallingPromptUrlPrompts}
+          isPreviewing={isPreviewingPromptUrlInstall}
+          selectedPromptIDs={selectedPromptUrlInstallIDs}
+          onClose={onPromptUrlInstallDialogClose}
+          onInstall={onInstallPromptsFromUrl}
+          onPreview={onPreviewPromptUrlInstall}
+          onSourceChange={onPromptUrlInstallSourceChange}
+          onTogglePrompt={onPromptUrlInstallPromptToggle}
+        />
+      ) : null}
     </section>
   )
 }

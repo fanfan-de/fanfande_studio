@@ -1,4 +1,5 @@
 import { app, Menu, type MenuItemConstructorOptions } from "electron"
+import type { AppLocale } from "../shared/locale"
 import type { MenuKey } from "./types"
 
 export interface ApplicationMenuOptions {
@@ -10,8 +11,30 @@ export interface ApplicationMenus {
   popupMenus: Record<MenuKey, Menu>
 }
 
-export function createApplicationMenus(options: ApplicationMenuOptions = {}): ApplicationMenus {
+const menuLabels = {
+  "zh-CN": {
+    about: "关于 Fanfande Desktop",
+    checkForUpdates: "检查更新...",
+    edit: "编辑",
+    file: "文件",
+    help: "帮助",
+    view: "视图",
+    window: "窗口",
+  },
+  "en-US": {
+    about: "About Fanfande Desktop",
+    checkForUpdates: "Check for Updates...",
+    edit: "Edit",
+    file: "File",
+    help: "Help",
+    view: "View",
+    window: "Window",
+  },
+} as const satisfies Record<AppLocale, Record<string, string>>
+
+export function createApplicationMenus(locale: AppLocale, options: ApplicationMenuOptions = {}): ApplicationMenus {
   const isMac = process.platform === "darwin"
+  const labels = menuLabels[locale]
   const appMenu: MenuItemConstructorOptions[] = [
     { role: "about" },
     { type: "separator" },
@@ -49,14 +72,14 @@ export function createApplicationMenus(options: ApplicationMenuOptions = {}): Ap
     : [{ role: "minimize" }, { role: "close" }]
   const helpMenu: MenuItemConstructorOptions[] = [
     {
-      label: "Check for Updates...",
+      label: labels.checkForUpdates,
       click: () => {
         options.onCheckForUpdates?.()
       },
     },
     { type: "separator" },
     {
-      label: "About Fanfande Desktop",
+      label: labels.about,
       click: () => {
         void app.showAboutPanel()
       },
@@ -72,11 +95,11 @@ export function createApplicationMenus(options: ApplicationMenuOptions = {}): Ap
           } satisfies MenuItemConstructorOptions,
         ]
       : []),
-    { label: "File", submenu: fileMenu },
-    { label: "Edit", submenu: editMenu },
-    { label: "View", submenu: viewMenu },
-    { label: "Window", submenu: windowMenu },
-    { label: "Help", submenu: helpMenu },
+    { label: labels.file, submenu: fileMenu },
+    { label: labels.edit, submenu: editMenu },
+    { label: labels.view, submenu: viewMenu },
+    { label: labels.window, submenu: windowMenu },
+    { label: labels.help, submenu: helpMenu },
   ]
 
   return {

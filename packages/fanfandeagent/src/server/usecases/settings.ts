@@ -7,6 +7,7 @@ import * as ModelsDev from "#provider/modelsdev.ts"
 import * as Provider from "#provider/provider.ts"
 import { ApiError } from "#server/error.ts"
 import * as PromptPresets from "#session/support/prompt-presets.ts"
+import * as PromptUrlInstall from "#session/support/prompt-url-install.ts"
 import * as SkillGitInstall from "#skill/git-install.ts"
 import * as Skill from "#skill/skill.ts"
 import * as SkillManager from "#skill/manage.ts"
@@ -110,6 +111,15 @@ export const PromptPresetSelectionBody = z.object({
   sideChatPromptPresetID: z.string().min(1),
 })
 
+export const PreviewPromptUrlInstallBody = z.object({
+  source: z.string().min(1),
+})
+
+export const InstallPromptUrlPreviewBody = z.object({
+  previewID: z.string().min(1),
+  promptIDs: z.array(z.string().min(1)),
+})
+
 export const UpdateBuiltinToolSelectionBody = z
   .object({
     tools: z.record(z.string(), z.boolean()),
@@ -164,6 +174,17 @@ function toSkillApiError(error: unknown) {
 }
 
 function toPromptPresetApiError(error: unknown) {
+  if (error instanceof PromptPresets.PromptPresetStoreError) {
+    switch (error.code) {
+      case "INVALID_PROMPT_FILE":
+      case "INVALID_PROMPT_PATH":
+      case "DUPLICATE_PROMPT_PRESET":
+        return new ApiError(400, error.code, error.message)
+      default:
+        return error
+    }
+  }
+
   if (!(error instanceof Error)) {
     return error
   }
@@ -174,6 +195,22 @@ function toPromptPresetApiError(error: unknown) {
 
   if (error.message.includes("cannot be reset") || error.message.includes("cannot be deleted")) {
     return new ApiError(400, "PROMPT_PRESET_ACTION_NOT_ALLOWED", error.message)
+  }
+
+  return error
+}
+
+function toPromptUrlInstallApiError(error: unknown) {
+  if (error instanceof PromptUrlInstall.PromptUrlInstallError) {
+    if (error.code === "PROMPT_URL_PREVIEW_NOT_FOUND") {
+      return new ApiError(404, error.code, error.message)
+    }
+
+    if (error.code === "PROMPT_URL_FETCH_FAILED") {
+      return new ApiError(502, error.code, error.message)
+    }
+
+    return new ApiError(400, error.code, error.message)
   }
 
   return error
@@ -761,6 +798,22 @@ export async function deletePromptPreset(presetID: string) {
     return await PromptPresets.deletePromptPreset(presetID, Config.GLOBAL_CONFIG_ID)
   } catch (error) {
     throw toPromptPresetApiError(error)
+  }
+}
+
+export async function previewPromptUrlInstall(input: z.infer<typeof PreviewPromptUrlInstallBody>) {
+  try {
+    return await PromptUrlInstall.previewPromptUrlInstall(input.source)
+  } catch (error) {
+    throw toPromptUrlInstallApiError(error)
+  }
+}
+
+export async function installPromptUrlPreview(input: z.infer<typeof InstallPromptUrlPreviewBody>) {
+  try {
+    return await PromptUrlInstall.installPromptsFromUrlPreview(input, Config.GLOBAL_CONFIG_ID)
+  } catch (error) {
+    throw toPromptUrlInstallApiError(toPromptPresetApiError(error))
   }
 }
 

@@ -676,6 +676,7 @@ interface UseSessionStreamControllerOptions {
   conversationVersionRef: MutableRefObject<Record<string, number>>
   conversations: Record<string, Turn[]>
   historyRequestRef: MutableRefObject<number>
+  isRuntimeDebugEnabled: boolean
   openCanvasSessionIDs: string[]
   onSessionCanvasActivity: (sessionID: string) => void
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
@@ -716,6 +717,7 @@ export function useSessionStreamController({
   conversationVersionRef,
   conversations,
   historyRequestRef,
+  isRuntimeDebugEnabled,
   openCanvasSessionIDs,
   onSessionCanvasActivity,
   pendingStreamsRef,
@@ -824,6 +826,13 @@ export function useSessionStreamController({
   function clearRuntimeDebugRefreshTimer(sessionID: string) {
     clearRuntimeDebugRefreshTimerService(sessionID, runtimeDebugRefreshTimerRef)
   }
+
+  useEffect(() => {
+    if (isRuntimeDebugEnabled) return
+    for (const sessionID of Object.keys(runtimeDebugRefreshTimerRef.current)) {
+      clearRuntimeDebugRefreshTimer(sessionID)
+    }
+  }, [isRuntimeDebugEnabled])
 
   async function refreshWorkspaceFromDirectory(directory: string) {
     return refreshWorkspaceFromDirectoryService({
@@ -1304,6 +1313,11 @@ export function useSessionStreamController({
       turns?: number
     },
   ) {
+    if (!isRuntimeDebugEnabled) {
+      clearRuntimeDebugRefreshTimer(sessionID)
+      return
+    }
+
     await loadSessionRuntimeDebugForSessionService({
       backendSessionID,
       runtimeDebugRefreshTimerRef,
@@ -1321,6 +1335,11 @@ export function useSessionStreamController({
     backendSessionID = resolveBackendSessionID(sessionID),
     delayMs = 160,
   ) {
+    if (!isRuntimeDebugEnabled) {
+      clearRuntimeDebugRefreshTimer(sessionID)
+      return
+    }
+
     scheduleRuntimeDebugRefreshService({
       backendSessionID,
       delayMs,
@@ -1399,6 +1418,7 @@ export function useSessionStreamController({
     loadPendingPermissionRequestsForSession,
     loadSessionDiffForSession,
     loadSessionRuntimeDebugForSession,
+    isRuntimeDebugEnabled,
   })
 
   useReviewRefreshCleanupEffect({

@@ -20,17 +20,23 @@ const baseSession: TerminalSessionRecord = {
   transportState: "connected",
 }
 
-function renderTerminalView() {
+function renderTerminalView(input?: {
+  onInput?: (data: string) => void | Promise<void>
+  onResize?: (ptyID: string, rows: number, cols: number) => void
+  onSnapshotChange?: (ptyID: string, input: { scrollTop?: number }) => void
+  session?: TerminalSessionRecord
+  subscribeToTerminalStream?: (ptyID: string, listener: (event: TerminalStreamEvent) => void) => () => void
+}) {
   return (
     <TerminalView
       brandTheme="terra"
       colorMode="light"
       panelHeight={280}
-      session={baseSession}
-      onInput={vi.fn()}
-      onResize={vi.fn()}
-      onSnapshotChange={vi.fn()}
-      subscribeToTerminalStream={(_ptyID: string, _listener: (event: TerminalStreamEvent) => void) => () => {}}
+      session={input?.session ?? baseSession}
+      onInput={input?.onInput ?? vi.fn()}
+      onResize={input?.onResize ?? vi.fn()}
+      onSnapshotChange={input?.onSnapshotChange ?? vi.fn()}
+      subscribeToTerminalStream={input?.subscribeToTerminalStream ?? (() => () => {})}
     />
   )
 }
@@ -38,6 +44,12 @@ function renderTerminalView() {
 async function flushTimer() {
   await act(async () => {
     await new Promise((resolve) => window.setTimeout(resolve, 0))
+  })
+}
+
+async function flushFrame() {
+  await act(async () => {
+    await new Promise((resolve) => window.requestAnimationFrame(resolve))
   })
 }
 
@@ -88,5 +100,50 @@ describe("TerminalView", () => {
     await flushTimer()
 
     expect(container.querySelector(".terminal-xterm")).toHaveFocus()
+  })
+
+  it("keeps streamed output mounted across parent rerenders", async () => {
+    let streamListener: ((event: TerminalStreamEvent) => void) | null = null
+    const subscribeToTerminalStream = vi.fn(
+      (_ptyID: string, listener: (event: TerminalStreamEvent) => void) => {
+        streamListener = listener
+        return () => {
+          if (streamListener === listener) {
+            streamListener = null
+          }
+        }
+      },
+    )
+    const session = {
+      ...baseSession,
+      buffer: "boot",
+    }
+
+    const { container, rerender } = render(renderTerminalView({
+      session,
+      subscribeToTerminalStream,
+    }))
+
+    await flushTimer()
+
+    act(() => {
+      streamListener?.({
+        type: "append",
+        data: " live",
+        cursor: 9,
+      })
+    })
+    await flushFrame()
+    expect(container.querySelector(".terminal-xterm")).toHaveTextContent("boot live")
+
+    rerender(renderTerminalView({
+      onInput: vi.fn(),
+      session,
+      subscribeToTerminalStream,
+    }))
+    await flushTimer()
+
+    expect(container.querySelector(".terminal-xterm")).toHaveTextContent("boot live")
+    expect(subscribeToTerminalStream).toHaveBeenCalledTimes(1)
   })
 })

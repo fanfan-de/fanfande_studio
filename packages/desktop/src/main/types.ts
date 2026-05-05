@@ -865,10 +865,31 @@ export interface AgentPromptPresetSummary {
   hasOverride: boolean
   editable: boolean
   sourcePath?: string
+  filePath?: string
+  root?: string
 }
 
 export interface AgentPromptPresetDocument extends AgentPromptPresetSummary {
   content: string
+}
+
+export interface AgentPromptUrlInstallCandidate {
+  id: string
+  label: string
+  description: string
+  sourcePath: string
+  available: boolean
+  reason?: string
+}
+
+export interface AgentPromptUrlInstallPreview {
+  previewID: string
+  source: string
+  prompts: AgentPromptUrlInstallCandidate[]
+}
+
+export interface AgentPromptUrlInstallResult {
+  installed: AgentPromptPresetDocument[]
 }
 
 export type AgentMcpAllowedTools =

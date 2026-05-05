@@ -1,11 +1,11 @@
-import { type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { ChangesPanel } from "../changes/ChangesPanel"
 import { WorkspaceFilesPanel } from "../files/WorkspaceFilesPanel"
 import {
+  ChangesIcon,
   ConnectedStatusIcon,
-  FileTextIcon,
-  LayoutSidebarRightIcon,
-  OpenInEditorIcon
+  FileSearchIcon,
+  PreviewIcon
 } from "../icons"
 import { PreviewPanel } from "../preview/PreviewPanel"
 import { buildRuntimeStatusDescription, formatRuntimeBusyStateLabel, formatRuntimeDuration, formatRuntimeLoadStateLabel, formatRuntimePhaseLabel, formatRuntimeTurnStatusLabel } from "../runtime-debug"
@@ -40,6 +40,7 @@ interface RightSidebarProps {
   canInsertWorkspaceFileCommentsIntoDraft: boolean
   selectedDiffFile: string | null
   activeView: RightSidebarView
+  isRuntimeViewVisible: boolean
   onDiffFileSelect: (file: string | null) => void
   onDiffFileRestore: (file: string) => void | Promise<void>
   onPreviewAddComment: (input: {
@@ -52,20 +53,23 @@ interface RightSidebarProps {
     text: string
     anchor?: PreviewComment["anchor"]
   }) => void
+  onPreviewBack: () => void
   onPreviewDraftUrlChange: (value: string) => void
+  onPreviewForward: () => void
   onPreviewModeChange: (mode: PreviewMode) => void
   onPreviewOpen: () => void
   onPreviewOpenExternal: () => void | Promise<void>
+  onPreviewOpenUrl: (url: string) => void
   onPreviewReload: () => void
   onWorkspaceFileCommentCancel: () => void
   onWorkspaceFileCommentChange: (text: string) => void
   onWorkspaceFileCommentConfirm: () => void
   onWorkspaceFileCommentStart: (startLineNumber: number, endLineNumber?: number) => void
-  onWorkspaceFileCommentSubmit: () => void
   onWorkspaceFileQueryChange: (value: string) => void
   onWorkspaceFileSelect: (path: string) => void
   onRuntimeRefresh: () => void | Promise<void>
   onViewChange: (view: RightSidebarView) => void
+  renderTerminalArea?: (togglePortalTarget: Element | null) => ReactNode
   windowControls?: ReactNode
 }
 
@@ -232,28 +236,40 @@ export function RightSidebar({
   canInsertWorkspaceFileCommentsIntoDraft,
   selectedDiffFile,
   activeView,
+  isRuntimeViewVisible,
   onDiffFileSelect,
   onDiffFileRestore,
   onPreviewAddComment,
+  onPreviewBack,
   onPreviewDraftUrlChange,
+  onPreviewForward,
   onPreviewModeChange,
   onPreviewOpen,
   onPreviewOpenExternal,
+  onPreviewOpenUrl,
   onPreviewReload,
   onWorkspaceFileCommentCancel,
   onWorkspaceFileCommentChange,
   onWorkspaceFileCommentConfirm,
   onWorkspaceFileCommentStart,
-  onWorkspaceFileCommentSubmit,
   onWorkspaceFileQueryChange,
   onWorkspaceFileSelect,
   onRuntimeRefresh,
   onViewChange,
+  renderTerminalArea,
   windowControls,
 }: RightSidebarProps) {
+  const [terminalToggleSlot, setTerminalToggleSlot] = useState<Element | null>(null)
   const runtimeState = activeSessionRuntimeDebugState ?? RIGHT_SIDEBAR_RUNTIME_IDLE_STATE
   const latestRuntimeTurn = activeSessionRuntimeDebug?.latestTurn ?? null
   const latestRuntimePhase = activeSessionRuntimeDebug?.status.phase ?? latestRuntimeTurn?.phase
+  const viewHostClassName = activeView === "preview"
+    ? "right-sidebar-view-host is-preview"
+    : activeView === "files"
+      ? "right-sidebar-view-host is-files"
+      : activeView === "changes"
+        ? "right-sidebar-view-host is-changes"
+        : "right-sidebar-view-host"
   const runtimeStatusDescription = buildRuntimeStatusDescription({
     activeSession,
     runtimeState,
@@ -270,17 +286,20 @@ export function RightSidebar({
         content={(
           <>
             <TopMenuViewButton active={activeView === "changes"} label="Changes" onClick={() => onViewChange("changes")}>
-              <LayoutSidebarRightIcon />
+              <ChangesIcon />
             </TopMenuViewButton>
-            <TopMenuViewButton active={activeView === "runtime"} label="Runtime" onClick={() => onViewChange("runtime")}>
-              <ConnectedStatusIcon />
-            </TopMenuViewButton>
+            {isRuntimeViewVisible ? (
+              <TopMenuViewButton active={activeView === "runtime"} label="Runtime" onClick={() => onViewChange("runtime")}>
+                <ConnectedStatusIcon />
+              </TopMenuViewButton>
+            ) : null}
             <TopMenuViewButton active={activeView === "preview"} label="Preview" onClick={() => onViewChange("preview")}>
-              <OpenInEditorIcon />
+              <PreviewIcon />
             </TopMenuViewButton>
             <TopMenuViewButton active={activeView === "files"} label="Files" onClick={() => onViewChange("files")}>
-              <FileTextIcon />
+              <FileSearchIcon />
             </TopMenuViewButton>
+            {renderTerminalArea ? <span ref={setTerminalToggleSlot} className="right-sidebar-terminal-toggle-slot" /> : null}
           </>
         )}
         dragRegion
@@ -288,20 +307,21 @@ export function RightSidebar({
         trailingClassName="right-sidebar-top-menu-window-controls"
       />
 
-      <div className={activeView === "preview" ? "right-sidebar-view-host is-preview" : "right-sidebar-view-host"}>
-        {activeView === "changes" ? (
-          <ChangesPanel
-            activeSession={activeSession}
-            activeSessionDiff={activeSessionDiff}
-            activeSessionDiffState={activeSessionDiffState}
-            selectedDiffFile={selectedDiffFile}
-            onDiffFileSelect={onDiffFileSelect}
-            onDiffFileRestore={onDiffFileRestore}
-          />
-        ) : null}
+      <div className="right-sidebar-main-stack">
+        <div className={viewHostClassName}>
+          {activeView === "changes" ? (
+            <ChangesPanel
+              activeSession={activeSession}
+              activeSessionDiff={activeSessionDiff}
+              activeSessionDiffState={activeSessionDiffState}
+              selectedDiffFile={selectedDiffFile}
+              onDiffFileSelect={onDiffFileSelect}
+              onDiffFileRestore={onDiffFileRestore}
+            />
+          ) : null}
 
-        {activeView === "runtime" ? (
-          <section className="right-sidebar-section">
+          {isRuntimeViewVisible && activeView === "runtime" ? (
+            <section className="right-sidebar-section">
             <div className="right-sidebar-panel-header">
               <div className="right-sidebar-panel-copy">
                 <span className="label">Agent Runtime</span>
@@ -514,36 +534,40 @@ export function RightSidebar({
                 <p>Select a session to inspect its runtime state.</p>
               </div>
             )}
-          </section>
-        ) : null}
+            </section>
+          ) : null}
 
-        {activeView === "preview" ? (
-          <PreviewPanel
-            state={activePreviewState}
-            onAddComment={onPreviewAddComment}
-            onDraftUrlChange={onPreviewDraftUrlChange}
-            onModeChange={onPreviewModeChange}
-            onOpen={onPreviewOpen}
-            onOpenExternal={onPreviewOpenExternal}
-            onReload={onPreviewReload}
-          />
-        ) : null}
+          {activeView === "preview" ? (
+            <PreviewPanel
+              state={activePreviewState}
+              onAddComment={onPreviewAddComment}
+              onBack={onPreviewBack}
+              onDraftUrlChange={onPreviewDraftUrlChange}
+              onForward={onPreviewForward}
+              onModeChange={onPreviewModeChange}
+              onOpen={onPreviewOpen}
+              onOpenExternal={onPreviewOpenExternal}
+              onOpenUrl={onPreviewOpenUrl}
+              onReload={onPreviewReload}
+            />
+          ) : null}
 
-        {activeView === "files" ? (
-          <WorkspaceFilesPanel
-            canInsertCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
-            scopeDirectory={activeWorkspaceFileScopeDirectory}
-            scopeName={activeWorkspaceFileScopeName}
-            state={activeWorkspaceFileState}
-            onPendingCommentCancel={onWorkspaceFileCommentCancel}
-            onPendingCommentChange={onWorkspaceFileCommentChange}
-            onPendingCommentConfirm={onWorkspaceFileCommentConfirm}
-            onPendingCommentStart={onWorkspaceFileCommentStart}
-            onPendingCommentSubmit={onWorkspaceFileCommentSubmit}
-            onQueryChange={onWorkspaceFileQueryChange}
-            onSelectFile={onWorkspaceFileSelect}
-          />
-        ) : null}
+          {activeView === "files" ? (
+            <WorkspaceFilesPanel
+              canInsertCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
+              scopeDirectory={activeWorkspaceFileScopeDirectory}
+              scopeName={activeWorkspaceFileScopeName}
+              state={activeWorkspaceFileState}
+              onPendingCommentCancel={onWorkspaceFileCommentCancel}
+              onPendingCommentChange={onWorkspaceFileCommentChange}
+              onPendingCommentConfirm={onWorkspaceFileCommentConfirm}
+              onPendingCommentStart={onWorkspaceFileCommentStart}
+              onQueryChange={onWorkspaceFileQueryChange}
+              onSelectFile={onWorkspaceFileSelect}
+            />
+          ) : null}
+        </div>
+        {renderTerminalArea?.(terminalToggleSlot)}
       </div>
     </aside>
   )

@@ -38,9 +38,9 @@ function readCssVariable(styles: CSSStyleDeclaration, name: string, fallback: st
 
 function getTerminalTheme() {
   const styles = getComputedStyle(document.documentElement)
-  const background = readCssVariable(styles, "--surface-code-strong", "#14100f")
+  const background = readCssVariable(styles, "--semantic-terminal-surface", "#ffffff")
   const surface = readCssVariable(styles, "--surface-code", "#27272a")
-  const foreground = readCssVariable(styles, "--text-on-dark", "#fafaf9")
+  const foreground = readCssVariable(styles, "--text-primary", "#292524")
   const accent = readCssVariable(styles, "--brand-accent-active", "#fca5a5")
   const brand = readCssVariable(styles, "--brand-primary-active", "#d46b63")
   // 终端里的 ANSI 颜色需要更高对比度，所以优先读取强调态语义色。
@@ -70,7 +70,7 @@ function getTerminalTheme() {
     brightBlue: info,
     brightMagenta: accent,
     brightCyan: accent,
-    brightWhite: "#ffffff",
+    brightWhite: foreground,
   }
 }
 
@@ -258,7 +258,7 @@ export const TerminalView = memo(function TerminalView({
       isFlushingRef.current = false
       flushFrameRef.current = null
     }
-  }, [fitTerminal, handleInput, handleSnapshotChange, session.ptyID])
+  }, [session.ptyID])
 
   useEffect(() => {
     applyTerminalTheme()
@@ -292,7 +292,7 @@ export const TerminalView = memo(function TerminalView({
         cleanup()
       }
     }
-  }, [applyTerminalTheme, colorMode, themeSignature])
+  }, [colorMode, themeSignature])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -302,7 +302,7 @@ export const TerminalView = memo(function TerminalView({
     return () => {
       window.clearTimeout(timer)
     }
-  }, [fitTerminal, panelHeight, session.ptyID])
+  }, [panelHeight, session.ptyID])
 
   useEffect(() => {
     lastMeasuredDimensionsRef.current = {
@@ -313,7 +313,7 @@ export const TerminalView = memo(function TerminalView({
 
   useEffect(() => {
     return subscribeToTerminalStream(session.ptyID, handleTerminalStream)
-  }, [handleTerminalStream, session.ptyID, subscribeToTerminalStream])
+  }, [session.ptyID, subscribeToTerminalStream])
 
   return (
     <div className="terminal-view-shell">

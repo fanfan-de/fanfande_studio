@@ -18,6 +18,7 @@ import type {
   PromptPresetDocument,
   PromptPresetSelection,
   PromptPresetSummary,
+  PromptUrlInstallPreview,
   ProviderAuthCapability,
   ProviderCatalogItem,
   ProviderDraftState,
@@ -37,6 +38,7 @@ interface LoadSettingsOptions {
 }
 
 interface UseSettingsPageOptions {
+  isBuiltinToolsPageOpen?: boolean
   isMcpServersPageOpen?: boolean
   isPluginsPageOpen?: boolean
   isPromptPresetEditorOpen?: boolean
@@ -388,6 +390,7 @@ function getMcpServerValidationError(draft: McpServerDraftState) {
 }
 
 export function useSettingsPage(options: UseSettingsPageOptions) {
+  const isBuiltinToolsPageOpen = options.isBuiltinToolsPageOpen ?? false
   const isMcpServersPageOpen = options.isMcpServersPageOpen ?? false
   const isPluginsPageOpen = options.isPluginsPageOpen ?? false
   const isPromptPresetEditorOpen = options.isPromptPresetEditorOpen ?? false
@@ -426,6 +429,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [savedPromptLabel, setSavedPromptLabel] = useState("")
   const [promptDraftContent, setPromptDraftContent] = useState("")
   const [savedPromptContent, setSavedPromptContent] = useState("")
+  const [promptRoot, setPromptRoot] = useState("")
+  const [isPromptUrlInstallDialogOpen, setIsPromptUrlInstallDialogOpen] = useState(false)
+  const [promptUrlInstallSource, setPromptUrlInstallSource] = useState("")
+  const [promptUrlInstallPreview, setPromptUrlInstallPreview] = useState<PromptUrlInstallPreview | null>(null)
+  const [selectedPromptUrlInstallIDs, setSelectedPromptUrlInstallIDs] = useState<string[]>([])
+  const [promptUrlInstallMessage, setPromptUrlInstallMessage] = useState<SettingsMessage | null>(null)
   const [archivedSessions, setArchivedSessions] = useState<ArchivedSessionSummary[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingBuiltinTools, setIsLoadingBuiltinTools] = useState(false)
@@ -461,6 +470,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [deletingPromptPresetID, setDeletingPromptPresetID] = useState<string | null>(null)
   const [savingPromptPresetID, setSavingPromptPresetID] = useState<string | null>(null)
   const [resettingPromptPresetID, setResettingPromptPresetID] = useState<string | null>(null)
+  const [isPreviewingPromptUrlInstall, setIsPreviewingPromptUrlInstall] = useState(false)
+  const [isInstallingPromptUrlPrompts, setIsInstallingPromptUrlPrompts] = useState(false)
   const [restoringArchivedSessionID, setRestoringArchivedSessionID] = useState<string | null>(null)
   const [deletingArchivedSessionID, setDeletingArchivedSessionID] = useState<string | null>(null)
   const requestIDRef = useRef(0)
@@ -478,9 +489,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!isOpen) return
 
     void loadSettingsData()
-    void loadBuiltinTools()
     void loadArchivedSessions()
   }, [isOpen])
+
+  useEffect(() => {
+    if (!isBuiltinToolsPageOpen) return
+
+    void loadBuiltinTools()
+  }, [isBuiltinToolsPageOpen])
 
   useEffect(() => {
     if (!isMcpServersPageOpen) return
@@ -546,6 +562,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         hasOverride: document.hasOverride,
         editable: document.editable,
         sourcePath: document.sourcePath,
+        filePath: document.filePath,
+        root: document.root,
       }
 
       if (current.some((preset) => preset.id === document.id)) {
@@ -584,6 +602,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setSavedPromptLabel(document.label)
       setPromptDraftContent(document.content)
       setSavedPromptContent(document.content)
+      setPromptRoot(document.root ?? "")
       syncPromptPresetSummary(document)
       return document
     } catch (error) {
@@ -610,6 +629,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setSavedPromptLabel("")
       setPromptDraftContent("")
       setSavedPromptContent("")
+      setPromptRoot("")
       setPromptLoadError("Desktop prompt preset APIs are unavailable.")
       return
     }
@@ -628,6 +648,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       if (promptPresetsRequestIDRef.current !== requestID) return
 
       setPromptPresets(nextPromptPresets)
+      setPromptRoot(nextPromptPresets.find((preset) => preset.root)?.root ?? "")
       setPromptPresetSelection(nextPromptPresetSelection)
       setSavedPromptPresetSelection(nextPromptPresetSelection)
       const preferredPresetID =
@@ -643,6 +664,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         setSavedPromptLabel("")
         setPromptDraftContent("")
         setSavedPromptContent("")
+        setPromptRoot("")
         return
       }
 
@@ -658,6 +680,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       setSavedPromptLabel("")
       setPromptDraftContent("")
       setSavedPromptContent("")
+      setPromptRoot("")
       setPromptLoadError(getErrorMessage(error))
     } finally {
       if (promptPresetsRequestIDRef.current === requestID) {
@@ -1203,24 +1226,23 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setPromptDraftLabel(value)
   }
 
-  function setPromptPresetSelectionValue(
+  function buildPromptPresetSelectionValue(
     field: keyof PromptPresetSelection,
     value: string,
-  ) {
-    setPromptPresetSelection((current) => {
-      if (current) {
-        return {
-          ...current,
-          [field]: value,
-        }
-      }
-
+    current: PromptPresetSelection | null,
+  ): PromptPresetSelection {
+    if (current) {
       return {
-        systemPromptPresetID: field === "systemPromptPresetID" ? value : selectedPromptPresetID ?? value,
-        planModePromptPresetID: field === "planModePromptPresetID" ? value : selectedPromptPresetID ?? value,
-        sideChatPromptPresetID: field === "sideChatPromptPresetID" ? value : selectedPromptPresetID ?? value,
+        ...current,
+        [field]: value,
       }
-    })
+    }
+
+    return {
+      systemPromptPresetID: field === "systemPromptPresetID" ? value : selectedPromptPresetID ?? value,
+      planModePromptPresetID: field === "planModePromptPresetID" ? value : selectedPromptPresetID ?? value,
+      sideChatPromptPresetID: field === "sideChatPromptPresetID" ? value : selectedPromptPresetID ?? value,
+    }
   }
 
   async function selectPromptPreset(presetID: string) {
@@ -1228,8 +1250,59 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     return Boolean(document)
   }
 
+  async function persistPromptPresetSelection(
+    selectionToSave: PromptPresetSelection,
+    field?: keyof PromptPresetSelection,
+    rollbackSelection?: PromptPresetSelection | null,
+  ) {
+    if (!window.desktop?.updatePromptPresetSelection) return false
+    setIsSavingPromptPresetSelection(true)
+    setSavingPromptPresetSelectionField(field ?? null)
+    setMessage(null)
+
+    try {
+      const selection = await window.desktop.updatePromptPresetSelection(selectionToSave)
+      setPromptPresetSelection(selection)
+      setSavedPromptPresetSelection(selection)
+      setMessage({
+        tone: "success",
+        text:
+          field === "systemPromptPresetID"
+            ? "System prompt updated."
+            : field === "planModePromptPresetID"
+              ? "Plan prompt updated."
+              : field === "sideChatPromptPresetID"
+                ? "Side chat prompt updated."
+              : "Prompt assignments updated.",
+      })
+      return true
+    } catch (error) {
+      if (rollbackSelection) {
+        setPromptPresetSelection(rollbackSelection)
+      }
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsSavingPromptPresetSelection(false)
+      setSavingPromptPresetSelectionField(null)
+    }
+  }
+
+  async function setPromptPresetSelectionValue(
+    field: keyof PromptPresetSelection,
+    value: string,
+  ) {
+    const previousSelection = promptPresetSelection
+    const nextSelection = buildPromptPresetSelectionValue(field, value, promptPresetSelection)
+    setPromptPresetSelection(nextSelection)
+    return persistPromptPresetSelection(nextSelection, field, previousSelection ?? savedPromptPresetSelection)
+  }
+
   async function savePromptPresetSelection(field?: keyof PromptPresetSelection) {
-    if (!promptPresetSelection || !window.desktop?.updatePromptPresetSelection) return false
+    if (!promptPresetSelection) return false
 
     const selectionToSave =
       field && savedPromptPresetSelection
@@ -1249,47 +1322,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
           }
         : promptPresetSelection
 
-    setIsSavingPromptPresetSelection(true)
-    setSavingPromptPresetSelectionField(field ?? null)
-    setMessage(null)
-
-    try {
-      const selection = await window.desktop.updatePromptPresetSelection(selectionToSave)
-      setPromptPresetSelection((current) => {
-        if (!current || !field) return selection
-
-        return {
-          systemPromptPresetID:
-            field === "systemPromptPresetID" ? selection.systemPromptPresetID : current.systemPromptPresetID,
-          planModePromptPresetID:
-            field === "planModePromptPresetID" ? selection.planModePromptPresetID : current.planModePromptPresetID,
-          sideChatPromptPresetID:
-            field === "sideChatPromptPresetID" ? selection.sideChatPromptPresetID : current.sideChatPromptPresetID,
-        }
-      })
-      setSavedPromptPresetSelection(selection)
-      setMessage({
-        tone: "success",
-        text:
-          field === "systemPromptPresetID"
-            ? "System prompt updated."
-            : field === "planModePromptPresetID"
-              ? "Plan prompt updated."
-              : field === "sideChatPromptPresetID"
-                ? "Side chat prompt updated."
-              : "Prompt assignments updated.",
-      })
-      return true
-    } catch (error) {
-      setMessage({
-        tone: "error",
-        text: getErrorMessage(error),
-      })
-      return false
-    } finally {
-      setIsSavingPromptPresetSelection(false)
-      setSavingPromptPresetSelectionField(null)
-    }
+    return persistPromptPresetSelection(selectionToSave, field)
   }
 
   async function createPromptPreset() {
@@ -1311,7 +1344,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         hasOverride: document.hasOverride,
         editable: document.editable,
         sourcePath: document.sourcePath,
+        filePath: document.filePath,
+        root: document.root,
       }])
+      setPromptRoot(document.root ?? "")
       setSelectedPromptPresetID(document.id)
       setSelectedPromptPreset(document)
       setPromptDraftLabel(document.label)
@@ -1331,6 +1367,189 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       return false
     } finally {
       setIsCreatingPromptPreset(false)
+    }
+  }
+
+  async function openPromptFolder() {
+    const openInExternalEditor = window.desktop?.openInExternalEditor
+    if (!promptRoot.trim()) return false
+
+    setMessage(null)
+
+    if (!openInExternalEditor) {
+      setMessage({
+        tone: "error",
+        text: "Opening the prompts folder is unavailable in this desktop shell.",
+      })
+      return false
+    }
+
+    try {
+      await openInExternalEditor({
+        targetPath: promptRoot,
+        editorID: "explorer",
+      })
+      return true
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    }
+  }
+
+  function resetPromptUrlInstallDialog() {
+    setPromptUrlInstallSource("")
+    setPromptUrlInstallPreview(null)
+    setSelectedPromptUrlInstallIDs([])
+    setPromptUrlInstallMessage(null)
+  }
+
+  function openPromptUrlInstallDialog() {
+    if (isPreviewingPromptUrlInstall || isInstallingPromptUrlPrompts) return
+    resetPromptUrlInstallDialog()
+    setIsPromptUrlInstallDialogOpen(true)
+  }
+
+  function closePromptUrlInstallDialog() {
+    if (isPreviewingPromptUrlInstall || isInstallingPromptUrlPrompts) return
+    setIsPromptUrlInstallDialogOpen(false)
+    resetPromptUrlInstallDialog()
+  }
+
+  function setPromptUrlInstallSourceValue(value: string) {
+    setPromptUrlInstallSource(value)
+    setPromptUrlInstallPreview(null)
+    setSelectedPromptUrlInstallIDs([])
+    setPromptUrlInstallMessage(null)
+  }
+
+  function togglePromptUrlInstallPrompt(promptID: string) {
+    setSelectedPromptUrlInstallIDs((current) =>
+      current.includes(promptID)
+        ? current.filter((id) => id !== promptID)
+        : [...current, promptID],
+    )
+  }
+
+  async function previewPromptUrlInstall() {
+    const previewPromptUrlInstallApi = window.desktop?.previewPromptUrlInstall
+    if (!previewPromptUrlInstallApi) {
+      setPromptUrlInstallMessage({
+        tone: "error",
+        text: "Installing prompts from URL is unavailable in this desktop shell.",
+      })
+      return false
+    }
+
+    const source = promptUrlInstallSource.trim()
+    if (!source) {
+      setPromptUrlInstallMessage({
+        tone: "error",
+        text: "Enter a prompt resource URL.",
+      })
+      return false
+    }
+
+    setIsPreviewingPromptUrlInstall(true)
+    setPromptUrlInstallMessage(null)
+    setPromptUrlInstallPreview(null)
+    setSelectedPromptUrlInstallIDs([])
+
+    try {
+      const preview = await previewPromptUrlInstallApi({ source })
+      const availablePromptIDs = preview.prompts
+        .filter((prompt) => prompt.available)
+        .map((prompt) => prompt.id)
+
+      setPromptUrlInstallPreview(preview)
+      setSelectedPromptUrlInstallIDs(availablePromptIDs)
+      setPromptUrlInstallMessage(preview.prompts.length === 0
+        ? {
+            tone: "error",
+            text: "No prompts were found at that URL.",
+          }
+        : null)
+      return true
+    } catch (error) {
+      setPromptUrlInstallMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsPreviewingPromptUrlInstall(false)
+    }
+  }
+
+  async function installPromptsFromUrl() {
+    const installPromptsFromUrlApi = window.desktop?.installPromptsFromUrl
+    if (!promptUrlInstallPreview || isPreviewingPromptUrlInstall || isInstallingPromptUrlPrompts) return false
+
+    if (!installPromptsFromUrlApi) {
+      setPromptUrlInstallMessage({
+        tone: "error",
+        text: "Installing prompts from URL is unavailable in this desktop shell.",
+      })
+      return false
+    }
+
+    if (selectedPromptUrlInstallIDs.length === 0) {
+      setPromptUrlInstallMessage({
+        tone: "error",
+        text: "Select at least one prompt to install.",
+      })
+      return false
+    }
+
+    if (
+      isPromptDirty &&
+      typeof window.confirm === "function" &&
+      !window.confirm("Discard unsaved prompt changes and install prompts from URL?")
+    ) {
+      return false
+    }
+
+    setIsInstallingPromptUrlPrompts(true)
+    setPromptUrlInstallMessage(null)
+
+    try {
+      const result = await installPromptsFromUrlApi({
+        previewID: promptUrlInstallPreview.previewID,
+        promptIDs: selectedPromptUrlInstallIDs,
+      })
+      const firstInstalledPrompt = result.installed[0] ?? null
+
+      for (const document of result.installed) {
+        syncPromptPresetSummary(document)
+      }
+
+      if (firstInstalledPrompt) {
+        setPromptRoot(firstInstalledPrompt.root ?? promptRoot)
+        setSelectedPromptPresetID(firstInstalledPrompt.id)
+        setSelectedPromptPreset(firstInstalledPrompt)
+        setPromptDraftLabel(firstInstalledPrompt.label)
+        setSavedPromptLabel(firstInstalledPrompt.label)
+        setPromptDraftContent(firstInstalledPrompt.content)
+        setSavedPromptContent(firstInstalledPrompt.content)
+      }
+
+      setIsPromptUrlInstallDialogOpen(false)
+      resetPromptUrlInstallDialog()
+      setMessage({
+        tone: "success",
+        text: `Installed ${result.installed.length} prompt${result.installed.length === 1 ? "" : "s"}.`,
+      })
+      return true
+    } catch (error) {
+      setPromptUrlInstallMessage({
+        tone: "error",
+        text: getErrorMessage(error),
+      })
+      return false
+    } finally {
+      setIsInstallingPromptUrlPrompts(false)
     }
   }
 
@@ -1406,26 +1625,37 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
-  async function deletePromptPreset() {
+  async function deletePromptPreset(presetID = selectedPromptPresetID) {
+    const targetPromptPreset =
+      promptPresets.find((preset) => preset.id === presetID) ??
+      (selectedPromptPreset?.id === presetID ? selectedPromptPreset : null)
     if (
-      !selectedPromptPresetID ||
-      selectedPromptPreset?.source !== "custom" ||
+      !presetID ||
+      targetPromptPreset?.source !== "custom" ||
       !window.desktop?.deletePromptPreset
     ) {
       return false
     }
 
-    setDeletingPromptPresetID(selectedPromptPresetID)
+    setDeletingPromptPresetID(presetID)
     setMessage(null)
 
     try {
       const nextSelection = await window.desktop.deletePromptPreset({
-        presetID: selectedPromptPresetID,
+        presetID,
       })
-      const remainingPromptPresets = promptPresets.filter((preset) => preset.id !== selectedPromptPresetID)
+      const remainingPromptPresets = promptPresets.filter((preset) => preset.id !== presetID)
       setPromptPresets(remainingPromptPresets)
       setPromptPresetSelection(nextSelection)
       setSavedPromptPresetSelection(nextSelection)
+
+      if (selectedPromptPresetID !== presetID) {
+        setMessage({
+          tone: "success",
+          text: "Prompt preset deleted.",
+        })
+        return true
+      }
 
       const nextPresetID =
         remainingPromptPresets.find((preset) => preset.id === nextSelection.systemPromptPresetID)?.id ??
@@ -2319,6 +2549,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     diagnosingPluginID,
     diagnosingPluginConnectorID,
     installPlugin,
+    installPromptsFromUrl,
     importMcpConfigJson,
     installingPluginID,
     installedPlugins,
@@ -2332,11 +2563,14 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     isLoadingArchivedSessions,
     isOpen,
     isPromptDirty,
+    isPromptUrlInstallDialogOpen,
     isBuiltinToolSelectionDirty,
     isSystemPromptPresetDirty,
     isPlanModePromptPresetDirty,
     isSideChatPromptPresetDirty,
     isRefreshingProviderCatalog,
+    isInstallingPromptUrlPrompts,
+    isPreviewingPromptUrlInstall,
     isSavingPromptPresetSelection,
     isSavingBuiltinTools,
     isSavingSelection,
@@ -2354,11 +2588,19 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     promptDraftLabel,
     promptDraftContent,
     promptLoadError,
+    promptRoot,
     promptPresets,
     promptPresetSelection,
+    promptUrlInstallMessage,
+    promptUrlInstallPreview,
+    promptUrlInstallSource,
     providerDrafts,
     createPromptPreset,
     deletePromptPreset,
+    closePromptUrlInstallDialog,
+    openPromptFolder,
+    openPromptUrlInstallDialog,
+    previewPromptUrlInstall,
     refreshProviderCatalog,
     resetPromptPreset,
     resetBuiltinTools,
@@ -2382,9 +2624,11 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     testProviderConnection,
     testingProviderID,
     selectedPromptPreset,
+    selectedPromptUrlInstallIDs,
     setProviderAuthMethod,
     setPromptDraftLabelValue,
     setPromptPresetSelectionValue,
+    setPromptUrlInstallSourceValue,
     selectPromptPreset,
     selectMcpServer,
     selectPlugin,
@@ -2397,6 +2641,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setPromptDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
+    togglePromptUrlInstallPrompt,
     setBuiltinToolEnabled,
     startProviderAuthFlow,
     startNewMcpServer,

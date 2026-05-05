@@ -179,6 +179,8 @@
   --semantic-left-sidebar-top-menu-surface-dark: #241f1c;
   --semantic-right-sidebar-top-menu-surface-light: #f5f2ee;
   --semantic-right-sidebar-top-menu-surface-dark: #221d1a;
+  --semantic-terminal-surface-light: #ffffff;
+  --semantic-terminal-surface-dark: #000000;
   --semantic-sidebar-tree-row-text-light: var(--text-secondary-light);
   --semantic-sidebar-tree-row-text-dark: var(--text-secondary-dark);
   --semantic-sidebar-tree-row-text-hover-light: var(--text-primary-light);
@@ -200,6 +202,7 @@
   --semantic-pane-tab-bar-surface: var(--semantic-pane-tab-bar-surface-light);
   --semantic-left-sidebar-top-menu-surface: var(--semantic-left-sidebar-top-menu-surface-light);
   --semantic-right-sidebar-top-menu-surface: var(--semantic-right-sidebar-top-menu-surface-light);
+  --semantic-terminal-surface: var(--semantic-terminal-surface-light);
   --semantic-sidebar-tree-row-text: var(--semantic-sidebar-tree-row-text-light);
   --semantic-sidebar-tree-row-text-hover: var(--semantic-sidebar-tree-row-text-hover-light);
   --semantic-sidebar-tree-row-text-active: var(--semantic-sidebar-tree-row-text-active-light);
@@ -674,6 +677,7 @@
   --seg-pane-tab-bar-surface: var(--semantic-pane-tab-bar-surface);
   --seg-left-sidebar-top-menu-surface: var(--semantic-left-sidebar-top-menu-surface);
   --seg-right-sidebar-top-menu-surface: var(--semantic-right-sidebar-top-menu-surface);
+  --seg-terminal-surface: var(--semantic-terminal-surface);
   --seg-border: var(--border-default);
   --seg-divider: var(--border-subtle);
   --seg-text-1: var(--text-primary);
@@ -837,6 +841,8 @@
   --semantic-left-sidebar-top-menu-surface-dark: #0f1f31;
   --semantic-right-sidebar-top-menu-surface-light: #eef2f7;
   --semantic-right-sidebar-top-menu-surface-dark: #182536;
+  --semantic-terminal-surface-light: #ffffff;
+  --semantic-terminal-surface-dark: #000000;
   --semantic-composer-surface-light: #ffffff;
   --semantic-composer-surface-dark: #1e293b;
   --semantic-dropdown-menu-surface-light: #ffffff;
@@ -1115,6 +1121,7 @@
     --semantic-pane-tab-bar-surface: var(--semantic-pane-tab-bar-surface-dark);
     --semantic-left-sidebar-top-menu-surface: var(--semantic-left-sidebar-top-menu-surface-dark);
     --semantic-right-sidebar-top-menu-surface: var(--semantic-right-sidebar-top-menu-surface-dark);
+    --semantic-terminal-surface: var(--semantic-terminal-surface-dark);
     --semantic-composer-surface: var(--semantic-composer-surface-dark);
     --semantic-dropdown-menu-surface: var(--semantic-dropdown-menu-surface-dark);
     --semantic-question-card-surface: var(--semantic-question-card-surface-dark);
@@ -1285,6 +1292,7 @@
   --semantic-pane-tab-bar-surface: var(--semantic-pane-tab-bar-surface-dark);
   --semantic-left-sidebar-top-menu-surface: var(--semantic-left-sidebar-top-menu-surface-dark);
   --semantic-right-sidebar-top-menu-surface: var(--semantic-right-sidebar-top-menu-surface-dark);
+  --semantic-terminal-surface: var(--semantic-terminal-surface-dark);
   --semantic-sidebar-tree-row-text: var(--semantic-sidebar-tree-row-text-dark);
   --semantic-sidebar-tree-row-text-hover: var(--semantic-sidebar-tree-row-text-hover-dark);
   --semantic-sidebar-tree-row-text-active: var(--semantic-sidebar-tree-row-text-active-dark);

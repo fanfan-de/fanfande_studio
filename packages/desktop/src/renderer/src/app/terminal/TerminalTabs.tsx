@@ -5,6 +5,7 @@ import type { TerminalSessionRecord } from "./types"
 
 interface TerminalTabsProps {
   activePtyID: string | null
+  showToggleButton?: boolean
   sessions: TerminalSessionRecord[]
   onCloseTerminal: (ptyID: string) => void | Promise<void>
   onCreateTerminal: () => void | Promise<void>
@@ -27,6 +28,7 @@ function formatTerminalStatus(session: TerminalSessionRecord) {
 
 export const TerminalTabs = memo(function TerminalTabs({
   activePtyID,
+  showToggleButton = true,
   sessions,
   onCloseTerminal,
   onCreateTerminal,
@@ -35,7 +37,7 @@ export const TerminalTabs = memo(function TerminalTabs({
 }: TerminalTabsProps) {
   return (
     <div className="terminal-tabs">
-      <TerminalPanelToggleButton isOpen={true} onToggle={onTogglePanel} />
+      {showToggleButton ? <TerminalPanelToggleButton isOpen={true} onToggle={onTogglePanel} /> : null}
 
       <div className="terminal-tabs-list" role="tablist" aria-label="Terminal tabs">
         {sessions.map((session) => {

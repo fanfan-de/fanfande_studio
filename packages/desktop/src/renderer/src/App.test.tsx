@@ -645,6 +645,7 @@ describe("App", () => {
       capturePreviewScreenshot: vi.fn().mockResolvedValue({
         path: "C:\\Users\\codex\\preview-comment-screenshots\\marker.png",
       }),
+      detectLocalPreviewServices: vi.fn().mockResolvedValue([]),
       gitGetCapabilities: vi.fn().mockResolvedValue({
         directory: "C:\\Projects\\Project 2",
         root: "C:\\Projects\\Project 2",
@@ -759,6 +760,11 @@ describe("App", () => {
         items: [],
         selection: {},
       }),
+      getBuiltinTools: vi.fn().mockResolvedValue({
+        items: [],
+        selection: { tools: {} },
+      }),
+      updateBuiltinToolSelection: vi.fn().mockImplementation((selection) => Promise.resolve(selection)),
       getGlobalMcpServers: vi.fn().mockResolvedValue([]),
       getGlobalMcpServerDiagnostic: vi.fn().mockResolvedValue({
         serverID: "mock",
@@ -778,6 +784,8 @@ describe("App", () => {
           source: "custom",
         }),
       ),
+      previewPromptUrlInstall: vi.fn(),
+      installPromptsFromUrl: vi.fn(),
       updatePromptPreset: vi.fn().mockImplementation(
         ({ presetID, label, content }: { presetID: string; label?: string; content: string }) =>
           Promise.resolve(createPromptPresetDocument(presetID, {
@@ -1035,7 +1043,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Overview" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Artifacts" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Changes" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Runtime" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Runtime" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Preview" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Files" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Console" })).not.toBeInTheDocument()
@@ -1044,6 +1052,8 @@ describe("App", () => {
     expect(within(topMenu).getByRole("group", { name: "Open current project" })).toBeInTheDocument()
     expect(within(inspector).queryByText("Workspace diff")).not.toBeInTheDocument()
     expect(await within(inspector).findByText("No changes in this session.")).toBeInTheDocument()
+    expect(inspector.querySelector(".right-sidebar-view-host")).toHaveClass("is-changes")
+    expect(window.desktop?.getSessionRuntimeDebug).not.toHaveBeenCalled()
     expect(within(inspector).queryByText("Active Session")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Workspace")).not.toBeInTheDocument()
     expect(within(inspector).queryByText("Current execution state")).not.toBeInTheDocument()
@@ -1116,6 +1126,7 @@ describe("App", () => {
   })
 
   it("shows the runtime inspector when the runtime tab is selected", async () => {
+    window.localStorage.setItem("desktop.agentDebugTrace", "true")
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
         id: "workspace-runtime",
@@ -1141,6 +1152,7 @@ describe("App", () => {
       },
     ])
     render(<App />)
+    expect(await screen.findByRole("button", { name: "Runtime" })).toBeInTheDocument()
     await waitFor(() => {
       expect(window.desktop?.getSessionRuntimeDebug).toHaveBeenCalled()
     })
@@ -1593,7 +1605,7 @@ describe("App", () => {
     expect(screen.getByText("const nextValue = focusValue + 1")).toBeInTheDocument()
   })
 
-  it("shows line comments on hover, saves a comment, and discards a canceled draft", async () => {
+  it("shows line comments on hover, confirms a comment, and discards a canceled draft", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
     window.desktop!.searchWorkspaceFiles = vi.fn().mockResolvedValue([
       {
@@ -1627,7 +1639,8 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "File comment on line 2" }), {
       target: { value: "Check the increment logic." },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Annotate" }))
+    expect(screen.queryByRole("button", { name: "Annotate" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "确认" }))
 
     expect(screen.getByText("Check the increment logic.")).toBeInTheDocument()
 
@@ -1637,7 +1650,7 @@ describe("App", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "File comment on line 3" }), {
       target: { value: "Drop this note." },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }))
+    fireEvent.click(screen.getByRole("button", { name: "取消" }))
 
     expect(screen.queryByText("Drop this note.")).not.toBeInTheDocument()
     expect(screen.queryByRole("textbox", { name: "File comment on line 3" })).not.toBeInTheDocument()
@@ -1681,7 +1694,7 @@ describe("App", () => {
     fireEvent.change(commentBox, {
       target: { value: "Check how these values flow through the summary." },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }))
+    fireEvent.click(screen.getByRole("button", { name: "确认" }))
 
     await screen.findByText(/focus-files\.tsx:L2-L3/)
     expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).toContain("@focus-files.tsx:L2-L3")
@@ -1807,7 +1820,7 @@ describe("App", () => {
     fireEvent.change(commentBox, {
       target: { value: "Check how these values flow through the summary." },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }))
+    fireEvent.click(screen.getByRole("button", { name: "确认" }))
 
     fireEvent.click(getComposerSendButton())
 
@@ -6794,12 +6807,12 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Close settings" })).toBeInTheDocument()
     expect(screen.queryByText("Global settings")).not.toBeInTheDocument()
     expect(screen.queryByText("Manage shared providers and models for the app.")).not.toBeInTheDocument()
-    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(7)
+    expect(settingsDialog.querySelectorAll(".settings-primary-nav-icon")).toHaveLength(6)
     expect(screen.getByText("\u9009\u9879")).toBeInTheDocument()
     const providerNavButton = screen.getByRole("button", { name: "Provider" })
     expect(providerNavButton).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Models" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Tools" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Tools" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Archived Sessions" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Appearance" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Developer Mode" })).toBeInTheDocument()
@@ -6930,12 +6943,43 @@ describe("App", () => {
       }
       return Promise.resolve(promptPresetSelection)
     })
+    window.desktop!.previewPromptUrlInstall = vi.fn().mockResolvedValue({
+      previewID: "prompt-preview-1",
+      source: "https://github.com/acme/prompts/tree/main/prompts",
+      prompts: [
+        {
+          id: "remote-system-prompt",
+          label: "Remote System Prompt",
+          description: "Downloaded prompt.",
+          sourcePath: "https://github.com/acme/prompts/blob/main/prompts/system.md",
+          available: true,
+        },
+      ],
+    })
+    window.desktop!.installPromptsFromUrl = vi.fn().mockImplementation(() => {
+      const document = createPromptPresetDocument("custom-remote-system-prompt", {
+        label: "Remote System Prompt",
+        source: "custom",
+        description: "Downloaded prompt.",
+        sourcePath: "https://github.com/acme/prompts/blob/main/prompts/system.md",
+        content: "remote installed prompt",
+      })
+      upsertPromptPresetDocument(document)
+      return Promise.resolve({
+        installed: [document],
+      })
+    })
 
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Open prompts" }))
 
-    await screen.findByRole("list", { name: "Prompt presets" })
+    const promptTree = await screen.findByRole("list", { name: "Prompt presets" })
+    const bundledPromptFolder = within(promptTree).getByRole("button", { name: "Bundled prompt folder" })
+    expect(bundledPromptFolder.querySelector(".skill-tree-leading")).toBeNull()
+    expect(bundledPromptFolder.firstElementChild).toHaveClass("skill-tree-role-icon", "is-folder")
+    expect(promptTree.lastElementChild).toHaveClass("prompt-presets-new-menu-shell")
+    expect(within(promptTree.lastElementChild as HTMLElement).getByRole("button", { name: "New" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "System Prompt" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Plan Mode Prompt" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Side Chat Prompt" })).toBeInTheDocument()
@@ -6943,6 +6987,7 @@ describe("App", () => {
     expect(screen.getByLabelText("System prompt preset")).toHaveValue("system-default")
     expect(screen.getByLabelText("Plan mode prompt preset")).toHaveValue("plan-mode")
     expect(screen.getByLabelText("Side chat prompt preset")).toHaveValue("side-chat")
+    expect(screen.queryByRole("button", { name: /Confirm .* prompt preset/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Plan Mode Prompt" }))
 
@@ -6968,7 +7013,6 @@ describe("App", () => {
         value: "provider-gpt",
       },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Confirm system prompt preset" }))
 
     await waitFor(() => {
       expect(window.desktop!.updatePromptPresetSelection).toHaveBeenCalledWith({
@@ -7009,7 +7053,6 @@ describe("App", () => {
         value: "custom-untitled-preset",
       },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Confirm system prompt preset" }))
 
     await waitFor(() => {
       expect(window.desktop!.updatePromptPresetSelection).toHaveBeenLastCalledWith({
@@ -7028,6 +7071,39 @@ describe("App", () => {
     })
 
     expect(await screen.findByText("Prompt preset deleted.")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Install prompt" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "From URL" }))
+
+    const promptUrlInstallDialog = await screen.findByRole("dialog", { name: "Install prompts from URL" })
+    fireEvent.change(within(promptUrlInstallDialog).getByRole("textbox", { name: "Prompt resource URL" }), {
+      target: {
+        value: "https://github.com/acme/prompts/tree/main/prompts",
+      },
+    })
+    fireEvent.click(within(promptUrlInstallDialog).getByRole("button", { name: "Preview" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.previewPromptUrlInstall).toHaveBeenCalledWith({
+        source: "https://github.com/acme/prompts/tree/main/prompts",
+      })
+    })
+    expect(within(promptUrlInstallDialog).getByText("Remote System Prompt")).toBeInTheDocument()
+
+    fireEvent.click(within(promptUrlInstallDialog).getByRole("button", { name: "Install (1)" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.installPromptsFromUrl).toHaveBeenCalledWith({
+        previewID: "prompt-preview-1",
+        promptIDs: ["remote-system-prompt"],
+      })
+    })
+
+    expect(await screen.findByText("Installed 1 prompt.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Remote System Prompt" })).toBeInTheDocument()
+    expect(screen.getByRole("textbox", { name: "Remote System Prompt content" })).toHaveValue(
+      "remote installed prompt",
+    )
 
     fireEvent.click(screen.getByRole("button", { name: "GPT Provider Prompt" }))
 
@@ -7178,6 +7254,63 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Dismiss settings message" }))
     expect(screen.queryByText("Provider catalog refreshed.")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: /OpenAI.*Not connected/ })).toBeInTheDocument()
+  })
+
+  it("opens built-in tools from the activity rail and loads tool availability", async () => {
+    window.desktop!.getBuiltinTools = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: "git_bash_command",
+          title: "Git Bash",
+          description: "Run a Git Bash/MSYS Bash command inside the current project boundary.",
+          aliases: [],
+          capabilities: {
+            kind: "exec",
+            readOnly: false,
+            destructive: true,
+            concurrency: "exclusive",
+            needsShell: true,
+          },
+        },
+        {
+          id: "read-file",
+          title: "Read File",
+          description: "Read a text file or a line range from the current project.",
+          aliases: [],
+          capabilities: {
+            kind: "read",
+            readOnly: true,
+            destructive: false,
+            concurrency: "safe",
+          },
+        },
+      ],
+      selection: {
+        tools: {
+          "read-file": false,
+        },
+      },
+    })
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Open tools" }))
+
+    expect(screen.getByLabelText("Tools top menu")).toBeInTheDocument()
+    expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Pick a project first")).not.toBeInTheDocument()
+    expect(await screen.findByText("Global tool availability")).toBeInTheDocument()
+    expect(screen.getByText("1 of 2 built-in tools enabled.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Shell tools, 1 of 1 enabled" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByText("Git Bash")).toBeInTheDocument()
+    expect(screen.queryByText("Read File")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Read tools, 0 of 1 enabled" }))
+    expect(screen.getByText("Read File")).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(window.desktop!.getBuiltinTools).toHaveBeenCalledTimes(1)
+    })
   })
 
   it("edits global MCP servers from the activity rail and runs global diagnostics", async () => {
@@ -8141,9 +8274,13 @@ describe("App", () => {
     })
 
     const { container } = render(<App />)
+    const appShell = container.querySelector(".app-shell") as HTMLElement | null
+    expect(appShell).not.toBeNull()
+    expect(appShell).not.toHaveClass("is-settings-open")
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument()
+    expect(appShell).toHaveClass("is-settings-open")
 
     const settingsOverlay = container.querySelector(".settings-page-overlay")
     expect(settingsOverlay).not.toBeNull()
@@ -8152,15 +8289,18 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument()
     })
+    expect(appShell).not.toHaveClass("is-settings-open")
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument()
+    expect(appShell).toHaveClass("is-settings-open")
 
     fireEvent.keyDown(window, { key: "Escape" })
 
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument()
     })
+    expect(appShell).not.toHaveClass("is-settings-open")
   })
 
   it("drags settings within the main window", async () => {
@@ -9724,11 +9864,12 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
   })
 
-  it("toggles the terminal panel from the left rail footer and auto-creates the first terminal", async () => {
+  it("toggles the terminal panel from the right sidebar menu without changing the active inspector view", async () => {
     render(<App />)
 
-    const collapsedToggle = screen.getByRole("button", { name: "Toggle terminal panel" })
-    expect(collapsedToggle.closest(".activity-rail-bottom")).not.toBeNull()
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    const collapsedToggle = within(inspector).getByRole("button", { name: "Toggle terminal panel" })
+    expect(collapsedToggle.closest(".right-sidebar-top-menu")).not.toBeNull()
 
     fireEvent.click(collapsedToggle)
 
@@ -9742,32 +9883,30 @@ describe("App", () => {
 
     expect(screen.getByRole("tablist", { name: "Terminal tabs" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "New terminal" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Toggle terminal panel" }).closest(".terminal-tabs")).not.toBeNull()
+    expect(within(inspector).getByRole("button", { name: "Toggle terminal panel" }).closest(".right-sidebar-top-menu")).not.toBeNull()
     expect(screen.getByRole("button", { name: "New terminal" })).toHaveTextContent("")
-    expect(screen.getByRole("button", { name: "Toggle terminal panel" })).toHaveTextContent("")
+    expect(within(inspector).getByRole("button", { name: "Toggle terminal panel" })).toHaveTextContent("")
     expect(screen.queryByText("New terminal")).not.toBeInTheDocument()
     expect(document.querySelector(".terminal-view-meta")).toBeNull()
 
-    const composer = document.querySelector(".composer")
-    const utilityBar = document.querySelector(".composer-utility-bar")
-    const terminalPanel = document.querySelector(".terminal-panel")
-    expect(composer).not.toBeNull()
-    expect(utilityBar).not.toBeNull()
+    const viewHost = inspector.querySelector(".right-sidebar-view-host")
+    const terminalPanel = inspector.querySelector(".terminal-panel")
+    expect(viewHost).not.toBeNull()
     expect(terminalPanel).not.toBeNull()
-    expect(composer!.compareDocumentPosition(utilityBar!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(utilityBar!.compareDocumentPosition(terminalPanel!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(composer!.compareDocumentPosition(terminalPanel!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(viewHost).toHaveClass("is-changes")
+    expect(await within(inspector).findByText("No changes in this session.")).toBeInTheDocument()
+    expect(viewHost!.compareDocumentPosition(terminalPanel!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
 
-    fireEvent.click(screen.getByRole("button", { name: "Toggle terminal panel" }))
+    fireEvent.click(within(inspector).getByRole("button", { name: "Toggle terminal panel" }))
 
     await waitFor(() => {
       expect(screen.queryByRole("tablist", { name: "Terminal tabs" })).not.toBeInTheDocument()
     })
 
-    expect(screen.getByRole("button", { name: "Toggle terminal panel" }).closest(".activity-rail-bottom")).not.toBeNull()
+    expect(within(inspector).getByRole("button", { name: "Toggle terminal panel" }).closest(".right-sidebar-top-menu")).not.toBeNull()
   })
 
-  it("falls back to the canvas anchor for the terminal toggle when the left rail is hidden", async () => {
+  it("keeps the terminal toggle in the right sidebar menu when the left rail is hidden", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
@@ -9775,8 +9914,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Appearance/ }))
     fireEvent.click(screen.getByRole("switch", { name: "Show left rail" }))
 
-    const collapsedToggle = screen.getByRole("button", { name: "Toggle terminal panel" })
-    expect(collapsedToggle.closest(".canvas-terminal-toggle-anchor")).not.toBeNull()
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    const collapsedToggle = within(inspector).getByRole("button", { name: "Toggle terminal panel" })
+    expect(collapsedToggle.closest(".right-sidebar-top-menu")).not.toBeNull()
   })
 
   it("shows real context pressure from streamed assistant usage against the selected model context window", async () => {
@@ -10829,6 +10969,10 @@ describe("App", () => {
 
   it("keeps settings surfaces constrained as centered dialogs", () => {
     expect(styles).toMatch(/\.settings-page-overlay\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*center;[^}]*overflow:\s*auto;/s)
+    expect(styles).toMatch(/\.settings-page-overlay\s*\{[^}]*z-index:\s*40;/s)
+    expect(styles).toMatch(
+      /\.app-shell\.is-settings-open\s+\.preview-webview\s*\{[^}]*visibility:\s*hidden;[^}]*pointer-events:\s*none;/s,
+    )
     expect(styles).toMatch(
       /\.settings-page\s*\{[^}]*width:\s*min\(100%,\s*1320px\);[^}]*height:\s*min\(calc\(100dvh - 64px\),\s*860px\);[^}]*max-height:\s*min\(calc\(100dvh - 64px\),\s*860px\);/s,
     )
@@ -10851,6 +10995,10 @@ describe("App", () => {
     expect(styles).toMatch(/\.settings-page-content,\s*\.settings-page-main\s*\{[^}]*scrollbar-gutter:\s*stable both-edges;/s)
     expect(styles).toMatch(/\.settings-service-list\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s)
     expect(styles).toMatch(/\.settings-service-detail-panel\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s)
+    expect(styles).toMatch(/\.settings-page-main\.prompt-presets-page-main\s*\{[^}]*height:\s*100%;[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*align-items:\s*stretch;/s)
+    expect(styles).toMatch(/\.settings-page-main\.prompt-presets-page-main\s*>\s*\.settings-prompts-shell\s*\{[^}]*flex:\s*1 1 auto;[^}]*height:\s*auto;/s)
+    expect(styles).toMatch(/\.settings-prompt-assignment-list\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/s)
+    expect(styles).toMatch(/\.settings-prompt-assignment-control select\s*\{[^}]*width:\s*clamp\(220px,\s*18vw,\s*360px\);/s)
   })
 
   it("keeps the settings primary nav grouped and pill-led", () => {

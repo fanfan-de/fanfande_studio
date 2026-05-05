@@ -20,6 +20,8 @@ import type {
   AgentSideChatLink,
   AppearanceConfigDocument,
   AppearanceConfigSnapshot,
+  LocaleConfigDocument,
+  LocaleConfigSnapshot,
   BuiltinToolSelection,
   BuiltinToolsPayload,
   DesktopAppUpdateCheckResult,
@@ -27,6 +29,7 @@ import type {
   DesktopIpcChannel,
   DesktopIpcInput,
   DesktopIpcOutput,
+  DesktopLocalPreviewService,
   DesktopPreloadApi,
   ExternalEditorSummary,
   GitActionResult,
@@ -53,6 +56,8 @@ import type {
   PromptPresetDocument,
   PromptPresetSelection,
   PromptPresetSummary,
+  PromptUrlInstallPreview,
+  PromptUrlInstallResult,
   PtyIPCEvent,
   PtySessionInfo,
   SkillGitInstallPreview,
@@ -125,6 +130,10 @@ try {
       invokeDesktop("desktop:get-appearance-config") as Promise<AppearanceConfigSnapshot>,
     saveAppearanceConfig: (input: { document: AppearanceConfigDocument }) =>
       invokeDesktop("desktop:save-appearance-config", input) as Promise<AppearanceConfigSnapshot>,
+    getLocaleConfig: () =>
+      invokeDesktop("desktop:get-locale-config") as Promise<LocaleConfigSnapshot>,
+    saveLocaleConfig: (input: { document: LocaleConfigDocument }) =>
+      invokeDesktop("desktop:save-locale-config", input) as Promise<LocaleConfigSnapshot>,
     showMenu: (menuKey: MenuKey, anchor?: MenuAnchor) => invokeDesktop("desktop:show-menu", { menuKey, anchor }),
     showExternalEditorMenu: (input: { targetPath: string; anchor?: MenuAnchor }) =>
       invokeDesktop("desktop:show-external-editor-menu", input) as Promise<void>,
@@ -141,6 +150,7 @@ try {
         ok: true
         url: string
       }>,
+    openMonitorWindow: () => invokeDesktop("desktop:open-monitor-window") as Promise<DesktopIpcOutput<"desktop:open-monitor-window">>,
     windowAction: (action: WindowAction) => invokeDesktop("desktop:window-action", action),
     getAgentConfig: () =>
       invokeDesktop("desktop:get-agent-config") as Promise<{
@@ -173,6 +183,8 @@ try {
       invokeDesktop("desktop:pick-composer-attachments", input) as Promise<string[]>,
     capturePreviewScreenshot: (input: { bounds: { x: number; y: number; width: number; height: number }; url?: string }) =>
       invokeDesktop("desktop:capture-preview-screenshot", input) as Promise<{ path: string }>,
+    detectLocalPreviewServices: () =>
+      invokeDesktop("desktop:detect-local-preview-services") as Promise<DesktopLocalPreviewService[]>,
     gitGetCapabilities: (input: { projectID: string; directory: string }) =>
       invokeDesktop("desktop:git-get-capabilities", input) as Promise<GitCapabilities>,
     gitCommit: (input: { projectID: string; directory: string; message: string; stageAll?: boolean }) =>
@@ -452,6 +464,10 @@ try {
       invokeDesktop("desktop:read-prompt-preset", input) as Promise<PromptPresetDocument>,
     createPromptPreset: (input: { label?: string; content?: string; description?: string }) =>
       invokeDesktop("desktop:create-prompt-preset", input) as Promise<PromptPresetDocument>,
+    previewPromptUrlInstall: (input: { source: string }) =>
+      invokeDesktop("desktop:preview-prompt-url-install", input) as Promise<PromptUrlInstallPreview>,
+    installPromptsFromUrl: (input: { previewID: string; promptIDs: string[] }) =>
+      invokeDesktop("desktop:install-prompts-from-url", input) as Promise<PromptUrlInstallResult>,
     getGlobalSkillsTree: () =>
       invokeDesktop("desktop:get-global-skills-tree") as Promise<GlobalSkillTree>,
     readGlobalSkillFile: (input: { path: string }) =>

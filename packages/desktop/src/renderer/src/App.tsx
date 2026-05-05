@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import {
   ActivityRail,
+  BuiltinToolsPage,
   GlobalSkillsPage,
   McpServersPage,
   PluginsPage,
@@ -12,7 +13,7 @@ import {
   WindowChrome,
 } from "./app/components"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
-import type { ToolPermissionMode, WorkspaceMode } from "./app/types"
+import type { RightSidebarView, ToolPermissionMode, WorkspaceMode } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
@@ -140,16 +141,18 @@ export function App() {
     handleAskUserQuestionAnswer,
     handlePickComposerAttachments,
     handlePreviewAddComment,
+    handlePreviewBack,
     handlePreviewDraftUrlChange,
+    handlePreviewForward,
     handlePreviewModeChange,
     handlePreviewOpen,
     handlePreviewOpenExternal,
+    handlePreviewOpenUrl,
     handlePreviewReload,
     handleWorkspaceFileCommentCancel,
     handleWorkspaceFileCommentChange,
     handleWorkspaceFileCommentConfirm,
     handleWorkspaceFileCommentStart,
-    handleWorkspaceFileCommentSubmit,
     handleWorkspaceFileQueryChange,
     handleWorkspaceFileSelect,
     handleProjectCreateSession,
@@ -189,6 +192,7 @@ export function App() {
   } = useAgentWorkspace({
     agentConnected,
     agentDefaultDirectory,
+    isRuntimeDebugEnabled: isAgentDebugTraceEnabled,
     platform,
   })
 
@@ -290,6 +294,7 @@ export function App() {
     diagnosingPluginConnectorID,
     dismissMessage,
     installPlugin,
+    installPromptsFromUrl,
     importMcpConfigJson,
     installingPluginID,
     installedPlugins,
@@ -303,11 +308,11 @@ export function App() {
     isLoadingArchivedSessions,
     isOpen,
     isPromptDirty,
+    isPromptUrlInstallDialogOpen,
     isBuiltinToolSelectionDirty,
-    isSystemPromptPresetDirty,
-    isPlanModePromptPresetDirty,
-    isSideChatPromptPresetDirty,
     isRefreshingProviderCatalog,
+    isInstallingPromptUrlPrompts,
+    isPreviewingPromptUrlInstall,
     isSavingPromptPresetSelection,
     isSavingBuiltinTools,
     isSavingSelection,
@@ -325,11 +330,19 @@ export function App() {
     promptDraftLabel,
     promptDraftContent,
     promptLoadError,
+    promptRoot,
     promptPresets,
     promptPresetSelection,
+    promptUrlInstallMessage,
+    promptUrlInstallPreview,
+    promptUrlInstallSource,
     providerDrafts,
     createPromptPreset,
     deletePromptPreset,
+    closePromptUrlInstallDialog,
+    openPromptFolder,
+    openPromptUrlInstallDialog,
+    previewPromptUrlInstall,
     refreshProviderCatalog,
     resetBuiltinTools,
     resetPromptPreset,
@@ -342,8 +355,6 @@ export function App() {
     saveInstalledPluginConnectorApiKey,
     saveMcpServer,
     savePromptPreset,
-    savePromptPresetSelection,
-    savingPromptPresetSelectionField,
     saveProviderApiKey,
     saveProvider,
     saveSelection,
@@ -354,9 +365,11 @@ export function App() {
     testProviderConnection,
     testingProviderID,
     selectedPromptPreset,
+    selectedPromptUrlInstallIDs,
     setProviderAuthMethod,
     setPromptDraftLabelValue,
     setPromptPresetSelectionValue,
+    setPromptUrlInstallSourceValue,
     selectPromptPreset,
     selectMcpServer,
     selectPlugin,
@@ -370,11 +383,13 @@ export function App() {
     setPromptDraftValue,
     setProviderDraftValue,
     setSelectionDraftValue,
+    togglePromptUrlInstallPrompt,
     startProviderAuthFlow,
     startNewMcpServer,
     cancelProviderAuthFlow,
     updatingPluginID,
   } = useSettingsPage({
+    isBuiltinToolsPageOpen: leftSidebarView === "tools",
     isMcpServersPageOpen: leftSidebarView === "mcp",
     isPluginsPageOpen: leftSidebarView === "plugins",
     isPromptPresetEditorOpen: leftSidebarView === "prompts",
@@ -393,7 +408,6 @@ export function App() {
   const [draggedPaneTab, setDraggedPaneTab] = useState<DraggedPaneTab | null>(null)
   const [paneDropTarget, setPaneDropTarget] = useState<PaneDropTarget | null>(null)
   const [activePaneResize, setActivePaneResize] = useState<ActivePaneResize | null>(null)
-  const [activityRailTerminalSlot, setActivityRailTerminalSlot] = useState<HTMLDivElement | null>(null)
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code")
   const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
   const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
@@ -402,6 +416,8 @@ export function App() {
   const lastPaneID = workbenchPaneStates[workbenchPaneStates.length - 1]?.id ?? null
   const focusedWorkbenchPane = focusedPaneID ? workbenchPaneStateByID[focusedPaneID] ?? null : null
   const terminalWorkspaceDirectory = focusedWorkbenchPane?.workspace?.directory ?? selectedWorkspace?.directory ?? null
+  const activeRightSidebarView: RightSidebarView =
+    rightSidebarView === "runtime" && !isAgentDebugTraceEnabled ? "changes" : rightSidebarView
 
   useEffect(() => {
     let cancelled = false
@@ -424,6 +440,11 @@ export function App() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (rightSidebarView !== "runtime" || isAgentDebugTraceEnabled) return
+    handleRightSidebarViewChange("changes")
+  }, [handleRightSidebarViewChange, isAgentDebugTraceEnabled, rightSidebarView])
 
   async function handleToolPermissionModeChange(mode: ToolPermissionMode) {
     if (mode === toolPermissionMode || isSavingToolPermissionMode) return
@@ -450,6 +471,11 @@ export function App() {
     }
     handlePaneFocus(paneID)
     handleActiveSessionDiffFileSelect(file, sessionID)
+  }
+
+  function handleInspectorViewChange(view: RightSidebarView) {
+    if (view === "runtime" && !isAgentDebugTraceEnabled) return
+    handleRightSidebarViewChange(view)
   }
 
   useEffect(() => {
@@ -683,20 +709,22 @@ export function App() {
   const isGlobalSkillsView = leftSidebarView === "skills"
   const isMcpServersView = leftSidebarView === "mcp"
   const isPluginsView = leftSidebarView === "plugins"
-  const isFullSurfaceView = isPromptEditorView || isGlobalSkillsView || isMcpServersView || isPluginsView
+  const isBuiltinToolsView = leftSidebarView === "tools"
+  const isFullSurfaceView =
+    isPromptEditorView || isGlobalSkillsView || isMcpServersView || isPluginsView || isBuiltinToolsView
   const placeholderWorkspaceMode: Exclude<WorkspaceMode, "code"> | null =
     leftSidebarView === "workspace" && workspaceMode !== "code" ? workspaceMode : null
   const windowControls = (
     <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
   )
+  const appShellClassName = isOpen ? "app-shell is-settings-open" : "app-shell"
 
   return (
     <div className={windowShellClassName}>
-      <main ref={appShellRef} className="app-shell" style={appShellStyle}>
+      <main ref={appShellRef} className={appShellClassName} style={appShellStyle}>
         {isActivityRailVisible ? (
           <ActivityRail
             activeView={leftSidebarView}
-            bottomSlotRef={leftSidebarView === "workspace" ? setActivityRailTerminalSlot : undefined}
             isSidebarCollapsed={isSidebarCollapsed}
             onViewChange={handleLeftSidebarViewChange}
             onToggleSidebar={handleSidebarToggle}
@@ -773,17 +801,11 @@ export function App() {
 
         <section
           className={
-            isPromptEditorView
+            isFullSurfaceView
               ? "canvas is-workbench is-full-surface"
-              : isGlobalSkillsView
-                ? "canvas is-workbench is-full-surface"
-                : isMcpServersView
-                  ? "canvas is-workbench is-full-surface"
-                  : isPluginsView
-                    ? "canvas is-workbench is-full-surface"
-                    : placeholderWorkspaceMode
-                      ? "canvas is-workbench is-workspace-mode-placeholder"
-                      : "canvas is-workbench"
+              : placeholderWorkspaceMode
+                ? "canvas is-workbench is-workspace-mode-placeholder"
+                : "canvas is-workbench"
           }
         >
           {isPromptEditorView ? (
@@ -792,32 +814,42 @@ export function App() {
               isCreatingPromptPreset={isCreatingPromptPreset}
               isLoadingPromptPreset={isLoadingPromptPreset}
               isLoadingPrompts={isLoadingPrompts}
-              isPlanModePromptPresetDirty={isPlanModePromptPresetDirty}
+              isInstallingPromptUrlPrompts={isInstallingPromptUrlPrompts}
+              isPreviewingPromptUrlInstall={isPreviewingPromptUrlInstall}
               isPromptDirty={isPromptDirty}
+              isPromptUrlInstallDialogOpen={isPromptUrlInstallDialogOpen}
               isSavingPromptPresetSelection={isSavingPromptPresetSelection}
-              isSideChatPromptPresetDirty={isSideChatPromptPresetDirty}
-              isSystemPromptPresetDirty={isSystemPromptPresetDirty}
               message={message}
               promptDraftContent={promptDraftContent}
               promptDraftLabel={promptDraftLabel}
               promptLoadError={promptLoadError}
+              promptRoot={promptRoot}
               promptPresets={promptPresets}
               promptPresetSelection={promptPresetSelection}
+              promptUrlInstallMessage={promptUrlInstallMessage}
+              promptUrlInstallPreview={promptUrlInstallPreview}
+              promptUrlInstallSource={promptUrlInstallSource}
               resettingPromptPresetID={resettingPromptPresetID}
               savingPromptPresetID={savingPromptPresetID}
-              savingPromptPresetSelectionField={savingPromptPresetSelectionField}
               selectedPromptPreset={selectedPromptPreset}
+              selectedPromptUrlInstallIDs={selectedPromptUrlInstallIDs}
               windowControls={windowControls}
               onCreatePromptPreset={createPromptPreset}
               onDeletePromptPreset={deletePromptPreset}
               onDismissMessage={dismissMessage}
+              onInstallPromptsFromUrl={installPromptsFromUrl}
+              onPromptUrlInstallDialogClose={closePromptUrlInstallDialog}
+              onPromptUrlInstallDialogOpen={openPromptUrlInstallDialog}
+              onPromptUrlInstallPromptToggle={togglePromptUrlInstallPrompt}
+              onPromptUrlInstallSourceChange={setPromptUrlInstallSourceValue}
               onPromptDraftChange={setPromptDraftValue}
               onPromptDraftLabelChange={setPromptDraftLabelValue}
               onPromptPresetSelect={selectPromptPreset}
               onPromptPresetSelectionChange={setPromptPresetSelectionValue}
+              onPreviewPromptUrlInstall={previewPromptUrlInstall}
+              onOpenPromptFolder={openPromptFolder}
               onResetPromptPreset={resetPromptPreset}
               onSavePromptPreset={savePromptPreset}
-              onSavePromptPresetSelection={savePromptPresetSelection}
             />
           ) : isGlobalSkillsView ? (
             <GlobalSkillsPage
@@ -943,6 +975,20 @@ export function App() {
               onSetInstalledPluginEnabled={setInstalledPluginEnabled}
               savingPluginConnectorID={savingPluginConnectorID}
             />
+          ) : isBuiltinToolsView ? (
+            <BuiltinToolsPage
+              builtinTools={builtinTools}
+              builtinToolsError={builtinToolsError}
+              isBuiltinToolSelectionDirty={isBuiltinToolSelectionDirty}
+              isLoadingBuiltinTools={isLoadingBuiltinTools}
+              isSavingBuiltinTools={isSavingBuiltinTools}
+              message={message}
+              windowControls={windowControls}
+              onBuiltinToolToggle={setBuiltinToolEnabled}
+              onDismissMessage={dismissMessage}
+              onResetBuiltinTools={resetBuiltinTools}
+              onSaveBuiltinTools={saveBuiltinTools}
+            />
           ) : placeholderWorkspaceMode ? (
             <WorkspaceModeCanvasPlaceholder
               mode={placeholderWorkspaceMode}
@@ -1003,14 +1049,6 @@ export function App() {
                 onToggleLeftSidebar={handleSidebarToggle}
                 onToggleRightSidebar={handleRightSidebarToggle}
               />
-              <TerminalAreaHost
-                brandTheme={brandTheme}
-                collapsedTogglePortalTarget={isActivityRailVisible ? activityRailTerminalSlot : null}
-                colorMode={colorMode}
-                currentWorkspaceDirectory={terminalWorkspaceDirectory}
-                defaultCwd={agentDefaultDirectory}
-                storageKey={WORKBENCH_TERMINAL_STORAGE_KEY}
-              />
             </>
           )}
         </section>
@@ -1043,24 +1081,37 @@ export function App() {
                 activeSessionRuntimeDebugState={activeSessionRuntimeDebugState}
                 canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
                 selectedDiffFile={activeSessionSelectedDiffFile}
-                activeView={rightSidebarView}
+                activeView={activeRightSidebarView}
+                isRuntimeViewVisible={isAgentDebugTraceEnabled}
                 onDiffFileSelect={handleActiveSessionDiffFileSelect}
                 onDiffFileRestore={handleActiveSessionDiffFileRestore}
                 onPreviewAddComment={handlePreviewAddComment}
+                onPreviewBack={handlePreviewBack}
                 onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
+                onPreviewForward={handlePreviewForward}
                 onPreviewModeChange={handlePreviewModeChange}
                 onPreviewOpen={handlePreviewOpen}
                 onPreviewOpenExternal={handlePreviewOpenExternal}
+                onPreviewOpenUrl={handlePreviewOpenUrl}
                 onPreviewReload={handlePreviewReload}
                 onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
                 onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
                 onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
                 onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
-                onWorkspaceFileCommentSubmit={handleWorkspaceFileCommentSubmit}
                 onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
                 onWorkspaceFileSelect={handleWorkspaceFileSelect}
                 onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
-                onViewChange={handleRightSidebarViewChange}
+                onViewChange={handleInspectorViewChange}
+                renderTerminalArea={(togglePortalTarget) => (
+                  <TerminalAreaHost
+                    brandTheme={brandTheme}
+                    colorMode={colorMode}
+                    currentWorkspaceDirectory={terminalWorkspaceDirectory}
+                    defaultCwd={agentDefaultDirectory}
+                    storageKey={WORKBENCH_TERMINAL_STORAGE_KEY}
+                    togglePortalTarget={togglePortalTarget}
+                  />
+                )}
                 windowControls={windowControls}
               />
             )}
@@ -1072,8 +1123,6 @@ export function App() {
           activeMcpServerDiagnostic={activeMcpServerDiagnostic}
           archivedSessions={archivedSessions}
           archivedSessionsError={archivedSessionsError}
-          builtinTools={builtinTools}
-          builtinToolsError={builtinToolsError}
           catalog={catalog}
           deletingArchivedSessionID={deletingArchivedSessionID}
           deletingMcpServerID={deletingMcpServerID}
@@ -1091,12 +1140,9 @@ export function App() {
           isDebugLineColorsEnabled={isDebugLineColorsEnabled}
           isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
           isLoading={isLoading}
-          isLoadingBuiltinTools={isLoadingBuiltinTools}
           isLoadingArchivedSessions={isLoadingArchivedSessions}
           isOpen={isOpen}
-          isBuiltinToolSelectionDirty={isBuiltinToolSelectionDirty}
           isRefreshingProviderCatalog={isRefreshingProviderCatalog}
-          isSavingBuiltinTools={isSavingBuiltinTools}
           isSavingSelection={isSavingSelection}
           loadError={loadError}
           mcpServerDraft={mcpServerDraft}
@@ -1122,7 +1168,6 @@ export function App() {
           onDebugUiRegionsChange={handleDebugUiRegionsChange}
           onClose={closeSettings}
           onDismissMessage={dismissMessage}
-          onBuiltinToolToggle={setBuiltinToolEnabled}
           onDeleteArchivedSession={deleteArchivedSession}
           onDeleteMcpServer={deleteMcpServer}
           onDeleteProvider={deleteProvider}
@@ -1133,9 +1178,7 @@ export function App() {
           onProviderAuthMethodChange={setProviderAuthMethod}
           onProviderDraftChange={setProviderDraftValue}
           onRefreshProviderCatalog={refreshProviderCatalog}
-          onResetBuiltinTools={resetBuiltinTools}
           onRestoreArchivedSession={restoreArchivedSession}
-          onSaveBuiltinTools={saveBuiltinTools}
           onSaveMcpServer={saveMcpServer}
           onSaveProviderApiKey={saveProviderApiKey}
           onSaveProvider={saveProvider}

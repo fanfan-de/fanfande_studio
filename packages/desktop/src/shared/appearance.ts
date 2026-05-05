@@ -108,6 +108,8 @@ export const APPEARANCE_TOKEN_NAMES = [
   "semantic-left-sidebar-top-menu-surface-dark",
   "semantic-right-sidebar-top-menu-surface-light",
   "semantic-right-sidebar-top-menu-surface-dark",
+  "semantic-terminal-surface-light",
+  "semantic-terminal-surface-dark",
   "semantic-question-card-surface-light",
   "semantic-question-card-surface-dark",
   "semantic-sidebar-tree-row-text-light",
@@ -607,6 +609,20 @@ export const APPEARANCE_TOKEN_GROUPS = [
     ],
   },
   {
+    id: "component-terminal",
+    label: "Terminal",
+    description: "Dedicated semantic color for embedded terminal surfaces.",
+    rows: [
+      {
+        id: "semantic-terminal-surface",
+        label: "Terminal Surface",
+        description: "Background fill for terminal content surfaces.",
+        lightToken: "semantic-terminal-surface-light",
+        darkToken: "semantic-terminal-surface-dark",
+      },
+    ],
+  },
+  {
     id: "component-dropdown-select",
     label: "Dropdown Select",
     description: "Dedicated semantic color for expanded dropdown and select menus.",
@@ -838,6 +854,10 @@ const LEGACY_APPEARANCE_TOKEN_MIGRATIONS: Record<string, readonly AppearanceToke
   "semantic-question-card-surface": [
     "semantic-question-card-surface-light",
     "semantic-question-card-surface-dark",
+  ],
+  "semantic-terminal-surface": [
+    "semantic-terminal-surface-light",
+    "semantic-terminal-surface-dark",
   ],
   "semantic-composer-button-surface": [
     "semantic-composer-button-surface-light",

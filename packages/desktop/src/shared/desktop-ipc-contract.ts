@@ -30,6 +30,9 @@ import type {
   AgentPromptPresetDocument,
   AgentPromptPresetSelection,
   AgentPromptPresetSummary,
+  AgentPromptUrlInstallCandidate,
+  AgentPromptUrlInstallPreview,
+  AgentPromptUrlInstallResult,
   AgentProviderAuthFlow,
   AgentProviderAuthState,
   AgentProviderCatalogItem,
@@ -60,6 +63,7 @@ import type {
   WindowAction,
 } from "../main/types"
 import type { AppearanceConfigDocument, AppearanceConfigSnapshot } from "./appearance"
+import type { LocaleConfigDocument, LocaleConfigSnapshot } from "./locale"
 import type {
   PermissionRequestPrompt,
   PermissionResolveInput,
@@ -103,6 +107,9 @@ export type {
   AgentPromptPresetDocument,
   AgentPromptPresetSelection,
   AgentPromptPresetSummary,
+  AgentPromptUrlInstallCandidate,
+  AgentPromptUrlInstallPreview,
+  AgentPromptUrlInstallResult,
   AgentProviderAuthFlow,
   AgentProviderAuthState,
   AgentProviderCatalogItem,
@@ -129,6 +136,8 @@ export type {
   AgentWorkspaceSession,
   AppearanceConfigDocument,
   AppearanceConfigSnapshot,
+  LocaleConfigDocument,
+  LocaleConfigSnapshot,
   MenuAnchor,
   MenuKey,
   PermissionRequestPrompt,
@@ -212,6 +221,9 @@ export type GlobalSkillTree = AgentGlobalSkillTree
 export type PromptPresetDocument = AgentPromptPresetDocument
 export type PromptPresetSelection = AgentPromptPresetSelection
 export type PromptPresetSummary = AgentPromptPresetSummary
+export type PromptUrlInstallCandidate = AgentPromptUrlInstallCandidate
+export type PromptUrlInstallPreview = AgentPromptUrlInstallPreview
+export type PromptUrlInstallResult = AgentPromptUrlInstallResult
 export type BuiltinToolSummary = AgentBuiltinToolSummary
 export type BuiltinToolSelection = AgentBuiltinToolSelection
 export type BuiltinToolsPayload = AgentBuiltinToolsPayload
@@ -260,6 +272,12 @@ export interface DesktopPreviewScreenshotCaptureInput {
 
 export interface DesktopPreviewScreenshotCaptureResult {
   path: string
+}
+
+export interface DesktopLocalPreviewService {
+  port: number
+  statusCode: number
+  url: string
 }
 
 export interface DesktopSessionMutationResult {
@@ -375,6 +393,14 @@ export interface DesktopIpcContract {
     input: { document: AppearanceConfigDocument }
     output: AppearanceConfigSnapshot
   }
+  "desktop:get-locale-config": {
+    input: void
+    output: LocaleConfigSnapshot
+  }
+  "desktop:save-locale-config": {
+    input: { document: LocaleConfigDocument }
+    output: LocaleConfigSnapshot
+  }
   "desktop:window-action": {
     input: WindowAction
     output: void
@@ -382,6 +408,13 @@ export interface DesktopIpcContract {
   "desktop:open-external-url": {
     input: { url: string }
     output: { ok: true; url: string }
+  }
+  "desktop:open-monitor-window": {
+    input: void
+    output:
+      | { ok: true; reused: false; source: "dev-server"; url: string }
+      | { filePath: string; ok: true; reused: false; source: "file" }
+      | { ok: true; reused: true; source: "existing" }
   }
   "desktop:show-menu": {
     input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }
@@ -458,6 +491,10 @@ export interface DesktopIpcContract {
   "desktop:capture-preview-screenshot": {
     input: DesktopPreviewScreenshotCaptureInput
     output: DesktopPreviewScreenshotCaptureResult
+  }
+  "desktop:detect-local-preview-services": {
+    input: void
+    output: DesktopLocalPreviewService[]
   }
   "desktop:git-get-capabilities": {
     input: { projectID: string; directory: string }
@@ -707,6 +744,14 @@ export interface DesktopIpcContract {
     input: { label?: string; content?: string; description?: string }
     output: AgentPromptPresetDocument
   }
+  "desktop:preview-prompt-url-install": {
+    input: { source: string }
+    output: AgentPromptUrlInstallPreview
+  }
+  "desktop:install-prompts-from-url": {
+    input: { previewID: string; promptIDs: string[] }
+    output: AgentPromptUrlInstallResult
+  }
   "desktop:reset-prompt-preset": {
     input: { presetID: string }
     output: AgentPromptPresetDocument
@@ -923,11 +968,14 @@ export interface DesktopApiMethods {
   getWindowState(): Promise<DesktopIpcOutput<"desktop:get-window-state">>
   getAppearanceConfig(): Promise<DesktopIpcOutput<"desktop:get-appearance-config">>
   saveAppearanceConfig(input: DesktopIpcInput<"desktop:save-appearance-config">): Promise<DesktopIpcOutput<"desktop:save-appearance-config">>
+  getLocaleConfig(): Promise<DesktopIpcOutput<"desktop:get-locale-config">>
+  saveLocaleConfig(input: DesktopIpcInput<"desktop:save-locale-config">): Promise<DesktopIpcOutput<"desktop:save-locale-config">>
   showMenu(menuKey: MenuKey, anchor?: MenuAnchor): Promise<DesktopIpcOutput<"desktop:show-menu">>
   showExternalEditorMenu(input: DesktopIpcInput<"desktop:show-external-editor-menu">): Promise<DesktopIpcOutput<"desktop:show-external-editor-menu">>
   listExternalEditorsForTarget(input: DesktopIpcInput<"desktop:list-external-editors-for-target">): Promise<DesktopIpcOutput<"desktop:list-external-editors-for-target">>
   openInExternalEditor(input: DesktopIpcInput<"desktop:open-in-external-editor">): Promise<DesktopIpcOutput<"desktop:open-in-external-editor">>
   openExternalUrl(input: DesktopIpcInput<"desktop:open-external-url">): Promise<DesktopIpcOutput<"desktop:open-external-url">>
+  openMonitorWindow(): Promise<DesktopIpcOutput<"desktop:open-monitor-window">>
   windowAction(action: DesktopIpcInput<"desktop:window-action">): Promise<DesktopIpcOutput<"desktop:window-action">>
   getAgentConfig(): Promise<DesktopIpcOutput<"desktop:get-agent-config">>
   getAgentHealth(): Promise<DesktopIpcOutput<"desktop:agent-health">>
@@ -941,6 +989,7 @@ export interface DesktopApiMethods {
   pickProjectDirectory(): Promise<DesktopIpcOutput<"desktop:pick-project-directory">>
   pickComposerAttachments(input?: DesktopIpcInput<"desktop:pick-composer-attachments">): Promise<DesktopIpcOutput<"desktop:pick-composer-attachments">>
   capturePreviewScreenshot(input: DesktopIpcInput<"desktop:capture-preview-screenshot">): Promise<DesktopIpcOutput<"desktop:capture-preview-screenshot">>
+  detectLocalPreviewServices(): Promise<DesktopIpcOutput<"desktop:detect-local-preview-services">>
   gitGetCapabilities(input: DesktopIpcInput<"desktop:git-get-capabilities">): Promise<DesktopIpcOutput<"desktop:git-get-capabilities">>
   gitCommit(input: DesktopIpcInput<"desktop:git-commit">): Promise<DesktopIpcOutput<"desktop:git-commit">>
   gitPush(input: DesktopIpcInput<"desktop:git-push">): Promise<DesktopIpcOutput<"desktop:git-push">>
@@ -1005,6 +1054,8 @@ export interface DesktopApiMethods {
   getPromptPresetSelection(): Promise<DesktopIpcOutput<"desktop:get-prompt-preset-selection">>
   readPromptPreset(input: DesktopIpcInput<"desktop:read-prompt-preset">): Promise<DesktopIpcOutput<"desktop:read-prompt-preset">>
   createPromptPreset(input: DesktopIpcInput<"desktop:create-prompt-preset">): Promise<DesktopIpcOutput<"desktop:create-prompt-preset">>
+  previewPromptUrlInstall(input: DesktopIpcInput<"desktop:preview-prompt-url-install">): Promise<DesktopIpcOutput<"desktop:preview-prompt-url-install">>
+  installPromptsFromUrl(input: DesktopIpcInput<"desktop:install-prompts-from-url">): Promise<DesktopIpcOutput<"desktop:install-prompts-from-url">>
   getGlobalSkillsTree(): Promise<DesktopIpcOutput<"desktop:get-global-skills-tree">>
   readGlobalSkillFile(input: DesktopIpcInput<"desktop:read-global-skill-file">): Promise<DesktopIpcOutput<"desktop:read-global-skill-file">>
   searchWorkspaceFiles(input: DesktopIpcInput<"desktop:search-workspace-files">): Promise<DesktopIpcOutput<"desktop:search-workspace-files">>

@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEve
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { AppearanceConfigDocument } from "../shared/appearance"
+import type { AppLocale, LocaleConfigDocument } from "../shared/locale"
 import type {
   DesktopIpcChannel,
   DesktopIpcEventChannel,
@@ -27,6 +28,9 @@ import {
   pushGitChanges,
 } from "./git"
 import type { ApplicationMenus } from "./menu"
+import { readLocaleConfigSnapshot, writeLocaleConfigSnapshot } from "./locale-config"
+import { detectLocalPreviewServices } from "./local-preview-services"
+import { openMonitorWindow } from "./monitor-window"
 import { PtyProxyManager } from "./pty-proxy"
 import { safeWarn } from "./safe-console"
 import {
@@ -66,6 +70,8 @@ import type {
   AgentPromptPresetDocument,
   AgentPromptPresetSelection,
   AgentPromptPresetSummary,
+  AgentPromptUrlInstallPreview,
+  AgentPromptUrlInstallResult,
   AgentProviderAuthFlow,
   AgentProviderAuthState,
   AgentProviderCatalogItem,
@@ -283,7 +289,11 @@ function isAbortError(error: unknown) {
   return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
 }
 
-export function registerIpcHandlers(menus: ApplicationMenus) {
+export interface IpcHandlerOptions {
+  onLocaleChanged?: (locale: AppLocale) => void
+}
+
+export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandlerOptions = {}) {
   const ptyProxyManager = new PtyProxyManager()
   const workspaceWatchManager = new WorkspaceWatchManager()
   const externalEditorMenuResolvedIconCache = new Map<string, NativeImage | undefined>()
@@ -543,6 +553,14 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
     writeAppearanceConfigSnapshot(input.document),
   )
 
+  handleDesktopIpc("desktop:get-locale-config", async () => readLocaleConfigSnapshot())
+
+  handleDesktopIpc("desktop:save-locale-config", async (_event, input: { document: LocaleConfigDocument }) => {
+    const snapshot = await writeLocaleConfigSnapshot(input.document)
+    options.onLocaleChanged?.(snapshot.document.locale)
+    return snapshot
+  })
+
   handleDesktopIpc("desktop:window-action", (event, action: WindowAction) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
@@ -576,6 +594,8 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       url,
     }
   })
+
+  handleDesktopIpc("desktop:open-monitor-window", async () => openMonitorWindow())
 
   handleDesktopIpc("desktop:show-menu", (event, input: MenuKey | { menuKey: MenuKey; anchor?: MenuAnchor }) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -830,6 +850,8 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
 
     return capturePreviewScreenshotFromWindow(win, input)
   })
+
+  handleDesktopIpc("desktop:detect-local-preview-services", async () => detectLocalPreviewServices())
 
   handleDesktopIpc("desktop:git-get-capabilities", async (_event, input: { projectID: string; directory: string }) =>
     getGitCapabilities(input),
@@ -1608,6 +1630,35 @@ export function registerIpcHandlers(menus: ApplicationMenus) {
       return result.data
     },
   )
+
+  handleDesktopIpc("desktop:preview-prompt-url-install", async (_event, input: { source: string }) => {
+    const result = await requestAgentJSON<AgentPromptUrlInstallPreview>("/api/prompts/url/preview", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        source: input.source,
+      }),
+    })
+
+    return result.data
+  })
+
+  handleDesktopIpc("desktop:install-prompts-from-url", async (_event, input: { previewID: string; promptIDs: string[] }) => {
+    const result = await requestAgentJSON<AgentPromptUrlInstallResult>("/api/prompts/url/install", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        previewID: input.previewID,
+        promptIDs: input.promptIDs,
+      }),
+    })
+
+    return result.data
+  })
 
   handleDesktopIpc("desktop:reset-prompt-preset", async (_event, input: { presetID: string }) => {
     const result = await requestAgentJSON<AgentPromptPresetDocument>(

@@ -143,8 +143,11 @@ describe("workspace store", () => {
       committedUrl: null,
       comments: [],
       draftUrl: "http://localhost:5173",
+      errorKind: null,
       errorMessage: null,
       mode: "browse",
+      navigationHistory: [],
+      navigationIndex: -1,
       reloadToken: 1,
     }
 

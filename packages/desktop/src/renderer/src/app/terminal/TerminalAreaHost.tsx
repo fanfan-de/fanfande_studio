@@ -11,16 +11,19 @@ interface TerminalAreaHostProps {
   currentWorkspaceDirectory: string | null
   defaultCwd: string
   storageKey?: string
+  togglePortalTarget?: Element | null
 }
 
-export const TerminalAreaHost = memo(function TerminalAreaHost({
-  brandTheme,
-  collapsedTogglePortalTarget,
-  colorMode,
-  currentWorkspaceDirectory,
-  defaultCwd,
-  storageKey,
-}: TerminalAreaHostProps) {
+export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAreaHostProps) {
+  const {
+    brandTheme,
+    collapsedTogglePortalTarget,
+    colorMode,
+    currentWorkspaceDirectory,
+    defaultCwd,
+    storageKey,
+    togglePortalTarget,
+  } = props
   const {
     activeSession,
     handleCloseTerminal,
@@ -41,16 +44,21 @@ export const TerminalAreaHost = memo(function TerminalAreaHost({
     storageKey,
   })
 
-  const collapsedToggleButton = <TerminalPanelToggleButton isOpen={false} onToggle={() => void handleTogglePanel()} />
+  const hasPersistentTogglePortal = Object.prototype.hasOwnProperty.call(props, "togglePortalTarget")
+  const toggleButton = <TerminalPanelToggleButton isOpen={isOpen} onToggle={() => void handleTogglePanel()} />
 
   return (
     <>
-      {!isOpen
+      {hasPersistentTogglePortal
+        ? togglePortalTarget
+          ? createPortal(toggleButton, togglePortalTarget)
+          : null
+        : !isOpen
         ? collapsedTogglePortalTarget
-          ? createPortal(collapsedToggleButton, collapsedTogglePortalTarget)
+          ? createPortal(toggleButton, collapsedTogglePortalTarget)
           : (
             <div className="canvas-terminal-toggle-anchor">
-              {collapsedToggleButton}
+              {toggleButton}
             </div>
           )
         : null}
@@ -60,6 +68,7 @@ export const TerminalAreaHost = memo(function TerminalAreaHost({
         colorMode={colorMode}
         isOpen={isOpen}
         panelHeight={panelHeight}
+        showToggleButton={!hasPersistentTogglePortal}
         sessions={sessions}
         onCloseTerminal={handleCloseTerminal}
         onCreateTerminal={handleCreateTerminal}

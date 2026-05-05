@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto"
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
+import { homedir } from "node:os"
+import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import matter from "gray-matter"
 import * as Config from "#config/config.ts"
 import PROMPT_ANTHROPIC from "../prompt/anthropic.txt"
 import PROMPT_BEAST from "../prompt/beast.txt"
@@ -28,6 +33,8 @@ export interface PromptPresetSummary {
   editable: boolean
   hasOverride: boolean
   sourcePath?: string
+  filePath?: string
+  root?: string
 }
 
 export interface PromptPresetDocument extends PromptPresetSummary {
@@ -53,6 +60,33 @@ interface PromptPresetDefinition {
   sourcePath: string
   bundledContent: string
 }
+
+interface PromptPresetRecord extends PromptPresetDocument {
+  seedHash?: string
+}
+
+interface PromptFileMetadata {
+  id: string
+  label: string
+  description?: string
+  source: PromptPresetSource
+  seedHash?: string
+}
+
+export class PromptPresetStoreError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = "PromptPresetStoreError"
+  }
+}
+
+const PROMPT_ROOT_ENV = "FanFande_PROMPTS_ROOT"
+const BUNDLED_PROMPT_DIRECTORY = "bundled"
+const CUSTOM_PROMPT_DIRECTORY = "custom"
+const PROMPT_FILE_EXTENSION = ".md"
 
 const DEFAULT_PROMPT_PRESET_SELECTION: PromptPresetSelection = {
   systemPromptPresetID: "system-default",
@@ -154,36 +188,348 @@ function requirePromptPresetDefinition(presetID: string) {
   return preset
 }
 
-function hasPromptOverride(overrides: Record<string, string>, presetID: string) {
-  return Object.prototype.hasOwnProperty.call(overrides, presetID)
+function ensurePathInsideRoot(root: string, input: string) {
+  const resolvedRoot = resolve(root)
+  const candidate = resolve(input)
+  const relativePath = relative(resolvedRoot, candidate)
+
+  if (relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath))) {
+    return candidate
+  }
+
+  throw new PromptPresetStoreError(
+    "INVALID_PROMPT_PATH",
+    `Prompt path '${input}' is outside the prompts root.`,
+  )
 }
 
-function toPromptPresetSummary(
-  preset: PromptPresetDefinition,
-  overrides: Record<string, string>,
-): PromptPresetSummary {
+async function pathExists(path: string) {
+  return Boolean(await stat(path).catch(() => null))
+}
+
+function getPromptPresetSeedHash(content: string) {
+  return createHash("sha256").update(content).digest("hex")
+}
+
+function slugifyPromptPresetLabel(label: string) {
+  const slug = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+
+  return slug || "preset"
+}
+
+function sanitizePromptPresetDescription(description: string | undefined) {
+  return description?.trim() || undefined
+}
+
+function sanitizePromptPresetLabel(label: string | undefined) {
+  return label?.trim() || ""
+}
+
+function createCustomPromptPresetID(label: string, existingPresetIDs: Set<string>) {
+  const baseID = `custom-${slugifyPromptPresetLabel(label)}`
+  let candidateID = baseID
+  let suffix = 2
+
+  while (existingPresetIDs.has(candidateID)) {
+    candidateID = `${baseID}-${suffix}`
+    suffix += 1
+  }
+
+  return candidateID
+}
+
+function createPromptFileNameFromID(presetID: string) {
+  const slug = slugifyPromptPresetLabel(presetID)
+  return `${slug}${PROMPT_FILE_EXTENSION}`
+}
+
+export function getPromptPresetRoot() {
+  const configuredRoot = process.env[PROMPT_ROOT_ENV]?.trim()
+  return configuredRoot ? resolve(configuredRoot) : join(homedir(), ".anybox", "prompts")
+}
+
+function getBundledPromptDirectory(root: string) {
+  return join(root, BUNDLED_PROMPT_DIRECTORY)
+}
+
+function getCustomPromptDirectory(root: string) {
+  return join(root, CUSTOM_PROMPT_DIRECTORY)
+}
+
+function getBundledPromptFilePath(root: string, presetID: string) {
+  return join(getBundledPromptDirectory(root), `${presetID}${PROMPT_FILE_EXTENSION}`)
+}
+
+async function getCustomPromptFilePath(root: string, presetID: string) {
+  const customRoot = getCustomPromptDirectory(root)
+  let candidate = join(customRoot, createPromptFileNameFromID(presetID))
+  let suffix = 2
+
+  while (await pathExists(candidate)) {
+    candidate = join(customRoot, `${slugifyPromptPresetLabel(presetID)}-${suffix}${PROMPT_FILE_EXTENSION}`)
+    suffix += 1
+  }
+
+  return candidate
+}
+
+function buildPromptFile(metadata: PromptFileMetadata, content: string) {
+  const frontmatter = matter.stringify("", Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => value !== undefined),
+  )).trimEnd()
+
+  return `${frontmatter}\n${content}`
+}
+
+async function writePromptFile(filePath: string, root: string, metadata: PromptFileMetadata, content: string) {
+  const resolvedPath = ensurePathInsideRoot(root, filePath)
+  await mkdir(dirname(resolvedPath), { recursive: true })
+  await writeFile(resolvedPath, buildPromptFile(metadata, content), "utf8")
+
+  return resolvedPath
+}
+
+function readStringFrontmatter(
+  value: Record<string, unknown>,
+  key: string,
+  filePath: string,
+  options?: {
+    required?: boolean
+  },
+) {
+  const raw = value[key]
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (trimmed || !options?.required) return trimmed
+  }
+
+  if (options?.required) {
+    throw new PromptPresetStoreError(
+      "INVALID_PROMPT_FILE",
+      `Prompt file '${filePath}' must define a non-empty '${key}' frontmatter field.`,
+    )
+  }
+
+  return undefined
+}
+
+function readPromptSourceFrontmatter(value: Record<string, unknown>, filePath: string) {
+  const source = readStringFrontmatter(value, "source", filePath, { required: true })
+  if (source === "bundled" || source === "custom") {
+    return source
+  }
+
+  throw new PromptPresetStoreError(
+    "INVALID_PROMPT_FILE",
+    `Prompt file '${filePath}' must use source 'bundled' or 'custom'.`,
+  )
+}
+
+async function readPromptFile(filePath: string, root: string): Promise<PromptPresetRecord> {
+  const resolvedPath = ensurePathInsideRoot(root, filePath)
+  const raw = await readFile(resolvedPath, "utf8")
+  const parsed = matter(raw)
+  const data = parsed.data as Record<string, unknown>
+  const id = readStringFrontmatter(data, "id", resolvedPath, { required: true })!
+  const label = readStringFrontmatter(data, "label", resolvedPath, { required: true })!
+  const source = readPromptSourceFrontmatter(data, resolvedPath)
+  const description = readStringFrontmatter(data, "description", resolvedPath)
+  const seedHash = readStringFrontmatter(data, "seedHash", resolvedPath)
+
   return {
-    id: preset.id,
-    label: preset.label,
-    description: preset.description,
-    source: "bundled",
+    id,
+    label,
+    description: description ?? "Custom prompt preset.",
+    source,
     editable: true,
-    hasOverride: hasPromptOverride(overrides, preset.id),
-    sourcePath: preset.sourcePath,
+    hasOverride: false,
+    sourcePath: resolvedPath,
+    filePath: resolvedPath,
+    root,
+    content: parsed.content,
+    seedHash,
   }
 }
 
-function toCustomPromptPresetSummary(
+async function writeBundledPromptFile(root: string, preset: PromptPresetDefinition, content: string) {
+  return writePromptFile(
+    getBundledPromptFilePath(root, preset.id),
+    root,
+    {
+      id: preset.id,
+      label: preset.label,
+      description: preset.description,
+      source: "bundled",
+      seedHash: getPromptPresetSeedHash(preset.bundledContent),
+    },
+    content,
+  )
+}
+
+async function writeCustomPromptFile(
+  root: string,
+  filePath: string,
   presetID: string,
   preset: Config.CustomPromptPreset,
-): PromptPresetSummary {
+) {
+  return writePromptFile(
+    filePath,
+    root,
+    {
+      id: presetID,
+      label: preset.label,
+      description: preset.description,
+      source: "custom",
+    },
+    preset.content,
+  )
+}
+
+async function readCustomPromptPresetRecordsInDirectory(
+  root: string,
+  directory: string,
+): Promise<PromptPresetRecord[]> {
+  const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
+    throw error
+  })
+  const records = await Promise.all(entries
+    .filter((entry) => !entry.name.startsWith("."))
+    .map(async (entry) => {
+      const entryPath = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        return readCustomPromptPresetRecordsInDirectory(root, entryPath)
+      }
+
+      if (!entry.isFile() || !entry.name.endsWith(PROMPT_FILE_EXTENSION)) return []
+      const record = await readPromptFile(entryPath, root)
+      if (record.source !== "custom") {
+        throw new PromptPresetStoreError(
+          "INVALID_PROMPT_FILE",
+          `Custom prompt file '${entryPath}' must use source 'custom'.`,
+        )
+      }
+
+      return [record]
+    }))
+
+  return records.flat()
+}
+
+async function readCustomPromptPresetRecords(root: string) {
+  return (await readCustomPromptPresetRecordsInDirectory(root, getCustomPromptDirectory(root)))
+    .toSorted((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id))
+}
+
+async function getLegacyCustomPromptPresetRecords(configID = Config.GLOBAL_CONFIG_ID) {
+  const customPromptPresets = await Config.getCustomPromptPresets(configID)
+
+  return Object.fromEntries(
+    Object.entries(customPromptPresets).filter(([presetID]) => !getPromptPresetDefinition(presetID)),
+  )
+}
+
+async function ensurePromptRoot(configID = Config.GLOBAL_CONFIG_ID) {
+  const root = getPromptPresetRoot()
+  const bundledRoot = getBundledPromptDirectory(root)
+  const customRoot = getCustomPromptDirectory(root)
+  await mkdir(bundledRoot, { recursive: true })
+  await mkdir(customRoot, { recursive: true })
+
+  const [legacyOverrides, legacyCustomPresets] = await Promise.all([
+    Config.getPromptOverrides(configID),
+    getLegacyCustomPromptPresetRecords(configID),
+  ])
+
+  for (const preset of PROMPT_PRESET_DEFINITIONS) {
+    const filePath = getBundledPromptFilePath(root, preset.id)
+    const hasLegacyOverride = Object.prototype.hasOwnProperty.call(legacyOverrides, preset.id)
+    if (hasLegacyOverride || !await pathExists(filePath)) {
+      await writeBundledPromptFile(
+        root,
+        preset,
+        hasLegacyOverride ? (legacyOverrides[preset.id] ?? "") : preset.bundledContent,
+      )
+    }
+  }
+
+  const existingCustomRecords = await readCustomPromptPresetRecords(root)
+  const existingCustomByID = new Map(existingCustomRecords.map((record) => [record.id, record]))
+  for (const [presetID, preset] of Object.entries(legacyCustomPresets)) {
+    const filePath = existingCustomByID.get(presetID)?.filePath ?? await getCustomPromptFilePath(root, presetID)
+    await writeCustomPromptFile(root, filePath, presetID, preset)
+  }
+
+  if (Object.keys(legacyOverrides).length > 0 || Object.keys(legacyCustomPresets).length > 0) {
+    await Config.clearPromptPresetLegacyStorage(configID)
+  }
+
+  return root
+}
+
+async function readBundledPromptPresetRecords(root: string) {
+  const records: PromptPresetRecord[] = []
+
+  for (const preset of PROMPT_PRESET_DEFINITIONS) {
+    const filePath = getBundledPromptFilePath(root, preset.id)
+    const record = await readPromptFile(filePath, root)
+    if (record.source !== "bundled" || record.id !== preset.id) {
+      throw new PromptPresetStoreError(
+        "INVALID_PROMPT_FILE",
+        `Bundled prompt file '${filePath}' must use id '${preset.id}' and source 'bundled'.`,
+      )
+    }
+
+    const seedHash = getPromptPresetSeedHash(preset.bundledContent)
+    records.push({
+      ...record,
+      description: record.description || preset.description,
+      hasOverride: getPromptPresetSeedHash(record.content) !== seedHash,
+      seedHash,
+    })
+  }
+
+  return records
+}
+
+async function readPromptPresetIndex(configID = Config.GLOBAL_CONFIG_ID) {
+  const root = await ensurePromptRoot(configID)
+  const bundledRecords = await readBundledPromptPresetRecords(root)
+  const customRecords = await readCustomPromptPresetRecords(root)
+  const recordsByID = new Map<string, PromptPresetRecord>()
+
+  for (const record of [...bundledRecords, ...customRecords]) {
+    if (recordsByID.has(record.id)) {
+      throw new PromptPresetStoreError(
+        "DUPLICATE_PROMPT_PRESET",
+        `Prompt preset id '${record.id}' is defined more than once.`,
+      )
+    }
+
+    recordsByID.set(record.id, record)
+  }
+
   return {
-    id: presetID,
-    label: preset.label,
-    description: preset.description ?? "Custom prompt preset.",
-    source: "custom",
-    editable: true,
-    hasOverride: false,
+    root,
+    records: [...bundledRecords, ...customRecords],
+    recordsByID,
+  }
+}
+
+function toPromptPresetSummary(record: PromptPresetRecord): PromptPresetSummary {
+  return {
+    id: record.id,
+    label: record.label,
+    description: record.description,
+    source: record.source,
+    editable: record.editable,
+    hasOverride: record.hasOverride,
+    sourcePath: record.sourcePath,
+    filePath: record.filePath,
+    root: record.root,
   }
 }
 
@@ -200,50 +546,9 @@ function normalizePromptPresetSelectionValue(
   return fallbackPresetID
 }
 
-function sanitizePromptPresetDescription(description: string | undefined) {
-  return description?.trim() || undefined
-}
-
-function sanitizePromptPresetLabel(label: string | undefined) {
-  return label?.trim() || ""
-}
-
-function slugifyPromptPresetLabel(label: string) {
-  const slug = label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-
-  return slug || "preset"
-}
-
-function createCustomPromptPresetID(label: string, existingPresetIDs: Set<string>) {
-  const baseID = `custom-${slugifyPromptPresetLabel(label)}`
-  let candidateID = baseID
-  let suffix = 2
-
-  while (existingPresetIDs.has(candidateID)) {
-    candidateID = `${baseID}-${suffix}`
-    suffix += 1
-  }
-
-  return candidateID
-}
-
-async function getCustomPromptPresetRecords(configID = Config.GLOBAL_CONFIG_ID) {
-  const customPromptPresets = await Config.getCustomPromptPresets(configID)
-
-  return Object.fromEntries(
-    Object.entries(customPromptPresets).filter(([presetID]) => !getPromptPresetDefinition(presetID)),
-  )
-}
-
 async function listAvailablePromptPresetIDs(configID = Config.GLOBAL_CONFIG_ID) {
-  const customPromptPresets = await getCustomPromptPresetRecords(configID)
-  return new Set<string>([
-    ...PROMPT_PRESET_DEFINITIONS.map((preset) => preset.id),
-    ...Object.keys(customPromptPresets),
-  ])
+  const index = await readPromptPresetIndex(configID)
+  return new Set<string>(index.records.map((record) => record.id))
 }
 
 async function persistPromptPresetSelection(
@@ -262,19 +567,13 @@ export async function getResolvedPromptPresetContent(
   presetID: string,
   configID = Config.GLOBAL_CONFIG_ID,
 ) {
-  const preset = getPromptPresetDefinition(presetID)
-  if (preset) {
-    const overrides = await Config.getPromptOverrides(configID)
-    return hasPromptOverride(overrides, preset.id) ? overrides[preset.id] : preset.bundledContent
-  }
-
-  const customPromptPresets = await getCustomPromptPresetRecords(configID)
-  const customPromptPreset = customPromptPresets[presetID.trim()]
-  if (!customPromptPreset) {
+  const index = await readPromptPresetIndex(configID)
+  const record = index.recordsByID.get(presetID.trim())
+  if (!record) {
     throw new Error(`Unknown prompt preset '${presetID}'.`)
   }
 
-  return customPromptPreset.content
+  return record.content
 }
 
 export async function getPromptPresetSelection(
@@ -340,44 +639,21 @@ export async function updatePromptPresetSelection(
 export async function listPromptPresetSummaries(
   configID = Config.GLOBAL_CONFIG_ID,
 ): Promise<PromptPresetSummary[]> {
-  const [overrides, customPromptPresets] = await Promise.all([
-    Config.getPromptOverrides(configID),
-    getCustomPromptPresetRecords(configID),
-  ])
-  const bundledPromptPresets = PROMPT_PRESET_DEFINITIONS.map((preset) =>
-    toPromptPresetSummary(preset, overrides),
-  )
-  const customPromptPresetSummaries = Object.entries(customPromptPresets)
-    .map(([presetID, preset]) => toCustomPromptPresetSummary(presetID, preset))
-    .sort((left, right) => left.label.localeCompare(right.label))
-
-  return [...bundledPromptPresets, ...customPromptPresetSummaries]
+  const index = await readPromptPresetIndex(configID)
+  return index.records.map(toPromptPresetSummary)
 }
 
 export async function readPromptPresetDocument(
   presetID: string,
   configID = Config.GLOBAL_CONFIG_ID,
 ): Promise<PromptPresetDocument> {
-  const preset = getPromptPresetDefinition(presetID)
-  if (preset) {
-    const overrides = await Config.getPromptOverrides(configID)
-
-    return {
-      ...toPromptPresetSummary(preset, overrides),
-      content: hasPromptOverride(overrides, preset.id) ? (overrides[preset.id] ?? "") : preset.bundledContent,
-    }
-  }
-
-  const customPromptPresets = await getCustomPromptPresetRecords(configID)
-  const customPromptPreset = customPromptPresets[presetID.trim()]
-  if (!customPromptPreset) {
+  const index = await readPromptPresetIndex(configID)
+  const record = index.recordsByID.get(presetID.trim())
+  if (!record) {
     throw new Error(`Unknown prompt preset '${presetID}'.`)
   }
 
-  return {
-    ...toCustomPromptPresetSummary(presetID.trim(), customPromptPreset),
-    content: customPromptPreset.content,
-  }
+  return record
 }
 
 export async function createPromptPreset(
@@ -385,9 +661,11 @@ export async function createPromptPreset(
   configID = Config.GLOBAL_CONFIG_ID,
 ) {
   const label = sanitizePromptPresetLabel(input.label) || "Untitled preset"
-  const existingPresetIDs = await listAvailablePromptPresetIDs(configID)
+  const index = await readPromptPresetIndex(configID)
+  const existingPresetIDs = new Set(index.records.map((record) => record.id))
   const presetID = createCustomPromptPresetID(label, existingPresetIDs)
-  await Config.setCustomPromptPreset(configID, presetID, {
+  const filePath = await getCustomPromptFilePath(index.root, presetID)
+  await writeCustomPromptFile(index.root, filePath, presetID, {
     label,
     content: input.content ?? "",
     description: sanitizePromptPresetDescription(input.description),
@@ -401,26 +679,28 @@ export async function updatePromptPreset(
   input: PromptPresetUpdateInput,
   configID = Config.GLOBAL_CONFIG_ID,
 ) {
-  const bundledPreset = getPromptPresetDefinition(presetID)
+  const normalizedPresetID = presetID.trim()
+  const bundledPreset = getPromptPresetDefinition(normalizedPresetID)
   if (bundledPreset) {
-    await Config.setPromptOverride(configID, bundledPreset.id, input.content)
+    const root = await ensurePromptRoot(configID)
+    await writeBundledPromptFile(root, bundledPreset, input.content)
     return readPromptPresetDocument(bundledPreset.id, configID)
   }
 
-  const customPromptPresets = await getCustomPromptPresetRecords(configID)
-  const customPromptPreset = customPromptPresets[presetID.trim()]
-  if (!customPromptPreset) {
+  const index = await readPromptPresetIndex(configID)
+  const customPromptPreset = index.recordsByID.get(normalizedPresetID)
+  if (!customPromptPreset || customPromptPreset.source !== "custom") {
     throw new Error(`Unknown prompt preset '${presetID}'.`)
   }
 
   const label = sanitizePromptPresetLabel(input.label) || customPromptPreset.label
-  await Config.setCustomPromptPreset(configID, presetID, {
+  await writeCustomPromptFile(index.root, customPromptPreset.filePath!, customPromptPreset.id, {
     label,
     content: input.content,
     description: sanitizePromptPresetDescription(input.description) ?? customPromptPreset.description,
   })
 
-  return readPromptPresetDocument(presetID, configID)
+  return readPromptPresetDocument(customPromptPreset.id, configID)
 }
 
 export async function resetPromptPreset(
@@ -432,7 +712,8 @@ export async function resetPromptPreset(
     throw new Error(`Prompt preset '${presetID}' cannot be reset.`)
   }
 
-  await Config.clearPromptOverride(configID, preset.id)
+  const root = await ensurePromptRoot(configID)
+  await writeBundledPromptFile(root, preset, preset.bundledContent)
   return readPromptPresetDocument(preset.id, configID)
 }
 
@@ -444,12 +725,14 @@ export async function deletePromptPreset(
     throw new Error(`Prompt preset '${presetID}' cannot be deleted.`)
   }
 
-  const customPromptPresets = await getCustomPromptPresetRecords(configID)
-  if (!customPromptPresets[presetID.trim()]) {
+  const index = await readPromptPresetIndex(configID)
+  const customPromptPreset = index.recordsByID.get(presetID.trim())
+  if (!customPromptPreset || customPromptPreset.source !== "custom") {
     throw new Error(`Unknown prompt preset '${presetID}'.`)
   }
 
-  await Config.removeCustomPromptPreset(configID, presetID)
+  const filePath = ensurePathInsideRoot(index.root, customPromptPreset.filePath!)
+  await rm(filePath, { force: false })
   const resolvedSelection = await getPromptPresetSelection(configID)
   const nextSelection: PromptPresetSelection = {
     systemPromptPresetID:

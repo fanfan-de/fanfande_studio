@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { I18nProvider } from "../i18n/I18nProvider"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type McpServerDraftState } from "../types"
 import { SettingsPage } from "./SettingsPage"
 
@@ -47,36 +48,6 @@ function createSettingsPageProps(
     archivedSessionsError: null,
     assistantTraceVisibility: DEFAULT_ASSISTANT_TRACE_VISIBILITY,
     brandTheme: "sage",
-    builtinTools: [
-      {
-        id: "git_bash_command",
-        title: "Git Bash",
-        description: "Run a Git Bash/MSYS Bash command inside the current project boundary.",
-        aliases: [],
-        capabilities: {
-          kind: "exec",
-          readOnly: false,
-          destructive: true,
-          concurrency: "exclusive",
-          needsShell: true,
-        },
-        enabled: true,
-      },
-      {
-        id: "read-file",
-        title: "Read File",
-        description: "Read a text file or a line range from the current project.",
-        aliases: [],
-        capabilities: {
-          kind: "read",
-          readOnly: true,
-          destructive: false,
-          concurrency: "safe",
-        },
-        enabled: false,
-      },
-    ],
-    builtinToolsError: null,
     catalog: [],
     colorMode: "system",
     deletingArchivedSessionID: null,
@@ -84,15 +55,12 @@ function createSettingsPageProps(
     deletingProviderID: null,
     isActivityRailVisible: true,
     isAgentDebugTraceEnabled: false,
-    isBuiltinToolSelectionDirty: true,
     isDebugLineColorsEnabled: false,
     isDebugUiRegionsEnabled: false,
     isLoading: false,
     isLoadingArchivedSessions: false,
-    isLoadingBuiltinTools: false,
     isOpen: true,
     isRefreshingProviderCatalog: false,
-    isSavingBuiltinTools: false,
     isSavingSelection: false,
     loadError: null,
     mcpServerDraft: createMcpDraft(),
@@ -106,7 +74,6 @@ function createSettingsPageProps(
     onAppearanceTokenReset: vi.fn(),
     onAssistantTraceVisibilityChange: vi.fn(),
     onBrandThemeChange: vi.fn(),
-    onBuiltinToolToggle: vi.fn(),
     onCancelProviderAuthFlow: vi.fn(),
     onClose: vi.fn(),
     onColorModeChange: vi.fn(),
@@ -121,9 +88,7 @@ function createSettingsPageProps(
     onMcpToolPolicyChange: vi.fn(),
     onMcpServerSelect: vi.fn(),
     onRefreshProviderCatalog: vi.fn(),
-    onResetBuiltinTools: vi.fn(),
     onRestoreArchivedSession: vi.fn(),
-    onSaveBuiltinTools: vi.fn(),
     onSaveMcpServer: vi.fn(),
     onSaveProvider: vi.fn(),
     onSaveProviderApiKey: vi.fn(),
@@ -150,6 +115,7 @@ function createSettingsPageProps(
 describe("SettingsPage built-in tools", () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    window.localStorage.clear()
     delete (window as typeof window & { desktop?: unknown }).desktop
   })
 
@@ -210,39 +176,78 @@ describe("SettingsPage built-in tools", () => {
     expect(onDismissMessage).toHaveBeenCalledTimes(1)
   })
 
-  it("renders built-in tools, toggles selection, saves, and resets", () => {
-    const onBuiltinToolToggle = vi.fn()
-    const onSaveBuiltinTools = vi.fn()
-    const onResetBuiltinTools = vi.fn()
+  it("does not render built-in tools inside settings", () => {
+    render(<SettingsPage {...createSettingsPageProps()} />)
+
+    expect(screen.queryByRole("button", { name: "Tools" })).not.toBeInTheDocument()
+    expect(screen.queryByText("Global tool availability")).not.toBeInTheDocument()
+  })
+
+  it("opens the monitor app from developer mode settings", async () => {
+    const openExternalUrl = vi.fn().mockResolvedValue({
+      ok: true,
+      url: "http://127.0.0.1:4174/",
+    })
+    setDesktopMock({ openExternalUrl })
+
+    render(<SettingsPage {...createSettingsPageProps()} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Developer Mode" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open monitor" }))
+
+    await waitFor(() => {
+      expect(openExternalUrl).toHaveBeenCalledWith({ url: "http://127.0.0.1:4174/" })
+    })
+  })
+
+  it("switches the display language from general settings", async () => {
+    window.localStorage.setItem("desktop.locale", "en-US")
+    const saveLocaleConfig = vi.fn().mockResolvedValue({
+      path: "locale-settings.json",
+      exists: true,
+      document: {
+        version: 1,
+        locale: "zh-CN",
+        updatedAt: 1,
+      },
+    })
+
+    setDesktopMock({
+      getLocaleConfig: vi.fn().mockResolvedValue({
+        path: "locale-settings.json",
+        exists: true,
+        document: {
+          version: 1,
+          locale: "en-US",
+          updatedAt: 1,
+        },
+      }),
+      saveLocaleConfig,
+    })
 
     render(
-      <SettingsPage
-        {...createSettingsPageProps({
-          onBuiltinToolToggle,
-          onResetBuiltinTools,
-          onSaveBuiltinTools,
-        })}
-      />,
+      <I18nProvider>
+        <SettingsPage {...createSettingsPageProps()} />
+      </I18nProvider>,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "Tools" }))
+    expect(await screen.findByRole("heading", { name: "Display Language" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "About" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }))
+    expect(screen.queryByRole("heading", { name: "Display Language" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "General" }))
 
-    expect(screen.getByText("Global tool availability")).toBeInTheDocument()
-    expect(screen.getByText("1 of 2 built-in tools enabled.")).toBeInTheDocument()
-    expect(screen.getByText("Git Bash")).toBeInTheDocument()
-    expect(screen.getByText("Shell access")).toBeInTheDocument()
-    expect(screen.getByText("Read File")).toBeInTheDocument()
-    expect(screen.getByText("Read-only")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("radio", { name: /中文/ }))
 
-    const bashCard = screen.getByText("git_bash_command").closest("button")
-    expect(bashCard).not.toBeNull()
-    fireEvent.click(bashCard!)
-    expect(onBuiltinToolToggle).toHaveBeenCalledWith("git_bash_command", false)
-
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }))
-    expect(onSaveBuiltinTools).toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole("button", { name: "Reset to default" }))
-    expect(onResetBuiltinTools).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(saveLocaleConfig).toHaveBeenCalledWith({
+        document: expect.objectContaining({
+          locale: "zh-CN",
+          version: 1,
+        }),
+      })
+    })
+    expect(await screen.findByRole("heading", { name: "显示语言" })).toBeInTheDocument()
   })
 })

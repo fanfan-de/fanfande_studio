@@ -6,7 +6,7 @@
   position: relative;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  margin: 0 var(--pane-terminal-gutter);
+  margin: 0;
   border: 0;
   border-top: 1px solid rgba(138, 164, 189, 0.28);
   background: #f5f7fa;
@@ -28,7 +28,9 @@
   position: relative;
   height: 10px;
   cursor: row-resize;
-  background: transparent;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--mix-seg-border-82-transparent-18);
+  background: var(--seg-shell);
 }
 
 .terminal-panel-resizer::after {
@@ -58,7 +60,7 @@
   min-height: 42px;
   padding: 0 14px;
   justify-content: flex-start;
-  background: #eef1f5;
+  background: var(--seg-pane-tab-bar-surface);
   border-bottom: 1px solid var(--seg-border);
 }
 
@@ -195,8 +197,9 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 6px 12px 12px;
+  gap: 0;
+  padding: 0;
+  background: var(--seg-terminal-surface);
 }
 
 .terminal-view-error {
@@ -208,9 +211,9 @@
 .terminal-surface {
   min-height: 0;
   flex: 1 1 auto;
-  border: 1px solid #17202c;
-  border-radius: var(--seg-radius-xs);
-  background: #111923;
+  border: 0;
+  border-radius: 0;
+  background: var(--seg-terminal-surface);
   overflow: hidden;
   box-shadow: none;
   contain: layout paint;
@@ -225,6 +228,7 @@
 .terminal-xterm {
   min-height: 0;
   padding: 10px 12px 12px;
+  background: var(--seg-terminal-surface);
 }
 
 .terminal-xterm .xterm-viewport {
@@ -374,7 +378,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 }
 
 .terminal-tabs {
-  background: var(--mix-seg-shell-92-seg-panel-8);
+  background: var(--seg-pane-tab-bar-surface);
 }
 
 .terminal-panel-toggle-button,
@@ -418,14 +422,65 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before,
 
 .terminal-surface,
 .terminal-xterm {
-  background: var(--surface-code-strong);
+  background: var(--seg-terminal-surface);
 }
 
 .terminal-surface {
-  border: 1px solid var(--mix-surface-code-48-seg-border-52);
+  border: 0;
   box-shadow: none;
 }
 
 .terminal-tabs-list::-webkit-scrollbar-thumb {
   background: var(--mix-brand-accent-active-28-rgba-148-163-184-0-28-72);
+}
+
+.right-sidebar-main-stack .terminal-panel {
+  flex: 0 0 auto;
+  margin: 0;
+  border-top: 1px solid var(--mix-seg-border-82-transparent-18);
+}
+
+.right-sidebar-main-stack .terminal-tabs {
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.right-sidebar-top-menu .terminal-panel-toggle-button {
+  align-self: center;
+  width: var(--section-toolbar-control-size);
+  min-width: var(--section-toolbar-control-size);
+  height: var(--section-toolbar-control-size);
+  min-height: var(--section-toolbar-control-size);
+  margin: 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--semantic-accent-icon);
+  box-shadow: none;
+  transform: none;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.right-sidebar-top-menu .terminal-panel-toggle-button:hover,
+.right-sidebar-top-menu .terminal-panel-toggle-button:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  color: var(--semantic-accent-icon-hover);
+  box-shadow: none;
+  transform: none;
+}
+
+.right-sidebar-top-menu .terminal-panel-toggle-button.is-active,
+.right-sidebar-top-menu .terminal-panel-toggle-button.is-active:hover,
+.right-sidebar-top-menu .terminal-panel-toggle-button.is-active:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  color: var(--semantic-accent-icon-active);
+  box-shadow: none;
+  transform: none;
 }

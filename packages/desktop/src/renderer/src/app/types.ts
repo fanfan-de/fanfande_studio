@@ -24,12 +24,25 @@ export type {
 
 export type SessionStatus = "Live" | "Review" | "Ready"
 export type SidebarActionKey = "project" | "sort" | "new"
-export type LeftSidebarView = "workspace" | "skills" | "prompts" | "mcp" | "plugins"
+export type LeftSidebarView = "workspace" | "skills" | "prompts" | "mcp" | "plugins" | "tools"
 export type WorkspaceMode = "chat" | "cowork" | "code"
 export type RightSidebarView = "changes" | "runtime" | "preview" | "files"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
 export type PreviewMode = "browse" | "comment"
+export type PreviewErrorKind =
+  | "empty-url"
+  | "invalid-url"
+  | "unsupported-protocol"
+  | "connection-refused"
+  | "dns"
+  | "connection-reset"
+  | "timeout"
+  | "certificate"
+  | "embedded-blocked"
+  | "script"
+  | "webview-init"
+  | "unknown"
 
 export interface SessionWorkflowSummary {
   mode: "execution" | "planning"
@@ -339,7 +352,10 @@ export interface WorkspacePreviewState {
   committedUrl: string | null
   mode: PreviewMode
   reloadToken: number
+  errorKind: PreviewErrorKind | null
   errorMessage: string | null
+  navigationHistory: string[]
+  navigationIndex: number
   comments: PreviewComment[]
 }
 
@@ -935,10 +951,31 @@ export interface PromptPresetSummary {
   hasOverride: boolean
   editable: boolean
   sourcePath?: string
+  filePath?: string
+  root?: string
 }
 
 export interface PromptPresetDocument extends PromptPresetSummary {
   content: string
+}
+
+export interface PromptUrlInstallCandidate {
+  id: string
+  label: string
+  description: string
+  sourcePath: string
+  available: boolean
+  reason?: string
+}
+
+export interface PromptUrlInstallPreview {
+  previewID: string
+  source: string
+  prompts: PromptUrlInstallCandidate[]
+}
+
+export interface PromptUrlInstallResult {
+  installed: PromptPresetDocument[]
 }
 
 export type BuiltinToolKind =

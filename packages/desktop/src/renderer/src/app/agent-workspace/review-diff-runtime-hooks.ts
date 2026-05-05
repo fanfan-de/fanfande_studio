@@ -287,6 +287,7 @@ export function useActiveSessionReviewEffects({
   loadPendingPermissionRequestsForSession,
   loadSessionDiffForSession,
   loadSessionRuntimeDebugForSession,
+  isRuntimeDebugEnabled,
 }: {
   activeSessionID: string | null
   agentSessions: Record<string, string>
@@ -294,6 +295,7 @@ export function useActiveSessionReviewEffects({
   loadPendingPermissionRequestsForSession: (sessionID: string) => Promise<void>
   loadSessionDiffForSession: (sessionID: string) => Promise<void>
   loadSessionRuntimeDebugForSession: (sessionID: string) => Promise<void>
+  isRuntimeDebugEnabled: boolean
 }) {
   useEffect(() => {
     if (!canLoadSessionHistory || !activeSessionID) return
@@ -302,10 +304,10 @@ export function useActiveSessionReviewEffects({
   }, [activeSessionID, canLoadSessionHistory, agentSessions])
 
   useEffect(() => {
-    if (!canLoadSessionHistory || !activeSessionID) return
+    if (!canLoadSessionHistory || !activeSessionID || !isRuntimeDebugEnabled) return
 
     void loadSessionRuntimeDebugForSession(activeSessionID)
-  }, [activeSessionID, canLoadSessionHistory, agentSessions])
+  }, [activeSessionID, canLoadSessionHistory, agentSessions, isRuntimeDebugEnabled])
 
   useEffect(() => {
     if (!canLoadSessionHistory || !activeSessionID) return

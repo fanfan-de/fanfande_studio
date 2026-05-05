@@ -1,6 +1,9 @@
 import {
   Archive,
+  ArrowLeft,
+  ArrowRight,
   ArrowUp,
+  ArrowUpRight,
   ChevronDown,
   ChevronRight,
   CircleCheck,
@@ -11,10 +14,13 @@ import {
   Eye,
   EyeOff,
   Expand,
+  FileDiff,
   FilePlus2,
+  FileSearch,
   FileText,
   Folder,
   FolderOpen,
+  Globe,
   LayoutPanelLeft,
   ListChecks,
   LoaderCircle,
@@ -40,6 +46,7 @@ import {
   Sun,
   Terminal,
   Trash2,
+  Wrench,
   X,
   type LucideIcon,
   type LucideProps,
@@ -52,6 +59,8 @@ function createIcon(Icon: LucideIcon, defaults: LucideProps = {}) {
 }
 
 export const FolderIcon = createIcon(Folder)
+export const BackIcon = createIcon(ArrowLeft)
+export const ForwardIcon = createIcon(ArrowRight)
 export const FolderOpenIcon = createIcon(FolderOpen)
 export const PaperclipIcon = createIcon(Paperclip)
 export const CopyIcon = createIcon(Copy)
@@ -60,6 +69,10 @@ export const ChevronDownIcon = createIcon(ChevronDown)
 export const ChevronRightIcon = createIcon(ChevronRight)
 export const ExpandIcon = createIcon(Expand)
 export const OpenInEditorIcon = createIcon(Expand)
+export const OpenExternalIcon = createIcon(ArrowUpRight)
+export const ChangesIcon = createIcon(FileDiff)
+export const PreviewIcon = createIcon(Globe)
+export const FileSearchIcon = createIcon(FileSearch)
 export const FileTextIcon = createIcon(FileText)
 export const SortIcon = createIcon(SortAsc)
 export const NewItemIcon = createIcon(FilePlus2)
@@ -88,6 +101,7 @@ export const MaximizeIcon = createIcon(Square)
 export const RestoreIcon = createIcon(Copy)
 export const CloseIcon = createIcon(X)
 export const TerminalIcon = createIcon(Terminal)
+export const ToolsIcon = createIcon(Wrench)
 export const ArrowUpIcon = createIcon(ArrowUp)
 export const StopIcon = createIcon(Square, { fill: "currentColor", strokeWidth: 0 })
 export const PaletteIcon = createIcon(Palette)

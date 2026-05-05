@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react"
-import { OpenInEditorIcon, ResetIcon, SideChatIcon } from "../icons"
-import type { PreviewComment, PreviewMode, WorkspacePreviewState } from "../types"
+import type { DesktopLocalPreviewService } from "../../../../shared/desktop-ipc-contract"
+import { BackIcon, ForwardIcon, OpenExternalIcon, ResetIcon, SideChatIcon } from "../icons"
+import type { PreviewComment, PreviewErrorKind, PreviewMode, WorkspacePreviewState } from "../types"
 import { clamp } from "../utils"
+
+const PREVIEW_QUICK_URLS = ["http://localhost:3000", "http://localhost:5173", "http://localhost:8080"] as const
 
 interface PendingPreviewComment {
   x: number
@@ -40,10 +43,13 @@ interface PreviewPanelProps {
     text: string
     anchor?: PreviewComment["anchor"]
   }) => void
+  onBack: () => void
   onDraftUrlChange: (value: string) => void
+  onForward: () => void
   onModeChange: (mode: PreviewMode) => void
   onOpen: () => void
   onOpenExternal: () => void | Promise<void>
+  onOpenUrl: (url: string) => void
   onReload: () => void
 }
 
@@ -79,15 +85,79 @@ type PreviewGuestInspectionResult = {
   }
 }
 
-function getPreviewFailureMessage(errorDescription?: string) {
+type PreviewLoadError = {
+  code: string
+  kind: PreviewErrorKind
+  message: string
+  suggestions: string[]
+}
+
+export function getPreviewFailure(errorDescription?: string, errorCode?: number): PreviewLoadError {
   const message = (errorDescription ?? "").trim()
-  if (/ERR_BLOCKED_BY_RESPONSE/i.test(message)) {
-    return "This page does not allow being shown inside the preview window."
+  if (/ERR_BLOCKED_BY_RESPONSE/i.test(message) || errorCode === -27) {
+    return {
+      code: "ERR_BLOCKED_BY_RESPONSE",
+      kind: "embedded-blocked",
+      message: "This page does not allow being shown inside the preview window.",
+      suggestions: ["Open it in your browser.", "Check whether the site blocks embedding with response headers."],
+    }
   }
-  if (/ERR_NAME_NOT_RESOLVED|ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET/i.test(message)) {
-    return "The preview URL could not be reached."
+  if (/ERR_CONNECTION_REFUSED/i.test(message) || errorCode === -102) {
+    return {
+      code: "ERR_CONNECTION_REFUSED",
+      kind: "connection-refused",
+      message: "No service is listening at this address.",
+      suggestions: ["Start your local dev server.", "Check that the host and port in the URL are correct."],
+    }
   }
-  return "This page could not be opened inside the preview window."
+  if (/ERR_NAME_NOT_RESOLVED/i.test(message) || errorCode === -105) {
+    return {
+      code: "ERR_NAME_NOT_RESOLVED",
+      kind: "dns",
+      message: "The preview host could not be resolved.",
+      suggestions: ["Check the hostname.", "Check your proxy, DNS, or network settings."],
+    }
+  }
+  if (/ERR_CONNECTION_RESET/i.test(message) || errorCode === -101) {
+    return {
+      code: "ERR_CONNECTION_RESET",
+      kind: "connection-reset",
+      message: "The preview connection was reset before the page loaded.",
+      suggestions: ["Reload the preview.", "Check whether the local service restarted or crashed."],
+    }
+  }
+  if (/ERR_TIMED_OUT|TIMEOUT/i.test(message) || errorCode === -7) {
+    return {
+      code: "ERR_TIMED_OUT",
+      kind: "timeout",
+      message: "The preview URL timed out before it responded.",
+      suggestions: ["Reload the preview.", "Check whether the local service is still starting."],
+    }
+  }
+  if (/ERR_CERT|CERT_|SSL/i.test(message)) {
+    return {
+      code: message || "ERR_CERTIFICATE",
+      kind: "certificate",
+      message: "The preview URL has a certificate problem.",
+      suggestions: ["Open it externally to inspect the certificate.", "Use http:// for local development if HTTPS is not required."],
+    }
+  }
+
+  return {
+    code: message || "ERR_PREVIEW_LOAD_FAILED",
+    kind: "unknown",
+    message: "This page could not be opened inside the preview window.",
+    suggestions: ["Reload the preview.", "Open it externally to inspect the browser error."],
+  }
+}
+
+function getPreviewHostLabel(url: string | null) {
+  if (!url) return "This site"
+  try {
+    return new URL(url).host || url
+  } catch {
+    return url
+  }
 }
 
 function getPendingComposerPlacement(x: number) {
@@ -550,16 +620,22 @@ function resolveIframeHoverTarget(
 export function PreviewPanel({
   state,
   onAddComment,
+  onBack,
   onDraftUrlChange,
+  onForward,
   onModeChange,
   onOpen,
   onOpenExternal,
+  onOpenUrl,
   onReload,
 }: PreviewPanelProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const overlayRef = useRef<HTMLDivElement | null>(null)
   const webviewRef = useRef<WebviewElement | null>(null)
   const hoverRequestIDRef = useRef(0)
+  const previewLoadErrorRef = useRef<PreviewLoadError | null>(null)
+  const localServiceRequestIDRef = useRef(0)
+  const localServiceAutoScanRef = useRef(false)
   const previewGuestPreloadPath = window.desktop?.previewGuestPreloadPath
   const canUseWebview = useMemo(
     () =>
@@ -575,8 +651,22 @@ export function PreviewPanel({
   const [pendingComment, setPendingComment] = useState<PendingPreviewComment | null>(null)
   const [pendingText, setPendingText] = useState("")
   const [hoverTarget, setHoverTarget] = useState<PreviewHoverTarget | null>(null)
+  const [localPreviewServices, setLocalPreviewServices] = useState<DesktopLocalPreviewService[]>([])
+  const [localServiceStatus, setLocalServiceStatus] = useState<"idle" | "scanning" | "ready" | "error">("idle")
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [previewLoadError, setPreviewLoadError] = useState<PreviewLoadError | null>(null)
   const shouldUseWebview = canUseWebview && !forceIframeFallback
+  const navigationHistory = Array.isArray(state.navigationHistory)
+    ? state.navigationHistory
+    : state.committedUrl
+      ? [state.committedUrl]
+      : []
+  const navigationIndex = Number.isInteger(state.navigationIndex)
+    ? state.navigationIndex
+    : navigationHistory.length - 1
+  const canGoBack = navigationIndex > 0
+  const canGoForward = navigationIndex >= 0 && navigationIndex < navigationHistory.length - 1
+  const shouldRenderPreviewDocument = !previewLoadError
   const currentComments = state.committedUrl
     ? state.comments.filter((comment) => comment.url === state.committedUrl)
     : []
@@ -598,8 +688,19 @@ export function PreviewPanel({
       } as CSSProperties
     : undefined
 
+  useEffect(() => {
+    return () => {
+      localServiceRequestIDRef.current += 1
+    }
+  }, [])
+
   function getPreviewFrameLabel() {
     return shouldUseWebview ? "webview" : "iframe"
+  }
+
+  function setCurrentPreviewLoadError(error: PreviewLoadError | null) {
+    previewLoadErrorRef.current = error
+    setPreviewLoadError(error)
   }
 
   function formatNodePosition(comment: PendingPreviewComment) {
@@ -633,6 +734,31 @@ export function PreviewPanel({
     }
   }
 
+  async function scanLocalPreviewServices() {
+    const detectLocalPreviewServices = window.desktop?.detectLocalPreviewServices
+    const requestID = localServiceRequestIDRef.current + 1
+    localServiceRequestIDRef.current = requestID
+
+    if (!detectLocalPreviewServices) {
+      setLocalPreviewServices([])
+      setLocalServiceStatus("error")
+      return
+    }
+
+    setLocalServiceStatus("scanning")
+    try {
+      const services = await detectLocalPreviewServices()
+      if (localServiceRequestIDRef.current !== requestID) return
+      setLocalPreviewServices(services)
+      setLocalServiceStatus("ready")
+    } catch (error) {
+      if (localServiceRequestIDRef.current !== requestID) return
+      console.error("[preview] failed to detect local preview services:", error)
+      setLocalPreviewServices([])
+      setLocalServiceStatus("error")
+    }
+  }
+
   useEffect(() => {
     if (!state.committedUrl) {
       setIsLoading(false)
@@ -642,6 +768,7 @@ export function PreviewPanel({
       setPendingText("")
       setHoverTarget(null)
       setStatusMessage(null)
+      setCurrentPreviewLoadError(null)
       return
     }
 
@@ -649,10 +776,18 @@ export function PreviewPanel({
     setIsWebviewReady(false)
     setForceIframeFallback(false)
     setStatusMessage(null)
+    setCurrentPreviewLoadError(null)
     setPendingComment(null)
     setPendingText("")
     setHoverTarget(null)
   }, [state.committedUrl, state.reloadToken])
+
+  useEffect(() => {
+    if (state.committedUrl || localServiceAutoScanRef.current) return
+
+    localServiceAutoScanRef.current = true
+    void scanLocalPreviewServices()
+  }, [state.committedUrl])
 
   useEffect(() => {
     if (state.mode !== "comment") {
@@ -668,8 +803,14 @@ export function PreviewPanel({
     const readyWebview: WebviewElement = activeWebview
 
     function handleDomReady() {
+      if (previewLoadErrorRef.current) {
+        setIsLoading(false)
+        return
+      }
+
       setIsWebviewReady(true)
       setStatusMessage(null)
+      setCurrentPreviewLoadError(null)
       setIsLoading(false)
       try {
         readyWebview.send?.("preview:set-mode", { mode: state.mode })
@@ -680,6 +821,7 @@ export function PreviewPanel({
 
     function handleDidStartLoading() {
       setIsLoading(true)
+      setCurrentPreviewLoadError(null)
     }
 
     function handleDidStopLoading() {
@@ -694,8 +836,10 @@ export function PreviewPanel({
     function handleDidFailLoad(rawEvent: Event) {
       const event = rawEvent as WebviewFailLoadEvent
       if (event.isMainFrame === false) return
+      if (event.errorCode === -3) return
       setIsLoading(false)
-      setStatusMessage(getPreviewFailureMessage(event.errorDescription))
+      setIsWebviewReady(false)
+      setCurrentPreviewLoadError(getPreviewFailure(event.errorDescription, event.errorCode))
     }
 
     function handleIpcMessage(rawEvent: Event) {
@@ -877,16 +1021,38 @@ export function PreviewPanel({
               onOpen()
             }}
           >
-            <button
-              type="button"
-              className="preview-toolbar-icon-button"
-              aria-label="Refresh"
-              title="Refresh"
-              disabled={!state.committedUrl}
-              onClick={() => onReload()}
-            >
-              <ResetIcon size={15} />
-            </button>
+            <div className="preview-toolbar-navigation" aria-label="Preview navigation controls">
+              <button
+                type="button"
+                className="preview-toolbar-icon-button"
+                aria-label="Back"
+                title="Back"
+                disabled={!canGoBack}
+                onClick={() => onBack()}
+              >
+                <BackIcon size={15} />
+              </button>
+              <button
+                type="button"
+                className="preview-toolbar-icon-button"
+                aria-label="Forward"
+                title="Forward"
+                disabled={!canGoForward}
+                onClick={() => onForward()}
+              >
+                <ForwardIcon size={15} />
+              </button>
+              <button
+                type="button"
+                className="preview-toolbar-icon-button"
+                aria-label="Refresh"
+                title="Refresh"
+                disabled={!state.committedUrl}
+                onClick={() => onReload()}
+              >
+                <ResetIcon size={14} />
+              </button>
+            </div>
             <label className="preview-toolbar-address">
               <input
                 aria-label="Preview URL"
@@ -905,7 +1071,7 @@ export function PreviewPanel({
               disabled={!hasDraftPreviewUrl}
               onClick={() => void onOpenExternal()}
             >
-              <OpenInEditorIcon size={15} />
+              <OpenExternalIcon size={15} />
             </button>
             <button
               type="button"
@@ -930,42 +1096,50 @@ export function PreviewPanel({
         {state.committedUrl ? (
           <div className="preview-panel-preview-stack">
             <div className="preview-canvas">
-              {shouldUseWebview ? (
-                <webview
-                  key={`${state.committedUrl}:${state.reloadToken}`}
-                  ref={(node) => {
-                    webviewRef.current = node as WebviewElement | null
-                  }}
-                  aria-label={`Preview of ${state.committedUrl}`}
-                  className="preview-frame preview-webview"
-                  preload={previewGuestPreloadPath}
-                  src={state.committedUrl}
-                />
-              ) : (
+              {shouldRenderPreviewDocument ? (
                 <>
-                  <iframe
-                    key={`${state.committedUrl}:${state.reloadToken}`}
-                    ref={iframeRef}
-                    title={`Preview of ${state.committedUrl}`}
-                    className="preview-frame"
-                    sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
-                    src={state.committedUrl}
-                    onError={() => setIsLoading(false)}
-                    onLoad={() => setIsLoading(false)}
+                  {shouldUseWebview ? (
+                    <webview
+                      key={`${state.committedUrl}:${state.reloadToken}`}
+                      ref={(node) => {
+                        webviewRef.current = node as WebviewElement | null
+                      }}
+                      aria-label={`Preview of ${state.committedUrl}`}
+                      className="preview-frame preview-webview"
+                      preload={previewGuestPreloadPath}
+                      src={state.committedUrl}
+                    />
+                  ) : (
+                    <iframe
+                      key={`${state.committedUrl}:${state.reloadToken}`}
+                      ref={iframeRef}
+                      title={`Preview of ${state.committedUrl}`}
+                      className="preview-frame"
+                      sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
+                      src={state.committedUrl}
+                      onError={() => {
+                        setIsLoading(false)
+                        setCurrentPreviewLoadError(getPreviewFailure())
+                      }}
+                      onLoad={() => {
+                        setIsLoading(false)
+                        setCurrentPreviewLoadError(null)
+                      }}
+                    />
+                  )}
+
+                  <div
+                    ref={overlayRef}
+                    className={state.mode === "comment" ? "preview-comment-overlay is-active" : "preview-comment-overlay"}
+                    data-testid="preview-comment-overlay"
+                    onClick={handleOverlayClick}
+                    onMouseLeave={handleOverlayMouseLeave}
+                    onMouseMove={handleOverlayMouseMove}
                   />
                 </>
-              )}
+              ) : null}
 
-              <div
-                ref={overlayRef}
-                className={state.mode === "comment" ? "preview-comment-overlay is-active" : "preview-comment-overlay"}
-                data-testid="preview-comment-overlay"
-                onClick={handleOverlayClick}
-                onMouseLeave={handleOverlayMouseLeave}
-                onMouseMove={handleOverlayMouseMove}
-              />
-
-              {hoverTarget ? (
+              {shouldRenderPreviewDocument && hoverTarget ? (
                 <>
                   <div
                     className={`preview-hover-highlight ${hoverTarget.className}`}
@@ -995,28 +1169,39 @@ export function PreviewPanel({
                 </>
               ) : null}
 
-              <div className="preview-markers-layer" aria-hidden="true">
-                {currentComments.map((comment, index) => (
-                  <span
-                    key={comment.id}
-                    className="preview-comment-marker"
-                    style={{
-                      left: `${comment.x}%`,
-                      top: `${comment.y}%`,
-                    }}
-                  >
-                    {index + 1}
-                  </span>
-                ))}
-              </div>
-
-              {isLoading ? (
+              {isLoading && shouldRenderPreviewDocument ? (
                 <div className="preview-loading-scrim" aria-live="polite">
                   Loading preview...
                 </div>
               ) : null}
 
-              {pendingComment ? (
+              {previewLoadError ? (
+                <div className="preview-canvas-state preview-error-state" role="alert">
+                  <span className="preview-error-icon" aria-hidden="true">!</span>
+                  <h3>Unable to access this preview</h3>
+                  <p>{getPreviewHostLabel(state.committedUrl)} refused to load in Preview.</p>
+                  <p>{previewLoadError.message}</p>
+                  <div className="preview-error-details">
+                    <span>Try:</span>
+                    <ul>
+                      {previewLoadError.suggestions.map((suggestion) => (
+                        <li key={suggestion}>{suggestion}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <code>{previewLoadError.code}</code>
+                  <div className="preview-state-actions">
+                    <button type="button" className="secondary-button" onClick={() => onReload()}>
+                      Reload
+                    </button>
+                    <button type="button" className="secondary-button" onClick={() => void onOpenExternal()}>
+                      Open External
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {shouldRenderPreviewDocument && pendingComment ? (
                 <div
                   className={`preview-floating-comment-composer ${getPendingComposerPlacement(pendingComment.x)}`}
                   style={pendingCommentStyle}
@@ -1050,9 +1235,60 @@ export function PreviewPanel({
             </div>
           </div>
         ) : (
-          <div className="preview-empty-state">
-            <h3>No preview loaded</h3>
-            <p>Open your local dev server here or load a reference site such as a product homepage.</p>
+          <div className="preview-panel-preview-stack">
+            <div className="preview-canvas">
+              <div className="preview-canvas-state preview-empty-state">
+                <span className="preview-state-kicker">Preview</span>
+                <h3>No preview loaded</h3>
+                <p>Open a local dev server, choose a detected service, or start with a common localhost URL.</p>
+
+                <div className="preview-quick-links" aria-label="Preview quick links">
+                  {PREVIEW_QUICK_URLS.map((url) => (
+                    <button key={url} type="button" className="preview-quick-link" onClick={() => onOpenUrl(url)}>
+                      {url.replace(/^https?:\/\//, "")}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="preview-local-services">
+                  <div className="preview-local-services-header">
+                    <span>Local services</span>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={localServiceStatus === "scanning"}
+                      onClick={() => void scanLocalPreviewServices()}
+                    >
+                      {localServiceStatus === "scanning" ? "Scanning" : "Scan again"}
+                    </button>
+                  </div>
+
+                  {localServiceStatus === "scanning" ? (
+                    <p>Checking common dev server ports...</p>
+                  ) : localPreviewServices.length > 0 ? (
+                    <div className="preview-local-service-list">
+                      {localPreviewServices.map((service) => (
+                        <button
+                          key={service.url}
+                          type="button"
+                          className="preview-local-service"
+                          onClick={() => onOpenUrl(service.url)}
+                        >
+                          <strong>{service.url.replace(/^https?:\/\//, "")}</strong>
+                          <span>{service.statusCode}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>
+                      {localServiceStatus === "error"
+                        ? "Local service detection is unavailable."
+                        : "No local dev servers found on common ports."}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

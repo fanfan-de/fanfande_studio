@@ -931,6 +931,22 @@ export async function removeCustomPromptPreset(configID: string, presetID: strin
   return writeConfig(normalizedConfigID, Info.parse(next))
 }
 
+export async function clearPromptPresetLegacyStorage(configID = GLOBAL_CONFIG_ID) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  if (!current.prompt_overrides && !current.custom_prompt_presets) {
+    return current
+  }
+
+  const next: Info = {
+    ...current,
+    prompt_overrides: undefined,
+    custom_prompt_presets: undefined,
+  }
+
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
 export async function getSelectedSystemPromptPresetID(configID = GLOBAL_CONFIG_ID) {
   return normalizePromptPresetID(readConfig(normalizeConfigID(configID)).selected_system_prompt_preset)
 }

@@ -574,7 +574,8 @@
 }
 
 .prompt-presets-page,
-.mcp-servers-page {
+.mcp-servers-page,
+.builtin-tools-page {
   min-width: 0;
   min-height: 0;
   height: 100%;
@@ -619,8 +620,13 @@
 }
 
 .prompt-presets-page-main,
-.mcp-servers-page-main {
+.mcp-servers-page-main,
+.builtin-tools-page-main {
   min-height: 0;
+}
+
+.builtin-tools-page-layout {
+  min-width: 0;
 }
 
 .settings-page-main.global-skills-page-main {

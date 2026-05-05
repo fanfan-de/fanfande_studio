@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent as ReactMouseEvent } from "react"
+import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type MouseEvent as ReactMouseEvent } from "react"
 import { PlusIcon } from "../icons"
 import type { WorkspaceFileLineRange, WorkspaceFileReviewState } from "../types"
 import { formatTime } from "../utils"
@@ -13,7 +13,6 @@ interface WorkspaceFilesPanelProps {
   onPendingCommentChange: (text: string) => void
   onPendingCommentConfirm: () => void
   onPendingCommentStart: (startLineNumber: number, endLineNumber?: number) => void
-  onPendingCommentSubmit: () => void
   onQueryChange: (value: string) => void
   onSelectFile: (path: string) => void
 }
@@ -42,10 +41,10 @@ export function WorkspaceFilesPanel({
   onPendingCommentChange,
   onPendingCommentConfirm,
   onPendingCommentStart,
-  onPendingCommentSubmit,
   onQueryChange,
   onSelectFile,
 }: WorkspaceFilesPanelProps) {
+  const [isResultsDropdownOpen, setIsResultsDropdownOpen] = useState(false)
   const [hoveredLineNumber, setHoveredLineNumber] = useState<number | null>(null)
   const [dragSelection, setDragSelection] = useState<WorkspaceFileLineRange | null>(null)
   const dragSelectionRef = useRef<WorkspaceFileLineRange | null>(null)
@@ -55,6 +54,9 @@ export function WorkspaceFilesPanel({
     ? normalizeWorkspaceFileLineRange(state.pendingComment.startLineNumber, state.pendingComment.endLineNumber)
     : null
   const highlightedRange = dragSelection ?? pendingRange
+  const hasSearchQuery = state.query.trim().length > 0
+  const canShowResultsDropdown = state.status === "searching" || hasSearchQuery
+  const showResultsDropdown = isResultsDropdownOpen && canShowResultsDropdown
 
   for (const comment of state.comments) {
     const currentComments = commentsByEndLine.get(comment.endLineNumber) ?? []
@@ -121,81 +123,81 @@ export function WorkspaceFilesPanel({
     onPendingCommentStart(nextRange.startLineNumber, nextRange.endLineNumber)
   }
 
+  function handleSearchChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextQuery = event.target.value
+    setIsResultsDropdownOpen(nextQuery.trim().length > 0)
+    onQueryChange(nextQuery)
+  }
+
+  function handleSearchFocus() {
+    if (canShowResultsDropdown) setIsResultsDropdownOpen(true)
+  }
+
+  function handleSearchBlur(event: FocusEvent<HTMLDivElement>) {
+    const nextTarget = event.relatedTarget
+    if (nextTarget && event.currentTarget.contains(nextTarget as Node)) return
+    setIsResultsDropdownOpen(false)
+  }
+
+  function handleResultSelect(path: string) {
+    setIsResultsDropdownOpen(false)
+    onSelectFile(path)
+  }
+
   return (
     <section className="right-sidebar-section workspace-files-panel">
-      <div className="right-sidebar-panel-header">
-        <div className="right-sidebar-panel-copy">
-          <span className="label">Workspace Files</span>
-          <h3>Focused project browser</h3>
-          {scopeDirectory ? (
-            <p className="right-sidebar-scope">
-              Scope:
-              {" "}
-              <code>{scopeDirectory}</code>
-            </p>
-          ) : scopeName ? (
-            <p className="right-sidebar-scope">{scopeName}</p>
-          ) : null}
-        </div>
+      <div className="workspace-files-search-shell" onBlur={handleSearchBlur}>
+        <label className="right-sidebar-search-field workspace-files-search-field">
+          <input
+            aria-label="Search workspace files"
+            type="search"
+            value={state.query}
+            placeholder="Match file names"
+            onChange={handleSearchChange}
+            onFocus={handleSearchFocus}
+          />
+        </label>
+
+        {showResultsDropdown ? (
+          <div className="workspace-files-results-dropdown" aria-label="Workspace file search results">
+            {state.status === "searching" ? (
+              <div className="right-sidebar-empty">
+                <p>Searching file names in the focused workspace.</p>
+              </div>
+            ) : !scopeDirectory ? (
+              <div className="right-sidebar-empty">
+                <p>Select a workspace to start searching.</p>
+              </div>
+            ) : state.results.length > 0 ? (
+              <div className="workspace-files-results-list">
+                {state.results.map((result) => {
+                  const isSelected = state.selectedFilePath === result.path
+
+                  return (
+                    <button
+                      key={result.path}
+                      type="button"
+                      className={isSelected ? "workspace-files-result-row is-active" : "workspace-files-result-row"}
+                      aria-pressed={isSelected}
+                      onClick={() => handleResultSelect(result.path)}
+                    >
+                      <div className="workspace-files-result-copy">
+                        <strong>{result.name}</strong>
+                        <span>{result.path}</span>
+                      </div>
+                      {result.extension ? <span className="workspace-files-result-extension">{result.extension}</span> : null}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="right-sidebar-empty">
+                <p>No files matched the current search.</p>
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
-
-      <label className="right-sidebar-search-field workspace-files-search-field">
-        <span className="label">Search</span>
-        <input
-          aria-label="Search workspace files"
-          type="search"
-          value={state.query}
-          placeholder="Match file names"
-          onChange={(event: ChangeEvent<HTMLInputElement>) => onQueryChange(event.target.value)}
-        />
-      </label>
-
-      <section className="workspace-files-results-panel" aria-label="Workspace file search results">
-        <div className="workspace-files-panel-header">
-          <span className="label">Matches</span>
-          {state.query.trim() ? <strong>{String(state.results.length)}</strong> : null}
-        </div>
-
-        {state.status === "searching" ? (
-          <div className="right-sidebar-empty">
-            <p>Searching file names in the focused workspace.</p>
-          </div>
-        ) : !scopeDirectory ? (
-          <div className="right-sidebar-empty">
-            <p>Select a workspace to start searching.</p>
-          </div>
-        ) : !state.query.trim() ? (
-          <div className="right-sidebar-empty">
-            <p>Type a file name to search inside the current workspace.</p>
-          </div>
-        ) : state.results.length > 0 ? (
-          <div className="workspace-files-results-list">
-            {state.results.map((result) => {
-              const isSelected = state.selectedFilePath === result.path
-
-              return (
-                <button
-                  key={result.path}
-                  type="button"
-                  className={isSelected ? "workspace-files-result-row is-active" : "workspace-files-result-row"}
-                  aria-pressed={isSelected}
-                  onClick={() => onSelectFile(result.path)}
-                >
-                  <div className="workspace-files-result-copy">
-                    <strong>{result.name}</strong>
-                    <span>{result.path}</span>
-                  </div>
-                  {result.extension ? <span className="workspace-files-result-extension">{result.extension}</span> : null}
-                </button>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="right-sidebar-empty">
-            <p>No files matched the current search.</p>
-          </div>
-        )}
-      </section>
 
       <section className="workspace-files-reader" aria-label="Workspace file reader">
         <div className="workspace-files-panel-header">
@@ -219,6 +221,11 @@ export function WorkspaceFilesPanel({
               const lineLabel = pendingRange && isCommenting
                 ? formatWorkspaceFileLineRangeLabel(pendingRange.startLineNumber, pendingRange.endLineNumber)
                 : formatWorkspaceFileLineRangeLabel(lineNumber)
+              const commentTargetLabel = pendingRange && isCommenting
+                ? pendingRange.startLineNumber === pendingRange.endLineNumber
+                  ? `对第 L${String(pendingRange.startLineNumber)} 行发表评论`
+                  : `对第 L${String(pendingRange.startLineNumber)} 至第 L${String(pendingRange.endLineNumber)} 行发表评论`
+                : ""
               const isSelectionHighlighted = isLineWithinRange(highlightedRange, lineNumber)
 
               return (
@@ -260,42 +267,35 @@ export function WorkspaceFilesPanel({
 
                   {pendingRange?.endLineNumber === lineNumber ? (
                     <div className="workspace-files-comment-composer">
-                      <div className="workspace-files-comment-range">
-                        <strong>{lineLabel}</strong>
-                        {pendingRange.startLineNumber !== pendingRange.endLineNumber ? (
-                          <span>Drag line numbers to review a range at once.</span>
-                        ) : null}
-                      </div>
-                      <label className="preview-comment-label">
-                        <span className="label">Comment</span>
+                      <div className="workspace-files-comment-editor">
+                        <div className="workspace-files-comment-header">
+                          <strong>本地评论</strong>
+                          <span>{commentTargetLabel}</span>
+                        </div>
                         <textarea
                           aria-label={`File comment on ${lineLabel.toLowerCase()}`}
                           rows={3}
-                          placeholder={`Leave feedback for ${lineLabel.toLowerCase()}`}
+                          placeholder="请求更改"
                           value={state.pendingComment?.text ?? ""}
                           onChange={(event) => onPendingCommentChange(event.target.value)}
                         />
-                      </label>
-                      <div className="right-sidebar-toolbar">
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          disabled={!state.pendingComment?.text.trim() || !canInsertCommentsIntoDraft}
-                          onClick={() => onPendingCommentConfirm()}
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          disabled={!state.pendingComment?.text.trim()}
-                          onClick={() => onPendingCommentSubmit()}
-                        >
-                          Annotate
-                        </button>
-                        <button type="button" className="secondary-button" onClick={() => onPendingCommentCancel()}>
-                          Cancel
-                        </button>
+                        <div className="workspace-files-comment-actions">
+                          <button
+                            type="button"
+                            className="workspace-files-comment-cancel"
+                            onClick={() => onPendingCommentCancel()}
+                          >
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            className="workspace-files-comment-confirm"
+                            disabled={!state.pendingComment?.text.trim() || !canInsertCommentsIntoDraft}
+                            onClick={() => onPendingCommentConfirm()}
+                          >
+                            确认
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : null}

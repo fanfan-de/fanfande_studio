@@ -28,7 +28,10 @@ export const DEFAULT_WORKSPACE_PREVIEW_STATE: WorkspacePreviewState = {
   committedUrl: null,
   mode: "browse",
   reloadToken: 0,
+  errorKind: null,
   errorMessage: null,
+  navigationHistory: [],
+  navigationIndex: -1,
   comments: [],
 }
 

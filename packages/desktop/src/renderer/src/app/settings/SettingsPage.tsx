@@ -23,13 +23,13 @@ import {
   TerminalIcon
 } from "../icons"
 import { normalizeAppearanceColorInputValue } from "../appearance-theme"
+import { useI18n } from "../i18n/I18nProvider"
 import { writeTextToClipboard } from "../shared-ui"
 import type {
   ArchivedSessionSummary,
   AssistantTraceVisibility,
   AssistantTraceVisibilityKey,
   BrandTheme,
-  BuiltinToolSummary,
   ColorMode,
   McpServerDiagnostic,
   McpServerDraftState,
@@ -49,6 +49,7 @@ import {
   openExternalUrl,
   setAutomaticUpdatesEnabled,
 } from "./client"
+import type { AppLocale } from "../../../../shared/locale"
 
 const assistantTraceVisibilityOptions: Array<{
   key: AssistantTraceVisibilityKey
@@ -442,58 +443,7 @@ function doesMcpServerMatchSearch(server: McpServerSummary, rawQuery: string) {
   return haystack.includes(query)
 }
 
-function getBuiltinToolKindLabel(tool: BuiltinToolSummary) {
-  return getBuiltinToolGroupLabel(tool.capabilities.kind ?? "other")
-}
-
-function getBuiltinToolGroupLabel(kind: BuiltinToolSummary["capabilities"]["kind"] | "other") {
-  switch (kind) {
-    case "exec":
-      return "Shell"
-    case "write":
-      return "Write"
-    case "search":
-      return "Search"
-    case "read":
-      return "Read"
-    case "workflow":
-      return "Workflow"
-    case "interaction":
-      return "Interaction"
-    case "delegation":
-      return "Delegation"
-    default:
-      return "Other"
-  }
-}
-
-function getBuiltinToolRiskLabel(tool: BuiltinToolSummary) {
-  if (tool.capabilities.needsShell || tool.capabilities.kind === "exec") return "Shell access"
-  if (tool.capabilities.kind === "delegation") return tool.capabilities.readOnly ? "Delegation status" : "Delegates work"
-  if (tool.capabilities.kind === "workflow") return "Workflow control"
-  if (tool.capabilities.kind === "interaction") return "User interaction"
-  if (tool.capabilities.destructive) return "High risk"
-  if (tool.capabilities.readOnly) return "Read-only"
-  return "Moderate"
-}
-
-function getBuiltinToolRiskBadgeClassName(tool: BuiltinToolSummary) {
-  if (
-    tool.capabilities.needsShell ||
-    tool.capabilities.kind === "exec" ||
-    tool.capabilities.destructive ||
-    (tool.capabilities.kind === "delegation" && !tool.capabilities.readOnly) ||
-    (tool.capabilities.kind === "workflow" && !tool.capabilities.readOnly)
-  ) {
-    return "settings-badge is-warning"
-  }
-  if (tool.capabilities.readOnly) {
-    return "settings-badge is-highlight"
-  }
-  return "settings-badge"
-}
-
-type SettingsSectionKey = "general" | "services" | "defaults" | "mcp" | "tools" | "appearance" | "developer" | "archive"
+type SettingsSectionKey = "general" | "services" | "defaults" | "mcp" | "appearance" | "developer" | "archive"
 
 type AppUpdateStatus = {
   tone: "success" | "error" | "muted"
@@ -501,6 +451,7 @@ type AppUpdateStatus = {
 }
 
 const SETTINGS_PAGE_DRAG_MARGIN = 16
+const MONITOR_APP_URL = "http://127.0.0.1:4174/"
 
 interface SettingsPageOffset {
   x: number
@@ -564,8 +515,6 @@ interface SettingsPageProps {
   assistantTraceVisibility: AssistantTraceVisibility
   archivedSessions: ArchivedSessionSummary[]
   archivedSessionsError: string | null
-  builtinTools: BuiltinToolSummary[]
-  builtinToolsError: string | null
   catalog: ProviderCatalogItem[]
   deletingArchivedSessionID: string | null
   deletingMcpServerID: string | null
@@ -577,12 +526,9 @@ interface SettingsPageProps {
   isDebugLineColorsEnabled: boolean
   isDebugUiRegionsEnabled: boolean
   isLoading: boolean
-  isLoadingBuiltinTools: boolean
   isLoadingArchivedSessions: boolean
   isOpen: boolean
-  isBuiltinToolSelectionDirty: boolean
   isRefreshingProviderCatalog: boolean
-  isSavingBuiltinTools: boolean
   isSavingSelection: boolean
   loadError: string | null
   mcpServerDraft: McpServerDraftState
@@ -611,7 +557,6 @@ interface SettingsPageProps {
   onDebugUiRegionsChange: (value: boolean) => void
   onClose: () => void
   onDismissMessage: () => void
-  onBuiltinToolToggle: (toolID: string, enabled: boolean) => void
   onDeleteArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
   onDeleteProvider: (providerID: string) => void | Promise<void>
@@ -622,9 +567,7 @@ interface SettingsPageProps {
   onProviderAuthMethodChange: (providerID: string, method: string) => void
   onProviderDraftChange: (providerID: string, field: "apiKey" | "baseURL", value: string) => void
   onRefreshProviderCatalog: () => boolean | Promise<boolean>
-  onResetBuiltinTools: () => boolean | Promise<boolean>
   onRestoreArchivedSession: (sessionID: string) => boolean | Promise<boolean>
-  onSaveBuiltinTools: () => boolean | Promise<boolean>
   onSaveMcpServer: () => boolean | Promise<boolean>
   onSaveProviderApiKey: (providerID: string, apiKey?: string | null) => boolean | Promise<boolean>
   onSaveProvider: (providerID: string) => boolean | Promise<boolean>
@@ -655,8 +598,6 @@ export function SettingsPage({
   assistantTraceVisibility,
   archivedSessions,
   archivedSessionsError,
-  builtinTools,
-  builtinToolsError,
   catalog,
   deletingArchivedSessionID,
   deletingMcpServerID,
@@ -668,12 +609,9 @@ export function SettingsPage({
   isDebugLineColorsEnabled,
   isDebugUiRegionsEnabled,
   isLoading,
-  isLoadingBuiltinTools,
   isLoadingArchivedSessions,
   isOpen,
-  isBuiltinToolSelectionDirty,
   isRefreshingProviderCatalog,
-  isSavingBuiltinTools,
   isSavingSelection,
   loadError,
   mcpServerDraft,
@@ -699,7 +637,6 @@ export function SettingsPage({
   onDebugUiRegionsChange,
   onClose,
   onDismissMessage,
-  onBuiltinToolToggle,
   onDeleteArchivedSession,
   onDeleteMcpServer,
   onDeleteProvider,
@@ -710,9 +647,7 @@ export function SettingsPage({
   onProviderAuthMethodChange,
   onProviderDraftChange,
   onRefreshProviderCatalog,
-  onResetBuiltinTools,
   onRestoreArchivedSession,
-  onSaveBuiltinTools,
   onSaveMcpServer,
   onSaveProviderApiKey,
   onSaveProvider,
@@ -724,6 +659,7 @@ export function SettingsPage({
   onCancelProviderAuthFlow,
 }: SettingsPageProps) {
   {
+    const { error: localeError, locale, setLocale, t } = useI18n()
     const [activeSection, setActiveSection] = useState<SettingsSectionKey>("general")
     const [appUpdateSettings, setAppUpdateSettings] = useState<DesktopAppUpdateSettings | null>(null)
     const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null)
@@ -826,18 +762,6 @@ export function SettingsPage({
     const showProviderSections = activeSection === "services" || activeSection === "defaults" || activeSection === "mcp"
     const appVersionLabel = appUpdateSettings?.version ? `Version ${appUpdateSettings.version}` : "Version ..."
     const automaticUpdatesEnabled = appUpdateSettings?.automaticUpdates ?? true
-    const enabledBuiltinToolCount = builtinTools.filter((tool) => tool.enabled).length
-    const builtinToolKindOrder = ["exec", "write", "delegation", "workflow", "interaction", "search", "read", "other"] as const
-    const builtinToolGroups = builtinToolKindOrder
-      .map((kind) => {
-        const items = builtinTools.filter((tool) => (tool.capabilities.kind ?? "other") === kind)
-        return {
-          kind,
-          label: getBuiltinToolGroupLabel(kind),
-          items,
-        }
-      })
-      .filter((group) => group.items.length > 0)
     useEffect(() => {
       if (!isOpen) {
         setActiveSection("general")
@@ -1174,22 +1098,65 @@ export function SettingsPage({
         description: "Cool sage accents with the existing slate-driven shell.",
       },
     ]
+    const languageOptions: Array<{ value: AppLocale; label: string; description: string }> = [
+      {
+        value: "zh-CN",
+        label: t("settings.appearance.localeZh"),
+        description: t("settings.appearance.localeZhDescription"),
+      },
+      {
+        value: "en-US",
+        label: t("settings.appearance.localeEn"),
+        description: t("settings.appearance.localeEnDescription"),
+      },
+    ]
     const hasCustomAppearanceOverrides = Object.keys(appearanceOverrides).length > 0
 
     const primarySectionGroups = [
       {
         label: "\u9009\u9879",
         items: [
-          { key: "general" as const, label: "关于", Icon: MonitorIcon },
+          { key: "general" as const, label: t("settings.nav.general"), Icon: MonitorIcon },
           { key: "services" as const, label: "Provider", Icon: SettingsIcon },
           { key: "defaults" as const, label: "Models", Icon: ConnectedStatusIcon },
-          { key: "tools" as const, label: "Tools", Icon: TerminalIcon },
           { key: "appearance" as const, label: "Appearance", Icon: LayoutSidebarLeftIcon },
           { key: "developer" as const, label: "Developer Mode", Icon: TerminalIcon },
           { key: "archive" as const, label: "Archived Sessions", Icon: ArchiveIcon },
         ],
       },
     ] as const
+
+    const languageSection = (
+      <section className="settings-panel">
+        <div className="settings-section-header">
+          <div>
+            <span className="label">{t("settings.general.languageLabel")}</span>
+            <h3>{t("settings.general.languageTitle")}</h3>
+          </div>
+          <p>{t("settings.general.languageCopy")}</p>
+        </div>
+        <div className="settings-color-mode-group" role="group" aria-label={t("settings.general.localeGroup")}>
+          {languageOptions.map((option) => (
+            <button
+              key={option.value}
+              className={locale === option.value ? "settings-color-mode-option is-active" : "settings-color-mode-option"}
+              role="radio"
+              aria-checked={locale === option.value}
+              type="button"
+              onClick={() => void setLocale(option.value)}
+            >
+              <span>{option.label}</span>
+              <small>{option.description}</small>
+            </button>
+          ))}
+        </div>
+        {localeError ? (
+          <p className="settings-helper-text settings-theme-config-error">
+            {t("settings.general.localeSaveFailed")} {localeError}
+          </p>
+        ) : null}
+      </section>
+    )
 
     return (
       <section
@@ -1266,23 +1233,11 @@ export function SettingsPage({
                 <div className="settings-banner is-error">{archivedSessionsError}</div>
               ) : null}
 
-              {builtinToolsError && activeSection === "tools" ? (
-                <div className="settings-banner is-error">{builtinToolsError}</div>
-              ) : null}
-
               {isLoading && showProviderSections ? (
                 <article className="settings-empty-state">
                   <span className="label">Loading</span>
                   <h3>Fetching provider catalog</h3>
                   <p>Reading provider availability, model visibility, and saved model preferences.</p>
-                </article>
-              ) : null}
-
-              {isLoadingBuiltinTools && activeSection === "tools" ? (
-                <article className="settings-empty-state">
-                  <span className="label">Loading</span>
-                  <h3>Fetching built-in tools</h3>
-                  <p>Reading the built-in registry and saved global availability limits.</p>
                 </article>
               ) : null}
 
@@ -1342,90 +1297,9 @@ export function SettingsPage({
                       <p className={`settings-about-status is-${appUpdateStatus.tone}`}>{appUpdateStatus.text}</p>
                     ) : null}
                   </section>
-                </div>
-              ) : activeSection === "tools" ? (
-                isLoadingBuiltinTools ? null : (
-                  <section className="settings-panel settings-tools-panel" aria-label="Built-in tools">
-                    <div className="settings-tools-header">
-                      <div>
-                        <span className="label">Built-in tools</span>
-                        <h2>Global tool availability</h2>
-                        <p>
-                          {enabledBuiltinToolCount} of {builtinTools.length} built-in tools enabled.
-                        </p>
-                      </div>
-                      <div className="settings-tools-actions">
-                        <button
-                          className="secondary-button"
-                          type="button"
-                          disabled={isSavingBuiltinTools}
-                          onClick={() => void onResetBuiltinTools()}
-                        >
-                          {isSavingBuiltinTools ? "Resetting..." : "Reset to default"}
-                        </button>
-                        <button
-                          className="primary-button"
-                          type="button"
-                          disabled={!isBuiltinToolSelectionDirty || isSavingBuiltinTools}
-                          onClick={() => void onSaveBuiltinTools()}
-                        >
-                          {isSavingBuiltinTools ? "Saving..." : "Save changes"}
-                        </button>
-                      </div>
-                    </div>
 
-                    {builtinTools.length > 0 ? (
-                      <div className="settings-tool-groups">
-                        {builtinToolGroups.map((group) => (
-                          <section key={group.kind} className="settings-tool-group" aria-label={`${group.label} tools`}>
-                            <div className="settings-tool-group-heading">
-                              <h3>{group.label}</h3>
-                              <span className="settings-badge">{group.items.length}</span>
-                            </div>
-                            <div className="settings-tool-list">
-                              {group.items.map((tool) => (
-                                <button
-                                  key={tool.id}
-                                  className={
-                                    tool.enabled
-                                      ? "settings-toggle-card is-active settings-tool-card"
-                                      : "settings-toggle-card settings-tool-card"
-                                  }
-                                  type="button"
-                                  aria-pressed={tool.enabled}
-                                  onClick={() => onBuiltinToolToggle(tool.id, !tool.enabled)}
-                                >
-                                  <span className="settings-toggle-copy">
-                                    <span className="settings-tool-card-header">
-                                      <strong>{tool.title}</strong>
-                                      <span className="settings-tool-id">{tool.id}</span>
-                                    </span>
-                                    <small>{tool.description}</small>
-                                    <span className="settings-tool-meta">
-                                      <span className="settings-badge">{getBuiltinToolKindLabel(tool)}</span>
-                                      <span className={getBuiltinToolRiskBadgeClassName(tool)}>{getBuiltinToolRiskLabel(tool)}</span>
-                                      {tool.aliases.length > 0 ? (
-                                        <span className="settings-badge">{tool.aliases.length} aliases</span>
-                                      ) : null}
-                                    </span>
-                                  </span>
-                                  <span className="settings-toggle-control" aria-hidden="true">
-                                    <span className="settings-toggle-thumb" />
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </section>
-                        ))}
-                      </div>
-                    ) : (
-                      <article className="settings-empty-state">
-                        <h3>No built-in tools</h3>
-                        <p>The agent registry did not return any built-in tools.</p>
-                      </article>
-                    )}
-                  </section>
-                )
+                  {languageSection}
+                </div>
               ) : activeSection === "appearance" ? (
                 <div className="settings-appearance-layout">
                   <section className="settings-panel">
@@ -1683,6 +1557,30 @@ export function SettingsPage({
                 </div>
               ) : activeSection === "developer" ? (
                 <div className="settings-developer-layout">
+                  <section className="settings-panel">
+                    <div className="settings-section-header">
+                      <div>
+                        <span className="label">Monitor</span>
+                        <h3>Agent Monitor</h3>
+                      </div>
+                      <p>Open the standalone monitor dashboard for local agent status, runtime sessions, and live logs.</p>
+                    </div>
+
+                    <div className="settings-actions-row">
+                      <span className="settings-helper-text">
+                        The monitor app runs from the local developer server at {MONITOR_APP_URL}.
+                      </span>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        aria-label="Open monitor"
+                        onClick={() => void openExternalUrl(MONITOR_APP_URL)}
+                      >
+                        Open Monitor
+                      </button>
+                    </div>
+                  </section>
+
                   <section className="settings-panel">
                     <div className="settings-section-header">
                       <div>

@@ -19,6 +19,7 @@ import type {
   ComposerCommentReference,
   ComposerDraftState,
   PreviewComment,
+  PreviewErrorKind,
   PreviewMode,
   RightSidebarView,
   WorkspaceFileComment,
@@ -37,6 +38,8 @@ import {
 import type { WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
+
+const MAX_PREVIEW_NAVIGATION_HISTORY = 50
 
 interface UseReviewPanelControllerOptions {
   activeSessionDirectory: string | null
@@ -83,6 +86,62 @@ export function useReviewPanelController({
 }: UseReviewPanelControllerOptions) {
   const deferredWorkspaceFileQuery = useDeferredValue(workspaceFileReviewState.query)
 
+  function getPreviewNavigationState(current: WorkspacePreviewState) {
+    const history = Array.isArray(current.navigationHistory)
+      ? current.navigationHistory
+      : current.committedUrl
+        ? [current.committedUrl]
+        : []
+    const index = Number.isInteger(current.navigationIndex)
+      ? Math.min(Math.max(current.navigationIndex, -1), history.length - 1)
+      : history.length - 1
+
+    return { history, index }
+  }
+
+  function setPreviewError(
+    current: WorkspacePreviewState,
+    errorMessage: string | null,
+    errorKind: PreviewErrorKind | null,
+  ): WorkspacePreviewState {
+    return {
+      ...current,
+      errorKind,
+      errorMessage,
+    }
+  }
+
+  function commitPreviewUrl(current: WorkspacePreviewState, input: string): WorkspacePreviewState {
+    const { errorKind, errorMessage, normalizedUrl } = normalizePreviewUrlInput(input)
+    if (!normalizedUrl) {
+      return setPreviewError(current, errorMessage, errorKind)
+    }
+
+    if (current.committedUrl === normalizedUrl) {
+      return {
+        ...current,
+        draftUrl: normalizedUrl,
+        errorKind: null,
+        errorMessage: null,
+        reloadToken: current.reloadToken + 1,
+      }
+    }
+
+    const { history, index } = getPreviewNavigationState(current)
+    const activeHistory = index >= 0 ? history.slice(0, index + 1) : []
+    const nextHistory = [...activeHistory, normalizedUrl].slice(-MAX_PREVIEW_NAVIGATION_HISTORY)
+
+    return {
+      ...current,
+      draftUrl: normalizedUrl,
+      committedUrl: normalizedUrl,
+      errorKind: null,
+      errorMessage: null,
+      navigationHistory: nextHistory,
+      navigationIndex: nextHistory.length - 1,
+    }
+  }
+
   function updatePreviewState(
     updater: (current: WorkspacePreviewState) => WorkspacePreviewState,
     workspaceID = selectedWorkspace?.id ?? null,
@@ -104,45 +163,76 @@ export function useReviewPanelController({
       (current) => ({
         ...current,
         draftUrl: value,
+        errorKind: null,
         errorMessage: null,
       }),
       workspaceID,
     )
   }
 
+  function handlePreviewOpenUrl(url: string, workspaceID = selectedWorkspace?.id ?? null) {
+    setRightSidebarView("preview")
+    updatePreviewState((current) => commitPreviewUrl(current, url), workspaceID)
+  }
+
   function handlePreviewOpen(workspaceID = selectedWorkspace?.id ?? null) {
     setRightSidebarView("preview")
-    updatePreviewState((current) => {
-      const { errorMessage, normalizedUrl } = normalizePreviewUrlInput(current.draftUrl || current.committedUrl || "")
-      if (!normalizedUrl) {
-        return {
-          ...current,
-          errorMessage,
-        }
-      }
-
-      return {
-        ...current,
-        draftUrl: normalizedUrl,
-        committedUrl: normalizedUrl,
-        errorMessage: null,
-        reloadToken: current.committedUrl === normalizedUrl ? current.reloadToken + 1 : current.reloadToken,
-      }
-    }, workspaceID)
+    updatePreviewState((current) => commitPreviewUrl(current, current.draftUrl || current.committedUrl || ""), workspaceID)
   }
 
   function handlePreviewReload(workspaceID = selectedWorkspace?.id ?? null) {
     setRightSidebarView("preview")
     updatePreviewState(
       (current) => current.committedUrl
-        ? {
-            ...current,
-            errorMessage: null,
-            reloadToken: current.reloadToken + 1,
-          }
+          ? {
+              ...current,
+              errorKind: null,
+              errorMessage: null,
+              reloadToken: current.reloadToken + 1,
+            }
         : current,
       workspaceID,
     )
+  }
+
+  function handlePreviewBack(workspaceID = selectedWorkspace?.id ?? null) {
+    setRightSidebarView("preview")
+    updatePreviewState((current) => {
+      const { history, index } = getPreviewNavigationState(current)
+      if (index <= 0) return current
+      const nextUrl = history[index - 1]
+      if (!nextUrl) return current
+
+      return {
+        ...current,
+        draftUrl: nextUrl,
+        committedUrl: nextUrl,
+        errorKind: null,
+        errorMessage: null,
+        navigationHistory: history,
+        navigationIndex: index - 1,
+      }
+    }, workspaceID)
+  }
+
+  function handlePreviewForward(workspaceID = selectedWorkspace?.id ?? null) {
+    setRightSidebarView("preview")
+    updatePreviewState((current) => {
+      const { history, index } = getPreviewNavigationState(current)
+      if (index < 0 || index >= history.length - 1) return current
+      const nextUrl = history[index + 1]
+      if (!nextUrl) return current
+
+      return {
+        ...current,
+        draftUrl: nextUrl,
+        committedUrl: nextUrl,
+        errorKind: null,
+        errorMessage: null,
+        navigationHistory: history,
+        navigationIndex: index + 1,
+      }
+    }, workspaceID)
   }
 
   function handlePreviewModeChange(mode: PreviewMode, workspaceID = selectedWorkspace?.id ?? null) {
@@ -196,6 +286,7 @@ export function useReviewPanelController({
 
       return {
         ...current,
+        errorKind: null,
         comments: [...current.comments, nextComment],
         errorMessage: null,
       }
@@ -269,12 +360,13 @@ export function useReviewPanelController({
 
     const scopeID = resolvePreviewScopeID(workspaceID)
     const previewState = previewByWorkspaceID[scopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
-    const { errorMessage, normalizedUrl } = normalizePreviewUrlInput(previewState.committedUrl ?? previewState.draftUrl)
+    const { errorKind, errorMessage, normalizedUrl } = normalizePreviewUrlInput(previewState.committedUrl ?? previewState.draftUrl)
 
     if (!normalizedUrl) {
       updatePreviewState(
         (current) => ({
           ...current,
+          errorKind,
           errorMessage,
         }),
         workspaceID,
@@ -288,6 +380,7 @@ export function useReviewPanelController({
         (current) => ({
           ...current,
           draftUrl: normalizedUrl,
+          errorKind: null,
           errorMessage: null,
         }),
         workspaceID,
@@ -297,6 +390,7 @@ export function useReviewPanelController({
       updatePreviewState(
         (current) => ({
           ...current,
+          errorKind: "unknown",
           errorMessage: message,
         }),
         workspaceID,
@@ -494,10 +588,6 @@ export function useReviewPanelController({
     }
   }
 
-  function handleWorkspaceFileCommentSubmit() {
-    commitWorkspaceFileComment(false)
-  }
-
   function handleWorkspaceFileCommentConfirm() {
     commitWorkspaceFileComment(true)
   }
@@ -558,18 +648,20 @@ export function useReviewPanelController({
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handlePreviewAddComment,
+    handlePreviewBack,
     handlePreviewDeleteComment,
     handlePreviewDraftUrlChange,
+    handlePreviewForward,
     handlePreviewInsertCommentsIntoDraft,
     handlePreviewModeChange,
     handlePreviewOpen,
     handlePreviewOpenExternal,
+    handlePreviewOpenUrl,
     handlePreviewReload,
     handleWorkspaceFileCommentCancel,
     handleWorkspaceFileCommentChange,
     handleWorkspaceFileCommentConfirm,
     handleWorkspaceFileCommentStart,
-    handleWorkspaceFileCommentSubmit,
     handleWorkspaceFileQueryChange,
     handleWorkspaceFileSelect,
   }
