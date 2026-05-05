@@ -1,8 +1,11 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react"
 import {
-  gitActivity,
-  type GitCommitRecord,
-} from "./generated/git-activity"
+  localGitActivitySnapshot,
+  loadGitHubActivitySnapshot,
+  type ActivityDay,
+  type ActivityRecord,
+  type RuntimeGitActivitySnapshot,
+} from "./githubActivity"
 
 const dayMs = 24 * 60 * 60 * 1000
 const weekDays = ["日", "一", "二", "三", "四", "五", "六"]
@@ -56,30 +59,34 @@ function buildCalendarWeeks(year: number) {
   return weeks
 }
 
-function getActivityLevel(count: number) {
+function getActivityLevel(day?: ActivityDay) {
+  const count = day?.count ?? 0
+
   if (count === 0) return 0
+  if (day?.level !== undefined) return day.level
   if (count === 1) return 1
   if (count <= 3) return 2
   if (count <= 6) return 3
   return 4
 }
 
-function groupCommitsByDate(commits: GitCommitRecord[]) {
-  const grouped = new Map<string, GitCommitRecord[]>()
+function groupDaysByDate(days: ActivityDay[]) {
+  const grouped = new Map<string, ActivityDay>()
 
-  for (const commit of commits) {
-    const existing = grouped.get(commit.date) ?? []
-    grouped.set(commit.date, [...existing, commit])
+  for (const day of days) {
+    grouped.set(day.date, day)
   }
 
   return grouped
 }
 
-function getAvailableYears(commits: GitCommitRecord[]) {
+function getAvailableYears(days: ActivityDay[]) {
   const years = new Set<number>([new Date().getFullYear()])
 
-  for (const commit of commits) {
-    years.add(Number(commit.date.slice(0, 4)))
+  for (const day of days) {
+    if (day.count > 0) {
+      years.add(Number(day.date.slice(0, 4)))
+    }
   }
 
   return Array.from(years).sort((a, b) => b - a)
@@ -104,7 +111,7 @@ function getMonthLabels(weeks: Date[][], year: number) {
   })
 }
 
-function getLongestStreak(year: number, commitsByDate: Map<string, GitCommitRecord[]>) {
+function getLongestStreak(year: number, daysByDate: Map<string, ActivityDay>) {
   let best = 0
   let current = 0
 
@@ -113,7 +120,7 @@ function getLongestStreak(year: number, commitsByDate: Map<string, GitCommitReco
     cursor <= new Date(year, 11, 31);
     cursor = addDays(cursor, 1)
   ) {
-    if ((commitsByDate.get(toDateKey(cursor))?.length ?? 0) > 0) {
+    if ((daysByDate.get(toDateKey(cursor))?.count ?? 0) > 0) {
       current += 1
       best = Math.max(best, current)
     } else {
@@ -124,49 +131,95 @@ function getLongestStreak(year: number, commitsByDate: Map<string, GitCommitReco
   return best
 }
 
-function CommitLink({ commit }: { commit: GitCommitRecord }) {
-  const href = gitActivity.commitBaseUrl
-    ? `${gitActivity.commitBaseUrl}${commit.hash}`
-    : undefined
+function getDefaultSelectedDate(year: number, daysInYear: ActivityDay[]) {
+  const activeDates = daysInYear
+    .filter((day) => day.count > 0)
+    .map((day) => day.date)
+    .sort()
 
+  return (
+    activeDates.at(-1) ??
+    `${year}-${year === new Date().getFullYear() ? toDateKey(new Date()).slice(5) : "01-01"}`
+  )
+}
+
+function getSyncLabel(
+  activity: RuntimeGitActivitySnapshot,
+  syncState: "loading" | "ready" | "fallback",
+) {
+  if (syncState === "loading") return "同步 GitHub 中"
+  if (syncState === "fallback") return "GitHub 同步失败，显示本地快照"
+  return activity.sourceLabel
+}
+
+function ActivityRecordLink({ record }: { record: ActivityRecord }) {
   const content = (
     <>
-      <span>{commit.shortHash}</span>
-      <strong>{commit.subject}</strong>
+      <span>{record.shortHash}</span>
+      <strong>{record.subject}</strong>
     </>
   )
 
-  if (!href) {
+  if (!record.url) {
     return <div className="commit-row">{content}</div>
   }
 
   return (
-    <a className="commit-row" href={href} target="_blank" rel="noreferrer">
+    <a className="commit-row" href={record.url} target="_blank" rel="noreferrer">
       {content}
     </a>
   )
 }
 
 export function GitActivitySection() {
-  const commitsByDate = useMemo(
-    () => groupCommitsByDate(gitActivity.commits),
-    [],
+  const [activity, setActivity] = useState<RuntimeGitActivitySnapshot>(
+    () => localGitActivitySnapshot,
+  )
+  const [syncState, setSyncState] = useState<"loading" | "ready" | "fallback">(
+    "loading",
+  )
+
+  useEffect(() => {
+    let ignore = false
+
+    loadGitHubActivitySnapshot()
+      .then((snapshot) => {
+        if (ignore) return
+        setActivity(snapshot)
+        setSyncState("ready")
+      })
+      .catch(() => {
+        if (ignore) return
+        setSyncState("fallback")
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  const daysByDate = useMemo(
+    () => groupDaysByDate(activity.days),
+    [activity.days],
   )
   const yearOptions = useMemo(
-    () => getAvailableYears(gitActivity.commits),
-    [],
+    () => getAvailableYears(activity.days),
+    [activity.days],
   )
   const [selectedYear, setSelectedYear] = useState(yearOptions[0])
 
-  const commitsInYear = useMemo(
+  useEffect(() => {
+    if (!yearOptions.includes(selectedYear)) {
+      setSelectedYear(yearOptions[0])
+    }
+  }, [selectedYear, yearOptions])
+
+  const daysInYear = useMemo(
     () =>
-      gitActivity.commits.filter((commit) =>
-        commit.date.startsWith(`${selectedYear}-`),
-      ),
-    [selectedYear],
+      activity.days.filter((day) => day.date.startsWith(`${selectedYear}-`)),
+    [activity.days, selectedYear],
   )
-  const defaultSelectedDate =
-    commitsInYear[0]?.date ?? `${selectedYear}-${selectedYear === new Date().getFullYear() ? toDateKey(new Date()).slice(5) : "01-01"}`
+  const defaultSelectedDate = getDefaultSelectedDate(selectedYear, daysInYear)
   const [selectedDate, setSelectedDate] = useState(defaultSelectedDate)
 
   useEffect(() => {
@@ -178,22 +231,33 @@ export function GitActivitySection() {
     () => getMonthLabels(weeks, selectedYear),
     [selectedYear, weeks],
   )
-  const selectedCommits = commitsByDate.get(selectedDate) ?? []
-  const activeDays = commitsInYear.reduce((dates, commit) => {
-    dates.add(commit.date)
-    return dates
-  }, new Set<string>()).size
-  const longestStreak = getLongestStreak(selectedYear, commitsByDate)
-  const generatedAt = generatedFormatter.format(new Date(gitActivity.generatedAt))
+  const selectedDay = daysByDate.get(selectedDate)
+  const selectedRecords = selectedDay?.records ?? []
+  const selectedCount = selectedDay?.count ?? 0
+  const activeDays = daysInYear.filter((day) => day.count > 0).length
+  const contributionCount = daysInYear.reduce((total, day) => total + day.count, 0)
+  const longestStreak = getLongestStreak(selectedYear, daysByDate)
+  const generatedAt = generatedFormatter.format(new Date(activity.generatedAt))
+  const isGitHubSource = activity.source === "github"
+  const itemLabel = isGitHubSource ? "contributions" : "commits"
+  const detailLabel = isGitHubSource ? "贡献" : "更新"
+  const syncLabel = getSyncLabel(activity, syncState)
+  const syncClassName = [
+    "activity-sync",
+    syncState === "loading" ? "is-loading" : "",
+    syncState === "fallback" ? "is-fallback" : "is-live",
+  ]
+    .filter(Boolean)
+    .join(" ")
 
   return (
     <section className="git-activity-section" id="updates">
       <div className="activity-heading">
-        <p className="section-kicker">Git powered updates</p>
-        <h2>把真实 commit 记录变成项目更新热力图。</h2>
+        <p className="section-kicker">GitHub live updates</p>
+        <h2>实时同步 GitHub 贡献热力图。</h2>
         <p>
-          页面数据在启动和构建时从本地 Git 数据库自动生成，既保留 GitHub
-          式的贡献视图，也能展开查看每一天实际推进了什么。
+          页面打开时拉取 GitHub 公开贡献日历，让这里的热力图对应你的 GitHub
+          账号；如果网络接口不可用，会自动回退到本地 Git 快照。
         </p>
       </div>
 
@@ -201,8 +265,11 @@ export function GitActivitySection() {
         <div className="activity-panel">
           <div className="activity-toolbar">
             <div>
-              <span className="activity-eyebrow">当前分支</span>
-              <strong>{gitActivity.branch}</strong>
+              <span className="activity-eyebrow">
+                {isGitHubSource ? "GitHub 账号" : "当前分支"}
+              </span>
+              <strong>{activity.ownerLabel}</strong>
+              <span className={syncClassName}>{syncLabel}</span>
             </div>
             <div className="year-switcher" aria-label="选择年份">
               {yearOptions.map((year) => (
@@ -220,8 +287,10 @@ export function GitActivitySection() {
 
           <dl className="activity-stats">
             <div>
-              <dt>{selectedYear} commits</dt>
-              <dd>{commitsInYear.length}</dd>
+              <dt>
+                {selectedYear} {itemLabel}
+              </dt>
+              <dd>{contributionCount}</dd>
             </div>
             <div>
               <dt>活跃天数</dt>
@@ -232,12 +301,15 @@ export function GitActivitySection() {
               <dd>{longestStreak} 天</dd>
             </div>
             <div>
-              <dt>生成时间</dt>
+              <dt>{isGitHubSource ? "同步时间" : "生成时间"}</dt>
               <dd>{generatedAt}</dd>
             </div>
           </dl>
 
-          <div className="heatmap-scroll" aria-label={`${selectedYear} 年 Git commit 热力图`}>
+          <div
+            className="heatmap-scroll"
+            aria-label={`${selectedYear} 年 GitHub 贡献热力图`}
+          >
             <div
               className="heatmap-months"
               style={{ "--week-count": weeks.length } as CSSProperties}
@@ -264,11 +336,12 @@ export function GitActivitySection() {
                 {weeks.flatMap((week) =>
                   week.map((date) => {
                     const dateKey = toDateKey(date)
-                    const dayCommits = commitsByDate.get(dateKey) ?? []
-                    const level = getActivityLevel(dayCommits.length)
+                    const day = daysByDate.get(dateKey)
+                    const dayCount = day?.count ?? 0
+                    const level = getActivityLevel(day)
                     const isOutsideYear = date.getFullYear() !== selectedYear
                     const isSelected = dateKey === selectedDate
-                    const label = `${fullDateFormatter.format(date)}：${dayCommits.length} 次更新`
+                    const label = `${fullDateFormatter.format(date)}：${dayCount} 次${detailLabel}`
 
                     return (
                       <button
@@ -304,20 +377,24 @@ export function GitActivitySection() {
 
         <aside className="activity-detail" aria-live="polite">
           <p>{fullDateFormatter.format(parseDateKey(selectedDate))}</p>
-          <h3>{selectedCommits.length} 次更新</h3>
-          {selectedCommits.length > 0 ? (
+          <h3>
+            {selectedCount} 次{detailLabel}
+          </h3>
+          {selectedRecords.length > 0 ? (
             <div className="commit-list">
-              {selectedCommits.slice(0, 8).map((commit) => (
-                <CommitLink commit={commit} key={commit.hash} />
+              {selectedRecords.slice(0, 8).map((record) => (
+                <ActivityRecordLink record={record} key={record.hash} />
               ))}
-              {selectedCommits.length > 8 ? (
+              {selectedRecords.length > 8 ? (
                 <span className="commit-overflow">
-                  还有 {selectedCommits.length - 8} 条 commit 未显示
+                  还有 {selectedRecords.length - 8} 条记录未显示
                 </span>
               ) : null}
             </div>
           ) : (
-            <span className="empty-activity">这一天没有提交记录。</span>
+            <span className="empty-activity">
+              这一天没有{isGitHubSource ? "公开贡献" : "提交"}记录。
+            </span>
           )}
         </aside>
       </div>

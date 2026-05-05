@@ -236,31 +236,32 @@ export function PluginsPage({
       />
 
       <div className="settings-page-main is-services plugins-page-main">
-        {message ? (
-          <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
-            <span className="settings-banner-text">{message.text}</span>
-            <button
-              className="settings-banner-dismiss"
-              type="button"
-              aria-label="Dismiss plugins message"
-              title="Dismiss"
-              onClick={onDismissMessage}
-            >
-              <CloseIcon />
-            </button>
-          </div>
-        ) : null}
+        <div className="plugins-development-disabled" inert aria-hidden="true">
+          {message ? (
+            <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
+              <span className="settings-banner-text">{message.text}</span>
+              <button
+                className="settings-banner-dismiss"
+                type="button"
+                aria-label="Dismiss plugins message"
+                title="Dismiss"
+                onClick={onDismissMessage}
+              >
+                <CloseIcon />
+              </button>
+            </div>
+          ) : null}
 
-        {loadError ? <div className="settings-banner is-error">{loadError}</div> : null}
+          {loadError ? <div className="settings-banner is-error">{loadError}</div> : null}
 
-        {isLoading ? (
-          <article className="settings-empty-state">
-            <span className="label">Loading</span>
-            <h3>Fetching plugins</h3>
-            <p>Reading the curated catalog and installed plugin state.</p>
-          </article>
-        ) : (
-          <section className="settings-services-layout plugins-page-layout" aria-label="Plugin marketplace layout">
+          {isLoading ? (
+            <article className="settings-empty-state">
+              <span className="label">Loading</span>
+              <h3>Fetching plugins</h3>
+              <p>Reading the curated catalog and installed plugin state.</p>
+            </article>
+          ) : (
+            <section className="settings-services-layout plugins-page-layout" aria-label="Plugin marketplace layout">
             <div className="settings-service-list-panel plugins-list-panel">
               <div className="settings-panel plugins-market-panel">
                 <div className="settings-section-header">
@@ -668,8 +669,17 @@ export function PluginsPage({
                 </article>
               )}
             </div>
-          </section>
-        )}
+            </section>
+          )}
+        </div>
+
+        <div className="plugins-development-overlay" role="status" aria-live="polite">
+          <div className="plugins-development-card">
+            <span className="plugins-development-kicker">开发中</span>
+            <strong>插件模块待开发</strong>
+            <p>该页面功能正在建设中，暂不可用。</p>
+          </div>
+        </div>
       </div>
     </section>
   )

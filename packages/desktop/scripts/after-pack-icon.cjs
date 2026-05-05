@@ -2,6 +2,27 @@ const fs = require("node:fs")
 const path = require("node:path")
 const { spawnSync } = require("node:child_process")
 
+function copyAgentNodeModules(projectDir, appOutDir) {
+  const sourceDir = path.join(projectDir, "build", "agent-runtime", "node_modules")
+  const targetDir = path.join(appOutDir, "resources", "agent", "node_modules")
+  const nodePtyPackage = path.join(sourceDir, "node-pty", "package.json")
+
+  if (!fs.existsSync(nodePtyPackage)) {
+    throw new Error(`[desktop][build] node-pty runtime not found: ${nodePtyPackage}`)
+  }
+
+  fs.rmSync(targetDir, { recursive: true, force: true })
+  fs.mkdirSync(path.dirname(targetDir), { recursive: true })
+  fs.cpSync(sourceDir, targetDir, { recursive: true, force: true })
+
+  const packagedNodePtyPackage = path.join(targetDir, "node-pty", "package.json")
+  if (!fs.existsSync(packagedNodePtyPackage)) {
+    throw new Error(`[desktop][build] failed to package node-pty runtime: ${packagedNodePtyPackage}`)
+  }
+
+  console.log(`[desktop][build] packaged agent node_modules: ${targetDir}`)
+}
+
 function findRcedit(projectDir) {
   let currentDir = projectDir
 
@@ -40,9 +61,11 @@ function findRcedit(projectDir) {
 }
 
 module.exports = async function afterPack(context) {
+  const projectDir = context.packager.projectDir
+  copyAgentNodeModules(projectDir, context.appOutDir)
+
   if (process.platform !== "win32") return
 
-  const projectDir = context.packager.projectDir
   const executablePath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.exe`)
   const iconPath = path.join(projectDir, "build", "icon.ico")
 

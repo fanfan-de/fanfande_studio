@@ -259,6 +259,13 @@ a {
   font-size: 0.86rem;
 }
 
+.hero-visual-grid .activity-sync {
+  min-height: 20px;
+  margin-top: 6px;
+  padding: 0 6px;
+  font-size: 0.66rem;
+}
+
 .hero-visual-grid .activity-stats {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -484,6 +491,32 @@ a {
   font-size: 0.92rem;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+
+.activity-sync {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  margin-top: 8px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 0.72rem;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.activity-sync.is-loading {
+  color: var(--muted);
+  background: #f3f5f1;
+}
+
+.activity-sync.is-fallback {
+  color: #9a531f;
+  border-color: #efd6bd;
+  background: #fff4e8;
 }
 
 .activity-eyebrow {
