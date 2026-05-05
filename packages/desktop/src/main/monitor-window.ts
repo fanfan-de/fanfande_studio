@@ -60,7 +60,7 @@ function resolveMonitorIndexPath() {
 async function resolveMonitorWindowTarget(): Promise<MonitorWindowTarget> {
   const devServerURL = normalizeMonitorURL(process.env.FANFANDE_MONITOR_URL ?? DEFAULT_MONITOR_DEV_URL)
 
-  if (!app.isPackaged && await isMonitorDevServerAvailable(devServerURL)) {
+  if (!app.isPackaged && (await isMonitorDevServerAvailable(devServerURL))) {
     return {
       source: "dev-server",
       url: devServerURL,
@@ -93,7 +93,7 @@ export async function openMonitorWindow() {
 
     return {
       ok: true as const,
-      reused: true,
+      reused: true as const,
       source: "existing" as const,
     }
   }
@@ -133,7 +133,7 @@ export async function openMonitorWindow() {
       await win.loadURL(target.url)
       return {
         ok: true as const,
-        reused: false,
+        reused: false as const,
         source: target.source,
         url: target.url,
       }
@@ -143,7 +143,7 @@ export async function openMonitorWindow() {
     return {
       filePath: target.filePath,
       ok: true as const,
-      reused: false,
+      reused: false as const,
       source: target.source,
     }
   } catch (error) {

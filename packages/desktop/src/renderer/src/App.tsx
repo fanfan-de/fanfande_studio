@@ -46,7 +46,15 @@ interface ActivePaneResize {
   axis: WorkbenchSplitAxis
   combinedSize: number
   containerOrigin: number
+  didCommit: boolean
+  frameID: number | null
+  latestLeftSize: number
+  latestRightSize: number
+  leftElement: HTMLElement
   leftIndex: number
+  originalLeftFlexGrow: string
+  originalRightFlexGrow: string
+  rightElement: HTMLElement
   splitID: string
   totalSize: number
 }
@@ -408,6 +416,7 @@ export function App() {
   const [draggedPaneTab, setDraggedPaneTab] = useState<DraggedPaneTab | null>(null)
   const [paneDropTarget, setPaneDropTarget] = useState<PaneDropTarget | null>(null)
   const [activePaneResize, setActivePaneResize] = useState<ActivePaneResize | null>(null)
+  const handleWorkbenchPaneResizeRef = useRef(handleWorkbenchPaneResize)
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code")
   const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
   const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
@@ -418,6 +427,7 @@ export function App() {
   const terminalWorkspaceDirectory = focusedWorkbenchPane?.workspace?.directory ?? selectedWorkspace?.directory ?? null
   const activeRightSidebarView: RightSidebarView =
     rightSidebarView === "runtime" && !isAgentDebugTraceEnabled ? "changes" : rightSidebarView
+  handleWorkbenchPaneResizeRef.current = handleWorkbenchPaneResize
 
   useEffect(() => {
     let cancelled = false
@@ -496,7 +506,34 @@ export function App() {
     if (!activePaneResize) return
     const resizeState = activePaneResize
 
-    function handlePointerMove(event: PointerEvent) {
+    function applyPreview(leftSize: number, rightSize: number) {
+      resizeState.leftElement.style.flexGrow = String(leftSize)
+      resizeState.rightElement.style.flexGrow = String(rightSize)
+    }
+
+    function restorePreview() {
+      resizeState.leftElement.style.flexGrow = resizeState.originalLeftFlexGrow
+      resizeState.rightElement.style.flexGrow = resizeState.originalRightFlexGrow
+    }
+
+    function clearPreviewFrame() {
+      if (resizeState.frameID === null) return
+      window.cancelAnimationFrame(resizeState.frameID)
+      resizeState.frameID = null
+    }
+
+    function queuePreview(leftSize: number, rightSize: number) {
+      resizeState.latestLeftSize = leftSize
+      resizeState.latestRightSize = rightSize
+      if (resizeState.frameID !== null) return
+
+      resizeState.frameID = window.requestAnimationFrame(() => {
+        resizeState.frameID = null
+        applyPreview(resizeState.latestLeftSize, resizeState.latestRightSize)
+      })
+    }
+
+    function handlePointerMove(event: globalThis.PointerEvent) {
       const pointerPosition = resizeState.axis === "horizontal" ? event.clientX : event.clientY
       const minPaneSize = resizeState.axis === "horizontal" ? MIN_WORKBENCH_PANE_WIDTH : MIN_WORKBENCH_PANE_HEIGHT
       const nextLeftSizePx = clamp(
@@ -507,25 +544,44 @@ export function App() {
       const nextLeftSize = resizeState.totalSize * (nextLeftSizePx / resizeState.combinedSize)
       const nextRightSize = resizeState.totalSize - nextLeftSize
 
-      handleWorkbenchPaneResize(resizeState.splitID, resizeState.leftIndex, nextLeftSize, nextRightSize)
+      queuePreview(nextLeftSize, nextRightSize)
     }
 
     function stopPaneResize() {
+      clearPreviewFrame()
+      applyPreview(resizeState.latestLeftSize, resizeState.latestRightSize)
+      resizeState.didCommit = true
+      handleWorkbenchPaneResizeRef.current(
+        resizeState.splitID,
+        resizeState.leftIndex,
+        resizeState.latestLeftSize,
+        resizeState.latestRightSize,
+      )
+      setActivePaneResize(null)
+    }
+
+    function cancelPaneResize() {
+      clearPreviewFrame()
+      restorePreview()
       setActivePaneResize(null)
     }
 
     document.body.classList.add("is-resizing-workbench-pane")
     window.addEventListener("pointermove", handlePointerMove)
     window.addEventListener("pointerup", stopPaneResize)
-    window.addEventListener("pointercancel", stopPaneResize)
+    window.addEventListener("pointercancel", cancelPaneResize)
 
     return () => {
+      clearPreviewFrame()
+      if (!resizeState.didCommit) {
+        restorePreview()
+      }
       document.body.classList.remove("is-resizing-workbench-pane")
       window.removeEventListener("pointermove", handlePointerMove)
       window.removeEventListener("pointerup", stopPaneResize)
-      window.removeEventListener("pointercancel", stopPaneResize)
+      window.removeEventListener("pointercancel", cancelPaneResize)
     }
-  }, [activePaneResize, handleWorkbenchPaneResize])
+  }, [activePaneResize])
 
   function handleRegisterPane(paneID: string, node: HTMLElement | null) {
     if (node) {
@@ -687,13 +743,23 @@ export function App() {
     if (combinedSize <= minPaneSize * 2) return
 
     event.preventDefault()
+    const initialLeftSize = split.sizes[leftIndex] ?? 0
+    const initialRightSize = split.sizes[leftIndex + 1] ?? 0
     setActivePaneResize({
       axis,
       combinedSize,
       containerOrigin: axis === "horizontal" ? leftRect.left : leftRect.top,
+      didCommit: false,
+      frameID: null,
+      latestLeftSize: initialLeftSize,
+      latestRightSize: initialRightSize,
+      leftElement: leftPaneElement,
       leftIndex,
+      originalLeftFlexGrow: leftPaneElement.style.flexGrow,
+      originalRightFlexGrow: rightPaneElement.style.flexGrow,
+      rightElement: rightPaneElement,
       splitID,
-      totalSize: (split.sizes[leftIndex] ?? 0) + (split.sizes[leftIndex + 1] ?? 0),
+      totalSize: initialLeftSize + initialRightSize,
     })
   }
 

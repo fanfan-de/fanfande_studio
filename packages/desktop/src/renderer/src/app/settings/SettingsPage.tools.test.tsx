@@ -184,11 +184,12 @@ describe("SettingsPage built-in tools", () => {
   })
 
   it("opens the monitor app from developer mode settings", async () => {
-    const openExternalUrl = vi.fn().mockResolvedValue({
+    const openMonitorWindow = vi.fn().mockResolvedValue({
       ok: true,
-      url: "http://127.0.0.1:4174/",
+      reused: false,
+      source: "file",
     })
-    setDesktopMock({ openExternalUrl })
+    setDesktopMock({ openMonitorWindow })
 
     render(<SettingsPage {...createSettingsPageProps()} />)
 
@@ -196,7 +197,7 @@ describe("SettingsPage built-in tools", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open monitor" }))
 
     await waitFor(() => {
-      expect(openExternalUrl).toHaveBeenCalledWith({ url: "http://127.0.0.1:4174/" })
+      expect(openMonitorWindow).toHaveBeenCalledTimes(1)
     })
   })
 

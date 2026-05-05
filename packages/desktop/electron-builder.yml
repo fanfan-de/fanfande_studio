@@ -19,6 +19,10 @@ extraResources:
     to: agent
     filter:
       - "**/*"
+  - from: ../monitor/dist
+    to: monitor
+    filter:
+      - "**/*"
 win:
   icon: build/icon.ico
   signAndEditExecutable: false

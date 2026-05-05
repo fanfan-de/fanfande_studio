@@ -47,6 +47,7 @@ import {
   checkForAppUpdates,
   getAppUpdateSettings,
   openExternalUrl,
+  openMonitorWindow,
   setAutomaticUpdatesEnabled,
 } from "./client"
 import type { AppLocale } from "../../../../shared/locale"
@@ -451,7 +452,6 @@ type AppUpdateStatus = {
 }
 
 const SETTINGS_PAGE_DRAG_MARGIN = 16
-const MONITOR_APP_URL = "http://127.0.0.1:4174/"
 
 interface SettingsPageOffset {
   x: number
@@ -1568,13 +1568,13 @@ export function SettingsPage({
 
                     <div className="settings-actions-row">
                       <span className="settings-helper-text">
-                        The monitor app runs from the local developer server at {MONITOR_APP_URL}.
+                        Opens a dedicated desktop window and falls back to the bundled monitor build when the dev server is not running.
                       </span>
                       <button
                         className="secondary-button"
                         type="button"
                         aria-label="Open monitor"
-                        onClick={() => void openExternalUrl(MONITOR_APP_URL)}
+                        onClick={() => void openMonitorWindow()}
                       >
                         Open Monitor
                       </button>
