@@ -18,6 +18,20 @@ function Fixture() {
   )
 }
 
+function EditableFixture() {
+  return (
+    <div contentEditable data-testid="editable" suppressContentEditableWarning>
+      abc
+    </div>
+  )
+}
+
+function waitForLocalizationFrame() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 50)
+  })
+}
+
 afterEach(() => {
   cleanup()
   window.localStorage.clear()
@@ -83,5 +97,21 @@ describe("I18nProvider", () => {
     })
     expect(await screen.findByText("zh-CN")).toBeInTheDocument()
     expect(await screen.findByText("打开设置")).toBeInTheDocument()
+  })
+
+  it("does not localize user-editable text nodes", async () => {
+    render(
+      <I18nProvider>
+        <EditableFixture />
+      </I18nProvider>,
+    )
+
+    const editable = screen.getByTestId("editable")
+    await waitFor(() => expect(editable.textContent).toBe("abc"))
+
+    editable.firstChild!.nodeValue = "abc "
+    await waitForLocalizationFrame()
+
+    expect(editable.textContent).toBe("abc ")
   })
 })

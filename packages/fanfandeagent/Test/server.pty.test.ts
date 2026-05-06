@@ -3,6 +3,9 @@ import { createServerRuntime } from "#server/server.ts"
 import { createPtyRegistry } from "#pty/registry.ts"
 import type { PtyRuntimeAdapter, PtyRuntimeHandle } from "#pty/runtime.ts"
 import type { PtyServerMessage, PtySessionInfo } from "#pty/types.ts"
+import * as Identifier from "#id/id.ts"
+import * as Message from "#session/core/message.ts"
+import * as SessionCore from "#session/core/session.ts"
 
 interface JsonEnvelope<T = Record<string, unknown>> {
   success: boolean
@@ -12,6 +15,12 @@ interface JsonEnvelope<T = Record<string, unknown>> {
     code: string
     message: string
   }
+}
+
+interface SessionSummary {
+  id: string
+  directory: string
+  kind?: string
 }
 
 class FakePtyHandle implements PtyRuntimeHandle {
@@ -195,13 +204,26 @@ async function startPtyTestServer() {
 }
 
 async function createPty(baseURL: string) {
+  const sessionResponse = await fetch(`${baseURL}/api/sessions`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      directory: process.cwd(),
+    }),
+  })
+  const sessionBody = (await sessionResponse.json()) as JsonEnvelope<SessionSummary>
+  expect(sessionResponse.status).toBe(201)
+  expect(sessionBody.data?.id).toBeString()
+
   const response = await fetch(`${baseURL}/api/pty`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
     },
     body: JSON.stringify({
-      cwd: process.cwd(),
+      sessionID: sessionBody.data!.id,
       rows: 24,
       cols: 80,
     }),
@@ -210,22 +232,202 @@ async function createPty(baseURL: string) {
   return {
     response,
     body,
+    session: sessionBody.data!,
+  }
+}
+
+function createAnchorMessages(session: SessionSummary) {
+  const userMessage = Message.User.parse({
+    id: Identifier.ascending("message"),
+    sessionID: session.id,
+    role: "user",
+    created: Date.now(),
+    agent: "plan",
+    model: {
+      providerID: "test",
+      modelID: "test-model",
+    },
+  })
+  const userPart = Message.TextPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID: session.id,
+    messageID: userMessage.id,
+    type: "text",
+    text: "Parent prompt",
+  })
+  const assistantMessage = Message.Assistant.parse({
+    id: Identifier.ascending("message"),
+    sessionID: session.id,
+    role: "assistant",
+    created: Date.now(),
+    completed: Date.now(),
+    parentID: userMessage.id,
+    modelID: "test-model",
+    providerID: "test",
+    agent: "plan",
+    path: {
+      cwd: session.directory,
+      root: session.directory,
+    },
+    cost: 0,
+    tokens: {
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cache: {
+        read: 0,
+        write: 0,
+      },
+    },
+  })
+  const assistantPart = Message.TextPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID: session.id,
+    messageID: assistantMessage.id,
+    type: "text",
+    text: "Anchorable answer",
+  })
+
+  SessionCore.upsertMessage(userMessage)
+  SessionCore.upsertPart(userPart)
+  SessionCore.upsertMessage(assistantMessage)
+  SessionCore.upsertPart(assistantPart)
+
+  return {
+    assistantMessage,
   }
 }
 
 describe("server pty api", () => {
+  test("rejects PTY creation without a session owner", async () => {
+    const { baseURL } = await startPtyTestServer()
+    const response = await fetch(`${baseURL}/api/pty`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        rows: 24,
+        cols: 80,
+      }),
+    })
+    const body = (await response.json()) as JsonEnvelope<PtySessionInfo>
+
+    expect(response.status).toBe(400)
+    expect(body.success).toBe(false)
+  })
+
+  test("rejects caller-provided cwd during PTY creation", async () => {
+    const { baseURL } = await startPtyTestServer()
+    const sessionResponse = await fetch(`${baseURL}/api/sessions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        directory: process.cwd(),
+      }),
+    })
+    const sessionBody = (await sessionResponse.json()) as JsonEnvelope<SessionSummary>
+
+    const response = await fetch(`${baseURL}/api/pty`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionID: sessionBody.data!.id,
+        cwd: process.cwd(),
+      }),
+    })
+    const body = (await response.json()) as JsonEnvelope<PtySessionInfo>
+
+    expect(response.status).toBe(400)
+    expect(body.success).toBe(false)
+  })
+
   test("creates a PTY session and returns the JSON envelope", async () => {
     const { baseURL, runtime } = await startPtyTestServer()
-    const { response, body } = await createPty(baseURL)
+    const { response, body, session } = await createPty(baseURL)
 
     expect(response.status).toBe(201)
     expect(body.success).toBe(true)
     expect(body.requestId).toBeString()
     expect(body.data?.id).toStartWith("pty_")
+    expect(body.data?.sessionID).toBe(session.id)
     expect(body.data?.status).toBe("running")
     expect(runtime.handles).toHaveLength(1)
     expect(runtime.handles[0]?.cols).toBe(80)
     expect(runtime.handles[0]?.rows).toBe(24)
+  })
+
+  test("returns the same running PTY for repeated session creation", async () => {
+    const { baseURL, runtime } = await startPtyTestServer()
+    const created = await createPty(baseURL)
+    const sessionID = created.session.id
+    const firstPtyID = created.body.data?.id
+
+    const response = await fetch(`${baseURL}/api/sessions/${sessionID}/pty`, {
+      method: "POST",
+    })
+    const body = (await response.json()) as JsonEnvelope<PtySessionInfo>
+
+    expect(response.status).toBe(201)
+    expect(body.data?.id).toBe(firstPtyID)
+    expect(body.data?.sessionID).toBe(sessionID)
+    expect(runtime.handles).toHaveLength(1)
+  })
+
+  test("keeps PTYs isolated across sessions", async () => {
+    const { baseURL, registry, runtime } = await startPtyTestServer()
+    const first = await createPty(baseURL)
+    const second = await createPty(baseURL)
+
+    expect(first.body.data?.id).not.toBe(second.body.data?.id)
+    expect(first.body.data?.sessionID).toBe(first.session.id)
+    expect(second.body.data?.sessionID).toBe(second.session.id)
+    expect(registry.infoBySession(first.session.id)?.id).toBe(first.body.data?.id)
+    expect(registry.infoBySession(second.session.id)?.id).toBe(second.body.data?.id)
+    expect(runtime.handles).toHaveLength(2)
+  })
+
+  test("rejects session PTY creation for side chats", async () => {
+    const { baseURL } = await startPtyTestServer()
+    const parent = await createPty(baseURL)
+    const { assistantMessage } = createAnchorMessages(parent.session)
+    const sideChat = await SessionCore.createSideChat({
+      parentSessionID: parent.session.id,
+      anchorMessageID: assistantMessage.id,
+    })
+
+    const response = await fetch(`${baseURL}/api/sessions/${sideChat.id}/pty`, {
+      method: "POST",
+    })
+    const body = (await response.json()) as JsonEnvelope<PtySessionInfo>
+
+    expect(response.status).toBe(409)
+    expect(body.success).toBe(false)
+    expect(body.error?.code).toBe("TERMINAL_UNAVAILABLE")
+  })
+
+  test("returns null for a session without a terminal", async () => {
+    const { baseURL } = await startPtyTestServer()
+    const sessionResponse = await fetch(`${baseURL}/api/sessions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        directory: process.cwd(),
+      }),
+    })
+    const sessionBody = (await sessionResponse.json()) as JsonEnvelope<SessionSummary>
+
+    const response = await fetch(`${baseURL}/api/sessions/${sessionBody.data!.id}/pty`)
+    const body = (await response.json()) as JsonEnvelope<PtySessionInfo | null>
+
+    expect(response.status).toBe(200)
+    expect(body.data).toBeNull()
   })
 
   test("updates rows and cols through PUT /api/pty/:id", async () => {
@@ -374,5 +576,45 @@ describe("server pty api", () => {
     })
 
     socket.close()
+  })
+
+  test("deleting a session removes its PTY ownership mapping", async () => {
+    const { baseURL, registry } = await startPtyTestServer()
+    const created = await createPty(baseURL)
+
+    expect(registry.infoBySession(created.session.id)?.id).toBe(created.body.data?.id)
+
+    const response = await fetch(`${baseURL}/api/sessions/${created.session.id}`, {
+      method: "DELETE",
+    })
+    const body = (await response.json()) as JsonEnvelope<{ sessionID: string }>
+
+    expect(response.status).toBe(200)
+    expect(body.data?.sessionID).toBe(created.session.id)
+    expect(registry.infoBySession(created.session.id)).toBeNull()
+  })
+
+  test("archiving a session removes its PTY and restore does not recreate it", async () => {
+    const { baseURL, registry } = await startPtyTestServer()
+    const created = await createPty(baseURL)
+
+    expect(registry.infoBySession(created.session.id)?.id).toBe(created.body.data?.id)
+
+    const archiveResponse = await fetch(`${baseURL}/api/sessions/${created.session.id}/archive`, {
+      method: "POST",
+    })
+    expect(archiveResponse.status).toBe(200)
+    expect(registry.infoBySession(created.session.id)).toBeNull()
+
+    const restoreResponse = await fetch(`${baseURL}/api/sessions/archived/${created.session.id}/restore`, {
+      method: "POST",
+    })
+    expect(restoreResponse.status).toBe(200)
+
+    const getResponse = await fetch(`${baseURL}/api/sessions/${created.session.id}/pty`)
+    const getBody = (await getResponse.json()) as JsonEnvelope<PtySessionInfo | null>
+
+    expect(getResponse.status).toBe(200)
+    expect(getBody.data).toBeNull()
   })
 })

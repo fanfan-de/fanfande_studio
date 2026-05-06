@@ -25,10 +25,12 @@ import { ReadSkillResourceTool } from "#tool/read-skill-resource.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { SpawnSubagentTool } from "#tool/spawn-subagent.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
+import { TerminalReadTool, TerminalRunCommandTool, TerminalWriteInputTool } from "#tool/terminal-tools.ts"
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "#tool/task-tools.ts"
 import { ViewImageTool } from "#tool/view-image.ts"
 import { WaitSubagentTool } from "#tool/wait-subagent.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
+import { LoadWorkspaceDependenciesTool } from "#tool/workspace-dependencies.ts"
 import * as Mcp from "#mcp/manager.ts"
 
 function exposedNames(tool: Tool.ToolInfo): string[] {
@@ -74,6 +76,7 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     ListMcpResourcesTool,
     ListMcpResourceTemplatesTool,
     ReadMcpResourceTool,
+    LoadWorkspaceDependenciesTool,
     ReplaceTextTool,
     ApplyPatchTool,
     GlobTool,
@@ -85,6 +88,9 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     SpawnSubagentTool,
     CancelSubagentTool,
     StopBackgroundTaskTool,
+    TerminalRunCommandTool,
+    TerminalReadTool,
+    TerminalWriteInputTool,
     LspDefinitionTool,
     LspReferencesTool,
     LspHoverTool,

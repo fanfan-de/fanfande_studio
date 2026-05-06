@@ -719,19 +719,28 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     async (
       _event,
       input?: {
+        sessionID?: string
         title?: string
-        cwd?: string
         shell?: string
         rows?: number
         cols?: number
       },
     ) => {
+      if (!input?.sessionID?.trim()) {
+        throw new Error("PTY session creation requires a sessionID")
+      }
       const result = await requestAgentJSON<AgentPtySessionInfo>("/api/pty", {
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify(input ?? {}),
+        body: JSON.stringify({
+          sessionID: input.sessionID,
+          title: input.title,
+          shell: input.shell,
+          rows: input.rows,
+          cols: input.cols,
+        }),
       })
 
       return result.data

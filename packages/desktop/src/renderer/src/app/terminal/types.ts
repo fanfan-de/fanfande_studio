@@ -15,6 +15,7 @@ export type TerminalStreamEvent =
 
 export interface TerminalSessionRecord {
   ptyID: string
+  sessionID: string
   title: string
   cwd: string
   shell: string
@@ -36,11 +37,13 @@ export interface TerminalWorkspaceState {
   activePtyID: string | null
   order: string[]
   sessions: Record<string, TerminalSessionRecord>
+  scrollTopBySessionID: Record<string, number>
   panelHeight: number
 }
 
 export interface TerminalStorageSessionSnapshot {
   ptyID: string
+  sessionID: string
   title: string
   cwd: string
   shell: string
@@ -56,16 +59,18 @@ export interface TerminalStorageSessionSnapshot {
 }
 
 export interface TerminalStoragePayload {
-  version: 1
+  version: 2
   isOpen: boolean
   activePtyID: string | null
   order: string[]
   sessions: TerminalStorageSessionSnapshot[]
+  scrollTopBySessionID: Record<string, number>
   panelHeight: number
 }
 
 export interface PtySessionInfo {
   id: string
+  sessionID: string
   title: string
   cwd: string
   shell: string

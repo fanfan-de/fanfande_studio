@@ -208,7 +208,7 @@ function shellFirstCommand(command: string) {
     ?.toLowerCase()
 }
 
-function isCriticalShellCommand(kind: ShellKind, command: string) {
+export function isCriticalShellCommand(kind: ShellKind, command: string) {
   if (kind === "powershell") {
     return POWERSHELL_DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command))
   }

@@ -184,6 +184,22 @@ describe("Composer", () => {
     expect(tag).toHaveProperty("tabIndex", -1)
   })
 
+  it("leaves plain space insertion to the editor input pipeline", () => {
+    const { container } = renderComposer({
+      draftState: createComposerDraftStateFromPlainText("Prompt before space"),
+    })
+    const editor = container.querySelector(".composer-editor-input")
+
+    expect(editor).toBeInstanceOf(HTMLElement)
+    expect(
+      fireEvent.keyDown(editor as HTMLElement, {
+        key: " ",
+        code: "Space",
+        charCode: 32,
+      }),
+    ).toBe(true)
+  })
+
   it("switches the send button to stop while sending", () => {
     const onCancelSend = vi.fn()
     const onSend = vi.fn()

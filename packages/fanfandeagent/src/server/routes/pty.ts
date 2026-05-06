@@ -2,6 +2,7 @@ import type { UpgradeWebSocket } from "hono/ws"
 import { Hono } from "hono"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
+import * as Session from "#session/core/session.ts"
 import type { PtyRegistry } from "#pty/registry.ts"
 import {
   CreatePtySessionBody,
@@ -40,16 +41,32 @@ function readClientMessageData(data: MessageEvent["data"]) {
   throw new Error("PTY websocket payload must be text")
 }
 
+function requireMainSession(sessionID: string) {
+  const session = Session.DataBaseRead("sessions", sessionID) as Session.SessionInfo | null
+  if (!session) {
+    throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+  }
+  if (Session.isSideChatSession(session)) {
+    throw new ApiError(409, "TERMINAL_UNAVAILABLE", "Side chat sessions do not support terminals")
+  }
+
+  return session
+}
+
 export function PtyRoutes(options: { registry: PtyRegistry; upgradeWebSocket: UpgradeWebSocket }) {
   const app = new Hono<AppEnv>()
 
   app.post("/", async (c) => {
     const payload = CreatePtySessionBody.safeParse(await c.req.json().catch(() => ({})))
     if (!payload.success) {
-      throw new ApiError(400, "INVALID_PAYLOAD", "Body must include valid optional PTY session fields")
+      throw new ApiError(400, "INVALID_PAYLOAD", "Body must include a valid sessionID and PTY session fields")
     }
 
-    const session = await options.registry.create(payload.data)
+    const ownerSession = requireMainSession(payload.data.sessionID)
+    const session = await options.registry.create({
+      ...payload.data,
+      cwd: ownerSession.directory,
+    })
     return c.json(
       {
         success: true,

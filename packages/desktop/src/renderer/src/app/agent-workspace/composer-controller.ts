@@ -128,10 +128,21 @@ export function useComposerController({
   workspaces,
 }: UseComposerControllerOptions) {
   function setDraftForTab(tabKey: string, value: ComposerDraftState) {
-    setComposerDraftStateByTabKey((current) => ({
-      ...current,
-      [tabKey]: normalizeComposerDraftState(value),
-    }))
+    setComposerDraftStateByTabKey((current) => {
+      const nextDraftState = normalizeComposerDraftState(value)
+      const currentDraftState = current[tabKey]
+      if (
+        currentDraftState?.lexicalJSON === nextDraftState.lexicalJSON &&
+        currentDraftState.plainText === nextDraftState.plainText
+      ) {
+        return current
+      }
+
+      return {
+        ...current,
+        [tabKey]: nextDraftState,
+      }
+    })
   }
 
   function setDraft(value: ComposerDraftState) {

@@ -19,6 +19,7 @@ import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useSettingsPage } from "./app/use-settings-page"
 import { clamp } from "./app/utils"
+import { isSideChatSession } from "./app/workspace"
 import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
 import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
 import { WorkspaceModeCanvasPlaceholder, WorkspaceModeRightPlaceholder } from "./app/workspace-mode/WorkspaceModePlaceholder"
@@ -187,7 +188,6 @@ export function App() {
     refreshWorkspaceFromDirectory,
     rightSidebarView,
     runningSessionIDs,
-    selectedWorkspace,
     selectedFolderID,
     sessionCanvasUnreadBySession,
     setDraftForTab,
@@ -424,7 +424,8 @@ export function App() {
   const firstPaneID = workbenchPaneStates[0]?.id ?? null
   const lastPaneID = workbenchPaneStates[workbenchPaneStates.length - 1]?.id ?? null
   const focusedWorkbenchPane = focusedPaneID ? workbenchPaneStateByID[focusedPaneID] ?? null : null
-  const terminalWorkspaceDirectory = focusedWorkbenchPane?.workspace?.directory ?? selectedWorkspace?.directory ?? null
+  const terminalSession = focusedWorkbenchPane?.activeSession ?? null
+  const terminalSessionID = terminalSession && !isSideChatSession(terminalSession) ? terminalSession.id : null
   const activeRightSidebarView: RightSidebarView =
     rightSidebarView === "runtime" && !isAgentDebugTraceEnabled ? "changes" : rightSidebarView
   handleWorkbenchPaneResizeRef.current = handleWorkbenchPaneResize
@@ -1172,8 +1173,7 @@ export function App() {
                   <TerminalAreaHost
                     brandTheme={brandTheme}
                     colorMode={colorMode}
-                    currentWorkspaceDirectory={terminalWorkspaceDirectory}
-                    defaultCwd={agentDefaultDirectory}
+                    currentSessionID={terminalSessionID}
                     storageKey={WORKBENCH_TERMINAL_STORAGE_KEY}
                     togglePortalTarget={togglePortalTarget}
                   />

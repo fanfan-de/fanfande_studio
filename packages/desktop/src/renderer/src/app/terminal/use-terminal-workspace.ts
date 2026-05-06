@@ -66,14 +66,15 @@ interface LiveTerminalSessionSnapshot {
 type TerminalStreamListener = (event: TerminalStreamEvent) => void
 
 export interface UseTerminalWorkspaceOptions {
-  defaultCwd: string
-  currentWorkspaceDirectory?: string | null
+  currentSessionID?: string | null
   storageKey?: string
 }
 
-export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, storageKey }: UseTerminalWorkspaceOptions) {
+export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTerminalWorkspaceOptions) {
+  const normalizedCurrentSessionID = currentSessionID?.trim() || null
   const [workspace, setWorkspace] = useState(() => loadTerminalWorkspaceState(storageKey))
   const workspaceRef = useRef(workspace)
+  const currentSessionIDRef = useRef<string | null>(normalizedCurrentSessionID)
   // Keep the hot terminal buffer path outside React state so typing does not trigger
   // a render + diff cycle for every PTY output chunk.
   const liveSessionsRef = useRef<Record<string, LiveTerminalSessionSnapshot>>(
@@ -144,8 +145,14 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
   }
 
   function buildPersistedWorkspaceState(state: TerminalWorkspaceState): TerminalWorkspaceState {
+    const scrollTopBySessionID = { ...state.scrollTopBySessionID }
+    for (const [ptyID, session] of Object.entries(state.sessions)) {
+      scrollTopBySessionID[session.sessionID] = readLiveSessionSnapshot(ptyID, session).scrollTop
+    }
+
     return {
       ...state,
+      scrollTopBySessionID,
       sessions: Object.fromEntries(
         Object.entries(state.sessions).map(([ptyID, session]) => [
           ptyID,
@@ -205,12 +212,17 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
     }
   }).current
 
-  const sessions = orderedSessions(workspace).map((session) => materializeSession(session))
+  const sessions = orderedSessions(workspace)
+    .filter((session) => session.sessionID === normalizedCurrentSessionID)
+    .map((session) => materializeSession(session))
   const activeSession =
-    workspace.activePtyID && workspace.sessions[workspace.activePtyID]
+    workspace.activePtyID &&
+    workspace.sessions[workspace.activePtyID] &&
+    workspace.sessions[workspace.activePtyID]!.sessionID === normalizedCurrentSessionID
       ? materializeSession(workspace.sessions[workspace.activePtyID]!)
       : null
   workspaceRef.current = workspace
+  currentSessionIDRef.current = normalizedCurrentSessionID
 
   useEffect(() => {
     scheduleWorkspacePersistence()
@@ -231,6 +243,30 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
     }
   }, [storageKey])
 
+  useEffect(() => {
+    const activePtyID = workspaceRef.current.activePtyID
+    const active = activePtyID ? workspaceRef.current.sessions[activePtyID] : null
+    if (active && active.sessionID !== normalizedCurrentSessionID) {
+      void detachSession(active.ptyID, true)
+      updateWorkspace((current) => ({
+        ...current,
+        activePtyID: null,
+        order: [],
+        sessions: {},
+      }))
+      delete liveSessionsRef.current[active.ptyID]
+      delete terminalStreamListenersRef.current[active.ptyID]
+    }
+
+    if (workspaceRef.current.isOpen && normalizedCurrentSessionID) {
+      const nextActivePtyID = workspaceRef.current.activePtyID
+      const nextActive = nextActivePtyID ? workspaceRef.current.sessions[nextActivePtyID] : null
+      if (!nextActive || nextActive.sessionID !== normalizedCurrentSessionID) {
+        void handleCreateTerminal(true)
+      }
+    }
+  }, [normalizedCurrentSessionID])
+
   function updateWorkspace(updater: (current: TerminalWorkspaceState) => TerminalWorkspaceState) {
     startTransition(() => {
       setWorkspace((current) => updater(current))
@@ -248,7 +284,12 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
 
   async function replaceMissingSession(ptyID: string) {
     const current = workspaceRef.current
-    const shouldCreateReplacement = current.isOpen && current.activePtyID === ptyID && current.order.length === 1
+    const missingSessionID = current.sessions[ptyID]?.sessionID
+    const shouldCreateReplacement =
+      current.isOpen &&
+      current.activePtyID === ptyID &&
+      current.order.length === 1 &&
+      missingSessionID === normalizedCurrentSessionID
 
     delete liveSessionsRef.current[ptyID]
     delete terminalStreamListenersRef.current[ptyID]
@@ -291,7 +332,13 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
   function scheduleReconnect(ptyID: string) {
     const current = workspaceRef.current
     const session = current.sessions[ptyID]
-    if (!current.isOpen || current.activePtyID !== ptyID || !session || session.status !== "running") {
+    if (
+      !current.isOpen ||
+      current.activePtyID !== ptyID ||
+      !session ||
+      session.sessionID !== currentSessionIDRef.current ||
+      session.status !== "running"
+    ) {
       return
     }
     if (reconnectTimersRef.current[ptyID] !== undefined) return
@@ -309,6 +356,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
   async function attachSession(ptyID: string, cursor?: number) {
     const target = workspaceRef.current.sessions[ptyID]
     if (!target || target.status === "deleted" || target.status === "invalid") return
+    if (target.sessionID !== currentSessionIDRef.current) return
 
     const attachedPtyID = attachedPtyIDRef.current
     if (attachedPtyID && attachedPtyID !== ptyID) {
@@ -434,6 +482,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
         }
 
         if (event.type === "ready") {
+          if (event.session.sessionID !== currentSessionIDRef.current) return
           cancelReconnect(event.ptyID)
           attachedPtyIDRef.current = event.ptyID
           const previous = readLiveSessionSnapshot(event.ptyID)
@@ -477,6 +526,8 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
         }
 
         if (event.type === "output") {
+          const session = workspaceRef.current.sessions[event.ptyID]
+          if (!session || session.sessionID !== currentSessionIDRef.current) return
           const previous = readLiveSessionSnapshot(event.ptyID)
           const nextBuffer = `${previous.buffer}${event.data}`
           const nextLiveSnapshot = writeLiveSessionSnapshot(event.ptyID, {
@@ -501,6 +552,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
         }
 
         if (event.type === "state" || event.type === "exited" || event.type === "deleted") {
+          if (event.session.sessionID !== currentSessionIDRef.current) return
           if (event.type === "deleted") {
             cancelReconnect(event.ptyID)
           }
@@ -571,34 +623,54 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
       return
     }
 
+    const targetSession = workspace.sessions[targetPtyID]
+    if (!targetSession || targetSession.sessionID !== normalizedCurrentSessionID) return
     if (attachedPtyIDRef.current === targetPtyID) return
     void attachSession(targetPtyID, getKnownCursor(targetPtyID))
-  }, [workspace.activePtyID, workspace.isOpen])
+  }, [workspace.activePtyID, workspace.isOpen, normalizedCurrentSessionID])
 
   async function handleCreateTerminal(openPanel = true) {
+    const ownerSessionID = currentSessionIDRef.current
+    if (!ownerSessionID) return
+
+    const existing = Object.values(workspaceRef.current.sessions).find(
+      (session) => session.sessionID === ownerSessionID && session.status !== "deleted" && session.status !== "invalid",
+    )
+    if (existing) {
+      updateWorkspace((current) => ({
+        ...current,
+        isOpen: current.isOpen || openPanel,
+        activePtyID: existing.ptyID,
+        order: [existing.ptyID],
+        sessions: {
+          [existing.ptyID]: existing,
+        },
+      }))
+      return
+    }
+
     try {
-      const cwd = currentWorkspaceDirectory?.trim() || defaultCwd.trim() || undefined
       const session = await terminalClient.createSession({
-        cwd,
+        sessionID: ownerSessionID,
       })
       writeLiveSessionSnapshot(session.id, {
         buffer: "",
         cursor: session.cursor,
+        scrollTop: workspaceRef.current.scrollTopBySessionID[ownerSessionID] ?? 0,
       })
 
-      updateWorkspace((current) =>
-        upsertSession(
-          {
-            ...current,
-            isOpen: current.isOpen || openPanel,
-            activePtyID: session.id,
+      updateWorkspace((current) => ({
+          ...current,
+          isOpen: current.isOpen || openPanel,
+          activePtyID: session.id,
+          order: [session.id],
+          sessions: {
+            [session.id]: mapPtySessionInfoToRecord(session, {
+              scrollTop: workspaceRef.current.scrollTopBySessionID[ownerSessionID] ?? 0,
+              transportState: "idle",
+            }),
           },
-          mapPtySessionInfoToRecord(session, {
-            transportState: "idle",
-          }),
-          true,
-        ),
-      )
+        }))
     } catch (error) {
       console.error("[desktop] createPtySession failed:", error)
     }
@@ -613,7 +685,13 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
       return
     }
 
-    if (workspaceRef.current.order.length === 0) {
+    const ownerSessionID = currentSessionIDRef.current
+    if (!ownerSessionID) return
+
+    const activeForCurrentSession = Object.values(workspaceRef.current.sessions).some(
+      (session) => session.sessionID === ownerSessionID,
+    )
+    if (!activeForCurrentSession) {
       updateWorkspace((current) => ({
         ...current,
         isOpen: true,
@@ -645,6 +723,7 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
     }
 
     const session = workspaceRef.current.sessions[ptyID]
+    const removedSnapshot = session ? readLiveSessionSnapshot(ptyID, session) : null
     if (attachedPtyIDRef.current === ptyID) {
       await detachSession(ptyID, true)
     }
@@ -664,6 +743,13 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
 
       return {
         ...current,
+        scrollTopBySessionID:
+          session && removedSnapshot
+            ? {
+                ...current.scrollTopBySessionID,
+                [session.sessionID]: removedSnapshot.scrollTop,
+              }
+            : current.scrollTopBySessionID,
         activePtyID:
           current.activePtyID === ptyID ? nextActivePtyID(nextOrder, ptyID) : current.activePtyID,
         order: nextOrder,
@@ -721,6 +807,13 @@ export function useTerminalWorkspace({ defaultCwd, currentWorkspaceDirectory, st
     writeLiveSessionSnapshot(ptyID, {
       scrollTop: nextScrollTop,
     })
+    updateWorkspace((currentState) => ({
+      ...currentState,
+      scrollTopBySessionID: {
+        ...currentState.scrollTopBySessionID,
+        [session.sessionID]: nextScrollTop,
+      },
+    }))
     scheduleWorkspacePersistence()
   }
 

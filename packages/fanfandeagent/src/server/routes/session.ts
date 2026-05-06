@@ -2,12 +2,13 @@ import { Hono } from "hono"
 import { ok, parseJsonBody } from "#server/http.ts"
 import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
+import type { PtyRegistry } from "#pty/registry.ts"
 import * as SessionUseCase from "#server/usecases/session.ts"
 import * as ImageAssets from "#session/support/image-assets.ts"
 
 export { createSessionExecutionStream } from "#server/usecases/session.ts"
 
-export function SessionRoutes() {
+export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
   const app = new Hono<AppEnv>()
 
   app.get("/", (c) =>
@@ -27,7 +28,7 @@ export function SessionRoutes() {
 
   app.get("/archived", (c) => ok(c, SessionUseCase.listArchivedSessions()))
 
-  app.post("/:id/archive", (c) => ok(c, SessionUseCase.archiveSession(c.req.param("id"))))
+  app.post("/:id/archive", (c) => ok(c, SessionUseCase.archiveSession(c.req.param("id"), options)))
 
   app.post("/archived/:id/restore", (c) => ok(c, SessionUseCase.restoreArchivedSession(c.req.param("id"))))
 
@@ -55,6 +56,10 @@ export function SessionRoutes() {
   app.get("/:id/side-chat-link", (c) => ok(c, SessionUseCase.getSideChatLink(c.req.param("id"))))
 
   app.get("/:id/side-chat-context", (c) => ok(c, SessionUseCase.getSideChatContext(c.req.param("id"))))
+
+  app.get("/:id/pty", (c) => ok(c, SessionUseCase.getSessionPty(c.req.param("id"), options)))
+
+  app.post("/:id/pty", async (c) => ok(c, await SessionUseCase.createSessionPty(c.req.param("id"), options), 201))
 
   app.get("/:id/tasks", (c) =>
     ok(
@@ -115,7 +120,7 @@ export function SessionRoutes() {
     return ok(c, SessionUseCase.answerSessionQuestion(c.req.param("id"), payload))
   })
 
-  app.delete("/:id", (c) => ok(c, SessionUseCase.deleteSession(c.req.param("id"))))
+  app.delete("/:id", (c) => ok(c, SessionUseCase.deleteSession(c.req.param("id"), options)))
 
   app.get("/:id/events/stream", (c) =>
     SessionUseCase.createEventStreamResponse({

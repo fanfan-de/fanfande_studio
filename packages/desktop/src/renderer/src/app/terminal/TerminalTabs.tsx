@@ -1,5 +1,5 @@
 import { memo } from "react"
-import { CloseIcon, PlusIcon } from "../icons"
+import { CloseIcon } from "../icons"
 import { TerminalPanelToggleButton } from "./TerminalPanelToggleButton"
 import type { TerminalSessionRecord } from "./types"
 
@@ -8,7 +8,6 @@ interface TerminalTabsProps {
   showToggleButton?: boolean
   sessions: TerminalSessionRecord[]
   onCloseTerminal: (ptyID: string) => void | Promise<void>
-  onCreateTerminal: () => void | Promise<void>
   onSelectTerminal: (ptyID: string) => void
   onTogglePanel: () => void | Promise<void>
 }
@@ -31,7 +30,6 @@ export const TerminalTabs = memo(function TerminalTabs({
   showToggleButton = true,
   sessions,
   onCloseTerminal,
-  onCreateTerminal,
   onSelectTerminal,
   onTogglePanel,
 }: TerminalTabsProps) {
@@ -39,17 +37,14 @@ export const TerminalTabs = memo(function TerminalTabs({
     <div className="terminal-tabs">
       {showToggleButton ? <TerminalPanelToggleButton isOpen={true} onToggle={onTogglePanel} /> : null}
 
-      <div className="terminal-tabs-list" role="tablist" aria-label="Terminal tabs">
+      <div className="terminal-tabs-list" aria-label="Session terminal">
         {sessions.map((session) => {
           const isActive = session.ptyID === activePtyID
           return (
             <div key={session.ptyID} className={isActive ? "terminal-tab is-active" : "terminal-tab"}>
               <button
                 className="terminal-tab-trigger"
-                role="tab"
                 aria-label={`${session.title}, ${formatTerminalStatus(session)}`}
-                aria-selected={isActive}
-                aria-controls={`terminal-panel-${session.ptyID}`}
                 id={`terminal-tab-${session.ptyID}`}
                 onClick={() => onSelectTerminal(session.ptyID)}
                 type="button"
@@ -69,10 +64,6 @@ export const TerminalTabs = memo(function TerminalTabs({
           )
         })}
       </div>
-
-      <button className="terminal-panel-create" aria-label="New terminal" onClick={() => void onCreateTerminal()} type="button">
-        <PlusIcon />
-      </button>
     </div>
   )
 })

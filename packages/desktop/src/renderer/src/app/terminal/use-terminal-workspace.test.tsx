@@ -4,10 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { PtyEvent } from "./types"
 import { TERMINAL_LIVE_BUFFER_MAX_CHARS, useTerminalWorkspace } from "./use-terminal-workspace"
 
+const TEST_SESSION_ID = "session-1"
+
 function Harness() {
   const terminal = useTerminalWorkspace({
-    defaultCwd: "C:\\Projects\\fanfande_studio",
-    currentWorkspaceDirectory: "C:\\Projects\\fanfande_studio",
+    currentSessionID: TEST_SESSION_ID,
   })
 
   return (
@@ -68,6 +69,7 @@ describe("useTerminalWorkspace", () => {
         .fn()
         .mockResolvedValueOnce({
           id: "pty-1",
+          sessionID: TEST_SESSION_ID,
           title: "Terminal 1",
           cwd: "C:\\Projects\\fanfande_studio",
           shell: "powershell.exe",
@@ -81,6 +83,7 @@ describe("useTerminalWorkspace", () => {
         })
         .mockResolvedValueOnce({
           id: "pty-2",
+          sessionID: TEST_SESSION_ID,
           title: "Terminal 2",
           cwd: "C:\\Projects\\fanfande_studio",
           shell: "powershell.exe",
@@ -97,6 +100,7 @@ describe("useTerminalWorkspace", () => {
       deletePtySession: vi.fn().mockResolvedValue(undefined),
       attachPtySession: vi.fn().mockImplementation(async ({ id }: { id: string }) => ({
         id,
+        sessionID: TEST_SESSION_ID,
         title: id === "pty-1" ? "Terminal 1" : "Terminal 2",
         cwd: "C:\\Projects\\fanfande_studio",
         shell: "powershell.exe",
@@ -126,6 +130,9 @@ describe("useTerminalWorkspace", () => {
 
     await waitFor(() => {
       expect(window.desktop?.createPtySession).toHaveBeenCalledTimes(1)
+      expect(window.desktop?.createPtySession).toHaveBeenCalledWith({
+        sessionID: TEST_SESSION_ID,
+      })
       expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
         id: "pty-1",
         cursor: 0,
@@ -155,6 +162,7 @@ describe("useTerminalWorkspace", () => {
         type: "ready",
         session: {
           id: "pty-1",
+          sessionID: TEST_SESSION_ID,
           title: "Terminal 1",
           cwd: "C:\\Projects\\fanfande_studio",
           shell: "powershell.exe",
@@ -196,7 +204,7 @@ describe("useTerminalWorkspace", () => {
     })
   })
 
-  it("replaces a restored stale terminal session when the PTY no longer exists", async () => {
+  it("ignores old global terminal storage instead of restoring orphan PTYs", async () => {
     window.localStorage.setItem(
       "desktop.terminal.workspace.v1",
       JSON.stringify({
@@ -232,6 +240,7 @@ describe("useTerminalWorkspace", () => {
 
       return {
         id,
+        sessionID: TEST_SESSION_ID,
         title: "Terminal 1",
         cwd: "C:\\Projects\\fanfande_studio",
         shell: "powershell.exe",
@@ -247,12 +256,12 @@ describe("useTerminalWorkspace", () => {
 
     render(<Harness />)
 
-    await waitFor(() => {
-      expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
-        id: "pty-stale",
-        cursor: 7,
-      })
-    })
+    expect(screen.getByTestId("is-open")).toHaveTextContent("closed")
+    expect(screen.getByTestId("active-id")).toHaveTextContent("none")
+    expect(window.desktop?.attachPtySession).not.toHaveBeenCalled()
+    expect(window.desktop?.createPtySession).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
 
     await waitFor(() => {
       expect(window.desktop?.createPtySession).toHaveBeenCalledTimes(1)
@@ -353,6 +362,7 @@ describe("useTerminalWorkspace", () => {
         type: "state",
         session: {
           id: "pty-1",
+          sessionID: TEST_SESSION_ID,
           title: "Terminal 1",
           cwd: "C:\\Projects\\fanfande_studio",
           shell: "powershell.exe",
@@ -419,8 +429,8 @@ describe("useTerminalWorkspace", () => {
     expect(persisted).not.toBeNull()
 
     const payload = JSON.parse(persisted!)
-    expect(payload.sessions).toHaveLength(1)
-    expect(payload.sessions[0]?.scrollTop).toBe(42)
-    expect(payload.sessions[0]?.buffer).toBe("")
+    expect(payload.version).toBe(2)
+    expect(payload.sessions).toHaveLength(0)
+    expect(payload.scrollTopBySessionID?.[TEST_SESSION_ID]).toBe(42)
   })
 })

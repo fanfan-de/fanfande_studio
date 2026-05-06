@@ -458,7 +458,7 @@ export interface DesktopIpcContract {
     output: { directories: string[] }
   }
   "desktop:create-pty-session": {
-    input: { title?: string; cwd?: string; shell?: string; rows?: number; cols?: number } | undefined
+    input: { sessionID: string; title?: string; shell?: string; rows?: number; cols?: number }
     output: AgentPtySessionInfo
   }
   "desktop:get-pty-session": {
@@ -984,7 +984,7 @@ export interface DesktopApiMethods {
   windowAction(action: DesktopIpcInput<"desktop:window-action">): Promise<DesktopIpcOutput<"desktop:window-action">>
   getAgentConfig(): Promise<DesktopIpcOutput<"desktop:get-agent-config">>
   getAgentHealth(): Promise<DesktopIpcOutput<"desktop:agent-health">>
-  createPtySession(input?: DesktopIpcInput<"desktop:create-pty-session">): Promise<DesktopIpcOutput<"desktop:create-pty-session">>
+  createPtySession(input: DesktopIpcInput<"desktop:create-pty-session">): Promise<DesktopIpcOutput<"desktop:create-pty-session">>
   getPtySession(input: DesktopIpcInput<"desktop:get-pty-session">): Promise<DesktopIpcOutput<"desktop:get-pty-session">>
   updatePtySession(input: DesktopIpcInput<"desktop:update-pty-session">): Promise<DesktopIpcOutput<"desktop:update-pty-session">>
   deletePtySession(input: DesktopIpcInput<"desktop:delete-pty-session">): Promise<DesktopIpcOutput<"desktop:delete-pty-session">>

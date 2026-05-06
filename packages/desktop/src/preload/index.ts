@@ -164,7 +164,7 @@ try {
         requestId?: string
         error?: string
       }>,
-    createPtySession: (input?: { title?: string; cwd?: string; shell?: string; rows?: number; cols?: number }) =>
+    createPtySession: (input: { sessionID: string; title?: string; shell?: string; rows?: number; cols?: number }) =>
       invokeDesktop("desktop:create-pty-session", input) as Promise<PtySessionInfo>,
     getPtySession: (input: { id: string }) =>
       invokeDesktop("desktop:get-pty-session", input) as Promise<PtySessionInfo>,

@@ -8,13 +8,22 @@ import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin"
 import {
   $createTextNode,
   $getNodeByKey,
+  $getRoot,
   $getSelection,
   $isRangeSelection,
   $isTextNode,
   type LexicalEditor,
   type TextNode,
 } from "lexical"
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react"
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react"
 import { ArrowUpIcon, ChevronDownIcon, CloseIcon, PaperclipIcon, StopIcon } from "../icons"
 import type {
   ComposerAttachment,
@@ -76,6 +85,11 @@ interface ComposerProps {
 
 type ComposerMenuKey = "model" | "reasoning" | null
 type SlashCommandKey = "attach" | "file" | "mcp" | "model" | "reasoning" | "skill"
+
+type ComposerDebugWindow = Window & {
+  __FANFANDE_COMPOSER_DEBUG__?: boolean
+  __FANFANDE_COMPOSER_EVENTS__?: unknown[]
+}
 
 interface ComposerTriggerMatch {
   end: number
@@ -227,6 +241,116 @@ function getComposerSelectionRect() {
   return range.getBoundingClientRect()
 }
 
+function isComposerDebugEnabled() {
+  if (typeof window === "undefined") return false
+
+  try {
+    const debugWindow = window as ComposerDebugWindow
+    return debugWindow.__FANFANDE_COMPOSER_DEBUG__ === true || window.localStorage.getItem("fanfande:composer-debug") === "1"
+  } catch {
+    return false
+  }
+}
+
+function describeComposerDebugEvent(event: Event | null | undefined) {
+  if (!event) return null
+
+  const isKeyboardEvent = event instanceof globalThis.KeyboardEvent
+  const isInputEvent = typeof InputEvent !== "undefined" && event instanceof InputEvent
+
+  return {
+    defaultPrevented: event.defaultPrevented,
+    eventPhase: event.eventPhase,
+    inputType: isInputEvent ? event.inputType : undefined,
+    isComposing: isKeyboardEvent || isInputEvent ? event.isComposing : undefined,
+    key: isKeyboardEvent ? event.key : undefined,
+    keyCode: isKeyboardEvent ? event.keyCode : undefined,
+    type: event.type,
+    value: isInputEvent ? event.data : undefined,
+  }
+}
+
+function readComposerDebugSnapshot(editor: LexicalEditor | null, element: HTMLElement | null) {
+  if (typeof window === "undefined") return {}
+
+  const domSelection = window.getSelection()
+  let lexicalSelection: unknown = null
+
+  try {
+    editor?.getEditorState().read(() => {
+      const selection = $getSelection()
+      if (!$isRangeSelection(selection)) {
+        lexicalSelection = selection ? { type: selection.constructor.name } : null
+        return
+      }
+
+      lexicalSelection = {
+        anchorKey: selection.anchor.key,
+        anchorOffset: selection.anchor.offset,
+        anchorText: selection.anchor.getNode().getTextContent().slice(0, 120),
+        anchorType: selection.anchor.type,
+        collapsed: selection.isCollapsed(),
+        dirty: selection.dirty,
+        focusKey: selection.focus.key,
+        focusOffset: selection.focus.offset,
+        focusType: selection.focus.type,
+      }
+    })
+  } catch (error) {
+    lexicalSelection = {
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+
+  return {
+    activeElementClassName:
+      document.activeElement instanceof HTMLElement ? document.activeElement.className : document.activeElement?.nodeName,
+    activeElementIsComposer: Boolean(element && document.activeElement && element.contains(document.activeElement)),
+    domSelection: domSelection
+      ? {
+          anchorInComposer: Boolean(element && domSelection.anchorNode && element.contains(domSelection.anchorNode)),
+          anchorNode: domSelection.anchorNode?.nodeType === Node.TEXT_NODE ? "#text" : domSelection.anchorNode?.nodeName,
+          anchorOffset: domSelection.anchorOffset,
+          collapsed: domSelection.isCollapsed,
+          focusInComposer: Boolean(element && domSelection.focusNode && element.contains(domSelection.focusNode)),
+          focusNode: domSelection.focusNode?.nodeType === Node.TEXT_NODE ? "#text" : domSelection.focusNode?.nodeName,
+          focusOffset: domSelection.focusOffset,
+          rangeCount: domSelection.rangeCount,
+        }
+      : null,
+    editorText: element?.textContent ?? "",
+    lexicalSelection,
+  }
+}
+
+function logComposerDebug(
+  label: string,
+  payload: Record<string, unknown> = {},
+  options: { trace?: boolean } = {},
+) {
+  if (!isComposerDebugEnabled()) return
+
+  const entry = {
+    label,
+    payload,
+    time: Math.round(performance.now()),
+  }
+
+  try {
+    const debugWindow = window as ComposerDebugWindow
+    const events = debugWindow.__FANFANDE_COMPOSER_EVENTS__ ?? []
+    events.push(entry)
+    debugWindow.__FANFANDE_COMPOSER_EVENTS__ = events.slice(-300)
+  } catch {
+    // Ignore debug storage failures.
+  }
+
+  console.debug(`[composer-debug] ${label}`, entry)
+  if (options.trace) {
+    console.trace(`[composer-debug] ${label}`)
+  }
+}
+
 function toSet(values: string[]) {
   return new Set(values)
 }
@@ -255,12 +379,41 @@ export function buildMenuStyle(anchorRect: DOMRect | null, containerRect: DOMRec
 export function shouldApplyExternalComposerDraftState(
   editor: Pick<LexicalEditor, "getEditorState">,
   lexicalJSON: string,
+  options: {
+    localDraftEchoes?: Set<string>
+    localLexicalJSON?: string | null
+  } = {},
 ) {
+  if (options.localLexicalJSON === lexicalJSON || options.localDraftEchoes?.has(lexicalJSON)) {
+    return false
+  }
+
   try {
     return JSON.stringify(editor.getEditorState().toJSON()) !== lexicalJSON
   } catch {
     return true
   }
+}
+
+function isComposerEditorFocused(editor: LexicalEditor) {
+  if (typeof document === "undefined") return false
+
+  const rootElement = editor.getRootElement()
+  return Boolean(rootElement && document.activeElement && rootElement.contains(document.activeElement))
+}
+
+function parseComposerDraftStateForEditor(
+  editor: LexicalEditor,
+  lexicalJSON: string,
+  options: {
+    selectEnd?: boolean
+  } = {},
+) {
+  return editor.parseEditorState(lexicalJSON, () => {
+    if (options.selectEnd) {
+      $getRoot().selectEnd()
+    }
+  })
 }
 
 function isComposerCommandMenuTextAnchor(anchorNode: unknown): anchorNode is Pick<TextNode, "getTextContent" | "isToken"> {
@@ -449,9 +602,15 @@ function deriveCommandMenuState() {
 
 function ComposerEditorSyncPlugin({
   draftState,
+  draftStateRef,
+  localEditorLexicalJSONRef,
+  localDraftEchoesRef,
   onReady,
 }: {
   draftState: ComposerDraftState
+  draftStateRef: { current: ComposerDraftState }
+  localEditorLexicalJSONRef: { current: string }
+  localDraftEchoesRef: { current: Set<string> }
   onReady: (editor: LexicalEditor) => void
 }) {
   const [editor] = useLexicalComposerContext()
@@ -462,19 +621,58 @@ function ComposerEditorSyncPlugin({
   }, [editor, onReady])
 
   useEffect(() => {
-    if (draftState.lexicalJSON === lastLexicalJSONRef.current) return
+    if (draftState.lexicalJSON === lastLexicalJSONRef.current) {
+      logComposerDebug("sync-skip-same-prop", {
+        draftPlainText: draftState.plainText,
+      })
+      return
+    }
 
-    if (!shouldApplyExternalComposerDraftState(editor, draftState.lexicalJSON)) {
+    if (
+      !shouldApplyExternalComposerDraftState(editor, draftState.lexicalJSON, {
+        localDraftEchoes: localDraftEchoesRef.current,
+        localLexicalJSON: localEditorLexicalJSONRef.current,
+      })
+    ) {
+      logComposerDebug("sync-skip-local-echo", {
+        draftPlainText: draftState.plainText,
+        echoCount: localDraftEchoesRef.current.size,
+        incomingEqualsLocal: draftState.lexicalJSON === localEditorLexicalJSONRef.current,
+      })
       lastLexicalJSONRef.current = draftState.lexicalJSON
       return
     }
 
-    const nextEditorState = editor.parseEditorState(draftState.lexicalJSON)
+    logComposerDebug(
+      "sync-apply-setEditorState",
+      {
+        draftPlainText: draftState.plainText,
+        incomingEqualsLocal: draftState.lexicalJSON === localEditorLexicalJSONRef.current,
+      },
+      { trace: true },
+    )
+    const nextEditorState = parseComposerDraftStateForEditor(editor, draftState.lexicalJSON, {
+      selectEnd: isComposerEditorFocused(editor),
+    })
     editor.setEditorState(nextEditorState)
+    draftStateRef.current = draftState
+    localEditorLexicalJSONRef.current = draftState.lexicalJSON
+    localDraftEchoesRef.current.clear()
     lastLexicalJSONRef.current = draftState.lexicalJSON
-  }, [draftState.lexicalJSON, editor])
+  }, [draftState, draftStateRef, editor, localDraftEchoesRef, localEditorLexicalJSONRef])
 
   return null
+}
+
+function rememberLocalComposerDraftEcho(localDraftEchoes: Set<string>, lexicalJSON: string) {
+  localDraftEchoes.add(lexicalJSON)
+
+  if (localDraftEchoes.size <= 10) return
+
+  const oldestEcho = localDraftEchoes.values().next().value
+  if (oldestEcho) {
+    localDraftEchoes.delete(oldestEcho)
+  }
 }
 
 export function Composer({
@@ -510,8 +708,10 @@ export function Composer({
   unsupportedAttachmentPaths,
   workspaceDirectory,
 }: ComposerProps) {
-  const normalizedDraftState = normalizeComposerDraftState(draftState)
+  const normalizedDraftState = useMemo(() => normalizeComposerDraftState(draftState), [draftState.lexicalJSON])
   const draftStateRef = useRef(normalizedDraftState)
+  const localEditorLexicalJSONRef = useRef(normalizedDraftState.lexicalJSON)
+  const localDraftEchoesRef = useRef(new Set<string>())
   const editorRef = useRef<LexicalEditor | null>(null)
   const contentEditableRef = useRef<HTMLDivElement | null>(null)
   const footerRef = useRef<HTMLElement | null>(null)
@@ -654,6 +854,33 @@ export function Composer({
   }
 
   useEffect(() => {
+    logComposerDebug("mount", {
+      draftPlainText: normalizedDraftState.plainText,
+    })
+
+    return () => {
+      logComposerDebug("unmount", {
+        draftPlainText: draftStateRef.current.plainText,
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (
+      normalizedDraftState.lexicalJSON === localEditorLexicalJSONRef.current ||
+      localDraftEchoesRef.current.has(normalizedDraftState.lexicalJSON)
+    ) {
+      logComposerDebug("draft-ref-skip-local-prop", {
+        draftPlainText: normalizedDraftState.plainText,
+        echoCount: localDraftEchoesRef.current.size,
+        incomingEqualsLocal: normalizedDraftState.lexicalJSON === localEditorLexicalJSONRef.current,
+      })
+      return
+    }
+
+    logComposerDebug("draft-ref-update-from-prop", {
+      draftPlainText: normalizedDraftState.plainText,
+    })
     draftStateRef.current = normalizedDraftState
   }, [normalizedDraftState])
 
@@ -668,10 +895,22 @@ export function Composer({
           ? event.detail.value
           : element.textContent ?? ""
       const nextDraftState = createComposerDraftStateFromPlainText(nextValue)
-      const nextEditorState = editor.parseEditorState(nextDraftState.lexicalJSON)
+      const nextEditorState = parseComposerDraftStateForEditor(editor, nextDraftState.lexicalJSON, {
+        selectEnd: isComposerEditorFocused(editor),
+      })
 
       draftStateRef.current = nextDraftState
+      localEditorLexicalJSONRef.current = nextDraftState.lexicalJSON
+      rememberLocalComposerDraftEcho(localDraftEchoesRef.current, nextDraftState.lexicalJSON)
       setCommandMenuStateWithRef(null)
+      logComposerDebug(
+        "synthetic-setEditorState",
+        {
+          nextValue,
+          snapshot: readComposerDebugSnapshot(editor, element),
+        },
+        { trace: true },
+      )
       editor.setEditorState(nextEditorState)
       onDraftStateChange(nextDraftState)
     }
@@ -681,6 +920,36 @@ export function Composer({
       element.removeEventListener("desktop-composer-change", handleSyntheticDraftChange)
     }
   }, [onDraftStateChange])
+
+  useEffect(() => {
+    const element = contentEditableRef.current
+    if (!element) return
+
+    const handleEditorDebugEvent = (event: Event) => {
+      logComposerDebug(`event:${event.type}`, {
+        event: describeComposerDebugEvent(event),
+        snapshot: readComposerDebugSnapshot(editorRef.current, element),
+      })
+    }
+    const handleSelectionChange = () => {
+      logComposerDebug("event:selectionchange", {
+        snapshot: readComposerDebugSnapshot(editorRef.current, element),
+      })
+    }
+    const eventTypes = ["keydown", "beforeinput", "input", "keyup", "compositionstart", "compositionend"]
+
+    for (const eventType of eventTypes) {
+      element.addEventListener(eventType, handleEditorDebugEvent, true)
+    }
+    document.addEventListener("selectionchange", handleSelectionChange, true)
+
+    return () => {
+      for (const eventType of eventTypes) {
+        element.removeEventListener(eventType, handleEditorDebugEvent, true)
+      }
+      document.removeEventListener("selectionchange", handleSelectionChange, true)
+    }
+  }, [])
 
   useEffect(() => {
     if (!openMenu) return
@@ -830,6 +1099,13 @@ export function Composer({
     const nextDraftState = createComposerDraftStateFromEditorState(editorState)
     const nextCommandMenuState = editorState.read(() => deriveCommandMenuState())
 
+    logComposerDebug("onChange", {
+      changed:
+        nextDraftState.lexicalJSON !== draftStateRef.current.lexicalJSON ||
+        nextDraftState.plainText !== draftStateRef.current.plainText,
+      nextPlainText: nextDraftState.plainText,
+      snapshot: readComposerDebugSnapshot(editorRef.current, contentEditableRef.current),
+    })
     setCommandMenuStateWithRef(nextCommandMenuState)
     if (nextDraftState.lexicalJSON === draftStateRef.current.lexicalJSON && nextDraftState.plainText === draftStateRef.current.plainText) {
       return
@@ -837,6 +1113,8 @@ export function Composer({
 
     syncMcpDiff(nextDraftState)
     draftStateRef.current = nextDraftState
+    localEditorLexicalJSONRef.current = nextDraftState.lexicalJSON
+    rememberLocalComposerDraftEcho(localDraftEchoesRef.current, nextDraftState.lexicalJSON)
     onDraftStateChange(nextDraftState)
   }
 
@@ -913,6 +1191,12 @@ export function Composer({
       commandMenuItemCount: currentCommandMenuItems.length,
     })
 
+    logComposerDebug("footer-keydown-capture", {
+      action,
+      event: describeComposerDebugEvent(event.nativeEvent),
+      snapshot: readComposerDebugSnapshot(editorRef.current, contentEditableRef.current),
+    })
+
     if (action.preventDefault) {
       event.preventDefault()
       event.stopPropagation()
@@ -987,7 +1271,13 @@ export function Composer({
         }}
       >
         <div className="composer-editor-shell">
-          <ComposerEditorSyncPlugin draftState={normalizedDraftState} onReady={handleEditorReady} />
+          <ComposerEditorSyncPlugin
+            draftState={normalizedDraftState}
+            draftStateRef={draftStateRef}
+            localEditorLexicalJSONRef={localEditorLexicalJSONRef}
+            localDraftEchoesRef={localDraftEchoesRef}
+            onReady={handleEditorReady}
+          />
           <HistoryPlugin />
           <OnChangePlugin onChange={handleEditorChange} />
           <PlainTextPlugin

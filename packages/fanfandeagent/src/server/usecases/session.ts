@@ -3,6 +3,7 @@ import { basename, extname } from "node:path"
 import z from "zod"
 import * as Config from "#config/config.ts"
 import * as Project from "#project/project.ts"
+import type { PtyRegistry } from "#pty/registry.ts"
 import * as Provider from "#provider/provider.ts"
 import { Instance } from "#project/instance.ts"
 import { ApiError } from "#server/error.ts"
@@ -299,6 +300,15 @@ function requireSession(sessionID: string) {
   return session
 }
 
+function requireMainSession(sessionID: string) {
+  const session = requireSession(sessionID)
+  if (Session.isSideChatSession(session)) {
+    throw new ApiError(409, "TERMINAL_UNAVAILABLE", "Side chat sessions do not support terminals")
+  }
+
+  return session
+}
+
 function mapSessionSummary(session: Session.SessionInfo) {
   const normalized = Session.normalizeSessionInfo(session)
   return {
@@ -357,7 +367,7 @@ export function listArchivedSessions() {
   return Session.listArchivedSessions().map(mapArchivedSessionSummary)
 }
 
-export function archiveSession(sessionID: string) {
+export function archiveSession(sessionID: string, options?: { ptyRegistry?: PtyRegistry }) {
   const session = safeReadSession(sessionID)
   if (!session) {
     throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
@@ -378,6 +388,9 @@ export function archiveSession(sessionID: string) {
   }
 
   const archivedRecords = Session.archiveSessionCascade(sessionID)
+  for (const record of archivedRecords) {
+    options?.ptyRegistry?.deleteBySession(record.sessionID)
+  }
   const archived = archivedRecords[0]
   if (!archived) {
     throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
@@ -498,6 +511,19 @@ export function getSession(sessionID: string) {
   return mapSessionSummary(requireSession(sessionID))
 }
 
+export function getSessionPty(sessionID: string, options: { ptyRegistry: PtyRegistry }) {
+  requireMainSession(sessionID)
+  return options.ptyRegistry.infoBySession(sessionID)
+}
+
+export async function createSessionPty(sessionID: string, options: { ptyRegistry: PtyRegistry }) {
+  const session = requireMainSession(sessionID)
+  return await options.ptyRegistry.create({
+    sessionID: session.id,
+    cwd: session.directory,
+  })
+}
+
 export function listSessionTasks(sessionID: string, input?: {
   owner?: string
   status?: string
@@ -596,11 +622,12 @@ export async function updateSessionModelSelection(
   return toSessionModelSelectionPayload(Session.getSessionModelSelection(sessionID))
 }
 
-export function deleteSession(sessionID: string) {
+export function deleteSession(sessionID: string, options?: { ptyRegistry?: PtyRegistry }) {
   const session = Session.removeSession(sessionID)
   if (!session) {
     throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
   }
+  options?.ptyRegistry?.deleteBySession(sessionID)
 
   return {
     sessionID: session.id,

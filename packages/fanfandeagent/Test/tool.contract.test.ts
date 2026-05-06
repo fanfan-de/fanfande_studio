@@ -5,8 +5,10 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import path from "node:path"
 import z from "zod"
+import * as Identifier from "#id/id.ts"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/core/message.ts"
+import * as SessionCore from "#session/core/session.ts"
 import * as ImageAssets from "#session/support/image-assets.ts"
 import { AskUserQuestionTool, answerAskUserQuestion } from "#tool/ask-user-question.ts"
 import {
@@ -27,8 +29,14 @@ import { ReadBackgroundTaskTool } from "#tool/read-background-task.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
 import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
+import { TerminalReadTool, TerminalRunCommandTool, TerminalWriteInputTool } from "#tool/terminal-tools.ts"
 import * as Tool from "#tool/tool.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
+import {
+  LoadWorkspaceDependenciesTool,
+  WORKSPACE_NODE_PACKAGES,
+  WORKSPACE_PYTHON_IMPORTS,
+} from "#tool/workspace-dependencies.ts"
 
 async function createGitRepo(root: string, seed: string) {
   await mkdir(root, { recursive: true })
@@ -38,6 +46,137 @@ async function createGitRepo(root: string, seed: string) {
   await $`git config user.name fanfande-test`.cwd(root).quiet()
   await $`git add README.md`.cwd(root).quiet()
   await $`git commit -m init`.cwd(root).quiet()
+}
+
+async function withProcessEnv<T>(
+  overrides: Record<string, string | undefined>,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const backup = new Map<string, string | undefined>()
+
+  for (const [key, value] of Object.entries(overrides)) {
+    backup.set(key, process.env[key])
+    if (value === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = value
+    }
+  }
+
+  try {
+    return await fn()
+  } finally {
+    for (const [key, value] of backup.entries()) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+  }
+}
+
+async function createWorkspaceDependenciesFixture(root: string) {
+  const dependenciesRoot = path.join(root, "dependencies")
+  const nodeModulesDir = path.join(dependenciesRoot, "node", "node_modules")
+  const pythonRoot = path.join(dependenciesRoot, "python")
+  const pythonSitePackages = path.join(pythonRoot, "Lib", "site-packages")
+  const pythonExecutable = process.platform === "win32"
+    ? path.join(pythonRoot, "python.exe")
+    : path.join(pythonRoot, "bin", "python3")
+
+  for (const packageName of WORKSPACE_NODE_PACKAGES) {
+    const packageRoot = path.join(nodeModulesDir, packageName)
+    await mkdir(packageRoot, { recursive: true })
+    await writeFile(path.join(packageRoot, "package.json"), JSON.stringify({ name: packageName }))
+  }
+
+  await mkdir(pythonSitePackages, { recursive: true })
+  await mkdir(path.dirname(pythonExecutable), { recursive: true })
+  await writeFile(pythonExecutable, "")
+  for (const importDirectory of Object.values(WORKSPACE_PYTHON_IMPORTS)) {
+    await mkdir(path.join(pythonSitePackages, importDirectory), { recursive: true })
+  }
+
+  await writeFile(
+    path.join(dependenciesRoot, "manifest.json"),
+    JSON.stringify({
+      kind: "fanfande-workspace-dependencies",
+      version: 1,
+      bundleVersion: "fixture-manifest-version",
+    }),
+  )
+
+  return dependenciesRoot
+}
+
+async function createSideChatSessionForTerminalToolTest() {
+  const root = await mkdtemp(path.join(tmpdir(), "fanfande-terminal-tool-side-chat-"))
+  const parent = await SessionCore.createSession({
+    directory: root,
+    projectID: `project-terminal-tool-${Identifier.ascending("message")}`,
+    title: "Parent terminal tool test",
+  })
+  const userMessage = Message.User.parse({
+    id: Identifier.ascending("message"),
+    sessionID: parent.id,
+    role: "user",
+    created: Date.now(),
+    agent: "plan",
+    model: {
+      providerID: "test",
+      modelID: "test-model",
+    },
+  })
+  const userPart = Message.TextPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID: parent.id,
+    messageID: userMessage.id,
+    type: "text",
+    text: "Parent prompt",
+  })
+  const assistantMessage = Message.Assistant.parse({
+    id: Identifier.ascending("message"),
+    sessionID: parent.id,
+    role: "assistant",
+    created: Date.now(),
+    completed: Date.now(),
+    parentID: userMessage.id,
+    modelID: "test-model",
+    providerID: "test",
+    agent: "plan",
+    path: {
+      cwd: root,
+      root,
+    },
+    cost: 0,
+    tokens: {
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cache: {
+        read: 0,
+        write: 0,
+      },
+    },
+  })
+  const assistantPart = Message.TextPart.parse({
+    id: Identifier.ascending("part"),
+    sessionID: parent.id,
+    messageID: assistantMessage.id,
+    type: "text",
+    text: "Anchorable answer",
+  })
+
+  SessionCore.upsertMessage(userMessage)
+  SessionCore.upsertPart(userPart)
+  SessionCore.upsertMessage(assistantMessage)
+  SessionCore.upsertPart(assistantPart)
+
+  return await SessionCore.createSideChat({
+    parentSessionID: parent.id,
+    anchorMessageID: assistantMessage.id,
+  })
 }
 
 describe("tool contract", () => {
@@ -156,6 +295,112 @@ describe("tool contract", () => {
     ).resolves.toEqual({
       text: "plain-result",
     })
+  })
+
+  it("loads workspace dependency paths as structured read-only JSON", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "fanfande-workspace-deps-"))
+
+    try {
+      const dependenciesRoot = await createWorkspaceDependenciesFixture(root)
+      const nodeExecutable = path.join(root, process.platform === "win32" ? "node.exe" : "node")
+      await writeFile(nodeExecutable, "")
+
+      await withProcessEnv(
+        {
+          FANFANDE_WORKSPACE_DEPENDENCIES_DIR: dependenciesRoot,
+          FANFANDE_WORKSPACE_DEPENDENCIES_VERSION: "fixture-env-version",
+          FanFande_NODE_BINARY: nodeExecutable,
+          FanFande_NODE_RUN_AS_NODE: "1",
+        },
+        async () => {
+          expect(LoadWorkspaceDependenciesTool.aliases).toEqual(["load-workspace-dependencies"])
+          expect(LoadWorkspaceDependenciesTool.capabilities).toMatchObject({
+            kind: "read",
+            readOnly: true,
+            destructive: false,
+            concurrency: "safe",
+          })
+          expect(Tool.toolMatchesName(LoadWorkspaceDependenciesTool, "load-workspace-dependencies")).toBe(true)
+
+          const runtime = await LoadWorkspaceDependenciesTool.init()
+          const result = Tool.normalizeToolOutput(await runtime.execute(
+            {},
+            {
+              sessionID: "session-workspace-deps",
+              messageID: "message-workspace-deps",
+            },
+          ))
+          const data = result.data as any
+
+          expect(result.title).toBe("Workspace dependencies")
+          expect(data).toMatchObject({
+            kind: "workspace-dependencies",
+            version: 1,
+            bundleVersion: "fixture-env-version",
+            dependenciesRoot,
+            bun: {
+              executable: process.execPath,
+              available: true,
+            },
+            node: {
+              executable: nodeExecutable,
+              packages: path.join(dependenciesRoot, "node", "node_modules"),
+              env: {
+                ELECTRON_RUN_AS_NODE: "1",
+              },
+              available: true,
+            },
+            python: {
+              executable: process.platform === "win32"
+                ? path.join(dependenciesRoot, "python", "python.exe")
+                : path.join(dependenciesRoot, "python", "bin", "python3"),
+              packages: path.join(dependenciesRoot, "python"),
+              available: true,
+            },
+            missing: [],
+          })
+
+          const modelOutput = Tool.normalizeToolModelOutput(await runtime.toModelOutput!(result))
+          expect(modelOutput).toMatchObject({
+            type: "json",
+            value: {
+              kind: "workspace-dependencies",
+              bundleVersion: "fixture-env-version",
+            },
+          })
+        },
+      )
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("reports missing workspace dependencies without throwing", async () => {
+    await withProcessEnv(
+      {
+        FANFANDE_WORKSPACE_DEPENDENCIES_DIR: undefined,
+        FANFANDE_WORKSPACE_DEPENDENCIES_VERSION: undefined,
+        FanFande_NODE_BINARY: undefined,
+        FanFande_NODE_RUN_AS_NODE: undefined,
+      },
+      async () => {
+        const runtime = await LoadWorkspaceDependenciesTool.init()
+        const result = Tool.normalizeToolOutput(await runtime.execute(
+          {},
+          {
+            sessionID: "session-workspace-deps-missing",
+            messageID: "message-workspace-deps-missing",
+          },
+        ))
+        const data = result.data as any
+
+        expect(data.kind).toBe("workspace-dependencies")
+        expect(data.bundleVersion).toBe("unavailable")
+        expect(data.missing).toContain("FANFANDE_WORKSPACE_DEPENDENCIES_DIR")
+        expect(data.missing.length).toBeGreaterThan(0)
+        expect(result.text).toContain("Missing:")
+      },
+    )
   })
 
   it("shapes AskUserQuestion output for the user and the model", async () => {
@@ -834,6 +1079,84 @@ describe("tool contract", () => {
       expect(Boolean(shape.run_in_background)).toBe(item.background)
       expect(Boolean(shape.distro)).toBe(item.distro)
     }
+  })
+
+  it("exposes session-bound terminal tools without owner override parameters", async () => {
+    const terminalTools = [
+      {
+        tool: TerminalRunCommandTool,
+        id: "terminal-run-command",
+        title: "Run Terminal Command",
+        capabilities: {
+          kind: "exec",
+          concurrency: "exclusive",
+          needsShell: true,
+        },
+        validArgs: {
+          command: "echo ok",
+        },
+        forbiddenArgs: {
+          command: "echo ok",
+          sessionID: "session-other",
+        },
+      },
+      {
+        tool: TerminalReadTool,
+        id: "terminal-read",
+        title: "Read Terminal",
+        capabilities: {
+          kind: "read",
+          readOnly: true,
+          needsShell: true,
+        },
+        validArgs: {},
+        forbiddenArgs: {
+          ptyID: "pty-other",
+        },
+      },
+      {
+        tool: TerminalWriteInputTool,
+        id: "terminal-write-input",
+        title: "Write Terminal Input",
+        capabilities: {
+          kind: "exec",
+          concurrency: "exclusive",
+          needsShell: true,
+        },
+        validArgs: {
+          data: "abc",
+        },
+        forbiddenArgs: {
+          data: "abc",
+          sessionID: "session-other",
+        },
+      },
+    ]
+
+    for (const item of terminalTools) {
+      const runtime = await item.tool.init()
+      expect(item.tool.id).toBe(item.id)
+      expect(item.tool.title).toBe(item.title)
+      expect(item.tool.capabilities).toMatchObject(item.capabilities)
+      expect(runtime.title).toBe(item.title)
+      expect(runtime.parameters.safeParse(item.validArgs).success).toBe(true)
+      expect(runtime.parameters.safeParse(item.forbiddenArgs).success).toBe(false)
+    }
+  })
+
+  it("rejects terminal tools from side chat sessions before touching a PTY", async () => {
+    const sideChat = await createSideChatSessionForTerminalToolTest()
+    const runtime = await TerminalReadTool.init()
+
+    await expect(
+      runtime.execute(
+        {},
+        {
+          sessionID: sideChat.id,
+          messageID: "message-terminal-side-chat",
+        },
+      ),
+    ).rejects.toThrow("Side chat sessions do not support terminal tools.")
   })
 
   it("resolves shell executables by shell-specific Windows rules", async () => {

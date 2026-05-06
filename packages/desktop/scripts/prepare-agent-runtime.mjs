@@ -3,6 +3,7 @@ import fs from "node:fs"
 import fsp from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { prepareWorkspaceDependencies } from "./prepare-workspace-dependencies.mjs"
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const desktopDir = path.resolve(scriptDir, "..")
@@ -104,6 +105,7 @@ async function main() {
   await fsp.chmod(path.join(runtimeDir, bunExecutableName), 0o755).catch(() => {})
   await fsp.copyFile(path.join(agentDir, "src", "pty", "node-pty-worker.mjs"), path.join(runtimeDir, "node-pty-worker.mjs"))
   await copyNodePtyRuntime(runtimeNodeModulesDir)
+  await prepareWorkspaceDependencies({ bunBinary })
 
   console.log(`[desktop][build] prepared managed agent runtime at ${runtimeDir}`)
 }

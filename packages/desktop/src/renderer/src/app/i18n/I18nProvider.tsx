@@ -65,7 +65,7 @@ function shouldSkipTextNode(node: Text) {
   const parent = node.parentElement
   if (!parent) return true
 
-  return Boolean(parent.closest("script, style, textarea, code, pre, [data-i18n-skip], .xterm"))
+  return Boolean(parent.closest("script, style, textarea, code, pre, [contenteditable='true'], [data-lexical-editor], [data-i18n-skip], .xterm"))
 }
 
 function isRenderedVariant(source: string, rendered: string) {

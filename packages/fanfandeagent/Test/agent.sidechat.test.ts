@@ -353,6 +353,7 @@ describe("sidechat agent", () => {
 
         expect(tools["read-file"]).toBeDefined()
         expect(tools["grep"]).toBeDefined()
+        expect(tools["load_workspace_dependencies"]).toBeDefined()
         expect(tools["replace-text"]).toBeUndefined()
         expect(tools["spawn_subagent"]).toBeUndefined()
         expect(tools["powershell_command"]).toBeUndefined()

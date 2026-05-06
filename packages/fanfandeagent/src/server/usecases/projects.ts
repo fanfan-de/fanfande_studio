@@ -5,6 +5,7 @@ import * as db from "#database/Sqlite.ts"
 import * as Config from "#config/config.ts"
 import * as Git from "#git/git.ts"
 import * as Mcp from "#mcp/manager.ts"
+import type { PtyRegistry } from "#pty/registry.ts"
 import { Instance } from "#project/instance.ts"
 import * as Project from "#project/project.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
@@ -483,10 +484,13 @@ export async function removeProjectMcpServer(projectID: string, serverID: string
   }
 }
 
-export function deleteProject(projectID: string) {
+export function deleteProject(projectID: string, options?: { ptyRegistry?: PtyRegistry }) {
   safeReadProject(projectID)
 
   const deletedSessions = Session.removeProjectSessions(projectID)
+  for (const session of deletedSessions) {
+    options?.ptyRegistry?.deleteBySession(session.id)
+  }
   db.deleteById("projects", projectID)
   db.deleteById("project_configs", projectID, "projectID")
   if (db.tableExists("permission_requests")) {

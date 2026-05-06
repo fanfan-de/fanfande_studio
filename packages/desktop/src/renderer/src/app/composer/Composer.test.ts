@@ -31,6 +31,34 @@ describe("shouldApplyExternalComposerDraftState", () => {
     expect(shouldApplyExternalComposerDraftState(createEditorStateMock(draftState.lexicalJSON), draftState.lexicalJSON)).toBe(false)
   })
 
+  it("skips local draft echoes before comparing editor contents", () => {
+    const staleEditorState = createComposerDraftStateFromPlainText("Prompt before space")
+    const localDraftState = createComposerDraftStateFromPlainText("Prompt before space ")
+    const localEchoes = new Set([localDraftState.lexicalJSON])
+
+    expect(
+      shouldApplyExternalComposerDraftState(
+        createEditorStateMock(staleEditorState.lexicalJSON),
+        localDraftState.lexicalJSON,
+        { localDraftEchoes: localEchoes },
+      ),
+    ).toBe(false)
+    expect(localEchoes.has(localDraftState.lexicalJSON)).toBe(true)
+  })
+
+  it("skips the latest local editor draft even if the current editor snapshot is stale", () => {
+    const staleEditorState = createComposerDraftStateFromPlainText("Prompt before space")
+    const localDraftState = createComposerDraftStateFromPlainText("Prompt before space ")
+
+    expect(
+      shouldApplyExternalComposerDraftState(
+        createEditorStateMock(staleEditorState.lexicalJSON),
+        localDraftState.lexicalJSON,
+        { localLexicalJSON: localDraftState.lexicalJSON },
+      ),
+    ).toBe(false)
+  })
+
   it("applies external draft changes when the serialized editor state differs", () => {
     const currentDraftState = createComposerDraftStateFromPlainText("Current draft")
     const nextDraftState = createComposerDraftStateFromPlainText("Current draft plus external update")

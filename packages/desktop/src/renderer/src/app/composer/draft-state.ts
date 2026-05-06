@@ -107,6 +107,9 @@ function removeComposerTagNode(node: ComposerTagNode) {
   if ($isTextNode(nextSibling)) {
     if (nextText === " ") {
       nextSibling.remove()
+      if ($isTextNode(previousSibling) && previousText && previousText.endsWith(" ")) {
+        previousSibling.setTextContent(previousText.slice(0, -1))
+      }
     } else if (nextText && nextText.startsWith(" ")) {
       nextSibling.setTextContent(nextText.slice(1))
     }
@@ -319,7 +322,7 @@ function createParagraphFromText(text: string) {
 export function createComposerDraftStateFromEditorState(editorState: EditorState): ComposerDraftState {
   return editorState.read(() => ({
     lexicalJSON: JSON.stringify(editorState.toJSON()),
-    plainText: $getRoot().getTextContent().replace(/[ \t]+$/gm, ""),
+    plainText: $getRoot().getTextContent(),
   }))
 }
 

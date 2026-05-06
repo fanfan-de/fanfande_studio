@@ -14,6 +14,8 @@ const MANAGED_AGENT_WORKDIR_ENV = "FANFANDE_AGENT_WORKDIR"
 const MANAGED_AGENT_DISABLE_ENV = "FANFANDE_DISABLE_MANAGED_AGENT"
 const MANAGED_AGENT_RUNTIME_ENV = "FANFANDE_AGENT_RUNTIME_DIR"
 const MANAGED_AGENT_BUN_BINARY_ENV = "FANFANDE_BUN_BINARY"
+const WORKSPACE_DEPENDENCIES_DIR_ENV = "FANFANDE_WORKSPACE_DEPENDENCIES_DIR"
+const WORKSPACE_DEPENDENCIES_VERSION_ENV = "FANFANDE_WORKSPACE_DEPENDENCIES_VERSION"
 
 const BUNDLED_AGENT_ENTRYPOINT = "agent-server.js"
 const BUNDLED_BUN_BINARY = process.platform === "win32" ? "bun.exe" : "bun"
@@ -29,6 +31,7 @@ interface ManagedAgentLaunchSpec {
   readonly label: string
   readonly command: string
   readonly args: string[]
+  readonly dependenciesDir?: string
   readonly sourceRuntime: boolean
 }
 
@@ -111,6 +114,7 @@ function resolveSourceAgentLaunchSpec() {
     label: `source runtime (${entrypoint})`,
     command: bunBinary,
     args: ["run", entrypoint],
+    dependenciesDir: path.join(desktopAppPath, "build", "agent-runtime", "dependencies"),
     sourceRuntime: true,
   } satisfies ManagedAgentLaunchSpec
 }
@@ -126,6 +130,7 @@ function resolveBundledAgentLaunchSpecs() {
         label: `bundled runtime (${candidate})`,
         command: bunBinary,
         args: [entrypoint],
+        dependenciesDir: path.join(candidate, "dependencies"),
         sourceRuntime: false,
       })
     }
@@ -141,6 +146,67 @@ function resolveManagedAgentLaunchSpecs() {
 
   specs.push(...resolveBundledAgentLaunchSpecs())
   return specs
+}
+
+function readWorkspaceDependenciesBundleVersion(dependenciesDir: string | undefined) {
+  if (!dependenciesDir) return undefined
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(dependenciesDir, "manifest.json"), "utf8")) as {
+      bundleVersion?: unknown
+    }
+    if (typeof manifest.bundleVersion === "string" && manifest.bundleVersion.trim()) {
+      return manifest.bundleVersion.trim()
+    }
+    if (typeof manifest.bundleVersion === "number") {
+      return String(manifest.bundleVersion)
+    }
+  } catch {
+    // Source runtimes may not have prepared dependencies yet.
+  }
+
+  return undefined
+}
+
+function buildManagedAgentStartEnv(spec: ManagedAgentLaunchSpec, port: number): NodeJS.ProcessEnv {
+  const startEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    FanFande_NODE_BINARY: process.execPath,
+    FanFande_NODE_RUN_AS_NODE: "1",
+    FanFande_SERVER_HOST: "127.0.0.1",
+    FanFande_SERVER_PORT: String(port),
+  }
+
+  if (spec.dependenciesDir) {
+    startEnv[WORKSPACE_DEPENDENCIES_DIR_ENV] = spec.dependenciesDir
+    const bundleVersion = readWorkspaceDependenciesBundleVersion(spec.dependenciesDir)
+    if (bundleVersion) {
+      startEnv[WORKSPACE_DEPENDENCIES_VERSION_ENV] = bundleVersion
+    } else {
+      delete startEnv[WORKSPACE_DEPENDENCIES_VERSION_ENV]
+    }
+  } else {
+    delete startEnv[WORKSPACE_DEPENDENCIES_DIR_ENV]
+    delete startEnv[WORKSPACE_DEPENDENCIES_VERSION_ENV]
+  }
+
+  return startEnv
+}
+
+function applyWorkspaceDependencyEnv(spec: ManagedAgentLaunchSpec) {
+  if (spec.dependenciesDir) {
+    process.env[WORKSPACE_DEPENDENCIES_DIR_ENV] = spec.dependenciesDir
+    const bundleVersion = readWorkspaceDependenciesBundleVersion(spec.dependenciesDir)
+    if (bundleVersion) {
+      process.env[WORKSPACE_DEPENDENCIES_VERSION_ENV] = bundleVersion
+    } else {
+      delete process.env[WORKSPACE_DEPENDENCIES_VERSION_ENV]
+    }
+    return
+  }
+
+  delete process.env[WORKSPACE_DEPENDENCIES_DIR_ENV]
+  delete process.env[WORKSPACE_DEPENDENCIES_VERSION_ENV]
 }
 
 async function reservePort(port: number) {
@@ -312,18 +378,11 @@ export async function ensureManagedAgentRunning() {
 
   await fsp.mkdir(dataDir, { recursive: true })
 
-  const startEnv = {
-    ...process.env,
-    FanFande_NODE_BINARY: process.execPath,
-    FanFande_NODE_RUN_AS_NODE: "1",
-    FanFande_SERVER_HOST: "127.0.0.1",
-    FanFande_SERVER_PORT: String(port),
-  }
-
   const launchErrors: Error[] = []
 
   for (const spec of launchSpecs) {
     log(`starting managed agent with ${spec.label}`)
+    const startEnv = buildManagedAgentStartEnv(spec, port)
 
     const child = spawn(spec.command, spec.args, {
       cwd: dataDir,
@@ -353,6 +412,7 @@ export async function ensureManagedAgentRunning() {
       if (!process.env[MANAGED_AGENT_WORKDIR_ENV]?.trim()) {
         process.env[MANAGED_AGENT_WORKDIR_ENV] = app.getPath("home")
       }
+      applyWorkspaceDependencyEnv(spec)
       if (spec.sourceRuntime) {
         await ensureSourceRuntimeWatcher()
       }
@@ -380,6 +440,8 @@ export async function stopManagedAgent() {
   const current = managedAgent
   managedAgent = undefined
   delete process.env[MANAGED_AGENT_BASE_URL_ENV]
+  delete process.env[WORKSPACE_DEPENDENCIES_DIR_ENV]
+  delete process.env[WORKSPACE_DEPENDENCIES_VERSION_ENV]
   clearSourceRuntimeRestartTimer()
 
   if (!current || current.child.exitCode !== null) return
@@ -397,4 +459,17 @@ export async function stopManagedAgent() {
   ]).catch(() => {
     // The app is exiting anyway.
   })
+}
+
+export const managedAgentInternals = {
+  env: {
+    workspaceDependenciesDir: WORKSPACE_DEPENDENCIES_DIR_ENV,
+    workspaceDependenciesVersion: WORKSPACE_DEPENDENCIES_VERSION_ENV,
+  },
+  resolveBundledRuntimeCandidates,
+  resolveSourceAgentLaunchSpec,
+  resolveBundledAgentLaunchSpecs,
+  resolveManagedAgentLaunchSpecs,
+  readWorkspaceDependenciesBundleVersion,
+  buildManagedAgentStartEnv,
 }

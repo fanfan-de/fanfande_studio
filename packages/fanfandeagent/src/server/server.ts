@@ -116,8 +116,8 @@ export function createServerRuntime(options: Pick<ServerOptions, "corsWhitelist"
   app.route("/api/debug", DebugRoutes())
   app.route("/api/permissions", PermissionsRoutes())
   app.route("/api/pty", PtyRoutes({ registry: ptyRegistry, upgradeWebSocket }))
-  app.route("/api/projects", ProjectRoutes())
-  app.route("/api/sessions", SessionRoutes())
+  app.route("/api/projects", ProjectRoutes({ ptyRegistry }))
+  app.route("/api/sessions", SessionRoutes({ ptyRegistry }))
 
   app.notFound((c) => jsonError(c, 404, "NOT_FOUND", "Route not found"))
 

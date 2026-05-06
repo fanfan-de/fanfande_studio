@@ -146,7 +146,6 @@ export const TerminalPanel = memo(function TerminalPanel({
         showToggleButton={showToggleButton}
         sessions={sessions}
         onCloseTerminal={onCloseTerminal}
-        onCreateTerminal={onCreateTerminal}
         onSelectTerminal={onSelectTerminal}
         onTogglePanel={onTogglePanel}
       />

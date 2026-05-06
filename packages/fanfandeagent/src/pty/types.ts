@@ -9,6 +9,7 @@ export type PtyStatus = z.output<typeof PtyStatus>
 
 export const PtySessionInfo = z.object({
   id: Identifier.schema("pty"),
+  sessionID: Identifier.schema("session"),
   title: z.string(),
   cwd: z.string(),
   shell: z.string(),
@@ -23,12 +24,12 @@ export const PtySessionInfo = z.object({
 export type PtySessionInfo = z.output<typeof PtySessionInfo>
 
 export const CreatePtySessionBody = z.object({
+  sessionID: Identifier.schema("session"),
   title: z.string().min(1).max(160).optional(),
-  cwd: z.string().min(1).optional(),
   shell: z.string().min(1).optional(),
   rows: z.number().int().min(4).max(400).optional(),
   cols: z.number().int().min(10).max(400).optional(),
-})
+}).strict()
 export type CreatePtySessionBody = z.output<typeof CreatePtySessionBody>
 
 export const UpdatePtySessionBody = z
@@ -92,4 +93,3 @@ export const PtyServerMessage = z.discriminatedUnion("type", [
   }),
 ])
 export type PtyServerMessage = z.output<typeof PtyServerMessage>
-

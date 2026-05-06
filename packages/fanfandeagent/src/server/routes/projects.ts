@@ -1,9 +1,10 @@
 import { Hono } from "hono"
 import { ok, parseJsonBody, parseQuery } from "#server/http.ts"
 import type { AppEnv } from "#server/types.ts"
+import type { PtyRegistry } from "#pty/registry.ts"
 import * as ProjectUseCase from "#server/usecases/projects.ts"
 
-export function ProjectRoutes() {
+export function ProjectRoutes(options: { ptyRegistry: PtyRegistry }) {
   const app = new Hono<AppEnv>()
 
   app.get("/", async (c) => ok(c, await ProjectUseCase.listProjects()))
@@ -190,7 +191,7 @@ export function ProjectRoutes() {
     ok(c, await ProjectUseCase.removeProjectMcpServer(c.req.param("id"), c.req.param("serverID"))),
   )
 
-  app.delete("/:id", (c) => ok(c, ProjectUseCase.deleteProject(c.req.param("id"))))
+  app.delete("/:id", (c) => ok(c, ProjectUseCase.deleteProject(c.req.param("id"), options)))
 
   app.get("/:id", (c) => ok(c, ProjectUseCase.getProject(c.req.param("id"))))
 

@@ -724,6 +724,16 @@ describe("server api", () => {
       expect(listBody.success).toBe(true)
       expect(listBody.data?.selection.tools).toEqual({})
       expect(listBody.data?.items.some((tool) => tool.id === "AskUserQuestion")).toBe(true)
+      expect(listBody.data?.items.find((tool) => tool.id === "load_workspace_dependencies")).toMatchObject({
+        enabled: true,
+        aliases: ["load-workspace-dependencies"],
+        capabilities: {
+          kind: "read",
+          readOnly: true,
+          destructive: false,
+          concurrency: "safe",
+        },
+      })
       expect(listBody.data?.items.find((tool) => tool.id === "git_bash_command")).toMatchObject({
         enabled: true,
         inputSchema: {

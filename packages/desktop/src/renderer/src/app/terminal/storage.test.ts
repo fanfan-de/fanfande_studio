@@ -11,15 +11,19 @@ describe("terminal storage", () => {
     window.localStorage.clear()
   })
 
-  it("restores the saved terminal workspace snapshot", () => {
+  it("restores panel state and per-session scroll positions without restoring PTYs", () => {
     saveTerminalWorkspaceState({
       isOpen: true,
       activePtyID: "pty-1",
       order: ["pty-1"],
       panelHeight: 320,
+      scrollTopBySessionID: {
+        "session-1": 4,
+      },
       sessions: {
         "pty-1": {
           ptyID: "pty-1",
+          sessionID: "session-1",
           title: "Workspace shell",
           cwd: "C:\\Projects\\fanfande_studio",
           shell: "powershell.exe",
@@ -40,14 +44,12 @@ describe("terminal storage", () => {
     const restored = loadTerminalWorkspaceState()
 
     expect(restored.isOpen).toBe(true)
-    expect(restored.activePtyID).toBe("pty-1")
+    expect(restored.activePtyID).toBeNull()
     expect(restored.panelHeight).toBe(320)
-    expect(restored.sessions["pty-1"]).toMatchObject({
-      title: "Workspace shell",
-      buffer: "",
-      cursor: 0,
-      scrollTop: 4,
-      transportState: "idle",
+    expect(restored.order).toEqual([])
+    expect(restored.sessions).toEqual({})
+    expect(restored.scrollTopBySessionID).toEqual({
+      "session-1": 4,
     })
   })
 

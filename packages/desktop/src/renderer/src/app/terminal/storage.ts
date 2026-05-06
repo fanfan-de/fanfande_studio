@@ -1,9 +1,4 @@
-import type {
-  TerminalSessionRecord,
-  TerminalStoragePayload,
-  TerminalStorageSessionSnapshot,
-  TerminalWorkspaceState,
-} from "./types"
+import type { TerminalStoragePayload, TerminalWorkspaceState } from "./types"
 
 const TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v1"
 const DEFAULT_PANEL_HEIGHT = 280
@@ -12,40 +7,13 @@ function resolveTerminalStorageKey(storageKey?: string) {
   return storageKey?.trim() || TERMINAL_STORAGE_KEY
 }
 
-function toStoredSession(session: TerminalSessionRecord): TerminalStorageSessionSnapshot {
-  // PTY scrollback is live data owned by the backend. Persist only the
-  // structural shell state plus the viewport position so reconnecting or
-  // reloading does not jump back to the top of the terminal.
-  return {
-    ptyID: session.ptyID,
-    title: session.title,
-    cwd: session.cwd,
-    shell: session.shell,
-    rows: session.rows,
-    cols: session.cols,
-    status: session.status,
-    exitCode: session.exitCode,
-    createdAt: session.createdAt,
-    updatedAt: session.createdAt,
-    cursor: 0,
-    buffer: "",
-    scrollTop: session.scrollTop,
-  }
-}
-
-function fromStoredSession(snapshot: TerminalStorageSessionSnapshot): TerminalSessionRecord {
-  return {
-    ...snapshot,
-    transportState: "idle",
-  }
-}
-
 export function createEmptyTerminalWorkspaceState(): TerminalWorkspaceState {
   return {
     isOpen: false,
     activePtyID: null,
     order: [],
     sessions: {},
+    scrollTopBySessionID: {},
     panelHeight: DEFAULT_PANEL_HEIGHT,
   }
 }
@@ -58,19 +26,22 @@ export function loadTerminalWorkspaceState(storageKey?: string): TerminalWorkspa
     if (!raw) return createEmptyTerminalWorkspaceState()
 
     const parsed = JSON.parse(raw) as TerminalStoragePayload
-    if (parsed.version !== 1 || !Array.isArray(parsed.order) || !Array.isArray(parsed.sessions)) {
+    if (parsed.version !== 2) {
       return createEmptyTerminalWorkspaceState()
     }
 
-    const sessions = Object.fromEntries(parsed.sessions.map((session) => [session.ptyID, fromStoredSession(session)]))
-    const order = parsed.order.filter((ptyID) => Boolean(sessions[ptyID]))
-    const activePtyID = parsed.activePtyID && sessions[parsed.activePtyID] ? parsed.activePtyID : order[0] ?? null
-
     return {
       isOpen: parsed.isOpen === true,
-      activePtyID,
-      order,
-      sessions,
+      activePtyID: null,
+      order: [],
+      sessions: {},
+      scrollTopBySessionID:
+        parsed.scrollTopBySessionID && typeof parsed.scrollTopBySessionID === "object"
+          ? Object.fromEntries(
+              Object.entries(parsed.scrollTopBySessionID)
+                .filter(([, value]) => typeof value === "number" && Number.isFinite(value)),
+            )
+          : {},
       panelHeight: Number.isFinite(parsed.panelHeight) ? Math.max(220, Math.min(parsed.panelHeight, 560)) : DEFAULT_PANEL_HEIGHT,
     }
   } catch {
@@ -88,11 +59,12 @@ export function saveTerminalWorkspaceState(state: TerminalWorkspaceState, storag
 
 export function serializeTerminalWorkspaceState(state: TerminalWorkspaceState) {
   const payload: TerminalStoragePayload = {
-    version: 1,
+    version: 2,
     isOpen: state.isOpen,
-    activePtyID: state.activePtyID,
-    order: state.order,
-    sessions: state.order.map((ptyID) => toStoredSession(state.sessions[ptyID]!)),
+    activePtyID: null,
+    order: [],
+    sessions: [],
+    scrollTopBySessionID: state.scrollTopBySessionID,
     panelHeight: state.panelHeight,
   }
 

@@ -10,7 +10,7 @@ import {
   type PtyRuntimeAdapter,
 } from "#pty/runtime.ts"
 import { PtyEvents, publishPtyEvent } from "#pty/events.ts"
-import type { CreatePtySessionBody, PtySessionInfo, UpdatePtySessionBody } from "#pty/types.ts"
+import type { CreatePtySessionBody, PtyReplayPayload, PtySessionInfo, UpdatePtySessionBody } from "#pty/types.ts"
 
 const DEFAULT_COLS = 120
 const DEFAULT_ROWS = 32
@@ -46,8 +46,13 @@ export interface PtyRegistryOptions {
   deleteRetentionMs?: number
 }
 
+export type CreateOwnedPtySessionInput = CreatePtySessionBody & {
+  cwd: string
+}
+
 export class PtyRegistry {
   private readonly sessions = new Map<string, ManagedPtySession>()
+  private readonly sessionIndex = new Map<string, string>()
   private readonly pruneTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly runtime: PtyRuntimeAdapter
   private readonly now: () => number
@@ -73,11 +78,37 @@ export class PtyRegistry {
       const session = this.sessions.get(id)
       if (!session) return
       this.sessions.delete(id)
+      this.unindexSession(session)
       this.pruneTimers.delete(id)
       session.dispose()
     }, delayMs)
     timer.unref?.()
     this.pruneTimers.set(id, timer)
+  }
+
+  private clearPrune(id: string) {
+    const existing = this.pruneTimers.get(id)
+    if (!existing) return
+    clearTimeout(existing)
+    this.pruneTimers.delete(id)
+  }
+
+  private unindexSession(session: ManagedPtySession) {
+    const info = session.info()
+    if (this.sessionIndex.get(info.sessionID) === info.id) {
+      this.sessionIndex.delete(info.sessionID)
+    }
+  }
+
+  private pruneNonRunningSession(session: ManagedPtySession) {
+    const info = session.info()
+    if (info.status === "running") return false
+
+    this.clearPrune(info.id)
+    this.sessions.delete(info.id)
+    this.unindexSession(session)
+    session.dispose()
+    return true
   }
 
   private async resolveAllowedCwd(input?: string) {
@@ -94,7 +125,10 @@ export class PtyRegistry {
     return cwd
   }
 
-  async create(input: CreatePtySessionBody = {}) {
+  async create(input: CreateOwnedPtySessionInput) {
+    const existing = this.getBySession(input.sessionID)
+    if (existing) return existing.info()
+
     const cwd = await this.resolveAllowedCwd(input.cwd)
     const shell = await resolveDefaultPtyShell(input.shell)
     const rows = input.rows ?? DEFAULT_ROWS
@@ -111,6 +145,7 @@ export class PtyRegistry {
 
     const session = createManagedPtySession({
       id,
+      sessionID: input.sessionID,
       title: input.title,
       cwd,
       shell,
@@ -120,14 +155,17 @@ export class PtyRegistry {
       runtime,
       now: this.now,
       onExited: (info) => {
+        this.sessionIndex.delete(info.sessionID)
         this.schedulePrune(info.id, this.exitRetentionMs)
       },
       onDeleted: (info) => {
+        this.sessionIndex.delete(info.sessionID)
         this.schedulePrune(info.id, this.deleteRetentionMs)
       },
     })
 
     this.sessions.set(id, session)
+    this.sessionIndex.set(input.sessionID, id)
     const info = session.info()
     publishPtyEvent(PtyEvents.Created, { session: info })
     return info
@@ -137,8 +175,26 @@ export class PtyRegistry {
     return this.sessions.get(id) ?? null
   }
 
+  getBySession(sessionID: string) {
+    const ptyID = this.sessionIndex.get(sessionID)
+    if (!ptyID) return null
+
+    const session = this.sessions.get(ptyID)
+    if (!session) {
+      this.sessionIndex.delete(sessionID)
+      return null
+    }
+
+    if (this.pruneNonRunningSession(session)) return null
+    return session
+  }
+
   info(id: string) {
     return this.get(id)?.info() ?? null
+  }
+
+  infoBySession(sessionID: string) {
+    return this.getBySession(sessionID)?.info() ?? null
   }
 
   update(id: string, input: UpdatePtySessionBody) {
@@ -150,6 +206,17 @@ export class PtyRegistry {
   delete(id: string) {
     const session = this.get(id)
     if (!session) return null
+    const info = session.markDeleted()
+    this.unindexSession(session)
+    return info
+  }
+
+  deleteBySession(sessionID: string) {
+    const ptyID = this.sessionIndex.get(sessionID)
+    if (!ptyID) return null
+    const session = this.sessions.get(ptyID)
+    this.sessionIndex.delete(sessionID)
+    if (!session) return null
     return session.markDeleted()
   }
 
@@ -158,6 +225,17 @@ export class PtyRegistry {
     if (!session) return null
     session.write(data)
     return session.info()
+  }
+
+  writeBySession(sessionID: string, data: string) {
+    const session = this.getBySession(sessionID)
+    if (!session) return null
+    session.write(data)
+    return session.info()
+  }
+
+  replayBySession(sessionID: string, cursor?: number | null): PtyReplayPayload | null {
+    return this.getBySession(sessionID)?.replay(cursor) ?? null
   }
 }
 

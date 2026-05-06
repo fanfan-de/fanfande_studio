@@ -38,6 +38,7 @@ export interface ManagedPtySession {
 
 interface CreateManagedPtySessionOptions {
   id: string
+  sessionID: string
   title?: string
   cwd: string
   shell: string
@@ -61,6 +62,7 @@ export function createManagedPtySession(options: CreateManagedPtySessionOptions)
   const createdAt = now()
   let info: PtySessionInfo = {
     id: options.id,
+    sessionID: options.sessionID,
     title: options.title?.trim() || defaultTitle(options.cwd),
     cwd: options.cwd,
     shell: options.shell,

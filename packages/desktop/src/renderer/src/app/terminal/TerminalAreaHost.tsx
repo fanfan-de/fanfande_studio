@@ -8,8 +8,7 @@ interface TerminalAreaHostProps {
   brandTheme: "terra" | "sage"
   collapsedTogglePortalTarget?: Element | null
   colorMode: "system" | "light" | "dark"
-  currentWorkspaceDirectory: string | null
-  defaultCwd: string
+  currentSessionID: string | null
   storageKey?: string
   togglePortalTarget?: Element | null
 }
@@ -19,8 +18,7 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
     brandTheme,
     collapsedTogglePortalTarget,
     colorMode,
-    currentWorkspaceDirectory,
-    defaultCwd,
+    currentSessionID,
     storageKey,
     togglePortalTarget,
   } = props
@@ -39,10 +37,11 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
     sessions,
     subscribeToTerminalStream,
   } = useTerminalWorkspace({
-    defaultCwd,
-    currentWorkspaceDirectory,
+    currentSessionID,
     storageKey,
   })
+
+  if (!currentSessionID) return null
 
   const hasPersistentTogglePortal = Object.prototype.hasOwnProperty.call(props, "togglePortalTarget")
   const toggleButton = <TerminalPanelToggleButton isOpen={isOpen} onToggle={() => void handleTogglePanel()} />

@@ -182,6 +182,14 @@ describe("composer draft-state", () => {
     expect(draftState.plainText).toContain("Add command menus next.")
   })
 
+  it("preserves trailing spaces while editing but trims them when compiling", () => {
+    const draftState = createComposerDraftStateFromPlainText("Prompt before space ")
+    const compiled = compileComposerSubmission({ draftState })
+
+    expect(draftState.plainText).toBe("Prompt before space ")
+    expect(compiled.displayText).toBe("Prompt before space")
+  })
+
   it("removes a comment tag by reference id", () => {
     const commentReference = createCommentReference()
     let draftState = createComposerDraftStateFromPlainText("Need feedback.")

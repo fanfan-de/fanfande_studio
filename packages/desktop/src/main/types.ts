@@ -1129,6 +1129,7 @@ export interface AgentPluginConnectorStatus {
 
 export interface AgentPtySessionInfo {
   id: string
+  sessionID: string
   title: string
   cwd: string
   shell: string

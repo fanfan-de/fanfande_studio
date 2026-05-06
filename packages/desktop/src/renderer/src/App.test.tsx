@@ -599,6 +599,7 @@ describe("App", () => {
       }),
       createPtySession: vi.fn().mockResolvedValue({
         id: "pty-1",
+        sessionID: "session-chat-1",
         title: "Terminal 1",
         cwd: "C:\\Projects\\fanfande_studio",
         shell: "powershell.exe",
@@ -612,6 +613,7 @@ describe("App", () => {
       }),
       getPtySession: vi.fn().mockResolvedValue({
         id: "pty-1",
+        sessionID: "session-chat-1",
         title: "Terminal 1",
         cwd: "C:\\Projects\\fanfande_studio",
         shell: "powershell.exe",
@@ -627,6 +629,7 @@ describe("App", () => {
       deletePtySession: vi.fn().mockResolvedValue(undefined),
       attachPtySession: vi.fn().mockResolvedValue({
         id: "pty-1",
+        sessionID: "session-chat-1",
         title: "Terminal 1",
         cwd: "C:\\Projects\\fanfande_studio",
         shell: "powershell.exe",
@@ -9891,10 +9894,9 @@ describe("App", () => {
       })
     })
 
-    expect(screen.getByRole("tablist", { name: "Terminal tabs" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "New terminal" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Terminal 1,/ })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "New terminal" })).not.toBeInTheDocument()
     expect(within(inspector).getByRole("button", { name: "Toggle terminal panel" }).closest(".right-sidebar-top-menu")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "New terminal" })).toHaveTextContent("")
     expect(within(inspector).getByRole("button", { name: "Toggle terminal panel" })).toHaveTextContent("")
     expect(screen.queryByText("New terminal")).not.toBeInTheDocument()
     expect(document.querySelector(".terminal-view-meta")).toBeNull()
@@ -9910,7 +9912,7 @@ describe("App", () => {
     fireEvent.click(within(inspector).getByRole("button", { name: "Toggle terminal panel" }))
 
     await waitFor(() => {
-      expect(screen.queryByRole("tablist", { name: "Terminal tabs" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("button", { name: /^Terminal 1,/ })).not.toBeInTheDocument()
     })
 
     expect(within(inspector).getByRole("button", { name: "Toggle terminal panel" }).closest(".right-sidebar-top-menu")).not.toBeNull()
@@ -10131,6 +10133,7 @@ describe("App", () => {
         type: "ready",
         session: {
           id: "pty-1",
+          sessionID: "session-chat-1",
           title: "Terminal 1",
           cwd: "C:\\Projects\\fanfande_studio",
           shell: "powershell.exe",
@@ -10166,7 +10169,7 @@ describe("App", () => {
     expect(await screen.findByText(/prompt>\s*dir/)).toBeInTheDocument()
   })
 
-  it("keeps terminal output when switching between tabs", async () => {
+  it("keeps terminal output in the session-bound terminal control", async () => {
     let ptyListener:
       | ((event: {
           ptyID: string
@@ -10183,6 +10186,7 @@ describe("App", () => {
       .fn()
       .mockResolvedValueOnce({
         id: "pty-1",
+        sessionID: "session-chat-1",
         title: "Terminal 1",
         cwd: "C:\\Projects\\fanfande_studio",
         shell: "powershell.exe",
@@ -10196,6 +10200,7 @@ describe("App", () => {
       })
       .mockResolvedValueOnce({
         id: "pty-2",
+        sessionID: "session-chat-1",
         title: "Terminal 2",
         cwd: "C:\\Projects\\fanfande_studio",
         shell: "powershell.exe",
@@ -10209,6 +10214,7 @@ describe("App", () => {
       })
     window.desktop!.attachPtySession = vi.fn().mockImplementation(async ({ id }: { id: string }) => ({
       id,
+      sessionID: "session-chat-1",
       title: id === "pty-1" ? "Terminal 1" : "Terminal 2",
       cwd: "C:\\Projects\\fanfande_studio",
       shell: "powershell.exe",
@@ -10235,6 +10241,7 @@ describe("App", () => {
         type: "ready",
         session: {
           id: "pty-1",
+          sessionID: "session-chat-1",
           title: "Terminal 1",
           cwd: "C:\\Projects\\fanfande_studio",
           shell: "powershell.exe",
@@ -10257,49 +10264,10 @@ describe("App", () => {
 
     expect(await screen.findByText("first output")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "New terminal" }))
-
-    await waitFor(() => {
-      expect(window.desktop!.createPtySession).toHaveBeenCalledTimes(2)
-      expect(window.desktop!.attachPtySession).toHaveBeenCalledWith({
-        id: "pty-2",
-        cursor: 0,
-      })
-    })
-
-    act(() => {
-      ptyListener?.({
-        ptyID: "pty-2",
-        type: "ready",
-        session: {
-          id: "pty-2",
-          title: "Terminal 2",
-          cwd: "C:\\Projects\\fanfande_studio",
-          shell: "powershell.exe",
-          rows: 24,
-          cols: 80,
-          status: "running",
-          exitCode: null,
-          createdAt: 2,
-          updatedAt: 2,
-          cursor: 13,
-        },
-        replay: {
-          mode: "reset",
-          buffer: "second output",
-          cursor: 13,
-          startCursor: 0,
-        },
-      })
-    })
-
-    expect(await screen.findByText("second output")).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("tab", { name: /Terminal 1/i }))
+    expect(screen.queryByRole("button", { name: "New terminal" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /^Terminal 1,/i }))
+    expect(window.desktop!.createPtySession).toHaveBeenCalledTimes(1)
     expect(await screen.findByText("first output")).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("tab", { name: /Terminal 2/i }))
-    expect(await screen.findByText("second output")).toBeInTheDocument()
   })
 
   it("collapses the sidebar from the rail toggle and restores it on second click", () => {

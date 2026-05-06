@@ -5,6 +5,7 @@ import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
 
 const baseSession: TerminalSessionRecord = {
   ptyID: "pty-1",
+  sessionID: "session-1",
   title: "Terminal 1",
   cwd: "C:\\Projects\\fanfande_studio",
   shell: "powershell.exe",
