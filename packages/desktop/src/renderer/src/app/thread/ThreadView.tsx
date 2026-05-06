@@ -351,7 +351,18 @@ function getAssistantEphemeralHint(turn: AssistantTurn) {
 }
 
 function summarizeFileChangeItems(items: AssistantTraceItem[]) {
+  const imageItems = items.filter((item) => item.kind === "image")
   const latestPatch = [...items].reverse().find((item) => item.kind === "patch")
+  const latestNonImageItem = latestPatch ?? [...items].reverse().find((item) => item.kind !== "image")
+
+  if (imageItems.length > 0) {
+    const includedIDs = new Set([
+      ...imageItems.map((item) => item.id),
+      ...(latestNonImageItem ? [latestNonImageItem.id] : []),
+    ])
+    return items.filter((item) => includedIDs.has(item.id))
+  }
+
   if (latestPatch) return [latestPatch]
 
   const latestItem = items[items.length - 1]
@@ -470,6 +481,82 @@ function AssistantTurnSections({
         )
       })}
     </>
+  )
+}
+
+function TraceImagePreview({ item }: { item: AssistantTraceItem }) {
+  const src = item.src ?? ""
+  const alt = item.alt || item.title || "Image attachment"
+  const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">("loading")
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const thumbnailStyle = item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : undefined
+  const sizeText = item.width && item.height ? `${item.width} x ${item.height}` : ""
+  const metaText = [item.mimeType, sizeText].filter(Boolean).join(" | ")
+
+  useEffect(() => {
+    setLoadState("loading")
+    setIsPreviewOpen(false)
+  }, [src])
+
+  useEffect(() => {
+    if (!isPreviewOpen) return
+
+    function handleWindowKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsPreviewOpen(false)
+      }
+    }
+
+    window.addEventListener("keydown", handleWindowKeyDown)
+    return () => window.removeEventListener("keydown", handleWindowKeyDown)
+  }, [isPreviewOpen])
+
+  if (!src) return null
+
+  return (
+    <div className="trace-image-preview">
+      <button
+        type="button"
+        className={joinClassNames("trace-image-thumbnail", `is-${loadState}`)}
+        style={thumbnailStyle}
+        aria-label={`Preview ${alt}`}
+        disabled={loadState === "error"}
+        onClick={() => setIsPreviewOpen(true)}
+      >
+        <img
+          className="trace-image-thumbnail-image"
+          src={src}
+          alt={alt}
+          loading="lazy"
+          onLoad={() => setLoadState("loaded")}
+          onError={() => setLoadState("error")}
+        />
+        {loadState === "loading" ? <span className="trace-image-state">Loading image...</span> : null}
+        {loadState === "error" ? <span className="trace-image-state is-error">Image failed to load</span> : null}
+      </button>
+      {metaText ? <p className="trace-image-meta">{metaText}</p> : null}
+      {isPreviewOpen ? (
+        <div
+          className="trace-image-preview-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={alt}
+          onClick={() => setIsPreviewOpen(false)}
+        >
+          <div className="trace-image-preview-panel" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="trace-image-preview-close"
+              aria-label="Close image preview"
+              onClick={() => setIsPreviewOpen(false)}
+            >
+              <CloseIcon />
+            </button>
+            <img className="trace-image-preview-full" src={src} alt={alt} />
+          </div>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -753,6 +840,22 @@ function TraceItemView({
           </div>
         ))}
       </div>
+    )
+  }
+
+  if (item.kind === "image" && item.src) {
+    return (
+      <article className={className} data-kind={item.kind}>
+        <div className="trace-item-header">
+          <span className="trace-item-label">{item.label}</span>
+          {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
+          {item.status ? <span className={`trace-item-status is-${item.status}`}>{item.status}</span> : null}
+        </div>
+        <TraceImagePreview item={item} />
+        {item.text ? <ThreadRichText className="trace-item-text" text={item.text} /> : null}
+        {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
+        {renderDebugEntries()}
+      </article>
     )
   }
 

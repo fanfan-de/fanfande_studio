@@ -56,10 +56,21 @@ type ProviderMutationPayload = {
   }
 }
 
-function normalizeSelection(selection?: { model?: string; small_model?: string }): ProjectModelSelection {
+function normalizeSelection(selection?: {
+  model?: string
+  small_model?: string
+  image_model?: string
+  image_generation?: {
+    default_size?: string
+    default_count?: number
+  }
+}): ProjectModelSelection {
   return {
     model: selection?.model ?? null,
     smallModel: selection?.small_model ?? null,
+    imageModel: selection?.image_model ?? null,
+    imageDefaultSize: selection?.image_generation?.default_size ?? null,
+    imageDefaultCount: selection?.image_generation?.default_count ?? null,
   }
 }
 
@@ -400,10 +411,16 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [savedSelection, setSavedSelection] = useState<ProjectModelSelection>({
     model: null,
     smallModel: null,
+    imageModel: null,
+    imageDefaultSize: null,
+    imageDefaultCount: null,
   })
   const [selectionDraft, setSelectionDraft] = useState<ProjectModelSelection>({
     model: null,
     smallModel: null,
+    imageModel: null,
+    imageDefaultSize: null,
+    imageDefaultCount: null,
   })
   const [providerDrafts, setProviderDrafts] = useState<Record<string, ProviderDraftState>>({})
   const [mcpServers, setMcpServers] = useState<McpServerSummary[]>([])
@@ -1082,7 +1099,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }))
   }
 
-  function setSelectionDraftValue(field: keyof ProjectModelSelection, value: string | null) {
+  function setSelectionDraftValue<K extends keyof ProjectModelSelection>(field: K, value: ProjectModelSelection[K]) {
     setSelectionDraft((current) => ({
       ...current,
       [field]: value,
@@ -2056,9 +2073,21 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     setMessage(null)
 
     try {
+      const imageGenerationChanged =
+        savedSelection.imageDefaultSize !== selectionDraft.imageDefaultSize ||
+        savedSelection.imageDefaultCount !== selectionDraft.imageDefaultCount
+      const nextImageGeneration = {
+        ...(selectionDraft.imageDefaultSize ? { default_size: selectionDraft.imageDefaultSize } : {}),
+        ...(selectionDraft.imageDefaultCount ? { default_count: selectionDraft.imageDefaultCount } : {}),
+      }
+
       await updateModelSelection({
         model: selectionDraft.model,
         small_model: selectionDraft.smallModel,
+        ...(savedSelection.imageModel !== selectionDraft.imageModel ? { image_model: selectionDraft.imageModel } : {}),
+        ...(imageGenerationChanged
+          ? { image_generation: Object.keys(nextImageGeneration).length > 0 ? nextImageGeneration : null }
+          : {}),
       })
       setSavedSelection(selectionDraft)
       await notifyProviderModelsUpdated()

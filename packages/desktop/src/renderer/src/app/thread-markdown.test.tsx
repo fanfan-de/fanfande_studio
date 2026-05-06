@@ -69,10 +69,42 @@ describe("ThreadMarkdown", () => {
     })
   })
 
-  it("renders images as alt text instead of loading remote resources", () => {
-    const { container } = render(<ThreadMarkdown text="![Diagram](https://example.com/diagram.png)" />)
+  it("renders http markdown images directly", () => {
+    render(<ThreadMarkdown text="![Diagram](https://example.com/diagram.png)" />)
+
+    const image = screen.getByRole("img", { name: "Diagram" })
+    expect(image).toHaveClass("thread-markdown-image")
+    expect(image).toHaveAttribute("src", "https://example.com/diagram.png")
+  })
+
+  it("rewrites local absolute image paths to the internal image protocol", () => {
+    render(<ThreadMarkdown text={String.raw`![Local](C:\Users\19128\AppData\Local\Temp\a.png)`} />)
+
+    const image = screen.getByRole("img", { name: "Local" })
+    expect(image).toHaveAttribute(
+      "src",
+      `fanfande-local-image://image?source=${encodeURIComponent(String.raw`C:\Users\19128\AppData\Local\Temp\a.png`)}`,
+    )
+  })
+
+  it("rewrites file URL images to the internal image protocol", () => {
+    render(<ThreadMarkdown text="![Local](file:///C:/Users/19128/AppData/Local/Temp/a.png)" />)
+
+    const image = screen.getByRole("img", { name: "Local" })
+    expect(image).toHaveAttribute(
+      "src",
+      `fanfande-local-image://image?source=${encodeURIComponent("file:///C:/Users/19128/AppData/Local/Temp/a.png")}`,
+    )
+  })
+
+  it("renders unsafe and relative image sources as alt text", () => {
+    const { container } = render(
+      <ThreadMarkdown text="![Bad](javascript:alert(1)) ![Ftp](ftp://example.com/a.png) ![Relative](images/a.png)" />,
+    )
 
     expect(container.querySelector("img")).toBeNull()
-    expect(screen.getByText("Diagram")).toHaveClass("thread-markdown-image-alt")
+    expect(screen.getByText("Bad")).toHaveClass("thread-markdown-image-alt")
+    expect(screen.getByText("Ftp")).toHaveClass("thread-markdown-image-alt")
+    expect(screen.getByText("Relative")).toHaveClass("thread-markdown-image-alt")
   })
 })

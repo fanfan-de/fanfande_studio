@@ -1,7 +1,9 @@
 import { Hono } from "hono"
 import { ok, parseJsonBody } from "#server/http.ts"
+import { ApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
 import * as SessionUseCase from "#server/usecases/session.ts"
+import * as ImageAssets from "#session/support/image-assets.ts"
 
 export { createSessionExecutionStream } from "#server/usecases/session.ts"
 
@@ -83,6 +85,22 @@ export function SessionRoutes() {
   })
 
   app.get("/:id/messages", async (c) => ok(c, await SessionUseCase.listSessionMessages(c.req.param("id"))))
+
+  app.get("/:id/assets/:assetID", async (c) => {
+    let result: Awaited<ReturnType<typeof ImageAssets.readImageAsset>>
+    try {
+      result = await ImageAssets.readImageAsset(c.req.param("id"), c.req.param("assetID"))
+    } catch (error) {
+      if (error instanceof Error && error.message === "Invalid asset id.") {
+        throw new ApiError(400, "INVALID_IMAGE_ASSET_ID", error.message)
+      }
+      throw new ApiError(404, "IMAGE_ASSET_NOT_FOUND", `Image asset '${c.req.param("assetID")}' was not found`)
+    }
+    c.header("content-type", result.metadata.mime)
+    c.header("cache-control", "private, max-age=31536000, immutable")
+    c.header("x-content-type-options", "nosniff")
+    return c.body(result.file.stream())
+  })
 
   app.get("/:id/diff", async (c) => ok(c, await SessionUseCase.getSessionDiff(c.req.param("id"))))
 

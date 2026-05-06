@@ -311,6 +311,8 @@ export async function updateProvider(
     selection: {
       model: providerConfig.model,
       small_model: providerConfig.small_model,
+      image_model: providerConfig.image_model,
+      image_generation: providerConfig.image_generation,
     },
   }
 }
@@ -323,6 +325,8 @@ export async function removeProvider(providerID: string) {
     selection: {
       model: providerConfig.model,
       small_model: providerConfig.small_model,
+      image_model: providerConfig.image_model,
+      image_generation: providerConfig.image_generation,
     },
   }
 }
@@ -338,11 +342,25 @@ export async function updateModelSelection(input: z.infer<typeof UpdateGlobalMod
     await Provider.getModel(ref.providerID, ref.modelID)
   }
 
+  if (input.image_model) {
+    const ref = parseModelReference(input.image_model)
+    const model = await Provider.getModel(ref.providerID, ref.modelID)
+    if (!model.capabilities.output.image) {
+      throw new ApiError(
+        400,
+        "MODEL_NOT_IMAGE_CAPABLE",
+        `Model '${input.image_model}' does not support image output`,
+      )
+    }
+  }
+
   const selection = await Config.setModelSelection(Config.GLOBAL_CONFIG_ID, input)
 
   return {
     model: selection.model,
     small_model: selection.small_model,
+    image_model: selection.image_model,
+    image_generation: selection.image_generation,
   }
 }
 

@@ -7,6 +7,7 @@ import path from "node:path"
 import z from "zod"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/core/message.ts"
+import * as ImageAssets from "#session/support/image-assets.ts"
 import { AskUserQuestionTool, answerAskUserQuestion } from "#tool/ask-user-question.ts"
 import {
   CmdCommandTool,
@@ -2291,6 +2292,32 @@ describe("tool contract", () => {
     } finally {
       await rm(repositoryRoot, { recursive: true, force: true })
       await rm(outsideRoot, { recursive: true, force: true })
+    }
+  })
+
+  it("loads local image metadata and rejects files that only look like images by extension", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "fanfande-image-assets-"))
+
+    try {
+      const pngPath = path.join(root, "pixel.png")
+      const fakePath = path.join(root, "not-an-image.png")
+      await writeFile(
+        pngPath,
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      )
+      await writeFile(fakePath, "plain text")
+
+      const image = await ImageAssets.readLocalImage(pngPath)
+      expect(image.mime).toBe("image/png")
+      expect(image.width).toBe(1)
+      expect(image.height).toBe(1)
+
+      await expect(ImageAssets.readLocalImage(fakePath)).rejects.toThrow("Unsupported image file type")
+    } finally {
+      await rm(root, { recursive: true, force: true })
     }
   })
 })

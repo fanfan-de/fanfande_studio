@@ -262,6 +262,7 @@ export const FilePart = PartBase.extend({
     filename: z.string().optional(),
     url: z.string(), // 通常是 Data URL 或内部存储链接
     source: FilePartSource.optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
 }).meta({
     ref: "FilePart",
 })
@@ -272,11 +273,19 @@ export const ImagePart = PartBase.extend({
     mime: z.string(),
     filename: z.string().optional(),
     url: z.string(), // 通常是 Data URL 或内部存储链接
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
     source: FilePartSource.optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
 }).meta({
     ref: "ImagePart",
 })
 export type ImagePart = z.infer<typeof ImagePart>
+
+export const AttachmentPart = z.discriminatedUnion("type", [FilePart, ImagePart]).meta({
+    ref: "AttachmentPart",
+})
+export type AttachmentPart = z.infer<typeof AttachmentPart>
 
 export const AgentPart = PartBase.extend({
     type: z.literal("agent"),
@@ -347,7 +356,7 @@ export const ToolStateCompleted = z
             end: z.number(),
             compacted: z.number().optional(), // 如果工具输出过长被压缩，记录压缩发生的时间
         }),
-        attachments: FilePart.array().optional(), // 工具可以返回文件，例如生成的图片
+        attachments: AttachmentPart.array().optional(), // 工具可以返回文件，例如生成的图片
     })
     .meta({
         ref: "ToolStateCompleted",

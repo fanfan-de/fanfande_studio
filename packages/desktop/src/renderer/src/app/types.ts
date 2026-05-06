@@ -743,6 +743,11 @@ export interface AssistantTraceItem {
   title?: string
   text?: string
   detail?: string
+  src?: string
+  mimeType?: string
+  width?: number
+  height?: number
+  alt?: string
   toolInputText?: string
   toolOutputText?: string
   filePaths?: string[]
@@ -910,6 +915,7 @@ export interface ProviderModelCapabilities {
 export interface ProviderModel {
   id: string
   providerID: string
+  providerName?: string
   name: string
   family?: string
   status: "alpha" | "beta" | "deprecated" | "active"
@@ -925,6 +931,9 @@ export interface ProviderModel {
 export interface ProjectModelSelection {
   model: string | null
   smallModel: string | null
+  imageModel: string | null
+  imageDefaultSize: string | null
+  imageDefaultCount: number | null
 }
 
 export interface ProjectSkillSelection {
@@ -1114,6 +1123,8 @@ export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "hig
 export interface ComposerModelOption {
   value: string
   label: string
+  providerID: string
+  providerLabel: string
 }
 
 export interface ComposerReasoningEffortOption {

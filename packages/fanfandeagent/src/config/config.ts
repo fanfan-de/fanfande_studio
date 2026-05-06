@@ -79,6 +79,31 @@ const SmallModelField = z
   .string()
   .describe("Small model to use for tasks like title generation in the format of provider/model")
 
+const ImageModelField = z
+  .string()
+  .describe("Image generation model to use in the format of provider/model")
+
+export const ImageGenerationSettings = z
+  .object({
+    default_size: z
+      .string()
+      .regex(/^\d+x\d+$/)
+      .optional()
+      .describe("Default image generation size, for example 1024x1024"),
+    default_count: z
+      .number()
+      .int()
+      .min(1)
+      .max(4)
+      .optional()
+      .describe("Default number of images to generate"),
+  })
+  .strict()
+  .meta({
+    ref: "ImageGenerationSettings",
+  })
+export type ImageGenerationSettings = z.infer<typeof ImageGenerationSettings>
+
 const EnabledProvidersField = z
   .array(z.string())
   .optional()
@@ -91,12 +116,15 @@ const ProviderConfigFields = {
   enabled_providers: EnabledProvidersField,
   model: ModelField.optional(),
   small_model: SmallModelField.optional(),
+  image_model: ImageModelField.optional(),
   provider: ProviderMapField,
 }
 
 const ModelSelectionFields = {
   model: ModelField.nullable().optional(),
   small_model: SmallModelField.nullable().optional(),
+  image_model: ImageModelField.nullable().optional(),
+  image_generation: ImageGenerationSettings.nullable().optional(),
 }
 
 const SelectedMcpServersField = z
@@ -376,6 +404,7 @@ export const Info = z
         "Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications",
       ),
     ...ProviderConfigFields,
+    image_generation: ImageGenerationSettings.optional(),
     default_agent: z
       .string()
       .optional()
@@ -729,6 +758,7 @@ export async function removeProvider(configID: string, providerID: string) {
     provider: Object.keys(providers).length > 0 ? providers : undefined,
     model: current.model?.startsWith(`${providerID}/`) ? undefined : current.model,
     small_model: current.small_model?.startsWith(`${providerID}/`) ? undefined : current.small_model,
+    image_model: current.image_model?.startsWith(`${providerID}/`) ? undefined : current.image_model,
   }
 
   return writeConfig(normalizedConfigID, Info.parse(next))
@@ -747,6 +777,26 @@ export async function setModelSelection(configID: string, input: ModelSelection)
     ...current,
     model: parsed.model === null ? undefined : parsed.model ?? current.model,
     small_model: parsed.small_model === null ? undefined : parsed.small_model ?? current.small_model,
+    image_model: parsed.image_model === null ? undefined : parsed.image_model ?? current.image_model,
+    image_generation: parsed.image_generation === null
+      ? undefined
+      : parsed.image_generation ?? current.image_generation,
+  }
+  return writeConfig(normalizedConfigID, Info.parse(next))
+}
+
+export async function getImageGenerationSettings(configID = GLOBAL_CONFIG_ID): Promise<ImageGenerationSettings> {
+  const config = readConfig(normalizeConfigID(configID))
+  return ImageGenerationSettings.parse(config.image_generation ?? {})
+}
+
+export async function setImageGenerationSettings(configID: string, input: ImageGenerationSettings) {
+  const normalizedConfigID = normalizeConfigID(configID)
+  const current = readConfig(normalizedConfigID)
+  const parsed = ImageGenerationSettings.parse(input)
+  const next: Info = {
+    ...current,
+    image_generation: Object.keys(parsed).length > 0 ? parsed : undefined,
   }
   return writeConfig(normalizedConfigID, Info.parse(next))
 }

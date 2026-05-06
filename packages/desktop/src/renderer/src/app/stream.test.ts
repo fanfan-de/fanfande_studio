@@ -978,6 +978,12 @@ describe("stream trace reducer", () => {
                 {
                   mime: "image/png",
                   filename: "preview.png",
+                  url: "https://example.com/preview.png",
+                  metadata: {
+                    width: 512,
+                    height: 384,
+                    prompt: "preview prompt",
+                  },
                 },
               ],
             },
@@ -996,6 +1002,11 @@ describe("stream trace reducer", () => {
     expect(assistantItems[2]).toMatchObject({
       kind: "image",
       title: "preview.png",
+      src: "https://example.com/preview.png",
+      mimeType: "image/png",
+      width: 512,
+      height: 384,
+      alt: "preview prompt",
       section: "file-change",
     })
   })

@@ -38,7 +38,7 @@ export function SettingsRoutes() {
     const payload = await parseJsonBody(
       c,
       SettingsUseCase.UpdateGlobalModelSelectionBody,
-      "Body must contain nullable 'model' and 'small_model' fields",
+      "Body must contain nullable model selection fields",
     )
     return ok(c, await SettingsUseCase.updateModelSelection(payload))
   })

@@ -340,11 +340,14 @@ export namespace BunProc {
   export async function importPackage<TModule = Record<string, unknown>>(
     pkg: string,
     version?: string,
+    importSpecifier = pkg,
   ): Promise<InstallResult & { module: TModule }> {
     const resolved = await install(pkg, version)
-    const module = (await import(pathToFileURL(resolved.entry).href)) as TModule
+    const entry = createCacheRequire().resolve(importSpecifier)
+    const module = (await import(pathToFileURL(entry).href)) as TModule
     return {
       ...resolved,
+      entry,
       module,
     }
   }

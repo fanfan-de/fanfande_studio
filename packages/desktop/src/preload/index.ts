@@ -407,10 +407,20 @@ try {
     updateGlobalModelSelection: (input: {
       model?: string | null
       small_model?: string | null
+      image_model?: string | null
+      image_generation?: {
+        default_size?: string
+        default_count?: number
+      } | null
     }) =>
       invokeDesktop("desktop:update-global-model-selection", input) as Promise<{
         model?: string
         small_model?: string
+        image_model?: string
+        image_generation?: {
+          default_size?: string
+          default_count?: number
+        }
       }>,
     getGlobalMcpServers: () =>
       invokeDesktop("desktop:get-global-mcp-servers") as Promise<McpServerSummary[]>,

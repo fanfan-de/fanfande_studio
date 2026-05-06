@@ -59,6 +59,34 @@ function toComposerModelLabel(model: ProviderModel) {
   return model.name
 }
 
+const COMPOSER_PROVIDER_LABEL_OVERRIDES: Record<string, string> = {
+  anthropic: "Anthropic",
+  deepseek: "DeepSeek",
+  google: "Google",
+  groq: "Groq",
+  mistral: "Mistral",
+  ollama: "Ollama",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  xai: "xAI",
+}
+
+function formatComposerProviderID(providerID: string) {
+  const normalized = providerID.trim()
+  if (!normalized) return "Unknown provider"
+
+  const override = COMPOSER_PROVIDER_LABEL_OVERRIDES[normalized.toLowerCase()]
+  if (override) return override
+
+  return normalized
+    .replace(/[-_]+/g, " ")
+    .replace(/\b[a-z]/g, (letter) => letter.toUpperCase())
+}
+
+function toComposerModelProviderLabel(model: ProviderModel) {
+  return model.providerName?.trim() || formatComposerProviderID(model.providerID)
+}
+
 function isOpenAIReasoningModel(model: ProviderModel | null): model is ProviderModel {
   return Boolean(model && model.providerID === "openai" && model.capabilities.reasoning)
 }
@@ -406,6 +434,8 @@ export function useProjectComposer({
     .map((model) => ({
       value: toComposerModelValue(model),
       label: toComposerModelLabel(model),
+      providerID: model.providerID,
+      providerLabel: toComposerModelProviderLabel(model),
     }))
   const effectiveModel = resolveComposerEffectiveModel(selectedModel, models, defaultModel)
   const attachmentCapabilities = getComposerAttachmentCapabilities(effectiveModel)

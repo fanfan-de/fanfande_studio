@@ -3367,6 +3367,33 @@ body.is-dragging-settings-page {
   color: #8f3127;
 }
 
+.sidebar-toggle-button.is-rail.is-collapsed {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--semantic-accent-icon);
+  transform: none;
+}
+
+.sidebar-toggle-button.is-rail.is-collapsed:hover,
+.sidebar-toggle-button.is-rail.is-collapsed:focus-visible {
+  border-color: transparent;
+  background: var(--mix-seg-accent-soft-72-seg-panel-28);
+  box-shadow: none;
+  color: var(--semantic-accent-icon-hover);
+  transform: none;
+}
+
+.sidebar-toggle-button.is-rail.is-expanded,
+.sidebar-toggle-button.is-rail.is-expanded:hover,
+.sidebar-toggle-button.is-rail.is-expanded:focus-visible {
+  border-color: transparent;
+  background: var(--mix-seg-accent-soft-68-seg-panel-32);
+  box-shadow: none;
+  color: var(--semantic-accent-icon-active);
+  transform: none;
+}
+
 @media (max-width: 1100px) {
   .plugins-page-layout,
   .plugins-detail-grid {

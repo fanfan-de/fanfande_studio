@@ -739,6 +739,7 @@ export interface AgentProviderModelCapabilities {
 export interface AgentProviderModel {
   id: string
   providerID: string
+  providerName?: string
   name: string
   family?: string
   status: "alpha" | "beta" | "deprecated" | "active"
@@ -754,6 +755,11 @@ export interface AgentProviderModel {
 export interface AgentProjectModelSelection {
   model?: string
   small_model?: string
+  image_model?: string
+  image_generation?: {
+    default_size?: string
+    default_count?: number
+  }
 }
 
 export interface AgentProjectModelsResult {

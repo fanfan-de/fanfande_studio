@@ -7398,8 +7398,18 @@ describe("App", () => {
     const railCollapseButton = screen.getByRole("button", { name: "Collapse left sidebar" })
     const railTopMenu = railCollapseButton.closest(".activity-rail-top-menu")
     expect(railCollapseButton.closest(".activity-rail")).not.toBeNull()
+    expect(railCollapseButton).toHaveClass("is-expanded")
+    expect(railCollapseButton).not.toHaveClass("is-collapsed")
     expect(railTopMenu).not.toBeNull()
     expect(getLeftActivityRail()!.firstElementChild).toBe(railTopMenu)
+
+    fireEvent.click(railCollapseButton)
+    const railExpandButton = screen.getByRole("button", { name: "Expand left sidebar" })
+    expect(railExpandButton).toHaveClass("is-collapsed")
+    expect(railExpandButton).not.toHaveClass("is-expanded")
+
+    fireEvent.click(railExpandButton)
+    expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toHaveClass("is-expanded")
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
@@ -8753,8 +8763,8 @@ describe("App", () => {
         value: "gpt",
       },
     })
-    expect(within(modelList).queryByRole("option", { name: "DeepSeek Reasoner" })).not.toBeInTheDocument()
-    fireEvent.click(within(modelList).getByRole("option", { name: "GPT-4o mini" }))
+    expect(within(modelList).queryByRole("option", { name: /DeepSeek Reasoner/ })).not.toBeInTheDocument()
+    fireEvent.click(within(modelList).getByRole("option", { name: "GPT-4o mini OpenAI" }))
 
     await waitFor(() => {
       expect(window.desktop!.updateSessionModelSelection).toHaveBeenCalledWith({
@@ -10718,6 +10728,9 @@ describe("App", () => {
     expect(styles).toMatch(
       /\.sidebar-toggle-button\.is-rail\.is-active,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-active\);[^}]*transform:\s*none;/s,
     )
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-collapsed\s*\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon\);[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-collapsed:hover,[\s\S]*?\.sidebar-toggle-button\.is-rail\.is-collapsed:focus-visible\s*\{[^}]*background:\s*var\(--mix-seg-accent-soft-72-seg-panel-28\);[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.sidebar-toggle-button\.is-rail\.is-expanded,[\s\S]*?\.sidebar-toggle-button\.is-rail\.is-expanded:focus-visible\s*\{[^}]*background:\s*var\(--mix-seg-accent-soft-68-seg-panel-32\);[^}]*color:\s*var\(--semantic-accent-icon-active\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.session-tab\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-close\s*\{[^}]*cursor:\s*default;/s)

@@ -189,6 +189,60 @@ describe("ThreadView question prompts", () => {
   })
 })
 
+describe("ThreadView image trace items", () => {
+  it("renders generated images as inline previews and keeps multiple images visible", () => {
+    const items: AssistantTraceItem[] = [
+      {
+        id: "image-1",
+        kind: "image",
+        timestamp: 1,
+        label: "Image",
+        title: "first.png",
+        src: "https://example.com/first.png",
+        mimeType: "image/png",
+        width: 512,
+        height: 512,
+        alt: "First preview",
+        status: "completed",
+      },
+      {
+        id: "image-2",
+        kind: "image",
+        timestamp: 2,
+        label: "Image",
+        title: "second.png",
+        src: "https://example.com/second.png",
+        mimeType: "image/png",
+        width: 256,
+        height: 128,
+        alt: "Second preview",
+        status: "completed",
+      },
+      {
+        id: "patch-1",
+        kind: "patch",
+        timestamp: 3,
+        label: "Patch",
+        title: "Updated files",
+        filePaths: ["src/app.tsx"],
+        status: "completed",
+      },
+    ]
+
+    const { getByAltText, getByRole, getByText } = renderThread([
+      assistantTraceTurn("assistant-images", items, false),
+    ])
+
+    expect(getByAltText("First preview")).toHaveAttribute("src", "https://example.com/first.png")
+    expect(getByAltText("Second preview")).toHaveAttribute("src", "https://example.com/second.png")
+    expect(getByText("Updated files")).toBeInTheDocument()
+
+    fireEvent.click(getByRole("button", { name: "Preview First preview" }))
+
+    expect(getByRole("dialog", { name: "First preview" })).toBeInTheDocument()
+  })
+})
+
 describe("ThreadView trace collapse", () => {
   it("collapses completed reasoning to the first line and expands from the section", () => {
     const { container, getByText } = renderThread([

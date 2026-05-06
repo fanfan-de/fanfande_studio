@@ -13,6 +13,7 @@ import { EnterPlanModeTool } from "#tool/enter-plan-mode.ts"
 import { ExitPlanModeTool } from "#tool/exit-plan-mode.ts"
 import { GlobTool } from "#tool/glob.ts"
 import { GrepTool } from "#tool/grep.ts"
+import { GenerateImageTool } from "#tool/generate-image.ts"
 import { ListDirectoryTool } from "#tool/list-directory.ts"
 import { LspDefinitionTool, LspHoverTool, LspReferencesTool, LspWorkspaceSymbolsTool } from "#tool/lsp.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
@@ -24,6 +25,7 @@ import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { SpawnSubagentTool } from "#tool/spawn-subagent.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "#tool/task-tools.ts"
+import { ViewImageTool } from "#tool/view-image.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
 import * as Mcp from "#mcp/manager.ts"
 
@@ -71,6 +73,8 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     GlobTool,
     GrepTool,
     ListDirectoryTool,
+    GenerateImageTool,
+    ViewImageTool,
     WebFetchTool,
     SpawnSubagentTool,
     CancelSubagentTool,

@@ -261,7 +261,7 @@ function summarizeLlmCallInput(streamInput: LLM.StreamInput) {
 function toAttachmentPart(
     value: unknown,
     toolPart: Message.ToolPart,
-): Message.FilePart | undefined {
+): Message.AttachmentPart | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return undefined
     }
@@ -270,15 +270,42 @@ function toAttachmentPart(
     if (typeof candidate.url !== "string" || typeof candidate.mime !== "string") {
         return undefined
     }
+    const metadata = candidate.metadata && typeof candidate.metadata === "object" && !Array.isArray(candidate.metadata)
+        ? candidate.metadata as Record<string, unknown>
+        : undefined
+    const width = typeof candidate.width === "number"
+        ? candidate.width
+        : typeof metadata?.width === "number"
+            ? metadata.width
+            : undefined
+    const height = typeof candidate.height === "number"
+        ? candidate.height
+        : typeof metadata?.height === "number"
+            ? metadata.height
+            : undefined
 
-    return {
+    const base = {
         id: Identifier.ascending("part"),
         sessionID: toolPart.sessionID,
         messageID: toolPart.messageID,
-        type: "file",
         url: candidate.url,
         mime: candidate.mime,
         filename: typeof candidate.filename === "string" ? candidate.filename : undefined,
+        metadata,
+    }
+
+    if (candidate.mime.toLowerCase().startsWith("image/")) {
+        return {
+            ...base,
+            type: "image",
+            width,
+            height,
+        }
+    }
+
+    return {
+        type: "file",
+        ...base,
     }
 }
 
@@ -532,7 +559,7 @@ async function extractToolResultState(
     let text = Message.normalizeToolOutputText(output)
     let title = typeof fallbackTitle === "string" ? fallbackTitle : ""
     let metadata = fallbackMetadata ?? {}
-    let attachments: Message.FilePart[] | undefined
+    let attachments: Message.AttachmentPart[] | undefined
 
     if (output && typeof output === "object" && !Array.isArray(output)) {
         const candidate = output as Record<string, unknown>
@@ -552,7 +579,7 @@ async function extractToolResultState(
         if (toolPart && Array.isArray(candidate.attachments)) {
             const mapped = candidate.attachments
                 .map((attachment) => toAttachmentPart(attachment, toolPart))
-                .filter((attachment): attachment is Message.FilePart => Boolean(attachment))
+                .filter((attachment): attachment is Message.AttachmentPart => Boolean(attachment))
 
             if (mapped.length > 0) {
                 attachments = mapped

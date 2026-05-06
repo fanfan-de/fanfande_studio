@@ -29,6 +29,10 @@ function readNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
 }
 
+function readOptionalNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
 function readRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   return value as Record<string, unknown>
@@ -272,6 +276,8 @@ function buildPartDebugEntries(input: unknown) {
     appendDebugEntry(entries, "attachment.mime", readString(part.mime))
     appendDebugEntry(entries, "attachment.filename", readString(part.filename))
     appendDebugEntry(entries, "attachment.url", readString(part.url), 320)
+    appendDebugEntry(entries, "attachment.width", part.width)
+    appendDebugEntry(entries, "attachment.height", part.height)
   }
 
   if (type === "patch") {
@@ -669,14 +675,26 @@ function buildToolAttachmentTraceItems(
     .map((attachment, index) => {
       const mime = readString(attachment.mime)
       const kind = mime.startsWith("image/") ? "image" : "file"
+      const metadata = readRecord(attachment.metadata)
+      const width = readOptionalNumber(attachment.width) ?? readOptionalNumber(metadata?.width)
+      const height = readOptionalNumber(attachment.height) ?? readOptionalNumber(metadata?.height)
+      const src = readString(attachment.url) || readString(attachment.src)
+      const title = readString(attachment.filename) || `Tool attachment ${index + 1}`
+      const dimensions = width && height ? `${width}x${height}` : ""
+      const detail = [mime, dimensions].filter(Boolean).join(" | ")
 
       return createTraceItem({
         id: `${sourceID}:attachment:${index}`,
         sourceID: `${sourceID}:attachment:${index}`,
         kind,
         label: kind === "image" ? "Image" : "File",
-        title: readString(attachment.filename) || `Tool attachment ${index + 1}`,
-        detail: mime || "Attachment returned from the tool.",
+        title,
+        detail: detail || "Attachment returned from the tool.",
+        src: kind === "image" ? src : undefined,
+        mimeType: mime || undefined,
+        width,
+        height,
+        alt: readString(attachment.alt) || readString(metadata?.alt) || readString(metadata?.prompt) || title,
         status: "completed",
         section: "file-change",
         visibilityKey: "files",
@@ -1054,13 +1072,27 @@ function buildTraceItemFromPart(
   }
 
   if (type === "file" || type === "image") {
+    const metadata = readRecord(part.metadata)
+    const mime = readString(part.mime) || readString(part.mimeType)
+    const width = readOptionalNumber(part.width) ?? readOptionalNumber(metadata?.width)
+    const height = readOptionalNumber(part.height) ?? readOptionalNumber(metadata?.height)
+    const src = readString(part.url) || readString(part.src)
+    const title = readString(part.filename) || "Attachment"
+    const dimensions = width && height ? `${width}x${height}` : ""
+    const detail = [mime, dimensions].filter(Boolean).join(" | ")
+
     return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: type,
       label: type === "image" ? "Image" : "File",
-      title: readString(part.filename) || "Attachment",
-      detail: readString(part.mime) || describeStructuredValue(part.url, "Attachment returned from the agent."),
+      title,
+      detail: detail || describeStructuredValue(part.url, "Attachment returned from the agent."),
+      src: type === "image" ? src : undefined,
+      mimeType: mime || undefined,
+      width,
+      height,
+      alt: readString(part.alt) || readString(metadata?.alt) || readString(metadata?.prompt) || title,
       status: "completed",
       section: "file-change",
       visibilityKey: "files",

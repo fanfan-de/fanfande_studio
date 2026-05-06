@@ -1,7 +1,7 @@
 import z from "zod"
 import fuzzysort from "fuzzysort"
 import { mapValues } from "remeda"
-import type { LanguageModel, Provider, Provider as SDKProvider } from "ai"
+import type { ImageModel, LanguageModel, Provider, Provider as SDKProvider } from "ai"
 import { Instance } from "#project/instance.ts"
 import { NamedError } from "#util/error.ts"
 import { BunProc } from "#bun/index.ts"
@@ -14,6 +14,8 @@ import * as ProviderAuth from "#auth/provider-auth.ts"
 const OPENAI_SDK_PACKAGE = "@ai-sdk/openai"
 const OPENAI_COMPATIBLE_SDK_PACKAGE = "@ai-sdk/openai-compatible"
 const DEEPSEEK_SDK_PACKAGE = "@ai-sdk/deepseek"
+const OPENROUTER_SDK_PACKAGE = "@openrouter/ai-sdk-provider"
+const GOOGLE_VERTEX_SDK_PACKAGE = "@ai-sdk/google-vertex"
 const PROVIDER_VALIDATION_TIMEOUT_MS = 10_000
 const OPENAI_PROVIDER_ID = "openai"
 const OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
@@ -182,6 +184,7 @@ export const PublicModel = Model.omit({
   headers: true,
 }).extend({
   available: z.boolean(),
+  providerName: z.string().optional(),
 })
 export type PublicModel = z.infer<typeof PublicModel>
 
@@ -239,6 +242,8 @@ type ProviderFunctionOverrides = {
   getSelection?: (configID?: string) => Promise<{
     model?: string
     small_model?: string
+    image_model?: string
+    image_generation?: Config.ImageGenerationSettings
   }>
   getDefaultModelRef?: (configID?: string) => Promise<ModelReference>
   getModel?: (providerID: string, modelID: string, configID?: string) => Promise<Model>
@@ -272,7 +277,7 @@ type ProviderRuntimeDependencies = {
   getModelsDev: typeof ModelsDev.get
   getConfig: typeof Config.get
   getEnvAll: typeof Env.all
-  importPackage: (pkg: string, version?: string) => Promise<{
+  importPackage: (pkg: string, version?: string, importSpecifier?: string) => Promise<{
     module: Record<string, unknown>
     version?: string
   }>
@@ -300,18 +305,66 @@ export function setProviderRuntimeDependenciesForTesting(
   }
 }
 
-const SDK_ADAPTERS = {
+type SDKAdapter = {
+  version?: string
+  exportName?: string
+  installPackage?: string
+  importSpecifier?: string
+  create(input: SDKFactoryInput, factory: SDKModuleFactory): SDKProvider
+}
+
+function createSDKProvider(input: SDKFactoryInput, factory: SDKModuleFactory) {
+  return factory({
+    apiKey: input.apiKey,
+    baseURL: input.baseURL,
+    headers: input.headers,
+  }) as SDKProvider
+}
+
+function createNamedSDKProvider(input: SDKFactoryInput, factory: SDKModuleFactory) {
+  return factory({
+    name: input.provider.id,
+    apiKey: input.apiKey,
+    baseURL: input.baseURL,
+    headers: input.headers,
+  }) as SDKProvider
+}
+
+function sdkAdapter(version: string, exportName: string, options?: {
+  installPackage?: string
+  importSpecifier?: string
+  create?: SDKAdapter["create"]
+}): SDKAdapter {
+  return {
+    version,
+    exportName,
+    installPackage: options?.installPackage,
+    importSpecifier: options?.importSpecifier,
+    create: options?.create ?? createSDKProvider,
+  }
+}
+
+const SDK_ADAPTERS: Record<string, SDKAdapter> = {
+  "@ai-sdk/amazon-bedrock": sdkAdapter("4.0.101", "createAmazonBedrock"),
+  "@ai-sdk/anthropic": sdkAdapter("3.0.75", "createAnthropic"),
+  "@ai-sdk/azure": sdkAdapter("3.0.62", "createAzure"),
+  "@ai-sdk/cerebras": sdkAdapter("2.0.50", "createCerebras"),
+  "@ai-sdk/cohere": sdkAdapter("3.0.34", "createCohere"),
   [DEEPSEEK_SDK_PACKAGE]: {
     version: "2.0.32",
     exportName: "createDeepSeek",
-    create(input: SDKFactoryInput, factory: SDKModuleFactory) {
-      return factory({
-        apiKey: input.apiKey,
-        baseURL: input.baseURL,
-        headers: input.headers,
-      }) as SDKProvider
-    },
+    create: createSDKProvider,
   },
+  "@ai-sdk/deepinfra": sdkAdapter("2.0.50", "createDeepInfra"),
+  "@ai-sdk/gateway": sdkAdapter("3.0.110", "createGateway"),
+  "@ai-sdk/google": sdkAdapter("3.0.67", "createGoogleGenerativeAI"),
+  [GOOGLE_VERTEX_SDK_PACKAGE]: sdkAdapter("4.0.121", "createVertex"),
+  "@ai-sdk/google-vertex/anthropic": sdkAdapter("4.0.121", "createVertexAnthropic", {
+    installPackage: GOOGLE_VERTEX_SDK_PACKAGE,
+    importSpecifier: "@ai-sdk/google-vertex/anthropic",
+  }),
+  "@ai-sdk/groq": sdkAdapter("3.0.38", "createGroq"),
+  "@ai-sdk/mistral": sdkAdapter("3.0.35", "createMistral"),
   [OPENAI_COMPATIBLE_SDK_PACKAGE]: {
     version: "2.0.38",
     exportName: "createOpenAICompatible",
@@ -333,39 +386,77 @@ const SDK_ADAPTERS = {
   [OPENAI_SDK_PACKAGE]: {
     version: "3.0.48",
     exportName: "createOpenAI",
-    create(input: SDKFactoryInput, factory: SDKModuleFactory) {
-      return factory({
-        name: input.provider.id,
-        apiKey: input.apiKey,
-        baseURL: input.baseURL,
-        headers: input.headers,
-      }) as SDKProvider
-    },
+    create: createNamedSDKProvider,
   },
-} satisfies Record<
-  string,
-  {
-    version: string
-    exportName: string
-    create(input: SDKFactoryInput, factory: SDKModuleFactory): SDKProvider
-  }
->
-
-type SupportedSDKPackage = keyof typeof SDK_ADAPTERS
-
-function isSupportedSDKPackage(npmPackage: string): npmPackage is SupportedSDKPackage {
-  return npmPackage in SDK_ADAPTERS
+  "@ai-sdk/perplexity": sdkAdapter("3.0.32", "createPerplexity"),
+  "@ai-sdk/togetherai": sdkAdapter("2.0.50", "createTogetherAI"),
+  "@ai-sdk/vercel": sdkAdapter("2.0.48", "createVercel"),
+  "@ai-sdk/xai": sdkAdapter("3.0.88", "createXai"),
+  "@aihubmix/ai-sdk-provider": sdkAdapter("2.0.6", "createAihubmix"),
+  "@jerome-benoit/sap-ai-provider-v2": sdkAdapter("4.6.9", "createSAPAIProvider"),
+  [OPENROUTER_SDK_PACKAGE]: {
+    version: "2.9.0",
+    exportName: "createOpenRouter",
+    create: createSDKProvider,
+  },
+  "ai-gateway-provider": sdkAdapter("3.1.3", "createAiGateway"),
+  "gitlab-ai-provider": sdkAdapter("6.6.0", "createGitLab"),
+  "venice-ai-sdk-provider": sdkAdapter("1.1.19", "createVenice"),
 }
 
-function resolveSDKPackage(model: Model): SupportedSDKPackage {
-  const requested = model.api.npm
-  if (!isSupportedSDKPackage(requested)) {
-    throw new Error(
-      `Unsupported SDK package '${requested}'. Add it to the SDK adapter allowlist before using it in provider.npm or model.provider.npm.`,
-    )
+function sdkPackagesFromModelsDev(catalog: Record<string, ModelsDev.DevProvider>) {
+  const result = new Set<string>()
+  for (const provider of Object.values(catalog)) {
+    if (provider.npm) result.add(provider.npm)
+    for (const model of Object.values(provider.models)) {
+      if (model.provider?.npm) result.add(model.provider.npm)
+    }
+  }
+  return result
+}
+
+async function isModelsDevSDKPackage(npmPackage: string) {
+  const catalog = await providerRuntimeDependencies.getModelsDev()
+  return sdkPackagesFromModelsDev(catalog).has(npmPackage)
+}
+
+async function resolveSDKAdapter(requested: string): Promise<SDKAdapter> {
+  const adapter = SDK_ADAPTERS[requested]
+  if (adapter) return adapter
+
+  if (await isModelsDevSDKPackage(requested)) {
+    return {
+      create: createSDKProvider,
+    }
   }
 
-  return requested
+  throw new Error(
+    `Unsupported SDK package '${requested}'. Add it to the SDK adapter allowlist or models.dev catalog before using it in provider.npm or model.provider.npm.`,
+  )
+}
+
+function resolveSDKFactory(npmPackage: string, adapter: SDKAdapter, module: Record<string, unknown>) {
+  if (adapter.exportName) {
+    const factory = module[adapter.exportName]
+    if (typeof factory !== "function") {
+      throw new Error(`SDK package '${npmPackage}' is missing export '${adapter.exportName}'`)
+    }
+    return factory as SDKModuleFactory
+  }
+
+  const candidates = Object.entries(module)
+    .filter(([name, value]) => /^create[A-Z]/.test(name) && typeof value === "function")
+    .map(([name, value]) => [name, value] as const)
+
+  const candidate = candidates.length === 1 ? candidates[0] : undefined
+  if (candidate) {
+    return candidate[1] as SDKModuleFactory
+  }
+
+  const suffix = candidates.length
+    ? `Found candidate exports: ${candidates.map(([name]) => name).join(", ")}.`
+    : "No create* factory export was found."
+  throw new Error(`SDK package '${npmPackage}' needs an explicit SDK adapter. ${suffix}`)
 }
 
 // -----------------------------------------------------------------------------
@@ -970,6 +1061,7 @@ function formatValidationFailureMessage(provider: ProviderInfo, status: number, 
 function toPublicModel(provider: ProviderInfo, model: Model): PublicModel {
   return {
     ...model,
+    providerName: provider.name,
     available: isAvailable(provider),
   }
 }
@@ -1027,7 +1119,7 @@ function runtimeKey(provider: ProviderInfo, model: Model) {
   return JSON.stringify({
     providerID: provider.id,
     modelID: model.id,
-    sdkPackage: resolveSDKPackage(model),
+    sdkPackage: model.api.npm,
     apiKey: provider.key ?? "",
     baseURL: firstNonEmptyString(provider.runtimeBaseURL, provider.options.baseURL, model.api.url) ?? "",
     headers: {
@@ -1209,6 +1301,8 @@ export async function getSelection(configID = resolveConfigID()) {
   return {
     model: config.model,
     small_model: config.small_model,
+    image_model: config.image_model,
+    image_generation: config.image_generation,
   }
 }
 
@@ -1248,6 +1342,21 @@ export async function getDefaultModelRef(configID = resolveConfigID()): Promise<
   )
 }
 
+export async function getDefaultImageModelRef(configID = Config.GLOBAL_CONFIG_ID): Promise<ModelReference> {
+  const selection = await getSelection(configID)
+  const parsed = parseModelReference(selection.image_model)
+  if (!parsed) {
+    throw new Error("No image generation model is configured. Choose an image-capable model in model settings before using generate_image.")
+  }
+
+  const model = await getModel(parsed.providerID, parsed.modelID, configID)
+  if (!model.capabilities.output.image) {
+    throw new Error(`Configured image model '${selection.image_model}' does not support image output.`)
+  }
+
+  return parsed
+}
+
 // -----------------------------------------------------------------------------
 // 第三阶段：惰性运行时初始化
 // 只有 session 真正要拿 LanguageModel 发请求时，才会进入这一层。
@@ -1271,13 +1380,22 @@ export async function getLanguage(model: Model, configID = resolveConfigID()): P
   return language
 }
 
-async function loadSDKFactory(npmPackage: SupportedSDKPackage) {
-  const adapter = SDK_ADAPTERS[npmPackage]
-  const loaded = await providerRuntimeDependencies.importPackage(npmPackage, adapter.version)
-  const factory = loaded.module[adapter.exportName]
-  if (typeof factory !== "function") {
-    throw new Error(`SDK package '${npmPackage}' is missing export '${adapter.exportName}'`)
+export async function getImage(model: Model, configID = Config.GLOBAL_CONFIG_ID): Promise<ImageModel> {
+  const sdk = await getSDK(model, configID)
+  if (typeof sdk.imageModel !== "function") {
+    throw new Error(`Provider '${model.providerID}' does not expose image models through its SDK adapter.`)
   }
+  return sdk.imageModel(model.api.id) as ImageModel
+}
+
+async function loadSDKFactory(npmPackage: string) {
+  const adapter = await resolveSDKAdapter(npmPackage)
+  const loaded = await providerRuntimeDependencies.importPackage(
+    adapter.installPackage ?? npmPackage,
+    adapter.version,
+    adapter.importSpecifier ?? npmPackage,
+  )
+  const factory = resolveSDKFactory(npmPackage, adapter, loaded.module)
 
   return {
     adapter,
@@ -1312,7 +1430,7 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
     ...model.headers,
   }
   const headers = Object.keys(combinedHeaders).length > 0 ? combinedHeaders : undefined
-  const sdkPackage = resolveSDKPackage(model)
+  const sdkPackage = model.api.npm
   const loaded = await loadSDKFactory(sdkPackage)
   log.info("initializing sdk provider", {
     providerID: model.providerID,

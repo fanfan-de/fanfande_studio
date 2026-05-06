@@ -101,12 +101,18 @@ function createSettingsPageProps(
     savedSelection: {
       model: null,
       smallModel: null,
+      imageModel: null,
+      imageDefaultSize: null,
+      imageDefaultCount: null,
     },
     savingMcpServerID: null,
     savingProviderID: null,
     selectionDraft: {
       model: null,
       smallModel: null,
+      imageModel: null,
+      imageDefaultSize: null,
+      imageDefaultCount: null,
     },
     ...overrides,
   } as ComponentProps<typeof SettingsPage>

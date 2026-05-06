@@ -30,6 +30,7 @@ import {
   Moon,
   MoreHorizontal,
   Palette,
+  PanelLeft,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRight,
@@ -81,6 +82,8 @@ export const SettingsIcon = createIcon(Settings)
 export const PluginIcon = createIcon(Puzzle)
 export const LayoutSidebarLeftIcon = createIcon(LayoutPanelLeft)
 export const LayoutSidebarRightIcon = createIcon(PanelRight)
+export const LeftSidebarIcon = createIcon(PanelLeft)
+export const RightSidebarIcon = createIcon(PanelRight)
 export const SideChatIcon = createIcon(MessageSquare)
 export const CoworkModeIcon = createIcon(ListChecks)
 export const CodeModeIcon = createIcon(Code2)

@@ -209,6 +209,16 @@ describe("processor tool persistence", () => {
                     mime: "text/plain",
                     filename: "a.txt",
                   },
+                  {
+                    url: "https://example.com/preview.png",
+                    mime: "image/png",
+                    filename: "preview.png",
+                    metadata: {
+                      width: 64,
+                      height: 32,
+                      prompt: "alpha image",
+                    },
+                  },
                 ],
               },
             }
@@ -294,7 +304,27 @@ describe("processor tool persistence", () => {
       expect(completed?.payload.part.state.output).toBe("alpha")
       expect(completed?.payload.part.state.title).toBe("Read a.txt")
       expect(completed?.payload.part.state.metadata).toEqual({ source: "unit" })
-      expect(completed?.payload.part.state.attachments).toHaveLength(1)
+      const attachments = completed?.payload.part.state.attachments
+      expect(attachments).toHaveLength(2)
+      expect(attachments?.[0]).toMatchObject({
+        type: "file",
+        url: "https://example.com/a.txt",
+        mime: "text/plain",
+        filename: "a.txt",
+      })
+      expect(attachments?.[1]).toMatchObject({
+        type: "image",
+        url: "https://example.com/preview.png",
+        mime: "image/png",
+        filename: "preview.png",
+        width: 64,
+        height: 32,
+        metadata: {
+          width: 64,
+          height: 32,
+          prompt: "alpha image",
+        },
+      })
 
       const failed = recorded.events.find(
         (event) =>

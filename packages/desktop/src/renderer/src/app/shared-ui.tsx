@@ -1,7 +1,9 @@
 import { type ReactNode } from "react"
 import {
+  LeftSidebarIcon,
   LeftSidebarCollapseIcon,
   LeftSidebarExpandIcon,
+  RightSidebarIcon,
   RightSidebarCollapseIcon,
   RightSidebarExpandIcon
 } from "./icons"
@@ -141,7 +143,11 @@ function getSidebarToggleLabel(isSidebarCollapsed: boolean, side: SidebarSide) {
   return isSidebarCollapsed ? `Expand ${sideLabel} sidebar` : `Collapse ${sideLabel} sidebar`
 }
 
-function getSidebarToggleIcon(isSidebarCollapsed: boolean, side: SidebarSide) {
+function getSidebarToggleIcon(isSidebarCollapsed: boolean, side: SidebarSide, variant: SidebarToggleButtonVariant) {
+  if (variant === "rail") {
+    return side === "left" ? LeftSidebarIcon : RightSidebarIcon
+  }
+
   if (side === "left") {
     return isSidebarCollapsed ? LeftSidebarExpandIcon : LeftSidebarCollapseIcon
   }
@@ -151,11 +157,12 @@ function getSidebarToggleIcon(isSidebarCollapsed: boolean, side: SidebarSide) {
 
 export function SidebarToggleButton({ isSidebarCollapsed, onToggleSidebar, side, variant }: SidebarToggleButtonProps) {
   const label = getSidebarToggleLabel(isSidebarCollapsed, side)
-  const Icon = getSidebarToggleIcon(isSidebarCollapsed, side)
+  const Icon = getSidebarToggleIcon(isSidebarCollapsed, side, variant)
   const buttonClassName = [
     "sidebar-toggle-button",
     `is-${variant}`,
     `is-${side}`,
+    isSidebarCollapsed ? "is-collapsed" : "is-expanded",
     !isSidebarCollapsed ? "is-active" : "",
   ]
     .filter(Boolean)

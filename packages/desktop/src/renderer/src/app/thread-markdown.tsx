@@ -1,6 +1,7 @@
 import type { MouseEvent, ReactNode } from "react"
 import ReactMarkdown, { type Components, type UrlTransform } from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { toLocalImageProtocolUrl } from "../../../shared/local-image-protocol"
 
 interface ThreadMarkdownProps {
   className?: string
@@ -20,6 +21,13 @@ function normalizeExternalUrl(value: string) {
   } catch {
     return null
   }
+}
+
+function normalizeMarkdownImageSrc(value: string) {
+  const externalUrl = normalizeExternalUrl(value)
+  if (externalUrl) return externalUrl
+
+  return toLocalImageProtocolUrl(value)
 }
 
 function handleExternalLinkClick(event: MouseEvent<HTMLAnchorElement>, href: string) {
@@ -49,8 +57,12 @@ function MarkdownLink({ children, href }: { children?: ReactNode; href?: string 
   )
 }
 
-function MarkdownImage({ alt }: { alt?: string }) {
-  return alt ? <span className="thread-markdown-image-alt">{alt}</span> : null
+function MarkdownImage({ alt, src }: { alt?: string; src?: string }) {
+  if (!src) {
+    return alt ? <span className="thread-markdown-image-alt">{alt}</span> : null
+  }
+
+  return <img className="thread-markdown-image" src={src} alt={alt ?? ""} loading="lazy" decoding="async" />
 }
 
 const components: Components = {
@@ -59,11 +71,9 @@ const components: Components = {
 }
 
 const transformMarkdownUrl: UrlTransform = (url, key) => {
-  if (key !== "href" && key !== "src") {
-    return ""
-  }
-
-  return normalizeExternalUrl(url) ?? ""
+  if (key === "href") return normalizeExternalUrl(url) ?? ""
+  if (key === "src") return normalizeMarkdownImageSrc(url) ?? ""
+  return ""
 }
 
 export function ThreadMarkdown({ className, text }: ThreadMarkdownProps) {

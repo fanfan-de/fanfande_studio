@@ -339,6 +339,11 @@ export interface DesktopProviderConnectionTestInput {
 export interface DesktopModelSelectionUpdateInput {
   model?: string | null
   small_model?: string | null
+  image_model?: string | null
+  image_generation?: {
+    default_size?: string
+    default_count?: number
+  } | null
 }
 
 export interface DesktopAgentSessionTurnResult {

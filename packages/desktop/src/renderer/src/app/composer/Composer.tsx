@@ -965,7 +965,9 @@ export function Composer({
     normalizedModelSearchQuery.length === 0
       ? modelOptions
       : modelOptions.filter((option) =>
-          `${option.label} ${option.value}`.toLowerCase().includes(normalizedModelSearchQuery),
+          `${option.label} ${option.providerLabel} ${option.providerID} ${option.value}`
+            .toLowerCase()
+            .includes(normalizedModelSearchQuery),
         )
   const modelMenuEmptyLabel =
     modelOptions.length === 0 ? "No visible models are available for this project yet." : "No models match your search."
@@ -1129,13 +1131,17 @@ export function Composer({
                       visibleModelOptions.map((option) => (
                         <button
                           key={option.value}
+                          aria-label={`${option.label} ${option.providerLabel}`}
                           aria-selected={selectedModel === option.value}
                           className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
                           onClick={() => handleModelSelect(option.value)}
                           role="option"
                           type="button"
                         >
-                          <span>{option.label}</span>
+                          <span className="composer-menu-option-copy composer-model-option-copy">
+                            <strong>{option.label}</strong>
+                            <small>{option.providerLabel}</small>
+                          </span>
                         </button>
                       ))
                     ) : (

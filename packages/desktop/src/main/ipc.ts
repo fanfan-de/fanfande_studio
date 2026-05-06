@@ -1324,6 +1324,11 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       input: {
         model?: string | null
         small_model?: string | null
+        image_model?: string | null
+        image_generation?: {
+          default_size?: string
+          default_count?: number
+        } | null
       },
     ) => {
       const result = await requestAgentJSON<AgentProjectModelSelection>("/api/model-selection", {
@@ -1334,6 +1339,8 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
         body: JSON.stringify({
           model: input.model,
           small_model: input.small_model,
+          ...(input.image_model !== undefined ? { image_model: input.image_model } : {}),
+          ...(input.image_generation !== undefined ? { image_generation: input.image_generation } : {}),
         }),
       })
 

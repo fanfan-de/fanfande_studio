@@ -208,6 +208,7 @@ function buildModelTags(model: ProviderModel) {
   if (model.capabilities.reasoning) tags.push("Reasoning")
   if (model.capabilities.toolcall) tags.push("Tools")
   if (model.capabilities.input.image) tags.push("Vision")
+  if (model.capabilities.output.image) tags.push("Image Out")
   if (model.capabilities.attachment && model.capabilities.input.pdf) tags.push("PDF")
 
   return tags
@@ -405,6 +406,7 @@ function ModelListView({ catalog, models, selectionDraft }: ModelListViewProps) 
                   <span className="settings-badge">{model.available ? "Visible" : "Catalog"}</span>
                   {selectionDraft.model === modelValue ? <span className="settings-badge is-highlight">Primary</span> : null}
                   {selectionDraft.smallModel === modelValue ? <span className="settings-badge is-highlight">Small</span> : null}
+                  {selectionDraft.imageModel === modelValue ? <span className="settings-badge is-highlight">Image</span> : null}
                 </div>
               </div>
 
@@ -572,7 +574,7 @@ interface SettingsPageProps {
   onSaveProviderApiKey: (providerID: string, apiKey?: string | null) => boolean | Promise<boolean>
   onSaveProvider: (providerID: string) => boolean | Promise<boolean>
   onSaveSelection: () => void | Promise<void>
-  onSelectionChange: (field: keyof ProjectModelSelection, value: string | null) => void
+  onSelectionChange: <K extends keyof ProjectModelSelection>(field: K, value: ProjectModelSelection[K]) => void
   onTestProviderConnection: (
     providerID: string,
     input?: {
@@ -687,6 +689,7 @@ export function SettingsPage({
     }, {})
     const connectedProviderIDs = new Set(catalog.filter((item) => item.available).map((item) => item.id))
     const visibleModels = models.filter((model) => model.available && connectedProviderIDs.has(model.providerID))
+    const visibleImageModels = visibleModels.filter((model) => model.capabilities.output.image)
     const filteredCatalog = getVisibleProvidersForSettings(catalog, providerSearch)
     const filteredMcpServers = mcpServers.filter((server) => doesMcpServerMatchSearch(server, mcpServerSearchQuery))
     const activeProvider = selectedProviderID ? catalog.find((item) => item.id === selectedProviderID) ?? null : null
@@ -737,7 +740,11 @@ export function SettingsPage({
       activeProvider?.authState.account?.workspaceName ??
       null
     const selectionUnchanged =
-      savedSelection.model === selectionDraft.model && savedSelection.smallModel === selectionDraft.smallModel
+      savedSelection.model === selectionDraft.model &&
+      savedSelection.smallModel === selectionDraft.smallModel &&
+      savedSelection.imageModel === selectionDraft.imageModel &&
+      savedSelection.imageDefaultSize === selectionDraft.imageDefaultSize &&
+      savedSelection.imageDefaultCount === selectionDraft.imageDefaultCount
     const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
     const mcpSaveLabel = activeMcpServer ? "Save server" : "Create server"
     const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
@@ -2561,10 +2568,60 @@ export function SettingsPage({
                             ))}
                           </select>
                         </label>
+
+                        <label className="settings-field">
+                          <span className="settings-field-label">Image generation model</span>
+                          <select
+                            aria-label="Image generation model"
+                            value={selectionDraft.imageModel ?? ""}
+                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                              onSelectionChange("imageModel", event.target.value ? event.target.value : null)
+                            }
+                          >
+                            <option value="">Not configured</option>
+                            {visibleImageModels.map((model) => (
+                              <option key={`image-${model.providerID}/${model.id}`} value={`${model.providerID}/${model.id}`}>
+                                {toModelOptionLabel(model, catalog)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="settings-field">
+                          <span className="settings-field-label">Default image size</span>
+                          <select
+                            aria-label="Default image size"
+                            value={selectionDraft.imageDefaultSize ?? ""}
+                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                              onSelectionChange("imageDefaultSize", event.target.value ? event.target.value : null)
+                            }
+                          >
+                            <option value="">Provider default</option>
+                            <option value="1024x1024">1024x1024</option>
+                            <option value="1024x1536">1024x1536</option>
+                            <option value="1536x1024">1536x1024</option>
+                          </select>
+                        </label>
+
+                        <label className="settings-field">
+                          <span className="settings-field-label">Default image count</span>
+                          <select
+                            aria-label="Default image count"
+                            value={selectionDraft.imageDefaultCount?.toString() ?? ""}
+                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+                              onSelectionChange("imageDefaultCount", event.target.value ? Number(event.target.value) : null)
+                            }
+                          >
+                            <option value="">1 image</option>
+                            <option value="2">2 images</option>
+                            <option value="3">3 images</option>
+                            <option value="4">4 images</option>
+                          </select>
+                        </label>
                       </div>
 
                       <div className="settings-actions-row">
-                        <span className="settings-helper-text">Use the small model for lightweight tasks such as naming, titling, or utility generations.</span>
+                        <span className="settings-helper-text">Use the small model for lightweight tasks. The image model powers generate_image globally.</span>
                         <button
                           className="primary-button"
                           aria-label="Save model selection"

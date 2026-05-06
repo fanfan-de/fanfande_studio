@@ -13,6 +13,7 @@ import { isApiError } from "#server/error.ts"
 import type { AppEnv } from "#server/types.ts"
 import { getPtyRegistry, type PtyRegistry } from "#pty/registry.ts"
 import * as Log from "#util/log.ts"
+import { getServerBaseURL, setServerBaseURL } from "#server/base-url.ts"
 
 export interface ServerOptions {
   host?: string
@@ -24,7 +25,6 @@ export interface ServerOptions {
 
 const log = Log.create({ service: "server" })
 let activeServer: Bun.Server<unknown> | undefined
-let activeURL = new URL("http://127.0.0.1:4096")
 
 function getRequestId(c: Context<AppEnv>) {
   return c.get("requestId") ?? "unknown"
@@ -138,7 +138,7 @@ export function createServerRuntime(options: Pick<ServerOptions, "corsWhitelist"
 }
 
 export function url() {
-  return activeURL
+  return getServerBaseURL()
 }
 
 export function startServer(options: ServerOptions = {}) {
@@ -160,12 +160,12 @@ export function startServer(options: ServerOptions = {}) {
     },
     websocket: runtime.websocket,
   })
-  activeURL = new URL(`http://${host}:${port}`)
+  setServerBaseURL(`http://${host}:${port}`)
   log.info("server-started", {
     host,
     port,
     idleTimeout,
-    url: activeURL.toString(),
+    url: getServerBaseURL().toString(),
   })
   return activeServer
 }

@@ -1,0 +1,52 @@
+export const LOCAL_IMAGE_PROTOCOL = "fanfande-local-image"
+export const LOCAL_IMAGE_PROTOCOL_HOST = "image"
+
+const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-z]:[\\/]/i
+const WINDOWS_UNC_PATH_PATTERN = /^\\\\[^\\/]+[\\/][^\\/]+[\\/]/
+const POSIX_ABSOLUTE_PATH_PATTERN = /^\//
+
+function isLocalImageSourceValue(value: string) {
+  const source = value.trim()
+  if (!source) return false
+
+  if (source.toLowerCase().startsWith("file://")) return true
+  if (WINDOWS_ABSOLUTE_PATH_PATTERN.test(source)) return true
+  if (WINDOWS_UNC_PATH_PATTERN.test(source)) return true
+  return POSIX_ABSOLUTE_PATH_PATTERN.test(source)
+}
+
+export function normalizeLocalImageSource(value: string) {
+  const source = value.trim()
+  if (isLocalImageSourceValue(source)) return source
+
+  try {
+    const decodedSource = decodeURIComponent(source)
+    return isLocalImageSourceValue(decodedSource) ? decodedSource : null
+  } catch {
+    return null
+  }
+}
+
+export function isLocalImageSource(value: string) {
+  return normalizeLocalImageSource(value) !== null
+}
+
+export function toLocalImageProtocolUrl(source: string) {
+  const normalizedSource = normalizeLocalImageSource(source)
+  if (!normalizedSource) return null
+
+  return `${LOCAL_IMAGE_PROTOCOL}://${LOCAL_IMAGE_PROTOCOL_HOST}?source=${encodeURIComponent(normalizedSource)}`
+}
+
+export function readLocalImageProtocolSource(url: string) {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== `${LOCAL_IMAGE_PROTOCOL}:`) return null
+    if (parsed.hostname !== LOCAL_IMAGE_PROTOCOL_HOST) return null
+
+    const source = parsed.searchParams.get("source")?.trim()
+    return source || null
+  } catch {
+    return null
+  }
+}

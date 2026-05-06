@@ -1,7 +1,8 @@
-import { app, BrowserWindow, Menu } from "electron"
+import { app, BrowserWindow, Menu, protocol } from "electron"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { registerIpcHandlers } from "./ipc"
+import { registerLocalImageProtocolHandler, registerLocalImageProtocolScheme } from "./local-image-protocol"
 import { readLocaleConfigSnapshot } from "./locale-config"
 import { ensureManagedAgentRunning, stopManagedAgent } from "./managed-agent"
 import { createApplicationMenus, type ApplicationMenuOptions } from "./menu"
@@ -10,6 +11,8 @@ import { checkForAppUpdates, initializeAutoUpdater } from "./updater"
 import { createWindow } from "./window"
 
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
+
+registerLocalImageProtocolScheme(protocol)
 
 void app.whenReady().then(async () => {
   try {
@@ -37,6 +40,7 @@ void app.whenReady().then(async () => {
       Menu.setApplicationMenu(menus.applicationMenu)
     },
   })
+  registerLocalImageProtocolHandler(protocol)
 
   createWindow(mainDir)
   initializeAutoUpdater()

@@ -1010,8 +1010,12 @@
 
 .composer-menu-option-copy strong {
   color: currentColor;
+  display: block;
   font-size: 13px;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-menu-option-copy small,
@@ -1019,6 +1023,29 @@
   color: #607488;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.composer-menu-option-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-model-option-copy {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer-model-option-copy strong {
+  min-width: 0;
+}
+
+.composer-model-option-copy small {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .composer-menu-option-check {
