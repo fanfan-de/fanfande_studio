@@ -139,7 +139,8 @@ export function parsePromptUrlSource(source: string): PromptUrlSource {
   const trimmed = normalizeSource(source)
   const shorthandMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/)
   if (shorthandMatch) {
-    const [, owner, repo] = shorthandMatch
+    const owner = shorthandMatch[1]!
+    const repo = shorthandMatch[2]!
     return {
       kind: "github-repository",
       source: trimmed,

@@ -53,6 +53,7 @@ function coalescePendingStreamEvent(current: PendingDeltaStreamEvent, next: Pend
 export interface TurnContext {
   readonly sessionID: string
   readonly turnID: string
+  readonly steerable: boolean
   emit<TType extends RuntimeEvent.RuntimeEventType>(
     type: TType,
     payload: RuntimeEvent.RuntimeEventPayloadByType[TType],
@@ -62,6 +63,8 @@ export interface TurnContext {
     payload: RuntimeEvent.RuntimeEventPayloadByType[TType],
   ): void
   flushStreamEvents(): void
+  canAcceptSteer(): boolean
+  setAcceptingSteer(accepting: boolean): void
   close(): void
 }
 
@@ -70,15 +73,18 @@ const activeTurns = new Map<string, TurnRuntime>()
 class TurnRuntime implements TurnContext {
   readonly sessionID: string
   readonly turnID: string
+  readonly steerable: boolean
   private readonly factory: ReturnType<typeof RuntimeEvent.createRuntimeEventFactory>
   private readonly pendingStreamEvents: PendingStreamEvent[] = []
   private streamFlushScheduled = false
   private closed = false
   private terminalEvent: RuntimeEvent.RuntimeEvent | undefined
+  private acceptingSteer = true
 
-  constructor(input: { sessionID: string; turnID: string }) {
+  constructor(input: { sessionID: string; turnID: string; steerable: boolean }) {
     this.sessionID = input.sessionID
     this.turnID = input.turnID
+    this.steerable = input.steerable
     this.factory = RuntimeEvent.createRuntimeEventFactory({
       sessionID: input.sessionID,
       turnID: input.turnID,
@@ -101,6 +107,7 @@ class TurnRuntime implements TurnContext {
     const event = this.emitNow(type, payload)
 
     if (RuntimeEvent.isTerminalRuntimeEvent(event)) {
+      this.acceptingSteer = false
       this.terminalEvent = event
     }
 
@@ -136,6 +143,18 @@ class TurnRuntime implements TurnContext {
         pending.payload as RuntimeEvent.RuntimeEventPayloadByType[RuntimeEvent.TransientStreamEventType],
       )
     }
+  }
+
+  canAcceptSteer() {
+    return this.steerable && this.acceptingSteer && !this.closed && !this.terminalEvent
+  }
+
+  setAcceptingSteer(accepting: boolean) {
+    if (this.closed || this.terminalEvent) {
+      this.acceptingSteer = false
+      return
+    }
+    this.acceptingSteer = accepting
   }
 
   close() {
@@ -174,6 +193,7 @@ class TurnRuntime implements TurnContext {
 
 export function startTurn(input: {
   sessionID: string
+  turnID?: string
   userMessageID?: string
   agent?: string
   model?: {
@@ -181,6 +201,7 @@ export function startTurn(input: {
     modelID: string
   }
   resume?: boolean
+  steerable?: boolean
 }) {
   if (activeTurns.has(input.sessionID)) {
     throw new Error(`Session '${input.sessionID}' already has an active turn.`)
@@ -188,7 +209,8 @@ export function startTurn(input: {
 
   const turn = new TurnRuntime({
     sessionID: input.sessionID,
-    turnID: Identifier.ascending("turn"),
+    turnID: input.turnID ?? Identifier.ascending("turn"),
+    steerable: input.steerable ?? true,
   })
   activeTurns.set(input.sessionID, turn)
   turn.emit("turn.started", {

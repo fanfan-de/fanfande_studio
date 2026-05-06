@@ -2,12 +2,27 @@ import { describe, expect, it } from "bun:test"
 import * as Identifier from "#id/id.ts"
 import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
+import { SessionLimitError } from "#session/runtime/session-limits.ts"
 
 function createFactory() {
   return RuntimeEvent.createRuntimeEventFactory({
     sessionID: Identifier.ascending("session"),
     turnID: Identifier.ascending("turn"),
   })
+}
+
+function withEnv(name: string, value: string, fn: () => void) {
+  const previous = process.env[name]
+  process.env[name] = value
+  try {
+    fn()
+  } finally {
+    if (previous === undefined) {
+      delete process.env[name]
+    } else {
+      process.env[name] = previous
+    }
+  }
 }
 
 describe("live stream hub", () => {
@@ -36,9 +51,11 @@ describe("live stream hub", () => {
       LiveStreamHub.publish(second)
 
       const next = await subscription.next()
-      expect(next?.type).toBe("text.part.delta")
+      if (next?.type !== "text.part.delta") {
+        throw new Error(`Expected text.part.delta, got ${next?.type}`)
+      }
       expect(next?.seq).toBe(second.seq)
-      expect(next?.payload.delta).toBe("hello")
+      expect(next.payload.delta).toBe("hello")
     } finally {
       subscription.close()
     }
@@ -73,10 +90,12 @@ describe("live stream hub", () => {
       LiveStreamHub.publish(second)
 
       const next = await subscription.next()
-      expect(next?.type).toBe("tool.input.delta")
+      if (next?.type !== "tool.input.delta") {
+        throw new Error(`Expected tool.input.delta, got ${next?.type}`)
+      }
       expect(next?.seq).toBe(second.seq)
-      expect(next?.payload.delta).toBe("{\"p\":1}")
-      expect(next?.payload.rawLength).toBe(7)
+      expect(next.payload.delta).toBe("{\"p\":1}")
+      expect(next.payload.rawLength).toBe(7)
     } finally {
       subscription.close()
     }
@@ -115,5 +134,48 @@ describe("live stream hub", () => {
     } finally {
       subscription.close()
     }
+  })
+
+  it("enforces the global subscriber limit without closing existing subscribers", () => {
+    withEnv("FanFande_SESSION_MAX_STREAM_SUBSCRIBERS", "1", () => {
+      withEnv("FanFande_SESSION_MAX_STREAM_SUBSCRIBERS_PER_SESSION", "10", () => {
+        const first = LiveStreamHub.subscribe({
+          sessionID: Identifier.ascending("session"),
+          closeOnTerminalTurn: false,
+        })
+
+        try {
+          expect(() => LiveStreamHub.subscribe({
+            sessionID: Identifier.ascending("session"),
+            closeOnTerminalTurn: false,
+          })).toThrow(SessionLimitError)
+          expect(LiveStreamHub.snapshot().activeSubscriptions).toBe(1)
+        } finally {
+          first.close()
+        }
+      })
+    })
+  })
+
+  it("enforces the per-session subscriber limit without closing existing subscribers", () => {
+    withEnv("FanFande_SESSION_MAX_STREAM_SUBSCRIBERS", "10", () => {
+      withEnv("FanFande_SESSION_MAX_STREAM_SUBSCRIBERS_PER_SESSION", "1", () => {
+        const sessionID = Identifier.ascending("session")
+        const first = LiveStreamHub.subscribe({
+          sessionID,
+          closeOnTerminalTurn: false,
+        })
+
+        try {
+          expect(() => LiveStreamHub.subscribe({
+            sessionID,
+            closeOnTerminalTurn: false,
+          })).toThrow(SessionLimitError)
+          expect(LiveStreamHub.snapshot().activeSubscriptions).toBe(1)
+        } finally {
+          first.close()
+        }
+      })
+    })
   })
 })

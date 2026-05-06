@@ -4,6 +4,8 @@ import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
 import * as Message from "#session/core/message.ts"
 import * as Orchestrator from "#session/runtime/orchestrator.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
+import { isSessionLimitError } from "#session/runtime/session-limits.ts"
+import type * as SessionRunner from "#session/runtime/session-runner.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "server.session" })
@@ -126,6 +128,39 @@ function createTransportTerminalEvent(input: {
     timestamp: Date.now(),
     type: input.type,
     payload: input.payload,
+  })
+}
+
+function failedRuntimePayload(error: unknown, phase: string, retryable = false) {
+  return {
+    error: error instanceof Error ? error.message : String(error),
+    code: isSessionLimitError(error) ? error.code : undefined,
+    phase,
+    retryable,
+  } satisfies RuntimeEvent.RuntimeEventPayloadByType["turn.failed"]
+}
+
+export function createSessionExecutionErrorStream(input: {
+  sessionID: string
+  requestId?: string
+  turnID?: string
+  error: unknown
+  phase?: string
+}) {
+  const event = createTransportTerminalEvent({
+    sessionID: input.sessionID,
+    turnID: input.turnID,
+    type: "turn.failed",
+    payload: failedRuntimePayload(input.error, input.phase ?? "execution"),
+  })
+
+  return new Response(toSSE("runtime", event, runtimeEventSSEID(event)), {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-request-id": input.requestId,
+    },
   })
 }
 
@@ -280,8 +315,9 @@ export function createSessionEventStream(input: {
 
 export function createSessionExecutionStream(input: {
   sessionID: string
-  execute: () => Promise<SessionStreamResult>
-  cancel: () => void
+  handle?: SessionRunner.SessionExecutionHandle<SessionStreamResult>
+  execute?: () => Promise<SessionStreamResult>
+  cancel?: () => void
   requestId?: string
   heartbeatIntervalMs?: number
   replayTurnID?: string
@@ -289,16 +325,29 @@ export function createSessionExecutionStream(input: {
 }) {
   let cancelled = false
   const heartbeatIntervalMs = input.heartbeatIntervalMs ?? STREAM_HEARTBEAT_INTERVAL_MS
-  const subscription = LiveStreamHub.subscribe({
-    sessionID: input.sessionID,
-    turnID: input.replayTurnID,
-    closeOnTerminalTurn: true,
-    seed: replayRuntimeEvents({
+  const streamTurnID = input.replayTurnID ?? input.handle?.turnID
+  let subscription: LiveStreamHub.LiveStreamSubscription
+  try {
+    subscription = LiveStreamHub.subscribe({
       sessionID: input.sessionID,
-      turnID: input.replayTurnID,
-      sinceSeq: input.sinceSeq,
-    }),
-  })
+      turnID: streamTurnID,
+      closeOnTerminalTurn: true,
+      seed: replayRuntimeEvents({
+        sessionID: input.sessionID,
+        turnID: streamTurnID,
+        sinceSeq: input.sinceSeq,
+      }),
+    })
+  } catch (error) {
+    input.handle?.cancel()
+    return createSessionExecutionErrorStream({
+      sessionID: input.sessionID,
+      requestId: input.requestId,
+      turnID: streamTurnID,
+      error,
+      phase: "stream",
+    })
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -350,11 +399,11 @@ export function createSessionExecutionStream(input: {
         let resolved: SessionStreamResult | undefined
         let failed: unknown
         let terminalEvent: RuntimeEvent.RuntimeEvent | undefined
-        let observedTurnID = input.replayTurnID
+        let observedTurnID = streamTurnID
         let observedSeq = input.sinceSeq ?? 0
         let executionDone = false
 
-        const execution = input.execute()
+        const execution = (input.handle?.promise ?? input.execute?.() ?? Promise.reject(new Error("Missing session execution handle")))
           .then((value) => {
             resolved = value
             executionDone = true
@@ -409,17 +458,13 @@ export function createSessionExecutionStream(input: {
               requestId: input.requestId,
               error: normalizeLogError(failed),
             })
-            await sendRuntimeEvent(send, createTransportTerminalEvent({
-              sessionID: input.sessionID,
-              turnID: observedTurnID,
-              seq: observedSeq + 1,
-              type: "turn.failed",
-              payload: {
-                error: failed instanceof Error ? failed.message : String(failed),
-                phase: "execution",
-                retryable: false,
-              },
-            }))
+                await sendRuntimeEvent(send, createTransportTerminalEvent({
+                  sessionID: input.sessionID,
+                  turnID: observedTurnID,
+                  seq: observedSeq + 1,
+                  type: "turn.failed",
+                  payload: failedRuntimePayload(failed, "execution"),
+                }))
           } else if (resolved) {
             log.warn("session execution stream completed without terminal runtime event", {
               sessionID: input.sessionID,
@@ -467,13 +512,9 @@ export function createSessionExecutionStream(input: {
         })
         await sendRuntimeEvent(send, createTransportTerminalEvent({
           sessionID: input.sessionID,
-          turnID: input.replayTurnID,
+          turnID: streamTurnID,
           type: "turn.failed",
-          payload: {
-            error: error instanceof Error ? error.message : String(error),
-            phase: "stream",
-            retryable: true,
-          },
+          payload: failedRuntimePayload(error, "stream", true),
         }))
         subscription.close()
         if (!cancelled) controller.close()
@@ -481,13 +522,19 @@ export function createSessionExecutionStream(input: {
     },
     cancel() {
       cancelled = true
-      cancelActiveRuntimeTurn({
-        sessionID: input.sessionID,
-        reason: "client-disconnect",
-        detail: "Execution stream was cancelled by the client.",
-      })
+      if (!input.handle || input.handle.mode === "new-turn") {
+        cancelActiveRuntimeTurn({
+          sessionID: input.sessionID,
+          reason: "client-disconnect",
+          detail: "Execution stream was cancelled by the client.",
+        })
+      }
       subscription.close()
-      input.cancel()
+      if (input.handle) {
+        input.handle.cancel()
+      } else {
+        input.cancel?.()
+      }
     },
   })
 

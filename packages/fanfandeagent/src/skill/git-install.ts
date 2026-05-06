@@ -136,7 +136,8 @@ export function parseGitSkillSource(source: string): ParsedGitSkillSource {
   const trimmed = requireNonEmptySource(source)
   const shorthandMatch = trimmed.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/)
   if (shorthandMatch) {
-    const [, owner, repo] = shorthandMatch
+    const owner = shorthandMatch[1]!
+    const repo = shorthandMatch[2]!
     const repoName = normalizeRepoName(repo)
 
     return {
@@ -148,7 +149,8 @@ export function parseGitSkillSource(source: string): ParsedGitSkillSource {
 
   const sshMatch = trimmed.match(/^git@github\.com:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/)
   if (sshMatch) {
-    const [, owner, repo] = sshMatch
+    const owner = sshMatch[1]!
+    const repo = sshMatch[2]!
     const repoName = normalizeRepoName(repo)
 
     return {

@@ -1,4 +1,8 @@
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
+import {
+  getSessionLimits,
+  SessionLimitError,
+} from "#session/runtime/session-limits.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "session.live-stream" })
@@ -218,6 +222,14 @@ function subscriptionsForSession(sessionID: string) {
   return current
 }
 
+function activeSubscriptionCount() {
+  let count = 0
+  for (const subscriptions of subscriptionsBySession.values()) {
+    count += subscriptions.size
+  }
+  return count
+}
+
 export function publish(event: RuntimeEvent.RuntimeEvent) {
   const subscribers = subscriptionsBySession.get(event.sessionID)
   if (!subscribers || subscribers.size === 0) return event
@@ -237,6 +249,23 @@ export function publish(event: RuntimeEvent.RuntimeEvent) {
 }
 
 export function subscribe(options: SubscriberOptions): LiveStreamSubscription {
+  const existingSessionSubscriptions = subscriptionsBySession.get(options.sessionID)
+  const limits = getSessionLimits()
+  if (activeSubscriptionCount() >= limits.maxStreamSubscribers) {
+    throw new SessionLimitError(
+      "SESSION_STREAM_SUBSCRIBER_LIMIT",
+      `At most ${limits.maxStreamSubscribers} session stream subscribers can be active.`,
+      limits.maxStreamSubscribers,
+    )
+  }
+  if ((existingSessionSubscriptions?.size ?? 0) >= limits.maxStreamSubscribersPerSession) {
+    throw new SessionLimitError(
+      "SESSION_STREAM_SUBSCRIBER_LIMIT",
+      `At most ${limits.maxStreamSubscribersPerSession} stream subscribers can be active for one session.`,
+      limits.maxStreamSubscribersPerSession,
+    )
+  }
+
   const subscriber = new Subscription(options)
   const sessionSubscriptions = subscriptionsForSession(options.sessionID)
   sessionSubscriptions.add(subscriber)

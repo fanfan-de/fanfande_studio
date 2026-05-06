@@ -1,6 +1,7 @@
 import * as Orchestrator from "#session/runtime/orchestrator.ts"
 import * as EventStore from "#session/runtime/event-store.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
+import * as SessionRunner from "#session/runtime/session-runner.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import * as Session from "#session/core/session.ts"
 import * as Task from "#session/tasks/task.ts"
@@ -148,6 +149,8 @@ export type SessionRuntimeDebugSnapshot = {
     activeForMs: 0
     reason?: string
   }
+  runner: SessionRunner.SessionRunnerSnapshot | null
+  runnerLimits: ReturnType<typeof SessionRunner.runtimeLimitsSnapshot>
   activeTurnID: string | null
   turn: RuntimeTurnSummary | null
   latestTurn: RuntimeTurnSummary | null
@@ -703,6 +706,12 @@ function summarizeRuntimeEvent(event: RuntimeEvent.RuntimeEvent): RuntimeEventSu
         },
       }
   }
+  return {
+    ...base,
+    title: event.type,
+    detail: "Runtime event",
+    tone: "info",
+  }
 }
 
 function createTurnSummary(turnID: string): MutableTurnSummary {
@@ -934,6 +943,7 @@ export function getSessionRuntimeDebugSnapshot(input: {
   const turnLimit = Math.max(1, Math.min(input.turnLimit ?? 6, 20))
   const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null
   const running = RunningState.info(input.sessionID)
+  const runner = SessionRunner.info(input.sessionID)
   const activeTurn = Orchestrator.activeTurn(input.sessionID)
   const events = EventStore.listSessionEvents({ sessionID: input.sessionID })
   const turns = new Map<string, MutableTurnSummary>()
@@ -975,6 +985,8 @@ export function getSessionRuntimeDebugSnapshot(input: {
       activeForMs: 0,
       reason: undefined,
     },
+    runner,
+    runnerLimits: SessionRunner.runtimeLimitsSnapshot(),
     activeTurnID: activeTurn?.turnID ?? null,
     turn: latestTurn,
     latestTurn,

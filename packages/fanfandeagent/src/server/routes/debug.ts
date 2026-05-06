@@ -4,6 +4,7 @@ import type { AppEnv } from "#server/types.ts"
 import * as EventStore from "#session/runtime/event-store.ts"
 import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
+import * as SessionRunner from "#session/runtime/session-runner.ts"
 import { getSessionRuntimeDebugSnapshot } from "#session/runtime/runtime-debug.ts"
 import * as Session from "#session/core/session.ts"
 import * as Log from "#util/log.ts"
@@ -58,6 +59,7 @@ function buildStatusPayload() {
     },
     logging: Log.status(),
     streams: LiveStreamHub.snapshot(),
+    runnerLimits: SessionRunner.runtimeLimitsSnapshot(),
     runningSessions: {
       count: runningSessions.length,
       items: runningSessions,
@@ -84,6 +86,7 @@ function buildRuntimePayload(input?: {
       platform: process.platform,
     },
     logging: Log.status(),
+    runnerLimits: SessionRunner.runtimeLimitsSnapshot(),
     runningSessions: RunningState.snapshot().map((item) =>
       getSessionRuntimeDebugSnapshot({
         sessionID: item.sessionID,

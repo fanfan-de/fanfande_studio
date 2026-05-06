@@ -16,6 +16,7 @@ import * as SessionDiff from "#session/diff/diff.ts"
 import { Flag } from "#flag/flag.ts"
 import * as Orchestrator from "#session/runtime/orchestrator.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
+import * as SessionRunner from "#session/runtime/session-runner.ts"
 import * as ContextWindow from "#session/core/context-window.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import * as SessionTitle from "#session/support/title.ts"
@@ -31,7 +32,7 @@ import { resolveTools } from "./resolve-tools.ts";
  * 2. resume(): 不创建新 user message，只继续推进已有对话。
  * 3. runLoop(): 每轮重建上下文，拼装 system/messages/tools，交给 Processor 执行。
  *
- * 约束：数据库是会话真相；RunningState 只保存当前运行中的 AbortController。
+ * 约束：数据库是会话真相；SessionRunner 只保存当前进程内运行队列和 AbortController。
  */
 
 const log = Log.create({ service: "session.prompt" });
@@ -120,14 +121,6 @@ export const PromptInput = z.object({
     ),
 });
 export type PromptInput = z.infer<typeof PromptInput>;
-
-function finish(sessionID: string, controller?: AbortController) {
-    RunningState.finish(sessionID, controller);
-}
-
-async function waitForStop(sessionID: string) {
-    await RunningState.waitForStop(sessionID);
-}
 
 async function persistMessageRecord(
     message: Message.MessageInfo,
@@ -464,6 +457,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                             ? blockingInteraction.questionID
                             : undefined,
                 });
+                turn.setAcceptingSteer(false)
                 break;
             }
 
@@ -473,6 +467,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 lastUser.id < lastAssistant.id
             ) {
                 log.info("exiting loop", { sessionID });
+                turn.setAcceptingSteer(false)
                 break;
             }
 
@@ -567,7 +562,17 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
 
             await persistMessageRecord(assistantMessage, turn);
 
+            if (await SessionRunner.consumePendingSteer(sessionID, turn.turnID) > 0) {
+                log.info("continuing prompt loop after steer input", {
+                    sessionID,
+                    turnID: turn.turnID,
+                    iteration,
+                })
+                continue
+            }
+
             if (isFinalFinishReason(processor.message.finishReason)) {
+                turn.setAcceptingSteer(false)
                 log.info("model-finish", {
                     sessionID,
                     finishReason: processor.message.finishReason,
@@ -576,7 +581,10 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 break;
             }
 
-            if (processResult === "stop") break;
+            if (processResult === "stop") {
+                turn.setAcceptingSteer(false)
+                break;
+            }
         }
 
         const latest = currentAssistant
@@ -610,8 +618,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             finishReason,
         };
     } finally {
-        finish(sessionID, controller);
-        Status.set(sessionID, { type: "idle" });
+        void controller
     }
 }
 
@@ -619,8 +626,28 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
 // 对外入口
 // ---------------------------------------------------------------------------
 
-// 新用户输入入口：先记录 user message / parts，再启动 runLoop。
-export const prompt = fn(PromptInput, async (input) => {
+// 新用户输入入口：交给 per-session runner 决定新 turn、排队或 steer。
+function createPromptExecutionHandle(input: PromptInput) {
+    const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
+    if (!session) {
+        throw new Error(`Session '${input.sessionID}' was not found.`);
+    }
+
+    return SessionRunner.enqueuePrompt({
+        sessionID: input.sessionID,
+        directory: session.directory,
+        type: "prompt",
+        execute: (runtime) => runPromptOperation(input, runtime),
+        steer: ({ turn }) => recordSteerUserMessage(input, turn),
+    })
+}
+
+export const promptExecution = fn(PromptInput, createPromptExecutionHandle);
+
+export const prompt = fn(PromptInput, async (input) => createPromptExecutionHandle(input).promise);
+
+// 新用户输入的真实执行：先记录 user message / parts，再启动 runLoop。
+async function runPromptOperation(input: PromptInput, runtime: SessionRunner.PromptRuntime) {
     const existingMessages = loadMessagesWithParts(input.sessionID)
     const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
     if (!session) {
@@ -631,15 +658,6 @@ export const prompt = fn(PromptInput, async (input) => {
         Session.isDefaultSessionTitle(session.title) &&
         existingMessages.length === 0
     const agentName = resolveUserMessageAgentName(session, input.agent)
-
-    if (state()[input.sessionID]) {
-        throw new Error(`Session '${input.sessionID}' is already running.`);
-    }
-    //
-    const controller = new AbortController();
-    RunningState.register(input.sessionID, controller, {
-        reason: "prompt",
-    });
 
     const baselineSnapshot = await Snapshot.track().catch((error) => {
         log.warn("failed to capture pre-turn snapshot", {
@@ -676,7 +694,6 @@ export const prompt = fn(PromptInput, async (input) => {
             })
         }
     } catch (error) {
-        finish(input.sessionID, controller);
         Status.set(input.sessionID, { type: "idle" });
         throw error;
     }
@@ -684,6 +701,7 @@ export const prompt = fn(PromptInput, async (input) => {
     try {
         turn = Orchestrator.startTurn({
             sessionID: input.sessionID,
+            turnID: runtime.turnID,
             userMessageID: userMessage.messageinfo.id,
             agent: userMessage.messageinfo.agent,
             model: userMessage.messageinfo.model,
@@ -728,8 +746,8 @@ export const prompt = fn(PromptInput, async (input) => {
 
         const result = await runLoop({
             sessionID: input.sessionID,
-            abort: controller.signal,
-            controller,
+            abort: runtime.abort,
+            controller: runtime.controller,
             turn,
         });
 
@@ -788,7 +806,7 @@ export const prompt = fn(PromptInput, async (input) => {
         await sessionTitlePromise
 
         if (turn) {
-            const status = controller.signal.aborted ? "cancelled" : "failed"
+            const status = runtime.abort.aborted ? "cancelled" : "failed"
             Session.updateTurn(turn.turnID, {
                 status,
                 phase: status,
@@ -818,38 +836,77 @@ export const prompt = fn(PromptInput, async (input) => {
         if (turn) {
             Orchestrator.finishTurn(turn)
         }
-        finish(input.sessionID, controller)
         Status.set(input.sessionID, { type: "idle" })
     }
-});
+}
 
-export const ResumeInput = z.object({
-    sessionID: Identifier.schema("session"),
-});
-
-// 恢复入口：等待旧 loop 停止后，基于最近一次 user message 继续推进。
-export const resume = fn(ResumeInput, async (input) => {
+async function recordSteerUserMessage(input: PromptInput, turn: Orchestrator.TurnContext) {
     const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
     if (!session) {
         throw new Error(`Session '${input.sessionID}' was not found.`);
     }
 
-    await waitForStop(input.sessionID);
+    const agentName = resolveUserMessageAgentName(session, input.agent)
+    const nextInput: PromptInput = {
+        ...input,
+        agent: agentName,
+        skills: await Skill.resolveTurnSkillIDs({
+            projectID: session.projectID,
+            projectRoot: Instance.worktree,
+            requestedSkillIDs: input.skills,
+        }),
+    }
+    const userMessage = await createUserMessage(nextInput)
+    userMessage.messageinfo = {
+        ...userMessage.messageinfo,
+        turnID: turn.turnID,
+    }
 
-    const running = state();
-    if (running[input.sessionID])
-        throw new Error(`Session '${input.sessionID}' is already running.`);
+    turn.emit("message.recorded", {
+        message: userMessage.messageinfo,
+    })
+    for (const part of userMessage.parts) {
+        turn.emit("part.recorded", { part })
+    }
+}
 
-    const controller = new AbortController();
-    RunningState.register(input.sessionID, controller, {
-        reason: "resume",
-    });
+export const ResumeInput = z.object({
+    sessionID: Identifier.schema("session"),
+});
+export type ResumeInput = z.infer<typeof ResumeInput>;
+
+// 恢复入口：进入 per-session runner 队列后，基于最近一次 user message 继续推进。
+function createResumeExecutionHandle(input: ResumeInput) {
+    const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
+    if (!session) {
+        throw new Error(`Session '${input.sessionID}' was not found.`);
+    }
+
+    return SessionRunner.enqueueResume({
+        sessionID: input.sessionID,
+        directory: session.directory,
+        type: "resume",
+        execute: (runtime) => runResumeOperation(input, runtime),
+    })
+}
+
+export const resumeExecution = fn(ResumeInput, createResumeExecutionHandle);
+
+export const resume = fn(ResumeInput, async (input) => createResumeExecutionHandle(input).promise);
+
+async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.PromptRuntime) {
+    const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
+    if (!session) {
+        throw new Error(`Session '${input.sessionID}' was not found.`);
+    }
+
     const latestUser = SessionDiff.findLatestUserMessageWithSnapshot(input.sessionID)
     let turn: Orchestrator.TurnContext | undefined
 
     try {
         turn = Orchestrator.startTurn({
             sessionID: input.sessionID,
+            turnID: runtime.turnID,
             userMessageID: latestUser?.message.id,
             agent: latestUser?.message.agent,
             model: latestUser?.message.model,
@@ -874,8 +931,8 @@ export const resume = fn(ResumeInput, async (input) => {
 
         const result = await runLoop({
             sessionID: input.sessionID,
-            abort: controller.signal,
-            controller,
+            abort: runtime.abort,
+            controller: runtime.controller,
             turn,
         });
 
@@ -932,7 +989,7 @@ export const resume = fn(ResumeInput, async (input) => {
         })
 
         if (turn) {
-            const status = controller.signal.aborted ? "cancelled" : "failed"
+            const status = runtime.abort.aborted ? "cancelled" : "failed"
             Session.updateTurn(turn.turnID, {
                 status,
                 phase: status,
@@ -962,10 +1019,9 @@ export const resume = fn(ResumeInput, async (input) => {
         if (turn) {
             Orchestrator.finishTurn(turn)
         }
-        finish(input.sessionID, controller)
         Status.set(input.sessionID, { type: "idle" })
     }
-});
+}
 
 type LoopRuntimeInput = {
     sessionID: string

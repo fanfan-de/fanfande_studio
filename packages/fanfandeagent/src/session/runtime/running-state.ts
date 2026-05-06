@@ -1,3 +1,5 @@
+import * as SessionRunner from "#session/runtime/session-runner.ts"
+
 type RunningSession = {
   abort: AbortController
   startedAt?: number
@@ -16,9 +18,15 @@ export type RunningStateEvent = {
 
 export type RunningSessionSnapshot = {
   sessionID: string
-  startedAt: number
+  startedAt: number | null
   activeForMs: number
   reason?: string
+  status?: SessionRunner.SessionRunnerStatus
+  activeTurnID?: string | null
+  directory?: string
+  queueLength?: number
+  queuedOpCount?: number
+  pendingSteerCount?: number
 }
 
 export function state() {
@@ -26,10 +34,26 @@ export function state() {
 }
 
 export function isRunning(sessionID: string) {
-  return Boolean(runningSessions[sessionID])
+  return SessionRunner.isRunning(sessionID) || Boolean(runningSessions[sessionID])
 }
 
 export function info(sessionID: string): RunningSessionSnapshot | null {
+  const runner = SessionRunner.info(sessionID)
+  if (runner && (runner.status === "running" || runner.status === "cancelling" || runner.queueLength > 0)) {
+    return {
+      sessionID: runner.sessionID,
+      startedAt: runner.startedAt,
+      activeForMs: runner.activeForMs,
+      reason: runner.reason,
+      status: runner.status,
+      activeTurnID: runner.activeTurnID,
+      directory: runner.directory,
+      queueLength: runner.queueLength,
+      queuedOpCount: runner.queuedOpCount,
+      pendingSteerCount: runner.pendingSteerCount,
+    }
+  }
+
   const current = runningSessions[sessionID]
   if (!current) return null
   const startedAt = current.startedAt ?? Date.now()
@@ -39,14 +63,33 @@ export function info(sessionID: string): RunningSessionSnapshot | null {
     startedAt,
     activeForMs: Math.max(0, Date.now() - startedAt),
     reason: current.reason,
+    status: "running",
+    queueLength: 0,
+    queuedOpCount: 0,
+    pendingSteerCount: 0,
   }
 }
 
 export function snapshot(): RunningSessionSnapshot[] {
-  return Object.keys(runningSessions)
+  const runnerSnapshots = SessionRunner.snapshot().map((runner) => ({
+    sessionID: runner.sessionID,
+    startedAt: runner.startedAt,
+    activeForMs: runner.activeForMs,
+    reason: runner.reason,
+    status: runner.status,
+    activeTurnID: runner.activeTurnID,
+    directory: runner.directory,
+    queueLength: runner.queueLength,
+    queuedOpCount: runner.queuedOpCount,
+    pendingSteerCount: runner.pendingSteerCount,
+  }))
+  const runnerSessionIDs = new Set(runnerSnapshots.map((item) => item.sessionID))
+  const legacySnapshots = Object.keys(runningSessions)
+    .filter((sessionID) => !runnerSessionIDs.has(sessionID))
     .map((sessionID) => info(sessionID))
     .filter((value): value is RunningSessionSnapshot => Boolean(value))
-    .sort((left, right) => left.startedAt - right.startedAt)
+  return [...runnerSnapshots, ...legacySnapshots]
+    .sort((left, right) => (left.startedAt ?? Number.MAX_SAFE_INTEGER) - (right.startedAt ?? Number.MAX_SAFE_INTEGER))
 }
 
 function notify(event: RunningStateEvent) {
@@ -61,8 +104,16 @@ function notify(event: RunningStateEvent) {
 
 export function subscribe(subscriber: (event: RunningStateEvent) => void) {
   subscribers.add(subscriber)
+  const unsubscribeRunner = SessionRunner.subscribe((event) => {
+    if (event.type === "queued" || event.type === "steered") return
+    subscriber({
+      type: event.type,
+      sessionID: event.sessionID,
+    })
+  })
   return () => {
     subscribers.delete(subscriber)
+    unsubscribeRunner()
   }
 }
 
@@ -74,6 +125,7 @@ export function register(
     reason?: string
   },
 ) {
+  if (SessionRunner.isRunning(sessionID)) return false
   if (runningSessions[sessionID]) return false
 
   runningSessions[sessionID] = {
@@ -95,12 +147,12 @@ export function finish(sessionID: string, controller?: AbortController) {
 }
 
 export async function waitForStop(sessionID: string) {
-  while (isRunning(sessionID)) {
-    await new Promise((resolve) => setTimeout(resolve, 25))
-  }
+  await SessionRunner.waitForIdle(sessionID)
+  while (runningSessions[sessionID]) await new Promise((resolve) => setTimeout(resolve, 25))
 }
 
 export function cancel(sessionID: string) {
+  if (SessionRunner.cancel(sessionID)) return true
   const current = runningSessions[sessionID]
   if (!current) return false
 

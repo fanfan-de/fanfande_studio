@@ -15,11 +15,13 @@ import * as Task from "#session/tasks/task.ts"
 import * as Log from "#util/log.ts"
 import {
   createSessionEventStream,
+  createSessionExecutionErrorStream,
   createSessionExecutionStream,
   parseReplayCursor,
   parseSinceSeq,
   serializeReplayCursor,
 } from "#server/usecases/session-stream.ts"
+import { isSessionLimitError } from "#session/runtime/session-limits.ts"
 import {
   findModelByReference,
   listProjectModelsWithFallback,
@@ -665,7 +667,7 @@ export function createEventStreamResponse(input: {
   })
 }
 
-export function createMessageStreamResponse(input: {
+export async function createMessageStreamResponse(input: {
   sessionID: string
   payload: StreamSessionMessageInput
   requestId?: string
@@ -689,53 +691,74 @@ export function createMessageStreamResponse(input: {
     skillCount: input.payload.skills?.length ?? 0,
   })
 
+  let handle: ReturnType<typeof Prompt.promptExecution>
+  try {
+    handle = await Instance.provide({
+      directory: session.directory,
+      fn: async () => {
+        const parts = await resolvePromptPartsFromStreamPayload(input.payload)
+        return Prompt.promptExecution({
+          sessionID: input.sessionID,
+          parts,
+          system: input.payload.system,
+          agent: input.payload.agent,
+          skills: input.payload.skills,
+          reasoningEffort: input.payload.reasoningEffort,
+          model: input.payload.model,
+        })
+      },
+    })
+  } catch (error) {
+    if (isSessionLimitError(error)) {
+      return createSessionExecutionErrorStream({
+        sessionID: input.sessionID,
+        requestId: input.requestId,
+        turnID: input.replayTurnID,
+        error,
+      })
+    }
+    throw error
+  }
+
   return createSessionExecutionStream({
     sessionID: input.sessionID,
     requestId: input.requestId,
     replayTurnID: input.replayTurnID,
     sinceSeq: parseSinceSeq(input.sinceSeq),
-    execute: () =>
-      Instance.provide({
-        directory: session.directory,
-        fn: async () => {
-          const parts = await resolvePromptPartsFromStreamPayload(input.payload)
-          return Prompt.prompt({
-            sessionID: input.sessionID,
-            parts,
-            system: input.payload.system,
-            agent: input.payload.agent,
-            skills: input.payload.skills,
-            reasoningEffort: input.payload.reasoningEffort,
-            model: input.payload.model,
-          })
-        },
-      }).then(async (value) => (await value) as SessionStreamResult),
-    cancel: () => {
-      void Prompt.cancel(input.sessionID)
-    },
+    handle,
   })
 }
 
-export function createResumeStreamResponse(input: {
+export async function createResumeStreamResponse(input: {
   sessionID: string
   requestId?: string
   replayTurnID?: string
   sinceSeq?: string
 }) {
   const session = requireSession(input.sessionID)
+  let handle: ReturnType<typeof Prompt.resumeExecution>
+  try {
+    handle = await Instance.provide({
+      directory: session.directory,
+      fn: () => Prompt.resumeExecution({ sessionID: input.sessionID }),
+    })
+  } catch (error) {
+    if (isSessionLimitError(error)) {
+      return createSessionExecutionErrorStream({
+        sessionID: input.sessionID,
+        requestId: input.requestId,
+        turnID: input.replayTurnID,
+        error,
+      })
+    }
+    throw error
+  }
 
   return createSessionExecutionStream({
     sessionID: input.sessionID,
     requestId: input.requestId,
     replayTurnID: input.replayTurnID,
     sinceSeq: parseSinceSeq(input.sinceSeq),
-    execute: () =>
-      Instance.provide({
-        directory: session.directory,
-        fn: () => Prompt.resume({ sessionID: input.sessionID }),
-      }).then(async (value) => (await value) as SessionStreamResult),
-    cancel: () => {
-      void Prompt.cancel(input.sessionID)
-    },
+    handle,
   })
 }
