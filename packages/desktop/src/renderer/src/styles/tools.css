@@ -477,13 +477,6 @@
   padding: 0 18px 16px 46px;
 }
 
-.tools-card-details p {
-  margin: 0;
-  color: var(--seg-text-3);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
 .tools-card-detail-grid {
   margin: 0;
   display: grid;
@@ -491,12 +484,16 @@
   gap: 8px;
 }
 
-.tools-card-detail-grid div {
+.tools-card-detail-item {
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--seg-border);
   border-radius: var(--seg-radius-sm);
   background: var(--mix-seg-panel-72-seg-panel-muted-28);
+}
+
+.tools-card-detail-item.is-description {
+  grid-column: 1 / -1;
 }
 
 .tools-card-detail-grid dt {
@@ -513,6 +510,44 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tools-card-detail-item.is-description dd {
+  color: var(--seg-text-2);
+  line-height: 1.5;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.tools-card-input-schema {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.tools-card-detail-label {
+  color: var(--seg-text-3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tools-card-input-schema pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--seg-code-bg, var(--mix-seg-panel-72-seg-panel-muted-28));
+  color: var(--seg-text-1);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .tools-detail-empty-state {

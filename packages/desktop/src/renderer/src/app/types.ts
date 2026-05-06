@@ -1010,6 +1010,7 @@ export interface BuiltinToolSummary {
   id: string
   title: string
   description: string
+  inputSchema?: unknown
   aliases: string[]
   capabilities: BuiltinToolCapabilities
   enabled: boolean

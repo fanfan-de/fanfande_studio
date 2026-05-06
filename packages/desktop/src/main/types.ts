@@ -289,6 +289,7 @@ export interface AgentBuiltinToolSummary {
   id: string
   title: string
   description: string
+  inputSchema?: unknown
   aliases: string[]
   capabilities: AgentBuiltinToolCapabilities
   enabled: boolean

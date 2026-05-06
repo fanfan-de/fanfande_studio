@@ -22,6 +22,16 @@ interface BuiltinToolsPageProps {
   onSaveBuiltinTools: () => boolean | Promise<boolean>
 }
 
+function formatJson(value: unknown) {
+  if (value === undefined) return "{}"
+
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 function getBuiltinToolKindLabel(tool: BuiltinToolSummary) {
   return getBuiltinToolGroupLabel(tool.capabilities.kind ?? "other")
 }
@@ -338,21 +348,28 @@ export function BuiltinToolsPage({
 
                             {isExpanded ? (
                               <div className="tools-card-details" id={detailsID}>
-                                <p>{tool.description}</p>
                                 <dl className="tools-card-detail-grid">
-                                  <div>
+                                  <div className="tools-card-detail-item is-description">
+                                    <dt>Description</dt>
+                                    <dd title={tool.description}>{tool.description}</dd>
+                                  </div>
+                                  <div className="tools-card-detail-item">
                                     <dt>Tool ID</dt>
                                     <dd>{tool.id}</dd>
                                   </div>
-                                  <div>
+                                  <div className="tools-card-detail-item">
                                     <dt>Concurrency</dt>
                                     <dd>{tool.capabilities.concurrency ?? "default"}</dd>
                                   </div>
-                                  <div>
+                                  <div className="tools-card-detail-item">
                                     <dt>Aliases</dt>
                                     <dd>{tool.aliases.length > 0 ? tool.aliases.join(", ") : "None"}</dd>
                                   </div>
                                 </dl>
+                                <div className="tools-card-input-schema">
+                                  <span className="tools-card-detail-label">Input schema</span>
+                                  <pre>{formatJson(tool.inputSchema ?? {})}</pre>
+                                </div>
                               </div>
                             ) : null}
                           </article>

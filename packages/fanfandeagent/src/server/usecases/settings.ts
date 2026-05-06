@@ -132,6 +132,14 @@ export const UpdateToolPermissionModeBody = z
   })
   .strict()
 
+function toToolInputSchema(schema: z.ZodType) {
+  try {
+    return z.toJSONSchema(schema)
+  } catch {
+    return {}
+  }
+}
+
 function parseModelReference(value: string) {
   const [providerID, ...rest] = value.split("/")
   const modelID = rest.join("/")
@@ -728,6 +736,7 @@ export async function listBuiltinTools() {
           id: item.id,
           title: runtime.title ?? item.title ?? item.id,
           description: runtime.description,
+          inputSchema: toToolInputSchema(runtime.parameters),
           aliases: item.aliases ?? [],
           capabilities: item.capabilities ?? {},
           enabled: !explicitStates.includes(false),

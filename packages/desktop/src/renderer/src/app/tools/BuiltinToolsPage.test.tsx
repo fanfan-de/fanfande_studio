@@ -8,6 +8,15 @@ const builtinTools: BuiltinToolSummary[] = [
     id: "git_bash_command",
     title: "Git Bash",
     description: "Run a Git Bash/MSYS Bash command inside the current project boundary.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+        },
+      },
+      required: ["command"],
+    },
     aliases: [],
     capabilities: {
       kind: "exec",
@@ -85,7 +94,10 @@ describe("BuiltinToolsPage", () => {
     expect(screen.queryByText("Read File")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Show details for Git Bash" }))
+    expect(screen.getByText("Description")).toBeInTheDocument()
     expect(screen.getByText("Run a Git Bash/MSYS Bash command inside the current project boundary.")).toBeInTheDocument()
+    expect(screen.getByText("Input schema")).toBeInTheDocument()
+    expect(props.container.querySelector(".tools-card-input-schema pre")?.textContent).toContain('"command"')
     expect(screen.getByText("Concurrency")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Hide details for Git Bash" })).toHaveAttribute("aria-expanded", "true")
 

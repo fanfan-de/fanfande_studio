@@ -332,6 +332,7 @@ type BuiltinToolListEnvelope = JsonEnvelope<{
     id: string
     title: string
     description: string
+    inputSchema?: unknown
     aliases: string[]
     capabilities: {
       kind?: "read" | "write" | "search" | "exec" | "workflow" | "interaction" | "delegation" | "other"
@@ -725,11 +726,15 @@ describe("server api", () => {
       expect(listBody.data?.items.some((tool) => tool.id === "AskUserQuestion")).toBe(true)
       expect(listBody.data?.items.find((tool) => tool.id === "git_bash_command")).toMatchObject({
         enabled: true,
+        inputSchema: {
+          type: "object",
+        },
         capabilities: {
           kind: "exec",
           needsShell: true,
         },
       })
+      expect(JSON.stringify(listBody.data?.items.find((tool) => tool.id === "git_bash_command")?.inputSchema)).toContain("command")
       expect(listBody.data?.items.find((tool) => tool.id === "powershell_command")).toMatchObject({
         enabled: true,
         capabilities: {
