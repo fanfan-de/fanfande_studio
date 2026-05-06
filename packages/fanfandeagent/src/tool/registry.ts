@@ -27,6 +27,7 @@ import { SpawnSubagentTool } from "#tool/spawn-subagent.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
 import { TaskCreateTool, TaskGetTool, TaskListTool, TaskUpdateTool } from "#tool/task-tools.ts"
 import { ViewImageTool } from "#tool/view-image.ts"
+import { WaitSubagentTool } from "#tool/wait-subagent.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
 import * as Mcp from "#mcp/manager.ts"
 
@@ -67,6 +68,7 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     ReadFileTool,
     ReadBackgroundTaskTool,
     ReadSubagentTool,
+    WaitSubagentTool,
     LoadSkillTool,
     ReadSkillResourceTool,
     ListMcpResourcesTool,

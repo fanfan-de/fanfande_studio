@@ -386,17 +386,17 @@ function resolveParentUserMessageID(
 
 function buildParentNotificationText(record: SubtaskRecord) {
   return [
-    "<subtask-notification>",
+    '<runtime_event type="subagent.completed">',
     `task_id: ${record.id}`,
+    `agent_id: ${record.agent}`,
     `child_session_id: ${record.childSessionID}`,
-    `agent: ${record.agent}`,
     `status: ${record.status}`,
     record.finishReason ? `finish_reason: ${record.finishReason}` : undefined,
     record.error ? `error: ${record.error}` : undefined,
     "",
     "summary:",
     record.summary ?? "(no summary)",
-    "</subtask-notification>",
+    "</runtime_event>",
   ].filter(Boolean).join("\n")
 }
 
@@ -471,6 +471,7 @@ async function maybeNotifyParentSession(record: SubtaskRecord) {
         agent: latestUser.agent,
         model: latestUser.model,
         skills: latestUser.skills,
+        internal: true,
         system: buildParentNotificationSystemPrompt(),
         parts: [
           {
@@ -478,7 +479,8 @@ async function maybeNotifyParentSession(record: SubtaskRecord) {
             text: buildParentNotificationText(record),
             synthetic: true,
             metadata: {
-              kind: "subtask-notification",
+              kind: "runtime-event",
+              runtimeEventType: "subagent.completed",
               taskID: record.id,
               childSessionID: record.childSessionID,
               status: record.status,

@@ -185,6 +185,7 @@ describe("subagent tools", () => {
     const Session = await import("#session/core/session.ts")
     const { SpawnSubagentTool } = await import("#tool/spawn-subagent.ts")
     const { ReadSubagentTool } = await import("#tool/read-subagent.ts")
+    const { WaitSubagentTool } = await import("#tool/wait-subagent.ts")
 
     await Instance.provide({
       directory: process.cwd(),
@@ -197,6 +198,7 @@ describe("subagent tools", () => {
 
         const spawn = await SpawnSubagentTool.init()
         const read = await ReadSubagentTool.init()
+        const wait = await WaitSubagentTool.init()
         const spawned = await spawn.execute(
           {
             prompt: "Run in the background and finish later.",
@@ -226,18 +228,37 @@ describe("subagent tools", () => {
           status: "running",
         })
 
+        const timedOut = await wait.execute(
+          { id: taskID, timeoutMs: 20 },
+          {
+            sessionID: parent.id,
+            messageID: "msg_parent_background_wait_timeout",
+          },
+        )
+        expect(timedOut.metadata).toMatchObject({
+          kind: "subagent",
+          action: "read",
+          status: "running",
+          active: true,
+        })
+        expect((timedOut.metadata as { instruction?: string }).instruction).toContain("still running")
+
         gates.values().next().value?.()
 
-        await waitFor(async () => {
-          const snapshot = await read.execute(
-            { id: taskID },
-            {
-              sessionID: parent.id,
-              messageID: "msg_parent_background_poll",
-            },
-          )
-          return (snapshot.metadata as { status?: string }).status === "completed"
+        const waited = await wait.execute(
+          { id: taskID, timeoutMs: 2_000 },
+          {
+            sessionID: parent.id,
+            messageID: "msg_parent_background_wait_final",
+          },
+        )
+        expect(waited.metadata).toMatchObject({
+          kind: "subagent",
+          action: "read",
+          status: "completed",
+          active: false,
         })
+        expect(waited.text).toContain("background done")
 
         const completed = await read.execute(
           { id: taskID },
@@ -255,6 +276,81 @@ describe("subagent tools", () => {
         })
       },
     })
+  })
+
+  it("wait_subagent returns already-terminal subagent statuses", async () => {
+    const Session = await import("#session/core/session.ts")
+    const Subtask = await import("#session/tasks/subtask.ts")
+    const db = await import("#database/Sqlite.ts")
+    const Identifier = await import("#id/id.ts")
+    const { WaitSubagentTool } = await import("#tool/wait-subagent.ts")
+
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const parent = await Session.createSession({
+          directory: Instance.directory,
+          projectID: Instance.project.id,
+          title: "parent-terminal-wait",
+        })
+
+        Subtask.readSubtask(Identifier.ascending("task"))
+
+        const wait = await WaitSubagentTool.init()
+        for (const status of ["blocked", "failed", "stopped"] as const) {
+          const child = await Session.createSession({
+            directory: Instance.directory,
+            projectID: Instance.project.id,
+            title: `child-${status}`,
+          })
+          const now = Date.now()
+          const record = Subtask.SubtaskRecord.parse({
+            id: Identifier.ascending("task"),
+            parentSessionID: parent.id,
+            parentMessageID: Identifier.ascending("message"),
+            childSessionID: child.id,
+            title: `Subagent ${status}`,
+            prompt: `terminal ${status}`,
+            agent: "default",
+            model: {
+              providerID: "test-provider",
+              modelID: "test-model",
+            },
+            runInBackground: true,
+            permissionMode: "default",
+            status,
+            summary: `${status} summary`,
+            startedAt: now,
+            updatedAt: now,
+            finishedAt: now,
+          })
+          db.insertOneWithSchema("subtasks", record, Subtask.SubtaskRecord)
+
+          const result = await wait.execute(
+            { id: record.id, timeoutMs: 20 },
+            {
+              sessionID: parent.id,
+              messageID: Identifier.ascending("message"),
+            },
+          )
+          expect(result.metadata).toMatchObject({
+            kind: "subagent",
+            action: "read",
+            status,
+            active: false,
+            summary: `${status} summary`,
+          })
+        }
+      },
+    })
+  })
+
+  it("registers wait_subagent and its alias", async () => {
+    const Registry = await import("#tool/registry.ts")
+
+    const waitTool = (await Registry.builtinTools()).find((tool) => tool.id === "wait_subagent")
+    expect(waitTool).toBeDefined()
+    expect(waitTool?.aliases).toContain("wait-subagent")
   })
 
   it("cancels a running background child session", async () => {
@@ -336,7 +432,8 @@ describe("subagent tools", () => {
               messageID: "msg_parent_cancel_poll",
             },
           )
-          return (snapshot.metadata as { status?: string }).status === "cancelled"
+          const metadata = snapshot.metadata as { status?: string; active?: boolean }
+          return metadata.status === "cancelled" && metadata.active === false
         })
 
         const snapshot = await read.execute(
@@ -472,10 +569,14 @@ describe("subagent tools", () => {
         expect(assistantMessages).toHaveLength(2)
         expect(
           userMessages.some((message) =>
+            message.info.internal === true &&
             message.parts.some(
-              (part: { type: string; text?: string; metadata?: Record<string, unknown> }) =>
+              (part: { type: string; text?: string; synthetic?: boolean; metadata?: Record<string, unknown> }) =>
                 part.type === "text" &&
-                part.metadata?.kind === "subtask-notification" &&
+                part.synthetic === true &&
+                part.metadata?.kind === "runtime-event" &&
+                part.metadata?.runtimeEventType === "subagent.completed" &&
+                part.text?.includes('<runtime_event type="subagent.completed">') &&
                 part.text?.includes("worker finished delegated research"),
             ),
           ),

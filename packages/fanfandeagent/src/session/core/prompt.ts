@@ -61,6 +61,7 @@ export const PromptInput = z.object({
         .optional(),
     agent: z.string().optional(),
     noReply: z.boolean().optional(),
+    internal: z.boolean().optional(),
     system: z.string().optional(),
     skills: z.array(z.string()).optional(),
     variant: z.string().optional(),
@@ -351,6 +352,15 @@ function isInternalUserMessage(message: Message.WithParts) {
     return message.info.role === "user" && message.info.internal === true
 }
 
+function hasInternalUserMessageAfter(messages: Message.WithParts[], assistantID: string) {
+    const assistantIndex = messages.findIndex((message) => message.info.id === assistantID)
+    if (assistantIndex < 0) return false
+
+    return messages
+        .slice(assistantIndex + 1)
+        .some((message) => message.info.role === "user" && message.info.internal === true)
+}
+
 function isLegacyCompactionAssistantMessage(message: Message.WithParts) {
     return message.info.role === "assistant" && message.parts.some((part) => part.type === "compaction")
 }
@@ -464,7 +474,8 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             if (
                 lastAssistant &&
                 isFinalFinishReason(lastAssistant.finishReason) &&
-                lastUser.id < lastAssistant.id
+                lastUser.id < lastAssistant.id &&
+                !hasInternalUserMessageAfter(messages, lastAssistant.id)
             ) {
                 log.info("exiting loop", { sessionID });
                 turn.setAcceptingSteer(false)
@@ -1387,6 +1398,7 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         model: await resolvePromptModel(input),
         system: input.system,
         skills: input.skills,
+        internal: input.internal,
         reasoningEffort: input.reasoningEffort,
     };
 

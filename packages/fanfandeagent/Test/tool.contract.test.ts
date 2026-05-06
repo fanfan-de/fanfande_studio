@@ -322,6 +322,79 @@ describe("tool contract", () => {
     expect(serializedMessage).toContain("answer: vercel")
   })
 
+  it("replays internal runtime event user messages into model context", async () => {
+    const model = {
+      capabilities: {
+        reasoning: false,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "user-runtime-event",
+            sessionID: "session-runtime-event",
+            role: "user",
+            created: Date.now(),
+            agent: "default",
+            model: {
+              providerID: "test-provider",
+              modelID: "test-model",
+            },
+            internal: true,
+          } as Message.User,
+          parts: [
+            {
+              id: "part-runtime-event",
+              sessionID: "session-runtime-event",
+              messageID: "user-runtime-event",
+              type: "text",
+              text: [
+                '<runtime_event type="subagent.completed">',
+                "task_id: task_123",
+                "agent_id: default",
+                "child_session_id: session_child",
+                "status: completed",
+                "",
+                "summary:",
+                "delegated work completed",
+                "</runtime_event>",
+              ].join("\n"),
+              synthetic: true,
+              metadata: {
+                kind: "runtime-event",
+                runtimeEventType: "subagent.completed",
+                taskID: "task_123",
+                childSessionID: "session_child",
+                status: "completed",
+                agent: "default",
+              },
+            } as Message.TextPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: "user",
+    })
+    const serializedMessage = JSON.stringify(messages[0])
+    expect(serializedMessage).toContain("<runtime_event type=\\\"subagent.completed\\\">")
+    expect(serializedMessage).toContain("delegated work completed")
+  })
+
   it("does not replay AskUserQuestion UI metadata as provider options", async () => {
     const model = {
       capabilities: {

@@ -56,7 +56,7 @@ export const SpawnSubagentTool = Tool.define(
               action: "spawn",
               instruction:
                 task.runInBackground && task.status === "running"
-                  ? "Use read_subagent with this id to inspect progress or fetch the final result."
+                  ? "You may continue other work. Use wait_subagent when you need the result, or read_subagent to inspect progress. A <runtime_event type=\"subagent.completed\"> notification will also arrive when the background subagent completes."
                   : undefined,
             }),
           },
