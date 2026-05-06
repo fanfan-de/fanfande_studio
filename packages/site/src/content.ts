@@ -1,5 +1,9 @@
 export const navigationItems = [
   {
+    href: "/docs/",
+    label: "文档",
+  },
+  {
     href: "https://github.com/fanfan-de/fanfande_studio",
     label: "GitHub",
     external: true,

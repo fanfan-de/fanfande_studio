@@ -7,7 +7,16 @@ import * as Config from "#config/config.ts"
 import { Instance } from "#project/instance.ts"
 import * as Tool from "#tool/tool.ts"
 import * as Log from "#util/log.ts"
-import { McpClient, type McpToolDefinition, type McpToolCallResult, getMcpToolDisplayName, summarizeToolCallResult } from "#mcp/client.ts"
+import {
+  McpClient,
+  type McpResourceDefinition,
+  type McpResourceReadResult,
+  type McpResourceTemplateDefinition,
+  type McpToolCallResult,
+  type McpToolDefinition,
+  getMcpToolDisplayName,
+  summarizeToolCallResult,
+} from "#mcp/client.ts"
 
 const log = Log.create({ service: "mcp.manager" })
 
@@ -17,6 +26,8 @@ type ManagedServer = {
   client?: McpClient
   config: Config.McpServerSummary
   configKey: string
+  resourcesPromise?: Promise<McpResourceDefinition[]>
+  resourceTemplatesPromise?: Promise<McpResourceTemplateDefinition[]>
   toolsPromise?: Promise<McpToolDefinition[]>
 }
 
@@ -40,6 +51,42 @@ export interface McpToolDiagnostic {
   riskHint: "read-only" | "destructive" | "open-world" | "unknown"
   recommendedPolicy: Config.McpToolPolicyValue
   configuredPolicy?: Config.McpToolPolicyValue
+}
+
+export interface McpResourceListItem {
+  serverID: string
+  serverName: string
+  resource: McpResourceDefinition
+}
+
+export interface McpResourceTemplateListItem {
+  serverID: string
+  serverName: string
+  resourceTemplate: McpResourceTemplateDefinition
+}
+
+export interface McpResourceListError {
+  serverID: string
+  serverName: string
+  error: string
+}
+
+export interface McpResourceListResult {
+  items: McpResourceListItem[]
+  errors: McpResourceListError[]
+}
+
+export interface McpResourceTemplateListResult {
+  items: McpResourceTemplateListItem[]
+  errors: McpResourceListError[]
+}
+
+export interface McpReadResourceResult {
+  serverID: string
+  serverName: string
+  uri: string
+  contents: McpResourceReadResult["contents"]
+  meta?: McpResourceReadResult["_meta"]
 }
 
 type LiteralValue = string | number | bigint | boolean | null | undefined
@@ -268,6 +315,77 @@ export class McpManager {
     return result
   }
 
+  async listResources(serverID?: string): Promise<McpResourceListResult> {
+    const scopedServers = await this.activeResourceServers(serverID)
+    const result: McpResourceListResult = {
+      items: [],
+      errors: [],
+    }
+
+    for (const { server, handle } of scopedServers) {
+      try {
+        const resources = await this.serverResources(handle)
+        result.items.push(...resources.map((resource) => ({
+          serverID: server.id,
+          serverName: server.name ?? server.id,
+          resource,
+        })))
+      } catch (error) {
+        if (serverID) throw error
+        result.errors.push(resourceListError(server, error))
+      }
+    }
+
+    return result
+  }
+
+  async listResourceTemplates(serverID?: string): Promise<McpResourceTemplateListResult> {
+    const scopedServers = await this.activeResourceServers(serverID)
+    const result: McpResourceTemplateListResult = {
+      items: [],
+      errors: [],
+    }
+
+    for (const { server, handle } of scopedServers) {
+      try {
+        const resourceTemplates = await this.serverResourceTemplates(handle)
+        result.items.push(...resourceTemplates.map((resourceTemplate) => ({
+          serverID: server.id,
+          serverName: server.name ?? server.id,
+          resourceTemplate,
+        })))
+      } catch (error) {
+        if (serverID) throw error
+        result.errors.push(resourceListError(server, error))
+      }
+    }
+
+    return result
+  }
+
+  async readResource(
+    serverID: string,
+    uri: string,
+    abort?: AbortSignal,
+  ): Promise<McpReadResourceResult> {
+    const scopedServers = await this.activeResourceServers(serverID)
+    const entry = scopedServers[0]
+    if (!entry) {
+      throw new Error(`MCP server '${serverID}' is not available for project '${this.projectID}'.`)
+    }
+
+    const client = await this.clientFor(entry.handle)
+    const result = await client.readResource(uri, abort)
+
+    return {
+      serverID: entry.server.id,
+      serverName: entry.server.name ?? entry.server.id,
+      uri,
+      contents: result.contents,
+      meta: result._meta,
+    }
+  }
+
   async diagnose(serverID: string): Promise<McpServerDiagnostic> {
     const activeServers = await Config.resolveProjectMcpServers(this.projectID)
     const server = await Config.getProjectMcpServer(this.projectID, serverID)
@@ -352,6 +470,36 @@ export class McpManager {
       await handle.client?.dispose()
       this.handles.delete(serverID)
     }
+  }
+
+  private async activeResourceServers(serverID?: string) {
+    const servers = await Config.resolveProjectMcpServers(this.projectID)
+    await this.reconcile(servers)
+
+    const requestedServerID = serverID?.trim()
+    const scopedServers = requestedServerID
+      ? servers.filter((server) => server.id === requestedServerID)
+      : servers.filter((server) => server.enabled)
+
+    if (requestedServerID && scopedServers.length === 0) {
+      throw new Error(`MCP server '${requestedServerID}' is not available for project '${this.projectID}'.`)
+    }
+
+    return scopedServers.map((server) => {
+      if (!server.enabled) {
+        throw new Error(`MCP server '${server.id}' is disabled.`)
+      }
+
+      const handle = this.handles.get(server.id)
+      if (!handle) {
+        throw new Error(`MCP server '${server.id}' is not configured for project '${this.projectID}'.`)
+      }
+
+      return {
+        server,
+        handle,
+      }
+    })
   }
 
   private createToolInfo(server: Config.McpServerSummary, definition: McpToolDefinition, id: string): Tool.ToolInfo {
@@ -484,6 +632,16 @@ export class McpManager {
     return await handle.toolsPromise
   }
 
+  private async serverResources(handle: ManagedServer) {
+    handle.resourcesPromise ??= this.clientFor(handle).then((client) => client.listResources())
+    return await handle.resourcesPromise
+  }
+
+  private async serverResourceTemplates(handle: ManagedServer) {
+    handle.resourceTemplatesPromise ??= this.clientFor(handle).then((client) => client.listResourceTemplates())
+    return await handle.resourceTemplatesPromise
+  }
+
   private async clientFor(handle: ManagedServer) {
     if (handle.client) return handle.client
 
@@ -492,6 +650,10 @@ export class McpManager {
       cwd: handle.config.transport === "stdio" ? resolveServerCwd(handle.config.cwd) : Instance.directory,
       onToolsChanged: () => {
         handle.toolsPromise = undefined
+      },
+      onResourcesChanged: () => {
+        handle.resourcesPromise = undefined
+        handle.resourceTemplatesPromise = undefined
       },
       requestTimeoutMs: timeout,
       server: handle.config,
@@ -503,6 +665,14 @@ export class McpManager {
 
   private filterTools(server: Config.McpServerSummary, tools: McpToolDefinition[]) {
     return filterMcpTools(server, tools)
+  }
+}
+
+function resourceListError(server: Config.McpServerSummary, error: unknown): McpResourceListError {
+  return {
+    serverID: server.id,
+    serverName: server.name ?? server.id,
+    error: error instanceof Error ? error.message : String(error),
   }
 }
 
@@ -694,4 +864,16 @@ export async function tools() {
 
 export async function diagnose(serverID: string) {
   return await managerState().diagnose(serverID)
+}
+
+export async function listResources(serverID?: string) {
+  return await managerState().listResources(serverID)
+}
+
+export async function listResourceTemplates(serverID?: string) {
+  return await managerState().listResourceTemplates(serverID)
+}
+
+export async function readResource(serverID: string, uri: string, abort?: AbortSignal) {
+  return await managerState().readResource(serverID, uri, abort)
 }

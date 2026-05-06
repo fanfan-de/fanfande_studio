@@ -12,10 +12,13 @@ import z from "zod"
 import * as Config from "#config/config.ts"
 import { McpClient } from "#mcp/client.ts"
 import * as Mcp from "#mcp/manager.ts"
+import * as Agent from "#agent/agent.ts"
 import { Instance } from "#project/instance.ts"
 import * as Project from "#project/project.ts"
+import * as ResolveTools from "#session/core/resolve-tools.ts"
 import * as db from "#database/Sqlite.ts"
 import * as Tool from "#tool/tool.ts"
+import * as ToolRegistry from "#tool/registry.ts"
 
 async function createGitRepo(root: string, seed: string) {
   await mkdir(root, { recursive: true })
@@ -47,6 +50,31 @@ async function writeMockMcpServer(root: string) {
       "  },",
       "  annotations: { readOnlyHint: true },",
       "}]",
+      "const resources = [",
+      "  {",
+      "    uri: 'mock://notes/alpha',",
+      "    name: 'alpha-note',",
+      "    title: 'Alpha Note',",
+      "    description: 'A static alpha note resource',",
+      "    mimeType: 'text/plain',",
+      "    size: 19,",
+      "  },",
+      "  {",
+      "    uri: 'mock://binary/logo',",
+      "    name: 'logo',",
+      "    title: 'Logo Blob',",
+      "    description: 'A small binary resource',",
+      "    mimeType: 'application/octet-stream',",
+      "    size: 5,",
+      "  },",
+      "]",
+      "const resourceTemplates = [{",
+      "  uriTemplate: 'mock://notes/{name}',",
+      "  name: 'note-template',",
+      "  title: 'Note Template',",
+      "  description: 'Parameterized note resources',",
+      "  mimeType: 'text/plain',",
+      "}]",
       "rl.on('line', (line) => {",
       "  if (!line.trim()) return",
       "  const message = JSON.parse(line)",
@@ -56,7 +84,7 @@ async function writeMockMcpServer(root: string) {
       "      id: message.id,",
       "      result: {",
       "        protocolVersion: '2025-06-18',",
-      "        capabilities: { tools: { listChanged: false } },",
+      "        capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },",
       "        serverInfo: { name: 'mock-stdio', version: '1.0.0' },",
       "      },",
       "    })",
@@ -64,6 +92,35 @@ async function writeMockMcpServer(root: string) {
       "  }",
       "  if (message.method === 'tools/list') {",
       "    send({ jsonrpc: '2.0', id: message.id, result: { tools } })",
+      "    return",
+      "  }",
+      "  if (message.method === 'resources/list') {",
+      "    send({ jsonrpc: '2.0', id: message.id, result: { resources } })",
+      "    return",
+      "  }",
+      "  if (message.method === 'resources/templates/list') {",
+      "    send({ jsonrpc: '2.0', id: message.id, result: { resourceTemplates } })",
+      "    return",
+      "  }",
+      "  if (message.method === 'resources/read') {",
+      "    const uri = message.params?.uri ?? ''",
+      "    if (uri === 'mock://binary/logo') {",
+      "      send({",
+      "        jsonrpc: '2.0',",
+      "        id: message.id,",
+      "        result: {",
+      "          contents: [{ uri, mimeType: 'application/octet-stream', blob: 'aGVsbG8=' }],",
+      "        },",
+      "      })",
+      "      return",
+      "    }",
+      "    send({",
+      "      jsonrpc: '2.0',",
+      "      id: message.id,",
+      "      result: {",
+      "        contents: [{ uri, mimeType: 'text/plain', text: `resource:${uri}` }],",
+      "      },",
+      "    })",
       "    return",
       "  }",
       "  if (message.method === 'tools/call') {",
@@ -244,6 +301,72 @@ describe("mcp integration", () => {
     }
   })
 
+  test("McpClient should list resource metadata and read resources", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fanfande-mcp-client-resources-"))
+
+    try {
+      const script = await writeMockMcpServer(root)
+      const client = new McpClient({
+        cwd: root,
+        worktree: root,
+        requestTimeoutMs: 1000,
+        server: {
+          id: "mock",
+          name: "Mock",
+          transport: "stdio",
+          command: process.execPath,
+          args: [script],
+          enabled: true,
+        },
+      })
+
+      try {
+        const resources = await client.listResources()
+        expect(resources.map((resource) => resource.uri)).toEqual([
+          "mock://notes/alpha",
+          "mock://binary/logo",
+        ])
+        expect(resources[0]).toMatchObject({
+          name: "alpha-note",
+          title: "Alpha Note",
+          mimeType: "text/plain",
+        })
+
+        const resourceTemplates = await client.listResourceTemplates()
+        expect(resourceTemplates).toEqual([
+          expect.objectContaining({
+            name: "note-template",
+            title: "Note Template",
+            uriTemplate: "mock://notes/{name}",
+          }),
+        ])
+
+        const textResource = await client.readResource("mock://notes/alpha")
+        expect(textResource.contents).toEqual([
+          {
+            uri: "mock://notes/alpha",
+            mimeType: "text/plain",
+            text: "resource:mock://notes/alpha",
+          },
+        ])
+
+        const blobResource = await client.readResource("mock://binary/logo")
+        expect(blobResource.contents).toEqual([
+          {
+            uri: "mock://binary/logo",
+            mimeType: "application/octet-stream",
+            blob: "aGVsbG8=",
+          },
+        ])
+      } finally {
+        await client.dispose()
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   test("McpClient should list and call remote HTTP tools", async () => {
     const remote = await startMockHttpMcpServer()
 
@@ -340,6 +463,214 @@ describe("mcp integration", () => {
               echoed: "hello",
             },
           })
+        },
+      })
+    } finally {
+      await Instance.disposeAll()
+      if (projectID) {
+        db.deleteMany("project_configs", [{ column: "projectID", value: projectID }])
+        db.deleteMany("projects", [{ column: "id", value: projectID }])
+      }
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("Mcp manager should expose project-scoped resources and read selected resources", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fanfande-mcp-manager-resources-"))
+    let projectID: string | undefined
+
+    try {
+      await createGitRepo(root, "mcp-manager-resources")
+      const script = await writeMockMcpServer(root)
+      const { project } = await Project.fromDirectory(root)
+      projectID = project.id
+
+      await Config.setMcpServer(project.id, "mock", {
+        name: "Mock",
+        command: process.execPath,
+        args: [script],
+        enabled: true,
+      })
+
+      await Instance.provide({
+        directory: root,
+        fn: async () => {
+          const resources = await Mcp.listResources()
+          expect(resources.errors).toEqual([])
+          expect(resources.items).toEqual([
+            expect.objectContaining({
+              serverID: "mock",
+              serverName: "Mock",
+              resource: expect.objectContaining({
+                uri: "mock://notes/alpha",
+                name: "alpha-note",
+              }),
+            }),
+            expect.objectContaining({
+              serverID: "mock",
+              resource: expect.objectContaining({
+                uri: "mock://binary/logo",
+              }),
+            }),
+          ])
+
+          const scopedResources = await Mcp.listResources("mock")
+          expect(scopedResources.items).toHaveLength(2)
+
+          const templates = await Mcp.listResourceTemplates("mock")
+          expect(templates.errors).toEqual([])
+          expect(templates.items).toEqual([
+            expect.objectContaining({
+              serverID: "mock",
+              resourceTemplate: expect.objectContaining({
+                uriTemplate: "mock://notes/{name}",
+              }),
+            }),
+          ])
+
+          const resource = await Mcp.readResource("mock", "mock://notes/alpha")
+          expect(resource).toMatchObject({
+            serverID: "mock",
+            serverName: "Mock",
+            uri: "mock://notes/alpha",
+            contents: [
+              {
+                uri: "mock://notes/alpha",
+                mimeType: "text/plain",
+                text: "resource:mock://notes/alpha",
+              },
+            ],
+          })
+
+          await expect(Mcp.listResources("missing")).rejects.toThrow("is not available for project")
+        },
+      })
+    } finally {
+      await Instance.disposeAll()
+      if (projectID) {
+        db.deleteMany("project_configs", [{ column: "projectID", value: projectID }])
+        db.deleteMany("projects", [{ column: "id", value: projectID }])
+      }
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("MCP resource tools should be built-in, read-only, and visible to read-only agents", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fanfande-mcp-resource-tools-"))
+    let projectID: string | undefined
+
+    try {
+      await createGitRepo(root, "mcp-resource-tools")
+      const script = await writeMockMcpServer(root)
+      const { project } = await Project.fromDirectory(root)
+      projectID = project.id
+
+      await Config.setMcpServer(project.id, "mock", {
+        name: "Mock",
+        command: process.execPath,
+        args: [script],
+        enabled: true,
+      })
+
+      await Instance.provide({
+        directory: root,
+        fn: async () => {
+          const builtinTools = await ToolRegistry.builtinTools()
+          const ids = [
+            "list_mcp_resources",
+            "list_mcp_resource_templates",
+            "read_mcp_resource",
+          ]
+
+          for (const id of ids) {
+            const info = builtinTools.find((tool) => tool.id === id)
+            expect(info).toBeDefined()
+            expect(info?.capabilities).toMatchObject({
+              kind: "read",
+              readOnly: true,
+              destructive: false,
+              concurrency: "safe",
+            })
+          }
+
+          const ctx = {
+            sessionID: "session_mcp_resource_tools",
+            messageID: "message_mcp_resource_tools",
+          }
+          const listRuntime = await builtinTools.find((tool) => tool.id === "list_mcp_resources")!.init()
+          const listOutput = Tool.normalizeToolOutput(await listRuntime.execute({}, ctx))
+          expect(listOutput.text).toContain("MCP resources: 2")
+          expect(listOutput.text).toContain("mock://notes/alpha")
+          expect(await listRuntime.toModelOutput?.(listOutput)).toMatchObject({
+            type: "json",
+            value: {
+              kind: "mcp-resources",
+              resources: expect.any(Array),
+              errors: [],
+            },
+          })
+
+          const templateRuntime = await builtinTools.find((tool) => tool.id === "list_mcp_resource_templates")!.init()
+          const templateOutput = Tool.normalizeToolOutput(await templateRuntime.execute({ server_id: "mock" }, ctx))
+          expect(templateOutput.text).toContain("mock://notes/{name}")
+
+          const readRuntime = await builtinTools.find((tool) => tool.id === "read_mcp_resource")!.init()
+          const textOutput = Tool.normalizeToolOutput(await readRuntime.execute(
+            {
+              server_id: "mock",
+              uri: "mock://notes/alpha",
+            },
+            ctx,
+          ))
+          expect(textOutput.text).toContain("resource:mock://notes/alpha")
+
+          const blobOutput = Tool.normalizeToolOutput(await readRuntime.execute(
+            {
+              server_id: "mock",
+              uri: "mock://binary/logo",
+            },
+            ctx,
+          ))
+          expect(blobOutput.text).toContain("Blob: 5 bytes")
+          expect(blobOutput.text).not.toContain("aGVsbG8=")
+          expect(blobOutput.attachments).toEqual([
+            {
+              url: "data:application/octet-stream;base64,aGVsbG8=",
+              mime: "application/octet-stream",
+              filename: "logo",
+            },
+          ])
+          expect((blobOutput.metadata?.contents as any[])[0]).toMatchObject({
+            type: "blob",
+            blobBytes: 5,
+            blobOmitted: true,
+          })
+
+          const plan = await Agent.get("plan")
+          const sidechat = await Agent.get("sidechat")
+          if (!plan || !sidechat) {
+            throw new Error("Expected built-in agents to exist.")
+          }
+
+          const planTools = await ResolveTools.resolveTools({
+            agent: plan,
+            sessionID: "session_mcp_resource_tools_plan",
+            messageID: "message_mcp_resource_tools_plan",
+            abort: new AbortController().signal,
+          })
+          expect(planTools["list_mcp_resources"]).toBeDefined()
+          expect(planTools["list_mcp_resource_templates"]).toBeDefined()
+          expect(planTools["read_mcp_resource"]).toBeDefined()
+
+          const sidechatTools = await ResolveTools.resolveTools({
+            agent: sidechat,
+            sessionID: "session_mcp_resource_tools_sidechat",
+            messageID: "message_mcp_resource_tools_sidechat",
+            abort: new AbortController().signal,
+          })
+          expect(sidechatTools["list_mcp_resources"]).toBeDefined()
+          expect(sidechatTools["list_mcp_resource_templates"]).toBeDefined()
+          expect(sidechatTools["read_mcp_resource"]).toBeDefined()
         },
       })
     } finally {

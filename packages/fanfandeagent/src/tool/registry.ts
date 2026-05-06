@@ -17,6 +17,7 @@ import { GenerateImageTool } from "#tool/generate-image.ts"
 import { ListDirectoryTool } from "#tool/list-directory.ts"
 import { LspDefinitionTool, LspHoverTool, LspReferencesTool, LspWorkspaceSymbolsTool } from "#tool/lsp.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
+import { ListMcpResourceTemplatesTool, ListMcpResourcesTool, ReadMcpResourceTool } from "#tool/mcp-resources.ts"
 import { ReadBackgroundTaskTool } from "#tool/read-background-task.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
 import { ReadSubagentTool } from "#tool/read-subagent.ts"
@@ -68,6 +69,9 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     ReadSubagentTool,
     LoadSkillTool,
     ReadSkillResourceTool,
+    ListMcpResourcesTool,
+    ListMcpResourceTemplatesTool,
+    ReadMcpResourceTool,
     ReplaceTextTool,
     ApplyPatchTool,
     GlobTool,

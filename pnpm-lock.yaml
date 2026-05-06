@@ -264,6 +264,9 @@ importers:
 
   packages/site:
     dependencies:
+      marked:
+        specifier: ^18.0.3
+        version: 18.0.3
       react:
         specifier: ^19.2.0
         version: 19.2.5
@@ -2744,6 +2747,11 @@ packages:
 
   marked@17.0.1:
     resolution: {integrity: sha512-boeBdiS0ghpWcSwoNm/jJBwdpFaMnZWRzjA6SkUMYb40SVaN1x7mmfGKp0jvexGcx+7y2La5zRZsYFZI6Qpypg==}
+    engines: {node: '>= 20'}
+    hasBin: true
+
+  marked@18.0.3:
+    resolution: {integrity: sha512-7VT90JOkDeaRWpfjOReRGPEKn0ecdARBkDGL+tT1wZY0efPPqkUxLUSmzy/C7TIylQYJC9STISEsCHrqb/7VIA==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -6977,6 +6985,8 @@ snapshots:
   markdown-table@3.0.4: {}
 
   marked@17.0.1: {}
+
+  marked@18.0.3: {}
 
   matcher@3.0.0:
     dependencies:

@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
+import type { ReadResourceResult, Resource, ResourceTemplate } from "@modelcontextprotocol/sdk/types.js"
 import type { McpServerSummary } from "#config/config.ts"
 import * as Log from "#util/log.ts"
 
@@ -30,8 +31,13 @@ export interface McpToolCallResult {
   isError?: boolean
 }
 
+export type McpResourceDefinition = Resource
+export type McpResourceTemplateDefinition = ResourceTemplate
+export type McpResourceReadResult = ReadResourceResult
+
 export interface McpClientOptions {
   cwd: string
+  onResourcesChanged?: () => void
   onToolsChanged?: () => void
   requestTimeoutMs: number
   server: McpServerSummary
@@ -163,6 +169,52 @@ export class McpClient {
     return tools
   }
 
+  async listResources(): Promise<Resource[]> {
+    await this.ensureInitialized()
+    const resources: Resource[] = []
+    let cursor: string | undefined
+
+    do {
+      const result = await this.client!.listResources(cursor ? { cursor } : undefined, {
+        timeout: this.options.requestTimeoutMs,
+      })
+      resources.push(...result.resources)
+      cursor = result.nextCursor
+    } while (cursor)
+
+    return resources
+  }
+
+  async listResourceTemplates(): Promise<ResourceTemplate[]> {
+    await this.ensureInitialized()
+    const resourceTemplates: ResourceTemplate[] = []
+    let cursor: string | undefined
+
+    do {
+      const result = await this.client!.listResourceTemplates(cursor ? { cursor } : undefined, {
+        timeout: this.options.requestTimeoutMs,
+      })
+      resourceTemplates.push(...result.resourceTemplates)
+      cursor = result.nextCursor
+    } while (cursor)
+
+    return resourceTemplates
+  }
+
+  async readResource(uri: string, abort?: AbortSignal): Promise<ReadResourceResult> {
+    await this.ensureInitialized()
+
+    return await this.client!.readResource(
+      {
+        uri,
+      },
+      {
+        signal: abort,
+        timeout: this.options.requestTimeoutMs,
+      },
+    )
+  }
+
   async callTool(
     toolName: string,
     args: Record<string, unknown> | undefined,
@@ -203,6 +255,17 @@ export class McpClient {
             },
           },
           listChanged: {
+            resources: {
+              onChanged: (error) => {
+                if (error) {
+                  log.warn("failed to refresh mcp resources after list_changed", {
+                    serverID: this.options.server.id,
+                    error: error instanceof Error ? error.message : String(error),
+                  })
+                }
+                this.options.onResourcesChanged?.()
+              },
+            },
             tools: {
               onChanged: (error) => {
                 if (error) {
