@@ -516,7 +516,9 @@ export function useSessionLifecycleController({
       return
     }
 
-    openCreateSessionTab(selectedWorkspace?.id ?? workspaces[0]?.id ?? null)
+    const preferredWorkspaceID = selectedWorkspace?.id ?? workspaces[0]?.id ?? null
+    if (focusExistingCreateSessionTabAcrossPanes(preferredWorkspaceID)) return
+    openCreateSessionTab(preferredWorkspaceID)
   }
 
   function handleProjectClick(workspace: WorkspaceGroup) {

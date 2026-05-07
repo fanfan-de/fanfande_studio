@@ -6396,7 +6396,7 @@ describe("App", () => {
     expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
   })
 
-  it("allows multiple create session tabs with independent project selections", async () => {
+  it("reuses the existing create session tab when the sidebar create action is clicked again", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
@@ -6410,19 +6410,9 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
 
-    expect(await screen.findByRole("button", { name: "Switch to create session tab 2" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
     expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
-
-    fireEvent.change(getCreateSessionProjectSelect(), {
-      target: { value: "C:\\Projects\\Project 2\\app" },
-    })
-    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 2\\app")
-
-    fireEvent.click(screen.getByRole("button", { name: "Switch to create session tab" }))
-    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
-
-    fireEvent.click(screen.getByRole("button", { name: "Switch to create session tab 2" }))
-    expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 2\\app")
   })
 
   it("shows the session canvas top menu while a create session tab is active", async () => {
