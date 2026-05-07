@@ -73,6 +73,9 @@ describe("PreviewPanel", () => {
     expect(getPreviewFailure("ERR_CONNECTION_REFUSED", -102)).toMatchObject({
       kind: "connection-refused",
     })
+    expect(getPreviewFailure("ERR_EMPTY_RESPONSE", -324)).toMatchObject({
+      kind: "connection-reset",
+    })
     expect(getPreviewFailure("ERR_NAME_NOT_RESOLVED", -105)).toMatchObject({
       kind: "dns",
     })

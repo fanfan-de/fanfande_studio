@@ -126,6 +126,14 @@ export function getPreviewFailure(errorDescription?: string, errorCode?: number)
       suggestions: ["Reload the preview.", "Check whether the local service restarted or crashed."],
     }
   }
+  if (/ERR_EMPTY_RESPONSE/i.test(message) || errorCode === -324) {
+    return {
+      code: "ERR_EMPTY_RESPONSE",
+      kind: "connection-reset",
+      message: "The preview service accepted the connection but returned an empty response.",
+      suggestions: ["Restart the local dev server.", "Check server logs for crashes or early connection closes."],
+    }
+  }
   if (/ERR_TIMED_OUT|TIMEOUT/i.test(message) || errorCode === -7) {
     return {
       code: "ERR_TIMED_OUT",
