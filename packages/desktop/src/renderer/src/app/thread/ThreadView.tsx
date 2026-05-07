@@ -1,4 +1,5 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from "react"
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
+import { createPortal } from "react-dom"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
 import { createEmptyComposerDraftState } from "../composer/draft-state"
@@ -7,7 +8,10 @@ import {
   ChevronRightIcon,
   CloseIcon,
   CopyIcon,
+  MinimizeIcon,
   PaperclipIcon,
+  PlusIcon,
+  ResetIcon,
   SideChatIcon
 } from "../icons"
 import { joinClassNames, writeTextToClipboard } from "../shared-ui"
@@ -106,6 +110,41 @@ type QuestionAnswerHandler = (input: {
 }) => void | Promise<void>
 
 const THREAD_BOTTOM_LOCK_THRESHOLD_PX = 32
+const IMAGE_LIGHTBOX_BODY_CLASS = "is-image-lightbox-open"
+const IMAGE_LIGHTBOX_FOCUSABLE_SELECTOR = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+const IMAGE_LIGHTBOX_MIN_ZOOM = 0.5
+const IMAGE_LIGHTBOX_MAX_ZOOM = 4
+const IMAGE_LIGHTBOX_ZOOM_STEP = 0.1
+const IMAGE_TALL_RATIO_THRESHOLD = 1.8
+
+type ImagePreviewFitMode = "fit-width" | "fit-contain"
+
+interface ImagePreviewPayload {
+  src: string
+  alt: string
+  width?: number
+  height?: number
+  mimeType?: string
+  triggerElement?: HTMLButtonElement | null
+}
+
+interface ActiveImagePreview extends ImagePreviewPayload {
+  openedAt: number
+}
+
+function clampImageZoom(value: number) {
+  return Math.min(IMAGE_LIGHTBOX_MAX_ZOOM, Math.max(IMAGE_LIGHTBOX_MIN_ZOOM, Math.round(value * 100) / 100))
+}
+
+function isTallImage(width?: number, height?: number) {
+  if (!width || !height || width <= 0 || height <= 0) return false
+  return height / width >= IMAGE_TALL_RATIO_THRESHOLD
+}
+
+function getFocusableElements(container: HTMLElement | null) {
+  if (!container) return []
+  return Array.from(container.querySelectorAll<HTMLElement>(IMAGE_LIGHTBOX_FOCUSABLE_SELECTOR))
+}
 
 function isThreadColumnPinnedToBottom(threadColumn: HTMLDivElement) {
   return threadColumn.scrollHeight - threadColumn.scrollTop - threadColumn.clientHeight <= THREAD_BOTTOM_LOCK_THRESHOLD_PX
@@ -418,6 +457,7 @@ function AssistantTurnSections({
   answeredQuestionIDs,
   isQuestionAnswerDisabled = false,
   items,
+  onOpenImagePreview,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
   renderAfterSection,
@@ -429,6 +469,7 @@ function AssistantTurnSections({
   answeredQuestionIDs: Set<string>
   isQuestionAnswerDisabled?: boolean
   items: AssistantTraceItem[]
+  onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect: ((file: string) => void) | undefined
   renderAfterSection?: (input: {
@@ -469,6 +510,7 @@ function AssistantTurnSections({
                   answeredQuestionIDs={answeredQuestionIDs}
                   item={item}
                   isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+                  onOpenImagePreview={onOpenImagePreview}
                   onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                   onFileChangeSelect={onFileChangeSelect}
                   shouldCollapseAfterTurnCompletion={shouldCollapseReasoningAndTools}
@@ -490,44 +532,44 @@ function AssistantTurnSections({
   )
 }
 
-function TraceImagePreview({ item }: { item: AssistantTraceItem }) {
+function TraceImagePreview({
+  item,
+  onOpenImagePreview,
+}: {
+  item: AssistantTraceItem
+  onOpenImagePreview?: (payload: ImagePreviewPayload) => void
+}) {
   const src = item.src ?? ""
   const alt = item.alt || item.title || "Image attachment"
   const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">("loading")
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const thumbnailStyle = item.width && item.height ? { aspectRatio: `${item.width} / ${item.height}` } : undefined
   const sizeText = item.width && item.height ? `${item.width} x ${item.height}` : ""
   const metaText = [item.mimeType, sizeText].filter(Boolean).join(" | ")
 
   useEffect(() => {
     setLoadState("loading")
-    setIsPreviewOpen(false)
   }, [src])
-
-  useEffect(() => {
-    if (!isPreviewOpen) return
-
-    function handleWindowKeyDown(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") {
-        setIsPreviewOpen(false)
-      }
-    }
-
-    window.addEventListener("keydown", handleWindowKeyDown)
-    return () => window.removeEventListener("keydown", handleWindowKeyDown)
-  }, [isPreviewOpen])
 
   if (!src) return null
 
   return (
     <div className="trace-image-preview">
       <button
+        ref={triggerRef}
         type="button"
         className={joinClassNames("trace-image-thumbnail", `is-${loadState}`)}
         style={thumbnailStyle}
         aria-label={`Preview ${alt}`}
         disabled={loadState === "error"}
-        onClick={() => setIsPreviewOpen(true)}
+        onClick={() => onOpenImagePreview?.({
+          src,
+          alt,
+          width: item.width,
+          height: item.height,
+          mimeType: item.mimeType,
+          triggerElement: triggerRef.current,
+        })}
       >
         <img
           className="trace-image-thumbnail-image"
@@ -541,28 +583,284 @@ function TraceImagePreview({ item }: { item: AssistantTraceItem }) {
         {loadState === "error" ? <span className="trace-image-state is-error">Image failed to load</span> : null}
       </button>
       {metaText ? <p className="trace-image-meta">{metaText}</p> : null}
-      {isPreviewOpen ? (
-        <div
-          className="trace-image-preview-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label={alt}
-          onClick={() => setIsPreviewOpen(false)}
-        >
-          <div className="trace-image-preview-panel" onClick={(event) => event.stopPropagation()}>
+    </div>
+  )
+}
+
+function ImageLightbox({
+  preview,
+  onClose,
+}: {
+  preview: ActiveImagePreview
+  onClose: () => void
+}) {
+  const isDefaultFitWidth = isTallImage(preview.width, preview.height)
+  const [fitMode, setFitMode] = useState<ImagePreviewFitMode>(isDefaultFitWidth ? "fit-width" : "fit-contain")
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = useState(false)
+  const backdropRef = useRef<HTMLDivElement | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const dragStateRef = useRef<{
+    pointerId: number
+    pointerTarget: HTMLDivElement
+    originClientX: number
+    originClientY: number
+    originPanX: number
+    originPanY: number
+  } | null>(null)
+  const effectiveLabel = preview.alt || "Image preview"
+
+  const closePreview = useEffectEvent(() => {
+    onClose()
+    const trigger = preview.triggerElement
+    if (trigger?.isConnected) {
+      trigger.focus()
+    }
+  })
+
+  const adjustZoom = useEffectEvent((delta: number) => {
+    setZoom((currentZoom) => clampImageZoom(currentZoom + delta))
+  })
+
+  const resetView = useEffectEvent(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+    setIsDragging(false)
+    dragStateRef.current = null
+  })
+
+  useEffect(() => {
+    setFitMode(isTallImage(preview.width, preview.height) ? "fit-width" : "fit-contain")
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+    setIsDragging(false)
+    dragStateRef.current = null
+  }, [preview.height, preview.src, preview.width])
+
+  useEffect(() => {
+    if (zoom > 1) return
+    setPan({ x: 0, y: 0 })
+    setIsDragging(false)
+    const dragState = dragStateRef.current
+    if (dragState?.pointerTarget.hasPointerCapture(dragState.pointerId)) {
+      dragState.pointerTarget.releasePointerCapture(dragState.pointerId)
+    }
+    dragStateRef.current = null
+  }, [zoom])
+
+  useEffect(() => {
+    document.body.classList.add(IMAGE_LIGHTBOX_BODY_CLASS)
+    closeButtonRef.current?.focus()
+    return () => {
+      document.body.classList.remove(IMAGE_LIGHTBOX_BODY_CLASS)
+    }
+  }, [])
+
+  useEffect(() => {
+    function handleWindowKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        closePreview()
+        return
+      }
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault()
+        adjustZoom(IMAGE_LIGHTBOX_ZOOM_STEP)
+        return
+      }
+      if (event.key === "-") {
+        event.preventDefault()
+        adjustZoom(-IMAGE_LIGHTBOX_ZOOM_STEP)
+        return
+      }
+      if (event.key === "0") {
+        event.preventDefault()
+        resetView()
+      }
+    }
+
+    window.addEventListener("keydown", handleWindowKeyDown)
+    return () => window.removeEventListener("keydown", handleWindowKeyDown)
+  }, [adjustZoom, closePreview, resetView])
+
+  function handleBackdropKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return
+    const focusable = getFocusableElements(backdropRef.current)
+    if (focusable.length === 0) {
+      event.preventDefault()
+      return
+    }
+
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const activeElement = document.activeElement as HTMLElement | null
+    const activeInside = activeElement ? backdropRef.current?.contains(activeElement) : false
+
+    if (event.shiftKey) {
+      if (!activeInside || activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      }
+      return
+    }
+
+    if (!activeInside || activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
+  function handleViewportWheel(event: ReactWheelEvent<HTMLDivElement>) {
+    if (!event.ctrlKey && !event.metaKey) return
+    event.preventDefault()
+    adjustZoom(event.deltaY < 0 ? IMAGE_LIGHTBOX_ZOOM_STEP : -IMAGE_LIGHTBOX_ZOOM_STEP)
+  }
+
+  function handleCanvasPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (zoom <= 1) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      pointerTarget: event.currentTarget,
+      originClientX: event.clientX,
+      originClientY: event.clientY,
+      originPanX: pan.x,
+      originPanY: pan.y,
+    }
+    setIsDragging(true)
+  }
+
+  function handleCanvasPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const dragState = dragStateRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    event.preventDefault()
+    const deltaX = event.clientX - dragState.originClientX
+    const deltaY = event.clientY - dragState.originClientY
+    setPan({
+      x: dragState.originPanX + deltaX,
+      y: dragState.originPanY + deltaY,
+    })
+  }
+
+  function handleCanvasPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    const dragState = dragStateRef.current
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    if (dragState.pointerTarget.hasPointerCapture(event.pointerId)) {
+      dragState.pointerTarget.releasePointerCapture(event.pointerId)
+    }
+    dragStateRef.current = null
+    setIsDragging(false)
+  }
+
+  const zoomPercent = Math.round(zoom * 100)
+
+  if (typeof document === "undefined") return null
+
+  return createPortal(
+    <div
+      ref={backdropRef}
+      className="trace-image-lightbox-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={effectiveLabel}
+      tabIndex={-1}
+      onClick={closePreview}
+      onKeyDown={handleBackdropKeyDown}
+    >
+      <div className="trace-image-lightbox-panel" onClick={(event) => event.stopPropagation()}>
+        <div className="trace-image-lightbox-toolbar">
+          <div className="trace-image-lightbox-toolbar-group">
             <button
               type="button"
-              className="trace-image-preview-close"
+              className={fitMode === "fit-width" ? "trace-image-lightbox-toolbar-button is-active" : "trace-image-lightbox-toolbar-button"}
+              aria-label="Fit width"
+              onClick={() => {
+                setFitMode("fit-width")
+                resetView()
+              }}
+            >
+              Fit width
+            </button>
+            <button
+              type="button"
+              className={fitMode === "fit-contain" ? "trace-image-lightbox-toolbar-button is-active" : "trace-image-lightbox-toolbar-button"}
+              aria-label="Fit contain"
+              onClick={() => {
+                setFitMode("fit-contain")
+                resetView()
+              }}
+            >
+              Fit contain
+            </button>
+          </div>
+
+          <div className="trace-image-lightbox-toolbar-group">
+            <button
+              type="button"
+              className="trace-image-lightbox-toolbar-icon-button"
+              aria-label="Zoom out"
+              onClick={() => adjustZoom(-IMAGE_LIGHTBOX_ZOOM_STEP)}
+            >
+              <MinimizeIcon />
+            </button>
+            <button
+              type="button"
+              className="trace-image-lightbox-toolbar-button trace-image-lightbox-zoom-button"
+              aria-label="Reset zoom"
+              onClick={resetView}
+            >
+              <ResetIcon />
+              <span>{zoomPercent}%</span>
+            </button>
+            <button
+              type="button"
+              className="trace-image-lightbox-toolbar-icon-button"
+              aria-label="Zoom in"
+              onClick={() => adjustZoom(IMAGE_LIGHTBOX_ZOOM_STEP)}
+            >
+              <PlusIcon />
+            </button>
+            <button
+              ref={closeButtonRef}
+              type="button"
+              className="trace-image-lightbox-close"
               aria-label="Close image preview"
-              onClick={() => setIsPreviewOpen(false)}
+              onClick={closePreview}
             >
               <CloseIcon />
             </button>
-            <img className="trace-image-preview-full" src={src} alt={alt} />
           </div>
         </div>
-      ) : null}
-    </div>
+
+        <div className={fitMode === "fit-width" ? "trace-image-lightbox-viewport is-fit-width" : "trace-image-lightbox-viewport"} onWheel={handleViewportWheel}>
+          <div
+            className={joinClassNames(
+              "trace-image-lightbox-canvas",
+              `is-${fitMode}`,
+              zoom > 1 && "is-zoomed",
+              isDragging && "is-dragging",
+            )}
+            onPointerCancel={handleCanvasPointerEnd}
+            onPointerDown={handleCanvasPointerDown}
+            onPointerMove={handleCanvasPointerMove}
+            onPointerUp={handleCanvasPointerEnd}
+          >
+            <img
+              className="trace-image-lightbox-image"
+              src={preview.src}
+              alt={preview.alt}
+              draggable={false}
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -809,6 +1107,7 @@ function TraceItemView({
   answeredQuestionIDs,
   item,
   isQuestionAnswerDisabled = false,
+  onOpenImagePreview,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
   shouldCollapseAfterTurnCompletion = false,
@@ -817,6 +1116,7 @@ function TraceItemView({
   answeredQuestionIDs?: Set<string>
   item: AssistantTraceItem
   isQuestionAnswerDisabled?: boolean
+  onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect?: (file: string) => void
   shouldCollapseAfterTurnCompletion?: boolean
@@ -876,7 +1176,7 @@ function TraceItemView({
           {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
           {item.status ? <span className={`trace-item-status is-${item.status}`}>{item.status}</span> : null}
         </div>
-        <TraceImagePreview item={item} />
+        <TraceImagePreview item={item} onOpenImagePreview={onOpenImagePreview} />
         {item.text ? <ThreadRichText className="trace-item-text" text={item.text} /> : null}
         {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
         {renderDebugEntries()}
@@ -1517,6 +1817,7 @@ export function ThreadView({
   const readOnlySideChat = isSideChatSession(activeSession)
   const [copiedResponseTurnID, setCopiedResponseTurnID] = useState<string | null>(null)
   const [copiedUserTurnID, setCopiedUserTurnID] = useState<string | null>(null)
+  const [activeImagePreview, setActiveImagePreview] = useState<ActiveImagePreview | null>(null)
   const copiedResponseTimeoutRef = useRef<number | null>(null)
   const copiedUserTimeoutRef = useRef<number | null>(null)
   const isPinnedToBottomRef = useRef(true)
@@ -1567,6 +1868,18 @@ export function ThreadView({
     } catch (error) {
       console.error("[desktop] Failed to copy user message:", error)
     }
+  })
+
+  const handleOpenImagePreview = useEffectEvent((payload: ImagePreviewPayload) => {
+    if (!payload.src) return
+    setActiveImagePreview({
+      ...payload,
+      openedAt: Date.now(),
+    })
+  })
+
+  const handleCloseImagePreview = useEffectEvent(() => {
+    setActiveImagePreview(null)
   })
 
   useLayoutEffect(() => {
@@ -1697,6 +2010,7 @@ export function ThreadView({
                         isQuestionAnswerDisabled={isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
                         turnID={turn.id}
                         items={traceItems}
+                        onOpenImagePreview={handleOpenImagePreview}
                         onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                         onFileChangeSelect={onFileChangeSelect}
                         renderAfterSection={({ items, sectionKey }) => {
@@ -1814,6 +2128,13 @@ export function ThreadView({
           </>
         )}
       </div>
+      {activeImagePreview ? (
+        <ImageLightbox
+          key={`${activeImagePreview.src}:${activeImagePreview.openedAt}`}
+          preview={activeImagePreview}
+          onClose={handleCloseImagePreview}
+        />
+      ) : null}
     </section>
   )
 }

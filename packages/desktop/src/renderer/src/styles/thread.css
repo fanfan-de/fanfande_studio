@@ -991,58 +991,157 @@
   line-height: 1.4;
 }
 
-.trace-image-preview-backdrop {
+body.is-image-lightbox-open {
+  overflow: hidden;
+}
+
+.trace-image-lightbox-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 120;
   display: grid;
   place-items: center;
-  padding: 24px;
-  background: rgba(12, 20, 31, 0.72);
+  padding: 18px;
+  background: rgba(10, 17, 27, 0.82);
 }
 
-.trace-image-preview-panel {
-  position: relative;
+.trace-image-lightbox-panel {
+  width: min(96vw, 1400px);
+  height: min(94vh, 980px);
   display: grid;
-  max-width: min(94vw, 1200px);
-  max-height: 90vh;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(8, 14, 22, 0.94);
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.44);
 }
 
-.trace-image-preview-full {
-  display: block;
-  max-width: min(94vw, 1200px);
-  max-height: 90vh;
-  object-fit: contain;
+.trace-image-lightbox-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.trace-image-lightbox-toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.trace-image-lightbox-toolbar-button,
+.trace-image-lightbox-toolbar-icon-button,
+.trace-image-lightbox-close {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(218, 229, 241, 0.28);
   border-radius: 8px;
-  background: #0f1722;
-  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.34);
+  color: #eff7ff;
+  background: rgba(14, 23, 34, 0.9);
 }
 
-.trace-image-preview-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 1;
-  display: grid;
-  place-items: center;
+.trace-image-lightbox-toolbar-icon-button,
+.trace-image-lightbox-close {
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 8px;
-  background: rgba(15, 23, 34, 0.78);
-  color: #ffffff;
+  display: grid;
+  place-items: center;
 }
 
-.trace-image-preview-close:hover,
-.trace-image-preview-close:focus-visible {
-  background: rgba(15, 23, 34, 0.94);
+.trace-image-lightbox-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.trace-image-lightbox-toolbar-button.is-active {
+  border-color: rgba(121, 167, 207, 0.92);
+  background: rgba(43, 79, 118, 0.78);
+}
+
+.trace-image-lightbox-toolbar-button:hover,
+.trace-image-lightbox-toolbar-button:focus-visible,
+.trace-image-lightbox-toolbar-icon-button:hover,
+.trace-image-lightbox-toolbar-icon-button:focus-visible,
+.trace-image-lightbox-close:hover,
+.trace-image-lightbox-close:focus-visible {
+  border-color: rgba(174, 204, 231, 0.92);
+  background: rgba(28, 45, 65, 0.95);
   outline: none;
 }
 
-.trace-image-preview-close svg {
+.trace-image-lightbox-zoom-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.trace-image-lightbox-toolbar-icon-button svg,
+.trace-image-lightbox-close svg {
   width: 16px;
   height: 16px;
+}
+
+.trace-image-lightbox-viewport {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid rgba(176, 196, 216, 0.22);
+  border-radius: 10px;
+  background: rgba(14, 23, 34, 0.7);
+}
+
+.trace-image-lightbox-viewport.is-fit-width {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.trace-image-lightbox-canvas {
+  min-width: 100%;
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.trace-image-lightbox-canvas.is-fit-width {
+  display: block;
+  min-height: auto;
+  padding: 0;
+}
+
+.trace-image-lightbox-canvas.is-zoomed {
+  cursor: grab;
+}
+
+.trace-image-lightbox-canvas.is-zoomed.is-dragging {
+  cursor: grabbing;
+}
+
+.trace-image-lightbox-image {
+  display: block;
+  transform-origin: center center;
+  transition: transform 120ms ease;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.trace-image-lightbox-canvas.is-fit-contain .trace-image-lightbox-image {
+  max-width: 100%;
+  max-height: calc(94vh - 140px);
+  object-fit: contain;
+}
+
+.trace-image-lightbox-canvas.is-fit-width .trace-image-lightbox-image {
+  width: 100%;
+  max-width: none;
+  height: auto;
 }
 
 .trace-kind-error {

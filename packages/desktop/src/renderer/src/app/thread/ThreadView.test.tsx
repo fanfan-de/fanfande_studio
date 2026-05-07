@@ -229,7 +229,7 @@ describe("ThreadView image trace items", () => {
       },
     ]
 
-    const { getByAltText, getByRole, getByText } = renderThread([
+    const { container, getByAltText, getByRole, getByText } = renderThread([
       assistantTraceTurn("assistant-images", items, false),
     ])
 
@@ -239,7 +239,184 @@ describe("ThreadView image trace items", () => {
 
     fireEvent.click(getByRole("button", { name: "Preview First preview" }))
 
+    const dialog = getByRole("dialog", { name: "First preview" })
+    expect(dialog).toBeInTheDocument()
+    expect(document.body.contains(dialog)).toBe(true)
+    expect(container.contains(dialog)).toBe(false)
+  })
+
+  it("closes the lightbox with Escape and restores focus to the thumbnail trigger", () => {
+    const items: AssistantTraceItem[] = [
+      {
+        id: "image-1",
+        kind: "image",
+        timestamp: 1,
+        label: "Image",
+        title: "first.png",
+        src: "https://example.com/first.png",
+        mimeType: "image/png",
+        width: 512,
+        height: 512,
+        alt: "First preview",
+        status: "completed",
+      },
+    ]
+    const { getByRole, queryByRole } = renderThread([
+      assistantTraceTurn("assistant-images", items, false),
+    ])
+
+    const previewButton = getByRole("button", { name: "Preview First preview" })
+    previewButton.focus()
+
+    fireEvent.click(previewButton)
     expect(getByRole("dialog", { name: "First preview" })).toBeInTheDocument()
+    expect(document.body.classList.contains("is-image-lightbox-open")).toBe(true)
+
+    fireEvent.keyDown(window, { key: "Escape" })
+
+    expect(queryByRole("dialog", { name: "First preview" })).toBeNull()
+    expect(document.body.classList.contains("is-image-lightbox-open")).toBe(false)
+    expect(document.activeElement).toBe(previewButton)
+  })
+
+  it("uses fit-width by default for tall images and fit-contain for regular images", () => {
+    const items: AssistantTraceItem[] = [
+      {
+        id: "image-1",
+        kind: "image",
+        timestamp: 1,
+        label: "Image",
+        title: "tall.png",
+        src: "https://example.com/tall.png",
+        mimeType: "image/png",
+        width: 1440,
+        height: 3557,
+        alt: "Tall preview",
+        status: "completed",
+      },
+      {
+        id: "image-2",
+        kind: "image",
+        timestamp: 2,
+        label: "Image",
+        title: "wide.png",
+        src: "https://example.com/wide.png",
+        mimeType: "image/png",
+        width: 1920,
+        height: 1080,
+        alt: "Wide preview",
+        status: "completed",
+      },
+    ]
+    const { getByRole, queryByRole } = renderThread([
+      assistantTraceTurn("assistant-images", items, false),
+    ])
+
+    fireEvent.click(getByRole("button", { name: "Preview Tall preview" }))
+    expect(document.querySelector(".trace-image-lightbox-canvas.is-fit-width")).not.toBeNull()
+    fireEvent.keyDown(window, { key: "Escape" })
+    expect(queryByRole("dialog", { name: "Tall preview" })).toBeNull()
+
+    fireEvent.click(getByRole("button", { name: "Preview Wide preview" }))
+    expect(document.querySelector(".trace-image-lightbox-canvas.is-fit-contain")).not.toBeNull()
+  })
+
+  it("supports keyboard zoom shortcuts and reset", () => {
+    const items: AssistantTraceItem[] = [
+      {
+        id: "image-1",
+        kind: "image",
+        timestamp: 1,
+        label: "Image",
+        title: "first.png",
+        src: "https://example.com/first.png",
+        mimeType: "image/png",
+        width: 512,
+        height: 512,
+        alt: "First preview",
+        status: "completed",
+      },
+    ]
+    const { getByRole } = renderThread([
+      assistantTraceTurn("assistant-images", items, false),
+    ])
+
+    fireEvent.click(getByRole("button", { name: "Preview First preview" }))
+    const resetZoomButton = getByRole("button", { name: "Reset zoom" })
+    expect(resetZoomButton.textContent).toContain("100%")
+
+    fireEvent.keyDown(window, { key: "+" })
+    expect(resetZoomButton.textContent).toContain("110%")
+
+    fireEvent.keyDown(window, { key: "-" })
+    expect(resetZoomButton.textContent).toContain("100%")
+
+    fireEvent.keyDown(window, { key: "=" })
+    expect(resetZoomButton.textContent).toContain("110%")
+
+    fireEvent.keyDown(window, { key: "0" })
+    expect(resetZoomButton.textContent).toContain("100%")
+  })
+
+  it("closes on backdrop click and stays open when clicking inside the panel", () => {
+    const items: AssistantTraceItem[] = [
+      {
+        id: "image-1",
+        kind: "image",
+        timestamp: 1,
+        label: "Image",
+        title: "first.png",
+        src: "https://example.com/first.png",
+        mimeType: "image/png",
+        width: 512,
+        height: 512,
+        alt: "First preview",
+        status: "completed",
+      },
+    ]
+    const { getByRole, queryByRole } = renderThread([
+      assistantTraceTurn("assistant-images", items, false),
+    ])
+
+    fireEvent.click(getByRole("button", { name: "Preview First preview" }))
+
+    const panel = document.querySelector(".trace-image-lightbox-panel") as HTMLElement
+    fireEvent.click(panel)
+    expect(getByRole("dialog", { name: "First preview" })).toBeInTheDocument()
+
+    const backdrop = document.querySelector(".trace-image-lightbox-backdrop") as HTMLElement
+    fireEvent.click(backdrop)
+    expect(queryByRole("dialog", { name: "First preview" })).toBeNull()
+  })
+
+  it("does not open the preview when image loading fails", () => {
+    const items: AssistantTraceItem[] = [
+      {
+        id: "image-1",
+        kind: "image",
+        timestamp: 1,
+        label: "Image",
+        title: "broken.png",
+        src: "https://example.com/broken.png",
+        mimeType: "image/png",
+        width: 512,
+        height: 512,
+        alt: "Broken preview",
+        status: "completed",
+      },
+    ]
+    const { getByAltText, getByRole, queryByRole } = renderThread([
+      assistantTraceTurn("assistant-images", items, false),
+    ])
+
+    const thumbnail = getByAltText("Broken preview")
+    fireEvent.error(thumbnail)
+
+    const previewButton = getByRole("button", { name: "Preview Broken preview" }) as HTMLButtonElement
+    expect(previewButton.disabled).toBe(true)
+
+    fireEvent.click(previewButton)
+    expect(queryByRole("dialog", { name: "Broken preview" })).toBeNull()
   })
 })
 
