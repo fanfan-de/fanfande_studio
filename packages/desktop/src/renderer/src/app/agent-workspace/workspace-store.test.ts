@@ -112,9 +112,18 @@ describe("workspace store", () => {
 
     expect(store.getState().sessions.workspaces).toEqual([])
     expect(store.getState().sessions.selectedFolderID).toBeNull()
-    expect(store.getState().sessions.expandedFolderID).toBeNull()
+    expect(store.getState().sessions.expandedFolderIDs).toEqual([])
     expect(store.getState().sessions.isInitialWorkspaceLoadPending).toBe(true)
     expect(store.getState().agentStream.conversations).toEqual({})
+  })
+
+  it("starts with the seed selected workspace expanded when seed data is used", () => {
+    const store = createTestStore()
+
+    expect(store.getState().sessions.selectedFolderID).not.toBeNull()
+    expect(store.getState().sessions.expandedFolderIDs).toEqual([
+      store.getState().sessions.selectedFolderID,
+    ])
   })
 
   it("tracks stream permissions and request lifecycle state", () => {

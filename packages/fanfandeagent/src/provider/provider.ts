@@ -1318,8 +1318,15 @@ export async function getDefaultModelRef(configID = resolveConfigID()): Promise<
   }
 
   const selection = await getSelection(configID)
-  const parsed = parseModelReference(selection.model)
-  if (parsed) {
+  const globalSelection =
+    configID === Config.GLOBAL_CONFIG_ID
+      ? undefined
+      : await getSelection(Config.GLOBAL_CONFIG_ID).catch(() => undefined)
+  const modelCandidates = [selection.model, globalSelection?.model]
+
+  for (const candidate of modelCandidates) {
+    const parsed = parseModelReference(candidate)
+    if (!parsed) continue
     try {
       await getModel(parsed.providerID, parsed.modelID, configID)
       return parsed

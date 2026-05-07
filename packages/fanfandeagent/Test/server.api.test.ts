@@ -1562,7 +1562,8 @@ describe("server api", () => {
           const compatibilityBody = (await compatibilityResponse.json()) as ProjectModelsEnvelope
 
           expect(compatibilityResponse.status).toBe(200)
-          expect(compatibilityBody.data?.selection.model).toBeUndefined()
+          expect(compatibilityBody.data?.selection.model).toBe("deepseek/deepseek-reasoner")
+          expect(compatibilityBody.data?.effectiveModel?.id).toBe("deepseek-reasoner")
           expect(compatibilityBody.data?.items).toHaveLength(1)
           expect(compatibilityBody.data?.items[0]).toMatchObject({
             providerID: "deepseek",
@@ -1607,7 +1608,8 @@ describe("server api", () => {
               }),
             ]),
           )
-          expect(projectModelsBody.data?.selection.model).toBeUndefined()
+          expect(projectModelsBody.data?.selection.model).toBe("deepseek/deepseek-reasoner")
+          expect(projectModelsBody.data?.effectiveModel?.id).toBe("deepseek-reasoner")
 
           const createProjectSessionResponse = await app.request(`http://localhost/api/projects/${projectID}/sessions`, {
             method: "POST",
@@ -1625,6 +1627,7 @@ describe("server api", () => {
 
           expect(sessionModelsBeforeResponse.status).toBe(200)
           expect(sessionModelsBeforeBody.data?.selection.model).toBeUndefined()
+          expect(sessionModelsBeforeBody.data?.effectiveModel?.id).toBe("deepseek-reasoner")
 
           const sessionSelectionResponse = await app.request(`http://localhost/api/sessions/${sessionID}/model-selection`, {
             method: "PATCH",
@@ -1664,12 +1667,13 @@ describe("server api", () => {
 
           expect(otherSessionModelsResponse.status).toBe(200)
           expect(otherSessionModelsBody.data?.selection.model).toBeUndefined()
+          expect(otherSessionModelsBody.data?.effectiveModel?.id).toBe("deepseek-reasoner")
 
           const projectModelsAfterSessionResponse = await app.request(`http://localhost/api/projects/${projectID}/models`)
           const projectModelsAfterSessionBody = (await projectModelsAfterSessionResponse.json()) as ProjectModelsEnvelope
 
           expect(projectModelsAfterSessionResponse.status).toBe(200)
-          expect(projectModelsAfterSessionBody.data?.selection.model).toBeUndefined()
+          expect(projectModelsAfterSessionBody.data?.selection.model).toBe("deepseek/deepseek-reasoner")
 
           const sessionsAfterSelectionResponse = await app.request(`http://localhost/api/projects/${projectID}/sessions`)
           const sessionsAfterSelectionBody = (await sessionsAfterSelectionResponse.json()) as ProjectSessionsResponseEnvelope

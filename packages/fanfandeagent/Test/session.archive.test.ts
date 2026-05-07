@@ -117,6 +117,38 @@ test("archiveSessionCascade archives derived side chats with the parent session"
   }
 })
 
+test("archived session summaries do not parse archived snapshots", async () => {
+  const root = await mkdtemp(join(tmpdir(), "fanfande-session-archive-summary-"))
+  const databaseFile = join(root, "archive.db")
+
+  try {
+    Sqlite.setDatabaseFile(databaseFile)
+
+    const session = await Session.createSession({
+      directory: root,
+      projectID: "project_archive_summary",
+    })
+
+    const archived = Session.archiveSession(session.id)
+    expect(archived?.sessionID).toBe(session.id)
+
+    const updateSnapshot = Sqlite.db.prepare(
+      `UPDATE archived_sessions SET snapshot = ? WHERE sessionID = ?`,
+    )
+    updateSnapshot.run("{not-json", session.id)
+    updateSnapshot.finalize()
+
+    const summaries = Session.listArchivedSessionSummaries()
+    expect(summaries).toHaveLength(1)
+    expect(summaries[0]!.sessionID).toBe(session.id)
+    expect("snapshot" in summaries[0]!).toBe(false)
+  } finally {
+    Sqlite.closeDatabase()
+    Sqlite.setDatabaseFile(undefined)
+    await removeWithRetry(root)
+  }
+})
+
 test("archived sessions tolerate unsupported legacy runtime event types", async () => {
   const root = await mkdtemp(join(tmpdir(), "fanfande-session-archive-legacy-"))
   const databaseFile = join(root, "archive.db")

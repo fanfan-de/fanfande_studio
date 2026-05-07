@@ -15,6 +15,7 @@ import {
   clearProjectModelListCache,
   listProjectModelsWithFallback,
   resolveEffectiveModelWithFallback,
+  resolveProjectModelSelectionWithGlobalFallback,
 } from "#server/usecases/model-list-cache.ts"
 import * as Session from "#session/core/session.ts"
 import * as Skill from "#skill/skill.ts"
@@ -238,7 +239,7 @@ export async function listProjectModels(projectID: string) {
   safeReadProject(projectID)
 
   const items = await listProjectModelsWithFallback(projectID)
-  const selection = await Provider.getSelection(projectID)
+  const selection = await resolveProjectModelSelectionWithGlobalFallback(projectID, items)
 
   return {
     effectiveModel: await resolveEffectiveModelWithFallback(projectID, items, selection.model),

@@ -6002,6 +6002,8 @@ describe("App", () => {
 
     expect((await screen.findByRole("button", { name: "server" })).closest(".project-row")).toHaveClass("is-active")
     expect(screen.getByRole("button", { name: "client" }).closest(".project-row")).not.toHaveClass("is-active")
+    expect(screen.getByRole("button", { name: "client" })).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "server" })).toHaveAttribute("aria-expanded", "true")
     expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
   })
 
@@ -6856,7 +6858,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Models/ }))
 
-    expect(screen.getByLabelText("Primary model")).toHaveValue("deepseek/deepseek-reasoner")
+    expect(screen.getByRole("button", { name: "Primary model: DeepSeek / DeepSeek Reasoner" })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: "Connected Models" })).toBeInTheDocument()
     expect(screen.getByText("DeepSeek Reasoner")).toBeInTheDocument()
 
@@ -8487,17 +8489,18 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Models/ }))
     expect(screen.getByText("GPT-4o mini")).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText("Primary model"), {
+    fireEvent.click(screen.getByRole("button", { name: "Primary model: DeepSeek / DeepSeek Reasoner" }))
+    let modelPicker = screen.getByRole("dialog", { name: "Primary model model picker" })
+    fireEvent.change(within(modelPicker).getByRole("searchbox", { name: "Search providers or models" }), {
       target: {
-        value: "openai/gpt-4o-mini",
+        value: "openai",
       },
     })
-    fireEvent.change(screen.getByLabelText("Small model"), {
-      target: {
-        value: "deepseek/deepseek-reasoner",
-      },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Save model selection" }))
+    fireEvent.click(within(modelPicker).getByRole("option", { name: "GPT-4o mini" }))
+
+    fireEvent.click(screen.getByRole("button", { name: "Small model: Use server default" }))
+    modelPicker = screen.getByRole("dialog", { name: "Small model model picker" })
+    fireEvent.click(within(modelPicker).getByRole("option", { name: "DeepSeek Reasoner" }))
 
     await waitFor(() => {
       expect(window.desktop!.updateGlobalModelSelection).toHaveBeenCalledWith({
@@ -9329,11 +9332,16 @@ describe("App", () => {
   it("removes a folder from the sidebar without deleting it from the backend", () => {
     render(<App />)
 
+    fireEvent.click(screen.getByRole("button", { name: "src" }))
+    expect(screen.getByRole("button", { name: "src" })).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "app" })).toHaveAttribute("aria-expanded", "true")
+
     fireEvent.click(screen.getByRole("button", { name: "\u79FB\u9664 app" }))
 
     expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "src" }).closest(".project-row")).toHaveClass("is-active")
+    expect(screen.getByRole("button", { name: "src" })).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByRole("button", { name: "Layout pass" })).toBeInTheDocument()
     expect(window.desktop!.deleteProjectWorkspace).not.toHaveBeenCalled()
   })
@@ -9877,6 +9885,34 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
   })
 
+  it("keeps other folders expanded when selecting a different folder", () => {
+    render(<App />)
+
+    const appFolder = screen.getByRole("button", { name: "app" })
+    const srcFolder = screen.getByRole("button", { name: "src" })
+
+    expect(appFolder).toHaveAttribute("aria-expanded", "true")
+    expect(srcFolder).toHaveAttribute("aria-expanded", "false")
+
+    fireEvent.click(srcFolder)
+
+    expect(appFolder).toHaveAttribute("aria-expanded", "true")
+    expect(srcFolder).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Layout pass" })).toBeInTheDocument()
+    expect(srcFolder.closest(".project-row")).toHaveClass("is-active")
+    expect(appFolder.closest(".project-row")).not.toHaveClass("is-active")
+    expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
+
+    fireEvent.click(appFolder)
+
+    expect(appFolder).toHaveAttribute("aria-expanded", "true")
+    expect(srcFolder).toHaveAttribute("aria-expanded", "true")
+    expect(appFolder.closest(".project-row")).toHaveClass("is-active")
+    expect(srcFolder.closest(".project-row")).not.toHaveClass("is-active")
+    expect(document.querySelectorAll(".project-row.is-active")).toHaveLength(1)
+  })
+
   it("toggles the terminal panel from the right sidebar menu without changing the active inspector view", async () => {
     render(<App />)
 
@@ -10371,17 +10407,23 @@ describe("App", () => {
     })
 
     fireEvent.pointerMove(window, {
+      buttons: 1,
       clientX: 374,
+      pointerType: "mouse",
     })
     expect(appShell!.getAttribute("style")).toContain("--sidebar-width: 320px")
 
     fireEvent.pointerMove(window, {
+      buttons: 1,
       clientX: 640,
+      pointerType: "mouse",
     })
     expect(appShell!.getAttribute("style")).toContain(`--sidebar-width: ${MAX_SIDEBAR_WIDTH}px`)
 
     fireEvent.pointerMove(window, {
+      buttons: 1,
       clientX: 120,
+      pointerType: "mouse",
     })
     expect(appShell!.getAttribute("style")).toContain(`--sidebar-width: ${MIN_SIDEBAR_WIDTH}px`)
 
@@ -10430,17 +10472,23 @@ describe("App", () => {
     })
 
     fireEvent.pointerMove(window, {
+      buttons: 1,
       clientX: 760,
+      pointerType: "mouse",
     })
     expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 440px")
 
     fireEvent.pointerMove(window, {
+      buttons: 1,
       clientX: 400,
+      pointerType: "mouse",
     })
     expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${expectedRightSidebarMaxWidth}px`)
 
     fireEvent.pointerMove(window, {
+      buttons: 1,
       clientX: 1100,
+      pointerType: "mouse",
     })
     expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${MIN_RIGHT_SIDEBAR_WIDTH}px`)
 
@@ -10449,6 +10497,57 @@ describe("App", () => {
     await waitFor(() => {
       expect(document.body).not.toHaveClass("is-resizing-sidebar")
     })
+  })
+
+  it("stops resizing the right sidebar when the mouse button is no longer pressed", async () => {
+    const { container } = render(<App />)
+    const appShell = container.querySelector(".app-shell") as HTMLElement | null
+
+    expect(appShell).not.toBeNull()
+    Object.defineProperty(appShell!, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 1200,
+        bottom: 800,
+        width: 1200,
+        height: 800,
+        toJSON: () => ({}),
+      }),
+    })
+
+    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${DEFAULT_RIGHT_SIDEBAR_WIDTH}px`)
+
+    fireEvent.pointerDown(screen.getByTestId("right-sidebar-resizer"), {
+      button: 0,
+      clientX: 720,
+      pointerType: "mouse",
+    })
+
+    await waitFor(() => {
+      expect(document.body).toHaveClass("is-resizing-sidebar")
+    })
+
+    fireEvent.pointerMove(window, {
+      buttons: 0,
+      clientX: 760,
+      pointerType: "mouse",
+    })
+
+    await waitFor(() => {
+      expect(document.body).not.toHaveClass("is-resizing-sidebar")
+    })
+    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${DEFAULT_RIGHT_SIDEBAR_WIDTH}px`)
+
+    fireEvent.pointerMove(window, {
+      buttons: 1,
+      clientX: 760,
+      pointerType: "mouse",
+    })
+    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${DEFAULT_RIGHT_SIDEBAR_WIDTH}px`)
   })
 
   it("limits the right sidebar to two thirds of the app width even when the left sidebar is expanded", async () => {
@@ -10487,7 +10586,9 @@ describe("App", () => {
     })
 
     fireEvent.pointerMove(window, {
+      buttons: 1,
       clientX: 300,
+      pointerType: "mouse",
     })
     expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${expectedRightSidebarMaxWidth}px`)
 
@@ -10957,7 +11058,9 @@ describe("App", () => {
     expect(styles).toMatch(
       /\.settings-page\s*\{[^}]*width:\s*min\(100%,\s*1320px\);[^}]*height:\s*min\(calc\(100dvh - 64px\),\s*860px\);[^}]*max-height:\s*min\(calc\(100dvh - 64px\),\s*860px\);/s,
     )
-    expect(styles).toMatch(/\.settings-page-body,\s*\.settings-page-shell\s*\{[^}]*grid-template-columns:\s*220px minmax\(0,\s*1fr\);/s)
+    expect(styles).toMatch(
+      /\.settings-page-body,\s*\.settings-page-shell\s*\{[^}]*grid-template-columns:\s*var\(--settings-nav-width\) minmax\(0,\s*1fr\);/s,
+    )
     expect(styles).toMatch(/\.settings-services-layout\s*\{[^}]*grid-template-columns:\s*320px minmax\(0,\s*1fr\);/s)
   })
 
@@ -10974,6 +11077,7 @@ describe("App", () => {
   it("scopes provider scrolling to the column layout", () => {
     expect(styles).toMatch(/\.settings-page-main\.is-services\s*\{[^}]*overflow:\s*hidden;/s)
     expect(styles).toMatch(/\.settings-page-content,\s*\.settings-page-main\s*\{[^}]*scrollbar-gutter:\s*stable both-edges;/s)
+    expect(styles).toMatch(/\.settings-toast-region\s*\{[^}]*position:\s*absolute;[^}]*top:\s*18px;[^}]*right:\s*56px;/s)
     expect(styles).toMatch(/\.settings-service-list\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s)
     expect(styles).toMatch(/\.settings-service-detail-panel\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s)
     expect(styles).toMatch(/\.settings-page-main\.prompt-presets-page-main\s*\{[^}]*height:\s*100%;[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*align-items:\s*stretch;/s)
@@ -10982,15 +11086,41 @@ describe("App", () => {
     expect(styles).toMatch(/\.settings-prompt-assignment-control select\s*\{[^}]*width:\s*clamp\(220px,\s*18vw,\s*360px\);/s)
   })
 
+  it("uses Obsidian-style grouped settings rows for standard settings pages", () => {
+    expect(styles).toMatch(
+      /\.settings-page-main:not\(\.is-services\):not\(\.prompt-presets-page-main\)\s*\{[^}]*justify-items:\s*start;[^}]*gap:\s*28px;/s,
+    )
+    expect(styles).toMatch(
+      /\.settings-page-main:not\(\.is-services\):not\(\.prompt-presets-page-main\)\s+\.settings-field-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*gap:\s*0;/s,
+    )
+    expect(styles).toMatch(
+      /\.settings-page-main:not\(\.is-services\):not\(\.prompt-presets-page-main\)\s+\.settings-field\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(220px,\s*320px\);[^}]*align-items:\s*center;/s,
+    )
+    expect(styles).toMatch(
+      /\.settings-page-main:not\(\.is-services\):not\(\.prompt-presets-page-main\)\s+\.settings-actions-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) auto;[^}]*align-items:\s*center;/s,
+    )
+    expect(styles).toMatch(
+      /\.settings-page-main:not\(\.is-services\):not\(\.prompt-presets-page-main\)\s+\.provider-model-picker-panel\s*\{[^}]*right:\s*0;[^}]*left:\s*auto;[^}]*width:\s*min\(560px,\s*calc\(100vw - var\(--settings-nav-width\) - 112px\)\);/s,
+    )
+  })
+
   it("keeps the settings primary nav grouped and pill-led", () => {
     expect(styles).toMatch(/\.settings-page-close-button\s*\{[^}]*width:\s*32px;[^}]*background:\s*transparent;/s)
     expect(styles).toMatch(
       /\.settings-page-nav,\s*\.settings-page-primary-nav\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;[^}]*gap:\s*20px;/s,
     )
+    expect(styles).toMatch(
+      /\.settings-page-nav,\s*\.settings-page-primary-nav\s*\{[^}]*background:\s*var\(--seg-shell\);[^}]*color:\s*var\(--seg-text-1\);/s,
+    )
     expect(styles).toMatch(/\.settings-primary-nav-group-label,[\s\S]*?\.settings-helper-text,[\s\S]*?\.settings-page-copy,[\s\S]*?\.settings-section-header p,[\s\S]*?\.provider-row-copy,[\s\S]*?\.provider-model-empty,[\s\S]*?\.settings-toggle-copy small\s*\{[^}]*color:\s*var\(--seg-text-3\);/s)
     expect(styles).toMatch(
       /\.settings-primary-nav-item\s*\{[^}]*border:\s*1px solid transparent;[^}]*border-radius:\s*12px;[^}]*background:\s*transparent;[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\);/s,
     )
-    expect(styles).toMatch(/\.settings-primary-nav-item\.is-active\s*\{[^}]*border-color:\s*var\(--mix-seg-accent-24-seg-border-76\);[^}]*background:\s*var\(--mix-seg-accent-soft-80-seg-panel-20\);[^}]*color:\s*var\(--seg-text-1\);/s)
+    expect(styles).toMatch(
+      /\.settings-primary-nav-item:hover,\s*\.settings-primary-nav-item:focus-visible\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*var\(--semantic-sidebar-tree-row-surface-active\);[^}]*color:\s*var\(--semantic-sidebar-tree-row-text-active\);/s,
+    )
+    expect(styles).toMatch(
+      /\.settings-primary-nav-item\.is-active\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*var\(--semantic-sidebar-tree-row-surface-active\);[^}]*color:\s*var\(--semantic-sidebar-tree-row-text-active\);/s,
+    )
   })
 })

@@ -16,6 +16,12 @@ export type ResolveToolsInput = {
   abort: AbortSignal
 }
 
+const PROVIDER_SAFE_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/
+
+function isProviderSafeToolName(name: string) {
+  return PROVIDER_SAFE_TOOL_NAME_PATTERN.test(name)
+}
+
 export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
   // Load registered tools and build the ToolSet expected by the AI SDK.
   const [registry, builtinRegistry, globalToolSelection] = await Promise.all([
@@ -63,13 +69,21 @@ export async function resolveTools(input: ResolveToolsInput): Promise<ToolSet> {
       },
     })
 
-    // Register the tool by its id and aliases, while guarding against duplicates.
+    // Register only provider-safe names; OpenAI-compatible providers reject
+    // function names outside /^[a-zA-Z0-9_-]+$/ before the stream starts.
+    let registeredNames = 0
     for (const name of [item.id, ...(item.aliases ?? [])]) {
+      if (!isProviderSafeToolName(name)) continue
       if (tools[name]) {
         throw new Error(`Duplicate resolved tool name "${name}".`)
       }
 
       tools[name] = resolvedTool
+      registeredNames += 1
+    }
+
+    if (registeredNames === 0) {
+      throw new Error(`Tool "${item.id}" does not expose a provider-safe name.`)
     }
   }
   return tools

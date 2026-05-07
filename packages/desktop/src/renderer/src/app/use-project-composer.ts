@@ -337,7 +337,7 @@ export function useProjectComposer({
         projectComposerModelItemsCache.set(requestProjectID, payload.items)
         setModels(payload.items)
         setDefaultModel(payload.effectiveModel ?? null)
-        if (isSessionModelRequest || !getSessionModels) {
+        if (isSessionModelRequest || !requestSessionID || !getSessionModels) {
           setSelectedModel(payload.selection?.model ?? null)
           setSmallModel(payload.selection?.small_model ?? null)
           if (isSessionModelRequest && requestSessionID) {

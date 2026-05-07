@@ -40,6 +40,11 @@ const EMPTY_APPEARANCE_TOKEN_VALUES = Object.fromEntries(
 
 type SidebarResizerSide = "left" | "right"
 
+interface ActivePointerCapture {
+  element: HTMLDivElement
+  pointerId: number
+}
+
 function readBooleanPreference(key: string, fallback: boolean) {
   if (typeof window === "undefined") return fallback
 
@@ -155,6 +160,7 @@ export function useDesktopShell() {
   const [agentConnected, setAgentConnected] = useState(false)
   const lastExpandedSidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH)
   const lastExpandedRightSidebarWidthRef = useRef(DEFAULT_RIGHT_SIDEBAR_WIDTH)
+  const activeSidebarResizerPointerRef = useRef<ActivePointerCapture | null>(null)
   const isSidebarResizing = activeSidebarResizer === "left"
   const isRightSidebarResizing = activeSidebarResizer === "right"
   const isAgentDebugTraceEnabled = assistantTraceVisibility.debugMetadata
@@ -179,6 +185,34 @@ export function useDesktopShell() {
     }
 
     return resolveRightSidebarWidthBounds(containerWidth, RIGHT_SIDEBAR_MIN_LEFT_EDGE_RATIO)
+  }
+
+  function releaseActiveSidebarResizerPointerCapture() {
+    const activePointer = activeSidebarResizerPointerRef.current
+    activeSidebarResizerPointerRef.current = null
+    if (!activePointer) return
+
+    try {
+      if (activePointer.element.hasPointerCapture?.(activePointer.pointerId)) {
+        activePointer.element.releasePointerCapture(activePointer.pointerId)
+      }
+    } catch {
+      // Pointer capture is best-effort; losing it should not keep resize active.
+    }
+  }
+
+  function captureSidebarResizerPointer(event: PointerEvent<HTMLDivElement>) {
+    releaseActiveSidebarResizerPointerCapture()
+
+    try {
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+      activeSidebarResizerPointerRef.current = {
+        element: event.currentTarget,
+        pointerId: event.pointerId,
+      }
+    } catch {
+      activeSidebarResizerPointerRef.current = null
+    }
   }
 
   useEffect(() => {
@@ -430,10 +464,22 @@ export function useDesktopShell() {
     }
   }, [isActivityRailVisible, isRightSidebarCollapsed, isSidebarCollapsed, rightSidebarWidth, sidebarWidth])
 
+  const activeLeftResizeRightSidebarWidth = activeSidebarResizer === "left" ? rightSidebarWidth : null
+
   useEffect(() => {
     if (!activeSidebarResizer) return
 
+    function stopSidebarResize() {
+      releaseActiveSidebarResizerPointerCapture()
+      setActiveSidebarResizer(null)
+    }
+
     function handlePointerMove(event: globalThis.PointerEvent) {
+      if (event.pointerType === "mouse" && event.buttons === 0) {
+        stopSidebarResize()
+        return
+      }
+
       const rect = appShellRef.current?.getBoundingClientRect()
       if (!rect || rect.width <= 0) return
 
@@ -451,22 +497,21 @@ export function useDesktopShell() {
       setRightSidebarWidth(nextWidth)
     }
 
-    function stopSidebarResize() {
-      setActiveSidebarResizer(null)
-    }
-
     document.body.classList.add("is-resizing-sidebar")
     window.addEventListener("pointermove", handlePointerMove)
     window.addEventListener("pointerup", stopSidebarResize)
     window.addEventListener("pointercancel", stopSidebarResize)
+    window.addEventListener("blur", stopSidebarResize)
 
     return () => {
+      releaseActiveSidebarResizerPointerCapture()
       document.body.classList.remove("is-resizing-sidebar")
       window.removeEventListener("pointermove", handlePointerMove)
       window.removeEventListener("pointerup", stopSidebarResize)
       window.removeEventListener("pointercancel", stopSidebarResize)
+      window.removeEventListener("blur", stopSidebarResize)
     }
-  }, [activeSidebarResizer, isActivityRailVisible, isRightSidebarCollapsed, isSidebarCollapsed, rightSidebarWidth, sidebarWidth])
+  }, [activeSidebarResizer, activeLeftResizeRightSidebarWidth, isActivityRailVisible, isRightSidebarCollapsed, isSidebarCollapsed])
 
   function adjustSidebarWidth(delta: number) {
     const rect = appShellRef.current?.getBoundingClientRect()
@@ -507,6 +552,7 @@ export function useDesktopShell() {
   function handleSidebarResizerPointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return
 
+    captureSidebarResizerPointer(event)
     const rect = appShellRef.current?.getBoundingClientRect()
     if (rect?.width && rect.width > 0) {
       const bounds = resolveLeftSidebarBounds(rect.width)
@@ -522,6 +568,7 @@ export function useDesktopShell() {
   function handleRightSidebarResizerPointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return
 
+    captureSidebarResizerPointer(event)
     const rect = appShellRef.current?.getBoundingClientRect()
     if (rect?.width && rect.width > 0) {
       const bounds = resolveRightSidebarBounds(rect.width)

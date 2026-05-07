@@ -37,7 +37,7 @@ interface UseWorkspaceLoadingControllerOptions {
   setCanLoadSessionHistory: StateSetter<boolean>
   setConversations: StateSetter<Record<string, Turn[]>>
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
-  setExpandedFolderID: StateSetter<string | null>
+  setExpandedFolderIDs: StateSetter<string[]>
   setIsInitialWorkspaceLoadPending: StateSetter<boolean>
   setSelectedFolderID: StateSetter<string | null>
   setSessionDiffStateBySession: StateSetter<Record<string, SessionDiffState>>
@@ -68,7 +68,7 @@ export function useWorkspaceLoadingController({
   setCanLoadSessionHistory,
   setConversations,
   setCreateSessionTabs,
-  setExpandedFolderID,
+  setExpandedFolderIDs,
   setIsInitialWorkspaceLoadPending,
   setSelectedFolderID,
   setSessionDiffStateBySession,
@@ -116,7 +116,7 @@ export function useWorkspaceLoadingController({
     setCanLoadSessionHistory,
     setConversations,
     setCreateSessionTabs,
-    setExpandedFolderID,
+    setExpandedFolderIDs,
     setIsInitialWorkspaceLoadPending,
     setSelectedFolderID,
     setSessionDirectoryBySession,

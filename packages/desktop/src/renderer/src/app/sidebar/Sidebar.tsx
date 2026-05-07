@@ -39,7 +39,7 @@ interface SidebarProps {
   activeView: LeftSidebarView
   deletingGlobalSkillDirectory: string | null
   deletingSessionID: string | null
-  expandedFolderID: string | null
+  expandedFolderIDs: string[]
   expandedSkillPaths: string[]
   creatingGlobalSkillName: string
   globalSkillsRoot: string
@@ -150,7 +150,7 @@ function LeftSidebarTopMenu({
 interface FolderWorkspaceViewProps {
   activeSessionID: string | null
   deletingSessionID: string | null
-  expandedFolderID: string | null
+  expandedFolderIDs: string[]
   hoveredFolderID: string | null
   isCreatingProject: boolean
   isCreatingSession: boolean
@@ -172,7 +172,7 @@ interface FolderWorkspaceViewProps {
 function FolderWorkspaceView({
   activeSessionID,
   deletingSessionID,
-  expandedFolderID,
+  expandedFolderIDs,
   hoveredFolderID,
   isCreatingProject,
   isCreatingSession,
@@ -217,7 +217,7 @@ function FolderWorkspaceView({
       <div className="sidebar-projects">
         {workspaces.map((workspace) => {
           const isActiveWorkspace = workspace.id === selectedFolderID
-          const isExpanded = workspace.id === expandedFolderID
+          const isExpanded = expandedFolderIDs.includes(workspace.id)
           const isMissingWorkspace = workspace.exists === false
           const showStateIcon = workspace.id === hoveredFolderID
           const leadingIcon = showStateIcon ? (isExpanded ? "expanded" : "collapsed") : "folder"
@@ -653,7 +653,7 @@ export function Sidebar({
   activeView,
   deletingGlobalSkillDirectory,
   deletingSessionID,
-  expandedFolderID,
+  expandedFolderIDs,
   expandedSkillPaths,
   creatingGlobalSkillName,
   globalSkillsRoot,
@@ -717,7 +717,7 @@ export function Sidebar({
             <FolderWorkspaceView
               activeSessionID={activeSessionID}
               deletingSessionID={deletingSessionID}
-              expandedFolderID={expandedFolderID}
+              expandedFolderIDs={expandedFolderIDs}
               hoveredFolderID={hoveredFolderID}
               isCreatingProject={isCreatingProject}
               isCreatingSession={isCreatingSession}

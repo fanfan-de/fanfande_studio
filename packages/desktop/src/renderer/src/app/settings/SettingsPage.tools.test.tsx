@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { I18nProvider } from "../i18n/I18nProvider"
@@ -61,7 +61,6 @@ function createSettingsPageProps(
     isLoadingArchivedSessions: false,
     isOpen: true,
     isRefreshingProviderCatalog: false,
-    isSavingSelection: false,
     loadError: null,
     mcpServerDraft: createMcpDraft(),
     mcpServers: [],
@@ -87,24 +86,17 @@ function createSettingsPageProps(
     onMcpServerDraftChange: vi.fn(),
     onMcpToolPolicyChange: vi.fn(),
     onMcpServerSelect: vi.fn(),
+    onLoadArchivedSessions: vi.fn(),
     onRefreshProviderCatalog: vi.fn(),
     onRestoreArchivedSession: vi.fn(),
     onSaveMcpServer: vi.fn(),
     onSaveProvider: vi.fn(),
     onSaveProviderApiKey: vi.fn(),
-    onSaveSelection: vi.fn(),
     onSelectionChange: vi.fn(),
     onStartNewMcpServer: vi.fn(),
     onStartProviderAuthFlow: vi.fn(),
     providerDrafts: {},
     restoringArchivedSessionID: null,
-    savedSelection: {
-      model: null,
-      smallModel: null,
-      imageModel: null,
-      imageDefaultSize: null,
-      imageDefaultCount: null,
-    },
     savingMcpServerID: null,
     savingProviderID: null,
     selectionDraft: {
@@ -116,6 +108,72 @@ function createSettingsPageProps(
     },
     ...overrides,
   } as ComponentProps<typeof SettingsPage>
+}
+
+function createProvider(id: string, name: string): ComponentProps<typeof SettingsPage>["catalog"][number] {
+  return {
+    id,
+    name,
+    source: "config",
+    env: [],
+    configured: true,
+    available: true,
+    apiKeyConfigured: true,
+    modelCount: 1,
+    authCapabilities: [],
+    authScope: "global",
+    authState: {
+      providerID: id,
+      scope: "global",
+      status: "connected",
+      capabilities: [],
+      credentials: [],
+    },
+  }
+}
+
+function createModel(
+  providerID: string,
+  id: string,
+  name: string,
+  input?: {
+    family?: string
+    imageOutput?: boolean
+    reasoning?: boolean
+  },
+): ComponentProps<typeof SettingsPage>["models"][number] {
+  return {
+    id,
+    providerID,
+    name,
+    family: input?.family,
+    status: "active",
+    available: true,
+    capabilities: {
+      temperature: true,
+      reasoning: input?.reasoning ?? false,
+      attachment: false,
+      toolcall: true,
+      input: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+      output: {
+        text: true,
+        audio: false,
+        image: input?.imageOutput ?? false,
+        video: false,
+        pdf: false,
+      },
+    },
+    limit: {
+      context: 128000,
+      output: 8192,
+    },
+  }
 }
 
 describe("SettingsPage built-in tools", () => {
@@ -256,5 +314,86 @@ describe("SettingsPage built-in tools", () => {
       })
     })
     expect(await screen.findByRole("heading", { name: "显示语言" })).toBeInTheDocument()
+  })
+
+  it("selects the primary model through the provider model picker", () => {
+    const onSelectionChange = vi.fn()
+
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          catalog: [createProvider("deepseek", "DeepSeek"), createProvider("openai", "OpenAI")],
+          models: [
+            createModel("deepseek", "deepseek-reasoner", "DeepSeek Reasoner", { reasoning: true }),
+            createModel("openai", "gpt-4o-mini", "GPT-4o mini"),
+          ],
+          onSelectionChange,
+          selectionDraft: {
+            model: "deepseek/deepseek-reasoner",
+            smallModel: null,
+            imageModel: null,
+            imageDefaultSize: null,
+            imageDefaultCount: null,
+          },
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Models" }))
+    fireEvent.click(screen.getByRole("button", { name: "Primary model: DeepSeek / DeepSeek Reasoner" }))
+
+    const picker = screen.getByRole("dialog", { name: "Primary model model picker" })
+    const providerList = within(picker).getByRole("listbox", { name: "Primary model providers" })
+    const modelList = within(picker).getByRole("listbox", { name: "Primary model models" })
+    expect(within(providerList).getByRole("option", { name: /DeepSeek/ })).toHaveAttribute("aria-selected", "true")
+    expect(within(modelList).getByRole("option", { name: "DeepSeek Reasoner" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    )
+
+    fireEvent.change(within(picker).getByRole("searchbox", { name: "Search providers or models" }), {
+      target: {
+        value: "openai",
+      },
+    })
+
+    expect(within(providerList).queryByRole("option", { name: /DeepSeek/ })).not.toBeInTheDocument()
+    fireEvent.click(within(modelList).getByRole("option", { name: "GPT-4o mini" }))
+    expect(onSelectionChange).toHaveBeenCalledWith("model", "openai/gpt-4o-mini")
+  })
+
+  it("uses the picker for small models and filters image generation models", () => {
+    const onSelectionChange = vi.fn()
+
+    render(
+      <SettingsPage
+        {...createSettingsPageProps({
+          catalog: [createProvider("deepseek", "DeepSeek"), createProvider("openai", "OpenAI")],
+          models: [
+            createModel("deepseek", "deepseek-reasoner", "DeepSeek Reasoner", { reasoning: true }),
+            createModel("openai", "gpt-4o-mini", "GPT-4o mini"),
+            createModel("openai", "gpt-image-1", "GPT Image", { imageOutput: true }),
+          ],
+          onSelectionChange,
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Models" }))
+    expect(screen.queryByRole("button", { name: "Save model selection" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Small model: Use server default" }))
+    fireEvent.click(screen.getByRole("option", { name: "DeepSeek Reasoner" }))
+    expect(onSelectionChange).toHaveBeenCalledWith("smallModel", "deepseek/deepseek-reasoner")
+    expect(screen.queryByRole("dialog", { name: "Small model model picker" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Image generation model: Not configured" }))
+    const picker = screen.getByRole("dialog", { name: "Image generation model model picker" })
+    const modelList = within(picker).getByRole("listbox", { name: "Image generation model models" })
+
+    expect(within(modelList).getByRole("option", { name: "GPT Image" })).toBeInTheDocument()
+    expect(within(modelList).queryByRole("option", { name: "GPT-4o mini" })).not.toBeInTheDocument()
+
+    fireEvent.click(within(modelList).getByRole("option", { name: "GPT Image" }))
+    expect(onSelectionChange).toHaveBeenCalledWith("imageModel", "openai/gpt-image-1")
   })
 })

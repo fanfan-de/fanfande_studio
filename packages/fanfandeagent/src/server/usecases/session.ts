@@ -331,9 +331,9 @@ function mapSideChatLink(link: Session.SideChatLink) {
   }
 }
 
-function mapArchivedSessionSummary(record: Session.ArchivedSessionRecord) {
+function mapArchivedSessionSummary(record: Session.ArchivedSessionRecord | Session.ArchivedSessionSummaryRecord) {
   const project = Project.get(record.projectID)
-  const normalized = Session.normalizeSessionInfo(record.snapshot.session)
+  const normalized = "snapshot" in record ? Session.normalizeSessionInfo(record.snapshot.session) : null
 
   return {
     id: record.sessionID,
@@ -347,8 +347,8 @@ function mapArchivedSessionSummary(record: Session.ArchivedSessionRecord) {
     archivedAt: record.archivedAt,
     messageCount: record.messageCount,
     eventCount: record.eventCount,
-    kind: normalized.kind,
-    policy: normalized.policy,
+    kind: normalized?.kind,
+    policy: normalized?.policy,
     origin: Session.getSessionOrigin(record.sessionID),
   }
 }
@@ -364,7 +364,7 @@ export async function createSession(input: z.infer<typeof CreateSessionBody>) {
 }
 
 export function listArchivedSessions() {
-  return Session.listArchivedSessions().map(mapArchivedSessionSummary)
+  return Session.listArchivedSessionSummaries().map(mapArchivedSessionSummary)
 }
 
 export function archiveSession(sessionID: string, options?: { ptyRegistry?: PtyRegistry }) {

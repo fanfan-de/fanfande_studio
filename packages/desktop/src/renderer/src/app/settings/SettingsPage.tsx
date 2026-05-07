@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent, type PointerEvent } from "react"
 import { APPEARANCE_TOKEN_GROUPS, type AppearanceTokenMap, type AppearanceTokenName } from "../../../../shared/appearance"
 import type { DesktopAppUpdateSettings } from "../../../../shared/desktop-ipc-contract"
 import {
@@ -214,6 +214,10 @@ function buildModelTags(model: ProviderModel) {
   return tags
 }
 
+function toModelValue(model: ProviderModel) {
+  return `${model.providerID}/${model.id}`
+}
+
 function toModelOptionLabel(model: ProviderModel, providers: ProviderCatalogItem[]) {
   const providerName = providers.find((item) => item.id === model.providerID)?.name ?? model.providerID
   return `${providerName} / ${model.name}`
@@ -382,12 +386,240 @@ interface ModelListViewProps {
   selectionDraft: ProjectModelSelection
 }
 
+interface ProviderModelPickerProps {
+  catalog: ProviderCatalogItem[]
+  emptyLabel: string
+  label: string
+  models: ProviderModel[]
+  value: string | null
+  onChange: (value: string | null) => void
+}
+
+interface ProviderModelPickerGroup {
+  matchingModels: ProviderModel[]
+  provider: ProviderCatalogItem
+}
+
+function matchesProviderModelSearch(provider: ProviderCatalogItem, model: ProviderModel, normalizedQuery: string) {
+  if (!normalizedQuery) return true
+
+  return `${provider.name} ${provider.id} ${model.name} ${model.id}`.toLowerCase().includes(normalizedQuery)
+}
+
+function matchesProviderModelPickerProviderSearch(provider: ProviderCatalogItem, normalizedQuery: string) {
+  if (!normalizedQuery) return true
+
+  return `${provider.name} ${provider.id}`.toLowerCase().includes(normalizedQuery)
+}
+
+function buildProviderModelPickerGroups(
+  catalog: ProviderCatalogItem[],
+  models: ProviderModel[],
+  searchQuery: string,
+): ProviderModelPickerGroup[] {
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+
+  return catalog.flatMap((provider) => {
+    if (!provider.available) return []
+
+    const providerModels = models.filter((model) => model.providerID === provider.id)
+    if (providerModels.length === 0) return []
+
+    const providerMatches = matchesProviderModelPickerProviderSearch(provider, normalizedQuery)
+    const matchingModels = normalizedQuery
+      ? providerModels.filter((model) => matchesProviderModelSearch(provider, model, normalizedQuery))
+      : providerModels
+
+    if (normalizedQuery && !providerMatches && matchingModels.length === 0) return []
+
+    return [
+      {
+        matchingModels: providerMatches ? providerModels : matchingModels,
+        provider,
+      },
+    ]
+  })
+}
+
+function ProviderModelPicker({
+  catalog,
+  emptyLabel,
+  label,
+  models,
+  value,
+  onChange,
+}: ProviderModelPickerProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [activeProviderID, setActiveProviderID] = useState<string | null>(null)
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const selectedModel = models.find((model) => toModelValue(model) === value) ?? null
+  const selectedProviderID = selectedModel?.providerID ?? value?.split("/")[0] ?? null
+  const selectedLabel = selectedModel ? toModelOptionLabel(selectedModel, catalog) : (value ?? emptyLabel)
+  const allProviderGroups = useMemo(() => buildProviderModelPickerGroups(catalog, models, ""), [catalog, models])
+  const providerGroups = useMemo(
+    () => buildProviderModelPickerGroups(catalog, models, searchQuery),
+    [catalog, models, searchQuery],
+  )
+  const activeProviderGroup =
+    (activeProviderID ? providerGroups.find((group) => group.provider.id === activeProviderID) : null) ?? providerGroups[0] ?? null
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    setSearchQuery("")
+    setActiveProviderID(
+      selectedProviderID && allProviderGroups.some((group) => group.provider.id === selectedProviderID)
+        ? selectedProviderID
+        : (allProviderGroups[0]?.provider.id ?? null),
+    )
+  }, [allProviderGroups, isOpen, selectedProviderID])
+
+  useEffect(() => {
+    if (!isOpen) return
+    if (activeProviderID && providerGroups.some((group) => group.provider.id === activeProviderID)) return
+
+    setActiveProviderID(providerGroups[0]?.provider.id ?? null)
+  }, [activeProviderID, isOpen, providerGroups])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    function handleDocumentPointerDown(event: globalThis.PointerEvent) {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (buttonRef.current?.contains(target) || panelRef.current?.contains(target)) return
+
+      setIsOpen(false)
+    }
+
+    document.addEventListener("pointerdown", handleDocumentPointerDown)
+    return () => document.removeEventListener("pointerdown", handleDocumentPointerDown)
+  }, [isOpen])
+
+  function closePicker() {
+    setIsOpen(false)
+    setSearchQuery("")
+    setActiveProviderID(null)
+    buttonRef.current?.focus()
+  }
+
+  function handleModelSelect(model: ProviderModel) {
+    closePicker()
+    onChange(toModelValue(model))
+  }
+
+  return (
+    <div className="provider-model-picker">
+      <button
+        ref={buttonRef}
+        type="button"
+        className={isOpen ? "provider-model-picker-button is-open" : "provider-model-picker-button"}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
+        aria-label={`${label}: ${selectedLabel}`}
+        onClick={() => setIsOpen((current) => !current)}
+      >
+        <span className={value ? "provider-model-picker-value" : "provider-model-picker-value is-empty"}>{selectedLabel}</span>
+        <ChevronDownIcon />
+      </button>
+
+      {isOpen ? (
+        <div
+          ref={panelRef}
+          className="provider-model-picker-panel"
+          role="dialog"
+          aria-label={`${label} model picker`}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            event.stopPropagation()
+            closePicker()
+          }}
+        >
+          <div className="provider-model-picker-search-row">
+            <input
+              aria-label="Search providers or models"
+              autoFocus
+              className="provider-model-picker-search"
+              placeholder="搜索 Provider 或模型"
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.currentTarget.value)}
+            />
+          </div>
+
+          {providerGroups.length > 0 ? (
+            <div className="provider-model-picker-body">
+              <div className="provider-model-picker-provider-list" role="listbox" aria-label={`${label} providers`}>
+                {providerGroups.map((group) => {
+                  const isActive = activeProviderGroup?.provider.id === group.provider.id
+
+                  return (
+                    <button
+                      key={group.provider.id}
+                      type="button"
+                      role="option"
+                      aria-selected={isActive}
+                      className={isActive ? "provider-model-picker-provider is-active" : "provider-model-picker-provider"}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        setActiveProviderID(group.provider.id)
+                      }}
+                    >
+                      <span className="provider-model-picker-provider-name">{group.provider.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="provider-model-picker-model-list" role="listbox" aria-label={`${label} models`}>
+                {activeProviderGroup && activeProviderGroup.matchingModels.length > 0 ? (
+                  activeProviderGroup.matchingModels.map((model) => {
+                    const modelValue = toModelValue(model)
+                    const isSelected = value === modelValue
+
+                    return (
+                      <button
+                        key={modelValue}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        className="provider-model-picker-model"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          handleModelSelect(model)
+                        }}
+                      >
+                        <span className="provider-model-picker-model-name">{model.name}</span>
+                      </button>
+                    )
+                  })
+                ) : (
+                  <p className="provider-model-picker-empty">No models found.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="provider-model-picker-empty">
+              {models.length === 0 ? "No models available." : "No providers or models found."}
+            </p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function ModelListView({ catalog, models, selectionDraft }: ModelListViewProps) {
   return (
     <div className="model-list">
       {models.map((model) => {
         const providerName = catalog.find((item) => item.id === model.providerID)?.name ?? model.providerID
-        const modelValue = `${model.providerID}/${model.id}`
+        const modelValue = toModelValue(model)
 
         return (
           <article key={modelValue} className="model-row">
@@ -531,7 +763,6 @@ interface SettingsPageProps {
   isLoadingArchivedSessions: boolean
   isOpen: boolean
   isRefreshingProviderCatalog: boolean
-  isSavingSelection: boolean
   loadError: string | null
   mcpServerDraft: McpServerDraftState
   mcpServers: McpServerSummary[]
@@ -542,7 +773,6 @@ interface SettingsPageProps {
   models: ProviderModel[]
   providerDrafts: Record<string, ProviderDraftState>
   restoringArchivedSessionID: string | null
-  savedSelection: ProjectModelSelection
   savingMcpServerID: string | null
   savingProviderID: string | null
   testingProviderID: string | null
@@ -569,11 +799,11 @@ interface SettingsPageProps {
   onProviderAuthMethodChange: (providerID: string, method: string) => void
   onProviderDraftChange: (providerID: string, field: "apiKey" | "baseURL", value: string) => void
   onRefreshProviderCatalog: () => boolean | Promise<boolean>
+  onLoadArchivedSessions: () => void | Promise<void>
   onRestoreArchivedSession: (sessionID: string) => boolean | Promise<boolean>
   onSaveMcpServer: () => boolean | Promise<boolean>
   onSaveProviderApiKey: (providerID: string, apiKey?: string | null) => boolean | Promise<boolean>
   onSaveProvider: (providerID: string) => boolean | Promise<boolean>
-  onSaveSelection: () => void | Promise<void>
   onSelectionChange: <K extends keyof ProjectModelSelection>(field: K, value: ProjectModelSelection[K]) => void
   onTestProviderConnection: (
     providerID: string,
@@ -614,7 +844,6 @@ export function SettingsPage({
   isLoadingArchivedSessions,
   isOpen,
   isRefreshingProviderCatalog,
-  isSavingSelection,
   loadError,
   mcpServerDraft,
   mcpServers,
@@ -622,7 +851,6 @@ export function SettingsPage({
   models,
   providerDrafts,
   restoringArchivedSessionID,
-  savedSelection,
   savingMcpServerID,
   savingProviderID,
   testingProviderID,
@@ -649,11 +877,11 @@ export function SettingsPage({
   onProviderAuthMethodChange,
   onProviderDraftChange,
   onRefreshProviderCatalog,
+  onLoadArchivedSessions,
   onRestoreArchivedSession,
   onSaveMcpServer,
   onSaveProviderApiKey,
   onSaveProvider,
-  onSaveSelection,
   onSelectionChange,
   onTestProviderConnection,
   onStartProviderAuthFlow,
@@ -739,12 +967,6 @@ export function SettingsPage({
       activeProvider?.authState.account?.email ??
       activeProvider?.authState.account?.workspaceName ??
       null
-    const selectionUnchanged =
-      savedSelection.model === selectionDraft.model &&
-      savedSelection.smallModel === selectionDraft.smallModel &&
-      savedSelection.imageModel === selectionDraft.imageModel &&
-      savedSelection.imageDefaultSize === selectionDraft.imageDefaultSize &&
-      savedSelection.imageDefaultCount === selectionDraft.imageDefaultCount
     const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
     const mcpSaveLabel = activeMcpServer ? "Save server" : "Create server"
     const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
@@ -777,6 +999,12 @@ export function SettingsPage({
         setAppUpdateStatus(null)
       }
     }, [isOpen])
+
+    useEffect(() => {
+      if (!isOpen || activeSection !== "archive") return
+
+      void onLoadArchivedSessions()
+    }, [activeSection, isOpen, onLoadArchivedSessions])
 
     useEffect(() => {
       if (!isOpen) return
@@ -1186,6 +1414,26 @@ export function SettingsPage({
             </button>
           </header>
 
+          {message ? (
+            <div className="settings-toast-region">
+              <div
+                className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}
+                role={message.tone === "success" ? "status" : "alert"}
+              >
+                <span className="settings-banner-text">{message.text}</span>
+                <button
+                  className="settings-banner-dismiss"
+                  type="button"
+                  aria-label="Dismiss settings message"
+                  title="Dismiss"
+                  onClick={onDismissMessage}
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="settings-page-shell">
             <aside className="settings-page-primary-nav" aria-label="Settings sections">
               {primarySectionGroups.map((group) => (
@@ -1219,21 +1467,6 @@ export function SettingsPage({
             </aside>
 
             <div className={activeSection === "services" ? "settings-page-main is-services" : "settings-page-main"}>
-              {message ? (
-                <div className={message.tone === "success" ? "settings-banner is-success" : "settings-banner is-error"}>
-                  <span className="settings-banner-text">{message.text}</span>
-                  <button
-                    className="settings-banner-dismiss"
-                    type="button"
-                    aria-label="Dismiss settings message"
-                    title="Dismiss"
-                    onClick={onDismissMessage}
-                  >
-                    <CloseIcon />
-                  </button>
-                </div>
-              ) : null}
-
               {loadError && showProviderSections ? <div className="settings-banner is-error">{loadError}</div> : null}
 
               {archivedSessionsError && activeSection === "archive" ? (
@@ -2533,59 +2766,41 @@ export function SettingsPage({
                       </div>
 
                       <div className="settings-field-grid">
-                        <label className="settings-field">
+                        <div className="settings-field">
                           <span className="settings-field-label">Primary model</span>
-                          <select
-                            aria-label="Primary model"
-                            value={selectionDraft.model ?? ""}
-                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                              onSelectionChange("model", event.target.value ? event.target.value : null)
-                            }
-                          >
-                            <option value="">Use server default</option>
-                            {visibleModels.map((model) => (
-                              <option key={`${model.providerID}/${model.id}`} value={`${model.providerID}/${model.id}`}>
-                                {toModelOptionLabel(model, catalog)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                          <ProviderModelPicker
+                            catalog={catalog}
+                            emptyLabel="Use server default"
+                            label="Primary model"
+                            models={visibleModels}
+                            value={selectionDraft.model}
+                            onChange={(value) => onSelectionChange("model", value)}
+                          />
+                        </div>
 
-                        <label className="settings-field">
+                        <div className="settings-field">
                           <span className="settings-field-label">Small model</span>
-                          <select
-                            aria-label="Small model"
-                            value={selectionDraft.smallModel ?? ""}
-                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                              onSelectionChange("smallModel", event.target.value ? event.target.value : null)
-                            }
-                          >
-                            <option value="">Use server default</option>
-                            {visibleModels.map((model) => (
-                              <option key={`small-${model.providerID}/${model.id}`} value={`${model.providerID}/${model.id}`}>
-                                {toModelOptionLabel(model, catalog)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                          <ProviderModelPicker
+                            catalog={catalog}
+                            emptyLabel="Use server default"
+                            label="Small model"
+                            models={visibleModels}
+                            value={selectionDraft.smallModel}
+                            onChange={(value) => onSelectionChange("smallModel", value)}
+                          />
+                        </div>
 
-                        <label className="settings-field">
+                        <div className="settings-field">
                           <span className="settings-field-label">Image generation model</span>
-                          <select
-                            aria-label="Image generation model"
-                            value={selectionDraft.imageModel ?? ""}
-                            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                              onSelectionChange("imageModel", event.target.value ? event.target.value : null)
-                            }
-                          >
-                            <option value="">Not configured</option>
-                            {visibleImageModels.map((model) => (
-                              <option key={`image-${model.providerID}/${model.id}`} value={`${model.providerID}/${model.id}`}>
-                                {toModelOptionLabel(model, catalog)}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
+                          <ProviderModelPicker
+                            catalog={catalog}
+                            emptyLabel="Not configured"
+                            label="Image generation model"
+                            models={visibleImageModels}
+                            value={selectionDraft.imageModel}
+                            onChange={(value) => onSelectionChange("imageModel", value)}
+                          />
+                        </div>
 
                         <label className="settings-field">
                           <span className="settings-field-label">Default image size</span>
@@ -2620,17 +2835,6 @@ export function SettingsPage({
                         </label>
                       </div>
 
-                      <div className="settings-actions-row">
-                        <span className="settings-helper-text">Use the small model for lightweight tasks. The image model powers generate_image globally.</span>
-                        <button
-                          className="primary-button"
-                          aria-label="Save model selection"
-                          disabled={isSavingSelection || selectionUnchanged}
-                          onClick={() => void onSaveSelection()}
-                        >
-                          {isSavingSelection ? "Saving..." : "Save model selection"}
-                        </button>
-                      </div>
                     </section>
 
                     <section className="settings-panel">
@@ -2918,41 +3122,29 @@ export function SettingsPage({
                     </div>
 
                     <div className="settings-field-grid">
-                      <label className="settings-field">
+                      <div className="settings-field">
                         <span className="settings-field-label">Primary model</span>
-                        <select
-                          aria-label="Primary model"
-                          value={selectionDraft.model ?? ""}
-                          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                            onSelectionChange("model", event.target.value ? event.target.value : null)
-                          }
-                        >
-                          <option value="">Use server default</option>
-                          {visibleModels.map((model) => (
-                            <option key={`${model.providerID}/${model.id}`} value={`${model.providerID}/${model.id}`}>
-                              {toModelOptionLabel(model, catalog)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        <ProviderModelPicker
+                          catalog={catalog}
+                          emptyLabel="Use server default"
+                          label="Primary model"
+                          models={visibleModels}
+                          value={selectionDraft.model}
+                          onChange={(value) => onSelectionChange("model", value)}
+                        />
+                      </div>
 
-                      <label className="settings-field">
+                      <div className="settings-field">
                         <span className="settings-field-label">Small model</span>
-                        <select
-                          aria-label="Small model"
-                          value={selectionDraft.smallModel ?? ""}
-                          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                            onSelectionChange("smallModel", event.target.value ? event.target.value : null)
-                          }
-                        >
-                          <option value="">Use server default</option>
-                          {visibleModels.map((model) => (
-                            <option key={`small-${model.providerID}/${model.id}`} value={`${model.providerID}/${model.id}`}>
-                              {toModelOptionLabel(model, catalog)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        <ProviderModelPicker
+                          catalog={catalog}
+                          emptyLabel="Use server default"
+                          label="Small model"
+                          models={visibleModels}
+                          value={selectionDraft.smallModel}
+                          onChange={(value) => onSelectionChange("smallModel", value)}
+                        />
+                      </div>
                     </div>
 
                     <div className="settings-actions-row">

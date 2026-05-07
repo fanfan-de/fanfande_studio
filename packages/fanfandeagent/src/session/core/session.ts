@@ -245,6 +245,13 @@ export const ArchivedSessionRecord = z
   })
 export type ArchivedSessionRecord = z.output<typeof ArchivedSessionRecord>
 
+export const ArchivedSessionSummaryRecord = ArchivedSessionRecord.omit({
+  snapshot: true,
+}).meta({
+  ref: "ArchivedSessionSummaryRecord",
+})
+export type ArchivedSessionSummaryRecord = z.output<typeof ArchivedSessionSummaryRecord>
+
 export const SideChatSource = z
   .object({
     kind: z.enum(["url", "document"]),
@@ -1004,6 +1011,28 @@ function listArchivedSessions(): ArchivedSessionRecord[] {
   })
 }
 
+function listArchivedSessionSummaries(): ArchivedSessionSummaryRecord[] {
+  ensureSessionTables()
+  return db.findManyWithSchema("archived_sessions", ArchivedSessionSummaryRecord, {
+    columns: [
+      "sessionID",
+      "projectID",
+      "directory",
+      "title",
+      "createdAt",
+      "updatedAt",
+      "archivedAt",
+      "schemaVersion",
+      "messageCount",
+      "eventCount",
+    ],
+    orderBy: [
+      { column: "archivedAt", direction: "DESC" },
+      { column: "updatedAt", direction: "DESC" },
+    ],
+  })
+}
+
 function listArchivableSessions(sessionID: string): SessionInfo[] {
   ensureSessionTables()
   const existing = DataBaseRead("sessions", sessionID) as SessionInfo | null
@@ -1279,6 +1308,7 @@ export {
   DataBaseRead,
   deletePart,
   listArchivedSessions,
+  listArchivedSessionSummaries,
   listByProject,
   listSideChats,
   listTurns,

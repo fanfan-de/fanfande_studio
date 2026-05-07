@@ -29,7 +29,7 @@ import {
   resolveCreateSessionWorkspaceID,
   resolveWorkbenchGroupID
 } from "./workspace-derived-state"
-import type { WorkspaceStateUpdater } from "./workspace-store"
+import { ensureExpandedFolderID, filterExpandedFolderIDs, type WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 
@@ -46,7 +46,7 @@ interface UseWorkbenchTabControllerOptions {
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
   selectedFolderID: string | null
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
-  setExpandedFolderID: StateSetter<string | null>
+  setExpandedFolderIDs: StateSetter<string[]>
   setSelectedFolderID: StateSetter<string | null>
   setWorkbenchLayout: StateSetter<WorkbenchLayoutState>
   workbenchLayout: WorkbenchLayoutState
@@ -67,7 +67,7 @@ export function useWorkbenchTabController({
   projectRowRefs,
   selectedFolderID,
   setCreateSessionTabs,
-  setExpandedFolderID,
+  setExpandedFolderIDs,
   setSelectedFolderID,
   setWorkbenchLayout,
   workbenchLayout,
@@ -89,7 +89,7 @@ export function useWorkbenchTabController({
   function activateSessionTab(workspaceID: string, sessionID: string, paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null) {
     lastFocusedSessionIDRef.current = sessionID
     setSelectedFolderID(workspaceID)
-    setExpandedFolderID(workspaceID)
+    setExpandedFolderIDs((current) => ensureExpandedFolderID(current, workspaceID))
     setWorkbenchLayout((current) =>
       upsertTabReferenceInGroup(current, resolveWorkbenchGroupID(current, paneID), createSessionWorkbenchTab(sessionID)),
     )
@@ -116,7 +116,7 @@ export function useWorkbenchTabController({
       upsertTabReferenceInGroup(current, resolveWorkbenchGroupID(current, paneID), createCreateSessionWorkbenchTab(nextCreateSessionTab.id)),
     )
     setSelectedFolderID(nextCreateSessionTab.workspaceID)
-    setExpandedFolderID(nextCreateSessionTab.workspaceID)
+    setExpandedFolderIDs((current) => ensureExpandedFolderID(current, nextCreateSessionTab.workspaceID))
   }
 
   function openCreateSessionTab(
@@ -138,7 +138,7 @@ export function useWorkbenchTabController({
     )
 
     setSelectedFolderID(nextWorkspaceID)
-    setExpandedFolderID(nextWorkspaceID)
+    setExpandedFolderIDs((current) => ensureExpandedFolderID(current, nextWorkspaceID))
   }
 
   function focusMostRecentCreateSessionTab(
@@ -219,7 +219,7 @@ export function useWorkbenchTabController({
       ),
     )
     setSelectedFolderID(workspaceID)
-    setExpandedFolderID(workspaceID)
+    setExpandedFolderIDs((current) => ensureExpandedFolderID(current, workspaceID))
   }
 
   function handleCreateSessionTitleChange(value: string, createSessionTabID = activeCreateSessionTabID) {
@@ -245,7 +245,7 @@ export function useWorkbenchTabController({
     const nextWorkspaceID = resolveWorkspaceIDForTab(nextActiveTab)
     setFocusedPaneID(paneID)
     setSelectedFolderID(nextWorkspaceID)
-    setExpandedFolderID(nextWorkspaceID)
+    setExpandedFolderIDs((current) => ensureExpandedFolderID(current, nextWorkspaceID))
   }
 
   function handleSplitResize(splitID: string, leftIndex: number, leftSize: number, rightSize: number) {
@@ -284,7 +284,7 @@ export function useWorkbenchTabController({
 
     const nextWorkspaceID = resolveWorkspaceIDForTab(movedTab)
     setSelectedFolderID(nextWorkspaceID)
-    setExpandedFolderID(nextWorkspaceID)
+    setExpandedFolderIDs((current) => ensureExpandedFolderID(current, nextWorkspaceID))
   }
 
   function handlePaneSplit(paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null) {
@@ -303,7 +303,7 @@ export function useWorkbenchTabController({
       splitGroupWithReference(current, paneID, createCreateSessionWorkbenchTab(nextCreateSessionTab.id), "right"),
     )
     setSelectedFolderID(nextWorkspaceID)
-    setExpandedFolderID(nextWorkspaceID)
+    setExpandedFolderIDs((current) => ensureExpandedFolderID(current, nextWorkspaceID))
   }
 
   useEffect(() => {
@@ -318,6 +318,8 @@ export function useWorkbenchTabController({
   useEffect(() => {
     const validWorkspaceIDs = new Set(workspaces.map((workspace) => workspace.id))
     const validSessionIDs = new Set(workspaces.flatMap((workspace) => workspace.sessions.map((session) => session.id)))
+
+    setExpandedFolderIDs((current) => filterExpandedFolderIDs(current, validWorkspaceIDs))
 
     setWorkbenchLayout((current) =>
       filterLayoutTabs(current, (reference) => reference.kind !== "session" || validSessionIDs.has(reference.sessionID)),
@@ -367,7 +369,7 @@ export function useWorkbenchTabController({
 
     if (fallbackCreateSessionTab.workspaceID !== selectedFolderID) {
       setSelectedFolderID(fallbackCreateSessionTab.workspaceID)
-      setExpandedFolderID(fallbackCreateSessionTab.workspaceID)
+      setExpandedFolderIDs((current) => ensureExpandedFolderID(current, fallbackCreateSessionTab.workspaceID))
     }
   }, [activeCreateSessionTab, createSessionTabs, selectedFolderID, workspaces, activeWorkspace?.id, workbenchPanes])
 

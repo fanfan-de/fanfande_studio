@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type {
   ArchivedSessionSummary,
   BuiltinToolSelection,
@@ -75,6 +75,35 @@ function normalizeSelection(selection?: {
 }
 
 const EMPTY_BUILTIN_TOOL_SELECTION: BuiltinToolSelection = { tools: {} }
+const EMPTY_PROJECT_MODEL_SELECTION: ProjectModelSelection = {
+  model: null,
+  smallModel: null,
+  imageModel: null,
+  imageDefaultSize: null,
+  imageDefaultCount: null,
+}
+
+function buildModelSelectionUpdatePayload(
+  savedSelection: ProjectModelSelection,
+  nextSelection: ProjectModelSelection,
+) {
+  const imageGenerationChanged =
+    savedSelection.imageDefaultSize !== nextSelection.imageDefaultSize ||
+    savedSelection.imageDefaultCount !== nextSelection.imageDefaultCount
+  const nextImageGeneration = {
+    ...(nextSelection.imageDefaultSize ? { default_size: nextSelection.imageDefaultSize } : {}),
+    ...(nextSelection.imageDefaultCount ? { default_count: nextSelection.imageDefaultCount } : {}),
+  }
+
+  return {
+    model: nextSelection.model,
+    small_model: nextSelection.smallModel,
+    ...(savedSelection.imageModel !== nextSelection.imageModel ? { image_model: nextSelection.imageModel } : {}),
+    ...(imageGenerationChanged
+      ? { image_generation: Object.keys(nextImageGeneration).length > 0 ? nextImageGeneration : null }
+      : {}),
+  }
+}
 
 function normalizeBuiltinToolSelection(selection?: BuiltinToolSelection | null): BuiltinToolSelection {
   return {
@@ -408,20 +437,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [isOpen, setIsOpen] = useState(false)
   const [catalog, setCatalog] = useState<ProviderCatalogItem[]>([])
   const [models, setModels] = useState<ProviderModel[]>([])
-  const [savedSelection, setSavedSelection] = useState<ProjectModelSelection>({
-    model: null,
-    smallModel: null,
-    imageModel: null,
-    imageDefaultSize: null,
-    imageDefaultCount: null,
-  })
-  const [selectionDraft, setSelectionDraft] = useState<ProjectModelSelection>({
-    model: null,
-    smallModel: null,
-    imageModel: null,
-    imageDefaultSize: null,
-    imageDefaultCount: null,
-  })
+  const [savedSelection, setSavedSelection] = useState<ProjectModelSelection>(EMPTY_PROJECT_MODEL_SELECTION)
+  const [selectionDraft, setSelectionDraft] = useState<ProjectModelSelection>(EMPTY_PROJECT_MODEL_SELECTION)
   const [providerDrafts, setProviderDrafts] = useState<Record<string, ProviderDraftState>>({})
   const [mcpServers, setMcpServers] = useState<McpServerSummary[]>([])
   const [mcpDiagnostics, setMcpDiagnostics] = useState<Record<string, McpServerDiagnostic>>({})
@@ -492,6 +509,10 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   const [restoringArchivedSessionID, setRestoringArchivedSessionID] = useState<string | null>(null)
   const [deletingArchivedSessionID, setDeletingArchivedSessionID] = useState<string | null>(null)
   const requestIDRef = useRef(0)
+  const savedSelectionRef = useRef<ProjectModelSelection>(EMPTY_PROJECT_MODEL_SELECTION)
+  const selectionDraftRef = useRef<ProjectModelSelection>(EMPTY_PROJECT_MODEL_SELECTION)
+  const pendingSelectionSaveRef = useRef<ProjectModelSelection | null>(null)
+  const isPersistingSelectionRef = useRef(false)
   const builtinToolsRequestIDRef = useRef(0)
   const archivedSessionsRequestIDRef = useRef(0)
   const mcpServersRequestIDRef = useRef(0)
@@ -506,7 +527,6 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     if (!isOpen) return
 
     void loadSettingsData()
-    void loadArchivedSessions()
   }, [isOpen])
 
   useEffect(() => {
@@ -712,7 +732,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     void loadMcpServerDiagnostic(activeMcpServerID)
   }, [activeMcpServerID, isMcpServersPageOpen, isOpen])
 
-  async function loadArchivedSessions(optionsArg?: LoadSettingsOptions) {
+  const loadArchivedSessions = useCallback(async (optionsArg?: LoadSettingsOptions) => {
     const listArchivedSessions = window.desktop?.listArchivedSessions
     if (!listArchivedSessions) {
       setArchivedSessions([])
@@ -739,7 +759,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
         setIsLoadingArchivedSessions(false)
       }
     }
-  }
+  }, [])
 
   async function loadSettingsData(optionsArg?: LoadSettingsOptions) {
     const loadProviderCatalog = window.desktop?.getGlobalProviderCatalog
@@ -771,6 +791,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       const nextSelection = normalizeSelection(modelPayload.selection)
       setCatalog(normalizedCatalog)
       setModels(modelPayload.items)
+      savedSelectionRef.current = nextSelection
+      selectionDraftRef.current = nextSelection
       setSavedSelection(nextSelection)
       setSelectionDraft(nextSelection)
       const nextProviderDrafts = buildProviderDrafts(normalizedCatalog)
@@ -1100,10 +1122,16 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   function setSelectionDraftValue<K extends keyof ProjectModelSelection>(field: K, value: ProjectModelSelection[K]) {
-    setSelectionDraft((current) => ({
-      ...current,
+    if (selectionDraftRef.current[field] === value) return
+
+    const nextSelection = {
+      ...selectionDraftRef.current,
       [field]: value,
-    }))
+    } as ProjectModelSelection
+
+    selectionDraftRef.current = nextSelection
+    setSelectionDraft(nextSelection)
+    void saveSelection(nextSelection)
   }
 
   function startNewMcpServer() {
@@ -2065,43 +2093,48 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
   }
 
-  async function saveSelection() {
+  async function saveSelection(nextSelection: ProjectModelSelection = selectionDraftRef.current) {
     const updateModelSelection = window.desktop?.updateGlobalModelSelection
     if (!updateModelSelection) return
 
+    pendingSelectionSaveRef.current = nextSelection
+    if (isPersistingSelectionRef.current) return
+
+    isPersistingSelectionRef.current = true
     setIsSavingSelection(true)
     setMessage(null)
 
     try {
-      const imageGenerationChanged =
-        savedSelection.imageDefaultSize !== selectionDraft.imageDefaultSize ||
-        savedSelection.imageDefaultCount !== selectionDraft.imageDefaultCount
-      const nextImageGeneration = {
-        ...(selectionDraft.imageDefaultSize ? { default_size: selectionDraft.imageDefaultSize } : {}),
-        ...(selectionDraft.imageDefaultCount ? { default_count: selectionDraft.imageDefaultCount } : {}),
+      let didSave = false
+
+      while (pendingSelectionSaveRef.current) {
+        const selectionToSave = pendingSelectionSaveRef.current
+        pendingSelectionSaveRef.current = null
+
+        await updateModelSelection(buildModelSelectionUpdatePayload(savedSelectionRef.current, selectionToSave))
+        savedSelectionRef.current = selectionToSave
+        setSavedSelection(selectionToSave)
+        didSave = true
       }
 
-      await updateModelSelection({
-        model: selectionDraft.model,
-        small_model: selectionDraft.smallModel,
-        ...(savedSelection.imageModel !== selectionDraft.imageModel ? { image_model: selectionDraft.imageModel } : {}),
-        ...(imageGenerationChanged
-          ? { image_generation: Object.keys(nextImageGeneration).length > 0 ? nextImageGeneration : null }
-          : {}),
-      })
-      setSavedSelection(selectionDraft)
-      await notifyProviderModelsUpdated()
-      setMessage({
-        tone: "success",
-        text: "Model settings saved.",
-      })
+      if (didSave) {
+        await notifyProviderModelsUpdated()
+        setMessage({
+          tone: "success",
+          text: "Model settings saved.",
+        })
+      }
     } catch (error) {
       setMessage({
         tone: "error",
         text: getErrorMessage(error),
       })
     } finally {
+      isPersistingSelectionRef.current = false
       setIsSavingSelection(false)
+      if (pendingSelectionSaveRef.current) {
+        void saveSelection(pendingSelectionSaveRef.current)
+      }
     }
   }
 
@@ -2582,6 +2615,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     importMcpConfigJson,
     installingPluginID,
     installedPlugins,
+    loadArchivedSessions,
     isCreatingPromptPreset,
     isImportingMcpConfigJson,
     isLoading,

@@ -29,6 +29,18 @@ describe("global built-in tool selection", () => {
     await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {})
   })
 
+  it("exposes only provider-safe tool names to the model", async () => {
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const toolNames = await resolveAgentToolNames("default")
+        expect(toolNames.every((name) => /^[a-zA-Z0-9_-]+$/.test(name))).toBe(true)
+        expect(toolNames).toContain("multi_tool_use_parallel")
+        expect(toolNames).not.toContain("multi_tool_use.parallel")
+      },
+    })
+  })
+
   it("keeps built-in tools available when the global selection is empty", async () => {
     await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {})
 
@@ -37,7 +49,7 @@ describe("global built-in tool selection", () => {
       async fn() {
         const toolNames = await resolveAgentToolNames("default")
         expect(toolNames).toContain("read-file")
-        expect(toolNames).toContain("multi_tool_use.parallel")
+        expect(toolNames).toContain("multi_tool_use_parallel")
         expect(toolNames).toContain("git_bash_command")
         expect(toolNames).toContain("powershell_command")
         expect(toolNames).toContain("cmd_command")
@@ -82,7 +94,7 @@ describe("global built-in tool selection", () => {
       async fn() {
         const toolNames = await resolveAgentToolNames("plan")
         expect(toolNames).toContain("read-file")
-        expect(toolNames).toContain("multi_tool_use.parallel")
+        expect(toolNames).toContain("multi_tool_use_parallel")
         expect(toolNames).not.toContain("replace-text")
       },
     })
@@ -98,8 +110,8 @@ describe("global built-in tool selection", () => {
       async fn() {
         const defaultToolNames = await resolveAgentToolNames("default")
         const planToolNames = await resolveAgentToolNames("plan")
-        expect(defaultToolNames).not.toContain("multi_tool_use.parallel")
-        expect(planToolNames).not.toContain("multi_tool_use.parallel")
+        expect(defaultToolNames).not.toContain("multi_tool_use_parallel")
+        expect(planToolNames).not.toContain("multi_tool_use_parallel")
       },
     })
   })

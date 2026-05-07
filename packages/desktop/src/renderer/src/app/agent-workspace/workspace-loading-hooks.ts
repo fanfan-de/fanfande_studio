@@ -285,7 +285,7 @@ interface UseInitialFolderWorkspacesEffectOptions {
   setCanLoadSessionHistory: (update: boolean) => void
   setConversations: (update: (current: Record<string, Turn[]>) => Record<string, Turn[]>) => void
   setCreateSessionTabs: (update: CreateSessionTab[]) => void
-  setExpandedFolderID: (update: string | null) => void
+  setExpandedFolderIDs: (update: string[]) => void
   setIsInitialWorkspaceLoadPending: (update: boolean) => void
   setSelectedFolderID: (update: string | null) => void
   setSessionDirectoryBySession: (update: (current: Record<string, string>) => Record<string, string>) => void
@@ -304,7 +304,7 @@ export function useInitialFolderWorkspacesEffect({
   setCanLoadSessionHistory,
   setConversations,
   setCreateSessionTabs,
-  setExpandedFolderID,
+  setExpandedFolderIDs,
   setIsInitialWorkspaceLoadPending,
   setSelectedFolderID,
   setSessionDirectoryBySession,
@@ -358,7 +358,7 @@ export function useInitialFolderWorkspacesEffect({
                 ? createCreateSessionWorkbenchTab(nextCreateSessionTab.id)
                 : null
           setSelectedFolderID(nextFolderID)
-          setExpandedFolderID(nextFolderID)
+          setExpandedFolderIDs(nextFolderID ? [nextFolderID] : [])
           setCreateSessionTabs(nextCreateSessionTab ? [nextCreateSessionTab] : [])
           setWorkbenchLayout(nextInitialTab ? createWorkbenchLayoutWithTab(nextInitialTab) : normalizeLayoutState({
             rootId: null,

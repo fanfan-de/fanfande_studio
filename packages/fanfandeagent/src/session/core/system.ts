@@ -41,12 +41,12 @@ function renderActiveTasks(session: Session.SessionInfo | null | undefined) {
 }
 
 export function tools(toolNames: string[]) {
-    if (!toolNames.includes("multi_tool_use.parallel")) return []
+    if (!toolNames.includes("multi_tool_use_parallel")) return []
 
     return [
         [
             "# Parallel tool use",
-            "- When you need multiple independent read/search tool calls, prefer one `multi_tool_use.parallel` call.",
+            "- When you need multiple independent read/search tool calls, prefer one `multi_tool_use_parallel` call.",
             "- Use `{ calls: [{ tool: \"read-file\", input: { file_path: \"...\" } }] }`.",
             "- Do not use it for dependent steps, edits, shell commands, user questions, image generation, or subagent control.",
         ].join("\n"),

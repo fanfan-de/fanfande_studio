@@ -705,6 +705,46 @@
   background: inherit;
 }
 
+.composer-model-menu-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.composer-model-menu-panel .composer-menu-search {
+  position: relative;
+  top: auto;
+  z-index: 2;
+  margin: -8px -8px 0;
+  padding: 8px 8px 6px;
+  border-bottom: 1px solid rgba(166, 186, 208, 0.28);
+  background: var(--seg-dropdown-menu-surface);
+}
+
+.composer-model-menu-options {
+  min-height: 0;
+  max-height: calc(min(320px, calc(100dvh - 180px)) - 51px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-top: 4px;
+  scrollbar-color: var(--mix-seg-text-3-54-transparent-46) var(--seg-dropdown-menu-surface);
+}
+
+.composer-model-menu-options::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.composer-model-menu-options::-webkit-scrollbar-track {
+  background: var(--seg-dropdown-menu-surface);
+}
+
+.composer-model-menu-options::-webkit-scrollbar-thumb {
+  border: 3px solid var(--seg-dropdown-menu-surface);
+  border-radius: 999px;
+  background: var(--mix-seg-text-3-54-transparent-46);
+}
+
 .composer-menu-search-input {
   width: 100%;
   height: 32px;

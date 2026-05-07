@@ -10,7 +10,8 @@ import {
 } from "#tool/execution.ts"
 import * as Tool from "#tool/tool.ts"
 
-export const PARALLEL_TOOL_ID = "multi_tool_use.parallel"
+export const PARALLEL_TOOL_ID = "multi_tool_use_parallel"
+export const PARALLEL_TOOL_LEGACY_ID = "multi_tool_use.parallel"
 
 const ALLOWED_CHILD_KINDS = new Set<Tool.ToolKind>(["read", "search"])
 const MAX_PARALLEL_CALLS = 8
@@ -76,7 +77,7 @@ function getChildEligibilityFailure(item: Tool.ToolInfo) {
 }
 
 function isParallelToolName(name: string) {
-  return name === PARALLEL_TOOL_ID
+  return name === PARALLEL_TOOL_ID || name === PARALLEL_TOOL_LEGACY_ID
 }
 
 async function defaultAgent() {
@@ -251,6 +252,7 @@ export const ParallelTool = Tool.define(
   },
   {
     title: "Parallel Tool Use",
+    aliases: [PARALLEL_TOOL_LEGACY_ID],
     maxResultSizeChars: Infinity,
     capabilities: {
       kind: "read",

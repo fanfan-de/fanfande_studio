@@ -1404,7 +1404,7 @@ export function Composer({
               </button>
 
               {openMenu === "model" ? (
-                <div className="composer-menu-panel">
+                <div className="composer-menu-panel composer-model-menu-panel">
                   <div className="composer-menu-search" role="presentation">
                     <input
                       aria-label="Search models"
@@ -1416,7 +1416,7 @@ export function Composer({
                       value={modelSearchQuery}
                     />
                   </div>
-                  <div className="composer-menu-options" role="listbox" aria-label="Model selection">
+                  <div className="composer-menu-options composer-model-menu-options" role="listbox" aria-label="Model selection">
                     {visibleModelOptions.length > 0 ? (
                       visibleModelOptions.map((option) => (
                         <button

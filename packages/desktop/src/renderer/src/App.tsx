@@ -129,7 +129,7 @@ export function App() {
     canInsertWorkspaceFileCommentsIntoDraft,
     composerRefreshVersion,
     deletingSessionID,
-    expandedFolderID,
+    expandedFolderIDs,
     handleCancelSend,
     handleCanvasSessionTabClose,
     handleCanvasSessionTabSelect,
@@ -323,8 +323,8 @@ export function App() {
     isPreviewingPromptUrlInstall,
     isSavingPromptPresetSelection,
     isSavingBuiltinTools,
-    isSavingSelection,
     loadError,
+    loadArchivedSessions,
     mcpServerDraft,
     mcpServers,
     message,
@@ -356,7 +356,6 @@ export function App() {
     resetPromptPreset,
     resettingPromptPresetID,
     restoringArchivedSessionID,
-    savedSelection,
     restoreArchivedSession,
     saveBuiltinTools,
     saveInstalledPluginConfig,
@@ -365,7 +364,6 @@ export function App() {
     savePromptPreset,
     saveProviderApiKey,
     saveProvider,
-    saveSelection,
     savingMcpServerID,
     savingPromptPresetID,
     savingProviderID,
@@ -806,7 +804,7 @@ export function App() {
               activeView={leftSidebarView}
               deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
               deletingSessionID={deletingSessionID}
-              expandedFolderID={expandedFolderID}
+              expandedFolderIDs={expandedFolderIDs}
               expandedSkillPaths={expandedSkillPaths}
               creatingGlobalSkillName={creatingGlobalSkillName}
               globalSkillsRoot={globalSkillsRoot}
@@ -1209,7 +1207,6 @@ export function App() {
           isLoadingArchivedSessions={isLoadingArchivedSessions}
           isOpen={isOpen}
           isRefreshingProviderCatalog={isRefreshingProviderCatalog}
-          isSavingSelection={isSavingSelection}
           loadError={loadError}
           mcpServerDraft={mcpServerDraft}
           mcpServers={mcpServers}
@@ -1217,7 +1214,6 @@ export function App() {
           models={models}
           providerDrafts={providerDrafts}
           restoringArchivedSessionID={restoringArchivedSessionID}
-          savedSelection={savedSelection}
           savingMcpServerID={savingMcpServerID}
           savingProviderID={savingProviderID}
           testingProviderID={testingProviderID}
@@ -1244,11 +1240,11 @@ export function App() {
           onProviderAuthMethodChange={setProviderAuthMethod}
           onProviderDraftChange={setProviderDraftValue}
           onRefreshProviderCatalog={refreshProviderCatalog}
+          onLoadArchivedSessions={loadArchivedSessions}
           onRestoreArchivedSession={restoreArchivedSession}
           onSaveMcpServer={saveMcpServer}
           onSaveProviderApiKey={saveProviderApiKey}
           onSaveProvider={saveProvider}
-          onSaveSelection={saveSelection}
           onSelectionChange={setSelectionDraftValue}
           onTestProviderConnection={testProviderConnection}
           onStartProviderAuthFlow={startProviderAuthFlow}

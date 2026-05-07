@@ -65,7 +65,7 @@ function useWorkbenchHarness() {
     },
   ])
   const [selectedFolderID, setSelectedFolderID] = useState<string | null>(workspace.id)
-  const [, setExpandedFolderID] = useState<string | null>(workspace.id)
+  const [, setExpandedFolderIDs] = useState<string[]>([workspace.id])
   const [workbenchLayout, setWorkbenchLayout] = useState(() =>
     createWorkbenchLayoutFromLegacyPanes([
       createWorkbenchPane([
@@ -116,7 +116,7 @@ function useWorkbenchHarness() {
     projectRowRefs,
     selectedFolderID,
     setCreateSessionTabs,
-    setExpandedFolderID,
+    setExpandedFolderIDs,
     setSelectedFolderID,
     setWorkbenchLayout,
     workbenchLayout,

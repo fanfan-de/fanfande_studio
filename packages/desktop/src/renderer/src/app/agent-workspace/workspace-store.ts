@@ -29,6 +29,21 @@ export const seedWorkspaceIDs = new Set(seedWorkspaces.map((workspace) => worksp
 
 export type WorkspaceStateUpdater<T> = SetStateAction<T>
 
+export function ensureExpandedFolderID(current: string[], folderID: string | null | undefined) {
+  if (!folderID || current.includes(folderID)) return current
+  return [...current, folderID]
+}
+
+export function removeExpandedFolderID(current: string[], folderID: string | null | undefined) {
+  if (!folderID || !current.includes(folderID)) return current
+  return current.filter((item) => item !== folderID)
+}
+
+export function filterExpandedFolderIDs(current: string[], validFolderIDs: Set<string>) {
+  const next = current.filter((folderID) => validFolderIDs.has(folderID))
+  return next.length === current.length ? current : next
+}
+
 export interface WorkbenchSliceState {
   workbenchLayout: WorkbenchLayoutState
 }
@@ -38,7 +53,7 @@ export interface SessionsSliceState {
   canLoadSessionHistory: boolean
   createSessionTabs: CreateSessionTab[]
   deletingSessionID: string | null
-  expandedFolderID: string | null
+  expandedFolderIDs: string[]
   hoveredFolderID: string | null
   isCreatingProject: boolean
   isInitialWorkspaceLoadPending: boolean
@@ -89,7 +104,7 @@ export interface SessionsSliceActions {
   setCanLoadSessionHistory: (update: WorkspaceStateUpdater<boolean>) => void
   setCreateSessionTabs: (update: WorkspaceStateUpdater<CreateSessionTab[]>) => void
   setDeletingSessionID: (update: WorkspaceStateUpdater<string | null>) => void
-  setExpandedFolderID: (update: WorkspaceStateUpdater<string | null>) => void
+  setExpandedFolderIDs: (update: WorkspaceStateUpdater<string[]>) => void
   setHoveredFolderID: (update: WorkspaceStateUpdater<string | null>) => void
   setIsCreatingProject: (update: WorkspaceStateUpdater<boolean>) => void
   setIsInitialWorkspaceLoadPending: (update: WorkspaceStateUpdater<boolean>) => void
@@ -193,7 +208,7 @@ export function createWorkspaceStore({
       canLoadSessionHistory: false,
       createSessionTabs: initialCreateSessionTab ? [initialCreateSessionTab] : [],
       deletingSessionID: null,
-      expandedFolderID: initialWorkspace?.id ?? null,
+      expandedFolderIDs: initialWorkspace ? [initialWorkspace.id] : [],
       hoveredFolderID: null,
       isCreatingProject: false,
       isInitialWorkspaceLoadPending: hasFolderWorkspaceLoader,
@@ -276,11 +291,11 @@ export function createWorkspaceStore({
             deletingSessionID: resolveStateUpdate(state.sessions.deletingSessionID, update),
           },
         })),
-      setExpandedFolderID: (update) =>
+      setExpandedFolderIDs: (update) =>
         set((state) => ({
           sessions: {
             ...state.sessions,
-            expandedFolderID: resolveStateUpdate(state.sessions.expandedFolderID, update),
+            expandedFolderIDs: resolveStateUpdate(state.sessions.expandedFolderIDs, update),
           },
         })),
       setHoveredFolderID: (update) =>

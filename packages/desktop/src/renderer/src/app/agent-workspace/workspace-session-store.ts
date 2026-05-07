@@ -24,7 +24,7 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
   const canLoadSessionHistory = useWorkspaceStoreSelector(store, (state) => state.sessions.canLoadSessionHistory)
   const createSessionTabs = useWorkspaceStoreSelector(store, (state) => state.sessions.createSessionTabs)
   const deletingSessionID = useWorkspaceStoreSelector(store, (state) => state.sessions.deletingSessionID)
-  const expandedFolderID = useWorkspaceStoreSelector(store, (state) => state.sessions.expandedFolderID)
+  const expandedFolderIDs = useWorkspaceStoreSelector(store, (state) => state.sessions.expandedFolderIDs)
   const hoveredFolderID = useWorkspaceStoreSelector(store, (state) => state.sessions.hoveredFolderID)
   const isCreatingProject = useWorkspaceStoreSelector(store, (state) => state.sessions.isCreatingProject)
   const isInitialWorkspaceLoadPending = useWorkspaceStoreSelector(
@@ -49,7 +49,7 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
   )
   const setCreateSessionTabs = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setCreateSessionTabs)
   const setDeletingSessionID = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setDeletingSessionID)
-  const setExpandedFolderID = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setExpandedFolderID)
+  const setExpandedFolderIDs = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setExpandedFolderIDs)
   const setHoveredFolderID = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setHoveredFolderID)
   const setIsCreatingProject = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setIsCreatingProject)
   const setIsInitialWorkspaceLoadPending = useWorkspaceStoreSelector(
@@ -70,7 +70,7 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
     canLoadSessionHistory,
     createSessionTabs,
     deletingSessionID,
-    expandedFolderID,
+    expandedFolderIDs,
     gitRefreshSuppressedUntilRef,
     hoveredFolderID,
     initialFolderWorkspacesLoadedRef,
@@ -85,7 +85,7 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
     setCanLoadSessionHistory,
     setCreateSessionTabs,
     setDeletingSessionID,
-    setExpandedFolderID,
+    setExpandedFolderIDs,
     setHoveredFolderID,
     setIsCreatingProject,
     setIsInitialWorkspaceLoadPending,

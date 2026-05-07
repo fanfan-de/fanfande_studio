@@ -1,3 +1,4 @@
+import * as Config from "#config/config.ts"
 import * as Provider from "#provider/provider.ts"
 
 const MODEL_LIST_CACHE_TTL_MS = 30_000
@@ -116,6 +117,30 @@ export function findModelByReference(items: Provider.PublicModel[], value: strin
   return items.find((model) => model.providerID === providerID && model.id === modelID) ?? null
 }
 
+function resolveInheritedModelReference(
+  items: Provider.PublicModel[],
+  projectValue: string | undefined,
+  globalValue: string | undefined,
+) {
+  return projectValue ?? (findModelByReference(items, globalValue) ? globalValue : undefined)
+}
+
+export async function resolveProjectModelSelectionWithGlobalFallback(
+  projectID: string,
+  items: Provider.PublicModel[],
+) {
+  const projectSelection = await Provider.getSelection(projectID)
+  const globalSelection =
+    projectID === Config.GLOBAL_CONFIG_ID
+      ? undefined
+      : await Provider.getSelection(Config.GLOBAL_CONFIG_ID).catch(() => undefined)
+
+  return {
+    model: resolveInheritedModelReference(items, projectSelection.model, globalSelection?.model),
+    small_model: resolveInheritedModelReference(items, projectSelection.small_model, globalSelection?.small_model),
+  }
+}
+
 export async function resolveEffectiveModelWithFallback(
   projectID: string,
   items: Provider.PublicModel[],
@@ -127,6 +152,12 @@ export async function resolveEffectiveModelWithFallback(
   const projectSelection = await Provider.getSelection(projectID).catch(() => undefined)
   const configuredDefault = findModelByReference(items, projectSelection?.model)
   if (configuredDefault) return configuredDefault
+
+  if (projectID !== Config.GLOBAL_CONFIG_ID) {
+    const globalSelection = await Provider.getSelection(Config.GLOBAL_CONFIG_ID).catch(() => undefined)
+    const globalDefault = findModelByReference(items, globalSelection?.model)
+    if (globalDefault) return globalDefault
+  }
 
   return items.find((model) => model.available) ?? null
 }

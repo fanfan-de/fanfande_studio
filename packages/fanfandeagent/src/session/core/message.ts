@@ -54,6 +54,11 @@ export type APIError = z.infer<typeof APIError.Schema>
 
 const log = Log.create({ service: "session.message" })
 
+function modelSafeToolName(toolName: string) {
+    if (toolName === "multi_tool_use.parallel") return "multi_tool_use_parallel"
+    return toolName
+}
+
 function summarizeAttachmentPartForLog(part: FilePart | ImagePart) {
     return {
         type: part.type,
@@ -985,11 +990,12 @@ export async function toModelMessages(
                     state.status === "error" ||
                     state.status === "denied"
                 ) {
+                    const toolName = modelSafeToolName(part.tool)
                     const toolCallProviderOptions = providerOptionsFromMetadata(part.metadata)
                     assistantContent.push({
                         type: "tool-call" as const,
                         toolCallId: part.callID,
-                        toolName: part.tool,
+                        toolName,
                         input: state.input,
                         ...(part.providerExecuted ? { providerExecuted: true } : {}),
                         ...(toolCallProviderOptions ? { providerOptions: toolCallProviderOptions } : {}),
@@ -1008,7 +1014,7 @@ export async function toModelMessages(
                         assistantContent.push({
                             type: "tool-result" as const,
                             toolCallId: part.callID,
-                            toolName: part.tool,
+                            toolName,
                             output: await resolveToolModelOutput(part),
                             ...(toolResultProviderOptions ? { providerOptions: toolResultProviderOptions } : {}),
                         })
@@ -1027,7 +1033,7 @@ export async function toModelMessages(
                         toolContent.push({
                             type: "tool-result" as const,
                             toolCallId: part.callID,
-                            toolName: part.tool,
+                            toolName,
                             output: await resolveToolModelOutput(part),
                         })
                     }

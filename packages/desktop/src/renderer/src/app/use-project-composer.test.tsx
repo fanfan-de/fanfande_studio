@@ -82,6 +82,36 @@ afterEach(() => {
 })
 
 describe("useProjectComposer model selection", () => {
+  it("uses the project selection for create-session composers when session model APIs are available", async () => {
+    const getProjectModels = vi.fn(async () =>
+      createModelsPayload({
+        model: "anthropic/claude-sonnet-4.5",
+      }),
+    )
+    const getSessionModels = vi.fn(async () => createModelsPayload({ model: "openai/gpt-5.4" }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        getProjectModels,
+        getSessionModels,
+      } as unknown as typeof window.desktop,
+    })
+
+    const { result } = renderHook(() =>
+      useProjectComposer({
+        attachmentPaths: [],
+        projectID: "project-1",
+      }),
+    )
+
+    await waitFor(() => expect(result.current.selectedModel).toBe("anthropic/claude-sonnet-4.5"))
+
+    expect(result.current.selectedModelLabel).toBe("anthropic/claude-sonnet-4.5")
+    expect(getProjectModels).toHaveBeenCalledWith({ projectID: "project-1" })
+    expect(getSessionModels).not.toHaveBeenCalled()
+  })
+
   it("shows the current session selection while stale model requests are still pending", async () => {
     const requests = new Map<string, Deferred<ReturnType<typeof createModelsPayload>>>()
     const getSessionModels = vi.fn((input: { sessionID: string }) => {

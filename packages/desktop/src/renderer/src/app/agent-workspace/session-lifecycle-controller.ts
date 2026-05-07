@@ -51,7 +51,11 @@ import {
   resolveWorkbenchGroupID,
 } from "./workspace-derived-state"
 import { collectSessionDirectoryMap } from "./workspace-loading-hooks"
-import type { WorkspaceStateUpdater } from "./workspace-store"
+import {
+  ensureExpandedFolderID,
+  removeExpandedFolderID,
+  type WorkspaceStateUpdater,
+} from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 
@@ -108,7 +112,7 @@ interface UseSessionLifecycleControllerOptions {
   createSessionTabs: CreateSessionTab[]
   createSessionWorkspaceID: string | null
   deletingSessionID: string | null
-  expandedFolderID: string | null
+  expandedFolderIDs: string[]
   focusExistingCreateSessionTabAcrossPanes: (preferredWorkspaceID?: string | null) => boolean
   focusSession: (workspaceID: string, sessionID: string, paneID?: string) => void
   focusedPane: ReturnType<typeof getGroupNode>
@@ -135,7 +139,7 @@ interface UseSessionLifecycleControllerOptions {
   setContextUsageBySession: StateSetter<Record<string, SessionContextUsage>>
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
   setDeletingSessionID: StateSetter<string | null>
-  setExpandedFolderID: StateSetter<string | null>
+  setExpandedFolderIDs: StateSetter<string[]>
   setHoveredFolderID: StateSetter<string | null>
   setIsCreatingProject: StateSetter<boolean>
   setIsCreatingSessionByTabKey: StateSetter<Record<string, boolean>>
@@ -173,7 +177,7 @@ export function useSessionLifecycleController({
   createSessionTabs,
   createSessionWorkspaceID,
   deletingSessionID,
-  expandedFolderID,
+  expandedFolderIDs,
   focusExistingCreateSessionTabAcrossPanes,
   focusSession,
   focusedPane,
@@ -199,7 +203,7 @@ export function useSessionLifecycleController({
   setConversations,
   setCreateSessionTabs,
   setDeletingSessionID,
-  setExpandedFolderID,
+  setExpandedFolderIDs,
   setHoveredFolderID,
   setIsCreatingProject,
   setIsCreatingSessionByTabKey,
@@ -485,7 +489,7 @@ export function useSessionLifecycleController({
           ...collectSessionDirectoryMap([createdWorkspace]),
         }))
         setCanLoadSessionHistory(true)
-        setExpandedFolderID(createdWorkspace.id)
+        setExpandedFolderIDs((current) => ensureExpandedFolderID(current, createdWorkspace.id))
         setSelectedFolderID(createdWorkspace.id)
         const [initialWorkspaceSession] = getPrimaryWorkspaceSessions(nextWorkspace.sessions)
         if (initialWorkspaceSession) {
@@ -517,11 +521,11 @@ export function useSessionLifecycleController({
 
   function handleProjectClick(workspace: WorkspaceGroup) {
     const isSelected = selectedFolderID === workspace.id
-    const isExpanded = expandedFolderID === workspace.id
+    const isExpanded = expandedFolderIDs.includes(workspace.id)
     setSelectedFolderID(workspace.id)
 
     if (isSelected && isExpanded) {
-      setExpandedFolderID(null)
+      setExpandedFolderIDs((current) => removeExpandedFolderID(current, workspace.id))
       const primarySessions = getPrimaryWorkspaceSessions(workspace.sessions)
       if (primarySessions.length === 0) {
         return
@@ -533,7 +537,7 @@ export function useSessionLifecycleController({
       return
     }
 
-    setExpandedFolderID(workspace.id)
+    setExpandedFolderIDs((current) => ensureExpandedFolderID(current, workspace.id))
     const currentSessionInWorkspace = workspace.sessions.some((session) => session.id === activeSessionID)
     const primarySessions = getPrimaryWorkspaceSessions(workspace.sessions)
     if (primarySessions.length === 0) {
@@ -558,7 +562,7 @@ export function useSessionLifecycleController({
     if (!targetPaneID) {
       setWorkbenchLayout(createWorkbenchLayoutWithTab(createSessionWorkbenchTab(sessionID)))
       setSelectedFolderID(workspaceID)
-      setExpandedFolderID(workspaceID)
+      setExpandedFolderIDs((current) => ensureExpandedFolderID(current, workspaceID))
       return
     }
 
@@ -582,7 +586,7 @@ export function useSessionLifecycleController({
 
   async function activateSideChatThread(parentSessionID: string, sessionID: string, workspaceID: string) {
     setSelectedFolderID(workspaceID)
-    setExpandedFolderID(workspaceID)
+    setExpandedFolderIDs((current) => ensureExpandedFolderID(current, workspaceID))
     setActiveSideChatSessionIDByParentSessionID((current) => ({
       ...current,
       [parentSessionID]: sessionID,
@@ -698,7 +702,12 @@ export function useSessionLifecycleController({
     setCreateSessionTabs(nextCreateSessionTabs)
     setHoveredFolderID((current) => (current === workspace.id ? null : current))
     setSelectedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID)
-    setExpandedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID)
+    setExpandedFolderIDs((current) =>
+      ensureExpandedFolderID(
+        removeExpandedFolderID(current, workspace.id),
+        nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID,
+      ),
+    )
   }
 
   async function handleSessionDelete(workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) {
@@ -760,7 +769,9 @@ export function useSessionLifecycleController({
       })
       cleanupSessionState(archivedSessionIDs)
       setSelectedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID ?? nextWorkspaces[0]?.id ?? null)
-      setExpandedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID ?? null)
+      setExpandedFolderIDs((current) =>
+        ensureExpandedFolderID(current, nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID ?? null),
+      )
     } catch (error) {
       console.error("[desktop] archiveAgentSession failed:", error)
     } finally {

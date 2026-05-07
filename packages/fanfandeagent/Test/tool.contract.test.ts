@@ -358,7 +358,7 @@ describe("tool contract", () => {
             messageID: Identifier.ascending("message"),
             abort: new AbortController().signal,
           })
-          const parallel = tools["multi_tool_use.parallel"] as any
+          const parallel = tools["multi_tool_use_parallel"] as any
           const output = await parallel.execute({
             calls: [
               { tool: "parallel-delay-a", input: { value: "first" } },
@@ -406,7 +406,7 @@ describe("tool contract", () => {
             messageID: Identifier.ascending("message"),
             abort: new AbortController().signal,
           })
-          const parallel = tools["multi_tool_use.parallel"] as any
+          const parallel = tools["multi_tool_use_parallel"] as any
           const output = await parallel.execute({
             calls: [
               { tool: "replace-text", input: {} },
@@ -414,6 +414,7 @@ describe("tool contract", () => {
               { tool: "terminal-run-command", input: {} },
               { tool: "generate_image", input: {} },
               { tool: "AskUserQuestion", input: {} },
+              { tool: "multi_tool_use_parallel", input: {} },
               { tool: "multi_tool_use.parallel", input: {} },
               { tool: "missing_parallel_child", input: {} },
             ],
@@ -429,6 +430,7 @@ describe("tool contract", () => {
           expect(results.find((result) => result.tool === "terminal-run-command")?.error).toContain("not eligible")
           expect(results.find((result) => result.tool === "generate_image")?.error).toContain("not eligible")
           expect(results.find((result) => result.tool === "AskUserQuestion")?.error).toContain("not eligible")
+          expect(results.find((result) => result.tool === "multi_tool_use_parallel")?.error).toContain("cannot call itself")
           expect(results.find((result) => result.tool === "multi_tool_use.parallel")?.error).toContain("cannot call itself")
           expect(results.find((result) => result.tool === "missing_parallel_child")?.error).toContain("not available")
         },
@@ -488,7 +490,7 @@ describe("tool contract", () => {
             messageID: Identifier.ascending("message"),
             abort: new AbortController().signal,
           })
-          const parallel = tools["multi_tool_use.parallel"] as any
+          const parallel = tools["multi_tool_use_parallel"] as any
           const output = await parallel.execute({
             calls: [
               { tool: "parallel-large-tool", input: {} },
@@ -2008,6 +2010,101 @@ describe("tool contract", () => {
         toolName: "read-file",
         input: {
           path: "README.md",
+        },
+      },
+    ])
+  })
+
+  it("replays legacy parallel tool history with the provider-safe model-facing name", async () => {
+    const model = {
+      capabilities: {
+        reasoning: false,
+        attachment: false,
+        toolcall: true,
+        input: {
+          text: true,
+          audio: false,
+          image: false,
+          video: false,
+          pdf: false,
+        },
+      },
+    } as any
+
+    const messages = await Message.toModelMessages(
+      [
+        {
+          info: {
+            id: "assistant-legacy-parallel-history",
+            sessionID: "session-legacy-parallel-history",
+            role: "assistant",
+            created: Date.now(),
+            parentID: "user-legacy-parallel-history",
+            modelID: "deepseek-v4-pro",
+            providerID: "deepseek",
+            agent: "plan",
+            path: {
+              cwd: ".",
+              root: ".",
+            },
+            cost: 0,
+            tokens: {
+              input: 0,
+              output: 0,
+              reasoning: 0,
+              cache: {
+                read: 0,
+                write: 0,
+              },
+            },
+          } as Message.Assistant,
+          parts: [
+            {
+              id: "assistant-legacy-parallel-tool",
+              sessionID: "session-legacy-parallel-history",
+              messageID: "assistant-legacy-parallel-history",
+              type: "tool",
+              callID: "call-legacy-parallel",
+              tool: "multi_tool_use.parallel",
+              state: {
+                status: "denied",
+                input: {
+                  calls: [{ tool: "read-file", input: { path: "README.md" } }],
+                },
+                reason: "approval denied",
+                time: {
+                  start: 1,
+                  end: 2,
+                },
+              },
+            } as Message.ToolPart,
+          ],
+        },
+      ],
+      model,
+    )
+
+    const assistantMessage = messages.find((item) => item.role === "assistant") as any
+    expect(assistantMessage.content).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "call-legacy-parallel",
+        toolName: "multi_tool_use_parallel",
+        input: {
+          calls: [{ tool: "read-file", input: { path: "README.md" } }],
+        },
+      },
+    ])
+
+    const toolMessage = messages.find((item) => item.role === "tool") as any
+    expect(toolMessage.content).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "call-legacy-parallel",
+        toolName: "multi_tool_use_parallel",
+        output: {
+          type: "execution-denied",
+          reason: "approval denied",
         },
       },
     ])

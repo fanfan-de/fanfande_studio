@@ -16,22 +16,22 @@ function createSession(id: string, title: string): SessionSummary {
   }
 }
 
-function createWorkspace(): WorkspaceGroup {
+function createWorkspace(id = "workspace-1", name = "Workspace", sessionPrefix = ""): WorkspaceGroup {
   return {
-    id: "workspace-1",
-    name: "Workspace",
-    directory: "C:/work/workspace",
+    id,
+    name,
+    directory: `C:/work/${id}`,
     created: 1,
     updated: 1,
     project: {
-      id: "project-1",
-      name: "Project",
-      worktree: "C:/work/workspace",
+      id: `project-${id}`,
+      name: `Project ${id}`,
+      worktree: `C:/work/${id}`,
     },
     sessions: [
-      createSession("session-unread", "Unread"),
-      createSession("session-visible", "Visible"),
-      createSession("session-read", "Read"),
+      createSession(`${id}-session-unread`, `${sessionPrefix}Unread`),
+      createSession(`${id}-session-visible`, `${sessionPrefix}Visible`),
+      createSession(`${id}-session-read`, `${sessionPrefix}Read`),
     ],
   }
 }
@@ -43,7 +43,7 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     creatingGlobalSkillName: "",
     deletingGlobalSkillDirectory: null,
     deletingSessionID: null,
-    expandedFolderID: "workspace-1",
+    expandedFolderIDs: ["workspace-1"],
     expandedSkillPaths: [],
     globalSkillsRoot: "",
     globalSkillsTree: [],
@@ -139,16 +139,35 @@ describe("Sidebar", () => {
 
   it("shows the green dot only for unread session canvases that are not visible", () => {
     renderSidebar({
-      activeSessionID: "session-visible",
+      activeSessionID: "workspace-1-session-visible",
       sessionCanvasUnreadBySession: {
-        "session-unread": true,
-        "session-visible": true,
+        "workspace-1-session-unread": true,
+        "workspace-1-session-visible": true,
       },
-      visibleCanvasSessionIDs: ["session-visible"],
+      visibleCanvasSessionIDs: ["workspace-1-session-visible"],
     })
 
     expect(screen.getByRole("button", { name: "Unread" }).querySelector(".session-row-status-dot")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Visible" }).querySelector(".session-row-status-dot")).toBeNull()
     expect(screen.getByRole("button", { name: "Read" }).querySelector(".session-row-status-dot")).toBeNull()
+  })
+
+  it("renders session rows for every expanded workspace", () => {
+    renderSidebar({
+      expandedFolderIDs: ["workspace-1", "workspace-2"],
+      selectedFolderID: "workspace-2",
+      workspaces: [
+        createWorkspace("workspace-1", "Workspace 1", "One "),
+        createWorkspace("workspace-2", "Workspace 2", "Two "),
+        createWorkspace("workspace-3", "Workspace 3", "Three "),
+      ],
+    })
+
+    expect(screen.getByRole("button", { name: "Workspace 1" })).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "Workspace 2" })).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("button", { name: "Workspace 3" })).toHaveAttribute("aria-expanded", "false")
+    expect(screen.getByRole("button", { name: "One Unread" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Two Unread" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Three Unread" })).not.toBeInTheDocument()
   })
 })
