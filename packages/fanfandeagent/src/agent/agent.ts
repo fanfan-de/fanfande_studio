@@ -45,6 +45,7 @@ const PLAN_AGENT_TOOL_POLICY: Record<string, boolean> = {
   "list_mcp_resources": true,
   "list_mcp_resource_templates": true,
   "read_mcp_resource": true,
+  "multi_tool_use.parallel": true,
   "glob": true,
   "grep": true,
   "list-directory": true,

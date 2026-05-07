@@ -504,6 +504,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     agent,
                     session: activeSession,
                 }),
+                ...SystemPrompt.tools(Object.keys(tools)),
                 ...(sideChatLink ? [buildSideChatSystemPrompt(sideChatLink)] : []),
                 ...await SystemPrompt.environment(model),
                 ...await SystemPrompt.skills(sessionID, lastUser.skills ?? []),

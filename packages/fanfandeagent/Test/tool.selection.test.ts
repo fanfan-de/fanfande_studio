@@ -37,6 +37,7 @@ describe("global built-in tool selection", () => {
       async fn() {
         const toolNames = await resolveAgentToolNames("default")
         expect(toolNames).toContain("read-file")
+        expect(toolNames).toContain("multi_tool_use.parallel")
         expect(toolNames).toContain("git_bash_command")
         expect(toolNames).toContain("powershell_command")
         expect(toolNames).toContain("cmd_command")
@@ -81,7 +82,24 @@ describe("global built-in tool selection", () => {
       async fn() {
         const toolNames = await resolveAgentToolNames("plan")
         expect(toolNames).toContain("read-file")
+        expect(toolNames).toContain("multi_tool_use.parallel")
         expect(toolNames).not.toContain("replace-text")
+      },
+    })
+  })
+
+  it("filters the built-in parallel tool through global selection", async () => {
+    await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {
+      "multi_tool_use.parallel": false,
+    })
+
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const defaultToolNames = await resolveAgentToolNames("default")
+        const planToolNames = await resolveAgentToolNames("plan")
+        expect(defaultToolNames).not.toContain("multi_tool_use.parallel")
+        expect(planToolNames).not.toContain("multi_tool_use.parallel")
       },
     })
   })

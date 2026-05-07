@@ -40,6 +40,19 @@ function renderActiveTasks(session: Session.SessionInfo | null | undefined) {
     ].filter((line): line is string => typeof line === "string").join("\n")
 }
 
+export function tools(toolNames: string[]) {
+    if (!toolNames.includes("multi_tool_use.parallel")) return []
+
+    return [
+        [
+            "# Parallel tool use",
+            "- When you need multiple independent read/search tool calls, prefer one `multi_tool_use.parallel` call.",
+            "- Use `{ calls: [{ tool: \"read-file\", input: { file_path: \"...\" } }] }`.",
+            "- Do not use it for dependent steps, edits, shell commands, user questions, image generation, or subagent control.",
+        ].join("\n"),
+    ]
+}
+
 export function provider(model: Provider.Model): string[] {
     // if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
     //   return [PROMPT_BEAST]

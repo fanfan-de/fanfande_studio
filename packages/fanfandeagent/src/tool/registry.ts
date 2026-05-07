@@ -18,6 +18,7 @@ import { ListDirectoryTool } from "#tool/list-directory.ts"
 import { LspDefinitionTool, LspHoverTool, LspReferencesTool, LspWorkspaceSymbolsTool } from "#tool/lsp.ts"
 import { LoadSkillTool } from "#tool/load-skill.ts"
 import { ListMcpResourceTemplatesTool, ListMcpResourcesTool, ReadMcpResourceTool } from "#tool/mcp-resources.ts"
+import { ParallelTool } from "#tool/parallel-tool.ts"
 import { ReadBackgroundTaskTool } from "#tool/read-background-task.ts"
 import { ReadFileTool } from "#tool/read-file.ts"
 import { ReadSubagentTool } from "#tool/read-subagent.ts"
@@ -76,6 +77,7 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     ListMcpResourcesTool,
     ListMcpResourceTemplatesTool,
     ReadMcpResourceTool,
+    ParallelTool,
     LoadWorkspaceDependenciesTool,
     ReplaceTextTool,
     ApplyPatchTool,

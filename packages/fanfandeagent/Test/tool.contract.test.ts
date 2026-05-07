@@ -5,11 +5,14 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import path from "node:path"
 import z from "zod"
+import * as Agent from "#agent/agent.ts"
 import * as Identifier from "#id/id.ts"
 import { Instance } from "#project/instance.ts"
 import * as Message from "#session/core/message.ts"
+import { resolveTools } from "#session/core/resolve-tools.ts"
 import * as SessionCore from "#session/core/session.ts"
 import * as ImageAssets from "#session/support/image-assets.ts"
+import * as ToolResultPersistence from "#session/support/tool-result-persistence.ts"
 import { AskUserQuestionTool, answerAskUserQuestion } from "#tool/ask-user-question.ts"
 import {
   CmdCommandTool,
@@ -31,6 +34,7 @@ import { ReplaceTextTool } from "#tool/replace-text.ts"
 import { StopBackgroundTaskTool } from "#tool/stop-background-task.ts"
 import { TerminalReadTool, TerminalRunCommandTool, TerminalWriteInputTool } from "#tool/terminal-tools.ts"
 import * as Tool from "#tool/tool.ts"
+import * as ToolRegistry from "#tool/registry.ts"
 import { WebFetchTool } from "#tool/web-fetch.ts"
 import {
   LoadWorkspaceDependenciesTool,
@@ -46,6 +50,10 @@ async function createGitRepo(root: string, seed: string) {
   await $`git config user.name fanfande-test`.cwd(root).quiet()
   await $`git add README.md`.cwd(root).quiet()
   await $`git commit -m init`.cwd(root).quiet()
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 async function withProcessEnv<T>(
@@ -295,6 +303,215 @@ describe("tool contract", () => {
     ).resolves.toEqual({
       text: "plain-result",
     })
+  })
+
+  it("runs eligible read/search child tools concurrently and preserves result order", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "fanfande-parallel-tool-"))
+    let active = 0
+    let maxActive = 0
+
+    try {
+      await Instance.provide({
+        directory: root,
+        async fn() {
+          const registry = await ToolRegistry.state()
+          const createDelayTool = (id: string) =>
+            Tool.define(
+              id,
+              async () => ({
+                description: "Test-only delayed read tool.",
+                parameters: z.object({
+                  value: z.string(),
+                }),
+                execute: async ({ value }) => {
+                  active += 1
+                  maxActive = Math.max(maxActive, active)
+                  try {
+                    await sleep(80)
+                    return {
+                      title: `Delay ${value}`,
+                      text: `${id}:${value}`,
+                    }
+                  } finally {
+                    active -= 1
+                  }
+                },
+              }),
+              {
+                capabilities: {
+                  kind: "read",
+                  readOnly: true,
+                  destructive: false,
+                  concurrency: "safe",
+                },
+              },
+            )
+
+          registry.custom.push(createDelayTool("parallel-delay-a"))
+          registry.custom.push(createDelayTool("parallel-delay-b"))
+
+          const agent = await Agent.get("default")
+          expect(agent).toBeDefined()
+          const tools = await resolveTools({
+            agent: agent!,
+            sessionID: "ses_parallel_delay",
+            messageID: Identifier.ascending("message"),
+            abort: new AbortController().signal,
+          })
+          const parallel = tools["multi_tool_use.parallel"] as any
+          const output = await parallel.execute({
+            calls: [
+              { tool: "parallel-delay-a", input: { value: "first" } },
+              { tool: "parallel-delay-b", input: { value: "second" } },
+            ],
+          }, {
+            toolCallId: "tool-parallel-delay",
+            messages: [],
+          })
+
+          expect(maxActive).toBe(2)
+          expect(output.data.results).toEqual([
+            expect.objectContaining({
+              index: 0,
+              tool: "parallel-delay-a",
+              status: "completed",
+              output: "parallel-delay-a:first",
+            }),
+            expect.objectContaining({
+              index: 1,
+              tool: "parallel-delay-b",
+              status: "completed",
+              output: "parallel-delay-b:second",
+            }),
+          ])
+        },
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("rejects ineligible, recursive, and unknown parallel child tools without executing them", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "fanfande-parallel-tool-safety-"))
+
+    try {
+      await Instance.provide({
+        directory: root,
+        async fn() {
+          const agent = await Agent.get("default")
+          expect(agent).toBeDefined()
+          const tools = await resolveTools({
+            agent: agent!,
+            sessionID: "ses_parallel_safety",
+            messageID: Identifier.ascending("message"),
+            abort: new AbortController().signal,
+          })
+          const parallel = tools["multi_tool_use.parallel"] as any
+          const output = await parallel.execute({
+            calls: [
+              { tool: "replace-text", input: {} },
+              { tool: "git_bash_command", input: {} },
+              { tool: "terminal-run-command", input: {} },
+              { tool: "generate_image", input: {} },
+              { tool: "AskUserQuestion", input: {} },
+              { tool: "multi_tool_use.parallel", input: {} },
+              { tool: "missing_parallel_child", input: {} },
+            ],
+          }, {
+            toolCallId: "tool-parallel-safety",
+            messages: [],
+          })
+
+          const results = output.data.results as Array<{ tool: string; status: string; error?: string }>
+          expect(results.every((result) => result.status === "error")).toBe(true)
+          expect(results.find((result) => result.tool === "replace-text")?.error).toContain("not eligible")
+          expect(results.find((result) => result.tool === "git_bash_command")?.error).toContain("not eligible")
+          expect(results.find((result) => result.tool === "terminal-run-command")?.error).toContain("not eligible")
+          expect(results.find((result) => result.tool === "generate_image")?.error).toContain("not eligible")
+          expect(results.find((result) => result.tool === "AskUserQuestion")?.error).toContain("not eligible")
+          expect(results.find((result) => result.tool === "multi_tool_use.parallel")?.error).toContain("cannot call itself")
+          expect(results.find((result) => result.tool === "missing_parallel_child")?.error).toContain("not available")
+        },
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("persists large child outputs before returning parallel model output", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "fanfande-parallel-tool-persist-"))
+    const sessionID = "ses_parallel_persist"
+    const large = `${"parallel-large-output ".repeat(5_000)}secret-tail`
+
+    try {
+      await Instance.provide({
+        directory: root,
+        async fn() {
+          const registry = await ToolRegistry.state()
+          registry.custom.push(
+            Tool.define(
+              "parallel-large-tool",
+              async () => ({
+                description: "Test-only large read tool.",
+                parameters: z.object({}),
+                execute: async () => ({
+                  title: "Large Parallel Child",
+                  text: large,
+                  metadata: {
+                    stdout: large,
+                  },
+                }),
+                toModelOutput: async () => ({
+                  type: "json" as const,
+                  value: {
+                    leaked: "secret-tail",
+                  },
+                }),
+              }),
+              {
+                maxResultSizeChars: 1_000,
+                capabilities: {
+                  kind: "read",
+                  readOnly: true,
+                  destructive: false,
+                  concurrency: "safe",
+                },
+              },
+            ),
+          )
+
+          const agent = await Agent.get("default")
+          expect(agent).toBeDefined()
+          const tools = await resolveTools({
+            agent: agent!,
+            sessionID,
+            messageID: Identifier.ascending("message"),
+            abort: new AbortController().signal,
+          })
+          const parallel = tools["multi_tool_use.parallel"] as any
+          const output = await parallel.execute({
+            calls: [
+              { tool: "parallel-large-tool", input: {} },
+            ],
+          }, {
+            toolCallId: "tool-parallel-persist",
+            messages: [],
+          })
+
+          const child = output.data.results[0]
+          expect(child.status).toBe("completed")
+          expect(child.output).toContain("<persisted-output>")
+          expect(child.modelOutput).toMatchObject({
+            type: "text",
+          })
+          expect(JSON.stringify(child)).not.toContain("secret-tail")
+          expect(output.text).not.toContain("secret-tail")
+        },
+      })
+    } finally {
+      ToolResultPersistence.removeSessionOutputDirectory(sessionID)
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it("loads workspace dependency paths as structured read-only JSON", async () => {
