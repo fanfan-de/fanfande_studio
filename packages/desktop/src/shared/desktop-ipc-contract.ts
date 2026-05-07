@@ -260,6 +260,16 @@ export interface DesktopAgentHealth {
   error?: string
 }
 
+export interface DesktopComposerPastedImageAttachment {
+  dataUrl: string
+  mimeType: string
+  name?: string
+}
+
+export interface DesktopSaveComposerPastedImagesInput {
+  images: DesktopComposerPastedImageAttachment[]
+}
+
 export interface DesktopPreviewScreenshotCaptureInput {
   bounds: {
     height: number
@@ -491,6 +501,10 @@ export interface DesktopIpcContract {
   }
   "desktop:pick-composer-attachments": {
     input: { allowImage?: boolean; allowPdf?: boolean } | undefined
+    output: string[]
+  }
+  "desktop:save-composer-pasted-images": {
+    input: DesktopSaveComposerPastedImagesInput
     output: string[]
   }
   "desktop:capture-preview-screenshot": {
@@ -993,6 +1007,7 @@ export interface DesktopApiMethods {
   writePtyInput(input: DesktopIpcInput<"desktop:write-pty-input">): Promise<DesktopIpcOutput<"desktop:write-pty-input">>
   pickProjectDirectory(): Promise<DesktopIpcOutput<"desktop:pick-project-directory">>
   pickComposerAttachments(input?: DesktopIpcInput<"desktop:pick-composer-attachments">): Promise<DesktopIpcOutput<"desktop:pick-composer-attachments">>
+  saveComposerPastedImages(input: DesktopIpcInput<"desktop:save-composer-pasted-images">): Promise<DesktopIpcOutput<"desktop:save-composer-pasted-images">>
   capturePreviewScreenshot(input: DesktopIpcInput<"desktop:capture-preview-screenshot">): Promise<DesktopIpcOutput<"desktop:capture-preview-screenshot">>
   detectLocalPreviewServices(): Promise<DesktopIpcOutput<"desktop:detect-local-preview-services">>
   gitGetCapabilities(input: DesktopIpcInput<"desktop:git-get-capabilities">): Promise<DesktopIpcOutput<"desktop:git-get-capabilities">>

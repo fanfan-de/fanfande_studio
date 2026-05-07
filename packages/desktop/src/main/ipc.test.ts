@@ -142,3 +142,37 @@ describe("ipc preview screenshot helpers", () => {
     expect(writeImageFile).toHaveBeenCalledWith(result.path, pngBuffer)
   })
 })
+
+describe("ipc composer pasted image helpers", () => {
+  it("decodes and writes pasted composer images under user data", async () => {
+    const imageBuffer = Buffer.from("clipboard-image")
+    const makeDirectory = vi.fn().mockResolvedValue(undefined)
+    const writeImageFile = vi.fn().mockResolvedValue(undefined)
+
+    const result = await internal.saveComposerPastedImages(
+      {
+        images: [
+          {
+            dataUrl: `data:image/png;base64,${imageBuffer.toString("base64")}`,
+            mimeType: "image/png",
+            name: "screen shot.png",
+          },
+        ],
+      },
+      {
+        makeDirectory,
+        now: new Date("2026-05-03T01:02:03.004Z"),
+        userDataPath: "C:\\Users\\codex\\AppData\\Roaming\\Desktop",
+        writeImageFile,
+      },
+    )
+
+    expect(result).toHaveLength(1)
+    expect(result[0]).toContain("composer-pasted-images")
+    expect(result[0]).toContain("2026-05-03T01-02-03-004Z-01-screen-shot.png")
+    expect(makeDirectory).toHaveBeenCalledWith(expect.stringContaining("composer-pasted-images"), {
+      recursive: true,
+    })
+    expect(writeImageFile).toHaveBeenCalledWith(result[0], imageBuffer)
+  })
+})

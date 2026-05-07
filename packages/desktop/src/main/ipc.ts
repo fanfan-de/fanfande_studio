@@ -185,12 +185,64 @@ function sanitizeScreenshotFileSegment(value: string) {
 }
 
 type PreviewScreenshotCaptureInput = DesktopIpcInput<"desktop:capture-preview-screenshot">
+type SaveComposerPastedImagesInput = DesktopIpcInput<"desktop:save-composer-pasted-images">
 
 interface PreviewScreenshotCaptureOptions {
   makeDirectory?: (directory: string, options: { recursive: true }) => Promise<unknown>
   now?: Date
   userDataPath?: string
   writeImageFile?: (filePath: string, data: Buffer) => Promise<unknown>
+}
+
+interface SaveComposerPastedImagesOptions {
+  makeDirectory?: (directory: string, options: { recursive: true }) => Promise<unknown>
+  now?: Date
+  userDataPath?: string
+  writeImageFile?: (filePath: string, data: Buffer) => Promise<unknown>
+}
+
+const COMPOSER_PASTED_IMAGE_EXTENSIONS = new Map([
+  ["image/png", "png"],
+  ["image/jpeg", "jpg"],
+  ["image/jpg", "jpg"],
+  ["image/gif", "gif"],
+  ["image/webp", "webp"],
+  ["image/bmp", "bmp"],
+  ["image/svg+xml", "svg"],
+])
+
+function sanitizeComposerPastedImageName(value: string | undefined, fallback: string) {
+  const basename = path.basename(value?.trim() || fallback)
+  const withoutExtension = basename.replace(/\.[^.]+$/, "")
+  return (
+    withoutExtension
+      .replace(/[^a-z0-9._-]+/gi, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || fallback
+  )
+}
+
+function parseComposerPastedImageDataUrl(dataUrl: string, fallbackMimeType: string) {
+  const match = /^data:([^;,]+);base64,([\s\S]+)$/i.exec(dataUrl.trim())
+  if (!match) {
+    throw new Error("Pasted image data must be a base64 data URL.")
+  }
+
+  const mimeType = (match[1] || fallbackMimeType).trim().toLowerCase()
+  const extension = COMPOSER_PASTED_IMAGE_EXTENSIONS.get(mimeType)
+  if (!extension) {
+    throw new Error(`Unsupported pasted image type: ${mimeType || "unknown"}.`)
+  }
+
+  const buffer = Buffer.from(match[2].replace(/\s/g, ""), "base64")
+  if (buffer.length === 0) {
+    throw new Error("Pasted image data is empty.")
+  }
+
+  return {
+    buffer,
+    extension,
+  }
 }
 
 async function capturePreviewScreenshotFromWindow(
@@ -218,6 +270,34 @@ async function capturePreviewScreenshotFromWindow(
   await (options.writeImageFile ?? writeFile)(screenshotPath, image.toPNG())
 
   return { path: screenshotPath }
+}
+
+async function saveComposerPastedImages(
+  input: SaveComposerPastedImagesInput,
+  options: SaveComposerPastedImagesOptions = {},
+) {
+  const imageDirectory = path.join(
+    options.userDataPath ?? app.getPath("userData"),
+    "composer-pasted-images",
+  )
+  const timestamp = (options.now ?? new Date()).toISOString().replace(/[:.]/g, "-")
+  const savedPaths: string[] = []
+
+  await (options.makeDirectory ?? mkdir)(imageDirectory, { recursive: true })
+
+  for (const [index, image] of input.images.entries()) {
+    const parsedImage = parseComposerPastedImageDataUrl(image.dataUrl, image.mimeType)
+    const safeName = sanitizeComposerPastedImageName(image.name, "pasted-image")
+    const filePath = path.join(
+      imageDirectory,
+      `${timestamp}-${String(index + 1).padStart(2, "0")}-${safeName}.${parsedImage.extension}`,
+    )
+
+    await (options.writeImageFile ?? writeFile)(filePath, parsedImage.buffer)
+    savedPaths.push(filePath)
+  }
+
+  return savedPaths
 }
 
 async function getToolPermissionMode() {
@@ -850,6 +930,8 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       return result.canceled ? [] : result.filePaths
     },
   )
+
+  handleDesktopIpc("desktop:save-composer-pasted-images", async (_event, input) => saveComposerPastedImages(input))
 
   handleDesktopIpc("desktop:capture-preview-screenshot", async (event, input) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -2486,5 +2568,6 @@ export const internal = {
   disposeSessionStreamSubscriptionsForWebContents,
   getToolPermissionMode,
   isSessionStreamSubscriptionKeyForWebContents,
+  saveComposerPastedImages,
   updateToolPermissionMode,
 }

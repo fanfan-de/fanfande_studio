@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react"
@@ -30,6 +31,7 @@ import type {
   ComposerDraftState,
   ComposerMcpOption,
   ComposerModelOption,
+  ComposerPastedImageAttachment,
   ComposerReasoningEffortOption,
   ComposerSkillOption,
   ComposerTagData,
@@ -55,6 +57,7 @@ interface ComposerProps {
   attachmentDisabledReason: string | null
   attachmentError: string | null
   canSend: boolean
+  canPasteImageAttachments?: boolean
   draftState: ComposerDraftState
   hasPendingPermissionRequests: boolean
   isSending: boolean
@@ -64,6 +67,7 @@ interface ComposerProps {
   onMcpToggle?: (value: string) => void | Promise<void>
   onModelChange: (value: string | null) => void | Promise<void>
   onPickAttachments: () => void | Promise<void>
+  onPasteImageAttachments?: (images: ComposerPastedImageAttachment[]) => void | Promise<void>
   onReasoningEffortChange: (value: OpenAIReasoningEffort | null) => void
   onRemoveAttachment: (path: string) => void
   onCancelSend?: () => void | Promise<void>
@@ -508,6 +512,51 @@ function createTextReplacement(editor: LexicalEditor, match: ComposerTriggerMatc
   })
 }
 
+function isImageClipboardFile(file: File | null | undefined): file is File {
+  return Boolean(file && file.type.trim().toLowerCase().startsWith("image/"))
+}
+
+export function readComposerClipboardImageFiles(clipboardData: Pick<DataTransfer, "files" | "items"> | null) {
+  if (!clipboardData) return [] as File[]
+
+  const itemFiles = Array.from(clipboardData.items ?? [])
+    .filter((item) => item.kind === "file" && item.type.trim().toLowerCase().startsWith("image/"))
+    .map((item) => item.getAsFile())
+    .filter(isImageClipboardFile)
+
+  if (itemFiles.length > 0) {
+    return itemFiles
+  }
+
+  return Array.from(clipboardData.files ?? []).filter(isImageClipboardFile)
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read pasted image."))
+    reader.onload = () => {
+      if (typeof reader.result !== "string") {
+        reject(new Error("Pasted image could not be converted to a data URL."))
+        return
+      }
+
+      resolve(reader.result)
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function createComposerPastedImageAttachments(files: File[]) {
+  return Promise.all(
+    files.map(async (file, index) => ({
+      dataUrl: await readFileAsDataUrl(file),
+      mimeType: file.type || "image/png",
+      name: file.name || `pasted-image-${String(index + 1)}.png`,
+    })),
+  )
+}
+
 function insertTagAtMatch(editor: LexicalEditor, match: ComposerTriggerMatch, tagData: ComposerTagData) {
   editor.update(() => {
     const node = $getNodeByKey(match.nodeKey)
@@ -681,6 +730,7 @@ export function Composer({
   attachmentDisabledReason,
   attachmentError,
   canSend,
+  canPasteImageAttachments = false,
   draftState,
   hasPendingPermissionRequests,
   isSending,
@@ -690,6 +740,7 @@ export function Composer({
   onMcpToggle,
   onModelChange,
   onPickAttachments,
+  onPasteImageAttachments,
   onReasoningEffortChange,
   onRemoveAttachment,
   onCancelSend,
@@ -1231,6 +1282,21 @@ export function Composer({
     }
   }
 
+  function handleEditorPaste(event: ReactClipboardEvent<HTMLElement>) {
+    const imageFiles = readComposerClipboardImageFiles(event.clipboardData)
+    if (imageFiles.length === 0) return
+    if (!canPasteImageAttachments || !onPasteImageAttachments) return
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    void createComposerPastedImageAttachments(imageFiles)
+      .then((images) => onPasteImageAttachments(images))
+      .catch((error) => {
+        console.error("[desktop] read pasted composer image failed:", error)
+      })
+  }
+
   const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
   const sendButtonLabel = isSending ? "Stop task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
   const sendButtonDescription = getComposerSendButtonDescription({
@@ -1292,6 +1358,7 @@ export function Composer({
                 onCompositionStart={() => {
                   isComposingRef.current = true
                 }}
+                onPasteCapture={handleEditorPaste}
                 ref={contentEditableRef}
               />
             }

@@ -1030,6 +1030,12 @@ export interface ComposerAttachment {
   name: string
 }
 
+export interface ComposerPastedImageAttachment {
+  dataUrl: string
+  mimeType: string
+  name?: string
+}
+
 export interface ComposerFileCommentReference {
   source: "file"
   id: string

@@ -154,6 +154,7 @@ export interface WorkbenchPaneSurfaceProps {
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
+  onPasteComposerImageAttachments: AgentWorkspaceState["handlePasteComposerImageAttachments"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
@@ -200,6 +201,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onPermissionRequestResponse,
   onToolPermissionModeChange,
   onPickComposerAttachments,
+  onPasteComposerImageAttachments,
   onRegisterPane,
   onRemoveComposerAttachment,
   onSelectCreateSessionTab,
@@ -288,6 +290,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   attachmentDisabledReason={composer.attachmentDisabledReason}
                   attachmentError={composer.attachmentError}
                   canSend={Boolean(pane.createSessionWorkspaceID)}
+                  canPasteImageAttachments={composer.attachmentCapabilities.image && composer.attachmentDisabledReason === null}
                   draftState={pane.draftState}
                   hasPendingPermissionRequests={false}
                   isSending={pane.isSending || pane.isCreatingSession}
@@ -314,6 +317,14 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                       allowImage: composer.attachmentCapabilities.image,
                       allowPdf: composer.attachmentCapabilities.pdf,
                       disabledReason: composer.attachmentDisabledReason,
+                      tabKey: pane.tabKey,
+                    })
+                  }
+                  onPasteImageAttachments={(images) =>
+                    onPasteComposerImageAttachments({
+                      allowImage: composer.attachmentCapabilities.image,
+                      disabledReason: composer.attachmentDisabledReason,
+                      images,
                       tabKey: pane.tabKey,
                     })
                   }
@@ -396,6 +407,14 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                     tabKey: pane.activeSideChatTabKey,
                   })
                 }
+                onSideChatPasteImageAttachments={({ allowImage, disabledReason, images }) =>
+                  onPasteComposerImageAttachments({
+                    allowImage,
+                    disabledReason,
+                    images,
+                    tabKey: pane.activeSideChatTabKey,
+                  })
+                }
                 onSideChatRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.activeSideChatTabKey)}
                 onSideChatCancelSend={() => void onCancelSend({
                   sessionID: pane.activeSideChatSession?.id,
@@ -426,6 +445,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   attachmentDisabledReason={composer.attachmentDisabledReason}
                   attachmentError={composer.attachmentError}
                   canSend={Boolean(pane.activeSession)}
+                  canPasteImageAttachments={composer.attachmentCapabilities.image && composer.attachmentDisabledReason === null}
                   draftState={pane.draftState}
                   hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
                   isSending={pane.isSending}
@@ -452,6 +472,14 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                       allowImage: composer.attachmentCapabilities.image,
                       allowPdf: composer.attachmentCapabilities.pdf,
                       disabledReason: composer.attachmentDisabledReason,
+                      tabKey: pane.tabKey,
+                    })
+                  }
+                  onPasteImageAttachments={(images) =>
+                    onPasteComposerImageAttachments({
+                      allowImage: composer.attachmentCapabilities.image,
+                      disabledReason: composer.attachmentDisabledReason,
+                      images,
                       tabKey: pane.tabKey,
                     })
                   }

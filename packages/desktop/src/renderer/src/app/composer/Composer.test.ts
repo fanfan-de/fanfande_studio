@@ -2,9 +2,11 @@ import type { LexicalEditor } from "lexical"
 import { describe, expect, it, vi } from "vitest"
 import {
   buildMenuStyle,
+  createComposerPastedImageAttachments,
   formatComposerAbsoluteFilePath,
   getComposerKeyAction,
   handleComposerCommandMenuMouseDown,
+  readComposerClipboardImageFiles,
   readComposerBeforeTextForCommandMenu,
   shouldApplyExternalComposerDraftState,
 } from "./Composer"
@@ -118,6 +120,38 @@ describe("formatComposerAbsoluteFilePath", () => {
     expect(formatComposerAbsoluteFilePath("C:\\Projects\\Atlas\\games\\angry-birds.html")).toBe(
       "C:\\Projects\\Atlas\\games\\angry-birds.html",
     )
+  })
+})
+
+describe("readComposerClipboardImageFiles", () => {
+  it("extracts image files from clipboard items before falling back to file lists", () => {
+    const imageFile = new File(["image"], "screenshot.png", { type: "image/png" })
+    const fallbackImageFile = new File(["fallback"], "fallback.jpg", { type: "image/jpeg" })
+
+    const files = readComposerClipboardImageFiles({
+      items: [
+        {
+          kind: "file",
+          type: "image/png",
+          getAsFile: () => imageFile,
+        },
+      ] as unknown as DataTransferItemList,
+      files: [fallbackImageFile] as unknown as FileList,
+    })
+
+    expect(files).toEqual([imageFile])
+  })
+
+  it("converts pasted image files into data-url attachments", async () => {
+    const imageFile = new File(["image"], "screenshot.png", { type: "image/png" })
+
+    await expect(createComposerPastedImageAttachments([imageFile])).resolves.toEqual([
+      {
+        dataUrl: "data:image/png;base64,aW1hZ2U=",
+        mimeType: "image/png",
+        name: "screenshot.png",
+      },
+    ])
   })
 })
 

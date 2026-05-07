@@ -68,6 +68,31 @@ function summarizeAttachmentPartForLog(part: FilePart | ImagePart) {
     }
 }
 
+function decodeDataUrlAttachment(url: string) {
+    if (!url.trim().toLowerCase().startsWith("data:")) return undefined
+
+    const match = /^data:([^;,]+)(?:;[^,]*)?;base64,([\s\S]*)$/i.exec(url.trim())
+    if (!match) {
+        throw new Error("Attachment data URL must use base64 encoding.")
+    }
+
+    const mediaType = match[1].trim()
+    const base64 = match[2].replace(/\s/g, "")
+    if (!mediaType || !base64) {
+        throw new Error("Attachment data URL is missing media type or data.")
+    }
+
+    const data = Buffer.from(base64, "base64")
+    if (data.length === 0) {
+        throw new Error("Attachment data URL is empty.")
+    }
+
+    return {
+        data: new Uint8Array(data),
+        mediaType,
+    }
+}
+
 function summarizeModelCapabilitiesForLog(model: Provider.Model) {
     return {
         attachment: model.capabilities.attachment,
@@ -856,10 +881,11 @@ export async function toModelMessages(
                     model: modelLabel,
                     part: summarizeAttachmentPartForLog(part),
                 })
+                const decodedFile = decodeDataUrlAttachment(part.url)
                 return {
                     type: "file" as const,
-                    data: part.url,
-                    mediaType: part.mime,
+                    data: decodedFile?.data ?? part.url,
+                    mediaType: decodedFile?.mediaType ?? part.mime,
                     filename: part.filename,
                 }
             case "image":
@@ -871,10 +897,11 @@ export async function toModelMessages(
                     model: modelLabel,
                     part: summarizeAttachmentPartForLog(part),
                 })
+                const decodedImage = decodeDataUrlAttachment(part.url)
                 return {
                     type: "image" as const,
-                    image: part.url,
-                    mediaType: part.mime,
+                    image: decodedImage?.data ?? part.url,
+                    mediaType: decodedImage?.mediaType ?? part.mime,
                 }
             case "tool":
             case "permission":

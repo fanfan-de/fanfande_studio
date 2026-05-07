@@ -77,6 +77,7 @@ export interface WorkbenchShellProps {
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
+  onPasteComposerImageAttachments: AgentWorkspaceState["handlePasteComposerImageAttachments"]
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
@@ -183,6 +184,7 @@ function WorkbenchNodeView({
         onPermissionRequestResponse={props.onPermissionRequestResponse}
         onToolPermissionModeChange={props.onToolPermissionModeChange}
         onPickComposerAttachments={props.onPickComposerAttachments}
+        onPasteComposerImageAttachments={props.onPasteComposerImageAttachments}
         onRegisterPane={props.onRegisterPane}
         onRemoveComposerAttachment={props.onRemoveComposerAttachment}
         onSelectCreateSessionTab={props.onSelectCreateSessionTab}

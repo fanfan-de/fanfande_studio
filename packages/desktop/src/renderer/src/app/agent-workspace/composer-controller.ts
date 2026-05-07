@@ -10,6 +10,7 @@ import type {
   ComposerAttachment,
   ComposerCommentReference,
   ComposerDraftState,
+  ComposerPastedImageAttachment,
   CreateSessionTab,
   OpenAIReasoningEffort,
   PendingAgentStream,
@@ -423,27 +424,58 @@ export function useComposerController({
       })
       if (!pickedPaths || pickedPaths.length === 0) return
 
-      setComposerAttachmentsByTabKey((current) => {
-        const existingAttachments = current[tabKey] ?? []
-        const seen = new Set(existingAttachments.map((attachment) => attachment.path))
-        const nextAttachments = [...existingAttachments]
-        const supportedCapabilities = { image: allowImage, pdf: allowPdf }
-
-        for (const path of pickedPaths) {
-          if (!isComposerAttachmentSupported(path, supportedCapabilities)) continue
-          if (seen.has(path)) continue
-          seen.add(path)
-          nextAttachments.push(buildComposerAttachment(path))
-        }
-
-        return {
-          ...current,
-          [tabKey]: nextAttachments,
-        }
-      })
+      appendComposerAttachmentPaths(tabKey, pickedPaths, { image: allowImage, pdf: allowPdf })
     } catch (error) {
       console.error("[desktop] pickComposerAttachments failed:", error)
     }
+  }
+
+  async function handlePasteComposerImageAttachments(input: {
+    allowImage: boolean
+    disabledReason?: string | null
+    images: ComposerPastedImageAttachment[]
+    tabKey?: string | null
+  }) {
+    const saveComposerPastedImages = window.desktop?.saveComposerPastedImages
+    const tabKey = input.tabKey ?? activeTabKey
+    if (!input.allowImage) return
+    if (input.disabledReason) return
+    if (!tabKey || input.images.length === 0 || !saveComposerPastedImages) return
+
+    try {
+      const savedPaths = await saveComposerPastedImages({
+        images: input.images,
+      })
+      if (savedPaths.length === 0) return
+
+      appendComposerAttachmentPaths(tabKey, savedPaths, { image: true, pdf: false })
+    } catch (error) {
+      console.error("[desktop] saveComposerPastedImages failed:", error)
+    }
+  }
+
+  function appendComposerAttachmentPaths(
+    tabKey: string,
+    paths: string[],
+    supportedCapabilities: { image: boolean; pdf: boolean },
+  ) {
+    setComposerAttachmentsByTabKey((current) => {
+      const existingAttachments = current[tabKey] ?? []
+      const seen = new Set(existingAttachments.map((attachment) => attachment.path))
+      const nextAttachments = [...existingAttachments]
+
+      for (const path of paths) {
+        if (!isComposerAttachmentSupported(path, supportedCapabilities)) continue
+        if (seen.has(path)) continue
+        seen.add(path)
+        nextAttachments.push(buildComposerAttachment(path))
+      }
+
+      return {
+        ...current,
+        [tabKey]: nextAttachments,
+      }
+    })
   }
 
   function handleRemoveComposerAttachment(path: string, tabKey = activeTabKey) {
@@ -457,6 +489,7 @@ export function useComposerController({
   return {
     handlePermissionRequestResponse,
     handlePickComposerAttachments,
+    handlePasteComposerImageAttachments,
     handleRemoveComposerAttachment,
     handleAskUserQuestionAnswer,
     handleCancelSend,

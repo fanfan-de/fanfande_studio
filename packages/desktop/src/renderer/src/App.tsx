@@ -149,6 +149,7 @@ export function App() {
     handlePermissionRequestResponse,
     handleAskUserQuestionAnswer,
     handlePickComposerAttachments,
+    handlePasteComposerImageAttachments,
     handlePreviewAddComment,
     handlePreviewBack,
     handlePreviewDraftUrlChange,
@@ -1103,6 +1104,7 @@ export function App() {
                 onToolPermissionModeChange={handleToolPermissionModeChange}
                 onAskUserQuestionAnswer={handleAskUserQuestionAnswer}
                 onPickComposerAttachments={handlePickComposerAttachments}
+                onPasteComposerImageAttachments={handlePasteComposerImageAttachments}
                 onRegisterPane={handleRegisterPane}
                 onRemoveComposerAttachment={handleRemoveComposerAttachment}
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}

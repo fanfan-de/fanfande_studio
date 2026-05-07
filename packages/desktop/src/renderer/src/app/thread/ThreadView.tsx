@@ -22,6 +22,7 @@ import type {
   AssistantTurn,
   ComposerAttachment,
   ComposerDraftState,
+  ComposerPastedImageAttachment,
   OpenAIReasoningEffort,
   PermissionDecision,
   PermissionRequest,
@@ -64,6 +65,11 @@ interface ThreadViewProps {
     allowImage: boolean
     allowPdf: boolean
     disabledReason: string | null
+  }) => void | Promise<void>
+  onSideChatPasteImageAttachments?: (input: {
+    allowImage: boolean
+    disabledReason: string | null
+    images: ComposerPastedImageAttachment[]
   }) => void | Promise<void>
   onSideChatRemoveAttachment?: (path: string) => void
   onSideChatCancelSend?: () => void | Promise<void>
@@ -583,6 +589,11 @@ interface InlineSideChatThreadProps {
     allowPdf: boolean
     disabledReason: string | null
   }) => void | Promise<void>
+  onPasteImageAttachments?: (input: {
+    allowImage: boolean
+    disabledReason: string | null
+    images: ComposerPastedImageAttachment[]
+  }) => void | Promise<void>
   onRemoveAttachment: (path: string) => void
   onCancelSend?: () => void | Promise<void>
   onSend: (input: {
@@ -620,6 +631,7 @@ function InlineSideChatThread({
   onAskUserQuestionAnswer,
   onPermissionRequestResponse,
   onPickAttachments,
+  onPasteImageAttachments,
   onRemoveAttachment,
   onCancelSend,
   onSend,
@@ -715,6 +727,9 @@ function InlineSideChatThread({
           attachmentDisabledReason={composer.attachmentDisabledReason}
           attachmentError={composer.attachmentError}
           canSend
+          canPasteImageAttachments={
+            Boolean(onPasteImageAttachments) && composer.attachmentCapabilities.image && composer.attachmentDisabledReason === null
+          }
           draftState={draftState}
           hasPendingPermissionRequests={pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
           isSending={isSending}
@@ -742,6 +757,16 @@ function InlineSideChatThread({
               allowPdf: composer.attachmentCapabilities.pdf,
               disabledReason: composer.attachmentDisabledReason,
             })
+          }
+          onPasteImageAttachments={
+            onPasteImageAttachments
+              ? (images) =>
+                  onPasteImageAttachments({
+                    allowImage: composer.attachmentCapabilities.image,
+                    disabledReason: composer.attachmentDisabledReason,
+                    images,
+                  })
+              : undefined
           }
           onRemoveAttachment={onRemoveAttachment}
           onCancelSend={onCancelSend}
@@ -1481,6 +1506,7 @@ export function ThreadView({
   threadColumnRef,
   onSideChatDraftStateChange,
   onSideChatPickAttachments,
+  onSideChatPasteImageAttachments,
   onSideChatRemoveAttachment,
   onSideChatCancelSend,
   onSideChatSend,
@@ -1757,6 +1783,7 @@ export function ThreadView({
                                   onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                                   onPermissionRequestResponse={onPermissionRequestResponse}
                                   onPickAttachments={onSideChatPickAttachments}
+                                  onPasteImageAttachments={onSideChatPasteImageAttachments}
                                   onRemoveAttachment={onSideChatRemoveAttachment}
                                   onCancelSend={onSideChatCancelSend}
                                   onSend={onSideChatSend}

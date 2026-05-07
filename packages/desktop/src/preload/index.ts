@@ -181,6 +181,8 @@ try {
     pickProjectDirectory: () => invokeDesktop("desktop:pick-project-directory") as Promise<string | null>,
     pickComposerAttachments: (input?: { allowImage?: boolean; allowPdf?: boolean }) =>
       invokeDesktop("desktop:pick-composer-attachments", input) as Promise<string[]>,
+    saveComposerPastedImages: (input: DesktopIpcInput<"desktop:save-composer-pasted-images">) =>
+      invokeDesktop("desktop:save-composer-pasted-images", input) as Promise<string[]>,
     capturePreviewScreenshot: (input: { bounds: { x: number; y: number; width: number; height: number }; url?: string }) =>
       invokeDesktop("desktop:capture-preview-screenshot", input) as Promise<{ path: string }>,
     detectLocalPreviewServices: () =>

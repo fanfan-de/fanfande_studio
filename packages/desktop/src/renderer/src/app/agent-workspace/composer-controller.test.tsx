@@ -123,6 +123,7 @@ function useComposerHarness(input?: {
   })
 
   return {
+    attachmentsByTabKey,
     controller,
     createSessionForWorkspace,
     pendingStreamsRef,
@@ -207,6 +208,56 @@ describe("composer controller", () => {
         clientTurnID: "stream-1",
       })
       expect(result.current.pendingStreamsRef.current["stream-1"]?.cancelRequested).toBe(true)
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("saves pasted images and adds the resulting files as composer attachments", async () => {
+    const previousDesktop = window.desktop
+    const saveComposerPastedImages = vi.fn(async () => ["C:\\Temp\\pasted-image.png"])
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        saveComposerPastedImages,
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() => useComposerHarness())
+
+      await act(async () => {
+        await result.current.controller.handlePasteComposerImageAttachments({
+          allowImage: true,
+          images: [
+            {
+              dataUrl: "data:image/png;base64,aW1hZ2U=",
+              mimeType: "image/png",
+              name: "screenshot.png",
+            },
+          ],
+        })
+      })
+
+      expect(saveComposerPastedImages).toHaveBeenCalledWith({
+        images: [
+          {
+            dataUrl: "data:image/png;base64,aW1hZ2U=",
+            mimeType: "image/png",
+            name: "screenshot.png",
+          },
+        ],
+      })
+      expect(result.current.attachmentsByTabKey["session:session-1"]).toEqual([
+        {
+          path: "C:\\Temp\\pasted-image.png",
+          name: "pasted-image.png",
+        },
+      ])
     } finally {
       Object.defineProperty(window, "desktop", {
         configurable: true,

@@ -1622,26 +1622,34 @@ describe("tool contract", () => {
     )
 
     expect(messages).toHaveLength(1)
-    expect(messages[0]).toMatchObject({
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: "Describe these references.",
-        },
-        {
-          type: "image",
-          image: "data:image/png;base64,aGVsbG8=",
-          mediaType: "image/png",
-        },
-        {
-          type: "file",
-          data: "data:application/pdf;base64,aGVsbG8=",
-          filename: "brief.pdf",
-          mediaType: "application/pdf",
-        },
-      ],
+    expect(messages[0]?.role).toBe("user")
+    const content = messages[0]?.content
+    expect(Array.isArray(content)).toBe(true)
+    if (!Array.isArray(content)) throw new Error("Expected user content array")
+
+    expect(content[0]).toMatchObject({
+      type: "text",
+      text: "Describe these references.",
     })
+
+    const imagePart = content[1] as { image?: unknown; mediaType?: string; type?: string }
+    expect(imagePart).toMatchObject({
+      type: "image",
+      mediaType: "image/png",
+    })
+    expect(imagePart.image).toBeInstanceOf(Uint8Array)
+    expect(imagePart.image).not.toBe("data:image/png;base64,aGVsbG8=")
+    expect(Buffer.from(imagePart.image as Uint8Array).toString("utf8")).toBe("hello")
+
+    const filePart = content[2] as { data?: unknown; filename?: string; mediaType?: string; type?: string }
+    expect(filePart).toMatchObject({
+      type: "file",
+      filename: "brief.pdf",
+      mediaType: "application/pdf",
+    })
+    expect(filePart.data).toBeInstanceOf(Uint8Array)
+    expect(filePart.data).not.toBe("data:application/pdf;base64,aGVsbG8=")
+    expect(Buffer.from(filePart.data as Uint8Array).toString("utf8")).toBe("hello")
   })
 
   it("replays assistant reasoning parts into subsequent model context by default", async () => {
@@ -2342,16 +2350,18 @@ describe("tool contract", () => {
     )
 
     expect(messages).toHaveLength(1)
-    expect(messages[0]).toMatchObject({
-      role: "user",
-      content: [
-        {
-          type: "image",
-          image: "data:image/png;base64,aGVsbG8=",
-          mediaType: "image/png",
-        },
-      ],
+    expect(messages[0]?.role).toBe("user")
+    const content = messages[0]?.content
+    expect(Array.isArray(content)).toBe(true)
+    if (!Array.isArray(content)) throw new Error("Expected user content array")
+
+    const imagePart = content[0] as { image?: unknown; mediaType?: string; type?: string }
+    expect(imagePart).toMatchObject({
+      type: "image",
+      mediaType: "image/png",
     })
+    expect(imagePart.image).toBeInstanceOf(Uint8Array)
+    expect(imagePart.image).not.toBe("data:image/png;base64,aGVsbG8=")
   })
 
   it("replays provider-executed MCP history on the assistant message", async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { Composer } from "./Composer"
 import { appendComposerTagToDraftState, createComposerDraftStateFromPlainText, createComposerFileTagData } from "./draft-state"
@@ -198,6 +198,41 @@ describe("Composer", () => {
         charCode: 32,
       }),
     ).toBe(true)
+  })
+
+  it("passes pasted image files to the attachment handler", async () => {
+    const onPasteImageAttachments = vi.fn()
+    const { container } = renderComposer({
+      canPasteImageAttachments: true,
+      onPasteImageAttachments,
+    })
+    const editor = container.querySelector(".composer-editor-input")
+    const imageFile = new File(["image"], "screenshot.png", { type: "image/png" })
+
+    expect(editor).toBeInstanceOf(HTMLElement)
+    expect(
+      fireEvent.paste(editor as HTMLElement, {
+        clipboardData: {
+          items: [
+            {
+              kind: "file",
+              type: "image/png",
+              getAsFile: () => imageFile,
+            },
+          ],
+          files: [],
+        },
+      }),
+    ).toBe(false)
+
+    await waitFor(() => expect(onPasteImageAttachments).toHaveBeenCalledTimes(1))
+    expect(onPasteImageAttachments.mock.calls[0]?.[0]).toEqual([
+      {
+        dataUrl: "data:image/png;base64,aW1hZ2U=",
+        mimeType: "image/png",
+        name: "screenshot.png",
+      },
+    ])
   })
 
   it("switches the send button to stop while sending", () => {
