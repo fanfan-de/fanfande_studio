@@ -7453,26 +7453,26 @@ describe("App", () => {
     const windowShell = container.querySelector(".window-shell") as HTMLElement | null
 
     expect(windowShell).not.toBeNull()
-    expect(windowShell).toHaveClass("debug-ui-regions")
+    expect(windowShell).not.toHaveClass("debug-ui-regions")
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
     await screen.findByRole("dialog", { name: "Settings" })
     fireEvent.click(screen.getByRole("button", { name: /^Developer Mode/ }))
 
     const debugRegionsSwitch = screen.getByRole("switch", { name: "Show debug region colors" })
-    expect(debugRegionsSwitch).toHaveAttribute("aria-checked", "true")
-
-    fireEvent.click(debugRegionsSwitch)
-
     expect(debugRegionsSwitch).toHaveAttribute("aria-checked", "false")
-    expect(windowShell).not.toHaveClass("debug-ui-regions")
-    expect(window.localStorage.getItem("desktop.debugUiRegions")).toBe("false")
 
     fireEvent.click(debugRegionsSwitch)
 
     expect(debugRegionsSwitch).toHaveAttribute("aria-checked", "true")
     expect(windowShell).toHaveClass("debug-ui-regions")
     expect(window.localStorage.getItem("desktop.debugUiRegions")).toBe("true")
+
+    fireEvent.click(debugRegionsSwitch)
+
+    expect(debugRegionsSwitch).toHaveAttribute("aria-checked", "false")
+    expect(windowShell).not.toHaveClass("debug-ui-regions")
+    expect(window.localStorage.getItem("desktop.debugUiRegions")).toBe("false")
   })
 
   it("toggles line debug colors from developer mode settings", async () => {

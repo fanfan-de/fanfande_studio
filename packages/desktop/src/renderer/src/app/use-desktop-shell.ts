@@ -84,7 +84,7 @@ function readBrandThemePreference(): BrandTheme {
 }
 
 function readDebugUiRegionsPreference() {
-  return readBooleanPreference(DEBUG_UI_REGIONS_STORAGE_KEY, true)
+  return readBooleanPreference(DEBUG_UI_REGIONS_STORAGE_KEY, false)
 }
 
 function readDebugLineColorsPreference() {
