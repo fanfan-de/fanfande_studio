@@ -124,6 +124,7 @@ function LeftSidebarTopMenu({
             <button
               key={mode}
               className={workspaceMode === mode && activeView === "workspace" ? "workspace-mode-selector-button is-active" : "workspace-mode-selector-button"}
+              aria-label={label}
               aria-pressed={workspaceMode === mode && activeView === "workspace"}
               title={label}
               type="button"
@@ -133,7 +134,6 @@ function LeftSidebarTopMenu({
               }}
             >
               <Icon />
-              <span className="workspace-mode-selector-label">{label}</span>
             </button>
           ))}
         </div>

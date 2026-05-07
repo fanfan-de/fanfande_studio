@@ -246,6 +246,10 @@
     margin-top: 8px;
   }
 
+  .composer-model-picker-body {
+    grid-template-columns: 1fr;
+  }
+
   .composer-toolbar,
   .sidebar-footer,
   .settings-actions-row,

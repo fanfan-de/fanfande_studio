@@ -706,6 +706,10 @@
 }
 
 .composer-model-menu-panel {
+  width: min(560px, calc(100vw - 64px));
+  max-width: min(560px, calc(100vw - 64px));
+  height: min(360px, calc(100dvh - 180px));
+  max-height: 360px;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
@@ -722,11 +726,11 @@
 
 .composer-model-menu-options {
   min-height: 0;
-  max-height: calc(min(320px, calc(100dvh - 180px)) - 51px);
   overflow: auto;
+  align-content: start;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  padding-top: 4px;
+  padding-top: 0;
   scrollbar-color: var(--mix-seg-text-3-54-transparent-46) var(--seg-dropdown-menu-surface);
 }
 
@@ -743,6 +747,77 @@
   border: 3px solid var(--seg-dropdown-menu-surface);
   border-radius: 999px;
   background: var(--mix-seg-text-3-54-transparent-46);
+}
+
+.composer-model-picker-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(140px, 0.38fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.composer-model-provider-list,
+.composer-model-menu-options {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.composer-model-provider-list {
+  scrollbar-color: var(--mix-seg-text-3-54-transparent-46) var(--seg-dropdown-menu-surface);
+}
+
+.composer-model-provider-list::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.composer-model-provider-list::-webkit-scrollbar-track {
+  background: var(--seg-dropdown-menu-surface);
+}
+
+.composer-model-provider-list::-webkit-scrollbar-thumb {
+  border: 3px solid var(--seg-dropdown-menu-surface);
+  border-radius: 999px;
+  background: var(--mix-seg-text-3-54-transparent-46);
+}
+
+.composer-model-provider-option {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--seg-radius-xs);
+  background: transparent;
+  color: #314353;
+  display: flex;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.composer-model-provider-option:hover,
+.composer-model-provider-option:focus-visible,
+.composer-model-provider-option.is-active {
+  border-color: var(--mix-seg-accent-34-seg-border-66);
+  background: var(--seg-composer-button-surface);
+  color: var(--seg-composer-button-text);
+}
+
+.composer-model-provider-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .composer-menu-search-input {
@@ -1320,6 +1395,20 @@
   border-color: transparent;
   background: var(--seg-composer-button-surface-strong);
   color: var(--seg-composer-button-text-strong);
+}
+
+.composer .composer-model-provider-option {
+  border-color: transparent;
+  background: transparent;
+  color: var(--seg-text-2);
+}
+
+.composer .composer-model-provider-option:hover,
+.composer .composer-model-provider-option:focus-visible,
+.composer .composer-model-provider-option.is-active {
+  border-color: transparent;
+  background: var(--seg-composer-button-surface);
+  color: var(--seg-composer-button-text);
 }
 
 .composer-utility-bar .composer-utility-git-branch-button,

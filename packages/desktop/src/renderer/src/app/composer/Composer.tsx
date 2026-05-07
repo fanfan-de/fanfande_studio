@@ -90,6 +90,12 @@ interface ComposerProps {
 type ComposerMenuKey = "model" | "reasoning" | null
 type SlashCommandKey = "attach" | "file" | "mcp" | "model" | "reasoning" | "skill"
 
+interface ComposerModelProviderGroup {
+  matchingOptions: ComposerModelOption[]
+  providerID: string
+  providerLabel: string
+}
+
 type ComposerDebugWindow = Window & {
   __FANFANDE_COMPOSER_DEBUG__?: boolean
   __FANFANDE_COMPOSER_EVENTS__?: unknown[]
@@ -205,6 +211,66 @@ function isComposerSubmitKeyEvent(event: KeyboardEvent<HTMLElement>, isComposing
 
   const nativeEvent = event.nativeEvent
   return !(isComposing || nativeEvent.isComposing || nativeEvent.keyCode === 229)
+}
+
+function matchesComposerModelOptionSearch(option: ComposerModelOption, normalizedQuery: string) {
+  if (!normalizedQuery) return true
+
+  return `${option.label} ${option.providerLabel} ${option.providerID} ${option.value}`
+    .toLowerCase()
+    .includes(normalizedQuery)
+}
+
+function matchesComposerModelProviderSearch(
+  providerID: string,
+  providerLabel: string,
+  normalizedQuery: string,
+) {
+  if (!normalizedQuery) return true
+
+  return `${providerLabel} ${providerID}`.toLowerCase().includes(normalizedQuery)
+}
+
+function buildComposerModelProviderGroups(
+  modelOptions: ComposerModelOption[],
+  searchQuery: string,
+): ComposerModelProviderGroup[] {
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  const groupedOptions = new Map<string, ComposerModelProviderGroup & { allOptions: ComposerModelOption[] }>()
+
+  for (const option of modelOptions) {
+    const existingGroup = groupedOptions.get(option.providerID)
+    if (existingGroup) {
+      existingGroup.allOptions.push(option)
+      continue
+    }
+
+    groupedOptions.set(option.providerID, {
+      providerID: option.providerID,
+      providerLabel: option.providerLabel,
+      allOptions: [option],
+      matchingOptions: [],
+    })
+  }
+
+  const groups: ComposerModelProviderGroup[] = []
+
+  for (const group of groupedOptions.values()) {
+    const providerMatches = matchesComposerModelProviderSearch(group.providerID, group.providerLabel, normalizedQuery)
+    const matchingOptions = normalizedQuery
+      ? group.allOptions.filter((option) => matchesComposerModelOptionSearch(option, normalizedQuery))
+      : group.allOptions
+
+    if (normalizedQuery && !providerMatches && matchingOptions.length === 0) continue
+
+    groups.push({
+      providerID: group.providerID,
+      providerLabel: group.providerLabel,
+      matchingOptions: providerMatches ? group.allOptions : matchingOptions,
+    })
+  }
+
+  return groups
 }
 
 function getComposerSendButtonDescription({
@@ -775,6 +841,8 @@ export function Composer({
 
   const [openMenu, setOpenMenu] = useState<ComposerMenuKey>(null)
   const [modelSearchQuery, setModelSearchQuery] = useState("")
+  const [activeModelProviderID, setActiveModelProviderID] = useState<string | null>(null)
+  const previousOpenMenuRef = useRef<ComposerMenuKey>(null)
   const [commandMenuState, setCommandMenuState] = useState<ComposerCommandMenuState | null>(null)
   const [commandMenuItems, setCommandMenuItems] = useState<ComposerCommandMenuItem[]>([])
   const [activeCommandIndex, setActiveCommandIndex] = useState(0)
@@ -1030,6 +1098,48 @@ export function Composer({
     if (openMenu === "model" || modelSearchQuery === "") return
     setModelSearchQuery("")
   }, [modelSearchQuery, openMenu])
+
+  const selectedModelProviderID =
+    modelOptions.find((option) => option.value === selectedModel)?.providerID ?? selectedModel?.split("/")[0] ?? null
+  const allModelProviderGroups = useMemo(() => buildComposerModelProviderGroups(modelOptions, ""), [modelOptions])
+  const allModelProviderIDsKey = allModelProviderGroups.map((group) => group.providerID).join("\n")
+  const visibleModelProviderGroups = useMemo(
+    () => buildComposerModelProviderGroups(modelOptions, modelSearchQuery),
+    [modelOptions, modelSearchQuery],
+  )
+  const activeModelProviderGroup =
+    (activeModelProviderID
+      ? visibleModelProviderGroups.find((group) => group.providerID === activeModelProviderID)
+      : null) ??
+    visibleModelProviderGroups[0] ??
+    null
+
+  useEffect(() => {
+    const previousOpenMenu = previousOpenMenuRef.current
+    previousOpenMenuRef.current = openMenu
+    if (openMenu !== "model") return
+    if (previousOpenMenu === "model") return
+
+    const allModelProviderIDs = allModelProviderIDsKey ? allModelProviderIDsKey.split("\n") : []
+
+    setActiveModelProviderID(
+      selectedModelProviderID && allModelProviderIDs.includes(selectedModelProviderID)
+        ? selectedModelProviderID
+        : (allModelProviderIDs[0] ?? null),
+    )
+  }, [allModelProviderIDsKey, openMenu, selectedModelProviderID])
+
+  useEffect(() => {
+    if (openMenu !== "model") return
+    if (activeModelProviderID && visibleModelProviderGroups.some((group) => group.providerID === activeModelProviderID)) return
+
+    setActiveModelProviderID(visibleModelProviderGroups[0]?.providerID ?? null)
+  }, [activeModelProviderID, openMenu, visibleModelProviderGroups])
+
+  useEffect(() => {
+    if (openMenu === "model" || activeModelProviderID === null) return
+    setActiveModelProviderID(null)
+  }, [activeModelProviderID, openMenu])
 
   useEffect(() => {
     if (!commandMenuState) {
@@ -1310,15 +1420,6 @@ export function Composer({
   const sendButtonDisabled = isSending ? !onCancelSend : !canSend || hasPendingPermissionRequests || attachmentError !== null
   const showReasoningEffortSelector = showModelSelector && reasoningEffortOptions.length > 0
   const selectedReasoningEffortButtonLabel = `Reasoning: ${selectedReasoningEffortLabel}`
-  const normalizedModelSearchQuery = modelSearchQuery.trim().toLowerCase()
-  const visibleModelOptions =
-    normalizedModelSearchQuery.length === 0
-      ? modelOptions
-      : modelOptions.filter((option) =>
-          `${option.label} ${option.providerLabel} ${option.providerID} ${option.value}`
-            .toLowerCase()
-            .includes(normalizedModelSearchQuery),
-        )
   const modelMenuEmptyLabel =
     modelOptions.length === 0 ? "No visible models are available for this project yet." : "No models match your search."
   const commandMenuEmptyLabel =
@@ -1483,28 +1584,60 @@ export function Composer({
                       value={modelSearchQuery}
                     />
                   </div>
-                  <div className="composer-menu-options composer-model-menu-options" role="listbox" aria-label="Model selection">
-                    {visibleModelOptions.length > 0 ? (
-                      visibleModelOptions.map((option) => (
-                        <button
-                          key={option.value}
-                          aria-label={`${option.label} ${option.providerLabel}`}
-                          aria-selected={selectedModel === option.value}
-                          className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
-                          onClick={() => handleModelSelect(option.value)}
-                          role="option"
-                          type="button"
-                        >
-                          <span className="composer-menu-option-copy composer-model-option-copy">
-                            <strong>{option.label}</strong>
-                            <small>{option.providerLabel}</small>
-                          </span>
-                        </button>
-                      ))
+                  {visibleModelProviderGroups.length > 0 ? (
+                    <div className="composer-model-picker-body">
+                      <div className="composer-model-provider-list" role="listbox" aria-label="Model providers">
+                        {visibleModelProviderGroups.map((group) => {
+                          const isActive = activeModelProviderGroup?.providerID === group.providerID
+
+                          return (
+                            <button
+                              key={group.providerID}
+                              type="button"
+                              role="option"
+                              aria-selected={isActive}
+                              className={
+                                isActive
+                                  ? "composer-model-provider-option is-active"
+                                  : "composer-model-provider-option"
+                              }
+                              onClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                setActiveModelProviderID(group.providerID)
+                              }}
+                            >
+                              <span className="composer-model-provider-name">{group.providerLabel}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <div className="composer-menu-options composer-model-menu-options" role="listbox" aria-label="Model selection">
+                        {activeModelProviderGroup && activeModelProviderGroup.matchingOptions.length > 0 ? (
+                          activeModelProviderGroup.matchingOptions.map((option) => (
+                            <button
+                              key={option.value}
+                              aria-label={`${option.label} ${option.providerLabel}`}
+                              aria-selected={selectedModel === option.value}
+                              className={selectedModel === option.value ? "composer-menu-option is-selected" : "composer-menu-option"}
+                              onClick={() => handleModelSelect(option.value)}
+                              role="option"
+                              type="button"
+                            >
+                              <span className="composer-menu-option-copy">
+                                <strong>{option.label}</strong>
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <p className="composer-menu-empty">No models found.</p>
+                        )}
+                      </div>
+                    </div>
                     ) : (
                       <p className="composer-menu-empty">{modelMenuEmptyLabel}</p>
                     )}
-                  </div>
                 </div>
               ) : null}
             </div>

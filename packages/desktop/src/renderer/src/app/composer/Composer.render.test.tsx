@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { Composer } from "./Composer"
 import { appendComposerTagToDraftState, createComposerDraftStateFromPlainText, createComposerFileTagData } from "./draft-state"
@@ -114,7 +114,7 @@ describe("Composer", () => {
     expect(screen.getByText("Ask a follow-up about this reply.")).toBeInTheDocument()
   })
 
-  it("shows provider labels in the model menu", () => {
+  it("supports two-level provider and model selection in the model menu", () => {
     renderComposer({
       modelOptions: [
         {
@@ -136,8 +136,86 @@ describe("Composer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Select model: GPT-4o mini" }))
 
-    expect(screen.getByRole("option", { name: "GPT-4o mini OpenAI" })).toBeInTheDocument()
-    expect(screen.getByRole("option", { name: "GPT-4o mini OpenRouter" })).toBeInTheDocument()
+    const providerList = screen.getByRole("listbox", { name: "Model providers" })
+    const modelList = screen.getByRole("listbox", { name: "Model selection" })
+
+    expect(within(providerList).getByRole("option", { name: "OpenAI" })).toBeInTheDocument()
+    expect(within(providerList).getByRole("option", { name: "OpenRouter" })).toBeInTheDocument()
+    expect(within(modelList).getByRole("option", { name: "GPT-4o mini OpenAI" })).toBeInTheDocument()
+    expect(within(modelList).queryByRole("option", { name: "GPT-4o mini OpenRouter" })).not.toBeInTheDocument()
+
+    fireEvent.click(within(providerList).getByRole("option", { name: "OpenRouter" }))
+    expect(within(modelList).getByRole("option", { name: "GPT-4o mini OpenRouter" })).toBeInTheDocument()
+  })
+
+  it("keeps the active model provider while the parent rerenders", () => {
+    const createModelOptions = () => [
+      {
+        value: "deepseek/deepseek-v4-pro",
+        label: "DeepSeek V4 Pro",
+        providerID: "deepseek",
+        providerLabel: "DeepSeek",
+      },
+      {
+        value: "openrouter/claude-opus-4.5",
+        label: "Claude Opus 4.5",
+        providerID: "openrouter",
+        providerLabel: "OpenRouter",
+      },
+    ]
+
+    function Harness({ modelOptions }: { modelOptions: ReturnType<typeof createModelOptions> }) {
+      return (
+        <Composer
+          attachments={[]}
+          attachmentButtonTitle="Add attachments"
+          attachmentDisabledReason={null}
+          attachmentError={null}
+          canSend
+          draftState={createComposerDraftStateFromPlainText("")}
+          hasPendingPermissionRequests={false}
+          isSending={false}
+          mcpOptions={[]}
+          modelOptions={modelOptions}
+          onDraftStateChange={vi.fn()}
+          onModelChange={vi.fn()}
+          onPickAttachments={vi.fn()}
+          onReasoningEffortChange={vi.fn()}
+          onRemoveAttachment={vi.fn()}
+          onSend={vi.fn()}
+          reasoningEffortOptions={[]}
+          selectedMcpServerIDs={[]}
+          selectedModel="deepseek/deepseek-v4-pro"
+          selectedModelLabel="DeepSeek V4 Pro"
+          selectedReasoningEffort={null}
+          selectedReasoningEffortLabel=""
+          selectedSkillIDs={[]}
+          skillOptions={[]}
+          unsupportedAttachmentPaths={[]}
+          workspaceDirectory={null}
+        />
+      )
+    }
+
+    const { rerender } = render(<Harness modelOptions={createModelOptions()} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Select model: DeepSeek V4 Pro" }))
+    fireEvent.click(
+      within(screen.getByRole("listbox", { name: "Model providers" })).getByRole("option", { name: "OpenRouter" }),
+    )
+    expect(
+      within(screen.getByRole("listbox", { name: "Model selection" })).getByRole("option", {
+        name: "Claude Opus 4.5 OpenRouter",
+      }),
+    ).toBeInTheDocument()
+
+    rerender(<Harness modelOptions={createModelOptions()} />)
+
+    expect(
+      within(screen.getByRole("listbox", { name: "Model selection" })).getByRole("option", {
+        name: "Claude Opus 4.5 OpenRouter",
+      }),
+    ).toBeInTheDocument()
   })
 
   it("renders composer tags as non-editable DOM tokens", () => {
