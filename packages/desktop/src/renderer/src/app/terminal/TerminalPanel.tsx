@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEve
 import type { BrandTheme, ColorMode } from "../types"
 import { TerminalTabs } from "./TerminalTabs"
 import { TerminalView } from "./TerminalView"
-import type { TerminalSessionRecord, TerminalStreamEvent } from "./types"
+import type { TerminalSessionRecord, TerminalShellProfile, TerminalStreamEvent } from "./types"
 
 interface TerminalPanelProps {
   activeSession: TerminalSessionRecord | null
@@ -14,8 +14,12 @@ interface TerminalPanelProps {
   sessions: TerminalSessionRecord[]
   onCloseTerminal: (ptyID: string) => void | Promise<void>
   onCreateTerminal: () => void | Promise<void>
+  onCreateTerminalForShellProfile: (profileID: string) => void | Promise<void>
   onPanelHeightChange: (height: number) => void
+  onShellProfileChange: (profileID: string) => void
   onSelectTerminal: (ptyID: string) => void
+  selectedShellProfileID: string
+  shellProfiles: TerminalShellProfile[]
   onTerminalInput: (data: string) => void | Promise<void>
   onTerminalResize: (ptyID: string, rows: number, cols: number) => void
   onTerminalSnapshotChange: (ptyID: string, input: { scrollTop?: number }) => void
@@ -40,8 +44,12 @@ export const TerminalPanel = memo(function TerminalPanel({
   sessions,
   onCloseTerminal,
   onCreateTerminal,
+  onCreateTerminalForShellProfile,
   onPanelHeightChange,
+  onShellProfileChange,
   onSelectTerminal,
+  selectedShellProfileID,
+  shellProfiles,
   onTerminalInput,
   onTerminalResize,
   onTerminalSnapshotChange,
@@ -146,7 +154,11 @@ export const TerminalPanel = memo(function TerminalPanel({
         showToggleButton={showToggleButton}
         sessions={sessions}
         onCloseTerminal={onCloseTerminal}
+        onCreateTerminal={onCreateTerminalForShellProfile}
+        onShellProfileChange={onShellProfileChange}
         onSelectTerminal={onSelectTerminal}
+        selectedShellProfileID={selectedShellProfileID}
+        shellProfiles={shellProfiles}
         onTogglePanel={onTogglePanel}
       />
 

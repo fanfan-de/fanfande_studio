@@ -60,19 +60,25 @@ async function resolveExistingCommand(candidate?: string | null) {
   return which(value) ?? null
 }
 
+function isWindowsSystemBashShim(candidate: string) {
+  if (process.platform !== "win32") return false
+  const normalized = path.resolve(candidate).replaceAll("/", "\\").toLowerCase()
+  return normalized.endsWith("\\windows\\system32\\bash.exe")
+}
+
 export async function resolveDefaultPtyShell(input?: string) {
   const explicit = await resolveExistingCommand(input ?? process.env["FanFande_PTY_SHELL"])
   if (explicit) return explicit
 
   const fromShellEnv = await resolveExistingCommand(process.env.SHELL)
-  if (fromShellEnv) return fromShellEnv
+  if (fromShellEnv && !isWindowsSystemBashShim(fromShellEnv)) return fromShellEnv
 
   const fromConfiguredGitBash = await resolveExistingCommand(Flag.FanFande_GIT_BASH_PATH)
   if (fromConfiguredGitBash) return fromConfiguredGitBash
 
   if (process.platform === "win32") {
     const bash = (await resolveExistingCommand("bash.exe")) ?? (await resolveExistingCommand("bash"))
-    if (bash) return bash
+    if (bash && !isWindowsSystemBashShim(bash)) return bash
 
     const git = (await resolveExistingCommand("git.exe")) ?? (await resolveExistingCommand("git"))
     if (git) {

@@ -1,14 +1,18 @@
 import { memo } from "react"
-import { CloseIcon } from "../icons"
+import { CloseIcon, PlusIcon } from "../icons"
 import { TerminalPanelToggleButton } from "./TerminalPanelToggleButton"
-import type { TerminalSessionRecord } from "./types"
+import type { TerminalSessionRecord, TerminalShellProfile } from "./types"
 
 interface TerminalTabsProps {
   activePtyID: string | null
   showToggleButton?: boolean
   sessions: TerminalSessionRecord[]
   onCloseTerminal: (ptyID: string) => void | Promise<void>
+  onCreateTerminal: (profileID: string) => void | Promise<void>
+  onShellProfileChange: (profileID: string) => void
   onSelectTerminal: (ptyID: string) => void
+  selectedShellProfileID: string
+  shellProfiles: TerminalShellProfile[]
   onTogglePanel: () => void | Promise<void>
 }
 
@@ -30,9 +34,15 @@ export const TerminalTabs = memo(function TerminalTabs({
   showToggleButton = true,
   sessions,
   onCloseTerminal,
+  onCreateTerminal,
+  onShellProfileChange,
   onSelectTerminal,
+  selectedShellProfileID,
+  shellProfiles,
   onTogglePanel,
 }: TerminalTabsProps) {
+  const selectedShellLabel = shellProfiles.find((profile) => profile.id === selectedShellProfileID)?.label ?? "Default"
+
   return (
     <div className="terminal-tabs">
       {showToggleButton ? <TerminalPanelToggleButton isOpen={true} onToggle={onTogglePanel} /> : null}
@@ -63,6 +73,34 @@ export const TerminalTabs = memo(function TerminalTabs({
             </div>
           )
         })}
+      </div>
+
+      <div className="terminal-tabs-actions">
+        <label className="terminal-shell-picker">
+          <span className="terminal-shell-picker-label">Shell</span>
+          <select
+            aria-label="Terminal shell profile"
+            className="terminal-shell-picker-select"
+            value={selectedShellProfileID}
+            onChange={(event) => onShellProfileChange(event.currentTarget.value)}
+          >
+            {shellProfiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <button
+          className="terminal-panel-create"
+          aria-label={`Create terminal (${selectedShellLabel})`}
+          title={`New terminal (${selectedShellLabel})`}
+          onClick={() => void onCreateTerminal(selectedShellProfileID)}
+          type="button"
+        >
+          <PlusIcon />
+        </button>
       </div>
     </div>
   )

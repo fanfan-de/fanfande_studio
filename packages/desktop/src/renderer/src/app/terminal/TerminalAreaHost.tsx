@@ -26,7 +26,9 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
     activeSession,
     handleCloseTerminal,
     handleCreateTerminal,
+    handleCreateTerminalForShellProfile,
     handlePanelHeightChange,
+    handleShellProfileChange,
     handleSelectTerminal,
     handleTerminalInput,
     handleTerminalResize,
@@ -34,6 +36,8 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
     handleTogglePanel,
     isOpen,
     panelHeight,
+    selectedShellProfileID,
+    shellProfiles,
     sessions,
     subscribeToTerminalStream,
   } = useTerminalWorkspace({
@@ -71,8 +75,12 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
         sessions={sessions}
         onCloseTerminal={handleCloseTerminal}
         onCreateTerminal={handleCreateTerminal}
+        onCreateTerminalForShellProfile={handleCreateTerminalForShellProfile}
         onPanelHeightChange={handlePanelHeightChange}
+        onShellProfileChange={handleShellProfileChange}
         onSelectTerminal={handleSelectTerminal}
+        selectedShellProfileID={selectedShellProfileID}
+        shellProfiles={shellProfiles}
         onTerminalInput={handleTerminalInput}
         onTerminalResize={handleTerminalResize}
         onTerminalSnapshotChange={handleTerminalSnapshotChange}

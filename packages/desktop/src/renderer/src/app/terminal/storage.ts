@@ -15,6 +15,7 @@ export function createEmptyTerminalWorkspaceState(): TerminalWorkspaceState {
     sessions: {},
     scrollTopBySessionID: {},
     panelHeight: DEFAULT_PANEL_HEIGHT,
+    preferredShellProfileID: null,
   }
 }
 
@@ -43,6 +44,7 @@ export function loadTerminalWorkspaceState(storageKey?: string): TerminalWorkspa
             )
           : {},
       panelHeight: Number.isFinite(parsed.panelHeight) ? Math.max(220, Math.min(parsed.panelHeight, 560)) : DEFAULT_PANEL_HEIGHT,
+      preferredShellProfileID: typeof parsed.preferredShellProfileID === "string" ? parsed.preferredShellProfileID : null,
     }
   } catch {
     return createEmptyTerminalWorkspaceState()
@@ -66,6 +68,7 @@ export function serializeTerminalWorkspaceState(state: TerminalWorkspaceState) {
     sessions: [],
     scrollTopBySessionID: state.scrollTopBySessionID,
     panelHeight: state.panelHeight,
+    preferredShellProfileID: state.preferredShellProfileID,
   }
 
   return JSON.stringify(payload)

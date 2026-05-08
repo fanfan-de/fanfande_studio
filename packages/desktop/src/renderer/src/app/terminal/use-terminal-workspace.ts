@@ -1,7 +1,8 @@
 import { startTransition, useEffect, useRef, useState } from "react"
 import { mapPtySessionInfoToRecord, terminalClient } from "./client"
+import { DEFAULT_TERMINAL_SHELL_PROFILE_ID, resolveShellFromProfile, resolveTerminalShellProfiles } from "./shell-profiles"
 import { loadTerminalWorkspaceState, saveTerminalWorkspaceState, serializeTerminalWorkspaceState } from "./storage"
-import type { PtyEvent, TerminalSessionRecord, TerminalStreamEvent, TerminalWorkspaceState } from "./types"
+import type { PtyEvent, TerminalSessionRecord, TerminalShellProfile, TerminalStreamEvent, TerminalWorkspaceState } from "./types"
 
 const MIN_PANEL_HEIGHT = 220
 const MAX_PANEL_HEIGHT = 560
@@ -72,6 +73,9 @@ export interface UseTerminalWorkspaceOptions {
 
 export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTerminalWorkspaceOptions) {
   const normalizedCurrentSessionID = currentSessionID?.trim() || null
+  const shellProfilesRef = useRef<TerminalShellProfile[]>(
+    resolveTerminalShellProfiles(typeof window === "undefined" ? undefined : window.desktop?.platform),
+  )
   const [workspace, setWorkspace] = useState(() => loadTerminalWorkspaceState(storageKey))
   const workspaceRef = useRef(workspace)
   const currentSessionIDRef = useRef<string | null>(normalizedCurrentSessionID)
@@ -224,6 +228,11 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
   workspaceRef.current = workspace
   currentSessionIDRef.current = normalizedCurrentSessionID
 
+  const shellProfiles = shellProfilesRef.current
+  const selectedShellProfileID = shellProfiles.some((profile) => profile.id === workspace.preferredShellProfileID)
+    ? workspace.preferredShellProfileID!
+    : DEFAULT_TERMINAL_SHELL_PROFILE_ID
+
   useEffect(() => {
     scheduleWorkspacePersistence()
   }, [workspace])
@@ -271,6 +280,18 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
     startTransition(() => {
       setWorkspace((current) => updater(current))
     })
+  }
+
+  function handleShellProfileChange(profileID: string) {
+    const resolvedProfileID =
+      profileID === DEFAULT_TERMINAL_SHELL_PROFILE_ID || !shellProfiles.some((profile) => profile.id === profileID)
+        ? null
+        : profileID
+
+    updateWorkspace((current) => ({
+      ...current,
+      preferredShellProfileID: resolvedProfileID,
+    }))
   }
 
   function cancelReconnect(ptyID: string) {
@@ -629,7 +650,7 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
     void attachSession(targetPtyID, getKnownCursor(targetPtyID))
   }, [workspace.activePtyID, workspace.isOpen, normalizedCurrentSessionID])
 
-  async function handleCreateTerminal(openPanel = true) {
+  async function handleCreateTerminal(openPanel = true, shellOverride?: string | null) {
     const ownerSessionID = currentSessionIDRef.current
     if (!ownerSessionID) return
 
@@ -650,8 +671,10 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
     }
 
     try {
+      const shell = shellOverride ?? resolveShellFromProfile(shellProfilesRef.current, workspaceRef.current.preferredShellProfileID)
       const session = await terminalClient.createSession({
         sessionID: ownerSessionID,
+        ...(shell ? { shell } : {}),
       })
       writeLiveSessionSnapshot(session.id, {
         buffer: "",
@@ -674,6 +697,11 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
     } catch (error) {
       console.error("[desktop] createPtySession failed:", error)
     }
+  }
+
+  async function handleCreateTerminalForShellProfile(profileID: string) {
+    const shell = resolveShellFromProfile(shellProfilesRef.current, profileID)
+    await handleCreateTerminal(true, shell)
   }
 
   async function handleTogglePanel() {
@@ -833,11 +861,15 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
 
   return {
     activeSession,
+    handleCreateTerminalForShellProfile,
     isOpen: workspace.isOpen,
     panelHeight: clampPanelHeight(workspace.panelHeight),
+    selectedShellProfileID,
+    shellProfiles,
     sessions,
     handleCloseTerminal,
     handleCreateTerminal,
+    handleShellProfileChange,
     handlePanelHeightChange,
     handleSelectTerminal,
     handleTerminalInput,

@@ -23,8 +23,18 @@ describe("TerminalPanel", () => {
         sessions={[]}
         onCloseTerminal={vi.fn()}
         onCreateTerminal={vi.fn()}
+        onCreateTerminalForShellProfile={vi.fn()}
         onPanelHeightChange={onPanelHeightChange}
+        onShellProfileChange={vi.fn()}
         onSelectTerminal={vi.fn()}
+        selectedShellProfileID="default"
+        shellProfiles={[
+          {
+            id: "default",
+            label: "Default",
+            shell: null,
+          },
+        ]}
         onTerminalInput={vi.fn()}
         onTerminalResize={vi.fn()}
         onTerminalSnapshotChange={vi.fn()}

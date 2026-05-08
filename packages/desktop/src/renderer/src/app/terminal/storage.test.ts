@@ -17,6 +17,7 @@ describe("terminal storage", () => {
       activePtyID: "pty-1",
       order: ["pty-1"],
       panelHeight: 320,
+      preferredShellProfileID: "powershell",
       scrollTopBySessionID: {
         "session-1": 4,
       },
@@ -51,6 +52,7 @@ describe("terminal storage", () => {
     expect(restored.scrollTopBySessionID).toEqual({
       "session-1": 4,
     })
+    expect(restored.preferredShellProfileID).toBe("powershell")
   })
 
   it("falls back to the empty workspace shape for invalid payloads", () => {

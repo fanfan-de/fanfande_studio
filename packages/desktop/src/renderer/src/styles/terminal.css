@@ -66,9 +66,43 @@
 
 .terminal-tabs-list {
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   overflow: auto;
   scrollbar-width: thin;
+}
+
+.terminal-tabs-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-shell-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--seg-text-2);
+  font-size: 12px;
+}
+
+.terminal-shell-picker-label {
+  white-space: nowrap;
+}
+
+.terminal-shell-picker-select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--seg-border);
+  border-radius: 8px;
+  background: var(--seg-panel);
+  color: var(--seg-text-1);
+  font-size: 12px;
+}
+
+.terminal-shell-picker-select:focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
 }
 
 .terminal-panel-toggle-button {

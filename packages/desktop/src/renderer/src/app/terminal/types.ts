@@ -1,5 +1,10 @@
 export type TerminalSessionStatus = "running" | "exited" | "deleted" | "invalid"
 export type TerminalTransportState = "idle" | "connecting" | "connected" | "disconnected" | "error"
+export interface TerminalShellProfile {
+  id: string
+  label: string
+  shell: string | null
+}
 export type TerminalStreamEvent =
   | {
       type: "append"
@@ -39,6 +44,7 @@ export interface TerminalWorkspaceState {
   sessions: Record<string, TerminalSessionRecord>
   scrollTopBySessionID: Record<string, number>
   panelHeight: number
+  preferredShellProfileID: string | null
 }
 
 export interface TerminalStorageSessionSnapshot {
@@ -66,6 +72,7 @@ export interface TerminalStoragePayload {
   sessions: TerminalStorageSessionSnapshot[]
   scrollTopBySessionID: Record<string, number>
   panelHeight: number
+  preferredShellProfileID?: string | null
 }
 
 export interface PtySessionInfo {
