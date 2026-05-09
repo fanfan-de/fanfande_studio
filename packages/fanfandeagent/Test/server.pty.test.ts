@@ -87,6 +87,28 @@ class FakePtyRuntime implements PtyRuntimeAdapter {
   }
 }
 
+class ThrowingPtyRuntime implements PtyRuntimeAdapter {
+  spawn(): PtyRuntimeHandle {
+    throw new Error("native PTY spawn failed")
+  }
+}
+
+class ThrowingResizePtyRuntime implements PtyRuntimeAdapter {
+  readonly handles: FakePtyHandle[] = []
+
+  spawn(input: { shell: string; cwd: string; rows: number; cols: number; env: Record<string, string> }) {
+    void input.shell
+    void input.cwd
+    void input.env
+    const handle = new FakePtyHandle(input.cols, input.rows)
+    handle.resize = () => {
+      throw new Error("ioctl(2) failed")
+    }
+    this.handles.push(handle)
+    return handle
+  }
+}
+
 class SocketHarness {
   readonly socket: WebSocket
   private readonly queue: PtyServerMessage[] = []
@@ -177,8 +199,8 @@ async function waitForWrites(read: () => string[] | undefined, expected: string[
   expect(read()).toEqual(expected)
 }
 
-async function startPtyTestServer() {
-  const runtime = new FakePtyRuntime()
+async function startPtyTestServer(input?: { runtime?: PtyRuntimeAdapter }) {
+  const runtime = input?.runtime ?? new FakePtyRuntime()
   const registry = createPtyRegistry({
     runtime,
     exitRetentionMs: 30_000,
@@ -199,7 +221,7 @@ async function startPtyTestServer() {
   return {
     baseURL,
     registry,
-    runtime,
+    runtime: runtime as FakePtyRuntime,
   }
 }
 
@@ -361,6 +383,18 @@ describe("server pty api", () => {
     expect(runtime.handles[0]?.rows).toBe(24)
   })
 
+  test("returns a readable error when PTY runtime spawn fails", async () => {
+    const { baseURL } = await startPtyTestServer({
+      runtime: new ThrowingPtyRuntime(),
+    })
+    const { response, body } = await createPty(baseURL)
+
+    expect(response.status).toBe(500)
+    expect(body.success).toBe(false)
+    expect(body.error?.code).toBe("PTY_CREATE_FAILED")
+    expect(body.error?.message).toContain("native PTY spawn failed")
+  })
+
   test("returns the same running PTY for repeated session creation", async () => {
     const { baseURL, runtime } = await startPtyTestServer()
     const created = await createPty(baseURL)
@@ -454,6 +488,32 @@ describe("server pty api", () => {
     expect(body.data?.cols).toBe(120)
     expect(runtime.handles[0]?.rows).toBe(40)
     expect(runtime.handles[0]?.cols).toBe(120)
+  })
+
+  test("treats runtime resize errors as non-fatal", async () => {
+    const { baseURL } = await startPtyTestServer({
+      runtime: new ThrowingResizePtyRuntime(),
+    })
+    const created = await createPty(baseURL)
+    const ptyID = created.body.data?.id
+
+    expect(ptyID).toBeString()
+
+    const response = await fetch(`${baseURL}/api/pty/${ptyID}`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        rows: 40,
+        cols: 120,
+      }),
+    })
+    const body = (await response.json()) as JsonEnvelope<PtySessionInfo>
+
+    expect(response.status).toBe(200)
+    expect(body.data?.rows).toBe(40)
+    expect(body.data?.cols).toBe(120)
   })
 
   test("replays only missing output when reconnecting with a cursor", async () => {

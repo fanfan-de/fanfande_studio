@@ -201,6 +201,7 @@ export const ParallelTool = Tool.define(
         "Execute 1-8 independent read/search tool calls in parallel. Only read-only tools marked concurrency=safe are allowed.",
       parameters: ParallelToolParameters,
       execute: async (parameters, ctx): Promise<Tool.ToolOutput<Record<string, unknown>, ParallelToolData>> => {
+        const parsedParameters = ParallelToolParameters.parse(parameters)
         const [ToolRegistry, globalToolSelection] = await Promise.all([
           import("#tool/registry.ts"),
           Config.getToolSelection(Config.GLOBAL_CONFIG_ID),
@@ -213,8 +214,8 @@ export const ParallelTool = Tool.define(
         const builtinToolIDs = new Set(builtinRegistry.map((item) => item.id))
         const readOnlyToolsOnly = readOnlyToolsOnlyForSession(agent, ctx.sessionID)
         const parentToolCallID = ctx.toolCallID ?? Identifier.ascending("tool")
-        const results = await Promise.all(
-          parameters.calls.map((call, index) =>
+        const results: ParallelChildResult[] = await Promise.all(
+          parsedParameters.calls.map((call: ParallelCallInput, index: number) =>
             runChildCall({
               call,
               index,

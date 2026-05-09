@@ -89,6 +89,15 @@ export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
     return ok(c, await SessionUseCase.updateSessionModelSelection(c.req.param("id"), payload))
   })
 
+  app.patch("/:id/workflow", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SessionUseCase.UpdateSessionWorkflowBody,
+      "Body must contain a valid workflow action.",
+    )
+    return ok(c, SessionUseCase.updateSessionWorkflow(c.req.param("id"), payload))
+  })
+
   app.get("/:id/messages", async (c) => ok(c, await SessionUseCase.listSessionMessages(c.req.param("id"))))
 
   app.get("/:id/assets/:assetID", async (c) => {

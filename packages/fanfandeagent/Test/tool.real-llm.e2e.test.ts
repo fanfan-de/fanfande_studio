@@ -111,6 +111,30 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
     return
   }
 
+  const shellScenario: Scenario | null = process.platform === "darwin"
+    ? {
+        name: "macos_shell_command",
+        toolName: "macos_shell_command",
+        setup: async () => undefined,
+        prompt: "Run echo macos-shell-ok with the macos_shell_command tool and then confirm macos-shell-ok.",
+        verify: async (_directory, _assistant, toolPart) => {
+          const completed = toolPart.state as Message.ToolStateCompleted
+          expect(String(completed.output)).toContain("macos-shell-ok")
+        },
+      }
+    : process.platform === "win32"
+      ? {
+          name: "git_bash_command",
+          toolName: "git_bash_command",
+          setup: async () => undefined,
+          prompt: "Run echo git-bash-ok with the git_bash_command tool and then confirm git-bash-ok.",
+          verify: async (_directory, _assistant, toolPart) => {
+            const completed = toolPart.state as Message.ToolStateCompleted
+            expect(String(completed.output)).toContain("git-bash-ok")
+          },
+        }
+      : null
+
   const scenarios: Scenario[] = [
     {
       name: "read-file",
@@ -184,16 +208,7 @@ realTest("real LLM can use prompt() to drive core tools", async () => {
         expect(String(completed.output)).toContain("Replaced 2")
       },
     },
-    {
-      name: "git_bash_command",
-      toolName: "git_bash_command",
-      setup: async () => undefined,
-      prompt: "Run echo git-bash-ok with the git_bash_command tool and then confirm git-bash-ok.",
-      verify: async (_directory, _assistant, toolPart) => {
-        const completed = toolPart.state as Message.ToolStateCompleted
-        expect(String(completed.output)).toContain("git-bash-ok")
-      },
-    },
+    ...(shellScenario ? [shellScenario] : []),
   ]
 
   for (const scenario of scenarios) {

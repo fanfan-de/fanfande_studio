@@ -6,11 +6,10 @@ import { CancelSubagentTool } from "#tool/cancel-subagent.ts"
 import {
   CmdCommandTool,
   GitBashCommandTool,
+  MacOSShellCommandTool,
   PowerShellCommandTool,
   WslBashCommandTool,
 } from "#tool/shell-command.ts"
-import { EnterPlanModeTool } from "#tool/enter-plan-mode.ts"
-import { ExitPlanModeTool } from "#tool/exit-plan-mode.ts"
 import { GlobTool } from "#tool/glob.ts"
 import { GrepTool } from "#tool/grep.ts"
 import { GenerateImageTool } from "#tool/generate-image.ts"
@@ -59,11 +58,26 @@ export const state = Instance.state(async () => {
   }
 })
 
+export function builtinShellToolsForPlatform(platform: NodeJS.Platform): Tool.ToolInfo[] {
+  if (platform === "win32") {
+    return [
+      GitBashCommandTool,
+      PowerShellCommandTool,
+      CmdCommandTool,
+      WslBashCommandTool,
+    ]
+  }
+
+  if (platform === "darwin") {
+    return [MacOSShellCommandTool]
+  }
+
+  return []
+}
+
 export async function builtinTools(): Promise<Tool.ToolInfo[]> {
   return [
     AskUserQuestionTool,
-    EnterPlanModeTool,
-    ExitPlanModeTool,
     TaskCreateTool,
     TaskGetTool,
     TaskListTool,
@@ -97,10 +111,7 @@ export async function builtinTools(): Promise<Tool.ToolInfo[]> {
     LspReferencesTool,
     LspHoverTool,
     LspWorkspaceSymbolsTool,
-    GitBashCommandTool,
-    PowerShellCommandTool,
-    CmdCommandTool,
-    WslBashCommandTool,
+    ...builtinShellToolsForPlatform(process.platform),
   ]
 }
 

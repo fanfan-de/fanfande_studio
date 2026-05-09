@@ -13,6 +13,7 @@ import { isApiError } from "#server/error.ts"
 import { isSessionLimitError } from "#session/runtime/session-limits.ts"
 import type { AppEnv } from "#server/types.ts"
 import { getPtyRegistry, type PtyRegistry } from "#pty/registry.ts"
+import { isPtyRuntimeError } from "#pty/runtime.ts"
 import * as Log from "#util/log.ts"
 import { getServerBaseURL, setServerBaseURL } from "#server/base-url.ts"
 
@@ -123,6 +124,10 @@ export function createServerRuntime(options: Pick<ServerOptions, "corsWhitelist"
 
   app.onError((error, c) => {
     if (isApiError(error)) return jsonError(c, error.status, error.code, error.message)
+    if (isPtyRuntimeError(error)) {
+      const status = error.code === "PTY_RUNTIME_UNAVAILABLE" ? 503 : 500
+      return jsonError(c, status, error.code, error.message)
+    }
     if (isSessionLimitError(error)) return jsonError(c, 429, error.code, error.message)
 
     log.error("unhandled-error", {

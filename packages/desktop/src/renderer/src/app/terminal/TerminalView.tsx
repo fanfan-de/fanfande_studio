@@ -25,7 +25,7 @@ interface TerminalViewProps {
   colorMode: ColorMode
   panelHeight: number
   session: TerminalSessionRecord
-  onInput: (data: string) => void | Promise<void>
+  onInput: (ptyID: string, data: string) => void | Promise<void>
   onResize: (ptyID: string, rows: number, cols: number) => void
   onSnapshotChange: (ptyID: string, input: { scrollTop?: number }) => void
   subscribeToTerminalStream: (ptyID: string, listener: (event: TerminalStreamEvent) => void) => () => void
@@ -72,6 +72,19 @@ function getTerminalTheme() {
     brightCyan: accent,
     brightWhite: foreground,
   }
+}
+
+export function createTerminalOptions() {
+  return {
+    allowProposedApi: false,
+    cursorBlink: true,
+    cursorInactiveStyle: "outline",
+    fontFamily: "\"IBM Plex Mono\", \"JetBrains Mono\", \"Consolas\", monospace",
+    fontSize: 13,
+    lineHeight: 1.25,
+    scrollback: 5_000,
+    theme: getTerminalTheme(),
+  } satisfies ConstructorParameters<typeof Terminal>[0]
 }
 
 export const TerminalView = memo(function TerminalView({
@@ -181,21 +194,15 @@ export const TerminalView = memo(function TerminalView({
     isFlushingRef.current = true
     flushFrameRef.current = window.requestAnimationFrame(flushWrites)
   })
+  const focusTerminal = useEffectEvent(() => {
+    terminalRef.current?.focus()
+  })
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const terminal = new Terminal({
-      allowProposedApi: false,
-      cursorBlink: true,
-      cursorInactiveStyle: "outline",
-      fontFamily: "\"IBM Plex Mono\", \"JetBrains Mono\", \"Consolas\", monospace",
-      fontSize: 13,
-      lineHeight: 1.25,
-      scrollback: 5_000,
-      theme: getTerminalTheme(),
-    })
+    const terminal = new Terminal(createTerminalOptions())
     const fitAddon = new FitAddon()
     fitAddonRef.current = fitAddon
     terminal.loadAddon(fitAddon)
@@ -208,7 +215,7 @@ export const TerminalView = memo(function TerminalView({
     }
 
     const disposeInput = terminal.onData((data) => {
-      void handleInput(data)
+      void handleInput(session.ptyID, data)
     })
     const disposeScroll = terminal.onScroll(() => {
       const nextScrollTop = terminal.buffer.active.viewportY
@@ -323,6 +330,7 @@ export const TerminalView = memo(function TerminalView({
         id={`terminal-panel-${session.ptyID}`}
         aria-labelledby={`terminal-tab-${session.ptyID}`}
         className="terminal-surface"
+        onMouseDown={() => focusTerminal()}
         role="tabpanel"
       >
         <div ref={containerRef} className="terminal-xterm" />

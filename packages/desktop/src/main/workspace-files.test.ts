@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -33,19 +33,20 @@ afterEach(async () => {
 describe("workspace files", () => {
   it("searches by file name and skips excluded directories", async () => {
     const workspaceRoot = await createWorkspaceFixture()
+    const resolvedWorkspaceRoot = await realpath(workspaceRoot)
 
     const results = await searchWorkspaceFiles(workspaceRoot, "app")
 
     expect(results).toEqual([
       {
         path: "docs/app-guide.md",
-        absolutePath: join(workspaceRoot, "docs", "app-guide.md"),
+        absolutePath: join(resolvedWorkspaceRoot, "docs", "app-guide.md"),
         name: "app-guide.md",
         extension: "md",
       },
       {
         path: "src/App.tsx",
-        absolutePath: join(workspaceRoot, "src", "App.tsx"),
+        absolutePath: join(resolvedWorkspaceRoot, "src", "App.tsx"),
         name: "App.tsx",
         extension: "tsx",
       },

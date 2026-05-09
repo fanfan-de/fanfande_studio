@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test"
+ import { describe, expect, test } from "bun:test"
 import "./sqlite.cleanup.ts"
 import { $ } from "bun"
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServerApp } from "#server/server.ts"
@@ -118,6 +118,15 @@ type GitActionEnvelope = JsonEnvelope<{
   summary: string
   url?: string
 }>
+
+async function createTempDirectory(prefix: string) {
+  return realpath(await mkdtemp(join(tmpdir(), prefix)))
+}
+
+async function createTempPath(prefix: string) {
+  const root = await realpath(tmpdir()).catch(() => tmpdir())
+  return join(root, `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+}
 
 type GitBranchesEnvelope = JsonEnvelope<
   Array<{
@@ -387,7 +396,7 @@ type PromptPresetSelectionEnvelope = JsonEnvelope<{
 
 async function withTempPromptRoot<T>(fn: (root: string) => Promise<T>) {
   const previousPromptRoot = process.env.FanFande_PROMPTS_ROOT
-  const root = await mkdtemp(join(tmpdir(), "fanfande-prompts-"))
+  const root = await createTempDirectory("fanfande-prompts-")
   process.env.FanFande_PROMPTS_ROOT = root
 
   try {
@@ -1133,7 +1142,7 @@ describe("server api", () => {
 
   test("POST /api/sessions/:id/cancel should return false for an idle session", async () => {
     const app = createServerApp()
-    const directory = await mkdtemp(join(tmpdir(), "fanfande-cancel-idle-"))
+    const directory = await createTempDirectory("fanfande-cancel-idle-")
     let sessionID: string | null = null
 
     try {
@@ -1170,7 +1179,7 @@ describe("server api", () => {
 
   test("POST /api/sessions/:id/cancel should stop a running session", async () => {
     const app = createServerApp()
-    const directory = await mkdtemp(join(tmpdir(), "fanfande-cancel-running-"))
+    const directory = await createTempDirectory("fanfande-cancel-running-")
     const controller = new AbortController()
     let sessionID: string | null = null
 
@@ -1297,7 +1306,7 @@ describe("server api", () => {
 
   test("GET /api/projects should keep the same project id when a directory becomes a git repo", async () => {
     const app = createServerApp()
-    const directory = await mkdtemp(join(tmpdir(), "fanfande-directory-to-git-"))
+    const directory = await createTempDirectory("fanfande-directory-to-git-")
 
     try {
       const createResponse = await app.request("http://localhost/api/sessions", {
@@ -1340,7 +1349,7 @@ describe("server api", () => {
 
   test("project git routes should keep working with the original project id after git init", async () => {
     const app = createServerApp()
-    const directory = await mkdtemp(join(tmpdir(), "fanfande-stable-project-git-"))
+    const directory = await createTempDirectory("fanfande-stable-project-git-")
     let sessionID: string | undefined
 
     try {
@@ -1421,7 +1430,7 @@ describe("server api", () => {
   test("global and project provider routes should stay isolated", async () => {
     const restoreFetch = mockModelsDevFetch()
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-provider-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-provider-project-")
 
     try {
       await withTemporaryEnv(
@@ -1718,7 +1727,7 @@ describe("server api", () => {
 
   test("GET /api/projects/:id/skills should list project skills with metadata fallback", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-skills-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-skills-project-")
 
     try {
       await createGitRepo(repositoryRoot, "skills-project")
@@ -1786,7 +1795,7 @@ describe("server api", () => {
 
   test("project skill selection routes should persist project-scoped skill ids", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-skill-selection-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-skill-selection-project-")
 
     try {
       await createGitRepo(repositoryRoot, "skill-selection-project")
@@ -1845,7 +1854,7 @@ describe("server api", () => {
 
   test("project MCP routes should persist project-scoped server configs", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-mcp-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-mcp-project-")
 
     try {
       await createGitRepo(repositoryRoot, "mcp-project")
@@ -1925,7 +1934,7 @@ describe("server api", () => {
 
   test("project MCP routes should persist remote MCP server configs", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-remote-mcp-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-remote-mcp-project-")
 
     try {
       await createGitRepo(repositoryRoot, "remote-mcp-project")
@@ -2149,7 +2158,7 @@ describe("server api", () => {
 
   test("GET /api/providers/:providerID/auth should surface shared Codex ChatGPT cache for OpenAI", async () => {
     const app = createServerApp()
-    const codexHome = await mkdtemp(join(tmpdir(), "fanfande-codex-home-"))
+    const codexHome = await createTempDirectory("fanfande-codex-home-")
     const idToken = encodeJwt({
       exp: Math.floor(Date.now() / 1000) + 60 * 60,
       email: "codex-cache@example.test",
@@ -2350,7 +2359,7 @@ describe("server api", () => {
 
   test("POST /api/projects should keep folders in the same git repo under one project", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-repo-"))
+    const repositoryRoot = await createTempDirectory("fanfande-repo-")
     const firstDirectory = join(repositoryRoot, "client")
     const secondDirectory = join(repositoryRoot, "server")
 
@@ -2605,7 +2614,7 @@ describe("server api", () => {
           name: "plan",
         },
       })
-      expect(runtimePrompt.some((section) => section?.includes(customPlanPrompt) === true)).toBe(true)
+      expect(runtimePrompt.some((section) => section?.includes(customPlanPrompt) === true)).toBe(false)
       expect(runtimePrompt.some((section) => section?.includes(`${customSystemPrompt}\nupdated`) === true)).toBe(true)
       const sideChatRuntimePrompt = await SystemPrompt.defaultPrompt({
         agent: {
@@ -2641,7 +2650,7 @@ describe("server api", () => {
       expect(resetResponse.status).toBe(200)
       expect(resetBody.success).toBe(true)
       expect(resetBody.data?.hasOverride).toBe(false)
-      expect(resetBody.data?.content).toContain("# Plan Mode - System Reminder")
+      expect(resetBody.data?.content).toContain("# Plan Mode")
 
       const runtimeAfterReset = await SystemPrompt.defaultPrompt({
         agent: {
@@ -2692,8 +2701,8 @@ describe("server api", () => {
 
   test("POST /api/projects should track extra git worktrees in sandboxes", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-worktree-root-"))
-    const extraWorktree = join(tmpdir(), `fanfande-worktree-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    const repositoryRoot = await createTempDirectory("fanfande-worktree-root-")
+    const extraWorktree = await createTempPath("fanfande-worktree")
 
     try {
       await createGitRepo(repositoryRoot, "shared-repo")
@@ -2742,8 +2751,8 @@ describe("server api", () => {
 
   test("POST /api/projects should keep different git repos as different projects", async () => {
     const app = createServerApp()
-    const firstDirectory = await mkdtemp(join(tmpdir(), "fanfande-project-a-"))
-    const secondDirectory = await mkdtemp(join(tmpdir(), "fanfande-project-b-"))
+    const firstDirectory = await createTempDirectory("fanfande-project-a-")
+    const secondDirectory = await createTempDirectory("fanfande-project-b-")
 
     try {
       await createGitRepo(firstDirectory, "repo-a")
@@ -2778,7 +2787,7 @@ describe("server api", () => {
 
   test("project git routes should report capabilities, commit staged changes, and create branches", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-git-project-")
 
     try {
       await createGitRepo(repositoryRoot, "git-project")
@@ -2875,7 +2884,7 @@ describe("server api", () => {
 
   test("project git routes should list branches and checkout an existing branch", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-branch-list-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-git-branch-list-project-")
 
     try {
       await createGitRepo(repositoryRoot, "git-branch-list-project")
@@ -2965,7 +2974,7 @@ describe("server api", () => {
 
   test("project git branch list should return a client error outside git repositories", async () => {
     const app = createServerApp()
-    const directory = await mkdtemp(join(tmpdir(), "fanfande-non-git-branch-list-project-"))
+    const directory = await createTempDirectory("fanfande-non-git-branch-list-project-")
 
     try {
       await writeFile(join(directory, "README.md"), "# plain project\n")
@@ -2997,7 +3006,7 @@ describe("server api", () => {
 
   test("project git capabilities should disable branch creation before the first commit", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-unborn-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-git-unborn-project-")
 
     try {
       await mkdir(repositoryRoot, { recursive: true })
@@ -3045,8 +3054,8 @@ describe("server api", () => {
 
   test("project git routes should reject directories outside the requested project", async () => {
     const app = createServerApp()
-    const repositoryRootA = await mkdtemp(join(tmpdir(), "fanfande-git-project-boundary-a-"))
-    const repositoryRootB = await mkdtemp(join(tmpdir(), "fanfande-git-project-boundary-b-"))
+    const repositoryRootA = await createTempDirectory("fanfande-git-project-boundary-a-")
+    const repositoryRootB = await createTempDirectory("fanfande-git-project-boundary-b-")
 
     try {
       await createGitRepo(repositoryRootA, "git-project-boundary-a")
@@ -3090,8 +3099,8 @@ describe("server api", () => {
 
   test("project git routes should reject project-local links that resolve to an external repo", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-project-link-root-"))
-    const externalRepositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-project-link-external-"))
+    const repositoryRoot = await createTempDirectory("fanfande-git-project-link-root-")
+    const externalRepositoryRoot = await createTempDirectory("fanfande-git-project-link-external-")
     const linkedDirectory = join(repositoryRoot, "external-link")
 
     try {
@@ -3141,7 +3150,7 @@ describe("server api", () => {
 
   test("project git routes should only commit staged changes", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-staged-commit-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-git-staged-commit-project-")
 
     try {
       await createGitRepo(repositoryRoot, "git-staged-commit-project")
@@ -3213,7 +3222,7 @@ describe("server api", () => {
 
   test("project git routes should stage all changes before committing when requested", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-stage-all-project-"))
+    const repositoryRoot = await createTempDirectory("fanfande-git-stage-all-project-")
 
     try {
       await createGitRepo(repositoryRoot, "git-stage-all-project")
@@ -3267,8 +3276,8 @@ describe("server api", () => {
 
   test("project git capabilities should enable push for a tracked branch with outgoing commits", async () => {
     const app = createServerApp()
-    const repositoryRoot = await mkdtemp(join(tmpdir(), "fanfande-git-push-project-"))
-    const remoteRoot = await mkdtemp(join(tmpdir(), "fanfande-git-push-remote-"))
+    const repositoryRoot = await createTempDirectory("fanfande-git-push-project-")
+    const remoteRoot = await createTempDirectory("fanfande-git-push-remote-")
 
     try {
       await createGitRepo(repositoryRoot, "git-push-project")
@@ -3814,7 +3823,7 @@ describe("server api", () => {
 
   test("GET /api/projects/:id/sessions should return an empty list for a new project with no sessions", async () => {
     const app = createServerApp()
-    const directory = await mkdtemp(join(tmpdir(), "fanfande-project-empty-"))
+    const directory = await createTempDirectory("fanfande-project-empty-")
 
     try {
       const projectResponse = await app.request("http://localhost/api/projects", {

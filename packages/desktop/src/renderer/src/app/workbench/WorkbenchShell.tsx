@@ -74,6 +74,7 @@ export interface WorkbenchShellProps {
   onPaneTabPointerDrop: (clientX: number, clientY: number) => void
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
   onAskUserQuestionAnswer: AgentWorkspaceState["handleAskUserQuestionAnswer"]
+  onApproveProposedPlan: AgentWorkspaceState["handleApproveProposedPlan"]
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
@@ -83,6 +84,7 @@ export interface WorkbenchShellProps {
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onCancelSend: AgentWorkspaceState["handleCancelSend"]
+  onPlanModeToggle: AgentWorkspaceState["handlePlanModeToggle"]
   onSend: AgentWorkspaceState["handleSend"]
   onSessionModelSelectionChange: AgentWorkspaceState["handleSessionModelSelectionChange"]
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
@@ -181,6 +183,7 @@ function WorkbenchNodeView({
         onPaneTabPointerDrop={props.onPaneTabPointerDrop}
         onPaneTabDrop={props.onPaneTabDrop}
         onAskUserQuestionAnswer={props.onAskUserQuestionAnswer}
+        onApproveProposedPlan={props.onApproveProposedPlan}
         onPermissionRequestResponse={props.onPermissionRequestResponse}
         onToolPermissionModeChange={props.onToolPermissionModeChange}
         onPickComposerAttachments={props.onPickComposerAttachments}
@@ -190,6 +193,7 @@ function WorkbenchNodeView({
         onSelectCreateSessionTab={props.onSelectCreateSessionTab}
         onSelectSessionTab={props.onSelectSessionTab}
         onCancelSend={props.onCancelSend}
+        onPlanModeToggle={props.onPlanModeToggle}
         onSend={props.onSend}
         onSessionModelSelectionChange={props.onSessionModelSelectionChange}
         onSetDraft={props.onSetDraft}

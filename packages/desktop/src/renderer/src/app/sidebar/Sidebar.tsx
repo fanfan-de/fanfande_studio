@@ -15,8 +15,7 @@ import {
   SideChatIcon,
   SortIcon
 } from "../icons"
-import { getSessionWorkflowBadge } from "../session-workflow"
-import { SessionWorkflowBadge, ShellTopMenu, SidebarToggleButton } from "../shared-ui"
+import { ShellTopMenu, SidebarToggleButton } from "../shared-ui"
 import type {
   GlobalSkillTreeNode,
   LeftSidebarView,
@@ -293,8 +292,6 @@ function FolderWorkspaceView({
                     const isRunning = runningSessionIDSet.has(session.id)
                     const hasUnreadCanvas =
                       Boolean(sessionCanvasUnreadBySession[session.id]) && !visibleSessionIDSet.has(session.id)
-                    const workflowBadge = getSessionWorkflowBadge(session.workflow)
-
                     return (
                       <div key={session.id} className="session-row-shell">
                         <button
@@ -319,7 +316,6 @@ function FolderWorkspaceView({
                           </span>
                           <span className="session-row-copy">
                             <span className="session-row-label">{session.title}</span>
-                            <SessionWorkflowBadge compact workflow={workflowBadge} />
                           </span>
                         </button>
                         <button

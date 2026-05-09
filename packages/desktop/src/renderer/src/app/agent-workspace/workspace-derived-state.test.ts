@@ -198,6 +198,48 @@ describe("workspace derived state", () => {
     expect([...derived.runningSessionIDs].sort()).toEqual([sendingSession.id, streamingSession.id].sort())
   })
 
+  it("exposes pending workflow mode for the active create-session tab", () => {
+    const workspace = createWorkspace("workspace-1", [])
+    const createSessionTab = {
+      id: "create-1",
+      initialWorkflowMode: "planning" as const,
+      workspaceID: workspace.id,
+      title: "",
+    }
+    const layout = createWorkbenchLayoutFromLegacyPanes([
+      createWorkbenchPane([createCreateSessionWorkbenchTab(createSessionTab.id)], "pane-1"),
+    ])
+
+    const derived = buildWorkspaceDerivedState({
+      activeSideChatSessionIDByParentSessionID: {},
+      composerAttachmentsByTabKey: {},
+      composerDraftStateByTabKey: {},
+      contextUsageBySession: {},
+      conversations: {},
+      createSessionTabs: [createSessionTab],
+      isCreatingSessionByTabKey: {},
+      isInitialWorkspaceLoadPending: false,
+      isSendingByTabKey: {},
+      pendingPermissionRequestsBySession: {},
+      platform: "win32",
+      previewByWorkspaceID: {},
+      selectedDiffFileBySession: {},
+      selectedFolderID: workspace.id,
+      sessionDiffBySession: {},
+      sessionDiffStateBySession: {},
+      sessionDirectoryBySession: {},
+      sessionRuntimeDebugBySession: {},
+      sessionRuntimeDebugStateBySession: {},
+      seedWorkspaceIDs: new Set(),
+      workbenchLayout: layout,
+      workspaceFileCommentsByTarget: {},
+      workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+      workspaces: [workspace],
+    })
+
+    expect(derived.workbenchPaneStates[0]?.createSessionInitialWorkflowMode).toBe("planning")
+  })
+
   it("separates open canvas sessions from the visible active canvas sessions", () => {
     const sessionA = createSession("session-a", "A")
     const sessionB = createSession("session-b", "B")

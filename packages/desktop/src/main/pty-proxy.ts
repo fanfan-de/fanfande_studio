@@ -7,10 +7,14 @@ export const PTY_EVENT_CHANNEL = DESKTOP_PTY_EVENT_CHANNEL
 
 interface PtyProxyConnection {
   detached: boolean
+  pendingInput: string[]
+  pendingInputChars: number
   ptyID: string
   senderID: number
   socket: WebSocket
 }
+
+const MAX_PENDING_INPUT_CHARS = 100_000
 
 function connectionKey(senderID: number, ptyID: string) {
   return `${String(senderID)}:${ptyID}`
@@ -27,6 +31,35 @@ async function readMessageData(data: MessageEvent["data"]) {
   if (ArrayBuffer.isView(data)) return new TextDecoder().decode(data)
   if (data instanceof Blob) return data.text()
   return String(data)
+}
+
+function sendPtyInput(socket: WebSocket, data: string) {
+  socket.send(
+    JSON.stringify({
+      type: "input",
+      data,
+    }),
+  )
+}
+
+function queuePtyInput(connection: PtyProxyConnection, data: string) {
+  const nextInput = `${connection.pendingInput.join("")}${data}`
+  const trimmedInput =
+    nextInput.length > MAX_PENDING_INPUT_CHARS ? nextInput.slice(-MAX_PENDING_INPUT_CHARS) : nextInput
+  connection.pendingInput = trimmedInput ? [trimmedInput] : []
+  connection.pendingInputChars = trimmedInput.length
+}
+
+function flushPendingInput(connection: PtyProxyConnection) {
+  if (connection.socket.readyState !== WebSocket.OPEN || connection.pendingInput.length === 0) return
+
+  const pendingInput = connection.pendingInput
+  connection.pendingInput = []
+  connection.pendingInputChars = 0
+
+  for (const data of pendingInput) {
+    sendPtyInput(connection.socket, data)
+  }
 }
 
 export class PtyProxyManager {
@@ -75,6 +108,8 @@ export class PtyProxyManager {
     )
     const connection: PtyProxyConnection = {
       detached: false,
+      pendingInput: [],
+      pendingInputChars: 0,
       ptyID,
       senderID: sender.id,
       socket,
@@ -94,6 +129,7 @@ export class PtyProxyManager {
         type: "transport",
         state: "connected",
       })
+      flushPendingInput(connection)
     })
 
     socket.addEventListener("message", async (event) => {
@@ -157,15 +193,20 @@ export class PtyProxyManager {
   write(sender: WebContents, input: { id: string; data: string }) {
     const key = connectionKey(sender.id, input.id.trim())
     const connection = this.connections.get(key)
-    if (!connection || connection.socket.readyState !== WebSocket.OPEN) {
+    if (!connection) {
       throw new Error(`PTY session '${input.id}' is not attached`)
     }
 
-    connection.socket.send(
-      JSON.stringify({
-        type: "input",
-        data: input.data,
-      }),
-    )
+    if (connection.socket.readyState === WebSocket.OPEN) {
+      sendPtyInput(connection.socket, input.data)
+      return
+    }
+
+    if (connection.socket.readyState === WebSocket.CONNECTING) {
+      queuePtyInput(connection, input.data)
+      return
+    }
+
+    throw new Error(`PTY session '${input.id}' is not attached`)
   }
 }

@@ -1,4 +1,5 @@
 import { app } from "electron"
+import { createPlatformAdapter, getBundledBunName } from "@fanfande/platform"
 import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process"
 import fs from "node:fs"
 import fsp from "node:fs/promises"
@@ -14,11 +15,13 @@ const MANAGED_AGENT_WORKDIR_ENV = "FANFANDE_AGENT_WORKDIR"
 const MANAGED_AGENT_DISABLE_ENV = "FANFANDE_DISABLE_MANAGED_AGENT"
 const MANAGED_AGENT_RUNTIME_ENV = "FANFANDE_AGENT_RUNTIME_DIR"
 const MANAGED_AGENT_BUN_BINARY_ENV = "FANFANDE_BUN_BINARY"
+const MANAGED_AGENT_DATA_DIR_ENV = "FANFANDE_AGENT_DATA_DIR"
 const WORKSPACE_DEPENDENCIES_DIR_ENV = "FANFANDE_WORKSPACE_DEPENDENCIES_DIR"
 const WORKSPACE_DEPENDENCIES_VERSION_ENV = "FANFANDE_WORKSPACE_DEPENDENCIES_VERSION"
 
 const BUNDLED_AGENT_ENTRYPOINT = "agent-server.js"
-const BUNDLED_BUN_BINARY = process.platform === "win32" ? "bun.exe" : "bun"
+const BUNDLED_BUN_BINARY = getBundledBunName()
+const platformAdapter = createPlatformAdapter({ platform: process.platform })
 
 interface ManagedAgentProcess {
   readonly baseURL: string
@@ -168,7 +171,7 @@ function readWorkspaceDependenciesBundleVersion(dependenciesDir: string | undefi
   return undefined
 }
 
-function buildManagedAgentStartEnv(spec: ManagedAgentLaunchSpec, port: number): NodeJS.ProcessEnv {
+function buildManagedAgentStartEnv(spec: ManagedAgentLaunchSpec, port: number, dataDir?: string): NodeJS.ProcessEnv {
   const startEnv: NodeJS.ProcessEnv = {
     ...process.env,
     FanFande_NODE_BINARY: process.execPath,
@@ -188,6 +191,10 @@ function buildManagedAgentStartEnv(spec: ManagedAgentLaunchSpec, port: number): 
   } else {
     delete startEnv[WORKSPACE_DEPENDENCIES_DIR_ENV]
     delete startEnv[WORKSPACE_DEPENDENCIES_VERSION_ENV]
+  }
+
+  if (dataDir) {
+    startEnv[MANAGED_AGENT_DATA_DIR_ENV] = dataDir
   }
 
   return startEnv
@@ -382,7 +389,7 @@ export async function ensureManagedAgentRunning() {
 
   for (const spec of launchSpecs) {
     log(`starting managed agent with ${spec.label}`)
-    const startEnv = buildManagedAgentStartEnv(spec, port)
+    const startEnv = buildManagedAgentStartEnv(spec, port, dataDir)
 
     const child = spawn(spec.command, spec.args, {
       cwd: dataDir,
@@ -440,17 +447,24 @@ export async function stopManagedAgent() {
   const current = managedAgent
   managedAgent = undefined
   delete process.env[MANAGED_AGENT_BASE_URL_ENV]
+  delete process.env[MANAGED_AGENT_DATA_DIR_ENV]
   delete process.env[WORKSPACE_DEPENDENCIES_DIR_ENV]
   delete process.env[WORKSPACE_DEPENDENCIES_VERSION_ENV]
   clearSourceRuntimeRestartTimer()
 
   if (!current || current.child.exitCode !== null) return
 
-  current.child.kill()
+  const exitPromise = new Promise<void>((resolve) => {
+    current.child.once("exit", () => resolve())
+  })
+
+  if (typeof current.child.pid === "number") {
+    await platformAdapter.terminateProcessTree(current.child.pid)
+  } else {
+    current.child.kill()
+  }
   await Promise.race([
-    new Promise<void>((resolve) => {
-      current.child.once("exit", () => resolve())
-    }),
+    exitPromise,
     delay(2000).then(() => {
       if (current.child.exitCode === null) {
         current.child.kill("SIGKILL")
@@ -463,6 +477,7 @@ export async function stopManagedAgent() {
 
 export const managedAgentInternals = {
   env: {
+    agentDataDir: MANAGED_AGENT_DATA_DIR_ENV,
     workspaceDependenciesDir: WORKSPACE_DEPENDENCIES_DIR_ENV,
     workspaceDependenciesVersion: WORKSPACE_DEPENDENCIES_VERSION_ENV,
   },

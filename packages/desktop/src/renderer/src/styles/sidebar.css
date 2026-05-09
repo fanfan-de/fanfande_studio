@@ -623,7 +623,7 @@
 
 .session-tree {
   display: grid;
-  gap: 4px;
+  gap: 0;
   padding-left: 0;
 }
 

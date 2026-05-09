@@ -33,12 +33,16 @@ npm install
 npm run dev
 ```
 
-默认会连接本地 agent 服务：
+开发模式会优先连接外部 agent 服务；未显式配置时，Electron main 会尝试托管本地 Bun agent runtime：
 
 - `FANFANDE_AGENT_BASE_URL`
-  - 默认值：`http://127.0.0.1:4096`
+  - 设置后直接连接该地址，不启动托管 agent。
+- `FANFANDE_DISABLE_MANAGED_AGENT`
+  - 设置为 `1` 时禁用 Electron 托管 agent。
 - `FANFANDE_AGENT_WORKDIR`
   - 默认值：当前进程工作目录
+- `FANFANDE_AGENT_DATA_DIR`
+  - Electron 托管 agent 时由 main 注入；agent 的 config/cache/log/state/database 都从该目录派生。
 
 如果 `fanfandeagent` 没启动，桌面端仍可用，但会回退到本地 seed 数据和本地 assistant fallback。
 

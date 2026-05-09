@@ -1,8 +1,7 @@
 import {
   CloseIcon
 } from "../icons"
-import { getSessionWorkflowBadge } from "../session-workflow"
-import { joinClassNames, SessionWorkflowBadge, ShellTopMenu, SidebarToggleButton, SideChatBadge } from "../shared-ui"
+import { joinClassNames, ShellTopMenu, SidebarToggleButton, SideChatBadge } from "../shared-ui"
 import type {
   CreateSessionTab,
   SessionSummary,
@@ -78,7 +77,6 @@ export function CanvasRegionTopMenu({
           <div className="canvas-region-top-menu-tabs" aria-label="Session tabs">
             {sessions.filter((session) => !isSideChatSession(session)).map((session) => {
               const isActive = activeCreateSessionTabID === null && session.id === activeSessionID
-              const workflowBadge = getSessionWorkflowBadge(session.workflow)
 
               return (
                 <div key={session.id} className={isActive ? "session-tab is-active" : "session-tab"}>
@@ -93,7 +91,6 @@ export function CanvasRegionTopMenu({
                     <span className="session-tab-copy">
                       <span className="session-tab-title">{session.title}</span>
                       {isSideChatSession(session) ? <SideChatBadge compact /> : null}
-                      <SessionWorkflowBadge compact workflow={workflowBadge} />
                     </span>
                   </button>
                   <button

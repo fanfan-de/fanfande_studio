@@ -1,4 +1,5 @@
 import fs from "node:fs"
+import { normalizeComparablePath } from "@fanfande/platform"
 import path from "node:path"
 import type { WorkspaceFileChangeIPCEvent } from "../shared/desktop-ipc-contract"
 import { DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL } from "../shared/desktop-ipc-contract"
@@ -17,6 +18,11 @@ type SenderLike = {
 }
 type WatchFactory = (filename: string, options: fs.WatchOptions, listener: fs.WatchListener<string>) => fs.FSWatcher
 type ExistsSync = typeof fs.existsSync
+type PathModule = typeof path.win32
+
+interface WorkspaceWatchManagerOptions {
+  platform?: NodeJS.Platform
+}
 
 interface DirectoryWatchState {
   directory: string
@@ -28,27 +34,31 @@ interface DirectoryWatchState {
   debounceTimer: ReturnType<typeof setTimeout> | null
 }
 
-function normalizeDirectory(input: string) {
-  const resolved = path.resolve(input.trim())
-  const normalized = path.normalize(resolved)
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized
+function getPathModule(platform: NodeJS.Platform): PathModule {
+  return platform === "win32" ? path.win32 : path.posix
 }
 
-function resolveDirectory(input: string) {
-  return path.normalize(path.resolve(input.trim()))
+function normalizeDirectory(input: string, pathModule: PathModule, platform: NodeJS.Platform) {
+  const resolved = pathModule.resolve(input.trim())
+  const normalized = pathModule.normalize(resolved)
+  return normalizeComparablePath(normalized, platform)
 }
 
-function isGitPath(directory: string, changedPath: string) {
-  const relativePath = path.relative(directory, changedPath)
+function resolveDirectory(input: string, pathModule: PathModule) {
+  return pathModule.normalize(pathModule.resolve(input.trim()))
+}
+
+function isGitPath(directory: string, changedPath: string, pathModule: PathModule) {
+  const relativePath = pathModule.relative(directory, changedPath)
   if (!relativePath) return false
-  return relativePath === ".git" || relativePath.startsWith(`.git${path.sep}`)
+  return relativePath === ".git" || relativePath.startsWith(`.git${pathModule.sep}`)
 }
 
-function resolveChangedPath(baseDirectory: string, filename: string | Buffer | null | undefined) {
+function resolveChangedPath(baseDirectory: string, filename: string | Buffer | null | undefined, pathModule: PathModule) {
   if (typeof filename !== "string") return baseDirectory
   const trimmed = filename.trim()
   if (!trimmed) return baseDirectory
-  return path.normalize(path.resolve(baseDirectory, trimmed))
+  return pathModule.normalize(pathModule.resolve(baseDirectory, trimmed))
 }
 
 function safeSend(sender: SenderLike, payload: WorkspaceFileChangeIPCEvent) {
@@ -67,11 +77,17 @@ function safeExists(existsSync: ExistsSync, targetDirectory: string) {
 export class WorkspaceWatchManager {
   private readonly trackedSenders = new Set<number>()
   private readonly senderStates = new Map<number, Map<string, DirectoryWatchState>>()
+  private readonly pathModule: PathModule
+  private readonly platform: NodeJS.Platform
 
   constructor(
     private readonly watchFactory: WatchFactory = fs.watch as WatchFactory,
     private readonly existsSync: ExistsSync = fs.existsSync,
-  ) {}
+    options: WorkspaceWatchManagerOptions = {},
+  ) {
+    this.platform = options.platform ?? process.platform
+    this.pathModule = getPathModule(this.platform)
+  }
 
   updateDirectories(sender: SenderLike, directories: string[]) {
     this.ensureSenderCleanup(sender)
@@ -80,9 +96,9 @@ export class WorkspaceWatchManager {
     for (const directory of directories) {
       const trimmed = directory.trim()
       if (!trimmed) continue
-      const resolvedDirectory = resolveDirectory(trimmed)
+      const resolvedDirectory = resolveDirectory(trimmed, this.pathModule)
       if (!safeExists(this.existsSync, resolvedDirectory)) continue
-      nextDirectories.set(normalizeDirectory(resolvedDirectory), resolvedDirectory)
+      nextDirectories.set(normalizeDirectory(resolvedDirectory, this.pathModule, this.platform), resolvedDirectory)
     }
 
     const currentStates = this.senderStates.get(sender.id) ?? new Map<string, DirectoryWatchState>()
@@ -139,7 +155,7 @@ export class WorkspaceWatchManager {
   private createDirectoryState(sender: SenderLike, directory: string): DirectoryWatchState | null {
     const state: DirectoryWatchState = {
       directory,
-      gitDirectory: path.join(directory, ".git"),
+      gitDirectory: this.pathModule.join(directory, ".git"),
       sender,
       rootWatcher: null,
       gitWatcher: null,
@@ -186,10 +202,10 @@ export class WorkspaceWatchManager {
   }
 
   private recordChange(state: DirectoryWatchState, baseDirectory: string, filename: string | Buffer | null | undefined) {
-    const changedPath = resolveChangedPath(baseDirectory, filename)
+    const changedPath = resolveChangedPath(baseDirectory, filename, this.pathModule)
     state.pendingPaths.add(changedPath)
 
-    if (baseDirectory === state.directory ? isGitPath(state.directory, changedPath) : true) {
+    if (baseDirectory === state.directory ? isGitPath(state.directory, changedPath, this.pathModule) : true) {
       this.syncGitWatcher(state)
     }
 

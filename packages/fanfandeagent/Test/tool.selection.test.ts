@@ -24,6 +24,10 @@ async function resolveAgentToolNames(agentName: string) {
   )
 }
 
+function activeOneTimeShellToolIDs() {
+  return ToolRegistry.builtinShellToolsForPlatform(process.platform).map((tool) => tool.id)
+}
+
 describe("global built-in tool selection", () => {
   afterEach(async () => {
     await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {})
@@ -48,12 +52,18 @@ describe("global built-in tool selection", () => {
       directory: process.cwd(),
       async fn() {
         const toolNames = await resolveAgentToolNames("default")
+        const shellToolIDs = activeOneTimeShellToolIDs()
         expect(toolNames).toContain("read-file")
         expect(toolNames).toContain("multi_tool_use_parallel")
-        expect(toolNames).toContain("git_bash_command")
-        expect(toolNames).toContain("powershell_command")
-        expect(toolNames).toContain("cmd_command")
-        expect(toolNames).toContain("wsl_bash_command")
+        for (const shellToolID of shellToolIDs) {
+          expect(toolNames).toContain(shellToolID)
+        }
+        if (process.platform === "darwin") {
+          expect(toolNames).not.toContain("git_bash_command")
+          expect(toolNames).not.toContain("powershell_command")
+          expect(toolNames).not.toContain("cmd_command")
+          expect(toolNames).not.toContain("wsl_bash_command")
+        }
         expect(toolNames).not.toContain("exec_command")
         expect(toolNames).not.toContain("bash")
         expect(toolNames).not.toContain("exec-command")
@@ -65,18 +75,21 @@ describe("global built-in tool selection", () => {
   })
 
   it("filters a globally disabled built-in shell tool without legacy aliases", async () => {
+    const selectedToolID = activeOneTimeShellToolIDs()[0] ?? "read-file"
     await Config.setToolSelection(Config.GLOBAL_CONFIG_ID, {
-      git_bash_command: false,
+      [selectedToolID]: false,
     })
 
     await Instance.provide({
       directory: process.cwd(),
       async fn() {
         const toolNames = await resolveAgentToolNames("default")
-        expect(toolNames).not.toContain("git_bash_command")
-        expect(toolNames).toContain("powershell_command")
-        expect(toolNames).toContain("cmd_command")
-        expect(toolNames).toContain("wsl_bash_command")
+        expect(toolNames).not.toContain(selectedToolID)
+        for (const shellToolID of activeOneTimeShellToolIDs()) {
+          if (shellToolID !== selectedToolID) {
+            expect(toolNames).toContain(shellToolID)
+          }
+        }
         expect(toolNames).not.toContain("exec_command")
         expect(toolNames).not.toContain("bash")
         expect(toolNames).not.toContain("exec-command")

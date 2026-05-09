@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import * as fs from "node:fs";
+import path from "node:path";
 import { record, z, ZodType } from "zod";
 import { toCreateTableSQL, zodObjectToColumnDefs, } from "./parser"
 import type { SQLiteColumnDef } from "./parser"
@@ -9,6 +11,7 @@ import type { SQLiteColumnDef } from "./parser"
 // #region Constants ──────────────────────────────────────
 const DEFAULT_DATABASE_FILE = "agent_local_data.db";
 const DATABASE_FILE_ENV = "FanFande_DATABASE_FILE";
+const AGENT_DATA_DIR_ENV = "FANFANDE_AGENT_DATA_DIR";
 // #endregion
 
 // #region Types & Interfaces ─────────────────────────────
@@ -48,7 +51,14 @@ let lifecycleHooksRegistered = false
 
 function resolveDatabaseFile() {
   const configured = process.env[DATABASE_FILE_ENV]?.trim()
-  return configured && configured.length > 0 ? configured : DEFAULT_DATABASE_FILE
+  if (configured && configured.length > 0) return configured
+
+  const managedDataDir = process.env[AGENT_DATA_DIR_ENV]?.trim()
+  if (managedDataDir) {
+    return path.join(managedDataDir, "database", DEFAULT_DATABASE_FILE)
+  }
+
+  return DEFAULT_DATABASE_FILE
 }
 
 function configureDatabase(database: Database) {
@@ -71,6 +81,11 @@ function registerLifecycleHooks() {
 }
 
 function openDatabase(databaseFile: string) {
+  const databaseDirectory = path.dirname(databaseFile)
+  if (databaseDirectory && databaseDirectory !== ".") {
+    fs.mkdirSync(databaseDirectory, { recursive: true })
+  }
+
   const database = new Database(databaseFile, { create: true })
   configureDatabase(database)
   activeDatabase = database

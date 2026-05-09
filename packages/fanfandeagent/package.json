@@ -13,6 +13,8 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
+    "@fanfande/platform": "workspace:*",
+    "@fanfande/shared": "workspace:*",
     "@ai-sdk/provider": "^3.0.8",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@opentui/core": "^0.1.90",

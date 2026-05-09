@@ -1,6 +1,6 @@
 {
   "name": "fanfande_studio",
-  "version": "1.0.1",
+  "version": "0.1.5",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -21,7 +21,8 @@
     "monitor:preview": "corepack pnpm --filter fanfande-monitor preview",
     "monitor:typecheck": "corepack pnpm --filter fanfande-monitor typecheck",
     "test": "corepack pnpm --filter fanfande-desktop-agent test",
-    "typecheck": "corepack pnpm --filter fanfande-desktop-agent typecheck"
+    "typecheck": "corepack pnpm --filter fanfande-desktop-agent typecheck",
+    "verify:versions": "node ./scripts/verify-product-version.mjs"
   },
   "keywords": [],
   "author": "",

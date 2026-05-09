@@ -39,6 +39,9 @@ import { mergeUserTurnPresentationState, readPersistedUserTurns } from "../user-
 import { formatTime } from "../utils"
 import { isSideChatSession } from "../workspace"
 
+type ProposedPlanConfirmHandler = (input: { planMarkdown: string }) => void | Promise<void>
+type ProposedPlanCardStatus = "idle" | "cancelled" | "confirming" | "confirmed"
+
 interface ThreadViewProps {
   activeProjectID?: string | null
   activeSession: SessionSummary | null
@@ -91,6 +94,7 @@ interface ThreadViewProps {
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
   onSessionModelSelectionChange?: (sessionID: string, selection: SessionSummary["modelSelection"] | undefined) => void
+  onProposedPlanConfirm?: ProposedPlanConfirmHandler
   onPermissionRequestResponse: PermissionRequestResponseHandler
 }
 
@@ -114,6 +118,8 @@ const IMAGE_LIGHTBOX_BODY_CLASS = "is-image-lightbox-open"
 const IMAGE_LIGHTBOX_FOCUSABLE_SELECTOR = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 const IMAGE_LIGHTBOX_MIN_ZOOM = 0.5
 const IMAGE_LIGHTBOX_MAX_ZOOM = 4
+const PROPOSED_PLAN_OPEN_TAG = "<proposed_plan>"
+const PROPOSED_PLAN_CLOSE_TAG = "</proposed_plan>"
 const IMAGE_LIGHTBOX_ZOOM_STEP = 0.1
 const IMAGE_TALL_RATIO_THRESHOLD = 1.8
 
@@ -456,22 +462,25 @@ function AssistantTurnPlaceholder({ message }: { message: string }) {
 function AssistantTurnSections({
   answeredQuestionIDs,
   isQuestionAnswerDisabled = false,
+  isLatestMessage,
   items,
   onOpenImagePreview,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
+  onProposedPlanConfirm,
   renderAfterSection,
   showFileChanges,
   shouldCollapseReasoningAndTools,
   traceVisibility,
-  turnID,
 }: {
   answeredQuestionIDs: Set<string>
   isQuestionAnswerDisabled?: boolean
+  isLatestMessage: boolean
   items: AssistantTraceItem[]
   onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect: ((file: string) => void) | undefined
+  onProposedPlanConfirm?: ProposedPlanConfirmHandler
   renderAfterSection?: (input: {
     items: AssistantTraceItem[]
     sectionKey: AssistantTraceSectionKey
@@ -480,7 +489,6 @@ function AssistantTurnSections({
   showFileChanges: boolean
   shouldCollapseReasoningAndTools: boolean
   traceVisibility: AssistantTraceVisibility
-  turnID: string
 }) {
   const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, showFileChanges, traceVisibility))
 
@@ -488,10 +496,11 @@ function AssistantTurnSections({
     <>
       {blocks.map((block, index) => {
         const renderedItems = block.sectionKey === "file-change" ? summarizeFileChangeItems(block.items) : block.items
+        const sectionID = `${block.sectionKey}-${index}`
 
         return (
           <AssistantTraceSection
-            key={`${turnID}-${block.sectionKey}-${index}`}
+            key={sectionID}
             sectionKey={block.sectionKey}
             title={block.title}
           >
@@ -513,6 +522,8 @@ function AssistantTurnSections({
                   onOpenImagePreview={onOpenImagePreview}
                   onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                   onFileChangeSelect={onFileChangeSelect}
+                  isLatestMessage={isLatestMessage}
+                  onProposedPlanConfirm={onProposedPlanConfirm}
                   shouldCollapseAfterTurnCompletion={shouldCollapseReasoningAndTools}
                   traceVisibility={traceVisibility}
                 />
@@ -1103,22 +1114,123 @@ function formatTraceStatusText(status?: AssistantTraceItem["status"]) {
   }
 }
 
+function parseProposedPlanBlock(text: string | null | undefined) {
+  const raw = text?.trim() ?? ""
+  if (!raw.startsWith(PROPOSED_PLAN_OPEN_TAG)) return null
+
+  const closeTagIndex = raw.indexOf(PROPOSED_PLAN_CLOSE_TAG, PROPOSED_PLAN_OPEN_TAG.length)
+  const isComplete = closeTagIndex >= 0
+  const contentEndIndex = isComplete ? closeTagIndex : raw.length
+  const rawEndIndex = isComplete ? closeTagIndex + PROPOSED_PLAN_CLOSE_TAG.length : raw.length
+  const markdown = raw.slice(PROPOSED_PLAN_OPEN_TAG.length, contentEndIndex).trim()
+
+  return {
+    raw: raw.slice(0, rawEndIndex).trim(),
+    markdown,
+    isComplete,
+  }
+}
+
+function getProposedPlanStateText(status: ProposedPlanCardStatus) {
+  switch (status) {
+    case "cancelled":
+      return "已取消"
+    case "confirmed":
+      return "已确认"
+    case "confirming":
+      return "确认中..."
+    case "idle":
+      return null
+  }
+}
+
+function ProposedPlanCard({
+  planMarkdown,
+  rawPlanMarkdown,
+  isComplete,
+  isLatestMessage,
+  onConfirm,
+}: {
+  planMarkdown: string
+  rawPlanMarkdown: string
+  isComplete: boolean
+  isLatestMessage: boolean
+  onConfirm?: ProposedPlanConfirmHandler
+}) {
+  const [status, setStatus] = useState<ProposedPlanCardStatus>("idle")
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const stateText = getProposedPlanStateText(status)
+  const showActions = isLatestMessage && status === "idle"
+  const showState = isLatestMessage && Boolean(stateText)
+  const isActionDisabled = !isComplete || status !== "idle"
+
+  async function handleConfirm() {
+    if (!isComplete || !onConfirm || status !== "idle") return
+
+    setStatus("confirming")
+    setErrorMessage(null)
+    try {
+      await onConfirm({ planMarkdown: rawPlanMarkdown })
+      setStatus("confirmed")
+    } catch (error) {
+      setStatus("idle")
+      setErrorMessage(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  return (
+    <article className="proposed-plan-card" aria-label="Proposed plan">
+      <div className="proposed-plan-card-body">
+        <ThreadMarkdown className="proposed-plan-markdown thread-markdown" text={planMarkdown} />
+      </div>
+      <div className="proposed-plan-actions">
+        {errorMessage ? <span className="proposed-plan-error">{errorMessage}</span> : null}
+        {showState ? <span className="proposed-plan-state">{stateText}</span> : null}
+        {showActions ? (
+          <>
+            <button
+              className="secondary-button"
+              disabled={isActionDisabled}
+              type="button"
+              onClick={() => setStatus("cancelled")}
+            >
+              取消
+            </button>
+            <button
+              className="primary-button"
+              disabled={!onConfirm || isActionDisabled}
+              type="button"
+              onClick={() => void handleConfirm()}
+            >
+              确认实施
+            </button>
+          </>
+        ) : null}
+      </div>
+    </article>
+  )
+}
+
 function TraceItemView({
   answeredQuestionIDs,
   item,
   isQuestionAnswerDisabled = false,
+  isLatestMessage = false,
   onOpenImagePreview,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
+  onProposedPlanConfirm,
   shouldCollapseAfterTurnCompletion = false,
   traceVisibility,
 }: {
   answeredQuestionIDs?: Set<string>
   item: AssistantTraceItem
   isQuestionAnswerDisabled?: boolean
+  isLatestMessage?: boolean
   onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect?: (file: string) => void
+  onProposedPlanConfirm?: ProposedPlanConfirmHandler
   shouldCollapseAfterTurnCompletion?: boolean
   traceVisibility: AssistantTraceVisibility
 }) {
@@ -1544,6 +1656,19 @@ function TraceItemView({
   }
 
   const isResponseItem = traceSectionKeyForItem(item) === "response"
+  const proposedPlan = isResponseItem ? parseProposedPlanBlock(item.text) : null
+
+  if (proposedPlan) {
+    return (
+      <ProposedPlanCard
+        planMarkdown={proposedPlan.markdown}
+        rawPlanMarkdown={proposedPlan.raw}
+        isComplete={proposedPlan.isComplete}
+        isLatestMessage={isLatestMessage}
+        onConfirm={onProposedPlanConfirm}
+      />
+    )
+  }
 
   return (
     <article className={className} data-kind={item.kind}>
@@ -1811,6 +1936,7 @@ export function ThreadView({
   onSideChatCancelSend,
   onSideChatSend,
   onSessionModelSelectionChange,
+  onProposedPlanConfirm,
   onPermissionRequestResponse,
 }: ThreadViewProps) {
   const answeredQuestionIDs = collectAnsweredQuestionIDs(activeTurns)
@@ -2008,11 +2134,12 @@ export function ThreadView({
                       <AssistantTurnSections
                         answeredQuestionIDs={answeredQuestionIDs}
                         isQuestionAnswerDisabled={isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
-                        turnID={turn.id}
+                        isLatestMessage={turnIndex === activeTurns.length - 1}
                         items={traceItems}
                         onOpenImagePreview={handleOpenImagePreview}
                         onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                         onFileChangeSelect={onFileChangeSelect}
+                        onProposedPlanConfirm={onProposedPlanConfirm}
                         renderAfterSection={({ items, sectionKey }) => {
                           if (sectionKey !== "response") return null
 

@@ -486,12 +486,14 @@ export function useAgentWorkspace({
   })
 
   const {
+    handleApproveProposedPlan,
     handleCancelSend,
     handlePermissionRequestResponse,
     handleAskUserQuestionAnswer,
     handlePickComposerAttachments,
     handlePasteComposerImageAttachments,
     handleRemoveComposerAttachment,
+    handlePlanModeToggle,
     handleSend,
     setDraft,
     setDraftForTab,
@@ -523,6 +525,7 @@ export function useAgentWorkspace({
     setAgentSessions,
     setComposerAttachmentsByTabKey,
     setComposerDraftStateByTabKey,
+    setCreateSessionTabs,
     setIsSendingByTabKey,
     setPendingPermissionRequestsBySession,
     setPermissionRequestActionError,
@@ -660,6 +663,7 @@ export function useAgentWorkspace({
     handleSplitResize,
     handlePaneTabDrop,
     handlePaneSplit,
+    handleApproveProposedPlan,
     handlePermissionRequestResponse,
     handleAskUserQuestionAnswer,
     handlePickComposerAttachments,
@@ -691,6 +695,7 @@ export function useAgentWorkspace({
     handleRemoveComposerAttachment,
     handleRightSidebarViewChange,
     handleSend,
+    handlePlanModeToggle,
     handleSessionDelete,
     handleSessionSelect,
     handleSidebarAction,

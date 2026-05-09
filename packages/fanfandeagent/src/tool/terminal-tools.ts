@@ -59,7 +59,8 @@ function detectShellKind(shell: string): ShellKind {
   if (normalized.includes("powershell") || normalized.includes("pwsh")) return "powershell"
   if (normalized.includes("cmd.exe") || normalized.endsWith("cmd")) return "cmd"
   if (normalized.includes("wsl")) return "wsl"
-  return "bash"
+  if (normalized.includes("bash")) return "bash"
+  return "posix"
 }
 
 function shellDisplayName(info: PtySessionInfo) {

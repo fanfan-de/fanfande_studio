@@ -102,9 +102,11 @@ describe("managed agent workspace dependencies", () => {
           sourceRuntime: false,
         })
 
-        const env = managedAgentInternals.buildManagedAgentStartEnv(spec!, 4567)
+        const agentDataDir = path.join(runtimeDir, "agent-data")
+        const env = managedAgentInternals.buildManagedAgentStartEnv(spec!, 4567, agentDataDir)
         expect(env[managedAgentInternals.env.workspaceDependenciesDir]).toBe(dependenciesDir)
         expect(env[managedAgentInternals.env.workspaceDependenciesVersion]).toBe("bundle-test-version")
+        expect(env[managedAgentInternals.env.agentDataDir]).toBe(agentDataDir)
         expect(env.FanFande_SERVER_PORT).toBe("4567")
       },
     )

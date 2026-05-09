@@ -1,6 +1,46 @@
 import { describe, expect, it } from "vitest"
 import { APPEARANCE_TOKEN_GROUPS, normalizeAppearanceConfigDocument } from "./appearance"
 
+describe("appearance proposed plan card tokens", () => {
+  it("registers the proposed plan card token group", () => {
+    expect(APPEARANCE_TOKEN_GROUPS).toContainEqual({
+      id: "component-proposed-plan-card",
+      label: "Proposed Plan",
+      description: "Dedicated semantic color for proposed plan cards.",
+      rows: [
+        {
+          id: "semantic-proposed-plan-card-surface",
+          label: "Card Surface",
+          description: "Background fill for proposed plan cards shown in assistant responses.",
+          lightToken: "semantic-proposed-plan-card-surface-light",
+          darkToken: "semantic-proposed-plan-card-surface-dark",
+        },
+      ],
+    })
+  })
+
+  it("normalizes proposed plan card overrides", () => {
+    const document = normalizeAppearanceConfigDocument({
+      overrides: {
+        "semantic-proposed-plan-card-surface-light": " #123456 ",
+        "semantic-proposed-plan-card-surface-dark": "#abcdef",
+        "semantic-proposed-plan-card-surface": "#000000",
+      },
+      resolvedTokens: {
+        "semantic-proposed-plan-card-surface-light": " #654321 ",
+      },
+    })
+
+    expect(document.overrides).toEqual({
+      "semantic-proposed-plan-card-surface-light": "#123456",
+      "semantic-proposed-plan-card-surface-dark": "#abcdef",
+    })
+    expect(document.resolvedTokens).toEqual({
+      "semantic-proposed-plan-card-surface-light": "#654321",
+    })
+  })
+})
+
 describe("appearance sidebar tree row tokens", () => {
   it("registers the sidebar tree row token group", () => {
     expect(APPEARANCE_TOKEN_GROUPS).toContainEqual({

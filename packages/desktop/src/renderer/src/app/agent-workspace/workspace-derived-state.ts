@@ -507,6 +507,7 @@ export function buildWorkspaceDerivedState({
           ? `${currentWorkspace.project.name} / ${currentWorkspace.name}`
           : "No project selected",
       createSessionTabID: currentActiveCreateSessionTab?.id ?? null,
+      createSessionInitialWorkflowMode: currentActiveCreateSessionTab?.initialWorkflowMode ?? "execution",
       createSessionWorkspaceID: currentActiveCreateSessionTab?.workspaceID ?? null,
       draftState: currentActiveTabKey
         ? composerDraftStateByTabKey[currentActiveTabKey] ?? createEmptyComposerDraftState()

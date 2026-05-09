@@ -86,6 +86,24 @@ async function copyNodePtyRuntime(runtimeNodeModulesDir) {
   }
 }
 
+async function fixNodePtySpawnHelperPermissions(runtimeNodeModulesDir) {
+  if (process.platform !== "darwin") return
+
+  const prebuildsDir = path.join(runtimeNodeModulesDir, "node-pty", "prebuilds")
+  if (!(await pathExists(prebuildsDir))) return
+
+  const entries = await fsp.readdir(prebuildsDir, { withFileTypes: true })
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith("darwin-"))
+      .map(async (entry) => {
+        const helperPath = path.join(prebuildsDir, entry.name, "spawn-helper")
+        if (!(await pathExists(helperPath))) return
+        await fsp.chmod(helperPath, 0o755)
+      }),
+  )
+}
+
 async function main() {
   const bunBinary = resolveBunBinary()
   const runtimeNodeModulesDir = path.join(runtimeDir, "node_modules")
@@ -105,6 +123,7 @@ async function main() {
   await fsp.chmod(path.join(runtimeDir, bunExecutableName), 0o755).catch(() => {})
   await fsp.copyFile(path.join(agentDir, "src", "pty", "node-pty-worker.mjs"), path.join(runtimeDir, "node-pty-worker.mjs"))
   await copyNodePtyRuntime(runtimeNodeModulesDir)
+  await fixNodePtySpawnHelperPermissions(runtimeNodeModulesDir)
   await prepareWorkspaceDependencies({ bunBinary })
 
   console.log(`[desktop][build] prepared managed agent runtime at ${runtimeDir}`)

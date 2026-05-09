@@ -5,6 +5,7 @@ import z from "zod"
 import * as Tool from "#tool/tool.ts"
 import { Flag } from "#flag/flag.ts"
 import { Instance } from "#project/instance.ts"
+import { withMacOSDefaultPath } from "#shell/environment.ts"
 import { getShellTaskRegistry } from "#shell/task-registry.ts"
 import { terminateProcessTree } from "#shell/terminate.ts"
 import { resolveToolPath, toDisplayPath } from "#tool/shared.ts"
@@ -22,6 +23,15 @@ const DANGEROUS_COMMAND_PATTERNS = [
   /\bpoweroff\b/i,
   /\bhalt\b/i,
   /:\(\)\s*\{\s*:\|:&\s*\};:/,
+]
+
+const MACOS_DANGEROUS_COMMAND_PATTERNS = [
+  /\bdiskutil\s+eraseDisk\b/i,
+  /\bdiskutil\s+partitionDisk\b/i,
+  /\bsudo\s+rm\s+-rf\s+\/(\s|$)/i,
+  /\bcsrutil\b/i,
+  /\bnvram\b/i,
+  /\bspctl\s+--master-disable\b/i,
 ]
 
 const POWERSHELL_DANGEROUS_COMMAND_PATTERNS = [
@@ -42,7 +52,7 @@ const CMD_DANGEROUS_COMMAND_PATTERNS = [
   /\bdel\b[\s\S]*(?:\/s|-\S*s)[\s\S]*(?:\/q|-\S*q)[\s\S]*(?:[a-z]:\\|\\$)/i,
 ]
 
-export type ShellKind = "bash" | "powershell" | "cmd" | "wsl"
+export type ShellKind = "bash" | "posix" | "powershell" | "cmd" | "wsl"
 
 export type ShellCommandInput = {
   command: string
@@ -89,6 +99,7 @@ type ShellInvocation = {
   executable: string
   args: string[]
   shell: string
+  env?: NodeJS.ProcessEnv
 }
 
 type ShellToolConfig<Parameters extends z.ZodType> = {
@@ -158,6 +169,11 @@ const GitBashCommandParameters = shellCommandParameters({
   supportsBackground: true,
 })
 
+const MacOSShellCommandParameters = shellCommandParameters({
+  commandDescription: "macOS zsh/POSIX shell command to execute.",
+  supportsBackground: true,
+})
+
 const PowerShellCommandParameters = shellCommandParameters({
   commandDescription: "PowerShell command to execute.",
 })
@@ -217,7 +233,10 @@ export function isCriticalShellCommand(kind: ShellKind, command: string) {
     return CMD_DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command))
   }
 
-  return DANGEROUS_COMMAND_PATTERNS.some((pattern) => pattern.test(command))
+  return [
+    ...DANGEROUS_COMMAND_PATTERNS,
+    ...(kind === "posix" ? MACOS_DANGEROUS_COMMAND_PATTERNS : []),
+  ].some((pattern) => pattern.test(command))
 }
 
 function isShellReadOnlyCommand(kind: ShellKind, command: string) {
@@ -371,13 +390,37 @@ function quoteBashSingle(value: string) {
 }
 
 function gitBashCandidatesFromEnvironment(env: NodeJS.ProcessEnv) {
+  const windowsPath = path.win32
   return [
-    env.ProgramFiles ? path.join(env.ProgramFiles, "Git", "bin", "bash.exe") : undefined,
-    env["ProgramFiles(x86)"] ? path.join(env["ProgramFiles(x86)"], "Git", "bin", "bash.exe") : undefined,
-    env.LocalAppData ? path.join(env.LocalAppData, "Programs", "Git", "bin", "bash.exe") : undefined,
+    env.ProgramFiles ? windowsPath.join(env.ProgramFiles, "Git", "bin", "bash.exe") : undefined,
+    env["ProgramFiles(x86)"] ? windowsPath.join(env["ProgramFiles(x86)"], "Git", "bin", "bash.exe") : undefined,
+    env.LocalAppData ? windowsPath.join(env.LocalAppData, "Programs", "Git", "bin", "bash.exe") : undefined,
     "C:\\Program Files\\Git\\bin\\bash.exe",
     "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
   ]
+}
+
+async function resolveShellCandidate(
+  candidate: string | undefined,
+  env: NodeJS.ProcessEnv,
+  whichCommand: WhichCommand,
+  isFile: IsFile,
+) {
+  const value = candidate?.trim()
+  if (!value) return null
+
+  if (path.isAbsolute(value) || value.includes("/") || value.includes("\\")) {
+    return await isFile(value) ? value : null
+  }
+
+  return whichCommand(value, env)
+}
+
+function buildMacOSShellEnvironment(env: NodeJS.ProcessEnv) {
+  return {
+    ...env,
+    PATH: withMacOSDefaultPath(env.PATH ?? env.Path),
+  }
 }
 
 export function waitForProcessExit(proc: {
@@ -401,9 +444,10 @@ export async function resolveGitBashExecutable(options?: ResolverOptions) {
   }
 
   if (platform === "win32") {
+    const windowsPath = path.win32
     const git = whichCommand("git.exe", env) ?? whichCommand("git", env)
     if (git) {
-      const gitBash = path.resolve(git, "..", "..", "bin", "bash.exe")
+      const gitBash = windowsPath.resolve(git, "..", "..", "bin", "bash.exe")
       if (await isFile(gitBash)) {
         return gitBash
       }
@@ -418,14 +462,42 @@ export async function resolveGitBashExecutable(options?: ResolverOptions) {
   )
 }
 
+export async function resolveMacOSShellExecutable(options?: ResolverOptions) {
+  const { env, platform, whichCommand, isFile } = getResolverParts(options)
+
+  const configured = await resolveShellCandidate(
+    env.FanFande_MACOS_SHELL,
+    env,
+    whichCommand,
+    isFile,
+  )
+  if (configured) return configured
+
+  const fromShellEnv = await resolveShellCandidate(env.SHELL, env, whichCommand, isFile)
+  if (fromShellEnv) return fromShellEnv
+
+  if (platform === "darwin") {
+    const systemShell = await firstExistingFile(["/bin/zsh", "/bin/bash", "/bin/sh"], isFile)
+    if (systemShell) return systemShell
+  }
+
+  const fromPath = whichCommand("zsh", env) ?? whichCommand("bash", env) ?? whichCommand("sh", env)
+  if (fromPath) return fromPath
+
+  throw new Error(
+    "No macOS shell executable was found. Set FanFande_MACOS_SHELL or SHELL, or add zsh, bash, or sh to PATH.",
+  )
+}
+
 export async function resolvePowerShellExecutable(options?: ResolverOptions) {
   const { env, platform, whichCommand, isFile } = getResolverParts(options)
   const fromPath = whichCommand("powershell.exe", env) ?? whichCommand("powershell", env)
   if (fromPath) return fromPath
 
   if (platform === "win32") {
-    const systemRoot = env.SystemRoot ?? (env.SystemDrive ? path.join(env.SystemDrive, "Windows") : "C:\\Windows")
-    const defaultPath = path.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    const windowsPath = path.win32
+    const systemRoot = env.SystemRoot ?? (env.SystemDrive ? windowsPath.join(env.SystemDrive, "Windows") : "C:\\Windows")
+    const defaultPath = windowsPath.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
     if (await isFile(defaultPath)) return defaultPath
   }
 
@@ -441,8 +513,9 @@ export async function resolveCmdExecutable(options?: ResolverOptions) {
   if (fromPath) return fromPath
 
   if (platform === "win32") {
-    const systemRoot = env.SystemRoot ?? (env.SystemDrive ? path.join(env.SystemDrive, "Windows") : "C:\\Windows")
-    const defaultPath = path.join(systemRoot, "System32", "cmd.exe")
+    const windowsPath = path.win32
+    const systemRoot = env.SystemRoot ?? (env.SystemDrive ? windowsPath.join(env.SystemDrive, "Windows") : "C:\\Windows")
+    const defaultPath = windowsPath.join(systemRoot, "System32", "cmd.exe")
     if (await isFile(defaultPath)) return defaultPath
   }
 
@@ -455,8 +528,9 @@ export async function resolveWslExecutable(options?: ResolverOptions) {
   if (fromPath) return fromPath
 
   if (platform === "win32") {
-    const systemRoot = env.SystemRoot ?? (env.SystemDrive ? path.join(env.SystemDrive, "Windows") : "C:\\Windows")
-    const defaultPath = path.join(systemRoot, "System32", "wsl.exe")
+    const windowsPath = path.win32
+    const systemRoot = env.SystemRoot ?? (env.SystemDrive ? windowsPath.join(env.SystemDrive, "Windows") : "C:\\Windows")
+    const defaultPath = windowsPath.join(systemRoot, "System32", "wsl.exe")
     if (await isFile(defaultPath)) return defaultPath
   }
 
@@ -566,6 +640,7 @@ function createShellCommandTool<Parameters extends z.ZodType>(
               command,
               cwd,
               shell: invocation.executable,
+              env: invocation.env,
             })
 
             return {
@@ -601,6 +676,7 @@ function createShellCommandTool<Parameters extends z.ZodType>(
 
           const proc = spawn(invocation.executable, invocation.args, {
             cwd,
+            ...(invocation.env ? { env: invocation.env } : {}),
             windowsHide: true,
           })
 
@@ -780,6 +856,25 @@ export const GitBashCommandTool = createShellCommandTool({
   },
 })
 
+export const MacOSShellCommandTool = createShellCommandTool({
+  id: "macos_shell_command",
+  title: "macOS Shell",
+  shellKind: "posix",
+  description: "Run a macOS shell command inside the current project boundary. Use zsh/POSIX syntax.",
+  parameters: MacOSShellCommandParameters,
+  supportsBackground: true,
+  async resolveInvocation(parameters) {
+    const executable = await resolveMacOSShellExecutable()
+    const command = shellInput(parameters).command.trim()
+    return {
+      executable,
+      args: ["-lc", command],
+      shell: executable,
+      env: buildMacOSShellEnvironment(process.env),
+    }
+  },
+})
+
 export const PowerShellCommandTool = createShellCommandTool({
   id: "powershell_command",
   title: "PowerShell",
@@ -839,4 +934,3 @@ export const WslBashCommandTool = createShellCommandTool({
     }
   },
 })
-

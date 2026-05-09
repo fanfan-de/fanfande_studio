@@ -48,6 +48,7 @@ import type {
   AgentSessionQuestionAnswerResult,
   AgentSessionRuntimeDebugSnapshot,
   AgentSessionTurnRequestInput,
+  AgentSessionWorkflowUpdateInput,
   AgentSideChatLink,
   AgentSkillGitInstallPreview,
   AgentSkillInfo,
@@ -62,6 +63,7 @@ import type {
   PtyTransportIPCEvent,
   WindowAction,
 } from "../main/types"
+import type { DesktopOpenPathInput, DesktopOpenPathResult } from "@fanfande/shared"
 import type { AppearanceConfigDocument, AppearanceConfigSnapshot } from "./appearance"
 import type { LocaleConfigDocument, LocaleConfigSnapshot } from "./locale"
 import type {
@@ -125,6 +127,7 @@ export type {
   AgentSessionQuestionAnswerResult,
   AgentSessionRuntimeDebugSnapshot,
   AgentSessionTurnRequestInput,
+  AgentSessionWorkflowUpdateInput,
   AgentSideChatLink,
   AgentSkillGitInstallPreview,
   AgentSkillInfo,
@@ -424,6 +427,10 @@ export interface DesktopIpcContract {
     input: { url: string }
     output: { ok: true; url: string }
   }
+  "desktop:open-path": {
+    input: DesktopOpenPathInput
+    output: DesktopOpenPathResult
+  }
   "desktop:open-monitor-window": {
     input: void
     output:
@@ -610,6 +617,10 @@ export interface DesktopIpcContract {
   "desktop:get-session-runtime-debug": {
     input: { sessionID: string; limit?: number; turns?: number }
     output: AgentSessionRuntimeDebugSnapshot
+  }
+  "desktop:update-session-workflow": {
+    input: { sessionID: string } & AgentSessionWorkflowUpdateInput
+    output: DesktopSessionMutationResult
   }
   "desktop:get-global-provider-catalog": {
     input: void
@@ -994,6 +1005,7 @@ export interface DesktopApiMethods {
   listExternalEditorsForTarget(input: DesktopIpcInput<"desktop:list-external-editors-for-target">): Promise<DesktopIpcOutput<"desktop:list-external-editors-for-target">>
   openInExternalEditor(input: DesktopIpcInput<"desktop:open-in-external-editor">): Promise<DesktopIpcOutput<"desktop:open-in-external-editor">>
   openExternalUrl(input: DesktopIpcInput<"desktop:open-external-url">): Promise<DesktopIpcOutput<"desktop:open-external-url">>
+  openPath(input: DesktopIpcInput<"desktop:open-path">): Promise<DesktopIpcOutput<"desktop:open-path">>
   openMonitorWindow(): Promise<DesktopIpcOutput<"desktop:open-monitor-window">>
   windowAction(action: DesktopIpcInput<"desktop:window-action">): Promise<DesktopIpcOutput<"desktop:window-action">>
   getAgentConfig(): Promise<DesktopIpcOutput<"desktop:get-agent-config">>
@@ -1026,6 +1038,7 @@ export interface DesktopApiMethods {
   createFolderSession(input: DesktopIpcInput<"desktop:create-folder-session">): Promise<DesktopIpcOutput<"desktop:create-folder-session">>
   createProjectSession(input: DesktopIpcInput<"desktop:create-project-session">): Promise<DesktopIpcOutput<"desktop:create-project-session">>
   createSideChat(input: DesktopIpcInput<"desktop:create-side-chat">): Promise<DesktopIpcOutput<"desktop:create-side-chat">>
+  updateSessionWorkflow(input: DesktopIpcInput<"desktop:update-session-workflow">): Promise<DesktopIpcOutput<"desktop:update-session-workflow">>
   listSideChats(input: DesktopIpcInput<"desktop:list-side-chats">): Promise<DesktopIpcOutput<"desktop:list-side-chats">>
   getSideChatLink(input: DesktopIpcInput<"desktop:get-side-chat-link">): Promise<DesktopIpcOutput<"desktop:get-side-chat-link">>
   deleteProjectWorkspace(input: DesktopIpcInput<"desktop:delete-project-workspace">): Promise<DesktopIpcOutput<"desktop:delete-project-workspace">>

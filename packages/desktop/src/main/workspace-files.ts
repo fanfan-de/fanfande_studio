@@ -109,7 +109,11 @@ export async function readWorkspaceFile(
     throw new Error("Workspace file path is required.")
   }
 
-  const candidatePath = resolve(workspaceRoot, trimmedFilePath)
+  const candidatePath = resolve(workspaceRoot, trimmedFilePath.replace(/\\/g, "/"))
+  if (!isPathInsideWorkspace(workspaceRoot, candidatePath)) {
+    throw new Error("Workspace file path must stay within the current project.")
+  }
+
   const resolvedFilePath = await realpath(candidatePath)
 
   if (!isPathInsideWorkspace(workspaceRoot, resolvedFilePath)) {

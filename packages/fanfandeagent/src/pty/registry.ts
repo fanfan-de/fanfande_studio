@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises"
 import path from "node:path"
+import { normalizeComparablePath } from "@fanfande/platform"
 import * as Identifier from "#id/id.ts"
 import * as Project from "#project/project.ts"
 import { createManagedPtySession, type ManagedPtySession } from "#pty/session.ts"
@@ -7,6 +8,7 @@ import {
   buildPtyEnvironment,
   createNodePtyRuntimeAdapter,
   resolveDefaultPtyShell,
+  toPtyCreateError,
   type PtyRuntimeAdapter,
 } from "#pty/runtime.ts"
 import { PtyEvents, publishPtyEvent } from "#pty/events.ts"
@@ -20,7 +22,7 @@ const DEFAULT_DELETE_RETENTION_MS = 15_000
 
 function normalizePath(input: string) {
   const resolved = path.resolve(input)
-  return process.platform === "win32" ? resolved.toLowerCase() : resolved
+  return normalizeComparablePath(resolved)
 }
 
 function isWithinRoot(root: string, candidate: string) {
@@ -143,26 +145,31 @@ export class PtyRegistry {
         }),
     }
 
-    const session = createManagedPtySession({
-      id,
-      sessionID: input.sessionID,
-      title: input.title,
-      cwd,
-      shell,
-      rows,
-      cols,
-      bufferChars: this.bufferChars,
-      runtime,
-      now: this.now,
-      onExited: (info) => {
-        this.sessionIndex.delete(info.sessionID)
-        this.schedulePrune(info.id, this.exitRetentionMs)
-      },
-      onDeleted: (info) => {
-        this.sessionIndex.delete(info.sessionID)
-        this.schedulePrune(info.id, this.deleteRetentionMs)
-      },
-    })
+    let session: ManagedPtySession
+    try {
+      session = await createManagedPtySession({
+        id,
+        sessionID: input.sessionID,
+        title: input.title,
+        cwd,
+        shell,
+        rows,
+        cols,
+        bufferChars: this.bufferChars,
+        runtime,
+        now: this.now,
+        onExited: (info) => {
+          this.sessionIndex.delete(info.sessionID)
+          this.schedulePrune(info.id, this.exitRetentionMs)
+        },
+        onDeleted: (info) => {
+          this.sessionIndex.delete(info.sessionID)
+          this.schedulePrune(info.id, this.deleteRetentionMs)
+        },
+      })
+    } catch (error) {
+      throw toPtyCreateError(error, shell)
+    }
 
     this.sessions.set(id, session)
     this.sessionIndex.set(input.sessionID, id)

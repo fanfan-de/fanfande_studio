@@ -5,6 +5,8 @@ import type { TerminalSessionRecord, TerminalShellProfile } from "./types"
 
 interface TerminalTabsProps {
   activePtyID: string | null
+  canCreateTerminal?: boolean
+  isCreatingTerminal?: boolean
   showToggleButton?: boolean
   sessions: TerminalSessionRecord[]
   onCloseTerminal: (ptyID: string) => void | Promise<void>
@@ -31,6 +33,8 @@ function formatTerminalStatus(session: TerminalSessionRecord) {
 
 export const TerminalTabs = memo(function TerminalTabs({
   activePtyID,
+  canCreateTerminal = true,
+  isCreatingTerminal = false,
   showToggleButton = true,
   sessions,
   onCloseTerminal,
@@ -81,6 +85,7 @@ export const TerminalTabs = memo(function TerminalTabs({
           <select
             aria-label="Terminal shell profile"
             className="terminal-shell-picker-select"
+            disabled={!canCreateTerminal || isCreatingTerminal}
             value={selectedShellProfileID}
             onChange={(event) => onShellProfileChange(event.currentTarget.value)}
           >
@@ -92,15 +97,18 @@ export const TerminalTabs = memo(function TerminalTabs({
           </select>
         </label>
 
-        <button
-          className="terminal-panel-create"
-          aria-label={`Create terminal (${selectedShellLabel})`}
-          title={`New terminal (${selectedShellLabel})`}
-          onClick={() => void onCreateTerminal(selectedShellProfileID)}
-          type="button"
-        >
-          <PlusIcon />
-        </button>
+        {canCreateTerminal ? (
+          <button
+            className="terminal-panel-create"
+            aria-label={`Create terminal (${selectedShellLabel})`}
+            disabled={isCreatingTerminal}
+            title={`New terminal (${selectedShellLabel})`}
+            onClick={() => void onCreateTerminal(selectedShellProfileID)}
+            type="button"
+          >
+            <PlusIcon />
+          </button>
+        ) : null}
       </div>
     </div>
   )

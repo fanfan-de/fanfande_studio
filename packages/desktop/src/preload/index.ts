@@ -150,6 +150,8 @@ try {
         ok: true
         url: string
       }>,
+    openPath: (input: DesktopIpcInput<"desktop:open-path">) =>
+      invokeDesktop("desktop:open-path", input) as Promise<DesktopIpcOutput<"desktop:open-path">>,
     openMonitorWindow: () => invokeDesktop("desktop:open-monitor-window") as Promise<DesktopIpcOutput<"desktop:open-monitor-window">>,
     windowAction: (action: WindowAction) => invokeDesktop("desktop:window-action", action),
     getAgentConfig: () =>
@@ -289,6 +291,8 @@ try {
       invokeDesktop("desktop:restore-workspace-diff-file", input) as Promise<WorkspaceDiffFileRestoreResult>,
     getSessionRuntimeDebug: (input: { sessionID: string; limit?: number; turns?: number }) =>
       invokeDesktop("desktop:get-session-runtime-debug", input) as Promise<AgentSessionRuntimeDebugSnapshot>,
+    updateSessionWorkflow: (input: DesktopIpcInput<"desktop:update-session-workflow">) =>
+      invokeDesktop("desktop:update-session-workflow", input) as Promise<DesktopIpcOutput<"desktop:update-session-workflow">>,
     agentSession: {
       loadHistory: (input: { backendSessionID: string }) =>
         invokeDesktop("desktop:agent-session-load-history", input) as Promise<AgentSessionHistoryMessage[]>,

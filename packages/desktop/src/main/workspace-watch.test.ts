@@ -60,6 +60,7 @@ describe("workspace watch manager", () => {
     const manager = new WorkspaceWatchManager(
       watchFactory,
       (target) => target === gitDirectory ? gitExists : true,
+      { platform: "win32" },
     )
     const sender = createSender()
 
@@ -106,6 +107,7 @@ describe("workspace watch manager", () => {
     const manager = new WorkspaceWatchManager(
       watchFactory,
       (target) => target === workspaceA || target === workspaceB,
+      { platform: "win32" },
     )
     const sender = createSender(9)
 
@@ -141,6 +143,7 @@ describe("workspace watch manager", () => {
     const manager = new WorkspaceWatchManager(
       watchFactory,
       (target) => target === workspace,
+      { platform: "win32" },
     )
     const sender = createSender(7)
 

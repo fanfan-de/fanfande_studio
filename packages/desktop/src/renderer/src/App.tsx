@@ -129,6 +129,7 @@ export function App() {
     canInsertWorkspaceFileCommentsIntoDraft,
     composerRefreshVersion,
     deletingSessionID,
+    handleApproveProposedPlan,
     expandedFolderIDs,
     handleCancelSend,
     handleCanvasSessionTabClose,
@@ -171,6 +172,7 @@ export function App() {
     handleRemoveComposerAttachment,
     handleRightSidebarViewChange,
     handleSend,
+    handlePlanModeToggle,
     handleSessionDelete,
     handleSessionSelect,
     handleSessionModelSelectionChange,
@@ -1101,6 +1103,7 @@ export function App() {
                 onPaneTabPointerDrop={handlePaneTabPointerDrop}
                 onPaneTabDrop={handlePaneTabDrop}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
+                onApproveProposedPlan={handleApproveProposedPlan}
                 onToolPermissionModeChange={handleToolPermissionModeChange}
                 onAskUserQuestionAnswer={handleAskUserQuestionAnswer}
                 onPickComposerAttachments={handlePickComposerAttachments}
@@ -1110,6 +1113,7 @@ export function App() {
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}
                 onSelectSessionTab={handleCanvasSessionTabSelect}
                 onCancelSend={handleCancelSend}
+                onPlanModeToggle={handlePlanModeToggle}
                 onSend={handleSend}
                 onSessionModelSelectionChange={handleSessionModelSelectionChange}
                 onSetDraft={setDraftForTab}

@@ -36,6 +36,7 @@ export interface AgentSessionTurnInput {
   clientTurnID: string
   backendSessionID: string
   text?: string
+  displayText?: string
   attachments?: Array<Pick<ComposerAttachment, "path" | "name">>
   questionAnswer?: {
     questionID: string

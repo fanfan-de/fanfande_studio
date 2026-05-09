@@ -130,6 +130,7 @@ const WINDOWS_EDITOR_COMMAND_EXTENSIONS = [".cmd", ".exe", ".bat", ".com"] as co
 const VISUAL_STUDIO_SOLUTION_EXTENSIONS = new Set([".sln", ".slnx"])
 const VISUAL_STUDIO_PROJECT_EXTENSIONS = new Set([".csproj", ".fsproj", ".vbproj", ".vcxproj"])
 const VISUAL_STUDIO_SKIP_DIRECTORIES = new Set([".git", ".next", "bin", "build", "dist", "node_modules", "obj", "out"])
+const windowsPath = path.win32
 
 function expandWindowsPathTemplate(template: string, env: NodeJS.ProcessEnv) {
   return template.replace(/%([^%]+)%/g, (_match, variableName: string) => env[variableName] ?? "")
@@ -158,10 +159,10 @@ function defaultResolveCommand(
 }
 
 function resolveLaunchableWindowsCommand(commandPath: string, existsSync: (targetPath: string) => boolean) {
-  const candidate = path.normalize(commandPath.trim())
+  const candidate = windowsPath.normalize(commandPath.trim())
   if (!candidate) return undefined
 
-  const extension = path.extname(candidate).toLowerCase()
+  const extension = windowsPath.extname(candidate).toLowerCase()
   if (extension) {
     return candidate
   }
@@ -184,7 +185,7 @@ function resolveTemplatePath(
   }: Pick<ExternalEditorDependencies, "env" | "existsSync"> = {},
 ) {
   for (const template of templates) {
-    const candidate = path.normalize(expandWindowsPathTemplate(template, env))
+    const candidate = windowsPath.normalize(expandWindowsPathTemplate(template, env))
     if (candidate && existsSync(candidate)) {
       return candidate
     }
@@ -209,7 +210,7 @@ function resolveVisualStudioExecutable({
   }
 
   const programFilesX86 = env["ProgramFiles(x86)"]?.trim() || "C:\\Program Files (x86)"
-  const vswherePath = path.join(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe")
+  const vswherePath = windowsPath.join(programFilesX86, "Microsoft Visual Studio", "Installer", "vswhere.exe")
   if (existsSync(vswherePath)) {
     const result = spawnSyncProcess(
       vswherePath,
@@ -225,7 +226,7 @@ function resolveVisualStudioExecutable({
         .map((line) => line.trim())
         .find(Boolean)
       if (match && existsSync(match)) {
-        return path.normalize(match)
+        return windowsPath.normalize(match)
       }
     }
   }
@@ -286,7 +287,7 @@ function resolveDescriptorIconPath(
 }
 
 function isShellWrappedExecutable(executablePath: string) {
-  const extension = path.extname(executablePath).toLowerCase()
+  const extension = windowsPath.extname(executablePath).toLowerCase()
   return extension === ".cmd" || extension === ".bat"
 }
 
@@ -295,7 +296,7 @@ function resolveWindowsCommandShell(env: NodeJS.ProcessEnv) {
   if (comSpec) return comSpec
 
   const systemRoot = env.SystemRoot?.trim() || "C:\\Windows"
-  return path.join(systemRoot, "System32", "cmd.exe")
+  return windowsPath.join(systemRoot, "System32", "cmd.exe")
 }
 
 function quoteWindowsCmdInvocation(command: string, args: string[]) {
@@ -387,8 +388,8 @@ function findVisualStudioOpenTarget(
   for (const entry of entries) {
     if (!entry.isFile()) continue
 
-    const extension = path.extname(entry.name).toLowerCase()
-    const candidatePath = path.join(directoryPath, entry.name)
+    const extension = windowsPath.extname(entry.name).toLowerCase()
+    const candidatePath = windowsPath.join(directoryPath, entry.name)
     if (VISUAL_STUDIO_SOLUTION_EXTENSIONS.has(extension)) {
       return candidatePath
     }
@@ -407,10 +408,10 @@ function findVisualStudioOpenTarget(
       continue
     }
 
-    const nestedTarget = findVisualStudioOpenTarget(path.join(directoryPath, entry.name), { readdirSync }, remainingDepth - 1)
+    const nestedTarget = findVisualStudioOpenTarget(windowsPath.join(directoryPath, entry.name), { readdirSync }, remainingDepth - 1)
     if (!nestedTarget) continue
 
-    if (VISUAL_STUDIO_SOLUTION_EXTENSIONS.has(path.extname(nestedTarget).toLowerCase())) {
+    if (VISUAL_STUDIO_SOLUTION_EXTENSIONS.has(windowsPath.extname(nestedTarget).toLowerCase())) {
       return nestedTarget
     }
 
@@ -428,7 +429,7 @@ function isGitRepositoryTarget(
     existsSync = fs.existsSync,
   }: Pick<ExternalEditorDependencies, "existsSync"> = {},
 ) {
-  return existsSync(path.join(targetPath, ".git"))
+  return existsSync(windowsPath.join(targetPath, ".git"))
 }
 
 function isEditorSupportedForTarget(

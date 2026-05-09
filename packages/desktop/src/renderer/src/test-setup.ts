@@ -1,6 +1,48 @@
 import "@testing-library/jest-dom/vitest"
 import { vi } from "vitest"
 
+function createStorageMock(): Storage {
+  const values = new Map<string, string>()
+
+  return {
+    get length() {
+      return values.size
+    },
+    clear: () => {
+      values.clear()
+    },
+    getItem: (key) => values.get(key) ?? null,
+    key: (index) => [...values.keys()][index] ?? null,
+    removeItem: (key) => {
+      values.delete(key)
+    },
+    setItem: (key, value) => {
+      values.set(key, String(value))
+    },
+  }
+}
+
+function ensureStorage(name: "localStorage" | "sessionStorage") {
+  try {
+    window[name]?.getItem("__storage_probe__")
+  } catch {
+    Object.defineProperty(window, name, {
+      configurable: true,
+      value: createStorageMock(),
+    })
+  }
+
+  if (!window[name]) {
+    Object.defineProperty(window, name, {
+      configurable: true,
+      value: createStorageMock(),
+    })
+  }
+}
+
+ensureStorage("localStorage")
+ensureStorage("sessionStorage")
+
 class MockTerminal {
   rows = 24
   cols = 80
@@ -13,15 +55,33 @@ class MockTerminal {
   private element: HTMLElement | null = null
   private readonly dataListeners = new Set<(data: string) => void>()
   private readonly scrollListeners = new Set<() => void>()
+  private handleKeyDown: ((event: KeyboardEvent) => void) | null = null
 
   loadAddon(addon: { activate?: (terminal: MockTerminal) => void }) {
     addon.activate?.(this)
   }
 
   open(element: HTMLElement) {
+    if (this.element && this.handleKeyDown) {
+      this.element.removeEventListener("keydown", this.handleKeyDown)
+    }
     this.element = element
     this.element.tabIndex = -1
     this.element.textContent = ""
+    this.handleKeyDown = (event) => {
+      const data = event.key === "Enter"
+        ? "\r"
+        : event.key === "Backspace"
+          ? "\x7f"
+          : event.key.length === 1
+            ? event.key
+            : ""
+      if (!data) return
+      for (const listener of this.dataListeners) {
+        listener(data)
+      }
+    }
+    this.element.addEventListener("keydown", this.handleKeyDown)
   }
 
   write(data: string, callback?: () => void) {
@@ -64,9 +124,13 @@ class MockTerminal {
   }
 
   dispose() {
+    if (this.element && this.handleKeyDown) {
+      this.element.removeEventListener("keydown", this.handleKeyDown)
+    }
     this.dataListeners.clear()
     this.scrollListeners.clear()
     this.element = null
+    this.handleKeyDown = null
   }
 }
 
@@ -80,6 +144,10 @@ class MockFitAddon {
   fit() {}
 
   proposeDimensions() {
+    const override = (globalThis as { __mockXtermFitDimensions?: { rows: number; cols: number } | null }).__mockXtermFitDimensions
+    if (override === null) return undefined
+    if (override) return override
+
     return {
       rows: this.terminal?.rows ?? 24,
       cols: this.terminal?.cols ?? 80,

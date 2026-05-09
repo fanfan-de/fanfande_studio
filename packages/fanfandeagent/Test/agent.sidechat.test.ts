@@ -356,6 +356,7 @@ describe("sidechat agent", () => {
         expect(tools["load_workspace_dependencies"]).toBeDefined()
         expect(tools["replace-text"]).toBeUndefined()
         expect(tools["spawn_subagent"]).toBeUndefined()
+        expect(tools["macos_shell_command"]).toBeUndefined()
         expect(tools["powershell_command"]).toBeUndefined()
       },
     })

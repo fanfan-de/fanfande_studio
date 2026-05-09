@@ -1,4 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type NativeImage, type WebContents } from "electron"
+import { createPlatformAdapter } from "@fanfande/platform"
+import { DesktopIpcSchemas } from "@fanfande/shared"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { AppearanceConfigDocument } from "../shared/appearance"
@@ -86,6 +88,7 @@ import type {
   AgentSessionInfo,
   AgentSessionRuntimeDebugSnapshot,
   AgentSessionTurnRequestInput,
+  AgentSessionWorkflowUpdateInput,
   AgentSideChatLink,
   AgentSkillInfo,
   AgentToolPermissionModePayload,
@@ -374,6 +377,10 @@ export interface IpcHandlerOptions {
 }
 
 export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandlerOptions = {}) {
+  const platformAdapter = createPlatformAdapter({
+    platform: process.platform,
+    openPath: shell.openPath,
+  })
   const ptyProxyManager = new PtyProxyManager()
   const workspaceWatchManager = new WorkspaceWatchManager()
   const externalEditorMenuResolvedIconCache = new Map<string, NativeImage | undefined>()
@@ -673,6 +680,21 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       ok: true as const,
       url,
     }
+  })
+
+  handleDesktopIpc("desktop:open-path", async (_event, input: { targetPath: string }) => {
+    const parsedInput = DesktopIpcSchemas.openPath.input.parse(input)
+    const targetPath = parsedInput.targetPath.trim()
+    if (!targetPath) {
+      throw new Error("A path is required.")
+    }
+
+    await platformAdapter.openPath(targetPath)
+
+    return DesktopIpcSchemas.openPath.output.parse({
+      ok: true as const,
+      targetPath,
+    })
   })
 
   handleDesktopIpc("desktop:open-monitor-window", async () => openMonitorWindow())
@@ -1216,6 +1238,37 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       )
 
       return result.data
+    },
+  )
+
+  handleDesktopIpc(
+    "desktop:update-session-workflow",
+    async (_event, input: { sessionID: string } & AgentSessionWorkflowUpdateInput) => {
+      const sessionID = input.sessionID.trim()
+      const body =
+        input.action === "approve-plan"
+          ? {
+              action: input.action,
+              proposedPlanMarkdown: input.proposedPlanMarkdown,
+            }
+          : {
+              action: input.action,
+            }
+      const result = await requestAgentJSON<AgentSessionInfo>(
+        `/api/sessions/${encodeURIComponent(sessionID)}/workflow`,
+        {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        },
+      )
+
+      return {
+        session: mapSessionInfo(result.data),
+        requestId: result.requestId,
+      }
     },
   )
 
@@ -2322,6 +2375,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   function buildAgentSessionTurnRequestBody(input: AgentSessionTurnRequestInput) {
     return {
       text: input.text,
+      displayText: input.displayText,
       attachments: input.attachments,
       questionAnswer: input.questionAnswer,
       reasoningEffort: input.reasoningEffort,

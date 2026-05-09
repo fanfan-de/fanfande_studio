@@ -942,6 +942,10 @@ describe("App", () => {
         },
         targetPath: "C:\\Projects\\Project 2\\app",
       }),
+      openPath: vi.fn().mockResolvedValue({
+        ok: true,
+        targetPath: "C:\\Projects\\Project 2\\app",
+      }),
       openExternalUrl: vi.fn().mockResolvedValue({
         ok: true,
         url: "http://localhost:3000/",
@@ -1900,7 +1904,7 @@ describe("App", () => {
     expect(screen.getByLabelText("Search workspace files")).toHaveValue("")
   })
 
-  it("renders session workflow badges in the sidebar, tabs, and active session header", async () => {
+  it("renders planning state only below the composer", async () => {
     const workspace: LoadedFolderWorkspace = {
       id: "workspace-plan",
       directory: "C:\\Projects\\Planner\\app",
@@ -1967,10 +1971,10 @@ describe("App", () => {
     render(<App />)
 
     const topMenu = await screen.findByLabelText("Session canvas top menu")
-    expect(within(topMenu).getByText("Plan Pending Approval")).toBeInTheDocument()
-    expect(screen.getAllByText("Pending").length).toBeGreaterThan(0)
-    expect(screen.getAllByText("Planning").length).toBeGreaterThan(0)
-    expect(screen.getAllByText("Approved plan").length).toBeGreaterThan(0)
+    expect(within(topMenu).queryByText("Planning")).not.toBeInTheDocument()
+    expect(screen.getAllByText("Planning")).toHaveLength(1)
+    expect(screen.queryByText("Pending")).not.toBeInTheDocument()
+    expect(screen.queryByText("Approved plan")).not.toBeInTheDocument()
   })
 
   it("opens the external editor selector from the session canvas top menu", async () => {
@@ -2315,9 +2319,8 @@ describe("App", () => {
     fireEvent.click(openLocationButton)
 
     await waitFor(() => {
-      expect(window.desktop!.openInExternalEditor).toHaveBeenCalledWith({
+      expect(window.desktop!.openPath).toHaveBeenCalledWith({
         targetPath: root,
-        editorID: "explorer",
       })
     })
   })
@@ -7597,6 +7600,9 @@ describe("App", () => {
     const questionCardInput = screen.getByLabelText(
       "Question Card Surface Light semantic-question-card-surface-light hex color",
     ) as HTMLInputElement
+    const proposedPlanCardInput = screen.getByLabelText(
+      "Proposed Plan Card Surface Light semantic-proposed-plan-card-surface-light hex color",
+    ) as HTMLInputElement
     const preview = screen.getByLabelText("Current appearance config JSON") as HTMLTextAreaElement
     const saveAppearanceConfig = window.desktop!.saveAppearanceConfig as ReturnType<typeof vi.fn>
 
@@ -7604,10 +7610,13 @@ describe("App", () => {
     fireEvent.blur(accentBaseInput)
     fireEvent.change(questionCardInput, { target: { value: "#123456" } })
     fireEvent.blur(questionCardInput)
+    fireEvent.change(proposedPlanCardInput, { target: { value: "#654321" } })
+    fireEvent.blur(proposedPlanCardInput)
 
     await waitFor(() => {
       expect(document.documentElement.style.getPropertyValue("--brand-primary")).toBe("#ffffff")
       expect(document.documentElement.style.getPropertyValue("--semantic-question-card-surface-light")).toBe("#123456")
+      expect(document.documentElement.style.getPropertyValue("--semantic-proposed-plan-card-surface-light")).toBe("#654321")
     })
     await waitFor(() => {
       expect(saveAppearanceConfig).toHaveBeenCalled()
@@ -7615,6 +7624,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(preview.value).toContain("#ffffff")
       expect(preview.value).toContain("#123456")
+      expect(preview.value).toContain("#654321")
     })
   })
 
@@ -10886,9 +10896,7 @@ describe("App", () => {
     expect(styles).toMatch(
       /\.session-canvas-top-menu\s+\.canvas-top-menu-button\s*\{[^}]*min-height:\s*var\(--section-toolbar-pill-height\);[^}]*border-radius:\s*8px;[^}]*font-size:\s*12px;[^}]*line-height:\s*1\.2;/s,
     )
-    expect(styles).toMatch(
-      /\.session-canvas-top-menu-copy\s+\.session-workflow-badge,\s*\.session-canvas-top-menu-copy\s+\.side-chat-badge\s*\{[^}]*min-height:\s*20px;[^}]*padding:\s*0 8px;[^}]*font-size:\s*11px;/s,
-    )
+    expect(styles).toMatch(/\.session-canvas-top-menu-copy\s+\.side-chat-badge\s*\{[^}]*min-height:\s*20px;[^}]*padding:\s*0 8px;[^}]*font-size:\s*11px;/s)
     expect(styles).toMatch(
       /\.canvas-top-menu-mcp-trigger,\s*\.canvas-top-menu-skill-trigger\s*\{[^}]*gap:\s*4px;[^}]*max-width:\s*min\(128px,\s*22vw\);/s,
     )
@@ -11026,6 +11034,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.permission-request-card\s*\{[^}]*border-left-color:\s*var\(--seg-warning-strong\);[^}]*background:\s*var\(--mix-seg-warning-surface-84-surface-trace-16\);/s)
     expect(styles).toMatch(/\.ask-user-question-card\s*\{[^}]*border:\s*0;[^}]*background:\s*var\(--semantic-question-card-surface\);/s)
     expect(styles).toMatch(/\.assistant-section\.is-response\s+\.ask-user-question-card\s*\{[^}]*border:\s*0;[^}]*background:\s*var\(--semantic-question-card-surface\);/s)
+    expect(styles).toMatch(/\.proposed-plan-card\s*\{[^}]*background:\s*var\(--semantic-proposed-plan-card-surface\);/s)
     expect(styles).toMatch(/\.assistant-shell\.is-sectioned\s*\{[^}]*border:\s*0;[^}]*padding:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(
       /\.assistant-section\.is-reasoning,\s*\.assistant-section\.is-response,\s*\.assistant-section\.is-tools\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*padding:\s*0;/s,

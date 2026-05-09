@@ -26,7 +26,11 @@
     "noUnusedParameters": false,//函数参数没使用，**不报错**。
     "noPropertyAccessFromIndexSignature": false,//允许通过点号 `obj.key` 访问那些只定义了索引签名 `[key: string]: any` 的对象。
     "paths":{
-      "@/*":["./src/*"]
+      "@/*":["./src/*"],
+      "@fanfande/shared": ["../shared/src/index.ts"],
+      "@fanfande/shared/*": ["../shared/src/*"],
+      "@fanfande/platform": ["../platform/src/index.ts"],
+      "zod": ["./node_modules/zod"]
     }
   }
 }

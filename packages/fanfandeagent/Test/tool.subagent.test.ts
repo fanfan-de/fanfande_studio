@@ -569,6 +569,7 @@ describe("subagent tools", () => {
         expect(assistantMessages).toHaveLength(2)
         expect(
           userMessages.some((message) =>
+            message.info.role === "user" &&
             message.info.internal === true &&
             message.parts.some(
               (part: { type: string; text?: string; synthetic?: boolean; metadata?: Record<string, unknown> }) =>
@@ -622,8 +623,11 @@ describe("subagent tools", () => {
         })
 
         expect(planTools["read-file"]).toBeDefined()
-        expect(planTools["ExitPlanMode"]).toBeDefined()
+        expect(planTools["AskUserQuestion"]).toBeDefined()
+        expect(planTools["EnterPlanMode"]).toBeUndefined()
+        expect(planTools["ExitPlanMode"]).toBeUndefined()
         expect(planTools["git_bash_command"]).toBeUndefined()
+        expect(planTools["macos_shell_command"]).toBeUndefined()
         expect(planTools["powershell_command"]).toBeUndefined()
         expect(planTools["cmd_command"]).toBeUndefined()
         expect(planTools["wsl_bash_command"]).toBeUndefined()

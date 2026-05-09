@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import type { BrandTheme, ColorMode } from "../types"
+import { TerminalInitialDimensionsProbe } from "./TerminalInitialDimensionsProbe"
 import { TerminalTabs } from "./TerminalTabs"
 import { TerminalView } from "./TerminalView"
 import type { TerminalSessionRecord, TerminalShellProfile, TerminalStreamEvent } from "./types"
@@ -8,19 +9,24 @@ interface TerminalPanelProps {
   activeSession: TerminalSessionRecord | null
   brandTheme: BrandTheme
   colorMode: ColorMode
+  creationError?: string | null
   isOpen: boolean
+  isCreatingTerminal?: boolean
   panelHeight: number
+  pendingCreateRequestID?: number | null
   showToggleButton?: boolean
   sessions: TerminalSessionRecord[]
   onCloseTerminal: (ptyID: string) => void | Promise<void>
   onCreateTerminal: () => void | Promise<void>
   onCreateTerminalForShellProfile: (profileID: string) => void | Promise<void>
+  onTerminalInitialDimensions: (requestID: number, dimensions: { rows: number; cols: number }) => void | Promise<void>
+  onTerminalInitialDimensionsError: (requestID: number, message: string) => void
   onPanelHeightChange: (height: number) => void
   onShellProfileChange: (profileID: string) => void
   onSelectTerminal: (ptyID: string) => void
   selectedShellProfileID: string
   shellProfiles: TerminalShellProfile[]
-  onTerminalInput: (data: string) => void | Promise<void>
+  onTerminalInput: (ptyID: string, data: string) => void | Promise<void>
   onTerminalResize: (ptyID: string, rows: number, cols: number) => void
   onTerminalSnapshotChange: (ptyID: string, input: { scrollTop?: number }) => void
   onTogglePanel: () => void | Promise<void>
@@ -38,13 +44,18 @@ export const TerminalPanel = memo(function TerminalPanel({
   activeSession,
   brandTheme,
   colorMode,
+  creationError,
   isOpen,
+  isCreatingTerminal = false,
   panelHeight,
+  pendingCreateRequestID = null,
   showToggleButton = true,
   sessions,
   onCloseTerminal,
   onCreateTerminal,
   onCreateTerminalForShellProfile,
+  onTerminalInitialDimensions,
+  onTerminalInitialDimensionsError,
   onPanelHeightChange,
   onShellProfileChange,
   onSelectTerminal,
@@ -138,6 +149,7 @@ export const TerminalPanel = memo(function TerminalPanel({
   }
 
   const renderedHeight = isResizing ? previewHeight : panelHeight
+  const canCreateTerminal = sessions.length === 0
 
   return (
     <section className={isResizing ? "terminal-panel is-resizing" : "terminal-panel"} style={{ height: `${String(renderedHeight)}px` }}>
@@ -151,6 +163,8 @@ export const TerminalPanel = memo(function TerminalPanel({
 
       <TerminalTabs
         activePtyID={activeSession?.ptyID ?? null}
+        canCreateTerminal={canCreateTerminal}
+        isCreatingTerminal={isCreatingTerminal}
         showToggleButton={showToggleButton}
         sessions={sessions}
         onCloseTerminal={onCloseTerminal}
@@ -173,11 +187,32 @@ export const TerminalPanel = memo(function TerminalPanel({
           onSnapshotChange={onTerminalSnapshotChange}
           subscribeToTerminalStream={subscribeToTerminalStream}
         />
+      ) : isCreatingTerminal && !creationError && pendingCreateRequestID !== null ? (
+        <TerminalInitialDimensionsProbe
+          key={pendingCreateRequestID}
+          brandTheme={brandTheme}
+          colorMode={colorMode}
+          panelHeight={renderedHeight}
+          requestID={pendingCreateRequestID}
+          onDimensions={onTerminalInitialDimensions}
+          onMeasurementError={onTerminalInitialDimensionsError}
+        />
       ) : (
         <div className="terminal-empty-state">
-          <p>No terminal session is open.</p>
-          <button className="secondary-button" onClick={() => void onCreateTerminal()} type="button">
-            Create terminal
+          {creationError ? (
+            <p className="terminal-empty-error" role="alert">
+              {creationError}
+            </p>
+          ) : (
+            <p>No terminal session is open.</p>
+          )}
+          <button
+            className="secondary-button"
+            disabled={!canCreateTerminal || isCreatingTerminal}
+            onClick={() => void onCreateTerminal()}
+            type="button"
+          >
+            {isCreatingTerminal ? "Creating..." : creationError ? "Retry" : "Create terminal"}
           </button>
         </div>
       )}

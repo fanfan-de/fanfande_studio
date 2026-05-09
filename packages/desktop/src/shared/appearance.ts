@@ -112,6 +112,8 @@ export const APPEARANCE_TOKEN_NAMES = [
   "semantic-terminal-surface-dark",
   "semantic-question-card-surface-light",
   "semantic-question-card-surface-dark",
+  "semantic-proposed-plan-card-surface-light",
+  "semantic-proposed-plan-card-surface-dark",
   "semantic-sidebar-tree-row-text-light",
   "semantic-sidebar-tree-row-text-dark",
   "semantic-sidebar-tree-row-text-hover-light",
@@ -651,6 +653,20 @@ export const APPEARANCE_TOKEN_GROUPS = [
     ],
   },
   {
+    id: "component-proposed-plan-card",
+    label: "Proposed Plan",
+    description: "Dedicated semantic color for proposed plan cards.",
+    rows: [
+      {
+        id: "semantic-proposed-plan-card-surface",
+        label: "Card Surface",
+        description: "Background fill for proposed plan cards shown in assistant responses.",
+        lightToken: "semantic-proposed-plan-card-surface-light",
+        darkToken: "semantic-proposed-plan-card-surface-dark",
+      },
+    ],
+  },
+  {
     id: "component-sidebar-tree-rows",
     label: "Sidebar Tree Rows",
     description: "Dedicated row tokens for the left sidebar workspace and skills trees.",
@@ -855,6 +871,10 @@ const LEGACY_APPEARANCE_TOKEN_MIGRATIONS: Record<string, readonly AppearanceToke
     "semantic-question-card-surface-light",
     "semantic-question-card-surface-dark",
   ],
+  "semantic-proposed-plan-card-surface": [
+    "semantic-proposed-plan-card-surface-light",
+    "semantic-proposed-plan-card-surface-dark",
+  ],
   "semantic-terminal-surface": [
     "semantic-terminal-surface-light",
     "semantic-terminal-surface-dark",
@@ -1030,6 +1050,8 @@ const DEFAULT_APPEARANCE_RESOLVED_TOKENS = {
   "semantic-terminal-surface-dark": "#000000",
   "semantic-question-card-surface-light": "#f8eeeb",
   "semantic-question-card-surface-dark": "#332623",
+  "semantic-proposed-plan-card-surface-light": "#ffffff",
+  "semantic-proposed-plan-card-surface-dark": "#292524",
   "semantic-sidebar-tree-row-text-light": "#525252",
   "semantic-sidebar-tree-row-text-dark": "#a591d9",
   "semantic-sidebar-tree-row-text-hover-light": "#000000",

@@ -20,6 +20,7 @@ import * as SessionRunner from "#session/runtime/session-runner.ts"
 import * as ContextWindow from "#session/core/context-window.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import * as SessionTitle from "#session/support/title.ts"
+import * as PromptPresets from "#session/support/prompt-presets.ts"
 
 import * as Message from "./message";
 import { resolveTools } from "./resolve-tools.ts";
@@ -63,6 +64,7 @@ export const PromptInput = z.object({
     noReply: z.boolean().optional(),
     internal: z.boolean().optional(),
     system: z.string().optional(),
+    displayText: z.string().optional(),
     skills: z.array(z.string()).optional(),
     variant: z.string().optional(),
     reasoningEffort: Message.OpenAIReasoningEffort.optional(),
@@ -755,6 +757,7 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
                 part,
             })
         }
+        clearPendingWorkflowInstruction(input.sessionID)
 
         const result = await runLoop({
             sessionID: input.sessionID,
@@ -880,6 +883,7 @@ async function recordSteerUserMessage(input: PromptInput, turn: Orchestrator.Tur
     for (const part of userMessage.parts) {
         turn.emit("part.recorded", { part })
     }
+    clearPendingWorkflowInstruction(input.sessionID)
 }
 
 export const ResumeInput = z.object({
@@ -1389,7 +1393,96 @@ async function resolvePromptModel(input: PromptInput): Promise<Provider.ModelRef
     return Provider.getDefaultModelRef(Instance.project.id)
 }
 
+function wrapWorkflowInstruction(tag: string, body: string) {
+    return [
+        `<${tag}>`,
+        body.trim(),
+        `</${tag}>`,
+    ].join("\n")
+}
+
+async function buildPendingWorkflowInstruction(workflow: Session.SessionWorkflowState) {
+    switch (workflow.plan.pendingInstruction) {
+        case "plan-mode": {
+            const selection = await PromptPresets.getPromptPresetSelection()
+            return wrapWorkflowInstruction(
+                "plan_mode_instruction",
+                await PromptPresets.getResolvedPromptPresetContent(selection.planModePromptPresetID),
+            )
+        }
+        case "exit-plan":
+            return wrapWorkflowInstruction(
+                "plan_mode_exit_instruction",
+                [
+                    "Plan Mode has ended. You are back in normal execution mode.",
+                    "Do not continue planning unless the user explicitly switches back into Plan Mode.",
+                ].join("\n"),
+            )
+        case "execute-approved-plan": {
+            const approvedPlan = workflow.plan.approvedMarkdown?.trim()
+            return wrapWorkflowInstruction(
+                "plan_mode_exit_instruction",
+                [
+                    "Plan Mode has ended. Execute the approved implementation plan now.",
+                    approvedPlan
+                        ? [
+                            "<approved_plan>",
+                            approvedPlan,
+                            "</approved_plan>",
+                        ].join("\n")
+                        : undefined,
+                ].filter((line): line is string => typeof line === "string").join("\n\n"),
+            )
+        }
+        default:
+            return undefined
+    }
+}
+
+function injectWorkflowInstructionIntoParts(
+    parts: z.infer<typeof PromptInput>["parts"],
+    instruction: string | undefined,
+): z.infer<typeof PromptInput>["parts"] {
+    const normalizedInstruction = instruction?.trim()
+    if (!normalizedInstruction) return parts
+
+    let injected = false
+    const nextParts = parts.map((part) => {
+        if (injected || part.type !== "text") return part
+        injected = true
+        return {
+            ...part,
+            text: [normalizedInstruction, part.text.trim()].filter(Boolean).join("\n\n"),
+        }
+    })
+
+    if (injected) return nextParts
+
+    return [
+        {
+            type: "text",
+            text: normalizedInstruction,
+        },
+        ...nextParts,
+    ]
+}
+
+function clearPendingWorkflowInstruction(sessionID: string) {
+    Session.updateSessionWorkflow(sessionID, (workflow) => ({
+        ...workflow,
+        plan: {
+            ...workflow.plan,
+            pendingInstruction: undefined,
+            updatedAt: Date.now(),
+        },
+    }))
+}
+
 async function createUserMessage(input: PromptInput, options?: { snapshot?: string }) {
+    const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null
+    const workflow = Session.normalizeWorkflowState(session?.workflow)
+    const pendingWorkflowInstruction = await buildPendingWorkflowInstruction(workflow)
+    const inputParts = injectWorkflowInstructionIntoParts(input.parts, pendingWorkflowInstruction)
     const messageinfo: Message.User = {
         id: Identifier.ascending("message"),
         sessionID: input.sessionID,
@@ -1398,12 +1491,13 @@ async function createUserMessage(input: PromptInput, options?: { snapshot?: stri
         agent: input.agent ?? "default",
         model: await resolvePromptModel(input),
         system: input.system,
+        displayText: input.displayText?.trim() || undefined,
         skills: input.skills,
         internal: input.internal,
         reasoningEffort: input.reasoningEffort,
     };
 
-    const parts = input.parts.map((part) =>
+    const parts = inputParts.map((part) =>
         toUserPart(part, messageinfo.id, input.sessionID),
     );
 

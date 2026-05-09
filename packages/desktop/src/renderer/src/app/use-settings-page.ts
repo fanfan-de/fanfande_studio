@@ -1416,12 +1416,12 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
   }
 
   async function openPromptFolder() {
-    const openInExternalEditor = window.desktop?.openInExternalEditor
+    const openPath = window.desktop?.openPath
     if (!promptRoot.trim()) return false
 
     setMessage(null)
 
-    if (!openInExternalEditor) {
+    if (!openPath) {
       setMessage({
         tone: "error",
         text: "Opening the prompts folder is unavailable in this desktop shell.",
@@ -1430,9 +1430,8 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
     }
 
     try {
-      await openInExternalEditor({
+      await openPath({
         targetPath: promptRoot,
-        editorID: "explorer",
       })
       return true
     } catch (error) {

@@ -19,6 +19,43 @@ function Harness() {
       <button onClick={() => void terminal.handleCreateTerminal()} type="button">
         Create
       </button>
+      <button onClick={() => void terminal.handleCreateTerminalForShellProfile("zsh")} type="button">
+        Create zsh
+      </button>
+      <button
+        disabled={terminal.pendingCreateRequestID === null}
+        onClick={() =>
+          terminal.pendingCreateRequestID !== null &&
+          void terminal.handleTerminalInitialDimensions(terminal.pendingCreateRequestID, {
+            rows: 30,
+            cols: 100,
+          })
+        }
+        type="button"
+      >
+        Measure terminal
+      </button>
+      <button
+        onClick={() =>
+          void terminal.handleTerminalInitialDimensions(1, {
+            rows: 31,
+            cols: 101,
+          })
+        }
+        type="button"
+      >
+        Measure request 1
+      </button>
+      <button
+        disabled={terminal.pendingCreateRequestID === null}
+        onClick={() =>
+          terminal.pendingCreateRequestID !== null &&
+          terminal.handleTerminalInitialDimensionsError(terminal.pendingCreateRequestID, "Unable to measure terminal size")
+        }
+        type="button"
+      >
+        Fail measure
+      </button>
       <button
         disabled={!terminal.activeSession}
         onClick={() => terminal.activeSession && void terminal.handleCloseTerminal(terminal.activeSession.ptyID)}
@@ -38,8 +75,18 @@ function Harness() {
       >
         Snapshot
       </button>
+      <button
+        disabled={!terminal.activeSession}
+        onClick={() => terminal.activeSession && void terminal.handleTerminalInput(terminal.activeSession.ptyID, "echo queued\r")}
+        type="button"
+      >
+        Type echo
+      </button>
       <div data-testid="is-open">{terminal.isOpen ? "open" : "closed"}</div>
       <div data-testid="active-id">{terminal.activeSession?.ptyID ?? "none"}</div>
+      <div data-testid="creation-error">{terminal.creationError ?? "none"}</div>
+      <div data-testid="is-creating">{terminal.isCreatingTerminal ? "creating" : "idle"}</div>
+      <div data-testid="pending-create-id">{terminal.pendingCreateRequestID ?? "none"}</div>
       <div data-testid="session-count">{String(terminal.sessions.length)}</div>
       <div data-testid="session-buffers">
         {terminal.sessions.map((session) => `${session.ptyID}:${session.buffer}`).join("|")}
@@ -51,6 +98,14 @@ function Harness() {
       ))}
     </div>
   )
+}
+
+async function finishInitialTerminalMeasurement() {
+  await waitFor(() => {
+    expect(screen.getByTestId("pending-create-id")).not.toHaveTextContent("none")
+  })
+
+  fireEvent.click(screen.getByRole("button", { name: "Measure terminal" }))
 }
 
 describe("useTerminalWorkspace", () => {
@@ -129,9 +184,18 @@ describe("useTerminalWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
 
     await waitFor(() => {
+      expect(window.desktop?.createPtySession).not.toHaveBeenCalled()
+      expect(screen.getByTestId("pending-create-id")).not.toHaveTextContent("none")
+    })
+
+    await finishInitialTerminalMeasurement()
+
+    await waitFor(() => {
       expect(window.desktop?.createPtySession).toHaveBeenCalledTimes(1)
       expect(window.desktop?.createPtySession).toHaveBeenCalledWith({
         sessionID: TEST_SESSION_ID,
+        rows: 30,
+        cols: 100,
       })
       expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
         id: "pty-1",
@@ -144,10 +208,107 @@ describe("useTerminalWorkspace", () => {
     expect(screen.getByTestId("session-count")).toHaveTextContent("1")
   })
 
+  it("passes the selected shell profile with the measured initial dimensions", async () => {
+    window.desktop!.platform = "darwin"
+
+    render(<Harness />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Create zsh" }))
+    await finishInitialTerminalMeasurement()
+
+    await waitFor(() => {
+      expect(window.desktop?.createPtySession).toHaveBeenCalledWith({
+        sessionID: TEST_SESSION_ID,
+        rows: 30,
+        cols: 100,
+        shell: "zsh",
+      })
+    })
+  })
+
+  it("ignores stale initial dimensions after the panel closes before measuring", async () => {
+    render(<Harness />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pending-create-id")).toHaveTextContent("1")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+    fireEvent.click(screen.getByRole("button", { name: "Measure request 1" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("is-open")).toHaveTextContent("closed")
+      expect(screen.getByTestId("is-creating")).toHaveTextContent("idle")
+      expect(screen.getByTestId("pending-create-id")).toHaveTextContent("none")
+      expect(window.desktop?.createPtySession).not.toHaveBeenCalled()
+    })
+  })
+
+  it("reports measurement errors without creating a PTY session", async () => {
+    render(<Harness />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pending-create-id")).not.toHaveTextContent("none")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Fail measure" }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId("creation-error")).toHaveTextContent("Unable to measure terminal size")
+      expect(screen.getByTestId("is-creating")).toHaveTextContent("idle")
+      expect(window.desktop?.createPtySession).not.toHaveBeenCalled()
+    })
+  })
+
+  it("keeps the panel open with a creation error and retries successfully", async () => {
+    window.desktop!.createPtySession = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("node-pty spawn helper is not executable"))
+      .mockResolvedValueOnce({
+        id: "pty-1",
+        sessionID: TEST_SESSION_ID,
+        title: "Terminal 1",
+        cwd: "C:\\Projects\\fanfande_studio",
+        shell: "powershell.exe",
+        rows: 24,
+        cols: 80,
+        status: "running",
+        exitCode: null,
+        createdAt: 1,
+        updatedAt: 1,
+        cursor: 0,
+      })
+
+    render(<Harness />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+    await finishInitialTerminalMeasurement()
+
+    await waitFor(() => {
+      expect(screen.getByTestId("is-open")).toHaveTextContent("open")
+      expect(screen.getByTestId("active-id")).toHaveTextContent("none")
+      expect(screen.getByTestId("creation-error")).toHaveTextContent("node-pty spawn helper is not executable")
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }))
+    await finishInitialTerminalMeasurement()
+
+    await waitFor(() => {
+      expect(window.desktop?.createPtySession).toHaveBeenCalledTimes(2)
+      expect(screen.getByTestId("active-id")).toHaveTextContent("pty-1")
+      expect(screen.getByTestId("creation-error")).toHaveTextContent("none")
+    })
+  })
+
   it("reconnects the active terminal with the latest cursor after an unexpected disconnect", async () => {
     render(<Harness />)
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+    await finishInitialTerminalMeasurement()
 
     await waitFor(() => {
       expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
@@ -200,6 +361,71 @@ describe("useTerminalWorkspace", () => {
       expect(window.desktop?.attachPtySession).toHaveBeenLastCalledWith({
         id: "pty-1",
         cursor: 5,
+      })
+    })
+  })
+
+  it("replays terminal input when the bridge rejects early input before PTY ready", async () => {
+    window.desktop!.writePtyInput = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("PTY session 'pty-1' is not attached"))
+      .mockResolvedValue(undefined)
+
+    render(<Harness />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+    await finishInitialTerminalMeasurement()
+
+    await waitFor(() => {
+      expect(screen.getByTestId("active-id")).toHaveTextContent("pty-1")
+      expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
+        id: "pty-1",
+        cursor: 0,
+      })
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Type echo" }))
+
+    await waitFor(() => {
+      expect(window.desktop?.writePtyInput).toHaveBeenCalledTimes(1)
+      expect(window.desktop?.writePtyInput).toHaveBeenCalledWith({
+        id: "pty-1",
+        data: "echo queued\r",
+      })
+    })
+
+    act(() => {
+      ptyListener?.({
+        ptyID: "pty-1",
+        type: "ready",
+        session: {
+          id: "pty-1",
+          sessionID: TEST_SESSION_ID,
+          title: "Terminal 1",
+          cwd: "C:\\Projects\\fanfande_studio",
+          shell: "powershell.exe",
+          rows: 24,
+          cols: 80,
+          status: "running",
+          exitCode: null,
+          createdAt: 1,
+          updatedAt: 1,
+          cursor: 0,
+        },
+        replay: {
+          mode: "reset",
+          buffer: "",
+          cursor: 0,
+          startCursor: 0,
+        },
+      })
+    })
+
+    await waitFor(() => {
+      expect(window.desktop?.writePtyInput).toHaveBeenCalledTimes(2)
+      expect(window.desktop?.writePtyInput).toHaveBeenLastCalledWith({
+        id: "pty-1",
+        data: "echo queued\r",
       })
     })
   })
@@ -262,6 +488,7 @@ describe("useTerminalWorkspace", () => {
     expect(window.desktop?.createPtySession).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+    await finishInitialTerminalMeasurement()
 
     await waitFor(() => {
       expect(window.desktop?.createPtySession).toHaveBeenCalledTimes(1)
@@ -285,6 +512,7 @@ describe("useTerminalWorkspace", () => {
     render(<Harness />)
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+    await finishInitialTerminalMeasurement()
 
     await waitFor(() => {
       expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
@@ -340,6 +568,7 @@ describe("useTerminalWorkspace", () => {
     render(<Harness />)
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+    await finishInitialTerminalMeasurement()
 
     await waitFor(() => {
       expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({
@@ -408,6 +637,7 @@ describe("useTerminalWorkspace", () => {
     render(<Harness />)
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle" }))
+    await finishInitialTerminalMeasurement()
 
     await waitFor(() => {
       expect(window.desktop?.attachPtySession).toHaveBeenCalledWith({

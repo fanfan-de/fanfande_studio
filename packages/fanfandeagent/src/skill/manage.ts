@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rename, rm, rmdir, stat, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from "node:path"
+import { normalizeComparablePath } from "@fanfande/platform"
 import matter from "gray-matter"
 
 export interface GlobalSkillTreeNode {
@@ -56,7 +57,7 @@ const SKILL_FILENAME = "SKILL.md"
 
 function comparePaths(value: string) {
   const normalized = normalize(resolve(value))
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized
+  return normalizeComparablePath(normalized)
 }
 
 function ensureSafeRelativePath(root: string, input: string) {

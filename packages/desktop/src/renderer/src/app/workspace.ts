@@ -48,6 +48,17 @@ export function updateSessionModelSelectionInWorkspaces(
   }))
 }
 
+export function updateSessionInWorkspaces(
+  workspaces: WorkspaceGroup[],
+  sessionID: string,
+  updater: (session: SessionSummary) => SessionSummary,
+) {
+  return workspaces.map((workspace) => ({
+    ...workspace,
+    sessions: workspace.sessions.map((session) => (session.id === sessionID ? updater(session) : session)),
+  }))
+}
+
 export function getPrimaryWorkspaceSessions<T extends Pick<SessionSummary, "kind">>(sessions: T[]) {
   return sessions.filter((session) => !isSideChatSession(session))
 }

@@ -89,24 +89,6 @@ export async function defaultPrompt(input?: {
     if (input?.agent?.name === "sidechat") {
         prompts.push(await PromptPresets.getResolvedPromptPresetContent(selection.sideChatPromptPresetID))
     }
-    if (input?.agent?.name === "plan") {
-        prompts.push(await PromptPresets.getResolvedPromptPresetContent(selection.planModePromptPresetID))
-    }
-
-    const workflow = input?.session?.workflow
-    const approvedPlan = workflow?.mode === "execution"
-        ? workflow.plan.approvedMarkdown?.trim()
-        : undefined
-
-    if (approvedPlan) {
-        prompts.push([
-            "<approved-plan>",
-            "A plan has already been approved for this session. Unless the user changes scope, execute according to it.",
-            approvedPlan,
-            "</approved-plan>",
-        ].join("\n"))
-    }
-
     const activeTasks = renderActiveTasks(input?.session)
     if (activeTasks) {
         prompts.push(activeTasks)

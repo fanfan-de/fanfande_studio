@@ -17,11 +17,13 @@ import { AskUserQuestionTool, answerAskUserQuestion } from "#tool/ask-user-quest
 import {
   CmdCommandTool,
   GitBashCommandTool,
+  MacOSShellCommandTool,
   PowerShellCommandTool,
   WslBashCommandTool,
   assessShellPermission,
   resolveCmdExecutable,
   resolveGitBashExecutable,
+  resolveMacOSShellExecutable,
   resolvePowerShellExecutable,
   resolveWslExecutable,
   waitForProcessExit,
@@ -41,6 +43,7 @@ import {
   WORKSPACE_NODE_PACKAGES,
   WORKSPACE_PYTHON_IMPORTS,
 } from "#tool/workspace-dependencies.ts"
+import { buildPtyEnvironment } from "#pty/runtime.ts"
 
 async function createGitRepo(root: string, seed: string) {
   await mkdir(root, { recursive: true })
@@ -116,6 +119,10 @@ async function createWorkspaceDependenciesFixture(root: string) {
   )
 
   return dependenciesRoot
+}
+
+function platformShellToolID() {
+  return ToolRegistry.builtinShellToolsForPlatform(process.platform)[0]?.id ?? null
 }
 
 async function createSideChatSessionForTerminalToolTest() {
@@ -407,10 +414,11 @@ describe("tool contract", () => {
             abort: new AbortController().signal,
           })
           const parallel = tools["multi_tool_use_parallel"] as any
+          const shellToolID = platformShellToolID()
           const output = await parallel.execute({
             calls: [
               { tool: "replace-text", input: {} },
-              { tool: "git_bash_command", input: {} },
+              ...(shellToolID ? [{ tool: shellToolID, input: {} }] : []),
               { tool: "terminal-run-command", input: {} },
               { tool: "generate_image", input: {} },
               { tool: "AskUserQuestion", input: {} },
@@ -426,7 +434,9 @@ describe("tool contract", () => {
           const results = output.data.results as Array<{ tool: string; status: string; error?: string }>
           expect(results.every((result) => result.status === "error")).toBe(true)
           expect(results.find((result) => result.tool === "replace-text")?.error).toContain("not eligible")
-          expect(results.find((result) => result.tool === "git_bash_command")?.error).toContain("not eligible")
+          if (shellToolID) {
+            expect(results.find((result) => result.tool === shellToolID)?.error).toContain("not eligible")
+          }
           expect(results.find((result) => result.tool === "terminal-run-command")?.error).toContain("not eligible")
           expect(results.find((result) => result.tool === "generate_image")?.error).toContain("not eligible")
           expect(results.find((result) => result.tool === "AskUserQuestion")?.error).toContain("not eligible")
@@ -1111,7 +1121,13 @@ describe("tool contract", () => {
     await Instance.provide({
       directory: process.cwd(),
       async fn() {
-        const execRuntime = await GitBashCommandTool.init()
+        const execTool = process.platform === "darwin"
+          ? MacOSShellCommandTool
+          : process.platform === "win32"
+            ? GitBashCommandTool
+            : null
+        if (!execTool) return
+        const execRuntime = await execTool.init()
         const readRuntime = await ReadBackgroundTaskTool.init()
         const stopRuntime = await StopBackgroundTaskTool.init()
         const ctx = {
@@ -1200,6 +1216,13 @@ describe("tool contract", () => {
               unknown: "custom-task --flag",
             },
             {
+              shell: "posix" as const,
+              readonly: "git status --short",
+              writeLike: "touch temporary.txt",
+              dangerous: "diskutil eraseDisk APFS Test /dev/disk9",
+              unknown: "custom-task --flag",
+            },
+            {
               shell: "powershell" as const,
               readonly: "Get-ChildItem",
               writeLike: "Set-Content temporary.txt hello",
@@ -1247,12 +1270,19 @@ describe("tool contract", () => {
     }
   }, 120000)
 
-  it("exposes four shell tools with distinct schemas and capabilities", async () => {
+  it("exposes shell tools with distinct schemas and capabilities", async () => {
     const tools = [
       {
         tool: GitBashCommandTool,
         id: "git_bash_command",
         title: "Git Bash",
+        background: true,
+        distro: false,
+      },
+      {
+        tool: MacOSShellCommandTool,
+        id: "macos_shell_command",
+        title: "macOS Shell",
         background: true,
         distro: false,
       },
@@ -1298,6 +1328,19 @@ describe("tool contract", () => {
       expect(Boolean(shape.run_in_background)).toBe(item.background)
       expect(Boolean(shape.distro)).toBe(item.distro)
     }
+  })
+
+  it("selects one-time shell tools by host platform", () => {
+    expect(ToolRegistry.builtinShellToolsForPlatform("darwin").map((tool) => tool.id)).toEqual([
+      "macos_shell_command",
+    ])
+    expect(ToolRegistry.builtinShellToolsForPlatform("win32").map((tool) => tool.id)).toEqual([
+      "git_bash_command",
+      "powershell_command",
+      "cmd_command",
+      "wsl_bash_command",
+    ])
+    expect(ToolRegistry.builtinShellToolsForPlatform("linux").map((tool) => tool.id)).toEqual([])
   })
 
   it("exposes session-bound terminal tools without owner override parameters", async () => {
@@ -1449,6 +1492,53 @@ describe("tool contract", () => {
     ).rejects.toThrow("No Git Bash executable was found")
   })
 
+  it("resolves macOS shell executables and preserves Homebrew PATH entries", async () => {
+    const configured = await resolveMacOSShellExecutable({
+      platform: "darwin",
+      env: {
+        FanFande_MACOS_SHELL: "/custom/zsh",
+        SHELL: "/bin/zsh",
+      },
+      whichCommand: () => null,
+      isFile: async (filePath) => filePath === "/custom/zsh",
+    })
+    expect(configured).toBe("/custom/zsh")
+
+    const fromShellEnv = await resolveMacOSShellExecutable({
+      platform: "darwin",
+      env: {
+        SHELL: "/bin/fish",
+      },
+      whichCommand: () => null,
+      isFile: async (filePath) => filePath === "/bin/fish",
+    })
+    expect(fromShellEnv).toBe("/bin/fish")
+
+    const fallback = await resolveMacOSShellExecutable({
+      platform: "darwin",
+      env: {},
+      whichCommand: () => null,
+      isFile: async (filePath) => filePath === "/bin/zsh",
+    })
+    expect(fallback).toBe("/bin/zsh")
+
+    await expect(
+      resolveMacOSShellExecutable({
+        platform: "darwin",
+        env: {},
+        whichCommand: () => null,
+        isFile: async () => false,
+      }),
+    ).rejects.toThrow("No macOS shell executable was found")
+
+    const env = buildPtyEnvironment("/tmp/project", "/bin/zsh")
+    if (process.platform === "darwin") {
+      const pathSegments = (env.PATH ?? "").split(":")
+      expect(pathSegments).toContain("/opt/homebrew/bin")
+      expect(pathSegments).toContain("/usr/local/bin")
+    }
+  })
+
   it("replays completed tool history through the tool model output formatter", async () => {
     const repositoryRoot = await mkdtemp(path.join(tmpdir(), "fanfande-tool-history-"))
 
@@ -1458,6 +1548,8 @@ describe("tool contract", () => {
       await Instance.provide({
         directory: repositoryRoot,
         async fn() {
+          const shellToolID = platformShellToolID()
+          if (!shellToolID) return
           const model = {
             capabilities: {
               reasoning: false,
@@ -1500,12 +1592,12 @@ describe("tool contract", () => {
                     messageID: "assistant-history",
                     type: "tool",
                     callID: "call-history",
-                    tool: "git_bash_command",
+                    tool: shellToolID,
                     state: {
                       status: "completed",
                       input: { command: "printf hello" },
                       output: "Command: printf hello",
-                      title: "git_bash_command: printf hello",
+                      title: `${shellToolID}: printf hello`,
                       metadata: {
                         command: "printf hello",
                         shell: "/bin/bash",
@@ -1538,10 +1630,10 @@ describe("tool contract", () => {
           const toolMessage = messages.find((item) => item.role === "tool") as any
           expect(toolMessage).toBeDefined()
           expect(toolMessage.content).toHaveLength(1)
-          expect(toolMessage.content.find((item: any) => item.toolName === "git_bash_command")).toMatchObject({
+          expect(toolMessage.content.find((item: any) => item.toolName === shellToolID)).toMatchObject({
             type: "tool-result",
             toolCallId: "call-history",
-            toolName: "git_bash_command",
+            toolName: shellToolID,
             output: {
               type: "json",
               value: {

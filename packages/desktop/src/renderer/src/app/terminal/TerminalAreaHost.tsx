@@ -24,18 +24,23 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
   } = props
   const {
     activeSession,
+    creationError,
     handleCloseTerminal,
     handleCreateTerminal,
     handleCreateTerminalForShellProfile,
     handlePanelHeightChange,
     handleShellProfileChange,
     handleSelectTerminal,
+    handleTerminalInitialDimensions,
+    handleTerminalInitialDimensionsError,
     handleTerminalInput,
     handleTerminalResize,
     handleTerminalSnapshotChange,
     handleTogglePanel,
+    isCreatingTerminal,
     isOpen,
     panelHeight,
+    pendingCreateRequestID,
     selectedShellProfileID,
     shellProfiles,
     sessions,
@@ -69,13 +74,18 @@ export const TerminalAreaHost = memo(function TerminalAreaHost(props: TerminalAr
         activeSession={activeSession}
         brandTheme={brandTheme}
         colorMode={colorMode}
+        creationError={creationError}
         isOpen={isOpen}
+        isCreatingTerminal={isCreatingTerminal}
         panelHeight={panelHeight}
+        pendingCreateRequestID={pendingCreateRequestID}
         showToggleButton={!hasPersistentTogglePortal}
         sessions={sessions}
         onCloseTerminal={handleCloseTerminal}
         onCreateTerminal={handleCreateTerminal}
         onCreateTerminalForShellProfile={handleCreateTerminalForShellProfile}
+        onTerminalInitialDimensions={handleTerminalInitialDimensions}
+        onTerminalInitialDimensionsError={handleTerminalInitialDimensionsError}
         onPanelHeightChange={handlePanelHeightChange}
         onShellProfileChange={handleShellProfileChange}
         onSelectTerminal={handleSelectTerminal}

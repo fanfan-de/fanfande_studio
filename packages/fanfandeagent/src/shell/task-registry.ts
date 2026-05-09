@@ -43,6 +43,7 @@ export interface ShellTaskRuntimeAdapter {
     shell: string
     cwd: string
     command: string
+    env?: NodeJS.ProcessEnv
   }): ShellTaskRuntimeHandle
 }
 
@@ -107,6 +108,7 @@ export function createShellTaskRuntimeAdapter(): ShellTaskRuntimeAdapter {
     spawn(input) {
       const child = spawn(input.shell, ["-lc", input.command], {
         cwd: input.cwd,
+        ...(input.env ? { env: input.env } : {}),
         windowsHide: true,
       })
 
@@ -147,6 +149,7 @@ function createManagedShellTask(
     command: string
     cwd: string
     shell: string
+    env?: NodeJS.ProcessEnv
     bufferChars: number
     runtime: ShellTaskRuntimeAdapter
     now: () => number
@@ -174,6 +177,7 @@ function createManagedShellTask(
     shell: input.shell,
     cwd: input.cwd,
     command: input.command,
+    env: input.env,
   })
   let onOutputDispose: (() => void) | null = null
   let onExitDispose: (() => void) | null = null
@@ -313,6 +317,7 @@ export class ShellTaskRegistry {
     command: string
     cwd: string
     shell: string
+    env?: NodeJS.ProcessEnv
   }) {
     const id = Identifier.descending("task")
     const task = createManagedShellTask({
@@ -321,6 +326,7 @@ export class ShellTaskRegistry {
       command: input.command,
       cwd: input.cwd,
       shell: input.shell,
+      env: input.env,
       bufferChars: this.bufferChars,
       runtime: this.runtime,
       now: this.now,

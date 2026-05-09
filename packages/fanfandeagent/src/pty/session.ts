@@ -1,7 +1,7 @@
 import path from "node:path"
 import { PtyBuffer } from "#pty/buffer.ts"
 import { PtyEvents, publishPtyEvent } from "#pty/events.ts"
-import type { PtyRuntimeAdapter, PtyRuntimeHandle } from "#pty/runtime.ts"
+import type { PtyRuntimeAdapter } from "#pty/runtime.ts"
 import type { PtyReplayPayload, PtySessionInfo } from "#pty/types.ts"
 
 export type PtySessionEvent =
@@ -56,7 +56,7 @@ function defaultTitle(cwd: string) {
   return folder || cwd
 }
 
-export function createManagedPtySession(options: CreateManagedPtySessionOptions): ManagedPtySession {
+export async function createManagedPtySession(options: CreateManagedPtySessionOptions): Promise<ManagedPtySession> {
   const now = options.now ?? Date.now
   const buffer = new PtyBuffer(options.bufferChars)
   const createdAt = now()
@@ -75,7 +75,7 @@ export function createManagedPtySession(options: CreateManagedPtySessionOptions)
     cursor: 0,
   }
   const listeners = new Set<(event: PtySessionEvent) => void>()
-  const runtime = options.runtime.spawn({
+  const runtime = await options.runtime.spawn({
     shell: options.shell,
     cwd: options.cwd,
     rows: options.rows,
@@ -172,7 +172,11 @@ export function createManagedPtySession(options: CreateManagedPtySessionOptions)
       const nextCols = input.cols ?? info.cols
       const nextRows = input.rows ?? info.rows
       if (nextCols !== info.cols || nextRows !== info.rows) {
-        runtime.resize(nextCols, nextRows)
+        try {
+          runtime.resize(nextCols, nextRows)
+        } catch {
+          // Resizing is advisory; stale PTY file descriptors can reject ioctl while the shell is exiting.
+        }
         info = {
           ...info,
           cols: nextCols,

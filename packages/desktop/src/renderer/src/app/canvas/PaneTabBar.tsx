@@ -1,7 +1,6 @@
 import { useEffect, useRef, type PointerEvent, type DragEvent as ReactDragEvent, type ReactNode } from "react"
 import { CloseIcon } from "../icons"
-import { getSessionWorkflowBadge } from "../session-workflow"
-import { SessionWorkflowBadge, SideChatBadge } from "../shared-ui"
+import { SideChatBadge } from "../shared-ui"
 import type { SessionSummary } from "../types"
 
 interface PaneTabBarProps {
@@ -222,7 +221,6 @@ export function PaneTabBar({
       <div className="pane-tab-bar-tabs" aria-label="Pane tab list">
         {tabs.map((tab) => {
           const isActive = tab.key === activeTabKey
-          const workflowBadge = tab.kind === "session" ? getSessionWorkflowBadge(tab.workflow) : null
           const createTabIndex =
             tab.kind === "create-session"
               ? tabs.slice(0, tabs.indexOf(tab) + 1).filter((item) => item.kind === "create-session").length - 1
@@ -289,7 +287,6 @@ export function PaneTabBar({
                 <span className="session-tab-copy">
                   <span className="session-tab-title">{tab.title}</span>
                   {tab.kind === "session" && tab.sessionKind === "side-chat" ? <SideChatBadge compact /> : null}
-                  <SessionWorkflowBadge compact workflow={workflowBadge} />
                 </span>
               </button>
               <button

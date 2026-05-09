@@ -1,5 +1,5 @@
 import { createRef, type ComponentProps } from "react"
-import { fireEvent, render } from "@testing-library/react"
+import { fireEvent, render, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTurn, type SessionSummary, type Turn, type UserTurn } from "../types"
 import { ThreadView } from "./ThreadView"
@@ -533,6 +533,264 @@ describe("ThreadView assistant response markdown", () => {
     expect(container.querySelector("strong")?.textContent).toBe("Ready")
     expect(getByRole("table")).toBeInTheDocument()
     expect(container.querySelector(".assistant-section.is-response .thread-markdown")).not.toBeNull()
+  })
+
+  function createProposedPlan(title = "Plan Title") {
+    return [
+      "<proposed_plan>",
+      `# ${title}`,
+      "",
+      "## Summary",
+      "Do the work.",
+      "",
+      "## Implementation",
+      "Change the files.",
+      "",
+      "## Tests",
+      "Run checks.",
+      "</proposed_plan>",
+    ].join("\n")
+  }
+
+  it("renders the latest complete proposed plan as actionable", () => {
+    const onProposedPlanConfirm = vi.fn()
+    const proposedPlan = createProposedPlan()
+
+    const { getByRole, queryByText } = renderThread([
+      assistantTraceTurn("assistant-1", [
+        {
+          id: "response-1",
+          kind: "text",
+          timestamp: 1,
+          label: "Assistant",
+          text: proposedPlan,
+          status: "completed",
+        },
+      ], false),
+    ], {
+      onProposedPlanConfirm,
+    })
+
+    expect(getByRole("article", { name: "Proposed plan" })).toBeInTheDocument()
+    expect(getByRole("heading", { name: "Plan Title" })).toBeInTheDocument()
+    expect(queryByText("<proposed_plan>")).not.toBeInTheDocument()
+    expect(getByRole("button", { name: "取消" })).toBeEnabled()
+    expect(getByRole("button", { name: "确认实施" })).toBeEnabled()
+  })
+
+  it("removes proposed plan actions and shows cancelled state after cancel", () => {
+    const onProposedPlanConfirm = vi.fn()
+    const proposedPlan = createProposedPlan()
+
+    const { getByRole, queryByRole, getByText } = renderThread([
+      assistantTraceTurn("assistant-1", [
+        {
+          id: "response-1",
+          kind: "text",
+          timestamp: 1,
+          label: "Assistant",
+          text: proposedPlan,
+          status: "completed",
+        },
+      ], false),
+    ], {
+      onProposedPlanConfirm,
+    })
+
+    fireEvent.click(getByRole("button", { name: "取消" }))
+
+    expect(getByText("已取消")).toBeInTheDocument()
+    expect(queryByRole("button", { name: "取消" })).not.toBeInTheDocument()
+    expect(queryByRole("button", { name: "确认实施" })).not.toBeInTheDocument()
+    expect(onProposedPlanConfirm).not.toHaveBeenCalled()
+  })
+
+  it("removes proposed plan actions and shows confirmed state after confirm", async () => {
+    const onProposedPlanConfirm = vi.fn().mockResolvedValue(undefined)
+    const proposedPlan = createProposedPlan()
+
+    const { getByRole, queryByRole, getByText } = renderThread([
+      assistantTraceTurn("assistant-1", [
+        {
+          id: "response-1",
+          kind: "text",
+          timestamp: 1,
+          label: "Assistant",
+          text: proposedPlan,
+          status: "completed",
+        },
+      ], false),
+    ], {
+      onProposedPlanConfirm,
+    })
+
+    fireEvent.click(getByRole("button", { name: "确认实施" }))
+
+    expect(onProposedPlanConfirm).toHaveBeenCalledWith({ planMarkdown: proposedPlan })
+    await waitFor(() => expect(getByText("已确认")).toBeInTheDocument())
+    expect(queryByRole("button", { name: "取消" })).not.toBeInTheDocument()
+    expect(queryByRole("button", { name: "确认实施" })).not.toBeInTheDocument()
+  })
+
+  it("keeps proposed plan actions available and shows an error when confirm fails", async () => {
+    const onProposedPlanConfirm = vi.fn().mockRejectedValue(new Error("Approval failed"))
+    const proposedPlan = createProposedPlan()
+
+    const { getByRole, getByText } = renderThread([
+      assistantTraceTurn("assistant-1", [
+        {
+          id: "response-1",
+          kind: "text",
+          timestamp: 1,
+          label: "Assistant",
+          text: proposedPlan,
+          status: "completed",
+        },
+      ], false),
+    ], {
+      onProposedPlanConfirm,
+    })
+
+    fireEvent.click(getByRole("button", { name: "确认实施" }))
+
+    await waitFor(() => expect(getByText("Approval failed")).toBeInTheDocument())
+    expect(getByRole("button", { name: "取消" })).toBeEnabled()
+    expect(getByRole("button", { name: "确认实施" })).toBeEnabled()
+  })
+
+  it("renders historical complete proposed plans without actions", () => {
+    const proposedPlan = createProposedPlan("Historical Plan")
+
+    const { getByRole, queryByRole, queryByText } = renderThread([
+      assistantTraceTurn("assistant-1", [
+        {
+          id: "response-1",
+          kind: "text",
+          timestamp: 1,
+          label: "Assistant",
+          text: proposedPlan,
+          status: "completed",
+        },
+      ], false),
+      userTurn("user-1", "Thanks"),
+    ])
+
+    expect(getByRole("heading", { name: "Historical Plan" })).toBeInTheDocument()
+    expect(queryByText("已过期")).not.toBeInTheDocument()
+    expect(queryByRole("button", { name: "取消" })).not.toBeInTheDocument()
+    expect(queryByRole("button", { name: "确认实施" })).not.toBeInTheDocument()
+  })
+
+  it("hides proposed plan actions once a newer turn appears", () => {
+    const onProposedPlanConfirm = vi.fn()
+    const proposedPlan = createProposedPlan("Fresh Plan")
+    const planTurn = assistantTraceTurn("assistant-1", [
+      {
+        id: "response-1",
+        kind: "text",
+        timestamp: 1,
+        label: "Assistant",
+        text: proposedPlan,
+        status: "completed",
+      },
+    ], false)
+
+    const { getByRole, props, queryByRole, queryByText, rerender } = renderThread([planTurn], {
+      onProposedPlanConfirm,
+    })
+
+    expect(getByRole("button", { name: "取消" })).toBeEnabled()
+    expect(getByRole("button", { name: "确认实施" })).toBeEnabled()
+
+    rerender(<ThreadView {...props} activeTurns={[planTurn, userTurn("user-1", "Continue")]} />)
+
+    expect(getByRole("heading", { name: "Fresh Plan" })).toBeInTheDocument()
+    expect(queryByText("已过期")).not.toBeInTheDocument()
+    expect(queryByRole("button", { name: "取消" })).not.toBeInTheDocument()
+    expect(queryByRole("button", { name: "确认实施" })).not.toBeInTheDocument()
+  })
+
+  it("renders streaming proposed plan responses immediately with disabled actions", () => {
+    const onProposedPlanConfirm = vi.fn()
+    const proposedPlan = [
+      "<proposed_plan>",
+      "# Streaming Plan",
+      "",
+      "## Summary",
+      "Still drafting.",
+    ].join("\n")
+
+    const { getByRole, queryByText } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: proposedPlan,
+            status: "running",
+            isStreaming: true,
+          },
+        ],
+        true,
+      ),
+    ], {
+      onProposedPlanConfirm,
+    })
+
+    expect(getByRole("article", { name: "Proposed plan" })).toBeInTheDocument()
+    expect(getByRole("heading", { name: "Streaming Plan" })).toBeInTheDocument()
+    expect(queryByText("<proposed_plan>")).not.toBeInTheDocument()
+    expect(getByRole("button", { name: "取消" })).toBeDisabled()
+    expect(getByRole("button", { name: "确认实施" })).toBeDisabled()
+
+    fireEvent.click(getByRole("button", { name: "确认实施" }))
+    expect(onProposedPlanConfirm).not.toHaveBeenCalled()
+  })
+
+  it("enables proposed plan actions when the close tag arrives during streaming", () => {
+    const onProposedPlanConfirm = vi.fn()
+    const partialPlan = [
+      "<proposed_plan>",
+      "# Streaming Plan",
+      "",
+      "## Summary",
+      "Still drafting.",
+    ].join("\n")
+    const completePlan = [
+      partialPlan,
+      "",
+      "## Tests",
+      "Run checks.",
+      "</proposed_plan>",
+    ].join("\n")
+    const buildResponseItem = (text: string): AssistantTraceItem => ({
+      id: "response-1",
+      kind: "text",
+      timestamp: 1,
+      label: "Assistant",
+      text,
+      status: "running",
+      isStreaming: true,
+    })
+
+    const { getByRole, props, rerender } = renderThread([
+      assistantTraceTurn("assistant-1", [buildResponseItem(partialPlan)], true),
+    ], {
+      onProposedPlanConfirm,
+    })
+
+    expect(getByRole("button", { name: "确认实施" })).toBeDisabled()
+
+    rerender(<ThreadView {...props} activeTurns={[assistantTraceTurn("assistant-1", [buildResponseItem(completePlan)], true)]} />)
+
+    expect(getByRole("button", { name: "取消" })).toBeEnabled()
+    expect(getByRole("button", { name: "确认实施" })).toBeEnabled()
+
+    fireEvent.click(getByRole("button", { name: "确认实施" }))
+    expect(onProposedPlanConfirm).toHaveBeenCalledWith({ planMarkdown: completePlan })
   })
 
   it("keeps reasoning and tool markdown-like content as plain rich text", () => {

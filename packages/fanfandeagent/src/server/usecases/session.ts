@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { basename, extname } from "node:path"
+import { AgentRouteSchemas, SessionAttachmentBodySchema } from "@fanfande/shared"
 import z from "zod"
 import * as Config from "#config/config.ts"
 import * as Project from "#project/project.ts"
@@ -32,57 +33,21 @@ import { answerAskUserQuestion } from "#tool/ask-user-question.ts"
 
 export { createSessionExecutionStream } from "#server/usecases/session-stream.ts"
 
-export const CreateSessionBody = z.object({
-  directory: z.string().min(1),
-})
+export const CreateSessionBody = AgentRouteSchemas.sessions.create.body
 
-export const CreateSideChatBody = z.object({
-  anchorMessageID: z.string().min(1),
-})
+export const CreateSideChatBody = AgentRouteSchemas.sessions.createSideChat.body
 
 export const UpdateSessionModelSelectionBody = Config.ModelSelection
 
-export const StreamSessionAttachmentBody = z.object({
-  path: z.string().min(1),
-  name: z.string().optional(),
-})
+export const UpdateSessionWorkflowBody = AgentRouteSchemas.sessions.updateWorkflow.body
 
-export const StreamSessionQuestionAnswerBody = z.object({
-  questionID: z.string().min(1),
-  selectedOptions: z.array(z.string().min(1)).optional(),
-  freeformText: z.string().optional(),
-})
+export const StreamSessionAttachmentBody = SessionAttachmentBodySchema
+
+export const StreamSessionQuestionAnswerBody = AgentRouteSchemas.sessions.answerQuestion.body
 
 export const AnswerSessionQuestionBody = StreamSessionQuestionAnswerBody
 
-export const StreamSessionMessageBody = z.object({
-  text: z.string().optional(),
-  attachments: z.array(StreamSessionAttachmentBody).optional(),
-  questionAnswer: StreamSessionQuestionAnswerBody.optional(),
-  system: z.string().optional(),
-  agent: z.string().optional(),
-  skills: z.array(z.string()).optional(),
-  reasoningEffort: Message.OpenAIReasoningEffort.optional(),
-  model: z
-    .object({
-      providerID: z.string(),
-      modelID: z.string(),
-    })
-    .optional(),
-}).superRefine((value, ctx) => {
-  const hasText = typeof value.text === "string" && value.text.trim().length > 0
-  const derivedQuestionText = normalizeQuestionAnswerText(value.questionAnswer)
-  const hasQuestionAnswerText = typeof derivedQuestionText === "string" && derivedQuestionText.length > 0
-  const hasAttachments = Array.isArray(value.attachments) && value.attachments.length > 0
-
-  if (!hasText && !hasQuestionAnswerText && !hasAttachments) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Body must include a non-empty 'text', a structured question answer, or at least one attachment",
-      path: ["text"],
-    })
-  }
-})
+export const StreamSessionMessageBody = AgentRouteSchemas.sessions.streamMessage.body
 
 const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
   ".apng": "image/apng",
@@ -622,6 +587,71 @@ export async function updateSessionModelSelection(
   return toSessionModelSelectionPayload(Session.getSessionModelSelection(sessionID))
 }
 
+export function updateSessionWorkflow(
+  sessionID: string,
+  input: z.infer<typeof UpdateSessionWorkflowBody>,
+) {
+  requireSession(sessionID)
+
+  const updated = Session.updateSessionWorkflow(sessionID, (workflow) => {
+    const now = Date.now()
+
+    switch (input.action) {
+      case "enter-plan":
+        return {
+          mode: "planning",
+          plan: {
+            status: "draft",
+            draftMarkdown: undefined,
+            pendingRequestID: undefined,
+            approvedMarkdown: undefined,
+            approvedAt: undefined,
+            pendingInstruction: "plan-mode",
+            updatedAt: now,
+          },
+        }
+      case "leave-plan":
+        return {
+          mode: "execution",
+          plan: {
+            status: "idle",
+            draftMarkdown: workflow.plan.draftMarkdown,
+            pendingRequestID: undefined,
+            approvedMarkdown: undefined,
+            approvedAt: undefined,
+            pendingInstruction: "exit-plan",
+            updatedAt: now,
+          },
+        }
+      case "approve-plan": {
+        const approvedMarkdown = input.proposedPlanMarkdown.trim()
+        if (!approvedMarkdown) {
+          throw new ApiError(400, "EMPTY_PLAN", "Approved plan markdown must not be empty")
+        }
+
+        return {
+          mode: "execution",
+          plan: {
+            status: "approved",
+            draftMarkdown: approvedMarkdown,
+            pendingRequestID: undefined,
+            approvedMarkdown,
+            approvedAt: now,
+            pendingInstruction: "execute-approved-plan",
+            updatedAt: now,
+          },
+        }
+      }
+    }
+  })
+
+  if (!updated) {
+    throw new ApiError(404, "SESSION_NOT_FOUND", `Session '${sessionID}' not found`)
+  }
+
+  return mapSessionSummary(updated)
+}
+
 export function deleteSession(sessionID: string, options?: { ptyRegistry?: PtyRegistry }) {
   const session = Session.removeSession(sessionID)
   if (!session) {
@@ -732,6 +762,7 @@ export async function createMessageStreamResponse(input: {
           skills: input.payload.skills,
           reasoningEffort: input.payload.reasoningEffort,
           model: input.payload.model,
+          displayText: input.payload.displayText,
         })
       },
     })

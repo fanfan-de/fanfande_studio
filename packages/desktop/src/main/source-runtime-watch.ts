@@ -1,4 +1,5 @@
 import fsp from "node:fs/promises"
+import { normalizeComparablePath } from "@fanfande/platform"
 import path from "node:path"
 
 export type SourceRuntimeSnapshot = Map<string, string>
@@ -13,7 +14,7 @@ function normalizeWatchKey(watchRoot: string, changedPath: string) {
     return ""
   }
 
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized
+  return normalizeComparablePath(normalized)
 }
 
 async function readEntrySignature(targetPath: string) {

@@ -1254,6 +1254,46 @@
   margin-bottom: 0;
 }
 
+.composer-plan-mode-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: var(--pane-content-max-width);
+  min-width: 0;
+  min-height: 28px;
+  margin: 0 auto;
+  padding: 0 10px;
+  border: 1px solid rgba(180, 92, 32, 0.18);
+  border-radius: var(--seg-radius-xs);
+  background: rgba(180, 92, 32, 0.08);
+  color: #8f4711;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.composer-plan-mode-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #b45c20;
+  box-shadow: 0 0 0 3px rgba(180, 92, 32, 0.12);
+}
+
+.composer-plan-mode-label {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.composer-plan-mode-detail {
+  min-width: 0;
+  color: rgba(143, 71, 17, 0.76);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .inline-side-chat-thread .composer {
   --composer-editor-min-height: 96px;
   width: 100%;

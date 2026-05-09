@@ -8,6 +8,7 @@ const MIN_PANEL_HEIGHT = 220
 const MAX_PANEL_HEIGHT = 560
 const RECONNECT_DELAYS_MS = [600, 1_000, 1_600, 2_400, 3_600]
 export const TERMINAL_LIVE_BUFFER_MAX_CHARS = 200_000
+export const TERMINAL_PENDING_INPUT_MAX_CHARS = 100_000
 
 function clampPanelHeight(value: number) {
   return Math.max(MIN_PANEL_HEIGHT, Math.min(MAX_PANEL_HEIGHT, value))
@@ -64,6 +65,14 @@ interface LiveTerminalSessionSnapshot {
   scrollTop: number
 }
 
+interface PendingTerminalCreateRequest {
+  requestID: number
+  sessionID: string
+  shell: string | null
+  openPanel: boolean
+  phase: "measuring" | "creating"
+}
+
 type TerminalStreamListener = (event: TerminalStreamEvent) => void
 
 export interface UseTerminalWorkspaceOptions {
@@ -77,6 +86,9 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
     resolveTerminalShellProfiles(typeof window === "undefined" ? undefined : window.desktop?.platform),
   )
   const [workspace, setWorkspace] = useState(() => loadTerminalWorkspaceState(storageKey))
+  const [creationError, setCreationError] = useState<string | null>(null)
+  const [isCreatingTerminal, setIsCreatingTerminal] = useState(false)
+  const [pendingCreateRequestID, setPendingCreateRequestID] = useState<number | null>(null)
   const workspaceRef = useRef(workspace)
   const currentSessionIDRef = useRef<string | null>(normalizedCurrentSessionID)
   // Keep the hot terminal buffer path outside React state so typing does not trigger
@@ -98,6 +110,10 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
   const reconnectTimersRef = useRef<Record<string, number>>({})
   const reconnectAttemptsRef = useRef<Record<string, number>>({})
   const resizeTimersRef = useRef<Record<string, number>>({})
+  const isCreatingTerminalRef = useRef(false)
+  const nextCreateRequestIDRef = useRef(0)
+  const pendingCreateRef = useRef<PendingTerminalCreateRequest | null>(null)
+  const pendingInputRef = useRef<Record<string, string>>({})
   const persistTimerRef = useRef<number | null>(null)
   const persistedSnapshotRef = useRef(serializeTerminalWorkspaceState(workspace))
 
@@ -253,6 +269,12 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
   }, [storageKey])
 
   useEffect(() => {
+    setCreationError(null)
+    const pendingCreate = pendingCreateRef.current
+    if (pendingCreate && pendingCreate.sessionID !== normalizedCurrentSessionID) {
+      cancelPendingCreateRequest(pendingCreate.requestID)
+    }
+
     const activePtyID = workspaceRef.current.activePtyID
     const active = activePtyID ? workspaceRef.current.sessions[activePtyID] : null
     if (active && active.sessionID !== normalizedCurrentSessionID) {
@@ -282,6 +304,18 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
     })
   }
 
+  function cancelPendingCreateRequest(requestID?: number) {
+    const pending = pendingCreateRef.current
+    if (!pending) return false
+    if (requestID !== undefined && pending.requestID !== requestID) return false
+
+    pendingCreateRef.current = null
+    setPendingCreateRequestID(null)
+    isCreatingTerminalRef.current = false
+    setIsCreatingTerminal(false)
+    return true
+  }
+
   function handleShellProfileChange(profileID: string) {
     const resolvedProfileID =
       profileID === DEFAULT_TERMINAL_SHELL_PROFILE_ID || !shellProfiles.some((profile) => profile.id === profileID)
@@ -303,6 +337,33 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
     delete reconnectAttemptsRef.current[ptyID]
   }
 
+  function queuePendingInput(ptyID: string, data: string, placement: "append" | "prepend" = "append") {
+    if (!data) return
+
+    const current = pendingInputRef.current[ptyID] ?? ""
+    const next = placement === "prepend" ? `${data}${current}` : `${current}${data}`
+    pendingInputRef.current[ptyID] =
+      next.length > TERMINAL_PENDING_INPUT_MAX_CHARS ? next.slice(-TERMINAL_PENDING_INPUT_MAX_CHARS) : next
+  }
+
+  async function flushPendingInput(ptyID: string) {
+    const pendingInput = pendingInputRef.current[ptyID]
+    if (!pendingInput) return
+
+    delete pendingInputRef.current[ptyID]
+
+    try {
+      await terminalClient.writeInput({
+        id: ptyID,
+        data: pendingInput,
+      })
+    } catch (error) {
+      queuePendingInput(ptyID, pendingInput, "prepend")
+      console.error("[desktop] writePtyInput failed while flushing pending input:", error)
+      scheduleReconnect(ptyID)
+    }
+  }
+
   async function replaceMissingSession(ptyID: string) {
     const current = workspaceRef.current
     const missingSessionID = current.sessions[ptyID]?.sessionID
@@ -314,6 +375,7 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
 
     delete liveSessionsRef.current[ptyID]
     delete terminalStreamListenersRef.current[ptyID]
+    delete pendingInputRef.current[ptyID]
     updateWorkspace((workspaceState) => removeSession(workspaceState, ptyID))
 
     if (shouldCreateReplacement) {
@@ -482,6 +544,7 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
 
           if (event.state === "connected") {
             cancelReconnect(event.ptyID)
+            void flushPendingInput(event.ptyID)
             return
           }
 
@@ -543,6 +606,7 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
               }),
             )
           })
+          void flushPendingInput(event.ptyID)
           return
         }
 
@@ -576,6 +640,7 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
           if (event.session.sessionID !== currentSessionIDRef.current) return
           if (event.type === "deleted") {
             cancelReconnect(event.ptyID)
+            delete pendingInputRef.current[event.ptyID]
           }
 
           writeLiveSessionSnapshot(event.ptyID, {
@@ -653,11 +718,13 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
   async function handleCreateTerminal(openPanel = true, shellOverride?: string | null) {
     const ownerSessionID = currentSessionIDRef.current
     if (!ownerSessionID) return
+    if (isCreatingTerminalRef.current) return
 
     const existing = Object.values(workspaceRef.current.sessions).find(
       (session) => session.sessionID === ownerSessionID && session.status !== "deleted" && session.status !== "invalid",
     )
     if (existing) {
+      setCreationError(null)
       updateWorkspace((current) => ({
         ...current,
         isOpen: current.isOpen || openPanel,
@@ -670,33 +737,100 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
       return
     }
 
+    const shell = shellOverride ?? resolveShellFromProfile(shellProfilesRef.current, workspaceRef.current.preferredShellProfileID)
+    const requestID = nextCreateRequestIDRef.current + 1
+    nextCreateRequestIDRef.current = requestID
+    pendingCreateRef.current = {
+      requestID,
+      sessionID: ownerSessionID,
+      shell,
+      openPanel,
+      phase: "measuring",
+    }
+    isCreatingTerminalRef.current = true
+    setIsCreatingTerminal(true)
+    setPendingCreateRequestID(requestID)
+    setCreationError(null)
+    if (openPanel) {
+      updateWorkspace((current) => ({
+        ...current,
+        isOpen: true,
+      }))
+    }
+  }
+
+  async function handleTerminalInitialDimensions(requestID: number, dimensions: { rows: number; cols: number }) {
+    const pending = pendingCreateRef.current
+    if (!pending || pending.requestID !== requestID) return
+    if (pending.phase !== "measuring") return
+    if (pending.sessionID !== currentSessionIDRef.current || !workspaceRef.current.isOpen) {
+      cancelPendingCreateRequest(requestID)
+      return
+    }
+
+    pendingCreateRef.current = {
+      ...pending,
+      phase: "creating",
+    }
+    setPendingCreateRequestID(null)
+
     try {
-      const shell = shellOverride ?? resolveShellFromProfile(shellProfilesRef.current, workspaceRef.current.preferredShellProfileID)
       const session = await terminalClient.createSession({
-        sessionID: ownerSessionID,
-        ...(shell ? { shell } : {}),
+        sessionID: pending.sessionID,
+        rows: dimensions.rows,
+        cols: dimensions.cols,
+        ...(pending.shell ? { shell: pending.shell } : {}),
       })
+
+      const stillCurrent =
+        pendingCreateRef.current?.requestID === requestID &&
+        pending.sessionID === currentSessionIDRef.current &&
+        workspaceRef.current.isOpen
+
+      if (!stillCurrent) {
+        await terminalClient.deleteSession({ id: session.id }).catch((error) => {
+          console.error("[desktop] deletePtySession failed for canceled create:", error)
+        })
+        return
+      }
+
       writeLiveSessionSnapshot(session.id, {
         buffer: "",
         cursor: session.cursor,
-        scrollTop: workspaceRef.current.scrollTopBySessionID[ownerSessionID] ?? 0,
+        scrollTop: workspaceRef.current.scrollTopBySessionID[pending.sessionID] ?? 0,
       })
 
       updateWorkspace((current) => ({
           ...current,
-          isOpen: current.isOpen || openPanel,
+          isOpen: current.isOpen || pending.openPanel,
           activePtyID: session.id,
           order: [session.id],
           sessions: {
             [session.id]: mapPtySessionInfoToRecord(session, {
-              scrollTop: workspaceRef.current.scrollTopBySessionID[ownerSessionID] ?? 0,
+              scrollTop: workspaceRef.current.scrollTopBySessionID[pending.sessionID] ?? 0,
               transportState: "idle",
             }),
           },
         }))
+      setCreationError(null)
     } catch (error) {
+      if (pendingCreateRef.current?.requestID !== requestID) return
+      const message = error instanceof Error ? error.message : String(error)
+      setCreationError(message)
       console.error("[desktop] createPtySession failed:", error)
+    } finally {
+      if (pendingCreateRef.current?.requestID === requestID) {
+        pendingCreateRef.current = null
+        setPendingCreateRequestID(null)
+        isCreatingTerminalRef.current = false
+        setIsCreatingTerminal(false)
+      }
     }
+  }
+
+  function handleTerminalInitialDimensionsError(requestID: number, message: string) {
+    if (!cancelPendingCreateRequest(requestID)) return
+    setCreationError(message)
   }
 
   async function handleCreateTerminalForShellProfile(profileID: string) {
@@ -706,6 +840,7 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
 
   async function handleTogglePanel() {
     if (workspaceRef.current.isOpen) {
+      cancelPendingCreateRequest()
       updateWorkspace((current) => ({
         ...current,
         isOpen: false,
@@ -786,6 +921,7 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
     })
     delete liveSessionsRef.current[ptyID]
     delete terminalStreamListenersRef.current[ptyID]
+    delete pendingInputRef.current[ptyID]
   }
 
   function handlePanelHeightChange(height: number) {
@@ -845,25 +981,43 @@ export function useTerminalWorkspace({ currentSessionID, storageKey }: UseTermin
     scheduleWorkspacePersistence()
   }
 
-  async function handleTerminalInput(data: string) {
-    const activePtyID = workspaceRef.current.activePtyID
-    if (!activePtyID) return
+  async function handleTerminalInput(ptyID: string, data: string) {
+    const targetPtyID = ptyID.trim()
+    if (!targetPtyID) return
+
+    const session = workspaceRef.current.sessions[targetPtyID]
+    if (!session || session.sessionID !== currentSessionIDRef.current || session.status !== "running") return
+
+    if (session.transportState !== "connected" && session.transportState !== "connecting") {
+      queuePendingInput(targetPtyID, data)
+      if (attachedPtyIDRef.current !== targetPtyID) {
+        void attachSession(targetPtyID, getKnownCursor(targetPtyID))
+      }
+      return
+    }
 
     try {
       await terminalClient.writeInput({
-        id: activePtyID,
+        id: targetPtyID,
         data,
       })
     } catch (error) {
+      queuePendingInput(targetPtyID, data, "prepend")
       console.error("[desktop] writePtyInput failed:", error)
+      scheduleReconnect(targetPtyID)
     }
   }
 
   return {
     activeSession,
+    creationError,
     handleCreateTerminalForShellProfile,
+    handleTerminalInitialDimensions,
+    handleTerminalInitialDimensionsError,
+    isCreatingTerminal,
     isOpen: workspace.isOpen,
     panelHeight: clampPanelHeight(workspace.panelHeight),
+    pendingCreateRequestID,
     selectedShellProfileID,
     shellProfiles,
     sessions,

@@ -189,6 +189,7 @@ export interface SessionSummary {
 
 export interface CreateSessionTab {
   id: string
+  initialWorkflowMode?: "execution" | "planning"
   workspaceID: string | null
   title: string
 }

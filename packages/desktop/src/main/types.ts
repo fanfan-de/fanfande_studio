@@ -339,6 +339,7 @@ export interface AgentSessionTurnRequestInput {
   clientTurnID: string
   backendSessionID: string
   text?: string
+  displayText?: string
   attachments?: AgentSessionComposerAttachmentInput[]
   questionAnswer?: AgentSessionQuestionAnswerInput
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
@@ -350,6 +351,11 @@ export interface AgentSessionTurnRequestInput {
   agent?: string
   skills?: string[]
 }
+
+export type AgentSessionWorkflowUpdateInput =
+  | { action: "enter-plan" }
+  | { action: "leave-plan" }
+  | { action: "approve-plan"; proposedPlanMarkdown: string }
 
 export type AgentSessionBridgeIPCEvent =
   | {

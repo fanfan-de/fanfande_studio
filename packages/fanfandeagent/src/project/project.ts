@@ -1,5 +1,6 @@
 import z from "zod"
 import fs from "fs/promises"
+import { normalizeComparablePath } from "@fanfande/platform"
 import * as Filesystem from "#util/filesystem.ts"
 import path from "path"
 import { $ } from "bun"
@@ -8,7 +9,7 @@ import * as Log from "#util/log.ts"
 import { fn } from "#util/fn.ts"
 import * as BusEvent from "#bus/bus-event.ts"
 import { GlobalBus } from "#bus/global.ts"
-import { existsSync } from "fs"
+import { existsSync, realpathSync } from "fs"
 import * as Session from "#session/core/session.ts"
 import * as Identifier from "#id/id.ts"
 
@@ -79,8 +80,23 @@ type ResolvedProjectIdentity =
 
 function normalizeProjectPath(input: string) {
   const resolved = path.resolve(input)
-  const normalized = path.normalize(resolved)
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized
+  let realPath = resolved
+  try {
+    realPath = realpathSync.native(resolved)
+  } catch {
+    try {
+      realPath = realpathSync(resolved)
+    } catch {
+      realPath = resolved
+    }
+  }
+  const normalized = path.normalize(realPath)
+  return normalizeComparablePath(normalized)
+}
+
+async function resolveExistingProjectPath(input: string) {
+  const resolved = path.resolve(input)
+  return fs.realpath(resolved).catch(() => resolved)
 }
 
 function resolveProjectKind(project: Pick<ProjectInfo, "kind" | "vcs">) {
@@ -361,7 +377,7 @@ async function writeStoredGitProjectID(gitCommonDir: string | undefined, project
 }
 
 async function resolveProjectIdentity(directory: string): Promise<ResolvedProjectIdentity> {
-  const resolvedDirectory = path.resolve(directory)
+  const resolvedDirectory = await resolveExistingProjectPath(directory)
   const matches = Filesystem.up({ targets: [".git"], start: resolvedDirectory })
   const gitMarker = await matches.next().then((item) => item.value)
   await matches.return()

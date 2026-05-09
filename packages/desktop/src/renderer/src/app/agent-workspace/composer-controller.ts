@@ -2,6 +2,7 @@ import type { MutableRefObject } from "react"
 import { buildComposerAttachment, isComposerAttachmentSupported } from "../composer/attachment-utils"
 import {
   compileComposerSubmission,
+  createComposerDraftStateFromPlainText,
   createEmptyComposerDraftState,
   normalizeComposerDraftState,
 } from "../composer/draft-state"
@@ -23,7 +24,13 @@ import type {
 } from "../types"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { buildFailureTurn } from "../stream"
-import { findSession, findWorkspaceByID, normalizeSessionModelSelection, updateSessionModelSelectionInWorkspaces } from "../workspace"
+import {
+  findSession,
+  findWorkspaceByID,
+  normalizeSessionModelSelection,
+  updateSessionInWorkspaces,
+  updateSessionModelSelectionInWorkspaces,
+} from "../workspace"
 import {
   normalizeQuestionAnswerText,
   sendPromptToSession as sendPromptToSessionService,
@@ -77,6 +84,7 @@ interface UseComposerControllerOptions {
   setAgentSessions: StateSetter<Record<string, string>>
   setComposerAttachmentsByTabKey: StateSetter<Record<string, ComposerAttachment[]>>
   setComposerDraftStateByTabKey: StateSetter<Record<string, ComposerDraftState>>
+  setCreateSessionTabs: StateSetter<CreateSessionTab[]>
   setIsSendingByTabKey: StateSetter<Record<string, boolean>>
   setPendingPermissionRequestsBySession: StateSetter<Record<string, PermissionRequest[]>>
   setPermissionRequestActionError: StateSetter<string | null>
@@ -119,6 +127,7 @@ export function useComposerController({
   setAgentSessions,
   setComposerAttachmentsByTabKey,
   setComposerDraftStateByTabKey,
+  setCreateSessionTabs,
   setIsSendingByTabKey,
   setPendingPermissionRequestsBySession,
   setPermissionRequestActionError,
@@ -259,6 +268,7 @@ export function useComposerController({
 
     const workspace = findWorkspaceByID(workspaces, currentCreateSessionTab.workspaceID)
     if (!workspace) return
+    const shouldStartInPlanning = currentCreateSessionTab.initialWorkflowMode === "planning"
 
     const created = await createSessionForWorkspace(workspace, {
       closeCreateTab: true,
@@ -290,6 +300,34 @@ export function useComposerController({
       }
     }
 
+    if (shouldStartInPlanning) {
+      if (!window.desktop?.updateSessionWorkflow) {
+        appendConversationTurns(created.session.id, [buildFailureTurn("Plan Mode is unavailable for this session.")])
+        return
+      }
+
+      try {
+        const result = await window.desktop.updateSessionWorkflow({
+          sessionID: created.session.id,
+          action: "enter-plan",
+        })
+        createdSession = {
+          ...createdSession,
+          ...result.session,
+        }
+        setWorkspaces((currentWorkspaces) =>
+          updateSessionInWorkspaces(currentWorkspaces, created.session.id, (session) => ({
+            ...session,
+            ...result.session,
+          })),
+        )
+      } catch (error) {
+        console.error("[desktop] enter plan mode for new session failed:", error)
+        appendConversationTurns(created.session.id, [buildFailureTurn(error instanceof Error ? error.message : String(error))])
+        return
+      }
+    }
+
     await sendPromptToSession({
       attachments,
       backendSessionID: created.backendSessionID,
@@ -305,6 +343,93 @@ export function useComposerController({
       tabKey: targetTabKey,
       text: effectiveText,
       workspace: created.workspace,
+    })
+  }
+
+  async function handlePlanModeToggle(input?: {
+    createSessionTabID?: string | null
+    sessionID?: string | null
+  }) {
+    const targetCreateSessionTabID = input?.createSessionTabID ?? null
+    if (targetCreateSessionTabID) {
+      setCreateSessionTabs((current) =>
+        current.map((tab) =>
+          tab.id === targetCreateSessionTabID
+            ? {
+                ...tab,
+                initialWorkflowMode: tab.initialWorkflowMode === "planning" ? "execution" : "planning",
+              }
+            : tab,
+        ),
+      )
+      return
+    }
+
+    const targetSessionID = input?.sessionID ?? activeSessionID
+    if (!targetSessionID || !window.desktop?.updateSessionWorkflow) return
+
+    const current = findSession(workspaces, targetSessionID).session
+    if (!current) return
+
+    const action = current.workflow?.mode === "planning" ? "leave-plan" : "enter-plan"
+    try {
+      const result = await window.desktop.updateSessionWorkflow({
+        sessionID: targetSessionID,
+        action,
+      })
+      setWorkspaces((currentWorkspaces) =>
+        updateSessionInWorkspaces(currentWorkspaces, targetSessionID, (session) => ({
+          ...session,
+          ...result.session,
+        })),
+      )
+      void refreshWorkspaceForSession(targetSessionID)
+    } catch (error) {
+      console.error("[desktop] updateSessionWorkflow failed:", error)
+    }
+  }
+
+  async function handleApproveProposedPlan(input: {
+    planMarkdown: string
+    selectedReasoningEffort?: OpenAIReasoningEffort | null
+    selectedModel?: string | null
+    selectedSkillIDs?: string[]
+    sessionID?: string | null
+    tabKey?: string | null
+    waitForPendingModelSelection?: (() => Promise<void>) | null
+  }) {
+    const targetSessionID = input.sessionID ?? activeSessionID
+    const targetTabKey = input.tabKey ?? activeTabKey
+    const planMarkdown = input.planMarkdown.trim()
+    if (!targetSessionID || !targetTabKey || !planMarkdown || !window.desktop?.updateSessionWorkflow) return
+
+    try {
+      const result = await window.desktop.updateSessionWorkflow({
+        sessionID: targetSessionID,
+        action: "approve-plan",
+        proposedPlanMarkdown: planMarkdown,
+      })
+      setWorkspaces((currentWorkspaces) =>
+        updateSessionInWorkspaces(currentWorkspaces, targetSessionID, (session) => ({
+          ...session,
+          ...result.session,
+        })),
+      )
+    } catch (error) {
+      console.error("[desktop] approve proposed plan failed:", error)
+      appendConversationTurns(targetSessionID, [buildFailureTurn(error instanceof Error ? error.message : String(error))])
+      return
+    }
+
+    await handleSend({
+      draftStateOverride: createComposerDraftStateFromPlainText("实施计划"),
+      preserveComposerState: true,
+      selectedReasoningEffort: input.selectedReasoningEffort,
+      selectedModel: input.selectedModel,
+      selectedSkillIDs: input.selectedSkillIDs,
+      sessionID: targetSessionID,
+      tabKey: targetTabKey,
+      waitForPendingModelSelection: input.waitForPendingModelSelection,
     })
   }
 
@@ -492,7 +617,9 @@ export function useComposerController({
     handlePasteComposerImageAttachments,
     handleRemoveComposerAttachment,
     handleAskUserQuestionAnswer,
+    handleApproveProposedPlan,
     handleCancelSend,
+    handlePlanModeToggle,
     handleSend,
     sendPromptToSession,
     setDraft,

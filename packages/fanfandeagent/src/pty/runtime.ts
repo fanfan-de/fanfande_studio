@@ -1,11 +1,44 @@
 import os from "node:os"
 import { spawn as spawnChild } from "node:child_process"
+import { constants as fsConstants } from "node:fs"
 import path from "node:path"
-import { stat } from "node:fs/promises"
+import { access, chmod, stat } from "node:fs/promises"
+import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
-import { spawn, type IPty } from "node-pty"
+import type { IPty } from "node-pty"
 import { Flag } from "#flag/flag.ts"
+import { withMacOSDefaultPath } from "#shell/environment.ts"
 import { which } from "#util/which.ts"
+
+type MaybePromise<T> = T | Promise<T>
+type NodePtyModule = typeof import("node-pty")
+
+const nodeRequire = createRequire(import.meta.url)
+
+export type PtyRuntimeErrorCode = "PTY_RUNTIME_UNAVAILABLE" | "PTY_CREATE_FAILED"
+
+export class PtyRuntimeError extends Error {
+  constructor(
+    public readonly code: PtyRuntimeErrorCode,
+    message: string,
+  ) {
+    super(message)
+    this.name = "PtyRuntimeError"
+  }
+}
+
+export function isPtyRuntimeError(error: unknown): error is PtyRuntimeError {
+  return error instanceof PtyRuntimeError
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+export function toPtyCreateError(error: unknown, shell: string) {
+  if (isPtyRuntimeError(error)) return error
+  return new PtyRuntimeError("PTY_CREATE_FAILED", `Failed to start terminal shell '${shell}': ${errorMessage(error)}`)
+}
 
 export interface PtyRuntimeHandle {
   readonly pid: number
@@ -23,7 +56,7 @@ export interface PtyRuntimeAdapter {
     rows: number
     cols: number
     env: Record<string, string>
-  }): PtyRuntimeHandle
+  }): MaybePromise<PtyRuntimeHandle>
 }
 
 type NodePtyWorkerEvent =
@@ -66,9 +99,80 @@ function isWindowsSystemBashShim(candidate: string) {
   return normalized.endsWith("\\windows\\system32\\bash.exe")
 }
 
+function resolveNodePtyPackageRoot() {
+  try {
+    return path.dirname(nodeRequire.resolve("node-pty/package.json"))
+  } catch (error) {
+    throw new PtyRuntimeError("PTY_RUNTIME_UNAVAILABLE", `Unable to resolve node-pty: ${errorMessage(error)}`)
+  }
+}
+
+export async function ensureMacOSNodePtySpawnHelperExecutable(options?: {
+  arch?: string
+  packageRoot?: string
+  platform?: NodeJS.Platform
+}) {
+  const platform = options?.platform ?? process.platform
+  if (platform !== "darwin") return null
+
+  const arch = options?.arch ?? process.arch
+  const packageRoot = options?.packageRoot ?? resolveNodePtyPackageRoot()
+  const helperPath = path.join(packageRoot, "prebuilds", `${platform}-${arch}`, "spawn-helper")
+  const helperStat = await stat(helperPath).catch(() => null)
+  if (!helperStat?.isFile()) {
+    throw new PtyRuntimeError("PTY_RUNTIME_UNAVAILABLE", `node-pty spawn helper is missing: ${helperPath}`)
+  }
+
+  if ((helperStat.mode & 0o111) === 0) {
+    try {
+      await chmod(helperPath, helperStat.mode | 0o755)
+    } catch (error) {
+      throw new PtyRuntimeError(
+        "PTY_RUNTIME_UNAVAILABLE",
+        `node-pty spawn helper is not executable and could not be fixed: ${helperPath}: ${errorMessage(error)}`,
+      )
+    }
+  }
+
+  try {
+    await access(helperPath, fsConstants.X_OK)
+  } catch (error) {
+    throw new PtyRuntimeError(
+      "PTY_RUNTIME_UNAVAILABLE",
+      `node-pty spawn helper is not executable: ${helperPath}: ${errorMessage(error)}`,
+    )
+  }
+
+  return helperPath
+}
+
+let nodePtyModulePromise: Promise<NodePtyModule> | null = null
+
+async function loadNodePtyModule() {
+  if (!nodePtyModulePromise) {
+    nodePtyModulePromise = (async () => {
+      await ensureMacOSNodePtySpawnHelperExecutable()
+      try {
+        return await import("node-pty")
+      } catch (error) {
+        throw new PtyRuntimeError("PTY_RUNTIME_UNAVAILABLE", `Unable to load node-pty: ${errorMessage(error)}`)
+      }
+    })().catch((error) => {
+      nodePtyModulePromise = null
+      throw error
+    })
+  }
+
+  return nodePtyModulePromise
+}
+
 export async function resolveDefaultPtyShell(input?: string) {
-  const explicit = await resolveExistingCommand(input ?? process.env["FanFande_PTY_SHELL"])
+  const requestedShell = input ?? process.env["FanFande_PTY_SHELL"]
+  const explicit = await resolveExistingCommand(requestedShell)
   if (explicit) return explicit
+  if (requestedShell?.trim()) {
+    throw new PtyRuntimeError("PTY_CREATE_FAILED", `Terminal shell not found: ${requestedShell.trim()}`)
+  }
 
   const fromShellEnv = await resolveExistingCommand(process.env.SHELL)
   if (fromShellEnv && !isWindowsSystemBashShim(fromShellEnv)) return fromShellEnv
@@ -168,6 +272,9 @@ export function buildPtyEnvironment(cwd: string, shell: string) {
     env.HOMEPATH = source.HOMEPATH ?? env.HOMEPATH ?? env.USERPROFILE.slice(2)
   } else {
     env.PATH = source.PATH ?? env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+    if (process.platform === "darwin") {
+      env.PATH = withMacOSDefaultPath(env.PATH)
+    }
     env.HOME = source.HOME ?? env.HOME ?? os.homedir()
     env.SHELL = shell
   }
@@ -208,8 +315,8 @@ function wrapRuntimeHandle(term: IPty): PtyRuntimeHandle {
   }
 }
 
-function shouldUseNodePtySidecar() {
-  return Boolean(process.versions.bun) && process.platform === "win32"
+export function shouldUseNodePtySidecar(options?: { isBun?: boolean }) {
+  return options?.isBun ?? Boolean(process.versions.bun)
 }
 
 function resolveNodeBinary() {
@@ -228,7 +335,7 @@ function buildNodeSidecarEnvironment() {
 function createNodePtySidecarRuntimeAdapter(): PtyRuntimeAdapter {
   const nodeBinary = resolveNodeBinary()
   if (!nodeBinary) {
-    throw new Error("Node.js is required to host PTY input on Windows when running the server with Bun")
+    throw new Error("Node.js is required to host PTY sessions when running the server with Bun")
   }
 
   const workerPath = fileURLToPath(new URL("./node-pty-worker.mjs", import.meta.url))
@@ -244,6 +351,8 @@ function createNodePtySidecarRuntimeAdapter(): PtyRuntimeAdapter {
       const exitListeners = new Set<(event: { exitCode: number | null; signal?: number }) => void>()
       let stdoutBuffer = ""
       let hasExited = false
+      let startupSettled = false
+      let runtimePid = child.pid ?? 0
 
       function emitData(data: string) {
         for (const listener of [...dataListeners]) {
@@ -259,73 +368,10 @@ function createNodePtySidecarRuntimeAdapter(): PtyRuntimeAdapter {
         }
       }
 
-      function sendCommand(payload: Record<string, unknown>) {
-        if (child.stdin.destroyed || !child.stdin.writable) {
-          throw new Error("PTY worker stdin is unavailable")
-        }
-
-        child.stdin.write(`${JSON.stringify(payload)}\n`)
-      }
-
-      child.stdout.setEncoding("utf8")
-      child.stdout.on("data", (chunk: string) => {
-        stdoutBuffer += chunk
-        const lines = stdoutBuffer.split(/\r?\n/)
-        stdoutBuffer = lines.pop() ?? ""
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed) continue
-
-          let event: NodePtyWorkerEvent
-          try {
-            event = JSON.parse(trimmed) as NodePtyWorkerEvent
-          } catch {
-            continue
-          }
-
-          if (event.type === "data") {
-            emitData(event.data)
-            continue
-          }
-
-          if (event.type === "exit") {
-            emitExit({
-              exitCode: event.exitCode,
-              signal: event.signal,
-            })
-            continue
-          }
-
-          if (event.type === "error") {
-            emitData(`\r\n[pty worker error] ${event.message}\r\n`)
-          }
-        }
-      })
-
-      child.stderr.setEncoding("utf8")
-      child.stderr.on("data", (chunk: string) => {
-        emitData(`\r\n[pty worker stderr] ${chunk}\r\n`)
-      })
-
-      child.once("exit", (code, signal) => {
-        emitExit({
-          exitCode: typeof code === "number" ? code : null,
-          signal: typeof signal === "string" ? undefined : signal ?? undefined,
-        })
-      })
-
-      sendCommand({
-        type: "start",
-        shell: input.shell,
-        cwd: input.cwd,
-        rows: input.rows,
-        cols: input.cols,
-        env: input.env,
-      })
-
-      return {
-        pid: child.pid ?? 0,
+      const handle: PtyRuntimeHandle = {
+        get pid() {
+          return runtimePid
+        },
         write(data) {
           sendCommand({
             type: "write",
@@ -365,6 +411,128 @@ function createNodePtySidecarRuntimeAdapter(): PtyRuntimeAdapter {
           }
         },
       }
+
+      function sendCommand(payload: Record<string, unknown>) {
+        if (child.stdin.destroyed || !child.stdin.writable) {
+          throw new Error("PTY worker stdin is unavailable")
+        }
+
+        child.stdin.write(`${JSON.stringify(payload)}\n`)
+      }
+
+      return new Promise<PtyRuntimeHandle>((resolve, reject) => {
+        function failStartup(message: string) {
+          if (startupSettled) return
+          startupSettled = true
+          clearTimeout(startupTimer)
+          if (!child.killed) {
+            child.kill()
+          }
+          reject(new PtyRuntimeError("PTY_CREATE_FAILED", message))
+        }
+
+        const startupTimer = setTimeout(() => {
+          failStartup("PTY worker did not become ready in time")
+        }, 5_000)
+        startupTimer.unref?.()
+
+        function finishStartup() {
+          if (startupSettled) return false
+          startupSettled = true
+          clearTimeout(startupTimer)
+          resolve(handle)
+          return true
+        }
+
+        child.stdout.setEncoding("utf8")
+        child.stdout.on("data", (chunk: string) => {
+          stdoutBuffer += chunk
+          const lines = stdoutBuffer.split(/\r?\n/)
+          stdoutBuffer = lines.pop() ?? ""
+
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed) continue
+
+            let event: NodePtyWorkerEvent
+            try {
+              event = JSON.parse(trimmed) as NodePtyWorkerEvent
+            } catch {
+              continue
+            }
+
+            if (event.type === "ready") {
+              runtimePid = event.pid
+              finishStartup()
+              continue
+            }
+
+            if (event.type === "data") {
+              emitData(event.data)
+              continue
+            }
+
+            if (event.type === "exit") {
+              emitExit({
+                exitCode: event.exitCode,
+                signal: event.signal,
+              })
+              continue
+            }
+
+            if (event.type === "error") {
+              if (!startupSettled) {
+                failStartup(event.message)
+                continue
+              }
+              emitData(`\r\n[pty worker error] ${event.message}\r\n`)
+            }
+          }
+        })
+
+        child.stderr.setEncoding("utf8")
+        child.stderr.on("data", (chunk: string) => {
+          if (!startupSettled) {
+            failStartup(`PTY worker stderr: ${chunk.trim() || "unknown error"}`)
+            return
+          }
+          emitData(`\r\n[pty worker stderr] ${chunk}\r\n`)
+        })
+
+        child.once("error", (error) => {
+          if (!startupSettled) {
+            failStartup(`PTY worker failed to start: ${errorMessage(error)}`)
+            return
+          }
+          emitExit({
+            exitCode: null,
+          })
+        })
+
+        child.once("exit", (code, signal) => {
+          if (!startupSettled) {
+            failStartup(`PTY worker exited before ready (code=${code ?? "null"}, signal=${signal ?? "none"})`)
+            return
+          }
+          emitExit({
+            exitCode: typeof code === "number" ? code : null,
+            signal: typeof signal === "string" ? undefined : signal ?? undefined,
+          })
+        })
+
+        try {
+          sendCommand({
+            type: "start",
+            shell: input.shell,
+            cwd: input.cwd,
+            rows: input.rows,
+            cols: input.cols,
+            env: input.env,
+          })
+        } catch (error) {
+          failStartup(`Failed to initialize PTY worker: ${errorMessage(error)}`)
+        }
+      })
     },
   }
 }
@@ -375,17 +543,22 @@ export function createNodePtyRuntimeAdapter(): PtyRuntimeAdapter {
   }
 
   return {
-    spawn(input) {
-      const term = spawn(input.shell, [], {
-        name: "xterm-256color",
-        cwd: input.cwd,
-        cols: input.cols,
-        rows: input.rows,
-        env: input.env,
-        useConpty: process.platform === "win32" ? true : undefined,
-      })
+    async spawn(input) {
+      const nodePty = await loadNodePtyModule()
+      try {
+        const term = nodePty.spawn(input.shell, [], {
+          name: "xterm-256color",
+          cwd: input.cwd,
+          cols: input.cols,
+          rows: input.rows,
+          env: input.env,
+          useConpty: process.platform === "win32" ? true : undefined,
+        })
 
-      return wrapRuntimeHandle(term)
+        return wrapRuntimeHandle(term)
+      } catch (error) {
+        throw toPtyCreateError(error, input.shell)
+      }
     },
   }
 }

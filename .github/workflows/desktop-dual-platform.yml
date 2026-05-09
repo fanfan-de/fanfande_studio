@@ -1,0 +1,75 @@
+name: Desktop dual-platform verification
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  verify-desktop:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Verify product version
+        run: pnpm verify:versions
+
+      - name: Typecheck shared contracts
+        run: pnpm --filter @fanfande/shared typecheck
+
+      - name: Typecheck platform adapter
+        run: pnpm --filter @fanfande/platform typecheck
+
+      - name: Typecheck desktop
+        run: pnpm --filter fanfande-desktop-agent typecheck
+
+      - name: Typecheck agent
+        run: pnpm --filter fanfandeagent exec tsc --noEmit -p tsconfig.json
+
+      - name: Test desktop
+        run: pnpm --filter fanfande-desktop-agent test
+
+      - name: Test shared contracts
+        run: pnpm --filter @fanfande/shared test
+
+      - name: Test platform adapter
+        run: pnpm --filter @fanfande/platform test
+
+      - name: Test agent server
+        working-directory: packages/fanfandeagent
+        run: bun test Test/server.api.test.ts
+
+      - name: Package macOS
+        if: runner.os == 'macOS'
+        run: pnpm --filter fanfande-desktop-agent dist -- --mac --publish never
+
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        run: pnpm --filter fanfande-desktop-agent dist -- --win --publish never

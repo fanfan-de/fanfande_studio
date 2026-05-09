@@ -3,9 +3,11 @@ import { xdgData, xdgCache, xdgConfig, xdgState } from "xdg-basedir"
 import path from "path"
 import os from "os"
 
+const AGENT_DATA_DIR_ENV = "FANFANDE_AGENT_DATA_DIR"
 
-// 应用名称
+// 应用名称。未由 Electron 托管时保留旧路径名，避免开发环境数据迁移。
 const app: string = "opencode"
+const managedAgentDataDir = process.env[AGENT_DATA_DIR_ENV]?.trim()
 
 // 拼接出应用专属的系统路径
 // Global paths: {
@@ -14,10 +16,11 @@ const app: string = "opencode"
 //   config: "C:\\Users\\wb.xuedengwen\\.config\\opencode",
 //   state: "C:\\Users\\wb.xuedengwen\\.local\\state\\opencode",
 // }
-const data = path.join(xdgData!, app)
-const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
-const state = path.join(xdgState!, app)
+const data = managedAgentDataDir ? path.join(managedAgentDataDir, "data") : path.join(xdgData!, app)
+const cache = managedAgentDataDir ? path.join(managedAgentDataDir, "cache") : path.join(xdgCache!, app)
+const config = managedAgentDataDir ? path.join(managedAgentDataDir, "config") : path.join(xdgConfig!, app)
+const state = managedAgentDataDir ? path.join(managedAgentDataDir, "state") : path.join(xdgState!, app)
+const log = managedAgentDataDir ? path.join(managedAgentDataDir, "log") : path.join(data, "log")
 
 /*
 Global paths: {
@@ -40,9 +43,10 @@ export const Path = {
   get home() {
     return process.env.OPENCODE_TEST_HOME || os.homedir()
   },
+  root: managedAgentDataDir,
   data,
   bin: path.join(data, "bin"),
-  log: path.join(data, "log"),
+  log,
   cache,
   config,
   state,
@@ -54,6 +58,7 @@ export const Path = {
 //自动初始化目录 (Top-level Await)
 await Promise.all([
   fs.mkdir(Path.data, { recursive: true }),
+  fs.mkdir(Path.cache, { recursive: true }),
   fs.mkdir(Path.config, { recursive: true }),
   fs.mkdir(Path.state, { recursive: true }),
   fs.mkdir(Path.log, { recursive: true }),

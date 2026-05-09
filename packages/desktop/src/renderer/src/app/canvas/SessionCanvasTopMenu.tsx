@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { ExternalEditorMenuButton } from "../external-editor/ExternalEditorMenuButton"
 import { GitQuickMenuButton } from "../git/GitQuickMenuButton"
 import { ChevronDownIcon } from "../icons"
-import { getSessionWorkflowBadge } from "../session-workflow"
-import { SessionWorkflowBadge, ShellTopMenu, SideChatBadge } from "../shared-ui"
+import { ShellTopMenu, SideChatBadge } from "../shared-ui"
 import type {
   ComposerMcpOption,
   ComposerSkillOption,
@@ -370,7 +369,6 @@ export function SessionCanvasTopMenu({
   gitDirectory,
   isSavingToolPermissionMode,
   mcpOptions,
-  pendingPermissionRequests,
   selectedMcpServerIDs,
   selectedMcpServerLabel,
   onMcpServerToggle,
@@ -382,7 +380,6 @@ export function SessionCanvasTopMenu({
   selectedSkillLabel,
   onSkillToggle,
 }: SessionCanvasTopMenuProps) {
-  const workflowBadge = getSessionWorkflowBadge(activeSession?.workflow, pendingPermissionRequests)
   const readOnlySideChat = isSideChatSession(activeSession)
   const sessionTitle = activeSession?.title ?? ""
 
@@ -392,13 +389,12 @@ export function SessionCanvasTopMenu({
       as="div"
       className="session-canvas-top-menu"
       contentClassName="panel-toolbar-copy session-canvas-top-menu-copy"
-      content={sessionTitle || readOnlySideChat || workflowBadge ? (
+      content={sessionTitle || readOnlySideChat ? (
         <div className="session-canvas-top-menu-copy-main">
           {sessionTitle ? <span className="label" title={sessionTitle}>{sessionTitle}</span> : null}
-          {readOnlySideChat || workflowBadge ? (
+          {readOnlySideChat ? (
             <div className="session-canvas-top-menu-copy-status">
               {readOnlySideChat ? <SideChatBadge /> : null}
-              <SessionWorkflowBadge workflow={workflowBadge} />
             </div>
           ) : null}
         </div>

@@ -8,6 +8,7 @@ import {
 } from "../components"
 import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
+import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBadgeInfo } from "../session-workflow"
 import type { AssistantTraceVisibility, ComposerDraftState, ToolPermissionMode } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { useProjectComposer } from "../use-project-composer"
@@ -39,6 +40,16 @@ const PANE_DROP_PREVIEW_GAP = 12
 const PANE_DROP_PREVIEW_HALF_SPAN = `calc(50% - ${PANE_DROP_PREVIEW_INSET + PANE_DROP_PREVIEW_GAP / 2}px)`
 const PANE_DROP_PREVIEW_FULL_SPAN = `calc(100% - ${PANE_DROP_PREVIEW_INSET * 2}px)`
 const PANE_DROP_PREVIEW_TRAILING_OFFSET = `calc(50% + ${PANE_DROP_PREVIEW_GAP / 2}px)`
+
+function ComposerPlanModeNotice({ workflow }: { workflow: SessionWorkflowBadgeInfo }) {
+  return (
+    <div className="composer-plan-mode-notice" role="status" title={workflow.description}>
+      <span className="composer-plan-mode-dot" aria-hidden="true" />
+      <span className="composer-plan-mode-label">{workflow.label}</span>
+      <span className="composer-plan-mode-detail">Read-only research</span>
+    </div>
+  )
+}
 
 function getPaneDropPreviewStyles(position: PaneDropPosition): { current: CSSProperties; incoming: CSSProperties } {
   switch (position) {
@@ -151,6 +162,7 @@ export interface WorkbenchPaneSurfaceProps {
   onPaneTabPointerDrop: (clientX: number, clientY: number) => void
   onPaneTabDrop: (paneID: string, position: PaneDropPosition) => void
   onAskUserQuestionAnswer: AgentWorkspaceState["handleAskUserQuestionAnswer"]
+  onApproveProposedPlan: AgentWorkspaceState["handleApproveProposedPlan"]
   onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
   onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
   onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
@@ -160,6 +172,7 @@ export interface WorkbenchPaneSurfaceProps {
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onCancelSend: AgentWorkspaceState["handleCancelSend"]
+  onPlanModeToggle: AgentWorkspaceState["handlePlanModeToggle"]
   onSend: AgentWorkspaceState["handleSend"]
   onSessionModelSelectionChange: AgentWorkspaceState["handleSessionModelSelectionChange"]
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
@@ -198,6 +211,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onPaneTabPointerDrop,
   onPaneTabDrop,
   onAskUserQuestionAnswer,
+  onApproveProposedPlan,
   onPermissionRequestResponse,
   onToolPermissionModeChange,
   onPickComposerAttachments,
@@ -207,6 +221,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onSelectCreateSessionTab,
   onSelectSessionTab,
   onCancelSend,
+  onPlanModeToggle,
   onSend,
   onSessionModelSelectionChange,
   onSetDraft,
@@ -224,6 +239,17 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
     sessionID: pane.sessionID,
   })
   const readOnlySideChat = isSideChatSession(pane.activeSession)
+  const composerWorkflowBadge = !readOnlySideChat ? getSessionWorkflowBadge(pane.activeSession?.workflow) : null
+  const createSessionWorkflowBadge =
+    pane.createSessionInitialWorkflowMode === "planning"
+      ? getSessionWorkflowBadge({
+          mode: "planning",
+          plan: {
+            status: "idle",
+            updatedAt: 0,
+          },
+        })
+      : null
 
   return (
     <section
@@ -328,6 +354,13 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                       tabKey: pane.tabKey,
                     })
                   }
+                  onPlanModeToggle={
+                    pane.createSessionTabID
+                      ? () => void onPlanModeToggle({ createSessionTabID: pane.createSessionTabID })
+                      : readOnlySideChat
+                      ? undefined
+                      : () => void onPlanModeToggle({ sessionID: pane.sessionID })
+                  }
                   onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
                   onCancelSend={() => void onCancelSend({ tabKey: pane.tabKey })}
                   onSend={(draftStateOverride) =>
@@ -344,6 +377,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                     })
                   }
                 />
+                {createSessionWorkflowBadge ? <ComposerPlanModeNotice workflow={createSessionWorkflowBadge} /> : null}
                 <ComposerUtilityBar
                   contextWindow={composer.contextWindow}
                   gitDirectory={pane.workspace?.directory ?? null}
@@ -435,6 +469,17 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                     waitForPendingModelSelection: input.waitForPendingModelSelection,
                   })
                 }
+                onProposedPlanConfirm={(input) =>
+                  onApproveProposedPlan({
+                    planMarkdown: input.planMarkdown,
+                    selectedReasoningEffort: composer.selectedReasoningEffort,
+                    selectedModel: composer.selectedModel,
+                    selectedSkillIDs: composer.selectedSkillIDs,
+                    sessionID: pane.sessionID,
+                    tabKey: pane.tabKey,
+                    waitForPendingModelSelection: composer.awaitPendingModelSelection,
+                  })
+                }
                 onPermissionRequestResponse={onPermissionRequestResponse}
               />
               <div className="composer-stack">
@@ -483,6 +528,11 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                       tabKey: pane.tabKey,
                     })
                   }
+                  onPlanModeToggle={
+                    readOnlySideChat
+                      ? undefined
+                      : () => void onPlanModeToggle({ sessionID: pane.sessionID })
+                  }
                   onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
                   onCancelSend={() => void onCancelSend({
                     sessionID: pane.sessionID,
@@ -502,6 +552,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                     })
                   }
                 />
+                {composerWorkflowBadge ? <ComposerPlanModeNotice workflow={composerWorkflowBadge} /> : null}
                 <ComposerUtilityBar
                   contextWindow={composer.contextWindow}
                   gitDirectory={pane.workspace?.directory ?? null}

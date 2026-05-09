@@ -105,6 +105,11 @@
   outline-offset: var(--focus-outline-offset);
 }
 
+.terminal-shell-picker-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .terminal-panel-toggle-button {
   width: 34px;
   min-width: 34px;
@@ -215,6 +220,11 @@
   background: var(--mix-seg-accent-soft-72-transparent-28);
 }
 
+.terminal-panel-create:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
 .terminal-tab-close svg,
 .terminal-panel-create svg,
 .terminal-panel-toggle-button svg {
@@ -283,6 +293,13 @@
 
 .terminal-empty-state p {
   margin: 0;
+}
+
+.terminal-empty-error {
+  max-width: min(680px, 100%);
+  color: var(--seg-danger);
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .terminal-tabs-list::-webkit-scrollbar {

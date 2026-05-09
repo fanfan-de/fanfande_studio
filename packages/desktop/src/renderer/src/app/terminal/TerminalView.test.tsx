@@ -22,7 +22,7 @@ const baseSession: TerminalSessionRecord = {
 }
 
 function renderTerminalView(input?: {
-  onInput?: (data: string) => void | Promise<void>
+  onInput?: (ptyID: string, data: string) => void | Promise<void>
   onResize?: (ptyID: string, rows: number, cols: number) => void
   onSnapshotChange?: (ptyID: string, input: { scrollTop?: number }) => void
   session?: TerminalSessionRecord
@@ -146,5 +146,30 @@ describe("TerminalView", () => {
 
     expect(container.querySelector(".terminal-xterm")).toHaveTextContent("boot live")
     expect(subscribeToTerminalStream).toHaveBeenCalledTimes(1)
+  })
+
+  it("routes keyboard input to the mounted terminal session", async () => {
+    const onInput = vi.fn()
+    const { container } = render(renderTerminalView({
+      onInput,
+      session: {
+        ...baseSession,
+        ptyID: "pty-focused",
+      },
+    }))
+
+    await flushTimer()
+
+    const terminal = container.querySelector(".terminal-xterm")
+    expect(terminal).not.toBeNull()
+
+    act(() => {
+      terminal?.dispatchEvent(new KeyboardEvent("keydown", {
+        bubbles: true,
+        key: "a",
+      }))
+    })
+
+    expect(onInput).toHaveBeenCalledWith("pty-focused", "a")
   })
 })

@@ -893,12 +893,12 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
   }
 
   async function handleOpenGlobalSkillsFolder() {
-    const openInExternalEditor = window.desktop?.openInExternalEditor
+    const openPath = window.desktop?.openPath
     if (!globalSkillsRoot.trim()) return
 
     setGlobalSkillsMessage(null)
 
-    if (!openInExternalEditor) {
+    if (!openPath) {
       setGlobalSkillsMessage({
         tone: "error",
         text: "Opening the skills folder is unavailable in this desktop shell.",
@@ -907,9 +907,8 @@ export function useGlobalSkills({ onSkillsUpdated }: UseGlobalSkillsOptions = {}
     }
 
     try {
-      await openInExternalEditor({
+      await openPath({
         targetPath: globalSkillsRoot,
-        editorID: "explorer",
       })
     } catch (error) {
       setGlobalSkillsMessage({

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"],
+    "typeRoots": ["../desktop/node_modules/@types", "../fanfandeagent/node_modules/@types"],
+    "paths": {
+      "vitest": ["../fanfandeagent/node_modules/vitest"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.test.ts"]
+}

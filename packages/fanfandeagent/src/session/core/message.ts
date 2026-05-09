@@ -76,8 +76,8 @@ function decodeDataUrlAttachment(url: string) {
         throw new Error("Attachment data URL must use base64 encoding.")
     }
 
-    const mediaType = match[1].trim()
-    const base64 = match[2].replace(/\s/g, "")
+    const mediaType = match[1]?.trim() ?? ""
+    const base64 = match[2]?.replace(/\s/g, "") ?? ""
     if (!mediaType || !base64) {
         throw new Error("Attachment data URL is missing media type or data.")
     }
@@ -619,6 +619,7 @@ export const User = Base.extend({
         modelID: z.string(),
     }),
     system: z.string().optional(),
+    displayText: z.string().optional(),
     skills: z.array(z.string()).optional(),
     tools: z.record(z.string(), z.boolean()).optional(),
     internal: z.boolean().optional(),
@@ -1096,4 +1097,3 @@ export async function toModelMessages(
 
     return result
 }
-

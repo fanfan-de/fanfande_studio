@@ -1587,7 +1587,10 @@ function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
   const attachmentNames = extractAttachmentNames(message.parts)
   const attachments = attachmentNames.map((name) => ({ name }))
   const questionAnswer = extractQuestionAnswer(message.parts)
-  const presentation = extractReferencedFilePathsFromText(textParts.join("\n\n").trim())
+  const persistedDisplayText = readString(message.info.displayText).trim()
+  const presentation = extractReferencedFilePathsFromText(
+    persistedDisplayText || textParts.join("\n\n").trim(),
+  )
 
   return buildUserTurn({
     id: message.info.id || createID("user"),

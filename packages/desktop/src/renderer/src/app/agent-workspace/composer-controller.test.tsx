@@ -1,10 +1,11 @@
 import { act, renderHook } from "@testing-library/react"
-import { useRef, useState } from "react"
+import { useRef, useState, type Dispatch, type SetStateAction } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import type {
   ComposerAttachment,
   ComposerDraftState,
+  CreateSessionTab,
   PendingAgentStream,
   PermissionRequest,
   SessionSummary,
@@ -41,19 +42,28 @@ function createWorkspace(session: SessionSummary): WorkspaceGroup {
   }
 }
 
-function applyUpdate<T>(setValue: (value: T) => void, current: T, update: T | ((value: T) => T)) {
-  setValue(typeof update === "function" ? (update as (value: T) => T)(current) : update)
+function applyUpdate<T>(setValue: Dispatch<SetStateAction<T>>, _current: T, update: T | ((value: T) => T)) {
+  setValue((current) => (typeof update === "function" ? (update as (value: T) => T)(current) : update))
 }
 
 function useComposerHarness(input?: {
   activeCreateSessionTabID?: string | null
   activeSessionID?: string | null
   activeTabKey?: string | null
+  createSessionInitialWorkflowMode?: "execution" | "planning"
 }) {
   const session = createSession("session-1")
   const workspace = createWorkspace(session)
   const [agentSessions, setAgentSessionsState] = useState<Record<string, string>>({})
   const [attachmentsByTabKey, setAttachmentsByTabKeyState] = useState<Record<string, ComposerAttachment[]>>({})
+  const [createSessionTabs, setCreateSessionTabsState] = useState<CreateSessionTab[]>([
+    {
+      id: "create-1",
+      initialWorkflowMode: input?.createSessionInitialWorkflowMode,
+      workspaceID: workspace.id,
+      title: "",
+    },
+  ])
   const [draftsByTabKey, setDraftsByTabKeyState] = useState<Record<string, ComposerDraftState>>({
     "session:session-1": createComposerDraftStateFromPlainText("Existing prompt"),
     "create-session:create-1": createComposerDraftStateFromPlainText("New prompt"),
@@ -66,14 +76,20 @@ function useComposerHarness(input?: {
   const pendingStreamsRef = useRef<Record<string, PendingAgentStream>>({})
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
   const createdSession = createSession("created-session-1")
-  const createSessionForWorkspace = useRef(vi.fn(async (targetWorkspace: WorkspaceGroup) => ({
-    backendSessionID: createdSession.id,
-    session: createdSession,
-    workspace: {
+  const createSessionForWorkspace = useRef(vi.fn(async (targetWorkspace: WorkspaceGroup) => {
+    const nextWorkspace = {
       ...targetWorkspace,
       sessions: [...targetWorkspace.sessions, createdSession],
-    },
-  }))).current
+    }
+    setWorkspacesState((current) =>
+      current.map((currentWorkspace) => currentWorkspace.id === targetWorkspace.id ? nextWorkspace : currentWorkspace),
+    )
+    return {
+      backendSessionID: createdSession.id,
+      session: createdSession,
+      workspace: nextWorkspace,
+    }
+  })).current
 
   const controller = useComposerController({
     activeCreateSessionTabID: input && "activeCreateSessionTabID" in input ? input.activeCreateSessionTabID ?? null : null,
@@ -88,13 +104,7 @@ function useComposerHarness(input?: {
     composerAttachmentsByTabKey: attachmentsByTabKey,
     composerDraftStateByTabKey: draftsByTabKey,
     createSessionForWorkspace,
-    createSessionTabs: [
-      {
-        id: "create-1",
-        workspaceID: workspace.id,
-        title: "",
-      },
-    ],
+    createSessionTabs,
     isSendingByTabKey,
     loadPendingPermissionRequestsForSession: vi.fn(async () => undefined),
     loadSessionDiffForSession: vi.fn(async () => undefined),
@@ -111,6 +121,7 @@ function useComposerHarness(input?: {
     setAgentSessions: (update) => applyUpdate(setAgentSessionsState, agentSessions, update),
     setComposerAttachmentsByTabKey: (update) => applyUpdate(setAttachmentsByTabKeyState, attachmentsByTabKey, update),
     setComposerDraftStateByTabKey: (update) => applyUpdate(setDraftsByTabKeyState, draftsByTabKey, update),
+    setCreateSessionTabs: (update) => applyUpdate(setCreateSessionTabsState, createSessionTabs, update),
     setIsSendingByTabKey: (update) => applyUpdate(setIsSendingByTabKeyState, isSendingByTabKey, update),
     setPendingPermissionRequestsBySession: (update) =>
       applyUpdate(setPendingPermissionRequestsBySessionState, pendingPermissionRequestsBySession, update),
@@ -126,8 +137,10 @@ function useComposerHarness(input?: {
     attachmentsByTabKey,
     controller,
     createSessionForWorkspace,
+    createSessionTabs,
     pendingStreamsRef,
     turnsRef,
+    workspaces,
   }
 }
 
@@ -171,6 +184,189 @@ describe("composer controller", () => {
       }),
     )
     expect(result.current.turnsRef.current["created-session-1"]).toHaveLength(2)
+  })
+
+  it("toggles plan mode for an existing session", async () => {
+    const previousDesktop = window.desktop
+    const updateSessionWorkflow = vi.fn(async () => ({
+      requestId: "request-1",
+      session: {
+        ...createSession("session-1"),
+        workflow: {
+          mode: "planning" as const,
+          plan: {
+            status: "idle" as const,
+            updatedAt: 10,
+          },
+        },
+      },
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        updateSessionWorkflow,
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() => useComposerHarness())
+
+      await act(async () => {
+        await result.current.controller.handlePlanModeToggle({ sessionID: "session-1" })
+      })
+
+      expect(updateSessionWorkflow).toHaveBeenCalledWith({
+        sessionID: "session-1",
+        action: "enter-plan",
+      })
+      expect(result.current.workspaces[0]?.sessions[0]?.workflow?.mode).toBe("planning")
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("toggles pending plan mode on a create-session tab without touching the backend", async () => {
+    const previousDesktop = window.desktop
+    const updateSessionWorkflow = vi.fn()
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        updateSessionWorkflow,
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() =>
+        useComposerHarness({
+          activeCreateSessionTabID: "create-1",
+          activeSessionID: null,
+          activeTabKey: "create-session:create-1",
+        }),
+      )
+
+      await act(async () => {
+        await result.current.controller.handlePlanModeToggle({ createSessionTabID: "create-1" })
+      })
+
+      expect(updateSessionWorkflow).not.toHaveBeenCalled()
+      expect(result.current.createSessionTabs[0]?.initialWorkflowMode).toBe("planning")
+
+      await act(async () => {
+        await result.current.controller.handlePlanModeToggle({ createSessionTabID: "create-1" })
+      })
+
+      expect(result.current.createSessionTabs[0]?.initialWorkflowMode).toBe("execution")
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("enters plan mode before sending the first prompt from a pending planning create-session tab", async () => {
+    const previousDesktop = window.desktop
+    const updateSessionWorkflow = vi.fn(async () => ({
+      requestId: "request-1",
+      session: {
+        ...createSession("created-session-1"),
+        workflow: {
+          mode: "planning" as const,
+          plan: {
+            status: "idle" as const,
+            updatedAt: 10,
+          },
+        },
+      },
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        updateSessionWorkflow,
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() =>
+        useComposerHarness({
+          activeCreateSessionTabID: "create-1",
+          activeSessionID: null,
+          activeTabKey: "create-session:create-1",
+          createSessionInitialWorkflowMode: "planning",
+        }),
+      )
+
+      await act(async () => {
+        await result.current.controller.handleSend()
+      })
+
+      expect(result.current.createSessionForWorkspace).toHaveBeenCalled()
+      expect(updateSessionWorkflow).toHaveBeenCalledWith({
+        sessionID: "created-session-1",
+        action: "enter-plan",
+      })
+      expect(result.current.turnsRef.current["created-session-1"]).toHaveLength(2)
+      expect(result.current.workspaces[0]?.sessions.find((session) => session.id === "created-session-1")?.workflow?.mode).toBe(
+        "planning",
+      )
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("does not send the first create-session prompt when entering plan mode fails", async () => {
+    const previousDesktop = window.desktop
+    const updateSessionWorkflow = vi.fn(async () => {
+      throw new Error("Cannot enter plan mode")
+    })
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        updateSessionWorkflow,
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() =>
+        useComposerHarness({
+          activeCreateSessionTabID: "create-1",
+          activeSessionID: null,
+          activeTabKey: "create-session:create-1",
+          createSessionInitialWorkflowMode: "planning",
+        }),
+      )
+
+      await act(async () => {
+        await result.current.controller.handleSend()
+      })
+
+      expect(updateSessionWorkflow).toHaveBeenCalledWith({
+        sessionID: "created-session-1",
+        action: "enter-plan",
+      })
+      expect(result.current.turnsRef.current["created-session-1"]).toHaveLength(1)
+      expect(result.current.turnsRef.current["created-session-1"]?.[0]).toMatchObject({
+        kind: "assistant",
+        runtime: {
+          errorMessage: "Cannot enter plan mode",
+        },
+      })
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
   })
 
   it("cancels the active pending stream for the current session", async () => {

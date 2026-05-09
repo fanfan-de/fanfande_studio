@@ -2,20 +2,20 @@ import { describe, expect, it } from "vitest"
 import { getSessionWorkflowBadge } from "./session-workflow"
 
 describe("session workflow badges", () => {
-  it("summarizes pending plan approval without legacy progress details", () => {
+  it("only surfaces the active planning mode", () => {
     const badge = getSessionWorkflowBadge({
       mode: "planning",
       plan: {
-        status: "pending-approval",
+        status: "draft",
         updatedAt: 1,
       },
     })
 
-    expect(badge?.tone).toBe("pending")
-    expect(badge?.shortLabel).toBe("Pending")
+    expect(badge?.tone).toBe("planning")
+    expect(badge?.shortLabel).toBe("Planning")
   })
 
-  it("keeps approved plan badges", () => {
+  it("does not show execution-only plan state as a separate mode", () => {
     const badge = getSessionWorkflowBadge({
       mode: "execution",
       plan: {
@@ -24,7 +24,6 @@ describe("session workflow badges", () => {
       },
     })
 
-    expect(badge?.tone).toBe("approved")
-    expect(badge?.shortLabel).toBe("Approved plan")
+    expect(badge).toBeNull()
   })
 })

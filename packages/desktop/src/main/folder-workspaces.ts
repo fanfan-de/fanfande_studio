@@ -1,11 +1,12 @@
 import fs from "node:fs"
+import { normalizeComparablePath } from "@fanfande/platform"
 import path from "node:path"
 import type { AgentFolderWorkspace, AgentProjectInfo, AgentProjectWorkspace } from "./types"
 
 function normalizePath(input: string) {
   const resolved = path.resolve(input)
   const normalized = path.normalize(resolved)
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized
+  return normalizeComparablePath(normalized)
 }
 
 function samePath(left: string, right: string) {

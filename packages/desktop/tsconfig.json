@@ -10,7 +10,22 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "types": ["node", "vite/client", "vitest/globals"],
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@fanfande/shared": ["../shared/src/index.ts"],
+      "@fanfande/shared/*": ["../shared/src/*"],
+      "@fanfande/platform": ["../platform/src/index.ts"],
+      "zod": ["../fanfandeagent/node_modules/zod"]
+    }
   },
-  "include": ["electron.vite.config.ts", "src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts", "vitest.config.ts"]
+  "include": [
+    "electron.vite.config.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts",
+    "vitest.config.ts",
+    "../shared/src/**/*.ts",
+    "../platform/src/**/*.ts"
+  ],
+  "exclude": ["../shared/src/**/*.test.ts", "../platform/src/**/*.test.ts"]
 }

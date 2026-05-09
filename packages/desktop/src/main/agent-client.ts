@@ -1,4 +1,5 @@
-import type { AgentConfig, AgentEnvelope, AgentSSEEvent } from "./types"
+import { ApiEnvelopeSchema, SessionEventSchema, type ApiEnvelope, type SessionEvent } from "@fanfande/shared"
+import type { AgentConfig } from "./types"
 
 const DEFAULT_AGENT_BASE_URL = "http://127.0.0.1:4096"
 
@@ -48,14 +49,17 @@ export function resolveAgentWebSocketURL(
 
 export async function requestAgentJSON<T>(pathname: string, init?: RequestInit) {
   const response = await fetch(resolveAgentURL(pathname), init)
-  const envelope = (await response.json().catch(() => null)) as AgentEnvelope<T> | null
+  const rawEnvelope = await response.json().catch(() => null)
+  const parsedEnvelope = ApiEnvelopeSchema.safeParse(rawEnvelope)
+  const envelope = parsedEnvelope.success ? (parsedEnvelope.data as ApiEnvelope<T>) : null
 
   if (!response.ok || !envelope || envelope.success !== true || envelope.data === undefined) {
     const fallback = `Agent API request failed (${response.status})`
+    const apiError = envelope?.success === false ? envelope.error : undefined
     throw new AgentAPIError({
-      message: envelope?.error?.message || fallback,
+      message: apiError?.message || fallback,
       status: response.status,
-      code: envelope?.error?.code,
+      code: apiError?.code,
       requestId: response.headers.get("x-request-id") ?? undefined,
     })
   }
@@ -66,8 +70,8 @@ export async function requestAgentJSON<T>(pathname: string, init?: RequestInit) 
   }
 }
 
-export function parseSSE(raw: string): AgentSSEEvent[] {
-  const events: AgentSSEEvent[] = []
+export function parseSSE(raw: string): SessionEvent[] {
+  const events: SessionEvent[] = []
 
   for (const block of raw.split(/\r?\n\r?\n/)) {
     const parsed = parseSSEBlock(block)
@@ -77,7 +81,7 @@ export function parseSSE(raw: string): AgentSSEEvent[] {
   return events
 }
 
-function parseSSEBlock(block: string): AgentSSEEvent | null {
+function parseSSEBlock(block: string): SessionEvent | null {
   if (!block.trim()) return null
 
   let eventID = ""
@@ -120,15 +124,18 @@ function parseSSEBlock(block: string): AgentSSEEvent | null {
     data = payload
   }
 
-  return {
+  const event = {
     ...(eventID ? { id: eventID } : {}),
     event: eventName,
     data,
   }
+
+  const parsed = SessionEventSchema.safeParse(event)
+  return parsed.success ? parsed.data : null
 }
 
 export function consumeSSEBuffer(raw: string, flush = false) {
-  const events: AgentSSEEvent[] = []
+  const events: SessionEvent[] = []
   const boundaryPattern = /\r?\n\r?\n/g
   let lastIndex = 0
   let match: RegExpExecArray | null
@@ -157,7 +164,7 @@ export function consumeSSEBuffer(raw: string, flush = false) {
 
 export async function readAgentSSEStream(
   response: Response,
-  onEvent: (event: AgentSSEEvent) => void,
+  onEvent: (event: SessionEvent) => void,
 ): Promise<void> {
   const reader = response.body?.getReader()
   if (!reader) {

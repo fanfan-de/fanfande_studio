@@ -32,11 +32,6 @@ export const SIDECHAT_AGENT_NAME = "sidechat"
 
 const PLAN_AGENT_TOOL_POLICY: Record<string, boolean> = {
   AskUserQuestion: true,
-  ExitPlanMode: true,
-  TaskCreate: true,
-  TaskGet: true,
-  TaskList: true,
-  TaskUpdate: true,
   "read-file": true,
   "read_background_task": true,
   "read_subagent": true,

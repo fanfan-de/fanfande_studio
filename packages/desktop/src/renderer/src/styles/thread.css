@@ -1544,6 +1544,55 @@ body.is-image-lightbox-open {
   font-size: 13px;
 }
 
+.proposed-plan-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 14px;
+  border: 1px solid var(--seg-border);
+  border-radius: var(--seg-radius-sm);
+  background: var(--semantic-proposed-plan-card-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.proposed-plan-card-body {
+  min-width: 0;
+}
+
+.proposed-plan-markdown {
+  margin: 0;
+}
+
+.proposed-plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--seg-border);
+}
+
+.proposed-plan-actions .primary-button,
+.proposed-plan-actions .secondary-button {
+  min-height: 30px;
+  padding: 0 12px;
+}
+
+.proposed-plan-state,
+.proposed-plan-error {
+  margin-right: auto;
+  color: var(--seg-text-3);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.proposed-plan-error {
+  color: var(--danger, #b42318);
+}
+
 .trace-kind-tool {
   border-left-color: var(--seg-accent);
 }

@@ -68,6 +68,7 @@ interface ComposerProps {
   onModelChange: (value: string | null) => void | Promise<void>
   onPickAttachments: () => void | Promise<void>
   onPasteImageAttachments?: (images: ComposerPastedImageAttachment[]) => void | Promise<void>
+  onPlanModeToggle?: () => void | Promise<void>
   onReasoningEffortChange: (value: OpenAIReasoningEffort | null) => void
   onRemoveAttachment: (path: string) => void
   onCancelSend?: () => void | Promise<void>
@@ -88,7 +89,7 @@ interface ComposerProps {
 }
 
 type ComposerMenuKey = "model" | "reasoning" | null
-type SlashCommandKey = "attach" | "file" | "mcp" | "model" | "reasoning" | "skill"
+type SlashCommandKey = "attach" | "file" | "mcp" | "model" | "plan" | "reasoning" | "skill"
 
 interface ComposerModelProviderGroup {
   matchingOptions: ComposerModelOption[]
@@ -193,6 +194,11 @@ const SLASH_COMMANDS: Array<{
     description: "Open the attachment picker for images or PDFs.",
   },
   {
+    value: "plan",
+    label: "/plan",
+    description: "Toggle Plan Mode for this session.",
+  },
+  {
     value: "model",
     label: "/model",
     description: "Open the model picker.",
@@ -203,6 +209,45 @@ const SLASH_COMMANDS: Array<{
     description: "Open the reasoning-effort picker.",
   },
 ]
+
+export function getVisibleComposerSlashCommandLabels({
+  hasPlanModeToggle = false,
+  query = "",
+  reasoningEffortOptionCount = 0,
+  showModelSelector = false,
+  showProjectTagCommands = false,
+}: {
+  hasPlanModeToggle?: boolean
+  query?: string
+  reasoningEffortOptionCount?: number
+  showModelSelector?: boolean
+  showProjectTagCommands?: boolean
+}) {
+  const normalizedQuery = query.trim().toLowerCase()
+
+  return SLASH_COMMANDS
+    .filter((command) => command.label.slice(1).includes(normalizedQuery))
+    .filter((command) => {
+      if ((command.value === "skill" || command.value === "mcp") && !showProjectTagCommands) {
+        return false
+      }
+
+      if (command.value === "model" && !showModelSelector) {
+        return false
+      }
+
+      if (command.value === "reasoning" && (!showModelSelector || reasoningEffortOptionCount === 0)) {
+        return false
+      }
+
+      if (command.value === "plan" && !hasPlanModeToggle) {
+        return false
+      }
+
+      return true
+    })
+    .map((command) => command.label)
+}
 
 
 function isComposerSubmitKeyEvent(event: KeyboardEvent<HTMLElement>, isComposing: boolean) {
@@ -807,6 +852,7 @@ export function Composer({
   onModelChange,
   onPickAttachments,
   onPasteImageAttachments,
+  onPlanModeToggle,
   onReasoningEffortChange,
   onRemoveAttachment,
   onCancelSend,
@@ -869,23 +915,16 @@ export function Composer({
   }
 
   function buildSlashCommandItems(query: string) {
+    const visibleLabels = new Set(getVisibleComposerSlashCommandLabels({
+      hasPlanModeToggle: Boolean(onPlanModeToggle),
+      query,
+      reasoningEffortOptionCount: reasoningEffortOptions.length,
+      showModelSelector: Boolean(showModelSelector),
+      showProjectTagCommands: Boolean(showProjectTagCommands),
+    }))
+
     return SLASH_COMMANDS
-      .filter((command) => command.label.slice(1).includes(query.trim().toLowerCase()))
-      .filter((command) => {
-        if ((command.value === "skill" || command.value === "mcp") && !showProjectTagCommands) {
-          return false
-        }
-
-        if (command.value === "model" && !showModelSelector) {
-          return false
-        }
-
-        if (command.value === "reasoning" && (!showModelSelector || reasoningEffortOptions.length === 0)) {
-          return false
-        }
-
-        return true
-      })
+      .filter((command) => visibleLabels.has(command.label))
       .map((command) => ({
         type: "command",
         key: `command:${command.value}`,
@@ -1211,6 +1250,7 @@ export function Composer({
   }, [
     commandMenuState,
     mcpOptions,
+    onPlanModeToggle,
     reasoningEffortOptions.length,
     selectedMcpServerIDs,
     selectedSkillIDs,
@@ -1305,6 +1345,10 @@ export function Composer({
     if (command === "reasoning") {
       setOpenMenu("reasoning")
       return
+    }
+
+    if (command === "plan") {
+      void onPlanModeToggle?.()
     }
 
   }

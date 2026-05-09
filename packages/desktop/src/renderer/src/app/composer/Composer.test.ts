@@ -4,6 +4,7 @@ import {
   buildMenuStyle,
   createComposerPastedImageAttachments,
   formatComposerAbsoluteFilePath,
+  getVisibleComposerSlashCommandLabels,
   getComposerKeyAction,
   handleComposerCommandMenuMouseDown,
   readComposerClipboardImageFiles,
@@ -210,6 +211,16 @@ describe("getComposerKeyAction", () => {
       type: "send",
       preventDefault: true,
     })
+  })
+})
+
+describe("getVisibleComposerSlashCommandLabels", () => {
+  it("shows /plan when plan mode toggling is available", () => {
+    expect(getVisibleComposerSlashCommandLabels({ hasPlanModeToggle: true })).toContain("/plan")
+  })
+
+  it("hides /plan when plan mode toggling is unavailable", () => {
+    expect(getVisibleComposerSlashCommandLabels({ hasPlanModeToggle: false })).not.toContain("/plan")
   })
 })
 
