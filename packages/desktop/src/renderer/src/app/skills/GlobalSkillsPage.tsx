@@ -25,7 +25,7 @@ import { ShellTopMenu } from "../shared-ui"
 import type { GlobalSkillTreeNode, SkillGitInstallPreview } from "../types"
 import type { GlobalSkillFolderOption } from "../use-global-skills"
 
-type CreateGlobalSkillDraftKind = "skill" | "folder"
+export type CreateGlobalSkillDraftKind = "skill" | "folder"
 
 interface GlobalSkillsPageProps {
   creatingGlobalSkillName: string
@@ -71,6 +71,7 @@ interface GlobalSkillsPageProps {
   selectedFilePath: string | null
   selectedGitInstallSkillIDs: string[]
   selectedSkillDirectoryName: string | null
+  hideNavigator?: boolean
   windowControls?: ReactNode
   onChange: (value: string) => void
   onCreateGlobalSkill: () => void | Promise<void>
@@ -104,7 +105,7 @@ interface GlobalSkillsPageProps {
   onSave: () => void | Promise<void>
 }
 
-interface GlobalSkillsNavigatorProps {
+export interface GlobalSkillsNavigatorProps {
   creatingGlobalSkillName: string
   creatingGlobalSkillDraftKind: CreateGlobalSkillDraftKind
   creatingGlobalSkillParentDirectory: string | null
@@ -622,7 +623,7 @@ function GlobalSkillsTreeNodeRow({
   )
 }
 
-function GlobalSkillsNavigator({
+export function GlobalSkillsNavigator({
   creatingGlobalSkillName,
   creatingGlobalSkillDraftKind,
   creatingGlobalSkillParentDirectory,
@@ -1205,6 +1206,7 @@ export function GlobalSkillsPage({
   selectedFilePath,
   selectedGitInstallSkillIDs,
   selectedSkillDirectoryName,
+  hideNavigator = false,
   windowControls,
   onChange,
   onCreateGlobalSkill,
@@ -1256,42 +1258,47 @@ export function GlobalSkillsPage({
         trailingClassName="prompt-presets-top-menu-window-controls"
       />
 
-      <div className="settings-page-main is-services global-skills-page-main">
-        <section className="settings-services-layout global-skills-page-layout" aria-label="Global skill layout">
-          <div className="settings-service-list-panel global-skills-library-panel">
-            <GlobalSkillsNavigator
-              creatingGlobalSkillName={creatingGlobalSkillName}
-              creatingGlobalSkillDraftKind={creatingGlobalSkillDraftKind}
-              creatingGlobalSkillParentDirectory={creatingGlobalSkillParentDirectory}
-              deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
-              expandedSkillPaths={expandedSkillPaths}
-              globalSkillsRoot={globalSkillsRoot}
-              globalSkillsTree={globalSkillsTree}
-              isCreateGlobalSkillDraftVisible={isCreateGlobalSkillDraftVisible}
-              isCreatingGlobalSkill={isCreatingGlobalSkill}
-              isInstallingLocalSkill={isInstallingLocalSkill}
-              isLoadingSkillsTree={isLoadingSkillsTree}
-              renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
-              renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
-              renamingGlobalSkillName={renamingGlobalSkillName}
-              selectedGlobalSkillFilePath={selectedFilePath}
-              onCreateGlobalSkill={onCreateGlobalSkill}
-              onCreateGlobalSkillDraftCancel={onCreateGlobalSkillDraftCancel}
-              onCreateGlobalSkillDraftChange={onCreateGlobalSkillDraftChange}
-              onCreateGlobalSkillDraftStart={onCreateGlobalSkillDraftStart}
-              onDeleteGlobalSkill={onDeleteGlobalSkill}
-              onGitInstallDialogOpen={onGitInstallDialogOpen}
-              onGlobalSkillDirectoryToggle={onGlobalSkillDirectoryToggle}
-              onGlobalSkillFileSelect={onGlobalSkillFileSelect}
-              onLocalInstallDialogOpen={onLocalInstallDialogOpen}
-              onMoveGlobalSkillDirectoryStart={onMoveGlobalSkillDirectoryStart}
-              onOpenGlobalSkillsFolder={onOpenGlobalSkillsFolder}
-              onRenameGlobalSkill={onRenameGlobalSkill}
-              onRenameGlobalSkillDraftCancel={onRenameGlobalSkillDraftCancel}
-              onRenameGlobalSkillDraftChange={onRenameGlobalSkillDraftChange}
-              onRenameGlobalSkillDraftStart={onRenameGlobalSkillDraftStart}
-            />
-          </div>
+      <div className={hideNavigator ? "settings-page-main is-services global-skills-page-main is-sidebar-hosted" : "settings-page-main is-services global-skills-page-main"}>
+        <section
+          className={hideNavigator ? "settings-services-layout global-skills-page-layout is-sidebar-hosted" : "settings-services-layout global-skills-page-layout"}
+          aria-label="Global skill layout"
+        >
+          {!hideNavigator ? (
+            <div className="settings-service-list-panel global-skills-library-panel">
+              <GlobalSkillsNavigator
+                creatingGlobalSkillName={creatingGlobalSkillName}
+                creatingGlobalSkillDraftKind={creatingGlobalSkillDraftKind}
+                creatingGlobalSkillParentDirectory={creatingGlobalSkillParentDirectory}
+                deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
+                expandedSkillPaths={expandedSkillPaths}
+                globalSkillsRoot={globalSkillsRoot}
+                globalSkillsTree={globalSkillsTree}
+                isCreateGlobalSkillDraftVisible={isCreateGlobalSkillDraftVisible}
+                isCreatingGlobalSkill={isCreatingGlobalSkill}
+                isInstallingLocalSkill={isInstallingLocalSkill}
+                isLoadingSkillsTree={isLoadingSkillsTree}
+                renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
+                renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
+                renamingGlobalSkillName={renamingGlobalSkillName}
+                selectedGlobalSkillFilePath={selectedFilePath}
+                onCreateGlobalSkill={onCreateGlobalSkill}
+                onCreateGlobalSkillDraftCancel={onCreateGlobalSkillDraftCancel}
+                onCreateGlobalSkillDraftChange={onCreateGlobalSkillDraftChange}
+                onCreateGlobalSkillDraftStart={onCreateGlobalSkillDraftStart}
+                onDeleteGlobalSkill={onDeleteGlobalSkill}
+                onGitInstallDialogOpen={onGitInstallDialogOpen}
+                onGlobalSkillDirectoryToggle={onGlobalSkillDirectoryToggle}
+                onGlobalSkillFileSelect={onGlobalSkillFileSelect}
+                onLocalInstallDialogOpen={onLocalInstallDialogOpen}
+                onMoveGlobalSkillDirectoryStart={onMoveGlobalSkillDirectoryStart}
+                onOpenGlobalSkillsFolder={onOpenGlobalSkillsFolder}
+                onRenameGlobalSkill={onRenameGlobalSkill}
+                onRenameGlobalSkillDraftCancel={onRenameGlobalSkillDraftCancel}
+                onRenameGlobalSkillDraftChange={onRenameGlobalSkillDraftChange}
+                onRenameGlobalSkillDraftStart={onRenameGlobalSkillDraftStart}
+              />
+            </div>
+          ) : null}
 
           <div className="settings-service-detail-panel global-skills-detail-panel">
             <GlobalSkillsCanvas

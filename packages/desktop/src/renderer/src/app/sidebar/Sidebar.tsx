@@ -15,7 +15,11 @@ import {
   SideChatIcon,
   SortIcon
 } from "../icons"
+import { McpServersSidebarView, type McpServersSidebarViewProps } from "../mcp/McpServersPage"
+import { PromptPresetsSidebarView, type PromptPresetsSidebarViewProps } from "../prompts/PromptPresetsPage"
 import { ShellTopMenu, SidebarToggleButton } from "../shared-ui"
+import { GlobalSkillsNavigator, type GlobalSkillsNavigatorProps } from "../skills/GlobalSkillsPage"
+import { BuiltinToolsSidebarView, type BuiltinToolsSidebarViewProps } from "../tools/BuiltinToolsPage"
 import type {
   GlobalSkillTreeNode,
   LeftSidebarView,
@@ -36,25 +40,17 @@ const workspaceModeOptions = [
 interface SidebarProps {
   activeSessionID: string | null
   activeView: LeftSidebarView
-  deletingGlobalSkillDirectory: string | null
   deletingSessionID: string | null
   expandedFolderIDs: string[]
-  expandedSkillPaths: string[]
-  creatingGlobalSkillName: string
-  globalSkillsRoot: string
-  globalSkillsTree: GlobalSkillTreeNode[]
+  globalSkillsNavigatorProps: GlobalSkillsNavigatorProps
   hoveredFolderID: string | null
-  isCreateGlobalSkillDraftVisible: boolean
-  isCreatingGlobalSkill: boolean
   isCreatingProject: boolean
   isCreatingSession: boolean
-  isLoadingSkillsTree: boolean
   isSettingsOpen: boolean
-  renamingGlobalSkillDirectory: string | null
-  renamingGlobalSkillDraftDirectory: string | null
-  renamingGlobalSkillName: string
-  selectedGlobalSkillFilePath: string | null
+  mcpServersSidebarProps: McpServersSidebarViewProps
+  promptPresetsSidebarProps: PromptPresetsSidebarViewProps
   showSidebarToggleButton: boolean
+  builtinToolsSidebarProps: BuiltinToolsSidebarViewProps
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
   runningSessionIDs: string[]
   selectedFolderID: string | null
@@ -62,17 +58,6 @@ interface SidebarProps {
   visibleCanvasSessionIDs: string[]
   workspaces: WorkspaceGroup[]
   workspaceMode: WorkspaceMode
-  onCreateGlobalSkill: () => void | Promise<void>
-  onCreateGlobalSkillDraftCancel: () => void
-  onCreateGlobalSkillDraftChange: (value: string) => void
-  onCreateGlobalSkillDraftStart: () => void
-  onDeleteGlobalSkill: (directoryPath?: string) => void | Promise<void>
-  onGlobalSkillDirectoryToggle: (path: string) => void
-  onGlobalSkillFileSelect: (path: string) => void | Promise<void>
-  onRenameGlobalSkill: () => void | Promise<void>
-  onRenameGlobalSkillDraftCancel: () => void
-  onRenameGlobalSkillDraftChange: (value: string) => void
-  onRenameGlobalSkillDraftStart: (directoryPath: string) => void
   onHoveredFolderChange: Dispatch<SetStateAction<string | null>>
   onOpenSettings: () => void
   onProjectClick: (workspace: WorkspaceGroup) => void
@@ -531,7 +516,7 @@ interface SkillsSidebarViewProps {
   onRenameGlobalSkillDraftStart: (directoryPath: string) => void
 }
 
-function SkillsSidebarView({
+export function SkillsSidebarView({
   deletingGlobalSkillDirectory,
   expandedSkillPaths,
   creatingGlobalSkillName,
@@ -647,25 +632,17 @@ function SkillsSidebarView({
 export function Sidebar({
   activeSessionID,
   activeView,
-  deletingGlobalSkillDirectory,
   deletingSessionID,
   expandedFolderIDs,
-  expandedSkillPaths,
-  creatingGlobalSkillName,
-  globalSkillsRoot,
-  globalSkillsTree,
+  globalSkillsNavigatorProps,
   hoveredFolderID,
-  isCreateGlobalSkillDraftVisible,
-  isCreatingGlobalSkill,
   isCreatingProject,
   isCreatingSession,
-  isLoadingSkillsTree,
   isSettingsOpen,
-  renamingGlobalSkillDirectory,
-  renamingGlobalSkillDraftDirectory,
-  renamingGlobalSkillName,
-  selectedGlobalSkillFilePath,
+  mcpServersSidebarProps,
+  promptPresetsSidebarProps,
   showSidebarToggleButton,
+  builtinToolsSidebarProps,
   projectRowRefs,
   runningSessionIDs,
   selectedFolderID,
@@ -673,17 +650,6 @@ export function Sidebar({
   visibleCanvasSessionIDs,
   workspaces,
   workspaceMode,
-  onCreateGlobalSkill,
-  onCreateGlobalSkillDraftCancel,
-  onCreateGlobalSkillDraftChange,
-  onCreateGlobalSkillDraftStart,
-  onDeleteGlobalSkill,
-  onGlobalSkillDirectoryToggle,
-  onGlobalSkillFileSelect,
-  onRenameGlobalSkill,
-  onRenameGlobalSkillDraftCancel,
-  onRenameGlobalSkillDraftChange,
-  onRenameGlobalSkillDraftStart,
   onHoveredFolderChange,
   onOpenSettings,
   onProjectClick,
@@ -736,31 +702,16 @@ export function Sidebar({
           )
         ) : null}
         {activeView === "skills" ? (
-          <SkillsSidebarView
-            deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
-            expandedSkillPaths={expandedSkillPaths}
-            creatingGlobalSkillName={creatingGlobalSkillName}
-            globalSkillsRoot={globalSkillsRoot}
-            globalSkillsTree={globalSkillsTree}
-            isCreateGlobalSkillDraftVisible={isCreateGlobalSkillDraftVisible}
-            isCreatingGlobalSkill={isCreatingGlobalSkill}
-            isLoadingSkillsTree={isLoadingSkillsTree}
-            renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
-            renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
-            renamingGlobalSkillName={renamingGlobalSkillName}
-            selectedGlobalSkillFilePath={selectedGlobalSkillFilePath}
-            onCreateGlobalSkill={onCreateGlobalSkill}
-            onCreateGlobalSkillDraftCancel={onCreateGlobalSkillDraftCancel}
-            onCreateGlobalSkillDraftChange={onCreateGlobalSkillDraftChange}
-            onCreateGlobalSkillDraftStart={onCreateGlobalSkillDraftStart}
-            onDeleteGlobalSkill={onDeleteGlobalSkill}
-            onGlobalSkillDirectoryToggle={onGlobalSkillDirectoryToggle}
-            onGlobalSkillFileSelect={onGlobalSkillFileSelect}
-            onRenameGlobalSkill={onRenameGlobalSkill}
-            onRenameGlobalSkillDraftCancel={onRenameGlobalSkillDraftCancel}
-            onRenameGlobalSkillDraftChange={onRenameGlobalSkillDraftChange}
-            onRenameGlobalSkillDraftStart={onRenameGlobalSkillDraftStart}
-          />
+          <GlobalSkillsNavigator {...globalSkillsNavigatorProps} />
+        ) : null}
+        {activeView === "prompts" ? (
+          <PromptPresetsSidebarView {...promptPresetsSidebarProps} />
+        ) : null}
+        {activeView === "mcp" ? (
+          <McpServersSidebarView {...mcpServersSidebarProps} />
+        ) : null}
+        {activeView === "tools" ? (
+          <BuiltinToolsSidebarView {...builtinToolsSidebarProps} />
         ) : null}
       </div>
 

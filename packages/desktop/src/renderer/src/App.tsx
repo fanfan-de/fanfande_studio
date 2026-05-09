@@ -18,6 +18,7 @@ import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useSettingsPage } from "./app/use-settings-page"
+import type { BuiltinToolKindKey } from "./app/tools/BuiltinToolsPage"
 import { clamp } from "./app/utils"
 import { isSideChatSession } from "./app/workspace"
 import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
@@ -419,6 +420,7 @@ export function App() {
   const [activePaneResize, setActivePaneResize] = useState<ActivePaneResize | null>(null)
   const handleWorkbenchPaneResizeRef = useRef(handleWorkbenchPaneResize)
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code")
+  const [activeBuiltinToolKind, setActiveBuiltinToolKind] = useState<BuiltinToolKindKey | null>(null)
   const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
   const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
   const [isSavingToolPermissionMode, setIsSavingToolPermissionMode] = useState(false)
@@ -778,18 +780,25 @@ export function App() {
   const isMcpServersView = leftSidebarView === "mcp"
   const isPluginsView = leftSidebarView === "plugins"
   const isBuiltinToolsView = leftSidebarView === "tools"
-  const isFullSurfaceView =
-    isPromptEditorView || isGlobalSkillsView || isMcpServersView || isPluginsView || isBuiltinToolsView
+  const isShellSidebarManagedView = isPromptEditorView || isGlobalSkillsView || isMcpServersView || isBuiltinToolsView
+  const isFullSurfaceView = isPluginsView
   const placeholderWorkspaceMode: Exclude<WorkspaceMode, "code"> | null =
     leftSidebarView === "workspace" && workspaceMode !== "code" ? workspaceMode : null
   const windowControls = (
     <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
   )
   const appShellClassName = isOpen ? "app-shell is-settings-open" : "app-shell"
+  const effectiveAppShellStyle = isShellSidebarManagedView
+    ? {
+        ...appShellStyle,
+        "--right-sidebar-display-width": "0px",
+        "--right-sidebar-resizer-width": "0px",
+      }
+    : appShellStyle
 
   return (
     <div className={windowShellClassName}>
-      <main ref={appShellRef} className={appShellClassName} style={appShellStyle}>
+      <main ref={appShellRef} className={appShellClassName} style={effectiveAppShellStyle}>
         {isActivityRailVisible ? (
           <ActivityRail
             activeView={leftSidebarView}
@@ -805,25 +814,75 @@ export function App() {
             <Sidebar
               activeSessionID={activeSession?.id ?? null}
               activeView={leftSidebarView}
-              deletingGlobalSkillDirectory={deletingGlobalSkillDirectory}
               deletingSessionID={deletingSessionID}
               expandedFolderIDs={expandedFolderIDs}
-              expandedSkillPaths={expandedSkillPaths}
-              creatingGlobalSkillName={creatingGlobalSkillName}
-              globalSkillsRoot={globalSkillsRoot}
-              globalSkillsTree={globalSkillsTree}
+              globalSkillsNavigatorProps={{
+                creatingGlobalSkillName,
+                creatingGlobalSkillDraftKind,
+                creatingGlobalSkillParentDirectory,
+                deletingGlobalSkillDirectory,
+                expandedSkillPaths,
+                globalSkillsRoot,
+                globalSkillsTree,
+                isCreateGlobalSkillDraftVisible,
+                isCreatingGlobalSkill,
+                isInstallingLocalSkill,
+                isLoadingSkillsTree: isLoadingGlobalSkillsTree,
+                renamingGlobalSkillDirectory,
+                renamingGlobalSkillDraftDirectory,
+                renamingGlobalSkillName,
+                selectedGlobalSkillFilePath,
+                onCreateGlobalSkill: handleCreateGlobalSkill,
+                onCreateGlobalSkillDraftCancel: handleCreateGlobalSkillDraftCancel,
+                onCreateGlobalSkillDraftChange: handleCreateGlobalSkillDraftChange,
+                onCreateGlobalSkillDraftStart: handleCreateGlobalSkillDraftStart,
+                onDeleteGlobalSkill: handleDeleteGlobalSkill,
+                onGitInstallDialogOpen: handleGitInstallDialogOpen,
+                onGlobalSkillDirectoryToggle: handleGlobalSkillDirectoryToggle,
+                onGlobalSkillFileSelect: handleGlobalSkillFileSelect,
+                onLocalInstallDialogOpen: handleLocalInstallDialogOpen,
+                onMoveGlobalSkillDirectoryStart: handleMoveGlobalSkillDirectoryStart,
+                onOpenGlobalSkillsFolder: handleOpenGlobalSkillsFolder,
+                onRenameGlobalSkill: handleRenameGlobalSkill,
+                onRenameGlobalSkillDraftCancel: handleRenameGlobalSkillDraftCancel,
+                onRenameGlobalSkillDraftChange: handleRenameGlobalSkillDraftChange,
+                onRenameGlobalSkillDraftStart: handleRenameGlobalSkillDraftStart,
+              }}
               hoveredFolderID={hoveredFolderID}
-              isCreateGlobalSkillDraftVisible={isCreateGlobalSkillDraftVisible}
-              isCreatingGlobalSkill={isCreatingGlobalSkill}
               isCreatingProject={isCreatingProject}
               isCreatingSession={isCreatingSession}
-              isLoadingSkillsTree={isLoadingGlobalSkillsTree}
               isSettingsOpen={isOpen}
-              renamingGlobalSkillDirectory={renamingGlobalSkillDirectory}
-              renamingGlobalSkillDraftDirectory={renamingGlobalSkillDraftDirectory}
-              renamingGlobalSkillName={renamingGlobalSkillName}
-              selectedGlobalSkillFilePath={selectedGlobalSkillFilePath}
+              mcpServersSidebarProps={{
+                activeMcpServerID,
+                deletingMcpServerID,
+                isImportingMcpConfigJson,
+                mcpServers,
+                savingMcpServerID,
+                onMcpServerSelect: selectMcpServer,
+                onStartNewMcpServer: startNewMcpServer,
+              }}
+              promptPresetsSidebarProps={{
+                deletingPromptPresetID,
+                isCreatingPromptPreset,
+                isInstallingPromptUrlPrompts,
+                isPreviewingPromptUrlInstall,
+                isPromptDirty,
+                promptRoot,
+                promptPresets,
+                promptPresetSelection,
+                selectedPromptPreset,
+                onCreatePromptPreset: createPromptPreset,
+                onDeletePromptPreset: deletePromptPreset,
+                onOpenPromptFolder: openPromptFolder,
+                onPromptPresetSelect: selectPromptPreset,
+                onPromptUrlInstallDialogOpen: openPromptUrlInstallDialog,
+              }}
               showSidebarToggleButton={!isActivityRailVisible}
+              builtinToolsSidebarProps={{
+                activeToolKind: activeBuiltinToolKind,
+                builtinTools,
+                onActiveToolKindChange: setActiveBuiltinToolKind,
+              }}
               projectRowRefs={projectRowRefs}
               runningSessionIDs={runningSessionIDs}
               selectedFolderID={selectedFolderID}
@@ -831,17 +890,6 @@ export function App() {
               visibleCanvasSessionIDs={visibleCanvasSessionIDs}
               workspaces={workspaces}
               workspaceMode={workspaceMode}
-              onCreateGlobalSkill={handleCreateGlobalSkill}
-              onCreateGlobalSkillDraftCancel={handleCreateGlobalSkillDraftCancel}
-              onCreateGlobalSkillDraftChange={handleCreateGlobalSkillDraftChange}
-              onCreateGlobalSkillDraftStart={handleCreateGlobalSkillDraftStart}
-              onDeleteGlobalSkill={handleDeleteGlobalSkill}
-              onGlobalSkillDirectoryToggle={handleGlobalSkillDirectoryToggle}
-              onGlobalSkillFileSelect={handleGlobalSkillFileSelect}
-              onRenameGlobalSkill={handleRenameGlobalSkill}
-              onRenameGlobalSkillDraftCancel={handleRenameGlobalSkillDraftCancel}
-              onRenameGlobalSkillDraftChange={handleRenameGlobalSkillDraftChange}
-              onRenameGlobalSkillDraftStart={handleRenameGlobalSkillDraftStart}
               onHoveredFolderChange={setHoveredFolderID}
               onOpenSettings={openSettings}
               onProjectCreateSession={handleProjectCreateSession}
@@ -879,6 +927,7 @@ export function App() {
           {isPromptEditorView ? (
             <PromptPresetsPage
               deletingPromptPresetID={deletingPromptPresetID}
+              hideNavigator
               isCreatingPromptPreset={isCreatingPromptPreset}
               isLoadingPromptPreset={isLoadingPromptPreset}
               isLoadingPrompts={isLoadingPrompts}
@@ -930,6 +979,7 @@ export function App() {
               globalSkillsMessage={globalSkillsMessage}
               globalSkillsRoot={globalSkillsRoot}
               globalSkillsTree={globalSkillsTree}
+              hideNavigator
               gitInstallTargetDirectory={gitInstallTargetDirectory}
               gitInstallMessage={gitInstallMessage}
               gitInstallPreview={gitInstallPreview}
@@ -995,6 +1045,7 @@ export function App() {
               activeMcpServerID={activeMcpServerID}
               activeMcpServerDiagnostic={activeMcpServerDiagnostic}
               deletingMcpServerID={deletingMcpServerID}
+              hideNavigator
               isLoading={isLoading}
               loadError={loadError}
               mcpServerDraft={mcpServerDraft}
@@ -1045,13 +1096,16 @@ export function App() {
             />
           ) : isBuiltinToolsView ? (
             <BuiltinToolsPage
+              activeToolKind={activeBuiltinToolKind}
               builtinTools={builtinTools}
               builtinToolsError={builtinToolsError}
+              hideNavigator
               isBuiltinToolSelectionDirty={isBuiltinToolSelectionDirty}
               isLoadingBuiltinTools={isLoadingBuiltinTools}
               isSavingBuiltinTools={isSavingBuiltinTools}
               message={message}
               windowControls={windowControls}
+              onActiveToolKindChange={setActiveBuiltinToolKind}
               onBuiltinToolToggle={setBuiltinToolEnabled}
               onDismissMessage={dismissMessage}
               onResetBuiltinTools={resetBuiltinTools}
@@ -1124,7 +1178,7 @@ export function App() {
           )}
         </section>
 
-        {!isFullSurfaceView && !isRightSidebarCollapsed ? (
+        {!isFullSurfaceView && !isShellSidebarManagedView && !isRightSidebarCollapsed ? (
           <>
             <SidebarResizer
               isSidebarResizing={isRightSidebarResizing}

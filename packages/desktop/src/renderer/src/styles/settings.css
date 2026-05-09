@@ -951,6 +951,13 @@ body.is-dragging-settings-page {
   gap: 14px 18px;
 }
 
+.settings-prompts-shell.is-sidebar-hosted {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "slots"
+    "detail";
+}
+
 .settings-page-main.prompt-presets-page-main {
   height: 100%;
   display: flex;

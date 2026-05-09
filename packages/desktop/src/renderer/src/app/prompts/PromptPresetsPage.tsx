@@ -51,6 +51,7 @@ interface PromptPresetsPageProps {
   savingPromptPresetID: string | null
   selectedPromptPreset: PromptPresetDocument | null
   selectedPromptUrlInstallIDs: string[]
+  hideNavigator?: boolean
   windowControls?: ReactNode
   onCreatePromptPreset: () => boolean | Promise<boolean>
   onDeletePromptPreset: (presetID?: string) => boolean | Promise<boolean>
@@ -68,6 +69,23 @@ interface PromptPresetsPageProps {
   onOpenPromptFolder: () => boolean | Promise<boolean>
   onResetPromptPreset: () => boolean | Promise<boolean>
   onSavePromptPreset: () => boolean | Promise<boolean>
+}
+
+export interface PromptPresetsSidebarViewProps {
+  deletingPromptPresetID: string | null
+  isCreatingPromptPreset: boolean
+  isInstallingPromptUrlPrompts: boolean
+  isPreviewingPromptUrlInstall: boolean
+  isPromptDirty: boolean
+  promptRoot: string
+  promptPresets: PromptPresetSummary[]
+  promptPresetSelection: PromptPresetSelection | null
+  selectedPromptPreset: PromptPresetDocument | null
+  onCreatePromptPreset: () => boolean | Promise<boolean>
+  onDeletePromptPreset: (presetID?: string) => boolean | Promise<boolean>
+  onOpenPromptFolder: () => boolean | Promise<boolean>
+  onPromptPresetSelect: (presetID: string) => boolean | Promise<boolean>
+  onPromptUrlInstallDialogOpen: () => void
 }
 
 function getPromptPresetSourceLabel(source: PromptPresetSummary["source"]) {
@@ -267,49 +285,22 @@ function PromptUrlInstallDialog({
   )
 }
 
-export function PromptPresetsPage({
+export function PromptPresetsSidebarView({
   deletingPromptPresetID,
   isCreatingPromptPreset,
   isInstallingPromptUrlPrompts,
-  isLoadingPromptPreset,
-  isLoadingPrompts,
   isPreviewingPromptUrlInstall,
   isPromptDirty,
-  isPromptUrlInstallDialogOpen,
-  isSavingPromptPresetSelection,
-  message,
-  promptDraftContent,
-  promptDraftLabel,
-  promptLoadError,
   promptRoot,
   promptPresets,
   promptPresetSelection,
-  promptUrlInstallMessage,
-  promptUrlInstallPreview,
-  promptUrlInstallSource,
-  resettingPromptPresetID,
-  savingPromptPresetID,
   selectedPromptPreset,
-  selectedPromptUrlInstallIDs,
-  windowControls,
   onCreatePromptPreset,
   onDeletePromptPreset,
-  onDismissMessage,
-  onInstallPromptsFromUrl,
-  onPromptDraftChange,
-  onPromptDraftLabelChange,
-  onPromptPresetSelect,
-  onPromptPresetSelectionChange,
-  onPromptUrlInstallDialogClose,
-  onPromptUrlInstallDialogOpen,
-  onPromptUrlInstallPromptToggle,
-  onPromptUrlInstallSourceChange,
-  onPreviewPromptUrlInstall,
   onOpenPromptFolder,
-  onResetPromptPreset,
-  onSavePromptPreset,
-}: PromptPresetsPageProps) {
-  const [promptEditorMode, setPromptEditorMode] = useState<PromptEditorMode>("edit")
+  onPromptPresetSelect,
+  onPromptUrlInstallDialogOpen,
+}: PromptPresetsSidebarViewProps) {
   const [promptSearchTerm, setPromptSearchTerm] = useState("")
   const [isInstallMenuOpen, setIsInstallMenuOpen] = useState(false)
   const installMenuRef = useRef<HTMLDivElement | null>(null)
@@ -324,16 +315,6 @@ export function PromptPresetsPage({
 
     return left.label.localeCompare(right.label)
   })
-  const selectedPromptPresetBusy =
-    selectedPromptPreset !== null &&
-    (
-      savingPromptPresetID === selectedPromptPreset.id ||
-      resettingPromptPresetID === selectedPromptPreset.id ||
-      deletingPromptPresetID === selectedPromptPreset.id
-    )
-  const selectedPromptPresetUsageLabels = selectedPromptPreset
-    ? getPromptPresetUsageLabels(selectedPromptPreset.id, promptPresetSelection)
-    : []
   const normalizedPromptSearchTerm = normalizePromptSearchTerm(promptSearchTerm)
   const promptPresetFolderDefinitions: Array<{
     id: PromptPresetFolderID
@@ -429,6 +410,250 @@ export function PromptPresetsPage({
   }
 
   return (
+    <section className="sidebar-view sidebar-view-prompts" aria-label="Prompt presets sidebar view">
+      <div className="settings-prompt-section-bar prompt-presets-navigator-bar global-skills-section-bar">
+        <div className="prompt-presets-navigator-actions global-skills-section-actions">
+          <button
+            className="secondary-button global-skills-open-folder-button prompt-presets-open-button"
+            type="button"
+            aria-label="Open prompts folder"
+            title={promptRoot || "Prompts folder"}
+            disabled={!promptRoot.trim()}
+            onClick={() => void onOpenPromptFolder()}
+          >
+            <FolderIcon />
+            <span>打开文件位置</span>
+          </button>
+          <div className="global-skills-install-menu-shell" ref={installMenuRef}>
+            <button
+              className={
+                isInstallMenuOpen
+                  ? "secondary-button global-skills-install-button prompt-presets-install-button is-open"
+                  : "secondary-button global-skills-install-button prompt-presets-install-button"
+              }
+              aria-expanded={isInstallMenuOpen}
+              aria-haspopup="menu"
+              aria-label="Install prompt"
+              disabled={isInstallButtonDisabled}
+              title="Install prompt"
+              type="button"
+              onClick={handleInstallMenuToggle}
+            >
+              <DownloadIcon />
+              <span>{isInstallingPromptUrlPrompts ? "Installing..." : "Install"}</span>
+              <ChevronDownIcon />
+            </button>
+            {isInstallMenuOpen ? (
+              <div
+                className="global-skills-install-menu prompt-presets-install-menu"
+                role="menu"
+                aria-label="Install prompt options"
+              >
+                <button
+                  className="global-skills-install-menu-item"
+                  role="menuitem"
+                  type="button"
+                  onClick={handleInstallFromUrl}
+                >
+                  From URL
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="skills-tree-root prompt-presets-tree" role="list" aria-label="Prompt presets">
+        <div className="skills-tree-search-row" aria-label="Prompt presets search" role="search">
+          <SearchIcon />
+          <input
+            aria-label="Search prompts"
+            placeholder="搜索 prompts"
+            type="search"
+            value={promptSearchTerm}
+            onChange={(event) => setPromptSearchTerm(event.target.value)}
+          />
+          {promptSearchTerm.trim() ? (
+            <button
+              aria-label="Clear prompt search"
+              title="Clear"
+              type="button"
+              onClick={() => setPromptSearchTerm("")}
+            >
+              <CloseIcon />
+            </button>
+          ) : null}
+        </div>
+
+        {visiblePromptPresetFolders.length > 0 ? (
+          visiblePromptPresetFolders.map((folder) => {
+            const isExpanded = isPromptSearchActive || expandedPromptPresetFolders.includes(folder.id)
+
+            return (
+              <div key={folder.id} className="skill-tree-item prompt-tree-folder">
+                <div className="skill-tree-row-shell">
+                  <button
+                    className="skill-tree-row"
+                    aria-expanded={isExpanded}
+                    aria-label={`${folder.label} prompt folder`}
+                    type="button"
+                    onClick={() => handlePromptFolderToggle(folder.id)}
+                  >
+                    <span className="skill-tree-role-icon is-folder" aria-hidden="true">
+                      {isExpanded ? <FolderOpenIcon /> : <FolderIcon />}
+                    </span>
+                    <span className="skill-tree-label">{folder.label}</span>
+                    <span className="prompt-tree-count">{folder.presets.length}</span>
+                  </button>
+                </div>
+
+                {isExpanded ? (
+                  <div className="skill-tree-children">
+                    {folder.presets.length > 0 ? (
+                      folder.presets.map((preset) => {
+                        const isActive = preset.id === selectedPromptPreset?.id
+                        const usageLabels = getPromptPresetUsageLabels(preset.id, promptPresetSelection)
+                        const isDeleting = deletingPromptPresetID === preset.id
+
+                        return (
+                          <div key={preset.id} className="skill-tree-item skill-tree-item-file prompt-tree-file">
+                            <div className="skill-tree-row-shell">
+                              <button
+                                className={isActive ? "skill-tree-row is-active" : "skill-tree-row"}
+                                aria-label={preset.label}
+                                aria-pressed={isActive}
+                                title={getPromptPresetPathLabel(preset)}
+                                type="button"
+                                onClick={() => handlePromptPresetSelection(preset.id)}
+                              >
+                                <span className="skill-tree-role-icon is-skill" aria-hidden="true">
+                                  <FileTextIcon />
+                                </span>
+                                <span className="skill-tree-label">{preset.label}</span>
+                                <span className="prompt-tree-row-badges" aria-hidden="true">
+                                  {usageLabels.map((label) => (
+                                    <span key={`${preset.id}-${label}`} className="settings-badge is-highlight">
+                                      {label}
+                                    </span>
+                                  ))}
+                                  {preset.hasOverride ? <span className="settings-badge is-warning">Edited</span> : null}
+                                </span>
+                              </button>
+                              {preset.source === "custom" ? (
+                                <button
+                                  className="row-action skill-tree-row-action prompt-tree-delete-button"
+                                  aria-label={`Delete prompt ${preset.label}`}
+                                  disabled={deletingPromptPresetID !== null}
+                                  title={isDeleting ? `Deleting ${preset.label}` : `Delete ${preset.label}`}
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void onDeletePromptPreset(preset.id)
+                                  }}
+                                >
+                                  <DeleteIcon />
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        )
+                      })
+                    ) : (
+                      <p className="skills-tree-empty prompt-tree-empty">
+                        {folder.id === "custom" ? "No custom prompts yet." : "No bundled prompts."}
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            )
+          })
+        ) : promptPresetOptions.length > 0 ? (
+          <p className="skills-tree-empty">No prompts match your search.</p>
+        ) : (
+          <p className="skills-tree-empty">No prompt files found.</p>
+        )}
+
+        <div className="global-skills-new-menu-shell prompt-presets-new-menu-shell">
+          <button
+            className="global-skills-new-button prompt-presets-new-button"
+            type="button"
+            aria-label="New"
+            disabled={isCreatingPromptPreset}
+            title={isCreatingPromptPreset ? "Creating..." : "New prompt"}
+            onClick={handlePromptPresetCreate}
+          >
+            <PlusIcon />
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+export function PromptPresetsPage({
+  deletingPromptPresetID,
+  isCreatingPromptPreset,
+  isInstallingPromptUrlPrompts,
+  isLoadingPromptPreset,
+  isLoadingPrompts,
+  isPreviewingPromptUrlInstall,
+  isPromptDirty,
+  isPromptUrlInstallDialogOpen,
+  isSavingPromptPresetSelection,
+  message,
+  promptDraftContent,
+  promptDraftLabel,
+  promptLoadError,
+  promptRoot,
+  promptPresets,
+  promptPresetSelection,
+  promptUrlInstallMessage,
+  promptUrlInstallPreview,
+  promptUrlInstallSource,
+  resettingPromptPresetID,
+  savingPromptPresetID,
+  selectedPromptPreset,
+  selectedPromptUrlInstallIDs,
+  hideNavigator = false,
+  windowControls,
+  onCreatePromptPreset,
+  onDeletePromptPreset,
+  onDismissMessage,
+  onInstallPromptsFromUrl,
+  onPromptDraftChange,
+  onPromptDraftLabelChange,
+  onPromptPresetSelect,
+  onPromptPresetSelectionChange,
+  onPromptUrlInstallDialogClose,
+  onPromptUrlInstallDialogOpen,
+  onPromptUrlInstallPromptToggle,
+  onPromptUrlInstallSourceChange,
+  onPreviewPromptUrlInstall,
+  onOpenPromptFolder,
+  onResetPromptPreset,
+  onSavePromptPreset,
+}: PromptPresetsPageProps) {
+  const [promptEditorMode, setPromptEditorMode] = useState<PromptEditorMode>("edit")
+  const promptPresetOptions = [...promptPresets].sort((left, right) => {
+    if (left.source !== right.source) {
+      return left.source === "bundled" ? -1 : 1
+    }
+
+    return left.label.localeCompare(right.label)
+  })
+  const selectedPromptPresetBusy =
+    selectedPromptPreset !== null &&
+    (
+      savingPromptPresetID === selectedPromptPreset.id ||
+      resettingPromptPresetID === selectedPromptPreset.id ||
+      deletingPromptPresetID === selectedPromptPreset.id
+    )
+  const selectedPromptPresetUsageLabels = selectedPromptPreset
+    ? getPromptPresetUsageLabels(selectedPromptPreset.id, promptPresetSelection)
+    : []
+
+  return (
     <section className="prompt-presets-page" aria-label="Prompt presets">
       <ShellTopMenu
         as="header"
@@ -474,7 +699,7 @@ export function PromptPresetsPage({
             <p>Reading the prompt catalog, override state, and current editable content.</p>
           </article>
         ) : (
-          <section className="settings-prompts-shell" aria-label="Prompt preset layout">
+          <section className={hideNavigator ? "settings-prompts-shell is-sidebar-hosted" : "settings-prompts-shell"} aria-label="Prompt preset layout">
             <section className="settings-panel settings-prompt-slots-panel">
               <div className="settings-prompt-assignment-list">
                 <div className="settings-prompt-assignment-row">
@@ -560,187 +785,27 @@ export function PromptPresetsPage({
               </div>
             </section>
 
-            <div className="settings-services-layout settings-prompts-layout">
-              <div className="settings-service-list-panel settings-prompt-library-panel">
-                <div className="settings-prompt-section-bar prompt-presets-navigator-bar global-skills-section-bar">
-                  <div className="prompt-presets-navigator-actions global-skills-section-actions">
-                    <button
-                      className="secondary-button global-skills-open-folder-button prompt-presets-open-button"
-                      type="button"
-                      aria-label="Open prompts folder"
-                      title={promptRoot || "Prompts folder"}
-                      disabled={!promptRoot.trim()}
-                      onClick={() => void onOpenPromptFolder()}
-                    >
-                      <FolderIcon />
-                      <span>打开文件位置</span>
-                    </button>
-                    <div className="global-skills-install-menu-shell" ref={installMenuRef}>
-                      <button
-                        className={
-                          isInstallMenuOpen
-                            ? "secondary-button global-skills-install-button prompt-presets-install-button is-open"
-                            : "secondary-button global-skills-install-button prompt-presets-install-button"
-                        }
-                        aria-expanded={isInstallMenuOpen}
-                        aria-haspopup="menu"
-                        aria-label="Install prompt"
-                        disabled={isInstallButtonDisabled}
-                        title="Install prompt"
-                        type="button"
-                        onClick={handleInstallMenuToggle}
-                      >
-                        <DownloadIcon />
-                        <span>{isInstallingPromptUrlPrompts ? "Installing..." : "Install"}</span>
-                        <ChevronDownIcon />
-                      </button>
-                      {isInstallMenuOpen ? (
-                        <div
-                          className="global-skills-install-menu prompt-presets-install-menu"
-                          role="menu"
-                          aria-label="Install prompt options"
-                        >
-                          <button
-                            className="global-skills-install-menu-item"
-                            role="menuitem"
-                            type="button"
-                            onClick={handleInstallFromUrl}
-                          >
-                            From URL
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
+            <div className={hideNavigator ? "settings-services-layout settings-prompts-layout is-sidebar-hosted" : "settings-services-layout settings-prompts-layout"}>
+              {!hideNavigator ? (
+                <div className="settings-service-list-panel settings-prompt-library-panel">
+                  <PromptPresetsSidebarView
+                    deletingPromptPresetID={deletingPromptPresetID}
+                    isCreatingPromptPreset={isCreatingPromptPreset}
+                    isInstallingPromptUrlPrompts={isInstallingPromptUrlPrompts}
+                    isPreviewingPromptUrlInstall={isPreviewingPromptUrlInstall}
+                    isPromptDirty={isPromptDirty}
+                    promptRoot={promptRoot}
+                    promptPresets={promptPresets}
+                    promptPresetSelection={promptPresetSelection}
+                    selectedPromptPreset={selectedPromptPreset}
+                    onCreatePromptPreset={onCreatePromptPreset}
+                    onDeletePromptPreset={onDeletePromptPreset}
+                    onOpenPromptFolder={onOpenPromptFolder}
+                    onPromptPresetSelect={onPromptPresetSelect}
+                    onPromptUrlInstallDialogOpen={onPromptUrlInstallDialogOpen}
+                  />
                 </div>
-
-                <div className="settings-service-list-body prompt-presets-tree-body">
-                  <div className="skills-tree-root prompt-presets-tree" role="list" aria-label="Prompt presets">
-                    <div className="skills-tree-search-row" aria-label="Prompt presets search" role="search">
-                      <SearchIcon />
-                      <input
-                        aria-label="Search prompts"
-                        placeholder="搜索 prompts"
-                        type="search"
-                        value={promptSearchTerm}
-                        onChange={(event) => setPromptSearchTerm(event.target.value)}
-                      />
-                      {promptSearchTerm.trim() ? (
-                        <button
-                          aria-label="Clear prompt search"
-                          title="Clear"
-                          type="button"
-                          onClick={() => setPromptSearchTerm("")}
-                        >
-                          <CloseIcon />
-                        </button>
-                      ) : null}
-                    </div>
-
-                    {visiblePromptPresetFolders.length > 0 ? (
-                      visiblePromptPresetFolders.map((folder) => {
-                        const isExpanded = isPromptSearchActive || expandedPromptPresetFolders.includes(folder.id)
-
-                        return (
-                          <div key={folder.id} className="skill-tree-item prompt-tree-folder">
-                            <div className="skill-tree-row-shell">
-                              <button
-                                className="skill-tree-row"
-                                aria-expanded={isExpanded}
-                                aria-label={`${folder.label} prompt folder`}
-                                type="button"
-                                onClick={() => handlePromptFolderToggle(folder.id)}
-                              >
-                                <span className="skill-tree-role-icon is-folder" aria-hidden="true">
-                                  {isExpanded ? <FolderOpenIcon /> : <FolderIcon />}
-                                </span>
-                                <span className="skill-tree-label">{folder.label}</span>
-                                <span className="prompt-tree-count">{folder.presets.length}</span>
-                              </button>
-                            </div>
-
-                            {isExpanded ? (
-                              <div className="skill-tree-children">
-                                {folder.presets.length > 0 ? (
-                                  folder.presets.map((preset) => {
-                                    const isActive = preset.id === selectedPromptPreset?.id
-                                    const usageLabels = getPromptPresetUsageLabels(preset.id, promptPresetSelection)
-                                    const isDeleting = deletingPromptPresetID === preset.id
-
-                                    return (
-                                      <div key={preset.id} className="skill-tree-item skill-tree-item-file prompt-tree-file">
-                                        <div className="skill-tree-row-shell">
-                                          <button
-                                            className={isActive ? "skill-tree-row is-active" : "skill-tree-row"}
-                                            aria-label={preset.label}
-                                            aria-pressed={isActive}
-                                            title={getPromptPresetPathLabel(preset)}
-                                            type="button"
-                                            onClick={() => handlePromptPresetSelection(preset.id)}
-                                          >
-                                            <span className="skill-tree-role-icon is-skill" aria-hidden="true">
-                                              <FileTextIcon />
-                                            </span>
-                                            <span className="skill-tree-label">{preset.label}</span>
-                                            <span className="prompt-tree-row-badges" aria-hidden="true">
-                                              {usageLabels.map((label) => (
-                                                <span key={`${preset.id}-${label}`} className="settings-badge is-highlight">
-                                                  {label}
-                                                </span>
-                                              ))}
-                                              {preset.hasOverride ? <span className="settings-badge is-warning">Edited</span> : null}
-                                            </span>
-                                          </button>
-                                          {preset.source === "custom" ? (
-                                            <button
-                                              className="row-action skill-tree-row-action prompt-tree-delete-button"
-                                              aria-label={`Delete prompt ${preset.label}`}
-                                              disabled={deletingPromptPresetID !== null}
-                                              title={isDeleting ? `Deleting ${preset.label}` : `Delete ${preset.label}`}
-                                              type="button"
-                                              onClick={(event) => {
-                                                event.stopPropagation()
-                                                void onDeletePromptPreset(preset.id)
-                                              }}
-                                            >
-                                              <DeleteIcon />
-                                            </button>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    )
-                                  })
-                                ) : (
-                                  <p className="skills-tree-empty prompt-tree-empty">
-                                    {folder.id === "custom" ? "No custom prompts yet." : "No bundled prompts."}
-                                  </p>
-                                )}
-                              </div>
-                            ) : null}
-                          </div>
-                        )
-                      })
-                    ) : promptPresetOptions.length > 0 ? (
-                      <p className="skills-tree-empty">No prompts match your search.</p>
-                    ) : (
-                      <p className="skills-tree-empty">No prompt files found.</p>
-                    )}
-
-                    <div className="global-skills-new-menu-shell prompt-presets-new-menu-shell">
-                      <button
-                        className="global-skills-new-button prompt-presets-new-button"
-                        type="button"
-                        aria-label="New"
-                        disabled={isCreatingPromptPreset}
-                        title={isCreatingPromptPreset ? "Creating..." : "New prompt"}
-                        onClick={handlePromptPresetCreate}
-                      >
-                        <PlusIcon />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              ) : null}
 
               <div className="settings-service-detail-panel settings-prompt-detail-panel">
                 {selectedPromptPreset ? (

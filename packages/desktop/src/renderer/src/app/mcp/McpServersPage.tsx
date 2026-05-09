@@ -25,6 +25,7 @@ interface McpServersPageProps {
   mcpServers: McpServerSummary[]
   message: McpServersMessage | null
   savingMcpServerID: string | null
+  hideNavigator?: boolean
   isImportingMcpConfigJson?: boolean
   windowControls?: ReactNode
   onDeleteMcpServer: (serverID: string) => void | Promise<void>
@@ -34,6 +35,16 @@ interface McpServersPageProps {
   onMcpToolPolicyChange: (toolName: string, policy: McpToolPolicyValue) => void
   onMcpServerSelect: (serverID: string) => void
   onSaveMcpServer: () => boolean | Promise<boolean>
+  onStartNewMcpServer: () => void
+}
+
+export interface McpServersSidebarViewProps {
+  activeMcpServerID: string | null
+  deletingMcpServerID: string | null
+  isImportingMcpConfigJson?: boolean
+  mcpServers: McpServerSummary[]
+  savingMcpServerID: string | null
+  onMcpServerSelect: (serverID: string) => void
   onStartNewMcpServer: () => void
 }
 
@@ -98,6 +109,95 @@ function getMcpServerValidationError(draft: McpServerDraftState) {
   return null
 }
 
+export function McpServersSidebarView({
+  activeMcpServerID,
+  deletingMcpServerID,
+  isImportingMcpConfigJson = false,
+  mcpServers,
+  savingMcpServerID,
+  onMcpServerSelect,
+  onStartNewMcpServer,
+}: McpServersSidebarViewProps) {
+  const [mcpServerSearchQuery, setMcpServerSearchQuery] = useState("")
+  const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
+  const filteredMcpServers = useMemo(
+    () => mcpServers.filter((server) => doesMcpServerMatchSearch(server, mcpServerSearchQuery)),
+    [mcpServerSearchQuery, mcpServers],
+  )
+
+  return (
+    <section className="sidebar-view sidebar-view-mcp" aria-label="MCP servers sidebar view">
+      <div className="skills-tree-search-row mcp-servers-search-row" role="search">
+        <SearchIcon />
+        <input
+          aria-label="Search MCP servers"
+          type="search"
+          value={mcpServerSearchQuery}
+          placeholder="Search servers"
+          onChange={(event) => setMcpServerSearchQuery(event.target.value)}
+        />
+        {mcpServerSearchQuery ? (
+          <button
+            aria-label="Clear MCP server search"
+            title="Clear search"
+            type="button"
+            onClick={() => setMcpServerSearchQuery("")}
+          >
+            <CloseIcon />
+          </button>
+        ) : null}
+      </div>
+
+      <div className="skills-tree-root mcp-servers-list-stack" role="list" aria-label="MCP servers">
+        {filteredMcpServers.length > 0 ? (
+          filteredMcpServers.map((server) => {
+            const isActive = server.id === activeMcpServerID
+
+            return (
+              <button
+                key={server.id}
+                className={isActive ? "skill-tree-row mcp-server-sidebar-row is-active" : "skill-tree-row mcp-server-sidebar-row"}
+                aria-label={`${server.name ?? server.id} ${server.enabled ? "enabled" : "disabled"}`}
+                aria-pressed={isActive}
+                type="button"
+                onClick={() => onMcpServerSelect(server.id)}
+              >
+                <span className="skill-tree-role-icon is-folder" aria-hidden="true">
+                  <FolderIcon />
+                </span>
+                <span className="skill-tree-label">{server.name ?? server.id}</span>
+                <span className="prompt-tree-row-badges" aria-hidden="true">
+                  <span className="settings-badge">{getMcpTransportLabel(server.transport)}</span>
+                  <span className={server.enabled ? "settings-badge is-highlight" : "settings-badge"}>
+                    {server.enabled ? "Enabled" : "Disabled"}
+                  </span>
+                </span>
+              </button>
+            )
+          })
+        ) : mcpServers.length > 0 ? (
+          <p className="skills-tree-empty">No MCP servers match this search.</p>
+        ) : (
+          <p className="skills-tree-empty">No global MCP servers configured yet.</p>
+        )}
+
+        <div className="global-skills-new-menu-shell mcp-servers-new-menu-shell">
+          <button
+            aria-label="New server"
+            aria-pressed={!activeMcpServer}
+            className={activeMcpServer ? "global-skills-new-button mcp-servers-new-button" : "global-skills-new-button mcp-servers-new-button is-active"}
+            onClick={onStartNewMcpServer}
+            title="New server"
+            type="button"
+          >
+            <PlusIcon />
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function McpServersPage({
   activeMcpServerID,
   activeMcpServerDiagnostic,
@@ -108,6 +208,7 @@ export function McpServersPage({
   mcpServers,
   message,
   savingMcpServerID,
+  hideNavigator = false,
   isImportingMcpConfigJson = false,
   windowControls,
   onDeleteMcpServer,
@@ -121,7 +222,6 @@ export function McpServersPage({
 }: McpServersPageProps) {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [importConfigJson, setImportConfigJson] = useState("")
-  const [mcpServerSearchQuery, setMcpServerSearchQuery] = useState("")
   const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
   const mcpSaveLabel = activeMcpServer ? "Save server" : "Create server"
   const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
@@ -131,10 +231,6 @@ export function McpServersPage({
   )
   const mcpServerValidationError = getMcpServerValidationError(mcpServerDraft)
   const mcpServerCanSave = !mcpServerValidationError
-  const filteredMcpServers = useMemo(
-    () => mcpServers.filter((server) => doesMcpServerMatchSearch(server, mcpServerSearchQuery)),
-    [mcpServerSearchQuery, mcpServers],
-  )
   const importPreview = useMemo(() => {
     if (!importConfigJson.trim()) return null
 
@@ -207,84 +303,23 @@ export function McpServersPage({
             <p>Reading global MCP definitions, current defaults, and diagnostics.</p>
           </article>
         ) : (
-          <section className="settings-services-layout mcp-servers-page-layout" aria-label="MCP server layout">
-            <div className="settings-service-list-panel mcp-servers-list-panel">
-              <div className="mcp-servers-search-row" role="search">
-                <SearchIcon />
-                <input
-                  aria-label="Search MCP servers"
-                  type="search"
-                  value={mcpServerSearchQuery}
-                  placeholder="Search servers"
-                  onChange={(event) => setMcpServerSearchQuery(event.target.value)}
+          <section
+            className={hideNavigator ? "settings-services-layout mcp-servers-page-layout is-sidebar-hosted" : "settings-services-layout mcp-servers-page-layout"}
+            aria-label="MCP server layout"
+          >
+            {!hideNavigator ? (
+              <div className="settings-service-list-panel mcp-servers-list-panel">
+                <McpServersSidebarView
+                  activeMcpServerID={activeMcpServerID}
+                  deletingMcpServerID={deletingMcpServerID}
+                  isImportingMcpConfigJson={isImportingMcpConfigJson}
+                  mcpServers={mcpServers}
+                  savingMcpServerID={savingMcpServerID}
+                  onMcpServerSelect={onMcpServerSelect}
+                  onStartNewMcpServer={onStartNewMcpServer}
                 />
-                {mcpServerSearchQuery ? (
-                  <button
-                    aria-label="Clear MCP server search"
-                    title="Clear search"
-                    type="button"
-                    onClick={() => setMcpServerSearchQuery("")}
-                  >
-                    <CloseIcon />
-                  </button>
-                ) : null}
               </div>
-              <div className="settings-service-list-body">
-                <div className="settings-service-list mcp-servers-list-stack" role="list" aria-label="MCP servers">
-                  {filteredMcpServers.length > 0 ? (
-                    filteredMcpServers.map((server) => {
-                      const isActive = server.id === activeMcpServerID
-
-                      return (
-                        <button
-                          key={server.id}
-                          className={isActive ? "settings-service-item is-active" : "settings-service-item"}
-                          aria-label={`${server.name ?? server.id} ${server.enabled ? "enabled" : "disabled"}`}
-                          aria-pressed={isActive}
-                          onClick={() => onMcpServerSelect(server.id)}
-                        >
-                          <div className="settings-service-item-header">
-                            <strong>{server.name ?? server.id}</strong>
-                            <div className="provider-row-statuses">
-                              <span className="settings-badge">{getMcpTransportLabel(server.transport)}</span>
-                              <span className={server.enabled ? "settings-badge is-highlight" : "settings-badge"}>
-                                {server.enabled ? "Enabled" : "Disabled"}
-                              </span>
-                            </div>
-                          </div>
-                        </button>
-                      )
-                    })
-                  ) : mcpServers.length > 0 ? (
-                    <article className="settings-empty-state settings-service-list-empty-state">
-                      <span className="label">No Match</span>
-                      <h3>No MCP servers match this search</h3>
-                    </article>
-                  ) : (
-                    <article className="settings-empty-state settings-service-list-empty-state">
-                      <span className="label">No Servers</span>
-                      <h3>No global MCP servers configured yet</h3>
-                      <p>Create a reusable local or remote server here, then enable it from a project when needed.</p>
-                    </article>
-                  )}
-
-                  <button
-                    aria-label="New server"
-                    aria-pressed={!activeMcpServer}
-                    className={
-                      activeMcpServer
-                        ? "settings-service-item mcp-servers-new-button"
-                        : "settings-service-item mcp-servers-new-button is-active"
-                    }
-                    onClick={onStartNewMcpServer}
-                    title="New server"
-                    type="button"
-                  >
-                    <PlusIcon />
-                  </button>
-                </div>
-              </div>
-            </div>
+            ) : null}
 
             <div className="settings-service-detail-panel">
               <div className="settings-detail-hero">

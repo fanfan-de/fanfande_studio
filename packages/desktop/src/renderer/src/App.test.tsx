@@ -2069,7 +2069,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open skills" }))
 
     expect(screen.getByLabelText("Skills top menu")).toBeInTheDocument()
-    expect(screen.queryByLabelText("Left sidebar top menu")).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Left sidebar top menu")).toBeInTheDocument()
+    expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
 
     await screen.findByText("No skills exist yet. Use + to create the first one.")
@@ -6972,6 +6973,8 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open prompts" }))
 
+    expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
+    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     const promptTree = await screen.findByRole("list", { name: "Prompt presets" })
     const bundledPromptFolder = within(promptTree).getByRole("button", { name: "Bundled prompt folder" })
     expect(bundledPromptFolder.querySelector(".skill-tree-leading")).toBeNull()
@@ -7295,6 +7298,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open tools" }))
 
     expect(screen.getByLabelText("Tools top menu")).toBeInTheDocument()
+    expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
+    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     expect(screen.queryByRole("dialog", { name: "Settings" })).not.toBeInTheDocument()
     expect(screen.queryByText("Pick a project first")).not.toBeInTheDocument()
     expect(await screen.findByText("Global tool availability")).toBeInTheDocument()
@@ -7348,6 +7353,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open MCP" }))
 
     expect(screen.getByLabelText("MCP top menu")).toBeInTheDocument()
+    expect(document.querySelector("#app-sidebar")).toBeInTheDocument()
+    expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     const filesystemButton = await screen.findByRole("button", { name: /Filesystem enabled/ })
     const newServerButton = screen.getByRole("button", { name: "New server" })
     const pageButtons = screen.getAllByRole("button")

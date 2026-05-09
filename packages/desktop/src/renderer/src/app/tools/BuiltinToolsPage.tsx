@@ -9,17 +9,26 @@ interface BuiltinToolsMessage {
 }
 
 interface BuiltinToolsPageProps {
+  activeToolKind?: BuiltinToolKindKey | null
   builtinTools: BuiltinToolSummary[]
   builtinToolsError: string | null
+  hideNavigator?: boolean
   isBuiltinToolSelectionDirty: boolean
   isLoadingBuiltinTools: boolean
   isSavingBuiltinTools: boolean
   message: BuiltinToolsMessage | null
   windowControls?: ReactNode
+  onActiveToolKindChange?: (kind: BuiltinToolKindKey | null) => void
   onBuiltinToolToggle: (toolID: string, enabled: boolean) => void
   onDismissMessage: () => void
   onResetBuiltinTools: () => boolean | Promise<boolean>
   onSaveBuiltinTools: () => boolean | Promise<boolean>
+}
+
+export interface BuiltinToolsSidebarViewProps {
+  activeToolKind: BuiltinToolKindKey | null
+  builtinTools: BuiltinToolSummary[]
+  onActiveToolKindChange: (kind: BuiltinToolKindKey) => void
 }
 
 function formatJson(value: unknown) {
@@ -83,8 +92,15 @@ function getBuiltinToolRiskBadgeClassName(tool: BuiltinToolSummary) {
   return "tools-badge"
 }
 
-const builtinToolKindOrder = ["exec", "write", "delegation", "workflow", "interaction", "search", "read", "other"] as const
-type BuiltinToolKindKey = (typeof builtinToolKindOrder)[number]
+export const builtinToolKindOrder = ["exec", "write", "delegation", "workflow", "interaction", "search", "read", "other"] as const
+export type BuiltinToolKindKey = (typeof builtinToolKindOrder)[number]
+
+interface BuiltinToolGroup {
+  kind: BuiltinToolKindKey
+  label: string
+  items: BuiltinToolSummary[]
+  enabledCount: number
+}
 
 function getBuiltinToolGroupDescription(groupLabel: string) {
   switch (groupLabel) {
@@ -107,38 +123,91 @@ function getBuiltinToolGroupDescription(groupLabel: string) {
   }
 }
 
+export function BuiltinToolsSidebarView({
+  activeToolKind,
+  builtinTools,
+  onActiveToolKindChange,
+}: BuiltinToolsSidebarViewProps) {
+  const builtinToolGroups = useMemo(() => buildBuiltinToolGroups(builtinTools), [builtinTools])
+
+  return (
+    <section className="sidebar-view sidebar-view-tools" aria-label="Built-in tool categories sidebar view">
+      <div className="skills-tree-root tools-category-list" role="list" aria-label="Tool categories">
+        {builtinToolGroups.map((group) => {
+          const isActive = group.kind === activeToolKind
+
+          return (
+            <button
+              key={group.kind}
+              className={isActive ? "skill-tree-row tools-category-item is-active" : "skill-tree-row tools-category-item"}
+              aria-label={`${group.label} tools, ${group.enabledCount} of ${group.items.length} enabled`}
+              aria-pressed={isActive}
+              type="button"
+              onClick={() => onActiveToolKindChange(group.kind)}
+            >
+              <span className="skill-tree-role-icon is-skill" aria-hidden="true">
+                <ToolsIcon />
+              </span>
+              <span className="skill-tree-label">{group.label}</span>
+              <span className="prompt-tree-row-badges" aria-hidden="true">
+                <span className="tools-badge">{group.items.length}</span>
+                <span className="tools-badge">
+                  {group.enabledCount}/{group.items.length}
+                </span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function buildBuiltinToolGroups(builtinTools: BuiltinToolSummary[]): BuiltinToolGroup[] {
+  return builtinToolKindOrder
+    .map((kind) => {
+      const items = builtinTools.filter((tool) => (tool.capabilities.kind ?? "other") === kind)
+      return {
+        kind,
+        label: getBuiltinToolGroupLabel(kind),
+        items,
+        enabledCount: items.filter((tool) => tool.enabled).length,
+      }
+    })
+    .filter((group) => group.items.length > 0)
+}
+
 export function BuiltinToolsPage({
+  activeToolKind: controlledActiveToolKind,
   builtinTools,
   builtinToolsError,
+  hideNavigator = false,
   isBuiltinToolSelectionDirty,
   isLoadingBuiltinTools,
   isSavingBuiltinTools,
   message,
   windowControls,
+  onActiveToolKindChange,
   onBuiltinToolToggle,
   onDismissMessage,
   onResetBuiltinTools,
   onSaveBuiltinTools,
 }: BuiltinToolsPageProps) {
-  const [activeToolKind, setActiveToolKind] = useState<BuiltinToolKindKey | null>(null)
+  const [internalActiveToolKind, setInternalActiveToolKind] = useState<BuiltinToolKindKey | null>(null)
   const [expandedToolIDs, setExpandedToolIDs] = useState<Set<string>>(() => new Set())
   const enabledBuiltinToolCount = builtinTools.filter((tool) => tool.enabled).length
-  const builtinToolGroups = useMemo(
-    () =>
-      builtinToolKindOrder
-        .map((kind) => {
-          const items = builtinTools.filter((tool) => (tool.capabilities.kind ?? "other") === kind)
-          return {
-            kind,
-            label: getBuiltinToolGroupLabel(kind),
-            items,
-            enabledCount: items.filter((tool) => tool.enabled).length,
-          }
-        })
-        .filter((group) => group.items.length > 0),
-    [builtinTools],
-  )
+  const builtinToolGroups = useMemo(() => buildBuiltinToolGroups(builtinTools), [builtinTools])
+  const activeToolKind = controlledActiveToolKind ?? internalActiveToolKind
   const activeToolGroup = builtinToolGroups.find((group) => group.kind === activeToolKind) ?? builtinToolGroups[0] ?? null
+
+  function setActiveToolKind(nextKind: BuiltinToolKindKey | null) {
+    if (onActiveToolKindChange) {
+      onActiveToolKindChange(nextKind)
+      return
+    }
+
+    setInternalActiveToolKind(nextKind)
+  }
 
   useEffect(() => {
     const firstKind = builtinToolGroups[0]?.kind ?? null
@@ -210,35 +279,18 @@ export function BuiltinToolsPage({
             <p>Reading the built-in registry and saved global availability limits.</p>
           </article>
         ) : (
-          <section className="tools-layout" aria-label="Built-in tools">
-            <div className="tools-category-panel">
-              <div className="tools-category-body">
-                <div className="tools-category-list" role="list" aria-label="Tool categories">
-                  {builtinToolGroups.map((group) => {
-                    const isActive = group.kind === activeToolGroup?.kind
-
-                    return (
-                      <button
-                        key={group.kind}
-                        className={isActive ? "tools-category-item is-active" : "tools-category-item"}
-                        aria-label={`${group.label} tools, ${group.enabledCount} of ${group.items.length} enabled`}
-                        aria-pressed={isActive}
-                        type="button"
-                        onClick={() => setActiveToolKind(group.kind)}
-                      >
-                        <div className="tools-category-item-header">
-                          <strong>{group.label}</strong>
-                          <span className="tools-badge">{group.items.length}</span>
-                        </div>
-                        <span className="tools-category-item-copy">
-                          {group.enabledCount} of {group.items.length} enabled
-                        </span>
-                      </button>
-                    )
-                  })}
+          <section className={hideNavigator ? "tools-layout is-sidebar-hosted" : "tools-layout"} aria-label="Built-in tools">
+            {!hideNavigator ? (
+              <div className="tools-category-panel">
+                <div className="tools-category-body">
+                  <BuiltinToolsSidebarView
+                    activeToolKind={activeToolGroup?.kind ?? null}
+                    builtinTools={builtinTools}
+                    onActiveToolKindChange={setActiveToolKind}
+                  />
                 </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="tools-detail-panel">
               {activeToolGroup ? (

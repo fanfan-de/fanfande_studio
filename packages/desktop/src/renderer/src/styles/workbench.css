@@ -642,6 +642,11 @@
   grid-template-columns: 340px minmax(0, 1fr);
 }
 
+.settings-services-layout.global-skills-page-layout.is-sidebar-hosted,
+.settings-services-layout.mcp-servers-page-layout.is-sidebar-hosted {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .settings-service-list-panel.mcp-servers-list-panel {
   grid-template-rows: auto minmax(0, 1fr);
 }
