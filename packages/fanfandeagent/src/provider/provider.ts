@@ -18,7 +18,12 @@ const OPENROUTER_SDK_PACKAGE = "@openrouter/ai-sdk-provider"
 const GOOGLE_VERTEX_SDK_PACKAGE = "@ai-sdk/google-vertex"
 const PROVIDER_VALIDATION_TIMEOUT_MS = 10_000
 const OPENAI_PROVIDER_ID = "openai"
+const ANYBOX_PROVIDER_ID = "anybox"
 const OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
+const ANYBOX_DEFAULT_BASE_URL =
+  process.env["FANFANDE_ANYBOX_BASE_URL"]?.trim() ||
+  process.env["FanFande_ANYBOX_BASE_URL"]?.trim() ||
+  "http://localhost:3000"
 const log = Log.create({ service: "provider" })
 
 // -----------------------------------------------------------------------------
@@ -269,6 +274,7 @@ type SDKFactoryInput = {
   apiKey: string | undefined
   baseURL: string | undefined
   headers: Record<string, string> | undefined
+  fetch?: (input: any, init?: any) => Promise<Response>
 }
 
 type SDKModuleFactory = (options: Record<string, unknown>) => Provider
@@ -313,21 +319,23 @@ type SDKAdapter = {
   create(input: SDKFactoryInput, factory: SDKModuleFactory): SDKProvider
 }
 
-function createSDKProvider(input: SDKFactoryInput, factory: SDKModuleFactory) {
-  return factory({
+function sdkFactoryOptions(input: SDKFactoryInput, extra: Record<string, unknown> = {}) {
+  const options: Record<string, unknown> = {
     apiKey: input.apiKey,
     baseURL: input.baseURL,
     headers: input.headers,
-  }) as SDKProvider
+    ...extra,
+  }
+  if (input.fetch) options.fetch = input.fetch
+  return options
+}
+
+function createSDKProvider(input: SDKFactoryInput, factory: SDKModuleFactory) {
+  return factory(sdkFactoryOptions(input)) as SDKProvider
 }
 
 function createNamedSDKProvider(input: SDKFactoryInput, factory: SDKModuleFactory) {
-  return factory({
-    name: input.provider.id,
-    apiKey: input.apiKey,
-    baseURL: input.baseURL,
-    headers: input.headers,
-  }) as SDKProvider
+  return factory(sdkFactoryOptions(input, { name: input.provider.id })) as SDKProvider
 }
 
 function sdkAdapter(version: string, exportName: string, options?: {
@@ -375,12 +383,7 @@ const SDK_ADAPTERS: Record<string, SDKAdapter> = {
         )
       }
 
-      return factory({
-        name: input.provider.id,
-        apiKey: input.apiKey,
-        baseURL: input.baseURL,
-        headers: input.headers,
-      }) as SDKProvider
+      return factory(sdkFactoryOptions(input, { name: input.provider.id })) as SDKProvider
     },
   },
   [OPENAI_SDK_PACKAGE]: {
@@ -472,6 +475,15 @@ function firstNonEmptyString(...values: unknown[]) {
   return undefined
 }
 
+function parseNumeric(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value === "string") {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
 function hasProviderConfig(config: Config.Info, providerID: string) {
   return Boolean(config.provider?.[providerID])
 }
@@ -509,6 +521,10 @@ function hasApiKeyCredential(provider: ProviderInfo) {
 }
 
 function isAvailable(provider: ProviderInfo) {
+  if (provider.id === ANYBOX_PROVIDER_ID) {
+    return provider.authState?.status === "connected" && hasRuntimeCredential(provider)
+  }
+
   if (provider.authState && provider.env.length > 0) {
     return provider.authState.status === "connected"
   }
@@ -567,6 +583,28 @@ function createConfigOnlyProvider(providerID: string, providerConfig: Config.Pro
     env: providerConfig?.env ?? [],
     options: {},
     models: {},
+  }
+}
+
+function normalizeAnyboxRootURL(baseURL?: string) {
+  const configured = firstNonEmptyString(baseURL, ANYBOX_DEFAULT_BASE_URL) ?? ANYBOX_DEFAULT_BASE_URL
+  const trimmed = configured.replace(/\/+$/, "")
+  return trimmed.endsWith("/v1") ? trimmed.slice(0, -"/v1".length) : trimmed
+}
+
+function normalizeAnyboxApiURL(baseURL?: string) {
+  return `${normalizeAnyboxRootURL(baseURL)}/v1`
+}
+
+function createAnyboxProvider(): ProviderInfo {
+  return {
+    id: ANYBOX_PROVIDER_ID,
+    name: "Anybox",
+    source: "api",
+    env: [],
+    options: {},
+    models: {},
+    displayBaseURL: normalizeAnyboxApiURL(),
   }
 }
 
@@ -862,10 +900,166 @@ function filterProviderModels(models: Record<string, Model>, providerConfig: Con
   return Object.fromEntries(modelEntries)
 }
 
+function toRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function stringArray(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === "string")
+}
+
+function hasAny(values: string[], candidates: string[]) {
+  const normalized = new Set(values.map((item) => item.toLowerCase()))
+  return candidates.some((candidate) => normalized.has(candidate))
+}
+
+function readNestedBoolean(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === "boolean") return value
+  }
+  return undefined
+}
+
+function readAnyboxModelBoolean(
+  model: Record<string, unknown>,
+  capabilities: Record<string, unknown>,
+  keys: string[],
+) {
+  return readNestedBoolean(model, keys) ?? readNestedBoolean(capabilities, keys)
+}
+
+function normalizeAnyboxModelStatus(value: unknown): Model["status"] {
+  if (value === "alpha" || value === "beta" || value === "deprecated" || value === "active") return value
+  return "active"
+}
+
+function anyboxModelFromPayload(baseURL: string, payload: unknown): Model | undefined {
+  const item = toRecord(payload)
+  const modelID = firstNonEmptyString(item.id, item.model, item.slug)
+  if (!modelID) return undefined
+
+  const capabilities = toRecord(item.capabilities)
+  const modalities = toRecord(item.modalities)
+  const inputModalities = stringArray(modalities.input)
+  const outputModalities = stringArray(modalities.output)
+  const capabilityInput = stringArray(capabilities.input)
+  const capabilityOutput = stringArray(capabilities.output)
+  const inputKinds = [...inputModalities, ...capabilityInput]
+  const outputKinds = [...outputModalities, ...capabilityOutput]
+  const supportsVision =
+    readAnyboxModelBoolean(item, capabilities, ["vision", "supportsVision", "image", "images"]) ??
+    hasAny(inputKinds, ["image", "vision"])
+  const supportsPdf =
+    readAnyboxModelBoolean(item, capabilities, ["pdf", "supportsPdf", "supportsPDF"]) ??
+    hasAny(inputKinds, ["pdf"])
+  const supportsReasoning =
+    readAnyboxModelBoolean(item, capabilities, ["reasoning", "supportsReasoning"]) ??
+    false
+  const supportsToolCall =
+    readAnyboxModelBoolean(item, capabilities, ["tool_call", "toolCall", "toolcall", "tools", "function_calling"]) ??
+    true
+
+  return {
+    id: modelID,
+    providerID: ANYBOX_PROVIDER_ID,
+    api: {
+      id: firstNonEmptyString(item.api_id, item.apiID, item.model, modelID) ?? modelID,
+      url: normalizeAnyboxApiURL(baseURL),
+      npm: OPENAI_COMPATIBLE_SDK_PACKAGE,
+    },
+    name: firstNonEmptyString(item.display_name, item.displayName, item.name, modelID) ?? modelID,
+    family: firstNonEmptyString(item.family, item.provider, item.vendor),
+    capabilities: {
+      temperature: readAnyboxModelBoolean(item, capabilities, ["temperature", "supportsTemperature"]) ?? true,
+      reasoning: supportsReasoning,
+      replayAssistantReasoning: true,
+      attachment: supportsVision || supportsPdf,
+      toolcall: supportsToolCall,
+      input: {
+        text: true,
+        audio: hasAny(inputKinds, ["audio"]),
+        image: supportsVision,
+        video: hasAny(inputKinds, ["video"]),
+        pdf: supportsPdf,
+      },
+      output: {
+        text: true,
+        audio: hasAny(outputKinds, ["audio"]),
+        image:
+          readAnyboxModelBoolean(item, capabilities, ["image_output", "imageOutput", "generatesImages"]) ??
+          hasAny(outputKinds, ["image"]),
+        video: hasAny(outputKinds, ["video"]),
+        pdf: hasAny(outputKinds, ["pdf"]),
+      },
+      interleaved: item.interleaved === true ? true : false,
+    },
+    cost: {
+      input: parseNumeric(toRecord(item.cost).input) ?? parseNumeric(toRecord(item.pricing).input) ?? 0,
+      output: parseNumeric(toRecord(item.cost).output) ?? parseNumeric(toRecord(item.pricing).output) ?? 0,
+      cache: {
+        read: parseNumeric(toRecord(item.cost).cache_read) ?? parseNumeric(toRecord(item.pricing).cache_read) ?? 0,
+        write: parseNumeric(toRecord(item.cost).cache_write) ?? parseNumeric(toRecord(item.pricing).cache_write) ?? 0,
+      },
+    },
+    limit: {
+      context:
+        parseNumeric(item.context_window) ??
+        parseNumeric(item.contextWindow) ??
+        parseNumeric(toRecord(item.limit).context) ??
+        128_000,
+      input: parseNumeric(toRecord(item.limit).input),
+      output:
+        parseNumeric(item.output_limit) ??
+        parseNumeric(item.outputLimit) ??
+        parseNumeric(item.max_output_tokens) ??
+        parseNumeric(item.maxOutputTokens) ??
+        parseNumeric(toRecord(item.limit).output) ??
+        8_192,
+    },
+    status: normalizeAnyboxModelStatus(item.status),
+    options: toRecord(item.options),
+    headers: {},
+    release_date: firstNonEmptyString(item.release_date, item.releaseDate) ?? "2026-01-01",
+    variants: {},
+  }
+}
+
+async function fetchAnyboxModels(baseURL: string | undefined, accessToken: string) {
+  const apiURL = normalizeAnyboxApiURL(baseURL)
+  const response = await fetch(buildProviderModelsURL(apiURL), {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${accessToken}`,
+    },
+    signal: AbortSignal.timeout(PROVIDER_VALIDATION_TIMEOUT_MS),
+  })
+
+  if (!response.ok) {
+    const detail = await readValidationFailureMessage(response)
+    throw new Error(formatValidationFailureMessage(createAnyboxProvider(), response.status, detail))
+  }
+
+  const payload = await response.json() as unknown
+  const payloadRecord = toRecord(payload)
+  const records: unknown[] = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payloadRecord.data)
+      ? payloadRecord.data
+      : []
+  const models = records
+    .map((item) => anyboxModelFromPayload(apiURL, item))
+    .filter((item): item is Model => Boolean(item))
+
+  return Object.fromEntries(models.map((model) => [model.id, model]))
+}
+
 // 把 catalog 里的 provider、项目配置、当前实例环境变量三份信息合成最终 ProviderInfo。
 function displayBaseURL(baseProvider: ProviderInfo | undefined, providerConfig: Config.Provider | undefined) {
   const catalogModel = baseProvider ? Object.values(baseProvider.models)[0] : undefined
-  return firstNonEmptyString(providerConfig?.options?.baseURL, providerConfig?.api, catalogModel?.api.url)
+  return firstNonEmptyString(providerConfig?.options?.baseURL, providerConfig?.api, baseProvider?.displayBaseURL, catalogModel?.api.url)
 }
 
 async function applyProviderConfig(
@@ -880,10 +1074,15 @@ async function applyProviderConfig(
   const provider: ProviderInfo = baseProvider
     ? structuredClone(baseProvider)
     : createConfigOnlyProvider(providerID, providerConfig)
+  const configuredBaseURL =
+    providerID === ANYBOX_PROVIDER_ID
+      ? normalizeAnyboxApiURL(displayBaseURL(baseProvider, providerConfig))
+      : displayBaseURL(baseProvider, providerConfig)
 
   const runtimeAuth = await ProviderAuth.resolveProviderRuntimeAuth(providerID, {
     configApiKey: providerConfig?.options?.apiKey,
     envApiKey: firstNonEmptyString(...provider.env.map((item) => env[item])),
+    providerBaseURL: configuredBaseURL,
   }, authOptions)
 
   const configured = Boolean(providerConfig) || Boolean(runtimeAuth.apiKey) || runtimeAuth.authState.status !== "not_connected"
@@ -894,7 +1093,13 @@ async function applyProviderConfig(
   provider.source = providerConfig ? "config" : runtimeAuth.credentialSource === "environment" ? "env" : provider.source
   provider.key = runtimeAuth.apiKey
   provider.options = sanitizeProviderOptions(providerConfig?.options)
-  provider.displayBaseURL = displayBaseURL(baseProvider, providerConfig)
+  if (providerID === ANYBOX_PROVIDER_ID) {
+    provider.options = {
+      ...provider.options,
+      baseURL: configuredBaseURL,
+    }
+  }
+  provider.displayBaseURL = configuredBaseURL
   provider.runtimeBaseURL = runtimeAuth.runtimeBaseURL
   provider.runtimeHeaders = runtimeAuth.runtimeHeaders
   provider.credentialKind = runtimeAuth.credentialKind
@@ -903,14 +1108,37 @@ async function applyProviderConfig(
   provider.authCapabilities = runtimeAuth.authCapabilities
   provider.authState = runtimeAuth.authState
 
-  const baseModels = runtimeAuth.authMode === "codex" && providerID === OPENAI_PROVIDER_ID ? openAICodexModels() : provider.models
-  provider.models = filterProviderModels(mergeProviderModels(providerID, baseModels, providerConfig), providerConfig)
+  let baseModels = runtimeAuth.authMode === "codex" && providerID === OPENAI_PROVIDER_ID ? openAICodexModels() : provider.models
+  if (providerID === ANYBOX_PROVIDER_ID && runtimeAuth.apiKey) {
+    baseModels = await fetchAnyboxModels(runtimeAuth.runtimeBaseURL ?? configuredBaseURL, runtimeAuth.apiKey).catch((error) => {
+      log.warn("anybox-model-list-failed", {
+        providerID,
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return provider.models
+    })
+  }
+  const mergeConfig =
+    providerID === ANYBOX_PROVIDER_ID && providerConfig
+      ? {
+          ...providerConfig,
+          api: configuredBaseURL,
+          options: {
+            ...providerConfig.options,
+            baseURL: configuredBaseURL,
+          },
+        }
+      : providerConfig
+  provider.models = filterProviderModels(mergeProviderModels(providerID, baseModels, mergeConfig), providerConfig)
   return provider
 }
 
 async function catalogMap():Promise<Record<string,ProviderInfo>> {
   const providers = await providerRuntimeDependencies.getModelsDev()
-  return mapValues(providers, fromModelsDevProvider)
+  return {
+    ...mapValues(providers, fromModelsDevProvider),
+    [ANYBOX_PROVIDER_ID]: createAnyboxProvider(),
+  }
 }
 
 /**
@@ -1099,7 +1327,11 @@ function toCatalogItem(
     source: configuredProvider?.source ?? baseProvider.source,
     env: configuredProvider?.env ?? baseProvider.env,
     configured: Boolean(configuredProvider),
-    available: configuredProvider ? isAvailable(configuredProvider) : baseProvider.env.length === 0,
+    available: configuredProvider
+      ? isAvailable(configuredProvider)
+      : baseProvider.id === ANYBOX_PROVIDER_ID
+        ? authState.status === "connected"
+        : baseProvider.env.length === 0,
     apiKeyConfigured: configuredProvider ? hasApiKeyCredential(configuredProvider) : false,
     baseURL: configuredProvider ? modelBaseURL(configuredProvider) : modelBaseURL(baseProvider),
     modelCount: Object.keys((configuredProvider ?? baseProvider).models).length,
@@ -1148,6 +1380,7 @@ export async function catalog(configID = resolveConfigID()) {
         (await ProviderAuth.getProviderAuthState(provider.id, {
           configApiKey: state.config.provider?.[provider.id]?.options?.apiKey,
           envApiKey: firstNonEmptyString(...(configuredProvider?.env ?? provider.env).map((item) => state.env[item])),
+          providerBaseURL: displayBaseURL(provider, state.config.provider?.[provider.id]),
         }))
       return toCatalogItem(provider, configuredProvider, authState)
     }),
@@ -1178,6 +1411,13 @@ export async function validateProviderConfig(
 
   if (!provider) {
     throw new Error(`Provider '${providerID}' could not be resolved from the catalog`)
+  }
+
+  if (providerID === ANYBOX_PROVIDER_ID && !provider.key) {
+    if (options.requireCredential) {
+      throw new Error(`Provider '${provider.name}' does not have an available Anybox account session`)
+    }
+    return
   }
 
   if (!provider.key && provider.env.length > 0) {
@@ -1411,6 +1651,62 @@ async function loadSDKFactory(npmPackage: string) {
   }
 }
 
+type RuntimeFetchInput = any
+type RuntimeFetchInit = any
+
+function withBearerToken(input: RuntimeFetchInput, init: RuntimeFetchInit, accessToken: string) {
+  const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+  headers.set("authorization", `Bearer ${accessToken}`)
+
+  return {
+    input: input instanceof Request ? input.clone() : input,
+    init: {
+      ...init,
+      headers,
+    },
+  }
+}
+
+function createAnyboxRuntimeFetch(provider: ProviderInfo) {
+  let accessToken = provider.key
+
+  return async (input: RuntimeFetchInput, init?: RuntimeFetchInit) => {
+    if (!accessToken) return await fetch(input, init)
+
+    const firstRequest = withBearerToken(input, init, accessToken)
+    const response = await fetch(firstRequest.input, firstRequest.init)
+    if (response.status !== 401) return response
+
+    const refreshed = await ProviderAuth.resolveProviderRuntimeAuth(
+      ANYBOX_PROVIDER_ID,
+      {
+        providerBaseURL: firstNonEmptyString(provider.runtimeBaseURL, provider.displayBaseURL, provider.options.baseURL),
+      },
+      {
+        method: provider.activeMethod,
+        credentialMode: "active",
+        forceRefresh: true,
+      },
+    ).catch((error) => {
+      log.warn("anybox-runtime-fetch-refresh-failed", {
+        providerID: provider.id,
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return undefined
+    })
+
+    if (!refreshed?.apiKey || refreshed.apiKey === accessToken) return response
+
+    accessToken = refreshed.apiKey
+    provider.key = refreshed.apiKey
+    provider.runtimeBaseURL = refreshed.runtimeBaseURL ?? provider.runtimeBaseURL
+    provider.runtimeHeaders = refreshed.runtimeHeaders ?? provider.runtimeHeaders
+
+    const retryRequest = withBearerToken(input, init, accessToken)
+    return await fetch(retryRequest.input, retryRequest.init)
+  }
+}
+
 async function getSDK(model: Model, configID = resolveConfigID()) {
   // SDK Provider 比 LanguageModel 更底层，先保证它存在，再由上层取 languageModel。
   const provider = await requireRuntimeProvider(model.providerID, configID)
@@ -1437,6 +1733,7 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
     ...model.headers,
   }
   const headers = Object.keys(combinedHeaders).length > 0 ? combinedHeaders : undefined
+  const runtimeFetch = provider.id === ANYBOX_PROVIDER_ID ? createAnyboxRuntimeFetch(provider) : undefined
   const sdkPackage = model.api.npm
   const loaded = await loadSDKFactory(sdkPackage)
   log.info("initializing sdk provider", {
@@ -1454,6 +1751,7 @@ async function getSDK(model: Model, configID = resolveConfigID()) {
       apiKey: provider.key,
       baseURL,
       headers,
+      fetch: runtimeFetch,
     },
     loaded.factory,
   )

@@ -9,12 +9,19 @@ import * as Log from "#util/log.ts"
 const log = Log.create({ service: "provider-auth" })
 
 const OPENAI_PROVIDER_ID = "openai"
+const ANYBOX_PROVIDER_ID = "anybox"
 const OPENAI_AUTH_ISSUER = "https://auth.openai.com"
 const OPENAI_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 const OPENAI_DEVICE_AUTH_BASE_URL = `${OPENAI_AUTH_ISSUER}/api/accounts`
 const OPENAI_DEVICE_AUTH_VERIFICATION_URL = `${OPENAI_AUTH_ISSUER}/codex/device`
 const OPENAI_LOCAL_CALLBACK_PATH = "/auth/callback"
 const DEFAULT_OPENAI_LOCAL_CALLBACK_PORT = 1455
+const ANYBOX_BROWSER_METHOD = "anybox-browser"
+const ANYBOX_DEFAULT_BASE_URL =
+  process.env["FANFANDE_ANYBOX_BASE_URL"]?.trim() ||
+  process.env["FanFande_ANYBOX_BASE_URL"]?.trim() ||
+  "http://localhost:3000"
+const ANYBOX_CLIENT_ID = process.env["FANFANDE_ANYBOX_CLIENT_ID"]?.trim() || "fanfande-agent"
 const OPENAI_OAUTH_CLIENT_ID = process.env["FanFande_OPENAI_CODEX_CLIENT_ID"]?.trim() || "app_EMoamEEZ73f0CkXaXp7hrann"
 const OPENAI_OAUTH_SCOPE = "openid profile email offline_access"
 const OPENAI_ORIGINATOR =
@@ -68,6 +75,9 @@ export const ProviderAuthAccountSummary = z
     planType: z.string().optional(),
     workspaceID: z.string().optional(),
     workspaceName: z.string().optional(),
+    balanceMicrocents: z.number().optional(),
+    currency: z.string().optional(),
+    rechargeUrl: z.string().optional(),
     label: z.string().optional(),
   })
   .meta({ ref: "ProviderAuthAccountSummary" })
@@ -125,6 +135,7 @@ export type ProviderRuntimeAuth = {
 type ProviderAuthFallbacks = {
   configApiKey?: string
   envApiKey?: string
+  providerBaseURL?: string
 }
 
 export type ProviderRuntimeCredentialMode = "active" | "manual" | "environment"
@@ -133,12 +144,14 @@ export type ProviderRuntimeAuthOptions = {
   method?: string
   credentialMode?: ProviderRuntimeCredentialMode
   transientApiKey?: string | null
+  forceRefresh?: boolean
 }
 
 type ProviderFlowContext = {
   providerID: string
   method: string
   serverBaseURL: string
+  providerBaseURL?: string
 }
 
 type InternalFlow = ProviderAuthFlow & {
@@ -149,6 +162,7 @@ type InternalFlow = ProviderAuthFlow & {
   intervalSeconds?: number
   cancelSignal?: AbortController
   timeoutHandle?: ReturnType<typeof setTimeout>
+  providerBaseURL?: string
 }
 
 const flowState = new Map<string, InternalFlow>()
@@ -194,6 +208,19 @@ const openaiCapabilities: ProviderAuthCapability[] = [
   apiKeyCapability,
 ]
 
+const anyboxCapabilities: ProviderAuthCapability[] = [
+  {
+    method: ANYBOX_BROWSER_METHOD,
+    label: "Anybox account",
+    description: "Sign in with your Anybox account.",
+    kind: "browser_oauth",
+    recommended: true,
+    supportsPolling: true,
+    supportsRefresh: true,
+    supportsDisconnect: true,
+  },
+]
+
 function now() {
   return Date.now()
 }
@@ -206,6 +233,7 @@ function normalizeString(value: unknown) {
 
 function getCapabilities(providerID: string): ProviderAuthCapability[] {
   if (providerID === OPENAI_PROVIDER_ID) return openaiCapabilities
+  if (providerID === ANYBOX_PROVIDER_ID) return anyboxCapabilities
   return [apiKeyCapability]
 }
 
@@ -312,6 +340,9 @@ function summarizeOAuthAccount(credential: Auth.OAuthSessionCredential): Provide
     !credential.planType &&
     !credential.workspaceID &&
     !credential.workspaceName &&
+    credential.balanceMicrocents === undefined &&
+    !credential.currency &&
+    !credential.rechargeUrl &&
     !label
   ) {
     return undefined
@@ -324,6 +355,9 @@ function summarizeOAuthAccount(credential: Auth.OAuthSessionCredential): Provide
     planType: credential.planType,
     workspaceID: credential.workspaceID,
     workspaceName: credential.workspaceName,
+    balanceMicrocents: credential.balanceMicrocents,
+    currency: credential.currency,
+    rechargeUrl: credential.rechargeUrl,
     label,
   }
 }
@@ -344,9 +378,11 @@ function connectionLabelForCredential(
   if (credential.kind === "oauth_session") {
     const planLabel = normalizeString(credential.planType)?.toUpperCase()
     const baseLabel =
-      source === "external_cache" && providerID === OPENAI_PROVIDER_ID
-        ? "Connected via ChatGPT login (Codex cache)"
-        : `Connected via ${methodLabel(providerID, method)}`
+      providerID === ANYBOX_PROVIDER_ID
+        ? "Connected via Anybox account"
+        : source === "external_cache" && providerID === OPENAI_PROVIDER_ID
+          ? "Connected via ChatGPT login (Codex cache)"
+          : `Connected via ${methodLabel(providerID, method)}`
     return planLabel ? `${baseLabel} (${planLabel})` : baseLabel
   }
 
@@ -383,6 +419,14 @@ function isOpenAIBrowserFlow(flow: InternalFlow) {
   return flow.providerID === OPENAI_PROVIDER_ID && flow.method === "chatgpt-browser"
 }
 
+function isAnyboxBrowserFlow(flow: InternalFlow) {
+  return flow.providerID === ANYBOX_PROVIDER_ID && flow.method === ANYBOX_BROWSER_METHOD
+}
+
+function isLocalBrowserCallbackFlow(flow: InternalFlow) {
+  return isOpenAIBrowserFlow(flow) || isAnyboxBrowserFlow(flow)
+}
+
 function clearFlowTimeout(flow: InternalFlow) {
   if (!flow.timeoutHandle) return
   clearTimeout(flow.timeoutHandle)
@@ -390,7 +434,7 @@ function clearFlowTimeout(flow: InternalFlow) {
 }
 
 function hasActiveOpenAIBrowserFlows() {
-  return Array.from(flowState.values()).some((flow) => isOpenAIBrowserFlow(flow) && !isTerminalFlowStatus(flow.status))
+  return Array.from(flowState.values()).some((flow) => isLocalBrowserCallbackFlow(flow) && !isTerminalFlowStatus(flow.status))
 }
 
 function getLatestProviderFlow(providerID: string) {
@@ -423,7 +467,7 @@ async function closeOpenAILocalCallbackServerIfIdle() {
 }
 
 async function settleOpenAIBrowserFlow(flow: InternalFlow, options?: { deferServerClose?: boolean }) {
-  if (!isOpenAIBrowserFlow(flow)) return
+  if (!isLocalBrowserCallbackFlow(flow)) return
   clearFlowTimeout(flow)
 
   if (options?.deferServerClose) {
@@ -440,7 +484,7 @@ async function settleOpenAIBrowserFlow(flow: InternalFlow, options?: { deferServ
 
 async function expireOpenAIBrowserFlow(flowID: string) {
   const flow = flowState.get(flowID)
-  if (!flow || !isOpenAIBrowserFlow(flow) || isTerminalFlowStatus(flow.status)) return
+  if (!flow || !isLocalBrowserCallbackFlow(flow) || isTerminalFlowStatus(flow.status)) return
 
   flow.status = "expired"
   flow.errorMessage = "Browser sign-in timed out after 15 minutes."
@@ -482,8 +526,24 @@ async function handleOpenAILocalCallbackRequest(req: IncomingMessage, res: Serve
   }
 
   try {
+    const state = normalizeString(url.searchParams.get("state"))
+    const flow = Array.from(flowState.values()).find(
+      (candidate) => isLocalBrowserCallbackFlow(candidate) && candidate.state === state,
+    )
+    if (!flow) {
+      res.writeHead(400, { "content-type": "text/html; charset=utf-8" })
+      res.end(
+        renderProviderAuthCallbackPage({
+          ok: false,
+          title: "Sign-in failed",
+          message: "The authentication flow could not be matched. Start the login flow again from the app.",
+        }),
+      )
+      return
+    }
+
     const result = await completeProviderBrowserCallback({
-      providerID: OPENAI_PROVIDER_ID,
+      providerID: flow.providerID,
       url,
     })
 
@@ -674,6 +734,9 @@ function makeDescriptor(
     planType: credential.planType,
     workspaceID: credential.workspaceID,
     workspaceName: credential.workspaceName,
+    balanceMicrocents: credential.balanceMicrocents,
+    currency: credential.currency,
+    rechargeUrl: credential.rechargeUrl,
     label: credential.email ?? credential.workspaceName ?? credential.planType,
   }
 }
@@ -748,6 +811,69 @@ function computeTokenExpiry(input: { accessToken?: string; idToken?: string; exp
   }
 
   return readJwtExpiry(input.accessToken) ?? readJwtExpiry(input.idToken) ?? now() + DEFAULT_TOKEN_TTL_MS
+}
+
+function normalizeAnyboxRootURL(baseURL?: string) {
+  const configured = normalizeString(baseURL) ?? ANYBOX_DEFAULT_BASE_URL
+  const trimmed = configured.replace(/\/+$/, "")
+  return trimmed.endsWith("/v1") ? trimmed.slice(0, -"/v1".length) : trimmed
+}
+
+function normalizeAnyboxApiURL(baseURL?: string) {
+  return `${normalizeAnyboxRootURL(baseURL)}/v1`
+}
+
+function anyboxURL(baseURL: string | undefined, pathname: string) {
+  const root = normalizeAnyboxRootURL(baseURL)
+  return new URL(pathname.replace(/^\/+/, ""), `${root}/`).toString()
+}
+
+function readAnyboxAccount(payload: unknown) {
+  const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {}
+  const account = record.account && typeof record.account === "object" ? (record.account as Record<string, unknown>) : record
+  const workspace = account.workspace && typeof account.workspace === "object" ? (account.workspace as Record<string, unknown>) : {}
+  const billing = account.billing && typeof account.billing === "object" ? (account.billing as Record<string, unknown>) : {}
+
+  return {
+    accountID: normalizeString(account.account_id) ?? normalizeString(account.accountID),
+    userID: normalizeString(account.user_id) ?? normalizeString(account.userID) ?? normalizeString(account.id),
+    email: normalizeString(account.email),
+    planType: normalizeString(account.plan_type) ?? normalizeString(account.planType),
+    workspaceID:
+      normalizeString(account.workspace_id) ??
+      normalizeString(account.workspaceID) ??
+      normalizeString(workspace.id),
+    workspaceName:
+      normalizeString(account.workspace_name) ??
+      normalizeString(account.workspaceName) ??
+      normalizeString(workspace.name),
+    balanceMicrocents:
+      parseNumeric(account.balance_microcents) ??
+      parseNumeric(account.balanceMicrocents) ??
+      parseNumeric(billing.balance_microcents) ??
+      parseNumeric(billing.balanceMicrocents),
+    currency:
+      normalizeString(account.currency) ??
+      normalizeString(billing.currency),
+    rechargeUrl:
+      normalizeString(account.recharge_url) ??
+      normalizeString(account.rechargeUrl) ??
+      normalizeString(billing.recharge_url) ??
+      normalizeString(billing.rechargeUrl),
+  }
+}
+
+async function fetchAnyboxAccount(baseURL: string | undefined, accessToken: string) {
+  const response = await fetch(anyboxURL(baseURL, "/api/agent/me"), {
+    method: "GET",
+    headers: {
+      accept: "application/json",
+      authorization: `Bearer ${accessToken}`,
+    },
+  })
+
+  await ensureOkResponse(response, "Anybox account request failed")
+  return readAnyboxAccount(await response.json())
 }
 
 async function parseJsonResponse(response: Response) {
@@ -901,6 +1027,156 @@ async function saveOpenAITokens(method: string, payload: Record<string, unknown>
   return credential
 }
 
+function buildAnyboxBrowserAuthorizeURL(input: {
+  baseURL?: string
+  redirectURI: string
+  codeChallenge: string
+  state: string
+}) {
+  const url = new URL(anyboxURL(input.baseURL, "/api/agent/oauth/authorize"))
+  url.searchParams.set("response_type", "code")
+  url.searchParams.set("client_id", ANYBOX_CLIENT_ID)
+  url.searchParams.set("redirect_uri", input.redirectURI)
+  url.searchParams.set("state", input.state)
+  url.searchParams.set("code_challenge", input.codeChallenge)
+  url.searchParams.set("code_challenge_method", "S256")
+  return url.toString()
+}
+
+async function exchangeAnyboxAuthorizationCode(input: {
+  baseURL?: string
+  authorizationCode: string
+  codeVerifier: string
+  redirectURI: string
+}) {
+  const response = await fetch(anyboxURL(input.baseURL, "/api/agent/oauth/token"), {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      grant_type: "authorization_code",
+      client_id: ANYBOX_CLIENT_ID,
+      code: input.authorizationCode,
+      code_verifier: input.codeVerifier,
+      redirect_uri: input.redirectURI,
+    }),
+  })
+
+  await ensureOkResponse(response, "Anybox token exchange failed")
+  return (await response.json()) as Record<string, unknown>
+}
+
+async function refreshAnyboxSession(credential: Auth.OAuthSessionCredential, baseURL?: string) {
+  const resolvedBaseURL = baseURL ?? credential.originator
+  const response = await fetch(anyboxURL(resolvedBaseURL, "/api/agent/oauth/refresh"), {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      grant_type: "refresh_token",
+      client_id: ANYBOX_CLIENT_ID,
+      refresh_token: credential.refreshToken,
+    }),
+  })
+
+  await ensureOkResponse(response, "Anybox token refresh failed")
+  const payload = (await response.json()) as Record<string, unknown>
+  const accessToken = normalizeString(payload.access_token) ?? credential.accessToken
+  const account = await fetchAnyboxAccount(resolvedBaseURL, accessToken).catch(() => ({
+    accountID: credential.accountID,
+    userID: credential.userID,
+    email: credential.email,
+    planType: credential.planType,
+    workspaceID: credential.workspaceID,
+    workspaceName: credential.workspaceName,
+    balanceMicrocents: credential.balanceMicrocents,
+    currency: credential.currency,
+    rechargeUrl: credential.rechargeUrl,
+  }))
+
+  return {
+    kind: "oauth_session",
+    accessToken,
+    refreshToken: normalizeString(payload.refresh_token) ?? credential.refreshToken,
+    expiresAt: computeTokenExpiry({
+      accessToken,
+      idToken: normalizeString(payload.id_token) ?? credential.idToken,
+      expiresIn: payload.expires_in,
+    }),
+    tokenType: normalizeString(payload.token_type) ?? credential.tokenType,
+    idToken: normalizeString(payload.id_token) ?? credential.idToken,
+    scope: normalizeString(payload.scope) ?? credential.scope,
+    accountID: account.accountID,
+    userID: account.userID,
+    email: account.email,
+    planType: account.planType,
+    workspaceID: account.workspaceID,
+    workspaceName: account.workspaceName,
+    balanceMicrocents: account.balanceMicrocents,
+    currency: account.currency,
+    rechargeUrl: account.rechargeUrl,
+    originator: normalizeAnyboxRootURL(resolvedBaseURL),
+    createdAt: credential.createdAt,
+  } satisfies Auth.OAuthSessionCredential
+}
+
+async function saveAnyboxTokens(method: string, payload: Record<string, unknown>, baseURL?: string) {
+  const accessToken = normalizeString(payload.access_token) ?? ""
+  const idToken = normalizeString(payload.id_token)
+  const account = accessToken
+    ? await fetchAnyboxAccount(baseURL, accessToken).catch(() => readAnyboxAccount(payload))
+    : readAnyboxAccount(payload)
+
+  const credential: Auth.OAuthSessionCredential = {
+    kind: "oauth_session",
+    accessToken,
+    refreshToken: normalizeString(payload.refresh_token) ?? "",
+    expiresAt: computeTokenExpiry({
+      accessToken,
+      idToken,
+      expiresIn: payload.expires_in,
+    }),
+    tokenType: normalizeString(payload.token_type),
+    idToken,
+    scope: normalizeString(payload.scope),
+    accountID: account.accountID,
+    userID: account.userID,
+    email: account.email,
+    planType: account.planType,
+    workspaceID: account.workspaceID,
+    workspaceName: account.workspaceName,
+    balanceMicrocents: account.balanceMicrocents,
+    currency: account.currency,
+    rechargeUrl: account.rechargeUrl,
+    originator: normalizeAnyboxRootURL(baseURL),
+  }
+
+  await Auth.setProviderCredential(ANYBOX_PROVIDER_ID, method, credential, {
+    activate: true,
+    lastError: null,
+  })
+
+  return credential
+}
+
+async function revokeAnyboxSession(credential: Auth.OAuthSessionCredential) {
+  await fetch(anyboxURL(credential.originator, "/api/agent/oauth/revoke"), {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      authorization: `Bearer ${credential.accessToken}`,
+    },
+    body: JSON.stringify({
+      token: credential.refreshToken,
+    }),
+  }).catch(() => undefined)
+}
+
 async function startOpenAIBrowserFlow(input: ProviderFlowContext) {
   const capability = getCapability(input.providerID, input.method)
   if (!capability) throw new Error(`Provider '${input.providerID}' does not support auth method '${input.method}'`)
@@ -930,6 +1206,47 @@ async function startOpenAIBrowserFlow(input: ProviderFlowContext) {
     state,
     redirectURI,
     codeVerifier,
+    timeoutHandle: setTimeout(() => {
+      void expireOpenAIBrowserFlow(id)
+    }, OPENAI_FLOW_TIMEOUT_MS),
+  }
+
+  upsertFlow(flow)
+  return flowPublicView(flow)
+}
+
+async function startAnyboxBrowserFlow(input: ProviderFlowContext) {
+  const capability = getCapability(input.providerID, input.method)
+  if (!capability) throw new Error(`Provider '${input.providerID}' does not support auth method '${input.method}'`)
+
+  const callbackServer = await ensureOpenAILocalCallbackServer()
+  const id = createFlowID()
+  const { codeChallenge, codeVerifier } = await createPkcePair()
+  const state = createFlowID()
+  const redirectURI = callbackServer.redirectURI
+  const providerBaseURL = normalizeAnyboxRootURL(input.providerBaseURL)
+  const authorizationURL = buildAnyboxBrowserAuthorizeURL({
+    baseURL: providerBaseURL,
+    redirectURI,
+    codeChallenge,
+    state,
+  })
+
+  const flow: InternalFlow = {
+    id,
+    providerID: input.providerID,
+    method: input.method,
+    kind: capability.kind,
+    status: "waiting_user",
+    startedAt: now(),
+    updatedAt: now(),
+    expiresAt: now() + OPENAI_FLOW_TIMEOUT_MS,
+    authorizationURL,
+    connectionLabel: `Waiting for ${capability.label}`,
+    state,
+    redirectURI,
+    codeVerifier,
+    providerBaseURL,
     timeoutHandle: setTimeout(() => {
       void expireOpenAIBrowserFlow(id)
     }, OPENAI_FLOW_TIMEOUT_MS),
@@ -1091,6 +1408,10 @@ export async function startProviderAuthFlow(input: ProviderFlowContext) {
     return await startOpenAIDeviceCodeFlow(input)
   }
 
+  if (input.providerID === ANYBOX_PROVIDER_ID && input.method === ANYBOX_BROWSER_METHOD) {
+    return await startAnyboxBrowserFlow(input)
+  }
+
   throw new Error(`Provider '${input.providerID}' does not support interactive auth flow '${input.method}'`)
 }
 
@@ -1129,7 +1450,7 @@ export async function completeProviderBrowserCallback(input: {
   const flow = Array.from(flowState.values()).find(
     (candidate) =>
       candidate.providerID === input.providerID &&
-      candidate.method === "chatgpt-browser" &&
+      isLocalBrowserCallbackFlow(candidate) &&
       candidate.state === state,
   )
 
@@ -1176,12 +1497,21 @@ export async function completeProviderBrowserCallback(input: {
   upsertFlow(flow)
 
   try {
-    const tokens = await exchangeOpenAIAuthorizationCode({
-      authorizationCode: code,
-      codeVerifier: flow.codeVerifier,
-      redirectURI: flow.redirectURI,
-    })
-    const credential = await saveOpenAITokens(flow.method, tokens)
+    const tokens = isAnyboxBrowserFlow(flow)
+      ? await exchangeAnyboxAuthorizationCode({
+          baseURL: flow.providerBaseURL,
+          authorizationCode: code,
+          codeVerifier: flow.codeVerifier,
+          redirectURI: flow.redirectURI,
+        })
+      : await exchangeOpenAIAuthorizationCode({
+          authorizationCode: code,
+          codeVerifier: flow.codeVerifier,
+          redirectURI: flow.redirectURI,
+        })
+    const credential = isAnyboxBrowserFlow(flow)
+      ? await saveAnyboxTokens(flow.method, tokens, flow.providerBaseURL)
+      : await saveOpenAITokens(flow.method, tokens)
     flow.status = "connected"
     flow.errorMessage = undefined
     flow.connectionLabel = connectionLabelForCredential(flow.providerID, flow.method, credential)
@@ -1305,9 +1635,18 @@ export async function saveProviderApiKey(providerID: string, apiKey: string | nu
 }
 
 export async function deleteProviderSession(providerID: string) {
+  const previousRecord = await Auth.getProviderRecord(providerID)
+  if (providerID === ANYBOX_PROVIDER_ID && previousRecord) {
+    await Promise.all(
+      Object.values(previousRecord.credentials)
+        .filter((credential): credential is Auth.OAuthSessionCredential => credential.kind === "oauth_session")
+        .map((credential) => revokeAnyboxSession(credential)),
+    )
+  }
+
   const removed = await Auth.removeProviderCredentials(providerID, ({ credential }) => credential.kind === "oauth_session")
   const record = await Auth.getProviderRecord(providerID)
-  if (record?.activeMethod && isOpenAIChatGPTMethod(record.activeMethod)) {
+  if (record?.activeMethod && (isOpenAIChatGPTMethod(record.activeMethod) || providerID === ANYBOX_PROVIDER_ID)) {
     await Auth.setActiveMethod(providerID, "api-key" in record.credentials ? "api-key" : null)
   }
   await Auth.setProviderLastError(providerID, null)
@@ -1415,6 +1754,55 @@ export async function resolveProviderRuntimeAuth(
     }
   }
 
+  if (providerID === ANYBOX_PROVIDER_ID && credential?.kind === "oauth_session") {
+    if (options.forceRefresh || credential.expiresAt <= now() + TOKEN_REFRESH_THRESHOLD_MS) {
+      try {
+        const refreshed = await refreshAnyboxSession(credential, fallbacks.providerBaseURL)
+        if (activeMethod) {
+          await Auth.setProviderCredential(providerID, activeMethod, refreshed, {
+            activate: true,
+            lastError: null,
+          })
+          credentialSource = "credential_store"
+        }
+        credential = refreshed
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        await Auth.setProviderLastError(providerID, message)
+        if (options.forceRefresh || credential.expiresAt <= now()) credential = undefined
+        log.warn("oauth-session-refresh-failed", {
+          providerID,
+          activeMethod,
+          message,
+        })
+      }
+    } else {
+      try {
+        const resolvedBaseURL = fallbacks.providerBaseURL ?? credential.originator
+        const account = await fetchAnyboxAccount(resolvedBaseURL, credential.accessToken)
+        const enriched: Auth.OAuthSessionCredential = {
+          ...credential,
+          ...account,
+          originator: normalizeAnyboxRootURL(resolvedBaseURL),
+        }
+        if (activeMethod) {
+          await Auth.setProviderCredential(providerID, activeMethod, enriched, {
+            activate: true,
+            lastError: null,
+          })
+          credentialSource = "credential_store"
+        }
+        credential = enriched
+      } catch (error) {
+        log.debug("anybox-account-refresh-skipped", {
+          providerID,
+          activeMethod,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+  }
+
   const authState = await buildProviderAuthState(providerID, fallbacks)
 
   if (!credential) {
@@ -1455,6 +1843,19 @@ export async function resolveProviderRuntimeAuth(
       runtimeBaseURL: OPENAI_CODEX_BASE_URL,
       runtimeHeaders: headers,
       authMode: "codex",
+      authCapabilities: capabilities,
+      authState,
+    }
+  }
+
+  if (providerID === ANYBOX_PROVIDER_ID) {
+    return {
+      credentialKind: credential.kind,
+      credentialSource,
+      activeMethod,
+      apiKey: credential.accessToken,
+      runtimeBaseURL: normalizeAnyboxApiURL(fallbacks.providerBaseURL ?? credential.originator),
+      authMode: "api",
       authCapabilities: capabilities,
       authState,
     }

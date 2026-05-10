@@ -1536,6 +1536,29 @@ body.is-dragging-settings-page {
   line-height: 1.55;
 }
 
+.provider-account-summary {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+}
+
+.provider-account-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  color: #68717a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.provider-account-summary-row strong {
+  color: #1f252b;
+  font-weight: 650;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 .provider-advanced-settings {
   border: 1px solid var(--seg-border);
   border-radius: var(--seg-radius-xs);

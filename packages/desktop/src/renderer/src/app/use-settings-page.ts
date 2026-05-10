@@ -1865,6 +1865,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
       const flow = await window.desktop.startGlobalProviderAuthFlow({
         providerID,
         method,
+        baseURL: draft?.baseURL?.trim() || provider.baseURL || null,
       })
 
       setProviderDrafts((current) => ({

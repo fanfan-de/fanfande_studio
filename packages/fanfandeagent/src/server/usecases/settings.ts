@@ -80,6 +80,7 @@ export const SavePluginConnectorApiKeyBody = Plugin.SavePluginConnectorApiKeyInp
 
 export const ProviderAuthFlowBody = z.object({
   method: z.string().min(1),
+  baseURL: z.string().nullable().optional(),
 })
 
 export const ProviderAuthApiKeyBody = z.object({
@@ -563,9 +564,15 @@ export async function startProviderAuthFlow(input: {
   providerID: string
   method: string
   serverBaseURL: string
+  baseURL?: string | null
 }) {
   try {
-    return await ProviderAuth.startProviderAuthFlow(input)
+    const catalog = await Provider.catalog()
+    const provider = catalog.find((entry) => entry.id === input.providerID)
+    return await ProviderAuth.startProviderAuthFlow({
+      ...input,
+      providerBaseURL: input.baseURL?.trim() || provider?.baseURL,
+    })
   } catch (error) {
     throw new ApiError(400, "PROVIDER_AUTH_FLOW_FAILED", error instanceof Error ? error.message : String(error))
   }

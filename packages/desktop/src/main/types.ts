@@ -666,6 +666,9 @@ export interface AgentProviderAuthAccountSummary {
   planType?: string
   workspaceID?: string
   workspaceName?: string
+  balanceMicrocents?: number
+  currency?: string
+  rechargeUrl?: string
   label?: string
 }
 
@@ -707,6 +710,9 @@ export interface AgentProviderAuthState {
     planType?: string
     workspaceID?: string
     workspaceName?: string
+    balanceMicrocents?: number
+    currency?: string
+    rechargeUrl?: string
   }>
   flow?: AgentProviderAuthFlow
 }

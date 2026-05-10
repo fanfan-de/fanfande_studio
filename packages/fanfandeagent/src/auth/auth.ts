@@ -33,6 +33,9 @@ export const OAuthSessionCredential = z
     planType: z.string().optional(),
     workspaceID: z.string().optional(),
     workspaceName: z.string().optional(),
+    balanceMicrocents: z.number().optional(),
+    currency: z.string().optional(),
+    rechargeUrl: z.string().optional(),
     originator: z.string().optional(),
     createdAt: z.number().optional(),
     updatedAt: z.number().optional(),
@@ -57,6 +60,9 @@ export const ProviderCredentialDescriptor = z
     planType: z.string().optional(),
     workspaceID: z.string().optional(),
     workspaceName: z.string().optional(),
+    balanceMicrocents: z.number().optional(),
+    currency: z.string().optional(),
+    rechargeUrl: z.string().optional(),
   })
   .meta({ ref: "ProviderCredentialDescriptor" })
 export type ProviderCredentialDescriptor = z.infer<typeof ProviderCredentialDescriptor>
@@ -127,6 +133,9 @@ function descriptorFromCredential(
     planType: credential.planType,
     workspaceID: credential.workspaceID,
     workspaceName: credential.workspaceName,
+    balanceMicrocents: credential.balanceMicrocents,
+    currency: credential.currency,
+    rechargeUrl: credential.rechargeUrl,
   }
 }
 

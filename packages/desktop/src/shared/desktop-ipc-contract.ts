@@ -635,7 +635,7 @@ export interface DesktopIpcContract {
     output: AgentProviderAuthState
   }
   "desktop:start-global-provider-auth-flow": {
-    input: { providerID: string; method: string }
+    input: { providerID: string; method: string; baseURL?: string | null }
     output: AgentProviderAuthFlow
   }
   "desktop:get-global-provider-auth-flow": {

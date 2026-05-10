@@ -245,6 +245,10 @@ function isProviderConnected(provider: ProviderCatalogItem) {
   return provider.authState.status === "connected"
 }
 
+function isAnyboxProvider(provider: ProviderCatalogItem) {
+  return provider.id === "anybox"
+}
+
 function getProviderCredentialSummary(provider: ProviderCatalogItem) {
   const activeCredential =
     provider.authState.credentials.find((credential) => credential.method === provider.authState.activeMethod) ??
@@ -332,6 +336,7 @@ function getProviderStatusText(provider: ProviderCatalogItem) {
 
 function getProviderSourceText(provider: ProviderCatalogItem) {
   const activeCredential = getProviderActiveCredential(provider)
+  if (isAnyboxProvider(provider) && activeCredential?.kind === "oauth_session") return "来自 Anybox 账号"
   if (activeCredential?.source === "environment" || provider.source === "env") return "来自环境变量"
   if (activeCredential?.source === "credential_store") return "来自已保存密钥"
   if (activeCredential?.source === "external_cache") return "来自共享登录"
@@ -344,9 +349,31 @@ function getProviderHeaderSummary(provider: ProviderCatalogItem) {
 }
 
 function getProviderAuthMethodOptionLabel(provider: ProviderCatalogItem, capability: ProviderAuthCapability) {
+  if (isAnyboxProvider(provider) && capability.kind === "browser_oauth") return "Anybox 账号（浏览器登录）"
   if (provider.id === "openai" && capability.kind === "browser_oauth") return "ChatGPT Pro/Plus（浏览器登录）"
   if (provider.id === "openai" && capability.kind === "device_code") return "ChatGPT Pro/Plus（设备码登录）"
   return capability.recommended ? `${capability.label}（推荐）` : capability.label
+}
+
+function formatProviderBalance(account: ProviderCatalogItem["authState"]["account"]) {
+  if (account?.balanceMicrocents === undefined) return null
+  const currency = account.currency || "CNY"
+  return new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(account.balanceMicrocents / 100_000_000)
+}
+
+function getAnyboxRechargeUrl(provider: ProviderCatalogItem) {
+  const account = provider.authState.account
+  const credential = getProviderActiveCredential(provider)
+  const direct = account?.rechargeUrl ?? credential?.rechargeUrl
+  if (direct) return direct
+
+  const baseURL = provider.baseURL?.trim()
+  if (!baseURL) return null
+  return `${baseURL.replace(/\/+$/, "").replace(/\/v1$/, "")}/billing`
 }
 
 function matchesProviderSearch(provider: ProviderCatalogItem, rawQuery: string) {
@@ -967,6 +994,9 @@ export function SettingsPage({
       activeProvider?.authState.account?.email ??
       activeProvider?.authState.account?.workspaceName ??
       null
+    const activeProviderAccount = activeProvider?.authState.account ?? null
+    const activeProviderBalance = activeProvider ? formatProviderBalance(activeProvider.authState.account) : null
+    const activeProviderRechargeUrl = activeProvider && isAnyboxProvider(activeProvider) ? getAnyboxRechargeUrl(activeProvider) : null
     const activeMcpServer = activeMcpServerID ? mcpServers.find((server) => server.id === activeMcpServerID) ?? null : null
     const mcpSaveLabel = activeMcpServer ? "Save server" : "Create server"
     const mcpServerBusyID = activeMcpServerID ?? mcpServerDraft.id.trim() ?? null
@@ -2242,7 +2272,42 @@ export function SettingsPage({
                                       ? activeProviderFlow.errorMessage ?? "请在浏览器中完成登录。"
                                       : activeProviderAccountSummary ?? activeProvider.lastAuthError ?? "使用浏览器登录来连接此 provider。"}
                                   </p>
+                                  {isAnyboxProvider(activeProvider) && activeProvider.authState.status === "connected" ? (
+                                    <div className="provider-account-summary" aria-label="Anybox account summary">
+                                      {activeProviderAccount?.email ? (
+                                        <div className="provider-account-summary-row">
+                                          <span>账号</span>
+                                          <strong>{activeProviderAccount.email}</strong>
+                                        </div>
+                                      ) : null}
+                                      {activeProviderAccount?.workspaceName || activeProviderAccount?.planType ? (
+                                        <div className="provider-account-summary-row">
+                                          <span>工作区 / 套餐</span>
+                                          <strong>
+                                            {[activeProviderAccount.workspaceName, activeProviderAccount.planType]
+                                              .filter(Boolean)
+                                              .join(" / ")}
+                                          </strong>
+                                        </div>
+                                      ) : null}
+                                      {activeProviderBalance ? (
+                                        <div className="provider-account-summary-row">
+                                          <span>余额</span>
+                                          <strong>{activeProviderBalance}</strong>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
                                   <div className="settings-inline-actions">
+                                    {isAnyboxProvider(activeProvider) && activeProviderRechargeUrl ? (
+                                      <button
+                                        className="secondary-button"
+                                        disabled={activeProviderBusy}
+                                        onClick={() => void openExternalUrl(activeProviderRechargeUrl)}
+                                      >
+                                        充值
+                                      </button>
+                                    ) : null}
                                     {activeProvider.authState.status !== "not_connected" ? (
                                       <button
                                         className="secondary-button"
@@ -2354,7 +2419,9 @@ export function SettingsPage({
                                 </summary>
                                 <div className="provider-advanced-settings-body">
                                   <label className="settings-field">
-                                    <span className="settings-field-label">Base URL</span>
+                                    <span className="settings-field-label">
+                                      {isAnyboxProvider(activeProvider) ? "Anybox API URL" : "Base URL"}
+                                    </span>
                                     <input
                                       aria-label={`Base URL for ${activeProvider.name}`}
                                       type="text"
@@ -3212,7 +3279,7 @@ export function SettingsPage({
                     <article className="settings-empty-state">
                       <span className="label">No Models</span>
                       <h3>No connected provider is exposing models yet</h3>
-                      <p>Open the Provider tab, connect a provider with an API key, then come back here to review the unlocked models.</p>
+                      <p>Open the Provider tab, connect a provider account or API key, then come back here to review the unlocked models.</p>
                     </article>
                   )}
 

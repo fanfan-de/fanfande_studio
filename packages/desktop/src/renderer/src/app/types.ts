@@ -851,6 +851,9 @@ export interface ProviderAuthAccountSummary {
   planType?: string
   workspaceID?: string
   workspaceName?: string
+  balanceMicrocents?: number
+  currency?: string
+  rechargeUrl?: string
   label?: string
 }
 
@@ -892,6 +895,9 @@ export interface ProviderAuthState {
     planType?: string
     workspaceID?: string
     workspaceName?: string
+    balanceMicrocents?: number
+    currency?: string
+    rechargeUrl?: string
   }>
   flow?: ProviderAuthFlow
 }

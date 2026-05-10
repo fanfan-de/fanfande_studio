@@ -59,6 +59,7 @@ export function SettingsRoutes() {
         providerID: c.req.param("providerID"),
         method: payload.method,
         serverBaseURL: resolveServerBaseURL(c.req.url),
+        baseURL: payload.baseURL,
       }),
     )
   })
