@@ -9,14 +9,30 @@ process.env.FANFANDE_ANYBOX_BASE_URL = "https://anybox.test"
 process.env.FanFande_OPENAI_CODEX_CALLBACK_PORT = "0"
 
 const Auth = await import("#auth/auth.ts")
+const AnyboxHTTP = await import("#provider/anybox-http.ts")
 const ProviderAuth = await import("#auth/provider-auth.ts")
 const Provider = await import("#provider/provider.ts")
 const { Instance } = await import("#project/instance.ts")
+const Sqlite = await import("#database/Sqlite.ts")
 
 type FetchInput = Parameters<typeof fetch>[0]
 type FetchInit = Parameters<typeof fetch>[1]
 
+function parseRequestBody(init?: FetchInit): Record<string, unknown> {
+  const body = init?.body
+  if (!body) return {}
+  if (body instanceof URLSearchParams) return Object.fromEntries(body.entries())
+  if (typeof body !== "string") return {}
+
+  try {
+    return JSON.parse(body) as Record<string, unknown>
+  } catch {
+    return Object.fromEntries(new URLSearchParams(body).entries())
+  }
+}
+
 afterAll(() => {
+  Sqlite.closeDatabase()
   rmSync(testRoot, { recursive: true, force: true })
 })
 
@@ -50,6 +66,122 @@ test("anybox is visible in catalog without API key capability before login", asy
   }
 })
 
+test("anybox browser login starts without Anybox connectivity preflight", async () => {
+  const restoreHTTP = AnyboxHTTP.setAnyboxHTTPDependenciesForTesting({
+    env: {
+      HTTPS_PROXY: "http://unreachable-proxy.test:8080",
+    },
+    fetch: (async () => {
+      throw new Error("Anybox browser login should not fetch Anybox before opening the browser")
+    }) as unknown as typeof fetch,
+  })
+
+  try {
+    const flow = await ProviderAuth.startProviderAuthFlow({
+      providerID: "anybox",
+      method: "anybox-browser",
+      serverBaseURL: "http://localhost",
+      providerBaseURL: "https://anybox.test/v1",
+    })
+
+    expect(flow).toMatchObject({
+      providerID: "anybox",
+      method: "anybox-browser",
+      kind: "browser_oauth",
+      status: "waiting_user",
+    })
+
+    const authorizationURL = new URL(flow.authorizationURL ?? "")
+    expect(authorizationURL.origin).toBe("https://anybox.test")
+    expect(authorizationURL.pathname).toBe("/api/agent/oauth/authorize")
+    expect(authorizationURL.searchParams.get("client_id")).toBe("fanfande-agent")
+
+    await ProviderAuth.cancelProviderAuthFlow("anybox", flow.id)
+  } finally {
+    restoreHTTP()
+  }
+})
+
+test("anybox model payload requires sdk and endpoint", async () => {
+  const originalFetch = globalThis.fetch
+  let modelPayload: Record<string, unknown> = {
+    id: "missing-sdk",
+    endpoint: "/api/models/missing-sdk/chat",
+  }
+
+  await Auth.setProviderCredential(
+    "anybox",
+    "anybox-browser",
+    {
+      kind: "oauth_session",
+      accessToken: "contract-access",
+      refreshToken: "contract-refresh",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      email: "contract@anybox.test",
+      originator: "https://anybox.test",
+    },
+    {
+      activate: true,
+      lastError: null,
+    },
+  )
+
+  globalThis.fetch = (async (input: FetchInput, init?: FetchInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    const headers = new Headers(init?.headers)
+
+    if (url === "https://anybox.test/api/agent/me") {
+      expect(headers.get("authorization")).toBe("Bearer contract-access")
+      return Response.json({
+        account: {
+          email: "contract@anybox.test",
+        },
+      })
+    }
+
+    if (url === "https://anybox.test/v1/models") {
+      expect(headers.get("authorization")).toBe("Bearer contract-access")
+      return Response.json({
+        data: [modelPayload],
+      })
+    }
+
+    return originalFetch(input, init)
+  }) as typeof fetch
+
+  const restoreProvider = Provider.setProviderRuntimeDependenciesForTesting({
+    getModelsDev: async () => ({}) as never,
+    getConfig: async () =>
+      ({
+        provider: {
+          anybox: {
+            name: "Anybox",
+            options: {
+              baseURL: "https://anybox.test",
+            },
+          },
+        },
+      }) as never,
+    getEnvAll: () => ({}),
+    importPackage: async () => {
+      throw new Error("Validating Anybox model payload should not import SDK packages")
+    },
+  })
+
+  try {
+    await expect(Provider.listModels()).rejects.toThrow("Anybox model 'missing-sdk' is missing required sdk information")
+
+    modelPayload = {
+      id: "missing-endpoint",
+      sdk: "@ai-sdk/openai-compatible",
+    }
+    await expect(Provider.listModels()).rejects.toThrow("Anybox model 'missing-endpoint' is missing required endpoint")
+  } finally {
+    restoreProvider()
+    globalThis.fetch = originalFetch
+  }
+})
+
 test("anybox browser login stores oauth session and runtime uses openai-compatible with access token", async () => {
   const anyboxLanguageModel = {
     doGenerate() {},
@@ -57,15 +189,21 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
   }
   const capturedFactoryInputs: Array<Record<string, unknown>> = []
   const originalFetch = globalThis.fetch
-  const seenRequests: Array<{ url: string; authorization?: string; body?: Record<string, unknown> }> = []
+  const seenRequests: Array<{ url: string; authorization?: string; body?: Record<string, unknown>; proxy?: string }> = []
+  const restoreHTTP = AnyboxHTTP.setAnyboxHTTPDependenciesForTesting({
+    env: {},
+  })
 
   globalThis.fetch = (async (input: FetchInput, init?: FetchInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     const headers = new Headers(init?.headers)
+    const proxy = (init as FetchInit & { proxy?: string } | undefined)?.proxy
+
+    if (url === "https://anybox.test/livez") throw new Error("Anybox browser login should not preflight /livez")
 
     if (url === "https://anybox.test/api/agent/oauth/token") {
-      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
-      seenRequests.push({ url, body })
+      const body = parseRequestBody(init)
+      seenRequests.push({ url, body, proxy })
       expect(body).toMatchObject({
         grant_type: "authorization_code",
         client_id: "fanfande-agent",
@@ -78,15 +216,9 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
         refresh_token: "anybox-refresh-1",
         expires_in: 3600,
         token_type: "Bearer",
-      })
-    }
-
-    if (url === "https://anybox.test/api/agent/me") {
-      seenRequests.push({ url, authorization: headers.get("authorization") ?? undefined })
-      expect(headers.get("authorization")).toBe("Bearer anybox-access-1")
-      return Response.json({
         account: {
           id: "user_anybox",
+          user_id: "user_anybox",
           email: "agent-user@anybox.test",
           plan_type: "pro",
           workspace: {
@@ -102,8 +234,12 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
       })
     }
 
+    if (url === "https://anybox.test/api/agent/me") {
+      throw new Error("Anybox browser login should not fetch /api/agent/me")
+    }
+
     if (url === "https://anybox.test/v1/models") {
-      seenRequests.push({ url, authorization: headers.get("authorization") ?? undefined })
+      seenRequests.push({ url, authorization: headers.get("authorization") ?? undefined, proxy })
       expect(headers.get("authorization")).toBe("Bearer anybox-access-1")
       return Response.json({
         object: "list",
@@ -111,11 +247,15 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
           {
             id: "claude-opus",
             name: "Claude Opus",
+            sdk: "@ai-sdk/openai-compatible",
+            endpoint: "/api/models/claude-opus/chat",
             context_window: 200_000,
             max_output_tokens: 32_000,
           },
           {
             id: "vision-model",
+            sdk: "@ai-sdk/openai-compatible",
+            endpoint: "/api/models/vision-model/chat",
             capabilities: {
               vision: true,
               pdf: true,
@@ -209,6 +349,7 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
             rechargeUrl: "https://anybox.test/billing/recharge",
           },
         })
+        expect(seenRequests.map((request) => request.url)).toEqual(["https://anybox.test/api/agent/oauth/token"])
 
         const catalog = await Provider.catalog()
         const anybox = catalog.find((provider) => provider.id === "anybox")
@@ -218,7 +359,7 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
 
         const model = await Provider.getModel("anybox", "claude-opus")
         expect(model.api.npm).toBe("@ai-sdk/openai-compatible")
-        expect(model.api.url).toBe("https://anybox.test/v1")
+        expect(model.api.url).toBe("https://anybox.test/api/models/claude-opus/chat")
         expect(model.capabilities.input.text).toBe(true)
         expect(model.capabilities.input.image).toBe(false)
         expect(model.capabilities.toolcall).toBe(true)
@@ -234,7 +375,7 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
           {
             name: "anybox",
             apiKey: "anybox-access-1",
-            baseURL: "https://anybox.test/v1",
+            baseURL: "https://anybox.test/api/models/claude-opus/chat",
             headers: undefined,
             fetch: expect.any(Function),
           },
@@ -242,8 +383,214 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
       },
     })
 
+    expect(seenRequests.some((request) => request.url === "https://anybox.test/livez")).toBe(false)
     expect(seenRequests.some((request) => request.url === "https://anybox.test/api/agent/oauth/token")).toBe(true)
+    expect(seenRequests.some((request) => request.url === "https://anybox.test/api/agent/me")).toBe(false)
     expect(seenRequests.some((request) => request.url === "https://anybox.test/v1/models")).toBe(true)
+    expect(seenRequests.every((request) => request.proxy === undefined)).toBe(true)
+  } finally {
+    restoreHTTP()
+    restoreProvider()
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("anybox model payload can select sdk package and API URL per model", async () => {
+  const anyboxLanguageModel = {
+    doGenerate() {},
+    doStream() {},
+  }
+  const capturedFactoryInputs: Array<Record<string, unknown>> = []
+  const originalFetch = globalThis.fetch
+
+  await Auth.setProviderCredential(
+    "anybox",
+    "anybox-browser",
+    {
+      kind: "oauth_session",
+      accessToken: "anybox-access-sdk",
+      refreshToken: "anybox-refresh-sdk",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      email: "sdk@anybox.test",
+      originator: "https://anybox.test",
+    },
+    {
+      activate: true,
+      lastError: null,
+    },
+  )
+
+  globalThis.fetch = (async (input: FetchInput, init?: FetchInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    const headers = new Headers(init?.headers)
+
+    if (url === "https://anybox.test/api/agent/me") {
+      expect(headers.get("authorization")).toBe("Bearer anybox-access-sdk")
+      return Response.json({
+        account: {
+          email: "sdk@anybox.test",
+          workspace_name: "SDK Workspace",
+        },
+      })
+    }
+
+    if (url === "https://anybox.test/v1/models") {
+      expect(headers.get("authorization")).toBe("Bearer anybox-access-sdk")
+      return Response.json({
+        data: [
+          {
+            id: "anthropic-opus",
+            name: "Anthropic Opus",
+            sdk: "@ai-sdk/anthropic",
+            endpoint: "/api/models/anthropic-opus/chat",
+          },
+        ],
+      })
+    }
+
+    return originalFetch(input, init)
+  }) as typeof fetch
+
+  const restoreProvider = Provider.setProviderRuntimeDependenciesForTesting({
+    getModelsDev: async () => ({}) as never,
+    getConfig: async () =>
+      ({
+        provider: {
+          anybox: {
+            name: "Anybox",
+            options: {
+              baseURL: "https://anybox.test",
+            },
+          },
+        },
+      }) as never,
+    getEnvAll: () => ({}),
+    importPackage: async (pkg: string, version?: string) => {
+      expect(pkg).toBe("@ai-sdk/anthropic")
+      expect(version).toBe("3.0.75")
+
+      return {
+        name: pkg,
+        version: version ?? "test-version",
+        entry: `${pkg}/index.js`,
+        root: pkg,
+        module: {
+          createAnthropic(options: Record<string, unknown>) {
+            capturedFactoryInputs.push(options)
+            return {
+              languageModel(modelID: string) {
+                expect(modelID).toBe("anthropic-opus")
+                return anyboxLanguageModel
+              },
+            }
+          },
+        },
+      }
+    },
+  })
+
+  try {
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const model = await Provider.getModel("anybox", "anthropic-opus")
+        expect(model.api.npm).toBe("@ai-sdk/anthropic")
+        expect(model.api.url).toBe("https://anybox.test/api/models/anthropic-opus/chat")
+
+        const language = await Provider.getLanguage(model)
+        expect(language as unknown).toBe(anyboxLanguageModel)
+        expect(capturedFactoryInputs).toEqual([
+          {
+            apiKey: "anybox-access-sdk",
+            baseURL: "https://anybox.test/api/models/anthropic-opus/chat",
+            headers: undefined,
+            fetch: expect.any(Function),
+          },
+        ])
+      },
+    })
+  } finally {
+    restoreProvider()
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("anybox model list uses oauth originator when project has no explicit anybox base URL", async () => {
+  const originalFetch = globalThis.fetch
+  const seenModelURLs: string[] = []
+
+  await Auth.setProviderCredential(
+    "anybox",
+    "anybox-browser",
+    {
+      kind: "oauth_session",
+      accessToken: "origin-access",
+      refreshToken: "origin-refresh",
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      email: "origin@anybox.test",
+      originator: "https://credential-origin.anybox.test",
+    },
+    {
+      activate: true,
+      lastError: null,
+    },
+  )
+
+  globalThis.fetch = (async (input: FetchInput, init?: FetchInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    const headers = new Headers(init?.headers)
+
+    if (url === "https://credential-origin.anybox.test/api/agent/me") {
+      expect(headers.get("authorization")).toBe("Bearer origin-access")
+      return Response.json({
+        account: {
+          email: "origin@anybox.test",
+          workspace_name: "Origin Workspace",
+        },
+      })
+    }
+
+    if (url === "https://credential-origin.anybox.test/v1/models") {
+      seenModelURLs.push(url)
+      expect(headers.get("authorization")).toBe("Bearer origin-access")
+      return Response.json({
+        data: [
+          {
+            id: "origin-model",
+            name: "Origin Model",
+            sdk: "@ai-sdk/openai-compatible",
+            endpoint: "/api/models/origin-model/chat",
+          },
+        ],
+      })
+    }
+
+    if (url.includes("anybox.test")) {
+      throw new Error(`Unexpected Anybox URL: ${url}`)
+    }
+
+    return originalFetch(input, init)
+  }) as typeof fetch
+
+  const restoreProvider = Provider.setProviderRuntimeDependenciesForTesting({
+    getModelsDev: async () => ({}) as never,
+    getConfig: async () => ({}) as never,
+    getEnvAll: () => ({}),
+    importPackage: async () => {
+      throw new Error("Listing Anybox models should not import SDK packages")
+    },
+  })
+
+  try {
+    const models = await Provider.listModels("project-without-anybox-config")
+
+    expect(seenModelURLs).toEqual(["https://credential-origin.anybox.test/v1/models"])
+    expect(models).toHaveLength(1)
+    expect(models[0]).toMatchObject({
+      providerID: "anybox",
+      id: "origin-model",
+      available: true,
+    })
   } finally {
     restoreProvider()
     globalThis.fetch = originalFetch
@@ -253,7 +600,11 @@ test("anybox browser login stores oauth session and runtime uses openai-compatib
 test("anybox runtime fetch refreshes and retries chat completion after 401", async () => {
   const capturedFactoryInputs: Array<Record<string, unknown>> = []
   const chatAuthorizations: string[] = []
+  const chatProxies: Array<string | undefined> = []
   const originalFetch = globalThis.fetch
+  const restoreHTTP = AnyboxHTTP.setAnyboxHTTPDependenciesForTesting({
+    env: {},
+  })
 
   await Auth.setProviderCredential(
     "anybox",
@@ -277,14 +628,7 @@ test("anybox runtime fetch refreshes and retries chat completion after 401", asy
     const headers = new Headers(init?.headers)
     const authorization = headers.get("authorization") ?? ""
 
-    if (url === "https://anybox.test/api/agent/me") {
-      return Response.json({
-        account: {
-          email: authorization.includes("new-anybox-access") ? "fresh@anybox.test" : "agent-user@anybox.test",
-          workspace_name: "Anybox Workspace",
-        },
-      })
-    }
+    if (url === "https://anybox.test/api/agent/me") throw new Error("Anybox runtime auth should not fetch /api/agent/me")
 
     if (url === "https://anybox.test/v1/models") {
       expect(authorization).toBe("Bearer old-anybox-access")
@@ -293,6 +637,8 @@ test("anybox runtime fetch refreshes and retries chat completion after 401", asy
           {
             id: "retry-model",
             name: "Retry Model",
+            sdk: "@ai-sdk/openai-compatible",
+            endpoint: "/api/models/retry-model/chat",
           },
         ],
       })
@@ -303,11 +649,16 @@ test("anybox runtime fetch refreshes and retries chat completion after 401", asy
         access_token: "new-anybox-access",
         refresh_token: "new-anybox-refresh",
         expires_in: 3600,
+        account: {
+          email: "fresh@anybox.test",
+          workspace_name: "Anybox Workspace",
+        },
       })
     }
 
-    if (url === "https://anybox.test/v1/chat/completions") {
+    if (url === "https://anybox.test/api/models/retry-model/chat/chat/completions") {
       chatAuthorizations.push(authorization)
+      chatProxies.push((init as FetchInit & { proxy?: string } | undefined)?.proxy)
       if (authorization === "Bearer old-anybox-access") {
         return Response.json({ error: { message: "expired" } }, { status: 401 })
       }
@@ -363,7 +714,7 @@ test("anybox runtime fetch refreshes and retries chat completion after 401", asy
         const runtimeFetch = capturedFactoryInputs[0]?.fetch
         expect(typeof runtimeFetch).toBe("function")
 
-        const response = await (runtimeFetch as typeof fetch)("https://anybox.test/v1/chat/completions", {
+        const response = await (runtimeFetch as typeof fetch)("https://anybox.test/api/models/retry-model/chat/chat/completions", {
           method: "POST",
           headers: {
             authorization: "Bearer old-anybox-access",
@@ -374,6 +725,7 @@ test("anybox runtime fetch refreshes and retries chat completion after 401", asy
 
         expect(response.status).toBe(200)
         expect(chatAuthorizations).toEqual(["Bearer old-anybox-access", "Bearer new-anybox-access"])
+        expect(chatProxies).toEqual([undefined, undefined])
 
         const active = await Auth.getActiveProviderCredential("anybox")
         expect(active?.credential).toMatchObject({
@@ -385,6 +737,7 @@ test("anybox runtime fetch refreshes and retries chat completion after 401", asy
       },
     })
   } finally {
+    restoreHTTP()
     restoreProvider()
     globalThis.fetch = originalFetch
   }
@@ -413,27 +766,22 @@ test("anybox runtime auth refreshes near-expired access tokens", async () => {
 
   globalThis.fetch = (async (input: FetchInput, init?: FetchInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-    const headers = new Headers(init?.headers)
 
     if (url === "https://anybox.test/api/agent/oauth/refresh") {
-      const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
+      const body = parseRequestBody(init)
       seenRefreshBodies.push(body)
       return Response.json({
         access_token: "new-anybox-access",
         refresh_token: "new-anybox-refresh",
         expires_in: 3600,
-      })
-    }
-
-    if (url === "https://anybox.test/api/agent/me") {
-      expect(headers.get("authorization")).toBe("Bearer new-anybox-access")
-      return Response.json({
         account: {
           email: "fresh@anybox.test",
           workspace_name: "Fresh Workspace",
         },
       })
     }
+
+    if (url === "https://anybox.test/api/agent/me") throw new Error("Anybox runtime auth should not fetch /api/agent/me")
 
     return originalFetch(input, init)
   }) as typeof fetch

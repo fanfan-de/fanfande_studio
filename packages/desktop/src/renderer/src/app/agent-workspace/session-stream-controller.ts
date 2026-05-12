@@ -274,13 +274,36 @@ function mergeAssistantTraceItem(existing: AssistantTraceItem, nextItem: Assista
     }
   }
 
-  return {
+  const merged = {
     ...existing,
     ...nextItem,
     id: existing.id,
     timestamp: existing.timestamp,
     debugEntries: mergeTraceDebugEntries(existing.debugEntries, nextItem.debugEntries),
   }
+
+  if (
+    existing.kind === nextItem.kind &&
+    (nextItem.kind === "reasoning" || nextItem.kind === "text") &&
+    existing.text &&
+    !nextItem.text
+  ) {
+    return {
+      ...merged,
+      text: existing.text,
+    }
+  }
+
+  if (existing.kind === "tool" && nextItem.kind === "tool") {
+    return {
+      ...merged,
+      text: nextItem.text ?? existing.text,
+      toolInputText: nextItem.toolInputText ?? existing.toolInputText,
+      toolOutputText: nextItem.toolOutputText ?? existing.toolOutputText,
+    }
+  }
+
+  return merged
 }
 
 function upsertAssistantTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {

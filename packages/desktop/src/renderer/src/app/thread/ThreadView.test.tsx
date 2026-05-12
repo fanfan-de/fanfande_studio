@@ -1,7 +1,7 @@
 import { createRef, type ComponentProps } from "react"
 import { fireEvent, render, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTurn, type SessionSummary, type Turn, type UserTurn } from "../types"
+import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTraceItemKind, type AssistantTurn, type SessionSummary, type Turn, type UserTurn } from "../types"
 import { ThreadView } from "./ThreadView"
 
 const session: SessionSummary = {
@@ -101,6 +101,152 @@ function setScrollMetrics(element: HTMLElement, input: { clientHeight: number; s
   })
   element.scrollTop = input.scrollTop
 }
+
+const traceItemKinds: AssistantTraceItemKind[] = [
+  "system",
+  "reasoning",
+  "text",
+  "question",
+  "tool",
+  "source",
+  "file",
+  "image",
+  "patch",
+  "subtask",
+  "compaction",
+  "step",
+  "retry",
+  "snapshot",
+  "task-state",
+  "error",
+]
+
+function traceSmokeItem(kind: AssistantTraceItemKind): AssistantTraceItem {
+  const base: AssistantTraceItem = {
+    id: `trace-smoke-${kind}`,
+    kind,
+    timestamp: 1,
+    label: kind,
+    title: `Smoke ${kind}`,
+    text: `Rendered ${kind}`,
+    status: "completed",
+  }
+
+  if (kind === "question") {
+    return {
+      ...base,
+      questionPrompt: {
+        questionID: "smoke-question",
+        question: "Choose a smoke answer",
+        options: [
+          {
+            label: "Continue",
+            value: "continue",
+          },
+        ],
+        allowFreeform: false,
+        multiple: false,
+        required: true,
+      },
+    }
+  }
+
+  if (kind === "tool") {
+    return {
+      ...base,
+      title: "Smoke tool",
+      toolOutputText: "tool output",
+    }
+  }
+
+  if (kind === "image") {
+    return {
+      ...base,
+      alt: "Smoke image",
+      src: "https://example.com/smoke.png",
+    }
+  }
+
+  if (kind === "patch") {
+    return {
+      ...base,
+      filePaths: ["src/smoke.ts"],
+    }
+  }
+
+  if (kind === "task-state") {
+    return {
+      ...base,
+      progressItems: [
+        {
+          id: "task-1",
+          status: "completed",
+          step: "Render smoke task",
+        },
+      ],
+    }
+  }
+
+  return base
+}
+
+describe("ThreadView trace item renderers", () => {
+  it("renders every assistant trace item kind through the registry", () => {
+    const activeTurns = traceItemKinds.flatMap<Turn>((kind, index) => [
+      userTurn(`user-${kind}`, `Trigger ${kind}`),
+      assistantTraceTurn(`assistant-${kind}`, [traceSmokeItem(kind)], false),
+      ...(index === traceItemKinds.length - 1 ? [] : [userTurn(`separator-${kind}`, `Next ${kind}`)]),
+    ])
+    const { container } = renderThread(activeTurns, {
+      assistantTraceVisibility: {
+        ...DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+        debugMetadata: true,
+        workflow: true,
+      },
+    })
+
+    for (const kind of traceItemKinds) {
+      expect(container.querySelector(`.trace-kind-${kind}`)).not.toBeNull()
+    }
+  })
+
+  it("renders workflow step trace items as a single compact row", () => {
+    const { container } = renderThread(
+      [
+        assistantTraceTurn(
+          "assistant-step",
+          [
+            {
+              id: "step-1",
+              kind: "step",
+              timestamp: 1,
+              label: "Step",
+              title: "Reasoning step finished",
+              detail: "Completed one reasoning step.",
+              status: "completed",
+              section: "workflow",
+              visibilityKey: "workflow",
+            },
+          ],
+          false,
+        ),
+      ],
+      {
+        assistantTraceVisibility: {
+          ...DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+          workflow: true,
+        },
+      },
+    )
+
+    const row = container.querySelector(".trace-kind-step .trace-item-step-row")
+
+    expect(row).not.toBeNull()
+    expect(row?.textContent).toContain("Reasoning step finished")
+    expect(row?.textContent).toContain("Completed one reasoning step.")
+    expect(row?.querySelector(".trace-item-detail")?.tagName).toBe("SPAN")
+  })
+})
 
 describe("ThreadView side chat banner", () => {
   it("does not render the anchored response preview as banner copy", () => {
@@ -243,6 +389,28 @@ describe("ThreadView image trace items", () => {
     expect(dialog).toBeInTheDocument()
     expect(document.body.contains(dialog)).toBe(true)
     expect(container.contains(dialog)).toBe(false)
+  })
+
+  it("routes patch file chips to the file change handler", () => {
+    const onFileChangeSelect = vi.fn()
+    const patchItem: AssistantTraceItem = {
+      id: "patch-action",
+      kind: "patch",
+      timestamp: 1,
+      label: "Patch",
+      title: "Updated files",
+      filePaths: ["src/app.tsx"],
+      status: "completed",
+    }
+    const { getByRole } = renderThread([
+      assistantTraceTurn("assistant-patch", [patchItem], false),
+    ], {
+      onFileChangeSelect,
+    })
+
+    fireEvent.click(getByRole("button", { name: "src/app.tsx" }))
+
+    expect(onFileChangeSelect).toHaveBeenCalledWith("src/app.tsx")
   })
 
   it("closes the lightbox with Escape and restores focus to the thumbnail trigger", () => {

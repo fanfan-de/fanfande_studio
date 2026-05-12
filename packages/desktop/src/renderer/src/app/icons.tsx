@@ -37,6 +37,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
+  Pin,
   Plus,
   Puzzle,
   RotateCcw,
@@ -64,6 +65,7 @@ export const BackIcon = createIcon(ArrowLeft)
 export const ForwardIcon = createIcon(ArrowRight)
 export const FolderOpenIcon = createIcon(FolderOpen)
 export const PaperclipIcon = createIcon(Paperclip)
+export const PinIcon = createIcon(Pin)
 export const CopyIcon = createIcon(Copy)
 export const DownloadIcon = createIcon(Download)
 export const ChevronDownIcon = createIcon(ChevronDown)

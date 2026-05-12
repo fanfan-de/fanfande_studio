@@ -802,6 +802,55 @@ function upsertTraceItems(items: AssistantTraceItem[], nextItems: AssistantTrace
   return nextItems.reduce((result, nextItem) => upsertTraceItem(result, nextItem), items)
 }
 
+function mergeTraceItem(existing: AssistantTraceItem, nextItem: AssistantTraceItem): AssistantTraceItem {
+  const keepsTerminalToolState =
+    existing.kind === "tool" &&
+    nextItem.kind === "tool" &&
+    isTerminalTraceStatus(existing.status) &&
+    !isTerminalTraceStatus(nextItem.status)
+
+  if (keepsTerminalToolState) {
+    return {
+      ...existing,
+      messageID: existing.messageID ?? nextItem.messageID,
+      partID: existing.partID ?? nextItem.partID,
+      toolCallID: existing.toolCallID ?? nextItem.toolCallID,
+      debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
+    }
+  }
+
+  const merged = {
+    ...existing,
+    ...nextItem,
+    id: existing.id,
+    timestamp: existing.timestamp,
+    debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
+  }
+
+  if (
+    existing.kind === nextItem.kind &&
+    (nextItem.kind === "reasoning" || nextItem.kind === "text") &&
+    existing.text &&
+    !nextItem.text
+  ) {
+    return {
+      ...merged,
+      text: existing.text,
+    }
+  }
+
+  if (existing.kind === "tool" && nextItem.kind === "tool") {
+    return {
+      ...merged,
+      text: nextItem.text ?? existing.text,
+      toolInputText: nextItem.toolInputText ?? existing.toolInputText,
+      toolOutputText: nextItem.toolOutputText ?? existing.toolOutputText,
+    }
+  }
+
+  return merged
+}
+
 function upsertTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceItem) {
   const matchingIndices = items.reduce<number[]>((result, item, index) => {
     if (nextItem.sourceID && item.sourceID ? item.sourceID === nextItem.sourceID : item.id === nextItem.id) {
@@ -817,26 +866,7 @@ function upsertTraceItem(items: AssistantTraceItem[], nextItem: AssistantTraceIt
 
   const firstIndex = matchingIndices[0]
   const existing = items[firstIndex]
-  const keepsTerminalToolState =
-    existing.kind === "tool" &&
-    nextItem.kind === "tool" &&
-    isTerminalTraceStatus(existing.status) &&
-    !isTerminalTraceStatus(nextItem.status)
-  const merged = keepsTerminalToolState
-    ? {
-        ...existing,
-        messageID: existing.messageID ?? nextItem.messageID,
-        partID: existing.partID ?? nextItem.partID,
-        toolCallID: existing.toolCallID ?? nextItem.toolCallID,
-        debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
-      }
-    : {
-        ...existing,
-        ...nextItem,
-        id: existing.id,
-        timestamp: existing.timestamp,
-        debugEntries: mergeDebugEntries(existing.debugEntries, nextItem.debugEntries),
-      }
+  const merged = mergeTraceItem(existing, nextItem)
 
   const duplicateIndices = new Set(matchingIndices.slice(1))
 

@@ -949,6 +949,83 @@ describe("stream trace reducer", () => {
     })
   })
 
+  it("keeps streamed reasoning visible when a sparse completion event is followed by tool input", () => {
+    let turn = buildStreamingAssistantTurn("Inspect live reasoning before tools")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-reasoning-delta",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "reasoning.part.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "reasoning-part",
+          delta: "I will inspect the thread renderer.",
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-reasoning-completed",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "reasoning.part.completed",
+        payload: {
+          part: {
+            id: "reasoning-part",
+            messageID: "message-runtime",
+            type: "reasoning",
+          },
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-tool-input",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 3,
+        timestamp: 102,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-part",
+          toolCallID: "call-live-input",
+          toolName: "shell",
+          delta: "{\"command\":\"rg ThreadView\"}",
+        },
+      },
+    })
+
+    expect(turn.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "reasoning",
+          sourceID: "reasoning-part",
+          text: "I will inspect the thread renderer.",
+          isStreaming: false,
+        }),
+        expect.objectContaining({
+          kind: "tool",
+          sourceID: "tool-input-part",
+          title: "shell",
+          toolInputText: "{\"command\":\"rg ThreadView\"}",
+        }),
+      ]),
+    )
+    expect(turn.runtime.phase).toBe("tool_running")
+  })
+
   it("derives source and attachment trace items from assistant parts", () => {
     const turns = buildTurnsFromHistory([
       {

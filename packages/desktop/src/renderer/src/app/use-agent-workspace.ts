@@ -20,7 +20,7 @@ import { useWorkspaceLoadingController } from "./agent-workspace/workspace-loadi
 import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-store"
 import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
 import { initialSelection } from "./seed-data"
-import type { LeftSidebarView, RightSidebarView, SessionModelSelection } from "./types"
+import type { LeftSidebarView, RightSidebarView, SessionModelSelection, WorkspaceGroup } from "./types"
 import { updateSessionModelSelectionInWorkspaces } from "./workspace"
 import { createWorkbenchLayoutFromLegacyPanes } from "./workbench/core"
 
@@ -90,6 +90,7 @@ export function useAgentWorkspace({
     isCreatingProject,
     isInitialWorkspaceLoadPending,
     leftSidebarView,
+    pinnedWorkspaceIDs,
     preserveLocalWorkspaceStateOnInitialLoadRef,
     projectRowRefs,
     rightSidebarView,
@@ -104,6 +105,7 @@ export function useAgentWorkspace({
     setIsCreatingProject,
     setIsInitialWorkspaceLoadPending,
     setLeftSidebarView,
+    setPinnedWorkspaceIDs,
     setRightSidebarView,
     setSelectedFolderID,
     setSessionCanvasUnreadBySession,
@@ -417,7 +419,9 @@ export function useAgentWorkspace({
     handleOpenSideChat,
     handleOpenSideChatInTab,
     handleProjectClick,
+    handleProjectArchiveSessions,
     handleProjectCreateSession,
+    handleProjectOpenInExplorer,
     handleProjectRemove,
     handleSessionDelete,
     handleSessionSelect,
@@ -588,6 +592,10 @@ export function useAgentWorkspace({
     setRightSidebarView(nextView)
   }
 
+  function handleProjectPin(workspace: WorkspaceGroup) {
+    setPinnedWorkspaceIDs((current) => [workspace.id, ...current.filter((workspaceID) => workspaceID !== workspace.id)])
+  }
+
   function invalidateProjectComposer() {
     setComposerRefreshVersion((current) => current + 1)
   }
@@ -691,6 +699,9 @@ export function useAgentWorkspace({
     handleWorkspaceFileSelect,
     handleProjectCreateSession,
     handleProjectClick,
+    handleProjectArchiveSessions,
+    handleProjectOpenInExplorer,
+    handleProjectPin,
     handleProjectRemove,
     handleRemoveComposerAttachment,
     handleRightSidebarViewChange,
@@ -710,6 +721,7 @@ export function useAgentWorkspace({
     leftSidebarView,
     permissionRequestActionError,
     permissionRequestActionRequestID,
+    pinnedWorkspaceIDs,
     projectRowRefs,
     refreshComposerMcp,
     refreshComposerModels,

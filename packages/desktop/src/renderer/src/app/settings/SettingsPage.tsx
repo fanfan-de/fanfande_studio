@@ -824,7 +824,11 @@ interface SettingsPageProps {
   onMcpToolPolicyChange: (toolName: string, policy: McpToolPolicyValue) => void
   onMcpServerSelect: (serverID: string) => void
   onProviderAuthMethodChange: (providerID: string, method: string) => void
-  onProviderDraftChange: (providerID: string, field: "apiKey" | "baseURL", value: string) => void
+  onProviderDraftChange: (
+    providerID: string,
+    field: "apiKey" | "baseURL",
+    value: string,
+  ) => void
   onRefreshProviderCatalog: () => boolean | Promise<boolean>
   onLoadArchivedSessions: () => void | Promise<void>
   onRestoreArchivedSession: (sessionID: string) => boolean | Promise<boolean>

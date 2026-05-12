@@ -4,6 +4,7 @@ import {
   findFirstSession,
   getPrimaryWorkspaceSessions,
   selectAfterSessionDelete,
+  sortWorkspaceGroups,
   updateSessionModelSelectionInWorkspaces,
 } from "./workspace"
 
@@ -76,5 +77,17 @@ describe("workspace primary session selection", () => {
 
     expect(workspace?.sessions.find((session) => session.id === "session-a")?.modelSelection?.model).toBe("openai/gpt-5.4")
     expect(workspace?.sessions.find((session) => session.id === "session-b")?.modelSelection).toBeUndefined()
+  })
+
+  it("keeps pinned workspaces above recency-sorted workspaces", () => {
+    const oldPinnedWorkspace = buildWorkspace("old-pinned", [], 1)
+    const recentWorkspace = buildWorkspace("recent", [], 100)
+    const secondPinnedWorkspace = buildWorkspace("second-pinned", [], 2)
+
+    expect(
+      sortWorkspaceGroups([recentWorkspace, oldPinnedWorkspace, secondPinnedWorkspace], ["second-pinned", "old-pinned"]).map(
+        (workspace) => workspace.id,
+      ),
+    ).toEqual(["second-pinned", "old-pinned", "recent"])
   })
 })

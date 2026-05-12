@@ -685,6 +685,8 @@ export interface AgentProviderAuthFlow {
   verificationURI?: string
   userCode?: string
   errorMessage?: string
+  errorCode?: string
+  diagnostics?: Record<string, unknown>
   connectionLabel?: string
   account?: AgentProviderAuthAccountSummary
 }
@@ -730,6 +732,8 @@ export interface AgentProviderConnectionTestResult {
     | "unknown_error"
   checkedAt: number
   message: string
+  errorCode?: string
+  diagnostics?: Record<string, unknown>
 }
 
 export interface AgentProviderModelCapabilitiesModalities {

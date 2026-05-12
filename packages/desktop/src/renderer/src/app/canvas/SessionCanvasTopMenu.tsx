@@ -110,7 +110,7 @@ function ToolPermissionModeMenuButton({
         className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-permission-trigger is-active" : "canvas-top-menu-button canvas-top-menu-permission-trigger"}
         aria-controls="canvas-top-menu-permission-menu"
         aria-expanded={isMenuOpen}
-        aria-haspopup="dialog"
+        aria-haspopup="menu"
         aria-label={`工具权限：${selectedLabel}`}
         title={title}
         disabled={isSaving}
@@ -124,8 +124,8 @@ function ToolPermissionModeMenuButton({
         <div
           ref={menuRef}
           id="canvas-top-menu-permission-menu"
-          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel"
-          role="dialog"
+          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel canvas-top-menu-context-panel canvas-top-menu-permission-panel"
+          role="menu"
           aria-label="工具权限模式选择"
         >
           {TOOL_PERMISSION_MODE_OPTIONS.map((option) => {
@@ -134,16 +134,17 @@ function ToolPermissionModeMenuButton({
             return (
               <button
                 key={option.value}
-                className={isSelected ? "composer-menu-option canvas-top-menu-segmented-option is-selected" : "composer-menu-option canvas-top-menu-segmented-option"}
+                className={isSelected ? "canvas-top-menu-context-option canvas-top-menu-permission-option is-selected" : "canvas-top-menu-context-option canvas-top-menu-permission-option"}
                 disabled={isSaving}
                 onClick={() => handleOptionClick(option.value)}
+                role="menuitem"
+                title={option.description}
                 type="button"
               >
-                <span className="composer-menu-option-copy">
+                <span className="canvas-top-menu-context-option-label canvas-top-menu-permission-option-label">
                   <strong>{option.label}</strong>
-                  <small>{option.description}</small>
                 </span>
-                <span className="composer-menu-option-check">{isSelected ? "已选择" : "切换"}</span>
+                <span className="canvas-top-menu-context-option-status canvas-top-menu-permission-option-status">{isSelected ? "已选择" : "切换"}</span>
               </button>
             )
           })}
@@ -202,7 +203,7 @@ function ProjectMcpMenuButton({
         className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-mcp-trigger is-active" : "canvas-top-menu-button canvas-top-menu-mcp-trigger"}
         aria-controls="canvas-top-menu-mcp-menu"
         aria-expanded={isMenuOpen}
-        aria-haspopup="dialog"
+        aria-haspopup="menu"
         aria-label={`Select project MCP servers: ${selectedMcpServerLabel}`}
         title={`Project MCP servers: ${selectedMcpServerLabel}`}
         onClick={() => setIsMenuOpen((current) => !current)}
@@ -215,8 +216,8 @@ function ProjectMcpMenuButton({
         <div
           ref={menuRef}
           id="canvas-top-menu-mcp-menu"
-          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel"
-          role="dialog"
+          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel canvas-top-menu-context-panel canvas-top-menu-mcp-panel"
+          role="menu"
           aria-label="Project MCP server selection"
         >
           {mcpOptions.length > 0 ? (
@@ -226,15 +227,17 @@ function ProjectMcpMenuButton({
               return (
                 <button
                   key={option.value}
-                  className={isSelected ? "composer-menu-option canvas-top-menu-segmented-option is-selected" : "composer-menu-option canvas-top-menu-segmented-option"}
+                  aria-checked={isSelected}
+                  className={isSelected ? "canvas-top-menu-context-option canvas-top-menu-mcp-option is-selected" : "canvas-top-menu-context-option canvas-top-menu-mcp-option"}
                   onClick={() => void onMcpServerToggle(option.value)}
+                  role="menuitemcheckbox"
+                  title={option.description}
                   type="button"
                 >
-                  <span className="composer-menu-option-copy">
+                  <span className="canvas-top-menu-context-option-label">
                     <strong>{option.label}</strong>
-                    <small>{option.description}</small>
                   </span>
-                  <span className="composer-menu-option-check">{isSelected ? "Enabled" : "Enable"}</span>
+                  <span className="canvas-top-menu-context-option-status">{isSelected ? "Enabled" : "Enable"}</span>
                 </button>
               )
             })
@@ -320,7 +323,7 @@ function ProjectSkillsMenuButton({
         <div
           ref={menuRef}
           id="canvas-top-menu-skill-menu"
-          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel canvas-top-menu-skill-selector-panel"
+          className="canvas-top-menu-selector-panel canvas-top-menu-action-selector-panel canvas-top-menu-context-panel canvas-top-menu-searchable-panel canvas-top-menu-skill-selector-panel"
           role="dialog"
           aria-label="Project skill selection"
         >
@@ -344,12 +347,12 @@ function ProjectSkillsMenuButton({
                   <button
                     key={option.value}
                     aria-selected={isSelected}
-                    className={isSelected ? "composer-menu-option canvas-top-menu-segmented-option canvas-top-menu-skill-option is-selected" : "composer-menu-option canvas-top-menu-segmented-option canvas-top-menu-skill-option"}
+                    className={isSelected ? "canvas-top-menu-context-option canvas-top-menu-skill-option is-selected" : "canvas-top-menu-context-option canvas-top-menu-skill-option"}
                     onClick={() => onSkillToggle(option.value)}
                     role="option"
                     type="button"
                   >
-                    <span>{option.label}</span>
+                    <span className="canvas-top-menu-context-option-label">{option.label}</span>
                   </button>
                 )
               })

@@ -1,4 +1,5 @@
-import { type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type SetStateAction } from "react"
+import { useEffect, useRef, useState, type Dispatch, type FocusEvent, type FormEvent, type KeyboardEvent, type MouseEvent, type MutableRefObject, type SetStateAction } from "react"
+import { createPortal } from "react-dom"
 import { sidebarActions } from "../constants"
 import {
   ArchiveIcon,
@@ -9,7 +10,9 @@ import {
   DeleteIcon,
   FileTextIcon,
   FolderIcon,
+  FolderOpenIcon,
   NewItemIcon,
+  PinIcon,
   SessionRunningIcon,
   SettingsIcon,
   SideChatIcon,
@@ -58,10 +61,14 @@ interface SidebarProps {
   visibleCanvasSessionIDs: string[]
   workspaces: WorkspaceGroup[]
   workspaceMode: WorkspaceMode
+  pinnedWorkspaceIDs: string[]
   onHoveredFolderChange: Dispatch<SetStateAction<string | null>>
   onOpenSettings: () => void
+  onProjectArchiveSessions: (workspace: WorkspaceGroup) => void | Promise<void>
   onProjectClick: (workspace: WorkspaceGroup) => void
   onProjectCreateSession: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void | Promise<void>
+  onProjectOpenInExplorer: (workspace: WorkspaceGroup) => void | Promise<void>
+  onProjectPin: (workspace: WorkspaceGroup) => void
   onProjectRemove: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void
   onSessionDelete: (workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) => void
   onSessionSelect: (workspaceID: string, sessionID: string) => void
@@ -144,13 +151,168 @@ interface FolderWorkspaceViewProps {
   sessionCanvasUnreadBySession: Record<string, boolean>
   visibleCanvasSessionIDs: string[]
   workspaces: WorkspaceGroup[]
+  pinnedWorkspaceIDs: string[]
   onHoveredFolderChange: Dispatch<SetStateAction<string | null>>
+  onProjectArchiveSessions: (workspace: WorkspaceGroup) => void | Promise<void>
   onProjectClick: (workspace: WorkspaceGroup) => void
   onProjectCreateSession: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void | Promise<void>
+  onProjectOpenInExplorer: (workspace: WorkspaceGroup) => void | Promise<void>
+  onProjectPin: (workspace: WorkspaceGroup) => void
   onProjectRemove: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void
   onSessionDelete: (workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) => void
   onSessionSelect: (workspaceID: string, sessionID: string) => void
   onSidebarAction: (action: SidebarActionKey) => void | Promise<void>
+}
+
+type ProjectContextMenuState = {
+  workspace: WorkspaceGroup
+  x: number
+  y: number
+} | null
+
+const PROJECT_CONTEXT_MENU_WIDTH = 240
+const PROJECT_CONTEXT_MENU_HEIGHT = 152
+
+function clampProjectContextMenuPosition(x: number, y: number) {
+  const margin = 8
+  if (typeof window === "undefined") {
+    return { x, y }
+  }
+
+  return {
+    x: Math.max(margin, Math.min(x, window.innerWidth - PROJECT_CONTEXT_MENU_WIDTH - margin)),
+    y: Math.max(margin, Math.min(y, window.innerHeight - PROJECT_CONTEXT_MENU_HEIGHT - margin)),
+  }
+}
+
+interface ProjectContextMenuProps {
+  deletingSessionID: string | null
+  menu: ProjectContextMenuState
+  pinnedWorkspaceIDs: string[]
+  onClose: () => void
+  onProjectArchiveSessions: (workspace: WorkspaceGroup) => void | Promise<void>
+  onProjectOpenInExplorer: (workspace: WorkspaceGroup) => void | Promise<void>
+  onProjectPin: (workspace: WorkspaceGroup) => void
+  onProjectRemove: (workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) => void
+}
+
+function ProjectContextMenu({
+  deletingSessionID,
+  menu,
+  pinnedWorkspaceIDs,
+  onClose,
+  onProjectArchiveSessions,
+  onProjectOpenInExplorer,
+  onProjectPin,
+  onProjectRemove,
+}: ProjectContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!menu) return
+
+    function handlePointerDown(event: globalThis.PointerEvent) {
+      const target = event.target as Node | null
+      if (!target) return
+      if (menuRef.current?.contains(target)) return
+      onClose()
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose()
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown)
+    document.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("resize", onClose)
+    window.addEventListener("scroll", onClose, true)
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown)
+      document.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("resize", onClose)
+      window.removeEventListener("scroll", onClose, true)
+    }
+  }, [menu, onClose])
+
+  if (!menu) return null
+
+  const { workspace } = menu
+  const position = clampProjectContextMenuPosition(menu.x, menu.y)
+  const isMissingWorkspace = workspace.exists === false
+  const hasArchivableSessions = workspace.sessions.some((session) => !isSideChatSession(session)) || workspace.sessions.length > 0
+  const isArchiveDisabled = deletingSessionID !== null || !hasArchivableSessions
+  const isPinnedFirst = pinnedWorkspaceIDs[0] === workspace.id
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="ui-context-menu project-context-menu"
+      role="menu"
+      aria-label={`${workspace.name} actions`}
+      style={{ left: position.x, top: position.y }}
+    >
+      <button
+        className="ui-context-menu__item"
+        role="menuitem"
+        type="button"
+        disabled={isPinnedFirst}
+        onClick={(event) => {
+          event.stopPropagation()
+          onClose()
+          onProjectPin(workspace)
+        }}
+      >
+        <span className="ui-context-menu__icon" aria-hidden="true"><PinIcon /></span>
+        <span className="ui-context-menu__label">{isPinnedFirst ? "已置顶" : "置顶项目"}</span>
+      </button>
+      <button
+        className="ui-context-menu__item"
+        role="menuitem"
+        type="button"
+        disabled={isMissingWorkspace}
+        onClick={(event) => {
+          event.stopPropagation()
+          onClose()
+          void onProjectOpenInExplorer(workspace)
+        }}
+      >
+        <span className="ui-context-menu__icon" aria-hidden="true"><FolderOpenIcon /></span>
+        <span className="ui-context-menu__label">在资源管理器中打开</span>
+      </button>
+      <button
+        className="ui-context-menu__item"
+        role="menuitem"
+        type="button"
+        disabled={isArchiveDisabled}
+        onClick={(event) => {
+          event.stopPropagation()
+          onClose()
+          void onProjectArchiveSessions(workspace)
+        }}
+      >
+        <span className="ui-context-menu__icon" aria-hidden="true"><ArchiveIcon /></span>
+        <span className="ui-context-menu__label">归档所有对话</span>
+      </button>
+      <div className="ui-context-menu__divider" role="separator" />
+      <button
+        className="ui-context-menu__item"
+        role="menuitem"
+        type="button"
+        data-variant="danger"
+        onClick={(event) => {
+          onClose()
+          onProjectRemove(workspace, event)
+        }}
+      >
+        <span className="ui-context-menu__icon" aria-hidden="true"><DeleteIcon /></span>
+        <span className="ui-context-menu__label">移除</span>
+      </button>
+    </div>,
+    document.body,
+  )
 }
 
 function FolderWorkspaceView({
@@ -166,9 +328,13 @@ function FolderWorkspaceView({
   sessionCanvasUnreadBySession,
   visibleCanvasSessionIDs,
   workspaces,
+  pinnedWorkspaceIDs,
   onHoveredFolderChange,
+  onProjectArchiveSessions,
   onProjectClick,
   onProjectCreateSession,
+  onProjectOpenInExplorer,
+  onProjectPin,
   onProjectRemove,
   onSessionDelete,
   onSessionSelect,
@@ -176,6 +342,11 @@ function FolderWorkspaceView({
 }: FolderWorkspaceViewProps) {
   const runningSessionIDSet = new Set(runningSessionIDs)
   const visibleSessionIDSet = new Set(visibleCanvasSessionIDs)
+  const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState>(null)
+
+  function closeProjectContextMenu() {
+    setProjectContextMenu(null)
+  }
 
   return (
     <section className="sidebar-view sidebar-view-workspace" aria-label="Workspace sidebar view">
@@ -205,8 +376,6 @@ function FolderWorkspaceView({
           const isMissingWorkspace = workspace.exists === false
           const showStateIcon = workspace.id === hoveredFolderID
           const leadingIcon = showStateIcon ? (isExpanded ? "expanded" : "collapsed") : "folder"
-          const removeLabel = "\u79FB\u9664"
-          const removeFolderLabel = `${removeLabel} ${workspace.name}`
           const createSessionLabel = `Create session for ${workspace.name}`
           const createSessionTitle = isMissingWorkspace
             ? `${workspace.name} has been deleted and cannot create new sessions.`
@@ -217,6 +386,23 @@ function FolderWorkspaceView({
             onHoveredFolderChange((current) => (current === workspace.id ? null : current))
           }
 
+          function handleProjectContextMenu(event: MouseEvent<HTMLDivElement>) {
+            const target = event.target
+            if (target instanceof HTMLElement) {
+              const editable = target.closest("input, textarea, [contenteditable='true'], webview")
+              if (editable) return
+            }
+
+            event.preventDefault()
+            event.stopPropagation()
+            onHoveredFolderChange(workspace.id)
+            setProjectContextMenu({
+              workspace,
+              x: event.clientX,
+              y: event.clientY,
+            })
+          }
+
           return (
             <section key={workspace.id} className="project-block">
               <div
@@ -225,6 +411,7 @@ function FolderWorkspaceView({
                 onMouseLeave={() => onHoveredFolderChange((current) => (current === workspace.id ? null : current))}
                 onFocus={() => onHoveredFolderChange(workspace.id)}
                 onBlur={handleProjectBlur}
+                onContextMenu={handleProjectContextMenu}
               >
                 <button
                   ref={(node) => {
@@ -241,8 +428,8 @@ function FolderWorkspaceView({
                   </span>
                   <span className="project-row-text">
                     <span className="project-row-label">{workspace.name}</span>
-                    <span className="project-row-meta">
-                      <span className="project-row-meta-label">{workspace.project.name}</span>
+                    <span className="project-row-meta" title={workspace.project.worktree}>
+                      <span className="project-row-meta-label">{workspace.project.worktree}</span>
                       {isMissingWorkspace ? (
                         <span className="project-row-status is-missing">{"\u5df2\u5220\u9664"}</span>
                       ) : null}
@@ -250,14 +437,6 @@ function FolderWorkspaceView({
                   </span>
                 </button>
                 <div className="project-row-actions" aria-label={`${workspace.name} actions`}>
-                  <button
-                    className="row-action project-row-action"
-                    aria-label={removeFolderLabel}
-                    title={removeFolderLabel}
-                    onClick={(event) => onProjectRemove(workspace, event)}
-                  >
-                    <DeleteIcon />
-                  </button>
                   <button
                     className="row-action project-row-action"
                     aria-label={createSessionLabel}
@@ -321,6 +500,16 @@ function FolderWorkspaceView({
           )
         })}
       </div>
+      <ProjectContextMenu
+        deletingSessionID={deletingSessionID}
+        menu={projectContextMenu}
+        pinnedWorkspaceIDs={pinnedWorkspaceIDs}
+        onClose={closeProjectContextMenu}
+        onProjectArchiveSessions={onProjectArchiveSessions}
+        onProjectOpenInExplorer={onProjectOpenInExplorer}
+        onProjectPin={onProjectPin}
+        onProjectRemove={onProjectRemove}
+      />
     </section>
   )
 }
@@ -650,10 +839,14 @@ export function Sidebar({
   visibleCanvasSessionIDs,
   workspaces,
   workspaceMode,
+  pinnedWorkspaceIDs,
   onHoveredFolderChange,
   onOpenSettings,
+  onProjectArchiveSessions,
   onProjectClick,
   onProjectCreateSession,
+  onProjectOpenInExplorer,
+  onProjectPin,
   onProjectRemove,
   onSessionDelete,
   onSessionSelect,
@@ -689,9 +882,13 @@ export function Sidebar({
               sessionCanvasUnreadBySession={sessionCanvasUnreadBySession}
               visibleCanvasSessionIDs={visibleCanvasSessionIDs}
               workspaces={workspaces}
+              pinnedWorkspaceIDs={pinnedWorkspaceIDs}
               onHoveredFolderChange={onHoveredFolderChange}
+              onProjectArchiveSessions={onProjectArchiveSessions}
               onProjectClick={onProjectClick}
               onProjectCreateSession={onProjectCreateSession}
+              onProjectOpenInExplorer={onProjectOpenInExplorer}
+              onProjectPin={onProjectPin}
               onProjectRemove={onProjectRemove}
               onSessionDelete={onSessionDelete}
               onSessionSelect={onSessionSelect}

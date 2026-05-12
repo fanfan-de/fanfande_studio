@@ -167,8 +167,11 @@ export function App() {
     handleWorkspaceFileCommentStart,
     handleWorkspaceFileQueryChange,
     handleWorkspaceFileSelect,
+    handleProjectArchiveSessions,
     handleProjectCreateSession,
     handleProjectClick,
+    handleProjectOpenInExplorer,
+    handleProjectPin,
     handleProjectRemove,
     handleRemoveComposerAttachment,
     handleRightSidebarViewChange,
@@ -185,6 +188,7 @@ export function App() {
     leftSidebarView,
     permissionRequestActionError,
     permissionRequestActionRequestID,
+    pinnedWorkspaceIDs,
     projectRowRefs,
     refreshComposerMcp,
     refreshComposerModels,
@@ -890,10 +894,14 @@ export function App() {
               visibleCanvasSessionIDs={visibleCanvasSessionIDs}
               workspaces={workspaces}
               workspaceMode={workspaceMode}
+              pinnedWorkspaceIDs={pinnedWorkspaceIDs}
               onHoveredFolderChange={setHoveredFolderID}
               onOpenSettings={openSettings}
+              onProjectArchiveSessions={handleProjectArchiveSessions}
               onProjectCreateSession={handleProjectCreateSession}
               onProjectClick={handleProjectClick}
+              onProjectOpenInExplorer={handleProjectOpenInExplorer}
+              onProjectPin={handleProjectPin}
               onProjectRemove={handleProjectRemove}
               onSessionDelete={handleSessionDelete}
               onSessionSelect={handleSessionSelect}

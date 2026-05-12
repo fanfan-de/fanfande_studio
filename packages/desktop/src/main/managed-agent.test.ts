@@ -12,6 +12,10 @@ const electronAppMock = vi.hoisted(() => ({
   } as Record<string, string>,
 }))
 
+const electronSessionMock = vi.hoisted(() => ({
+  resolveProxy: vi.fn(),
+}))
+
 vi.mock("electron", () => ({
   app: {
     get isPackaged() {
@@ -19,6 +23,11 @@ vi.mock("electron", () => ({
     },
     getAppPath: vi.fn(() => electronAppMock.appPath),
     getPath: vi.fn((name: string) => electronAppMock.paths[name] ?? ""),
+  },
+  session: {
+    defaultSession: {
+      resolveProxy: electronSessionMock.resolveProxy,
+    },
   },
 }))
 
@@ -67,6 +76,7 @@ beforeEach(() => {
     home: "",
     userData: "",
   }
+  electronSessionMock.resolveProxy.mockReset()
 })
 
 afterEach(async () => {
@@ -142,5 +152,52 @@ describe("managed agent workspace dependencies", () => {
         expect(env[managedAgentInternals.env.workspaceDependenciesVersion]).toBeUndefined()
       },
     )
+  })
+})
+
+describe("managed agent proxy environment", () => {
+  it("converts Electron system proxy rules into launch env", async () => {
+    electronSessionMock.resolveProxy.mockResolvedValue("PROXY 127.0.0.1:7890; DIRECT")
+
+    await withProcessEnv(
+      {
+        HTTPS_PROXY: undefined,
+        HTTP_PROXY: undefined,
+        ALL_PROXY: undefined,
+        https_proxy: undefined,
+        http_proxy: undefined,
+        all_proxy: undefined,
+      },
+      async () => {
+        const proxyEnv = await managedAgentInternals.resolveManagedAgentProxyEnv()
+        expect(proxyEnv).toEqual({
+          HTTP_PROXY: "http://127.0.0.1:7890",
+          HTTPS_PROXY: "http://127.0.0.1:7890",
+        })
+        expect(electronSessionMock.resolveProxy).toHaveBeenCalledWith("https://anybox.com.cn")
+      },
+    )
+  })
+
+  it("does not override explicitly configured proxy env", async () => {
+    electronSessionMock.resolveProxy.mockResolvedValue("PROXY 127.0.0.1:7890")
+
+    await withProcessEnv(
+      {
+        HTTPS_PROXY: "http://manual-proxy.test:8080",
+        HTTP_PROXY: undefined,
+        ALL_PROXY: undefined,
+      },
+      async () => {
+        await expect(managedAgentInternals.resolveManagedAgentProxyEnv()).resolves.toEqual({})
+        expect(electronSessionMock.resolveProxy).not.toHaveBeenCalled()
+      },
+    )
+  })
+
+  it("ignores direct and unsupported proxy rules", () => {
+    expect(managedAgentInternals.proxyURLFromElectronProxyRule("DIRECT")).toBeUndefined()
+    expect(managedAgentInternals.proxyURLFromElectronProxyRule("SOCKS5 127.0.0.1:7891")).toBeUndefined()
+    expect(managedAgentInternals.proxyURLFromElectronProxyRule("HTTPS proxy.test:8443")).toBe("http://proxy.test:8443")
   })
 })

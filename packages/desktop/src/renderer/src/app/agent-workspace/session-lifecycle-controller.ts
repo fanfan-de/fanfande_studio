@@ -43,6 +43,7 @@ import {
   upsertSessionInWorkspace,
   upsertWorkspaceGroup,
 } from "../workspace"
+import { openExternalEditor } from "../external-editor/client"
 import {
   createCreateSessionWorkbenchTab,
   createSessionWorkbenchTab,
@@ -712,6 +713,115 @@ export function useSessionLifecycleController({
     )
   }
 
+  function applyArchivedSessions(archivedSessionIDs: Set<string>, fallbackWorkspaceID: string) {
+    const nextWorkspaces = sortWorkspaceGroups(
+      workspaces.map((item) => ({
+        ...item,
+        sessions: item.sessions.filter((existing) => !archivedSessionIDs.has(existing.id)),
+      })),
+    )
+    const nextCreateSessionWorkspaceID = resolveCreateSessionWorkspaceID(
+      nextWorkspaces,
+      activeCreateSessionTab?.workspaceID ?? createSessionWorkspaceID,
+      fallbackWorkspaceID,
+    )
+    const nextCreateSessionTabs = createSessionTabs.map((tab) => {
+      const nextWorkspaceID = findWorkspaceByID(nextWorkspaces, tab.workspaceID ?? "")?.id ?? nextCreateSessionWorkspaceID
+
+      return nextWorkspaceID === tab.workspaceID
+        ? tab
+        : {
+            ...tab,
+            workspaceID: nextWorkspaceID,
+          }
+    })
+    const nextWorkbenchLayout = filterLayoutTabs(
+      workbenchLayout,
+      (reference) => reference.kind !== "session" || !archivedSessionIDs.has(reference.sessionID),
+    )
+    const nextFocusedPane = getGroupNode(nextWorkbenchLayout, nextWorkbenchLayout.focusedGroupId)
+    const nextFocusedTab = nextFocusedPane?.activeTabId ? getReferenceForTabId(nextWorkbenchLayout, nextFocusedPane.activeTabId) : null
+    const nextFocusedWorkspaceID =
+      nextFocusedTab?.kind === "session"
+        ? findSession(nextWorkspaces, nextFocusedTab.sessionID).workspace?.id ?? null
+        : nextCreateSessionTabs.find((tab) => tab.id === nextFocusedTab?.createSessionTabID)?.workspaceID ?? null
+
+    setWorkspaces(nextWorkspaces)
+    setWorkbenchLayout(nextWorkbenchLayout)
+    setCreateSessionTabs(nextCreateSessionTabs)
+    setConversations((prev) => {
+      let next = prev
+      for (const archivedSessionID of archivedSessionIDs) {
+        next = removeConversationSession(next, archivedSessionID)
+      }
+      return next
+    })
+    setAgentSessions((prev) => {
+      let next = prev
+      for (const archivedSessionID of archivedSessionIDs) {
+        next = removeAgentSession(next, archivedSessionID)
+      }
+      return next
+    })
+    cleanupSessionState(archivedSessionIDs)
+    setSelectedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID ?? nextWorkspaces[0]?.id ?? null)
+    setExpandedFolderIDs((current) =>
+      ensureExpandedFolderID(current, nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID ?? null),
+    )
+  }
+
+  async function handleProjectOpenInExplorer(workspace: WorkspaceGroup) {
+    if (!isWorkspaceAvailable(workspace)) return
+
+    try {
+      await openExternalEditor({
+        editorID: "explorer",
+        targetPath: workspace.directory,
+      })
+    } catch (error) {
+      if (!window.desktop?.openPath) {
+        console.error("[desktop] open project in explorer failed:", error)
+        return
+      }
+
+      try {
+        await window.desktop.openPath({
+          targetPath: workspace.directory,
+        })
+      } catch (fallbackError) {
+        console.error("[desktop] open project path failed:", fallbackError)
+      }
+    }
+  }
+
+  async function handleProjectArchiveSessions(workspace: WorkspaceGroup) {
+    if (deletingSessionID || !window.desktop?.archiveAgentSession) return
+
+    const targetSessions = workspace.sessions
+    if (targetSessions.length === 0) return
+
+    setDeletingSessionID(targetSessions[0]?.id ?? workspace.id)
+    try {
+      const archivedSessionIDs = new Set<string>()
+      for (const session of targetSessions) {
+        if (archivedSessionIDs.has(session.id)) continue
+        const archiveResult = await window.desktop.archiveAgentSession({ sessionID: session.id })
+        const resultSessionIDs = archiveResult.archivedSessionIDs?.filter(Boolean) ?? [archiveResult.sessionID || session.id]
+        for (const sessionID of resultSessionIDs) {
+          archivedSessionIDs.add(sessionID)
+        }
+      }
+
+      if (archivedSessionIDs.size > 0) {
+        applyArchivedSessions(archivedSessionIDs, workspace.id)
+      }
+    } catch (error) {
+      console.error("[desktop] archive workspace sessions failed:", error)
+    } finally {
+      setDeletingSessionID(null)
+    }
+  }
+
   async function handleSessionDelete(workspace: WorkspaceGroup, session: SessionSummary, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
     if (deletingSessionID || !window.desktop?.archiveAgentSession) return
@@ -720,60 +830,7 @@ export function useSessionLifecycleController({
     try {
       const archiveResult = await window.desktop.archiveAgentSession({ sessionID: session.id })
       const archivedSessionIDs = new Set((archiveResult.archivedSessionIDs?.filter(Boolean) ?? [session.id]) as string[])
-      const nextWorkspaces = sortWorkspaceGroups(
-        workspaces.map((item) => ({
-          ...item,
-          sessions: item.sessions.filter((existing) => !archivedSessionIDs.has(existing.id)),
-        })),
-      )
-      const nextCreateSessionWorkspaceID = resolveCreateSessionWorkspaceID(
-        nextWorkspaces,
-        activeCreateSessionTab?.workspaceID ?? createSessionWorkspaceID,
-        workspace.id,
-      )
-      const nextCreateSessionTabs = createSessionTabs.map((tab) => {
-        const nextWorkspaceID = findWorkspaceByID(nextWorkspaces, tab.workspaceID ?? "")?.id ?? nextCreateSessionWorkspaceID
-
-        return nextWorkspaceID === tab.workspaceID
-          ? tab
-          : {
-              ...tab,
-              workspaceID: nextWorkspaceID,
-          }
-      })
-      const nextWorkbenchLayout = filterLayoutTabs(
-        workbenchLayout,
-        (reference) => reference.kind !== "session" || !archivedSessionIDs.has(reference.sessionID),
-      )
-      const nextFocusedPane = getGroupNode(nextWorkbenchLayout, nextWorkbenchLayout.focusedGroupId)
-      const nextFocusedTab = nextFocusedPane?.activeTabId ? getReferenceForTabId(nextWorkbenchLayout, nextFocusedPane.activeTabId) : null
-      const nextFocusedWorkspaceID =
-        nextFocusedTab?.kind === "session"
-          ? findSession(nextWorkspaces, nextFocusedTab.sessionID).workspace?.id ?? null
-          : nextCreateSessionTabs.find((tab) => tab.id === nextFocusedTab?.createSessionTabID)?.workspaceID ?? null
-
-      setWorkspaces(nextWorkspaces)
-      setWorkbenchLayout(nextWorkbenchLayout)
-      setCreateSessionTabs(nextCreateSessionTabs)
-      setConversations((prev) => {
-        let next = prev
-        for (const archivedSessionID of archivedSessionIDs) {
-          next = removeConversationSession(next, archivedSessionID)
-        }
-        return next
-      })
-      setAgentSessions((prev) => {
-        let next = prev
-        for (const archivedSessionID of archivedSessionIDs) {
-          next = removeAgentSession(next, archivedSessionID)
-        }
-        return next
-      })
-      cleanupSessionState(archivedSessionIDs)
-      setSelectedFolderID(nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID ?? nextWorkspaces[0]?.id ?? null)
-      setExpandedFolderIDs((current) =>
-        ensureExpandedFolderID(current, nextFocusedWorkspaceID ?? nextCreateSessionWorkspaceID ?? null),
-      )
+      applyArchivedSessions(archivedSessionIDs, workspace.id)
     } catch (error) {
       console.error("[desktop] archiveAgentSession failed:", error)
     } finally {
@@ -788,7 +845,9 @@ export function useSessionLifecycleController({
     handleOpenSideChat,
     handleOpenSideChatInTab,
     handleProjectClick,
+    handleProjectArchiveSessions,
     handleProjectCreateSession,
+    handleProjectOpenInExplorer,
     handleProjectRemove,
     handleSessionDelete,
     handleSessionSelect,

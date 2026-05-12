@@ -251,7 +251,7 @@ export function ExternalEditorMenuButton({ directory }: { directory: string | nu
           className={isMenuOpen ? "canvas-top-menu-button canvas-top-menu-editor-menu-button is-active" : "canvas-top-menu-button canvas-top-menu-editor-menu-button"}
           aria-controls="canvas-top-menu-editor-menu"
           aria-expanded={isMenuOpen}
-          aria-haspopup="dialog"
+          aria-haspopup="menu"
           aria-label="Choose editor for current project"
           title="Choose editor for current project"
           disabled={pendingEditorID !== null}
@@ -265,8 +265,8 @@ export function ExternalEditorMenuButton({ directory }: { directory: string | nu
         <div
           ref={menuRef}
           id="canvas-top-menu-editor-menu"
-          className="canvas-top-menu-selector-panel external-editor-menu-panel"
-          role="dialog"
+          className="canvas-top-menu-selector-panel canvas-top-menu-context-panel canvas-top-menu-fit-panel external-editor-menu-panel"
+          role="menu"
           aria-label="Open current project"
         >
           {isLoadingOptions ? <p className="composer-menu-empty">Loading available apps...</p> : null}
@@ -278,9 +278,10 @@ export function ExternalEditorMenuButton({ directory }: { directory: string | nu
             ? editorOptions.map((option) => (
                 <button
                   key={option.id}
-                  className="composer-menu-option external-editor-menu-option"
+                  className="canvas-top-menu-context-option external-editor-menu-option"
                   disabled={pendingEditorID !== null}
                   onClick={() => void handleOptionClick(option.id)}
+                  role="menuitem"
                   type="button"
                 >
                   <span className="external-editor-menu-option-main">

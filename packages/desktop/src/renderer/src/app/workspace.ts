@@ -68,10 +68,19 @@ function getPreferredWorkspaces(workspaces: WorkspaceGroup[]) {
   return available.length > 0 ? available : workspaces
 }
 
-export function sortWorkspaceGroups(input: WorkspaceGroup[]) {
+export function sortWorkspaceGroups(input: WorkspaceGroup[], pinnedWorkspaceIDs: string[] = []) {
   const getWorkspaceUpdated = (workspace: WorkspaceGroup) => workspace.sessions[0]?.updated ?? workspace.updated
+  const pinnedRankByID = new Map(pinnedWorkspaceIDs.map((workspaceID, index) => [workspaceID, index]))
 
   return [...input].sort((left, right) => {
+    const leftPinnedRank = pinnedRankByID.get(left.id)
+    const rightPinnedRank = pinnedRankByID.get(right.id)
+    if (leftPinnedRank !== undefined || rightPinnedRank !== undefined) {
+      if (leftPinnedRank === undefined) return 1
+      if (rightPinnedRank === undefined) return -1
+      return leftPinnedRank - rightPinnedRank
+    }
+
     const leftUpdated = getWorkspaceUpdated(left)
     const rightUpdated = getWorkspaceUpdated(right)
     return rightUpdated - leftUpdated

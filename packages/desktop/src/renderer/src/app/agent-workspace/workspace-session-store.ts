@@ -32,6 +32,7 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
     (state) => state.sessions.isInitialWorkspaceLoadPending,
   )
   const leftSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessions.leftSidebarView)
+  const pinnedWorkspaceIDs = useWorkspaceStoreSelector(store, (state) => state.sessions.pinnedWorkspaceIDs)
   const rightSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessions.rightSidebarView)
   const selectedFolderID = useWorkspaceStoreSelector(store, (state) => state.sessions.selectedFolderID)
   const sessionCanvasUnreadBySession = useWorkspaceStoreSelector(
@@ -57,6 +58,7 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
     (state) => state.sessionsActions.setIsInitialWorkspaceLoadPending,
   )
   const setLeftSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setLeftSidebarView)
+  const setPinnedWorkspaceIDs = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setPinnedWorkspaceIDs)
   const setRightSidebarView = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setRightSidebarView)
   const setSelectedFolderID = useWorkspaceStoreSelector(store, (state) => state.sessionsActions.setSelectedFolderID)
   const setSessionCanvasUnreadBySession = useWorkspaceStoreSelector(
@@ -77,6 +79,7 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
     isCreatingProject,
     isInitialWorkspaceLoadPending,
     leftSidebarView,
+    pinnedWorkspaceIDs,
     preserveLocalWorkspaceStateOnInitialLoadRef,
     projectRowRefs,
     rightSidebarView,
@@ -90,6 +93,7 @@ export function useWorkspaceSessionStore({ store }: WorkspaceSessionStoreOptions
     setIsCreatingProject,
     setIsInitialWorkspaceLoadPending,
     setLeftSidebarView,
+    setPinnedWorkspaceIDs,
     setRightSidebarView,
     setSelectedFolderID,
     setSessionCanvasUnreadBySession,

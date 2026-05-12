@@ -20,12 +20,14 @@ import type {
   WorkspaceGroup,
   WorkspacePreviewState,
 } from "../types"
+import { sortWorkspaceGroups } from "../workspace"
 import type { WorkbenchLayoutState } from "../workbench/core"
 import {
   DEFAULT_WORKSPACE_FILE_REVIEW_STATE
 } from "./review-preview-state"
 
 export const seedWorkspaceIDs = new Set(seedWorkspaces.map((workspace) => workspace.id))
+const PINNED_WORKSPACE_IDS_STORAGE_KEY = "desktop.workspace.pinnedWorkspaceIDs.v1"
 
 export type WorkspaceStateUpdater<T> = SetStateAction<T>
 
@@ -44,6 +46,28 @@ export function filterExpandedFolderIDs(current: string[], validFolderIDs: Set<s
   return next.length === current.length ? current : next
 }
 
+function readPinnedWorkspaceIDs() {
+  if (typeof window === "undefined") return []
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PINNED_WORKSPACE_IDS_STORAGE_KEY) ?? "[]")
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+  } catch {
+    return []
+  }
+}
+
+function writePinnedWorkspaceIDs(workspaceIDs: string[]) {
+  if (typeof window === "undefined") return
+
+  try {
+    window.localStorage.setItem(PINNED_WORKSPACE_IDS_STORAGE_KEY, JSON.stringify(workspaceIDs))
+  } catch {
+    // Ignore storage failures; the in-memory ordering still works for the current window.
+  }
+}
+
 export interface WorkbenchSliceState {
   workbenchLayout: WorkbenchLayoutState
 }
@@ -58,6 +82,7 @@ export interface SessionsSliceState {
   isCreatingProject: boolean
   isInitialWorkspaceLoadPending: boolean
   leftSidebarView: LeftSidebarView
+  pinnedWorkspaceIDs: string[]
   rightSidebarView: RightSidebarView
   selectedFolderID: string | null
   sessionCanvasUnreadBySession: Record<string, boolean>
@@ -109,6 +134,7 @@ export interface SessionsSliceActions {
   setIsCreatingProject: (update: WorkspaceStateUpdater<boolean>) => void
   setIsInitialWorkspaceLoadPending: (update: WorkspaceStateUpdater<boolean>) => void
   setLeftSidebarView: (update: WorkspaceStateUpdater<LeftSidebarView>) => void
+  setPinnedWorkspaceIDs: (update: WorkspaceStateUpdater<string[]>) => void
   setRightSidebarView: (update: WorkspaceStateUpdater<RightSidebarView>) => void
   setSelectedFolderID: (update: WorkspaceStateUpdater<string | null>) => void
   setSessionCanvasUnreadBySession: (
@@ -198,6 +224,7 @@ export function createWorkspaceStore({
 }: CreateWorkspaceStoreOptions) {
   const shouldUseSeedData = !hasFolderWorkspaceLoader
   const initialWorkspace = shouldUseSeedData ? initialSelection.workspace : null
+  const initialPinnedWorkspaceIDs = readPinnedWorkspaceIDs()
 
   return createStore<WorkspaceStore>((set) => ({
     workbench: {
@@ -213,10 +240,11 @@ export function createWorkspaceStore({
       isCreatingProject: false,
       isInitialWorkspaceLoadPending: hasFolderWorkspaceLoader,
       leftSidebarView: "workspace",
+      pinnedWorkspaceIDs: initialPinnedWorkspaceIDs,
       rightSidebarView: "changes",
       selectedFolderID: initialWorkspace?.id ?? null,
       sessionCanvasUnreadBySession: {},
-      workspaces: shouldUseSeedData ? seedWorkspaces : [],
+      workspaces: shouldUseSeedData ? sortWorkspaceGroups(seedWorkspaces, initialPinnedWorkspaceIDs) : [],
     },
     composer: {
       composerAttachmentsByTabKey: {},
@@ -326,6 +354,19 @@ export function createWorkspaceStore({
             leftSidebarView: resolveStateUpdate(state.sessions.leftSidebarView, update),
           },
         })),
+      setPinnedWorkspaceIDs: (update) =>
+        set((state) => {
+          const pinnedWorkspaceIDs = [...new Set(resolveStateUpdate(state.sessions.pinnedWorkspaceIDs, update))]
+          writePinnedWorkspaceIDs(pinnedWorkspaceIDs)
+
+          return {
+            sessions: {
+              ...state.sessions,
+              pinnedWorkspaceIDs,
+              workspaces: sortWorkspaceGroups(state.sessions.workspaces, pinnedWorkspaceIDs),
+            },
+          }
+        }),
       setRightSidebarView: (update) =>
         set((state) => ({
           sessions: {
@@ -354,7 +395,10 @@ export function createWorkspaceStore({
         set((state) => ({
           sessions: {
             ...state.sessions,
-            workspaces: resolveStateUpdate(state.sessions.workspaces, update),
+            workspaces: sortWorkspaceGroups(
+              resolveStateUpdate(state.sessions.workspaces, update),
+              state.sessions.pinnedWorkspaceIDs,
+            ),
           },
         })),
     },

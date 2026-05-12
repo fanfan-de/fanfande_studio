@@ -870,6 +870,8 @@ export interface ProviderAuthFlow {
   verificationURI?: string
   userCode?: string
   errorMessage?: string
+  errorCode?: string
+  diagnostics?: Record<string, unknown>
   connectionLabel?: string
   account?: ProviderAuthAccountSummary
 }

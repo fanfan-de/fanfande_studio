@@ -2099,6 +2099,7 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   gap: 12px;
   background: var(--seg-dropdown-menu-surface);
   border: 1px solid rgba(147, 171, 195, 0.52);
+  border-radius: var(--semantic-dropdown-menu-radius, var(--seg-radius-md));
   box-shadow: 0 18px 36px rgba(36, 59, 82, 0.14);
 }
 
@@ -2111,11 +2112,11 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   max-width: min(360px, calc(100vw - 64px));
   max-height: min(320px, calc(100dvh - 180px));
   overflow: auto;
-  scrollbar-gutter: stable;
   padding: 8px;
   display: grid;
   gap: 4px;
   border: 1px solid rgba(166, 186, 208, 0.42);
+  border-radius: var(--semantic-dropdown-menu-radius, var(--seg-radius-md));
   background: var(--seg-dropdown-menu-surface);
   box-shadow: 0 14px 34px rgba(46, 81, 118, 0.12);
   -webkit-app-region: no-drag;
@@ -2126,9 +2127,124 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   gap: 2px;
 }
 
+.canvas-top-menu-context-panel {
+  --context-menu-surface: var(--semantic-dropdown-menu-surface, var(--seg-dropdown-menu-surface, var(--surface-elevated, #ffffff)));
+  --context-menu-border: var(--seg-border, var(--border-default, rgba(17, 24, 39, 0.12)));
+  --context-menu-text: var(--seg-text-1, var(--text-primary, #1f2937));
+  --context-menu-muted: var(--seg-text-2, var(--text-secondary, #6b7280));
+  --context-menu-hover: var(--semantic-sidebar-tree-row-surface-hover, rgba(17, 24, 39, 0.06));
+  --context-menu-hover-text: var(--semantic-sidebar-tree-row-text-hover, var(--context-menu-text));
+  --context-menu-radius: var(--semantic-dropdown-menu-radius, var(--seg-radius-md, calc(var(--seg-radius-xs, 6px) + 2px)));
+  --context-menu-focus: var(--focus-outline-color, rgba(212, 107, 99, 0.32));
+  --context-menu-shadow: var(--ui-shadow-md, var(--shadow-md, 0 14px 34px rgba(17, 24, 39, 0.14)));
+
+  min-width: 184px;
+  max-width: min(320px, calc(100vw - 64px));
+  overflow: hidden;
+  padding: 6px;
+  gap: 2px;
+  border-color: var(--context-menu-border);
+  border-radius: var(--context-menu-radius);
+  background: var(--context-menu-surface);
+  color: var(--context-menu-text);
+  box-shadow: var(--context-menu-shadow);
+}
+
+.canvas-top-menu-permission-panel,
+.canvas-top-menu-mcp-panel {
+  max-width: min(260px, calc(100vw - 64px));
+}
+
+.canvas-top-menu-fit-panel {
+  width: max-content;
+  min-width: 0;
+  max-width: min(240px, calc(100vw - 64px));
+}
+
+.canvas-top-menu-fit-panel .canvas-top-menu-context-option {
+  width: 100%;
+  max-width: calc(100vw - 76px);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.canvas-top-menu-context-option {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: max(4px, calc(var(--context-menu-radius) - 2px));
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: left;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.canvas-top-menu-context-option:hover,
+.canvas-top-menu-context-option:focus-visible,
+.canvas-top-menu-context-option.is-selected,
+.canvas-top-menu-context-option[aria-selected="true"],
+.canvas-top-menu-context-option[aria-checked="true"] {
+  background: var(--context-menu-hover);
+  color: var(--context-menu-hover-text);
+  outline: none;
+  box-shadow: none;
+}
+
+.canvas-top-menu-context-option:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--context-menu-focus);
+}
+
+.canvas-top-menu-context-option:disabled,
+.canvas-top-menu-context-option[aria-disabled="true"] {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.canvas-top-menu-context-option:disabled:hover,
+.canvas-top-menu-context-option:disabled:focus-visible,
+.canvas-top-menu-context-option[aria-disabled="true"]:hover,
+.canvas-top-menu-context-option[aria-disabled="true"]:focus-visible {
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+}
+
+.canvas-top-menu-context-option-label,
+.canvas-top-menu-permission-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-top-menu-context-option-status,
+.canvas-top-menu-permission-option-status {
+  justify-self: end;
+  color: var(--context-menu-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvas-top-menu-context-option:hover .canvas-top-menu-context-option-status,
+.canvas-top-menu-context-option:focus-visible .canvas-top-menu-context-option-status,
+.canvas-top-menu-context-option.is-selected .canvas-top-menu-context-option-status,
+.canvas-top-menu-context-option[aria-selected="true"] .canvas-top-menu-context-option-status,
+.canvas-top-menu-context-option[aria-checked="true"] .canvas-top-menu-context-option-status {
+  color: currentColor;
+}
+
 .canvas-top-menu-segmented-option {
   border: 0 !important;
-  border-radius: 8px;
+  border-radius: var(--seg-radius-sm);
   background: transparent;
   box-shadow: none !important;
 }
@@ -2136,9 +2252,9 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
 .canvas-top-menu-segmented-option:hover,
 .canvas-top-menu-segmented-option:focus-visible,
 .canvas-top-menu-segmented-option.is-selected {
-  background: #e5ebf3;
+  background: var(--context-menu-hover, var(--semantic-sidebar-tree-row-surface-hover, rgba(17, 24, 39, 0.06)));
   border-color: transparent;
-  color: #1d2a35;
+  color: var(--context-menu-hover-text, var(--semantic-sidebar-tree-row-text-hover, #1f2937));
   box-shadow: none;
 }
 
@@ -2149,24 +2265,56 @@ body.is-resizing-workbench-pane .workbench-pane-resizer::before {
   gap: 4px;
 }
 
-.canvas-top-menu-skill-selector-panel .composer-menu-search {
-  background: var(--seg-dropdown-menu-surface);
+.canvas-top-menu-searchable-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.canvas-top-menu-searchable-panel .composer-menu-search {
+  position: relative;
+  z-index: 1;
+  padding: 0 0 6px;
+  background: var(--context-menu-surface);
+}
+
+.canvas-top-menu-searchable-panel .composer-menu-search-input {
+  min-height: 32px;
+  border-color: var(--context-menu-border);
+  border-radius: max(4px, calc(var(--context-menu-radius) - 2px));
+  background: transparent;
+  color: var(--context-menu-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.canvas-top-menu-searchable-panel .composer-menu-search-input:focus {
+  border-color: var(--context-menu-border);
+  box-shadow: inset 0 0 0 1px var(--context-menu-focus);
+}
+
+.canvas-top-menu-searchable-panel .composer-menu-options {
+  min-height: 0;
+  display: grid;
+  gap: 2px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.canvas-top-menu-searchable-panel .composer-menu-options::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .canvas-top-menu-skill-option {
-  justify-content: flex-start;
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.canvas-top-menu-skill-option span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.canvas-top-menu-skill-option.is-selected {
-  background: var(--seg-composer-button-surface-strong);
-  color: var(--seg-composer-button-text-strong);
+.canvas-top-menu-skill-option .canvas-top-menu-context-option-label {
+  justify-self: start;
 }
 
 .canvas-top-menu-quick-field {

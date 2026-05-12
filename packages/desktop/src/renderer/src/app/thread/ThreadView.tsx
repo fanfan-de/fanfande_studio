@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { createPortal } from "react-dom"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
@@ -19,7 +19,9 @@ import { buildTurnsFromHistory } from "../stream"
 import { ThreadMarkdown } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
 import type {
+  AssistantTraceDebugEntry,
   AssistantTraceItem,
+  AssistantTraceItemKind,
   AssistantTraceSectionKey,
   AssistantTraceVisibility,
   AssistantTraceVisibilityKey,
@@ -1211,18 +1213,7 @@ function ProposedPlanCard({
   )
 }
 
-function TraceItemView({
-  answeredQuestionIDs,
-  item,
-  isQuestionAnswerDisabled = false,
-  isLatestMessage = false,
-  onOpenImagePreview,
-  onAskUserQuestionAnswer,
-  onFileChangeSelect,
-  onProposedPlanConfirm,
-  shouldCollapseAfterTurnCompletion = false,
-  traceVisibility,
-}: {
+interface TraceItemViewProps {
   answeredQuestionIDs?: Set<string>
   item: AssistantTraceItem
   isQuestionAnswerDisabled?: boolean
@@ -1233,26 +1224,551 @@ function TraceItemView({
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
   shouldCollapseAfterTurnCompletion?: boolean
   traceVisibility: AssistantTraceVisibility
+}
+
+type RequiredTraceItemRendererProps = Required<
+  Pick<
+    TraceItemViewProps,
+    "isQuestionAnswerDisabled" | "isLatestMessage" | "shouldCollapseAfterTurnCompletion"
+  >
+>
+
+type TraceItemRendererProps = RequiredTraceItemRendererProps &
+  Pick<
+    TraceItemViewProps,
+    | "answeredQuestionIDs"
+    | "item"
+    | "onAskUserQuestionAnswer"
+    | "onFileChangeSelect"
+    | "onOpenImagePreview"
+    | "onProposedPlanConfirm"
+    | "traceVisibility"
+  > & {
+    className: string
+    debugEntries: AssistantTraceDebugEntry[]
+    isResponseItem: boolean
+  }
+
+function TraceItemDebugEntries({
+  debugEntries,
+  itemID,
+}: {
+  debugEntries: AssistantTraceDebugEntry[]
+  itemID: string
 }) {
+  if (debugEntries.length === 0) return null
+
+  return (
+    <div className="trace-item-debug">
+      {debugEntries.map((entry) => (
+        <div key={`${itemID}-${entry.label}`} className="trace-item-debug-row">
+          <span className="trace-item-debug-label">{entry.label}</span>
+          <span className="trace-item-debug-value">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function TraceItemHeader({
+  item,
+  statusText,
+}: {
+  item: AssistantTraceItem
+  statusText?: string | null
+}) {
+  return (
+    <div className="trace-item-header">
+      <span className="trace-item-label">{item.label}</span>
+      {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
+      {item.status ? <span className={`trace-item-status is-${item.status}`}>{statusText ?? item.status}</span> : null}
+    </div>
+  )
+}
+
+function TraceItemTextBody({
+  isResponseItem,
+  item,
+}: {
+  isResponseItem: boolean
+  item: AssistantTraceItem
+}) {
+  return (
+    <>
+      {item.text ? (
+        isResponseItem && !item.isStreaming ? (
+          <ThreadMarkdown className="trace-item-text thread-markdown" text={item.text} />
+        ) : (
+          <ThreadRichText className="trace-item-text" text={item.text} />
+        )
+      ) : null}
+      {item.detail ? (
+        isResponseItem && !item.isStreaming ? (
+          <ThreadMarkdown className="trace-item-detail thread-markdown" text={item.detail} />
+        ) : (
+          <ThreadRichText className="trace-item-detail" text={item.detail} />
+        )
+      ) : null}
+    </>
+  )
+}
+
+function TraceItemFileActions({
+  filePaths,
+  itemID,
+  onFileChangeSelect,
+}: {
+  filePaths: string[]
+  itemID: string
+  onFileChangeSelect?: (file: string) => void
+}) {
+  if (filePaths.length === 0 || !onFileChangeSelect) return null
+
+  return (
+    <div className="trace-item-file-actions">
+      {filePaths.map((filePath) => (
+        <button
+          key={`${itemID}-${filePath}`}
+          type="button"
+          className="trace-item-file-chip"
+          onClick={() => onFileChangeSelect(filePath)}
+        >
+          {filePath}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function GenericTraceItemView({
+  className,
+  debugEntries,
+  isResponseItem,
+  item,
+  onFileChangeSelect,
+  showFileActions = false,
+}: TraceItemRendererProps & {
+  showFileActions?: boolean
+}) {
+  const selectableFilePaths = showFileActions ? item.filePaths?.filter(Boolean) ?? [] : []
+
+  return (
+    <article className={className} data-kind={item.kind}>
+      <TraceItemHeader item={item} />
+      <TraceItemTextBody item={item} isResponseItem={isResponseItem} />
+      <TraceItemFileActions
+        filePaths={selectableFilePaths}
+        itemID={item.id}
+        onFileChangeSelect={onFileChangeSelect}
+      />
+      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+    </article>
+  )
+}
+
+function SystemTraceItemView(props: TraceItemRendererProps) {
+  return <GenericTraceItemView {...props} />
+}
+
+function SourceTraceItemView(props: TraceItemRendererProps) {
+  return <GenericTraceItemView {...props} />
+}
+
+function FileTraceItemView(props: TraceItemRendererProps) {
+  return <GenericTraceItemView {...props} />
+}
+
+function PatchTraceItemView(props: TraceItemRendererProps) {
+  return <GenericTraceItemView {...props} showFileActions />
+}
+
+function SubtaskTraceItemView(props: TraceItemRendererProps) {
+  return <GenericTraceItemView {...props} />
+}
+
+function StepTraceItemView(props: TraceItemRendererProps) {
+  const { className, debugEntries, item } = props
+  const statusText = formatTraceStatusText(item.status) ?? item.status
+
+  return (
+    <article className={`${className} trace-item-step-line`} data-kind={item.kind}>
+      <div className="trace-item-step-row">
+        <span className="trace-item-label">{item.label}</span>
+        {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
+        {item.text ? <ThreadRichText as="span" className="trace-item-text trace-item-step-summary" text={item.text} /> : null}
+        {item.detail ? <ThreadRichText as="span" className="trace-item-detail trace-item-step-summary" text={item.detail} /> : null}
+        {item.status ? <span className={`trace-item-status is-${item.status}`}>{statusText}</span> : null}
+      </div>
+      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+    </article>
+  )
+}
+
+function RetryTraceItemView(props: TraceItemRendererProps) {
+  return <GenericTraceItemView {...props} />
+}
+
+function SnapshotTraceItemView(props: TraceItemRendererProps) {
+  return <GenericTraceItemView {...props} />
+}
+
+function ErrorTraceItemView(props: TraceItemRendererProps) {
+  return <GenericTraceItemView {...props} />
+}
+
+function ImageTraceItemView({
+  className,
+  debugEntries,
+  item,
+  onOpenImagePreview,
+  ...props
+}: TraceItemRendererProps) {
+  if (!item.src) {
+    return (
+      <GenericTraceItemView
+        className={className}
+        debugEntries={debugEntries}
+        item={item}
+        onOpenImagePreview={onOpenImagePreview}
+        {...props}
+      />
+    )
+  }
+
+  return (
+    <article className={className} data-kind={item.kind}>
+      <TraceItemHeader item={item} />
+      <TraceImagePreview item={item} onOpenImagePreview={onOpenImagePreview} />
+      {item.text ? <ThreadRichText className="trace-item-text" text={item.text} /> : null}
+      {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
+      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+    </article>
+  )
+}
+
+function ReasoningTraceItemView({
+  className,
+  debugEntries,
+  item,
+  shouldCollapseAfterTurnCompletion,
+}: TraceItemRendererProps) {
   const shouldCollapseTraceItem = shouldCollapseAfterTurnCompletion && isCollapsibleTraceItem(item)
-  const [isExpanded, setIsExpanded] = useState(() => item.kind === "reasoning" && !shouldCollapseTraceItem)
-  const [isInputExpanded, setIsInputExpanded] = useState(false)
-  const [isOutputExpanded, setIsOutputExpanded] = useState(false)
+  const [isExpanded, setIsExpanded] = useState(() => !shouldCollapseTraceItem)
+  const contentID = `trace-item-reasoning-${item.id}`
+  const collapsedLine = getCollapsedReasoningLine(item)
+
+  useLayoutEffect(() => {
+    if (!shouldCollapseTraceItem) return
+    setIsExpanded(false)
+  }, [item.id, shouldCollapseTraceItem])
+
+  function handleReasoningToggle() {
+    setIsExpanded((current) => !current)
+  }
+
+  function handleReasoningKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Enter" && event.key !== " ") return
+    event.preventDefault()
+    handleReasoningToggle()
+  }
+
+  return (
+    <article
+      className={joinClassNames(className, isExpanded ? "is-expanded" : "is-collapsed")}
+      data-kind={item.kind}
+    >
+      <div
+        className="trace-item-reasoning-toggle"
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        aria-controls={contentID}
+        onClick={handleReasoningToggle}
+        onKeyDown={handleReasoningKeyDown}
+      >
+        {isExpanded ? (
+          <div id={contentID} className="trace-item-reasoning-body">
+            {item.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={item.text} /> : null}
+            {item.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={item.detail} /> : null}
+            <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+          </div>
+        ) : (
+          <ThreadRichText
+            as="div"
+            className="trace-item-text trace-item-plain-text trace-item-collapsed-line"
+            text={collapsedLine}
+          />
+        )}
+      </div>
+    </article>
+  )
+}
+
+function CompactionTraceItemView({
+  className,
+  debugEntries,
+  item,
+}: TraceItemRendererProps) {
+  return (
+    <article className={className} data-kind={item.kind} aria-label={item.title || "Context compacted"}>
+      <div className="trace-compaction-separator">
+        <span className="trace-compaction-rule" aria-hidden="true" />
+        <span className="trace-compaction-label">
+          <span className="trace-compaction-glyph" aria-hidden="true" />
+          {item.title || "Context compacted"}
+        </span>
+        <span className="trace-compaction-rule" aria-hidden="true" />
+      </div>
+      {item.detail ? <ThreadRichText className="trace-item-detail trace-compaction-detail" text={item.detail} /> : null}
+      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+    </article>
+  )
+}
+
+function QuestionTraceItemView({
+  answeredQuestionIDs,
+  className,
+  debugEntries,
+  isQuestionAnswerDisabled,
+  item,
+  onAskUserQuestionAnswer,
+  ...props
+}: TraceItemRendererProps) {
   const [isSubmittingQuestionAnswer, setIsSubmittingQuestionAnswer] = useState(false)
   const [freeformAnswer, setFreeformAnswer] = useState("")
   const [selectedQuestionOptions, setSelectedQuestionOptions] = useState<string[]>([])
-  const className = [
-    "trace-item",
-    `trace-kind-${item.kind}`,
-    item.kind === "reasoning" || item.kind === "tool" ? "is-plain" : "",
-    item.isStreaming ? "is-streaming" : "",
-    item.status ? `is-${item.status}` : "",
-  ]
-    .filter(Boolean)
-    .join(" ")
-  const selectableFilePaths = item.kind === "patch" ? item.filePaths?.filter(Boolean) ?? [] : []
-  const debugEntries = traceVisibility.debugMetadata ? item.debugEntries ?? [] : []
-  const hasDebugEntries = debugEntries.length > 0
+  const prompt = item.questionPrompt
+
+  useEffect(() => {
+    setIsSubmittingQuestionAnswer(false)
+  }, [item.id])
+
+  if (!prompt) {
+    return (
+      <GenericTraceItemView
+        answeredQuestionIDs={answeredQuestionIDs}
+        className={className}
+        debugEntries={debugEntries}
+        isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+        item={item}
+        onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+        {...props}
+      />
+    )
+  }
+
+  const questionID = prompt.questionID
+  const isQuestionAnswered = Boolean(prompt.answered || (questionID && answeredQuestionIDs?.has(questionID)))
+  const canSubmitAnswer = Boolean(onAskUserQuestionAnswer && questionID)
+  const isAnswerDisabled = isQuestionAnswered || isQuestionAnswerDisabled || isSubmittingQuestionAnswer || !questionID
+  const canUseOptionButtons = prompt.options.length > 0 && !prompt.multiple && canSubmitAnswer
+  const canUseMultipleSelection = prompt.options.length > 0 && prompt.multiple && canSubmitAnswer
+  const trimmedFreeformAnswer = freeformAnswer.trim()
+  const hasSelectedOptions = selectedQuestionOptions.length > 0
+  const canSubmitStructuredAnswer = canSubmitAnswer && !isAnswerDisabled && (hasSelectedOptions || Boolean(trimmedFreeformAnswer))
+  const note = isQuestionAnswered
+    ? prompt.answerText ? `Answered: ${prompt.answerText}` : "Answered."
+    : canUseMultipleSelection && prompt.allowFreeform
+      ? "Select one or more options or add a custom answer."
+      : canUseMultipleSelection
+        ? "Select one or more options and submit."
+    : prompt.multiple
+      ? prompt.allowFreeform
+        ? "Reply in the composer below with one or more selections."
+        : "Reply in the composer below to continue."
+      : prompt.allowFreeform
+        ? canSubmitAnswer
+          ? "Choose an option or send a custom answer here."
+          : "You can also reply in the composer below."
+        : null
+
+  function handleQuestionOptionToggle(optionValue: string) {
+    setSelectedQuestionOptions((current) =>
+      current.includes(optionValue)
+        ? current.filter((value) => value !== optionValue)
+        : [...current, optionValue],
+    )
+  }
+
+  async function submitQuestionAnswer(input: {
+    text: string
+    selectedOptions?: string[]
+    freeformText?: string
+  }) {
+    if (!onAskUserQuestionAnswer || isAnswerDisabled || !questionID) return
+
+    setIsSubmittingQuestionAnswer(true)
+    try {
+      await onAskUserQuestionAnswer({
+        text: input.text,
+        questionID,
+        ...(input.selectedOptions && input.selectedOptions.length > 0 ? { selectedOptions: input.selectedOptions } : {}),
+        ...(input.freeformText ? { freeformText: input.freeformText } : {}),
+      })
+    } finally {
+      setIsSubmittingQuestionAnswer(false)
+    }
+  }
+
+  function handleStructuredAnswerSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (isAnswerDisabled) return
+
+    const selectedOptions = selectedQuestionOptions.map((value) => value.trim()).filter(Boolean)
+    const nextFreeformAnswer = freeformAnswer.trim()
+    const answerText = nextFreeformAnswer || selectedOptions.join(", ")
+    if (!answerText) return
+
+    void submitQuestionAnswer({
+      text: answerText,
+      ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
+      ...(nextFreeformAnswer ? { freeformText: nextFreeformAnswer } : {}),
+    })
+
+    setFreeformAnswer("")
+    setSelectedQuestionOptions([])
+  }
+
+  return (
+    <article className={`${className} ask-user-question-card`} data-kind={item.kind} role="region" aria-label={item.title || "Agent question"}>
+      <div className="ask-user-question-body">
+        <ThreadRichText className="ask-user-question-text" text={prompt.question} />
+
+        {prompt.options.length > 0 ? (
+          <ol className="ask-user-question-options">
+            {prompt.options.map((option, index) => (
+              <li key={`${item.id}-${option.value}-${index}`} className="ask-user-question-option">
+                <span className="ask-user-question-option-number" aria-hidden="true">{index + 1}.</span>
+                {canUseOptionButtons ? (
+                  <button
+                    aria-label={option.label}
+                    className="ask-user-question-option-button"
+                    disabled={isAnswerDisabled}
+                    onClick={() =>
+                      void submitQuestionAnswer({
+                        text: option.value,
+                        selectedOptions: [option.value],
+                      })}
+                    type="button"
+                  >
+                    <span className="ask-user-question-option-label">{option.label}</span>
+                    {option.description ? <ThreadRichText as="span" className="ask-user-question-option-description" text={option.description} /> : null}
+                  </button>
+                ) : canUseMultipleSelection ? (
+                  <label className="ask-user-question-option-choice">
+                    <input
+                      checked={selectedQuestionOptions.includes(option.value)}
+                      className="ask-user-question-option-checkbox"
+                      disabled={isAnswerDisabled}
+                      onChange={() => handleQuestionOptionToggle(option.value)}
+                      type="checkbox"
+                    />
+                    <span className="ask-user-question-option-label">{option.label}</span>
+                    {option.description ? <ThreadRichText as="span" className="ask-user-question-option-description" text={option.description} /> : null}
+                  </label>
+                ) : (
+                  <div className="ask-user-question-option-static">
+                    <span className="ask-user-question-option-label">{option.label}</span>
+                    {option.description ? <ThreadRichText as="span" className="ask-user-question-option-description" text={option.description} /> : null}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+
+        {canUseMultipleSelection || (prompt.allowFreeform && canSubmitAnswer) ? (
+          <form className="ask-user-question-response-form" onSubmit={handleStructuredAnswerSubmit}>
+            {prompt.allowFreeform ? (
+              <label className={joinClassNames(
+                "ask-user-question-freeform-row",
+                prompt.options.length === 0 && "is-standalone",
+              )}>
+                {prompt.options.length > 0 ? (
+                  <span className="ask-user-question-option-number" aria-hidden="true">{prompt.options.length + 1}.</span>
+                ) : null}
+                <input
+                  aria-label="Custom answer"
+                  className="ask-user-question-freeform-input"
+                  disabled={isAnswerDisabled}
+                  onChange={(event) => setFreeformAnswer(event.target.value)}
+                  placeholder={prompt.placeholder || "Type your answer"}
+                  type="text"
+                  value={freeformAnswer}
+                />
+              </label>
+            ) : null}
+
+            <div className="ask-user-question-actions">
+              <button
+                className="secondary-button"
+                disabled={!canSubmitStructuredAnswer}
+                type="submit"
+              >
+                Submit
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {note ? <p className="ask-user-question-note">{note}</p> : null}
+      </div>
+      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+    </article>
+  )
+}
+
+function TaskStateTraceItemView({
+  className,
+  debugEntries,
+  item,
+  ...props
+}: TraceItemRendererProps) {
+  if (!item.progressItems?.length) {
+    return <GenericTraceItemView className={className} debugEntries={debugEntries} item={item} {...props} />
+  }
+
+  return (
+    <article className={className} data-kind={item.kind}>
+      <TraceItemHeader item={item} statusText={formatTraceStatusText(item.status) ?? item.status} />
+      {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
+      <ol className="task-progress-list">
+        {item.progressItems.map((progressItem) => (
+          <li key={`${item.id}-${progressItem.id}`} className={`task-progress-item is-${progressItem.status}`}>
+            <span className="task-progress-status">{progressItem.status === "in_progress" ? "in progress" : progressItem.status}</span>
+            <span className="task-progress-step">{progressItem.step}</span>
+          </li>
+        ))}
+      </ol>
+      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+    </article>
+  )
+}
+
+function ToolTraceItemView({
+  className,
+  debugEntries,
+  item,
+  shouldCollapseAfterTurnCompletion,
+  traceVisibility,
+}: TraceItemRendererProps) {
+  const shouldCollapseTraceItem = shouldCollapseAfterTurnCompletion && isCollapsibleTraceItem(item)
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [isInputExpanded, setIsInputExpanded] = useState(false)
+  const [isOutputExpanded, setIsOutputExpanded] = useState(false)
+  const statusText = formatTraceStatusText(item.status)
+  const summaryTitle = item.title || item.label
+  const showsToolInputs = item.status === "pending" || item.status === "running" || item.status === "waiting-approval"
+  const visibleToolInputText = traceVisibility.toolInputs ? item.toolInputText : undefined
+  const visibleToolOutputText = traceVisibility.toolOutputs ? item.toolOutputText : undefined
+  const inputSectionDetail = showsToolInputs ? item.detail : undefined
+  const outputSectionDetail = !showsToolInputs && traceVisibility.toolOutputs ? item.detail : undefined
+  const hasInputDisclosureContent = Boolean(visibleToolInputText || inputSectionDetail)
+  const hasOutputDisclosureContent = Boolean(visibleToolOutputText || outputSectionDetail)
+  const hasDisclosureContent = Boolean(hasInputDisclosureContent || hasOutputDisclosureContent)
+  const disclosureID = `trace-item-disclosure-${item.id}`
+  const inputDisclosureID = `trace-item-disclosure-input-${item.id}`
+  const outputDisclosureID = `trace-item-disclosure-output-${item.id}`
 
   useLayoutEffect(() => {
     if (!shouldCollapseTraceItem) return
@@ -1261,401 +1777,109 @@ function TraceItemView({
     setIsOutputExpanded(false)
   }, [item.id, shouldCollapseTraceItem])
 
-  useEffect(() => {
-    setIsSubmittingQuestionAnswer(false)
-  }, [item.id])
-
-  function renderDebugEntries() {
-    if (!hasDebugEntries) return null
-
-    return (
-      <div className="trace-item-debug">
-        {debugEntries.map((entry) => (
-          <div key={`${item.id}-${entry.label}`} className="trace-item-debug-row">
-            <span className="trace-item-debug-label">{entry.label}</span>
-            <span className="trace-item-debug-value">{entry.value}</span>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  if (item.kind === "image" && item.src) {
-    return (
-      <article className={className} data-kind={item.kind}>
-        <div className="trace-item-header">
-          <span className="trace-item-label">{item.label}</span>
-          {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
-          {item.status ? <span className={`trace-item-status is-${item.status}`}>{item.status}</span> : null}
-        </div>
-        <TraceImagePreview item={item} onOpenImagePreview={onOpenImagePreview} />
-        {item.text ? <ThreadRichText className="trace-item-text" text={item.text} /> : null}
-        {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
-        {renderDebugEntries()}
-      </article>
-    )
-  }
-
-  if (item.kind === "reasoning") {
-    const contentID = `trace-item-reasoning-${item.id}`
-    const collapsedLine = getCollapsedReasoningLine(item)
-
-    function handleReasoningToggle() {
-      setIsExpanded((current) => !current)
-    }
-
-    function handleReasoningKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-      if (event.key !== "Enter" && event.key !== " ") return
-      event.preventDefault()
-      handleReasoningToggle()
-    }
-
-    return (
-      <article
-        className={joinClassNames(className, isExpanded ? "is-expanded" : "is-collapsed")}
-        data-kind={item.kind}
-      >
-        <div
-          className="trace-item-reasoning-toggle"
-          role="button"
-          tabIndex={0}
-          aria-expanded={isExpanded}
-          aria-controls={contentID}
-          onClick={handleReasoningToggle}
-          onKeyDown={handleReasoningKeyDown}
-        >
-          {isExpanded ? (
-            <div id={contentID} className="trace-item-reasoning-body">
-              {item.text ? <ThreadRichText className="trace-item-text trace-item-plain-text" text={item.text} /> : null}
-              {item.detail ? <ThreadRichText className="trace-item-detail trace-item-plain-detail" text={item.detail} /> : null}
-              {renderDebugEntries()}
-            </div>
-          ) : (
-            <ThreadRichText
-              as="div"
-              className="trace-item-text trace-item-plain-text trace-item-collapsed-line"
-              text={collapsedLine}
-            />
-          )}
-        </div>
-      </article>
-    )
-  }
-
-  if (item.kind === "compaction") {
-    return (
-      <article className={className} data-kind={item.kind} aria-label={item.title || "Context compacted"}>
-        <div className="trace-compaction-separator">
-          <span className="trace-compaction-rule" aria-hidden="true" />
-          <span className="trace-compaction-label">
-            <span className="trace-compaction-glyph" aria-hidden="true" />
-            {item.title || "Context compacted"}
-          </span>
-          <span className="trace-compaction-rule" aria-hidden="true" />
-        </div>
-        {item.detail ? <ThreadRichText className="trace-item-detail trace-compaction-detail" text={item.detail} /> : null}
-        {renderDebugEntries()}
-      </article>
-    )
-  }
-
-  if (item.kind === "question" && item.questionPrompt) {
-    const prompt = item.questionPrompt
-    const questionID = prompt.questionID
-    const isQuestionAnswered = Boolean(prompt.answered || (questionID && answeredQuestionIDs?.has(questionID)))
-    const canSubmitAnswer = Boolean(onAskUserQuestionAnswer && questionID)
-    const isAnswerDisabled = isQuestionAnswered || isQuestionAnswerDisabled || isSubmittingQuestionAnswer || !questionID
-    const canUseOptionButtons = prompt.options.length > 0 && !prompt.multiple && canSubmitAnswer
-    const canUseMultipleSelection = prompt.options.length > 0 && prompt.multiple && canSubmitAnswer
-    const trimmedFreeformAnswer = freeformAnswer.trim()
-    const hasSelectedOptions = selectedQuestionOptions.length > 0
-    const canSubmitStructuredAnswer = canSubmitAnswer && !isAnswerDisabled && (hasSelectedOptions || Boolean(trimmedFreeformAnswer))
-    const note = isQuestionAnswered
-      ? prompt.answerText ? `Answered: ${prompt.answerText}` : "Answered."
-      : canUseMultipleSelection && prompt.allowFreeform
-        ? "Select one or more options or add a custom answer."
-        : canUseMultipleSelection
-          ? "Select one or more options and submit."
-      : prompt.multiple
-        ? prompt.allowFreeform
-          ? "Reply in the composer below with one or more selections."
-          : "Reply in the composer below to continue."
-        : prompt.allowFreeform
-          ? canSubmitAnswer
-            ? "Choose an option or send a custom answer here."
-            : "You can also reply in the composer below."
-          : null
-
-    function handleQuestionOptionToggle(optionValue: string) {
-      setSelectedQuestionOptions((current) =>
-        current.includes(optionValue)
-          ? current.filter((value) => value !== optionValue)
-          : [...current, optionValue],
-      )
-    }
-
-    async function submitQuestionAnswer(input: {
-      text: string
-      selectedOptions?: string[]
-      freeformText?: string
-    }) {
-      if (!onAskUserQuestionAnswer || isAnswerDisabled || !questionID) return
-
-      setIsSubmittingQuestionAnswer(true)
-      try {
-        await onAskUserQuestionAnswer({
-          text: input.text,
-          questionID,
-          ...(input.selectedOptions && input.selectedOptions.length > 0 ? { selectedOptions: input.selectedOptions } : {}),
-          ...(input.freeformText ? { freeformText: input.freeformText } : {}),
-        })
-      } finally {
-        setIsSubmittingQuestionAnswer(false)
+  function handleToolToggle() {
+    setIsExpanded((current) => {
+      if (current) {
+        setIsInputExpanded(false)
+        setIsOutputExpanded(false)
       }
-    }
-
-    function handleStructuredAnswerSubmit(event: FormEvent<HTMLFormElement>) {
-      event.preventDefault()
-      if (isAnswerDisabled) return
-
-      const selectedOptions = selectedQuestionOptions.map((value) => value.trim()).filter(Boolean)
-      const nextFreeformAnswer = freeformAnswer.trim()
-      const answerText = nextFreeformAnswer || selectedOptions.join(", ")
-      if (!answerText) return
-
-      void submitQuestionAnswer({
-        text: answerText,
-        ...(selectedOptions.length > 0 ? { selectedOptions } : {}),
-        ...(nextFreeformAnswer ? { freeformText: nextFreeformAnswer } : {}),
-      })
-
-      setFreeformAnswer("")
-      setSelectedQuestionOptions([])
-    }
-
-    return (
-      <article className={`${className} ask-user-question-card`} data-kind={item.kind} role="region" aria-label={item.title || "Agent question"}>
-        <div className="ask-user-question-body">
-          <ThreadRichText className="ask-user-question-text" text={prompt.question} />
-
-          {prompt.options.length > 0 ? (
-            <ol className="ask-user-question-options">
-              {prompt.options.map((option, index) => (
-                <li key={`${item.id}-${option.value}-${index}`} className="ask-user-question-option">
-                  <span className="ask-user-question-option-number" aria-hidden="true">{index + 1}.</span>
-                  {canUseOptionButtons ? (
-                    <button
-                      aria-label={option.label}
-                      className="ask-user-question-option-button"
-                      disabled={isAnswerDisabled}
-                      onClick={() =>
-                        void submitQuestionAnswer({
-                          text: option.value,
-                          selectedOptions: [option.value],
-                        })}
-                      type="button"
-                    >
-                      <span className="ask-user-question-option-label">{option.label}</span>
-                      {option.description ? <ThreadRichText as="span" className="ask-user-question-option-description" text={option.description} /> : null}
-                    </button>
-                  ) : canUseMultipleSelection ? (
-                    <label className="ask-user-question-option-choice">
-                      <input
-                        checked={selectedQuestionOptions.includes(option.value)}
-                        className="ask-user-question-option-checkbox"
-                        disabled={isAnswerDisabled}
-                        onChange={() => handleQuestionOptionToggle(option.value)}
-                        type="checkbox"
-                      />
-                      <span className="ask-user-question-option-label">{option.label}</span>
-                      {option.description ? <ThreadRichText as="span" className="ask-user-question-option-description" text={option.description} /> : null}
-                    </label>
-                  ) : (
-                    <div className="ask-user-question-option-static">
-                      <span className="ask-user-question-option-label">{option.label}</span>
-                      {option.description ? <ThreadRichText as="span" className="ask-user-question-option-description" text={option.description} /> : null}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ol>
-          ) : null}
-
-          {canUseMultipleSelection || (prompt.allowFreeform && canSubmitAnswer) ? (
-            <form className="ask-user-question-response-form" onSubmit={handleStructuredAnswerSubmit}>
-              {prompt.allowFreeform ? (
-                <label className={joinClassNames(
-                  "ask-user-question-freeform-row",
-                  prompt.options.length === 0 && "is-standalone",
-                )}>
-                  {prompt.options.length > 0 ? (
-                    <span className="ask-user-question-option-number" aria-hidden="true">{prompt.options.length + 1}.</span>
-                  ) : null}
-                  <input
-                    aria-label="Custom answer"
-                    className="ask-user-question-freeform-input"
-                    disabled={isAnswerDisabled}
-                    onChange={(event) => setFreeformAnswer(event.target.value)}
-                    placeholder={prompt.placeholder || "Type your answer"}
-                    type="text"
-                    value={freeformAnswer}
-                  />
-                </label>
-              ) : null}
-
-              <div className="ask-user-question-actions">
-                <button
-                  className="secondary-button"
-                  disabled={!canSubmitStructuredAnswer}
-                  type="submit"
-                >
-                  Submit
-                </button>
-              </div>
-            </form>
-          ) : null}
-
-          {note ? <p className="ask-user-question-note">{note}</p> : null}
-        </div>
-        {renderDebugEntries()}
-      </article>
-    )
+      return !current
+    })
   }
 
-  if (item.kind === "task-state" && item.progressItems?.length) {
-    return (
-      <article className={className} data-kind={item.kind}>
-        <div className="trace-item-header">
-          <span className="trace-item-label">{item.label}</span>
-          {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
-          {item.status ? <span className={`trace-item-status is-${item.status}`}>{formatTraceStatusText(item.status) ?? item.status}</span> : null}
-        </div>
-        {item.detail ? <ThreadRichText className="trace-item-detail" text={item.detail} /> : null}
-        <ol className="task-progress-list">
-          {item.progressItems.map((progressItem) => (
-            <li key={`${item.id}-${progressItem.id}`} className={`task-progress-item is-${progressItem.status}`}>
-              <span className="task-progress-status">{progressItem.status === "in_progress" ? "in progress" : progressItem.status}</span>
-              <span className="task-progress-step">{progressItem.step}</span>
-            </li>
-          ))}
-        </ol>
-        {renderDebugEntries()}
-      </article>
-    )
-  }
-
-  if (item.kind === "tool") {
-    const statusText = formatTraceStatusText(item.status)
-    const summaryTitle = item.title || item.label
-    const showsToolInputs = item.status === "pending" || item.status === "running" || item.status === "waiting-approval"
-    const visibleToolInputText = traceVisibility.toolInputs ? item.toolInputText : undefined
-    const visibleToolOutputText = traceVisibility.toolOutputs ? item.toolOutputText : undefined
-    const inputSectionDetail = showsToolInputs ? item.detail : undefined
-    const outputSectionDetail = !showsToolInputs && traceVisibility.toolOutputs ? item.detail : undefined
-    const hasInputDisclosureContent = Boolean(visibleToolInputText || inputSectionDetail)
-    const hasOutputDisclosureContent = Boolean(visibleToolOutputText || outputSectionDetail)
-    const hasDisclosureContent = Boolean(hasInputDisclosureContent || hasOutputDisclosureContent)
-    const disclosureID = `trace-item-disclosure-${item.id}`
-    const inputDisclosureID = `trace-item-disclosure-input-${item.id}`
-    const outputDisclosureID = `trace-item-disclosure-output-${item.id}`
-
-    function handleToolToggle() {
-      setIsExpanded((current) => {
-        if (current) {
-          setIsInputExpanded(false)
-          setIsOutputExpanded(false)
-        }
-        return !current
-      })
-    }
-
-    return (
-      <article className={className} data-kind={item.kind}>
-        {hasDisclosureContent ? (
-          <button
-            className="trace-item-toggle"
-            type="button"
-            aria-expanded={isExpanded}
-            aria-controls={disclosureID}
-            onClick={handleToolToggle}
-          >
-            <span className="trace-item-toggle-summary">
-              <span className="trace-item-toggle-icon" aria-hidden="true">
-                {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-              </span>
-              <span className="trace-item-toggle-line">
-                <span className="trace-item-inline-title">{summaryTitle}</span>
-                {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
-              </span>
+  return (
+    <article className={className} data-kind={item.kind}>
+      {hasDisclosureContent ? (
+        <button
+          className="trace-item-toggle"
+          type="button"
+          aria-expanded={isExpanded}
+          aria-controls={disclosureID}
+          onClick={handleToolToggle}
+        >
+          <span className="trace-item-toggle-summary">
+            <span className="trace-item-toggle-icon" aria-hidden="true">
+              {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
             </span>
-          </button>
-        ) : (
-          <p className="trace-item-toggle-line">
-            <span className="trace-item-inline-title">{summaryTitle}</span>
-            {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
-          </p>
-        )}
+            <span className="trace-item-toggle-line">
+              <span className="trace-item-inline-title">{summaryTitle}</span>
+              {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
+            </span>
+          </span>
+        </button>
+      ) : (
+        <p className="trace-item-toggle-line">
+          <span className="trace-item-inline-title">{summaryTitle}</span>
+          {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
+        </p>
+      )}
 
-        {hasDisclosureContent && isExpanded ? (
-          <div id={disclosureID} className="trace-item-disclosure">
-            {hasInputDisclosureContent ? (
-              <div className="trace-item-subsection">
-                <button
-                  className="trace-item-subsection-toggle"
-                  type="button"
-                  aria-expanded={isInputExpanded}
-                  aria-controls={inputDisclosureID}
-                  aria-label={`${summaryTitle} input`}
-                  onClick={() => setIsInputExpanded((current) => !current)}
-                >
-                  <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
-                    {isInputExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                  </span>
-                  <span className="trace-item-subsection-toggle-line">
-                    <span className="trace-item-subsection-label">Input</span>
-                  </span>
-                </button>
-                {isInputExpanded ? (
-                  <div id={inputDisclosureID} className="trace-item-subsection-body">
-                    {visibleToolInputText ? <ThreadRichText className="trace-item-text" text={visibleToolInputText} /> : null}
-                    {inputSectionDetail ? <ThreadRichText className="trace-item-detail" text={inputSectionDetail} /> : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {hasOutputDisclosureContent ? (
-              <div className="trace-item-subsection">
-                <button
-                  className="trace-item-subsection-toggle"
-                  type="button"
-                  aria-expanded={isOutputExpanded}
-                  aria-controls={outputDisclosureID}
-                  aria-label={`${summaryTitle} output`}
-                  onClick={() => setIsOutputExpanded((current) => !current)}
-                >
-                  <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
-                    {isOutputExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                  </span>
-                  <span className="trace-item-subsection-toggle-line">
-                    <span className="trace-item-subsection-label">Output</span>
-                  </span>
-                </button>
-                {isOutputExpanded ? (
-                  <div id={outputDisclosureID} className="trace-item-subsection-body">
-                    {visibleToolOutputText ? <ThreadRichText className="trace-item-text" text={visibleToolOutputText} /> : null}
-                    {outputSectionDetail ? <ThreadRichText className="trace-item-detail" text={outputSectionDetail} /> : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {renderDebugEntries()}
-      </article>
-    )
-  }
+      {hasDisclosureContent && isExpanded ? (
+        <div id={disclosureID} className="trace-item-disclosure">
+          {hasInputDisclosureContent ? (
+            <div className="trace-item-subsection">
+              <button
+                className="trace-item-subsection-toggle"
+                type="button"
+                aria-expanded={isInputExpanded}
+                aria-controls={inputDisclosureID}
+                aria-label={`${summaryTitle} input`}
+                onClick={() => setIsInputExpanded((current) => !current)}
+              >
+                <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
+                  {isInputExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                </span>
+                <span className="trace-item-subsection-toggle-line">
+                  <span className="trace-item-subsection-label">Input</span>
+                </span>
+              </button>
+              {isInputExpanded ? (
+                <div id={inputDisclosureID} className="trace-item-subsection-body">
+                  {visibleToolInputText ? <ThreadRichText className="trace-item-text" text={visibleToolInputText} /> : null}
+                  {inputSectionDetail ? <ThreadRichText className="trace-item-detail" text={inputSectionDetail} /> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {hasOutputDisclosureContent ? (
+            <div className="trace-item-subsection">
+              <button
+                className="trace-item-subsection-toggle"
+                type="button"
+                aria-expanded={isOutputExpanded}
+                aria-controls={outputDisclosureID}
+                aria-label={`${summaryTitle} output`}
+                onClick={() => setIsOutputExpanded((current) => !current)}
+              >
+                <span className="trace-item-subsection-toggle-icon" aria-hidden="true">
+                  {isOutputExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                </span>
+                <span className="trace-item-subsection-toggle-line">
+                  <span className="trace-item-subsection-label">Output</span>
+                </span>
+              </button>
+              {isOutputExpanded ? (
+                <div id={outputDisclosureID} className="trace-item-subsection-body">
+                  {visibleToolOutputText ? <ThreadRichText className="trace-item-text" text={visibleToolOutputText} /> : null}
+                  {outputSectionDetail ? <ThreadRichText className="trace-item-detail" text={outputSectionDetail} /> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+    </article>
+  )
+}
 
-  const isResponseItem = traceSectionKeyForItem(item) === "response"
+function TextTraceItemView({
+  isLatestMessage,
+  isResponseItem,
+  item,
+  onProposedPlanConfirm,
+  ...props
+}: TraceItemRendererProps) {
   const proposedPlan = isResponseItem ? parseProposedPlanBlock(item.text) : null
 
   if (proposedPlan) {
@@ -1671,42 +1895,76 @@ function TraceItemView({
   }
 
   return (
-    <article className={className} data-kind={item.kind}>
-      <div className="trace-item-header">
-        <span className="trace-item-label">{item.label}</span>
-        {item.title ? <strong className="trace-item-title">{item.title}</strong> : null}
-        {item.status ? <span className={`trace-item-status is-${item.status}`}>{item.status}</span> : null}
-      </div>
-      {item.text ? (
-        isResponseItem && !item.isStreaming ? (
-          <ThreadMarkdown className="trace-item-text thread-markdown" text={item.text} />
-        ) : (
-          <ThreadRichText className="trace-item-text" text={item.text} />
-        )
-      ) : null}
-      {item.detail ? (
-        isResponseItem && !item.isStreaming ? (
-          <ThreadMarkdown className="trace-item-detail thread-markdown" text={item.detail} />
-        ) : (
-          <ThreadRichText className="trace-item-detail" text={item.detail} />
-        )
-      ) : null}
-      {selectableFilePaths.length > 0 && onFileChangeSelect ? (
-        <div className="trace-item-file-actions">
-          {selectableFilePaths.map((filePath) => (
-            <button
-              key={`${item.id}-${filePath}`}
-              type="button"
-              className="trace-item-file-chip"
-              onClick={() => onFileChangeSelect(filePath)}
-            >
-              {filePath}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {renderDebugEntries()}
-    </article>
+    <GenericTraceItemView
+      isLatestMessage={isLatestMessage}
+      isResponseItem={isResponseItem}
+      item={item}
+      onProposedPlanConfirm={onProposedPlanConfirm}
+      {...props}
+    />
+  )
+}
+
+const traceItemRenderers = {
+  system: SystemTraceItemView,
+  reasoning: ReasoningTraceItemView,
+  text: TextTraceItemView,
+  question: QuestionTraceItemView,
+  tool: ToolTraceItemView,
+  source: SourceTraceItemView,
+  file: FileTraceItemView,
+  image: ImageTraceItemView,
+  patch: PatchTraceItemView,
+  subtask: SubtaskTraceItemView,
+  compaction: CompactionTraceItemView,
+  step: StepTraceItemView,
+  retry: RetryTraceItemView,
+  snapshot: SnapshotTraceItemView,
+  "task-state": TaskStateTraceItemView,
+  error: ErrorTraceItemView,
+} satisfies Record<AssistantTraceItemKind, ComponentType<TraceItemRendererProps>>
+
+function TraceItemView({
+  answeredQuestionIDs,
+  item,
+  isQuestionAnswerDisabled = false,
+  isLatestMessage = false,
+  onOpenImagePreview,
+  onAskUserQuestionAnswer,
+  onFileChangeSelect,
+  onProposedPlanConfirm,
+  shouldCollapseAfterTurnCompletion = false,
+  traceVisibility,
+}: TraceItemViewProps) {
+  const className = [
+    "trace-item",
+    `trace-kind-${item.kind}`,
+    item.kind === "reasoning" || item.kind === "tool" ? "is-plain" : "",
+    item.isStreaming ? "is-streaming" : "",
+    item.status ? `is-${item.status}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+  const debugEntries = traceVisibility.debugMetadata ? item.debugEntries ?? [] : []
+  const isResponseItem = traceSectionKeyForItem(item) === "response"
+  const Renderer = traceItemRenderers[item.kind]
+
+  return (
+    <Renderer
+      answeredQuestionIDs={answeredQuestionIDs}
+      className={className}
+      debugEntries={debugEntries}
+      isLatestMessage={isLatestMessage}
+      isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+      isResponseItem={isResponseItem}
+      item={item}
+      onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+      onFileChangeSelect={onFileChangeSelect}
+      onOpenImagePreview={onOpenImagePreview}
+      onProposedPlanConfirm={onProposedPlanConfirm}
+      shouldCollapseAfterTurnCompletion={shouldCollapseAfterTurnCompletion}
+      traceVisibility={traceVisibility}
+    />
   )
 }
 

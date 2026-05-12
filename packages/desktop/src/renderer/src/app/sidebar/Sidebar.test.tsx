@@ -116,10 +116,14 @@ function renderSidebar(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) 
     visibleCanvasSessionIDs: [],
     workspaces: [createWorkspace()],
     workspaceMode: "code",
+    pinnedWorkspaceIDs: [],
     onHoveredFolderChange: vi.fn(),
     onOpenSettings: vi.fn(),
+    onProjectArchiveSessions: vi.fn(),
     onProjectClick: vi.fn(),
     onProjectCreateSession: vi.fn(),
+    onProjectOpenInExplorer: vi.fn(),
+    onProjectPin: vi.fn(),
     onProjectRemove: vi.fn(),
     onSessionDelete: vi.fn(),
     onSessionSelect: vi.fn(),
@@ -208,5 +212,57 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: "One Unread" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Two Unread" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Three Unread" })).not.toBeInTheDocument()
+  })
+
+  it("shows the project root path inline with the folder name", () => {
+    renderSidebar()
+
+    const workspaceRow = screen.getByRole("button", { name: "Workspace" })
+    expect(workspaceRow.querySelector(".project-row-label")).toHaveTextContent("Workspace")
+    expect(workspaceRow.querySelector(".project-row-meta")).toHaveAttribute("title", "C:/work/workspace-1")
+    expect(workspaceRow.querySelector(".project-row-meta-label")).toHaveTextContent("C:/work/workspace-1")
+  })
+
+  it("opens workspace row actions from the context menu", () => {
+    const onProjectArchiveSessions = vi.fn()
+    const onProjectOpenInExplorer = vi.fn()
+    const onProjectPin = vi.fn()
+    const onProjectRemove = vi.fn()
+    renderSidebar({
+      onProjectArchiveSessions,
+      onProjectOpenInExplorer,
+      onProjectPin,
+      onProjectRemove,
+    })
+
+    expect(screen.queryByRole("button", { name: "移除 Workspace" })).not.toBeInTheDocument()
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Workspace" }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "置顶项目" }))
+    expect(onProjectPin).toHaveBeenCalledWith(expect.objectContaining({ id: "workspace-1" }))
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Workspace" }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "在资源管理器中打开" }))
+    expect(onProjectOpenInExplorer).toHaveBeenCalledWith(expect.objectContaining({ id: "workspace-1" }))
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Workspace" }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "归档所有对话" }))
+    expect(onProjectArchiveSessions).toHaveBeenCalledWith(expect.objectContaining({ id: "workspace-1" }))
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Workspace" }), {
+      clientX: 120,
+      clientY: 140,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "移除" }))
+    expect(onProjectRemove).toHaveBeenCalledWith(expect.objectContaining({ id: "workspace-1" }), expect.anything())
   })
 })

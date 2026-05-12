@@ -799,6 +799,46 @@
   font-size: 12px;
 }
 
+.trace-item-step-line {
+  gap: 4px;
+}
+
+.trace-item-step-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.trace-item-step-row .trace-item-label,
+.trace-item-step-row .trace-item-status {
+  flex: 0 0 auto;
+}
+
+.trace-item-step-row .trace-item-title,
+.trace-item-step-summary {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+}
+
+.trace-item-step-row .trace-item-title {
+  flex: 0 1 auto;
+}
+
+.trace-item-step-summary {
+  flex: 1 1 auto;
+}
+
+.trace-item-step-summary::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--seg-text-3);
+}
+
 .task-progress-list {
   display: grid;
   gap: 8px;

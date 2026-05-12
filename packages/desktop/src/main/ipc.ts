@@ -1294,7 +1294,14 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
 
   handleDesktopIpc(
     "desktop:start-global-provider-auth-flow",
-    async (_event, input: { providerID: string; method: string; baseURL?: string | null }) => {
+    async (
+      _event,
+      input: {
+        providerID: string
+        method: string
+        baseURL?: string | null
+      },
+    ) => {
       const providerID = input.providerID.trim()
       const result = await requestAgentJSON<AgentProviderAuthFlow>(
         `/api/providers/${encodeURIComponent(providerID)}/auth/flows`,

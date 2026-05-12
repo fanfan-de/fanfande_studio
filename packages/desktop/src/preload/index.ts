@@ -355,7 +355,11 @@ try {
       invokeDesktop("desktop:refresh-global-provider-catalog") as Promise<AgentProviderCatalogItem[]>,
     getGlobalProviderAuth: (input: { providerID: string }) =>
       invokeDesktop("desktop:get-global-provider-auth", input) as Promise<AgentProviderAuthState>,
-    startGlobalProviderAuthFlow: (input: { providerID: string; method: string }) =>
+    startGlobalProviderAuthFlow: (input: {
+      providerID: string
+      method: string
+      baseURL?: string | null
+    }) =>
       invokeDesktop("desktop:start-global-provider-auth-flow", input) as Promise<AgentProviderAuthFlow>,
     getGlobalProviderAuthFlow: (input: { providerID: string; flowID: string }) =>
       invokeDesktop("desktop:get-global-provider-auth-flow", input) as Promise<AgentProviderAuthFlow>,

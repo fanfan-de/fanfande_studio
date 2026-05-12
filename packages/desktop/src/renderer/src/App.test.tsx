@@ -1033,9 +1033,15 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "\u79FB\u9664 app" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "\u79FB\u9664 app" })).not.toBeInTheDocument()
+    fireEvent.contextMenu(screen.getByRole("button", { name: "app" }), {
+      clientX: 120,
+      clientY: 160,
+    })
+    expect(screen.getByRole("menuitem", { name: "\u79FB\u9664" })).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: "Escape" })
     expect(screen.getByRole("button", { name: "Create session for app" })).toBeInTheDocument()
-    expect(screen.getAllByText("Project 2").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("C:\\Projects\\Project 2").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toBeInTheDocument()
     const addSessionTabButton = screen.getByRole("button", { name: "Add session tab" })
@@ -1082,7 +1088,7 @@ describe("App", () => {
 
     const trigger = await screen.findByRole("button", { name: "工具权限：默认权限" })
     fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole("button", { name: /完全访问权限/ }))
+    fireEvent.click(screen.getByRole("menuitem", { name: /完全访问权限/ }))
 
     await waitFor(() => {
       expect(window.desktop!.updateToolPermissionMode).toHaveBeenCalledWith({
@@ -1989,9 +1995,9 @@ describe("App", () => {
 
     fireEvent.click(within(topMenu).getByRole("button", { name: "Choose editor for current project" }))
 
-    const editorMenu = await screen.findByRole("dialog", { name: "Open current project" })
+    const editorMenu = await screen.findByRole("menu", { name: "Open current project" })
     expect(editorMenu.querySelector(".external-editor-menu-option-icon-image")).not.toBeNull()
-    fireEvent.click(within(editorMenu).getByRole("button", { name: /VS Code/i }))
+    fireEvent.click(within(editorMenu).getByRole("menuitem", { name: /VS Code/i }))
 
     await waitFor(() => {
       expect(window.desktop!.openInExternalEditor).toHaveBeenCalledWith({
@@ -3139,7 +3145,7 @@ describe("App", () => {
 
     render(<App />)
 
-    expect(await screen.findByText("Atlas")).toBeInTheDocument()
+    expect(await screen.findByText("C:\\Projects\\Atlas")).toBeInTheDocument()
 
     await waitFor(() => {
       expect(window.desktop!.gitGetCapabilities).toHaveBeenCalledWith({
@@ -4082,7 +4088,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
     expect(await screen.findByRole("button", { name: "client" })).toBeInTheDocument()
-    expect(screen.getAllByText("Atlas").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("C:\\Projects\\Atlas").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Atlas review" })).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
@@ -4146,7 +4152,7 @@ describe("App", () => {
     render(<App />)
 
     expect(await screen.findByText("已删除")).toBeInTheDocument()
-    expect(screen.getAllByText("Ghost").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("C:\\Projects\\Ghost").length).toBeGreaterThan(0)
     expect(screen.getByRole("button", { name: "Create session for ghost-client" })).toBeDisabled()
     await waitFor(() => {
       expect(window.desktop!.updateWorkspaceWatchDirectories).toHaveBeenCalledWith({
@@ -5770,7 +5776,7 @@ describe("App", () => {
       })
     })
     expect(await screen.findByRole("button", { name: "client" })).toBeInTheDocument()
-    expect(screen.getAllByText("Orion").length).toBeGreaterThan(0)
+    expect(screen.getAllByText("C:\\Projects\\Orion").length).toBeGreaterThan(0)
   })
 
   it("reuses the existing create session tab when opening a folder without sessions", async () => {
@@ -7896,6 +7902,96 @@ describe("App", () => {
     expect(within(detailPanel as HTMLElement).getByRole("button", { name: "测试连接" })).toBeInTheDocument()
   })
 
+  it("keeps Anybox network settings product-level and does not send proxy fields", async () => {
+    window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
+      {
+        id: "anybox",
+        name: "Anybox",
+        source: "api",
+        env: [],
+        configured: true,
+        available: false,
+        apiKeyConfigured: false,
+        baseURL: "https://anybox.test/v1",
+        modelCount: 0,
+        authCapabilities: [
+          {
+            method: "anybox-browser",
+            label: "Anybox 账号（浏览器登录）",
+            kind: "browser_oauth",
+            supportsPolling: true,
+          },
+        ],
+        authState: {
+          providerID: "anybox",
+          scope: "global",
+          status: "not_connected",
+          capabilities: [],
+          credentials: [],
+        },
+      },
+    ])
+    window.desktop!.getGlobalModels = vi.fn().mockResolvedValue({
+      items: [],
+      selection: {},
+    })
+    window.desktop!.testGlobalProviderConnection = vi.fn().mockResolvedValue({
+      providerID: "anybox",
+      ok: true,
+      status: "working",
+      checkedAt: 1,
+      message: "连接测试成功。",
+    })
+    window.desktop!.startGlobalProviderAuthFlow = vi.fn().mockResolvedValue({
+      id: "flow_anybox",
+      providerID: "anybox",
+      method: "anybox-browser",
+      kind: "browser_oauth",
+      status: "waiting_user",
+      startedAt: 1,
+      updatedAt: 1,
+      authorizationURL: "https://anybox.test/api/agent/oauth/authorize",
+    })
+    window.desktop!.openExternalUrl = vi.fn().mockResolvedValue(undefined)
+    const testProviderConnection = vi.mocked(window.desktop!.testGlobalProviderConnection!)
+    const startProviderAuthFlow = vi.mocked(window.desktop!.startGlobalProviderAuthFlow!)
+
+    render(<App />)
+
+    await openProviderSettingsSection()
+    await screen.findByRole("heading", { name: "Anybox" })
+
+    expect(screen.getByLabelText("Base URL for Anybox")).toHaveValue("https://anybox.test/v1")
+    expect(screen.queryByText("代理模式")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("Anybox proxy URL")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "测试连接" }))
+    await waitFor(() => {
+      const payload = testProviderConnection.mock.calls[0]?.[0]
+      expect(payload).toMatchObject({
+        providerID: "anybox",
+        method: "anybox-browser",
+        credentialMode: "active",
+        baseURL: "https://anybox.test/v1",
+      })
+      expect(payload).not.toHaveProperty("proxyMode")
+      expect(payload).not.toHaveProperty("proxyURL")
+    })
+    expect(await screen.findByText("连接测试成功。")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "继续登录" }))
+    await waitFor(() => {
+      const payload = startProviderAuthFlow.mock.calls[0]?.[0]
+      expect(payload).toMatchObject({
+        providerID: "anybox",
+        method: "anybox-browser",
+        baseURL: "https://anybox.test/v1",
+      })
+      expect(payload).not.toHaveProperty("proxyMode")
+      expect(payload).not.toHaveProperty("proxyURL")
+    })
+  })
+
   it("tests provider connection from the provider detail page", async () => {
     window.desktop!.getGlobalProviderCatalog = vi.fn().mockResolvedValue([
       {
@@ -8968,8 +9064,8 @@ describe("App", () => {
 
     fireEvent.click(mcpButton)
 
-    const mcpMenu = screen.getByRole("dialog", { name: "Project MCP server selection" })
-    fireEvent.click(await within(mcpMenu).findByRole("button", { name: /Filesystem/i }))
+    const mcpMenu = screen.getByRole("menu", { name: "Project MCP server selection" })
+    fireEvent.click(await within(mcpMenu).findByRole("menuitemcheckbox", { name: /Filesystem/i }))
 
     await waitFor(() => {
       expect(window.desktop!.updateProjectMcpSelection).toHaveBeenCalledWith({
@@ -9343,7 +9439,11 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "src" })).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByRole("button", { name: "app" })).toHaveAttribute("aria-expanded", "true")
 
-    fireEvent.click(screen.getByRole("button", { name: "\u79FB\u9664 app" }))
+    fireEvent.contextMenu(screen.getByRole("button", { name: "app" }), {
+      clientX: 120,
+      clientY: 160,
+    })
+    fireEvent.click(screen.getByRole("menuitem", { name: "\u79FB\u9664" }))
 
     expect(screen.queryByRole("button", { name: "app" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Chat 1" })).not.toBeInTheDocument()
@@ -9771,7 +9871,7 @@ describe("App", () => {
       })
     })
 
-    expect(await screen.findByText("Atlas")).toBeInTheDocument()
+    expect(await screen.findByText("C:\\Projects\\Atlas")).toBeInTheDocument()
   })
 
   it("keeps consecutive streamed replies isolated to their own assistant cards", async () => {
@@ -10690,20 +10790,48 @@ describe("App", () => {
     expect(srcFolderLeading).toHaveAttribute("data-icon", "folder")
   })
 
-  it("keeps session rows aligned with folder rows and gives them the same hover treatment", () => {
+  it("keeps folder rows hoverable without an active visual treatment", () => {
     expect(styles).toMatch(/\.session-tree\s*\{[^}]*padding-left:\s*0;/s)
     expect(styles).toMatch(/\.project-row\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(/\.session-row\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(
       /\.project-row:hover,\s*\.project-row:focus-visible,\s*\.session-row:hover,\s*\.session-row:focus-visible\s*\{[^}]*background:\s*rgba\(84,\s*96,\s*109,\s*0\.08\);/s,
     )
+    expect(styles).not.toMatch(/\.project-row\.is-active/)
+    expect(styles).not.toMatch(/\.project-row:focus-within/)
   })
 
   it("keeps the prompt input shell and canvas tab caps on the documented radii", () => {
     expect(styles).toMatch(/\.prompt-input-shell\s*\{[^}]*border-radius:\s*28px;/s)
     expect(styles).toMatch(
+      /\.ui-context-menu\s*\{[^}]*--context-menu-radius:\s*var\(--semantic-dropdown-menu-radius,\s*var\(--seg-radius-md,/s,
+    )
+    expect(styles).toMatch(
+      /\.ui-context-menu__item\s*\{[^}]*border-radius:\s*max\(4px,\s*calc\(var\(--context-menu-radius\) - 2px\)\);/s,
+    )
+    expect(styles).toMatch(
       /\.canvas-region-top-menu\s*\{[^}]*--canvas-region-tab-cap-radius:\s*8px;/s,
     )
+    expect(styles).toMatch(
+      /\.canvas-top-menu-selector-panel\s*\{[^}]*border-radius:\s*var\(--semantic-dropdown-menu-radius,\s*var\(--seg-radius-md\)\);/s,
+    )
+    expect(styles).not.toMatch(/\.canvas-top-menu-selector-panel\s*\{[^}]*scrollbar-gutter:\s*stable/s)
+    expect(styles).toMatch(
+      /\.canvas-top-menu-selector-panel\s+\.composer-menu-option:not\(:hover\):not\(:focus-visible\):not\(\.is-selected\)\s*\{[^}]*background:\s*transparent;/s,
+    )
+    expect(styles).toMatch(/\.canvas-top-menu-context-panel\s*\{[^}]*--context-menu-hover:\s*var\(--semantic-sidebar-tree-row-surface-hover/s)
+    expect(styles).toMatch(
+      /\.canvas-top-menu-context-option:hover,\s*\.canvas-top-menu-context-option:focus-visible,\s*\.canvas-top-menu-context-option\.is-selected,\s*\.canvas-top-menu-context-option\[aria-selected="true"\],\s*\.canvas-top-menu-context-option\[aria-checked="true"\]\s*\{[^}]*background:\s*var\(--context-menu-hover\);[^}]*color:\s*var\(--context-menu-hover-text\);/s,
+    )
+    expect(styles).toMatch(/\.canvas-top-menu-searchable-panel\s+\.composer-menu-search-input\s*\{[^}]*border-radius:\s*max\(4px,\s*calc\(var\(--context-menu-radius\) - 2px\)\);/s)
+    expect(styles).toMatch(/\.canvas-top-menu-searchable-panel\s+\.composer-menu-options\s*\{[^}]*overflow-y:\s*auto;[^}]*scrollbar-width:\s*none;/s)
+    expect(styles).toMatch(/\.canvas-top-menu-searchable-panel\s+\.composer-menu-options::-webkit-scrollbar\s*\{[^}]*width:\s*0;/s)
+    expect(styles).not.toMatch(/\.canvas-top-menu-searchable-panel\s+\.composer-menu-options\s*\{[^}]*scrollbar-gutter/s)
+    expect(styles).toMatch(/\.canvas-top-menu-fit-panel\s*\{[^}]*width:\s*max-content;[^}]*min-width:\s*0;/s)
+    expect(styles).toMatch(/\.canvas-top-menu-fit-panel\s+\.canvas-top-menu-context-option\s*\{[^}]*width:\s*100%;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s)
+    expect(styles).toMatch(/\.external-editor-menu-panel\s*\{[^}]*width:\s*max-content;/s)
+    expect(styles).toMatch(/\.external-editor-menu-panel\s*\{[^}]*min-width:\s*0;/s)
+    expect(styles).toMatch(/\.external-editor-menu-option\s*\{[^}]*border-radius:\s*var\(--seg-radius-sm\);/s)
     expect(styles).toMatch(
       /\.canvas-region-top-menu\s+\.session-tab\s*\{[^}]*border-radius:\s*var\(--canvas-region-tab-cap-radius\) var\(--canvas-region-tab-cap-radius\) 0 0;/s,
     )

@@ -20,6 +20,7 @@ import type {
   PromptPresetSummary,
   PromptUrlInstallPreview,
   ProviderAuthCapability,
+  ProviderAuthFlow,
   ProviderCatalogItem,
   ProviderDraftState,
   ProviderModel,
@@ -166,6 +167,14 @@ function mergeProviderDrafts(
       ]
     }),
   )
+}
+
+function getProviderAuthFailureMessage(providerID: string, flow: ProviderAuthFlow) {
+  if (flow.errorMessage) return flow.errorMessage
+  if (providerID === "anybox") {
+    return "桌面端无法连接 Anybox API。请使用测试连接查看网络诊断，或切换代理规则后重试。"
+  }
+  return "Provider authentication failed."
 }
 
 function normalizeProviderCatalogItem(item: ProviderCatalogItem): ProviderCatalogItem {
@@ -1833,7 +1842,7 @@ export function useSettingsPage(options: UseSettingsPageOptions) {
           } else {
             setMessage({
               tone: "error",
-              text: flow.errorMessage ?? "Provider authentication failed.",
+              text: getProviderAuthFailureMessage(providerID, flow),
             })
           }
           return

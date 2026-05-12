@@ -89,7 +89,7 @@ interface ComposerProps {
 }
 
 type ComposerMenuKey = "model" | "reasoning" | null
-type SlashCommandKey = "attach" | "file" | "mcp" | "model" | "plan" | "reasoning" | "skill"
+type ComposerCommandKey = "attach" | "file" | "mcp" | "model" | "plan" | "reasoning" | "skill"
 
 interface ComposerModelProviderGroup {
   matchingOptions: ComposerModelOption[]
@@ -117,13 +117,13 @@ type ComposerCommandMenuState =
     }
   | {
       anchorRect: DOMRect | null
-      kind: "slash-command"
+      kind: "command-trigger"
       match: ComposerTriggerMatch
       query: string
     }
   | {
       anchorRect: DOMRect | null
-      kind: "slash-selector"
+      kind: "command-selector"
       match: ComposerTriggerMatch
       query: string
       selector: "file" | "mcp" | "skill"
@@ -137,7 +137,7 @@ type ComposerCommandMenuItem =
       key: string
       label: string
       type: "command"
-      value: SlashCommandKey
+      value: ComposerCommandKey
     }
   | {
       description: string
@@ -168,49 +168,51 @@ const LEXICAL_INITIAL_CONFIG = {
   },
 }
 
-const SLASH_COMMANDS: Array<{
+const COMPOSER_COMMAND_TRIGGER_PREFIX = "~"
+
+const COMPOSER_COMMANDS: Array<{
   description: string
   label: string
-  value: SlashCommandKey
+  value: ComposerCommandKey
 }> = [
   {
     value: "file",
-    label: "/file",
+    label: `${COMPOSER_COMMAND_TRIGGER_PREFIX}file`,
     description: "Search project files and insert an inline file tag.",
   },
   {
     value: "skill",
-    label: "/skill",
+    label: `${COMPOSER_COMMAND_TRIGGER_PREFIX}skill`,
     description: "Insert a project skill tag for this message only.",
   },
   {
     value: "mcp",
-    label: "/mcp",
+    label: `${COMPOSER_COMMAND_TRIGGER_PREFIX}mcp`,
     description: "Enable a project MCP server and insert its inline tag.",
   },
   {
     value: "attach",
-    label: "/attach",
+    label: `${COMPOSER_COMMAND_TRIGGER_PREFIX}attach`,
     description: "Open the attachment picker for images or PDFs.",
   },
   {
     value: "plan",
-    label: "/plan",
+    label: `${COMPOSER_COMMAND_TRIGGER_PREFIX}plan`,
     description: "Toggle Plan Mode for this session.",
   },
   {
     value: "model",
-    label: "/model",
+    label: `${COMPOSER_COMMAND_TRIGGER_PREFIX}model`,
     description: "Open the model picker.",
   },
   {
     value: "reasoning",
-    label: "/reasoning",
+    label: `${COMPOSER_COMMAND_TRIGGER_PREFIX}reasoning`,
     description: "Open the reasoning-effort picker.",
   },
 ]
 
-export function getVisibleComposerSlashCommandLabels({
+export function getVisibleComposerCommandLabels({
   hasPlanModeToggle = false,
   query = "",
   reasoningEffortOptionCount = 0,
@@ -225,7 +227,7 @@ export function getVisibleComposerSlashCommandLabels({
 }) {
   const normalizedQuery = query.trim().toLowerCase()
 
-  return SLASH_COMMANDS
+  return COMPOSER_COMMANDS
     .filter((command) => command.label.slice(1).includes(normalizedQuery))
     .filter((command) => {
       if ((command.value === "skill" || command.value === "mcp") && !showProjectTagCommands) {
@@ -714,11 +716,11 @@ function deriveCommandMenuState() {
   const beforeText = readComposerBeforeTextForCommandMenu(anchorNode, selection.anchor.offset)
   if (beforeText === null) return null
 
-  const selectorMatch = findTriggerMatch(beforeText, /(^|\s)\/(file|skill|mcp)(?:\s+([^\n]*))?$/)
+  const selectorMatch = findTriggerMatch(beforeText, /(^|\s)~(file|skill|mcp)(?:\s+([^\n]*))?$/)
   if (selectorMatch) {
     return {
       anchorRect: getComposerSelectionRect(),
-      kind: "slash-selector",
+      kind: "command-selector",
       match: {
         nodeKey: anchorNode.getKey(),
         start: selectorMatch.start,
@@ -729,7 +731,7 @@ function deriveCommandMenuState() {
     } satisfies ComposerCommandMenuState
   }
 
-  const mentionMatch = findTriggerMatch(beforeText, /(^|\s)@([^\s@/]*)$/)
+  const mentionMatch = findTriggerMatch(beforeText, /(^|\s)@([^\s@/~]*)$/)
   if (mentionMatch) {
     return {
       anchorRect: getComposerSelectionRect(),
@@ -743,17 +745,17 @@ function deriveCommandMenuState() {
     } satisfies ComposerCommandMenuState
   }
 
-  const slashCommandMatch = findTriggerMatch(beforeText, /(^|\s)\/([^\s]*)$/)
-  if (slashCommandMatch) {
+  const commandTriggerMatch = findTriggerMatch(beforeText, /(^|\s)~([^\s]*)$/)
+  if (commandTriggerMatch) {
     return {
       anchorRect: getComposerSelectionRect(),
-      kind: "slash-command",
+      kind: "command-trigger",
       match: {
         nodeKey: anchorNode.getKey(),
-        start: slashCommandMatch.start,
+        start: commandTriggerMatch.start,
         end: selection.anchor.offset,
       },
-      query: slashCommandMatch.groups[1] ?? "",
+      query: commandTriggerMatch.groups[1] ?? "",
     } satisfies ComposerCommandMenuState
   }
 
@@ -914,8 +916,8 @@ export function Composer({
     return new Set(readComposerTagsFromDraftState(draftStateRef.current).map(readComposerTagIdentity))
   }
 
-  function buildSlashCommandItems(query: string) {
-    const visibleLabels = new Set(getVisibleComposerSlashCommandLabels({
+  function buildComposerCommandItems(query: string) {
+    const visibleLabels = new Set(getVisibleComposerCommandLabels({
       hasPlanModeToggle: Boolean(onPlanModeToggle),
       query,
       reasoningEffortOptionCount: reasoningEffortOptions.length,
@@ -923,7 +925,7 @@ export function Composer({
       showProjectTagCommands: Boolean(showProjectTagCommands),
     }))
 
-    return SLASH_COMMANDS
+    return COMPOSER_COMMANDS
       .filter((command) => visibleLabels.has(command.label))
       .map((command) => ({
         type: "command",
@@ -988,11 +990,11 @@ export function Composer({
   function buildImmediateCommandMenuItems(state: ComposerCommandMenuState | null) {
     if (!state) return []
 
-    if (state.kind === "slash-command") {
-      return buildSlashCommandItems(state.query)
+    if (state.kind === "command-trigger") {
+      return buildComposerCommandItems(state.query)
     }
 
-    if (state.kind === "slash-selector") {
+    if (state.kind === "command-selector") {
       if (state.selector === "skill") {
         return buildSkillTagItems(state.query)
       }
@@ -1217,12 +1219,12 @@ export function Composer({
       })
     }
 
-    if (commandMenuState.kind === "slash-command") {
-      setCommandMenuItemsWithRef(buildSlashCommandItems(commandMenuState.query))
+    if (commandMenuState.kind === "command-trigger") {
+      setCommandMenuItemsWithRef(buildComposerCommandItems(commandMenuState.query))
       return
     }
 
-    if (commandMenuState.kind === "slash-selector") {
+    if (commandMenuState.kind === "command-selector") {
       const query = commandMenuState.query
       if (commandMenuState.selector === "skill") {
         setCommandMenuItemsWithRef(buildSkillTagItems(query))
@@ -1319,13 +1321,13 @@ export function Composer({
     onDraftStateChange(nextDraftState)
   }
 
-  function replaceCurrentTriggerWithCommand(command: SlashCommandKey) {
+  function replaceCurrentTriggerWithCommand(command: ComposerCommandKey) {
     const editor = editorRef.current
     const currentCommandMenuState = commandMenuStateRef.current ?? readCommandMenuStateFromEditor()
-    if (!editor || !currentCommandMenuState || currentCommandMenuState.kind !== "slash-command") return
+    if (!editor || !currentCommandMenuState || currentCommandMenuState.kind !== "command-trigger") return
 
     if (command === "file" || command === "skill" || command === "mcp") {
-      createTextReplacement(editor, currentCommandMenuState.match, `/${command} `)
+      createTextReplacement(editor, currentCommandMenuState.match, `${COMPOSER_COMMAND_TRIGGER_PREFIX}${command} `)
       return
     }
 
@@ -1467,9 +1469,9 @@ export function Composer({
   const modelMenuEmptyLabel =
     modelOptions.length === 0 ? "No visible models are available for this project yet." : "No models match your search."
   const commandMenuEmptyLabel =
-    commandMenuState?.kind === "mention" || (commandMenuState?.kind === "slash-selector" && commandMenuState.selector === "file")
+    commandMenuState?.kind === "mention" || (commandMenuState?.kind === "command-selector" && commandMenuState.selector === "file")
       ? "Type a file name to search this project."
-      : commandMenuState?.kind === "slash-command"
+      : commandMenuState?.kind === "command-trigger"
         ? "No matching commands."
         : "No matching commands or tags."
 

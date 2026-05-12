@@ -111,6 +111,43 @@ describe("SessionCanvasTopMenu project skills", () => {
   })
 })
 
+describe("SessionCanvasTopMenu project MCP servers", () => {
+  const mcpOptions = [
+    {
+      value: "filesystem",
+      label: "Filesystem",
+      description: "Access project files.",
+    },
+    {
+      value: "browser",
+      label: "Browser",
+      description: "Inspect local browser targets.",
+    },
+  ]
+
+  it("renders compact MCP rows with descriptions exposed as titles", () => {
+    const onMcpServerToggle = vi.fn()
+    renderTopMenu({
+      mcpOptions,
+      onMcpServerToggle,
+      selectedMcpServerIDs: ["filesystem"],
+      selectedMcpServerLabel: "Filesystem",
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: "Select project MCP servers: Filesystem" }))
+
+    const menu = screen.getByRole("menu", { name: "Project MCP server selection" })
+    const filesystemOption = within(menu).getByRole("menuitemcheckbox", { name: /Filesystem/ })
+    expect(filesystemOption).toHaveAttribute("aria-checked", "true")
+    expect(filesystemOption).toHaveAttribute("title", "Access project files.")
+    expect(within(menu).queryByText("Access project files.")).not.toBeInTheDocument()
+
+    fireEvent.click(within(menu).getByRole("menuitemcheckbox", { name: /Browser/ }))
+
+    expect(onMcpServerToggle).toHaveBeenCalledWith("browser")
+  })
+})
+
 describe("SessionCanvasTopMenu tool permission mode", () => {
   it("renders both permission modes and emits mode changes", () => {
     const onToolPermissionModeChange = vi.fn()
@@ -118,11 +155,16 @@ describe("SessionCanvasTopMenu tool permission mode", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "工具权限：默认权限" }))
 
-    const menu = screen.getByRole("dialog", { name: "工具权限模式选择" })
+    const menu = screen.getByRole("menu", { name: "工具权限模式选择" })
     expect(within(menu).getByText("默认权限")).toBeInTheDocument()
     expect(within(menu).getByText("完全访问权限")).toBeInTheDocument()
+    expect(within(menu).queryByText("ask 进入审批，allow 直接执行，deny 拒绝。")).not.toBeInTheDocument()
+    expect(within(menu).getByRole("menuitem", { name: /默认权限/ })).toHaveAttribute(
+      "title",
+      "ask 进入审批，allow 直接执行，deny 拒绝。",
+    )
 
-    fireEvent.click(within(menu).getByRole("button", { name: /完全访问权限/ }))
+    fireEvent.click(within(menu).getByRole("menuitem", { name: /完全访问权限/ }))
 
     expect(onToolPermissionModeChange).toHaveBeenCalledWith("full_access")
   })
@@ -164,7 +206,7 @@ describe("SessionCanvasTopMenu tool permission mode", () => {
 
     expect(screen.getAllByRole("button", { name: "工具权限：默认权限" })).toHaveLength(2)
     fireEvent.click(screen.getAllByRole("button", { name: "工具权限：默认权限" })[0]!)
-    fireEvent.click(screen.getByRole("button", { name: /完全访问权限/ }))
+    fireEvent.click(screen.getByRole("menuitem", { name: /完全访问权限/ }))
 
     expect(screen.getAllByRole("button", { name: "工具权限：完全访问权限" })).toHaveLength(2)
   })

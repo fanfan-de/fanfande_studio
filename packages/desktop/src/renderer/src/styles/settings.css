@@ -3287,9 +3287,15 @@ body.is-dragging-settings-page {
 
 .canvas-top-menu-selector-panel,
 .canvas-top-menu-quick-panel {
-  border-radius: var(--seg-radius-xs);
+  border-radius: var(--semantic-dropdown-menu-radius, var(--seg-radius-md));
   background: var(--seg-dropdown-menu-surface);
   box-shadow: 0 14px 34px rgba(46, 81, 118, 0.12);
+}
+
+.canvas-top-menu-selector-panel .composer-menu-option:not(:hover):not(:focus-visible):not(.is-selected) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Sage / Teal & Slate theme overrides */

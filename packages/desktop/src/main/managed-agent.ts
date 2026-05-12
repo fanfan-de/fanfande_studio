@@ -38,6 +38,10 @@ interface ManagedAgentLaunchSpec {
   readonly sourceRuntime: boolean
 }
 
+type ManagedAgentProxyEnv = Partial<
+  Pick<NodeJS.ProcessEnv, "HTTP_PROXY" | "HTTPS_PROXY" | "ALL_PROXY" | "http_proxy" | "https_proxy" | "all_proxy">
+>
+
 let managedAgent: ManagedAgentProcess | undefined
 let sourceRuntimeWatcher: fs.FSWatcher | undefined
 let sourceRuntimeRestartTimer: ReturnType<typeof setTimeout> | undefined
@@ -171,9 +175,62 @@ function readWorkspaceDependenciesBundleVersion(dependenciesDir: string | undefi
   return undefined
 }
 
-function buildManagedAgentStartEnv(spec: ManagedAgentLaunchSpec, port: number, dataDir?: string): NodeJS.ProcessEnv {
+function proxyURLFromElectronProxyRule(rule: string) {
+  const trimmed = rule.trim()
+  if (!trimmed || /^DIRECT$/i.test(trimmed)) return undefined
+
+  const [scheme, hostPort] = trimmed.split(/\s+/, 2)
+  if (!scheme || !hostPort) return undefined
+
+  switch (scheme.toUpperCase()) {
+    case "PROXY":
+    case "HTTPS":
+      return `http://${hostPort}`
+    default:
+      return undefined
+  }
+}
+
+async function resolveManagedAgentProxyEnv(targetURL = "https://anybox.com.cn"): Promise<ManagedAgentProxyEnv> {
+  if (
+    process.env.HTTPS_PROXY?.trim() ||
+    process.env.HTTP_PROXY?.trim() ||
+    process.env.ALL_PROXY?.trim() ||
+    process.env.https_proxy?.trim() ||
+    process.env.http_proxy?.trim() ||
+    process.env.all_proxy?.trim()
+  ) {
+    return {}
+  }
+
+  try {
+    const electron = await import("electron")
+    const proxyRules = await electron.session.defaultSession.resolveProxy(targetURL)
+    const proxyURL = proxyRules
+      .split(";")
+      .map(proxyURLFromElectronProxyRule)
+      .find((value): value is string => Boolean(value))
+    if (!proxyURL) return {}
+
+    return {
+      HTTP_PROXY: proxyURL,
+      HTTPS_PROXY: proxyURL,
+    }
+  } catch (error) {
+    logError("failed to resolve system proxy for managed agent", error)
+    return {}
+  }
+}
+
+function buildManagedAgentStartEnv(
+  spec: ManagedAgentLaunchSpec,
+  port: number,
+  dataDir?: string,
+  proxyEnv: ManagedAgentProxyEnv = {},
+): NodeJS.ProcessEnv {
   const startEnv: NodeJS.ProcessEnv = {
     ...process.env,
+    ...proxyEnv,
     FanFande_NODE_BINARY: process.execPath,
     FanFande_NODE_RUN_AS_NODE: "1",
     FanFande_SERVER_HOST: "127.0.0.1",
@@ -382,6 +439,7 @@ export async function ensureManagedAgentRunning() {
   const port = await findAvailablePort()
   const baseURL = `http://127.0.0.1:${port}`
   const dataDir = path.join(app.getPath("userData"), "agent")
+  const proxyEnv = await resolveManagedAgentProxyEnv()
 
   await fsp.mkdir(dataDir, { recursive: true })
 
@@ -389,7 +447,7 @@ export async function ensureManagedAgentRunning() {
 
   for (const spec of launchSpecs) {
     log(`starting managed agent with ${spec.label}`)
-    const startEnv = buildManagedAgentStartEnv(spec, port, dataDir)
+    const startEnv = buildManagedAgentStartEnv(spec, port, dataDir, proxyEnv)
 
     const child = spawn(spec.command, spec.args, {
       cwd: dataDir,
@@ -486,5 +544,7 @@ export const managedAgentInternals = {
   resolveBundledAgentLaunchSpecs,
   resolveManagedAgentLaunchSpecs,
   readWorkspaceDependenciesBundleVersion,
+  proxyURLFromElectronProxyRule,
+  resolveManagedAgentProxyEnv,
   buildManagedAgentStartEnv,
 }

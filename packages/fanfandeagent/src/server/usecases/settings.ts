@@ -4,6 +4,7 @@ import * as Config from "#config/config.ts"
 import * as Mcp from "#mcp/manager.ts"
 import * as Plugin from "#plugin/plugin.ts"
 import * as ModelsDev from "#provider/modelsdev.ts"
+import * as AnyboxHTTP from "#provider/anybox-http.ts"
 import * as Provider from "#provider/provider.ts"
 import { ApiError } from "#server/error.ts"
 import * as PromptPresets from "#session/support/prompt-presets.ts"
@@ -12,6 +13,9 @@ import * as SkillGitInstall from "#skill/git-install.ts"
 import * as Skill from "#skill/skill.ts"
 import * as SkillManager from "#skill/manage.ts"
 import * as ToolRegistry from "#tool/registry.ts"
+import * as Log from "#util/log.ts"
+
+const log = Log.create({ service: "settings" })
 
 export const SkillFileQuery = z.object({
   path: z.string().min(1),
@@ -379,6 +383,16 @@ export async function getProviderAuth(providerID: string) {
 
 function classifyProviderConnectionError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
+  if (error instanceof AnyboxHTTP.AnyboxHTTPError) {
+    const status = error.code === "http_error" ? "auth_error" : "network_error"
+    return {
+      status: status as "auth_error" | "network_error" | "config_error",
+      message,
+      errorCode: error.code,
+      diagnostics: error.diagnostics,
+    }
+  }
+
   const normalized = message.toLowerCase()
 
   if (
@@ -391,6 +405,8 @@ function classifyProviderConnectionError(error: unknown) {
     return {
       status: "auth_error" as const,
       message,
+      errorCode: undefined,
+      diagnostics: undefined,
     }
   }
 
@@ -405,12 +421,16 @@ function classifyProviderConnectionError(error: unknown) {
     return {
       status: "network_error" as const,
       message,
+      errorCode: undefined,
+      diagnostics: undefined,
     }
   }
 
   return {
     status: "config_error" as const,
     message,
+    errorCode: undefined,
+    diagnostics: undefined,
   }
 }
 
@@ -556,6 +576,8 @@ export async function testProviderConnection(
       status: classified.status,
       checkedAt: Date.now(),
       message: classified.message,
+      errorCode: classified.errorCode,
+      diagnostics: classified.diagnostics,
     }
   }
 }
@@ -574,6 +596,15 @@ export async function startProviderAuthFlow(input: {
       providerBaseURL: input.baseURL?.trim() || provider?.baseURL,
     })
   } catch (error) {
+    if (error instanceof AnyboxHTTP.AnyboxHTTPError) {
+      log.warn("provider-auth-flow-network-failed", {
+        providerID: input.providerID,
+        method: input.method,
+        errorCode: error.code,
+        diagnostics: error.diagnostics,
+        message: error.message,
+      })
+    }
     throw new ApiError(400, "PROVIDER_AUTH_FLOW_FAILED", error instanceof Error ? error.message : String(error))
   }
 }

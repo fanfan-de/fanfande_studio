@@ -4,6 +4,7 @@ import path from "path"
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http"
 import z from "zod"
 import * as Auth from "#auth/auth.ts"
+import * as AnyboxHTTP from "#provider/anybox-http.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "provider-auth" })
@@ -17,11 +18,8 @@ const OPENAI_DEVICE_AUTH_VERIFICATION_URL = `${OPENAI_AUTH_ISSUER}/codex/device`
 const OPENAI_LOCAL_CALLBACK_PATH = "/auth/callback"
 const DEFAULT_OPENAI_LOCAL_CALLBACK_PORT = 1455
 const ANYBOX_BROWSER_METHOD = "anybox-browser"
-const ANYBOX_DEFAULT_BASE_URL =
-  process.env["FANFANDE_ANYBOX_BASE_URL"]?.trim() ||
-  process.env["FanFande_ANYBOX_BASE_URL"]?.trim() ||
-  "http://localhost:3000"
 const ANYBOX_CLIENT_ID = process.env["FANFANDE_ANYBOX_CLIENT_ID"]?.trim() || "fanfande-agent"
+const ANYBOX_OAUTH_SCOPE = "openid profile email offline_access"
 const OPENAI_OAUTH_CLIENT_ID = process.env["FanFande_OPENAI_CODEX_CLIENT_ID"]?.trim() || "app_EMoamEEZ73f0CkXaXp7hrann"
 const OPENAI_OAUTH_SCOPE = "openid profile email offline_access"
 const OPENAI_ORIGINATOR =
@@ -97,6 +95,8 @@ export const ProviderAuthFlow = z
     verificationURI: z.string().optional(),
     userCode: z.string().optional(),
     errorMessage: z.string().optional(),
+    errorCode: z.string().optional(),
+    diagnostics: z.record(z.string(), z.any()).optional(),
     connectionLabel: z.string().optional(),
     account: ProviderAuthAccountSummary.optional(),
   })
@@ -406,6 +406,8 @@ function flowPublicView(flow: InternalFlow): ProviderAuthFlow {
     verificationURI: flow.verificationURI,
     userCode: flow.userCode,
     errorMessage: flow.errorMessage,
+    errorCode: flow.errorCode,
+    diagnostics: flow.diagnostics,
     connectionLabel: flow.connectionLabel,
     account: flow.account,
   }
@@ -814,28 +816,40 @@ function computeTokenExpiry(input: { accessToken?: string; idToken?: string; exp
 }
 
 function normalizeAnyboxRootURL(baseURL?: string) {
-  const configured = normalizeString(baseURL) ?? ANYBOX_DEFAULT_BASE_URL
-  const trimmed = configured.replace(/\/+$/, "")
-  return trimmed.endsWith("/v1") ? trimmed.slice(0, -"/v1".length) : trimmed
+  return AnyboxHTTP.normalizeAnyboxRootURL(baseURL)
 }
 
 function normalizeAnyboxApiURL(baseURL?: string) {
-  return `${normalizeAnyboxRootURL(baseURL)}/v1`
+  return AnyboxHTTP.normalizeAnyboxApiURL(baseURL)
 }
 
 function anyboxURL(baseURL: string | undefined, pathname: string) {
-  const root = normalizeAnyboxRootURL(baseURL)
-  return new URL(pathname.replace(/^\/+/, ""), `${root}/`).toString()
+  return AnyboxHTTP.anyboxURL(baseURL, pathname)
 }
 
 function readAnyboxAccount(payload: unknown) {
   const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {}
-  const account = record.account && typeof record.account === "object" ? (record.account as Record<string, unknown>) : record
-  const workspace = account.workspace && typeof account.workspace === "object" ? (account.workspace as Record<string, unknown>) : {}
-  const billing = account.billing && typeof account.billing === "object" ? (account.billing as Record<string, unknown>) : {}
+  const account =
+    record.account && typeof record.account === "object"
+      ? (record.account as Record<string, unknown>)
+      : record.user && typeof record.user === "object"
+        ? (record.user as Record<string, unknown>)
+        : record
+  const workspace =
+    account.workspace && typeof account.workspace === "object"
+      ? (account.workspace as Record<string, unknown>)
+      : record.workspace && typeof record.workspace === "object"
+        ? (record.workspace as Record<string, unknown>)
+        : {}
+  const billing =
+    account.billing && typeof account.billing === "object"
+      ? (account.billing as Record<string, unknown>)
+      : record.billing && typeof record.billing === "object"
+        ? (record.billing as Record<string, unknown>)
+        : {}
 
   return {
-    accountID: normalizeString(account.account_id) ?? normalizeString(account.accountID),
+    accountID: normalizeString(account.account_id) ?? normalizeString(account.accountID) ?? normalizeString(account.id),
     userID: normalizeString(account.user_id) ?? normalizeString(account.userID) ?? normalizeString(account.id),
     email: normalizeString(account.email),
     planType: normalizeString(account.plan_type) ?? normalizeString(account.planType),
@@ -863,17 +877,82 @@ function readAnyboxAccount(payload: unknown) {
   }
 }
 
-async function fetchAnyboxAccount(baseURL: string | undefined, accessToken: string) {
-  const response = await fetch(anyboxURL(baseURL, "/api/agent/me"), {
-    method: "GET",
-    headers: {
-      accept: "application/json",
-      authorization: `Bearer ${accessToken}`,
-    },
-  })
+function readOptionalRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined
+}
 
-  await ensureOkResponse(response, "Anybox account request failed")
-  return readAnyboxAccount(await response.json())
+function parseAnyboxIdToken(idToken: string | undefined) {
+  const payload = decodeJwtPayload(idToken ?? "")
+  if (!payload) return readAnyboxAccount(undefined)
+
+  const auth =
+    readOptionalRecord(payload["https://anybox.com.cn/auth"]) ??
+    readOptionalRecord(payload["https://anybox.com/auth"]) ??
+    readOptionalRecord(payload.anybox) ??
+    {}
+  const profile =
+    readOptionalRecord(payload["https://anybox.com.cn/profile"]) ??
+    readOptionalRecord(payload.profile) ??
+    {}
+
+  return readAnyboxAccount({
+    account: {
+      account_id: auth.anybox_account_id ?? auth.account_id,
+      user_id: auth.anybox_user_id ?? auth.user_id ?? payload.sub,
+      id: payload.sub,
+      email: payload.email ?? profile.email,
+      name: profile.name ?? payload.name,
+      plan_type: auth.anybox_plan_type ?? auth.plan_type,
+      workspace_id: auth.anybox_workspace_id ?? auth.workspace_id,
+      workspace_name: auth.anybox_workspace_name ?? auth.workspace_name,
+      balance_microcents: auth.balance_microcents,
+      currency: auth.currency,
+      recharge_url: auth.recharge_url,
+    },
+    workspace: auth.workspace,
+    billing: auth.billing,
+  })
+}
+
+function mergeAnyboxAccount(
+  primary: ReturnType<typeof readAnyboxAccount>,
+  secondary: ReturnType<typeof readAnyboxAccount>,
+  fallback?: Partial<Auth.OAuthSessionCredential>,
+) {
+  return {
+    accountID: primary.accountID ?? secondary.accountID ?? fallback?.accountID,
+    userID: primary.userID ?? secondary.userID ?? fallback?.userID,
+    email: primary.email ?? secondary.email ?? fallback?.email,
+    planType: primary.planType ?? secondary.planType ?? fallback?.planType,
+    workspaceID: primary.workspaceID ?? secondary.workspaceID ?? fallback?.workspaceID,
+    workspaceName: primary.workspaceName ?? secondary.workspaceName ?? fallback?.workspaceName,
+    balanceMicrocents: primary.balanceMicrocents ?? secondary.balanceMicrocents ?? fallback?.balanceMicrocents,
+    currency: primary.currency ?? secondary.currency ?? fallback?.currency,
+    rechargeUrl: primary.rechargeUrl ?? secondary.rechargeUrl ?? fallback?.rechargeUrl,
+  }
+}
+
+function readAnyboxTokenAccount(
+  payload: Record<string, unknown>,
+  idToken: string | undefined,
+  fallback?: Partial<Auth.OAuthSessionCredential>,
+) {
+  return mergeAnyboxAccount(readAnyboxAccount(payload), parseAnyboxIdToken(idToken), fallback)
+}
+
+async function ensureAnyboxOkResponse(
+  response: Response,
+  prefix: string,
+  url: string,
+) {
+  if (response.ok) return response
+  const payload = await parseJsonResponse(response)
+  const detail = errorMessageFromPayload(payload) ?? normalizeString(await response.text().catch(() => "")) ?? `HTTP ${response.status}`
+  throw new AnyboxHTTP.AnyboxHTTPError(
+    "http_error",
+    `${prefix}: ${detail}`,
+    await AnyboxHTTP.createAnyboxDiagnostics(url),
+  )
 }
 
 async function parseJsonResponse(response: Response) {
@@ -1037,6 +1116,7 @@ function buildAnyboxBrowserAuthorizeURL(input: {
   url.searchParams.set("response_type", "code")
   url.searchParams.set("client_id", ANYBOX_CLIENT_ID)
   url.searchParams.set("redirect_uri", input.redirectURI)
+  url.searchParams.set("scope", ANYBOX_OAUTH_SCOPE)
   url.searchParams.set("state", input.state)
   url.searchParams.set("code_challenge", input.codeChallenge)
   url.searchParams.set("code_challenge_method", "S256")
@@ -1049,54 +1129,52 @@ async function exchangeAnyboxAuthorizationCode(input: {
   codeVerifier: string
   redirectURI: string
 }) {
-  const response = await fetch(anyboxURL(input.baseURL, "/api/agent/oauth/token"), {
+  const body = new URLSearchParams()
+  body.set("grant_type", "authorization_code")
+  body.set("client_id", ANYBOX_CLIENT_ID)
+  body.set("code", input.authorizationCode)
+  body.set("code_verifier", input.codeVerifier)
+  body.set("redirect_uri", input.redirectURI)
+
+  const url = anyboxURL(input.baseURL, "/api/agent/oauth/token")
+  const response = await AnyboxHTTP.anyboxFetch(url, {
     method: "POST",
     headers: {
       accept: "application/json",
-      "content-type": "application/json",
+      "content-type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify({
-      grant_type: "authorization_code",
-      client_id: ANYBOX_CLIENT_ID,
-      code: input.authorizationCode,
-      code_verifier: input.codeVerifier,
-      redirect_uri: input.redirectURI,
-    }),
+    body,
   })
 
-  await ensureOkResponse(response, "Anybox token exchange failed")
+  await ensureAnyboxOkResponse(response, "Anybox token exchange failed", url)
   return (await response.json()) as Record<string, unknown>
 }
 
-async function refreshAnyboxSession(credential: Auth.OAuthSessionCredential, baseURL?: string) {
+async function refreshAnyboxSession(
+  credential: Auth.OAuthSessionCredential,
+  baseURL?: string,
+) {
   const resolvedBaseURL = baseURL ?? credential.originator
-  const response = await fetch(anyboxURL(resolvedBaseURL, "/api/agent/oauth/refresh"), {
+  const body = new URLSearchParams()
+  body.set("grant_type", "refresh_token")
+  body.set("client_id", ANYBOX_CLIENT_ID)
+  body.set("refresh_token", credential.refreshToken)
+
+  const url = anyboxURL(resolvedBaseURL, "/api/agent/oauth/refresh")
+  const response = await AnyboxHTTP.anyboxFetch(url, {
     method: "POST",
     headers: {
       accept: "application/json",
-      "content-type": "application/json",
+      "content-type": "application/x-www-form-urlencoded",
     },
-    body: JSON.stringify({
-      grant_type: "refresh_token",
-      client_id: ANYBOX_CLIENT_ID,
-      refresh_token: credential.refreshToken,
-    }),
+    body,
   })
 
-  await ensureOkResponse(response, "Anybox token refresh failed")
+  await ensureAnyboxOkResponse(response, "Anybox token refresh failed", url)
   const payload = (await response.json()) as Record<string, unknown>
   const accessToken = normalizeString(payload.access_token) ?? credential.accessToken
-  const account = await fetchAnyboxAccount(resolvedBaseURL, accessToken).catch(() => ({
-    accountID: credential.accountID,
-    userID: credential.userID,
-    email: credential.email,
-    planType: credential.planType,
-    workspaceID: credential.workspaceID,
-    workspaceName: credential.workspaceName,
-    balanceMicrocents: credential.balanceMicrocents,
-    currency: credential.currency,
-    rechargeUrl: credential.rechargeUrl,
-  }))
+  const idToken = normalizeString(payload.id_token) ?? credential.idToken
+  const account = readAnyboxTokenAccount(payload, idToken, credential)
 
   return {
     kind: "oauth_session",
@@ -1104,11 +1182,11 @@ async function refreshAnyboxSession(credential: Auth.OAuthSessionCredential, bas
     refreshToken: normalizeString(payload.refresh_token) ?? credential.refreshToken,
     expiresAt: computeTokenExpiry({
       accessToken,
-      idToken: normalizeString(payload.id_token) ?? credential.idToken,
+      idToken,
       expiresIn: payload.expires_in,
     }),
     tokenType: normalizeString(payload.token_type) ?? credential.tokenType,
-    idToken: normalizeString(payload.id_token) ?? credential.idToken,
+    idToken,
     scope: normalizeString(payload.scope) ?? credential.scope,
     accountID: account.accountID,
     userID: account.userID,
@@ -1124,12 +1202,14 @@ async function refreshAnyboxSession(credential: Auth.OAuthSessionCredential, bas
   } satisfies Auth.OAuthSessionCredential
 }
 
-async function saveAnyboxTokens(method: string, payload: Record<string, unknown>, baseURL?: string) {
+async function saveAnyboxTokens(
+  method: string,
+  payload: Record<string, unknown>,
+  baseURL?: string,
+) {
   const accessToken = normalizeString(payload.access_token) ?? ""
   const idToken = normalizeString(payload.id_token)
-  const account = accessToken
-    ? await fetchAnyboxAccount(baseURL, accessToken).catch(() => readAnyboxAccount(payload))
-    : readAnyboxAccount(payload)
+  const account = readAnyboxTokenAccount(payload, idToken)
 
   const credential: Auth.OAuthSessionCredential = {
     kind: "oauth_session",
@@ -1164,7 +1244,7 @@ async function saveAnyboxTokens(method: string, payload: Record<string, unknown>
 }
 
 async function revokeAnyboxSession(credential: Auth.OAuthSessionCredential) {
-  await fetch(anyboxURL(credential.originator, "/api/agent/oauth/revoke"), {
+  await AnyboxHTTP.anyboxFetch(anyboxURL(credential.originator, "/api/agent/oauth/revoke"), {
     method: "POST",
     headers: {
       accept: "application/json",
@@ -1219,12 +1299,13 @@ async function startAnyboxBrowserFlow(input: ProviderFlowContext) {
   const capability = getCapability(input.providerID, input.method)
   if (!capability) throw new Error(`Provider '${input.providerID}' does not support auth method '${input.method}'`)
 
+  const providerBaseURL = normalizeAnyboxRootURL(input.providerBaseURL)
+
   const callbackServer = await ensureOpenAILocalCallbackServer()
   const id = createFlowID()
   const { codeChallenge, codeVerifier } = await createPkcePair()
   const state = createFlowID()
   const redirectURI = callbackServer.redirectURI
-  const providerBaseURL = normalizeAnyboxRootURL(input.providerBaseURL)
   const authorizationURL = buildAnyboxBrowserAuthorizeURL({
     baseURL: providerBaseURL,
     redirectURI,
@@ -1514,6 +1595,8 @@ export async function completeProviderBrowserCallback(input: {
       : await saveOpenAITokens(flow.method, tokens)
     flow.status = "connected"
     flow.errorMessage = undefined
+    flow.errorCode = undefined
+    flow.diagnostics = undefined
     flow.connectionLabel = connectionLabelForCredential(flow.providerID, flow.method, credential)
     flow.account = summarizeOAuthAccount(credential)
     clearFlowTimeout(flow)
@@ -1529,6 +1612,10 @@ export async function completeProviderBrowserCallback(input: {
   } catch (error) {
     flow.status = "error"
     flow.errorMessage = error instanceof Error ? error.message : String(error)
+    if (error instanceof AnyboxHTTP.AnyboxHTTPError) {
+      flow.errorCode = error.code
+      flow.diagnostics = error.diagnostics
+    }
     clearFlowTimeout(flow)
     upsertFlow(flow)
     await Auth.setProviderLastError(flow.providerID, flow.errorMessage)
@@ -1774,30 +1861,6 @@ export async function resolveProviderRuntimeAuth(
           providerID,
           activeMethod,
           message,
-        })
-      }
-    } else {
-      try {
-        const resolvedBaseURL = fallbacks.providerBaseURL ?? credential.originator
-        const account = await fetchAnyboxAccount(resolvedBaseURL, credential.accessToken)
-        const enriched: Auth.OAuthSessionCredential = {
-          ...credential,
-          ...account,
-          originator: normalizeAnyboxRootURL(resolvedBaseURL),
-        }
-        if (activeMethod) {
-          await Auth.setProviderCredential(providerID, activeMethod, enriched, {
-            activate: true,
-            lastError: null,
-          })
-          credentialSource = "credential_store"
-        }
-        credential = enriched
-      } catch (error) {
-        log.debug("anybox-account-refresh-skipped", {
-          providerID,
-          activeMethod,
-          message: error instanceof Error ? error.message : String(error),
         })
       }
     }

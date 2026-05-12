@@ -408,7 +408,6 @@
   outline: none;
 }
 
-.project-row:focus-within,
 .session-row:focus-within,
 .project-row:hover,
 .session-row:hover,
@@ -460,6 +459,8 @@
 
 .project-row-label {
   min-width: 0;
+  max-width: 55%;
+  flex: 0 0 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -470,22 +471,28 @@
 .project-row-text {
   min-width: 0;
   flex: 1 1 auto;
-  display: grid;
-  gap: 1px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  overflow: hidden;
 }
 
 .project-row-meta {
   min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 6px;
+  padding-inline: 2px 4px;
   font-size: 11px;
+  line-height: 1.2;
   letter-spacing: 0.02em;
   color: #7b8b99;
 }
 
 .project-row-meta-label {
   min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -509,16 +516,133 @@
   color: #567086;
 }
 
-.project-row.is-active {
-  border-color: transparent;
-  background: var(--mix-seg-accent-soft-84-transparent-16);
-  color: var(--seg-accent-strong);
+.ui-context-menu {
+  --context-menu-surface: var(--semantic-dropdown-menu-surface, var(--seg-dropdown-menu-surface, var(--surface-elevated, #ffffff)));
+  --context-menu-border: var(--seg-border, var(--border-default, rgba(17, 24, 39, 0.12)));
+  --context-menu-text: var(--seg-text-1, var(--text-primary, #1f2937));
+  --context-menu-muted: var(--seg-text-2, var(--text-secondary, #6b7280));
+  --context-menu-hover: var(--semantic-sidebar-tree-row-surface-hover, rgba(17, 24, 39, 0.06));
+  --context-menu-hover-text: var(--semantic-sidebar-tree-row-text-hover, var(--context-menu-text));
+  --context-menu-danger-text: var(--semantic-error-text, var(--seg-danger-text, #b42318));
+  --context-menu-danger-hover: var(--semantic-error-surface, var(--seg-danger-surface, rgba(180, 35, 24, 0.08)));
+  --context-menu-radius: var(--semantic-dropdown-menu-radius, var(--seg-radius-md, calc(var(--seg-radius-xs, 6px) + 2px)));
+  --context-menu-focus: var(--focus-outline-color, rgba(212, 107, 99, 0.32));
+  --context-menu-shadow: var(--ui-shadow-md, var(--shadow-md, 0 14px 34px rgba(17, 24, 39, 0.14)));
+
+  position: fixed;
+  z-index: 1000;
+  min-width: 184px;
+  max-width: min(320px, calc(100vw - 16px));
+  max-height: min(360px, calc(100dvh - 16px));
+  overflow: hidden;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--context-menu-border);
+  border-radius: var(--context-menu-radius);
+  background: var(--context-menu-surface);
+  color: var(--context-menu-text);
+  box-shadow: var(--context-menu-shadow);
+  transform-origin: top left;
+  animation: ui-context-menu-in 120ms ease;
+}
+
+.ui-context-menu__item {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: max(4px, calc(var(--context-menu-radius) - 2px));
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: left;
+}
+
+.ui-context-menu__item:hover,
+.ui-context-menu__item:focus-visible {
+  background: var(--context-menu-hover);
+  color: var(--context-menu-hover-text);
+  outline: none;
+}
+
+.ui-context-menu__item:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--context-menu-focus);
+}
+
+.ui-context-menu__item:disabled,
+.ui-context-menu__item[aria-disabled="true"] {
+  opacity: 0.48;
+  cursor: default;
+}
+
+.ui-context-menu__item:disabled:hover,
+.ui-context-menu__item:disabled:focus-visible,
+.ui-context-menu__item[aria-disabled="true"]:hover,
+.ui-context-menu__item[aria-disabled="true"]:focus-visible {
+  background: transparent;
+  color: inherit;
   box-shadow: none;
 }
 
+.ui-context-menu__item[data-variant="danger"] {
+  color: var(--context-menu-danger-text);
+}
 
-.project-row.is-active .project-row-meta {
-  color: #567086;
+.ui-context-menu__item[data-variant="danger"]:hover,
+.ui-context-menu__item[data-variant="danger"]:focus-visible {
+  background: var(--context-menu-danger-hover);
+  color: var(--context-menu-danger-text);
+}
+
+.ui-context-menu__icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.ui-context-menu__icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ui-context-menu__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-context-menu__divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--context-menu-border);
+}
+
+@keyframes ui-context-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .session-row {
@@ -574,6 +698,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ui-context-menu {
+    animation: none;
+  }
+
   .session-row-status-icon.is-running {
     animation: none;
   }
@@ -1003,7 +1131,7 @@
   outline-offset: var(--focus-outline-offset);
 }
 
-/* Keep workspace tree hover/selection aligned with the simpler skills tree affordance. */
+/* Keep workspace tree row sizing aligned with the simpler skills tree affordance. */
 
 .project-row-shell,
 .session-row-shell,
@@ -1024,13 +1152,8 @@
   box-shadow: none;
 }
 
-.project-row.is-active .project-row-label,
 .session-row.is-active .session-row-label {
   color: inherit;
-}
-
-.project-row.is-active .project-row-leading {
-  color: var(--seg-accent);
 }
 
 /* Sage / Teal & Slate theme overrides */
@@ -1086,7 +1209,6 @@
   color: var(--semantic-sidebar-tree-row-text-hover);
 }
 
-.project-row.is-active,
 .session-row.is-active,
 .skill-tree-row.is-active {
   background: var(--semantic-sidebar-tree-row-surface-active);
@@ -1095,7 +1217,6 @@
   box-shadow: none;
 }
 
-.project-row.is-active .project-row-leading,
 .skill-tree-row.is-active .skill-tree-leading {
   color: var(--semantic-sidebar-tree-row-leading-active);
 }
