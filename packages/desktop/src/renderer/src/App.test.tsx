@@ -7606,6 +7606,10 @@ describe("App", () => {
     expect(screen.getByLabelText("Shell Chrome Right Sidebar Top Menu Surface Dark semantic-right-sidebar-top-menu-surface-dark")).toBeInTheDocument()
     expect(screen.getByLabelText("Dropdown Select Menu Surface Light semantic-dropdown-menu-surface-light")).toBeInTheDocument()
     expect(screen.getByLabelText("Dropdown Select Menu Surface Dark semantic-dropdown-menu-surface-dark")).toBeInTheDocument()
+    expect(screen.getByLabelText("Thread View Response Text Light semantic-thread-response-text-light")).toBeInTheDocument()
+    expect(screen.getByLabelText("Thread View Response Text Dark semantic-thread-response-text-dark")).toBeInTheDocument()
+    expect(screen.getByLabelText("Thread View Reasoning Text Light semantic-thread-reasoning-text-light")).toBeInTheDocument()
+    expect(screen.getByLabelText("Thread View Reasoning Text Dark semantic-thread-reasoning-text-dark")).toBeInTheDocument()
     expect(screen.getByLabelText("Composer Button Surface Light semantic-composer-button-surface-light")).toBeInTheDocument()
     expect(screen.getByLabelText("Composer Button Surface Dark semantic-composer-button-surface-dark")).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
@@ -7656,6 +7660,12 @@ describe("App", () => {
     const proposedPlanCardInput = screen.getByLabelText(
       "Proposed Plan Card Surface Light semantic-proposed-plan-card-surface-light hex color",
     ) as HTMLInputElement
+    const responseTextInput = screen.getByLabelText(
+      "Thread View Response Text Light semantic-thread-response-text-light hex color",
+    ) as HTMLInputElement
+    const reasoningTextInput = screen.getByLabelText(
+      "Thread View Reasoning Text Light semantic-thread-reasoning-text-light hex color",
+    ) as HTMLInputElement
     const preview = screen.getByLabelText("Current appearance config JSON") as HTMLTextAreaElement
     const saveAppearanceConfig = window.desktop!.saveAppearanceConfig as ReturnType<typeof vi.fn>
 
@@ -7665,11 +7675,17 @@ describe("App", () => {
     fireEvent.blur(questionCardInput)
     fireEvent.change(proposedPlanCardInput, { target: { value: "#654321" } })
     fireEvent.blur(proposedPlanCardInput)
+    fireEvent.change(responseTextInput, { target: { value: "#112233" } })
+    fireEvent.blur(responseTextInput)
+    fireEvent.change(reasoningTextInput, { target: { value: "#445566" } })
+    fireEvent.blur(reasoningTextInput)
 
     await waitFor(() => {
       expect(document.documentElement.style.getPropertyValue("--brand-primary")).toBe("#ffffff")
       expect(document.documentElement.style.getPropertyValue("--semantic-question-card-surface-light")).toBe("#123456")
       expect(document.documentElement.style.getPropertyValue("--semantic-proposed-plan-card-surface-light")).toBe("#654321")
+      expect(document.documentElement.style.getPropertyValue("--semantic-thread-response-text-light")).toBe("#112233")
+      expect(document.documentElement.style.getPropertyValue("--semantic-thread-reasoning-text-light")).toBe("#445566")
     })
     await waitFor(() => {
       expect(saveAppearanceConfig).toHaveBeenCalled()
@@ -7678,6 +7694,8 @@ describe("App", () => {
       expect(preview.value).toContain("#ffffff")
       expect(preview.value).toContain("#123456")
       expect(preview.value).toContain("#654321")
+      expect(preview.value).toContain("#112233")
+      expect(preview.value).toContain("#445566")
     })
   })
 
@@ -11132,6 +11150,12 @@ describe("App", () => {
     expect(styles).toMatch(/--semantic-composer-surface:\s*var\(--semantic-composer-surface-light\);/s)
     expect(styles).toMatch(/--semantic-composer-surface:\s*var\(--semantic-composer-surface-dark\);/s)
     expect(styles).not.toMatch(/--semantic-composer-surface:\s*var\(--surface-panel\);/s)
+    expect(styles).toMatch(/--semantic-thread-response-text-light:\s*var\(--text-primary-light\);/s)
+    expect(styles).toMatch(/--semantic-thread-reasoning-text-light:\s*var\(--text-secondary-light\);/s)
+    expect(styles).toMatch(/--semantic-thread-response-text:\s*var\(--semantic-thread-response-text-light\);/s)
+    expect(styles).toMatch(/--semantic-thread-response-text:\s*var\(--semantic-thread-response-text-dark\);/s)
+    expect(styles).toMatch(/--semantic-thread-reasoning-text:\s*var\(--semantic-thread-reasoning-text-light\);/s)
+    expect(styles).toMatch(/--semantic-thread-reasoning-text:\s*var\(--semantic-thread-reasoning-text-dark\);/s)
     expect(styles).toMatch(/--semantic-dropdown-menu-surface-light:\s*#ffffff;/i)
     expect(styles).toMatch(
       /--semantic-dropdown-menu-surface:\s*var\(--semantic-dropdown-menu-surface-light\);/s,
@@ -11210,6 +11234,8 @@ describe("App", () => {
     expect(styles).toMatch(/\.ask-user-question-card\s*\{[^}]*border:\s*0;[^}]*background:\s*var\(--semantic-question-card-surface\);/s)
     expect(styles).toMatch(/\.assistant-section\.is-response\s+\.ask-user-question-card\s*\{[^}]*border:\s*0;[^}]*background:\s*var\(--semantic-question-card-surface\);/s)
     expect(styles).toMatch(/\.proposed-plan-card\s*\{[^}]*background:\s*var\(--semantic-proposed-plan-card-surface\);/s)
+    expect(styles).toMatch(/\.assistant-section\.is-response \.trace-item-text,[\s\S]*?\.assistant-section\.is-response \.thread-markdown-image-alt\s*\{[^}]*color:\s*var\(--semantic-thread-response-text\);/s)
+    expect(styles).toMatch(/\.assistant-section\.is-reasoning \.trace-item-inline-title,[\s\S]*?\.assistant-section\.is-reasoning \.trace-item-plain-detail\s*\{[^}]*color:\s*var\(--semantic-thread-reasoning-text\);/s)
     expect(styles).toMatch(/\.assistant-shell\.is-sectioned\s*\{[^}]*border:\s*0;[^}]*padding:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(
       /\.assistant-section\.is-reasoning,\s*\.assistant-section\.is-response,\s*\.assistant-section\.is-tools\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*padding:\s*0;/s,
@@ -11221,6 +11247,7 @@ describe("App", () => {
       /@media \(hover:\s*hover\) and \(pointer:\s*fine\)\s*\{[\s\S]*\.assistant-response-side-chat:not\(\.is-persistent\) \.assistant-response-actions\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;[\s\S]*\.assistant-section\.is-response:hover \.assistant-response-side-chat \.assistant-response-actions,[\s\S]*\.assistant-response-side-chat\.is-persistent \.assistant-response-actions\s*\{[^}]*opacity:\s*1;[^}]*pointer-events:\s*auto;/s,
     )
     expect(styles).toMatch(/\.trace-item-toggle\s*\{[^}]*background:\s*transparent;[^}]*text-align:\s*left;[^}]*cursor:\s*pointer;/s)
+    expect(styles).toMatch(/\.trace-item-toggle-summary\s*\{[^}]*gap:\s*4px 6px;/s)
   })
 
   it("keeps settings surfaces constrained as centered dialogs", () => {

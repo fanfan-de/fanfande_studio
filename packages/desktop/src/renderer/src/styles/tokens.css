@@ -201,6 +201,10 @@
   --semantic-question-card-surface-dark: #332623;
   --semantic-proposed-plan-card-surface-light: #ffffff;
   --semantic-proposed-plan-card-surface-dark: #292524;
+  --semantic-thread-response-text-light: var(--text-primary-light);
+  --semantic-thread-response-text-dark: var(--text-primary-dark);
+  --semantic-thread-reasoning-text-light: var(--text-secondary-light);
+  --semantic-thread-reasoning-text-dark: var(--text-secondary-dark);
   --semantic-pane-tab-bar-surface: var(--semantic-pane-tab-bar-surface-light);
   --semantic-left-sidebar-top-menu-surface: var(--semantic-left-sidebar-top-menu-surface-light);
   --semantic-right-sidebar-top-menu-surface: var(--semantic-right-sidebar-top-menu-surface-light);
@@ -215,6 +219,8 @@
   --semantic-dropdown-menu-surface: var(--semantic-dropdown-menu-surface-light);
   --semantic-question-card-surface: var(--semantic-question-card-surface-light);
   --semantic-proposed-plan-card-surface: var(--semantic-proposed-plan-card-surface-light);
+  --semantic-thread-response-text: var(--semantic-thread-response-text-light);
+  --semantic-thread-reasoning-text: var(--semantic-thread-reasoning-text-light);
   --semantic-composer-button-surface-light: #f0f1ff;
   --semantic-composer-button-surface-strong-light: #e5e7ff;
   --semantic-composer-button-text-light: #4f46e5;
@@ -1131,6 +1137,8 @@
     --semantic-dropdown-menu-surface: var(--semantic-dropdown-menu-surface-dark);
     --semantic-question-card-surface: var(--semantic-question-card-surface-dark);
     --semantic-proposed-plan-card-surface: var(--semantic-proposed-plan-card-surface-dark);
+    --semantic-thread-response-text: var(--semantic-thread-response-text-dark);
+    --semantic-thread-reasoning-text: var(--semantic-thread-reasoning-text-dark);
     --semantic-composer-button-surface: var(--semantic-composer-button-surface-dark);
     --semantic-composer-button-surface-strong: var(--semantic-composer-button-surface-strong-dark);
     --semantic-composer-button-text: var(--semantic-composer-button-text-dark);
@@ -1309,6 +1317,8 @@
   --semantic-dropdown-menu-surface: var(--semantic-dropdown-menu-surface-dark);
   --semantic-question-card-surface: var(--semantic-question-card-surface-dark);
   --semantic-proposed-plan-card-surface: var(--semantic-proposed-plan-card-surface-dark);
+  --semantic-thread-response-text: var(--semantic-thread-response-text-dark);
+  --semantic-thread-reasoning-text: var(--semantic-thread-reasoning-text-dark);
   --semantic-composer-button-surface: var(--semantic-composer-button-surface-dark);
   --semantic-composer-button-surface-strong: var(--semantic-composer-button-surface-strong-dark);
   --semantic-composer-button-text: var(--semantic-composer-button-text-dark);

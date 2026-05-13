@@ -121,3 +121,51 @@ describe("appearance sidebar tree row tokens", () => {
     expect(document.updatedAt).toBe(42)
   })
 })
+
+describe("appearance thread view text tokens", () => {
+  it("registers response and reasoning text tokens", () => {
+    expect(APPEARANCE_TOKEN_GROUPS).toContainEqual({
+      id: "component-thread-view",
+      label: "Thread View",
+      description: "Dedicated semantic text colors for assistant response and reasoning content.",
+      rows: [
+        {
+          id: "semantic-thread-response-text",
+          label: "Response Text",
+          description: "Text color for assistant response content in the thread view.",
+          lightToken: "semantic-thread-response-text-light",
+          darkToken: "semantic-thread-response-text-dark",
+        },
+        {
+          id: "semantic-thread-reasoning-text",
+          label: "Reasoning Text",
+          description: "Text color for assistant reasoning content in the thread view.",
+          lightToken: "semantic-thread-reasoning-text-light",
+          darkToken: "semantic-thread-reasoning-text-dark",
+        },
+      ],
+    })
+  })
+
+  it("normalizes thread view text overrides", () => {
+    const document = normalizeAppearanceConfigDocument({
+      overrides: {
+        "semantic-thread-response-text-light": " #123456 ",
+        "semantic-thread-reasoning-text-dark": "#abcdef",
+        "semantic-thread-response-text": "#000000",
+      },
+      resolvedTokens: {
+        "semantic-thread-reasoning-text-light": " #654321 ",
+      },
+    })
+
+    expect(document.overrides).toEqual({
+      "semantic-thread-response-text-light": "#123456",
+      "semantic-thread-response-text-dark": "#000000",
+      "semantic-thread-reasoning-text-dark": "#abcdef",
+    })
+    expect(document.resolvedTokens).toEqual({
+      "semantic-thread-reasoning-text-light": "#654321",
+    })
+  })
+})

@@ -371,7 +371,7 @@
 
 .trace-item-toggle-summary {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   min-width: 0;
 }
@@ -385,7 +385,7 @@
   display: inline-flex;
   width: 14px;
   height: 14px;
-  margin-top: 4px;
+  margin-top: 0;
   align-items: center;
   justify-content: center;
   color: #6b7d90;
@@ -1013,6 +1013,10 @@
 .trace-file-change-toggle-icon svg {
   width: 13px;
   height: 13px;
+}
+
+.trace-file-change-summary-icon svg {
+  transform: translateY(-1px);
 }
 
 .trace-file-change-summary-label {
@@ -2608,18 +2612,22 @@ body.is-image-lightbox-open {
 }
 
 .assistant-section.is-tools .trace-item,
-.assistant-section.is-reasoning .trace-item {
+.assistant-section.is-reasoning .trace-item,
+.assistant-section.is-file-change .trace-item {
   padding: 1px 8px;
 }
 
-.trace-item-toggle-summary,
+.trace-item-toggle-summary {
+  gap: 4px 6px;
+}
+
 .trace-item-subsection-toggle {
   gap: 4px;
 }
 
 .trace-item-toggle-leading-icon,
 .trace-item-toggle-chevron {
-  margin-top: 2px;
+  margin-top: 0;
 }
 
 .trace-item-toggle-line {
@@ -2631,6 +2639,26 @@ body.is-image-lightbox-open {
 .assistant-section.is-response .trace-item-text,
 .assistant-section.is-response .trace-item-detail {
   line-height: 1.55;
+}
+
+.assistant-section.is-response .trace-item-text,
+.assistant-section.is-response .trace-item-detail,
+.assistant-section.is-response .thread-markdown :where(h1, h2, h3, h4, h5, h6),
+.assistant-section.is-response .thread-markdown :where(blockquote),
+.assistant-section.is-response .thread-markdown :where(:not(pre) > code),
+.assistant-section.is-response .thread-markdown pre,
+.assistant-section.is-response .thread-markdown th,
+.assistant-section.is-response .thread-markdown-image-alt {
+  color: var(--semantic-thread-response-text);
+}
+
+.assistant-section.is-reasoning .trace-item-inline-title,
+.assistant-section.is-reasoning .trace-item-toggle-line,
+.assistant-section.is-reasoning .trace-item-text,
+.assistant-section.is-reasoning .trace-item-plain-text,
+.assistant-section.is-reasoning .trace-item-detail,
+.assistant-section.is-reasoning .trace-item-plain-detail {
+  color: var(--semantic-thread-reasoning-text);
 }
 
 .inline-side-chat-thread .thread-column {
