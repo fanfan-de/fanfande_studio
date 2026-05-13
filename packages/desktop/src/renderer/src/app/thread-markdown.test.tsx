@@ -48,15 +48,18 @@ describe("ThreadMarkdown", () => {
   it("skips raw HTML and blocks unsafe links", () => {
     render(
       <ThreadMarkdown
-        text={'Before <span data-testid="raw-html">raw</span> [bad](javascript:alert(1)) [ftp](ftp://example.com).'}
+        text={'Before <span data-testid="raw-html">raw</span> [bad](javascript:alert(1)) [ftp](ftp://example.com) [relative](src/app.tsx).'}
+        onLocalFileLinkOpen={vi.fn()}
       />,
     )
 
     expect(screen.queryByTestId("raw-html")).not.toBeInTheDocument()
     expect(screen.queryByRole("link", { name: "bad" })).not.toBeInTheDocument()
     expect(screen.queryByRole("link", { name: "ftp" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "relative" })).not.toBeInTheDocument()
     expect(screen.getByText(/bad/)).toBeInTheDocument()
     expect(screen.getByText(/ftp/)).toBeInTheDocument()
+    expect(screen.getByText(/relative/)).toBeInTheDocument()
   })
 
   it("opens safe links through the desktop bridge", () => {
@@ -67,6 +70,79 @@ describe("ThreadMarkdown", () => {
     expect(window.desktop?.openExternalUrl).toHaveBeenCalledWith({
       url: "https://example.com/docs",
     })
+  })
+
+  it("opens local absolute file links through the local file callback", () => {
+    const onLocalFileLinkOpen = vi.fn()
+    render(
+      <ThreadMarkdown
+        text="[ThreadView.tsx](C:/Projects/fanfande_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx)"
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("link", { name: "ThreadView.tsx" }))
+
+    expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
+      lineRange: null,
+      path: "C:/Projects/fanfande_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
+    })
+    expect(window.desktop?.openExternalUrl).not.toHaveBeenCalled()
+  })
+
+  it("opens loose Windows file links with backslashes, spaces, and parentheses", () => {
+    const onLocalFileLinkOpen = vi.fn()
+    render(
+      <ThreadMarkdown
+        text={String.raw`[index.html](C:\新建文件夹 (4)\index.html)`}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("link", { name: "index.html" }))
+
+    expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
+      lineRange: null,
+      path: String.raw`C:\新建文件夹 (4)\index.html`,
+    })
+  })
+
+  it("parses local file link line range suffixes", () => {
+    const onLocalFileLinkOpen = vi.fn()
+    render(
+      <ThreadMarkdown
+        text={[
+          "[Colon](C:/Projects/app.tsx:12-20)",
+          "[Hash](file:///C:/Projects/app.tsx#L30-L34)",
+        ].join(" ")}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("link", { name: "Colon" }))
+    fireEvent.click(screen.getByRole("link", { name: "Hash" }))
+
+    expect(onLocalFileLinkOpen).toHaveBeenNthCalledWith(1, {
+      lineRange: {
+        startLineNumber: 12,
+        endLineNumber: 20,
+      },
+      path: "C:/Projects/app.tsx",
+    })
+    expect(onLocalFileLinkOpen).toHaveBeenNthCalledWith(2, {
+      lineRange: {
+        startLineNumber: 30,
+        endLineNumber: 34,
+      },
+      path: "C:/Projects/app.tsx",
+    })
+  })
+
+  it("renders local file links as plain text when no local file callback is provided", () => {
+    render(<ThreadMarkdown text="[Local](C:/Projects/app.tsx)" />)
+
+    expect(screen.queryByRole("link", { name: "Local" })).not.toBeInTheDocument()
+    expect(screen.getByText("Local")).toBeInTheDocument()
   })
 
   it("renders http markdown images directly", () => {

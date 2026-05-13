@@ -1902,6 +1902,10 @@
   background: #eef6ff;
 }
 
+.workspace-files-line.is-linked {
+  box-shadow: inset 3px 0 0 #2f7fbd;
+}
+
 .workspace-files-line-gutter {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2546,6 +2550,10 @@
 .workspace-files-line.is-selected,
 .workspace-files-line.is-selected .workspace-files-line-content {
   background: var(--mix-seg-accent-soft-76-seg-panel-24);
+}
+
+.workspace-files-line.is-linked {
+  box-shadow: inset 3px 0 0 var(--seg-accent-strong);
 }
 
 .workspace-files-comment-composer,

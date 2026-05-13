@@ -46,6 +46,7 @@ export const DEFAULT_WORKSPACE_FILE_REVIEW_STATE: WorkspaceFileReviewState = {
   status: "idle",
   errorMessage: null,
   comments: [],
+  linkedLineRange: null,
   pendingComment: null,
 }
 

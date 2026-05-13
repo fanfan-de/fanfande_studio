@@ -19,7 +19,7 @@ import {
 } from "../icons"
 import { joinClassNames, writeTextToClipboard } from "../shared-ui"
 import { buildTurnsFromHistory } from "../stream"
-import { ThreadMarkdown } from "../thread-markdown"
+import { ThreadMarkdown, type MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
 import type {
   AssistantTraceDebugEntry,
@@ -58,6 +58,7 @@ interface ThreadViewProps {
   isResolvingPermissionRequest: boolean
   showSessionBanner?: boolean
   onFileChangeSelect?: (file: string) => void
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenSideChat?: (anchorMessageID: string) => void | Promise<void>
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
@@ -473,6 +474,7 @@ function AssistantTurnSections({
   onOpenImagePreview,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
+  onLocalFileLinkOpen,
   onProposedPlanConfirm,
   renderAfterSection,
   showFileChanges,
@@ -486,6 +488,7 @@ function AssistantTurnSections({
   onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect: ((file: string) => void) | undefined
+  onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
   renderAfterSection?: (input: {
     items: AssistantTraceItem[]
@@ -528,6 +531,7 @@ function AssistantTurnSections({
                   onOpenImagePreview={onOpenImagePreview}
                   onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                   onFileChangeSelect={onFileChangeSelect}
+                  onLocalFileLinkOpen={onLocalFileLinkOpen}
                   isLatestMessage={isLatestMessage}
                   onProposedPlanConfirm={onProposedPlanConfirm}
                   shouldCollapseAfterTurnCompletion={shouldCollapseReasoningAndTools}
@@ -898,6 +902,7 @@ interface InlineSideChatThreadProps {
   onDraftStateChange: (value: ComposerDraftState) => void
   onHide: () => void
   onAskUserQuestionAnswer: QuestionAnswerHandler
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onPermissionRequestResponse: PermissionRequestResponseHandler
   onPickAttachments: (input: {
     allowImage: boolean
@@ -944,6 +949,7 @@ function InlineSideChatThread({
   onDraftStateChange,
   onHide,
   onAskUserQuestionAnswer,
+  onLocalFileLinkOpen,
   onPermissionRequestResponse,
   onPickAttachments,
   onPasteImageAttachments,
@@ -1033,6 +1039,7 @@ function InlineSideChatThread({
               sessionID: session.id,
             })
           }
+          onLocalFileLinkOpen={onLocalFileLinkOpen}
           onPermissionRequestResponse={onPermissionRequestResponse}
         />
 
@@ -1225,6 +1232,7 @@ interface TraceItemViewProps {
   onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect?: (file: string) => void
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
   shouldCollapseAfterTurnCompletion?: boolean
   traceVisibility: AssistantTraceVisibility
@@ -1244,6 +1252,7 @@ type TraceItemRendererProps = RequiredTraceItemRendererProps &
     | "item"
     | "onAskUserQuestionAnswer"
     | "onFileChangeSelect"
+    | "onLocalFileLinkOpen"
     | "onOpenImagePreview"
     | "onProposedPlanConfirm"
     | "traceVisibility"
@@ -1293,24 +1302,34 @@ function TraceItemHeader({
 function TraceItemTextBody({
   isResponseItem,
   item,
+  onLocalFileLinkOpen,
 }: {
   isResponseItem: boolean
   item: AssistantTraceItem
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
 }) {
   return (
     <>
       {item.text ? (
         isResponseItem && !item.isStreaming ? (
-          <ThreadMarkdown className="trace-item-text thread-markdown" text={item.text} />
+          <ThreadMarkdown className="trace-item-text thread-markdown" text={item.text} onLocalFileLinkOpen={onLocalFileLinkOpen} />
         ) : (
-          <ThreadRichText className="trace-item-text" text={item.text} />
+          <ThreadRichText
+            className="trace-item-text"
+            text={item.text}
+            onLocalFileLinkOpen={isResponseItem ? onLocalFileLinkOpen : undefined}
+          />
         )
       ) : null}
       {item.detail ? (
         isResponseItem && !item.isStreaming ? (
-          <ThreadMarkdown className="trace-item-detail thread-markdown" text={item.detail} />
+          <ThreadMarkdown className="trace-item-detail thread-markdown" text={item.detail} onLocalFileLinkOpen={onLocalFileLinkOpen} />
         ) : (
-          <ThreadRichText className="trace-item-detail" text={item.detail} />
+          <ThreadRichText
+            className="trace-item-detail"
+            text={item.detail}
+            onLocalFileLinkOpen={isResponseItem ? onLocalFileLinkOpen : undefined}
+          />
         )
       ) : null}
     </>
@@ -1363,6 +1382,7 @@ function GenericTraceItemView({
   isResponseItem,
   item,
   onFileChangeSelect,
+  onLocalFileLinkOpen,
   showFileActions = false,
 }: TraceItemRendererProps & {
   showFileActions?: boolean
@@ -1372,7 +1392,7 @@ function GenericTraceItemView({
   return (
     <article className={className} data-kind={item.kind}>
       <TraceItemHeader item={item} />
-      <TraceItemTextBody item={item} isResponseItem={isResponseItem} />
+      <TraceItemTextBody item={item} isResponseItem={isResponseItem} onLocalFileLinkOpen={onLocalFileLinkOpen} />
       <TraceItemFileActions
         filePaths={selectableFilePaths}
         itemID={item.id}
@@ -1883,6 +1903,76 @@ function TaskStateTraceItemView({
   )
 }
 
+type ToolTraceDisplayTone = "preparing" | "running" | "waiting-approval" | "success" | "error" | "denied" | "idle"
+type ToolTraceDisplayIconType = "dot" | "success" | "error" | "tool"
+
+function getToolTraceDisplayState(item: AssistantTraceItem): {
+  iconType: ToolTraceDisplayIconType
+  isBreathing: boolean
+  label: string | null
+  shouldShowLabel: boolean
+  tone: ToolTraceDisplayTone
+} {
+  switch (item.status) {
+    case "pending":
+      return {
+        iconType: "dot",
+        isBreathing: true,
+        label: "准备中",
+        shouldShowLabel: true,
+        tone: "preparing",
+      }
+    case "running":
+      return {
+        iconType: "dot",
+        isBreathing: true,
+        label: "执行中",
+        shouldShowLabel: true,
+        tone: "running",
+      }
+    case "waiting-approval":
+      return {
+        iconType: "dot",
+        isBreathing: true,
+        label: "等待确认",
+        shouldShowLabel: true,
+        tone: "waiting-approval",
+      }
+    case "completed":
+      return {
+        iconType: "success",
+        isBreathing: false,
+        label: null,
+        shouldShowLabel: false,
+        tone: "success",
+      }
+    case "error":
+      return {
+        iconType: "error",
+        isBreathing: false,
+        label: "失败",
+        shouldShowLabel: true,
+        tone: "error",
+      }
+    case "denied":
+      return {
+        iconType: "error",
+        isBreathing: false,
+        label: "已拒绝",
+        shouldShowLabel: true,
+        tone: "denied",
+      }
+    default:
+      return {
+        iconType: "tool",
+        isBreathing: false,
+        label: null,
+        shouldShowLabel: false,
+        tone: "idle",
+      }
+  }
+}
+
 function ToolTraceItemView({
   className,
   debugEntries,
@@ -1894,8 +1984,14 @@ function ToolTraceItemView({
   const [isExpanded, setIsExpanded] = useState(false)
   const [isInputExpanded, setIsInputExpanded] = useState(false)
   const [isOutputExpanded, setIsOutputExpanded] = useState(false)
-  const statusText = formatTraceStatusText(item.status)
   const summaryTitle = item.title || item.label
+  const displayState = getToolTraceDisplayState(item)
+  const statusIndicatorClassName = joinClassNames(
+    "trace-tool-status-indicator",
+    `is-${displayState.tone}`,
+    `is-icon-${displayState.iconType}`,
+    displayState.isBreathing && "is-breathing",
+  )
   const showsToolInputs = item.status === "pending" || item.status === "running" || item.status === "waiting-approval"
   const visibleToolInputText = traceVisibility.toolInputs ? item.toolInputText : undefined
   const visibleToolOutputText = traceVisibility.toolOutputs ? item.toolOutputText : undefined
@@ -1936,12 +2032,14 @@ function ToolTraceItemView({
           onClick={handleToolToggle}
         >
           <span className="trace-item-toggle-summary">
-            <span className="trace-item-toggle-leading-icon" aria-hidden="true">
+            <span className={joinClassNames("trace-item-toggle-leading-icon", statusIndicatorClassName)} aria-hidden="true">
               <ToolsIcon />
             </span>
             <span className="trace-item-toggle-line">
               <span className="trace-item-inline-title">{summaryTitle}</span>
-              {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
+              {displayState.shouldShowLabel && displayState.label ? (
+                <span className="trace-item-inline-status">{" \u00b7 "}{displayState.label}</span>
+              ) : null}
             </span>
             <span className="trace-item-toggle-chevron" aria-hidden="true">
               {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
@@ -1950,12 +2048,14 @@ function ToolTraceItemView({
         </button>
       ) : (
         <p className="trace-item-toggle-summary trace-item-toggle-static-summary">
-          <span className="trace-item-toggle-leading-icon" aria-hidden="true">
+          <span className={joinClassNames("trace-item-toggle-leading-icon", statusIndicatorClassName)} aria-hidden="true">
             <ToolsIcon />
           </span>
           <span className="trace-item-toggle-line">
             <span className="trace-item-inline-title">{summaryTitle}</span>
-            {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
+            {displayState.shouldShowLabel && displayState.label ? (
+              <span className="trace-item-inline-status">{" \u00b7 "}{displayState.label}</span>
+            ) : null}
           </span>
         </p>
       )}
@@ -2078,6 +2178,7 @@ function TraceItemView({
   onOpenImagePreview,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
+  onLocalFileLinkOpen,
   onProposedPlanConfirm,
   shouldCollapseAfterTurnCompletion = false,
   traceVisibility,
@@ -2106,6 +2207,7 @@ function TraceItemView({
       item={item}
       onAskUserQuestionAnswer={onAskUserQuestionAnswer}
       onFileChangeSelect={onFileChangeSelect}
+      onLocalFileLinkOpen={onLocalFileLinkOpen}
       onOpenImagePreview={onOpenImagePreview}
       onProposedPlanConfirm={onProposedPlanConfirm}
       shouldCollapseAfterTurnCompletion={shouldCollapseAfterTurnCompletion}
@@ -2291,6 +2393,7 @@ export function ThreadView({
   isResolvingPermissionRequest,
   showSessionBanner = true,
   onFileChangeSelect,
+  onLocalFileLinkOpen,
   onOpenSideChat,
   onAskUserQuestionAnswer,
   pendingPermissionRequests,
@@ -2508,6 +2611,7 @@ export function ThreadView({
                         onOpenImagePreview={handleOpenImagePreview}
                         onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                         onFileChangeSelect={onFileChangeSelect}
+                        onLocalFileLinkOpen={onLocalFileLinkOpen}
                         onProposedPlanConfirm={onProposedPlanConfirm}
                         renderAfterSection={({ items, sectionKey }) => {
                           if (sectionKey !== "response") return null
@@ -2591,6 +2695,7 @@ export function ThreadView({
                                   onDraftStateChange={onSideChatDraftStateChange}
                                   onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
                                   onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+                                  onLocalFileLinkOpen={onLocalFileLinkOpen}
                                   onPermissionRequestResponse={onPermissionRequestResponse}
                                   onPickAttachments={onSideChatPickAttachments}
                                   onPasteImageAttachments={onSideChatPasteImageAttachments}

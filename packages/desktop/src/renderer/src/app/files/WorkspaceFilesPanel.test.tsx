@@ -9,6 +9,7 @@ function createFileReviewState(overrides: Partial<WorkspaceFileReviewState> = {}
   return {
     comments: [],
     errorMessage: null,
+    linkedLineRange: null,
     pendingComment: null,
     query: "",
     results: [],
@@ -58,6 +59,36 @@ describe("WorkspaceFilesPanel", () => {
     expect(screen.getByText("src/camera.js")).toBeVisible()
     expect(screen.getByTestId("workspace-file-line-1")).toHaveTextContent("const camera = { x: 0, y: 0 };")
     expect(screen.getByTestId("workspace-file-line-4")).toHaveTextContent("return camera.x;")
+  })
+
+  it("highlights and scrolls to linked line ranges without opening a comment draft", () => {
+    const scrollIntoView = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    })
+
+    renderWorkspaceFilesPanel(
+      createFileReviewState({
+        linkedLineRange: {
+          startLineNumber: 2,
+          endLineNumber: 3,
+        },
+        selectedFileContent: "const a = 1\nconst b = 2\nconst c = 3",
+        selectedFileExtension: ".ts",
+        selectedFileKind: "text",
+        selectedFilePath: "src/linked.ts",
+        status: "ready",
+      }),
+    )
+
+    expect(screen.getByTestId("workspace-file-line-2")).toHaveClass("is-linked", "is-selected")
+    expect(screen.getByTestId("workspace-file-line-3")).toHaveClass("is-linked", "is-selected")
+    expect(screen.queryByRole("textbox", { name: "File comment on lines 2-3" })).not.toBeInTheDocument()
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      block: "center",
+      inline: "nearest",
+    })
   })
 
   it("keeps file reader text on readable panel colors", () => {

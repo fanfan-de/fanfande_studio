@@ -1618,6 +1618,207 @@ describe("App", () => {
     expect(screen.getByText("const nextValue = focusValue + 1")).toBeInTheDocument()
   })
 
+  it("opens response local file links inside the files inspector when the path is in the pane workspace", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-link-1",
+          sessionID: "session-frontend-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-link-1", type: "text", text: "Open the file link" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-link-1",
+          sessionID: "session-frontend-review",
+          role: "assistant",
+          created: 101,
+          completed: 102,
+        },
+        parts: [
+          {
+            id: "part-assistant-link-1",
+            type: "text",
+            text: "[focus-files.tsx](C:/Projects/Atlas/frontend/src/focus-files.tsx:2-3)",
+          },
+        ],
+      },
+    ])
+    window.desktop!.readWorkspaceFile = vi.fn().mockResolvedValue({
+      path: WORKSPACE_FILE_PATH,
+      name: "focus-files.tsx",
+      extension: "tsx",
+      kind: "text",
+      content: WORKSPACE_FILE_CONTENT,
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-frontend-review",
+      })
+    })
+    await screen.findByRole("link", { name: "focus-files.tsx" })
+    fireEvent.click(screen.getByRole("link", { name: "focus-files.tsx" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.readWorkspaceFile).toHaveBeenCalledWith({
+        directory: FRONTEND_WORKSPACE_DIRECTORY,
+        path: WORKSPACE_FILE_PATH,
+      })
+    })
+    expect(await screen.findByText("const nextValue = focusValue + 1")).toBeInTheDocument()
+    expect(screen.getByTestId("workspace-file-line-2")).toHaveClass("is-linked")
+    expect(screen.getByTestId("workspace-file-line-3")).toHaveClass("is-linked")
+    expect(screen.queryByRole("textbox", { name: "File comment on lines 2-3" })).not.toBeInTheDocument()
+  })
+
+  it("opens response local file links through the system when the path is outside the pane workspace", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-external-link-1",
+          sessionID: "session-frontend-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-external-link-1", type: "text", text: "Open the external local file" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-external-link-1",
+          sessionID: "session-frontend-review",
+          role: "assistant",
+          created: 101,
+          completed: 102,
+        },
+        parts: [
+          {
+            id: "part-assistant-external-link-1",
+            type: "text",
+            text: "[notes.txt](C:/Users/demo/notes.txt)",
+          },
+        ],
+      },
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-frontend-review",
+      })
+    })
+    await screen.findByRole("link", { name: "notes.txt" })
+    fireEvent.click(screen.getByRole("link", { name: "notes.txt" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.openPath).toHaveBeenCalledWith({
+        targetPath: "C:/Users/demo/notes.txt",
+      })
+    })
+  })
+
+  it("opens loose Windows response local file links through the system", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-loose-link-1",
+          sessionID: "session-frontend-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-loose-link-1", type: "text", text: "Open the loose local file" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-loose-link-1",
+          sessionID: "session-frontend-review",
+          role: "assistant",
+          created: 101,
+          completed: 102,
+        },
+        parts: [
+          {
+            id: "part-assistant-loose-link-1",
+            type: "text",
+            text: String.raw`[index.html](C:\新建文件夹 (4)\index.html)`,
+          },
+        ],
+      },
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-frontend-review",
+      })
+    })
+    await screen.findByRole("link", { name: "index.html" })
+    fireEvent.click(screen.getByRole("link", { name: "index.html" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.openPath).toHaveBeenCalledWith({
+        targetPath: String.raw`C:\新建文件夹 (4)\index.html`,
+      })
+    })
+  })
+
+  it("falls back to a file URL when opening a response local file path fails", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.openPath = vi.fn().mockRejectedValue(new Error("No application is associated with the specified file."))
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-file-url-fallback-1",
+          sessionID: "session-frontend-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-file-url-fallback-1", type: "text", text: "Open the fallback local file" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-file-url-fallback-1",
+          sessionID: "session-frontend-review",
+          role: "assistant",
+          created: 101,
+          completed: 102,
+        },
+        parts: [
+          {
+            id: "part-assistant-file-url-fallback-1",
+            type: "text",
+            text: String.raw`[index.html](C:\新建文件夹 (4)\index.html)`,
+          },
+        ],
+      },
+    ])
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-frontend-review",
+      })
+    })
+    await screen.findByRole("link", { name: "index.html" })
+    fireEvent.click(screen.getByRole("link", { name: "index.html" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.openExternalUrl).toHaveBeenCalledWith({
+        url: "file:///C:/%E6%96%B0%E5%BB%BA%E6%96%87%E4%BB%B6%E5%A4%B9%20(4)/index.html",
+      })
+    })
+  })
+
   it("shows line comments on hover, confirms a comment, and discards a canceled draft", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
     window.desktop!.searchWorkspaceFiles = vi.fn().mockResolvedValue([
@@ -4497,15 +4698,15 @@ describe("App", () => {
     expect((assistantTurn as HTMLElement).querySelector(".assistant-section-header")).toBeNull()
 
     expect(within(sectionElements[0] as HTMLElement).getByText("Inspecting workspace.")).toBeInTheDocument()
-    expect(within(sectionElements[0] as HTMLElement).queryByRole("button", { name: /npm test.*completed/i })).not.toBeInTheDocument()
+    expect(within(sectionElements[0] as HTMLElement).queryByRole("button", { name: /npm test/i })).not.toBeInTheDocument()
 
-    expect(within(sectionElements[1] as HTMLElement).getByRole("button", { name: /npm test.*completed/i })).toBeInTheDocument()
+    expect(within(sectionElements[1] as HTMLElement).getByRole("button", { name: /^npm test$/i })).toBeInTheDocument()
     expect(within(sectionElements[1] as HTMLElement).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
 
     expect(within(sectionElements[2] as HTMLElement).getByText("Evaluating test output.")).toBeInTheDocument()
-    expect(within(sectionElements[2] as HTMLElement).queryByRole("button", { name: /replace-text.*completed/i })).not.toBeInTheDocument()
+    expect(within(sectionElements[2] as HTMLElement).queryByRole("button", { name: /replace-text/i })).not.toBeInTheDocument()
 
-    expect(within(sectionElements[3] as HTMLElement).getByRole("button", { name: /replace-text.*completed/i })).toBeInTheDocument()
+    expect(within(sectionElements[3] as HTMLElement).getByRole("button", { name: /^replace-text$/i })).toBeInTheDocument()
     expect(within(sectionElements[3] as HTMLElement).queryByText("Evaluating test output.")).not.toBeInTheDocument()
 
     expect(within(sectionElements[4] as HTMLElement).getByText("All checks passed.")).toBeInTheDocument()
@@ -4829,7 +5030,7 @@ describe("App", () => {
       expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledTimes(2)
     })
 
-    await screen.findByRole("button", { name: /read-file.*waiting approval/i })
+    await screen.findByRole("button", { name: /read-file.*等待确认/i })
   })
 
   it("streams the response immediately while keeping file changes hidden until completion", async () => {
@@ -5652,7 +5853,7 @@ describe("App", () => {
 
     render(<App />)
 
-    const toolTraceToggle = await screen.findByRole("button", { name: /read-file.*waiting approval/i })
+    const toolTraceToggle = await screen.findByRole("button", { name: /read-file.*等待确认/i })
     expect(toolTraceToggle).toHaveAttribute("aria-expanded", "false")
     expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
 

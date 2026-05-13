@@ -190,6 +190,22 @@ function traceSmokeItem(kind: AssistantTraceItemKind): AssistantTraceItem {
   return base
 }
 
+function toolStatusTraceItem(status: NonNullable<AssistantTraceItem["status"]>): AssistantTraceItem {
+  const showsInput = status === "pending" || status === "running" || status === "waiting-approval"
+
+  return {
+    id: `tool-${status}`,
+    kind: "tool",
+    timestamp: 1,
+    label: "Tool",
+    title: `Tool ${status}`,
+    detail: "Tool detail",
+    status,
+    toolInputText: showsInput ? "tool input" : undefined,
+    toolOutputText: showsInput ? undefined : "tool output",
+  }
+}
+
 describe("ThreadView trace item renderers", () => {
   it("renders every assistant trace item kind through the registry", () => {
     const activeTurns = traceItemKinds.flatMap<Turn>((kind, index) => [
@@ -208,6 +224,70 @@ describe("ThreadView trace item renderers", () => {
     for (const kind of traceItemKinds) {
       expect(container.querySelector(`.trace-kind-${kind}`)).not.toBeNull()
     }
+  })
+
+  it("renders compact one-line tool status labels and indicators", () => {
+    const items = [
+      toolStatusTraceItem("pending"),
+      toolStatusTraceItem("running"),
+      toolStatusTraceItem("waiting-approval"),
+      toolStatusTraceItem("completed"),
+      toolStatusTraceItem("error"),
+      toolStatusTraceItem("denied"),
+    ]
+    const { container } = renderThread([
+      assistantTraceTurn("assistant-tools", items, true),
+    ])
+
+    expect(screen.getByRole("button", { name: /Tool pending.*准备中/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Tool running.*执行中/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Tool waiting-approval.*等待确认/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /^Tool completed$/ })).toBeInTheDocument()
+    expect(screen.queryByText("完成")).toBeNull()
+    expect(screen.getByRole("button", { name: /Tool error.*失败/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Tool denied.*已拒绝/ })).toBeInTheDocument()
+
+    for (const status of ["pending", "running", "waiting-approval"] as const) {
+      const indicator = container.querySelector(`.trace-kind-tool.is-${status} .trace-tool-status-indicator`)
+      expect(indicator).not.toBeNull()
+      expect(indicator).toHaveClass("is-icon-dot")
+      expect(indicator).toHaveClass("is-breathing")
+    }
+
+    const completedIndicator = container.querySelector(".trace-kind-tool.is-completed .trace-tool-status-indicator")
+    expect(completedIndicator).not.toBeNull()
+    expect(completedIndicator).toHaveClass("is-icon-success")
+    expect(completedIndicator).not.toHaveClass("is-breathing")
+
+    const errorIndicator = container.querySelector(".trace-kind-tool.is-error .trace-tool-status-indicator")
+    expect(errorIndicator).not.toBeNull()
+    expect(errorIndicator).toHaveClass("is-icon-error")
+    expect(errorIndicator).not.toHaveClass("is-breathing")
+
+    const deniedIndicator = container.querySelector(".trace-kind-tool.is-denied .trace-tool-status-indicator")
+    expect(deniedIndicator).not.toBeNull()
+    expect(deniedIndicator).toHaveClass("is-icon-error")
+    expect(deniedIndicator).not.toHaveClass("is-breathing")
+  })
+
+  it("keeps tool details available after expanding compact summaries", () => {
+    renderThread(
+      [
+        assistantTraceTurn("assistant-tools", [toolStatusTraceItem("running")], true),
+      ],
+      {
+        assistantTraceVisibility: {
+          ...DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+          toolInputs: true,
+        },
+      },
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /Tool running.*执行中/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Tool running input/ }))
+
+    expect(screen.getByText("tool input")).toBeInTheDocument()
+    expect(screen.getByText("Tool detail")).toBeInTheDocument()
   })
 
   it("renders workflow step trace items as a single compact row", () => {
@@ -798,6 +878,68 @@ describe("ThreadView assistant response markdown", () => {
     expect(container.querySelector("strong")?.textContent).toBe("Ready")
     expect(getByRole("table")).toBeInTheDocument()
     expect(container.querySelector(".assistant-section.is-response .thread-markdown")).not.toBeNull()
+  })
+
+  it("opens local file links from completed assistant response markdown", () => {
+    const onLocalFileLinkOpen = vi.fn()
+    const { getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "[ThreadView.tsx](C:/Projects/fanfande_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx:42)",
+            status: "completed",
+          },
+        ],
+        false,
+      ),
+    ], {
+      onLocalFileLinkOpen,
+    })
+
+    fireEvent.click(getByRole("link", { name: "ThreadView.tsx" }))
+
+    expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
+      lineRange: {
+        startLineNumber: 42,
+        endLineNumber: 42,
+      },
+      path: "C:/Projects/fanfande_studio/packages/desktop/src/renderer/src/app/thread/ThreadView.tsx",
+    })
+  })
+
+  it("opens local file links from streaming assistant response rich text", () => {
+    const onLocalFileLinkOpen = vi.fn()
+    const { getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: String.raw`[index.html](C:\新建文件夹 (4)\index.html)`,
+            status: "running",
+            isStreaming: true,
+          },
+        ],
+        true,
+      ),
+    ], {
+      onLocalFileLinkOpen,
+    })
+
+    fireEvent.click(getByRole("link", { name: "index.html" }))
+
+    expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
+      lineRange: null,
+      path: String.raw`C:\新建文件夹 (4)\index.html`,
+    })
   })
 
   function createProposedPlan(title = "Plan Title") {

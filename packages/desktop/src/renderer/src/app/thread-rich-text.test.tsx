@@ -52,6 +52,28 @@ describe("parseThreadRichText", () => {
     ])
   })
 
+  it("supports local markdown links in loose Windows path format", () => {
+    expect(parseThreadRichText(String.raw`Open [index.html](C:\新建文件夹 (4)\index.html).`)).toEqual([
+      {
+        type: "text",
+        text: "Open ",
+      },
+      {
+        type: "link",
+        text: "index.html",
+        href: String.raw`C:\新建文件夹 (4)\index.html`,
+        localFileTarget: {
+          lineRange: null,
+          path: String.raw`C:\新建文件夹 (4)\index.html`,
+        },
+      },
+      {
+        type: "text",
+        text: ".",
+      },
+    ])
+  })
+
   it("promotes matching user references into inline tag segments", () => {
     expect(
       parseThreadRichText("Check @src/angry-birds.js and https://example.com/plan.", [
@@ -127,6 +149,25 @@ describe("ThreadRichText", () => {
     expect(window.desktop?.openExternalUrl).toHaveBeenNthCalledWith(2, {
       url: "https://example.com/plan",
     })
+  })
+
+  it("routes local file link clicks through the local file callback", () => {
+    const onLocalFileLinkOpen = vi.fn()
+    render(
+      <ThreadRichText
+        className="trace-item-text"
+        text={String.raw`Open [index.html](C:\新建文件夹 (4)\index.html).`}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("link", { name: "index.html" }))
+
+    expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
+      lineRange: null,
+      path: String.raw`C:\新建文件夹 (4)\index.html`,
+    })
+    expect(window.desktop?.openExternalUrl).not.toHaveBeenCalled()
   })
 
   it("renders user references as inline pills using composer tag styling", () => {

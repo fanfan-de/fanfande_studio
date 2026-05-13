@@ -48,12 +48,16 @@ export function WorkspaceFilesPanel({
   const [hoveredLineNumber, setHoveredLineNumber] = useState<number | null>(null)
   const [dragSelection, setDragSelection] = useState<WorkspaceFileLineRange | null>(null)
   const dragSelectionRef = useRef<WorkspaceFileLineRange | null>(null)
+  const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const fileLines = state.selectedFileContent?.split(/\r?\n/) ?? []
   const commentsByEndLine = new Map<number, typeof state.comments>()
   const pendingRange = state.pendingComment
     ? normalizeWorkspaceFileLineRange(state.pendingComment.startLineNumber, state.pendingComment.endLineNumber)
     : null
-  const highlightedRange = dragSelection ?? pendingRange
+  const linkedRange = state.linkedLineRange
+    ? normalizeWorkspaceFileLineRange(state.linkedLineRange.startLineNumber, state.linkedLineRange.endLineNumber)
+    : null
+  const highlightedRange = dragSelection ?? pendingRange ?? linkedRange
   const hasSearchQuery = state.query.trim().length > 0
   const canShowResultsDropdown = state.status === "searching" || hasSearchQuery
   const showResultsDropdown = isResultsDropdownOpen && canShowResultsDropdown
@@ -68,6 +72,14 @@ export function WorkspaceFilesPanel({
     dragSelectionRef.current = null
     setDragSelection(null)
   }, [state.selectedFilePath, state.pendingComment?.startLineNumber, state.pendingComment?.endLineNumber])
+
+  useEffect(() => {
+    if (!linkedRange || state.selectedFileContent === null) return
+    lineRefs.current.get(linkedRange.startLineNumber)?.scrollIntoView?.({
+      block: "center",
+      inline: "nearest",
+    })
+  }, [linkedRange?.startLineNumber, linkedRange?.endLineNumber, state.selectedFileContent, state.selectedFilePath])
 
   useEffect(() => {
     function finalizeDragSelection() {
@@ -142,6 +154,16 @@ export function WorkspaceFilesPanel({
   function handleResultSelect(path: string) {
     setIsResultsDropdownOpen(false)
     onSelectFile(path)
+  }
+
+  function registerLineRef(lineNumber: number) {
+    return (node: HTMLDivElement | null) => {
+      if (node) {
+        lineRefs.current.set(lineNumber, node)
+      } else {
+        lineRefs.current.delete(lineNumber)
+      }
+    }
   }
 
   return (
@@ -227,14 +249,17 @@ export function WorkspaceFilesPanel({
                   : `对第 L${String(pendingRange.startLineNumber)} 至第 L${String(pendingRange.endLineNumber)} 行发表评论`
                 : ""
               const isSelectionHighlighted = isLineWithinRange(highlightedRange, lineNumber)
+              const isLinkedLine = isLineWithinRange(linkedRange, lineNumber)
 
               return (
                 <div key={`${state.selectedFilePath}:${lineNumber}`} className="workspace-files-code-block">
                   <div
+                    ref={registerLineRef(lineNumber)}
                     className={[
                       "workspace-files-line",
                       showCommentAction ? "is-hovered" : "",
                       isSelectionHighlighted ? "is-selected" : "",
+                      isLinkedLine ? "is-linked" : "",
                     ].filter(Boolean).join(" ")}
                     data-testid={`workspace-file-line-${lineNumber}`}
                     onMouseEnter={() => setHoveredLineNumber(lineNumber)}

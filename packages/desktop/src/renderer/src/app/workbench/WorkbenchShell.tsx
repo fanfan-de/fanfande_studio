@@ -1,5 +1,6 @@
 import { Fragment, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { SidebarToggleButton } from "../shared-ui"
+import type { MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import type { AssistantTraceVisibility, ComposerDraftState, ToolPermissionMode } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { WorkbenchPaneSurface, type PaneDropPosition } from "./WorkbenchPaneSurface"
@@ -64,6 +65,12 @@ export interface WorkbenchShellProps {
   onCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
   onFocusPane: (paneID: string) => void
   onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
+  onLocalFileLinkOpen: (input: {
+    paneID: string
+    sessionID: string | null
+    target: MarkdownLocalFileLinkTarget
+    workspaceDirectory: string | null
+  }) => void
   onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
   onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
   onPaneDropTargetChange: (paneID: string, position: PaneDropPosition | null) => void
@@ -174,6 +181,7 @@ function WorkbenchNodeView({
         onCreateSessionWorkspaceChange={props.onCreateSessionWorkspaceChange}
         onFocusPane={props.onFocusPane}
         onInspectFileInSidebar={props.onInspectFileInSidebar}
+        onLocalFileLinkOpen={props.onLocalFileLinkOpen}
         onOpenCreateSessionTab={props.onOpenCreateSessionTab}
         onOpenSideChat={props.onOpenSideChat}
         onPaneDropTargetChange={props.onPaneDropTargetChange}

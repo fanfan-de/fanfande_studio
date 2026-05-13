@@ -396,6 +396,7 @@ export interface WorkspaceFileReviewState {
   status: WorkspaceFileReviewStatus
   errorMessage: string | null
   comments: WorkspaceFileComment[]
+  linkedLineRange: WorkspaceFileLineRange | null
   pendingComment: WorkspaceFilePendingComment | null
 }
 

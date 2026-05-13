@@ -9,6 +9,7 @@ import {
 import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBadgeInfo } from "../session-workflow"
+import type { MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import type { AssistantTraceVisibility, ComposerDraftState, ToolPermissionMode } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { useProjectComposer } from "../use-project-composer"
@@ -153,6 +154,12 @@ export interface WorkbenchPaneSurfaceProps {
   onCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
   onFocusPane: (paneID: string) => void
   onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
+  onLocalFileLinkOpen: (input: {
+    paneID: string
+    sessionID: string | null
+    target: MarkdownLocalFileLinkTarget
+    workspaceDirectory: string | null
+  }) => void
   onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
   onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
   onPaneDropTargetChange: (paneID: string, position: PaneDropPosition | null) => void
@@ -202,6 +209,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onCreateSessionWorkspaceChange,
   onFocusPane,
   onInspectFileInSidebar,
+  onLocalFileLinkOpen,
   onOpenCreateSessionTab,
   onOpenSideChat,
   onPaneDropTargetChange,
@@ -422,6 +430,14 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   })
                 }
                 onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
+                onLocalFileLinkOpen={(target) =>
+                  onLocalFileLinkOpen({
+                    paneID: pane.id,
+                    sessionID: pane.sessionID,
+                    target,
+                    workspaceDirectory: pane.workspace?.directory ?? null,
+                  })
+                }
                 onOpenSideChat={(anchorMessageID) =>
                   void onOpenSideChat(anchorMessageID, {
                     paneID: pane.id,

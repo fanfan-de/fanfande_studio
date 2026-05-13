@@ -13,6 +13,8 @@ import {
   WindowChrome,
 } from "./app/components"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
+import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
+import type { MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
 import type { RightSidebarView, ToolPermissionMode, WorkspaceMode } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
@@ -63,6 +65,64 @@ interface ActivePaneResize {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
+}
+
+interface LocalFileLinkOpenInput {
+  paneID: string
+  sessionID: string | null
+  target: MarkdownLocalFileLinkTarget
+  workspaceDirectory: string | null
+}
+
+function encodeFilePathSegment(value: string) {
+  return encodeURIComponent(value).replace(/%3A/i, ":")
+}
+
+function toFileUrl(targetPath: string) {
+  const trimmedPath = targetPath.trim()
+  if (!trimmedPath) return null
+  if (trimmedPath.toLowerCase().startsWith("file://")) return trimmedPath
+
+  const normalizedPath = trimmedPath.replace(/\\/g, "/")
+  const uncMatch = normalizedPath.match(/^\/\/([^/]+)\/(.+)$/)
+  if (uncMatch) {
+    const encodedPath = uncMatch[2].split("/").map(encodeFilePathSegment).join("/")
+    return `file://${uncMatch[1]}/${encodedPath}`
+  }
+
+  if (/^[A-Za-z]:\//.test(normalizedPath)) {
+    const encodedPath = normalizedPath.split("/").map(encodeFilePathSegment).join("/")
+    return `file:///${encodedPath}`
+  }
+
+  if (normalizedPath.startsWith("/")) {
+    const encodedPath = normalizedPath.split("/").map(encodeFilePathSegment).join("/")
+    return `file://${encodedPath}`
+  }
+
+  return null
+}
+
+async function openSystemLocalPath(targetPath: string) {
+  const openPath = window.desktop?.openPath
+  if (openPath) {
+    try {
+      await openPath({ targetPath })
+      return
+    } catch (error) {
+      console.error("[desktop] Failed to open local file path:", error)
+    }
+  }
+
+  const fileUrl = toFileUrl(targetPath)
+  const openExternalUrl = window.desktop?.openExternalUrl
+  if (!fileUrl || !openExternalUrl) return
+
+  try {
+    await openExternalUrl({ url: fileUrl })
+  } catch (error) {
+    console.error("[desktop] Failed to open local file URL:", error)
+  }
 }
 
 
@@ -489,6 +549,31 @@ export function App() {
     }
     handlePaneFocus(paneID)
     handleActiveSessionDiffFileSelect(file, sessionID)
+  }
+
+  function handleLocalFileLinkOpen({
+    paneID,
+    target,
+    workspaceDirectory,
+  }: LocalFileLinkOpenInput) {
+    if (isRightSidebarCollapsed) {
+      handleRightSidebarToggle()
+    }
+    handlePaneFocus(paneID)
+
+    const workspaceRelativePath = workspaceDirectory
+      ? resolveWorkspaceRelativePath(workspaceDirectory, target.path, platform)
+      : null
+
+    if (workspaceDirectory && workspaceRelativePath !== null) {
+      void handleWorkspaceFileSelect(workspaceRelativePath, {
+        linkedLineRange: target.lineRange ?? null,
+        scopeDirectory: workspaceDirectory,
+      })
+      return
+    }
+
+    void openSystemLocalPath(target.path)
   }
 
   function handleInspectorViewChange(view: RightSidebarView) {
@@ -1155,6 +1240,7 @@ export function App() {
                 onCreateSessionWorkspaceChange={handleCreateSessionWorkspaceChange}
                 onFocusPane={handlePaneFocus}
                 onInspectFileInSidebar={handleInspectFileInSidebar}
+                onLocalFileLinkOpen={handleLocalFileLinkOpen}
                 onOpenCreateSessionTab={handleOpenCreateSessionTab}
                 onOpenSideChat={handleOpenSideChat}
                 onPaneDropTargetChange={handlePaneDropTargetChange}

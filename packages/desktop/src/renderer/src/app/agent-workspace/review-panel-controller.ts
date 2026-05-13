@@ -23,6 +23,7 @@ import type {
   PreviewMode,
   RightSidebarView,
   WorkspaceFileComment,
+  WorkspaceFileLineRange,
   WorkspaceFileReviewState,
   WorkspaceGroup,
   WorkspacePreviewState,
@@ -40,6 +41,11 @@ import type { WorkspaceStateUpdater } from "./workspace-store"
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 
 const MAX_PREVIEW_NAVIGATION_HISTORY = 50
+
+interface WorkspaceFileSelectOptions {
+  linkedLineRange?: WorkspaceFileLineRange | null
+  scopeDirectory?: string | null
+}
 
 interface UseReviewPanelControllerOptions {
   activeSessionDirectory: string | null
@@ -407,6 +413,7 @@ export function useReviewPanelController({
         query: value,
         results: value.trim() ? current.results : [],
         errorMessage: nextErrorMessage,
+        linkedLineRange: null,
         pendingComment: null,
       }
 
@@ -417,22 +424,25 @@ export function useReviewPanelController({
     })
   }
 
-  async function handleWorkspaceFileSelect(path: string) {
+  async function handleWorkspaceFileSelect(path: string, options: WorkspaceFileSelectOptions = {}) {
     const readWorkspaceFile = window.desktop?.readWorkspaceFile
-    const scopeDirectory = activeWorkspaceFileScopeDirectory
+    const scopeDirectory = options.scopeDirectory ?? activeWorkspaceFileScopeDirectory
     const trimmedPath = path.trim()
     if (!readWorkspaceFile || !scopeDirectory || !trimmedPath) return
 
+    const linkedLineRange = options.linkedLineRange ?? null
     const requestID = workspaceFileReadRequestRef.current + 1
     workspaceFileReadRequestRef.current = requestID
     setRightSidebarView("files")
     setWorkspaceFileReviewState((current) => ({
       ...current,
+      scopeDirectory,
       selectedFilePath: trimmedPath,
       selectedFileContent: null,
       selectedFileKind: null,
       selectedFileExtension: null,
       comments: [],
+      linkedLineRange,
       pendingComment: null,
       errorMessage: null,
       status: "reading",
@@ -456,6 +466,7 @@ export function useReviewPanelController({
         selectedFileKind: nextFile.kind,
         selectedFileExtension: nextFile.extension,
         comments: nextComments,
+        linkedLineRange: nextFile.kind === "text" ? linkedLineRange : null,
         pendingComment: null,
         errorMessage: nextErrorMessage,
         status: nextFile.kind === "text" ? "ready" : "unsupported",
@@ -471,6 +482,7 @@ export function useReviewPanelController({
         selectedFileKind: null,
         selectedFileExtension: null,
         comments: [],
+        linkedLineRange,
         pendingComment: null,
         errorMessage: message,
         status: "error",
@@ -485,6 +497,7 @@ export function useReviewPanelController({
     setRightSidebarView("files")
     setWorkspaceFileReviewState((current) => ({
       ...current,
+      linkedLineRange: null,
       pendingComment: {
         ...nextRange,
         text:

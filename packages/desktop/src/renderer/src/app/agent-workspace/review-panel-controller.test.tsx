@@ -187,4 +187,66 @@ describe("review panel controller", () => {
       reloadToken: beforeReload.reloadToken + 1,
     })
   })
+
+  it("clears linked file highlights when starting a file comment", () => {
+    const workspace = createWorkspace()
+
+    const { result } = renderHook(() => {
+      const [previewByWorkspaceID, setPreviewByWorkspaceIDState] = useState<Record<string, WorkspacePreviewState>>({})
+      const [workspaceFileCommentsByTarget, setWorkspaceFileCommentsByTargetState] = useState<Record<string, WorkspaceFileComment[]>>({})
+      const [workspaceFileReviewState, setWorkspaceFileReviewStateState] = useState<WorkspaceFileReviewState>({
+        ...DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+        linkedLineRange: {
+          startLineNumber: 2,
+          endLineNumber: 3,
+        },
+        scopeDirectory: workspace.directory,
+        selectedFileContent: "const a = 1\nconst b = 2",
+        selectedFileExtension: "ts",
+        selectedFileKind: "text",
+        selectedFilePath: "src/linked.ts",
+        status: "ready",
+      })
+      const [, setComposerDraftStateByTabKeyState] = useState<Record<string, ComposerDraftState>>({})
+      const [, setRightSidebarViewState] = useState<RightSidebarView>("files")
+      const [, setSelectedDiffFileBySessionState] = useState<Record<string, string | null>>({})
+      const workspaceFileReadRequestRef = useRef(0)
+      const workspaceFileSearchRequestRef = useRef(0)
+
+      const controller = useReviewPanelController({
+        activeSessionDirectory: workspace.directory,
+        activeSessionID: "session-1",
+        activeTabKey: "session:session-1",
+        activeWorkspaceFileScopeDirectory: workspace.directory,
+        loadSessionDiffForSession: vi.fn(async () => undefined),
+        loadSessionRuntimeDebugForSession: vi.fn(async () => undefined),
+        platform: "win32",
+        previewByWorkspaceID,
+        selectedWorkspace: workspace,
+        setComposerDraftStateByTabKey: setComposerDraftStateByTabKeyState,
+        setPreviewByWorkspaceID: (update) => applyUpdate(setPreviewByWorkspaceIDState, previewByWorkspaceID, update),
+        setRightSidebarView: setRightSidebarViewState,
+        setSelectedDiffFileBySession: setSelectedDiffFileBySessionState,
+        setWorkspaceFileCommentsByTarget: (update) =>
+          applyUpdate(setWorkspaceFileCommentsByTargetState, workspaceFileCommentsByTarget, update),
+        setWorkspaceFileReviewState: (update) => applyUpdate(setWorkspaceFileReviewStateState, workspaceFileReviewState, update),
+        workspaceFileCommentsByTarget,
+        workspaceFileReadRequestRef,
+        workspaceFileReviewState,
+        workspaceFileSearchRequestRef,
+      })
+
+      return { controller, workspaceFileReviewState }
+    })
+
+    act(() => {
+      result.current.controller.handleWorkspaceFileCommentStart(2, 3)
+    })
+
+    expect(result.current.workspaceFileReviewState.linkedLineRange).toBeNull()
+    expect(result.current.workspaceFileReviewState.pendingComment).toMatchObject({
+      startLineNumber: 2,
+      endLineNumber: 3,
+    })
+  })
 })

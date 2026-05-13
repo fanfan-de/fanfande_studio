@@ -1,4 +1,9 @@
 import { Fragment, type MouseEvent, type ReactNode } from "react"
+import {
+  normalizeLooseLocalFileMarkdownLinks,
+  normalizeMarkdownLinkTarget,
+  type MarkdownLocalFileLinkTarget,
+} from "./thread-markdown"
 import type { UserTurnReference } from "./types"
 
 type ThreadRichTextElement = "div" | "p" | "span"
@@ -11,6 +16,7 @@ type ThreadRichTextSegment =
       text: string
     }
   | {
+      localFileTarget?: MarkdownLocalFileLinkTarget
       type: "link"
       text: string
       href: string
@@ -24,6 +30,7 @@ type ThreadRichTextSegment =
 interface ThreadRichTextProps {
   as?: ThreadRichTextElement
   className?: string
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   references?: ThreadRichTextReference[]
   text: string
 }
@@ -33,6 +40,7 @@ interface MarkdownLinkMatch {
   end: number
   label: string
   href: string
+  localFileTarget?: MarkdownLocalFileLinkTarget
 }
 
 interface ThreadReferenceMatch {
@@ -176,48 +184,62 @@ function findNextMarkdownLink(text: string, startIndex: number): MarkdownLinkMat
     const label = text.slice(index + 1, labelEnd)
     if (!label) continue
 
+    let hrefText = ""
     let depth = 0
     let urlEnd = -1
     let invalidLink = false
 
-    for (let cursor = labelEnd + 2; cursor < text.length; cursor += 1) {
-      const character = text[cursor]
-
-      if (character === "\n") {
+    const destinationStart = labelEnd + 2
+    if (text[destinationStart] === "<") {
+      const destinationEnd = text.indexOf(">", destinationStart + 1)
+      if (destinationEnd !== -1 && text[destinationEnd + 1] === ")") {
+        hrefText = text.slice(destinationStart + 1, destinationEnd).replace(/\\\\/g, "\\")
+        urlEnd = destinationEnd + 1
+      } else {
         invalidLink = true
-        break
       }
+    } else {
+      for (let cursor = destinationStart; cursor < text.length; cursor += 1) {
+        const character = text[cursor]
 
-      if (/\s/.test(character) && depth === 0) {
-        invalidLink = true
-        break
-      }
-
-      if (character === "(") {
-        depth += 1
-        continue
-      }
-
-      if (character === ")") {
-        if (depth === 0) {
-          urlEnd = cursor
+        if (character === "\n") {
+          invalidLink = true
           break
         }
 
-        depth -= 1
+        if (/\s/.test(character) && depth === 0) {
+          invalidLink = true
+          break
+        }
+
+        if (character === "(") {
+          depth += 1
+          continue
+        }
+
+        if (character === ")") {
+          if (depth === 0) {
+            hrefText = text.slice(destinationStart, cursor)
+            urlEnd = cursor
+            break
+          }
+
+          depth -= 1
+        }
       }
     }
 
     if (invalidLink || urlEnd === -1) continue
 
-    const href = normalizeExternalUrl(text.slice(labelEnd + 2, urlEnd))
-    if (!href) continue
+    const linkTarget = normalizeMarkdownLinkTarget(hrefText)
+    if (!linkTarget) continue
 
     return {
       start: index,
       end: urlEnd + 1,
       label,
-      href,
+      href: linkTarget.href,
+      ...(linkTarget.kind === "local-file" ? { localFileTarget: linkTarget.target } : {}),
     }
   }
 
@@ -259,24 +281,26 @@ function findNextThreadReference(text: string, startIndex: number, references: T
 
 function parseThreadRichTextWithoutReferences(text: string): ThreadRichTextSegment[] {
   const segments: ThreadRichTextSegment[] = []
+  const normalizedText = normalizeLooseLocalFileMarkdownLinks(text)
   let cursor = 0
 
-  while (cursor < text.length) {
-    const markdownLink = findNextMarkdownLink(text, cursor)
+  while (cursor < normalizedText.length) {
+    const markdownLink = findNextMarkdownLink(normalizedText, cursor)
 
     if (!markdownLink) {
-      segments.push(...tokenizeBareUrls(text.slice(cursor)))
+      segments.push(...tokenizeBareUrls(normalizedText.slice(cursor)))
       break
     }
 
     if (markdownLink.start > cursor) {
-      segments.push(...tokenizeBareUrls(text.slice(cursor, markdownLink.start)))
+      segments.push(...tokenizeBareUrls(normalizedText.slice(cursor, markdownLink.start)))
     }
 
     segments.push({
       type: "link",
       text: markdownLink.label,
       href: markdownLink.href,
+      ...(markdownLink.localFileTarget ? { localFileTarget: markdownLink.localFileTarget } : {}),
     })
 
     cursor = markdownLink.end
@@ -316,7 +340,11 @@ export function parseThreadRichText(text: string, references: ThreadRichTextRefe
   return segments.filter((segment) => segment.text.length > 0)
 }
 
-function renderSegment(segment: ThreadRichTextSegment, index: number): ReactNode {
+function renderSegment(
+  segment: ThreadRichTextSegment,
+  index: number,
+  onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void,
+): ReactNode {
   if (segment.type === "text") {
     return <Fragment key={`text-${index}`}>{segment.text}</Fragment>
   }
@@ -336,6 +364,26 @@ function renderSegment(segment: ThreadRichTextSegment, index: number): ReactNode
   }
 
   const href = segment.href
+  const localFileTarget = segment.localFileTarget
+
+  if (localFileTarget) {
+    if (!onLocalFileLinkOpen) return <Fragment key={`local-link-text-${index}`}>{segment.text}</Fragment>
+
+    return (
+      <a
+        key={`local-link-${index}-${href}`}
+        className="thread-inline-link"
+        href={href}
+        onClick={(event) => {
+          event.preventDefault()
+          onLocalFileLinkOpen(localFileTarget)
+        }}
+        title={localFileTarget.path}
+      >
+        {segment.text}
+      </a>
+    )
+  }
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     const openExternalUrl = window.desktop?.openExternalUrl
@@ -364,6 +412,7 @@ function renderSegment(segment: ThreadRichTextSegment, index: number): ReactNode
 export function ThreadRichText({
   as = "p",
   className,
+  onLocalFileLinkOpen,
   references = [],
   text,
 }: ThreadRichTextProps) {
@@ -372,7 +421,7 @@ export function ThreadRichText({
 
   return (
     <Component className={className}>
-      {segments.map((segment, index) => renderSegment(segment, index))}
+      {segments.map((segment, index) => renderSegment(segment, index, onLocalFileLinkOpen))}
     </Component>
   )
 }
