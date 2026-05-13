@@ -385,6 +385,7 @@ export interface AgentSessionHistoryInfo {
   role: "user" | "assistant"
   created: number
   completed?: number
+  diffSummary?: AgentSessionDiffSummary
   error?: {
     message?: string
     [key: string]: unknown

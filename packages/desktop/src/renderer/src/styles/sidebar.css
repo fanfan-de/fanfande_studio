@@ -356,10 +356,14 @@
 .sidebar-projects {
   min-height: 0;
   overflow: auto;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.sidebar-projects::-webkit-scrollbar {
+  display: none;
 }
 
 .project-block {
@@ -654,6 +658,13 @@
   gap: 8px;
 }
 
+.session-row-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
 @keyframes session-row-status-spin {
   to {
     transform: rotate(360deg);
@@ -717,11 +728,50 @@
 .project-row-shell:hover .row-action,
 .project-row-shell:focus-within .row-action,
 .session-row-shell:hover .row-action,
-.session-row-shell:focus-within .row-action,
+.session-row-trailing .row-action:focus-visible,
 .skill-tree-row-shell:hover .row-action,
 .skill-tree-row-shell:focus-within .row-action {
   opacity: 1;
   pointer-events: auto;
+}
+
+.session-row-trailing {
+  width: 48px;
+  min-width: 48px;
+  height: 30px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.session-row-created-at {
+  max-width: 48px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 450;
+  line-height: 1;
+  color: var(--seg-text-3);
+}
+
+.session-row-trailing .row-action {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.session-row-trailing .row-action:hover,
+.session-row-trailing .row-action:focus-visible,
+.session-row-trailing .row-action:disabled {
+  transform: translateY(-50%);
+}
+
+.session-row-shell:hover .session-row-created-at,
+.session-row-trailing:has(.row-action:focus-visible) .session-row-created-at {
+  opacity: 0;
 }
 
 .session-row-label {
@@ -751,7 +801,7 @@
 
 .session-tree {
   display: grid;
-  gap: 0;
+  gap: 2px;
   padding-left: 0;
 }
 

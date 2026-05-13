@@ -888,6 +888,11 @@ describe("App", () => {
           localRequestAborted: false,
           backendCancelled: false,
         })),
+        interrupt: vi.fn().mockImplementation(async (input: { backendSessionID: string; clientTurnID?: string }) => ({
+          ...input,
+          localRequestsAborted: 0,
+          backendCancelled: false,
+        })),
         answerQuestion: vi.fn().mockImplementation(async (input: {
           backendSessionID: string
           questionID: string
@@ -954,7 +959,8 @@ describe("App", () => {
       onPtyEvent: vi.fn(() => vi.fn()),
       onWindowStateChange: vi.fn(() => vi.fn()),
     }
-    window.desktop.gitCommit = vi.fn().mockResolvedValue({
+    const desktop = window.desktop!
+    desktop.gitCommit = vi.fn().mockResolvedValue({
       directory: "C:\\Projects\\Project 2",
       root: "C:\\Projects\\Project 2",
       branch: "main",
@@ -962,7 +968,7 @@ describe("App", () => {
       stderr: "",
       summary: "Committed to main.",
     })
-    window.desktop.gitPush = vi.fn().mockResolvedValue({
+    desktop.gitPush = vi.fn().mockResolvedValue({
       directory: "C:\\Projects\\Project 2",
       root: "C:\\Projects\\Project 2",
       branch: "main",
@@ -970,7 +976,7 @@ describe("App", () => {
       stderr: "",
       summary: "Pushed main.",
     })
-    window.desktop.gitCreateBranch = vi.fn().mockResolvedValue({
+    desktop.gitCreateBranch = vi.fn().mockResolvedValue({
       directory: "C:\\Projects\\Project 2",
       root: "C:\\Projects\\Project 2",
       branch: "feature/test",
@@ -978,7 +984,7 @@ describe("App", () => {
       stderr: "",
       summary: "Created and switched to feature/test.",
     })
-    window.desktop.gitListBranches = vi.fn().mockResolvedValue([
+    desktop.gitListBranches = vi.fn().mockResolvedValue([
       {
         name: "main",
         kind: "local",
@@ -990,7 +996,7 @@ describe("App", () => {
         current: false,
       },
     ])
-    window.desktop.gitCheckoutBranch = vi.fn().mockResolvedValue({
+    desktop.gitCheckoutBranch = vi.fn().mockResolvedValue({
       directory: "C:\\Projects\\Project 2",
       root: "C:\\Projects\\Project 2",
       branch: "feature/test",
@@ -998,7 +1004,7 @@ describe("App", () => {
       stderr: "",
       summary: "Switched to feature/test.",
     })
-    window.desktop.gitCreatePullRequest = vi.fn().mockResolvedValue({
+    desktop.gitCreatePullRequest = vi.fn().mockResolvedValue({
       directory: "C:\\Projects\\Project 2",
       root: "C:\\Projects\\Project 2",
       branch: "feature/test",
@@ -5883,7 +5889,8 @@ describe("App", () => {
     expect(await screen.findByText("README loaded")).toBeInTheDocument()
     expect(screen.queryByText("Waiting for permission approval before the tool can continue.")).not.toBeInTheDocument()
     expect(screen.getByText("Resumed answer")).toBeInTheDocument()
-    expect(getComposerSendButton()).toBeDisabled()
+    expect(getComposerSendButton()).toBeEnabled()
+    expect(getComposerSendButton()).toHaveAccessibleName("Stop task")
 
     act(() => {
       finishResumeStream?.()
@@ -11460,7 +11467,7 @@ describe("App", () => {
     expect(styles).toMatch(/\.assistant-section\.is-response\s+\.trace-item-header\s*\{[^}]*display:\s*none;/s)
     expect(styles).toMatch(/\.assistant-response-side-chat\s*\{[^}]*gap:\s*8px;[^}]*margin-top:\s*0;/s)
     expect(styles).toMatch(
-      /@media \(hover:\s*hover\) and \(pointer:\s*fine\)\s*\{[\s\S]*\.assistant-response-side-chat:not\(\.is-persistent\) \.assistant-response-actions\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;[\s\S]*\.assistant-section\.is-response:hover \.assistant-response-side-chat \.assistant-response-actions,[\s\S]*\.assistant-response-side-chat\.is-persistent \.assistant-response-actions\s*\{[^}]*opacity:\s*1;[^}]*pointer-events:\s*auto;/s,
+      /@media \(hover:\s*hover\) and \(pointer:\s*fine\)\s*\{[\s\S]*\.assistant-response-side-chat:not\(\.is-persistent\) \.assistant-response-actions\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;[\s\S]*\.assistant-shell:hover \.assistant-response-side-chat \.assistant-response-actions,[\s\S]*\.assistant-response-side-chat\.is-persistent \.assistant-response-actions\s*\{[^}]*opacity:\s*1;[^}]*pointer-events:\s*auto;/s,
     )
     expect(styles).toMatch(/\.trace-item-toggle\s*\{[^}]*background:\s*transparent;[^}]*text-align:\s*left;[^}]*cursor:\s*pointer;/s)
     expect(styles).toMatch(/\.trace-item-toggle-summary\s*\{[^}]*gap:\s*4px 6px;/s)

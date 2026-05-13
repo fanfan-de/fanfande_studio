@@ -101,6 +101,16 @@ function normalizeToolError(error: unknown): string {
     return String(error)
 }
 
+function isAbortSignalAborted(signal: AbortSignal | undefined) {
+    return signal?.aborted === true
+}
+
+function throwIfAborted(signal: AbortSignal | undefined) {
+    if (isAbortSignalAborted(signal)) {
+        throw new Error("Prompt aborted")
+    }
+}
+
 function writeStreamDebug(value: string) {
     if (!ENABLE_STREAM_STDOUT_DEBUG) return
     process.stdout.write(value)
@@ -1263,6 +1273,7 @@ export function create(input: {
                         await persistAssistantMessage()
                     }
 
+                    throwIfAborted(streamInput.abort ?? input.abort)
                     const stream = await LLM.stream({
                         ...streamInput,
                         onFinish: (event) => {
@@ -1306,6 +1317,7 @@ export function create(input: {
                     let fullStreamProbeChunkCount = 0
                     log.debug("fullStream.consume.started", fullStreamProbeBase)
                     for await (const streamValue of stream.fullStream) {
+                        throwIfAborted(streamInput.abort ?? input.abort)
                         const fullStreamProbePulledAt = performance.now()
                         const fullStreamProbeSequence = fullStreamProbeChunkCount
                         const fullStreamProbeWaitMs = fullStreamProbePulledAt - fullStreamProbeLastHandledAt
@@ -1872,6 +1884,7 @@ export function create(input: {
                             fullStreamProbeLastHandledAt = performance.now()
                             fullStreamProbeChunkCount = fullStreamProbeSequence + 1
                         }
+                        throwIfAborted(streamInput.abort ?? input.abort)
                     }
                     log.debug("fullStream.consume.completed", {
                         ...fullStreamProbeBase,
@@ -1923,24 +1936,29 @@ export function create(input: {
                         await lifecyclePersistence
                     }
 
-                    await reconcileOpenToolCalls(stream)
+                    if (isAbortSignalAborted(streamInput.abort ?? input.abort)) {
+                        throwIfAborted(streamInput.abort ?? input.abort)
+                    } else {
+                        await reconcileOpenToolCalls(stream)
 
-                    const activeToolCalls = listActiveToolCalls()
-                    if (activeToolCalls.length > 0) {
-                        const reason = describeOpenToolCallFailure(activeToolCalls, streamAbortReason)
-                        await failOpenToolCalls(reason)
-                        log.warn("stopping processor because tool calls were left unresolved", {
-                            reason,
-                            activeToolCalls: activeToolCalls.map((part) => ({
-                                callID: part.callID,
-                                tool: part.tool,
-                                status: part.state.status,
-                            })),
-                        })
-                        return "stop"
+                        const activeToolCalls = listActiveToolCalls()
+                        if (activeToolCalls.length > 0) {
+                            const reason = describeOpenToolCallFailure(activeToolCalls, streamAbortReason)
+                            await failOpenToolCalls(reason)
+                            log.warn("stopping processor because tool calls were left unresolved", {
+                                reason,
+                                activeToolCalls: activeToolCalls.map((part) => ({
+                                    callID: part.callID,
+                                    tool: part.tool,
+                                    status: part.state.status,
+                                })),
+                            })
+                            return "stop"
+                        }
                     }
                 }
                 catch (e: any) {
+                    const aborted = isAbortSignalAborted(streamInput.abort ?? input.abort)
                     if (!llmCallSettled) {
                         emitRuntimeEvent?.("llm.call.failed", {
                             messageID: input.Assistant.id,
@@ -1956,7 +1974,9 @@ export function create(input: {
                         })
                     }
                     await persistPartialDraftOnce?.(normalizeToolError(e))
-                    await failOpenToolCalls(normalizeToolError(e))
+                    if (!aborted) {
+                        await failOpenToolCalls(normalizeToolError(e))
+                    }
                     log.error("processor failure", { error: e.message, stack: e.stack })
                     throw e  // 重新抛出错误
                 }

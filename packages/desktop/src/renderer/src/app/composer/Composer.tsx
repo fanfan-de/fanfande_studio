@@ -60,6 +60,8 @@ interface ComposerProps {
   canPasteImageAttachments?: boolean
   draftState: ComposerDraftState
   hasPendingPermissionRequests: boolean
+  isCancelling?: boolean
+  isInterruptible?: boolean
   isSending: boolean
   mcpOptions: ComposerMcpOption[]
   modelOptions: ComposerModelOption[]
@@ -323,12 +325,18 @@ function buildComposerModelProviderGroups(
 function getComposerSendButtonDescription({
   attachmentError,
   canSend,
+  hasDraftText,
   hasPendingPermissionRequests,
+  isCancelling,
+  isInterruptible,
   isSending,
 }: {
   attachmentError: string | null
   canSend: boolean
+  hasDraftText: boolean
   hasPendingPermissionRequests: boolean
+  isCancelling?: boolean
+  isInterruptible?: boolean
   isSending: boolean
 }) {
   if (attachmentError) {
@@ -343,11 +351,19 @@ function getComposerSendButtonDescription({
     return "Enter is unavailable while approval requests are pending. Press Shift+Enter for a newline."
   }
 
-  if (isSending) {
+  if (isCancelling) {
+    return "Cancellation has been requested. Press Shift+Enter for a newline."
+  }
+
+  if ((isSending || isInterruptible) && !hasDraftText) {
     return "Stop the current assistant turn. Press Shift+Enter for a newline."
   }
 
   return "Press Enter to send. Press Shift+Enter for a newline."
+}
+
+function hasComposerDraftText(draftState: ComposerDraftState) {
+  return draftState.plainText.trim().length > 0
 }
 
 function getComposerSelectionRect() {
@@ -846,6 +862,8 @@ export function Composer({
   canPasteImageAttachments = false,
   draftState,
   hasPendingPermissionRequests,
+  isCancelling = false,
+  isInterruptible = false,
   isSending,
   mcpOptions,
   modelOptions,
@@ -1433,6 +1451,11 @@ export function Composer({
 
     if (action.type === "send") {
       if (!isEditorEventTarget(event.target)) return
+      if (isCancelling) return
+      if ((isSending || isInterruptible) && !hasComposerDraftText(draftStateRef.current)) {
+        void onCancelSend?.()
+        return
+      }
       void onSend(draftStateRef.current)
       return
     }
@@ -1454,16 +1477,21 @@ export function Composer({
   }
 
   const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
-  const sendButtonLabel = isSending ? "Stop task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
+  const hasDraftText = hasComposerDraftText(normalizedDraftState)
+  const canInterrupt = isCancelling || ((isSending || isInterruptible) && !hasDraftText)
+  const sendButtonLabel = isCancelling ? "Cancelling task" : canInterrupt ? "Stop task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
   const sendButtonDescription = getComposerSendButtonDescription({
     attachmentError,
     canSend,
+    hasDraftText,
     hasPendingPermissionRequests,
+    isCancelling,
+    isInterruptible,
     isSending,
   })
   const sendButtonTitle = `${sendButtonLabel}. ${sendButtonDescription}`
-  const sendShortcut = !isSending && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
-  const sendButtonDisabled = isSending ? !onCancelSend : !canSend || hasPendingPermissionRequests || attachmentError !== null
+  const sendShortcut = !canInterrupt && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
+  const sendButtonDisabled = canInterrupt ? isCancelling || !onCancelSend : !canSend || hasPendingPermissionRequests || attachmentError !== null
   const showReasoningEffortSelector = showModelSelector && reasoningEffortOptions.length > 0
   const selectedReasoningEffortButtonLabel = `Reasoning: ${selectedReasoningEffortLabel}`
   const modelMenuEmptyLabel =
@@ -1735,7 +1763,7 @@ export function Composer({
             className="primary-button is-icon-only"
             disabled={sendButtonDisabled}
             onClick={() => {
-              if (isSending) {
+              if (canInterrupt) {
                 void onCancelSend?.()
                 return
               }
@@ -1745,7 +1773,7 @@ export function Composer({
             title={sendButtonTitle}
             type="button"
           >
-            {isSending ? <StopIcon /> : <ArrowUpIcon />}
+            {canInterrupt ? <StopIcon /> : <ArrowUpIcon />}
           </button>
         </div>
       </div>

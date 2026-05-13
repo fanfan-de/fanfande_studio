@@ -24,6 +24,21 @@ export type SessionExecutionHandle<T> = {
   cancel: () => void
 }
 
+export type SessionRunnerCancelResult = {
+  sessionID: string
+  activeCancelled: boolean
+  queuedCancelled: number
+  queuedCancelledTurnIDs: string[]
+  cancelled: boolean
+}
+
+export class SessionOperationCancelledError extends Error {
+  constructor(message = "Session operation was cancelled before it started.") {
+    super(message)
+    this.name = "SessionOperationCancelledError"
+  }
+}
+
 export type SessionRunnerSnapshot = {
   sessionID: string
   status: SessionRunnerStatus
@@ -233,6 +248,18 @@ class SessionRunner {
     return true
   }
 
+  cancelSession(options?: { cancelQueued?: boolean }) {
+    const activeCancelled = this.cancel()
+    const queuedCancelledTurnIDs = options?.cancelQueued ? this.cancelQueued() : []
+    return {
+      sessionID: this.sessionID,
+      activeCancelled,
+      queuedCancelled: queuedCancelledTurnIDs.length,
+      queuedCancelledTurnIDs,
+      cancelled: activeCancelled || queuedCancelledTurnIDs.length > 0,
+    } satisfies SessionRunnerCancelResult
+  }
+
   async consumePendingSteer(turnID: string) {
     if (!this.active || this.active.turnID !== turnID) return 0
     const pendingWrites = [...this.active.pendingSteerWrites]
@@ -274,9 +301,24 @@ class SessionRunner {
     const [op] = this.queue.splice(index, 1)
     if (!op) return false
     op.cancelled = true
-    op.reject(new Error("Session operation was cancelled before it started."))
+    op.reject(new SessionOperationCancelledError())
     this.resolveIdleIfNeeded()
     return true
+  }
+
+  private cancelQueued() {
+    const cancelledTurnIDs: string[] = []
+    for (const op of this.queue.splice(0)) {
+      if (op.cancelled) continue
+      op.cancelled = true
+      op.reject(new SessionOperationCancelledError())
+      cancelledTurnIDs.push(op.turnID)
+    }
+    if (cancelledTurnIDs.length > 0) {
+      notify({ type: "cancelled", sessionID: this.sessionID })
+      this.resolveIdleIfNeeded()
+    }
+    return cancelledTurnIDs
   }
 
   private drain() {
@@ -388,6 +430,20 @@ export function enqueueResume<T>(input: EnqueueOperationInput<T>): SessionExecut
 
 export function cancel(sessionID: string) {
   return runners.get(sessionID)?.cancel() ?? false
+}
+
+export function cancelSession(sessionID: string, options?: { cancelQueued?: boolean }): SessionRunnerCancelResult {
+  return runners.get(sessionID)?.cancelSession(options) ?? {
+    sessionID,
+    activeCancelled: false,
+    queuedCancelled: 0,
+    queuedCancelledTurnIDs: [],
+    cancelled: false,
+  }
+}
+
+export function isSessionOperationCancelledError(error: unknown) {
+  return error instanceof SessionOperationCancelledError
 }
 
 export function consumePendingSteer(sessionID: string, turnID: string) {

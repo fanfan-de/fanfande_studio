@@ -372,6 +372,16 @@ export interface DesktopAgentSessionCancelTurnResult {
   backendCancelError?: string
 }
 
+export interface DesktopAgentSessionInterruptResult {
+  backendSessionID: string
+  clientTurnID?: string
+  localRequestsAborted: number
+  backendCancelled: boolean
+  activeCancelled?: boolean
+  queuedCancelled?: number
+  backendCancelError?: string
+}
+
 export interface DesktopAgentSessionSubscriptionResult {
   backendSessionID: string
   lastEventID?: string
@@ -938,6 +948,10 @@ export interface DesktopIpcContract {
     input: { clientTurnID: string; backendSessionID: string }
     output: DesktopAgentSessionCancelTurnResult
   }
+  "desktop:agent-session-interrupt": {
+    input: { backendSessionID: string; clientTurnID?: string; reason?: "user-interrupt" }
+    output: DesktopAgentSessionInterruptResult
+  }
   "desktop:agent-session-answer-question": {
     input: { backendSessionID: string } & AgentSessionQuestionAnswerInput
     output: AgentSessionQuestionAnswerResult
@@ -978,6 +992,7 @@ export interface DesktopAgentSessionApi {
   sendTurn(input: DesktopIpcInput<"desktop:agent-session-send-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-send-turn">>
   resumeTurn(input: DesktopIpcInput<"desktop:agent-session-resume-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-resume-turn">>
   cancelTurn(input: DesktopIpcInput<"desktop:agent-session-cancel-turn">): Promise<DesktopIpcOutput<"desktop:agent-session-cancel-turn">>
+  interrupt(input: DesktopIpcInput<"desktop:agent-session-interrupt">): Promise<DesktopIpcOutput<"desktop:agent-session-interrupt">>
   answerQuestion(input: DesktopIpcInput<"desktop:agent-session-answer-question">): Promise<DesktopIpcOutput<"desktop:agent-session-answer-question">>
   subscribe(input: DesktopIpcInput<"desktop:agent-session-subscribe">): Promise<DesktopIpcOutput<"desktop:agent-session-subscribe">>
   unsubscribe(input: DesktopIpcInput<"desktop:agent-session-unsubscribe">): Promise<DesktopIpcOutput<"desktop:agent-session-unsubscribe">>

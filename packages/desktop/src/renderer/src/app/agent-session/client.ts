@@ -67,6 +67,16 @@ export interface AgentSessionCancelTurnResult {
   backendCancelError?: string
 }
 
+export interface AgentSessionInterruptResult {
+  backendSessionID: string
+  clientTurnID?: string
+  localRequestsAborted: number
+  backendCancelled: boolean
+  activeCancelled?: boolean
+  queuedCancelled?: number
+  backendCancelError?: string
+}
+
 export interface AgentSessionBridge {
   canStream: boolean
   canResumeStream: boolean
@@ -74,6 +84,7 @@ export interface AgentSessionBridge {
   sendTurn(input: AgentSessionTurnInput): Promise<AgentSessionSendTurnResult>
   resumeTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionSendTurnResult>
   cancelTurn(input: { clientTurnID: string; backendSessionID: string }): Promise<AgentSessionCancelTurnResult>
+  interrupt(input: { backendSessionID: string; clientTurnID?: string; reason?: "user-interrupt" }): Promise<AgentSessionInterruptResult>
   answerQuestion(input: {
     backendSessionID: string
     questionID: string
@@ -111,6 +122,7 @@ function createModernAgentSessionBridge(desktop: NonNullable<Window["desktop"]>)
     sendTurn: modern.sendTurn,
     resumeTurn: modern.resumeTurn,
     cancelTurn: modern.cancelTurn,
+    interrupt: modern.interrupt,
     answerQuestion: modern.answerQuestion,
     subscribe: (input) => modern.subscribe(input),
     unsubscribe: modern.unsubscribe,

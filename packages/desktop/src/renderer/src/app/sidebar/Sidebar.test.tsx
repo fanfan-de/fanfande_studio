@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { describe, expect, it, vi } from "vitest"
 import type { SessionSummary, WorkspaceGroup } from "../types"
@@ -10,6 +10,7 @@ function createSession(id: string, title: string): SessionSummary {
     title,
     branch: "main",
     status: "Ready",
+    created: 1,
     updated: 1,
     focus: "",
     summary: "",
@@ -193,6 +194,36 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: "Unread" }).querySelector(".session-row-status-dot")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Visible" }).querySelector(".session-row-status-dot")).toBeNull()
     expect(screen.getByRole("button", { name: "Read" }).querySelector(".session-row-status-dot")).toBeNull()
+  })
+
+  it("shows a session creation age in the trailing slot", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-05-13T12:00:00+08:00"))
+    const created = new Date("2026-05-13T11:32:00+08:00").getTime()
+
+    try {
+      renderSidebar({
+        workspaces: [
+          {
+            ...createWorkspace(),
+            sessions: [
+              {
+                ...createSession("workspace-1-session-recent", "Recent"),
+                created,
+                updated: new Date("2026-05-13T11:59:00+08:00").getTime(),
+              },
+            ],
+          },
+        ],
+      })
+
+      expect(screen.getByText("28 \u5206")).toHaveClass("session-row-created-at")
+      expect(screen.getByRole("button", { name: "Recent" })).toBeInTheDocument()
+      expect(screen.getByRole("button", { name: "Archive session Recent" })).toBeInTheDocument()
+    } finally {
+      cleanup()
+      vi.useRealTimers()
+    }
   })
 
   it("renders session rows for every expanded workspace", () => {

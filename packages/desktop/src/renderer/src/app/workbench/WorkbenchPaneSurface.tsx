@@ -327,6 +327,8 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   canPasteImageAttachments={composer.attachmentCapabilities.image && composer.attachmentDisabledReason === null}
                   draftState={pane.draftState}
                   hasPendingPermissionRequests={false}
+                  isCancelling={pane.isCancelling}
+                  isInterruptible={pane.isInterruptible || pane.isCreatingSession}
                   isSending={pane.isSending || pane.isCreatingSession}
                   mcpOptions={composer.mcpOptions}
                   modelOptions={composer.modelOptions}
@@ -411,6 +413,8 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 sideChatAttachments={pane.activeSideChatAttachments}
                 sideChatCountsByAnchorMessageID={pane.sideChatCountsByAnchorMessageID}
                 sideChatDraftState={pane.activeSideChatDraftState}
+                sideChatIsCancelling={pane.activeSideChatIsCancelling}
+                sideChatIsInterruptible={pane.activeSideChatIsInterruptible}
                 sideChatIsSending={pane.activeSideChatIsSending}
                 sideChatPendingPermissionRequests={pane.activeSideChatPendingPermissionRequests}
                 sideChatPermissionRequestActionError={permissionRequestActionError}
@@ -509,6 +513,8 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   canPasteImageAttachments={composer.attachmentCapabilities.image && composer.attachmentDisabledReason === null}
                   draftState={pane.draftState}
                   hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+                  isCancelling={pane.isCancelling}
+                  isInterruptible={pane.isInterruptible}
                   isSending={pane.isSending}
                   mcpOptions={composer.mcpOptions}
                   modelOptions={composer.modelOptions}

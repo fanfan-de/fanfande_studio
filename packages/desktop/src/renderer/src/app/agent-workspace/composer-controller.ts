@@ -54,6 +54,7 @@ interface UseComposerControllerOptions {
   agentConnected: boolean
   agentDefaultDirectory: string
   agentSessions: Record<string, string>
+  cancellingSessionIDs: Record<string, boolean>
   appendConversationTurns: (sessionID: string, nextTurns: Turn[]) => void
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
   composerDraftStateByTabKey: Record<string, ComposerDraftState>
@@ -82,6 +83,7 @@ interface UseComposerControllerOptions {
   reloadSessionHistoryForSession: (sessionID: string, backendSessionID?: string) => Promise<void>
   sessionDirectoryBySession: Record<string, string>
   setAgentSessions: StateSetter<Record<string, string>>
+  setCancellingSessionIDs: StateSetter<Record<string, boolean>>
   setComposerAttachmentsByTabKey: StateSetter<Record<string, ComposerAttachment[]>>
   setComposerDraftStateByTabKey: StateSetter<Record<string, ComposerDraftState>>
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
@@ -106,6 +108,7 @@ export function useComposerController({
   agentConnected,
   agentDefaultDirectory,
   agentSessions,
+  cancellingSessionIDs,
   appendConversationTurns,
   composerAttachmentsByTabKey,
   composerDraftStateByTabKey,
@@ -125,6 +128,7 @@ export function useComposerController({
   reloadSessionHistoryForSession,
   sessionDirectoryBySession,
   setAgentSessions,
+  setCancellingSessionIDs,
   setComposerAttachmentsByTabKey,
   setComposerDraftStateByTabKey,
   setCreateSessionTabs,
@@ -234,7 +238,13 @@ export function useComposerController({
     const normalizedQuestionAnswerText = normalizeQuestionAnswerText(input?.questionAnswer)
     const effectiveText = compiledSubmission.transportText || normalizedQuestionAnswerText
     const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
-    if (!targetTabKey || ((!effectiveText && attachments.length === 0) || isSendingByTabKey[targetTabKey] || pendingPermissionRequests.length > 0)) return
+    const isSending = Boolean(targetTabKey && isSendingByTabKey[targetTabKey])
+    if (
+      !targetTabKey ||
+      (!effectiveText && attachments.length === 0) ||
+      (isSending && !effectiveText) ||
+      pendingPermissionRequests.length > 0
+    ) return
     if (input?.waitForPendingModelSelection) {
       await input.waitForPendingModelSelection().catch(() => undefined)
     }
@@ -438,29 +448,68 @@ export function useComposerController({
     tabKey?: string | null
   }) {
     const agentSession = getAgentSessionBridge()
-    if (!agentSession?.cancelTurn) return
+    if (!agentSession?.interrupt && !agentSession?.cancelTurn) return
 
     const tabKey = input?.tabKey ?? activeTabKey
     const tabReference = tabKey ? getWorkbenchTabReferenceFromKey(tabKey) : null
     const sessionID = input?.sessionID ?? (tabReference?.kind === "session" ? tabReference.sessionID : activeSessionID)
     if (!sessionID) return
+    if (cancellingSessionIDs[sessionID]) return
 
     const pending = Object.entries(pendingStreamsRef.current).find(([, stream]) => stream.sessionID === sessionID)
-    if (!pending) return
+    const clientTurnID = pending?.[0]
+    const stream = pending?.[1]
+    const backendSessionID = stream?.backendSessionID ?? agentSessions[sessionID] ?? sessionID
+    if (!backendSessionID) return
+    if (stream?.cancelRequested) return
 
-    const [clientTurnID, stream] = pending
-    if (!stream.backendSessionID || stream.cancelRequested) return
-
-    stream.cancelRequested = true
+    if (stream) {
+      stream.cancelRequested = true
+    }
+    setCancellingSessionIDs((current) => ({
+      ...current,
+      [sessionID]: true,
+    }))
 
     try {
-      await agentSession.cancelTurn({
-        clientTurnID,
-        backendSessionID: stream.backendSessionID,
-      })
+      const result = agentSession.interrupt
+        ? await agentSession.interrupt({
+            backendSessionID,
+            ...(clientTurnID ? { clientTurnID } : {}),
+            reason: "user-interrupt",
+          })
+        : clientTurnID
+          ? await agentSession.cancelTurn({
+              clientTurnID,
+              backendSessionID,
+            }).then((cancelResult) => ({
+              backendSessionID,
+              clientTurnID,
+              localRequestsAborted: cancelResult.localRequestAborted ? 1 : 0,
+              backendCancelled: cancelResult.backendCancelled,
+              backendCancelError: cancelResult.backendCancelError,
+            }))
+          : null
+
+      if (!result || result.backendCancelError || !result.backendCancelled) {
+        setCancellingSessionIDs((current) => {
+          if (!current[sessionID]) return current
+          const next = { ...current }
+          delete next[sessionID]
+          return next
+        })
+      }
     } catch (error) {
-      stream.cancelRequested = false
-      console.error("[desktop] agentSession.cancelTurn failed:", error)
+      if (stream) {
+        stream.cancelRequested = false
+      }
+      setCancellingSessionIDs((current) => {
+        if (!current[sessionID]) return current
+        const next = { ...current }
+        delete next[sessionID]
+        return next
+      })
+      console.error("[desktop] agentSession interrupt failed:", error)
     }
   }
 

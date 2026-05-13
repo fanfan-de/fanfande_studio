@@ -12,6 +12,7 @@ import type {
   AssistantTurnPhase,
   AssistantTurnRuntime,
   LoadedSessionHistoryMessage,
+  SessionDiffSummary,
   SessionTaskSummary,
   SessionSummary,
   Turn,
@@ -36,6 +37,50 @@ function readOptionalNumber(value: unknown) {
 function readRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
   return value as Record<string, unknown>
+}
+
+function readSessionDiffSummary(value: unknown): SessionDiffSummary | undefined {
+  const record = readRecord(value)
+  if (!record) return undefined
+
+  const rawDiffs = Array.isArray(record.diffs) ? record.diffs : []
+  const diffs = rawDiffs
+    .map((item) => {
+      const diff = readRecord(item)
+      if (!diff) return null
+
+      const file = readString(diff.file).trim()
+      if (!file) return null
+
+      const additions = readNumber(diff.additions)
+      const deletions = readNumber(diff.deletions)
+      return {
+        file,
+        additions,
+        deletions,
+      }
+    })
+    .filter((item): item is SessionDiffSummary["diffs"][number] => item !== null)
+
+  if (diffs.length === 0) return undefined
+
+  const statsRecord = readRecord(record.stats)
+  const stats = statsRecord
+    ? {
+        additions: readNumber(statsRecord.additions),
+        deletions: readNumber(statsRecord.deletions),
+        files: readNumber(statsRecord.files),
+      }
+    : undefined
+  const title = readString(record.title).trim()
+  const body = readString(record.body).trim()
+
+  return {
+    ...(title ? { title } : {}),
+    ...(body ? { body } : {}),
+    ...(stats ? { stats } : {}),
+    diffs,
+  }
 }
 
 function readMessageID(value: unknown) {
@@ -1564,6 +1609,7 @@ export function buildUserTurnText(input: {
 
 export function buildUserTurn(input: {
   attachments?: UserTurnAttachment[]
+  diffSummary?: SessionDiffSummary
   displayText?: string
   fallbackText?: string
   id?: string
@@ -1589,6 +1635,7 @@ export function buildUserTurn(input: {
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(references.length > 0 ? { references } : {}),
     ...(input.questionAnswer ? { questionAnswer: input.questionAnswer } : {}),
+    ...(input.diffSummary?.diffs.length ? { diffSummary: input.diffSummary } : {}),
     timestamp: input.timestamp ?? Date.now(),
   } satisfies UserTurn
 }
@@ -1633,6 +1680,7 @@ function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
   return buildUserTurn({
     id: message.info.id || createID("user"),
     attachments,
+    diffSummary: readSessionDiffSummary(message.info.diffSummary),
     displayText: presentation.displayText,
     questionAnswer,
     references: presentation.references,

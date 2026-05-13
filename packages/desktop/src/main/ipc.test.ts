@@ -61,6 +61,81 @@ describe("ipc session stream cleanup helpers", () => {
     expect(otherPrefix.dispose).not.toHaveBeenCalled()
     expect([...subscriptions.keys()]).toEqual(["112:session-b", "1:12:session-c"])
   })
+
+  it("aborts only the matching client turn when provided", () => {
+    const matching = new AbortController()
+    const sameSessionOtherTurn = new AbortController()
+    const requests = new Map([
+      ["12:turn-a", {
+        backendSessionID: "session-a",
+        cancelRequested: false,
+        clientTurnID: "turn-a",
+        controller: matching,
+      }],
+      ["12:turn-b", {
+        backendSessionID: "session-a",
+        cancelRequested: false,
+        clientTurnID: "turn-b",
+        controller: sameSessionOtherTurn,
+      }],
+    ])
+
+    const aborted = internal.abortActiveAgentSessionRequestsInMap(requests, {
+      backendSessionID: "session-a",
+      clientTurnID: "turn-a",
+      webContentsID: 12,
+    })
+
+    expect(aborted).toBe(1)
+    expect(requests.get("12:turn-a")?.cancelRequested).toBe(true)
+    expect(matching.signal.aborted).toBe(true)
+    expect(requests.get("12:turn-b")?.cancelRequested).toBe(false)
+    expect(sameSessionOtherTurn.signal.aborted).toBe(false)
+  })
+
+  it("aborts all active requests for the same backend session in one webContents when no turn is provided", () => {
+    const first = new AbortController()
+    const second = new AbortController()
+    const otherSession = new AbortController()
+    const otherWebContents = new AbortController()
+    const requests = new Map([
+      ["12:turn-a", {
+        backendSessionID: "session-a",
+        cancelRequested: false,
+        clientTurnID: "turn-a",
+        controller: first,
+      }],
+      ["12:turn-b", {
+        backendSessionID: "session-a",
+        cancelRequested: false,
+        clientTurnID: "turn-b",
+        controller: second,
+      }],
+      ["12:turn-c", {
+        backendSessionID: "session-b",
+        cancelRequested: false,
+        clientTurnID: "turn-c",
+        controller: otherSession,
+      }],
+      ["13:turn-d", {
+        backendSessionID: "session-a",
+        cancelRequested: false,
+        clientTurnID: "turn-d",
+        controller: otherWebContents,
+      }],
+    ])
+
+    const aborted = internal.abortActiveAgentSessionRequestsInMap(requests, {
+      backendSessionID: "session-a",
+      webContentsID: 12,
+    })
+
+    expect(aborted).toBe(2)
+    expect(first.signal.aborted).toBe(true)
+    expect(second.signal.aborted).toBe(true)
+    expect(otherSession.signal.aborted).toBe(false)
+    expect(otherWebContents.signal.aborted).toBe(false)
+  })
 })
 
 describe("ipc tool permission mode helpers", () => {

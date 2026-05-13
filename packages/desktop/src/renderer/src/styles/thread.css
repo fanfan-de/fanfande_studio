@@ -2061,8 +2061,8 @@ body.is-image-lightbox-open {
     pointer-events: none;
   }
 
-  .assistant-section.is-response:hover .assistant-response-side-chat .assistant-response-actions,
-  .assistant-section.is-response:focus-within .assistant-response-side-chat .assistant-response-actions,
+  .assistant-shell:hover .assistant-response-side-chat .assistant-response-actions,
+  .assistant-shell:focus-within .assistant-response-side-chat .assistant-response-actions,
   .assistant-response-side-chat.is-persistent .assistant-response-actions {
     opacity: 1;
     pointer-events: auto;
@@ -2295,6 +2295,26 @@ body.is-image-lightbox-open {
   font-size: 16px;
   line-height: 1.6;
   box-shadow: none;
+}
+
+.user-turn-diff-summary {
+  width: min(100%, 520px);
+  min-width: 0;
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.user-turn-diff-summary .trace-file-change-summary {
+  grid-template-columns: 16px minmax(0, auto) auto 14px;
+  padding: 5px 8px;
+  border: 1px solid rgba(151, 168, 189, 0.48);
+  border-radius: var(--seg-radius-xs);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.user-turn-diff-summary .trace-file-change-list {
+  background: rgba(255, 255, 255, 0.58);
 }
 
 .user-bubble-content {

@@ -11,6 +11,7 @@ import * as EventStore from "#session/runtime/event-store.ts"
 import * as Message from "#session/core/message.ts"
 import * as Orchestrator from "#session/runtime/orchestrator.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
+import * as SessionRunner from "#session/runtime/session-runner.ts"
 import * as Session from "#session/core/session.ts"
 import * as LiveStreamHub from "#session/runtime/live-stream-hub.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
@@ -74,6 +75,8 @@ type DeleteSessionResponseEnvelope = JsonEnvelope<{
 type CancelSessionResponseEnvelope = JsonEnvelope<{
   sessionID: string
   cancelled: boolean
+  activeCancelled: boolean
+  queuedCancelled: number
 }>
 
 type DeleteProjectResponseEnvelope = JsonEnvelope<{
@@ -1168,6 +1171,8 @@ describe("server api", () => {
       expect(body.data).toEqual({
         sessionID,
         cancelled: false,
+        activeCancelled: false,
+        queuedCancelled: 0,
       })
     } finally {
       if (sessionID) {
@@ -1207,12 +1212,99 @@ describe("server api", () => {
       expect(body.data).toEqual({
         sessionID,
         cancelled: true,
+        activeCancelled: true,
+        queuedCancelled: 0,
       })
       expect(controller.signal.aborted).toBe(true)
       expect(RunningState.isRunning(sessionID)).toBe(false)
     } finally {
       if (sessionID) {
         RunningState.finish(sessionID, controller)
+        Session.removeSession(sessionID)
+      }
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("POST /api/sessions/:id/cancel should cancel queued work when requested", async () => {
+    const app = createServerApp()
+    const directory = await createTempDirectory("fanfande-cancel-queued-")
+    let sessionID: string | null = null
+    let releaseFirst!: () => void
+    const firstStarted = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let finishFirst!: () => void
+    const firstFinished = new Promise<void>((resolve) => {
+      finishFirst = resolve
+    })
+    const observedEvents: RuntimeEvent.RuntimeEvent[] = []
+    const unsubscribe = EventStore.subscribe((event) => {
+      if (event.sessionID === sessionID) {
+        observedEvents.push(event)
+      }
+    })
+
+    try {
+      const createResponse = await app.request("http://localhost/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const createBody = (await createResponse.json()) as SessionResponseEnvelope
+      sessionID = createBody.data?.id ?? null
+
+      expect(createResponse.status).toBe(201)
+      expect(sessionID).toBeString()
+      if (!sessionID) throw new Error("Expected session id")
+
+      const first = SessionRunner.enqueuePrompt({
+        sessionID,
+        directory,
+        type: "prompt",
+        execute: async () => {
+          releaseFirst()
+          await firstFinished
+          return "first"
+        },
+      })
+
+      await firstStarted
+
+      const second = SessionRunner.enqueuePrompt({
+        sessionID,
+        directory,
+        type: "prompt",
+        execute: async () => "second",
+      })
+
+      expect(second.mode).toBe("queued")
+      const response = await app.request(`http://localhost/api/sessions/${sessionID}/cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cancelQueued: true }),
+      })
+      const body = (await response.json()) as CancelSessionResponseEnvelope
+
+      expect(response.status).toBe(200)
+      expect(body.success).toBe(true)
+      expect(body.data).toEqual({
+        sessionID,
+        cancelled: true,
+        activeCancelled: true,
+        queuedCancelled: 1,
+      })
+      await expect(second.promise).rejects.toThrow("cancelled before it started")
+      expect(observedEvents.some((event) => event.turnID === second.turnID && event.type === "turn.cancelled")).toBe(true)
+
+      finishFirst()
+      await expect(first.promise).resolves.toBe("first")
+      await SessionRunner.waitForIdle(sessionID)
+    } finally {
+      unsubscribe()
+      finishFirst()
+      if (sessionID) {
+        SessionRunner.cancelSession(sessionID, { cancelQueued: true })
         Session.removeSession(sessionID)
       }
       await rm(directory, { recursive: true, force: true })

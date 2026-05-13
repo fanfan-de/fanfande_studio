@@ -223,8 +223,34 @@ function getRunningSessionIDs(
   return Array.from(sessionIDs)
 }
 
+function hasStreamingAssistantTurn(turns: Turn[]) {
+  return turns.some((turn) => turn.kind === "assistant" && turn.isStreaming)
+}
+
+function isRuntimeDebugBusy(debug: SessionRuntimeDebugSnapshot | null | undefined) {
+  return debug?.status.type === "busy" || Boolean(debug?.activeTurnID)
+}
+
+function isSessionInterruptible(input: {
+  cancellingSessionIDs: Record<string, boolean>
+  conversations: Record<string, Turn[]>
+  isSendingByTabKey: Record<string, boolean>
+  sessionID: string | null | undefined
+  sessionRuntimeDebugBySession: Record<string, SessionRuntimeDebugSnapshot>
+  tabKey: string | null | undefined
+}) {
+  if (!input.sessionID) return false
+  return (
+    Boolean(input.tabKey && input.isSendingByTabKey[input.tabKey]) ||
+    Boolean(input.cancellingSessionIDs[input.sessionID]) ||
+    hasStreamingAssistantTurn(input.conversations[input.sessionID] ?? []) ||
+    isRuntimeDebugBusy(input.sessionRuntimeDebugBySession[input.sessionID])
+  )
+}
+
 interface BuildWorkspaceDerivedStateInput {
   activeSideChatSessionIDByParentSessionID: Record<string, string>
+  cancellingSessionIDs: Record<string, boolean>
   composerAttachmentsByTabKey: Record<string, ComposerAttachment[]>
   composerDraftStateByTabKey: Record<string, ComposerDraftState>
   contextUsageBySession: Record<string, SessionContextUsage>
@@ -252,6 +278,7 @@ interface BuildWorkspaceDerivedStateInput {
 
 export function buildWorkspaceDerivedState({
   activeSideChatSessionIDByParentSessionID,
+  cancellingSessionIDs,
   composerAttachmentsByTabKey,
   composerDraftStateByTabKey,
   contextUsageBySession,
@@ -372,6 +399,15 @@ export function buildWorkspaceDerivedState({
     : createEmptyComposerDraftState()
   const activeSideChatAttachments = activeSideChatTabKey ? composerAttachmentsByTabKey[activeSideChatTabKey] ?? [] : []
   const activeSideChatIsSending = activeSideChatTabKey ? Boolean(isSendingByTabKey[activeSideChatTabKey]) : false
+  const activeSideChatIsCancelling = activeSideChatSession ? Boolean(cancellingSessionIDs[activeSideChatSession.id]) : false
+  const activeSideChatIsInterruptible = isSessionInterruptible({
+    cancellingSessionIDs,
+    conversations,
+    isSendingByTabKey,
+    sessionID: activeSideChatSession?.id,
+    sessionRuntimeDebugBySession,
+    tabKey: activeSideChatTabKey,
+  })
   const activeSideChatCountsByAnchorMessageID =
     activeSession && !activeSessionIsSideChat ? collectSideChatCountsForParentSession(workspaces, activeSession.id) : {}
   const isCreateSessionTabActive = activeCreateSessionTab !== null
@@ -385,6 +421,15 @@ export function buildWorkspaceDerivedState({
   const canInsertWorkspaceFileCommentsIntoDraft = Boolean(activeTabKey)
   const composerAttachments = activeTabKey ? composerAttachmentsByTabKey[activeTabKey] ?? [] : []
   const isSending = activeTabKey ? Boolean(isSendingByTabKey[activeTabKey]) : false
+  const isCancelling = activeSession ? Boolean(cancellingSessionIDs[activeSession.id]) : false
+  const isInterruptible = isSessionInterruptible({
+    cancellingSessionIDs,
+    conversations,
+    isSendingByTabKey,
+    sessionID: activeSession?.id,
+    sessionRuntimeDebugBySession,
+    tabKey: activeTabKey,
+  })
   const isCreatingSession = activeTabKey ? Boolean(isCreatingSessionByTabKey[activeTabKey]) : false
   const runningSessionIDs = getRunningSessionIDs(conversations, isSendingByTabKey)
   const canvasSessionTabs = focusedPane
@@ -423,6 +468,15 @@ export function buildWorkspaceDerivedState({
     const paneActiveSideChatTabKey = paneActiveSideChatSession
       ? getWorkbenchTabKey(createSessionWorkbenchTab(paneActiveSideChatSession.id))
       : null
+    const paneActiveSideChatIsCancelling = paneActiveSideChatSession ? Boolean(cancellingSessionIDs[paneActiveSideChatSession.id]) : false
+    const paneActiveSideChatIsInterruptible = isSessionInterruptible({
+      cancellingSessionIDs,
+      conversations,
+      isSendingByTabKey,
+      sessionID: paneActiveSideChatSession?.id,
+      sessionRuntimeDebugBySession,
+      tabKey: paneActiveSideChatTabKey,
+    })
     const paneTabs: Array<
       | {
           key: string
@@ -484,6 +538,8 @@ export function buildWorkspaceDerivedState({
         ? composerDraftStateByTabKey[paneActiveSideChatTabKey] ?? createEmptyComposerDraftState()
         : createEmptyComposerDraftState(),
       activeSideChatIsSending: paneActiveSideChatTabKey ? Boolean(isSendingByTabKey[paneActiveSideChatTabKey]) : false,
+      activeSideChatIsCancelling: paneActiveSideChatIsCancelling,
+      activeSideChatIsInterruptible: paneActiveSideChatIsInterruptible,
       activeSideChatPendingPermissionRequests: paneActiveSideChatSession
         ? pendingPermissionRequestsBySession[paneActiveSideChatSession.id] ?? []
         : [],
@@ -517,6 +573,15 @@ export function buildWorkspaceDerivedState({
           ? Boolean(isCreatingSessionByTabKey[currentActiveTabKey])
           : false,
       isSending: currentActiveTabKey ? Boolean(isSendingByTabKey[currentActiveTabKey]) : false,
+      isCancelling: currentSession ? Boolean(cancellingSessionIDs[currentSession.id]) : false,
+      isInterruptible: isSessionInterruptible({
+        cancellingSessionIDs,
+        conversations,
+        isSendingByTabKey,
+        sessionID: currentSession?.id,
+        sessionRuntimeDebugBySession,
+        tabKey: currentActiveTabKey,
+      }),
       pendingPermissionRequests: currentActiveSessionID ? pendingPermissionRequestsBySession[currentActiveSessionID] ?? [] : [],
       projectID:
         isInitialWorkspaceLoadPending && currentWorkspace && seedWorkspaceIDs.has(currentWorkspace.id)
@@ -553,6 +618,8 @@ export function buildWorkspaceDerivedState({
     activeSideChatAttachments,
     activeSideChatCountsByAnchorMessageID,
     activeSideChatDraftState,
+    activeSideChatIsCancelling,
+    activeSideChatIsInterruptible,
     activeSideChatIsSending,
     activeSideChatPendingPermissionRequests,
     activeSideChatSession,
@@ -575,7 +642,9 @@ export function buildWorkspaceDerivedState({
     focusedPane,
     focusedPaneID,
     isCreateSessionTabActive,
+    isCancelling,
     isCreatingSession,
+    isInterruptible,
     isSending,
     openCanvasSessionIDs,
     runningSessionIDs,

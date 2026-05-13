@@ -714,6 +714,7 @@ interface UseSessionStreamControllerOptions {
   sessionEventRouterRef: MutableRefObject<AgentSessionEventRouter>
   sessionRuntimeDebugBySession: Record<string, SessionRuntimeDebugSnapshot>
   setAgentSessions: StateSetter<Record<string, string>>
+  setCancellingSessionIDs: StateSetter<Record<string, boolean>>
   setCanLoadSessionHistory: StateSetter<boolean>
   setContextUsageBySession: StateSetter<Record<string, SessionContextUsage>>
   setConversations: StateSetter<Record<string, Turn[]>>
@@ -755,6 +756,7 @@ export function useSessionStreamController({
   sessionEventRouterRef,
   sessionRuntimeDebugBySession,
   setAgentSessions,
+  setCancellingSessionIDs,
   setCanLoadSessionHistory,
   setContextUsageBySession,
   setConversations,
@@ -914,6 +916,15 @@ export function useSessionStreamController({
         delete pendingStreamsRef.current[streamID]
       }
     }
+  }
+
+  function clearCancellingSession(sessionID: string) {
+    setCancellingSessionIDs((current) => {
+      if (!current[sessionID]) return current
+      const next = { ...current }
+      delete next[sessionID]
+      return next
+    })
   }
 
   function replaceConversationTurns(sessionID: string, nextTurns: Turn[]) {
@@ -1155,6 +1166,7 @@ export function useSessionStreamController({
     }
 
     if (isTerminalStreamEvent(streamEvent)) {
+      clearCancellingSession(target.sessionID)
       if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(target.sessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
       }
@@ -1191,6 +1203,7 @@ export function useSessionStreamController({
     const backendTurnID = resolveStreamTurnID(streamEvent)
     if (!backendTurnID) {
       if (isTerminalStreamEvent(streamEvent)) {
+        clearCancellingSession(uiSessionID)
         if (isCompletedStreamEvent(streamEvent)) {
           updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
         }
@@ -1252,6 +1265,7 @@ export function useSessionStreamController({
     }
 
     if (isTerminalStreamEvent(streamEvent)) {
+      clearCancellingSession(uiSessionID)
       if (isCompletedStreamEvent(streamEvent)) {
         updateSessionContextUsage(uiSessionID, readSessionContextUsageFromDoneEventData(streamEvent.data))
       }

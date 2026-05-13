@@ -71,6 +71,8 @@ interface ThreadViewProps {
   sideChatAttachments?: ComposerAttachment[]
   sideChatCountsByAnchorMessageID: Record<string, number>
   sideChatDraftState?: ComposerDraftState
+  sideChatIsCancelling?: boolean
+  sideChatIsInterruptible?: boolean
   sideChatIsSending?: boolean
   sideChatPendingPermissionRequests?: PermissionRequest[]
   sideChatPermissionRequestActionError?: string | null
@@ -213,6 +215,162 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
       </div>
     </div>
   )
+}
+
+function normalizeUserTurnDiffSummary(diffSummary: UserTurn["diffSummary"]): AssistantTraceFileChange[] {
+  return diffSummary?.diffs
+    .filter((change) => change.file.trim())
+    .map((change) => ({
+      file: change.file,
+      additions: change.additions,
+      deletions: change.deletions,
+    })) ?? []
+}
+
+function summarizeUserTurnDiffStats(
+  diffSummary: UserTurn["diffSummary"],
+  fileChanges: AssistantTraceFileChange[],
+) {
+  const fallback = fileChanges.reduce(
+    (stats, change) => ({
+      additions: stats.additions + change.additions,
+      deletions: stats.deletions + change.deletions,
+      files: stats.files + 1,
+    }),
+    { additions: 0, deletions: 0, files: 0 },
+  )
+  const stats = diffSummary?.stats ?? fallback
+
+  return {
+    additions: stats.additions,
+    deletions: stats.deletions,
+    files: stats.files > 0 ? stats.files : fallback.files,
+  }
+}
+
+function formatUserTurnDiffSummaryLabel(fileCount: number) {
+  return `${fileCount} file${fileCount === 1 ? "" : "s"} changed`
+}
+
+function UserTurnDiffSummary({
+  onFileChangeSelect,
+  turn,
+}: {
+  onFileChangeSelect?: (file: string) => void
+  turn: UserTurn
+}) {
+  const fileChanges = normalizeUserTurnDiffSummary(turn.diffSummary)
+  const fileChangeSignature = fileChanges
+    .map((change) => `${change.file}\u0000${change.additions}\u0000${change.deletions}`)
+    .join("\u0001")
+  const [isListExpanded, setIsListExpanded] = useState(false)
+
+  useEffect(() => {
+    setIsListExpanded(false)
+  }, [fileChangeSignature, turn.id])
+
+  if (fileChanges.length === 0) return null
+
+  const stats = summarizeUserTurnDiffStats(turn.diffSummary, fileChanges)
+  const listID = `user-turn-diff-list-${turn.id}`
+  const summaryLabel = formatUserTurnDiffSummaryLabel(stats.files)
+
+  return (
+    <div className="user-turn-diff-summary">
+      <button
+        type="button"
+        className="trace-file-change-summary"
+        aria-expanded={isListExpanded}
+        aria-controls={listID}
+        onClick={() => setIsListExpanded((current) => !current)}
+      >
+        <span className="trace-file-change-summary-icon" aria-hidden="true">
+          <ChangesIcon />
+        </span>
+        <span className="trace-file-change-summary-label">{summaryLabel}</span>
+        <span className="trace-file-change-stats" aria-label={`${stats.additions} additions, ${stats.deletions} deletions`}>
+          <span className="is-add">+{stats.additions}</span>
+          <span className="is-remove">-{stats.deletions}</span>
+        </span>
+        <span className="trace-file-change-summary-chevron" aria-hidden="true">
+          {isListExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+        </span>
+      </button>
+      {isListExpanded ? (
+        <div id={listID} className="trace-file-change-list">
+          {fileChanges.map((change, changeIndex) => {
+            const rowContent = (
+              <>
+                <span className="trace-file-change-toggle-icon" aria-hidden="true" />
+                <span className="trace-file-change-action">Changed</span>
+                <span className="trace-file-change-file">{change.file}</span>
+                <span className="trace-file-change-stats" aria-label={`${change.additions} additions, ${change.deletions} deletions`}>
+                  <span className="is-add">+{change.additions}</span>
+                  <span className="is-remove">-{change.deletions}</span>
+                </span>
+                <span className="trace-file-change-note">Summary only</span>
+              </>
+            )
+
+            return (
+              <div key={`${turn.id}-${change.file}-${changeIndex}`} className="trace-file-change-entry">
+                {onFileChangeSelect ? (
+                  <button
+                    type="button"
+                    className="trace-file-change-row"
+                    aria-label={`Changed ${change.file}`}
+                    onClick={() => onFileChangeSelect(change.file)}
+                  >
+                    {rowContent}
+                  </button>
+                ) : (
+                  <div className="trace-file-change-row is-static">
+                    {rowContent}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function hasUserTurnDiffSummary(turn: UserTurn) {
+  return normalizeUserTurnDiffSummary(turn.diffSummary).length > 0
+}
+
+function hasFollowingAssistantBeforeNextUser(turns: Turn[], startIndex: number) {
+  for (let index = startIndex + 1; index < turns.length; index += 1) {
+    const candidate = turns[index]
+    if (candidate.kind === "user") return false
+    if (candidate.kind === "assistant") return true
+  }
+
+  return false
+}
+
+function findPreviousUserTurn(turns: Turn[], startIndex: number) {
+  for (let index = startIndex - 1; index >= 0; index -= 1) {
+    const candidate = turns[index]
+    if (candidate.kind === "user") return candidate
+  }
+
+  return null
+}
+
+function getAssistantTrailingUserDiffTurn(turns: Turn[], assistantIndex: number, assistantTurn: AssistantTurn) {
+  if (assistantTurn.isStreaming || hasFollowingAssistantBeforeNextUser(turns, assistantIndex)) return null
+
+  const userTurn = findPreviousUserTurn(turns, assistantIndex)
+  if (!userTurn || !hasUserTurnDiffSummary(userTurn)) return null
+
+  return userTurn
+}
+
+function shouldRenderDiffOnStandaloneUserTurn(turns: Turn[], userIndex: number, turn: UserTurn) {
+  return hasUserTurnDiffSummary(turn) && !hasFollowingAssistantBeforeNextUser(turns, userIndex)
 }
 
 const primaryPermissionDecisions: PermissionDecision[] = ["deny", "allow"]
@@ -371,10 +529,6 @@ function filterRenderedAssistantTraceItems(
   })
 }
 
-function hasAssistantResponseContent(items: AssistantTraceItem[]) {
-  return items.some((item) => traceSectionKeyForItem(item) === "response" && item.kind === "text" && Boolean(item.text?.trim()))
-}
-
 function buildAssistantResponseCopyText(items: AssistantTraceItem[]) {
   return items
     .filter((item) => item.kind === "text")
@@ -388,6 +542,22 @@ function buildAssistantResponseCopyText(items: AssistantTraceItem[]) {
     .filter(Boolean)
     .join("\n\n")
     .trim()
+}
+
+function getLastAssistantResponseSectionItems(
+  items: AssistantTraceItem[],
+  traceVisibility: AssistantTraceVisibility,
+) {
+  const blocks = buildAssistantTraceBlocks(filterRenderedAssistantTraceItems(items, true, traceVisibility))
+
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index]
+    if (block.sectionKey !== "response") continue
+    if (!block.items.some((item) => item.kind === "text" && Boolean(item.text?.trim()))) continue
+    return block.items
+  }
+
+  return []
 }
 
 function getAssistantEphemeralHint(turn: AssistantTurn) {
@@ -481,7 +651,6 @@ function AssistantTurnSections({
   onFileChangeSelect,
   onLocalFileLinkOpen,
   onProposedPlanConfirm,
-  renderAfterSection,
   showFileChanges,
   shouldCollapseReasoningAndTools,
   traceVisibility,
@@ -495,11 +664,6 @@ function AssistantTurnSections({
   onFileChangeSelect: ((file: string) => void) | undefined
   onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
-  renderAfterSection?: (input: {
-    items: AssistantTraceItem[]
-    sectionKey: AssistantTraceSectionKey
-    title: string
-  }) => ReactNode
   showFileChanges: boolean
   shouldCollapseReasoningAndTools: boolean
   traceVisibility: AssistantTraceVisibility
@@ -543,13 +707,6 @@ function AssistantTurnSections({
                   traceVisibility={traceVisibility}
                 />
               ))}
-              {renderAfterSection
-                ? renderAfterSection({
-                    items: renderedItems,
-                    sectionKey: block.sectionKey,
-                    title: block.title,
-                  })
-                : null}
             </div>
           </AssistantTraceSection>
         )
@@ -898,6 +1055,8 @@ interface InlineSideChatThreadProps {
   draftState: ComposerDraftState
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
+  isCancelling?: boolean
+  isInterruptible?: boolean
   isSending: boolean
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
@@ -945,6 +1104,8 @@ function InlineSideChatThread({
   draftState,
   isAgentDebugTraceEnabled,
   isResolvingPermissionRequest,
+  isCancelling = false,
+  isInterruptible = false,
   isSending,
   pendingPermissionRequests,
   permissionRequestActionError,
@@ -1059,6 +1220,8 @@ function InlineSideChatThread({
           }
           draftState={draftState}
           hasPendingPermissionRequests={pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+          isCancelling={isCancelling}
+          isInterruptible={isInterruptible}
           isSending={isSending}
           mcpOptions={composer.mcpOptions}
           modelOptions={composer.modelOptions}
@@ -2408,6 +2571,8 @@ export function ThreadView({
   sideChatAttachments = [],
   sideChatCountsByAnchorMessageID,
   sideChatDraftState = createEmptyComposerDraftState(),
+  sideChatIsCancelling = false,
+  sideChatIsInterruptible = false,
   sideChatIsSending = false,
   sideChatPendingPermissionRequests = [],
   sideChatPermissionRequestActionError = null,
@@ -2645,6 +2810,9 @@ export function ThreadView({
                       <time>{formatTime(turn.timestamp)}</time>
                     </div>
                     <UserTurnBubble turn={turn} />
+                    {shouldRenderDiffOnStandaloneUserTurn(activeTurns, turnIndex, turn) ? (
+                      <UserTurnDiffSummary turn={turn} onFileChangeSelect={onFileChangeSelect} />
+                    ) : null}
                     {userCopyText ? (
                       <div className="user-message-actions">
                         <button
@@ -2675,8 +2843,16 @@ export function ThreadView({
               if (renderedItems.length === 0 && !ephemeralHint) return null
               const sideChatAnchorMessageID = turn.messageID ?? turn.id
               const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
-              const canOpenSideChat = !readOnlySideChat && !turn.isStreaming && hasAssistantResponseContent(traceItems) && Boolean(onOpenSideChat)
+              const lastResponseItems = getLastAssistantResponseSectionItems(traceItems, assistantTraceVisibility)
+              const responseCopyText = buildAssistantResponseCopyText(lastResponseItems)
+              const canOpenSideChat =
+                !readOnlySideChat &&
+                !turn.isStreaming &&
+                lastResponseItems.length > 0 &&
+                Boolean(onOpenSideChat)
               const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
+              const trailingUserDiffTurn = getAssistantTrailingUserDiffTurn(activeTurns, turnIndex, turn)
+              const shouldRenderResponseActions = Boolean(responseCopyText || canOpenSideChat)
 
               return (
                 <article key={turn.id} className="turn assistant-turn">
@@ -2694,106 +2870,104 @@ export function ThreadView({
                         onFileChangeSelect={onFileChangeSelect}
                         onLocalFileLinkOpen={onLocalFileLinkOpen}
                         onProposedPlanConfirm={onProposedPlanConfirm}
-                        renderAfterSection={({ items, sectionKey }) => {
-                          if (sectionKey !== "response") return null
-
-                          const responseCopyText = buildAssistantResponseCopyText(items)
-                          if (!responseCopyText && !canOpenSideChat) return null
-
-                          return (
-                            <div
-                              className={joinClassNames(
-                                "assistant-response-side-chat",
-                                (copiedResponseTurnID === turn.id ||
-                                  activeInlineSideChat ||
-                                  existingSideChatCount > 0) &&
-                                  "is-persistent",
-                              )}
-                            >
-                              <div className="assistant-response-actions">
-                                {responseCopyText ? (
-                                  <button
-                                    className={joinClassNames(
-                                      "assistant-response-action-button message-action-icon-button",
-                                      copiedResponseTurnID === turn.id && "is-active",
-                                    )}
-                                    type="button"
-                                    aria-label={copiedResponseTurnID === turn.id ? "Copied assistant response" : "Copy assistant response"}
-                                    title={copiedResponseTurnID === turn.id ? "Copied" : "Copy"}
-                                    onClick={() => void handleCopyAssistantResponse(turn.id, responseCopyText)}
-                                  >
-                                    <CopyIcon />
-                                  </button>
-                                ) : null}
-                                {canOpenSideChat ? (
-                                  <button
-                                    className={joinClassNames(
-                                      "assistant-response-action-button message-action-icon-button",
-                                      activeInlineSideChat && "is-active",
-                                    )}
-                                    type="button"
-                                    aria-label={
-                                      activeInlineSideChat
-                                        ? "Hide this side chat"
-                                        : existingSideChatCount > 0
-                                          ? `Open side chat (${existingSideChatCount})`
-                                          : "Open side chat"
-                                    }
-                                    aria-pressed={Boolean(activeInlineSideChat)}
-                                    title={
-                                      activeInlineSideChat
-                                        ? "Hide this side chat"
-                                        : existingSideChatCount > 0
-                                          ? `${existingSideChatCount} side chat thread${existingSideChatCount === 1 ? "" : "s"}`
-                                          : "Open a side chat for this reply"
-                                    }
-                                    onClick={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
-                                  >
-                                    <SideChatIcon />
-                                  </button>
-                                ) : null}
-                              </div>
-
-                              {activeInlineSideChat &&
-                              onSideChatDraftStateChange &&
-                              onSideChatPickAttachments &&
-                              onSideChatRemoveAttachment &&
-                              onSideChatSend ? (
-                                <InlineSideChatThread
-                                  activeProjectID={activeProjectID}
-                                  attachments={sideChatAttachments}
-                                  assistantTraceVisibility={assistantTraceVisibility}
-                                  composerRefreshVersion={composerRefreshVersion}
-                                  draftState={sideChatDraftState}
-                                  isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-                                  isResolvingPermissionRequest={isResolvingPermissionRequest}
-                                  isSending={sideChatIsSending}
-                                  pendingPermissionRequests={sideChatPendingPermissionRequests}
-                                  permissionRequestActionError={sideChatPermissionRequestActionError}
-                                  permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}
-                                  session={activeInlineSideChat}
-                                  turns={sideChatTurns}
-                                  onDraftStateChange={onSideChatDraftStateChange}
-                                  onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
-                                  onAskUserQuestionAnswer={onAskUserQuestionAnswer}
-                                  onLocalFileLinkOpen={onLocalFileLinkOpen}
-                                  onPermissionRequestResponse={onPermissionRequestResponse}
-                                  onPickAttachments={onSideChatPickAttachments}
-                                  onPasteImageAttachments={onSideChatPasteImageAttachments}
-                                  onRemoveAttachment={onSideChatRemoveAttachment}
-                                  onCancelSend={onSideChatCancelSend}
-                                  onSend={onSideChatSend}
-                                  onSessionModelSelectionChange={onSessionModelSelectionChange}
-                                />
-                              ) : null}
-                            </div>
-                          )
-                        }}
                         showFileChanges={!turn.isStreaming}
                         shouldCollapseReasoningAndTools={!turn.isStreaming}
                         traceVisibility={assistantTraceVisibility}
                       />
                     )}
+                    {trailingUserDiffTurn ? (
+                      <UserTurnDiffSummary turn={trailingUserDiffTurn} onFileChangeSelect={onFileChangeSelect} />
+                    ) : null}
+                    {shouldRenderResponseActions ? (
+                      <div
+                        className={joinClassNames(
+                          "assistant-response-side-chat",
+                          (copiedResponseTurnID === turn.id ||
+                            activeInlineSideChat ||
+                            existingSideChatCount > 0) &&
+                            "is-persistent",
+                        )}
+                      >
+                        <div className="assistant-response-actions">
+                          {responseCopyText ? (
+                            <button
+                              className={joinClassNames(
+                                "assistant-response-action-button message-action-icon-button",
+                                copiedResponseTurnID === turn.id && "is-active",
+                              )}
+                              type="button"
+                              aria-label={copiedResponseTurnID === turn.id ? "Copied assistant response" : "Copy assistant response"}
+                              title={copiedResponseTurnID === turn.id ? "Copied" : "Copy"}
+                              onClick={() => void handleCopyAssistantResponse(turn.id, responseCopyText)}
+                            >
+                              <CopyIcon />
+                            </button>
+                          ) : null}
+                          {canOpenSideChat ? (
+                            <button
+                              className={joinClassNames(
+                                "assistant-response-action-button message-action-icon-button",
+                                activeInlineSideChat && "is-active",
+                              )}
+                              type="button"
+                              aria-label={
+                                activeInlineSideChat
+                                  ? "Hide this side chat"
+                                  : existingSideChatCount > 0
+                                    ? `Open side chat (${existingSideChatCount})`
+                                    : "Open side chat"
+                              }
+                              aria-pressed={Boolean(activeInlineSideChat)}
+                              title={
+                                activeInlineSideChat
+                                  ? "Hide this side chat"
+                                  : existingSideChatCount > 0
+                                    ? `${existingSideChatCount} side chat thread${existingSideChatCount === 1 ? "" : "s"}`
+                                    : "Open a side chat for this reply"
+                              }
+                              onClick={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
+                            >
+                              <SideChatIcon />
+                            </button>
+                          ) : null}
+                        </div>
+
+                        {activeInlineSideChat &&
+                        onSideChatDraftStateChange &&
+                        onSideChatPickAttachments &&
+                        onSideChatRemoveAttachment &&
+                        onSideChatSend ? (
+                          <InlineSideChatThread
+                            activeProjectID={activeProjectID}
+                            attachments={sideChatAttachments}
+                            assistantTraceVisibility={assistantTraceVisibility}
+                            composerRefreshVersion={composerRefreshVersion}
+                            draftState={sideChatDraftState}
+                            isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+                            isResolvingPermissionRequest={isResolvingPermissionRequest}
+                            isCancelling={sideChatIsCancelling}
+                            isInterruptible={sideChatIsInterruptible}
+                            isSending={sideChatIsSending}
+                            pendingPermissionRequests={sideChatPendingPermissionRequests}
+                            permissionRequestActionError={sideChatPermissionRequestActionError}
+                            permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}
+                            session={activeInlineSideChat}
+                            turns={sideChatTurns}
+                            onDraftStateChange={onSideChatDraftStateChange}
+                            onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
+                            onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+                            onLocalFileLinkOpen={onLocalFileLinkOpen}
+                            onPermissionRequestResponse={onPermissionRequestResponse}
+                            onPickAttachments={onSideChatPickAttachments}
+                            onPasteImageAttachments={onSideChatPasteImageAttachments}
+                            onRemoveAttachment={onSideChatRemoveAttachment}
+                            onCancelSend={onSideChatCancelSend}
+                            onSend={onSideChatSend}
+                            onSessionModelSelectionChange={onSessionModelSelectionChange}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </article>
               )

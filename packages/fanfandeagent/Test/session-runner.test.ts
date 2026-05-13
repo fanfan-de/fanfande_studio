@@ -221,6 +221,48 @@ describe("session runner", () => {
     expect(SessionRunner.info(sessionID)?.status).toBe("idle")
   })
 
+  it("cancels queued operations when session cancel requests queued work", async () => {
+    const sessionID = testSessionID()
+    const directory = testDirectory()
+    const started = deferred()
+    const finish = deferred()
+
+    const first = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      execute: async () => {
+        started.resolve()
+        await finish.promise
+        return "first"
+      },
+    })
+
+    await started.promise
+
+    const second = SessionRunner.enqueuePrompt({
+      sessionID,
+      directory,
+      type: "prompt",
+      execute: async () => "second",
+    })
+
+    expect(second.mode).toBe("queued")
+    const result = SessionRunner.cancelSession(sessionID, { cancelQueued: true })
+    expect(result).toMatchObject({
+      sessionID,
+      activeCancelled: true,
+      queuedCancelled: 1,
+      cancelled: true,
+    })
+    expect(SessionRunner.info(sessionID)?.queueLength).toBe(0)
+    await expect(second.promise).rejects.toThrow("cancelled before it started")
+
+    finish.resolve()
+    await expect(first.promise).resolves.toBe("first")
+    await SessionRunner.waitForIdle(sessionID)
+  })
+
   it("removes a queued operation when its handle is cancelled", async () => {
     const sessionID = testSessionID()
     const directory = testDirectory()

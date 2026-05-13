@@ -40,6 +40,39 @@ const workspaceModeOptions = [
   { mode: "code" as const, label: "Code", Icon: CodeModeIcon },
 ]
 
+const MINUTE_MS = 60 * 1000
+const HOUR_MS = 60 * MINUTE_MS
+const DAY_MS = 24 * HOUR_MS
+
+function formatSessionCreatedAge(timestamp: number, now: number) {
+  const age = Math.max(0, now - timestamp)
+  if (age < MINUTE_MS) return "\u521a\u521a"
+  if (age < HOUR_MS) return `${Math.max(1, Math.floor(age / MINUTE_MS))} \u5206`
+  if (age < DAY_MS) return `${Math.max(1, Math.floor(age / HOUR_MS))} \u5c0f\u65f6`
+  return `${Math.max(1, Math.floor(age / DAY_MS))} \u5929`
+}
+
+function formatSessionCreatedTitle(timestamp: number) {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(timestamp)
+}
+
+function useSessionTimeNow() {
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const intervalID = window.setInterval(() => setNow(Date.now()), MINUTE_MS)
+    return () => window.clearInterval(intervalID)
+  }, [])
+
+  return now
+}
+
 interface SidebarProps {
   activeSessionID: string | null
   activeView: LeftSidebarView
@@ -343,6 +376,7 @@ function FolderWorkspaceView({
   const runningSessionIDSet = new Set(runningSessionIDs)
   const visibleSessionIDSet = new Set(visibleCanvasSessionIDs)
   const [projectContextMenu, setProjectContextMenu] = useState<ProjectContextMenuState>(null)
+  const sessionTimeNow = useSessionTimeNow()
 
   function closeProjectContextMenu() {
     setProjectContextMenu(null)
@@ -456,6 +490,7 @@ function FolderWorkspaceView({
                     const isRunning = runningSessionIDSet.has(session.id)
                     const hasUnreadCanvas =
                       Boolean(sessionCanvasUnreadBySession[session.id]) && !visibleSessionIDSet.has(session.id)
+                    const sessionCreatedAt = session.created ?? session.updated
                     return (
                       <div key={session.id} className="session-row-shell">
                         <button
@@ -482,15 +517,24 @@ function FolderWorkspaceView({
                             <span className="session-row-label">{session.title}</span>
                           </span>
                         </button>
-                        <button
-                          className="row-action"
-                          aria-label={`Archive session ${session.title}`}
-                          title={`Archive session ${session.title}`}
-                          disabled={deletingSessionID === session.id}
-                          onClick={(event) => onSessionDelete(workspace, session, event)}
-                        >
-                          <ArchiveIcon />
-                        </button>
+                        <span className="session-row-trailing">
+                          <time
+                            className="session-row-created-at"
+                            dateTime={new Date(sessionCreatedAt).toISOString()}
+                            title={formatSessionCreatedTitle(sessionCreatedAt)}
+                          >
+                            {formatSessionCreatedAge(sessionCreatedAt, sessionTimeNow)}
+                          </time>
+                          <button
+                            className="row-action"
+                            aria-label={`Archive session ${session.title}`}
+                            title={`Archive session ${session.title}`}
+                            disabled={deletingSessionID === session.id}
+                            onClick={(event) => onSessionDelete(workspace, session, event)}
+                          >
+                            <ArchiveIcon />
+                          </button>
+                        </span>
                       </div>
                     )
                   })}

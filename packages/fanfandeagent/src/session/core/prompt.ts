@@ -15,6 +15,7 @@ import * as Snapshot  from "#snapshot/snapshot.ts"
 import * as SessionDiff from "#session/diff/diff.ts"
 import { Flag } from "#flag/flag.ts"
 import * as Orchestrator from "#session/runtime/orchestrator.ts"
+import * as EventStore from "#session/runtime/event-store.ts"
 import * as RunningState from "#session/runtime/running-state.ts"
 import * as SessionRunner from "#session/runtime/session-runner.ts"
 import * as ContextWindow from "#session/core/context-window.ts"
@@ -152,6 +153,125 @@ async function persistRecoveredToolError(
     }
 
     await Session.updatePart(part)
+}
+
+async function captureSnapshot(input: {
+    context: string
+    sessionID: string
+    messageID?: string
+}) {
+    return Snapshot.track().catch((error) => {
+        log.warn(`failed to capture ${input.context} snapshot`, {
+            sessionID: input.sessionID,
+            messageID: input.messageID,
+            error: error instanceof Error ? error.message : String(error),
+        })
+        return undefined
+    })
+}
+
+function compactUserDiffSummary(detailed: SessionDiff.DetailedDiffSummary): Message.User["diffSummary"] | undefined {
+    if (detailed.diffs.length === 0) return undefined
+    return SessionDiff.buildDiffSummary(SessionDiff.summarizeFileDiffs(detailed.diffs))
+}
+
+function removeUserDiffSummary(message: Message.User): Message.User {
+    const nextMessage = { ...message }
+    delete nextMessage.diffSummary
+    return nextMessage
+}
+
+const userDiffTargetsByTurn = new Map<string, {
+    message: Message.User
+    snapshot?: string
+}>()
+
+async function persistUserDiffSummary(input: {
+    message: Message.User
+    fromSnapshot?: string
+    toSnapshot?: string
+    turn?: Orchestrator.TurnContext
+}) {
+    if (!input.fromSnapshot) return input.message
+
+    const toSnapshot = input.toSnapshot ?? await captureSnapshot({
+        context: "post-turn",
+        sessionID: input.message.sessionID,
+        messageID: input.message.id,
+    })
+    if (!toSnapshot) return input.message
+
+    const summary = compactUserDiffSummary(
+        await SessionDiff.computeDetailedDiffBetweenSnapshots(input.fromSnapshot, toSnapshot, {
+            includeContent: false,
+        }),
+    )
+    const nextMessage = summary
+        ? {
+            ...input.message,
+            diffSummary: summary,
+        }
+        : removeUserDiffSummary(input.message)
+
+    if (!summary && !input.message.diffSummary) return nextMessage
+
+    await persistMessageRecord(nextMessage, input.turn)
+    return nextMessage
+}
+
+async function settleLatestUserDiffSummary(input: {
+    sessionID: string
+    toSnapshot?: string
+    turn?: Orchestrator.TurnContext
+}) {
+    const latestUser = SessionDiff.findLatestUserMessageWithSnapshot(input.sessionID)
+    if (!latestUser) return null
+
+    return persistUserDiffSummary({
+        message: latestUser.message,
+        fromSnapshot: latestUser.snapshot,
+        toSnapshot: input.toSnapshot,
+        turn: input.turn,
+    }).catch((error) => {
+        log.warn("failed to persist user diff summary", {
+            sessionID: input.sessionID,
+            userMessageID: latestUser.message.id,
+            error: error instanceof Error ? error.message : String(error),
+        })
+        return latestUser.message
+    })
+}
+
+async function settleTurnUserDiffSummary(input: {
+    sessionID: string
+    toSnapshot?: string
+    turn: Orchestrator.TurnContext
+}) {
+    const target = userDiffTargetsByTurn.get(input.turn.turnID)
+    if (!target) {
+        return settleLatestUserDiffSummary(input)
+    }
+
+    const nextMessage = await persistUserDiffSummary({
+        message: target.message,
+        fromSnapshot: target.snapshot,
+        toSnapshot: input.toSnapshot,
+        turn: input.turn,
+    }).catch((error) => {
+        log.warn("failed to persist turn user diff summary", {
+            sessionID: input.sessionID,
+            userMessageID: target.message.id,
+            turnID: input.turn.turnID,
+            error: error instanceof Error ? error.message : String(error),
+        })
+        return target.message
+    })
+
+    userDiffTargetsByTurn.set(input.turn.turnID, {
+        ...target,
+        message: nextMessage,
+    })
+    return nextMessage
 }
 
 async function removePartRecord(
@@ -320,7 +440,46 @@ function emitTurnFailureContext(input: {
     })
 }
 
-export function cancel(sessionID: string) {
+function throwIfAborted(abort: AbortSignal, message = "Prompt aborted") {
+    if (abort.aborted) throw new Error(message)
+}
+
+function isTurnAbort(runtime: SessionRunner.PromptRuntime) {
+    return runtime.abort.aborted
+}
+
+function emitTurnCancelled(input: {
+    turn: Orchestrator.TurnContext
+    reason?: RuntimeEvent.RuntimeEventPayloadByType["turn.cancelled"]["reason"]
+    detail?: string
+}) {
+    input.turn.emit("turn.state.changed", {
+        phase: "cancelled",
+        reason: input.detail ?? "Prompt cancellation requested.",
+    })
+    input.turn.emit("turn.cancelled", {
+        reason: input.reason ?? "user",
+        detail: input.detail ?? "Prompt cancellation requested.",
+    })
+}
+
+function emitQueuedTurnCancelled(input: {
+    sessionID: string
+    turnID: string
+    reason?: RuntimeEvent.RuntimeEventPayloadByType["turn.cancelled"]["reason"]
+    detail?: string
+}) {
+    const factory = RuntimeEvent.createRuntimeEventFactory({
+        sessionID: input.sessionID,
+        turnID: input.turnID,
+    })
+    EventStore.appendAndProject(factory.next("turn.cancelled", {
+        reason: input.reason ?? "user",
+        detail: input.detail ?? "Queued prompt operation was cancelled before it started.",
+    }))
+}
+
+export function cancelSession(sessionID: string, options?: { cancelQueued?: boolean; reason?: RuntimeEvent.RuntimeEventPayloadByType["turn.cancelled"]["reason"] }) {
     const turn = Orchestrator.activeTurn(sessionID)
     if (turn) {
         Session.updateTurn(turn.turnID, {
@@ -328,17 +487,27 @@ export function cancel(sessionID: string) {
             phase: "cancelled",
             error: "Prompt cancellation requested.",
         })
-        turn.emit("turn.state.changed", {
-            phase: "cancelled",
-            reason: "Prompt cancellation requested.",
-        })
-        turn.emit("turn.cancelled", {
-            reason: "user",
-            detail: "Prompt cancellation requested.",
+        emitTurnCancelled({
+            turn,
+            reason: options?.reason ?? "user",
         })
     }
 
-    return RunningState.cancel(sessionID);
+    const result = RunningState.cancelSession(sessionID, {
+        cancelQueued: options?.cancelQueued,
+    });
+    for (const turnID of result.queuedCancelledTurnIDs) {
+        emitQueuedTurnCancelled({
+            sessionID,
+            turnID,
+            reason: options?.reason ?? "user",
+        })
+    }
+    return result
+}
+
+export function cancel(sessionID: string) {
+    return cancelSession(sessionID).cancelled
 }
 
 type RunLoopResult = {
@@ -375,6 +544,7 @@ function isLegacyCompactionAssistantMessage(message: Message.WithParts) {
 // session 级状态机：一个用户输入可能经过多轮模型调用和工具调用，直到最终回答或阻塞。
 async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
     const { sessionID, abort, controller, turn } = input;
+    throwIfAborted(abort)
     const session = Session.DataBaseRead("sessions", sessionID) as Session.SessionInfo | null;
     if (!session) {
         throw new Error(`Session '${sessionID}' was not found.`);
@@ -426,6 +596,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
 
             const effectiveAgentName = resolveRuntimeAgentName(activeSession, lastUser.agent);
             const agent = (await Agent.get(effectiveAgentName)) ?? Agent.planAgent;
+            throwIfAborted(abort)
             const maxLoopIterations = resolvePromptLoopLimit(agent);
             iteration += 1;
             if (iteration > maxLoopIterations) {
@@ -446,6 +617,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 lastUser.id,
                 turn,
             )
+            throwIfAborted(abort)
             if (recoveredDanglingToolCalls > 0) {
                 log.warn("recovered dangling tool calls before resuming the prompt loop", {
                     sessionID,
@@ -491,6 +663,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 lastUser.model.modelID,
                 Instance.project.id,
             );
+            throwIfAborted(abort)
 
             const assistantMessageID = Identifier.ascending("message")
 
@@ -500,6 +673,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 messageID: assistantMessageID,
                 abort,
             });
+            throwIfAborted(abort)
 
             // system prompt 由 agent 基础规则、侧聊上下文、项目环境、skills 和用户追加规则组成。
             const system: string[] = [
@@ -513,6 +687,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 ...await SystemPrompt.skills(sessionID, lastUser.skills ?? []),
                 ...(lastUser.system ? [lastUser.system] : []),
             ].filter((item): item is string => typeof item === "string")
+            throwIfAborted(abort)
 
             const promptContext = await ContextWindow.preparePromptContext({
                 sessionID,
@@ -533,6 +708,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 },
                 disableCompaction: Session.isSideChatSession(activeSession),
             })
+            throwIfAborted(abort)
 
             const assistantMessage = createAssistantMessage(sessionID, lastUser, model, agent.name, assistantMessageID, turn.turnID);
             currentAssistant = assistantMessage;
@@ -557,6 +733,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 })
                 return undefined
             })
+            throwIfAborted(abort)
             let processResult: Awaited<ReturnType<typeof processor.process>>;
             try {
                 processResult = await processor.process({
@@ -700,6 +877,7 @@ export const prompt = fn(PromptInput, async (input) => createPromptExecutionHand
 
 // 新用户输入的真实执行：先记录 user message / parts，再启动 runLoop。
 async function runPromptOperation(input: PromptInput, runtime: SessionRunner.PromptRuntime) {
+    throwIfAborted(runtime.abort)
     const existingMessages = loadMessagesWithParts(input.sessionID)
     const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
     if (!session) {
@@ -711,13 +889,11 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
         existingMessages.length === 0
     const agentName = resolveUserMessageAgentName(session, input.agent)
 
-    const baselineSnapshot = await Snapshot.track().catch((error) => {
-        log.warn("failed to capture pre-turn snapshot", {
-            sessionID: input.sessionID,
-            error: error instanceof Error ? error.message : String(error),
-        })
-        return undefined
+    const baselineSnapshot = await captureSnapshot({
+        context: "pre-turn",
+        sessionID: input.sessionID,
     })
+    throwIfAborted(runtime.abort)
     const nextInput: PromptInput = {
         ...input,
         agent: agentName,
@@ -727,6 +903,7 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
             requestedSkillIDs: input.skills,
         }),
     }
+    throwIfAborted(runtime.abort)
 
     let userMessage: Awaited<ReturnType<typeof createUserMessage>>
     let turn: Orchestrator.TurnContext | undefined
@@ -737,6 +914,7 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
         userMessage = await createUserMessage(nextInput, {
             snapshot: baselineSnapshot,
         });
+        throwIfAborted(runtime.abort)
         if (shouldAutoGenerateTitle) {
             sessionTitlePromise = autoGenerateSessionTitle({
                 sessionID: input.sessionID,
@@ -751,6 +929,7 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
     }
 
     try {
+        throwIfAborted(runtime.abort)
         turn = Orchestrator.startTurn({
             sessionID: input.sessionID,
             turnID: runtime.turnID,
@@ -771,6 +950,10 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
             ...userMessage.messageinfo,
             turnID: turn.turnID,
         }
+        userDiffTargetsByTurn.set(turn.turnID, {
+            message: userMessage.messageinfo,
+            snapshot: baselineSnapshot,
+        })
 
         turn.emit("turn.state.changed", {
             phase: "preparing",
@@ -803,8 +986,15 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
             controller: runtime.controller,
             turn,
         });
+        throwIfAborted(runtime.abort)
 
         await sessionTitlePromise
+        throwIfAborted(runtime.abort)
+        await settleTurnUserDiffSummary({
+            sessionID: input.sessionID,
+            turn,
+        })
+        throwIfAborted(runtime.abort)
 
         Session.updateTurn(turn.turnID, {
             status: result.status === "blocked" ? "blocked" : "completed",
@@ -832,9 +1022,25 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
             input.sessionID,
             userMessage.messageinfo.id,
         )
-        await sessionTitlePromise
+        if (isTurnAbort(runtime)) {
+            void sessionTitlePromise?.catch((titleError) => {
+                log.warn("session title generation failed after prompt cancellation", {
+                    sessionID: input.sessionID,
+                    error: titleError instanceof Error ? titleError.message : String(titleError),
+                })
+            })
+        } else {
+            await sessionTitlePromise
+        }
 
         if (turn) {
+            if (!isTurnAbort(runtime)) {
+                await settleTurnUserDiffSummary({
+                    sessionID: input.sessionID,
+                    turn,
+                })
+            }
+
             const status = runtime.abort.aborted ? "cancelled" : "failed"
             Session.updateTurn(turn.turnID, {
                 status,
@@ -842,27 +1048,35 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
                 error: normalizePromptErrorMessage(error),
                 lastMessageID: latestAssistant?.info.id,
             })
-            emitTurnFailureContext({
-                turn,
-                error,
-                assistant: latestAssistant?.info.role === "assistant" ? latestAssistant.info : undefined,
-                parts: latestAssistant?.parts ?? [],
-            })
-            turn.emit("turn.state.changed", {
-                phase: "failed",
-                reason: normalizePromptErrorMessage(error),
-                messageID: latestAssistant?.info.id,
-            })
-            turn.emit("turn.failed", {
-                error: normalizePromptErrorMessage(error),
-                message: latestAssistant?.info,
-                parts: latestAssistant?.parts,
-            })
+            if (status === "cancelled") {
+                emitTurnCancelled({
+                    turn,
+                    detail: normalizePromptErrorMessage(error),
+                })
+            } else {
+                emitTurnFailureContext({
+                    turn,
+                    error,
+                    assistant: latestAssistant?.info.role === "assistant" ? latestAssistant.info : undefined,
+                    parts: latestAssistant?.parts ?? [],
+                })
+                turn.emit("turn.state.changed", {
+                    phase: "failed",
+                    reason: normalizePromptErrorMessage(error),
+                    messageID: latestAssistant?.info.id,
+                })
+                turn.emit("turn.failed", {
+                    error: normalizePromptErrorMessage(error),
+                    message: latestAssistant?.info,
+                    parts: latestAssistant?.parts,
+                })
+            }
         }
 
         throw error
     } finally {
         if (turn) {
+            userDiffTargetsByTurn.delete(turn.turnID)
             Orchestrator.finishTurn(turn)
         }
         Status.set(input.sessionID, { type: "idle" })
@@ -875,6 +1089,19 @@ async function recordSteerUserMessage(input: PromptInput, turn: Orchestrator.Tur
         throw new Error(`Session '${input.sessionID}' was not found.`);
     }
 
+    const steerSnapshot = await captureSnapshot({
+        context: "steer",
+        sessionID: input.sessionID,
+    })
+    if (steerSnapshot) {
+        await settleTurnUserDiffSummary({
+            sessionID: input.sessionID,
+            toSnapshot: steerSnapshot,
+            turn,
+        })
+    }
+    if (!turn.canAcceptSteer()) throw new Error("Prompt aborted")
+
     const agentName = resolveUserMessageAgentName(session, input.agent)
     const nextInput: PromptInput = {
         ...input,
@@ -885,10 +1112,20 @@ async function recordSteerUserMessage(input: PromptInput, turn: Orchestrator.Tur
             requestedSkillIDs: input.skills,
         }),
     }
-    const userMessage = await createUserMessage(nextInput)
+    if (!turn.canAcceptSteer()) throw new Error("Prompt aborted")
+    const userMessage = await createUserMessage(nextInput, {
+        snapshot: steerSnapshot,
+    })
+    if (!turn.canAcceptSteer()) throw new Error("Prompt aborted")
     userMessage.messageinfo = {
         ...userMessage.messageinfo,
         turnID: turn.turnID,
+    }
+    if (steerSnapshot) {
+        userDiffTargetsByTurn.set(turn.turnID, {
+            message: userMessage.messageinfo,
+            snapshot: steerSnapshot,
+        })
     }
 
     turn.emit("message.recorded", {
@@ -925,6 +1162,7 @@ export const resumeExecution = fn(ResumeInput, createResumeExecutionHandle);
 export const resume = fn(ResumeInput, async (input) => createResumeExecutionHandle(input).promise);
 
 async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.PromptRuntime) {
+    throwIfAborted(runtime.abort)
     const session = Session.DataBaseRead("sessions", input.sessionID) as Session.SessionInfo | null;
     if (!session) {
         throw new Error(`Session '${input.sessionID}' was not found.`);
@@ -934,6 +1172,7 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
     let turn: Orchestrator.TurnContext | undefined
 
     try {
+        throwIfAborted(runtime.abort)
         turn = Orchestrator.startTurn({
             sessionID: input.sessionID,
             turnID: runtime.turnID,
@@ -942,6 +1181,12 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
             model: latestUser?.message.model,
             resume: true,
         })
+        if (latestUser) {
+            userDiffTargetsByTurn.set(turn.turnID, {
+                message: latestUser.message,
+                snapshot: latestUser.snapshot,
+            })
+        }
         Session.createTurn({
             id: turn.turnID,
             sessionID: input.sessionID,
@@ -965,6 +1210,13 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
             controller: runtime.controller,
             turn,
         });
+        throwIfAborted(runtime.abort)
+
+        await settleTurnUserDiffSummary({
+            sessionID: input.sessionID,
+            turn,
+        })
+        throwIfAborted(runtime.abort)
 
         Session.updateTurn(turn.turnID, {
             status: result.status === "blocked" ? "blocked" : "completed",
@@ -993,6 +1245,13 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
             latestUser?.message.id,
         )
         if (turn) {
+            if (!isTurnAbort(runtime)) {
+                await settleTurnUserDiffSummary({
+                    sessionID: input.sessionID,
+                    turn,
+                })
+            }
+
             const status = runtime.abort.aborted ? "cancelled" : "failed"
             Session.updateTurn(turn.turnID, {
                 status,
@@ -1000,27 +1259,35 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
                 error: normalizePromptErrorMessage(error),
                 lastMessageID: latestAssistant?.info.id,
             })
-            emitTurnFailureContext({
-                turn,
-                error,
-                assistant: latestAssistant?.info.role === "assistant" ? latestAssistant.info : undefined,
-                parts: latestAssistant?.parts ?? [],
-            })
-            turn.emit("turn.state.changed", {
-                phase: "failed",
-                reason: normalizePromptErrorMessage(error),
-                messageID: latestAssistant?.info.id,
-            })
-            turn.emit("turn.failed", {
-                error: normalizePromptErrorMessage(error),
-                message: latestAssistant?.info,
-                parts: latestAssistant?.parts,
-            })
+            if (status === "cancelled") {
+                emitTurnCancelled({
+                    turn,
+                    detail: normalizePromptErrorMessage(error),
+                })
+            } else {
+                emitTurnFailureContext({
+                    turn,
+                    error,
+                    assistant: latestAssistant?.info.role === "assistant" ? latestAssistant.info : undefined,
+                    parts: latestAssistant?.parts ?? [],
+                })
+                turn.emit("turn.state.changed", {
+                    phase: "failed",
+                    reason: normalizePromptErrorMessage(error),
+                    messageID: latestAssistant?.info.id,
+                })
+                turn.emit("turn.failed", {
+                    error: normalizePromptErrorMessage(error),
+                    message: latestAssistant?.info,
+                    parts: latestAssistant?.parts,
+                })
+            }
         }
 
         throw error
     } finally {
         if (turn) {
+            userDiffTargetsByTurn.delete(turn.turnID)
             Orchestrator.finishTurn(turn)
         }
         Status.set(input.sessionID, { type: "idle" })

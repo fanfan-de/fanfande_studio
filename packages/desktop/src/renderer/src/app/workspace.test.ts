@@ -3,6 +3,7 @@ import type { SessionSummary, WorkspaceGroup } from "./types"
 import {
   findFirstSession,
   getPrimaryWorkspaceSessions,
+  mapLoadedWorkspaces,
   selectAfterSessionDelete,
   sortWorkspaceGroups,
   updateSessionModelSelectionInWorkspaces,
@@ -39,6 +40,35 @@ function buildWorkspace(id: string, sessions: SessionSummary[], updated = 1): Wo
 }
 
 describe("workspace primary session selection", () => {
+  it("preserves loaded session creation timestamps", () => {
+    const [workspace] = mapLoadedWorkspaces([
+      {
+        id: "workspace-1",
+        name: "Workspace",
+        directory: "C:/workspace",
+        created: 10,
+        updated: 20,
+        project: {
+          id: "project-1",
+          name: "Project",
+          worktree: "C:/workspace",
+        },
+        sessions: [
+          {
+            id: "session-1",
+            projectID: "project-1",
+            directory: "C:/workspace",
+            title: "Session",
+            created: 123,
+            updated: 456,
+          },
+        ],
+      },
+    ])
+
+    expect(workspace?.sessions[0]?.created).toBe(123)
+  })
+
   it("does not treat side chats as primary sessions", () => {
     const sessions = [buildSession("side-chat-1", "side-chat"), buildSession("main-1", "main")]
 

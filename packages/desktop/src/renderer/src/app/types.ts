@@ -177,6 +177,7 @@ export interface SessionSummary {
   title: string
   branch: string
   status: SessionStatus
+  created?: number
   updated: number
   focus: string
   summary: string
@@ -280,6 +281,7 @@ export interface LoadedSessionHistoryInfo {
   role: "user" | "assistant"
   created: number
   completed?: number
+  diffSummary?: SessionDiffSummary
   error?: {
     message?: string
     [key: string]: unknown
@@ -597,6 +599,7 @@ export interface UserTurn {
     selectedOptions?: string[]
     freeformText?: string
   }
+  diffSummary?: SessionDiffSummary
   timestamp: number
 }
 

@@ -1,5 +1,5 @@
 import { buildUserTurnText } from "./stream"
-import type { Turn, UserTurn, UserTurnAttachment, UserTurnReference } from "./types"
+import type { SessionDiffSummary, Turn, UserTurn, UserTurnAttachment, UserTurnReference } from "./types"
 
 const USER_TURN_PRESENTATION_STORAGE_KEY = "desktop.userTurnPresentation.v1"
 const MAX_PERSISTED_SESSION_COUNT = 100
@@ -13,6 +13,53 @@ function readString(value: unknown) {
 
 function readNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function sanitizeUserTurnDiffSummary(value: unknown): SessionDiffSummary | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+
+  const record = value as Record<string, unknown>
+  if (!Array.isArray(record.diffs)) return undefined
+
+  const diffs = record.diffs
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null
+
+      const diff = item as Record<string, unknown>
+      const file = readString(diff.file).trim()
+      if (!file) return null
+
+      return {
+        file,
+        additions: readNumber(diff.additions),
+        deletions: readNumber(diff.deletions),
+      }
+    })
+    .filter((item): item is SessionDiffSummary["diffs"][number] => item !== null)
+
+  if (diffs.length === 0) return undefined
+
+  const statsRecord =
+    record.stats && typeof record.stats === "object" && !Array.isArray(record.stats)
+      ? record.stats as Record<string, unknown>
+      : null
+  const title = readString(record.title).trim()
+  const body = readString(record.body).trim()
+
+  return {
+    ...(title ? { title } : {}),
+    ...(body ? { body } : {}),
+    ...(statsRecord
+      ? {
+          stats: {
+            additions: readNumber(statsRecord.additions),
+            deletions: readNumber(statsRecord.deletions),
+            files: readNumber(statsRecord.files),
+          },
+        }
+      : {}),
+    diffs,
+  }
 }
 
 function sanitizeUserTurnAttachments(value: unknown): UserTurnAttachment[] | undefined {
@@ -77,6 +124,7 @@ function sanitizeUserTurn(value: unknown): UserTurn | null {
   const displayText = readString(record.displayText).trim()
   const attachments = sanitizeUserTurnAttachments(record.attachments)
   const references = sanitizeUserTurnReferences(record.references)
+  const diffSummary = sanitizeUserTurnDiffSummary(record.diffSummary)
   const questionAnswer =
     record.questionAnswer && typeof record.questionAnswer === "object" && !Array.isArray(record.questionAnswer)
       ? (() => {
@@ -107,7 +155,17 @@ function sanitizeUserTurn(value: unknown): UserTurn | null {
     ...(attachments ? { attachments } : {}),
     ...(references ? { references } : {}),
     ...(questionAnswer ? { questionAnswer } : {}),
+    ...(diffSummary ? { diffSummary } : {}),
     timestamp,
+  }
+}
+
+function cloneUserTurnDiffSummary(diffSummary: SessionDiffSummary): SessionDiffSummary {
+  return {
+    ...(diffSummary.title ? { title: diffSummary.title } : {}),
+    ...(diffSummary.body ? { body: diffSummary.body } : {}),
+    ...(diffSummary.stats ? { stats: { ...diffSummary.stats } } : {}),
+    diffs: diffSummary.diffs.map((diff) => ({ ...diff })),
   }
 }
 
@@ -155,6 +213,7 @@ function selectPersistableUserTurns(turns: Turn[]) {
       ...turn,
       ...(turn.attachments?.length ? { attachments: turn.attachments.map((attachment) => ({ ...attachment })) } : {}),
       ...(turn.references?.length ? { references: turn.references.map((reference) => ({ ...reference })) } : {}),
+      ...(turn.diffSummary ? { diffSummary: cloneUserTurnDiffSummary(turn.diffSummary) } : {}),
       ...(turn.questionAnswer
         ? {
             questionAnswer: {
@@ -225,6 +284,7 @@ export function mergeUserTurnPresentationState(previousTurns: Turn[], nextTurns:
       ...(mergedDisplayText ? { displayText: mergedDisplayText } : {}),
       ...(mergedAttachments?.length ? { attachments: mergedAttachments } : {}),
       ...(mergedReferences?.length ? { references: mergedReferences } : {}),
+      ...(turn.diffSummary ? { diffSummary: turn.diffSummary } : {}),
     }
   })
 

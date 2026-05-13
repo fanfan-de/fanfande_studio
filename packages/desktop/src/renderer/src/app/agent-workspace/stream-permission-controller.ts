@@ -24,6 +24,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
   const lastFocusedSessionIDRef = useRef<string | null>(initialSessionID)
 
   const agentSessions = useWorkspaceStoreSelector(store, (state) => state.agentStream.agentSessions)
+  const cancellingSessionIDs = useWorkspaceStoreSelector(store, (state) => state.agentStream.cancellingSessionIDs)
   const contextUsageBySession = useWorkspaceStoreSelector(store, (state) => state.agentStream.contextUsageBySession)
   const conversations = useWorkspaceStoreSelector(store, (state) => state.agentStream.conversations)
   const pendingPermissionRequestsBySession = useWorkspaceStoreSelector(
@@ -43,6 +44,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
     (state) => state.agentStream.sessionDirectoryBySession,
   )
   const setAgentSessions = useWorkspaceStoreSelector(store, (state) => state.agentStreamActions.setAgentSessions)
+  const setCancellingSessionIDs = useWorkspaceStoreSelector(store, (state) => state.agentStreamActions.setCancellingSessionIDs)
   const setContextUsageBySession = useWorkspaceStoreSelector(
     store,
     (state) => state.agentStreamActions.setContextUsageBySession,
@@ -68,6 +70,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
   return {
     agentSessionStoreRef,
     agentSessions,
+    cancellingSessionIDs,
     contextUsageBySession,
     conversationVersionRef,
     conversations,
@@ -81,6 +84,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
     sessionDirectoryBySession,
     sessionEventRouterRef,
     setAgentSessions,
+    setCancellingSessionIDs,
     setContextUsageBySession,
     setConversations,
     setPendingPermissionRequestsBySession,

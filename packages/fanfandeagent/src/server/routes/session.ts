@@ -118,7 +118,15 @@ export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
 
   app.get("/:id/diff", async (c) => ok(c, await SessionUseCase.getSessionDiff(c.req.param("id"))))
 
-  app.post("/:id/cancel", (c) => ok(c, SessionUseCase.cancelSession(c.req.param("id"))))
+  app.post("/:id/cancel", async (c) => {
+    const payload = await parseJsonBody(
+      c,
+      SessionUseCase.CancelSessionBody,
+      "Body must include optional cancelQueued and reason fields",
+      {},
+    )
+    return ok(c, SessionUseCase.cancelSession(c.req.param("id"), payload))
+  })
 
   app.post("/:id/questions/answer", async (c) => {
     const payload = await parseJsonBody(
@@ -151,6 +159,7 @@ export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
       requestId: c.get("requestId"),
       replayTurnID: c.req.query("turnID"),
       sinceSeq: c.req.query("sinceSeq"),
+      signal: c.req.raw.signal,
     })
   })
 
@@ -160,6 +169,7 @@ export function SessionRoutes(options: { ptyRegistry: PtyRegistry }) {
       requestId: c.get("requestId"),
       replayTurnID: c.req.query("turnID"),
       sinceSeq: c.req.query("sinceSeq"),
+      signal: c.req.raw.signal,
     }),
   )
 

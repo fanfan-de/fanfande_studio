@@ -109,12 +109,15 @@ describe("prompt loop concurrency", () => {
           })
 
           const assistants: MessageTypes.WithParts[] = []
+          const users: MessageTypes.WithParts[] = []
           for await (const item of Message.stream(session.id)) {
             if (item.info.role === "assistant") assistants.push(item)
+            if (item.info.role === "user") users.push(item)
           }
 
           expect(streamCalls).toBe(2)
           expect(assistants).toHaveLength(2)
+          expect(users).toHaveLength(1)
 
           const firstPatch = assistants[0]?.parts.find((part): part is MessageTypes.PatchPart => part.type === "patch")
           const secondPatch = assistants[1]?.parts.find((part): part is MessageTypes.PatchPart => part.type === "patch")
@@ -142,6 +145,13 @@ describe("prompt loop concurrency", () => {
             deletions: 0,
           })
           expect(secondPatch?.changes?.[0]?.patch).toContain("second change")
+          const userDiffSummary = users[0]?.info.role === "user" ? users[0].info.diffSummary : undefined
+          expect(userDiffSummary?.diffs.map((diff) => diff.file)).toEqual(["first.txt", "second.txt"])
+          expect(userDiffSummary?.stats).toEqual({
+            files: 2,
+            additions: 2,
+            deletions: 0,
+          })
 
           expect(existsSync(join(tempDir, ".git"))).toBe(false)
         },
@@ -215,12 +225,15 @@ describe("prompt loop concurrency", () => {
           })
 
           const assistants: MessageTypes.WithParts[] = []
+          const users: MessageTypes.WithParts[] = []
           for await (const item of Message.stream(session.id)) {
             if (item.info.role === "assistant") assistants.push(item)
+            if (item.info.role === "user") users.push(item)
           }
 
           expect(assistants).toHaveLength(1)
           expect(assistants[0]?.parts.some((part) => part.type === "patch")).toBe(false)
+          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary : undefined).toBeUndefined()
         },
       })
     } finally {
@@ -297,6 +310,217 @@ describe("prompt loop concurrency", () => {
             deletions: 0,
           })
           expect(patch?.changes?.[0]?.patch).toContain("changed before failure")
+        },
+      })
+    } finally {
+      restoreLLM()
+      restoreProvider()
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  itIfGit("records turn diff summaries on steer user messages", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "fanfande-turn-diff-steer-"))
+    let streamCalls = 0
+    let releaseFirstPrompt: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      releaseFirstPrompt = resolve
+    })
+    let markFirstEditDone: (() => void) | undefined
+    const firstEditDone = new Promise<void>((resolve) => {
+      markFirstEditDone = resolve
+    })
+
+    const restoreProvider = Provider.setProviderFunctionOverridesForTesting({
+      getDefaultModelRef: async () => ({
+        providerID: "test-provider",
+        modelID: "test-model",
+      }),
+      getSelection: async () => ({}),
+      getModel: async () => createTestModel(),
+      getLanguage: async (model) => model as never,
+    })
+
+    const restoreLLM = LLM.setRuntimeDependenciesForTesting({
+      getLanguage: async (model) => model as never,
+      streamText: ((input: any) => {
+        streamCalls += 1
+        const call = streamCalls
+
+        return {
+          fullStream: (async function* () {
+            yield { type: "start" }
+            if (call === 1) {
+              await writeFile(join(tempDir, "first.txt"), "first turn segment\n", "utf8")
+              markFirstEditDone?.()
+              await gate
+            } else {
+              await writeFile(join(tempDir, "second.txt"), "second turn segment\n", "utf8")
+            }
+            yield {
+              type: "finish",
+              finishReason: "stop",
+            }
+            await input.onFinish?.({
+              finishReason: "stop",
+              text: "",
+              totalUsage: {},
+            })
+          })(),
+        }
+      }) as never,
+    })
+
+    try {
+      const Session = await import("#session/core/session.ts")
+      const Prompt = await import("#session/core/prompt.ts")
+      const Message = await import("#session/core/message.ts")
+
+      await Instance.provide({
+        directory: tempDir,
+        async fn() {
+          const session = await Session.createSession({
+            directory: Instance.directory,
+            projectID: Instance.project.id,
+          })
+
+          const firstPrompt = Prompt.promptExecution({
+            sessionID: session.id,
+            model: {
+              providerID: "test-provider",
+              modelID: "test-model",
+            },
+            parts: [
+              {
+                type: "text",
+                text: "first",
+              },
+            ],
+          })
+
+          await firstEditDone
+
+          const secondPrompt = Prompt.promptExecution({
+            sessionID: session.id,
+            model: {
+              providerID: "test-provider",
+              modelID: "test-model",
+            },
+            parts: [
+              {
+                type: "text",
+                text: "second",
+              },
+            ],
+          })
+
+          expect(secondPrompt.mode).toBe("steer")
+
+          releaseFirstPrompt?.()
+          await firstPrompt.promise
+          await secondPrompt.promise
+
+          const users: MessageTypes.WithParts[] = []
+          for await (const item of Message.stream(session.id)) {
+            if (item.info.role === "user") users.push(item)
+          }
+
+          expect(streamCalls).toBe(2)
+          expect(users).toHaveLength(2)
+          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["first.txt"])
+          expect(users[1]?.info.role === "user" ? users[1].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["second.txt"])
+        },
+      })
+    } finally {
+      restoreLLM()
+      restoreProvider()
+      await rm(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  itIfGit("updates the latest user diff summary cumulatively on resume", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "fanfande-turn-diff-resume-"))
+    let streamCalls = 0
+
+    const restoreProvider = Provider.setProviderFunctionOverridesForTesting({
+      getDefaultModelRef: async () => ({
+        providerID: "test-provider",
+        modelID: "test-model",
+      }),
+      getSelection: async () => ({}),
+      getModel: async () => createTestModel(),
+      getLanguage: async (model) => model as never,
+    })
+
+    const restoreLLM = LLM.setRuntimeDependenciesForTesting({
+      getLanguage: async (model) => model as never,
+      streamText: ((input: any) => {
+        streamCalls += 1
+        const call = streamCalls
+        const file = call === 1 ? "first.txt" : "second.txt"
+
+        return {
+          fullStream: (async function* () {
+            yield { type: "start" }
+            await writeFile(join(tempDir, file), `${file}\n`, "utf8")
+            if (call === 1) {
+              throw new Error("first call failed")
+            }
+            yield {
+              type: "finish",
+              finishReason: "stop",
+            }
+            await input.onFinish?.({
+              finishReason: "stop",
+              text: "",
+              totalUsage: {},
+            })
+          })(),
+        }
+      }) as never,
+    })
+
+    try {
+      const Session = await import("#session/core/session.ts")
+      const Prompt = await import("#session/core/prompt.ts")
+      const Message = await import("#session/core/message.ts")
+
+      await Instance.provide({
+        directory: tempDir,
+        async fn() {
+          const session = await Session.createSession({
+            directory: Instance.directory,
+            projectID: Instance.project.id,
+          })
+
+          await expect(Prompt.prompt({
+            sessionID: session.id,
+            model: {
+              providerID: "test-provider",
+              modelID: "test-model",
+            },
+            parts: [
+              {
+                type: "text",
+                text: "first",
+              },
+            ],
+          })).rejects.toThrow("first call failed")
+          await Prompt.resume({ sessionID: session.id })
+
+          const users: MessageTypes.WithParts[] = []
+          for await (const item of Message.stream(session.id)) {
+            if (item.info.role === "user") users.push(item)
+          }
+
+          expect(streamCalls).toBe(2)
+          expect(users).toHaveLength(1)
+          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["first.txt", "second.txt"])
+          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary?.stats : undefined).toEqual({
+            files: 2,
+            additions: 2,
+            deletions: 0,
+          })
         },
       })
     } finally {

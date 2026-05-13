@@ -161,3 +161,20 @@ export function cancel(sessionID: string) {
   notify({ type: "cancelled", sessionID })
   return true
 }
+
+export function cancelSession(sessionID: string, options?: { cancelQueued?: boolean }) {
+  const runnerResult = SessionRunner.cancelSession(sessionID, options)
+  if (runnerResult.cancelled) return runnerResult
+
+  const current = runningSessions[sessionID]
+  if (!current) return runnerResult
+
+  current.abort.abort()
+  delete runningSessions[sessionID]
+  notify({ type: "cancelled", sessionID })
+  return {
+    ...runnerResult,
+    activeCancelled: true,
+    cancelled: true,
+  }
+}

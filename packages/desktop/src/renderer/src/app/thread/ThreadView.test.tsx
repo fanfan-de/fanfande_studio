@@ -1403,6 +1403,84 @@ describe("ThreadView message actions", () => {
     expect(writeText).toHaveBeenCalledWith("Hello from user")
   })
 
+  it("renders user turn file changes after the final assistant output and selects files from the summary", () => {
+    const onFileChangeSelect = vi.fn()
+    const turn: UserTurn = {
+      ...userTurn("user-with-diff", "Update the app"),
+      diffSummary: {
+        stats: {
+          files: 2,
+          additions: 5,
+          deletions: 1,
+        },
+        diffs: [
+          { file: "src/App.tsx", additions: 3, deletions: 1 },
+          { file: "src/styles.css", additions: 2, deletions: 0 },
+        ],
+      },
+    }
+
+    const { getByRole, getByText, queryByRole } = renderThread(
+      [
+        turn,
+        assistantTraceTurn(
+          "assistant-first",
+          [
+            {
+              id: "response-1",
+              kind: "text",
+              timestamp: 1,
+              label: "Assistant",
+              text: "First model call finished.",
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+        assistantTraceTurn(
+          "assistant-final",
+          [
+            {
+              id: "response-2",
+              kind: "text",
+              timestamp: 2,
+              label: "Assistant",
+              text: "Final answer after file updates.",
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+      ],
+      { onFileChangeSelect },
+    )
+
+    const summaryButton = getByRole("button", { name: /2 files changed/i })
+    const finalAssistantOutput = getByText("Final answer after file updates.")
+
+    expect(summaryButton).toBeInTheDocument()
+    expect(finalAssistantOutput.compareDocumentPosition(summaryButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(queryByRole("button", { name: /Changed\s+src\/App\.tsx/i })).toBeNull()
+
+    fireEvent.click(summaryButton)
+    fireEvent.click(getByRole("button", { name: /Changed\s+src\/App\.tsx/i }))
+
+    expect(onFileChangeSelect).toHaveBeenCalledWith("src/App.tsx")
+  })
+
+  it("hides the user turn file change summary when the diff is empty", () => {
+    renderThread([
+      {
+        ...userTurn("user-empty-diff", "No changes"),
+        diffSummary: {
+          diffs: [],
+        },
+      },
+    ])
+
+    expect(screen.queryByRole("button", { name: /files? changed/i })).toBeNull()
+  })
+
   it("renders assistant copy and side chat actions as icon buttons", () => {
     const onOpenSideChat = vi.fn()
     const { getByRole, queryByText } = renderThread(
@@ -1430,6 +1508,90 @@ describe("ThreadView message actions", () => {
 
     fireEvent.click(getByRole("button", { name: "Open side chat" }))
 
+    expect(onOpenSideChat).toHaveBeenCalledWith("assistant-1")
+  })
+
+  it("shows assistant response actions in the assistant message footer for the final response", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    })
+    const onOpenSideChat = vi.fn()
+
+    const { getAllByRole, getByRole, getByText } = renderThread(
+      [
+        assistantTraceTurn(
+          "assistant-1",
+          [
+            {
+              id: "response-1",
+              kind: "text",
+              timestamp: 1,
+              label: "Assistant",
+              text: "I will check the directory first.",
+              status: "completed",
+            },
+            {
+              id: "tool-1",
+              kind: "tool",
+              timestamp: 2,
+              label: "Tool",
+              title: "list-directory",
+              text: "index.html",
+              status: "completed",
+            },
+            {
+              id: "response-2",
+              kind: "text",
+              timestamp: 3,
+              label: "Assistant",
+              text: "Deleted. The directory is empty now.",
+              status: "completed",
+            },
+            {
+              id: "patch-1",
+              kind: "patch",
+              timestamp: 4,
+              label: "Patch",
+              title: "1 file change (+1 -0)",
+              fileChanges: [
+                {
+                  file: "src/index.ts",
+                  additions: 1,
+                  deletions: 0,
+                },
+              ],
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+      ],
+      { onOpenSideChat },
+    )
+
+    const copyButtons = getAllByRole("button", { name: "Copy assistant response" })
+    const sideChatButtons = getAllByRole("button", { name: "Open side chat" })
+    expect(copyButtons).toHaveLength(1)
+    expect(sideChatButtons).toHaveLength(1)
+
+    const actionRow = copyButtons[0]?.closest(".assistant-response-side-chat")
+    const assistantShell = copyButtons[0]?.closest(".assistant-shell")
+    const firstResponseSection = getByText("I will check the directory first.").closest(".assistant-section")
+    const finalResponseSection = getByText("Deleted. The directory is empty now.").closest(".assistant-section")
+    const fileChangeSection = getByRole("region", { name: "File Changes" })
+    expect(actionRow).not.toBeNull()
+    expect(assistantShell?.contains(actionRow)).toBe(true)
+    expect(firstResponseSection?.contains(actionRow)).toBe(false)
+    expect(finalResponseSection?.contains(actionRow)).toBe(false)
+    expect(actionRow?.closest(".assistant-section")).toBeNull()
+    expect(fileChangeSection.compareDocumentPosition(actionRow as HTMLElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    fireEvent.click(copyButtons[0]!)
+    expect(writeText).toHaveBeenCalledWith("Deleted. The directory is empty now.")
+
+    fireEvent.click(sideChatButtons[0]!)
     expect(onOpenSideChat).toHaveBeenCalledWith("assistant-1")
   })
 })

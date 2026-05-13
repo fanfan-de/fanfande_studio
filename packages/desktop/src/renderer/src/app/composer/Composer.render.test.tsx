@@ -313,41 +313,16 @@ describe("Composer", () => {
     ])
   })
 
-  it("switches the send button to stop while sending", () => {
+  it("switches the send button to stop while sending with an empty draft", () => {
     const onCancelSend = vi.fn()
     const onSend = vi.fn()
 
-    render(
-      <Composer
-        attachments={[]}
-        attachmentButtonTitle="Add attachments"
-        attachmentDisabledReason={null}
-        attachmentError={null}
-        canSend
-        draftState={createComposerDraftStateFromPlainText("Running prompt")}
-        hasPendingPermissionRequests={false}
-        isSending
-        mcpOptions={[]}
-        modelOptions={[]}
-        onCancelSend={onCancelSend}
-        onDraftStateChange={vi.fn()}
-        onModelChange={vi.fn()}
-        onPickAttachments={vi.fn()}
-        onReasoningEffortChange={vi.fn()}
-        onRemoveAttachment={vi.fn()}
-        onSend={onSend}
-        reasoningEffortOptions={[]}
-        selectedMcpServerIDs={[]}
-        selectedModel={null}
-        selectedModelLabel="Server default"
-        selectedReasoningEffort={null}
-        selectedReasoningEffortLabel=""
-        selectedSkillIDs={[]}
-        skillOptions={[]}
-        unsupportedAttachmentPaths={[]}
-        workspaceDirectory={null}
-      />,
-    )
+    renderComposer({
+      draftState: createComposerDraftStateFromPlainText(""),
+      isSending: true,
+      onCancelSend,
+      onSend,
+    })
 
     const button = screen.getByRole("button", { name: "Stop task" })
 
@@ -355,5 +330,24 @@ describe("Composer", () => {
     fireEvent.click(button)
     expect(onCancelSend).toHaveBeenCalledTimes(1)
     expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it("keeps the send button available while sending when the draft has text", () => {
+    const onCancelSend = vi.fn()
+    const onSend = vi.fn()
+
+    renderComposer({
+      draftState: createComposerDraftStateFromPlainText("Steer the current task"),
+      isSending: true,
+      onCancelSend,
+      onSend,
+    })
+
+    const button = screen.getByRole("button", { name: "Send task" })
+
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(onCancelSend).not.toHaveBeenCalled()
   })
 })

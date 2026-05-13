@@ -94,6 +94,7 @@ export function mapLoadedSession(session: LoadedSessionSnapshot, sessionIndex: n
     title: session.title.trim() || `Session ${sessionIndex + 1}`,
     branch: session.directory,
     status: "Ready",
+    created: session.created,
     updated: session.updated,
     focus: sideChat ? "Side chat" : "Backend",
     summary: sideChat

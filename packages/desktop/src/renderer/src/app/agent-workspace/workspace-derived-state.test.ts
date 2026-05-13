@@ -70,6 +70,7 @@ describe("workspace derived state", () => {
       activeSideChatSessionIDByParentSessionID: {
         [parentSession.id]: sideChatSession.id,
       },
+      cancellingSessionIDs: {},
       composerAttachmentsByTabKey: {},
       composerDraftStateByTabKey: {},
       contextUsageBySession: {},
@@ -135,6 +136,7 @@ describe("workspace derived state", () => {
 
     const derived = buildWorkspaceDerivedState({
       activeSideChatSessionIDByParentSessionID: {},
+      cancellingSessionIDs: {},
       composerAttachmentsByTabKey: {},
       composerDraftStateByTabKey: {},
       contextUsageBySession: {},
@@ -212,6 +214,7 @@ describe("workspace derived state", () => {
 
     const derived = buildWorkspaceDerivedState({
       activeSideChatSessionIDByParentSessionID: {},
+      cancellingSessionIDs: {},
       composerAttachmentsByTabKey: {},
       composerDraftStateByTabKey: {},
       contextUsageBySession: {},
@@ -257,6 +260,7 @@ describe("workspace derived state", () => {
 
     const derived = buildWorkspaceDerivedState({
       activeSideChatSessionIDByParentSessionID: {},
+      cancellingSessionIDs: {},
       composerAttachmentsByTabKey: {},
       composerDraftStateByTabKey: {},
       contextUsageBySession: {},

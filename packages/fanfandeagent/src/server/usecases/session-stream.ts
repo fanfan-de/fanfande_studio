@@ -5,7 +5,7 @@ import * as Message from "#session/core/message.ts"
 import * as Orchestrator from "#session/runtime/orchestrator.ts"
 import * as RuntimeEvent from "#session/runtime/runtime-event.ts"
 import { isSessionLimitError } from "#session/runtime/session-limits.ts"
-import type * as SessionRunner from "#session/runtime/session-runner.ts"
+import * as SessionRunner from "#session/runtime/session-runner.ts"
 import * as Log from "#util/log.ts"
 
 const log = Log.create({ service: "server.session" })
@@ -115,10 +115,11 @@ function createTransportTerminalEvent(input: {
   sessionID: string
   turnID?: string
   seq?: number
-  type: "turn.completed" | "turn.failed"
+  type: "turn.completed" | "turn.failed" | "turn.cancelled"
   payload:
     | RuntimeEvent.RuntimeEventPayloadByType["turn.completed"]
     | RuntimeEvent.RuntimeEventPayloadByType["turn.failed"]
+    | RuntimeEvent.RuntimeEventPayloadByType["turn.cancelled"]
 }) {
   return RuntimeEvent.RuntimeEvent.parse({
     eventID: Identifier.ascending("event"),
@@ -138,6 +139,23 @@ function failedRuntimePayload(error: unknown, phase: string, retryable = false) 
     phase,
     retryable,
   } satisfies RuntimeEvent.RuntimeEventPayloadByType["turn.failed"]
+}
+
+function isCancellationError(error: unknown) {
+  return (
+    SessionRunner.isSessionOperationCancelledError(error) ||
+    (
+      error instanceof Error &&
+      (error.name === "AbortError" || error.message === "Prompt aborted")
+    )
+  )
+}
+
+function cancelledRuntimePayload(error: unknown, reason: RuntimeEvent.RuntimeEventPayloadByType["turn.cancelled"]["reason"] = "user") {
+  return {
+    reason,
+    detail: error instanceof Error ? error.message : String(error),
+  } satisfies RuntimeEvent.RuntimeEventPayloadByType["turn.cancelled"]
 }
 
 export function createSessionExecutionErrorStream(input: {
@@ -458,6 +476,15 @@ export function createSessionExecutionStream(input: {
               requestId: input.requestId,
               error: normalizeLogError(failed),
             })
+            if (isCancellationError(failed)) {
+              await sendRuntimeEvent(send, createTransportTerminalEvent({
+                sessionID: input.sessionID,
+                turnID: observedTurnID,
+                seq: observedSeq + 1,
+                type: "turn.cancelled",
+                payload: cancelledRuntimePayload(failed),
+              }))
+            } else {
                 await sendRuntimeEvent(send, createTransportTerminalEvent({
                   sessionID: input.sessionID,
                   turnID: observedTurnID,
@@ -465,6 +492,7 @@ export function createSessionExecutionStream(input: {
                   type: "turn.failed",
                   payload: failedRuntimePayload(failed, "execution"),
                 }))
+            }
           } else if (resolved) {
             log.warn("session execution stream completed without terminal runtime event", {
               sessionID: input.sessionID,

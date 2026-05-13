@@ -362,4 +362,67 @@ describe("processor fullStream consumption probe", () => {
     expect(startedEvent?.payload.part.state.raw).toBe(raw)
     expect(completedEvent?.payload.part.state.raw).toBe(raw)
   })
+
+  it("stops consuming streamed tool input after abort", async () => {
+    const controller = new AbortController()
+
+    restoreLLM = LLM.setRuntimeDependenciesForTesting({
+      getLanguage: async (model) => model as never,
+      streamText: (() => ({
+        fullStream: (async function* () {
+          yield { type: "start" }
+          yield { type: "tool-input-start", id: "call_1", toolName: "write" }
+          yield { type: "tool-input-delta", id: "call_1", delta: "{" }
+          controller.abort()
+          yield { type: "tool-input-delta", id: "call_1", delta: "\"path\":\"README.md\"}" }
+          yield {
+            type: "tool-call",
+            toolCallId: "call_1",
+            toolName: "write",
+            input: { path: "README.md" },
+          }
+        })(),
+      })) as never,
+    })
+
+    const Processor = await import("#session/core/processor.ts")
+    const sessionID = `session-tool-input-abort-${Date.now()}`
+    const assistantID = `assistant-tool-input-abort-${Date.now()}`
+    const recorded = createTurnRecorder(sessionID)
+    const processor = Processor.create({
+      Assistant: {
+        id: assistantID,
+        sessionID,
+        role: "assistant",
+        created: Date.now(),
+        parentID: "user-tool-input-abort",
+        modelID: "gpt-5.3-codex",
+        providerID: "openai",
+        agent: "plan",
+        path: {
+          cwd: ".",
+          root: ".",
+        },
+        cost: 0,
+        tokens: {
+          input: 0,
+          output: 0,
+          reasoning: 0,
+          cache: {
+            read: 0,
+            write: 0,
+          },
+        },
+      } as any,
+      abort: controller.signal,
+      turn: recorded.turn,
+    })
+
+    await expect(processor.process({
+      ...createStreamInput(),
+      abort: controller.signal,
+    })).rejects.toThrow("Prompt aborted")
+
+    expect(recorded.events.some((event) => event.type === "tool.call.started")).toBe(false)
+  })
 })

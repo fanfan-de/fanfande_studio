@@ -173,6 +173,13 @@ export async function readAgentSSEStream(
 
   const decoder = new TextDecoder()
   let buffer = ""
+  let handledEventCount = 0
+
+  async function yieldAfterEventBurst() {
+    handledEventCount += 1
+    if (handledEventCount % 50 !== 0) return
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
 
   while (true) {
     const { value, done } = await reader.read()
@@ -184,6 +191,7 @@ export async function readAgentSSEStream(
 
     for (const event of parsed.events) {
       onEvent(event)
+      await yieldAfterEventBurst()
     }
   }
 
@@ -191,5 +199,6 @@ export async function readAgentSSEStream(
   const trailing = consumeSSEBuffer(buffer, true)
   for (const event of trailing.events) {
     onEvent(event)
+    await yieldAfterEventBurst()
   }
 }

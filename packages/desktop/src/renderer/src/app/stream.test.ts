@@ -1342,6 +1342,20 @@ describe("stream trace reducer", () => {
           sessionID: "session-1",
           role: "user",
           created: 10,
+          diffSummary: {
+            stats: {
+              files: 1,
+              additions: 2,
+              deletions: 1,
+            },
+            diffs: [
+              {
+                file: "src/App.tsx",
+                additions: 2,
+                deletions: 1,
+              },
+            ],
+          },
         },
         parts: [{ id: "part-user-1", type: "text", text: "Reload this session" }],
       },
@@ -1367,6 +1381,20 @@ describe("stream trace reducer", () => {
       displayText: "Reload this session",
       text: "Reload this session",
       timestamp: 10,
+      diffSummary: {
+        stats: {
+          files: 1,
+          additions: 2,
+          deletions: 1,
+        },
+        diffs: [
+          {
+            file: "src/App.tsx",
+            additions: 2,
+            deletions: 1,
+          },
+        ],
+      },
     })
     expect(turns[1]).toMatchObject({
       id: "msg-assistant-1",

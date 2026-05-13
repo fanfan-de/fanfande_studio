@@ -49,6 +49,11 @@ export const AnswerSessionQuestionBody = StreamSessionQuestionAnswerBody
 
 export const StreamSessionMessageBody = AgentRouteSchemas.sessions.streamMessage.body
 
+export const CancelSessionBody = z.object({
+  cancelQueued: z.boolean().optional(),
+  reason: z.enum(["user", "client-disconnect", "shutdown", "unknown"]).optional(),
+}).optional().default({})
+
 const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
   ".apng": "image/apng",
   ".avif": "image/avif",
@@ -76,6 +81,7 @@ const FILE_MIME_BY_EXTENSION: Record<string, string> = {
 const log = Log.create({ service: "server.session" })
 
 type StreamSessionMessageInput = z.infer<typeof StreamSessionMessageBody>
+type CancelSessionInput = z.infer<typeof CancelSessionBody>
 
 type SessionStreamResult = {
   info: Message.MessageInfo
@@ -85,6 +91,14 @@ type SessionStreamResult = {
 function normalizePromptText(text: string | undefined) {
   const trimmed = text?.trim()
   return trimmed ? trimmed : undefined
+}
+
+function throwIfAborted(signal: AbortSignal | undefined) {
+  if (signal?.aborted) {
+    const error = new Error("Session stream request was aborted.")
+    error.name = "AbortError"
+    throw error
+  }
 }
 
 function normalizeQuestionAnswerText(
@@ -160,11 +174,14 @@ function summarizeResolvedPart(part: z.infer<typeof Prompt.PromptInput>["parts"]
 
 async function resolveAttachmentPart(
   attachment: z.infer<typeof StreamSessionAttachmentBody>,
+  options?: { signal?: AbortSignal },
 ): Promise<z.infer<typeof Prompt.PromptInput>["parts"][number]> {
+  throwIfAborted(options?.signal)
   const attachmentSummary = summarizeAttachmentInput(attachment)
 
   try {
     const buffer = await readFile(attachment.path)
+    throwIfAborted(options?.signal)
     const extension = extname(attachment.path).toLowerCase()
     const filename = attachment.name?.trim() || basename(attachment.path)
 
@@ -206,7 +223,11 @@ async function resolveAttachmentPart(
   }
 }
 
-async function resolvePromptPartsFromStreamPayload(payload: StreamSessionMessageInput) {
+async function resolvePromptPartsFromStreamPayload(
+  payload: StreamSessionMessageInput,
+  options?: { signal?: AbortSignal },
+) {
+  throwIfAborted(options?.signal)
   const parts: z.infer<typeof Prompt.PromptInput>["parts"] = []
   const normalizedText = normalizePromptText(payload.text) ?? normalizeQuestionAnswerText(payload.questionAnswer)
 
@@ -228,8 +249,10 @@ async function resolvePromptPartsFromStreamPayload(payload: StreamSessionMessage
   }
 
   for (const attachment of payload.attachments ?? []) {
-    parts.push(await resolveAttachmentPart(attachment))
+    throwIfAborted(options?.signal)
+    parts.push(await resolveAttachmentPart(attachment, options))
   }
+  throwIfAborted(options?.signal)
 
   log.info("resolved stream payload parts", {
     hasText: Boolean(normalizedText),
@@ -665,12 +688,18 @@ export function deleteSession(sessionID: string, options?: { ptyRegistry?: PtyRe
   }
 }
 
-export function cancelSession(sessionID: string) {
+export function cancelSession(sessionID: string, input: CancelSessionInput = {}) {
   requireSession(sessionID)
+  const result = Prompt.cancelSession(sessionID, {
+    cancelQueued: input.cancelQueued ?? false,
+    reason: input.reason ?? "user",
+  })
 
   return {
     sessionID,
-    cancelled: Prompt.cancel(sessionID),
+    cancelled: result.cancelled,
+    activeCancelled: result.activeCancelled,
+    queuedCancelled: result.queuedCancelled,
   }
 }
 
@@ -730,8 +759,10 @@ export async function createMessageStreamResponse(input: {
   requestId?: string
   replayTurnID?: string
   sinceSeq?: string
+  signal?: AbortSignal
 }) {
   const session = requireSession(input.sessionID)
+  throwIfAborted(input.signal)
   const normalizedText = normalizePromptText(input.payload.text)
 
   log.info("received session stream request", {
@@ -753,8 +784,11 @@ export async function createMessageStreamResponse(input: {
     handle = await Instance.provide({
       directory: session.directory,
       fn: async () => {
-        const parts = await resolvePromptPartsFromStreamPayload(input.payload)
-        return Prompt.promptExecution({
+        const parts = await resolvePromptPartsFromStreamPayload(input.payload, {
+          signal: input.signal,
+        })
+        throwIfAborted(input.signal)
+        const handle = Prompt.promptExecution({
           sessionID: input.sessionID,
           parts,
           system: input.payload.system,
@@ -764,6 +798,11 @@ export async function createMessageStreamResponse(input: {
           model: input.payload.model,
           displayText: input.payload.displayText,
         })
+        if (input.signal?.aborted) {
+          handle.cancel()
+          throwIfAborted(input.signal)
+        }
+        return handle
       },
     })
   } catch (error) {
@@ -792,13 +831,22 @@ export async function createResumeStreamResponse(input: {
   requestId?: string
   replayTurnID?: string
   sinceSeq?: string
+  signal?: AbortSignal
 }) {
   const session = requireSession(input.sessionID)
+  throwIfAborted(input.signal)
   let handle: ReturnType<typeof Prompt.resumeExecution>
   try {
     handle = await Instance.provide({
       directory: session.directory,
-      fn: () => Prompt.resumeExecution({ sessionID: input.sessionID }),
+      fn: () => {
+        const nextHandle = Prompt.resumeExecution({ sessionID: input.sessionID })
+        if (input.signal?.aborted) {
+          nextHandle.cancel()
+          throwIfAborted(input.signal)
+        }
+        return nextHandle
+      },
     })
   } catch (error) {
     if (isSessionLimitError(error)) {

@@ -314,6 +314,8 @@ try {
           backendCancelled: boolean
           backendCancelError?: string
         }>,
+      interrupt: (input: DesktopIpcInput<"desktop:agent-session-interrupt">) =>
+        invokeDesktop("desktop:agent-session-interrupt", input) as Promise<DesktopIpcOutput<"desktop:agent-session-interrupt">>,
       answerQuestion: (input: { backendSessionID: string; questionID: string; selectedOptions?: string[]; freeformText?: string }) =>
         invokeDesktop("desktop:agent-session-answer-question", input) as Promise<{
           sessionID: string

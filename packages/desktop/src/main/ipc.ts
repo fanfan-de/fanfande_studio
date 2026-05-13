@@ -368,6 +368,39 @@ function agentSessionRequestKey(webContentsID: number, clientTurnID: string) {
   return `${webContentsID}:${clientTurnID}`
 }
 
+function abortActiveAgentSessionRequestsInMap(
+  activeAgentSessionRequests: Map<string, ActiveAgentSessionRequest>,
+  input: {
+    backendSessionID: string
+    clientTurnID?: string
+    webContentsID: number
+  },
+) {
+  const requests: ActiveAgentSessionRequest[] = []
+  const clientTurnID = input.clientTurnID?.trim()
+
+  if (clientTurnID) {
+    const request = activeAgentSessionRequests.get(agentSessionRequestKey(input.webContentsID, clientTurnID))
+    if (request && request.backendSessionID === input.backendSessionID) {
+      requests.push(request)
+    }
+  } else {
+    const prefix = `${input.webContentsID}:`
+    for (const [key, request] of activeAgentSessionRequests.entries()) {
+      if (!key.startsWith(prefix)) continue
+      if (request.backendSessionID !== input.backendSessionID) continue
+      requests.push(request)
+    }
+  }
+
+  for (const request of requests) {
+    request.cancelRequested = true
+    request.controller.abort()
+  }
+
+  return requests.length
+}
+
 function isAbortError(error: unknown) {
   return typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
 }
@@ -467,8 +500,12 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     return true
   }
 
-  function getActiveAgentSessionRequest(webContentsID: number, clientTurnID: string) {
-    return activeAgentSessionRequests.get(agentSessionRequestKey(webContentsID, clientTurnID))
+  function abortActiveAgentSessionRequests(input: {
+    backendSessionID: string
+    clientTurnID?: string
+    webContentsID: number
+  }) {
+    return abortActiveAgentSessionRequestsInMap(activeAgentSessionRequests, input)
   }
 
   function removeActiveAgentSessionRequest(webContentsID: number, clientTurnID: string, request: ActiveAgentSessionRequest) {
@@ -2497,47 +2534,84 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
       ),
   )
 
+  async function interruptAgentSession(
+    event: IpcMainInvokeEvent,
+    input: { backendSessionID: string; clientTurnID?: string; reason?: "user-interrupt" },
+  ): Promise<DesktopIpcOutput<"desktop:agent-session-interrupt">> {
+    const backendSessionID = input.backendSessionID.trim()
+    const clientTurnID = input.clientTurnID?.trim() || undefined
+    const localRequestsAborted = abortActiveAgentSessionRequests({
+      backendSessionID,
+      clientTurnID,
+      webContentsID: event.sender.id,
+    })
+
+    try {
+      const result = await requestAgentJSON<{
+        sessionID: string
+        cancelled: boolean
+        activeCancelled?: boolean
+        queuedCancelled?: number
+      }>(
+        `/api/sessions/${encodeURIComponent(backendSessionID)}/cancel`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            cancelQueued: true,
+            reason: "user",
+          }),
+        },
+      )
+
+      return {
+        backendSessionID,
+        ...(clientTurnID ? { clientTurnID } : {}),
+        localRequestsAborted,
+        backendCancelled: result.data.cancelled,
+        activeCancelled: result.data.activeCancelled,
+        queuedCancelled: result.data.queuedCancelled,
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (localRequestsAborted > 0) {
+        safeWarn("[desktop] agent session interrupt endpoint failed after local abort:", message)
+      }
+      return {
+        backendSessionID,
+        ...(clientTurnID ? { clientTurnID } : {}),
+        localRequestsAborted,
+        backendCancelled: false,
+        backendCancelError: message,
+      }
+    }
+  }
+
+  handleDesktopIpc(
+    "desktop:agent-session-interrupt",
+    async (event, input: { backendSessionID: string; clientTurnID?: string; reason?: "user-interrupt" }) =>
+      interruptAgentSession(event, input),
+  )
+
   handleDesktopIpc(
     "desktop:agent-session-cancel-turn",
     async (event, input: { clientTurnID: string; backendSessionID: string }) => {
       const clientTurnID = input.clientTurnID.trim()
       const backendSessionID = input.backendSessionID.trim()
-      const request = getActiveAgentSessionRequest(event.sender.id, clientTurnID)
-      const localRequestAborted = Boolean(request)
+      const result = await interruptAgentSession(event, {
+        backendSessionID,
+        clientTurnID,
+        reason: "user-interrupt",
+      })
 
-      if (request) {
-        request.cancelRequested = true
-        request.controller.abort()
-      }
-
-      try {
-        const result = await requestAgentJSON<{ sessionID: string; cancelled: boolean }>(
-          `/api/sessions/${encodeURIComponent(backendSessionID)}/cancel`,
-          {
-            method: "POST",
-          },
-        )
-
-        return {
-          clientTurnID,
-          backendSessionID,
-          localRequestAborted,
-          backendCancelled: result.data.cancelled,
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        if (localRequestAborted) {
-          safeWarn("[desktop] agent session cancel endpoint failed after local abort:", message)
-          return {
-            clientTurnID,
-            backendSessionID,
-            localRequestAborted,
-            backendCancelled: false,
-            backendCancelError: message,
-          }
-        }
-
-        throw error
+      return {
+        clientTurnID,
+        backendSessionID,
+        localRequestAborted: result.localRequestsAborted > 0,
+        backendCancelled: result.backendCancelled,
+        ...(result.backendCancelError ? { backendCancelError: result.backendCancelError } : {}),
       }
     },
   )
@@ -2626,6 +2700,7 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
 }
 
 export const internal = {
+  abortActiveAgentSessionRequestsInMap,
   capturePreviewScreenshotFromWindow,
   disposeSessionStreamSubscriptionsForWebContents,
   getToolPermissionMode,

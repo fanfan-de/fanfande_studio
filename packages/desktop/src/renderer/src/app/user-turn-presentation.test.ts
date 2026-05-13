@@ -59,4 +59,95 @@ describe("user turn presentation persistence", () => {
       "Review the selected lines before making changes.",
     )
   })
+
+  it("persists and restores user turn diff summaries", () => {
+    persistUserTurns("session-1", [
+      buildUserTurn({
+        displayText: "Update the app",
+        diffSummary: {
+          stats: {
+            files: 1,
+            additions: 4,
+            deletions: 2,
+          },
+          diffs: [
+            {
+              file: "src/App.tsx",
+              additions: 4,
+              deletions: 2,
+            },
+          ],
+        },
+        timestamp: 10,
+      }),
+    ])
+
+    expect(readPersistedUserTurns("session-1")[0]).toMatchObject({
+      kind: "user",
+      diffSummary: {
+        stats: {
+          files: 1,
+          additions: 4,
+          deletions: 2,
+        },
+        diffs: [
+          {
+            file: "src/App.tsx",
+            additions: 4,
+            deletions: 2,
+          },
+        ],
+      },
+    })
+  })
+
+  it("keeps backend diff summaries when merging user presentation state", () => {
+    const previousTurns = [
+      buildUserTurn({
+        displayText: "local text",
+        timestamp: 10,
+      }),
+    ]
+    const historyTurns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "msg-user-diff",
+          sessionID: "session-1",
+          role: "user",
+          created: 10,
+          diffSummary: {
+            stats: {
+              files: 1,
+              additions: 1,
+              deletions: 0,
+            },
+            diffs: [
+              {
+                file: "src/new.ts",
+                additions: 1,
+                deletions: 0,
+              },
+            ],
+          },
+        },
+        parts: [{ id: "part-user-diff", type: "text", text: "history text" }],
+      },
+    ])
+
+    const mergedTurns = mergeUserTurnPresentationState(previousTurns, historyTurns)
+
+    expect(mergedTurns[0]).toMatchObject({
+      kind: "user",
+      displayText: "local text",
+      diffSummary: {
+        diffs: [
+          {
+            file: "src/new.ts",
+            additions: 1,
+            deletions: 0,
+          },
+        ],
+      },
+    })
+  })
 })

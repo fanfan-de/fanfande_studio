@@ -99,6 +99,7 @@ export interface ComposerSliceState {
 
 export interface AgentStreamSliceState {
   agentSessions: Record<string, string>
+  cancellingSessionIDs: Record<string, boolean>
   contextUsageBySession: Record<string, SessionContextUsage>
   conversations: typeof initialConversations
   pendingPermissionRequestsBySession: Record<string, PermissionRequest[]>
@@ -157,6 +158,7 @@ export interface ComposerSliceActions {
 
 export interface AgentStreamSliceActions {
   setAgentSessions: (update: WorkspaceStateUpdater<Record<string, string>>) => void
+  setCancellingSessionIDs: (update: WorkspaceStateUpdater<Record<string, boolean>>) => void
   setContextUsageBySession: (
     update: WorkspaceStateUpdater<Record<string, SessionContextUsage>>,
   ) => void
@@ -261,6 +263,7 @@ export function createWorkspaceStore({
     },
     agentStream: {
       agentSessions: {},
+      cancellingSessionIDs: {},
       contextUsageBySession: {},
       conversations: shouldUseSeedData ? initialConversations : {},
       pendingPermissionRequestsBySession: {},
@@ -445,6 +448,13 @@ export function createWorkspaceStore({
           agentStream: {
             ...state.agentStream,
             agentSessions: resolveStateUpdate(state.agentStream.agentSessions, update),
+          },
+        })),
+      setCancellingSessionIDs: (update) =>
+        set((state) => ({
+          agentStream: {
+            ...state.agentStream,
+            cancellingSessionIDs: resolveStateUpdate(state.agentStream.cancellingSessionIDs, update),
           },
         })),
       setContextUsageBySession: (update) =>

@@ -78,6 +78,7 @@ function useWorkbenchHarness() {
   const projectRowRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const derived = buildWorkspaceDerivedState({
     activeSideChatSessionIDByParentSessionID: {},
+    cancellingSessionIDs: {},
     composerAttachmentsByTabKey: {},
     composerDraftStateByTabKey: {},
     contextUsageBySession: {},
