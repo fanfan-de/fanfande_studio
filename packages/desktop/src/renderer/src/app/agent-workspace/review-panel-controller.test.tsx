@@ -249,4 +249,77 @@ describe("review panel controller", () => {
       endLineNumber: 3,
     })
   })
+
+  it("restores multiple active session diff files and refreshes once", async () => {
+    const workspace = createWorkspace()
+    const restoreWorkspaceDiffFile = vi.fn().mockResolvedValue({
+      directory: workspace.directory,
+      file: "src/App.tsx",
+    })
+    const loadSessionDiffForSession = vi.fn(async () => undefined)
+    const setSelectedDiffFileBySession = vi.fn()
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        restoreWorkspaceDiffFile,
+      },
+    })
+
+    const { result } = renderHook(() => {
+      const [previewByWorkspaceID, setPreviewByWorkspaceIDState] = useState<Record<string, WorkspacePreviewState>>({})
+      const [workspaceFileCommentsByTarget, setWorkspaceFileCommentsByTargetState] = useState<Record<string, WorkspaceFileComment[]>>({})
+      const [workspaceFileReviewState, setWorkspaceFileReviewStateState] =
+        useState<WorkspaceFileReviewState>(DEFAULT_WORKSPACE_FILE_REVIEW_STATE)
+      const [, setComposerDraftStateByTabKeyState] = useState<Record<string, ComposerDraftState>>({})
+      const [, setRightSidebarViewState] = useState<RightSidebarView>("changes")
+      const workspaceFileReadRequestRef = useRef(0)
+      const workspaceFileSearchRequestRef = useRef(0)
+
+      const controller = useReviewPanelController({
+        activeSessionDirectory: workspace.directory,
+        activeSessionID: "session-1",
+        activeTabKey: "session:session-1",
+        activeWorkspaceFileScopeDirectory: workspace.directory,
+        loadSessionDiffForSession,
+        loadSessionRuntimeDebugForSession: vi.fn(async () => undefined),
+        platform: "win32",
+        previewByWorkspaceID,
+        selectedWorkspace: workspace,
+        setComposerDraftStateByTabKey: setComposerDraftStateByTabKeyState,
+        setPreviewByWorkspaceID: (update) => applyUpdate(setPreviewByWorkspaceIDState, previewByWorkspaceID, update),
+        setRightSidebarView: setRightSidebarViewState,
+        setSelectedDiffFileBySession,
+        setWorkspaceFileCommentsByTarget: (update) =>
+          applyUpdate(setWorkspaceFileCommentsByTargetState, workspaceFileCommentsByTarget, update),
+        setWorkspaceFileReviewState: (update) => applyUpdate(setWorkspaceFileReviewStateState, workspaceFileReviewState, update),
+        workspaceFileCommentsByTarget,
+        workspaceFileReadRequestRef,
+        workspaceFileReviewState,
+        workspaceFileSearchRequestRef,
+      })
+
+      return { controller }
+    })
+
+    await act(async () => {
+      await result.current.controller.handleActiveSessionDiffFilesRestore([
+        "src/App.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+      ])
+    })
+
+    expect(restoreWorkspaceDiffFile).toHaveBeenCalledTimes(2)
+    expect(restoreWorkspaceDiffFile).toHaveBeenNthCalledWith(1, {
+      directory: workspace.directory,
+      file: "src/App.tsx",
+    })
+    expect(restoreWorkspaceDiffFile).toHaveBeenNthCalledWith(2, {
+      directory: workspace.directory,
+      file: "src/styles.css",
+    })
+    expect(setSelectedDiffFileBySession).toHaveBeenCalled()
+    expect(loadSessionDiffForSession).toHaveBeenCalledTimes(1)
+    expect(loadSessionDiffForSession).toHaveBeenCalledWith("session-1")
+  })
 })

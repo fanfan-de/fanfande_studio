@@ -620,7 +620,10 @@ export function useReviewPanelController({
     await loadSessionDiffForSession(sessionID)
   }
 
-  async function handleActiveSessionDiffFileRestore(file: string, sessionID = activeSessionID) {
+  async function handleActiveSessionDiffFilesRestore(files: string[], sessionID = activeSessionID) {
+    const uniqueFiles = [...new Set(files.map((file) => file.trim()).filter(Boolean))]
+    if (uniqueFiles.length === 0) return
+
     const restoreWorkspaceDiffFile = window.desktop?.restoreWorkspaceDiffFile
     if (!restoreWorkspaceDiffFile) {
       throw new Error("Workspace diff restore bridge is unavailable.")
@@ -629,15 +632,21 @@ export function useReviewPanelController({
       throw new Error("Select a session before restoring a file.")
     }
 
-    await restoreWorkspaceDiffFile({
-      directory: activeSessionDirectory,
-      file,
-    })
+    for (const file of uniqueFiles) {
+      await restoreWorkspaceDiffFile({
+        directory: activeSessionDirectory,
+        file,
+      })
+    }
     setSelectedDiffFileBySession((prev) => ({
       ...prev,
       [sessionID]: null,
     }))
     await loadSessionDiffForSession(sessionID)
+  }
+
+  async function handleActiveSessionDiffFileRestore(file: string, sessionID = activeSessionID) {
+    await handleActiveSessionDiffFilesRestore([file], sessionID)
   }
 
   async function handleActiveSessionRuntimeDebugRefresh(sessionID = activeSessionID) {
@@ -658,6 +667,7 @@ export function useReviewPanelController({
   return {
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffFileRestore,
+    handleActiveSessionDiffFilesRestore,
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handlePreviewAddComment,

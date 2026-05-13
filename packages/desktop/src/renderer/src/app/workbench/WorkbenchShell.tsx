@@ -97,6 +97,8 @@ export interface WorkbenchShellProps {
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
   onToggleLeftSidebar: () => void
   onToggleRightSidebar: () => void
+  onTurnDiffRestore: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
+  onTurnDiffReview: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
 }
 
 export function WorkbenchShell(props: WorkbenchShellProps) {
@@ -205,6 +207,8 @@ function WorkbenchNodeView({
         onSend={props.onSend}
         onSessionModelSelectionChange={props.onSessionModelSelectionChange}
         onSetDraft={props.onSetDraft}
+        onTurnDiffRestore={props.onTurnDiffRestore}
+        onTurnDiffReview={props.onTurnDiffReview}
       />
     )
   }

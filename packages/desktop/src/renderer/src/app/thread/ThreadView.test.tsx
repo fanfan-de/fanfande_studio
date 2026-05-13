@@ -1403,8 +1403,11 @@ describe("ThreadView message actions", () => {
     expect(writeText).toHaveBeenCalledWith("Hello from user")
   })
 
-  it("renders user turn file changes after the final assistant output and selects files from the summary", () => {
+  it("renders user turn file changes after the final assistant output and handles card actions", async () => {
     const onFileChangeSelect = vi.fn()
+    const onTurnDiffReview = vi.fn().mockResolvedValue(undefined)
+    const onTurnDiffRestore = vi.fn().mockResolvedValue(undefined)
+    const confirmRestore = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true)
     const turn: UserTurn = {
       ...userTurn("user-with-diff", "Update the app"),
       diffSummary: {
@@ -1452,20 +1455,75 @@ describe("ThreadView message actions", () => {
           false,
         ),
       ],
-      { onFileChangeSelect },
+      { onFileChangeSelect, onTurnDiffRestore, onTurnDiffReview },
     )
 
-    const summaryButton = getByRole("button", { name: /2 files changed/i })
+    const summaryButton = getByRole("button", { name: /2 个文件已更改/i })
     const finalAssistantOutput = getByText("Final answer after file updates.")
 
     expect(summaryButton).toBeInTheDocument()
     expect(finalAssistantOutput.compareDocumentPosition(summaryButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(queryByRole("button", { name: /Changed\s+src\/App\.tsx/i })).toBeNull()
+    expect(getByRole("button", { name: /审核/i })).toBeInTheDocument()
+    expect(getByRole("button", { name: /撤销/i })).toBeInTheDocument()
+    expect(queryByRole("button", { name: /审核\s+src\/App\.tsx/i })).toBeNull()
 
-    fireEvent.click(summaryButton)
-    fireEvent.click(getByRole("button", { name: /Changed\s+src\/App\.tsx/i }))
+    fireEvent.click(getByRole("button", { name: "审核" }))
+    fireEvent.click(getByRole("button", { name: "展开文件变更" }))
+    fireEvent.click(getByRole("button", { name: /审核\s+src\/App\.tsx/i }))
+    fireEvent.click(getByRole("button", { name: "收起文件变更" }))
+    expect(queryByRole("button", { name: /审核\s+src\/App\.tsx/i })).toBeNull()
+    fireEvent.click(getByRole("button", { name: "展开文件变更" }))
+    fireEvent.click(getByRole("button", { name: /撤销/i }))
 
     expect(onFileChangeSelect).toHaveBeenCalledWith("src/App.tsx")
+    expect(onTurnDiffReview).toHaveBeenCalledWith(["src/App.tsx", "src/styles.css"])
+    expect(confirmRestore).toHaveBeenCalledTimes(1)
+    expect(onTurnDiffRestore).not.toHaveBeenCalled()
+
+    fireEvent.click(getByRole("button", { name: /撤销/i }))
+
+    await waitFor(() => {
+      expect(onTurnDiffRestore).toHaveBeenCalledWith(["src/App.tsx", "src/styles.css"])
+    })
+    confirmRestore.mockRestore()
+  })
+
+  it("shows user turn restore progress and errors", async () => {
+    const confirmRestore = vi.spyOn(window, "confirm").mockReturnValue(true)
+    let rejectRestore: (error: Error) => void = () => undefined
+    const onTurnDiffRestore = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectRestore = reject
+        }),
+    )
+
+    renderThread([
+      {
+        ...userTurn("user-restore-error", "Restore changes"),
+        diffSummary: {
+          stats: {
+            files: 1,
+            additions: 1,
+            deletions: 0,
+          },
+          diffs: [{ file: "src/App.tsx", additions: 1, deletions: 0 }],
+        },
+      },
+    ], { onTurnDiffRestore })
+
+    const restoreButton = screen.getByRole("button", { name: /撤销/i })
+    fireEvent.click(restoreButton)
+
+    expect(restoreButton).toBeDisabled()
+
+    rejectRestore(new Error("restore failed"))
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("restore failed")
+    })
+    expect(restoreButton).not.toBeDisabled()
+    confirmRestore.mockRestore()
   })
 
   it("hides the user turn file change summary when the diff is empty", () => {
@@ -1478,7 +1536,7 @@ describe("ThreadView message actions", () => {
       },
     ])
 
-    expect(screen.queryByRole("button", { name: /files? changed/i })).toBeNull()
+    expect(screen.queryByRole("button", { name: /个文件已更改/i })).toBeNull()
   })
 
   it("renders assistant copy and side chat actions as icon buttons", () => {

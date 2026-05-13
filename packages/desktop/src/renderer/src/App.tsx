@@ -198,6 +198,8 @@ export function App() {
     handleCreateSessionTabSelect,
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffFileRestore,
+    handleActiveSessionDiffFilesRestore,
+    handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
@@ -549,6 +551,24 @@ export function App() {
     }
     handlePaneFocus(paneID)
     handleActiveSessionDiffFileSelect(file, sessionID)
+  }
+
+  async function handleTurnDiffReview(_files: string[], sessionID: string | null, paneID: string) {
+    if (isRightSidebarCollapsed) {
+      handleRightSidebarToggle()
+    }
+    handlePaneFocus(paneID)
+    handleActiveSessionDiffFileSelect(null, sessionID)
+    await handleActiveSessionDiffRefresh(sessionID)
+  }
+
+  async function handleTurnDiffRestore(files: string[], sessionID: string | null, paneID: string) {
+    if (isRightSidebarCollapsed) {
+      handleRightSidebarToggle()
+    }
+    handlePaneFocus(paneID)
+    handleActiveSessionDiffFileSelect(null, sessionID)
+    await handleActiveSessionDiffFilesRestore(files, sessionID)
   }
 
   function handleLocalFileLinkOpen({
@@ -1267,6 +1287,8 @@ export function App() {
                 onSetDraft={setDraftForTab}
                 onToggleLeftSidebar={handleSidebarToggle}
                 onToggleRightSidebar={handleRightSidebarToggle}
+                onTurnDiffRestore={handleTurnDiffRestore}
+                onTurnDiffReview={handleTurnDiffReview}
               />
             </>
           )}

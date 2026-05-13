@@ -183,6 +183,8 @@ export interface WorkbenchPaneSurfaceProps {
   onSend: AgentWorkspaceState["handleSend"]
   onSessionModelSelectionChange: AgentWorkspaceState["handleSessionModelSelectionChange"]
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
+  onTurnDiffRestore: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
+  onTurnDiffReview: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
 }
 
 export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
@@ -233,6 +235,8 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onSend,
   onSessionModelSelectionChange,
   onSetDraft,
+  onTurnDiffRestore,
+  onTurnDiffReview,
 }: WorkbenchPaneSurfaceProps) {
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
   const splitPreviewPosition = draggedTabKey && dropTargetPosition && dropTargetPosition !== "center" ? dropTargetPosition : null
@@ -434,6 +438,8 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   })
                 }
                 onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
+                onTurnDiffRestore={(files) => onTurnDiffRestore(files, pane.sessionID, pane.id)}
+                onTurnDiffReview={(files) => onTurnDiffReview(files, pane.sessionID, pane.id)}
                 onLocalFileLinkOpen={(target) =>
                   onLocalFileLinkOpen({
                     paneID: pane.id,

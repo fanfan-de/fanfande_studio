@@ -65,6 +65,8 @@ interface ThreadViewProps {
   onFileChangeSelect?: (file: string) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenSideChat?: (anchorMessageID: string) => void | Promise<void>
+  onTurnDiffRestore?: (files: string[]) => void | Promise<void>
+  onTurnDiffReview?: (files: string[]) => void | Promise<void>
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
@@ -249,14 +251,18 @@ function summarizeUserTurnDiffStats(
 }
 
 function formatUserTurnDiffSummaryLabel(fileCount: number) {
-  return `${fileCount} file${fileCount === 1 ? "" : "s"} changed`
+  return `${fileCount} 个文件已更改`
 }
 
-function UserTurnDiffSummary({
+function UserTurnDiffCard({
   onFileChangeSelect,
+  onTurnDiffRestore,
+  onTurnDiffReview,
   turn,
 }: {
   onFileChangeSelect?: (file: string) => void
+  onTurnDiffRestore?: (files: string[]) => void | Promise<void>
+  onTurnDiffReview?: (files: string[]) => void | Promise<void>
   turn: UserTurn
 }) {
   const fileChanges = normalizeUserTurnDiffSummary(turn.diffSummary)
@@ -264,9 +270,13 @@ function UserTurnDiffSummary({
     .map((change) => `${change.file}\u0000${change.additions}\u0000${change.deletions}`)
     .join("\u0001")
   const [isListExpanded, setIsListExpanded] = useState(false)
+  const [isRestoring, setIsRestoring] = useState(false)
+  const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null)
 
   useEffect(() => {
     setIsListExpanded(false)
+    setIsRestoring(false)
+    setActionErrorMessage(null)
   }, [fileChangeSignature, turn.id])
 
   if (fileChanges.length === 0) return null
@@ -274,57 +284,114 @@ function UserTurnDiffSummary({
   const stats = summarizeUserTurnDiffStats(turn.diffSummary, fileChanges)
   const listID = `user-turn-diff-list-${turn.id}`
   const summaryLabel = formatUserTurnDiffSummaryLabel(stats.files)
+  const filePaths = fileChanges.map((change) => change.file)
+
+  const handleReviewClick = async () => {
+    if (!onTurnDiffReview) return
+
+    setActionErrorMessage(null)
+    try {
+      await onTurnDiffReview(filePaths)
+    } catch (error) {
+      setActionErrorMessage(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const handleRestoreClick = async () => {
+    if (!onTurnDiffRestore || isRestoring) return
+    const confirmed = window.confirm(
+      `撤销这 ${stats.files} 个文件的当前工作区变更？这会按当前 workspace 状态恢复这些文件，可能丢弃后续 turn 对同一文件的改动。`,
+    )
+    if (!confirmed) return
+
+    setIsRestoring(true)
+    setActionErrorMessage(null)
+    try {
+      await onTurnDiffRestore(filePaths)
+    } catch (error) {
+      setActionErrorMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsRestoring(false)
+    }
+  }
 
   return (
-    <div className="user-turn-diff-summary">
-      <button
-        type="button"
-        className="trace-file-change-summary"
-        aria-expanded={isListExpanded}
-        aria-controls={listID}
-        onClick={() => setIsListExpanded((current) => !current)}
-      >
-        <span className="trace-file-change-summary-icon" aria-hidden="true">
-          <ChangesIcon />
-        </span>
-        <span className="trace-file-change-summary-label">{summaryLabel}</span>
-        <span className="trace-file-change-stats" aria-label={`${stats.additions} additions, ${stats.deletions} deletions`}>
-          <span className="is-add">+{stats.additions}</span>
-          <span className="is-remove">-{stats.deletions}</span>
-        </span>
-        <span className="trace-file-change-summary-chevron" aria-hidden="true">
-          {isListExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-        </span>
-      </button>
+    <div className="user-turn-diff-card">
+      <div className="user-turn-diff-card-header">
+        <button
+          type="button"
+          className="user-turn-diff-card-summary"
+          aria-expanded={isListExpanded}
+          aria-controls={listID}
+          onClick={() => setIsListExpanded((current) => !current)}
+        >
+          <span className="user-turn-diff-card-title">{summaryLabel}</span>
+          <span className="user-turn-diff-stats" aria-label={`${stats.additions} additions, ${stats.deletions} deletions`}>
+            <span className="is-add">+{stats.additions}</span>
+            <span className="is-remove">-{stats.deletions}</span>
+          </span>
+        </button>
+        <div className="user-turn-diff-actions" aria-label="Turn file change actions">
+          <button
+            type="button"
+            className="user-turn-diff-action"
+            disabled={!onTurnDiffRestore || isRestoring}
+            onClick={() => void handleRestoreClick()}
+          >
+            <span>{isRestoring ? "撤销中" : "撤销"}</span>
+            <ResetIcon />
+          </button>
+          <button
+            type="button"
+            className="user-turn-diff-action"
+            disabled={!onTurnDiffReview}
+            onClick={() => void handleReviewClick()}
+          >
+            <span>审核</span>
+            <span aria-hidden="true">↗</span>
+          </button>
+          <button
+            type="button"
+            className="user-turn-diff-expand"
+            aria-label={isListExpanded ? "收起文件变更" : "展开文件变更"}
+            aria-expanded={isListExpanded}
+            aria-controls={listID}
+            onClick={() => setIsListExpanded((current) => !current)}
+          >
+            {isListExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+          </button>
+        </div>
+      </div>
       {isListExpanded ? (
-        <div id={listID} className="trace-file-change-list">
+        <div id={listID} className="user-turn-diff-file-list">
           {fileChanges.map((change, changeIndex) => {
             const rowContent = (
               <>
-                <span className="trace-file-change-toggle-icon" aria-hidden="true" />
-                <span className="trace-file-change-action">Changed</span>
-                <span className="trace-file-change-file">{change.file}</span>
-                <span className="trace-file-change-stats" aria-label={`${change.additions} additions, ${change.deletions} deletions`}>
+                <span className="user-turn-diff-file-path">{change.file}</span>
+                <span className="user-turn-diff-stats" aria-label={`${change.additions} additions, ${change.deletions} deletions`}>
                   <span className="is-add">+{change.additions}</span>
                   <span className="is-remove">-{change.deletions}</span>
                 </span>
-                <span className="trace-file-change-note">Summary only</span>
+                <span className="user-turn-diff-file-chevron" aria-hidden="true">
+                  <ChevronDownIcon />
+                </span>
               </>
             )
 
             return (
-              <div key={`${turn.id}-${change.file}-${changeIndex}`} className="trace-file-change-entry">
+              <div key={`${turn.id}-${change.file}-${changeIndex}`} className="user-turn-diff-file-entry">
                 {onFileChangeSelect ? (
                   <button
                     type="button"
-                    className="trace-file-change-row"
-                    aria-label={`Changed ${change.file}`}
+                    className="user-turn-diff-file-row"
+                    aria-label={`审核 ${change.file}`}
+                    title={change.file}
                     onClick={() => onFileChangeSelect(change.file)}
                   >
                     {rowContent}
                   </button>
                 ) : (
-                  <div className="trace-file-change-row is-static">
+                  <div className="user-turn-diff-file-row is-static" title={change.file}>
                     {rowContent}
                   </div>
                 )}
@@ -332,6 +399,9 @@ function UserTurnDiffSummary({
             )
           })}
         </div>
+      ) : null}
+      {actionErrorMessage ? (
+        <p className="user-turn-diff-error" role="alert">{actionErrorMessage}</p>
       ) : null}
     </div>
   )
@@ -2564,6 +2634,8 @@ export function ThreadView({
   onFileChangeSelect,
   onLocalFileLinkOpen,
   onOpenSideChat,
+  onTurnDiffRestore,
+  onTurnDiffReview,
   onAskUserQuestionAnswer,
   pendingPermissionRequests,
   permissionRequestActionError,
@@ -2811,7 +2883,12 @@ export function ThreadView({
                     </div>
                     <UserTurnBubble turn={turn} />
                     {shouldRenderDiffOnStandaloneUserTurn(activeTurns, turnIndex, turn) ? (
-                      <UserTurnDiffSummary turn={turn} onFileChangeSelect={onFileChangeSelect} />
+                      <UserTurnDiffCard
+                        turn={turn}
+                        onFileChangeSelect={onFileChangeSelect}
+                        onTurnDiffRestore={onTurnDiffRestore}
+                        onTurnDiffReview={onTurnDiffReview}
+                      />
                     ) : null}
                     {userCopyText ? (
                       <div className="user-message-actions">
@@ -2875,9 +2952,6 @@ export function ThreadView({
                         traceVisibility={assistantTraceVisibility}
                       />
                     )}
-                    {trailingUserDiffTurn ? (
-                      <UserTurnDiffSummary turn={trailingUserDiffTurn} onFileChangeSelect={onFileChangeSelect} />
-                    ) : null}
                     {shouldRenderResponseActions ? (
                       <div
                         className={joinClassNames(
@@ -2967,6 +3041,14 @@ export function ThreadView({
                           />
                         ) : null}
                       </div>
+                    ) : null}
+                    {trailingUserDiffTurn ? (
+                      <UserTurnDiffCard
+                        turn={trailingUserDiffTurn}
+                        onFileChangeSelect={onFileChangeSelect}
+                        onTurnDiffRestore={onTurnDiffRestore}
+                        onTurnDiffReview={onTurnDiffReview}
+                      />
                     ) : null}
                   </div>
                 </article>

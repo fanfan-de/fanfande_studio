@@ -572,6 +572,7 @@ export function useAgentWorkspace({
     handleWorkspaceFileQueryChange,
     handleWorkspaceFileSelect,
     handleActiveSessionDiffFileRestore,
+    handleActiveSessionDiffFilesRestore,
   } = useReviewPanelController({
     activeSessionDirectory,
     activeSessionID,
@@ -690,6 +691,7 @@ export function useAgentWorkspace({
     handlePasteComposerImageAttachments,
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffFileRestore,
+    handleActiveSessionDiffFilesRestore,
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handlePreviewAddComment,
