@@ -76,3 +76,7 @@ body.is-resizing-sidebar * {
   cursor: col-resize !important;
   user-select: none;
 }
+
+body.is-resizing-sidebar .preview-frame {
+  pointer-events: none;
+}

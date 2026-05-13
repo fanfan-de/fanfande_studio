@@ -10636,6 +10636,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.desktop!.createPtySession).toHaveBeenCalledTimes(1)
     })
+    await screen.findByRole("button", { name: /^Terminal 1,/i })
 
     act(() => {
       ptyListener?.({
@@ -10777,21 +10778,27 @@ describe("App", () => {
       clientX: 374,
       pointerType: "mouse",
     })
-    expect(appShell!.getAttribute("style")).toContain("--sidebar-width: 320px")
+    await waitFor(() => {
+      expect(appShell!.getAttribute("style")).toContain("--sidebar-width: 320px")
+    })
 
     fireEvent.pointerMove(window, {
       buttons: 1,
       clientX: 640,
       pointerType: "mouse",
     })
-    expect(appShell!.getAttribute("style")).toContain(`--sidebar-width: ${MAX_SIDEBAR_WIDTH}px`)
+    await waitFor(() => {
+      expect(appShell!.getAttribute("style")).toContain(`--sidebar-width: ${MAX_SIDEBAR_WIDTH}px`)
+    })
 
     fireEvent.pointerMove(window, {
       buttons: 1,
       clientX: 120,
       pointerType: "mouse",
     })
-    expect(appShell!.getAttribute("style")).toContain(`--sidebar-width: ${MIN_SIDEBAR_WIDTH}px`)
+    await waitFor(() => {
+      expect(appShell!.getAttribute("style")).toContain(`--sidebar-width: ${MIN_SIDEBAR_WIDTH}px`)
+    })
 
     fireEvent.pointerUp(window)
 
@@ -10842,21 +10849,27 @@ describe("App", () => {
       clientX: 760,
       pointerType: "mouse",
     })
-    expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 440px")
+    await waitFor(() => {
+      expect(appShell!.getAttribute("style")).toContain("--right-sidebar-width: 440px")
+    })
 
     fireEvent.pointerMove(window, {
       buttons: 1,
       clientX: 400,
       pointerType: "mouse",
     })
-    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${expectedRightSidebarMaxWidth}px`)
+    await waitFor(() => {
+      expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${expectedRightSidebarMaxWidth}px`)
+    })
 
     fireEvent.pointerMove(window, {
       buttons: 1,
       clientX: 1100,
       pointerType: "mouse",
     })
-    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${MIN_RIGHT_SIDEBAR_WIDTH}px`)
+    await waitFor(() => {
+      expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${MIN_RIGHT_SIDEBAR_WIDTH}px`)
+    })
 
     fireEvent.pointerUp(window)
 
@@ -10956,7 +10969,9 @@ describe("App", () => {
       clientX: 300,
       pointerType: "mouse",
     })
-    expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${expectedRightSidebarMaxWidth}px`)
+    await waitFor(() => {
+      expect(appShell!.getAttribute("style")).toContain(`--right-sidebar-width: ${expectedRightSidebarMaxWidth}px`)
+    })
 
     fireEvent.pointerUp(window)
 
