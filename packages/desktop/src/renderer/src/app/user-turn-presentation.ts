@@ -125,6 +125,7 @@ function sanitizeUserTurn(value: unknown): UserTurn | null {
   const attachments = sanitizeUserTurnAttachments(record.attachments)
   const references = sanitizeUserTurnReferences(record.references)
   const diffSummary = sanitizeUserTurnDiffSummary(record.diffSummary)
+  const submissionMode = record.submissionMode === "steer" ? "steer" : undefined
   const questionAnswer =
     record.questionAnswer && typeof record.questionAnswer === "object" && !Array.isArray(record.questionAnswer)
       ? (() => {
@@ -156,6 +157,7 @@ function sanitizeUserTurn(value: unknown): UserTurn | null {
     ...(references ? { references } : {}),
     ...(questionAnswer ? { questionAnswer } : {}),
     ...(diffSummary ? { diffSummary } : {}),
+    ...(submissionMode ? { submissionMode } : {}),
     timestamp,
   }
 }
@@ -209,22 +211,26 @@ function selectPersistableUserTurns(turns: Turn[]) {
   return turns
     .filter((turn): turn is UserTurn => turn.kind === "user")
     .slice(-MAX_PERSISTED_USER_TURNS_PER_SESSION)
-    .map((turn) => ({
-      ...turn,
-      ...(turn.attachments?.length ? { attachments: turn.attachments.map((attachment) => ({ ...attachment })) } : {}),
-      ...(turn.references?.length ? { references: turn.references.map((reference) => ({ ...reference })) } : {}),
-      ...(turn.diffSummary ? { diffSummary: cloneUserTurnDiffSummary(turn.diffSummary) } : {}),
-      ...(turn.questionAnswer
-        ? {
-            questionAnswer: {
-              ...turn.questionAnswer,
-              ...(turn.questionAnswer.selectedOptions
-                ? { selectedOptions: [...turn.questionAnswer.selectedOptions] }
-                : {}),
-            },
-          }
-        : {}),
-    }))
+    .map((turn) => {
+      const { streamInsertion: _streamInsertion, ...persistableTurn } = turn
+
+      return {
+        ...persistableTurn,
+        ...(turn.attachments?.length ? { attachments: turn.attachments.map((attachment) => ({ ...attachment })) } : {}),
+        ...(turn.references?.length ? { references: turn.references.map((reference) => ({ ...reference })) } : {}),
+        ...(turn.diffSummary ? { diffSummary: cloneUserTurnDiffSummary(turn.diffSummary) } : {}),
+        ...(turn.questionAnswer
+          ? {
+              questionAnswer: {
+                ...turn.questionAnswer,
+                ...(turn.questionAnswer.selectedOptions
+                  ? { selectedOptions: [...turn.questionAnswer.selectedOptions] }
+                  : {}),
+              },
+            }
+          : {}),
+      }
+    })
 }
 
 function prunePersistedPresentationMap(value: PersistedUserTurnPresentationMap) {
@@ -285,6 +291,7 @@ export function mergeUserTurnPresentationState(previousTurns: Turn[], nextTurns:
       ...(mergedAttachments?.length ? { attachments: mergedAttachments } : {}),
       ...(mergedReferences?.length ? { references: mergedReferences } : {}),
       ...(turn.diffSummary ? { diffSummary: turn.diffSummary } : {}),
+      ...(previousTurn.submissionMode ? { submissionMode: previousTurn.submissionMode } : {}),
     }
   })
 

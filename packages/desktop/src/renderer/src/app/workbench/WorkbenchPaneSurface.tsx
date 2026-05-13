@@ -9,8 +9,10 @@ import {
 import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBadgeInfo } from "../session-workflow"
+import { getPendingStreamInsertionUserTurns } from "../stream-insertion"
 import type { MarkdownLocalFileLinkTarget } from "../thread-markdown"
-import type { AssistantTraceVisibility, ComposerDraftState, ToolPermissionMode } from "../types"
+import { ThreadRichText } from "../thread-rich-text"
+import type { AssistantTraceVisibility, ComposerDraftState, ToolPermissionMode, UserTurn } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { useProjectComposer } from "../use-project-composer"
 import { isSideChatSession } from "../workspace"
@@ -48,6 +50,33 @@ function ComposerPlanModeNotice({ workflow }: { workflow: SessionWorkflowBadgeIn
       <span className="composer-plan-mode-dot" aria-hidden="true" />
       <span className="composer-plan-mode-label">{workflow.label}</span>
       <span className="composer-plan-mode-detail">Read-only research</span>
+    </div>
+  )
+}
+
+function getUserTurnPendingSteerText(turn: UserTurn) {
+  return turn.displayText?.trim() || turn.text
+}
+
+function ComposerPendingSteerDrawer({ turns }: { turns: UserTurn[] }) {
+  if (turns.length === 0) return null
+
+  return (
+    <div className="composer-pending-steer-drawer" aria-live="polite" aria-label="Pending submitted guidance">
+      {turns.map((turn) => (
+        <article key={turn.id} className="composer-pending-steer-card">
+          <ThreadRichText
+            as="div"
+            className="composer-pending-steer-text"
+            references={turn.references ?? []}
+            text={getUserTurnPendingSteerText(turn)}
+          />
+          <div className="composer-pending-steer-note">
+            <span>提交，但不中断模型运行</span>
+            <span>下次模型/工具调用后</span>
+          </div>
+        </article>
+      ))}
     </div>
   )
 }
@@ -251,6 +280,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
     sessionID: pane.sessionID,
   })
   const readOnlySideChat = isSideChatSession(pane.activeSession)
+  const pendingSteerTurns = getPendingStreamInsertionUserTurns(pane.activeTurns)
   const composerWorkflowBadge = !readOnlySideChat ? getSessionWorkflowBadge(pane.activeSession?.workflow) : null
   const createSessionWorkflowBadge =
     pane.createSessionInitialWorkflowMode === "planning"
@@ -491,6 +521,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                     selectedModel: input.selectedModel,
                     selectedSkillIDs: input.selectedSkillIDs,
                     sessionID: pane.activeSideChatSession?.id,
+                    submissionMode: input.submissionMode,
                     tabKey: pane.activeSideChatTabKey,
                     waitForPendingModelSelection: input.waitForPendingModelSelection,
                   })
@@ -510,6 +541,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
               />
               <div className="composer-stack">
                 <ComposerTaskProgress tasks={pane.activeSessionRuntimeDebug?.tasks ?? null} />
+                <ComposerPendingSteerDrawer turns={pendingSteerTurns} />
                 <Composer
                   attachments={pane.composerAttachments}
                   attachmentButtonTitle={composer.attachmentButtonTitle}
@@ -575,6 +607,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                       selectedModel: composer.selectedModel,
                       selectedSkillIDs: composer.selectedSkillIDs,
                       sessionID: pane.sessionID,
+                      submissionMode: pane.isSending || pane.isInterruptible ? "steer" : undefined,
                       tabKey: pane.tabKey,
                       waitForPendingModelSelection: composer.awaitPendingModelSelection,
                     })

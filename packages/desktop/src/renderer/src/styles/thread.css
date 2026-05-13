@@ -2284,6 +2284,10 @@ body.is-image-lightbox-open {
   justify-items: end;
 }
 
+.assistant-stream-insertion-user-turn {
+  margin: 8px 0;
+}
+
 .user-bubble {
   max-width: min(100%, 520px);
   min-width: 0;
@@ -2520,6 +2524,15 @@ body.is-image-lightbox-open {
   min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.user-bubble-steer-note {
+  display: grid;
+  gap: 2px;
+  padding-top: 2px;
+  color: var(--seg-text-3);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .thread-inline-reference {

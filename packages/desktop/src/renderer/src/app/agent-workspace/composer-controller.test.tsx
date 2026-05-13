@@ -3,6 +3,7 @@ import { useRef, useState, type Dispatch, type SetStateAction } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import type {
+  AssistantTurn,
   ComposerAttachment,
   ComposerDraftState,
   CreateSessionTab,
@@ -42,6 +43,31 @@ function createWorkspace(session: SessionSummary): WorkspaceGroup {
   }
 }
 
+function createStreamingAssistantTurn(id: string): AssistantTurn {
+  return {
+    id,
+    kind: "assistant",
+    timestamp: 1,
+    runtime: {
+      phase: "tool_running",
+      startedAt: 1,
+      updatedAt: 1,
+    },
+    state: "running",
+    items: [
+      {
+        id: `${id}-tool`,
+        kind: "tool",
+        timestamp: 1,
+        label: "Tool",
+        title: "read-file",
+        status: "running",
+      },
+    ],
+    isStreaming: true,
+  }
+}
+
 function applyUpdate<T>(setValue: Dispatch<SetStateAction<T>>, _current: T, update: T | ((value: T) => T)) {
   setValue((current) => (typeof update === "function" ? (update as (value: T) => T)(current) : update))
 }
@@ -50,13 +76,16 @@ function useComposerHarness(input?: {
   activeCreateSessionTabID?: string | null
   activeSessionID?: string | null
   activeTabKey?: string | null
+  agentConnected?: boolean
   createSessionInitialWorkflowMode?: "execution" | "planning"
+  initialAgentSessions?: Record<string, string>
   initialIsSendingByTabKey?: Record<string, boolean>
+  initialPendingPermissionRequestsBySession?: Record<string, PermissionRequest[]>
   sessionDraftText?: string
 }) {
   const session = createSession("session-1")
   const workspace = createWorkspace(session)
-  const [agentSessions, setAgentSessionsState] = useState<Record<string, string>>({})
+  const [agentSessions, setAgentSessionsState] = useState<Record<string, string>>(input?.initialAgentSessions ?? {})
   const [cancellingSessionIDs, setCancellingSessionIDsState] = useState<Record<string, boolean>>({})
   const [attachmentsByTabKey, setAttachmentsByTabKeyState] = useState<Record<string, ComposerAttachment[]>>({})
   const [createSessionTabs, setCreateSessionTabsState] = useState<CreateSessionTab[]>([
@@ -72,7 +101,9 @@ function useComposerHarness(input?: {
     "create-session:create-1": createComposerDraftStateFromPlainText("New prompt"),
   })
   const [isSendingByTabKey, setIsSendingByTabKeyState] = useState<Record<string, boolean>>(input?.initialIsSendingByTabKey ?? {})
-  const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySessionState] = useState<Record<string, PermissionRequest[]>>({})
+  const [pendingPermissionRequestsBySession, setPendingPermissionRequestsBySessionState] = useState<Record<string, PermissionRequest[]>>(
+    input?.initialPendingPermissionRequestsBySession ?? {},
+  )
   const [sessionDirectoryBySession, setSessionDirectoryBySessionState] = useState<Record<string, string>>({})
   const [workspaces, setWorkspacesState] = useState<WorkspaceGroup[]>([workspace])
   const turnsRef = useRef<Record<string, Turn[]>>({})
@@ -98,7 +129,7 @@ function useComposerHarness(input?: {
     activeCreateSessionTabID: input && "activeCreateSessionTabID" in input ? input.activeCreateSessionTabID ?? null : null,
     activeSessionID: input && "activeSessionID" in input ? input.activeSessionID ?? null : session.id,
     activeTabKey: input && "activeTabKey" in input ? input.activeTabKey ?? null : "session:session-1",
-    agentConnected: false,
+    agentConnected: input?.agentConnected ?? false,
     agentDefaultDirectory: "C:/work",
     agentSessions,
     cancellingSessionIDs,
@@ -109,6 +140,7 @@ function useComposerHarness(input?: {
     composerDraftStateByTabKey: draftsByTabKey,
     createSessionForWorkspace,
     createSessionTabs,
+    getConversationTurns: (sessionID) => turnsRef.current[sessionID] ?? [],
     isSendingByTabKey,
     loadPendingPermissionRequestsForSession: vi.fn(async () => undefined),
     loadSessionDiffForSession: vi.fn(async () => undefined),
@@ -187,6 +219,84 @@ describe("composer controller", () => {
     })
   })
 
+  it("marks running text submissions as steer turns without interrupting the active stream", async () => {
+    const previousDesktop = window.desktop
+    const sendTurn = vi.fn(async (input: { clientTurnID: string }) => ({
+      clientTurnID: input.clientTurnID,
+    }))
+    const interrupt = vi.fn()
+    const cancelTurn = vi.fn()
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        createAgentSession: vi.fn(),
+        agentSession: {
+          sendTurn,
+          interrupt,
+          cancelTurn,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() =>
+        useComposerHarness({
+          agentConnected: true,
+          initialAgentSessions: {
+            "session-1": "backend-session-1",
+          },
+          initialIsSendingByTabKey: {
+            "session:session-1": true,
+          },
+        }),
+      )
+
+      result.current.pendingStreamsRef.current["stream-active"] = {
+        assistantTurnID: "assistant-active",
+        backendSessionID: "backend-session-1",
+        backendTurnID: "turn-active",
+        sessionID: "session-1",
+      }
+      result.current.turnsRef.current["session-1"] = [createStreamingAssistantTurn("assistant-active")]
+
+      await act(async () => {
+        await result.current.controller.handleSend()
+      })
+
+      expect(sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "backend-session-1",
+        text: "Existing prompt",
+      }))
+      expect(interrupt).not.toHaveBeenCalled()
+      expect(cancelTurn).not.toHaveBeenCalled()
+      expect(result.current.turnsRef.current["session-1"]).toHaveLength(2)
+      expect(result.current.turnsRef.current["session-1"]?.[0]).toMatchObject({
+        kind: "assistant",
+      })
+      expect(result.current.turnsRef.current["session-1"]?.[1]).toMatchObject({
+        kind: "user",
+        submissionMode: "steer",
+        streamInsertion: {
+          assistantTurnID: "assistant-active",
+          afterItemCount: 1,
+        },
+      })
+      expect(Object.values(result.current.pendingStreamsRef.current)).toContainEqual(
+        expect.objectContaining({
+          assistantTurnID: "assistant-active",
+          backendTurnID: "turn-active",
+          sessionID: "session-1",
+        }),
+      )
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
   it("does not send an empty draft while the current tab is already sending", async () => {
     const { result } = renderHook(() =>
       useComposerHarness({
@@ -194,6 +304,43 @@ describe("composer controller", () => {
           "session:session-1": true,
         },
         sessionDraftText: "   ",
+      }),
+    )
+
+    await act(async () => {
+      await result.current.controller.handleSend()
+    })
+
+    expect(result.current.turnsRef.current["session-1"]).toBeUndefined()
+  })
+
+  it("does not send while permission requests are pending", async () => {
+    const { result } = renderHook(() =>
+      useComposerHarness({
+        initialPendingPermissionRequestsBySession: {
+          "session-1": [
+            {
+              id: "permission-1",
+              approvalID: "approval-1",
+              sessionID: "session-1",
+              messageID: "message-1",
+              toolCallID: "tool-1",
+              projectID: "project-1",
+              agent: "agent",
+              status: "pending",
+              createdAt: 1,
+              prompt: {
+                title: "Approval required",
+                summary: "Pending approval",
+                rationale: "",
+                risk: "medium",
+                detailsAvailable: false,
+                allowedDecisions: ["allow", "deny"],
+                recommendedDecision: "allow",
+              },
+            },
+          ],
+        },
       }),
     )
 

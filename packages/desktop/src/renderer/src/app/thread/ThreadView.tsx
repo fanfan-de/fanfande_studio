@@ -20,6 +20,11 @@ import {
 import { joinClassNames, writeTextToClipboard } from "../shared-ui"
 import { buildTurnsFromHistory } from "../stream"
 import {
+  getAssistantStreamInsertionUserTurns,
+  hasStreamInsertionTarget,
+  resolveStreamInsertionItemIndex,
+} from "../stream-insertion"
+import {
   ThreadMarkdown,
   normalizeMarkdownLinkTarget,
   openExternalThreadLink,
@@ -107,6 +112,7 @@ interface ThreadViewProps {
     selectedReasoningEffort?: OpenAIReasoningEffort | null
     selectedModel?: string | null
     selectedSkillIDs: string[]
+    submissionMode?: UserTurn["submissionMode"]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
   onSessionModelSelectionChange?: (sessionID: string, selection: SessionSummary["modelSelection"] | undefined) => void
@@ -185,8 +191,16 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
   const attachments = turn.attachments ?? []
   const hasStructuredContent = Boolean(displayText) || references.length > 0 || attachments.length > 0
   const bodyText = getUserTurnBodyText(turn)
+  const steerNote = turn.submissionMode === "steer"
+    ? (
+        <div className="user-bubble-steer-note" aria-label="Submitted while the agent is running">
+          <span>提交，但不中断模型运行</span>
+          <span>下次模型/工具调用后</span>
+        </div>
+      )
+    : null
 
-  if (!hasStructuredContent) {
+  if (!hasStructuredContent && !steerNote) {
     return (
       <div className="user-bubble">
         <ThreadRichText as="div" className="user-bubble-text" text={turn.text} />
@@ -198,6 +212,7 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
     <div className="user-bubble">
       <div className="user-bubble-content">
         <ThreadRichText as="div" className="user-bubble-text" references={references} text={bodyText} />
+        {steerNote}
 
         {attachments.length > 0 ? (
           <div className="user-bubble-chip-strip" aria-label="Sent attachments">
@@ -216,6 +231,49 @@ function UserTurnBubble({ turn }: { turn: UserTurn }) {
         ) : null}
       </div>
     </div>
+  )
+}
+
+function UserTurnArticle({
+  className,
+  copied,
+  diffCard,
+  onCopy,
+  turn,
+}: {
+  className?: string
+  copied: boolean
+  diffCard?: ReactNode
+  onCopy: (turnID: string, text: string) => void | Promise<void>
+  turn: UserTurn
+}) {
+  const userCopyText = getUserTurnBodyText(turn).trim()
+
+  return (
+    <article className={joinClassNames("turn user-turn", className)}>
+      <div className="turn-meta">
+        <span>You</span>
+        <time>{formatTime(turn.timestamp)}</time>
+      </div>
+      <UserTurnBubble turn={turn} />
+      {diffCard}
+      {userCopyText ? (
+        <div className="user-message-actions">
+          <button
+            className={joinClassNames(
+              "message-action-icon-button user-message-action-button",
+              copied && "is-active",
+            )}
+            type="button"
+            aria-label={copied ? "Copied user message" : "Copy user message"}
+            title={copied ? "Copied" : "Copy"}
+            onClick={() => void onCopy(turn.id, userCopyText)}
+          >
+            <CopyIcon />
+          </button>
+        </div>
+      ) : null}
+    </article>
   )
 }
 
@@ -441,6 +499,16 @@ function getAssistantTrailingUserDiffTurn(turns: Turn[], assistantIndex: number,
 
 function shouldRenderDiffOnStandaloneUserTurn(turns: Turn[], userIndex: number, turn: UserTurn) {
   return hasUserTurnDiffSummary(turn) && !hasFollowingAssistantBeforeNextUser(turns, userIndex)
+}
+
+function isAssistantLatestRenderableTurn(turns: Turn[], assistantIndex: number, assistantTurn: AssistantTurn) {
+  if (assistantIndex === turns.length - 1) return true
+
+  const followingTurns = turns.slice(assistantIndex + 1)
+  return followingTurns.length > 0 &&
+    followingTurns.every(
+      (turn) => turn.kind === "user" && turn.streamInsertion?.assistantTurnID === assistantTurn.id,
+    )
 }
 
 const primaryPermissionDecisions: PermissionDecision[] = ["deny", "allow"]
@@ -783,6 +851,103 @@ function AssistantTurnSections({
       })}
     </>
   )
+}
+
+function AssistantTurnSectionsWithStreamInsertions({
+  answeredQuestionIDs,
+  copiedUserTurnID,
+  insertedUserTurns,
+  isQuestionAnswerDisabled = false,
+  isLatestMessage,
+  items,
+  onCopyUserMessage,
+  onOpenImagePreview,
+  onAskUserQuestionAnswer,
+  onFileChangeSelect,
+  onLocalFileLinkOpen,
+  onProposedPlanConfirm,
+  showFileChanges,
+  shouldCollapseReasoningAndTools,
+  traceVisibility,
+}: {
+  answeredQuestionIDs: Set<string>
+  copiedUserTurnID: string | null
+  insertedUserTurns: UserTurn[]
+  isQuestionAnswerDisabled?: boolean
+  isLatestMessage: boolean
+  items: AssistantTraceItem[]
+  onCopyUserMessage: (turnID: string, text: string) => void | Promise<void>
+  onOpenImagePreview?: (payload: ImagePreviewPayload) => void
+  onAskUserQuestionAnswer?: QuestionAnswerHandler
+  onFileChangeSelect: ((file: string) => void) | undefined
+  onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
+  onProposedPlanConfirm?: ProposedPlanConfirmHandler
+  showFileChanges: boolean
+  shouldCollapseReasoningAndTools: boolean
+  traceVisibility: AssistantTraceVisibility
+}) {
+  if (insertedUserTurns.length === 0) {
+    return (
+      <AssistantTurnSections
+        answeredQuestionIDs={answeredQuestionIDs}
+        isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+        isLatestMessage={isLatestMessage}
+        items={items}
+        onOpenImagePreview={onOpenImagePreview}
+        onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+        onFileChangeSelect={onFileChangeSelect}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+        onProposedPlanConfirm={onProposedPlanConfirm}
+        showFileChanges={showFileChanges}
+        shouldCollapseReasoningAndTools={shouldCollapseReasoningAndTools}
+        traceVisibility={traceVisibility}
+      />
+    )
+  }
+
+  let cursor = 0
+  const nodes: ReactNode[] = []
+  const renderSegment = (segmentItems: AssistantTraceItem[], key: string) => {
+    if (segmentItems.length === 0) return
+
+    nodes.push(
+      <AssistantTurnSections
+        key={key}
+        answeredQuestionIDs={answeredQuestionIDs}
+        isQuestionAnswerDisabled={isQuestionAnswerDisabled}
+        isLatestMessage={isLatestMessage}
+        items={segmentItems}
+        onOpenImagePreview={onOpenImagePreview}
+        onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+        onFileChangeSelect={onFileChangeSelect}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+        onProposedPlanConfirm={onProposedPlanConfirm}
+        showFileChanges={showFileChanges}
+        shouldCollapseReasoningAndTools={shouldCollapseReasoningAndTools}
+        traceVisibility={traceVisibility}
+      />,
+    )
+  }
+
+  insertedUserTurns.forEach((turn, index) => {
+    const insertionIndex = resolveStreamInsertionItemIndex(items, turn, cursor)
+
+    renderSegment(items.slice(cursor, insertionIndex), `segment-${index}`)
+    nodes.push(
+      <UserTurnArticle
+        key={turn.id}
+        className="assistant-stream-insertion-user-turn"
+        copied={copiedUserTurnID === turn.id}
+        onCopy={onCopyUserMessage}
+        turn={turn}
+      />,
+    )
+    cursor = insertionIndex
+  })
+
+  renderSegment(items.slice(cursor), "segment-final")
+
+  return <>{nodes}</>
 }
 
 function TraceImagePreview({
@@ -1161,6 +1326,7 @@ interface InlineSideChatThreadProps {
     selectedReasoningEffort?: OpenAIReasoningEffort | null
     selectedModel?: string | null
     selectedSkillIDs: string[]
+    submissionMode?: UserTurn["submissionMode"]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
   onSessionModelSelectionChange?: (sessionID: string, selection: SessionSummary["modelSelection"] | undefined) => void
@@ -1337,6 +1503,7 @@ function InlineSideChatThread({
               selectedReasoningEffort: composer.selectedReasoningEffort,
               selectedModel: composer.selectedModel,
               selectedSkillIDs: composer.selectedSkillIDs,
+              submissionMode: isSending || isInterruptible ? "steer" : undefined,
               waitForPendingModelSelection: composer.awaitPendingModelSelection,
             })
           }
@@ -2872,52 +3039,37 @@ export function ThreadView({
             ) : null}
             {activeTurns.map((turn, turnIndex) => {
               if (turn.kind === "user") {
-                const userCopyText = getUserTurnBodyText(turn).trim()
-                const isUserCopied = copiedUserTurnID === turn.id
+                if (hasStreamInsertionTarget(activeTurns, turn)) return null
 
                 return (
-                  <article key={turn.id} className="turn user-turn">
-                    <div className="turn-meta">
-                      <span>You</span>
-                      <time>{formatTime(turn.timestamp)}</time>
-                    </div>
-                    <UserTurnBubble turn={turn} />
-                    {shouldRenderDiffOnStandaloneUserTurn(activeTurns, turnIndex, turn) ? (
-                      <UserTurnDiffCard
-                        turn={turn}
-                        onFileChangeSelect={onFileChangeSelect}
-                        onTurnDiffRestore={onTurnDiffRestore}
-                        onTurnDiffReview={onTurnDiffReview}
-                      />
-                    ) : null}
-                    {userCopyText ? (
-                      <div className="user-message-actions">
-                        <button
-                          className={joinClassNames(
-                            "message-action-icon-button user-message-action-button",
-                            isUserCopied && "is-active",
-                          )}
-                          type="button"
-                          aria-label={isUserCopied ? "Copied user message" : "Copy user message"}
-                          title={isUserCopied ? "Copied" : "Copy"}
-                          onClick={() => void handleCopyUserMessage(turn.id, userCopyText)}
-                        >
-                          <CopyIcon />
-                        </button>
-                      </div>
-                    ) : null}
-                  </article>
+                  <UserTurnArticle
+                    key={turn.id}
+                    copied={copiedUserTurnID === turn.id}
+                    onCopy={handleCopyUserMessage}
+                    turn={turn}
+                    diffCard={
+                      shouldRenderDiffOnStandaloneUserTurn(activeTurns, turnIndex, turn) ? (
+                        <UserTurnDiffCard
+                          turn={turn}
+                          onFileChangeSelect={onFileChangeSelect}
+                          onTurnDiffRestore={onTurnDiffRestore}
+                          onTurnDiffReview={onTurnDiffReview}
+                        />
+                      ) : null
+                    }
+                  />
                 )
               }
 
               const traceItems = turn.items
+              const insertedUserTurns = getAssistantStreamInsertionUserTurns(activeTurns, turn)
               const renderedItems = filterRenderedAssistantTraceItems(
                 traceItems,
                 !turn.isStreaming,
                 assistantTraceVisibility,
               )
               const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
-              if (renderedItems.length === 0 && !ephemeralHint) return null
+              if (renderedItems.length === 0 && !ephemeralHint && insertedUserTurns.length === 0) return null
               const sideChatAnchorMessageID = turn.messageID ?? turn.id
               const existingSideChatCount = sideChatCountsByAnchorMessageID[sideChatAnchorMessageID] ?? 0
               const lastResponseItems = getLastAssistantResponseSectionItems(traceItems, assistantTraceVisibility)
@@ -2930,18 +3082,33 @@ export function ThreadView({
               const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
               const trailingUserDiffTurn = getAssistantTrailingUserDiffTurn(activeTurns, turnIndex, turn)
               const shouldRenderResponseActions = Boolean(responseCopyText || canOpenSideChat)
+              const isLatestAssistantMessage = isAssistantLatestRenderableTurn(activeTurns, turnIndex, turn)
 
               return (
                 <article key={turn.id} className="turn assistant-turn">
                   <div className={turn.isStreaming ? "assistant-shell is-sectioned is-streaming" : "assistant-shell is-sectioned"}>
                     {ephemeralHint ? (
-                      <AssistantTurnPlaceholder message={ephemeralHint} />
+                      <>
+                        <AssistantTurnPlaceholder message={ephemeralHint} />
+                        {insertedUserTurns.map((insertedTurn) => (
+                          <UserTurnArticle
+                            key={insertedTurn.id}
+                            className="assistant-stream-insertion-user-turn"
+                            copied={copiedUserTurnID === insertedTurn.id}
+                            onCopy={handleCopyUserMessage}
+                            turn={insertedTurn}
+                          />
+                        ))}
+                      </>
                     ) : (
-                      <AssistantTurnSections
+                      <AssistantTurnSectionsWithStreamInsertions
                         answeredQuestionIDs={answeredQuestionIDs}
                         isQuestionAnswerDisabled={isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
-                        isLatestMessage={turnIndex === activeTurns.length - 1}
+                        copiedUserTurnID={copiedUserTurnID}
+                        insertedUserTurns={insertedUserTurns}
+                        isLatestMessage={isLatestAssistantMessage}
                         items={traceItems}
+                        onCopyUserMessage={handleCopyUserMessage}
                         onOpenImagePreview={handleOpenImagePreview}
                         onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                         onFileChangeSelect={onFileChangeSelect}
@@ -3018,7 +3185,7 @@ export function ThreadView({
                             composerRefreshVersion={composerRefreshVersion}
                             draftState={sideChatDraftState}
                             isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-                            isResolvingPermissionRequest={isResolvingPermissionRequest}
+                          isResolvingPermissionRequest={isResolvingPermissionRequest}
                             isCancelling={sideChatIsCancelling}
                             isInterruptible={sideChatIsInterruptible}
                             isSending={sideChatIsSending}

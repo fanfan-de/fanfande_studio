@@ -70,6 +70,7 @@ interface UseComposerControllerOptions {
   ) => Promise<CreateSessionResult | null>
   createSessionTabs: CreateSessionTab[]
   isSendingByTabKey: Record<string, boolean>
+  getConversationTurns: (sessionID: string) => Turn[]
   loadPendingPermissionRequestsForSession: (sessionID: string, backendSessionID?: string) => Promise<void>
   loadSessionDiffForSession: (sessionID: string, backendSessionID?: string) => Promise<void>
   loadSessionRuntimeDebugForSession: (sessionID: string, backendSessionID?: string) => Promise<void>
@@ -114,6 +115,7 @@ export function useComposerController({
   composerDraftStateByTabKey,
   createSessionForWorkspace,
   createSessionTabs,
+  getConversationTurns,
   isSendingByTabKey,
   loadPendingPermissionRequestsForSession,
   loadSessionDiffForSession,
@@ -180,6 +182,7 @@ export function useComposerController({
     selectedModel?: string | null
     session: SessionSummary
     selectedSkillIDs: string[]
+    submissionMode?: UserTurn["submissionMode"]
     tabKey: string
     text: string
     workspace: WorkspaceGroup
@@ -189,6 +192,7 @@ export function useComposerController({
       agentDefaultDirectory,
       agentSessions,
       appendConversationTurns,
+      getConversationTurns,
       pendingStreamsRef,
       platform,
       refreshWorkspaceFromDirectory,
@@ -220,6 +224,7 @@ export function useComposerController({
     selectedModel?: string | null
     selectedSkillIDs?: string[]
     sessionID?: string | null
+    submissionMode?: UserTurn["submissionMode"]
     tabKey?: string | null
     waitForPendingModelSelection?: (() => Promise<void>) | null
   }) {
@@ -239,6 +244,7 @@ export function useComposerController({
     const effectiveText = compiledSubmission.transportText || normalizedQuestionAnswerText
     const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
     const isSending = Boolean(targetTabKey && isSendingByTabKey[targetTabKey])
+    const submissionMode = input?.submissionMode ?? (isSending && effectiveText ? "steer" : undefined)
     if (
       !targetTabKey ||
       (!effectiveText && attachments.length === 0) ||
@@ -264,6 +270,7 @@ export function useComposerController({
         selectedModel: input?.selectedModel,
         selectedSkillIDs: compiledSubmission.selectedSkillIDs,
         session: nextSelection.session,
+        submissionMode,
         tabKey: targetTabKey,
         text: effectiveText,
         workspace: nextSelection.workspace,
@@ -350,6 +357,7 @@ export function useComposerController({
       selectedModel: input?.selectedModel,
       selectedSkillIDs: compiledSubmission.selectedSkillIDs,
       session: createdSession,
+      submissionMode,
       tabKey: targetTabKey,
       text: effectiveText,
       workspace: created.workspace,

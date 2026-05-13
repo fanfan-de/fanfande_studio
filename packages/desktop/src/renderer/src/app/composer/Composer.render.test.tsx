@@ -350,4 +350,58 @@ describe("Composer", () => {
     expect(onSend).toHaveBeenCalledTimes(1)
     expect(onCancelSend).not.toHaveBeenCalled()
   })
+
+  it("keeps the stop button while sending with attachments but no draft text", () => {
+    const onCancelSend = vi.fn()
+    const onSend = vi.fn()
+
+    renderComposer({
+      attachments: [{ name: "screenshot.png", path: "C:\\Temp\\screenshot.png" }],
+      draftState: createComposerDraftStateFromPlainText(""),
+      isSending: true,
+      onCancelSend,
+      onSend,
+    })
+
+    const button = screen.getByRole("button", { name: "Stop task" })
+
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(onCancelSend).toHaveBeenCalledTimes(1)
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it("uses Enter to stop while sending with an empty draft", () => {
+    const onCancelSend = vi.fn()
+    const onSend = vi.fn()
+    const { container } = renderComposer({
+      draftState: createComposerDraftStateFromPlainText(""),
+      isSending: true,
+      onCancelSend,
+      onSend,
+    })
+    const editor = container.querySelector(".composer-editor-input")
+
+    expect(editor).toBeInstanceOf(HTMLElement)
+    fireEvent.keyDown(editor as HTMLElement, { key: "Enter", code: "Enter" })
+    expect(onCancelSend).toHaveBeenCalledTimes(1)
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it("uses Enter to send while sending with draft text", () => {
+    const onCancelSend = vi.fn()
+    const onSend = vi.fn()
+    const { container } = renderComposer({
+      draftState: createComposerDraftStateFromPlainText("Steer the current task"),
+      isSending: true,
+      onCancelSend,
+      onSend,
+    })
+    const editor = container.querySelector(".composer-editor-input")
+
+    expect(editor).toBeInstanceOf(HTMLElement)
+    fireEvent.keyDown(editor as HTMLElement, { key: "Enter", code: "Enter" })
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(onCancelSend).not.toHaveBeenCalled()
+  })
 })

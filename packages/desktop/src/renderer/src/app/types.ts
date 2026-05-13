@@ -600,6 +600,11 @@ export interface UserTurn {
     freeformText?: string
   }
   diffSummary?: SessionDiffSummary
+  submissionMode?: "steer"
+  streamInsertion?: {
+    assistantTurnID: string
+    afterItemCount: number
+  }
   timestamp: number
 }
 

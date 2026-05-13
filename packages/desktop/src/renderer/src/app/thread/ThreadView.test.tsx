@@ -1403,6 +1403,109 @@ describe("ThreadView message actions", () => {
     expect(writeText).toHaveBeenCalledWith("Hello from user")
   })
 
+  it("renders steering submission status on user turns", () => {
+    renderThread([
+      {
+        ...userTurn("user-steer", "Adjust the current task"),
+        submissionMode: "steer",
+      },
+    ])
+
+    expect(screen.getByText("提交，但不中断模型运行")).toBeInTheDocument()
+    expect(screen.getByText("下次模型/工具调用后")).toBeInTheDocument()
+  })
+
+  it("renders stream-inserted steer turns between live assistant trace items", () => {
+    const insertedTurn: UserTurn = {
+      ...userTurn("user-steer", "Adjust the current task"),
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: "assistant-live",
+        afterItemCount: 1,
+      },
+    }
+    const { container } = renderThread([
+      assistantTraceTurn(
+        "assistant-live",
+        [
+          {
+            id: "assistant-before",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "Before steer",
+            status: "completed",
+          },
+          {
+            id: "assistant-after",
+            kind: "text",
+            timestamp: 2,
+            label: "Assistant",
+            text: "After steer",
+            status: "running",
+          },
+        ],
+        true,
+      ),
+      insertedTurn,
+    ])
+
+    const text = container.textContent ?? ""
+    expect(text.indexOf("Before steer")).toBeLessThan(text.indexOf("Adjust the current task"))
+    expect(text.indexOf("Adjust the current task")).toBeLessThan(text.indexOf("After steer"))
+    expect(container.querySelectorAll(".user-turn")).toHaveLength(1)
+    expect(container.querySelector(".assistant-stream-insertion-user-turn")).not.toBeNull()
+  })
+
+  it("places stream-inserted steer turns after the following tool call", () => {
+    const insertedTurn: UserTurn = {
+      ...userTurn("user-steer", "Hello during tool step"),
+      submissionMode: "steer",
+      streamInsertion: {
+        assistantTurnID: "assistant-live",
+        afterItemCount: 1,
+      },
+    }
+    const { container } = renderThread([
+      assistantTraceTurn(
+        "assistant-live",
+        [
+          {
+            id: "assistant-before",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "I will load a skill",
+            status: "completed",
+          },
+          {
+            id: "assistant-tool",
+            kind: "tool",
+            timestamp: 2,
+            label: "Tool",
+            title: "load-skill",
+            status: "completed",
+          },
+          {
+            id: "assistant-after",
+            kind: "text",
+            timestamp: 3,
+            label: "Assistant",
+            text: "After the steer",
+            status: "running",
+          },
+        ],
+        true,
+      ),
+      insertedTurn,
+    ])
+
+    const text = container.textContent ?? ""
+    expect(text.indexOf("I will load a skill")).toBeLessThan(text.indexOf("load-skill"))
+    expect(text.indexOf("load-skill")).toBeLessThan(text.indexOf("Hello during tool step"))
+    expect(text.indexOf("Hello during tool step")).toBeLessThan(text.indexOf("After the steer"))
+  })
+
   it("renders user turn file changes after the final assistant output and handles card actions", async () => {
     const onFileChangeSelect = vi.fn()
     const onTurnDiffReview = vi.fn().mockResolvedValue(undefined)

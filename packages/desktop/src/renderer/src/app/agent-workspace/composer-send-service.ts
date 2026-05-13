@@ -71,6 +71,7 @@ interface SendPromptToSessionInput {
   selectedModel?: string | null
   selectedSkillIDs: string[]
   session: SessionSummary
+  submissionMode?: UserTurn["submissionMode"]
   tabKey: string
   text: string
   workspace: WorkspaceGroup
@@ -81,6 +82,7 @@ interface SendPromptToSessionEnvironment {
   agentDefaultDirectory: string
   agentSessions: Record<string, string>
   appendConversationTurns: (sessionID: string, nextTurns: Turn[]) => void
+  getConversationTurns: (sessionID: string) => Turn[]
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
   platform: string
   refreshWorkspaceFromDirectory: (directory: string) => void | Promise<WorkspaceGroup | null>
@@ -112,6 +114,7 @@ export async function sendPromptToSession(
     agentDefaultDirectory,
     agentSessions,
     appendConversationTurns,
+    getConversationTurns,
     pendingStreamsRef,
     platform,
     refreshWorkspaceFromDirectory,
@@ -135,6 +138,7 @@ export async function sendPromptToSession(
     selectedModel,
     session,
     selectedSkillIDs,
+    submissionMode,
     tabKey,
     text,
     workspace,
@@ -142,6 +146,28 @@ export async function sendPromptToSession(
   const uiSessionID = session.id
   const agentSession = getAgentSessionBridge()
   const canStream = Boolean(agentSession?.canStream)
+  const existingStreamingTarget =
+    submissionMode === "steer" && canStream
+      ? Object.values(pendingStreamsRef.current).find(
+          (target) => target.sessionID === uiSessionID && !target.cancelRequested,
+        )
+      : undefined
+  const streamInsertion =
+    existingStreamingTarget
+      ? (() => {
+          const assistantTurn = getConversationTurns(uiSessionID).find(
+            (turn): turn is AssistantTurn =>
+              turn.kind === "assistant" && turn.id === existingStreamingTarget.assistantTurnID,
+          )
+
+          return assistantTurn
+            ? {
+                assistantTurnID: assistantTurn.id,
+                afterItemCount: assistantTurn.items.length,
+              }
+            : undefined
+        })()
+      : undefined
   const normalizedText = text.trim() || normalizeQuestionAnswerText(questionAnswer)
   const attachmentInputs = attachments.map((attachment) => ({
     path: attachment.path,
@@ -156,6 +182,8 @@ export async function sendPromptToSession(
     fallbackText: normalizedText,
     questionAnswer,
     references,
+    submissionMode,
+    streamInsertion,
   })
 
   if (!preserveComposerState) {
@@ -226,16 +254,29 @@ export async function sendPromptToSession(
     }
 
     if (canStream) {
-      const streamingTurn = buildStreamingAssistantTurn(userTurn.text)
-      streamingTurnID = streamingTurn.id
+      const streamTarget = existingStreamingTarget ?? Object.values(pendingStreamsRef.current).find(
+        (target) => target.sessionID === uiSessionID && !target.cancelRequested,
+      )
+      const streamingTurn = streamTarget
+        ? null
+        : buildStreamingAssistantTurn(userTurn.text)
+      const assistantTurnID = streamTarget?.assistantTurnID ?? streamingTurn?.id
+      if (!assistantTurnID) {
+        throw new Error("Assistant stream target is missing")
+      }
+
+      streamingTurnID = streamingTurn?.id ?? null
       streamID = createID("stream")
       pendingStreamsRef.current[streamID] = {
         sessionID: uiSessionID,
         backendSessionID,
-        assistantTurnID: streamingTurn.id,
+        assistantTurnID,
+        ...(streamTarget?.backendTurnID ? { backendTurnID: streamTarget.backendTurnID } : {}),
       }
 
-      appendConversationTurns(uiSessionID, [streamingTurn])
+      if (streamingTurn) {
+        appendConversationTurns(uiSessionID, [streamingTurn])
+      }
 
       await agentSession.sendTurn({
         clientTurnID: streamID,

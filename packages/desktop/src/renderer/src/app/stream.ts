@@ -1615,6 +1615,8 @@ export function buildUserTurn(input: {
   id?: string
   questionAnswer?: UserTurn["questionAnswer"]
   references?: UserTurnReference[]
+  submissionMode?: UserTurn["submissionMode"]
+  streamInsertion?: UserTurn["streamInsertion"]
   timestamp?: number
 }) {
   const displayText = readString(input.displayText).trim()
@@ -1636,6 +1638,8 @@ export function buildUserTurn(input: {
     ...(references.length > 0 ? { references } : {}),
     ...(input.questionAnswer ? { questionAnswer: input.questionAnswer } : {}),
     ...(input.diffSummary?.diffs.length ? { diffSummary: input.diffSummary } : {}),
+    ...(input.submissionMode ? { submissionMode: input.submissionMode } : {}),
+    ...(input.streamInsertion ? { streamInsertion: input.streamInsertion } : {}),
     timestamp: input.timestamp ?? Date.now(),
   } satisfies UserTurn
 }

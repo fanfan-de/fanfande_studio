@@ -522,6 +522,7 @@ export function useAgentWorkspace({
     composerDraftStateByTabKey,
     createSessionForWorkspace,
     createSessionTabs,
+    getConversationTurns: (sessionID) => conversations[sessionID] ?? [],
     isSendingByTabKey,
     loadPendingPermissionRequestsForSession,
     loadSessionDiffForSession,

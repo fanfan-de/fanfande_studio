@@ -101,6 +101,27 @@ describe("user turn presentation persistence", () => {
     })
   })
 
+  it("persists and restores steering submission mode", () => {
+    persistUserTurns("session-1", [
+      buildUserTurn({
+        displayText: "Adjust the current task",
+        submissionMode: "steer",
+        streamInsertion: {
+          assistantTurnID: "assistant-live",
+          afterItemCount: 1,
+        },
+        timestamp: 10,
+      }),
+    ])
+
+    const restoredTurn = readPersistedUserTurns("session-1")[0]
+    expect(restoredTurn).toMatchObject({
+      kind: "user",
+      submissionMode: "steer",
+    })
+    expect(restoredTurn?.streamInsertion).toBeUndefined()
+  })
+
   it("keeps backend diff summaries when merging user presentation state", () => {
     const previousTurns = [
       buildUserTurn({
