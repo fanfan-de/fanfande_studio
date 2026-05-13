@@ -272,14 +272,23 @@ export function normalizeLooseLocalFileMarkdownLinks(value: string) {
   return normalized
 }
 
-function handleExternalLinkClick(event: MouseEvent<HTMLAnchorElement>, href: string) {
+export function openExternalThreadLink(href: string) {
   const openExternalUrl = window.desktop?.openExternalUrl
-  if (!openExternalUrl) return
+  if (openExternalUrl) {
+    void openExternalUrl({ url: href }).catch((error) => {
+      console.error("[desktop] Failed to open external URL.", error)
+      window.open(href, "_blank", "noopener,noreferrer")
+    })
+    return
+  }
 
+  window.open(href, "_blank", "noopener,noreferrer")
+}
+
+function handleExternalLinkClick(event: MouseEvent<HTMLAnchorElement>, href: string) {
+  if (event.defaultPrevented) return
   event.preventDefault()
-  void openExternalUrl({ url: href }).catch((error) => {
-    console.error("[desktop] Failed to open external URL.", error)
-  })
+  openExternalThreadLink(href)
 }
 
 function MarkdownLink({

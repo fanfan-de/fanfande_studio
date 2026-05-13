@@ -19,7 +19,12 @@ import {
 } from "../icons"
 import { joinClassNames, writeTextToClipboard } from "../shared-ui"
 import { buildTurnsFromHistory } from "../stream"
-import { ThreadMarkdown, type MarkdownLocalFileLinkTarget } from "../thread-markdown"
+import {
+  ThreadMarkdown,
+  normalizeMarkdownLinkTarget,
+  openExternalThreadLink,
+  type MarkdownLocalFileLinkTarget,
+} from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
 import type {
   AssistantTraceDebugEntry,
@@ -1620,7 +1625,8 @@ function ReasoningTraceItemView({
     setIsExpanded(false)
   }, [item.id, shouldCollapseTraceItem])
 
-  function handleReasoningToggle() {
+  function handleReasoningToggle(event?: { target: EventTarget | null }) {
+    if (event?.target instanceof Element && event.target.closest("a[href]")) return
     setIsExpanded((current) => !current)
   }
 
@@ -2427,6 +2433,12 @@ export function ThreadView({
   const copiedResponseTimeoutRef = useRef<number | null>(null)
   const copiedUserTimeoutRef = useRef<number | null>(null)
   const isPinnedToBottomRef = useRef(true)
+  const lastInlineLinkActivationRef = useRef<{
+    href: string
+    time: number
+    x: number
+    y: number
+  } | null>(null)
   const activeSessionID = activeSession?.id ?? null
 
   useEffect(() => {
@@ -2487,6 +2499,75 @@ export function ThreadView({
   const handleCloseImagePreview = useEffectEvent(() => {
     setActiveImagePreview(null)
   })
+
+  useEffect(() => {
+    function handleInlineThreadLinkActivation(event: MouseEvent | PointerEvent) {
+      if (event.defaultPrevented || event.button !== 0) return
+      const threadColumn = threadColumnRef.current
+      if (!threadColumn) return
+
+      let anchor: HTMLAnchorElement | null = null
+      for (const target of event.composedPath()) {
+        if (!(target instanceof Element)) continue
+        const candidate = target.closest<HTMLAnchorElement>("a[href]")
+        if (candidate && threadColumn.contains(candidate)) {
+          anchor = candidate
+          break
+        }
+      }
+
+      if (!anchor) {
+        const elementsAtPoint = document.elementsFromPoint?.(event.clientX, event.clientY) ?? []
+        for (const element of elementsAtPoint) {
+          const candidate = element.closest<HTMLAnchorElement>("a[href]")
+          if (candidate && threadColumn.contains(candidate)) {
+            anchor = candidate
+            break
+          }
+        }
+      }
+
+      if (!anchor) return
+
+      const linkTarget = normalizeMarkdownLinkTarget(anchor.getAttribute("href") ?? "")
+      if (!linkTarget) return
+
+      const lastActivation = lastInlineLinkActivationRef.current
+      const isDuplicateClick =
+        event.type === "click" &&
+        lastActivation?.href === linkTarget.href &&
+        Date.now() - lastActivation.time < 700 &&
+        Math.abs(lastActivation.x - event.clientX) < 6 &&
+        Math.abs(lastActivation.y - event.clientY) < 6
+
+      event.preventDefault()
+      event.stopPropagation()
+      event.stopImmediatePropagation()
+
+      if (isDuplicateClick) return
+
+      lastInlineLinkActivationRef.current = {
+        href: linkTarget.href,
+        time: Date.now(),
+        x: event.clientX,
+        y: event.clientY,
+      }
+
+      if (linkTarget.kind === "local-file") {
+        onLocalFileLinkOpen?.(linkTarget.target)
+        return
+      }
+
+      openExternalThreadLink(linkTarget.href)
+    }
+
+    document.addEventListener("pointerup", handleInlineThreadLinkActivation, { capture: true })
+    document.addEventListener("click", handleInlineThreadLinkActivation, { capture: true })
+    return () => {
+      document.removeEventListener("pointerup", handleInlineThreadLinkActivation, { capture: true })
+      document.removeEventListener("click", handleInlineThreadLinkActivation, { capture: true })
+    }
+  }, [onLocalFileLinkOpen, threadColumnRef])
 
   useLayoutEffect(() => {
     isPinnedToBottomRef.current = true

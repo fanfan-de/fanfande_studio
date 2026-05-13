@@ -2,6 +2,7 @@ import { Fragment, type MouseEvent, type ReactNode } from "react"
 import {
   normalizeLooseLocalFileMarkdownLinks,
   normalizeMarkdownLinkTarget,
+  openExternalThreadLink,
   type MarkdownLocalFileLinkTarget,
 } from "./thread-markdown"
 import type { UserTurnReference } from "./types"
@@ -386,13 +387,9 @@ function renderSegment(
   }
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
-    const openExternalUrl = window.desktop?.openExternalUrl
-    if (!openExternalUrl) return
-
+    if (event.defaultPrevented) return
     event.preventDefault()
-    void openExternalUrl({ url: href }).catch((error) => {
-      console.error("[desktop] Failed to open external URL.", error)
-    })
+    openExternalThreadLink(href)
   }
 
   return (

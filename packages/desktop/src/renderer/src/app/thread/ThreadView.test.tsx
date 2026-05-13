@@ -848,6 +848,128 @@ describe("ThreadView trace collapse", () => {
 })
 
 describe("ThreadView assistant response markdown", () => {
+  it("opens external links from reasoning trace text", () => {
+    window.desktop = {
+      openExternalUrl: vi.fn().mockResolvedValue({
+        ok: true,
+        url: "https://www.baidu.com/",
+      }),
+    } as unknown as Window["desktop"]
+
+    const { getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "reasoning-1",
+            kind: "reasoning",
+            timestamp: 1,
+            label: "Reasoning",
+            text: "The user asked for https://www.baidu.com",
+            status: "running",
+          },
+        ],
+        true,
+      ),
+    ])
+
+    fireEvent.click(getByRole("link", { name: "https://www.baidu.com" }))
+
+    expect(window.desktop?.openExternalUrl).toHaveBeenCalledWith({
+      url: "https://www.baidu.com/",
+    })
+  })
+
+  it("opens external links on pointer release and suppresses the following click", () => {
+    window.desktop = {
+      openExternalUrl: vi.fn().mockResolvedValue({
+        ok: true,
+        url: "https://www.baidu.com/",
+      }),
+    } as unknown as Window["desktop"]
+
+    const { getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "https://www.baidu.com",
+            status: "running",
+            isStreaming: true,
+          },
+        ],
+        true,
+      ),
+    ])
+    const link = getByRole("link", { name: "https://www.baidu.com" })
+
+    fireEvent.pointerUp(link, { button: 0, clientX: 120, clientY: 80 })
+    fireEvent.click(link, { button: 0, clientX: 120, clientY: 80 })
+
+    expect(window.desktop?.openExternalUrl).toHaveBeenCalledTimes(1)
+    expect(window.desktop?.openExternalUrl).toHaveBeenCalledWith({
+      url: "https://www.baidu.com/",
+    })
+  })
+
+  it("opens external links when an overlay receives the click above a thread link", () => {
+    window.desktop = {
+      openExternalUrl: vi.fn().mockResolvedValue({
+        ok: true,
+        url: "https://www.baidu.com/",
+      }),
+    } as unknown as Window["desktop"]
+    const originalElementsFromPoint = document.elementsFromPoint
+
+    const { getByRole } = renderThread([
+      assistantTraceTurn(
+        "assistant-1",
+        [
+          {
+            id: "response-1",
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text: "https://www.baidu.com",
+            status: "running",
+            isStreaming: true,
+          },
+        ],
+        true,
+      ),
+    ])
+    const link = getByRole("link", { name: "https://www.baidu.com" })
+    const overlay = document.createElement("div")
+    document.body.appendChild(overlay)
+
+    Object.defineProperty(document, "elementsFromPoint", {
+      configurable: true,
+      value: vi.fn(() => [overlay, link]),
+    })
+
+    try {
+      fireEvent.click(overlay, { clientX: 12, clientY: 24 })
+    } finally {
+      if (originalElementsFromPoint) {
+        Object.defineProperty(document, "elementsFromPoint", {
+          configurable: true,
+          value: originalElementsFromPoint,
+        })
+      } else {
+        Reflect.deleteProperty(document, "elementsFromPoint")
+      }
+      overlay.remove()
+    }
+
+    expect(window.desktop?.openExternalUrl).toHaveBeenCalledWith({
+      url: "https://www.baidu.com/",
+    })
+  })
+
   it("renders assistant response markdown as semantic elements", () => {
     const { container, getByRole } = renderThread([
       assistantTraceTurn(

@@ -81,10 +81,12 @@
 
 .thread-inline-link {
   color: var(--seg-accent-strong);
+  cursor: pointer;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.16em;
   overflow-wrap: anywhere;
+  -webkit-app-region: no-drag;
 }
 
 .thread-inline-link:hover {
