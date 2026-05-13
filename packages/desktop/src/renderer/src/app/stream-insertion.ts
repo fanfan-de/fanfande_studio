@@ -17,6 +17,13 @@ function isToolInsertionBoundaryReady(item: AssistantTraceItem) {
     item.status === "waiting-approval"
 }
 
+function getActiveToolBeforeInsertionIndex(items: AssistantTraceItem[], requestedIndex: number) {
+  const previousItem = items[requestedIndex - 1]
+  return previousItem?.kind === "tool" && !isToolInsertionBoundaryReady(previousItem)
+    ? previousItem
+    : null
+}
+
 function getStreamInsertionRequestedIndex(items: AssistantTraceItem[], turn: UserTurn, cursor: number) {
   return Math.min(
     items.length,
@@ -34,6 +41,8 @@ export function isStreamInsertionReady(turns: Turn[], turn: UserTurn) {
 
   const requestedIndex = getStreamInsertionRequestedIndex(assistantTurn.items, turn, 0)
   if (assistantTurn.items.length <= requestedIndex) return false
+
+  if (getActiveToolBeforeInsertionIndex(assistantTurn.items, requestedIndex)) return false
 
   const followingTool = assistantTurn.items.find(
     (item, index) => index >= requestedIndex && item.kind === "tool",

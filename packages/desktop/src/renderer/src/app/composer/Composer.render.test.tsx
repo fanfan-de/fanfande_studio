@@ -344,11 +344,16 @@ describe("Composer", () => {
     })
 
     const button = screen.getByRole("button", { name: "Send task" })
+    const stopButton = screen.getByRole("button", { name: "Stop task" })
 
     expect(button).toBeEnabled()
+    expect(stopButton).toBeEnabled()
     fireEvent.click(button)
     expect(onSend).toHaveBeenCalledTimes(1)
     expect(onCancelSend).not.toHaveBeenCalled()
+
+    fireEvent.click(stopButton)
+    expect(onCancelSend).toHaveBeenCalledTimes(1)
   })
 
   it("keeps the stop button while sending with attachments but no draft text", () => {

@@ -62,6 +62,16 @@ function steerTurn(): UserTurn {
   }
 }
 
+function steerTurnAfterCurrentTool(): UserTurn {
+  return {
+    ...steerTurn(),
+    streamInsertion: {
+      assistantTurnID: "assistant-live",
+      afterItemCount: 2,
+    },
+  }
+}
+
 describe("stream insertion presentation", () => {
   it("keeps steer turns pending while the following tool is still running", () => {
     const turn = steerTurn()
@@ -72,9 +82,29 @@ describe("stream insertion presentation", () => {
     expect(getAssistantStreamInsertionUserTurns(turns, assistantTurn("running"))).toEqual([])
   })
 
+  it("keeps steer turns pending when the insertion point is after an active tool", () => {
+    const turn = steerTurnAfterCurrentTool()
+    const turns: Turn[] = [assistantTurn("running"), turn]
+
+    expect(isStreamInsertionReady(turns, turn)).toBe(false)
+    expect(getPendingStreamInsertionUserTurns(turns)).toEqual([turn])
+    expect(getAssistantStreamInsertionUserTurns(turns, assistantTurn("running"))).toEqual([])
+  })
+
   it("moves steer turns into the thread after the following tool boundary", () => {
     const assistant = assistantTurn("completed")
     const turn = steerTurn()
+    const turns: Turn[] = [assistant, turn]
+
+    expect(isStreamInsertionReady(turns, turn)).toBe(true)
+    expect(getPendingStreamInsertionUserTurns(turns)).toEqual([])
+    expect(getAssistantStreamInsertionUserTurns(turns, assistant)).toEqual([turn])
+    expect(resolveStreamInsertionItemIndex(assistant.items, turn, 0)).toBe(2)
+  })
+
+  it("moves steer turns into the thread after the active tool at the insertion point completes", () => {
+    const assistant = assistantTurn("completed")
+    const turn = steerTurnAfterCurrentTool()
     const turns: Turn[] = [assistant, turn]
 
     expect(isStreamInsertionReady(turns, turn)).toBe(true)

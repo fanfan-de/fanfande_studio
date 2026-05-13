@@ -109,6 +109,15 @@ function useComposerHarness(input?: {
   const turnsRef = useRef<Record<string, Turn[]>>({})
   const pendingStreamsRef = useRef<Record<string, PendingAgentStream>>({})
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
+  const updateAssistantConversationTurn = useRef(vi.fn((
+    sessionID: string,
+    turnID: string,
+    updater: (turn: AssistantTurn) => AssistantTurn,
+  ) => {
+    turnsRef.current[sessionID] = (turnsRef.current[sessionID] ?? []).map((turn) =>
+      turn.kind === "assistant" && turn.id === turnID ? updater(turn) : turn,
+    )
+  })).current
   const createdSession = createSession("created-session-1")
   const createSessionForWorkspace = useRef(vi.fn(async (targetWorkspace: WorkspaceGroup) => {
     const nextWorkspace = {
@@ -166,7 +175,7 @@ function useComposerHarness(input?: {
     setPermissionRequestActionRequestID: vi.fn(),
     setSessionDirectoryBySession: (update) => applyUpdate(setSessionDirectoryBySessionState, sessionDirectoryBySession, update),
     setWorkspaces: (update) => applyUpdate(setWorkspacesState, workspaces, update),
-    updateAssistantConversationTurn: vi.fn(),
+    updateAssistantConversationTurn,
     workspaces,
   })
 
@@ -178,6 +187,7 @@ function useComposerHarness(input?: {
     createSessionTabs,
     pendingStreamsRef,
     turnsRef,
+    updateAssistantConversationTurn,
     workspaces,
   }
 }
@@ -678,6 +688,119 @@ describe("composer controller", () => {
         reason: "user-interrupt",
       })
       expect(result.current.pendingStreamsRef.current["stream-1"]?.cancelRequested).toBe(true)
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("marks the visible running tool trace as cancelled when interrupt is requested", async () => {
+    const previousDesktop = window.desktop
+    const interrupt = vi.fn(async (input: { backendSessionID: string; clientTurnID?: string }) => ({
+      ...input,
+      localRequestsAborted: 1,
+      backendCancelled: true,
+      activeCancelled: true,
+      queuedCancelled: 0,
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        agentSession: {
+          interrupt,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() => useComposerHarness())
+
+      result.current.pendingStreamsRef.current["stream-1"] = {
+        assistantTurnID: "assistant-active",
+        backendSessionID: "backend-session-1",
+        sessionID: "session-1",
+      }
+      result.current.turnsRef.current["session-1"] = [createStreamingAssistantTurn("assistant-active")]
+
+      await act(async () => {
+        await result.current.controller.handleCancelSend()
+      })
+
+      expect(result.current.turnsRef.current["session-1"]?.[0]).toMatchObject({
+        kind: "assistant",
+        runtime: {
+          phase: "cancelled",
+        },
+        isStreaming: false,
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "tool",
+            status: "cancelled",
+            isStreaming: false,
+          }),
+        ]),
+      })
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("marks unfinished tool traces as cancelled even when the pending stream points at a stale turn", async () => {
+    const previousDesktop = window.desktop
+    const interrupt = vi.fn(async (input: { backendSessionID: string; clientTurnID?: string }) => ({
+      ...input,
+      localRequestsAborted: 1,
+      backendCancelled: true,
+      activeCancelled: true,
+      queuedCancelled: 0,
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        agentSession: {
+          interrupt,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() => useComposerHarness())
+
+      result.current.pendingStreamsRef.current["stream-1"] = {
+        assistantTurnID: "assistant-stale",
+        backendSessionID: "backend-session-1",
+        sessionID: "session-1",
+      }
+      result.current.turnsRef.current["session-1"] = [createStreamingAssistantTurn("assistant-visible")]
+
+      await act(async () => {
+        await result.current.controller.handleCancelSend()
+      })
+
+      expect(interrupt).toHaveBeenCalledWith({
+        backendSessionID: "backend-session-1",
+        clientTurnID: "stream-1",
+        reason: "user-interrupt",
+      })
+      expect(result.current.turnsRef.current["session-1"]?.[0]).toMatchObject({
+        kind: "assistant",
+        runtime: {
+          phase: "cancelled",
+        },
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "tool",
+            status: "cancelled",
+          }),
+        ]),
+      })
     } finally {
       Object.defineProperty(window, "desktop", {
         configurable: true,

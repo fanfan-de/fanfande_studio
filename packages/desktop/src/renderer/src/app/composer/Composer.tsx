@@ -355,8 +355,10 @@ function getComposerSendButtonDescription({
     return "Cancellation has been requested. Press Shift+Enter for a newline."
   }
 
-  if ((isSending || isInterruptible) && !hasDraftText) {
-    return "Stop the current assistant turn. Press Shift+Enter for a newline."
+  if (isSending || isInterruptible) {
+    return hasDraftText
+      ? "Press Enter to submit guidance without interrupting. Use Stop task to cancel the current assistant turn."
+      : "Stop the current assistant turn. Press Shift+Enter for a newline."
   }
 
   return "Press Enter to send. Press Shift+Enter for a newline."
@@ -1478,8 +1480,21 @@ export function Composer({
 
   const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
   const hasDraftText = hasComposerDraftText(normalizedDraftState)
-  const canInterrupt = isCancelling || ((isSending || isInterruptible) && !hasDraftText)
-  const sendButtonLabel = isCancelling ? "Cancelling task" : canInterrupt ? "Stop task" : hasPendingPermissionRequests ? "Resolve approval first" : "Send task"
+  const hasRunningTask = isSending || isInterruptible
+  const canInterrupt = isCancelling || hasRunningTask
+  const sendButtonActsAsStop = canInterrupt && !hasDraftText
+  const showInlineStopButton = canInterrupt && hasDraftText
+  const stopButtonLabel = isCancelling ? "Cancelling task" : "Stop task"
+  const stopButtonDescription = isCancelling
+    ? "Cancellation has been requested."
+    : "Cancel the current assistant turn without sending the draft."
+  const stopButtonTitle = `${stopButtonLabel}. ${stopButtonDescription}`
+  const stopButtonDisabled = isCancelling || !onCancelSend
+  const sendButtonLabel = sendButtonActsAsStop
+    ? stopButtonLabel
+    : hasPendingPermissionRequests
+      ? "Resolve approval first"
+      : "Send task"
   const sendButtonDescription = getComposerSendButtonDescription({
     attachmentError,
     canSend,
@@ -1490,8 +1505,10 @@ export function Composer({
     isSending,
   })
   const sendButtonTitle = `${sendButtonLabel}. ${sendButtonDescription}`
-  const sendShortcut = !canInterrupt && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
-  const sendButtonDisabled = canInterrupt ? isCancelling || !onCancelSend : !canSend || hasPendingPermissionRequests || attachmentError !== null
+  const sendShortcut = !sendButtonActsAsStop && canSend && !hasPendingPermissionRequests ? "Enter" : undefined
+  const sendButtonDisabled = sendButtonActsAsStop
+    ? stopButtonDisabled
+    : !canSend || hasPendingPermissionRequests || attachmentError !== null
   const showReasoningEffortSelector = showModelSelector && reasoningEffortOptions.length > 0
   const selectedReasoningEffortButtonLabel = `Reasoning: ${selectedReasoningEffortLabel}`
   const modelMenuEmptyLabel =
@@ -1756,6 +1773,21 @@ export function Composer({
         </div>
 
         <div className="composer-actions">
+          {showInlineStopButton ? (
+            <button
+              aria-description={stopButtonDescription}
+              aria-label={stopButtonLabel}
+              className="secondary-button is-icon-only"
+              disabled={stopButtonDisabled}
+              onClick={() => {
+                void onCancelSend?.()
+              }}
+              title={stopButtonTitle}
+              type="button"
+            >
+              <StopIcon />
+            </button>
+          ) : null}
           <button
             aria-description={sendButtonDescription}
             aria-keyshortcuts={sendShortcut}
@@ -1763,7 +1795,7 @@ export function Composer({
             className="primary-button is-icon-only"
             disabled={sendButtonDisabled}
             onClick={() => {
-              if (canInterrupt) {
+              if (sendButtonActsAsStop) {
                 void onCancelSend?.()
                 return
               }
@@ -1773,7 +1805,7 @@ export function Composer({
             title={sendButtonTitle}
             type="button"
           >
-            {canInterrupt ? <StopIcon /> : <ArrowUpIcon />}
+            {sendButtonActsAsStop ? <StopIcon /> : <ArrowUpIcon />}
           </button>
         </div>
       </div>

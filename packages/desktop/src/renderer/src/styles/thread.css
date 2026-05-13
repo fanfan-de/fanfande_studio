@@ -2011,7 +2011,6 @@ body.is-image-lightbox-open {
   flex-wrap: wrap;
   min-width: 0;
   padding-top: 0;
-  transition: opacity 160ms ease;
 }
 
 .message-action-icon-button {
@@ -2053,20 +2052,6 @@ body.is-image-lightbox-open {
   min-width: 0;
   margin-top: -2px;
   transition: opacity 160ms ease;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .assistant-response-side-chat:not(.is-persistent) .assistant-response-actions {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .assistant-shell:hover .assistant-response-side-chat .assistant-response-actions,
-  .assistant-shell:focus-within .assistant-response-side-chat .assistant-response-actions,
-  .assistant-response-side-chat.is-persistent .assistant-response-actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
 }
 
 .inline-side-chat-thread {
@@ -2917,6 +2902,10 @@ body.is-image-lightbox-open {
 .trace-tool-status-indicator.is-error,
 .trace-tool-status-indicator.is-denied {
   --tool-status-color: var(--seg-danger);
+}
+
+.trace-tool-status-indicator.is-cancelled {
+  --tool-status-color: var(--seg-text-3);
 }
 
 .trace-tool-status-indicator:is(.is-icon-dot, .is-icon-success, .is-icon-error) svg {

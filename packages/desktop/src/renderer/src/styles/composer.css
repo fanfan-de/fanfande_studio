@@ -665,7 +665,8 @@
 }
 
 .composer-selector-button.is-icon-only,
-.composer-actions .primary-button.is-icon-only {
+.composer-actions .primary-button.is-icon-only,
+.composer-actions .secondary-button.is-icon-only {
   width: 34px;
   min-width: 34px;
   padding: 0;
@@ -1259,6 +1260,7 @@
 }
 
 .composer-actions .primary-button.is-icon-only,
+.composer-actions .secondary-button.is-icon-only,
 .composer-selector-button.is-icon-only {
   border-radius: var(--seg-radius-xs);
 }
@@ -1451,6 +1453,7 @@
 
 .composer .composer-selector-button,
 .composer .composer-actions .primary-button,
+.composer .composer-actions .secondary-button,
 .composer .composer-menu-option {
   border-color: transparent;
   background: transparent;
@@ -1462,6 +1465,8 @@
 .composer .composer-selector-button:not(:disabled):focus-visible,
 .composer .composer-actions .primary-button:not(:disabled):hover,
 .composer .composer-actions .primary-button:not(:disabled):focus-visible,
+.composer .composer-actions .secondary-button:not(:disabled):hover,
+.composer .composer-actions .secondary-button:not(:disabled):focus-visible,
 .composer .composer-menu-option:not(:disabled):hover,
 .composer .composer-menu-option:not(:disabled):focus-visible {
   border-color: transparent;

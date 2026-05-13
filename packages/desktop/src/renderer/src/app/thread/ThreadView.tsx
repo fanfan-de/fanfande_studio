@@ -40,6 +40,7 @@ import type {
   AssistantTraceVisibility,
   AssistantTraceVisibilityKey,
   AssistantTurn,
+  AssistantTurnPhase,
   ComposerAttachment,
   ComposerDraftState,
   ComposerPastedImageAttachment,
@@ -781,6 +782,7 @@ function AssistantTurnPlaceholder({ message }: { message: string }) {
 
 function AssistantTurnSections({
   answeredQuestionIDs,
+  assistantTurnPhase,
   isQuestionAnswerDisabled = false,
   isLatestMessage,
   items,
@@ -794,6 +796,7 @@ function AssistantTurnSections({
   traceVisibility,
 }: {
   answeredQuestionIDs: Set<string>
+  assistantTurnPhase?: AssistantTurnPhase
   isQuestionAnswerDisabled?: boolean
   isLatestMessage: boolean
   items: AssistantTraceItem[]
@@ -833,6 +836,7 @@ function AssistantTurnSections({
                 <TraceItemView
                   key={item.id}
                   answeredQuestionIDs={answeredQuestionIDs}
+                  assistantTurnPhase={assistantTurnPhase}
                   item={item}
                   isQuestionAnswerDisabled={isQuestionAnswerDisabled}
                   onOpenImagePreview={onOpenImagePreview}
@@ -855,6 +859,7 @@ function AssistantTurnSections({
 
 function AssistantTurnSectionsWithStreamInsertions({
   answeredQuestionIDs,
+  assistantTurnPhase,
   copiedUserTurnID,
   insertedUserTurns,
   isQuestionAnswerDisabled = false,
@@ -871,6 +876,7 @@ function AssistantTurnSectionsWithStreamInsertions({
   traceVisibility,
 }: {
   answeredQuestionIDs: Set<string>
+  assistantTurnPhase?: AssistantTurnPhase
   copiedUserTurnID: string | null
   insertedUserTurns: UserTurn[]
   isQuestionAnswerDisabled?: boolean
@@ -890,6 +896,7 @@ function AssistantTurnSectionsWithStreamInsertions({
     return (
       <AssistantTurnSections
         answeredQuestionIDs={answeredQuestionIDs}
+        assistantTurnPhase={assistantTurnPhase}
         isQuestionAnswerDisabled={isQuestionAnswerDisabled}
         isLatestMessage={isLatestMessage}
         items={items}
@@ -914,6 +921,7 @@ function AssistantTurnSectionsWithStreamInsertions({
       <AssistantTurnSections
         key={key}
         answeredQuestionIDs={answeredQuestionIDs}
+        assistantTurnPhase={assistantTurnPhase}
         isQuestionAnswerDisabled={isQuestionAnswerDisabled}
         isLatestMessage={isLatestMessage}
         items={segmentItems}
@@ -1527,6 +1535,8 @@ function formatTraceStatusText(status?: AssistantTraceItem["status"]) {
       return "error"
     case "denied":
       return "denied"
+    case "cancelled":
+      return "cancelled"
     default:
       return null
   }
@@ -1631,6 +1641,7 @@ function ProposedPlanCard({
 
 interface TraceItemViewProps {
   answeredQuestionIDs?: Set<string>
+  assistantTurnPhase?: AssistantTurnPhase
   item: AssistantTraceItem
   isQuestionAnswerDisabled?: boolean
   isLatestMessage?: boolean
@@ -1654,6 +1665,7 @@ type TraceItemRendererProps = RequiredTraceItemRendererProps &
   Pick<
     TraceItemViewProps,
     | "answeredQuestionIDs"
+    | "assistantTurnPhase"
     | "item"
     | "onAskUserQuestionAnswer"
     | "onFileChangeSelect"
@@ -2309,7 +2321,7 @@ function TaskStateTraceItemView({
   )
 }
 
-type ToolTraceDisplayTone = "preparing" | "running" | "waiting-approval" | "success" | "error" | "denied" | "idle"
+type ToolTraceDisplayTone = "preparing" | "running" | "waiting-approval" | "success" | "error" | "denied" | "cancelled" | "idle"
 type ToolTraceDisplayIconType = "dot" | "success" | "error" | "tool"
 
 function getToolTraceDisplayState(item: AssistantTraceItem): {
@@ -2368,6 +2380,14 @@ function getToolTraceDisplayState(item: AssistantTraceItem): {
         shouldShowLabel: true,
         tone: "denied",
       }
+    case "cancelled":
+      return {
+        iconType: "error",
+        isBreathing: false,
+        label: "已取消",
+        shouldShowLabel: true,
+        tone: "cancelled",
+      }
     default:
       return {
         iconType: "tool",
@@ -2398,7 +2418,7 @@ function ToolTraceItemView({
     `is-icon-${displayState.iconType}`,
     displayState.isBreathing && "is-breathing",
   )
-  const showsToolInputs = item.status === "pending" || item.status === "running" || item.status === "waiting-approval"
+  const showsToolInputs = item.status === "pending" || item.status === "running" || item.status === "waiting-approval" || item.status === "cancelled"
   const visibleToolInputText = traceVisibility.toolInputs ? item.toolInputText : undefined
   const visibleToolOutputText = traceVisibility.toolOutputs ? item.toolOutputText : undefined
   const inputSectionDetail = showsToolInputs ? item.detail : undefined
@@ -2578,6 +2598,7 @@ const traceItemRenderers = {
 
 function TraceItemView({
   answeredQuestionIDs,
+  assistantTurnPhase,
   item,
   isQuestionAnswerDisabled = false,
   isLatestMessage = false,
@@ -2589,18 +2610,32 @@ function TraceItemView({
   shouldCollapseAfterTurnCompletion = false,
   traceVisibility,
 }: TraceItemViewProps) {
+  const renderedItem =
+    assistantTurnPhase === "cancelled" &&
+    item.kind === "tool" &&
+    item.status !== "cancelled" &&
+    item.status !== "completed" &&
+    item.status !== "denied" &&
+    item.status !== "error"
+      ? {
+          ...item,
+          status: "cancelled" as const,
+          detail: item.detail || "Prompt cancellation requested.",
+          isStreaming: false,
+        }
+      : item
   const className = [
     "trace-item",
-    `trace-kind-${item.kind}`,
-    item.kind === "reasoning" || item.kind === "tool" ? "is-plain" : "",
-    item.isStreaming ? "is-streaming" : "",
-    item.status ? `is-${item.status}` : "",
+    `trace-kind-${renderedItem.kind}`,
+    renderedItem.kind === "reasoning" || renderedItem.kind === "tool" ? "is-plain" : "",
+    renderedItem.isStreaming ? "is-streaming" : "",
+    renderedItem.status ? `is-${renderedItem.status}` : "",
   ]
     .filter(Boolean)
     .join(" ")
-  const debugEntries = traceVisibility.debugMetadata ? item.debugEntries ?? [] : []
-  const isResponseItem = traceSectionKeyForItem(item) === "response"
-  const Renderer = traceItemRenderers[item.kind]
+  const debugEntries = traceVisibility.debugMetadata ? renderedItem.debugEntries ?? [] : []
+  const isResponseItem = traceSectionKeyForItem(renderedItem) === "response"
+  const Renderer = traceItemRenderers[renderedItem.kind]
 
   return (
     <Renderer
@@ -2610,7 +2645,7 @@ function TraceItemView({
       isLatestMessage={isLatestMessage}
       isQuestionAnswerDisabled={isQuestionAnswerDisabled}
       isResponseItem={isResponseItem}
-      item={item}
+      item={renderedItem}
       onAskUserQuestionAnswer={onAskUserQuestionAnswer}
       onFileChangeSelect={onFileChangeSelect}
       onLocalFileLinkOpen={onLocalFileLinkOpen}
@@ -3103,6 +3138,7 @@ export function ThreadView({
                     ) : (
                       <AssistantTurnSectionsWithStreamInsertions
                         answeredQuestionIDs={answeredQuestionIDs}
+                        assistantTurnPhase={turn.runtime.phase}
                         isQuestionAnswerDisabled={isResolvingPermissionRequest || pendingPermissionRequests.length > 0}
                         copiedUserTurnID={copiedUserTurnID}
                         insertedUserTurns={insertedUserTurns}
@@ -3119,16 +3155,51 @@ export function ThreadView({
                         traceVisibility={assistantTraceVisibility}
                       />
                     )}
+                    {trailingUserDiffTurn ? (
+                      <UserTurnDiffCard
+                        turn={trailingUserDiffTurn}
+                        onFileChangeSelect={onFileChangeSelect}
+                        onTurnDiffRestore={onTurnDiffRestore}
+                        onTurnDiffReview={onTurnDiffReview}
+                      />
+                    ) : null}
                     {shouldRenderResponseActions ? (
-                      <div
-                        className={joinClassNames(
-                          "assistant-response-side-chat",
-                          (copiedResponseTurnID === turn.id ||
-                            activeInlineSideChat ||
-                            existingSideChatCount > 0) &&
-                            "is-persistent",
-                        )}
-                      >
+                      <div className="assistant-response-side-chat">
+                        {activeInlineSideChat &&
+                        onSideChatDraftStateChange &&
+                        onSideChatPickAttachments &&
+                        onSideChatRemoveAttachment &&
+                        onSideChatSend ? (
+                          <InlineSideChatThread
+                            activeProjectID={activeProjectID}
+                            attachments={sideChatAttachments}
+                            assistantTraceVisibility={assistantTraceVisibility}
+                            composerRefreshVersion={composerRefreshVersion}
+                            draftState={sideChatDraftState}
+                            isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+                            isResolvingPermissionRequest={isResolvingPermissionRequest}
+                            isCancelling={sideChatIsCancelling}
+                            isInterruptible={sideChatIsInterruptible}
+                            isSending={sideChatIsSending}
+                            pendingPermissionRequests={sideChatPendingPermissionRequests}
+                            permissionRequestActionError={sideChatPermissionRequestActionError}
+                            permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}
+                            session={activeInlineSideChat}
+                            turns={sideChatTurns}
+                            onDraftStateChange={onSideChatDraftStateChange}
+                            onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
+                            onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+                            onLocalFileLinkOpen={onLocalFileLinkOpen}
+                            onPermissionRequestResponse={onPermissionRequestResponse}
+                            onPickAttachments={onSideChatPickAttachments}
+                            onPasteImageAttachments={onSideChatPasteImageAttachments}
+                            onRemoveAttachment={onSideChatRemoveAttachment}
+                            onCancelSend={onSideChatCancelSend}
+                            onSend={onSideChatSend}
+                            onSessionModelSelectionChange={onSessionModelSelectionChange}
+                          />
+                        ) : null}
+
                         <div className="assistant-response-actions">
                           {responseCopyText ? (
                             <button
@@ -3172,50 +3243,7 @@ export function ThreadView({
                             </button>
                           ) : null}
                         </div>
-
-                        {activeInlineSideChat &&
-                        onSideChatDraftStateChange &&
-                        onSideChatPickAttachments &&
-                        onSideChatRemoveAttachment &&
-                        onSideChatSend ? (
-                          <InlineSideChatThread
-                            activeProjectID={activeProjectID}
-                            attachments={sideChatAttachments}
-                            assistantTraceVisibility={assistantTraceVisibility}
-                            composerRefreshVersion={composerRefreshVersion}
-                            draftState={sideChatDraftState}
-                            isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-                          isResolvingPermissionRequest={isResolvingPermissionRequest}
-                            isCancelling={sideChatIsCancelling}
-                            isInterruptible={sideChatIsInterruptible}
-                            isSending={sideChatIsSending}
-                            pendingPermissionRequests={sideChatPendingPermissionRequests}
-                            permissionRequestActionError={sideChatPermissionRequestActionError}
-                            permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}
-                            session={activeInlineSideChat}
-                            turns={sideChatTurns}
-                            onDraftStateChange={onSideChatDraftStateChange}
-                            onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
-                            onAskUserQuestionAnswer={onAskUserQuestionAnswer}
-                            onLocalFileLinkOpen={onLocalFileLinkOpen}
-                            onPermissionRequestResponse={onPermissionRequestResponse}
-                            onPickAttachments={onSideChatPickAttachments}
-                            onPasteImageAttachments={onSideChatPasteImageAttachments}
-                            onRemoveAttachment={onSideChatRemoveAttachment}
-                            onCancelSend={onSideChatCancelSend}
-                            onSend={onSideChatSend}
-                            onSessionModelSelectionChange={onSessionModelSelectionChange}
-                          />
-                        ) : null}
                       </div>
-                    ) : null}
-                    {trailingUserDiffTurn ? (
-                      <UserTurnDiffCard
-                        turn={trailingUserDiffTurn}
-                        onFileChangeSelect={onFileChangeSelect}
-                        onTurnDiffRestore={onTurnDiffRestore}
-                        onTurnDiffReview={onTurnDiffReview}
-                      />
                     ) : null}
                   </div>
                 </article>

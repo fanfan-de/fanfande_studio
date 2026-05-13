@@ -191,7 +191,7 @@ function traceSmokeItem(kind: AssistantTraceItemKind): AssistantTraceItem {
 }
 
 function toolStatusTraceItem(status: NonNullable<AssistantTraceItem["status"]>): AssistantTraceItem {
-  const showsInput = status === "pending" || status === "running" || status === "waiting-approval"
+  const showsInput = status === "pending" || status === "running" || status === "waiting-approval" || status === "cancelled"
 
   return {
     id: `tool-${status}`,
@@ -234,6 +234,7 @@ describe("ThreadView trace item renderers", () => {
       toolStatusTraceItem("completed"),
       toolStatusTraceItem("error"),
       toolStatusTraceItem("denied"),
+      toolStatusTraceItem("cancelled"),
     ]
     const { container } = renderThread([
       assistantTraceTurn("assistant-tools", items, true),
@@ -246,6 +247,7 @@ describe("ThreadView trace item renderers", () => {
     expect(screen.queryByText("完成")).toBeNull()
     expect(screen.getByRole("button", { name: /Tool error.*失败/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Tool denied.*已拒绝/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Tool cancelled.*已取消/ })).toBeInTheDocument()
 
     for (const status of ["pending", "running", "waiting-approval"] as const) {
       const indicator = container.querySelector(`.trace-kind-tool.is-${status} .trace-tool-status-indicator`)
@@ -268,6 +270,29 @@ describe("ThreadView trace item renderers", () => {
     expect(deniedIndicator).not.toBeNull()
     expect(deniedIndicator).toHaveClass("is-icon-error")
     expect(deniedIndicator).not.toHaveClass("is-breathing")
+
+    const cancelledIndicator = container.querySelector(".trace-kind-tool.is-cancelled .trace-tool-status-indicator")
+    expect(cancelledIndicator).not.toBeNull()
+    expect(cancelledIndicator).toHaveClass("is-icon-error")
+    expect(cancelledIndicator).not.toHaveClass("is-breathing")
+  })
+
+  it("renders pending tool traces as cancelled when the assistant turn is cancelled", () => {
+    const turn = assistantTraceTurn("assistant-cancelled", [toolStatusTraceItem("pending")], false)
+    turn.runtime = {
+      ...turn.runtime,
+      phase: "cancelled",
+    }
+    turn.state = "Backend stream cancelled"
+
+    const { container } = renderThread([turn])
+
+    expect(screen.getByRole("button", { name: /Tool pending/ })).toBeInTheDocument()
+    expect(container.querySelector(".trace-kind-tool.is-pending")).toBeNull()
+    const cancelledIndicator = container.querySelector(".trace-kind-tool.is-cancelled .trace-tool-status-indicator")
+    expect(cancelledIndicator).not.toBeNull()
+    expect(cancelledIndicator).toHaveClass("is-icon-error")
+    expect(cancelledIndicator).not.toHaveClass("is-breathing")
   })
 
   it("keeps tool details available after expanding compact summaries", () => {
@@ -1680,8 +1705,20 @@ describe("ThreadView message actions", () => {
     })
     const onOpenSideChat = vi.fn()
 
-    const { getAllByRole, getByRole, getByText } = renderThread(
+    const { container, getAllByRole, getByRole, getByText } = renderThread(
       [
+        {
+          ...userTurn("user-with-diff", "Please update the file."),
+          diffSummary: {
+            diffs: [
+              {
+                file: "src/index.ts",
+                additions: 1,
+                deletions: 0,
+              },
+            ],
+          },
+        },
         assistantTraceTurn(
           "assistant-1",
           [
@@ -1742,12 +1779,17 @@ describe("ThreadView message actions", () => {
     const firstResponseSection = getByText("I will check the directory first.").closest(".assistant-section")
     const finalResponseSection = getByText("Deleted. The directory is empty now.").closest(".assistant-section")
     const fileChangeSection = getByRole("region", { name: "File Changes" })
+    const trailingDiffCard = container.querySelector(".assistant-shell > .user-turn-diff-card")
     expect(actionRow).not.toBeNull()
+    expect(trailingDiffCard).not.toBeNull()
+    const actionRowElement = actionRow as HTMLElement
+    const trailingDiffCardElement = trailingDiffCard as HTMLElement
     expect(assistantShell?.contains(actionRow)).toBe(true)
     expect(firstResponseSection?.contains(actionRow)).toBe(false)
     expect(finalResponseSection?.contains(actionRow)).toBe(false)
     expect(actionRow?.closest(".assistant-section")).toBeNull()
-    expect(fileChangeSection.compareDocumentPosition(actionRow as HTMLElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(fileChangeSection.compareDocumentPosition(actionRowElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(trailingDiffCardElement.compareDocumentPosition(actionRowElement) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     fireEvent.click(copyButtons[0]!)
     expect(writeText).toHaveBeenCalledWith("Deleted. The directory is empty now.")

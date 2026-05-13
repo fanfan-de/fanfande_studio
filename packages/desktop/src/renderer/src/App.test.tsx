@@ -1221,7 +1221,7 @@ describe("App", () => {
     expect(screen.getAllByRole("textbox", { name: "Task draft" }).length).toBeGreaterThan(1)
   })
 
-  it("keeps the response action row persistent after hiding an existing side chat", async () => {
+  it("keeps the response action row available after hiding an existing side chat", async () => {
     render(<App />)
 
     const threadSideChatButton = await screen.findByRole("button", { name: "Open side chat" })
@@ -1241,7 +1241,6 @@ describe("App", () => {
     const responseActionRow = (assistantTurn as HTMLElement).querySelector(".assistant-response-side-chat") as HTMLElement | null
 
     expect(responseActionRow).not.toBeNull()
-    expect(responseActionRow).toHaveClass("is-persistent")
     expect(within(responseActionRow as HTMLElement).getByRole("button", { name: "Open side chat (1)" })).toHaveAttribute(
       "title",
       "1 side chat thread",
@@ -11400,10 +11399,10 @@ describe("App", () => {
       /\.composer-selector-button\s*\{[^}]*min-height:\s*34px;/s,
     )
     expect(styles).toMatch(
-      /\.composer\s+\.composer-selector-button,\s*\.composer\s+\.composer-actions\s+\.primary-button,\s*\.composer\s+\.composer-menu-option\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;/s,
+      /\.composer\s+\.composer-selector-button,\s*\.composer\s+\.composer-actions\s+\.primary-button,\s*\.composer\s+\.composer-actions\s+\.secondary-button,\s*\.composer\s+\.composer-menu-option\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;/s,
     )
     expect(styles).toMatch(
-      /\.composer\s+\.composer-selector-button:not\(:disabled\):hover,\s*\.composer\s+\.composer-selector-button:not\(:disabled\):focus-visible,\s*\.composer\s+\.composer-actions\s+\.primary-button:not\(:disabled\):hover,\s*\.composer\s+\.composer-actions\s+\.primary-button:not\(:disabled\):focus-visible,\s*\.composer\s+\.composer-menu-option:not\(:disabled\):hover,\s*\.composer\s+\.composer-menu-option:not\(:disabled\):focus-visible\s*\{[^}]*background:\s*var\(--seg-composer-button-surface\);[^}]*color:\s*var\(--seg-composer-button-text\);/s,
+      /\.composer\s+\.composer-selector-button:not\(:disabled\):hover,\s*\.composer\s+\.composer-selector-button:not\(:disabled\):focus-visible,\s*\.composer\s+\.composer-actions\s+\.primary-button:not\(:disabled\):hover,\s*\.composer\s+\.composer-actions\s+\.primary-button:not\(:disabled\):focus-visible,\s*\.composer\s+\.composer-actions\s+\.secondary-button:not\(:disabled\):hover,\s*\.composer\s+\.composer-actions\s+\.secondary-button:not\(:disabled\):focus-visible,\s*\.composer\s+\.composer-menu-option:not\(:disabled\):hover,\s*\.composer\s+\.composer-menu-option:not\(:disabled\):focus-visible\s*\{[^}]*background:\s*var\(--seg-composer-button-surface\);[^}]*color:\s*var\(--seg-composer-button-text\);/s,
     )
     expect(styles).toMatch(
       /\.composer\s+\.composer-menu-option\.is-selected\s*\{[^}]*background:\s*var\(--seg-composer-button-surface-strong\);[^}]*color:\s*var\(--seg-composer-button-text-strong\);/s,
@@ -11466,9 +11465,8 @@ describe("App", () => {
     expect(styles).toMatch(/\.assistant-reasoning-separator::before,\s*\.assistant-reasoning-separator::after\s*\{[^}]*height:\s*1px;/s)
     expect(styles).toMatch(/\.assistant-section\.is-response\s+\.trace-item-header\s*\{[^}]*display:\s*none;/s)
     expect(styles).toMatch(/\.assistant-response-side-chat\s*\{[^}]*gap:\s*8px;[^}]*margin-top:\s*0;/s)
-    expect(styles).toMatch(
-      /@media \(hover:\s*hover\) and \(pointer:\s*fine\)\s*\{[\s\S]*\.assistant-response-side-chat:not\(\.is-persistent\) \.assistant-response-actions\s*\{[^}]*opacity:\s*0;[^}]*pointer-events:\s*none;[\s\S]*\.assistant-shell:hover \.assistant-response-side-chat \.assistant-response-actions,[\s\S]*\.assistant-response-side-chat\.is-persistent \.assistant-response-actions\s*\{[^}]*opacity:\s*1;[^}]*pointer-events:\s*auto;/s,
-    )
+    expect(styles).not.toMatch(/\.assistant-response-side-chat:not\(\.is-persistent\) \.assistant-response-actions/)
+    expect(styles).not.toMatch(/\.assistant-shell:hover \.assistant-response-side-chat \.assistant-response-actions/)
     expect(styles).toMatch(/\.trace-item-toggle\s*\{[^}]*background:\s*transparent;[^}]*text-align:\s*left;[^}]*cursor:\s*pointer;/s)
     expect(styles).toMatch(/\.trace-item-toggle-summary\s*\{[^}]*gap:\s*4px 6px;/s)
   })

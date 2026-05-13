@@ -949,6 +949,170 @@ describe("stream trace reducer", () => {
     })
   })
 
+  it("marks unfinished streamed tool input as cancelled when the turn is interrupted", () => {
+    let turn = buildStreamingAssistantTurn("Inspect live tool input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-tool-input-1",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-part",
+          toolCallID: "call-live-input",
+          toolName: "replace-text",
+          delta: "{\"path\":\"game.ts\"",
+          rawLength: 17,
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-cancelled",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "turn.cancelled",
+        payload: {
+          reason: "user",
+          detail: "Prompt cancellation requested.",
+        },
+      },
+    })
+
+    const toolItems = turn.items.filter((item) => item.kind === "tool")
+    expect(toolItems).toHaveLength(1)
+    expect(turn.runtime.phase).toBe("cancelled")
+    expect(toolItems[0]).toMatchObject({
+      kind: "tool",
+      title: "replace-text",
+      status: "cancelled",
+      sourceID: "tool-input-part",
+      toolCallID: "call-live-input",
+      toolInputText: "{\"path\":\"game.ts\"",
+      isStreaming: false,
+    })
+    expect(turn.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "system",
+          title: "Turn cancelled",
+        }),
+      ]),
+    )
+  })
+
+  it("keeps late batched tool input cancelled after a local interrupt marker", () => {
+    let turn = buildStreamingAssistantTurn("Inspect live tool input")
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-cancelled",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 1,
+        timestamp: 100,
+        type: "turn.cancelled",
+        payload: {
+          reason: "user",
+          detail: "Prompt cancellation requested.",
+        },
+      },
+    })
+
+    turn = applyAgentStreamEventToTurn(turn, {
+      event: "runtime",
+      data: {
+        eventID: "event-late-tool-input",
+        sessionID: "session-runtime",
+        turnID: "turn-runtime",
+        seq: 2,
+        timestamp: 101,
+        type: "tool.input.delta",
+        payload: {
+          messageID: "message-runtime",
+          partID: "tool-input-part",
+          toolCallID: "call-live-input",
+          toolName: "AskUserQuestion",
+          delta: "{}",
+          rawLength: 2,
+        },
+      },
+    })
+
+    expect(turn.runtime.phase).toBe("cancelled")
+    expect(turn.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool",
+          title: "AskUserQuestion",
+          status: "cancelled",
+          toolInputText: "{}",
+          isStreaming: false,
+        }),
+      ]),
+    )
+  })
+
+  it("restores cancelled tool history without leaving pending tool traces active", () => {
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "assistant-cancelled",
+          sessionID: "session-runtime",
+          role: "assistant",
+          created: 100,
+          completed: 110,
+          finishReason: "cancelled",
+        },
+        parts: [
+          {
+            id: "tool-part",
+            type: "tool",
+            tool: "replace-text",
+            callID: "tool-call",
+            state: {
+              status: "pending",
+              raw: "{}",
+            },
+          },
+        ],
+      },
+    ])
+
+    expect(turns).toHaveLength(1)
+    const turn = turns[0]
+    expect(turn).toMatchObject({
+      kind: "assistant",
+      runtime: {
+        phase: "cancelled",
+      },
+      isStreaming: false,
+    })
+    expect(turn?.kind === "assistant" ? turn.items : []).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool",
+          status: "cancelled",
+          isStreaming: false,
+        }),
+        expect.objectContaining({
+          kind: "system",
+          title: "Turn cancelled",
+        }),
+      ]),
+    )
+  })
+
   it("keeps streamed reasoning visible when a sparse completion event is followed by tool input", () => {
     let turn = buildStreamingAssistantTurn("Inspect live reasoning before tools")
 

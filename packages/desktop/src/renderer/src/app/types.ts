@@ -686,7 +686,14 @@ export const DEFAULT_ASSISTANT_TRACE_VISIBILITY: AssistantTraceVisibility = {
   debugMetadata: false,
 }
 
-export type AssistantTraceStatus = "pending" | "running" | "completed" | "error" | "waiting-approval" | "denied"
+export type AssistantTraceStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "error"
+  | "waiting-approval"
+  | "denied"
+  | "cancelled"
 
 export type AssistantTurnPhase =
   | "requesting"

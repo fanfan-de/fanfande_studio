@@ -126,7 +126,7 @@ function isSettledAssistantPhase(phase: AssistantTurnPhase) {
 }
 
 function isTerminalTraceStatus(status: AssistantTraceStatus | undefined) {
-  return status === "completed" || status === "error" || status === "denied"
+  return status === "completed" || status === "error" || status === "denied" || status === "cancelled"
 }
 
 function isTerminalRuntimeEventType(type: string) {
@@ -513,6 +513,10 @@ function createToolTraceDetail(status: AssistantTraceStatus, state: Record<strin
     return "Tool execution was denied."
   }
 
+  if (status === "cancelled") {
+    return readString(state?.title) || "Tool call was cancelled."
+  }
+
   if (status === "waiting-approval") {
     return "Waiting for permission approval before the tool can continue."
   }
@@ -521,7 +525,7 @@ function createToolTraceDetail(status: AssistantTraceStatus, state: Record<strin
 }
 
 function createToolTraceInputText(status: AssistantTraceStatus, state: Record<string, unknown> | null) {
-  if (status === "completed" || status === "error" || status === "denied") {
+  if (status === "completed" || status === "error" || status === "denied" || status === "cancelled") {
     return describeOptionalStructuredValue(state?.input, {
       pretty: true,
     })
@@ -549,6 +553,10 @@ function createToolTraceOutputText(status: AssistantTraceStatus, state: Record<s
 
   if (status === "denied") {
     return readString(state?.reason) || "Tool execution was denied."
+  }
+
+  if (status === "cancelled") {
+    return readString(state?.reason) || readString(state?.title) || "Tool call was cancelled."
   }
 
   return undefined
@@ -830,6 +838,19 @@ function clearStreamingItems(items: AssistantTraceItem[]) {
   return items.map((item) => (item.isStreaming ? { ...item, isStreaming: false } : item))
 }
 
+function cancelInterruptedToolTraceItems(items: AssistantTraceItem[], detail: string) {
+  return clearStreamingItems(items).map((item) =>
+    item.kind === "tool" && !isTerminalTraceStatus(item.status)
+      ? {
+          ...item,
+          status: "cancelled" as const,
+          detail: item.detail || detail,
+          isStreaming: false,
+        }
+      : item,
+  )
+}
+
 function settleQueuedPrompt(items: AssistantTraceItem[], turnID: string, status: AssistantTraceStatus = "completed") {
   const promptSourceID = `${turnID}:prompt`
   return items.map((item) =>
@@ -981,6 +1002,8 @@ function appendToolInputDelta(
     messageID?: string
     toolCallID?: string
     toolName?: string
+    status?: AssistantTraceStatus
+    detail?: string
     debugEntries?: AssistantTraceDebugEntry[]
   },
 ) {
@@ -993,9 +1016,9 @@ function appendToolInputDelta(
     )
   )
   const nextToolInputText = `${existing?.toolInputText ?? ""}${input.delta}`
-  const status = existing?.kind === "tool" && existing.status && !isTerminalTraceStatus(existing.status)
+  const status = input.status ?? (existing?.kind === "tool" && existing.status && !isTerminalTraceStatus(existing.status)
     ? existing.status
-    : "pending"
+    : "pending")
   const nextItem = createTraceItem({
     id: existing?.id ?? input.sourceID,
     sourceID: existing?.sourceID ?? input.sourceID,
@@ -1003,7 +1026,7 @@ function appendToolInputDelta(
     label: "Tool",
     title: input.toolName || existing?.title || "Tool",
     text: existing?.toolOutputText ?? nextToolInputText,
-    detail: existing?.detail || "Preparing tool call.",
+    detail: input.detail || existing?.detail || "Preparing tool call.",
     toolInputText: nextToolInputText,
     toolOutputText: existing?.toolOutputText,
     status,
@@ -1060,7 +1083,9 @@ function buildTraceItemFromPart(
               ? "waiting-approval"
               : rawStatus === "denied"
                 ? "denied"
-                : "running"
+                : rawStatus === "cancelled" || rawStatus === "canceled"
+                  ? "cancelled"
+                  : "running"
     const toolName = readString(part.tool) || "Tool"
     const messageID = readString(part.messageID)
     const toolCallID = readString(part.callID)
@@ -1647,6 +1672,7 @@ export function buildUserTurn(input: {
 function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]) {
   const error = readRecord(info.error)
   if (error) return "Backend request failed"
+  if (isAssistantHistoryCancelled(info) || items.some((item) => item.status === "cancelled")) return "Backend stream cancelled"
   if (items.some((item) => item.kind === "question")) return "Waiting for your answer"
   if (items.some((item) => item.status === "waiting-approval")) return "Waiting for permission approval"
   if (items.some((item) => item.status === "denied")) return "Tool execution denied"
@@ -1659,6 +1685,7 @@ function resolveAssistantHistoryState(items: AssistantTraceItem[], info: LoadedS
 function resolveAssistantHistoryPhase(items: AssistantTraceItem[], info: LoadedSessionHistoryMessage["info"]): AssistantTurnPhase {
   const error = readRecord(info.error)
   if (error) return "failed"
+  if (isAssistantHistoryCancelled(info) || items.some((item) => item.status === "cancelled")) return "cancelled"
   if (items.some((item) => item.kind === "question")) return "blocked"
   if (items.some((item) => item.status === "waiting-approval")) return "waiting_approval"
   if (items.some((item) => item.status === "running" || item.status === "pending")) return "tool_running"
@@ -1669,6 +1696,20 @@ function resolveAssistantHistoryPhase(items: AssistantTraceItem[], info: LoadedS
 function resolveAssistantHistoryToolName(items: AssistantTraceItem[]) {
   return items.find((item) => item.kind === "tool" && (item.status === "running" || item.status === "pending" || item.status === "waiting-approval"))
     ?.title
+}
+
+function isAssistantHistoryCancelled(info: LoadedSessionHistoryMessage["info"]) {
+  const finishReason = readString(info.finishReason).toLowerCase()
+  const status = readString(info.status).toLowerCase()
+  const reason = readString(info.reason).toLowerCase()
+  return (
+    finishReason === "cancelled" ||
+    finishReason === "canceled" ||
+    status === "cancelled" ||
+    status === "canceled" ||
+    reason === "cancelled" ||
+    reason === "canceled"
+  )
 }
 
 function buildUserTurnFromHistory(message: LoadedSessionHistoryMessage) {
@@ -1696,6 +1737,7 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
   let items = mergeTraceParts([], message.parts)
   const error = readRecord(message.info.error)
   const errorMessage = readString(error?.message)
+  const isCancelled = isAssistantHistoryCancelled(message.info)
 
   if (errorMessage) {
     items = appendTraceItem(
@@ -1710,7 +1752,7 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
     )
   }
 
-  if (!errorMessage && readNumber(message.info.completed) > 0) {
+  if (!errorMessage && !isCancelled && readNumber(message.info.completed) > 0) {
     items = upsertTraceItem(
       items,
       buildCompletionTraceItem({
@@ -1718,6 +1760,22 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
         sourceID: `${message.info.id}:complete`,
         finishReason: message.info.finishReason,
         message: message.info,
+      }),
+    )
+  }
+
+  if (!errorMessage && isCancelled) {
+    items = upsertTraceItem(
+      cancelInterruptedToolTraceItems(items, "Prompt cancellation requested."),
+      createTraceItem({
+        kind: "system",
+        label: "System",
+        title: "Turn cancelled",
+        detail: "Prompt cancellation requested.",
+        status: "completed",
+        sourceID: `${message.info.id}:cancelled`,
+        section: "workflow",
+        visibilityKey: "workflow",
       }),
     )
   }
@@ -1963,6 +2021,46 @@ export function buildFailureTurn(
   }
 }
 
+export function markAssistantTurnInterrupted(
+  turn: AssistantTurn,
+  detail = "Prompt cancellation requested.",
+): AssistantTurn {
+  const updatedAt = Date.now()
+  const baseItems = cancelInterruptedToolTraceItems(
+    settleQueuedPrompt(turn.items, turn.id, "cancelled"),
+    detail,
+  )
+  const items = upsertTraceItem(
+    baseItems,
+    createTraceItem({
+      kind: "system",
+      label: "System",
+      title: "Turn cancelled",
+      detail,
+      status: "completed",
+      sourceID: `${turn.id}:cancelled`,
+      section: "workflow",
+      visibilityKey: "workflow",
+    }),
+  )
+
+  return updateAssistantTurnLifecycle(
+    {
+      ...turn,
+      isStreaming: false,
+    },
+    {
+      phase: "cancelled",
+      state: "Backend stream cancelled",
+      updatedAt,
+      toolName: null,
+      approvalRequestID: null,
+      errorMessage: null,
+    },
+    items,
+  )
+}
+
 export function finalizeStreamAssistantTurn(
   turn: AssistantTurn,
   input?: {
@@ -2186,7 +2284,8 @@ function applyRuntimeEventToTurn(
   item: AgentStreamEvent,
   event: AgentRuntimeEvent,
 ): AssistantTurn {
-  if (isSettledAssistantPhase(turn.runtime.phase) && !isTerminalRuntimeEventType(event.type)) {
+  const allowCancelledToolInputDelta = turn.runtime.phase === "cancelled" && event.type === "tool.input.delta"
+  if (isSettledAssistantPhase(turn.runtime.phase) && !isTerminalRuntimeEventType(event.type) && !allowCancelledToolInputDelta) {
     return turn
   }
 
@@ -2315,17 +2414,19 @@ function applyRuntimeEventToTurn(
     const delta = readString(payload.delta)
     if (!sourceID || !delta) return turn
     const rawLength = readNumber(payload.rawLength)
+    const isAlreadyCancelled = turn.runtime.phase === "cancelled"
+    const cancelledDetail = "Prompt cancellation requested."
 
     return updateAssistantTurnLifecycle(
       {
         ...turn,
         messageID,
-        isStreaming: true,
+        isStreaming: !isAlreadyCancelled,
       },
       {
-        phase: "tool_running",
-        state: "Preparing tool call",
-        toolName: readString(payload.toolName) || null,
+        phase: isAlreadyCancelled ? "cancelled" : "tool_running",
+        state: isAlreadyCancelled ? turn.state : "Preparing tool call",
+        toolName: isAlreadyCancelled ? null : readString(payload.toolName) || null,
       },
       appendToolInputDelta(preparedItems, {
         delta,
@@ -2333,6 +2434,8 @@ function applyRuntimeEventToTurn(
         messageID,
         toolCallID,
         toolName: readString(payload.toolName),
+        status: isAlreadyCancelled ? "cancelled" : undefined,
+        detail: isAlreadyCancelled ? cancelledDetail : undefined,
         debugEntries: buildRuntimeEventDebugEntries(event, item.id, {
           "message.id": readString(payload.messageID),
           "part.id": partID,
@@ -2507,14 +2610,16 @@ function applyRuntimeEventToTurn(
     const parts = Array.isArray(payload.parts) ? payload.parts : []
     const detail = readString(payload.detail) || readString(payload.reason) || "The turn was cancelled."
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
-    const nextItems = appendTraceItem(
-      mergeTraceParts(clearStreamingItems(preparedItems), parts),
+    const cancelledTurn = markAssistantTurnInterrupted(turn, detail)
+    const nextItems = upsertTraceItem(
+      mergeTraceParts(cancelledTurn.items, parts),
       createTraceItem({
         kind: "system",
         label: "System",
         title: "Turn cancelled",
         detail,
         status: "completed",
+        sourceID: `${turn.id}:cancelled`,
         section: "workflow",
         visibilityKey: "workflow",
         debugEntries,
@@ -2523,7 +2628,7 @@ function applyRuntimeEventToTurn(
 
     return updateAssistantTurnLifecycle(
       {
-        ...turn,
+        ...cancelledTurn,
         messageID,
         isStreaming: false,
       },

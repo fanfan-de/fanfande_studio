@@ -23,7 +23,7 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import { getAgentSessionBridge } from "../agent-session/client"
-import { buildFailureTurn } from "../stream"
+import { buildFailureTurn, markAssistantTurnInterrupted } from "../stream"
 import {
   findSession,
   findWorkspaceByID,
@@ -40,6 +40,40 @@ import { getWorkbenchTabReferenceFromKey } from "./workspace-derived-state"
 import type { WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
+
+const TERMINAL_ASSISTANT_PHASES = new Set(["blocked", "cancelled", "completed", "failed"])
+const TERMINAL_TOOL_TRACE_STATUSES = new Set(["cancelled", "completed", "denied", "error"])
+
+function hasInterruptibleToolTrace(turn: AssistantTurn): boolean {
+  return turn.items.some((item) =>
+    item.kind === "tool" && (!item.status || !TERMINAL_TOOL_TRACE_STATUSES.has(item.status)),
+  )
+}
+
+function shouldMarkAssistantTurnInterrupted(turn: AssistantTurn): boolean {
+  return (
+    turn.isStreaming ||
+    !TERMINAL_ASSISTANT_PHASES.has(turn.runtime.phase) ||
+    hasInterruptibleToolTrace(turn)
+  )
+}
+
+function collectAssistantTurnIDsForInterrupt(
+  turns: Turn[],
+  stream?: PendingAgentStream,
+): string[] {
+  const turnIDs = new Set<string>()
+  if (stream?.assistantTurnID) {
+    turnIDs.add(stream.assistantTurnID)
+  }
+  for (const turn of turns) {
+    if (turn.kind !== "assistant") continue
+    if (shouldMarkAssistantTurnInterrupted(turn)) {
+      turnIDs.add(turn.id)
+    }
+  }
+  return [...turnIDs]
+}
 
 interface CreateSessionResult {
   backendSessionID: string
@@ -473,6 +507,15 @@ export function useComposerController({
 
     if (stream) {
       stream.cancelRequested = true
+    }
+    const targetAssistantTurnIDs = collectAssistantTurnIDsForInterrupt(
+      getConversationTurns(sessionID),
+      stream,
+    )
+    for (const targetAssistantTurnID of targetAssistantTurnIDs) {
+      updateAssistantConversationTurn(sessionID, targetAssistantTurnID, (turn) =>
+        markAssistantTurnInterrupted(turn, "Prompt cancellation requested."),
+      )
     }
     setCancellingSessionIDs((current) => ({
       ...current,
