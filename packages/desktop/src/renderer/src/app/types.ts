@@ -736,6 +736,13 @@ export interface AssistantTraceProgressItem {
   status: SessionTaskStatus
 }
 
+export interface AssistantTraceFileChange {
+  file: string
+  additions: number
+  deletions: number
+  patch?: string
+}
+
 export interface AssistantTraceItem {
   id: string
   kind: AssistantTraceItemKind
@@ -751,6 +758,7 @@ export interface AssistantTraceItem {
   alt?: string
   toolInputText?: string
   toolOutputText?: string
+  fileChanges?: AssistantTraceFileChange[]
   filePaths?: string[]
   status?: AssistantTraceStatus
   sourceID?: string

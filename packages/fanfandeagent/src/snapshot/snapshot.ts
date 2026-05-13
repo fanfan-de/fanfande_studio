@@ -23,7 +23,6 @@ export function init() {
 }
 
 export async function cleanup() {
-  if (Instance.project.vcs !== "git") return
   const cfg = await Config.get()
   if (cfg.snapshot === false) return
   const git = gitdir()
@@ -47,30 +46,82 @@ export async function cleanup() {
   log.info("cleanup", { prune })
 }
 
+async function ensureSnapshotRepository(git: string) {
+  try {
+    await fs.mkdir(git, { recursive: true })
+    const hasHead = await fs
+      .stat(path.join(git, "HEAD"))
+      .then(() => true)
+      .catch(() => false)
+
+    if (!hasHead) {
+      const init = await $`git init`
+        .env({
+          ...process.env,
+          GIT_DIR: git,
+          GIT_WORK_TREE: Instance.worktree,
+        })
+        .quiet()
+        .nothrow()
+      if (init.exitCode !== 0) {
+        log.warn("snapshot repository init failed", {
+          exitCode: init.exitCode,
+          stderr: init.stderr.toString(),
+        })
+        return false
+      }
+      log.info("initialized")
+    }
+
+    const config = await $`git --git-dir ${git} config core.autocrlf false`.quiet().nothrow()
+    if (config.exitCode !== 0) {
+      log.warn("snapshot repository config failed", {
+        exitCode: config.exitCode,
+        stderr: config.stderr.toString(),
+      })
+      return false
+    }
+
+    return true
+  } catch (error) {
+    log.warn("snapshot repository unavailable", {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return false
+  }
+}
+
 export async function track() {
-  if (Instance.project.vcs !== "git") return
   const cfg = await Config.get()
   if (cfg.snapshot === false) return
   const git = gitdir()
-  if (await fs.mkdir(git, { recursive: true })) {
-    await $`git init`
-      .env({
-        ...process.env,
-        GIT_DIR: git,
-        GIT_WORK_TREE: Instance.worktree,
-      })
-      .quiet()
-      .nothrow()
-    // Configure git to not convert line endings on Windows
-    await $`git --git-dir ${git} config core.autocrlf false`.quiet().nothrow()
-    log.info("initialized")
+
+  if (!(await ensureSnapshotRepository(git))) {
+    return
   }
-  await $`git --git-dir ${git} --work-tree ${Instance.worktree} add .`.quiet().cwd(Instance.directory).nothrow()
-  const hash = await $`git --git-dir ${git} --work-tree ${Instance.worktree} write-tree`
+
+  const add = await $`git --git-dir ${git} --work-tree ${Instance.worktree} add .`.quiet().cwd(Instance.directory).nothrow()
+  if (add.exitCode !== 0) {
+    log.warn("failed to stage snapshot", {
+      exitCode: add.exitCode,
+      stderr: add.stderr.toString(),
+    })
+    return
+  }
+
+  const result = await $`git --git-dir ${git} --work-tree ${Instance.worktree} write-tree`
     .quiet()
     .cwd(Instance.directory)
     .nothrow()
-    .text()
+  if (result.exitCode !== 0) {
+    log.warn("failed to write snapshot tree", {
+      exitCode: result.exitCode,
+      stderr: result.stderr.toString(),
+    })
+    return
+  }
+
+  const hash = result.text()
   log.info("tracking", { hash, cwd: Instance.directory, git })
   return hash.trim()
 }
@@ -195,9 +246,17 @@ export const FileDiff = z
     ref: "FileDiff",
   })
 export type FileDiff = z.infer<typeof FileDiff>
-export async function diffFull(from: string, to: string): Promise<FileDiff[]> {
+export async function diffFull(
+  from: string,
+  to: string,
+  options: {
+    includeContent?: boolean
+    maxPatchBytes?: number
+  } = {},
+): Promise<FileDiff[]> {
   const git = gitdir()
   const result: FileDiff[] = []
+  const includeContent = options.includeContent ?? true
 
   const show = async (hash: string, file: string) => {
     const response =
@@ -210,14 +269,21 @@ export async function diffFull(from: string, to: string): Promise<FileDiff[]> {
     return `[DEBUG ERROR] git show ${hash}:${file} failed: ${stderr}`
   }
 
-  const showPatch = async (file: string) => {
+  const showPatch = async (file: string, isBinaryFile: boolean) => {
+    if (isBinaryFile) return undefined
     const response =
       await $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --no-renames ${from} ${to} -- ${file}`
         .quiet()
         .cwd(Instance.directory)
         .nothrow()
 
-    if (response.exitCode === 0) return response.text().trim()
+    if (response.exitCode === 0) {
+      const patch = response.text().trim()
+      if (options.maxPatchBytes !== undefined && Buffer.byteLength(patch, "utf8") > options.maxPatchBytes) {
+        return undefined
+      }
+      return patch
+    }
 
     log.warn("failed to get file diff patch", {
       file,
@@ -226,7 +292,7 @@ export async function diffFull(from: string, to: string): Promise<FileDiff[]> {
       exitCode: response.exitCode,
       stderr: response.stderr.toString(),
     })
-    return ""
+    return undefined
   }
 
   for await (const line of $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --no-renames --numstat ${from} ${to} -- .`
@@ -239,9 +305,9 @@ export async function diffFull(from: string, to: string): Promise<FileDiff[]> {
     const file = unquote(rawFile!)
     const isBinaryFile = additions === "-" && deletions === "-"
 
-    const before = isBinaryFile ? "" : await show(from, file)
-    const after = isBinaryFile ? "" : await show(to, file)
-    const patch = await showPatch(file)
+    const before = includeContent && !isBinaryFile ? await show(from, file) : ""
+    const after = includeContent && !isBinaryFile ? await show(to, file) : ""
+    const patch = await showPatch(file, isBinaryFile)
     const added = isBinaryFile ? 0 : parseInt(additions!)
     const deleted = isBinaryFile ? 0 : parseInt(deletions!)
     result.push({

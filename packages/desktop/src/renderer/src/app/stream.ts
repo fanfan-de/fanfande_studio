@@ -282,6 +282,9 @@ function buildPartDebugEntries(input: unknown) {
 
   if (type === "patch") {
     appendDebugEntry(entries, "patch.hash", readString(part.hash))
+    appendDebugEntry(entries, "patch.scope", readString(part.scope))
+    appendDebugEntry(entries, "patch.iteration", part.iteration)
+    appendDebugEntry(entries, "patch.from", readString(part.fromSnapshot))
   }
 
   if (type === "snapshot") {
@@ -1131,6 +1134,7 @@ function buildTraceItemFromPart(
   }
 
   if (type === "patch") {
+    const scope = readString(part.scope)
     const files = Array.isArray(part.files) ? part.files.filter((item): item is string => typeof item === "string") : []
     const changes = Array.isArray(part.changes)
       ? part.changes
@@ -1140,6 +1144,7 @@ function buildTraceItemFromPart(
             file: readString(change.file),
             additions: readNumber(change.additions),
             deletions: readNumber(change.deletions),
+            patch: readString(change.patch) || undefined,
           }))
           .filter((change) => Boolean(change.file))
       : []
@@ -1156,17 +1161,20 @@ function buildTraceItemFromPart(
         )
       : files.length > 0
         ? compactText(files.join(", "), 220)
-        : "Patch metadata received from the backend."
+        : scope === "model-call"
+          ? "Model call patch metadata received from the backend."
+          : "Patch metadata received from the backend."
 
     return [createTraceItem({
       id: sourceID,
       sourceID,
       kind: "patch",
-      label: "Patch",
+      label: scope === "model-call" ? "Model call" : "Patch",
       title: fileCount > 0
         ? `${fileCount} file change${fileCount === 1 ? "" : "s"} (+${additions} -${deletions})`
         : "Patch update",
       detail,
+      fileChanges: changes,
       filePaths: changes.length > 0 ? changes.map((change) => change.file) : files,
       status: "completed",
       section: "file-change",
@@ -1230,8 +1238,8 @@ function buildTraceItemFromPart(
       sourceID,
       kind: "step",
       label: "Step",
-      title: "Reasoning step started",
-      detail: "The backend opened a new reasoning step.",
+      title: "Model step started",
+      detail: "The model started a new generation step.",
       status: "pending",
       section: "workflow",
       visibilityKey: "workflow",
@@ -1245,8 +1253,8 @@ function buildTraceItemFromPart(
       sourceID,
       kind: "step",
       label: "Step",
-      title: "Reasoning step finished",
-      detail: readString(part.reason) || "The backend completed one reasoning step.",
+      title: "Model step finished",
+      detail: readString(part.reason) || "The model completed one generation step.",
       status: "completed",
       section: "workflow",
       visibilityKey: "workflow",

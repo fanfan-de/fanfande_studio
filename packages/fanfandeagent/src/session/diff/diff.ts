@@ -13,6 +13,11 @@ export interface DetailedDiffSummary extends Omit<DiffSummary, "diffs"> {
     diffs: Snapshot.FileDiff[]
 }
 
+export interface DetailedDiffOptions {
+    includeContent?: boolean
+    maxPatchBytes?: number
+}
+
 function listSessionParts(sessionID: string) {
     return db.findManyWithSchema("parts", Message.Part, {
         where: [{ column: "sessionID", value: sessionID }],
@@ -97,6 +102,19 @@ export async function computeDetailedDiffFromSnapshot(snapshot: string): Promise
     }
 
     const diffs = await Snapshot.diffFull(snapshot, currentSnapshot)
+    return buildDetailedDiffSummary(diffs)
+}
+
+export async function computeDetailedDiffBetweenSnapshots(
+    fromSnapshot: string,
+    toSnapshot: string,
+    options?: DetailedDiffOptions,
+): Promise<DetailedDiffSummary> {
+    if (!fromSnapshot || !toSnapshot || fromSnapshot === toSnapshot) {
+        return buildDetailedDiffSummary([])
+    }
+
+    const diffs = await Snapshot.diffFull(fromSnapshot, toSnapshot, options)
     return buildDetailedDiffSummary(diffs)
 }
 

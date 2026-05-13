@@ -175,11 +175,21 @@ export const FileChangeSummary = z
     })
 export type FileChangeSummary = z.infer<typeof FileChangeSummary>
 
+export const PatchFileChangeSummary = FileChangeSummary.extend({
+    patch: z.string().optional(),
+}).meta({
+    ref: "PatchFileChangeSummary",
+})
+export type PatchFileChangeSummary = z.infer<typeof PatchFileChangeSummary>
+
 export const PatchPart = PartBase.extend({
     type: z.literal("patch"),
     hash: z.string(),
     files: z.string().array(),
-    changes: FileChangeSummary.array().optional(),
+    scope: z.literal("model-call").optional(),
+    iteration: z.number().optional(),
+    fromSnapshot: z.string().optional(),
+    changes: PatchFileChangeSummary.array().optional(),
     summary: z
         .object({
             additions: z.number(),

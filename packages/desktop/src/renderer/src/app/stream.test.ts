@@ -1088,6 +1088,67 @@ describe("stream trace reducer", () => {
     })
   })
 
+  it("preserves static patch text on patch trace items", () => {
+    const patchText = [
+      "diff --git a/src/App.tsx b/src/App.tsx",
+      "--- a/src/App.tsx",
+      "+++ b/src/App.tsx",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+    ].join("\n")
+    const turns = buildTurnsFromHistory([
+      {
+        info: {
+          id: "msg-assistant-patch",
+          sessionID: "session-1",
+          role: "assistant",
+          created: 50,
+          completed: 51,
+        },
+        parts: [
+          {
+            id: "part-patch-1",
+            type: "patch",
+            scope: "model-call",
+            files: ["src/App.tsx"],
+            summary: {
+              files: 1,
+              additions: 1,
+              deletions: 1,
+            },
+            changes: [
+              {
+                file: "src/App.tsx",
+                additions: 1,
+                deletions: 1,
+                patch: patchText,
+              },
+            ],
+          },
+        ],
+      },
+    ])
+
+    const assistantItems = turns[0]?.kind === "assistant" ? turns[0].items : []
+    const patchItem = assistantItems.find((item) => item.kind === "patch")
+
+    expect(patchItem).toMatchObject({
+      kind: "patch",
+      label: "Model call",
+      title: "1 file change (+1 -1)",
+      fileChanges: [
+        {
+          file: "src/App.tsx",
+          additions: 1,
+          deletions: 1,
+          patch: patchText,
+        },
+      ],
+      filePaths: ["src/App.tsx"],
+    })
+  })
+
   it("keeps non-contiguous reasoning segments separate around tool events", () => {
     let turn = buildStreamingAssistantTurn("Trace tool execution")
 

@@ -4511,13 +4511,19 @@ describe("App", () => {
     expect(within(sectionElements[4] as HTMLElement).getByText("All checks passed.")).toBeInTheDocument()
     expect(within(sectionElements[4] as HTMLElement).queryByText("Inspecting workspace.")).not.toBeInTheDocument()
 
-    expect(within(sectionElements[5] as HTMLElement).getByText("2 file changes (+3 -1)")).toBeInTheDocument()
+    const sectionFileChangeSummary = within(sectionElements[5] as HTMLElement).getByRole("button", { name: "已编辑 2 个文件" })
+    expect(sectionFileChangeSummary).toHaveAttribute("aria-expanded", "false")
     expect(within(sectionElements[5] as HTMLElement).queryByText("1 file change (+2 -1)")).not.toBeInTheDocument()
-    expect(within(sectionElements[5] as HTMLElement).getByText(/src\/App\.tsx \(\+2 -1\).*src\/styles\.css \(\+1 -0\)/)).toBeInTheDocument()
+    expect(within(sectionElements[5] as HTMLElement).queryByText("src/App.tsx")).not.toBeInTheDocument()
+    fireEvent.click(sectionFileChangeSummary)
+    expect(within(sectionElements[5] as HTMLElement).getAllByText("src/App.tsx").length).toBeGreaterThan(0)
+    expect(within(sectionElements[5] as HTMLElement).getByLabelText("2 additions, 1 deletions")).toBeInTheDocument()
+    expect(within(sectionElements[5] as HTMLElement).getAllByText("src/styles.css").length).toBeGreaterThan(0)
+    expect(within(sectionElements[5] as HTMLElement).getByLabelText("1 additions, 0 deletions")).toBeInTheDocument()
     expect(within(sectionElements[5] as HTMLElement).queryByText("All checks passed.")).not.toBeInTheDocument()
   })
 
-  it("shows one file-change summary at the end of a consecutive assistant cycle", async () => {
+  it("keeps file-change summaries on their own assistant messages in a consecutive assistant cycle", async () => {
     window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue([
       {
         id: "C:\\Projects\\Atlas\\client",
@@ -4599,6 +4605,22 @@ describe("App", () => {
             },
           },
           { id: "text-2", type: "text", text: "Finished the cycle." },
+          {
+            id: "patch-2",
+            type: "patch",
+            summary: {
+              files: 1,
+              additions: 2,
+              deletions: 1,
+            },
+            changes: [
+              {
+                file: "docs/release-checklist.md",
+                additions: 2,
+                deletions: 1,
+              },
+            ],
+          },
         ],
       },
     ])
@@ -4614,12 +4636,24 @@ describe("App", () => {
     expect(finalAssistantTurn).not.toBeNull()
     expect(firstAssistantTurn).not.toBe(finalAssistantTurn)
 
-    expect(within(firstAssistantTurn as HTMLElement).queryByRole("region", { name: "File Changes" })).not.toBeInTheDocument()
+    const firstFileChangeSection = within(firstAssistantTurn as HTMLElement).getByRole("region", { name: "File Changes" })
+    const firstFileChangeSummary = within(firstFileChangeSection).getByRole("button", { name: "已编辑 1 个文件" })
+    expect(firstFileChangeSummary).toHaveAttribute("aria-expanded", "false")
+    expect(within(firstFileChangeSection).queryByText("docs/release-notes.md")).not.toBeInTheDocument()
+    fireEvent.click(firstFileChangeSummary)
+    expect(within(firstFileChangeSection).getAllByText("docs/release-notes.md").length).toBeGreaterThan(0)
+    expect(within(firstFileChangeSection).getByLabelText("4 additions, 0 deletions")).toBeInTheDocument()
+    expect(within(firstFileChangeSection).queryByText("docs/release-checklist.md")).not.toBeInTheDocument()
 
     const finalFileChangeSection = within(finalAssistantTurn as HTMLElement).getByRole("region", { name: "File Changes" })
-    expect(within(finalFileChangeSection).getByText("1 file change (+4 -0)")).toBeInTheDocument()
-    expect(within(finalFileChangeSection).getByText("docs/release-notes.md (+4 -0)")).toBeInTheDocument()
-    expect(screen.getAllByRole("region", { name: "File Changes" })).toHaveLength(1)
+    const finalFileChangeSummary = within(finalFileChangeSection).getByRole("button", { name: "已编辑 1 个文件" })
+    expect(finalFileChangeSummary).toHaveAttribute("aria-expanded", "false")
+    expect(within(finalFileChangeSection).queryByText("docs/release-checklist.md")).not.toBeInTheDocument()
+    fireEvent.click(finalFileChangeSummary)
+    expect(within(finalFileChangeSection).getAllByText("docs/release-checklist.md").length).toBeGreaterThan(0)
+    expect(within(finalFileChangeSection).getByLabelText("2 additions, 1 deletions")).toBeInTheDocument()
+    expect(within(finalFileChangeSection).queryByText("docs/release-notes.md")).not.toBeInTheDocument()
+    expect(screen.getAllByRole("region", { name: "File Changes" })).toHaveLength(2)
   })
 
   it("replays detached backend turns from the session event stream", async () => {
@@ -4988,9 +5022,15 @@ describe("App", () => {
     expect(within(responseSection).getByText("Streaming answer")).toBeInTheDocument()
 
     const fileChangeSection = within(assistantTurn as HTMLElement).getByRole("region", { name: "File Changes" })
-    expect(within(fileChangeSection).getByText("2 file changes (+3 -1)")).toBeInTheDocument()
+    const fileChangeSummary = within(fileChangeSection).getByRole("button", { name: "已编辑 2 个文件" })
+    expect(fileChangeSummary).toHaveAttribute("aria-expanded", "false")
     expect(within(fileChangeSection).queryByText("1 file change (+2 -1)")).not.toBeInTheDocument()
-    expect(within(fileChangeSection).getByText(/src\/App\.tsx \(\+2 -1\).*src\/styles\.css \(\+1 -0\)/)).toBeInTheDocument()
+    expect(within(fileChangeSection).queryByText("src/App.tsx")).not.toBeInTheDocument()
+    fireEvent.click(fileChangeSummary)
+    expect(within(fileChangeSection).getAllByText("src/App.tsx").length).toBeGreaterThan(0)
+    expect(within(fileChangeSection).getByLabelText("2 additions, 1 deletions")).toBeInTheDocument()
+    expect(within(fileChangeSection).getAllByText("src/styles.css").length).toBeGreaterThan(0)
+    expect(within(fileChangeSection).getByLabelText("1 additions, 0 deletions")).toBeInTheDocument()
 
     const reasoningPosition = reasoningSection.compareDocumentPosition(fileChangeSection)
     const responsePosition = responseSection.compareDocumentPosition(fileChangeSection)
@@ -7743,7 +7783,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: "Atlas review" })).toBeInTheDocument()
     expect(await screen.findByText("Done.")).toBeInTheDocument()
     expect(screen.getByText("Permission requested")).toBeInTheDocument()
-    expect(screen.queryByText("Reasoning step started")).not.toBeInTheDocument()
+    expect(screen.queryByText("Model step started")).not.toBeInTheDocument()
     expect(screen.queryByText("approval.id")).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Open settings" }))
@@ -7752,7 +7792,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Show trace workflow events" }))
     fireEvent.click(screen.getByRole("switch", { name: "Show trace debug metadata" }))
 
-    expect(screen.getByText("Reasoning step started")).toBeInTheDocument()
+    expect(screen.getByText("Model step started")).toBeInTheDocument()
     expect(screen.getByText("approval.id")).toBeInTheDocument()
     expect(screen.getAllByText("part.id").length).toBeGreaterThan(0)
   })

@@ -376,15 +376,24 @@
   min-width: 0;
 }
 
-.trace-item-toggle-icon {
+.trace-item-toggle-static-summary {
+  margin: 0;
+}
+
+.trace-item-toggle-leading-icon,
+.trace-item-toggle-chevron {
+  display: inline-flex;
   width: 14px;
   height: 14px;
   margin-top: 4px;
+  align-items: center;
+  justify-content: center;
   color: #6b7d90;
   flex: 0 0 auto;
 }
 
-.trace-item-toggle-icon svg {
+.trace-item-toggle-leading-icon svg,
+.trace-item-toggle-chevron svg {
   width: 14px;
   height: 14px;
   fill: none;
@@ -396,6 +405,8 @@
 
 .trace-item-toggle-line {
   min-width: 0;
+  width: fit-content;
+  max-width: 100%;
   margin: 0;
   color: #2d4153;
   line-height: 1.6;
@@ -960,6 +971,256 @@
   background: #ffffff;
   color: #0f67aa;
   outline: none;
+}
+
+.trace-file-change-summary {
+  display: inline-grid;
+  grid-template-columns: 16px auto 14px;
+  gap: 6px;
+  align-items: center;
+  justify-content: start;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trace-file-change-summary:hover,
+.trace-file-change-summary:focus-visible {
+  color: var(--seg-text-1);
+  outline: none;
+}
+
+.trace-file-change-summary-icon,
+.trace-file-change-summary-chevron,
+.trace-file-change-toggle-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
+.trace-file-change-summary-icon svg,
+.trace-file-change-summary-chevron svg,
+.trace-file-change-toggle-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.trace-file-change-summary-label {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.trace-file-change-list {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding-left: 20px;
+}
+
+.trace-file-change-entry {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.trace-file-change-row {
+  display: grid;
+  grid-template-columns: 14px auto minmax(0, auto) auto auto;
+  gap: 5px;
+  align-items: baseline;
+  justify-content: start;
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trace-file-change-row.is-static {
+  cursor: default;
+}
+
+.trace-file-change-row:hover,
+.trace-file-change-row:focus-visible {
+  color: var(--seg-text-1);
+  outline: none;
+}
+
+.trace-file-change-action {
+  color: var(--seg-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.trace-file-change-file {
+  min-width: 0;
+  color: var(--seg-accent-strong);
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.trace-file-change-stats {
+  display: inline-flex;
+  gap: 4px;
+  color: var(--seg-text-2);
+  font-family: "IBM Plex Mono", "JetBrains Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.trace-file-change-stats .is-add {
+  color: #238447;
+}
+
+.trace-file-change-stats .is-remove {
+  color: #a53a31;
+}
+
+.trace-file-change-note {
+  color: var(--seg-text-3);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.trace-file-change-preview {
+  min-width: 0;
+  margin: 6px 0 8px 19px;
+  border: 1px solid rgba(166, 186, 208, 0.22);
+  border-radius: var(--seg-radius-xs);
+  overflow: hidden;
+}
+
+.trace-historical-diff.right-sidebar-diff-preview,
+.trace-historical-diff-empty.right-sidebar-diff-empty {
+  border: 0;
+  background: #ffffff;
+}
+
+.trace-historical-diff.right-sidebar-diff-preview {
+  max-height: 280px;
+}
+
+.trace-historical-diff.right-sidebar-diff-preview.is-full-height {
+  max-height: none;
+}
+
+.trace-historical-diff .right-sidebar-diff-code {
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 11px;
+}
+
+.trace-historical-diff .right-sidebar-diff-hunk {
+  border: 0;
+  background: transparent;
+}
+
+.trace-historical-diff .right-sidebar-diff-hunk + .right-sidebar-diff-hunk {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(166, 186, 208, 0.22);
+}
+
+.trace-historical-diff .right-sidebar-diff-hunk-header {
+  padding: 0 8px 4px;
+  border-bottom: 0;
+  background: transparent;
+  color: var(--seg-text-3);
+}
+
+.trace-historical-diff .right-sidebar-diff-row {
+  grid-template-columns: 34px 34px minmax(0, 1fr);
+  background: transparent;
+}
+
+.trace-historical-diff .right-sidebar-diff-row + .right-sidebar-diff-row {
+  border-top: 0;
+}
+
+.trace-historical-diff .right-sidebar-diff-line-number {
+  padding: 0 6px;
+  border-right: 0;
+  background: transparent;
+  color: var(--seg-text-3);
+}
+
+.trace-historical-diff .right-sidebar-diff-content {
+  padding: 0 8px 0 6px;
+  color: var(--seg-text-1);
+}
+
+.trace-historical-diff .right-sidebar-diff-row.is-add {
+  background: var(--mix-seg-success-9-transparent-91);
+}
+
+.trace-historical-diff .right-sidebar-diff-row.is-add .right-sidebar-diff-content {
+  color: var(--mix-seg-success-78-seg-text-1-22);
+}
+
+.trace-historical-diff .right-sidebar-diff-row.is-remove {
+  background: var(--mix-seg-danger-9-transparent-91);
+}
+
+.trace-historical-diff .right-sidebar-diff-row.is-remove .right-sidebar-diff-content {
+  color: var(--mix-seg-danger-78-seg-text-1-22);
+}
+
+.trace-historical-diff .right-sidebar-diff-preview-footer {
+  position: static;
+  justify-content: flex-start;
+  padding: 8px;
+  border-top: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.trace-historical-diff .right-sidebar-diff-height-toggle {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-2);
+  font-size: 11px;
+}
+
+.trace-historical-diff .right-sidebar-diff-height-toggle:hover,
+.trace-historical-diff .right-sidebar-diff-height-toggle:focus-visible {
+  border: 0;
+  background: transparent;
+  color: var(--seg-text-1);
+}
+
+.trace-historical-diff-empty.right-sidebar-diff-empty {
+  padding: 8px;
+}
+
+.trace-historical-diff-empty p {
+  margin: 0;
+  color: var(--seg-text-3);
+  font-size: 12px;
 }
 
 .trace-image-preview {
@@ -2356,7 +2617,8 @@ body.is-image-lightbox-open {
   gap: 4px;
 }
 
-.trace-item-toggle-icon {
+.trace-item-toggle-leading-icon,
+.trace-item-toggle-chevron {
   margin-top: 2px;
 }
 

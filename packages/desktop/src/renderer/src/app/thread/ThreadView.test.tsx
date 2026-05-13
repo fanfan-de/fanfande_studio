@@ -1,5 +1,5 @@
 import { createRef, type ComponentProps } from "react"
-import { fireEvent, render, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTraceItemKind, type AssistantTurn, type SessionSummary, type Turn, type UserTurn } from "../types"
 import { ThreadView } from "./ThreadView"
@@ -221,8 +221,8 @@ describe("ThreadView trace item renderers", () => {
               kind: "step",
               timestamp: 1,
               label: "Step",
-              title: "Reasoning step finished",
-              detail: "Completed one reasoning step.",
+              title: "Model step finished",
+              detail: "The model completed one generation step.",
               status: "completed",
               section: "workflow",
               visibilityKey: "workflow",
@@ -242,8 +242,8 @@ describe("ThreadView trace item renderers", () => {
     const row = container.querySelector(".trace-kind-step .trace-item-step-row")
 
     expect(row).not.toBeNull()
-    expect(row?.textContent).toContain("Reasoning step finished")
-    expect(row?.textContent).toContain("Completed one reasoning step.")
+    expect(row?.textContent).toContain("Model step finished")
+    expect(row?.textContent).toContain("The model completed one generation step.")
     expect(row?.querySelector(".trace-item-detail")?.tagName).toBe("SPAN")
   })
 })
@@ -375,13 +375,13 @@ describe("ThreadView image trace items", () => {
       },
     ]
 
-    const { container, getByAltText, getByRole, getByText } = renderThread([
+    const { container, getByAltText, getByRole } = renderThread([
       assistantTraceTurn("assistant-images", items, false),
     ])
 
     expect(getByAltText("First preview")).toHaveAttribute("src", "https://example.com/first.png")
     expect(getByAltText("Second preview")).toHaveAttribute("src", "https://example.com/second.png")
-    expect(getByText("Updated files")).toBeInTheDocument()
+    expect(getByRole("button", { name: "已编辑 1 个文件" })).toBeInTheDocument()
 
     fireEvent.click(getByRole("button", { name: "Preview First preview" }))
 
@@ -391,26 +391,123 @@ describe("ThreadView image trace items", () => {
     expect(container.contains(dialog)).toBe(false)
   })
 
-  it("routes patch file chips to the file change handler", () => {
+  it("keeps patch file rows scoped to inline diff expansion", () => {
     const onFileChangeSelect = vi.fn()
     const patchItem: AssistantTraceItem = {
       id: "patch-action",
       kind: "patch",
       timestamp: 1,
       label: "Patch",
-      title: "Updated files",
-      filePaths: ["src/app.tsx"],
+      title: "1 file change (+1 -1)",
+      fileChanges: [
+        {
+          file: "src/app.tsx",
+          additions: 1,
+          deletions: 1,
+          patch: [
+            "diff --git a/src/app.tsx b/src/app.tsx",
+            "--- a/src/app.tsx",
+            "+++ b/src/app.tsx",
+            "@@ -1 +1 @@",
+            "-old",
+            "+new",
+          ].join("\n"),
+        },
+      ],
       status: "completed",
     }
-    const { getByRole } = renderThread([
+    const { getByRole, queryByRole } = renderThread([
       assistantTraceTurn("assistant-patch", [patchItem], false),
     ], {
       onFileChangeSelect,
     })
 
-    fireEvent.click(getByRole("button", { name: "src/app.tsx" }))
+    fireEvent.click(getByRole("button", { name: "已编辑 1 个文件" }))
+    fireEvent.click(getByRole("button", { name: /已编辑\s*src\/app\.tsx/ }))
 
-    expect(onFileChangeSelect).toHaveBeenCalledWith("src/app.tsx")
+    expect(onFileChangeSelect).not.toHaveBeenCalled()
+    expect(queryByRole("region", { name: "Diff preview for src/app.tsx" })).toBeInTheDocument()
+  })
+
+  it("renders historical patch text inline after expanding the file change summary", () => {
+    const patchItem: AssistantTraceItem = {
+      id: "patch-static",
+      kind: "patch",
+      timestamp: 1,
+      label: "Model call",
+      title: "1 file change (+1 -1)",
+      fileChanges: [
+        {
+          file: "src/app.tsx",
+          additions: 1,
+          deletions: 1,
+          patch: [
+            "diff --git a/src/app.tsx b/src/app.tsx",
+            "--- a/src/app.tsx",
+            "+++ b/src/app.tsx",
+            "@@ -10 +10 @@",
+            "-const label = \"old\"",
+            "+const label = \"new\"",
+          ].join("\n"),
+        },
+      ],
+      filePaths: ["src/app.tsx"],
+      status: "completed",
+    }
+
+    const { container, getByRole, getByText } = renderThread([
+      assistantTraceTurn("assistant-patch-static", [patchItem], false),
+    ])
+
+    expect(getByRole("button", { name: "已编辑 1 个文件" })).toHaveAttribute("aria-expanded", "false")
+    expect(getByRole("button", { name: "已编辑 1 个文件" })).toBeInTheDocument()
+    expect(screen.queryByText("src/app.tsx")).not.toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Diff preview for src/app.tsx" })).not.toBeInTheDocument()
+
+    fireEvent.click(getByRole("button", { name: "已编辑 1 个文件" }))
+    expect(getByRole("button", { name: "已编辑 1 个文件" })).toHaveAttribute("aria-expanded", "true")
+    expect(getByText("src/app.tsx")).toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Diff preview for src/app.tsx" })).not.toBeInTheDocument()
+
+    fireEvent.click(getByRole("button", { name: /已编辑\s*src\/app\.tsx/ }))
+    expect(getByRole("region", { name: "Diff preview for src/app.tsx" })).toBeInTheDocument()
+    expect(getByText('const label = "old"')).toBeInTheDocument()
+    expect(getByText('const label = "new"')).toBeInTheDocument()
+    expect(container.querySelectorAll(".right-sidebar-diff-row.is-remove")).toHaveLength(1)
+    expect(container.querySelectorAll(".right-sidebar-diff-row.is-add")).toHaveLength(1)
+
+    fireEvent.click(getByRole("button", { name: /已编辑\s*src\/app\.tsx/ }))
+    expect(screen.queryByRole("region", { name: "Diff preview for src/app.tsx" })).not.toBeInTheDocument()
+  })
+
+  it("uses the folded file change renderer for ordinary patch items", () => {
+    const patchItem: AssistantTraceItem = {
+      id: "patch-ordinary",
+      kind: "patch",
+      timestamp: 1,
+      label: "Patch",
+      title: "1 file change (+2 -0)",
+      fileChanges: [
+        {
+          file: "src/ordinary.ts",
+          additions: 2,
+          deletions: 0,
+        },
+      ],
+      status: "completed",
+    }
+
+    const { getByRole, getByText, queryByText } = renderThread([
+      assistantTraceTurn("assistant-patch-ordinary", [patchItem], false),
+    ])
+
+    expect(getByRole("button", { name: "已编辑 1 个文件" })).toBeInTheDocument()
+    expect(queryByText("src/ordinary.ts")).not.toBeInTheDocument()
+
+    fireEvent.click(getByRole("button", { name: "已编辑 1 个文件" }))
+
+    expect(getByText("src/ordinary.ts")).toBeInTheDocument()
+    expect(getByText("仅摘要")).toBeInTheDocument()
   })
 
   it("closes the lightbox with Escape and restores focus to the thumbnail trigger", () => {

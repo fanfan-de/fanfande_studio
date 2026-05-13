@@ -3,7 +3,9 @@ import { createPortal } from "react-dom"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
 import { createEmptyComposerDraftState } from "../composer/draft-state"
+import { DiffPreview } from "../diff/DiffPreview"
 import {
+  ChangesIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
@@ -12,7 +14,8 @@ import {
   PaperclipIcon,
   PlusIcon,
   ResetIcon,
-  SideChatIcon
+  SideChatIcon,
+  ToolsIcon,
 } from "../icons"
 import { joinClassNames, writeTextToClipboard } from "../shared-ui"
 import { buildTurnsFromHistory } from "../stream"
@@ -20,6 +23,7 @@ import { ThreadMarkdown } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
 import type {
   AssistantTraceDebugEntry,
+  AssistantTraceFileChange,
   AssistantTraceItem,
   AssistantTraceItemKind,
   AssistantTraceSectionKey,
@@ -1340,6 +1344,19 @@ function TraceItemFileActions({
   )
 }
 
+function normalizePatchFileChanges(item: AssistantTraceItem): AssistantTraceFileChange[] {
+  const changes = item.fileChanges?.filter((change) => change.file.trim()) ?? []
+  if (changes.length > 0) return changes
+
+  return (item.filePaths ?? [])
+    .filter((file) => file.trim())
+    .map((file) => ({
+      file,
+      additions: 0,
+      deletions: 0,
+    }))
+}
+
 function GenericTraceItemView({
   className,
   debugEntries,
@@ -1378,8 +1395,129 @@ function FileTraceItemView(props: TraceItemRendererProps) {
   return <GenericTraceItemView {...props} />
 }
 
-function PatchTraceItemView(props: TraceItemRendererProps) {
-  return <GenericTraceItemView {...props} showFileActions />
+function PatchTraceItemView({
+  className,
+  debugEntries,
+  item,
+  onFileChangeSelect,
+  ...props
+}: TraceItemRendererProps) {
+  const fileChanges = normalizePatchFileChanges(item)
+  const fileChangeSignature = fileChanges
+    .map((change) => `${change.file}\u0000${change.additions}\u0000${change.deletions}\u0000${Boolean(change.patch?.trim())}`)
+    .join("\u0001")
+  const [isListExpanded, setIsListExpanded] = useState(false)
+  const [expandedFile, setExpandedFile] = useState<string | null>(null)
+  const [fullHeightFile, setFullHeightFile] = useState<string | null>(null)
+
+  useEffect(() => {
+    setIsListExpanded(false)
+    setExpandedFile(null)
+    setFullHeightFile(null)
+  }, [fileChangeSignature, item.id])
+
+  if (fileChanges.length === 0) {
+    return (
+      <GenericTraceItemView
+        className={className}
+        debugEntries={debugEntries}
+        item={item}
+        onFileChangeSelect={onFileChangeSelect}
+        showFileActions
+        {...props}
+      />
+    )
+  }
+
+  const listID = `trace-file-change-list-${item.id}`
+  const editedFileSummary = `已编辑 ${fileChanges.length} 个文件`
+  const handleSummaryToggle = () => {
+    const nextIsListExpanded = !isListExpanded
+    setIsListExpanded(nextIsListExpanded)
+    if (!nextIsListExpanded) {
+      setExpandedFile(null)
+      setFullHeightFile(null)
+    }
+  }
+
+  return (
+    <article className={className} data-kind={item.kind}>
+      <button
+        type="button"
+        className="trace-file-change-summary"
+        aria-expanded={isListExpanded}
+        aria-controls={listID}
+        onClick={handleSummaryToggle}
+      >
+        <span className="trace-file-change-summary-icon" aria-hidden="true">
+          <ChangesIcon />
+        </span>
+        <span className="trace-file-change-summary-label">{editedFileSummary}</span>
+        <span className="trace-file-change-summary-chevron" aria-hidden="true">
+          {isListExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+        </span>
+      </button>
+      {isListExpanded ? (
+        <div id={listID} className="trace-file-change-list">
+          {fileChanges.map((change, changeIndex) => {
+            const hasPatch = Boolean(change.patch?.trim())
+            const isExpanded = expandedFile === change.file
+            const previewID = `trace-file-change-${item.id}-${changeIndex}`
+            const rowContent = (
+              <>
+                <span className="trace-file-change-toggle-icon" aria-hidden="true">
+                  {hasPatch ? (isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />) : null}
+                </span>
+                <span className="trace-file-change-action">已编辑</span>
+                <span className="trace-file-change-file">{change.file}</span>
+                <span className="trace-file-change-stats" aria-label={`${change.additions} additions, ${change.deletions} deletions`}>
+                  <span className="is-add">+{change.additions}</span>
+                  <span className="is-remove">-{change.deletions}</span>
+                </span>
+                {!hasPatch ? <span className="trace-file-change-note">仅摘要</span> : null}
+              </>
+            )
+
+            return (
+              <div key={`${item.id}-${change.file}-${changeIndex}`} className="trace-file-change-entry">
+                {hasPatch ? (
+                  <button
+                    type="button"
+                    className="trace-file-change-row"
+                    aria-expanded={isExpanded}
+                    aria-controls={previewID}
+                    onClick={() => setExpandedFile((current) => current === change.file ? null : change.file)}
+                  >
+                    {rowContent}
+                  </button>
+                ) : (
+                  <div className="trace-file-change-row is-static">
+                    {rowContent}
+                  </div>
+                )}
+                {hasPatch && isExpanded ? (
+                  <div id={previewID} className="trace-file-change-preview">
+                    <DiffPreview
+                      className="trace-historical-diff"
+                      emptyClassName="trace-historical-diff-empty"
+                      file={change.file}
+                      isFullHeight={fullHeightFile === change.file}
+                      onToggleFullHeight={() =>
+                        setFullHeightFile((current) => current === change.file ? null : change.file)
+                      }
+                      patch={change.patch}
+                      viewMode="unified"
+                    />
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+      <TraceItemDebugEntries debugEntries={debugEntries} itemID={item.id} />
+    </article>
+  )
 }
 
 function SubtaskTraceItemView(props: TraceItemRendererProps) {
@@ -1798,19 +1936,27 @@ function ToolTraceItemView({
           onClick={handleToolToggle}
         >
           <span className="trace-item-toggle-summary">
-            <span className="trace-item-toggle-icon" aria-hidden="true">
-              {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+            <span className="trace-item-toggle-leading-icon" aria-hidden="true">
+              <ToolsIcon />
             </span>
             <span className="trace-item-toggle-line">
               <span className="trace-item-inline-title">{summaryTitle}</span>
               {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
             </span>
+            <span className="trace-item-toggle-chevron" aria-hidden="true">
+              {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+            </span>
           </span>
         </button>
       ) : (
-        <p className="trace-item-toggle-line">
-          <span className="trace-item-inline-title">{summaryTitle}</span>
-          {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
+        <p className="trace-item-toggle-summary trace-item-toggle-static-summary">
+          <span className="trace-item-toggle-leading-icon" aria-hidden="true">
+            <ToolsIcon />
+          </span>
+          <span className="trace-item-toggle-line">
+            <span className="trace-item-inline-title">{summaryTitle}</span>
+            {statusText ? <span className="trace-item-inline-status">{" \u00b7 "}{statusText}</span> : null}
+          </span>
         </p>
       )}
 
@@ -2121,33 +2267,6 @@ function PermissionRequestInlinePrompt({
   )
 }
 
-function findAssistantCycleBounds(turns: Turn[], assistantTurnIndex: number) {
-  let startIndex = assistantTurnIndex
-  while (startIndex > 0 && turns[startIndex - 1]?.kind === "assistant") {
-    startIndex -= 1
-  }
-
-  let endIndex = assistantTurnIndex
-  while (endIndex + 1 < turns.length && turns[endIndex + 1]?.kind === "assistant") {
-    endIndex += 1
-  }
-
-  return { startIndex, endIndex }
-}
-
-function collectAssistantCycleFileChangeItems(turns: Turn[], startIndex: number, endIndex: number) {
-  const items: AssistantTraceItem[] = []
-
-  for (let index = startIndex; index <= endIndex; index += 1) {
-    const turn = turns[index]
-    if (!turn || turn.kind !== "assistant") continue
-
-    items.push(...turn.items.filter((item) => item.kind !== "system" && isFileChangeTraceItem(item)))
-  }
-
-  return items
-}
-
 function collectAnsweredQuestionIDs(turns: Turn[]) {
   const answeredQuestionIDs = new Set<string>()
 
@@ -2362,18 +2481,10 @@ export function ThreadView({
                 )
               }
 
-              const { startIndex, endIndex } = findAssistantCycleBounds(activeTurns, turnIndex)
-              const isCycleFinalTurn = turnIndex === endIndex
-              const cycleFileChangeItems = isCycleFinalTurn
-                ? collectAssistantCycleFileChangeItems(activeTurns, startIndex, endIndex)
-                : []
-              const traceItems = [
-                ...turn.items.filter((item) => !isFileChangeTraceItem(item)),
-                ...cycleFileChangeItems,
-              ]
+              const traceItems = turn.items
               const renderedItems = filterRenderedAssistantTraceItems(
                 traceItems,
-                isCycleFinalTurn && !turn.isStreaming,
+                !turn.isStreaming,
                 assistantTraceVisibility,
               )
               const ephemeralHint = renderedItems.length === 0 ? getAssistantEphemeralHint(turn) : null
@@ -2492,7 +2603,7 @@ export function ThreadView({
                             </div>
                           )
                         }}
-                        showFileChanges={isCycleFinalTurn && !turn.isStreaming}
+                        showFileChanges={!turn.isStreaming}
                         shouldCollapseReasoningAndTools={!turn.isStreaming}
                         traceVisibility={assistantTraceVisibility}
                       />

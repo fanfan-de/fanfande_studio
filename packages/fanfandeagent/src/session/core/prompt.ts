@@ -41,6 +41,7 @@ const DEFAULT_PROMPT_LOOP_LIMIT = 64
 const HARD_PROMPT_LOOP_LIMIT = Flag.FanFande_EXPERIMENTAL_AGENT_LOOP_LIMIT
 const DANGLING_TOOL_CALL_ERROR =
     "Recovered dangling tool call from an earlier interrupted run before resuming."
+const MODEL_CALL_PATCH_MAX_PATCH_BYTES = 128 * 1024
 
 // ---------------------------------------------------------------------------
 // 输入协议与运行态
@@ -547,6 +548,15 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 turn,
             });
 
+            const modelCallSnapshot = await Snapshot.track().catch((error) => {
+                log.warn("failed to capture model-call snapshot", {
+                    sessionID,
+                    assistantMessageID: assistantMessage.id,
+                    iteration,
+                    error: error instanceof Error ? error.message : String(error),
+                })
+                return undefined
+            })
             let processResult: Awaited<ReturnType<typeof processor.process>>;
             try {
                 processResult = await processor.process({
@@ -571,10 +581,38 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     },
                 } as Message.Assistant["error"];
                 await persistMessageRecord(assistantMessage, turn);
+                await persistModelCallPatchPart({
+                    sessionID,
+                    assistantMessageID: assistantMessage.id,
+                    fromSnapshot: modelCallSnapshot,
+                    iteration,
+                    turn,
+                }).catch((persistError) => {
+                    log.warn("failed to persist model-call patch after processor error", {
+                        sessionID,
+                        assistantMessageID: assistantMessage.id,
+                        iteration,
+                        error: persistError instanceof Error ? persistError.message : String(persistError),
+                    })
+                })
                 throw error;
             }
 
             await persistMessageRecord(assistantMessage, turn);
+            await persistModelCallPatchPart({
+                sessionID,
+                assistantMessageID: assistantMessage.id,
+                fromSnapshot: modelCallSnapshot,
+                iteration,
+                turn,
+            }).catch((error) => {
+                log.warn("failed to persist model-call patch", {
+                    sessionID,
+                    assistantMessageID: assistantMessage.id,
+                    iteration,
+                    error: error instanceof Error ? error.message : String(error),
+                })
+            })
 
             if (await SessionRunner.consumePendingSteer(sessionID, turn.turnID) > 0) {
                 log.info("continuing prompt loop after steer input", {
@@ -766,18 +804,6 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
             turn,
         });
 
-        await persistDiffArtifacts({
-            sessionID: input.sessionID,
-            userMessageID: userMessage.messageinfo.id,
-            snapshot: baselineSnapshot,
-            assistantMessageID: result.latest.info.role === "assistant" ? result.latest.info.id : undefined,
-            turn,
-        }).catch((error) => {
-            log.warn("failed to persist prompt diff artifacts", {
-                sessionID: input.sessionID,
-                error: error instanceof Error ? error.message : String(error),
-            })
-        })
         await sessionTitlePromise
 
         Session.updateTurn(turn.turnID, {
@@ -806,18 +832,6 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
             input.sessionID,
             userMessage.messageinfo.id,
         )
-        await persistDiffArtifacts({
-            sessionID: input.sessionID,
-            userMessageID: userMessage.messageinfo.id,
-            snapshot: baselineSnapshot,
-            assistantMessageID: latestAssistant?.info.role === "assistant" ? latestAssistant.info.id : undefined,
-            turn,
-        }).catch((persistError) => {
-            log.warn("failed to persist prompt diff artifacts after error", {
-                sessionID: input.sessionID,
-                error: persistError instanceof Error ? persistError.message : String(persistError),
-            })
-        })
         await sessionTitlePromise
 
         if (turn) {
@@ -952,19 +966,6 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
             turn,
         });
 
-        await persistDiffArtifacts({
-            sessionID: input.sessionID,
-            userMessageID: latestUser?.message.id ?? "",
-            snapshot: latestUser?.snapshot,
-            assistantMessageID: result.latest.info.role === "assistant" ? result.latest.info.id : undefined,
-            turn,
-        }).catch((error) => {
-            log.warn("failed to persist resume diff artifacts", {
-                sessionID: input.sessionID,
-                error: error instanceof Error ? error.message : String(error),
-            })
-        })
-
         Session.updateTurn(turn.turnID, {
             status: result.status === "blocked" ? "blocked" : "completed",
             phase: result.status === "blocked" ? "blocked" : "completed",
@@ -991,19 +992,6 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
             input.sessionID,
             latestUser?.message.id,
         )
-        await persistDiffArtifacts({
-            sessionID: input.sessionID,
-            userMessageID: latestUser?.message.id ?? "",
-            snapshot: latestUser?.snapshot,
-            assistantMessageID: latestAssistant?.info.role === "assistant" ? latestAssistant.info.id : undefined,
-            turn,
-        }).catch((persistError) => {
-            log.warn("failed to persist resume diff artifacts after error", {
-                sessionID: input.sessionID,
-                error: persistError instanceof Error ? persistError.message : String(persistError),
-            })
-        })
-
         if (turn) {
             const status = runtime.abort.aborted ? "cancelled" : "failed"
             Session.updateTurn(turn.turnID, {
@@ -1220,37 +1208,55 @@ function latestAssistantWithPartsAfter(
     return latestAssistant
 }
 
-function readPatchPart(messageID: string): Message.PatchPart | undefined {
+function readModelCallPatchPart(messageID: string): Message.PatchPart | undefined {
     const parts = db.findManyWithSchema("parts", Message.Part, {
         where: [{ column: "messageID", value: messageID }],
         orderBy: [{ column: "id", direction: "ASC" }],
     })
 
-    return parts.find((part): part is Message.PatchPart => part.type === "patch")
+    return parts.find((part): part is Message.PatchPart => part.type === "patch" && part.scope === "model-call")
 }
 
-async function persistDiffArtifacts(input: {
+function toPatchFileChangeSummary(
+    diffs: SessionDiff.DetailedDiffSummary["diffs"],
+): Message.PatchFileChangeSummary[] {
+    return diffs.map((diff) => ({
+        file: diff.file,
+        additions: diff.additions,
+        deletions: diff.deletions,
+        ...(diff.patch ? { patch: diff.patch } : {}),
+    }))
+}
+
+async function persistModelCallPatchPart(input: {
     sessionID: string
-    userMessageID: string
-    snapshot: string | undefined
-    assistantMessageID?: string
+    assistantMessageID: string
+    fromSnapshot: string | undefined
+    iteration: number
     turn?: Orchestrator.TurnContext
 }) {
-    if (!input.snapshot || !input.userMessageID) return
+    if (!input.fromSnapshot) return
 
-    const message = db.findById("messages", Message.MessageInfo, input.userMessageID)
-    if (!message || message.role !== "user") return
+    const existingPatch = readModelCallPatchPart(input.assistantMessageID)
+    const toSnapshot = await Snapshot.track()
+    if (!toSnapshot) return
 
-    const diffSummary = await SessionDiff.computeDiffSummaryFromSnapshot(input.snapshot)
-    const nextUser: Message.User = {
-        ...(message as Message.User),
-        diffSummary,
+    if (input.fromSnapshot === toSnapshot) {
+        if (existingPatch) {
+            await removePartRecord(existingPatch.id, input.turn, existingPatch.messageID)
+        }
+        return
     }
-    await persistMessageRecord(nextUser, input.turn)
 
-    if (!input.assistantMessageID) return
+    const diffSummary = await SessionDiff.computeDetailedDiffBetweenSnapshots(
+        input.fromSnapshot,
+        toSnapshot,
+        {
+            includeContent: false,
+            maxPatchBytes: MODEL_CALL_PATCH_MAX_PATCH_BYTES,
+        },
+    )
 
-    const existingPatch = readPatchPart(input.assistantMessageID)
     if (diffSummary.diffs.length === 0) {
         if (existingPatch) {
             await removePartRecord(existingPatch.id, input.turn, existingPatch.messageID)
@@ -1258,19 +1264,21 @@ async function persistDiffArtifacts(input: {
         return
     }
 
-    const currentSnapshot = await Snapshot.track()
-    if (!currentSnapshot) return
+    const changes = toPatchFileChangeSummary(diffSummary.diffs)
 
-    const patchPart: Message.PatchPart = {
+    const patchPart: Message.PatchPart = Message.PatchPart.parse({
         id: existingPatch?.id ?? Identifier.ascending("part"),
         sessionID: input.sessionID,
         messageID: input.assistantMessageID,
         type: "patch",
-        hash: currentSnapshot,
-        files: diffSummary.diffs.map((diff) => diff.file),
-        changes: diffSummary.diffs,
+        scope: "model-call",
+        iteration: input.iteration,
+        fromSnapshot: input.fromSnapshot,
+        hash: toSnapshot,
+        files: changes.map((change) => change.file),
+        changes,
         summary: diffSummary.stats,
-    }
+    })
 
     if (input.turn) {
         input.turn.emit("patch.generated", {
