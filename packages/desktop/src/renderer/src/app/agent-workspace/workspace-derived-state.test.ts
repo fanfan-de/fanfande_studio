@@ -53,7 +53,29 @@ describe("workspace derived state", () => {
       },
       updated: 200,
     }
-    const workspace = createWorkspace("workspace-1", [parentSession, sideChatSession])
+    const secondSideChatSession: SessionSummary = {
+      ...createSession("side-chat-2", "Side chat 2"),
+      kind: "side-chat",
+      origin: {
+        parentSessionID: parentSession.id,
+        anchorMessageID: "message-1",
+        anchorPreview: "Selected text",
+      },
+      created: 150,
+      updated: 150,
+    }
+    const otherAnchorSideChatSession: SessionSummary = {
+      ...createSession("side-chat-3", "Side chat 3"),
+      kind: "side-chat",
+      origin: {
+        parentSessionID: parentSession.id,
+        anchorMessageID: "message-2",
+        anchorPreview: "Other selected text",
+      },
+      created: 160,
+      updated: 160,
+    }
+    const workspace = createWorkspace("workspace-1", [parentSession, sideChatSession, secondSideChatSession, otherAnchorSideChatSession])
     const createSessionTab = {
       id: "create-1",
       workspaceID: workspace.id,
@@ -115,7 +137,11 @@ describe("workspace derived state", () => {
     expect(derived.activeTurns).toHaveLength(1)
     expect(derived.activeSideChatSession?.id).toBe(sideChatSession.id)
     expect(derived.activeSideChatTurns).toHaveLength(1)
-    expect(derived.activeSideChatCountsByAnchorMessageID).toEqual({ "message-1": 1 })
+    expect(derived.activeSideChatCountsByAnchorMessageID).toEqual({ "message-1": 2, "message-2": 1 })
+    expect(derived.activeSideChatSessionsByAnchorMessageID["message-1"]?.map((session) => session.id)).toEqual([
+      "side-chat-2",
+      "side-chat-1",
+    ])
     expect(derived.activePreviewState.draftUrl).toBe("http://localhost:5173")
     expect(derived.canvasSessionTabs.map((session) => session.id)).toEqual([parentSession.id])
     expect(derived.visibleCanvasSessionIDs).toEqual([parentSession.id])
@@ -124,8 +150,13 @@ describe("workspace derived state", () => {
       id: "pane-1",
       activeTabKey: getWorkbenchTabKey(createSessionWorkbenchTab(parentSession.id)),
       sessionID: parentSession.id,
+      sideChatCountsByAnchorMessageID: { "message-1": 2, "message-2": 1 },
       workspace,
     })
+    expect(derived.workbenchPaneStates[0]?.sideChatSessionsByAnchorMessageID["message-1"]?.map((session) => session.id)).toEqual([
+      "side-chat-2",
+      "side-chat-1",
+    ])
   })
 
   it("derives running sessions from sending tabs and streaming assistant turns", () => {

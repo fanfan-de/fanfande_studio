@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { createPortal } from "react-dom"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
@@ -10,6 +10,7 @@ import {
   ChevronRightIcon,
   CloseIcon,
   CopyIcon,
+  DeleteIcon,
   MinimizeIcon,
   PaperclipIcon,
   PlusIcon,
@@ -90,6 +91,7 @@ interface ThreadViewProps {
   sideChatPermissionRequestActionError?: string | null
   sideChatPermissionRequestActionRequestID?: string | null
   sideChatSession?: SessionSummary | null
+  sideChatSessionsByAnchorMessageID?: Record<string, SessionSummary[]>
   sideChatTurns?: Turn[]
   threadColumnRef: RefObject<HTMLDivElement | null>
   onAskUserQuestionAnswer: QuestionAnswerHandler
@@ -121,8 +123,11 @@ interface ThreadViewProps {
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
   onSessionModelSelectionChange?: (sessionID: string, selection: SessionSummary["modelSelection"] | undefined) => void
+  onSideChatCreate?: (anchorMessageID: string) => void | Promise<void>
+  onSideChatDelete?: (sessionID: string) => void | Promise<void>
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
   onPermissionRequestResponse: PermissionRequestResponseHandler
+  onSideChatSelect?: (sessionID: string) => void | Promise<void>
 }
 
 type PermissionRequestResponseHandler = (input: {
@@ -1454,6 +1459,7 @@ interface InlineSideChatThreadProps {
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
   session: SessionSummary
+  sideChatSessions: SessionSummary[]
   turns: Turn[]
   onDraftStateChange: (value: ComposerDraftState) => void
   onHide: () => void
@@ -1472,6 +1478,8 @@ interface InlineSideChatThreadProps {
   }) => void | Promise<void>
   onRemoveAttachment: (path: string) => void
   onCancelSend?: () => void | Promise<void>
+  onCreateSideChat: () => void | Promise<void>
+  onDeleteSideChat: (sessionID: string) => void | Promise<void>
   onSend: (input: {
     attachmentError?: string | null
     draftStateOverride?: ComposerDraftState
@@ -1486,6 +1494,7 @@ interface InlineSideChatThreadProps {
     submissionMode?: UserTurn["submissionMode"]
     waitForPendingModelSelection: () => Promise<void>
   }) => void | Promise<void>
+  onSelectSideChat: (sessionID: string) => void | Promise<void>
   onSessionModelSelectionChange?: (sessionID: string, selection: SessionSummary["modelSelection"] | undefined) => void
 }
 
@@ -1504,6 +1513,7 @@ function InlineSideChatThread({
   permissionRequestActionError,
   permissionRequestActionRequestID,
   session,
+  sideChatSessions,
   turns,
   onDraftStateChange,
   onHide,
@@ -1514,7 +1524,10 @@ function InlineSideChatThread({
   onPasteImageAttachments,
   onRemoveAttachment,
   onCancelSend,
+  onCreateSideChat,
+  onDeleteSideChat,
   onSend,
+  onSelectSideChat,
   onSessionModelSelectionChange,
 }: InlineSideChatThreadProps) {
   const composer = useProjectComposer({
@@ -1525,30 +1538,48 @@ function InlineSideChatThread({
     sessionModelSelection: session.modelSelection,
     sessionID: session.id,
   })
-  const [hydratedTurns, setHydratedTurns] = useState<Turn[]>(turns)
+  const [hydratedTurnsBySessionID, setHydratedTurnsBySessionID] = useState<Record<string, Turn[]>>({})
+  const [isCreatingSideChatTab, setIsCreatingSideChatTab] = useState(false)
+  const [deletingSideChatTabID, setDeletingSideChatTabID] = useState<string | null>(null)
+  const [sideChatTabMenu, setSideChatTabMenu] = useState<{ sessionID: string; x: number; y: number } | null>(null)
+  const sideChatTabMenuRef = useRef<HTMLDivElement | null>(null)
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
+  const hydratedTurns = hydratedTurnsBySessionID[session.id] ?? []
   const effectiveTurns = turns.length > 0 ? turns : hydratedTurns
+  const sideChatTabs = sideChatSessions.some((sideChat) => sideChat.id === session.id)
+    ? sideChatSessions
+    : [...sideChatSessions, session]
+  const shouldRenderNestedThread =
+    effectiveTurns.length > 0 ||
+    pendingPermissionRequests.length > 0 ||
+    isResolvingPermissionRequest ||
+    Boolean(permissionRequestActionError)
 
   useEffect(() => {
     if (turns.length > 0) {
-      setHydratedTurns(turns)
+      setHydratedTurnsBySessionID((current) => ({
+        ...current,
+        [session.id]: turns,
+      }))
       return
     }
 
     const agentSession = getAgentSessionBridge()
     if (!agentSession) {
-      setHydratedTurns([])
       return
     }
 
     let isCancelled = false
-    setHydratedTurns([])
 
     void agentSession.loadHistory({ backendSessionID: session.id })
       .then((messages) => {
         if (isCancelled) return
         const nextTurns = buildTurnsFromHistory(messages)
-        setHydratedTurns(mergeUserTurnPresentationState(readPersistedUserTurns(session.id), nextTurns))
+        const nextHydratedTurns = mergeUserTurnPresentationState(readPersistedUserTurns(session.id), nextTurns)
+        setHydratedTurnsBySessionID((current) => ({
+          ...current,
+          [session.id]: nextHydratedTurns,
+        }))
       })
       .catch((error) => {
         if (isCancelled) return
@@ -1560,11 +1591,123 @@ function InlineSideChatThread({
     }
   }, [session.id, turns])
 
+  useEffect(() => {
+    if (!sideChatTabMenu) return
+
+    function handlePointerDown(event: PointerEvent) {
+      if (sideChatTabMenuRef.current?.contains(event.target as Node)) return
+      setSideChatTabMenu(null)
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSideChatTabMenu(null)
+      }
+    }
+
+    function handleBlur() {
+      setSideChatTabMenu(null)
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown)
+    window.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("blur", handleBlur)
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown)
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("blur", handleBlur)
+    }
+  }, [sideChatTabMenu])
+
+  async function handleCreateSideChat() {
+    if (isCreatingSideChatTab) return
+
+    setIsCreatingSideChatTab(true)
+    try {
+      await onCreateSideChat()
+    } finally {
+      setIsCreatingSideChatTab(false)
+    }
+  }
+
+  function openSideChatTabMenu(event: ReactMouseEvent<HTMLElement>, sessionID: string) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const menuWidth = 132
+    const menuHeight = 42
+    const x = Math.min(Math.max(8, event.clientX), Math.max(8, window.innerWidth - menuWidth - 8))
+    const y = Math.min(Math.max(8, event.clientY), Math.max(8, window.innerHeight - menuHeight - 8))
+    setSideChatTabMenu({ sessionID, x, y })
+  }
+
+  function openSideChatTabMenuFromKeyboard(event: KeyboardEvent<HTMLElement>, sessionID: string) {
+    const target = event.currentTarget
+    const rect = target.getBoundingClientRect()
+    const menuWidth = 132
+    const x = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - menuWidth - 8))
+    const y = Math.min(Math.max(8, rect.bottom + 4), Math.max(8, window.innerHeight - 50))
+    setSideChatTabMenu({ sessionID, x, y })
+  }
+
+  async function handleDeleteSideChatTab(sessionID: string) {
+    if (deletingSideChatTabID) return
+
+    setDeletingSideChatTabID(sessionID)
+    setSideChatTabMenu(null)
+    try {
+      await onDeleteSideChat(sessionID)
+    } finally {
+      setDeletingSideChatTabID(null)
+    }
+  }
+
   return (
     <section className="inline-side-chat-thread" aria-label="Nested side chat">
       <header className="inline-side-chat-header">
-        <div className="inline-side-chat-copy">
-          <strong>Side chat</strong>
+        <div className="inline-side-chat-tabs" aria-label="Side chat tabs">
+          <div className="inline-side-chat-tab-list" role="tablist" aria-label="Side chat threads">
+            {sideChatTabs.map((sideChat, index) => {
+              const isActive = sideChat.id === session.id
+
+              return (
+                <button
+                  key={sideChat.id}
+                  className={isActive ? "inline-side-chat-tab is-active" : "inline-side-chat-tab"}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-label={`Chat ${index + 1}`}
+                  title={sideChat.title}
+                  onClick={() => {
+                    if (!isActive) {
+                      void onSelectSideChat(sideChat.id)
+                    }
+                  }}
+                  onContextMenu={(event) => openSideChatTabMenu(event, sideChat.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                      event.preventDefault()
+                      openSideChatTabMenuFromKeyboard(event, sideChat.id)
+                    }
+                  }}
+                >
+                  Chat {index + 1}
+                </button>
+              )
+            })}
+          </div>
+          <button
+            className="inline-side-chat-tab-add"
+            type="button"
+            aria-label="Create side chat tab"
+            title="Create side chat tab"
+            disabled={isCreatingSideChatTab}
+            onClick={() => void handleCreateSideChat()}
+          >
+            <PlusIcon />
+          </button>
         </div>
         <button
           aria-label="Hide side chat"
@@ -1577,30 +1720,59 @@ function InlineSideChatThread({
         </button>
       </header>
 
+      {sideChatTabMenu
+        ? createPortal(
+            <div
+              ref={sideChatTabMenuRef}
+              className="inline-side-chat-tab-menu"
+              role="menu"
+              aria-label="Side chat tab actions"
+              style={{ left: sideChatTabMenu.x, top: sideChatTabMenu.y }}
+            >
+              <button
+                className="inline-side-chat-tab-menu-item"
+                type="button"
+                role="menuitem"
+                data-variant="danger"
+                disabled={deletingSideChatTabID !== null}
+                onClick={() => void handleDeleteSideChatTab(sideChatTabMenu.sessionID)}
+              >
+                <span className="inline-side-chat-tab-menu-icon" aria-hidden="true">
+                  <DeleteIcon />
+                </span>
+                <span className="inline-side-chat-tab-menu-label">Archive</span>
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
+
       <div className="inline-side-chat-body">
-        <ThreadView
-          activeProjectID={activeProjectID}
-          activeSession={session}
-          activeTurns={effectiveTurns}
-          assistantTraceVisibility={assistantTraceVisibility}
-          composerRefreshVersion={composerRefreshVersion}
-          isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-          isResolvingPermissionRequest={isResolvingPermissionRequest}
-          pendingPermissionRequests={pendingPermissionRequests}
-          permissionRequestActionError={permissionRequestActionError}
-          permissionRequestActionRequestID={permissionRequestActionRequestID}
-          showSessionBanner={false}
-          sideChatCountsByAnchorMessageID={{}}
-          threadColumnRef={threadColumnRef}
-          onAskUserQuestionAnswer={(answer) =>
-            onAskUserQuestionAnswer({
-              ...answer,
-              sessionID: session.id,
-            })
-          }
-          onLocalFileLinkOpen={onLocalFileLinkOpen}
-          onPermissionRequestResponse={onPermissionRequestResponse}
-        />
+        {shouldRenderNestedThread ? (
+          <ThreadView
+            activeProjectID={activeProjectID}
+            activeSession={session}
+            activeTurns={effectiveTurns}
+            assistantTraceVisibility={assistantTraceVisibility}
+            composerRefreshVersion={composerRefreshVersion}
+            isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+            isResolvingPermissionRequest={isResolvingPermissionRequest}
+            pendingPermissionRequests={pendingPermissionRequests}
+            permissionRequestActionError={permissionRequestActionError}
+            permissionRequestActionRequestID={permissionRequestActionRequestID}
+            showSessionBanner={false}
+            sideChatCountsByAnchorMessageID={{}}
+            threadColumnRef={threadColumnRef}
+            onAskUserQuestionAnswer={(answer) =>
+              onAskUserQuestionAnswer({
+                ...answer,
+                sessionID: session.id,
+              })
+            }
+            onLocalFileLinkOpen={onLocalFileLinkOpen}
+            onPermissionRequestResponse={onPermissionRequestResponse}
+          />
+        ) : null}
 
         <Composer
           attachments={attachments}
@@ -3003,6 +3175,7 @@ export function ThreadView({
   sideChatPermissionRequestActionError = null,
   sideChatPermissionRequestActionRequestID = null,
   sideChatSession = null,
+  sideChatSessionsByAnchorMessageID = {},
   sideChatTurns = [],
   threadColumnRef,
   onSideChatDraftStateChange,
@@ -3012,10 +3185,13 @@ export function ThreadView({
   onSideChatCancelSend,
   onSideChatSend,
   onSessionModelSelectionChange,
+  onSideChatCreate,
+  onSideChatDelete,
   onProposedPlanConfirm,
   onPermissionRequestResponse,
+  onSideChatSelect,
 }: ThreadViewProps) {
-  const answeredQuestionIDs = collectAnsweredQuestionIDs(activeTurns)
+  const answeredQuestionIDs = useMemo(() => collectAnsweredQuestionIDs(activeTurns), [activeTurns])
   const readOnlySideChat = isSideChatSession(activeSession)
   const [copiedResponseTurnID, setCopiedResponseTurnID] = useState<string | null>(null)
   const [copiedUserTurnID, setCopiedUserTurnID] = useState<string | null>(null)
@@ -3342,6 +3518,9 @@ export function ThreadView({
                         onSideChatDraftStateChange &&
                         onSideChatPickAttachments &&
                         onSideChatRemoveAttachment &&
+                        onSideChatCreate &&
+                        onSideChatDelete &&
+                        onSideChatSelect &&
                         onSideChatSend ? (
                           <InlineSideChatThread
                             activeProjectID={activeProjectID}
@@ -3358,6 +3537,7 @@ export function ThreadView({
                             permissionRequestActionError={sideChatPermissionRequestActionError}
                             permissionRequestActionRequestID={sideChatPermissionRequestActionRequestID}
                             session={activeInlineSideChat}
+                            sideChatSessions={sideChatSessionsByAnchorMessageID[sideChatAnchorMessageID] ?? [activeInlineSideChat]}
                             turns={sideChatTurns}
                             onDraftStateChange={onSideChatDraftStateChange}
                             onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
@@ -3368,7 +3548,10 @@ export function ThreadView({
                             onPasteImageAttachments={onSideChatPasteImageAttachments}
                             onRemoveAttachment={onSideChatRemoveAttachment}
                             onCancelSend={onSideChatCancelSend}
+                            onCreateSideChat={() => onSideChatCreate(sideChatAnchorMessageID)}
+                            onDeleteSideChat={onSideChatDelete}
                             onSend={onSideChatSend}
+                            onSelectSideChat={onSideChatSelect}
                             onSessionModelSelectionChange={onSessionModelSelectionChange}
                           />
                         ) : null}

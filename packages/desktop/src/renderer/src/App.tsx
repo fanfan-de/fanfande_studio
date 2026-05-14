@@ -203,6 +203,8 @@ export function App() {
     handleActiveSessionRuntimeDebugRefresh,
     handleCloseCreateSessionTab,
     handleCreateSessionSubmit,
+    handleCreateSideChatTab,
+    handleDeleteSideChatTab,
     handleCreateSessionWorkspaceChange,
     handleLeftSidebarViewChange,
     handleOpenSideChat,
@@ -241,6 +243,7 @@ export function App() {
     handlePlanModeToggle,
     handleSessionDelete,
     handleSessionSelect,
+    handleSelectSideChatTab,
     handleSessionModelSelectionChange,
     handleTurnDiffSummaryHydrate,
     handleSidebarAction,
@@ -484,7 +487,7 @@ export function App() {
   const draggedPaneTabRef = useRef<DraggedPaneTab | null>(null)
   const [draggedPaneTab, setDraggedPaneTab] = useState<DraggedPaneTab | null>(null)
   const [paneDropTarget, setPaneDropTarget] = useState<PaneDropTarget | null>(null)
-  const [activePaneResize, setActivePaneResize] = useState<ActivePaneResize | null>(null)
+  const activePaneResizeCleanupRef = useRef<(() => void) | null>(null)
   const handleWorkbenchPaneResizeRef = useRef(handleWorkbenchPaneResize)
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code")
   const [activeBuiltinToolKind, setActiveBuiltinToolKind] = useState<BuiltinToolKindKey | null>(null)
@@ -617,9 +620,14 @@ export function App() {
   }, [draggedPaneTab, paneDropTarget, workbenchPaneStates])
 
   useEffect(() => {
-    if (!activePaneResize) return
-    const resizeState = activePaneResize
+    return () => {
+      activePaneResizeCleanupRef.current?.()
+    }
+  }, [])
 
+  function startWorkbenchPaneResize(resizeState: ActivePaneResize) {
+    activePaneResizeCleanupRef.current?.()
+    let isStopped = false
     function applyPreview(leftSize: number, rightSize: number) {
       resizeState.leftElement.style.flexGrow = String(leftSize)
       resizeState.rightElement.style.flexGrow = String(rightSize)
@@ -648,6 +656,11 @@ export function App() {
     }
 
     function handlePointerMove(event: globalThis.PointerEvent) {
+      if (event.pointerType === "mouse" && event.buttons === 0) {
+        stopPaneResize()
+        return
+      }
+
       const pointerPosition = resizeState.axis === "horizontal" ? event.clientX : event.clientY
       const minPaneSize = resizeState.axis === "horizontal" ? MIN_WORKBENCH_PANE_WIDTH : MIN_WORKBENCH_PANE_HEIGHT
       const nextLeftSizePx = clamp(
@@ -662,6 +675,8 @@ export function App() {
     }
 
     function stopPaneResize() {
+      if (isStopped) return
+      isStopped = true
       clearPreviewFrame()
       applyPreview(resizeState.latestLeftSize, resizeState.latestRightSize)
       resizeState.didCommit = true
@@ -671,31 +686,33 @@ export function App() {
         resizeState.latestLeftSize,
         resizeState.latestRightSize,
       )
-      setActivePaneResize(null)
+      cleanupPaneResize()
     }
 
     function cancelPaneResize() {
+      if (isStopped) return
+      isStopped = true
       clearPreviewFrame()
       restorePreview()
-      setActivePaneResize(null)
+      cleanupPaneResize()
+    }
+
+    function cleanupPaneResize() {
+      document.body.classList.remove("is-resizing-workbench-pane")
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", stopPaneResize)
+      window.removeEventListener("pointercancel", cancelPaneResize)
+      if (activePaneResizeCleanupRef.current === cancelPaneResize) {
+        activePaneResizeCleanupRef.current = null
+      }
     }
 
     document.body.classList.add("is-resizing-workbench-pane")
     window.addEventListener("pointermove", handlePointerMove)
     window.addEventListener("pointerup", stopPaneResize)
     window.addEventListener("pointercancel", cancelPaneResize)
-
-    return () => {
-      clearPreviewFrame()
-      if (!resizeState.didCommit) {
-        restorePreview()
-      }
-      document.body.classList.remove("is-resizing-workbench-pane")
-      window.removeEventListener("pointermove", handlePointerMove)
-      window.removeEventListener("pointerup", stopPaneResize)
-      window.removeEventListener("pointercancel", cancelPaneResize)
-    }
-  }, [activePaneResize])
+    activePaneResizeCleanupRef.current = cancelPaneResize
+  }
 
   function handleRegisterPane(paneID: string, node: HTMLElement | null) {
     if (node) {
@@ -859,7 +876,7 @@ export function App() {
     event.preventDefault()
     const initialLeftSize = split.sizes[leftIndex] ?? 0
     const initialRightSize = split.sizes[leftIndex + 1] ?? 0
-    setActivePaneResize({
+    startWorkbenchPaneResize({
       axis,
       combinedSize,
       containerOrigin: axis === "horizontal" ? leftRect.left : leftRect.top,
@@ -1262,6 +1279,8 @@ export function App() {
                 onFocusPane={handlePaneFocus}
                 onInspectFileInSidebar={handleInspectFileInSidebar}
                 onLocalFileLinkOpen={handleLocalFileLinkOpen}
+                onCreateSideChatTab={handleCreateSideChatTab}
+                onDeleteSideChatTab={handleDeleteSideChatTab}
                 onOpenCreateSessionTab={handleOpenCreateSessionTab}
                 onOpenSideChat={handleOpenSideChat}
                 onPaneDropTargetChange={handlePaneDropTargetChange}
@@ -1280,6 +1299,7 @@ export function App() {
                 onRegisterPane={handleRegisterPane}
                 onRemoveComposerAttachment={handleRemoveComposerAttachment}
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}
+                onSelectSideChatTab={handleSelectSideChatTab}
                 onSelectSessionTab={handleCanvasSessionTabSelect}
                 onCancelSend={handleCancelSend}
                 onPlanModeToggle={handlePlanModeToggle}

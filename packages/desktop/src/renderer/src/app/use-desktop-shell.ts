@@ -171,15 +171,15 @@ export function useDesktopShell() {
   const [assistantTraceVisibility, setAssistantTraceVisibility] = useState(readAssistantTraceVisibilityPreference)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isRightSidebarCollapsed, setIsRightSidebarCollapsed] = useState(false)
-  const [activeSidebarResizer, setActiveSidebarResizer] = useState<SidebarResizerSide | null>(null)
   const [agentDefaultDirectory, setAgentDefaultDirectory] = useState("")
   const [agentConnected, setAgentConnected] = useState(false)
   const lastExpandedSidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH)
   const lastExpandedRightSidebarWidthRef = useRef(DEFAULT_RIGHT_SIDEBAR_WIDTH)
   const activeSidebarResizerPointerRef = useRef<ActivePointerCapture | null>(null)
   const activeSidebarResizeRef = useRef<ActiveSidebarResize | null>(null)
-  const isSidebarResizing = activeSidebarResizer === "left"
-  const isRightSidebarResizing = activeSidebarResizer === "right"
+  const activeSidebarResizeCleanupRef = useRef<(() => void) | null>(null)
+  const isSidebarResizing = false
+  const isRightSidebarResizing = false
   const isAgentDebugTraceEnabled = assistantTraceVisibility.debugMetadata
 
   function getLeftRailDisplayWidth() {
@@ -526,45 +526,21 @@ export function useDesktopShell() {
   }, [isActivityRailVisible, isRightSidebarCollapsed, isSidebarCollapsed, rightSidebarWidth, sidebarWidth])
 
   useEffect(() => {
-    if (!activeSidebarResizer) return
-    const resizeState = activeSidebarResizeRef.current
-    if (!resizeState) return
-    const currentResizeState: ActiveSidebarResize = resizeState
-
-    function stopSidebarResize({ commit }: { commit: boolean }) {
-      clearSidebarResizeFrame(currentResizeState)
-      if (commit) {
-        applySidebarResizePreview(currentResizeState, currentResizeState.latestWidth)
-        currentResizeState.didCommit = true
-        if (currentResizeState.side === "left") {
-          lastExpandedSidebarWidthRef.current = currentResizeState.latestWidth
-          setSidebarWidth(currentResizeState.latestWidth)
-        } else {
-          lastExpandedRightSidebarWidthRef.current = currentResizeState.latestWidth
-          setRightSidebarWidth(currentResizeState.latestWidth)
-        }
-      } else {
-        restoreSidebarResizePreview(currentResizeState)
-      }
-      activeSidebarResizeRef.current = null
-      releaseActiveSidebarResizerPointerCapture()
-      setActiveSidebarResizer(null)
+    return () => {
+      activeSidebarResizeCleanupRef.current?.()
     }
+  }, [])
 
+  function startSidebarResize(resizeState: ActiveSidebarResize) {
+    let isStopped = false
     function handlePointerMove(event: globalThis.PointerEvent) {
       if (event.pointerType === "mouse" && event.buttons === 0) {
         stopSidebarResize({ commit: true })
         return
       }
 
-      queueSidebarResizePreview(currentResizeState, resolveSidebarResizeWidth(currentResizeState, event.clientX))
+      queueSidebarResizePreview(resizeState, resolveSidebarResizeWidth(resizeState, event.clientX))
     }
-
-    document.body.classList.add("is-resizing-sidebar")
-    window.addEventListener("pointermove", handlePointerMove)
-    window.addEventListener("pointerup", handlePointerUp)
-    window.addEventListener("pointercancel", handlePointerCancel)
-    window.addEventListener("blur", handleWindowBlur)
 
     function handlePointerUp() {
       stopSidebarResize({ commit: true })
@@ -578,22 +554,51 @@ export function useDesktopShell() {
       stopSidebarResize({ commit: true })
     }
 
-    return () => {
-      clearSidebarResizeFrame(currentResizeState)
-      if (!currentResizeState.didCommit) {
-        restoreSidebarResizePreview(currentResizeState)
+    function stopSidebarResize({ commit }: { commit: boolean }) {
+      if (isStopped) return
+      isStopped = true
+      clearSidebarResizeFrame(resizeState)
+      if (commit) {
+        applySidebarResizePreview(resizeState, resizeState.latestWidth)
+        resizeState.didCommit = true
+        if (resizeState.side === "left") {
+          lastExpandedSidebarWidthRef.current = resizeState.latestWidth
+          setSidebarWidth(resizeState.latestWidth)
+        } else {
+          lastExpandedRightSidebarWidthRef.current = resizeState.latestWidth
+          setRightSidebarWidth(resizeState.latestWidth)
+        }
+      } else {
+        restoreSidebarResizePreview(resizeState)
       }
-      if (activeSidebarResizeRef.current === currentResizeState) {
+      if (activeSidebarResizeRef.current === resizeState) {
         activeSidebarResizeRef.current = null
       }
+      activeSidebarResizerPointerRef.current?.element.classList.remove("is-active")
       releaseActiveSidebarResizerPointerCapture()
       document.body.classList.remove("is-resizing-sidebar")
       window.removeEventListener("pointermove", handlePointerMove)
       window.removeEventListener("pointerup", handlePointerUp)
       window.removeEventListener("pointercancel", handlePointerCancel)
       window.removeEventListener("blur", handleWindowBlur)
+      if (activeSidebarResizeCleanupRef.current === cleanupSidebarResize) {
+        activeSidebarResizeCleanupRef.current = null
+      }
     }
-  }, [activeSidebarResizer])
+
+    function cleanupSidebarResize() {
+      stopSidebarResize({ commit: false })
+    }
+
+    activeSidebarResizeRef.current = resizeState
+    activeSidebarResizeCleanupRef.current = cleanupSidebarResize
+    activeSidebarResizerPointerRef.current?.element.classList.add("is-active")
+    document.body.classList.add("is-resizing-sidebar")
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", handlePointerUp)
+    window.addEventListener("pointercancel", handlePointerCancel)
+    window.addEventListener("blur", handleWindowBlur)
+  }
 
   function adjustSidebarWidth(delta: number) {
     const rect = appShellRef.current?.getBoundingClientRect()
@@ -637,6 +642,7 @@ export function useDesktopShell() {
     const rect = appShellRef.current?.getBoundingClientRect()
     if (!rect || rect.width <= 0) return
 
+    activeSidebarResizeCleanupRef.current?.()
     captureSidebarResizerPointer(event)
     const bounds = resolveLeftSidebarBounds(rect.width)
     const resizeState: ActiveSidebarResize = {
@@ -651,11 +657,10 @@ export function useDesktopShell() {
       originalWidth: sidebarWidth,
       side: "left",
     }
-    activeSidebarResizeRef.current = resizeState
     queueSidebarResizePreview(resizeState, resolveSidebarResizeWidth(resizeState, event.clientX))
 
     event.preventDefault()
-    setActiveSidebarResizer("left")
+    startSidebarResize(resizeState)
   }
 
   function handleRightSidebarResizerPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -664,6 +669,7 @@ export function useDesktopShell() {
     const rect = appShellRef.current?.getBoundingClientRect()
     if (!rect || rect.width <= 0) return
 
+    activeSidebarResizeCleanupRef.current?.()
     captureSidebarResizerPointer(event)
     const bounds = resolveRightSidebarBounds(rect.width)
     const resizeState: ActiveSidebarResize = {
@@ -678,11 +684,10 @@ export function useDesktopShell() {
       originalWidth: rightSidebarWidth,
       side: "right",
     }
-    activeSidebarResizeRef.current = resizeState
     queueSidebarResizePreview(resizeState, resolveSidebarResizeWidth(resizeState, event.clientX))
 
     event.preventDefault()
-    setActiveSidebarResizer("right")
+    startSidebarResize(resizeState)
   }
 
   function handleSidebarResizerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -752,7 +757,7 @@ export function useDesktopShell() {
     }
 
     lastExpandedSidebarWidthRef.current = sidebarWidth
-    setActiveSidebarResizer(null)
+    activeSidebarResizeCleanupRef.current?.()
     setIsSidebarCollapsed(true)
   }
 
@@ -763,13 +768,13 @@ export function useDesktopShell() {
     }
 
     lastExpandedRightSidebarWidthRef.current = rightSidebarWidth
-    setActiveSidebarResizer(null)
+    activeSidebarResizeCleanupRef.current?.()
     setIsRightSidebarCollapsed(true)
   }
 
   function handleActivityRailVisibilityChange(nextVisible: boolean) {
     if (!nextVisible) {
-      setActiveSidebarResizer((current) => (current === "left" ? null : current))
+      activeSidebarResizeCleanupRef.current?.()
     }
 
     setIsActivityRailVisible(nextVisible)

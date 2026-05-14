@@ -71,6 +71,8 @@ export interface WorkbenchShellProps {
     target: MarkdownLocalFileLinkTarget
     workspaceDirectory: string | null
   }) => void
+  onCreateSideChatTab: AgentWorkspaceState["handleCreateSideChatTab"]
+  onDeleteSideChatTab: AgentWorkspaceState["handleDeleteSideChatTab"]
   onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
   onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
   onPaneDropTargetChange: (paneID: string, position: PaneDropPosition | null) => void
@@ -89,6 +91,7 @@ export interface WorkbenchShellProps {
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
+  onSelectSideChatTab: AgentWorkspaceState["handleSelectSideChatTab"]
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onCancelSend: AgentWorkspaceState["handleCancelSend"]
   onPlanModeToggle: AgentWorkspaceState["handlePlanModeToggle"]
@@ -185,6 +188,8 @@ function WorkbenchNodeView({
         onFocusPane={props.onFocusPane}
         onInspectFileInSidebar={props.onInspectFileInSidebar}
         onLocalFileLinkOpen={props.onLocalFileLinkOpen}
+        onCreateSideChatTab={props.onCreateSideChatTab}
+        onDeleteSideChatTab={props.onDeleteSideChatTab}
         onOpenCreateSessionTab={props.onOpenCreateSessionTab}
         onOpenSideChat={props.onOpenSideChat}
         onPaneDropTargetChange={props.onPaneDropTargetChange}
@@ -202,6 +207,7 @@ function WorkbenchNodeView({
         onRegisterPane={props.onRegisterPane}
         onRemoveComposerAttachment={props.onRemoveComposerAttachment}
         onSelectCreateSessionTab={props.onSelectCreateSessionTab}
+        onSelectSideChatTab={props.onSelectSideChatTab}
         onSelectSessionTab={props.onSelectSessionTab}
         onCancelSend={props.onCancelSend}
         onPlanModeToggle={props.onPlanModeToggle}

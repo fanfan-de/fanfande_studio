@@ -880,6 +880,7 @@ describe("App", () => {
           updated: 1,
         },
       }),
+      listSideChats: vi.fn().mockResolvedValue([]),
       agentSession: {
         loadHistory: vi.fn().mockResolvedValue([]),
         sendTurn: vi.fn().mockImplementation(async (input: { clientTurnID: string }) => ({
@@ -1215,7 +1216,8 @@ describe("App", () => {
 
     expect(currentSessionTab).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to session Chat 1 / Side chat" })).not.toBeInTheDocument()
-    expect(within(nestedSideChat).getByText("Side chat")).toBeInTheDocument()
+    expect(within(nestedSideChat).getByRole("tab", { name: "Chat 1" })).toHaveAttribute("aria-selected", "true")
+    expect(within(nestedSideChat).getByRole("button", { name: "Create side chat tab" })).toBeInTheDocument()
     expect(within(nestedSideChat).queryByText("Anchored reply snapshot")).not.toBeInTheDocument()
     expect(within(nestedSideChat).queryByText("Scoped")).not.toBeInTheDocument()
     expect(
@@ -1223,6 +1225,7 @@ describe("App", () => {
     ).not.toBeInTheDocument()
     expect(within(nestedSideChat).getByRole("button", { name: "Hide side chat" })).toBeInTheDocument()
     expect(within(nestedSideChat).getByText("Ask a follow-up about this reply.")).toBeInTheDocument()
+    expect(nestedSideChat.querySelector(".thread-shell")).not.toBeInTheDocument()
     expect(screen.getAllByRole("textbox", { name: "Task draft" }).length).toBeGreaterThan(1)
   })
 
@@ -1250,6 +1253,160 @@ describe("App", () => {
       "title",
       "1 side chat thread",
     )
+  })
+
+  it("adds and switches between multiple inline side chat tabs for one assistant response", async () => {
+    const createSideChat = vi.mocked(window.desktop!.createSideChat!)
+    createSideChat.mockReset()
+    createSideChat
+      .mockResolvedValueOnce({
+        session: {
+          id: "session-side-chat-1",
+          projectID: "project-2",
+          directory: "C:\\Projects\\Project 2",
+          title: "Chat 1 / Side chat",
+          kind: "side-chat",
+          origin: {
+            parentSessionID: "session-chat-1",
+            anchorMessageID: "chat-agent-message-1",
+            anchorPreview: "Anchored reply snapshot",
+          },
+          created: 1,
+          updated: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        session: {
+          id: "session-side-chat-2",
+          projectID: "project-2",
+          directory: "C:\\Projects\\Project 2",
+          title: "Chat 1 / Side chat",
+          kind: "side-chat",
+          origin: {
+            parentSessionID: "session-chat-1",
+            anchorMessageID: "chat-agent-message-1",
+            anchorPreview: "Anchored reply snapshot",
+          },
+          created: 2,
+          updated: 2,
+        },
+      })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
+
+    const nestedSideChat = await screen.findByRole("region", { name: "Nested side chat" })
+    const getNestedSideChat = () => screen.getByRole("region", { name: "Nested side chat" })
+    expect(await within(nestedSideChat).findByRole("tab", { name: "Chat 1" })).toHaveAttribute("aria-selected", "true")
+
+    setComposerDraftValue(within(nestedSideChat).getByRole("textbox", { name: "Task draft" }), "First side chat draft")
+    fireEvent.click(within(nestedSideChat).getByRole("button", { name: "Create side chat tab" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.createSideChat).toHaveBeenCalledTimes(2)
+      expect(within(getNestedSideChat()).getByRole("tab", { name: "Chat 2" })).toHaveAttribute("aria-selected", "true")
+    })
+
+    expectComposerDraftValue(within(getNestedSideChat()).getByRole("textbox", { name: "Task draft" }), "")
+    setComposerDraftValue(within(getNestedSideChat()).getByRole("textbox", { name: "Task draft" }), "Second side chat draft")
+
+    fireEvent.click(within(getNestedSideChat()).getByRole("tab", { name: "Chat 1" }))
+
+    await waitFor(() => {
+      expect(within(getNestedSideChat()).getByRole("tab", { name: "Chat 1" })).toHaveAttribute("aria-selected", "true")
+      expectComposerDraftValue(within(getNestedSideChat()).getByRole("textbox", { name: "Task draft" }), "First side chat draft")
+    })
+
+    fireEvent.click(within(getNestedSideChat()).getByRole("tab", { name: "Chat 2" }))
+
+    await waitFor(() => {
+      expect(within(getNestedSideChat()).getByRole("tab", { name: "Chat 2" })).toHaveAttribute("aria-selected", "true")
+      expectComposerDraftValue(within(getNestedSideChat()).getByRole("textbox", { name: "Task draft" }), "Second side chat draft")
+    })
+
+    fireEvent.click(within(getNestedSideChat()).getByRole("button", { name: "Send task" }))
+
+    await waitFor(() => {
+      expectComposerDraftValue(within(getNestedSideChat()).getByRole("textbox", { name: "Task draft" }), "")
+      expect(within(getNestedSideChat()).getAllByText("Second side chat draft").length).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(within(getNestedSideChat()).getByRole("tab", { name: "Chat 1" }))
+
+    await waitFor(() => {
+      expect(within(getNestedSideChat()).queryByText("Second side chat draft")).not.toBeInTheDocument()
+      expectComposerDraftValue(within(getNestedSideChat()).getByRole("textbox", { name: "Task draft" }), "First side chat draft")
+    })
+  })
+
+  it("archives an inline side chat tab from the tab context menu", async () => {
+    const createSideChat = vi.mocked(window.desktop!.createSideChat!)
+    createSideChat.mockReset()
+    createSideChat
+      .mockResolvedValueOnce({
+        session: {
+          id: "session-side-chat-1",
+          projectID: "project-2",
+          directory: "C:\\Projects\\Project 2",
+          title: "Chat 1 / Side chat",
+          kind: "side-chat",
+          origin: {
+            parentSessionID: "session-chat-1",
+            anchorMessageID: "chat-agent-message-1",
+            anchorPreview: "Anchored reply snapshot",
+          },
+          created: 1,
+          updated: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        session: {
+          id: "session-side-chat-2",
+          projectID: "project-2",
+          directory: "C:\\Projects\\Project 2",
+          title: "Chat 2 / Side chat",
+          kind: "side-chat",
+          origin: {
+            parentSessionID: "session-chat-1",
+            anchorMessageID: "chat-agent-message-1",
+            anchorPreview: "Anchored reply snapshot",
+          },
+          created: 2,
+          updated: 2,
+        },
+      })
+
+    window.desktop!.archiveAgentSession = vi.fn().mockResolvedValue({
+      sessionID: "session-side-chat-2",
+      projectID: "project-2",
+      directory: "C:\\Projects\\Project 2",
+      archivedAt: 3,
+      archivedSessionIDs: ["session-side-chat-2"],
+    })
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open side chat" }))
+
+    await screen.findByRole("region", { name: "Nested side chat" })
+    const getNestedSideChat = () => screen.getByRole("region", { name: "Nested side chat" })
+    fireEvent.click(await within(getNestedSideChat()).findByRole("button", { name: "Create side chat tab" }))
+
+    await waitFor(() => {
+      expect(within(getNestedSideChat()).getByRole("tab", { name: "Chat 2" })).toHaveAttribute("aria-selected", "true")
+    })
+
+    fireEvent.contextMenu(within(getNestedSideChat()).getByRole("tab", { name: "Chat 2" }))
+
+    expect(screen.getByRole("menu", { name: "Side chat tab actions" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.archiveAgentSession).toHaveBeenCalledWith({ sessionID: "session-side-chat-2" })
+      expect(within(getNestedSideChat()).queryByRole("tab", { name: "Chat 2" })).not.toBeInTheDocument()
+      expect(within(getNestedSideChat()).getByRole("tab", { name: "Chat 1" })).toHaveAttribute("aria-selected", "true")
+    })
   })
 
   it("copies the response content from the response action row", async () => {

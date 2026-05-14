@@ -37,19 +37,51 @@ import {
   resolvePreviewScopeID,
 } from "./review-preview-state"
 
-export function collectSideChatCountsForParentSession(workspaces: WorkspaceGroup[], parentSessionID: string) {
-  const counts: Record<string, number> = {}
+function getSideChatCreatedAt(session: SessionSummary) {
+  return session.created ?? session.updated
+}
+
+function compareSideChatSessions(left: SessionSummary, right: SessionSummary) {
+  const createdDelta = getSideChatCreatedAt(left) - getSideChatCreatedAt(right)
+  if (createdDelta !== 0) return createdDelta
+
+  const updatedDelta = left.updated - right.updated
+  if (updatedDelta !== 0) return updatedDelta
+
+  return left.id.localeCompare(right.id)
+}
+
+export function collectSideChatSessionsByAnchorMessageID(workspaces: WorkspaceGroup[], parentSessionID: string) {
+  const sessionsByAnchorMessageID: Record<string, SessionSummary[]> = {}
 
   for (const workspace of workspaces) {
     for (const session of workspace.sessions) {
       if (!isSideChatSession(session)) continue
       if (session.origin?.parentSessionID !== parentSessionID) continue
       const anchorMessageID = session.origin.anchorMessageID
-      counts[anchorMessageID] = (counts[anchorMessageID] ?? 0) + 1
+      sessionsByAnchorMessageID[anchorMessageID] = [...(sessionsByAnchorMessageID[anchorMessageID] ?? []), session]
     }
   }
 
+  for (const [anchorMessageID, sessions] of Object.entries(sessionsByAnchorMessageID)) {
+    sessionsByAnchorMessageID[anchorMessageID] = [...sessions].sort(compareSideChatSessions)
+  }
+
+  return sessionsByAnchorMessageID
+}
+
+export function collectSideChatCountsFromSessionsByAnchorMessageID(sessionsByAnchorMessageID: Record<string, SessionSummary[]>) {
+  const counts: Record<string, number> = {}
+
+  for (const [anchorMessageID, sessions] of Object.entries(sessionsByAnchorMessageID)) {
+    counts[anchorMessageID] = sessions.length
+  }
+
   return counts
+}
+
+export function collectSideChatCountsForParentSession(workspaces: WorkspaceGroup[], parentSessionID: string) {
+  return collectSideChatCountsFromSessionsByAnchorMessageID(collectSideChatSessionsByAnchorMessageID(workspaces, parentSessionID))
 }
 
 export function findLatestSideChatForAnchor(
@@ -64,7 +96,7 @@ export function findLatestSideChatForAnchor(
       if (!isSideChatSession(session)) continue
       if (session.origin?.parentSessionID !== parentSessionID) continue
       if (session.origin.anchorMessageID !== anchorMessageID) continue
-      if (!match || session.updated > match.session.updated) {
+      if (!match || compareSideChatSessions(match.session, session) < 0) {
         match = { workspace, session }
       }
     }
@@ -408,8 +440,10 @@ export function buildWorkspaceDerivedState({
     sessionRuntimeDebugBySession,
     tabKey: activeSideChatTabKey,
   })
+  const activeSideChatSessionsByAnchorMessageID =
+    activeSession && !activeSessionIsSideChat ? collectSideChatSessionsByAnchorMessageID(workspaces, activeSession.id) : {}
   const activeSideChatCountsByAnchorMessageID =
-    activeSession && !activeSessionIsSideChat ? collectSideChatCountsForParentSession(workspaces, activeSession.id) : {}
+    collectSideChatCountsFromSessionsByAnchorMessageID(activeSideChatSessionsByAnchorMessageID)
   const isCreateSessionTabActive = activeCreateSessionTab !== null
   const createSessionWorkspaceID = activeCreateSessionTab?.workspaceID ?? null
   const createSessionTitle = activeCreateSessionTab?.title ?? ""
@@ -456,6 +490,8 @@ export function buildWorkspaceDerivedState({
       null
     const currentSession = currentSessionSelection.session
     const currentSessionIsSideChat = isSideChatSession(currentSession)
+    const paneSideChatSessionsByAnchorMessageID =
+      currentSession && !currentSessionIsSideChat ? collectSideChatSessionsByAnchorMessageID(workspaces, currentSession.id) : {}
     const paneActiveSideChatSessionID =
       currentSession && !currentSessionIsSideChat ? activeSideChatSessionIDByParentSessionID[currentSession.id] ?? null : null
     const paneActiveSideChatSelection = findSession(workspaces, paneActiveSideChatSessionID)
@@ -589,10 +625,8 @@ export function buildWorkspaceDerivedState({
           : currentWorkspace?.project.id ?? null,
       size: pane.size,
       sessionID: currentSession?.id ?? null,
-      sideChatCountsByAnchorMessageID:
-        currentSession && !currentSessionIsSideChat
-          ? collectSideChatCountsForParentSession(workspaces, currentSession.id)
-          : {},
+      sideChatCountsByAnchorMessageID: collectSideChatCountsFromSessionsByAnchorMessageID(paneSideChatSessionsByAnchorMessageID),
+      sideChatSessionsByAnchorMessageID: paneSideChatSessionsByAnchorMessageID,
       tabKey: currentActiveTabKey,
       tabs: paneTabs,
       workspace: currentWorkspace,
@@ -623,6 +657,7 @@ export function buildWorkspaceDerivedState({
     activeSideChatIsSending,
     activeSideChatPendingPermissionRequests,
     activeSideChatSession,
+    activeSideChatSessionsByAnchorMessageID,
     activeSideChatTabKey,
     activeSideChatTurns,
     activeTab,

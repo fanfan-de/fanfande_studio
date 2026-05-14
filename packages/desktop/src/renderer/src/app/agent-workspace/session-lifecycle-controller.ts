@@ -8,6 +8,8 @@ import {
 } from "../conversation-state"
 import type {
   CreateSessionTab,
+  ComposerAttachment,
+  ComposerDraftState,
   PendingAgentStream,
   PermissionRequest,
   SessionContextUsage,
@@ -47,7 +49,9 @@ import { openExternalEditor } from "../external-editor/client"
 import {
   createCreateSessionWorkbenchTab,
   createSessionWorkbenchTab,
+  collectSideChatSessionsByAnchorMessageID,
   findLatestSideChatForAnchor,
+  getWorkbenchTabKey,
   resolveCreateSessionWorkspaceID,
   resolveWorkbenchGroupID,
 } from "./workspace-derived-state"
@@ -136,6 +140,8 @@ interface UseSessionLifecycleControllerOptions {
   setActiveSideChatSessionIDByParentSessionID: StateSetter<Record<string, string>>
   setAgentSessions: StateSetter<Record<string, string>>
   setCanLoadSessionHistory: StateSetter<boolean>
+  setComposerAttachmentsByTabKey: StateSetter<Record<string, ComposerAttachment[]>>
+  setComposerDraftStateByTabKey: StateSetter<Record<string, ComposerDraftState>>
   setConversations: StateSetter<Record<string, Turn[]>>
   setContextUsageBySession: StateSetter<Record<string, SessionContextUsage>>
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
@@ -144,6 +150,7 @@ interface UseSessionLifecycleControllerOptions {
   setHoveredFolderID: StateSetter<string | null>
   setIsCreatingProject: StateSetter<boolean>
   setIsCreatingSessionByTabKey: StateSetter<Record<string, boolean>>
+  setIsSendingByTabKey: StateSetter<Record<string, boolean>>
   setPendingPermissionRequestsBySession: StateSetter<Record<string, PermissionRequest[]>>
   setSelectedDiffFileBySession: StateSetter<Record<string, string | null>>
   setSelectedFolderID: StateSetter<string | null>
@@ -200,6 +207,8 @@ export function useSessionLifecycleController({
   setActiveSideChatSessionIDByParentSessionID,
   setAgentSessions,
   setCanLoadSessionHistory,
+  setComposerAttachmentsByTabKey,
+  setComposerDraftStateByTabKey,
   setContextUsageBySession,
   setConversations,
   setCreateSessionTabs,
@@ -208,6 +217,7 @@ export function useSessionLifecycleController({
   setHoveredFolderID,
   setIsCreatingProject,
   setIsCreatingSessionByTabKey,
+  setIsSendingByTabKey,
   setPendingPermissionRequestsBySession,
   setSelectedDiffFileBySession,
   setSelectedFolderID,
@@ -305,6 +315,32 @@ export function useSessionLifecycleController({
       const next = { ...prev }
       for (const sessionID of sessionIDs) {
         delete next[sessionID]
+      }
+      return next
+    })
+
+    const tabKeys = new Set([...sessionIDs].map((sessionID) => getWorkbenchTabKey(createSessionWorkbenchTab(sessionID))))
+
+    setComposerDraftStateByTabKey((prev) => {
+      const next = { ...prev }
+      for (const tabKey of tabKeys) {
+        delete next[tabKey]
+      }
+      return next
+    })
+
+    setComposerAttachmentsByTabKey((prev) => {
+      const next = { ...prev }
+      for (const tabKey of tabKeys) {
+        delete next[tabKey]
+      }
+      return next
+    })
+
+    setIsSendingByTabKey((prev) => {
+      const next = { ...prev }
+      for (const tabKey of tabKeys) {
+        delete next[tabKey]
       }
       return next
     })
@@ -587,6 +623,87 @@ export function useSessionLifecycleController({
     })
   }
 
+  function sortSideChatTabs(sessions: SessionSummary[]) {
+    return [...sessions].sort((left, right) => {
+      const createdDelta = (left.created ?? left.updated) - (right.created ?? right.updated)
+      if (createdDelta !== 0) return createdDelta
+
+      const updatedDelta = left.updated - right.updated
+      if (updatedDelta !== 0) return updatedDelta
+
+      return left.id.localeCompare(right.id)
+    })
+  }
+
+  function getLocalSideChatsForAnchor(parentSessionID: string, anchorMessageID: string) {
+    return collectSideChatSessionsByAnchorMessageID(workspaces, parentSessionID)[anchorMessageID] ?? []
+  }
+
+  function upsertSideChatSessions(workspaceID: string, sessions: SessionSummary[]) {
+    if (sessions.length === 0) return
+
+    const sessionIDs = sessions.map((session) => session.id)
+    setWorkspaces((prev) => sessions.reduce((next, session) => upsertSessionInWorkspace(next, workspaceID, session), prev))
+    setConversations((prev) => ensureConversationSessions(prev, sessionIDs))
+    setAgentSessions((prev) => ({
+      ...prev,
+      ...Object.fromEntries(sessionIDs.map((sessionID) => [sessionID, sessionID])),
+    }))
+    setSessionDirectoryBySession((prev) => ({
+      ...prev,
+      ...Object.fromEntries(sessions.map((session) => [session.id, session.branch])),
+    }))
+    setCanLoadSessionHistory(true)
+  }
+
+  async function syncSideChatsForAnchor(parentSessionID: string, anchorMessageID: string, workspaceID: string) {
+    const localSideChats = getLocalSideChatsForAnchor(parentSessionID, anchorMessageID)
+    const listSideChats = window.desktop?.listSideChats
+    if (!listSideChats) return localSideChats
+
+    try {
+      const links = await listSideChats({ parentSessionID, anchorMessageID })
+      const syncedSideChats = links
+        .flatMap((link, index) => {
+          if (!link.session || link.archived) return []
+
+          return [
+            mapLoadedSession(
+              {
+                id: link.session.id,
+                projectID: link.session.projectID,
+                directory: link.session.directory,
+                title: link.session.title,
+                kind: link.session.kind,
+                policy: link.session.policy,
+                origin: link.session.origin,
+                created: link.session.time.created,
+                updated: link.session.time.updated,
+                workflow: link.session.workflow,
+                modelSelection: link.session.modelSelection,
+              },
+              localSideChats.length + index,
+            ),
+          ]
+        })
+
+      upsertSideChatSessions(workspaceID, syncedSideChats)
+
+      const sideChatsByID = new Map<string, SessionSummary>()
+      for (const session of localSideChats) {
+        sideChatsByID.set(session.id, session)
+      }
+      for (const session of syncedSideChats) {
+        sideChatsByID.set(session.id, session)
+      }
+
+      return sortSideChatTabs([...sideChatsByID.values()])
+    } catch (error) {
+      console.error("[desktop] listSideChats failed:", error)
+      return localSideChats
+    }
+  }
+
   async function activateSideChatThread(parentSessionID: string, sessionID: string, workspaceID: string) {
     setSelectedFolderID(workspaceID)
     setExpandedFolderIDs((current) => ensureExpandedFolderID(current, workspaceID))
@@ -601,8 +718,91 @@ export function useSessionLifecycleController({
     ])
   }
 
-  async function handleOpenSideChat(anchorMessageID: string, input?: { parentSessionID?: string | null; paneID?: string | null }) {
+  async function createSideChatForAnchor(parentSessionID: string, anchorMessageID: string, parentWorkspace: WorkspaceGroup) {
     const createSideChat = window.desktop?.createSideChat
+    if (!createSideChat) return null
+
+    const created = await createSideChat({
+      parentSessionID,
+      anchorMessageID,
+    })
+    const nextSession = mapLoadedSession(created.session, parentWorkspace.sessions.length)
+
+    upsertSideChatSessions(parentWorkspace.id, [nextSession])
+    return nextSession
+  }
+
+  async function handleSelectSideChatTab(sessionID: string) {
+    const selection = findSession(workspaces, sessionID)
+    const session = selection.session
+    if (!selection.workspace || !session || !isSideChatSession(session) || !session.origin) return
+
+    await activateSideChatThread(session.origin.parentSessionID, session.id, selection.workspace.id)
+  }
+
+  async function handleDeleteSideChatTab(sessionID: string) {
+    const selection = findSession(workspaces, sessionID)
+    const session = selection.session
+    if (deletingSessionID || !selection.workspace || !session || !isSideChatSession(session) || !session.origin) return
+    if (!window.desktop?.archiveAgentSession) return
+
+    const parentSessionID = session.origin.parentSessionID
+    const anchorMessageID = session.origin.anchorMessageID
+    const siblingSideChats = sortSideChatTabs(getLocalSideChatsForAnchor(parentSessionID, anchorMessageID))
+    const deletedIndex = siblingSideChats.findIndex((sideChat) => sideChat.id === session.id)
+    const activeSideChatID = activeSideChatSessionIDByParentSessionID[parentSessionID] ?? null
+    const deletingActiveSideChat = activeSideChatID === session.id
+
+    setDeletingSessionID(session.id)
+    try {
+      const archiveResult = await window.desktop.archiveAgentSession({ sessionID: session.id })
+      const archivedSessionIDs = new Set((archiveResult.archivedSessionIDs?.filter(Boolean) ?? [session.id]) as string[])
+      const remainingSideChats = siblingSideChats.filter((sideChat) => !archivedSessionIDs.has(sideChat.id))
+      const nextActiveSideChat =
+        deletingActiveSideChat && remainingSideChats.length > 0
+          ? remainingSideChats[Math.max(0, deletedIndex - 1)] ?? remainingSideChats[0] ?? null
+          : null
+
+      applyArchivedSessions(archivedSessionIDs, selection.workspace.id)
+
+      if (deletingActiveSideChat && nextActiveSideChat) {
+        setActiveSideChatSessionIDByParentSessionID((current) => ({
+          ...current,
+          [parentSessionID]: nextActiveSideChat.id,
+        }))
+
+        await Promise.allSettled([
+          reloadSessionHistoryForSession(nextActiveSideChat.id),
+          loadPendingPermissionRequestsForSession(nextActiveSideChat.id),
+        ])
+      }
+    } catch (error) {
+      console.error("[desktop] archive side chat failed:", error)
+    } finally {
+      setDeletingSessionID(null)
+    }
+  }
+
+  async function handleCreateSideChatTab(anchorMessageID: string, input?: { parentSessionID?: string | null; paneID?: string | null }) {
+    const parentSessionID = input?.parentSessionID ?? activeSessionID
+    if (!parentSessionID) return
+
+    const parentSelection = findSession(workspaces, parentSessionID)
+    if (!parentSelection.workspace || !parentSelection.session || isSideChatSession(parentSelection.session)) {
+      return
+    }
+
+    try {
+      const nextSession = await createSideChatForAnchor(parentSessionID, anchorMessageID, parentSelection.workspace)
+      if (!nextSession) return
+
+      await activateSideChatThread(parentSessionID, nextSession.id, parentSelection.workspace.id)
+    } catch (error) {
+      console.error("[desktop] createSideChat failed:", error)
+    }
+  }
+
+  async function handleOpenSideChat(anchorMessageID: string, input?: { parentSessionID?: string | null; paneID?: string | null }) {
     const parentSessionID = input?.parentSessionID ?? activeSessionID
     if (!parentSessionID) return
 
@@ -621,41 +821,17 @@ export function useSessionLifecycleController({
       return
     }
 
-    const existing = findLatestSideChatForAnchor(workspaces, parentSessionID, anchorMessageID)
+    const syncedSideChats = await syncSideChatsForAnchor(parentSessionID, anchorMessageID, parentSelection.workspace.id)
+    const latestSyncedSideChat = syncedSideChats[syncedSideChats.length - 1] ?? null
+    const existing = latestSyncedSideChat
+      ? { workspace: parentSelection.workspace, session: latestSyncedSideChat }
+      : findLatestSideChatForAnchor(workspaces, parentSessionID, anchorMessageID)
     if (existing) {
       await activateSideChatThread(parentSessionID, existing.session.id, existing.workspace.id)
       return
     }
 
-    if (!createSideChat) {
-      return
-    }
-
-    try {
-      const created = await createSideChat({
-        parentSessionID,
-        anchorMessageID,
-      })
-      const nextSession = mapLoadedSession(created.session, parentSelection.workspace.sessions.length)
-
-      setWorkspaces((prev) => upsertSessionInWorkspace(prev, parentSelection.workspace!.id, nextSession))
-      setConversations((prev) => ({
-        ...prev,
-        [created.session.id]: prev[created.session.id] ?? [],
-      }))
-      setAgentSessions((prev) => ({
-        ...prev,
-        [created.session.id]: created.session.id,
-      }))
-      setSessionDirectoryBySession((prev) => ({
-        ...prev,
-        [created.session.id]: created.session.directory,
-      }))
-      setCanLoadSessionHistory(true)
-      await activateSideChatThread(parentSessionID, created.session.id, parentSelection.workspace.id)
-    } catch (error) {
-      console.error("[desktop] createSideChat failed:", error)
-    }
+    await handleCreateSideChatTab(anchorMessageID, input)
   }
 
   async function handleProjectCreateSession(workspace: WorkspaceGroup, event: MouseEvent<HTMLButtonElement>) {
@@ -842,6 +1018,8 @@ export function useSessionLifecycleController({
     cleanupSessionState,
     createSessionForWorkspace,
     handleCreateSessionSubmit,
+    handleCreateSideChatTab,
+    handleDeleteSideChatTab,
     handleOpenSideChat,
     handleOpenSideChatInTab,
     handleProjectClick,
@@ -851,6 +1029,7 @@ export function useSessionLifecycleController({
     handleProjectRemove,
     handleSessionDelete,
     handleSessionSelect,
+    handleSelectSideChatTab,
     handleSidebarAction,
   }
 }

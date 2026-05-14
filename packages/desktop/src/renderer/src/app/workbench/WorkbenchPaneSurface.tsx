@@ -189,6 +189,8 @@ export interface WorkbenchPaneSurfaceProps {
     target: MarkdownLocalFileLinkTarget
     workspaceDirectory: string | null
   }) => void
+  onCreateSideChatTab: AgentWorkspaceState["handleCreateSideChatTab"]
+  onDeleteSideChatTab: AgentWorkspaceState["handleDeleteSideChatTab"]
   onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
   onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
   onPaneDropTargetChange: (paneID: string, position: PaneDropPosition | null) => void
@@ -206,6 +208,7 @@ export interface WorkbenchPaneSurfaceProps {
   onRegisterPane: (paneID: string, node: HTMLElement | null) => void
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
+  onSelectSideChatTab: AgentWorkspaceState["handleSelectSideChatTab"]
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
   onCancelSend: AgentWorkspaceState["handleCancelSend"]
   onPlanModeToggle: AgentWorkspaceState["handlePlanModeToggle"]
@@ -242,6 +245,8 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onFocusPane,
   onInspectFileInSidebar,
   onLocalFileLinkOpen,
+  onCreateSideChatTab,
+  onDeleteSideChatTab,
   onOpenCreateSessionTab,
   onOpenSideChat,
   onPaneDropTargetChange,
@@ -259,6 +264,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onRegisterPane,
   onRemoveComposerAttachment,
   onSelectCreateSessionTab,
+  onSelectSideChatTab,
   onSelectSessionTab,
   onCancelSend,
   onPlanModeToggle,
@@ -457,6 +463,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 sideChatPermissionRequestActionError={permissionRequestActionError}
                 sideChatPermissionRequestActionRequestID={permissionRequestActionRequestID}
                 sideChatSession={pane.activeSideChatSession}
+                sideChatSessionsByAnchorMessageID={pane.sideChatSessionsByAnchorMessageID}
                 sideChatTurns={pane.activeSideChatTurns}
                 threadColumnRef={threadColumnRef}
                 onSessionModelSelectionChange={onSessionModelSelectionChange}
@@ -488,6 +495,14 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                     parentSessionID: pane.sessionID,
                   })
                 }
+                onSideChatCreate={(anchorMessageID) =>
+                  void onCreateSideChatTab(anchorMessageID, {
+                    paneID: pane.id,
+                    parentSessionID: pane.sessionID,
+                  })
+                }
+                onSideChatDelete={(sessionID) => void onDeleteSideChatTab(sessionID)}
+                onSideChatSelect={(sessionID) => void onSelectSideChatTab(sessionID)}
                 onSideChatDraftStateChange={(value) => {
                   if (pane.activeSideChatTabKey) {
                     onSetDraft(pane.activeSideChatTabKey, value)

@@ -1,4 +1,4 @@
-import type { MouseEvent, ReactNode } from "react"
+import { memo, useMemo, type MouseEvent, type ReactNode } from "react"
 import ReactMarkdown, { type Components, type UrlTransform } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { toLocalImageProtocolUrl } from "../../../shared/local-image-protocol"
@@ -372,14 +372,14 @@ const transformMarkdownUrl: UrlTransform = (url, key) => {
   return ""
 }
 
-export function ThreadMarkdown({ className, onLocalFileLinkOpen, text }: ThreadMarkdownProps) {
-  const markdownText = normalizeLooseLocalFileMarkdownLinks(text)
-  const components: Components = {
+export const ThreadMarkdown = memo(function ThreadMarkdown({ className, onLocalFileLinkOpen, text }: ThreadMarkdownProps) {
+  const markdownText = useMemo(() => normalizeLooseLocalFileMarkdownLinks(text), [text])
+  const components = useMemo<Components>(() => ({
     a: (props) => <MarkdownLink {...props} onLocalFileLinkOpen={onLocalFileLinkOpen} />,
     code: MarkdownCode,
     img: MarkdownImage,
     table: MarkdownTable,
-  }
+  }), [onLocalFileLinkOpen])
 
   return (
     <div className={className}>
@@ -393,4 +393,4 @@ export function ThreadMarkdown({ className, onLocalFileLinkOpen, text }: ThreadM
       </ReactMarkdown>
     </div>
   )
-}
+})

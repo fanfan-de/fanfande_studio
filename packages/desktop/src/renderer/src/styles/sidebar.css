@@ -140,7 +140,8 @@
 
 .sidebar-resizer:hover::before,
 .sidebar-resizer:focus-visible::before,
-.sidebar-resizer.is-active::before {
+.sidebar-resizer.is-active::before,
+body.is-resizing-sidebar .sidebar-resizer::before {
   background: var(--seg-accent);
   box-shadow: 0 0 0 3px var(--mix-seg-accent-14-transparent-86);
 }
