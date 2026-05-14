@@ -47,6 +47,7 @@ import type {
   OpenAIReasoningEffort,
   PermissionDecision,
   PermissionRequest,
+  SessionDiffFile,
   SessionDiffSummary,
   SessionSummary,
   Turn,
@@ -74,7 +75,7 @@ interface ThreadViewProps {
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenSideChat?: (anchorMessageID: string) => void | Promise<void>
   onTurnDiffSummaryHydrate?: (turnID: string, diffSummary: SessionDiffSummary) => void | Promise<void>
-  onTurnDiffRestore?: (files: string[]) => void | Promise<void>
+  onTurnDiffRestore?: (diffs: SessionDiffFile[]) => void | Promise<void>
   onTurnDiffReview?: (files: string[]) => void | Promise<void>
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
@@ -412,7 +413,7 @@ function TurnDiffCard({
   onFileChangeSelect?: (file: string) => void
   onTurnDiffSummaryHydrate?: (turnID: string, diffSummary: SessionDiffSummary) => void | Promise<void>
   patchSourceFileChanges?: AssistantTraceFileChange[]
-  onTurnDiffRestore?: (files: string[]) => void | Promise<void>
+  onTurnDiffRestore?: (diffs: SessionDiffFile[]) => void | Promise<void>
   onTurnDiffReview?: (files: string[]) => void | Promise<void>
   turnID: string
 }) {
@@ -477,14 +478,14 @@ function TurnDiffCard({
   const handleRestoreClick = async () => {
     if (!onTurnDiffRestore || isRestoring) return
     const confirmed = window.confirm(
-      `撤销这 ${stats.files} 个文件的当前工作区变更？这会按当前 workspace 状态恢复这些文件，可能丢弃后续 turn 对同一文件的改动。`,
+      `尝试反向应用这 ${stats.files} 个文件的变更？不能自动撤销的文件会提示失败，已成功撤销的文件会保留结果。`,
     )
     if (!confirmed) return
 
     setIsRestoring(true)
     setActionErrorMessage(null)
     try {
-      await onTurnDiffRestore(filePaths)
+      await onTurnDiffRestore(fileChanges)
     } catch (error) {
       setActionErrorMessage(error instanceof Error ? error.message : String(error))
     } finally {

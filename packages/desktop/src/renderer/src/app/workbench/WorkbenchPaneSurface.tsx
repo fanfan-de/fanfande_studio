@@ -12,7 +12,7 @@ import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBa
 import { getPendingStreamInsertionUserTurns } from "../stream-insertion"
 import type { MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
-import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffSummary, ToolPermissionMode, UserTurn } from "../types"
+import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, SessionDiffSummary, ToolPermissionMode, UserTurn } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { useProjectComposer } from "../use-project-composer"
 import { isSideChatSession } from "../workspace"
@@ -212,7 +212,7 @@ export interface WorkbenchPaneSurfaceProps {
   onSend: AgentWorkspaceState["handleSend"]
   onSessionModelSelectionChange: AgentWorkspaceState["handleSessionModelSelectionChange"]
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
-  onTurnDiffRestore: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
+  onTurnDiffRestore: (diffs: SessionDiffFile[], sessionID: string | null, paneID: string) => void | Promise<void>
   onTurnDiffReview: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
   onTurnDiffSummaryHydrate: (turnID: string, diffSummary: SessionDiffSummary, sessionID?: string | null) => void | Promise<void>
 }

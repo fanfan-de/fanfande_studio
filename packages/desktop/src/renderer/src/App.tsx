@@ -15,7 +15,7 @@ import {
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
 import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
 import type { MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
-import type { RightSidebarView, ToolPermissionMode, WorkspaceMode } from "./app/types"
+import type { RightSidebarView, SessionDiffFile, ToolPermissionMode, WorkspaceMode } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
@@ -198,7 +198,7 @@ export function App() {
     handleCreateSessionTabSelect,
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffFileRestore,
-    handleActiveSessionDiffFilesRestore,
+    handleActiveSessionDiffPatchesReverseApply,
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handleCloseCreateSessionTab,
@@ -563,13 +563,13 @@ export function App() {
     await handleActiveSessionDiffRefresh(sessionID)
   }
 
-  async function handleTurnDiffRestore(files: string[], sessionID: string | null, paneID: string) {
+  async function handleTurnDiffRestore(diffs: SessionDiffFile[], sessionID: string | null, paneID: string) {
     if (isRightSidebarCollapsed) {
       handleRightSidebarToggle()
     }
     handlePaneFocus(paneID)
     handleActiveSessionDiffFileSelect(null, sessionID)
-    await handleActiveSessionDiffFilesRestore(files, sessionID)
+    await handleActiveSessionDiffPatchesReverseApply(diffs, sessionID)
   }
 
   function handleLocalFileLinkOpen({

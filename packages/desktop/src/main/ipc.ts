@@ -99,7 +99,7 @@ import type {
   WindowAction,
 } from "./types"
 import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sendWindowState } from "./window-state"
-import { getWorkspaceGitDiff, restoreWorkspaceDiffFile } from "./workspace-diff"
+import { getWorkspaceGitDiff, restoreWorkspaceDiffFile, reverseApplyWorkspaceDiffPatches } from "./workspace-diff"
 import { readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
 import { WorkspaceWatchManager } from "./workspace-watch"
 
@@ -1255,6 +1255,12 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   handleDesktopIpc(
     "desktop:restore-workspace-diff-file",
     async (_event, input: { directory: string; file: string }) => restoreWorkspaceDiffFile(input),
+  )
+
+  handleDesktopIpc(
+    "desktop:reverse-apply-workspace-diff-patches",
+    async (_event, input: { directory: string; diffs: Array<{ file: string; patch?: string }> }) =>
+      reverseApplyWorkspaceDiffPatches(input),
   )
 
   handleDesktopIpc(

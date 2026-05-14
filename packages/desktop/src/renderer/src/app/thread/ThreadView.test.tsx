@@ -1625,12 +1625,25 @@ describe("ThreadView message actions", () => {
     expect(onFileChangeSelect).toHaveBeenCalledWith("src/styles.css")
     expect(onTurnDiffReview).toHaveBeenCalledWith(["src/App.tsx", "src/styles.css"])
     expect(confirmRestore).toHaveBeenCalledTimes(1)
+    expect(confirmRestore).toHaveBeenCalledWith(
+      "尝试反向应用这 2 个文件的变更？不能自动撤销的文件会提示失败，已成功撤销的文件会保留结果。",
+    )
     expect(onTurnDiffRestore).not.toHaveBeenCalled()
 
     fireEvent.click(getByRole("button", { name: /撤销/i }))
 
     await waitFor(() => {
-      expect(onTurnDiffRestore).toHaveBeenCalledWith(["src/App.tsx", "src/styles.css"])
+      expect(onTurnDiffRestore).toHaveBeenCalledWith([
+        expect.objectContaining({
+          file: "src/App.tsx",
+          patch: expect.stringContaining("-old app"),
+        }),
+        {
+          file: "src/styles.css",
+          additions: 2,
+          deletions: 0,
+        },
+      ])
     })
     confirmRestore.mockRestore()
   })

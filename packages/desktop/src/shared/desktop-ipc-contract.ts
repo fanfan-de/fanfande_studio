@@ -191,6 +191,18 @@ export type WorkspaceDiffFileRestoreResult = {
   directory: string
   file: string
 }
+export type WorkspaceDiffPatchReverseApplyInput = {
+  directory: string
+  diffs: Array<{
+    file: string
+    patch?: string
+  }>
+}
+export type WorkspaceDiffPatchReverseApplyResult = {
+  directory: string
+  restored: Array<{ file: string }>
+  failed: Array<{ file: string; message: string }>
+}
 export type McpServerSummary = AgentMcpServerSummary
 export type McpServerDiagnostic = AgentMcpServerDiagnostic
 export type McpServerInput = AgentMcpServerSummary extends infer Server
@@ -623,6 +635,10 @@ export interface DesktopIpcContract {
   "desktop:restore-workspace-diff-file": {
     input: { directory: string; file: string }
     output: WorkspaceDiffFileRestoreResult
+  }
+  "desktop:reverse-apply-workspace-diff-patches": {
+    input: WorkspaceDiffPatchReverseApplyInput
+    output: WorkspaceDiffPatchReverseApplyResult
   }
   "desktop:get-session-runtime-debug": {
     input: { sessionID: string; limit?: number; turns?: number }
@@ -1068,6 +1084,7 @@ export interface DesktopApiMethods {
   deleteArchivedSession(input: DesktopIpcInput<"desktop:delete-archived-session">): Promise<DesktopIpcOutput<"desktop:delete-archived-session">>
   getSessionDiff(input: DesktopIpcInput<"desktop:get-session-diff">): Promise<DesktopIpcOutput<"desktop:get-session-diff">>
   restoreWorkspaceDiffFile(input: DesktopIpcInput<"desktop:restore-workspace-diff-file">): Promise<DesktopIpcOutput<"desktop:restore-workspace-diff-file">>
+  reverseApplyWorkspaceDiffPatches(input: DesktopIpcInput<"desktop:reverse-apply-workspace-diff-patches">): Promise<DesktopIpcOutput<"desktop:reverse-apply-workspace-diff-patches">>
   getSessionRuntimeDebug(input: DesktopIpcInput<"desktop:get-session-runtime-debug">): Promise<DesktopIpcOutput<"desktop:get-session-runtime-debug">>
   agentSession: DesktopAgentSessionApi
   getGlobalProviderCatalog(): Promise<DesktopIpcOutput<"desktop:get-global-provider-catalog">>

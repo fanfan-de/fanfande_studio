@@ -720,6 +720,11 @@ describe("App", () => {
         directory: "C:\\Projects\\Project 2",
         file: "src/App.tsx",
       }),
+      reverseApplyWorkspaceDiffPatches: vi.fn().mockResolvedValue({
+        directory: "C:\\Projects\\Project 2",
+        restored: [],
+        failed: [],
+      }),
       getSessionRuntimeDebug: vi.fn().mockResolvedValue(createSessionRuntimeDebugSnapshot()),
       getGlobalSkills: vi.fn().mockResolvedValue([]),
       getProjectSkills: vi.fn().mockResolvedValue([]),
@@ -4463,6 +4468,25 @@ describe("App", () => {
           sessionID: "session-atlas-review",
           role: "assistant",
           created: 101,
+          diffSummary: {
+            stats: {
+              files: 2,
+              additions: 8,
+              deletions: 3,
+            },
+            diffs: [
+              {
+                file: "src/App.tsx",
+                additions: 5,
+                deletions: 1,
+              },
+              {
+                file: "src/styles.css",
+                additions: 3,
+                deletions: 2,
+              },
+            ],
+          },
         },
         parts: [
           {
@@ -4536,6 +4560,12 @@ describe("App", () => {
       directory: "C:\\Projects\\Atlas\\client",
       file: "src/App.tsx",
     })
+    window.desktop!.reverseApplyWorkspaceDiffPatches = vi.fn().mockResolvedValue({
+      directory: "C:\\Projects\\Atlas\\client",
+      restored: [{ file: "src/App.tsx" }, { file: "src/styles.css" }],
+      failed: [],
+    })
+    const confirmRestore = vi.spyOn(window, "confirm").mockReturnValue(true)
 
     const { container } = render(<App />)
 
@@ -4571,6 +4601,29 @@ describe("App", () => {
     })
 
     const getSessionDiff = window.desktop!.getSessionDiff as ReturnType<typeof vi.fn>
+    const diffCallsBeforeTurnRestore = getSessionDiff.mock.calls.length
+    fireEvent.click(screen.getByRole("button", { name: /撤销/i }))
+
+    await waitFor(() => {
+      expect(window.desktop!.reverseApplyWorkspaceDiffPatches).toHaveBeenCalledWith({
+        directory: "C:\\Projects\\Atlas\\client",
+        diffs: [
+          expect.objectContaining({
+            file: "src/App.tsx",
+            patch: expect.stringContaining('import { NewToolbar } from "./toolbar"'),
+          }),
+          expect.objectContaining({
+            file: "src/styles.css",
+            patch: expect.stringContaining(".toolbar {"),
+          }),
+        ],
+      })
+    })
+    expect(window.desktop!.restoreWorkspaceDiffFile).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(getSessionDiff.mock.calls.length).toBeGreaterThan(diffCallsBeforeTurnRestore)
+    })
+
     const diffCallsBeforeRestore = getSessionDiff.mock.calls.length
     fireEvent.click(within(inspector).getByRole("button", { name: "Restore src/App.tsx" }))
 
@@ -4583,6 +4636,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(getSessionDiff.mock.calls.length).toBeGreaterThan(diffCallsBeforeRestore)
     })
+    confirmRestore.mockRestore()
   })
 
   it("renders assistant trace blocks in backend order instead of grouping by type", async () => {

@@ -1,7 +1,7 @@
 import { Fragment, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { SidebarToggleButton } from "../shared-ui"
 import type { MarkdownLocalFileLinkTarget } from "../thread-markdown"
-import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffSummary, ToolPermissionMode } from "../types"
+import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, SessionDiffSummary, ToolPermissionMode } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { WorkbenchPaneSurface, type PaneDropPosition } from "./WorkbenchPaneSurface"
 
@@ -97,7 +97,7 @@ export interface WorkbenchShellProps {
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
   onToggleLeftSidebar: () => void
   onToggleRightSidebar: () => void
-  onTurnDiffRestore: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
+  onTurnDiffRestore: (diffs: SessionDiffFile[], sessionID: string | null, paneID: string) => void | Promise<void>
   onTurnDiffReview: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
   onTurnDiffSummaryHydrate: (turnID: string, diffSummary: SessionDiffSummary, sessionID?: string | null) => void | Promise<void>
 }

@@ -22,6 +22,7 @@ import type {
   PreviewErrorKind,
   PreviewMode,
   RightSidebarView,
+  SessionDiffFile,
   WorkspaceFileComment,
   WorkspaceFileLineRange,
   WorkspaceFileReviewState,
@@ -41,6 +42,16 @@ import type { WorkspaceStateUpdater } from "./workspace-store"
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 
 const MAX_PREVIEW_NAVIGATION_HISTORY = 50
+
+function formatReverseApplyFailureMessage(result: {
+  restored: Array<{ file: string }>
+  failed: Array<{ file: string; message: string }>
+}) {
+  const failedDetails = result.failed
+    .map((failure) => `${failure.file}: ${failure.message}`)
+    .join("；")
+  return `已撤销 ${result.restored.length} 个文件；${result.failed.length} 个文件无法自动反向应用变更：${failedDetails}`
+}
 
 interface WorkspaceFileSelectOptions {
   linkedLineRange?: WorkspaceFileLineRange | null
@@ -649,6 +660,42 @@ export function useReviewPanelController({
     await handleActiveSessionDiffFilesRestore([file], sessionID)
   }
 
+  async function handleActiveSessionDiffPatchesReverseApply(diffs: SessionDiffFile[], sessionID = activeSessionID) {
+    const patchDiffs = diffs
+      .map((diff) => ({
+        file: diff.file.trim(),
+        ...(diff.patch?.trim() ? { patch: diff.patch } : {}),
+      }))
+      .filter((diff) => diff.file)
+    if (patchDiffs.length === 0) return
+
+    const reverseApplyWorkspaceDiffPatches = window.desktop?.reverseApplyWorkspaceDiffPatches
+    if (!reverseApplyWorkspaceDiffPatches) {
+      throw new Error("Workspace diff reverse-apply bridge is unavailable.")
+    }
+    if (!sessionID || !activeSessionDirectory) {
+      throw new Error("Select a session before restoring a file.")
+    }
+
+    let result: Awaited<ReturnType<typeof reverseApplyWorkspaceDiffPatches>> | null = null
+    try {
+      result = await reverseApplyWorkspaceDiffPatches({
+        directory: activeSessionDirectory,
+        diffs: patchDiffs,
+      })
+    } finally {
+      setSelectedDiffFileBySession((prev) => ({
+        ...prev,
+        [sessionID]: null,
+      }))
+      await loadSessionDiffForSession(sessionID)
+    }
+
+    if (result.failed.length > 0) {
+      throw new Error(formatReverseApplyFailureMessage(result))
+    }
+  }
+
   async function handleActiveSessionRuntimeDebugRefresh(sessionID = activeSessionID) {
     if (!sessionID) return
     await loadSessionRuntimeDebugForSession(sessionID)
@@ -668,6 +715,7 @@ export function useReviewPanelController({
     handleActiveSessionDiffFileSelect,
     handleActiveSessionDiffFileRestore,
     handleActiveSessionDiffFilesRestore,
+    handleActiveSessionDiffPatchesReverseApply,
     handleActiveSessionDiffRefresh,
     handleActiveSessionRuntimeDebugRefresh,
     handlePreviewAddComment,

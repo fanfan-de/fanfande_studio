@@ -322,4 +322,93 @@ describe("review panel controller", () => {
     expect(loadSessionDiffForSession).toHaveBeenCalledTimes(1)
     expect(loadSessionDiffForSession).toHaveBeenCalledWith("session-1")
   })
+
+  it("reverse-applies active session diff patches and reports partial failures", async () => {
+    const workspace = createWorkspace()
+    const reverseApplyWorkspaceDiffPatches = vi.fn().mockResolvedValue({
+      directory: workspace.directory,
+      restored: [{ file: "src/App.tsx" }],
+      failed: [{ file: "src/styles.css", message: "patch does not apply" }],
+    })
+    const loadSessionDiffForSession = vi.fn(async () => undefined)
+    const setSelectedDiffFileBySession = vi.fn()
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        reverseApplyWorkspaceDiffPatches,
+      },
+    })
+
+    const { result } = renderHook(() => {
+      const [previewByWorkspaceID, setPreviewByWorkspaceIDState] = useState<Record<string, WorkspacePreviewState>>({})
+      const [workspaceFileCommentsByTarget, setWorkspaceFileCommentsByTargetState] = useState<Record<string, WorkspaceFileComment[]>>({})
+      const [workspaceFileReviewState, setWorkspaceFileReviewStateState] =
+        useState<WorkspaceFileReviewState>(DEFAULT_WORKSPACE_FILE_REVIEW_STATE)
+      const [, setComposerDraftStateByTabKeyState] = useState<Record<string, ComposerDraftState>>({})
+      const [, setRightSidebarViewState] = useState<RightSidebarView>("changes")
+      const workspaceFileReadRequestRef = useRef(0)
+      const workspaceFileSearchRequestRef = useRef(0)
+
+      const controller = useReviewPanelController({
+        activeSessionDirectory: workspace.directory,
+        activeSessionID: "session-1",
+        activeTabKey: "session:session-1",
+        activeWorkspaceFileScopeDirectory: workspace.directory,
+        loadSessionDiffForSession,
+        loadSessionRuntimeDebugForSession: vi.fn(async () => undefined),
+        platform: "win32",
+        previewByWorkspaceID,
+        selectedWorkspace: workspace,
+        setComposerDraftStateByTabKey: setComposerDraftStateByTabKeyState,
+        setPreviewByWorkspaceID: (update) => applyUpdate(setPreviewByWorkspaceIDState, previewByWorkspaceID, update),
+        setRightSidebarView: setRightSidebarViewState,
+        setSelectedDiffFileBySession,
+        setWorkspaceFileCommentsByTarget: (update) =>
+          applyUpdate(setWorkspaceFileCommentsByTargetState, workspaceFileCommentsByTarget, update),
+        setWorkspaceFileReviewState: (update) => applyUpdate(setWorkspaceFileReviewStateState, workspaceFileReviewState, update),
+        workspaceFileCommentsByTarget,
+        workspaceFileReadRequestRef,
+        workspaceFileReviewState,
+        workspaceFileSearchRequestRef,
+      })
+
+      return { controller }
+    })
+
+    await expect(
+      act(async () => {
+        await result.current.controller.handleActiveSessionDiffPatchesReverseApply([
+          {
+            file: "src/App.tsx",
+            additions: 1,
+            deletions: 1,
+            patch: "@@ -1 +1 @@\n-old\n+new",
+          },
+          {
+            file: "src/styles.css",
+            additions: 1,
+            deletions: 0,
+            patch: "@@ -1,0 +1 @@\n+.toolbar {}",
+          },
+        ])
+      }),
+    ).rejects.toThrow("已撤销 1 个文件；1 个文件无法自动反向应用变更：src/styles.css: patch does not apply")
+
+    expect(reverseApplyWorkspaceDiffPatches).toHaveBeenCalledWith({
+      directory: workspace.directory,
+      diffs: [
+        {
+          file: "src/App.tsx",
+          patch: "@@ -1 +1 @@\n-old\n+new",
+        },
+        {
+          file: "src/styles.css",
+          patch: "@@ -1,0 +1 @@\n+.toolbar {}",
+        },
+      ],
+    })
+    expect(setSelectedDiffFileBySession).toHaveBeenCalled()
+    expect(loadSessionDiffForSession).toHaveBeenCalledTimes(1)
+    expect(loadSessionDiffForSession).toHaveBeenCalledWith("session-1")
+  })
 })
