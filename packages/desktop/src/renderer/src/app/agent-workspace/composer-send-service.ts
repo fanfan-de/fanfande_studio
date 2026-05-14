@@ -13,8 +13,8 @@ import type {
   ComposerAttachment,
   ComposerCommentReference,
   ComposerDraftState,
-  OpenAIReasoningEffort,
   PendingAgentStream,
+  ReasoningEffort,
   SessionSummary,
   Turn,
   UserTurn,
@@ -66,7 +66,7 @@ interface SendPromptToSessionInput {
     selectedOptions?: string[]
     freeformText?: string
   }
-  reasoningEffort?: OpenAIReasoningEffort | null
+  reasoningEffort?: ReasoningEffort | null
   references?: UserTurn["references"]
   selectedModel?: string | null
   selectedSkillIDs: string[]

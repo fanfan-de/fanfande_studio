@@ -7,7 +7,7 @@ import type {
   AgentStreamEvent,
   ComposerAttachment,
   LoadedSessionHistoryMessage,
-  OpenAIReasoningEffort,
+  ReasoningEffort,
 } from "../types"
 
 export type AgentSessionBridgeEvent =
@@ -43,7 +43,7 @@ export interface AgentSessionTurnInput {
     selectedOptions?: string[]
     freeformText?: string
   }
-  reasoningEffort?: OpenAIReasoningEffort
+  reasoningEffort?: ReasoningEffort
   model?: {
     providerID: string
     modelID: string

@@ -132,6 +132,31 @@ describe("llm codex request shaping", () => {
     expect(capturedRequests[0]?.system).toBe("alpha\nbeta")
   })
 
+  it("sends DeepSeek reasoning effort through provider options", async () => {
+    await stream({
+      ...createInput(
+        createModel({
+          providerID: "deepseek",
+          url: "https://api.deepseek.com/v1",
+          id: "deepseek-v4-pro",
+          reasoning: true,
+        }),
+      ),
+      reasoningEffort: "max",
+    })
+
+    expect(capturedRequests).toHaveLength(1)
+    expect(capturedRequests[0]?.providerOptions).toEqual({
+      deepseek: {
+        thinking: {
+          type: "enabled",
+        },
+        reasoningEffort: "max",
+      },
+    })
+    expect(capturedRequests[0]?.system).toBe("alpha\nbeta")
+  })
+
   it("does not request OpenAI reasoning summaries unless reasoning effort is explicit", async () => {
     await stream(
       createInput(

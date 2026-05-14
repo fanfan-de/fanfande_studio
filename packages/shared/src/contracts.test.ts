@@ -3,6 +3,8 @@ import {
   AgentRouteSchemas,
   ApiEnvelopeSchema,
   DesktopIpcSchemas,
+  getSupportedReasoningEfforts,
+  normalizeReasoningEffort,
   SessionEventSchema,
 } from "./index"
 
@@ -26,5 +28,24 @@ describe("shared contracts", () => {
   it("validates desktop openPath and session event contracts", () => {
     expect(DesktopIpcSchemas.openPath.input.parse({ targetPath: "/tmp/project" }).targetPath).toBe("/tmp/project")
     expect(SessionEventSchema.parse({ event: "message", data: { text: "ok" }, id: "1" }).event).toBe("message")
+  })
+
+  it("keeps provider reasoning effort differences explicit", () => {
+    expect(getSupportedReasoningEfforts({
+      providerID: "deepseek",
+      modelID: "deepseek-v4-pro",
+      reasoning: true,
+    })).toEqual(["high", "max"])
+    expect(normalizeReasoningEffort({
+      providerID: "deepseek",
+      modelID: "deepseek-v4-pro",
+      reasoning: true,
+      reasoningEffort: "xhigh",
+    })).toBe("max")
+    expect(getSupportedReasoningEfforts({
+      providerID: "openai",
+      modelID: "gpt-5.4",
+      reasoning: true,
+    })).toEqual(["none", "low", "medium", "high", "xhigh"])
   })
 })

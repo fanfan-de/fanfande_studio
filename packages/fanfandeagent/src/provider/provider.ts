@@ -373,7 +373,7 @@ const SDK_ADAPTERS: Record<string, SDKAdapter> = {
   "@ai-sdk/cerebras": sdkAdapter("2.0.50", "createCerebras"),
   "@ai-sdk/cohere": sdkAdapter("3.0.34", "createCohere"),
   [DEEPSEEK_SDK_PACKAGE]: {
-    version: "2.0.32",
+    version: "2.0.35",
     exportName: "createDeepSeek",
     create: createSDKProvider,
   },

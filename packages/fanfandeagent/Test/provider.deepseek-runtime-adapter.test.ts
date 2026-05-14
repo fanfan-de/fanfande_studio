@@ -95,7 +95,7 @@ test("provider uses the dedicated DeepSeek adapter for built-in DeepSeek models"
         expect(capturedImports).toEqual([
           {
             pkg: "@ai-sdk/deepseek",
-            version: "2.0.32",
+            version: "2.0.35",
           },
         ])
         expect(capturedFactoryInputs).toEqual([

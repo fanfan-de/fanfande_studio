@@ -13,10 +13,10 @@ import type {
   ComposerDraftState,
   ComposerPastedImageAttachment,
   CreateSessionTab,
-  OpenAIReasoningEffort,
   PendingAgentStream,
   PermissionDecision,
   PermissionRequest,
+  ReasoningEffort,
   SessionSummary,
   Turn,
   UserTurn,
@@ -223,7 +223,7 @@ export function useComposerController({
       selectedOptions?: string[]
       freeformText?: string
     }
-    reasoningEffort?: OpenAIReasoningEffort | null
+    reasoningEffort?: ReasoningEffort | null
     references?: UserTurn["references"]
     selectedModel?: string | null
     session: SessionSummary
@@ -266,7 +266,7 @@ export function useComposerController({
       selectedOptions?: string[]
       freeformText?: string
     }
-    selectedReasoningEffort?: OpenAIReasoningEffort | null
+    selectedReasoningEffort?: ReasoningEffort | null
     selectedModel?: string | null
     selectedSkillIDs?: string[]
     sessionID?: string | null
@@ -469,7 +469,7 @@ export function useComposerController({
 
   async function handleApproveProposedPlan(input: {
     planMarkdown: string
-    selectedReasoningEffort?: OpenAIReasoningEffort | null
+    selectedReasoningEffort?: ReasoningEffort | null
     selectedModel?: string | null
     selectedSkillIDs?: string[]
     sessionID?: string | null

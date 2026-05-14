@@ -10,6 +10,7 @@ import type {
   ToolPermissionMode as AgentToolPermissionMode,
   ToolPermissionModePayload as AgentToolPermissionModePayload,
 } from "../shared/permission"
+import type { ReasoningEffort } from "@fanfande/shared"
 
 export type MenuKey = "file" | "edit" | "view" | "window" | "help"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
@@ -342,7 +343,7 @@ export interface AgentSessionTurnRequestInput {
   displayText?: string
   attachments?: AgentSessionComposerAttachmentInput[]
   questionAnswer?: AgentSessionQuestionAnswerInput
-  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
+  reasoningEffort?: ReasoningEffort
   model?: {
     providerID: string
     modelID: string

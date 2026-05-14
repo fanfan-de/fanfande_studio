@@ -29,6 +29,7 @@ import * as Provider from "#provider/provider.ts"
 import * as Permission from "#permission/schema.ts"
 import * as Log from "#util/log.ts"
 import * as ToolResultPersistence from "#session/support/tool-result-persistence.ts"
+import { ReasoningEffortSchema } from "@fanfande/shared"
 
 export const OutputLengthError = NamedError.create("MessageOutputLengthError", z.object({}))
 export const AbortedError = NamedError.create("MessageAbortedError", z.object({ message: z.string() }))
@@ -620,10 +621,14 @@ const Base = z.object({
     sessionID: z.string(),
     turnID: Identifier.schema("turn").optional(),
 })
-export const OpenAIReasoningEffort = z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).meta({
+export const ReasoningEffort = ReasoningEffortSchema.meta({
+    ref: "ReasoningEffort",
+})
+export type ReasoningEffort = z.infer<typeof ReasoningEffort>
+export const OpenAIReasoningEffort = ReasoningEffort.meta({
     ref: "OpenAIReasoningEffort",
 })
-export type OpenAIReasoningEffort = z.infer<typeof OpenAIReasoningEffort>
+export type OpenAIReasoningEffort = ReasoningEffort
 export const User = Base.extend({
     role: z.literal("user"),
     created: z.number(),
@@ -639,7 +644,7 @@ export const User = Base.extend({
     tools: z.record(z.string(), z.boolean()).optional(),
     internal: z.boolean().optional(),
     variant: z.string().optional(),
-    reasoningEffort: OpenAIReasoningEffort.optional(),
+    reasoningEffort: ReasoningEffort.optional(),
 }).meta({
     ref: "UserMessage",
 })

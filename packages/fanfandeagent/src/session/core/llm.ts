@@ -18,7 +18,7 @@ import {
   zodSchema
 } from "ai"
 import { clone, mergeDeep, pipe } from "remeda"
-//import { ProviderTransform } from "@/provider/transform"
+import * as ProviderTransform from "#provider/transform.ts"
 import * as  Config from "#config/config.ts"
 import * as  Agent from "#agent/agent.ts"
 import * as  Message from '#session/core/message.ts'
@@ -36,9 +36,6 @@ import * as db from "#database/Sqlite.ts"
 const log = Log.create({ service: "llm" })
 const DEFAULT_LLM_TOTAL_TIMEOUT_MS = 15 * 60 * 1000
 const DEFAULT_LLM_STEP_TIMEOUT_MS = 10 * 60 * 1000
-const OPENAI_PROVIDER_ID = "openai"
-const OPENAI_CODEX_API_SEGMENT = "/backend-api/codex"
-const DEFAULT_OPENAI_REASONING_EFFORTS: Message.OpenAIReasoningEffort[] = ["low", "medium", "high"]
 type StreamLifecycleCallback<TEvent> = (event: TEvent) => PromiseLike<void> | void
 const defaultRuntimeDependencies = {
   streamText,
@@ -75,7 +72,7 @@ export type StreamInput = {
   system: string[],
   abort: AbortSignal,
   messages: ModelMessage[],
-  reasoningEffort?: Message.OpenAIReasoningEffort,
+  reasoningEffort?: Message.ReasoningEffort,
   small?: boolean,
   tools?: ToolSet,
   retries?: number,
@@ -121,69 +118,6 @@ function buildSystemPrompt(systemParts: string[]) {
   return systemParts.join("\n")
 }
 
-function isOpenAICodexModel(model: Provider.Model) {
-  return model.providerID === OPENAI_PROVIDER_ID && model.api.url.includes(OPENAI_CODEX_API_SEGMENT)
-}
-
-function isOpenAIReasoningModel(model: Provider.Model) {
-  return model.providerID === OPENAI_PROVIDER_ID && model.capabilities.reasoning
-}
-
-function getSupportedOpenAIReasoningEfforts(modelID: string): Message.OpenAIReasoningEffort[] {
-  const normalized = modelID.trim().toLowerCase()
-  if (!normalized) return DEFAULT_OPENAI_REASONING_EFFORTS
-
-  if (normalized.startsWith("gpt-5-pro")) {
-    return ["high"]
-  }
-
-  if (normalized.startsWith("gpt-5.4-pro") || normalized.startsWith("gpt-5.2-pro")) {
-    return ["medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.4") || normalized.startsWith("gpt-5.2")) {
-    return ["none", "low", "medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.3-codex")) {
-    return ["low", "medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.1-codex-max")) {
-    return ["none", "medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.1")) {
-    return ["none", "low", "medium", "high"]
-  }
-
-  if (normalized.startsWith("gpt-5")) {
-    return ["minimal", "low", "medium", "high"]
-  }
-
-  return DEFAULT_OPENAI_REASONING_EFFORTS
-}
-
-function normalizeOpenAIReasoningEffort(
-  model: Provider.Model,
-  reasoningEffort?: Message.OpenAIReasoningEffort,
-) {
-  if (!reasoningEffort || !isOpenAIReasoningModel(model)) return undefined
-
-  const supported = getSupportedOpenAIReasoningEfforts(model.id)
-  if (supported.includes(reasoningEffort)) {
-    return reasoningEffort
-  }
-
-  log.warn("ignoring unsupported OpenAI reasoning effort", {
-    modelID: model.id,
-    providerID: model.providerID,
-    reasoningEffort,
-    supported,
-  })
-  return undefined
-}
-
 /**
  * Starts a text-generation stream and returns the AI SDK stream handle.
  */
@@ -212,9 +146,8 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
 
   // 组装 system prompt
   const systemPrompt = buildSystemPrompt(input.system)
-  const isOpenAICodex = isOpenAICodexModel(input.model)
-  const isOpenAIReasoning = isOpenAIReasoningModel(input.model)
-  const openAIReasoningEffort = normalizeOpenAIReasoningEffort(input.model, input.reasoningEffort)
+  const isOpenAICodex = ProviderTransform.isOpenAICodexModel(input.model)
+  const isProviderReasoning = ProviderTransform.isProviderReasoningModel(input.model)
 
   // 准备工具集，并解析最终使用的语言模型。
   const tools: ToolSet = input.tools ?? {}
@@ -236,7 +169,7 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
       pdfInput: input.model.capabilities.input.pdf,
       toolcall: input.model.capabilities.toolcall,
     },
-    reasoningEffort: openAIReasoningEffort,
+    reasoningEffort: input.reasoningEffort,
     timeouts: {
       totalMs: totalTimeoutMs,
       stepMs: stepTimeoutMs,
@@ -244,31 +177,11 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
   })
 
   //供应商额外设置
-  const openAIProviderOptions =
-    input.model.providerID === OPENAI_PROVIDER_ID
-      ? {
-        ...(isOpenAICodex
-          ? {
-            store: false,
-            ...(systemPrompt
-              ? {
-                instructions: systemPrompt,
-              }
-              : {}),
-          }
-          : {}),
-        ...(openAIReasoningEffort
-          ? {
-            reasoningEffort: openAIReasoningEffort,
-          }
-          : {}),
-        ...(isOpenAIReasoning && openAIReasoningEffort && openAIReasoningEffort !== "none"
-          ? {
-            reasoningSummary: "auto",
-          }
-          : {}),
-      }
-      : undefined
+  const providerOptions = ProviderTransform.buildProviderOptions({
+    model: input.model,
+    systemPrompt,
+    reasoningEffort: input.reasoningEffort,
+  })
 
 
   // 使用 Vercel AI SDK 发起流式请求；如需推理抽取，可在这里接入 middleware。
@@ -304,22 +217,17 @@ export async function stream(input: StreamInput): Promise<StreamOutput> {
     //----------- 输出与采样参数 --------------------
     output: runtime.outputText(),// 输出纯文本
     ///temperature: params.temperature,
-    temperature: isOpenAICodex || isOpenAIReasoning ? undefined : 1,
+    temperature: isOpenAICodex || isProviderReasoning ? undefined : 1,
     ///topP: params.topP,
     ///topK: params.topK,
     //maxOutputTokens : maxOutputTokens ,
-    presencePenalty: isOpenAICodex || isOpenAIReasoning ? undefined : 0,// 降低重复提及已出现主题的倾向
-    frequencyPenalty: isOpenAICodex || isOpenAIReasoning ? undefined : 0,// 降低重复使用相同词语或短语的倾向
+    presencePenalty: isOpenAICodex || isProviderReasoning ? undefined : 0,// 降低重复提及已出现主题的倾向
+    frequencyPenalty: isOpenAICodex || isProviderReasoning ? undefined : 0,// 降低重复使用相同词语或短语的倾向
     ///providerOptions: ProviderTransform.providerOptions(input.model, params.options),// 如需透传 provider 专有参数，可在这里扩展
     // OpenAI、Claude、Gemini 等模型支持的 providerOptions 并不完全一致。
     // 如果后续需要细粒度控制，可以在这里按 provider 组装额外参数。
     // providerOptions 会原样透传给底层 SDK，用于覆盖各家模型的专有配置。
-    providerOptions:
-      openAIProviderOptions && Object.keys(openAIProviderOptions).length > 0
-        ? {
-          openai: openAIProviderOptions,
-        }
-        : undefined,
+    providerOptions,
     activeTools: Object.keys(tools).filter((x) => x !== "invalid"),// 过滤掉兜底的 invalid 工具
 
     ///stopSequences:, // string[]，自定义停止序列

@@ -44,9 +44,9 @@ import type {
   ComposerAttachment,
   ComposerDraftState,
   ComposerPastedImageAttachment,
-  OpenAIReasoningEffort,
   PermissionDecision,
   PermissionRequest,
+  ReasoningEffort,
   SessionDiffFile,
   SessionDiffSummary,
   SessionSummary,
@@ -114,7 +114,7 @@ interface ThreadViewProps {
       selectedOptions?: string[]
       freeformText?: string
     }
-    selectedReasoningEffort?: OpenAIReasoningEffort | null
+    selectedReasoningEffort?: ReasoningEffort | null
     selectedModel?: string | null
     selectedSkillIDs: string[]
     submissionMode?: UserTurn["submissionMode"]
@@ -427,7 +427,7 @@ function TurnDiffCard({
   const fileChangeSignature = fileChanges
     .map((change) => `${change.file}\u0000${change.additions}\u0000${change.deletions}\u0000${change.patch ?? ""}`)
     .join("\u0001")
-  const [isListExpanded, setIsListExpanded] = useState(false)
+  const [isListExpanded, setIsListExpanded] = useState(true)
   const [expandedFile, setExpandedFile] = useState<string | null>(null)
   const [fullHeightFile, setFullHeightFile] = useState<string | null>(null)
   const [isRestoring, setIsRestoring] = useState(false)
@@ -436,7 +436,7 @@ function TurnDiffCard({
   const hydratedDiffSummarySignature = buildDiffSummarySignature(hydratedDiffSummary)
 
   useEffect(() => {
-    setIsListExpanded(false)
+    setIsListExpanded(true)
     setExpandedFile(null)
     setFullHeightFile(null)
     setIsRestoring(false)
@@ -1480,7 +1480,7 @@ interface InlineSideChatThreadProps {
       selectedOptions?: string[]
       freeformText?: string
     }
-    selectedReasoningEffort?: OpenAIReasoningEffort | null
+    selectedReasoningEffort?: ReasoningEffort | null
     selectedModel?: string | null
     selectedSkillIDs: string[]
     submissionMode?: UserTurn["submissionMode"]

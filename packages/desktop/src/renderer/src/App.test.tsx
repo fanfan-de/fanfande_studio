@@ -7871,6 +7871,8 @@ describe("App", () => {
     expect(screen.getByLabelText("Thread View Response Text Dark semantic-thread-response-text-dark")).toBeInTheDocument()
     expect(screen.getByLabelText("Thread View Reasoning Text Light semantic-thread-reasoning-text-light")).toBeInTheDocument()
     expect(screen.getByLabelText("Thread View Reasoning Text Dark semantic-thread-reasoning-text-dark")).toBeInTheDocument()
+    expect(screen.getByLabelText("Markdown Inline Code Surface Light semantic-markdown-inline-code-surface-light")).toBeInTheDocument()
+    expect(screen.getByLabelText("Markdown Code Block Surface Dark semantic-markdown-code-surface-dark")).toBeInTheDocument()
     expect(screen.getByLabelText("Composer Button Surface Light semantic-composer-button-surface-light")).toBeInTheDocument()
     expect(screen.getByLabelText("Composer Button Surface Dark semantic-composer-button-surface-dark")).toBeInTheDocument()
     expect(screen.getByRole("switch", { name: "Show left rail" })).toBeInTheDocument()
@@ -7924,6 +7926,9 @@ describe("App", () => {
     const responseTextInput = screen.getByLabelText(
       "Thread View Response Text Light semantic-thread-response-text-light hex color",
     ) as HTMLInputElement
+    const markdownInlineCodeInput = screen.getByLabelText(
+      "Markdown Inline Code Surface Light semantic-markdown-inline-code-surface-light hex color",
+    ) as HTMLInputElement
     const reasoningTextInput = screen.getByLabelText(
       "Thread View Reasoning Text Light semantic-thread-reasoning-text-light hex color",
     ) as HTMLInputElement
@@ -7938,6 +7943,8 @@ describe("App", () => {
     fireEvent.blur(proposedPlanCardInput)
     fireEvent.change(responseTextInput, { target: { value: "#112233" } })
     fireEvent.blur(responseTextInput)
+    fireEvent.change(markdownInlineCodeInput, { target: { value: "#ddeeff" } })
+    fireEvent.blur(markdownInlineCodeInput)
     fireEvent.change(reasoningTextInput, { target: { value: "#445566" } })
     fireEvent.blur(reasoningTextInput)
 
@@ -7946,6 +7953,7 @@ describe("App", () => {
       expect(document.documentElement.style.getPropertyValue("--semantic-question-card-surface-light")).toBe("#123456")
       expect(document.documentElement.style.getPropertyValue("--semantic-proposed-plan-card-surface-light")).toBe("#654321")
       expect(document.documentElement.style.getPropertyValue("--semantic-thread-response-text-light")).toBe("#112233")
+      expect(document.documentElement.style.getPropertyValue("--semantic-markdown-inline-code-surface-light")).toBe("#ddeeff")
       expect(document.documentElement.style.getPropertyValue("--semantic-thread-reasoning-text-light")).toBe("#445566")
     })
     await waitFor(() => {
@@ -7956,6 +7964,7 @@ describe("App", () => {
       expect(preview.value).toContain("#123456")
       expect(preview.value).toContain("#654321")
       expect(preview.value).toContain("#112233")
+      expect(preview.value).toContain("#ddeeff")
       expect(preview.value).toContain("#445566")
     })
   })
@@ -11432,6 +11441,10 @@ describe("App", () => {
     expect(styles).toMatch(/--semantic-thread-response-text:\s*var\(--semantic-thread-response-text-dark\);/s)
     expect(styles).toMatch(/--semantic-thread-reasoning-text:\s*var\(--semantic-thread-reasoning-text-light\);/s)
     expect(styles).toMatch(/--semantic-thread-reasoning-text:\s*var\(--semantic-thread-reasoning-text-dark\);/s)
+    expect(styles).toMatch(/--semantic-markdown-inline-code-surface-light:\s*var\(--mix-seg-accent-soft-80-seg-panel-20-light\);/s)
+    expect(styles).toMatch(/--semantic-markdown-code-surface-light:\s*#27272a;/s)
+    expect(styles).toMatch(/--semantic-markdown-inline-code-surface:\s*var\(--semantic-markdown-inline-code-surface-light\);/s)
+    expect(styles).toMatch(/--semantic-markdown-inline-code-surface:\s*var\(--semantic-markdown-inline-code-surface-dark\);/s)
     expect(styles).toMatch(/--semantic-dropdown-menu-surface-light:\s*#ffffff;/i)
     expect(styles).toMatch(
       /--semantic-dropdown-menu-surface:\s*var\(--semantic-dropdown-menu-surface-light\);/s,
@@ -11486,10 +11499,10 @@ describe("App", () => {
     )
   })
 
-  it("wraps response markdown code blocks without horizontal scrolling", () => {
-    expect(styles).toMatch(/\.thread-markdown pre\s*\{[^}]*overflow:\s*hidden;[^}]*white-space:\s*pre-wrap;/s)
+  it("lets response markdown code blocks scroll horizontally", () => {
+    expect(styles).toMatch(/\.thread-markdown pre\s*\{[^}]*overflow-x:\s*auto;[^}]*white-space:\s*pre;/s)
     expect(styles).toMatch(
-      /\.thread-markdown pre code\s*\{[^}]*max-width:\s*100%;[^}]*white-space:\s*pre-wrap;[^}]*overflow-wrap:\s*anywhere;[^}]*word-break:\s*break-word;/s,
+      /\.thread-markdown pre code\s*\{[^}]*width:\s*max-content;[^}]*min-width:\s*100%;[^}]*white-space:\s*pre;[^}]*overflow-wrap:\s*normal;[^}]*word-break:\s*normal;/s,
     )
   })
 
@@ -11510,7 +11523,9 @@ describe("App", () => {
     expect(styles).toMatch(/\.ask-user-question-card\s*\{[^}]*border:\s*0;[^}]*background:\s*var\(--semantic-question-card-surface\);/s)
     expect(styles).toMatch(/\.assistant-section\.is-response\s+\.ask-user-question-card\s*\{[^}]*border:\s*0;[^}]*background:\s*var\(--semantic-question-card-surface\);/s)
     expect(styles).toMatch(/\.proposed-plan-card\s*\{[^}]*background:\s*var\(--semantic-proposed-plan-card-surface\);/s)
-    expect(styles).toMatch(/\.assistant-section\.is-response \.trace-item-text,[\s\S]*?\.assistant-section\.is-response \.thread-markdown-image-alt\s*\{[^}]*color:\s*var\(--semantic-thread-response-text\);/s)
+    expect(styles).toMatch(/\.assistant-section\.is-response \.trace-item-text,\s*\.assistant-section\.is-response \.trace-item-detail\s*\{[^}]*color:\s*var\(--semantic-thread-response-text\);/s)
+    expect(styles).toMatch(/\.thread-markdown\s*\{[^}]*--md-text:\s*var\(--semantic-markdown-text,\s*var\(--seg-text-1\)\);/s)
+    expect(styles).toMatch(/\.thread-markdown\s*\{[^}]*--md-inline-code-bg:\s*var\(--semantic-markdown-inline-code-surface,\s*var\(--seg-panel-muted\)\);/s)
     expect(styles).toMatch(/\.assistant-section\.is-reasoning \.trace-item-inline-title,[\s\S]*?\.assistant-section\.is-reasoning \.trace-item-plain-detail\s*\{[^}]*color:\s*var\(--semantic-thread-reasoning-text\);/s)
     expect(styles).toMatch(/\.assistant-shell\.is-sectioned\s*\{[^}]*border:\s*0;[^}]*padding:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s)
     expect(styles).toMatch(

@@ -263,4 +263,33 @@ describe("useProjectComposer model selection", () => {
 
     expect(result.current.selectedReasoningEffortLabel).toBe("Medium")
   })
+
+  it("shows DeepSeek reasoning effort options for reasoning models", async () => {
+    const reasoningModel = createModel("deepseek", "deepseek-v4-pro", { reasoning: true })
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        getProjectModels: vi.fn(async () => ({
+          effectiveModel: reasoningModel,
+          items: [reasoningModel],
+          selection: {
+            model: "deepseek/deepseek-v4-pro",
+          },
+        })),
+      } as unknown as typeof window.desktop,
+    })
+
+    const { result } = renderHook(() =>
+      useProjectComposer({
+        attachmentPaths: [],
+        projectID: "project-deepseek-reasoning",
+      }),
+    )
+
+    await waitFor(() => expect(result.current.selectedReasoningEffort).toBe("high"))
+
+    expect(result.current.selectedReasoningEffortLabel).toBe("High")
+    expect(result.current.reasoningEffortOptions.map((option) => option.value)).toEqual(["high", "max"])
+  })
 })

@@ -4,6 +4,7 @@ import { Flag } from "#flag/flag.ts"
 import * as Log from "#util/log.ts"
 import * as Message from "#session/core/message.ts"
 import * as Provider from "#provider/provider.ts"
+import * as ProviderTransform from "#provider/transform.ts"
 import * as Session from "#session/core/session.ts"
 import { Instance } from "#project/instance.ts"
 import * as Identifier from "#id/id.ts"
@@ -25,9 +26,6 @@ const EMERGENCY_TOOL_OUTPUT_CHARS = 320
 const MEMORY_BLOCK_MAX_CHARS = 10_000
 const MEMORY_BLOCK_MIN_CHARS = 1_500
 export const CURRENT_SUMMARY_VERSION = 1
-const OPENAI_PROVIDER_ID = "openai"
-const OPENAI_CODEX_API_SEGMENT = "/backend-api/codex"
-const DEFAULT_OPENAI_REASONING_EFFORTS: Message.OpenAIReasoningEffort[] = ["low", "medium", "high"]
 
 const COMPACTION_COMMAND = [
   "<compaction_instruction>",
@@ -65,7 +63,7 @@ type SummaryGenerator = (input: {
   system: string[]
   messages: Message.WithParts[]
   model: Provider.Model
-  reasoningEffort?: Message.OpenAIReasoningEffort
+  reasoningEffort?: Message.ReasoningEffort
   tools?: ToolSet
 }) => Promise<string>
 
@@ -87,7 +85,7 @@ export async function preparePromptContext(input: {
   model: Provider.Model
   system: string[]
   messages: Message.WithParts[]
-  reasoningEffort?: Message.OpenAIReasoningEffort
+  reasoningEffort?: Message.ReasoningEffort
   tools?: ToolSet
   generateSummary?: SummaryGenerator
   recordCompactionMessage?: CompactionMessageRecorder
@@ -331,7 +329,7 @@ async function compactTurns(input: {
   turns: SessionTurn[]
   system: string[]
   model: Provider.Model
-  reasoningEffort?: Message.OpenAIReasoningEffort
+  reasoningEffort?: Message.ReasoningEffort
   tools?: ToolSet
   generateSummary: SummaryGenerator
 }) {
@@ -442,14 +440,14 @@ async function generateCompactionSummary(input: {
   system: string[]
   messages: Message.WithParts[]
   model: Provider.Model
-  reasoningEffort?: Message.OpenAIReasoningEffort
+  reasoningEffort?: Message.ReasoningEffort
   tools?: ToolSet
 }) {
   try {
     const languageModel = await Provider.getLanguage(input.model, Instance.project.id)
     const modelMessages = await Message.toModelMessages(input.messages, input.model)
     const systemPrompt = input.system.join("\n")
-    const providerOptions = buildProviderOptions({
+    const providerOptions = ProviderTransform.buildProviderOptions({
       model: input.model,
       systemPrompt,
       reasoningEffort: input.reasoningEffort,
@@ -470,7 +468,7 @@ async function generateCompactionSummary(input: {
     try {
       const withTools = await callCompactionModel({
         languageModel,
-        system: isOpenAICodexModel(input.model) ? undefined : systemPrompt || undefined,
+        system: ProviderTransform.isOpenAICodexModel(input.model) ? undefined : systemPrompt || undefined,
         providerOptions,
         prompt,
         tools: input.tools,
@@ -490,7 +488,7 @@ async function generateCompactionSummary(input: {
 
       const withoutTools = await callCompactionModel({
         languageModel,
-        system: isOpenAICodexModel(input.model) ? undefined : systemPrompt || undefined,
+        system: ProviderTransform.isOpenAICodexModel(input.model) ? undefined : systemPrompt || undefined,
         providerOptions,
         prompt,
         useTools: false,
@@ -540,108 +538,6 @@ async function callCompactionModel(input: {
 function hasToolCalls(result: unknown) {
   const candidate = result as { toolCalls?: unknown }
   return Array.isArray(candidate.toolCalls) && candidate.toolCalls.length > 0
-}
-
-function isOpenAICodexModel(model: Provider.Model) {
-  return model.providerID === OPENAI_PROVIDER_ID && model.api.url.includes(OPENAI_CODEX_API_SEGMENT)
-}
-
-function isOpenAIReasoningModel(model: Provider.Model) {
-  return model.providerID === OPENAI_PROVIDER_ID && model.capabilities.reasoning
-}
-
-function getSupportedOpenAIReasoningEfforts(modelID: string): Message.OpenAIReasoningEffort[] {
-  const normalized = modelID.trim().toLowerCase()
-  if (!normalized) return DEFAULT_OPENAI_REASONING_EFFORTS
-
-  if (normalized.startsWith("gpt-5-pro")) {
-    return ["high"]
-  }
-
-  if (normalized.startsWith("gpt-5.4-pro") || normalized.startsWith("gpt-5.2-pro")) {
-    return ["medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.4") || normalized.startsWith("gpt-5.2")) {
-    return ["none", "low", "medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.3-codex")) {
-    return ["low", "medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.1-codex-max")) {
-    return ["none", "medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.1")) {
-    return ["none", "low", "medium", "high"]
-  }
-
-  if (normalized.startsWith("gpt-5")) {
-    return ["minimal", "low", "medium", "high"]
-  }
-
-  return DEFAULT_OPENAI_REASONING_EFFORTS
-}
-
-function normalizeOpenAIReasoningEffort(
-  model: Provider.Model,
-  reasoningEffort?: Message.OpenAIReasoningEffort,
-) {
-  if (!reasoningEffort || !isOpenAIReasoningModel(model)) return undefined
-
-  const supported = getSupportedOpenAIReasoningEfforts(model.id)
-  if (supported.includes(reasoningEffort)) {
-    return reasoningEffort
-  }
-
-  log.warn("ignoring unsupported OpenAI reasoning effort for compaction", {
-    modelID: model.id,
-    providerID: model.providerID,
-    reasoningEffort,
-    supported,
-  })
-  return undefined
-}
-
-function buildProviderOptions(input: {
-  model: Provider.Model
-  systemPrompt: string
-  reasoningEffort?: Message.OpenAIReasoningEffort
-}) {
-  if (input.model.providerID !== OPENAI_PROVIDER_ID) return undefined
-
-  const openAIReasoningEffort = normalizeOpenAIReasoningEffort(input.model, input.reasoningEffort)
-  const isOpenAICodex = isOpenAICodexModel(input.model)
-  const isOpenAIReasoning = isOpenAIReasoningModel(input.model)
-  const openAIProviderOptions = {
-    ...(isOpenAICodex
-      ? {
-          store: false,
-          ...(input.systemPrompt
-            ? {
-                instructions: input.systemPrompt,
-              }
-            : {}),
-        }
-      : {}),
-    ...(openAIReasoningEffort
-      ? {
-          reasoningEffort: openAIReasoningEffort,
-        }
-      : {}),
-    ...(isOpenAIReasoning && openAIReasoningEffort && openAIReasoningEffort !== "none"
-      ? {
-          reasoningSummary: "auto",
-        }
-      : {}),
-  }
-
-  if (Object.keys(openAIProviderOptions).length === 0) return undefined
-  return {
-    openai: openAIProviderOptions,
-  }
 }
 
 function buildFallbackSummary(messages: Message.WithParts[]) {

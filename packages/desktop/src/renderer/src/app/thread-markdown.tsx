@@ -342,6 +342,30 @@ function MarkdownImage({ alt, src }: { alt?: string; src?: string }) {
   return <img className="thread-markdown-image" src={src} alt={alt ?? ""} loading="lazy" decoding="async" />
 }
 
+function normalizeMarkdownCodeLanguage(className?: string) {
+  if (!className) return null
+
+  const languageClass = className.split(/\s+/).find((value) => value.startsWith("language-"))
+  const language = languageClass?.slice("language-".length).trim()
+  return language || null
+}
+
+const MarkdownCode: NonNullable<Components["code"]> = ({ children, className, node: _node, ...props }) => {
+  const language = normalizeMarkdownCodeLanguage(className)
+
+  return (
+    <code {...props} className={className} data-language={language ?? undefined}>
+      {children}
+    </code>
+  )
+}
+
+const MarkdownTable: NonNullable<Components["table"]> = ({ children, node: _node, ...props }) => (
+  <div className="thread-markdown-table-scroll">
+    <table {...props}>{children}</table>
+  </div>
+)
+
 const transformMarkdownUrl: UrlTransform = (url, key) => {
   if (key === "href") return normalizeMarkdownLinkTarget(url)?.href ?? ""
   if (key === "src") return normalizeMarkdownImageSrc(url) ?? ""
@@ -352,7 +376,9 @@ export function ThreadMarkdown({ className, onLocalFileLinkOpen, text }: ThreadM
   const markdownText = normalizeLooseLocalFileMarkdownLinks(text)
   const components: Components = {
     a: (props) => <MarkdownLink {...props} onLocalFileLinkOpen={onLocalFileLinkOpen} />,
+    code: MarkdownCode,
     img: MarkdownImage,
+    table: MarkdownTable,
   }
 
   return (

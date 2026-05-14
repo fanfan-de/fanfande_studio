@@ -35,7 +35,7 @@ import type {
   ComposerReasoningEffortOption,
   ComposerSkillOption,
   ComposerTagData,
-  OpenAIReasoningEffort,
+  ReasoningEffort,
 } from "../types"
 import { $createComposerTagNode, ComposerTagNode } from "./ComposerTagNode"
 import {
@@ -71,7 +71,7 @@ interface ComposerProps {
   onPickAttachments: () => void | Promise<void>
   onPasteImageAttachments?: (images: ComposerPastedImageAttachment[]) => void | Promise<void>
   onPlanModeToggle?: () => void | Promise<void>
-  onReasoningEffortChange: (value: OpenAIReasoningEffort | null) => void
+  onReasoningEffortChange: (value: ReasoningEffort | null) => void
   onRemoveAttachment: (path: string) => void
   onCancelSend?: () => void | Promise<void>
   onSend: (draftStateOverride?: ComposerDraftState) => void | Promise<void>
@@ -80,7 +80,7 @@ interface ComposerProps {
   selectedMcpServerIDs: string[]
   selectedModel: string | null
   selectedModelLabel: string
-  selectedReasoningEffort: OpenAIReasoningEffort | null
+  selectedReasoningEffort: ReasoningEffort | null
   selectedReasoningEffortLabel: string
   selectedSkillIDs: string[]
   showModelSelector?: boolean
@@ -1285,7 +1285,7 @@ export function Composer({
     void onModelChange(value)
   }
 
-  function handleReasoningEffortSelect(value: OpenAIReasoningEffort) {
+  function handleReasoningEffortSelect(value: ReasoningEffort) {
     setOpenMenu(null)
     onReasoningEffortChange(value)
   }

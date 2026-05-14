@@ -1,4 +1,5 @@
 export * from "./api"
 export * from "./desktop-ipc"
+export * from "./reasoning"
 export * from "./session"
 export { z } from "zod"

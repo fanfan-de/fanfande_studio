@@ -1,5 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
+  getDefaultReasoningEffort as getProviderDefaultReasoningEffort,
+  getSupportedReasoningEfforts as getProviderSupportedReasoningEfforts,
+  supportsReasoningEffort,
+  type ReasoningEffort,
+} from "@fanfande/shared"
+import {
   describeComposerAttachmentSupport,
   getComposerAttachmentCapabilities,
   getComposerAttachmentDisabledReason,
@@ -12,14 +18,12 @@ import type {
   ComposerReasoningEffortOption,
   ComposerSkillOption,
   McpServerSummary,
-  OpenAIReasoningEffort,
   ProviderModel,
   SessionModelSelection,
   SkillInfo,
 } from "./types"
-const DEFAULT_OPENAI_REASONING_EFFORTS: OpenAIReasoningEffort[] = ["low", "medium", "high"]
-const OPENAI_REASONING_EFFORT_COPY: Record<
-  OpenAIReasoningEffort,
+const REASONING_EFFORT_COPY: Record<
+  ReasoningEffort,
   {
     label: string
     description: string
@@ -48,6 +52,10 @@ const OPENAI_REASONING_EFFORT_COPY: Record<
   xhigh: {
     label: "X-High",
     description: "Use the deepest supported reasoning setting for long-horizon work.",
+  },
+  max: {
+    label: "Max",
+    description: "Use the maximum supported reasoning setting for the most complex tasks.",
   },
 }
 
@@ -87,90 +95,39 @@ function toComposerModelProviderLabel(model: ProviderModel) {
   return model.providerName?.trim() || formatComposerProviderID(model.providerID)
 }
 
-function isOpenAIReasoningModel(model: ProviderModel | null): model is ProviderModel {
-  return Boolean(model && model.providerID === "openai" && model.capabilities.reasoning)
+function toReasoningProfile(model: ProviderModel) {
+  return {
+    providerID: model.providerID,
+    modelID: model.id,
+    reasoning: model.capabilities.reasoning,
+  }
 }
 
-function getSupportedOpenAIReasoningEfforts(modelID: string): OpenAIReasoningEffort[] {
-  const normalized = modelID.trim().toLowerCase()
-  if (!normalized) return DEFAULT_OPENAI_REASONING_EFFORTS
-
-  if (normalized.startsWith("gpt-5-pro")) {
-    return ["high"]
-  }
-
-  if (normalized.startsWith("gpt-5.4-pro") || normalized.startsWith("gpt-5.2-pro")) {
-    return ["medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.4") || normalized.startsWith("gpt-5.2")) {
-    return ["none", "low", "medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.3-codex")) {
-    return ["low", "medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.1-codex-max")) {
-    return ["none", "medium", "high", "xhigh"]
-  }
-
-  if (normalized.startsWith("gpt-5.1")) {
-    return ["none", "low", "medium", "high"]
-  }
-
-  if (normalized.startsWith("gpt-5")) {
-    return ["minimal", "low", "medium", "high"]
-  }
-
-  return DEFAULT_OPENAI_REASONING_EFFORTS
+function isReasoningEffortModel(model: ProviderModel | null): model is ProviderModel {
+  return Boolean(model && supportsReasoningEffort(toReasoningProfile(model)))
 }
 
 function resolveComposerReasoningEffortOptions(model: ProviderModel | null): ComposerReasoningEffortOption[] {
-  if (!isOpenAIReasoningModel(model)) return []
+  if (!isReasoningEffortModel(model)) return []
 
-  return getSupportedOpenAIReasoningEfforts(model.id).map((value) => ({
+  return getProviderSupportedReasoningEfforts(toReasoningProfile(model)).map((value) => ({
     value,
-    label: OPENAI_REASONING_EFFORT_COPY[value].label,
-    description: OPENAI_REASONING_EFFORT_COPY[value].description,
+    label: REASONING_EFFORT_COPY[value].label,
+    description: REASONING_EFFORT_COPY[value].description,
   }))
 }
 
-function resolveDefaultOpenAIReasoningEffort(
+function resolveDefaultReasoningEffort(
   model: ProviderModel | null,
   options: ComposerReasoningEffortOption[],
-): OpenAIReasoningEffort | null {
-  if (!isOpenAIReasoningModel(model) || options.length === 0) return null
-
-  const supported = new Set(options.map((option) => option.value))
-  const normalized = model.id.trim().toLowerCase()
-
-  if (normalized.startsWith("gpt-5-pro") && supported.has("high")) {
-    return "high"
-  }
-
-  if (normalized.startsWith("gpt-5.1") && supported.has("none")) {
-    return "none"
-  }
-
-  if (normalized.startsWith("gpt-5.2") && supported.has("none")) {
-    return "none"
-  }
-
-  if (normalized.startsWith("gpt-5.3-codex-spark") && supported.has("high")) {
-    return "high"
-  }
-
-  if (supported.has("medium")) {
-    return "medium"
-  }
-
-  return options[0]?.value ?? null
+): ReasoningEffort | null {
+  if (!isReasoningEffortModel(model) || options.length === 0) return null
+  return getProviderDefaultReasoningEffort(toReasoningProfile(model)) ?? null
 }
 
-function resolveSelectedOpenAIReasoningEffort(
-  selectedReasoningEffort: OpenAIReasoningEffort | null,
-  defaultReasoningEffort: OpenAIReasoningEffort | null,
+function resolveSelectedReasoningEffort(
+  selectedReasoningEffort: ReasoningEffort | null,
+  defaultReasoningEffort: ReasoningEffort | null,
   options: ComposerReasoningEffortOption[],
 ) {
   if (selectedReasoningEffort && options.some((option) => option.value === selectedReasoningEffort)) {
@@ -229,11 +186,11 @@ function resolveComposerMcpLabel(selectedServerIDs: string[], servers: McpServer
 }
 
 function resolveComposerReasoningEffortLabel(
-  selectedReasoningEffort: OpenAIReasoningEffort | null,
+  selectedReasoningEffort: ReasoningEffort | null,
   options: ComposerReasoningEffortOption[],
 ) {
   if (!selectedReasoningEffort) return ""
-  return options.find((option) => option.value === selectedReasoningEffort)?.label ?? OPENAI_REASONING_EFFORT_COPY[selectedReasoningEffort].label
+  return options.find((option) => option.value === selectedReasoningEffort)?.label ?? REASONING_EFFORT_COPY[selectedReasoningEffort].label
 }
 
 const projectComposerModelItemsCache = new Map<string, ProviderModel[]>()
@@ -259,7 +216,7 @@ export function useProjectComposer({
   const [defaultModel, setDefaultModel] = useState<ProviderModel | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [smallModel, setSmallModel] = useState<string | null>(null)
-  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<OpenAIReasoningEffort | null>(null)
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort | null>(null)
   const [isLoadingModels, setIsLoadingModels] = useState(false)
 
   const [skills, setSkills] = useState<SkillInfo[]>([])
@@ -463,8 +420,8 @@ export function useProjectComposer({
   const selectedMcpLabel = resolveComposerMcpLabel(selectedMcpServerIDs, mcpServers, isLoadingMcp)
   const contextWindow = effectiveModel?.limit.context ?? null
   const reasoningEffortOptions = resolveComposerReasoningEffortOptions(effectiveModel)
-  const defaultReasoningEffort = resolveDefaultOpenAIReasoningEffort(effectiveModel, reasoningEffortOptions)
-  const effectiveReasoningEffort = resolveSelectedOpenAIReasoningEffort(
+  const defaultReasoningEffort = resolveDefaultReasoningEffort(effectiveModel, reasoningEffortOptions)
+  const effectiveReasoningEffort = resolveSelectedReasoningEffort(
     selectedReasoningEffort,
     defaultReasoningEffort,
     reasoningEffortOptions,
@@ -598,7 +555,7 @@ export function useProjectComposer({
     }
   }
 
-  function handleReasoningEffortChange(value: OpenAIReasoningEffort | null) {
+  function handleReasoningEffortChange(value: ReasoningEffort | null) {
     setSelectedReasoningEffort(value)
   }
 

@@ -69,7 +69,7 @@ export const PromptInput = z.object({
     displayText: z.string().optional(),
     skills: z.array(z.string()).optional(),
     variant: z.string().optional(),
-    reasoningEffort: Message.OpenAIReasoningEffort.optional(),
+    reasoningEffort: Message.ReasoningEffort.optional(),
     parts: z.array(
         z.discriminatedUnion("type", [
             Message.TextPart.omit({

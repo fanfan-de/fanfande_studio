@@ -9,6 +9,7 @@ import type {
   PermissionToolKind,
   ToolPermissionMode,
 } from "../../../shared/permission"
+import type { ReasoningEffort as SharedReasoningEffort } from "@fanfande/shared"
 
 export type {
   PermissionDecision,
@@ -1159,7 +1160,8 @@ export type ComposerTagData =
 export type ColorMode = "system" | "light" | "dark"
 export type BrandTheme = "terra" | "sage"
 
-export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh"
+export type ReasoningEffort = SharedReasoningEffort
+export type OpenAIReasoningEffort = ReasoningEffort
 
 export interface ComposerModelOption {
   value: string
@@ -1169,7 +1171,7 @@ export interface ComposerModelOption {
 }
 
 export interface ComposerReasoningEffortOption {
-  value: OpenAIReasoningEffort
+  value: ReasoningEffort
   label: string
   description: string
 }

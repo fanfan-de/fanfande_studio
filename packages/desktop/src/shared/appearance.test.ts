@@ -169,3 +169,136 @@ describe("appearance thread view text tokens", () => {
     })
   })
 })
+
+describe("appearance markdown tokens", () => {
+  it("registers the markdown token group", () => {
+    expect(APPEARANCE_TOKEN_GROUPS).toContainEqual({
+      id: "component-markdown",
+      label: "Markdown",
+      description: "Dedicated semantic colors for rendered Markdown content.",
+      rows: [
+        {
+          id: "semantic-markdown-text",
+          label: "Text",
+          description: "Default body text inside rendered Markdown.",
+          lightToken: "semantic-markdown-text-light",
+          darkToken: "semantic-markdown-text-dark",
+        },
+        {
+          id: "semantic-markdown-muted-text",
+          label: "Muted Text",
+          description: "Supporting Markdown text such as quote and image fallback text.",
+          lightToken: "semantic-markdown-muted-text-light",
+          darkToken: "semantic-markdown-muted-text-dark",
+        },
+        {
+          id: "semantic-markdown-strong-text",
+          label: "Strong Text",
+          description: "High-emphasis Markdown text and headings.",
+          lightToken: "semantic-markdown-strong-text-light",
+          darkToken: "semantic-markdown-strong-text-dark",
+        },
+        {
+          id: "semantic-markdown-accent",
+          label: "Accent",
+          description: "Markdown heading rails, list markers, and lightweight emphasis.",
+          lightToken: "semantic-markdown-accent-light",
+          darkToken: "semantic-markdown-accent-dark",
+        },
+        {
+          id: "semantic-markdown-border",
+          label: "Border",
+          description: "Default Markdown table, image, and divider border.",
+          lightToken: "semantic-markdown-border-light",
+          darkToken: "semantic-markdown-border-dark",
+        },
+        {
+          id: "semantic-markdown-border-strong",
+          label: "Border Strong",
+          description: "Stronger Markdown borders for inline code and table headers.",
+          lightToken: "semantic-markdown-border-strong-light",
+          darkToken: "semantic-markdown-border-strong-dark",
+        },
+        {
+          id: "semantic-markdown-quote-surface",
+          label: "Quote Surface",
+          description: "Background fill for Markdown blockquotes.",
+          lightToken: "semantic-markdown-quote-surface-light",
+          darkToken: "semantic-markdown-quote-surface-dark",
+        },
+        {
+          id: "semantic-markdown-inline-code-surface",
+          label: "Inline Code Surface",
+          description: "Background fill for inline code tokens inside Markdown.",
+          lightToken: "semantic-markdown-inline-code-surface-light",
+          darkToken: "semantic-markdown-inline-code-surface-dark",
+        },
+        {
+          id: "semantic-markdown-table-head-surface",
+          label: "Table Header Surface",
+          description: "Background fill for Markdown table headers.",
+          lightToken: "semantic-markdown-table-head-surface-light",
+          darkToken: "semantic-markdown-table-head-surface-dark",
+        },
+        {
+          id: "semantic-markdown-table-row-alt-surface",
+          label: "Table Row Alt Surface",
+          description: "Alternating row background for Markdown tables.",
+          lightToken: "semantic-markdown-table-row-alt-surface-light",
+          darkToken: "semantic-markdown-table-row-alt-surface-dark",
+        },
+        {
+          id: "semantic-markdown-code-surface",
+          label: "Code Block Surface",
+          description: "Background fill for fenced Markdown code blocks.",
+          lightToken: "semantic-markdown-code-surface-light",
+          darkToken: "semantic-markdown-code-surface-dark",
+        },
+        {
+          id: "semantic-markdown-code-text",
+          label: "Code Block Text",
+          description: "Text color for fenced Markdown code blocks.",
+          lightToken: "semantic-markdown-code-text-light",
+          darkToken: "semantic-markdown-code-text-dark",
+        },
+        {
+          id: "semantic-markdown-code-muted-text",
+          label: "Code Block Muted Text",
+          description: "Muted metadata text inside fenced Markdown code blocks.",
+          lightToken: "semantic-markdown-code-muted-text-light",
+          darkToken: "semantic-markdown-code-muted-text-dark",
+        },
+        {
+          id: "semantic-markdown-code-border",
+          label: "Code Block Border",
+          description: "Border color for fenced Markdown code blocks.",
+          lightToken: "semantic-markdown-code-border-light",
+          darkToken: "semantic-markdown-code-border-dark",
+        },
+      ],
+    })
+  })
+
+  it("normalizes markdown token overrides", () => {
+    const document = normalizeAppearanceConfigDocument({
+      overrides: {
+        "semantic-markdown-inline-code-surface-light": " #123456 ",
+        "semantic-markdown-code-surface-dark": "#abcdef",
+        "semantic-markdown-code-text": "#000000",
+      },
+      resolvedTokens: {
+        "semantic-markdown-table-head-surface-light": " #654321 ",
+      },
+    })
+
+    expect(document.overrides).toEqual({
+      "semantic-markdown-inline-code-surface-light": "#123456",
+      "semantic-markdown-code-surface-dark": "#abcdef",
+      "semantic-markdown-code-text-light": "#000000",
+      "semantic-markdown-code-text-dark": "#000000",
+    })
+    expect(document.resolvedTokens).toEqual({
+      "semantic-markdown-table-head-surface-light": "#654321",
+    })
+  })
+})

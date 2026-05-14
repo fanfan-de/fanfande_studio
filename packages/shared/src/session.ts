@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { ReasoningEffortSchema } from "./reasoning"
 
 export const SessionAttachmentBodySchema = z.object({
   path: z.string().min(1),
@@ -46,7 +47,7 @@ export const StreamSessionMessageBodySchema = z
     system: z.string().optional(),
     agent: z.string().optional(),
     skills: z.array(z.string()).optional(),
-    reasoningEffort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).optional(),
+    reasoningEffort: ReasoningEffortSchema.optional(),
     model: AgentModelReferenceSchema.optional(),
   })
   .superRefine((value, ctx) => {

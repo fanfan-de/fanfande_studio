@@ -13,7 +13,7 @@ describe("ThreadMarkdown", () => {
   })
 
   it("renders GFM markdown blocks and inline formatting", () => {
-    render(
+    const { container } = render(
       <ThreadMarkdown
         text={[
           "## Release notes",
@@ -41,8 +41,10 @@ describe("ThreadMarkdown", () => {
     expect(screen.getByRole("checkbox")).toBeChecked()
     expect(screen.getByText("Reviewed")).toBeInTheDocument()
     expect(screen.getByRole("table")).toBeInTheDocument()
+    expect(container.querySelector(".thread-markdown-table-scroll table")).toBe(screen.getByRole("table"))
     expect(screen.getByText("ThreadView.tsx")).toBeInTheDocument()
     expect(screen.getByText("const enabled = true")).toBeInTheDocument()
+    expect(container.querySelector('code[data-language="ts"]')).toHaveTextContent("const enabled = true")
   })
 
   it("skips raw HTML and blocks unsafe links", () => {

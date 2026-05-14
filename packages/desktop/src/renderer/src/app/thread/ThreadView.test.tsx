@@ -1604,13 +1604,15 @@ describe("ThreadView message actions", () => {
     const finalAssistantOutput = getByText("Final answer after file updates.")
 
     expect(summaryButton).toBeInTheDocument()
+    expect(summaryButton).toHaveAttribute("aria-expanded", "true")
     expect(finalAssistantOutput.compareDocumentPosition(summaryButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(getByRole("button", { name: /审核/i })).toBeInTheDocument()
-    expect(getByRole("button", { name: /撤销/i })).toBeInTheDocument()
+    expect(getByRole("button", { name: "审核" })).toBeInTheDocument()
+    expect(getByRole("button", { name: "撤销" })).toBeInTheDocument()
     expect(queryByRole("button", { name: /审核\s+src\/App\.tsx/i })).toBeNull()
+    expect(getByRole("button", { name: /展开\s+src\/App\.tsx\s+变更/i })).toBeInTheDocument()
+    expect(queryByRole("region", { name: "Diff preview for src/App.tsx" })).not.toBeInTheDocument()
 
     fireEvent.click(getByRole("button", { name: "审核" }))
-    fireEvent.click(getByRole("button", { name: "展开文件变更" }))
     fireEvent.click(getByRole("button", { name: /src\/App\.tsx/i }))
     expect(getByRole("region", { name: "Diff preview for src/App.tsx" })).toBeInTheDocument()
     expect(getByText("old app")).toBeInTheDocument()
@@ -1698,7 +1700,6 @@ describe("ThreadView message actions", () => {
       },
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "展开文件变更" }))
     fireEvent.click(screen.getByRole("button", { name: "展开 tetris.html 变更" }))
 
     expect(screen.getByRole("region", { name: "Diff preview for tetris.html" })).toBeInTheDocument()
@@ -1756,15 +1757,13 @@ describe("ThreadView message actions", () => {
       buildPatchAssistantTurn("assistant-second-diff", "first turn", "second turn"),
     ])
 
-    const diffListButtons = screen.getAllByRole("button", { name: "展开文件变更" })
-    fireEvent.click(diffListButtons[0]!)
-    fireEvent.click(screen.getByRole("button", { name: "展开 src/shared.ts 变更" }))
+    const sharedFileButtons = screen.getAllByRole("button", { name: "展开 src/shared.ts 变更" })
+    fireEvent.click(sharedFileButtons[0]!)
 
     expect(screen.getByText('const value = "old"')).toBeInTheDocument()
     expect(screen.getByText('const value = "first turn"')).toBeInTheDocument()
     expect(screen.queryByText('const value = "second turn"')).not.toBeInTheDocument()
 
-    fireEvent.click(diffListButtons[1]!)
     fireEvent.click(screen.getByRole("button", { name: "展开 src/shared.ts 变更" }))
 
     expect(screen.getByText('const value = "second turn"')).toBeInTheDocument()
@@ -1831,12 +1830,9 @@ describe("ThreadView message actions", () => {
       },
     )
 
-    const diffListButtons = screen.getAllByRole("button", { name: "展开文件变更" })
-    fireEvent.click(diffListButtons[0]!)
-    expect(screen.queryByRole("button", { name: "展开 src/shared.ts 变更" })).not.toBeInTheDocument()
-
-    fireEvent.click(diffListButtons[1]!)
-    fireEvent.click(screen.getByRole("button", { name: "展开 src/shared.ts 变更" }))
+    const latestSharedPatchButtons = screen.getAllByRole("button", { name: "展开 src/shared.ts 变更" })
+    expect(latestSharedPatchButtons).toHaveLength(1)
+    fireEvent.click(latestSharedPatchButtons[0]!)
 
     expect(screen.getByRole("region", { name: "Diff preview for src/shared.ts" })).toBeInTheDocument()
     expect(screen.getByText('const value = "latest workspace"')).toBeInTheDocument()
@@ -1880,7 +1876,9 @@ describe("ThreadView message actions", () => {
     const restoreButton = screen.getByRole("button", { name: /撤销/i })
     fireEvent.click(restoreButton)
 
-    expect(restoreButton).toBeDisabled()
+    await waitFor(() => {
+      expect(restoreButton).toBeDisabled()
+    })
 
     rejectRestore(new Error("restore failed"))
 

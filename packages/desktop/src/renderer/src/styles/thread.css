@@ -578,8 +578,26 @@
 }
 
 .thread-markdown {
+  --md-text: var(--semantic-markdown-text, var(--seg-text-1));
+  --md-muted: var(--semantic-markdown-muted-text, var(--seg-text-2));
+  --md-faint: var(--semantic-markdown-muted-text, var(--seg-text-3));
+  --md-strong: var(--semantic-markdown-strong-text, var(--seg-text-1));
+  --md-accent: var(--semantic-markdown-accent, var(--seg-accent-strong));
+  --md-border: var(--semantic-markdown-border, var(--seg-border));
+  --md-border-strong: var(--semantic-markdown-border-strong, var(--seg-border));
+  --md-quote-bg: var(--semantic-markdown-quote-surface, var(--seg-panel-muted));
+  --md-inline-code-bg: var(--semantic-markdown-inline-code-surface, var(--seg-panel-muted));
+  --md-table-head-bg: var(--semantic-markdown-table-head-surface, var(--seg-panel-muted));
+  --md-table-row-alt-bg: var(--semantic-markdown-table-row-alt-surface, var(--seg-panel-muted));
+  --md-code-bg: var(--semantic-markdown-code-surface, var(--surface-code));
+  --md-code-text: var(--semantic-markdown-code-text, var(--text-on-dark));
+  --md-code-muted: var(--semantic-markdown-code-muted-text, rgba(250, 250, 249, 0.62));
+  --md-code-border: var(--semantic-markdown-code-border, var(--surface-code));
+
   min-width: 0;
   max-width: 100%;
+  color: var(--md-text);
+  line-height: 1.66;
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -592,98 +610,203 @@
   margin-bottom: 0;
 }
 
-.thread-markdown :where(p, blockquote, ul, ol, pre, table, h1, h2, h3, h4, h5, h6) {
-  margin: 0 0 0.78em;
+.thread-markdown :where(p, blockquote, ul, ol, pre, .thread-markdown-table-scroll, h1, h2, h3, h4, h5, h6) {
+  margin: 0 0 0.82em;
+}
+
+.thread-markdown p {
+  color: var(--md-text);
+}
+
+.thread-markdown strong {
+  color: var(--md-strong);
+  font-weight: 700;
 }
 
 .thread-markdown :where(h1, h2, h3, h4, h5, h6) {
-  color: var(--seg-text-1);
+  color: var(--md-strong);
   font-weight: 700;
-  line-height: 1.28;
+  line-height: 1.24;
+}
+
+.thread-markdown :where(h1, h2) {
+  position: relative;
+  padding-left: 11px;
+}
+
+.thread-markdown :where(h1, h2)::before {
+  content: "";
+  position: absolute;
+  top: 0.18em;
+  bottom: 0.2em;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--md-accent);
 }
 
 .thread-markdown h1 {
-  font-size: 22px;
+  font-size: 23px;
 }
 
 .thread-markdown h2 {
-  font-size: 19px;
+  font-size: 20px;
 }
 
 .thread-markdown :where(h3, h4, h5, h6) {
   font-size: 16px;
 }
 
+.thread-markdown h3 {
+  color: var(--md-accent);
+}
+
 .thread-markdown :where(ul, ol) {
-  padding-left: 1.35em;
+  padding-left: 1.45em;
+}
+
+.thread-markdown :where(ul, ol) :where(ul, ol) {
+  margin-top: 0.32em;
+  margin-bottom: 0.32em;
 }
 
 .thread-markdown :where(li + li) {
-  margin-top: 0.28em;
+  margin-top: 0.34em;
+}
+
+.thread-markdown li::marker {
+  color: var(--md-accent);
+  font-weight: 700;
 }
 
 .thread-markdown :where(blockquote) {
-  padding: 2px 0 2px 14px;
-  border-left: 3px solid var(--seg-border);
-  color: var(--seg-text-2);
+  padding: 8px 12px 8px 14px;
+  border-left: 3px solid var(--md-accent);
+  border-radius: var(--seg-radius-xs);
+  background: var(--md-quote-bg);
+  color: var(--md-muted);
+}
+
+.thread-markdown blockquote > :last-child {
+  margin-bottom: 0;
 }
 
 .thread-markdown :where(code) {
   font-family: var(--font-mono);
-  font-size: 0.92em;
+  font-size: 0.9em;
 }
 
 .thread-markdown :where(:not(pre) > code) {
-  padding: 0.12em 0.32em;
-  border: 1px solid var(--seg-border);
+  padding: 0.12em 0.36em;
+  border: 1px solid var(--md-border-strong);
   border-radius: 4px;
-  background: var(--seg-panel-muted);
-  color: var(--seg-text-1);
+  background: var(--md-inline-code-bg);
+  color: var(--md-strong);
 }
 
 .thread-markdown pre {
+  position: relative;
   max-width: 100%;
   min-width: 0;
-  overflow: hidden;
-  padding: 10px 12px;
-  border: 1px solid var(--seg-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 13px 15px;
+  border: 1px solid var(--md-code-border);
   border-radius: var(--seg-radius-xs);
-  background: var(--seg-panel-muted);
-  color: var(--seg-text-1);
-  white-space: pre-wrap;
+  background: var(--md-code-bg);
+  color: var(--md-code-text);
+  white-space: pre;
+  scrollbar-width: thin;
 }
 
 .thread-markdown pre code {
   display: block;
-  max-width: 100%;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
   padding: 0;
   border: 0;
   background: transparent;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  color: inherit;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.thread-markdown pre code[data-language]::before {
+  content: attr(data-language);
+  display: block;
+  width: fit-content;
+  margin: 0 0 10px;
+  color: var(--md-code-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.thread-markdown-table-scroll {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--md-border);
+  border-radius: var(--seg-radius-xs);
+  background: var(--seg-panel);
+  scrollbar-width: thin;
 }
 
 .thread-markdown table {
-  display: block;
-  max-width: 100%;
-  min-width: 0;
-  overflow: auto;
-  border-collapse: collapse;
+  width: 100%;
+  min-width: max-content;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .thread-markdown :where(th, td) {
   min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--seg-border);
+  padding: 7px 10px;
+  border: 0;
+  border-right: 1px solid var(--md-border);
+  border-bottom: 1px solid var(--md-border);
   text-align: left;
   vertical-align: top;
 }
 
 .thread-markdown th {
-  color: var(--seg-text-1);
+  color: var(--md-strong);
   font-weight: 700;
-  background: var(--seg-panel-muted);
+  background: var(--md-table-head-bg);
+}
+
+.thread-markdown td {
+  color: var(--md-text);
+  background: var(--seg-panel);
+}
+
+.thread-markdown tbody tr:nth-child(even) td {
+  background: var(--md-table-row-alt-bg);
+}
+
+.thread-markdown :where(th, td):last-child {
+  border-right: 0;
+}
+
+.thread-markdown tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.thread-markdown thead tr:last-child th {
+  border-bottom-color: var(--md-border-strong);
+}
+
+.thread-markdown hr {
+  height: 1px;
+  margin: 1em 0;
+  border: 0;
+  background: var(--md-border);
 }
 
 .thread-markdown .contains-task-list {
@@ -700,10 +823,11 @@
   height: 14px;
   margin: 0 7px 0 0;
   vertical-align: -2px;
+  accent-color: var(--md-accent);
 }
 
 .thread-markdown-image-alt {
-  color: var(--seg-text-2);
+  color: var(--md-muted);
   font-style: italic;
 }
 
@@ -712,11 +836,11 @@
   width: auto;
   max-width: min(100%, 520px);
   max-height: 420px;
-  margin: 8px 0;
+  margin: 10px 0;
   object-fit: contain;
-  border: 1px solid rgba(166, 186, 208, 0.54);
+  border: 1px solid var(--md-border);
   border-radius: 8px;
-  background: rgba(247, 250, 252, 0.88);
+  background: var(--seg-panel);
 }
 
 .trace-kind-text {
@@ -2987,13 +3111,7 @@ body.is-image-lightbox-open {
 }
 
 .assistant-section.is-response .trace-item-text,
-.assistant-section.is-response .trace-item-detail,
-.assistant-section.is-response .thread-markdown :where(h1, h2, h3, h4, h5, h6),
-.assistant-section.is-response .thread-markdown :where(blockquote),
-.assistant-section.is-response .thread-markdown :where(:not(pre) > code),
-.assistant-section.is-response .thread-markdown pre,
-.assistant-section.is-response .thread-markdown th,
-.assistant-section.is-response .thread-markdown-image-alt {
+.assistant-section.is-response .trace-item-detail {
   color: var(--semantic-thread-response-text);
 }
 
