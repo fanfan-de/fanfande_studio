@@ -1531,13 +1531,12 @@ describe("ThreadView message actions", () => {
     expect(text.indexOf("Hello during tool step")).toBeLessThan(text.indexOf("After the steer"))
   })
 
-  it("renders user turn file changes after the final assistant output and handles card actions", async () => {
+  it("renders assistant turn file changes after the final assistant output and handles card actions", async () => {
     const onFileChangeSelect = vi.fn()
     const onTurnDiffReview = vi.fn().mockResolvedValue(undefined)
     const onTurnDiffRestore = vi.fn().mockResolvedValue(undefined)
     const confirmRestore = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true)
-    const turn: UserTurn = {
-      ...userTurn("user-with-diff", "Update the app"),
+    const diffSummary = {
       diffSummary: {
         stats: {
           files: 2,
@@ -1565,7 +1564,7 @@ describe("ThreadView message actions", () => {
 
     const { getByRole, getByText, queryByRole } = renderThread(
       [
-        turn,
+        userTurn("user-with-diff", "Update the app"),
         assistantTraceTurn(
           "assistant-first",
           [
@@ -1580,20 +1579,23 @@ describe("ThreadView message actions", () => {
           ],
           false,
         ),
-        assistantTraceTurn(
-          "assistant-final",
-          [
-            {
-              id: "response-2",
-              kind: "text",
-              timestamp: 2,
-              label: "Assistant",
-              text: "Final answer after file updates.",
-              status: "completed",
-            },
-          ],
-          false,
-        ),
+        {
+          ...assistantTraceTurn(
+            "assistant-final",
+            [
+              {
+                id: "response-2",
+                kind: "text",
+                timestamp: 2,
+                label: "Assistant",
+                text: "Final answer after file updates.",
+                status: "completed",
+              },
+            ],
+            false,
+          ),
+          ...diffSummary,
+        },
       ],
       { onFileChangeSelect, onTurnDiffRestore, onTurnDiffReview },
     )
@@ -1637,8 +1639,37 @@ describe("ThreadView message actions", () => {
     const onFileChangeSelect = vi.fn()
     renderThread(
       [
+        userTurn("user-diff-summary-only", "Create a Tetris game"),
         {
-          ...userTurn("user-diff-summary-only", "Create a Tetris game"),
+          ...assistantTraceTurn(
+            "assistant-tetris",
+            [
+              {
+                id: "patch-tetris",
+                kind: "patch",
+                timestamp: 1,
+                label: "Patch",
+                title: "1 file change (+167 -0)",
+                fileChanges: [
+                  {
+                    file: "tetris.html",
+                    additions: 167,
+                    deletions: 0,
+                    patch: [
+                      "diff --git a/tetris.html b/tetris.html",
+                      "--- a/tetris.html",
+                      "+++ b/tetris.html",
+                      "@@ -0,0 +1,2 @@",
+                      "+<canvas id=\"board\"></canvas>",
+                      "+<script>startGame()</script>",
+                    ].join("\n"),
+                  },
+                ],
+                status: "completed",
+              },
+            ],
+            false,
+          ),
           diffSummary: {
             stats: {
               files: 1,
@@ -1648,35 +1679,6 @@ describe("ThreadView message actions", () => {
             diffs: [{ file: "tetris.html", additions: 167, deletions: 0 }],
           },
         },
-        assistantTraceTurn(
-          "assistant-tetris",
-          [
-            {
-              id: "patch-tetris",
-              kind: "patch",
-              timestamp: 1,
-              label: "Patch",
-              title: "1 file change (+167 -0)",
-              fileChanges: [
-                {
-                  file: "tetris.html",
-                  additions: 167,
-                  deletions: 0,
-                  patch: [
-                    "diff --git a/tetris.html b/tetris.html",
-                    "--- a/tetris.html",
-                    "+++ b/tetris.html",
-                    "@@ -0,0 +1,2 @@",
-                    "+<canvas id=\"board\"></canvas>",
-                    "+<script>startGame()</script>",
-                  ].join("\n"),
-                },
-              ],
-              status: "completed",
-            },
-          ],
-          false,
-        ),
       ],
       {
         onFileChangeSelect,
@@ -1693,19 +1695,9 @@ describe("ThreadView message actions", () => {
   })
 
   it("keeps inline diffs scoped to each turn when the same file changes later", () => {
-    const buildDiffUserTurn = (id: string): UserTurn => ({
-      ...userTurn(id, "Update shared file"),
-      diffSummary: {
-        stats: {
-          files: 1,
-          additions: 1,
-          deletions: 1,
-        },
-        diffs: [{ file: "src/shared.ts", additions: 1, deletions: 1 }],
-      },
-    })
-    const buildPatchAssistantTurn = (id: string, oldValue: string, newValue: string): AssistantTurn =>
-      assistantTraceTurn(
+    const buildDiffUserTurn = (id: string): UserTurn => userTurn(id, "Update shared file")
+    const buildPatchAssistantTurn = (id: string, oldValue: string, newValue: string): AssistantTurn => ({
+      ...assistantTraceTurn(
         id,
         [
           {
@@ -1733,7 +1725,16 @@ describe("ThreadView message actions", () => {
           },
         ],
         false,
-      )
+      ),
+      diffSummary: {
+        stats: {
+          files: 1,
+          additions: 1,
+          deletions: 1,
+        },
+        diffs: [{ file: "src/shared.ts", additions: 1, deletions: 1 }],
+      },
+    })
 
     renderThread([
       buildDiffUserTurn("user-first-diff"),
@@ -1758,8 +1759,22 @@ describe("ThreadView message actions", () => {
 
   it("uses the active workspace diff only for the latest turn without a saved patch", () => {
     const onTurnDiffSummaryHydrate = vi.fn()
-    const buildDiffUserTurn = (id: string): UserTurn => ({
-      ...userTurn(id, "Update shared file"),
+    const buildDiffUserTurn = (id: string): UserTurn => userTurn(id, "Update shared file")
+    const buildDiffAssistantTurn = (id: string, text: string): AssistantTurn => ({
+      ...assistantTraceTurn(
+        id,
+        [
+          {
+            id: `${id}-response`,
+            kind: "text",
+            timestamp: 1,
+            label: "Assistant",
+            text,
+            status: "completed",
+          },
+        ],
+        false,
+      ),
       diffSummary: {
         stats: {
           files: 1,
@@ -1773,35 +1788,9 @@ describe("ThreadView message actions", () => {
     renderThread(
       [
         buildDiffUserTurn("user-old-summary"),
-        assistantTraceTurn(
-          "assistant-old-summary",
-          [
-            {
-              id: "old-response",
-              kind: "text",
-              timestamp: 1,
-              label: "Assistant",
-              text: "Old turn finished.",
-              status: "completed",
-            },
-          ],
-          false,
-        ),
+        buildDiffAssistantTurn("assistant-old-summary", "Old turn finished."),
         buildDiffUserTurn("user-latest-summary"),
-        assistantTraceTurn(
-          "assistant-latest-summary",
-          [
-            {
-              id: "latest-response",
-              kind: "text",
-              timestamp: 2,
-              label: "Assistant",
-              text: "Latest turn finished.",
-              status: "completed",
-            },
-          ],
-          false,
-        ),
+        buildDiffAssistantTurn("assistant-latest-summary", "Latest turn finished."),
       ],
       {
         activeSessionDiff: {
@@ -1839,7 +1828,7 @@ describe("ThreadView message actions", () => {
     expect(screen.getByRole("region", { name: "Diff preview for src/shared.ts" })).toBeInTheDocument()
     expect(screen.getByText('const value = "latest workspace"')).toBeInTheDocument()
     expect(onTurnDiffSummaryHydrate).toHaveBeenCalledWith(
-      "user-latest-summary",
+      "assistant-latest-summary",
       expect.objectContaining({
         diffs: [
           expect.objectContaining({
@@ -1942,8 +1931,54 @@ describe("ThreadView message actions", () => {
 
     const { container, getAllByRole, getByRole, getByText } = renderThread(
       [
+        userTurn("user-with-diff", "Please update the file."),
         {
-          ...userTurn("user-with-diff", "Please update the file."),
+          ...assistantTraceTurn(
+            "assistant-1",
+            [
+              {
+                id: "response-1",
+                kind: "text",
+                timestamp: 1,
+                label: "Assistant",
+                text: "I will check the directory first.",
+                status: "completed",
+              },
+              {
+                id: "tool-1",
+                kind: "tool",
+                timestamp: 2,
+                label: "Tool",
+                title: "list-directory",
+                text: "index.html",
+                status: "completed",
+              },
+              {
+                id: "response-2",
+                kind: "text",
+                timestamp: 3,
+                label: "Assistant",
+                text: "Deleted. The directory is empty now.",
+                status: "completed",
+              },
+              {
+                id: "patch-1",
+                kind: "patch",
+                timestamp: 4,
+                label: "Patch",
+                title: "1 file change (+1 -0)",
+                fileChanges: [
+                  {
+                    file: "src/index.ts",
+                    additions: 1,
+                    deletions: 0,
+                  },
+                ],
+                status: "completed",
+              },
+            ],
+            false,
+          ),
           diffSummary: {
             diffs: [
               {
@@ -1954,52 +1989,6 @@ describe("ThreadView message actions", () => {
             ],
           },
         },
-        assistantTraceTurn(
-          "assistant-1",
-          [
-            {
-              id: "response-1",
-              kind: "text",
-              timestamp: 1,
-              label: "Assistant",
-              text: "I will check the directory first.",
-              status: "completed",
-            },
-            {
-              id: "tool-1",
-              kind: "tool",
-              timestamp: 2,
-              label: "Tool",
-              title: "list-directory",
-              text: "index.html",
-              status: "completed",
-            },
-            {
-              id: "response-2",
-              kind: "text",
-              timestamp: 3,
-              label: "Assistant",
-              text: "Deleted. The directory is empty now.",
-              status: "completed",
-            },
-            {
-              id: "patch-1",
-              kind: "patch",
-              timestamp: 4,
-              label: "Patch",
-              title: "1 file change (+1 -0)",
-              fileChanges: [
-                {
-                  file: "src/index.ts",
-                  additions: 1,
-                  deletions: 0,
-                },
-              ],
-              status: "completed",
-            },
-          ],
-          false,
-        ),
       ],
       { onOpenSideChat },
     )

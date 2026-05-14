@@ -1,5 +1,15 @@
 import { describe, expect, test } from "bun:test"
+import "./sqlite.cleanup.ts"
+import { spawnSync } from "node:child_process"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { Instance } from "#project/instance.ts"
 import { buildDetailedDiffSummary, buildDiffSummary, summarizeSnapshotFileDiffs } from "#session/diff/diff-summary.ts"
+import * as Snapshot from "#snapshot/snapshot.ts"
+
+const hasGit = spawnSync("git", ["--version"], { stdio: "ignore" }).status === 0
+const testIfGit = hasGit ? test : test.skip
 
 describe("session diff summary", () => {
   test("maps snapshot file diffs into compact file summaries", () => {
@@ -102,5 +112,39 @@ describe("session diff summary", () => {
       deletions: 1,
     })
     expect(summary.diffs[0]?.patch).toContain("@@ -1 +1 @@")
+  })
+
+  testIfGit("preserves patch text for non-ASCII file paths", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fanfande-snapshot-unicode-"))
+
+    try {
+      await Instance.provide({
+        directory: root,
+        async fn() {
+          const before = await Snapshot.track()
+          await writeFile(join(root, "春暖花开.md"), "面朝大海\n春暖花开\n", "utf8")
+          const after = await Snapshot.track()
+
+          if (!before || !after) {
+            throw new Error("Expected snapshots to be captured for the test workspace.")
+          }
+
+          const diffs = await Snapshot.diffFull(before, after, {
+            includeContent: false,
+          })
+
+          expect(diffs).toHaveLength(1)
+          expect(diffs[0]).toMatchObject({
+            file: "春暖花开.md",
+            additions: 2,
+            deletions: 0,
+          })
+          expect(diffs[0]?.patch).toContain("diff --git")
+          expect(diffs[0]?.patch).toContain("+面朝大海")
+        },
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })

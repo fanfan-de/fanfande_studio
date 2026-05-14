@@ -1531,6 +1531,21 @@ describe("stream trace reducer", () => {
           role: "assistant",
           created: 11,
           completed: 12,
+          diffSummary: {
+            stats: {
+              files: 1,
+              additions: 1,
+              deletions: 0,
+            },
+            diffs: [
+              {
+                file: "src/result.ts",
+                additions: 1,
+                deletions: 0,
+                patch: "@@ -0,0 +1 @@\n+result",
+              },
+            ],
+          },
         },
         parts: [
           { id: "part-reasoning-1", type: "reasoning", text: "Rebuilding from stored parts." },
@@ -1568,6 +1583,21 @@ describe("stream trace reducer", () => {
       kind: "assistant",
       timestamp: 11,
       state: "Backend response received",
+      diffSummary: {
+        stats: {
+          files: 1,
+          additions: 1,
+          deletions: 0,
+        },
+        diffs: [
+          {
+            file: "src/result.ts",
+            additions: 1,
+            deletions: 0,
+            patch: "@@ -0,0 +1 @@\n+result",
+          },
+        ],
+      },
     })
     expect(turns[1]?.kind === "assistant" ? turns[1].runtime.phase : null).toBe("completed")
     expect(turns[1]?.kind === "assistant" ? turns[1].items.map((item) => item.kind) : []).toEqual(["reasoning", "text", "system"])

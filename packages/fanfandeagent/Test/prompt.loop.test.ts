@@ -145,13 +145,17 @@ describe("prompt loop concurrency", () => {
             deletions: 0,
           })
           expect(secondPatch?.changes?.[0]?.patch).toContain("second change")
-          const userDiffSummary = users[0]?.info.role === "user" ? users[0].info.diffSummary : undefined
-          expect(userDiffSummary?.diffs.map((diff) => diff.file)).toEqual(["first.txt", "second.txt"])
-          expect(userDiffSummary?.stats).toEqual({
+          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary : undefined).toBeUndefined()
+          expect(assistants[0]?.info.role === "assistant" ? assistants[0].info.diffSummary : undefined).toBeUndefined()
+          const assistantDiffSummary = assistants[1]?.info.role === "assistant" ? assistants[1].info.diffSummary : undefined
+          expect(assistantDiffSummary?.diffs.map((diff) => diff.file)).toEqual(["first.txt", "second.txt"])
+          expect(assistantDiffSummary?.stats).toEqual({
             files: 2,
             additions: 2,
             deletions: 0,
           })
+          expect(assistantDiffSummary?.diffs[0]?.patch).toContain("first change")
+          expect(assistantDiffSummary?.diffs[1]?.patch).toContain("second change")
 
           expect(existsSync(join(tempDir, ".git"))).toBe(false)
         },
@@ -233,6 +237,7 @@ describe("prompt loop concurrency", () => {
 
           expect(assistants).toHaveLength(1)
           expect(assistants[0]?.parts.some((part) => part.type === "patch")).toBe(false)
+          expect(assistants[0]?.info.role === "assistant" ? assistants[0].info.diffSummary : undefined).toBeUndefined()
           expect(users[0]?.info.role === "user" ? users[0].info.diffSummary : undefined).toBeUndefined()
         },
       })
@@ -319,7 +324,7 @@ describe("prompt loop concurrency", () => {
     }
   })
 
-  itIfGit("records turn diff summaries on steer user messages", async () => {
+  itIfGit("records steer turn diff summary on the final assistant message", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "fanfande-turn-diff-steer-"))
     let streamCalls = 0
     let releaseFirstPrompt: (() => void) | undefined
@@ -420,15 +425,20 @@ describe("prompt loop concurrency", () => {
           await firstPrompt.promise
           await secondPrompt.promise
 
+          const assistants: MessageTypes.WithParts[] = []
           const users: MessageTypes.WithParts[] = []
           for await (const item of Message.stream(session.id)) {
+            if (item.info.role === "assistant") assistants.push(item)
             if (item.info.role === "user") users.push(item)
           }
 
           expect(streamCalls).toBe(2)
+          expect(assistants).toHaveLength(2)
           expect(users).toHaveLength(2)
-          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["first.txt"])
-          expect(users[1]?.info.role === "user" ? users[1].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["second.txt"])
+          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary : undefined).toBeUndefined()
+          expect(users[1]?.info.role === "user" ? users[1].info.diffSummary : undefined).toBeUndefined()
+          expect(assistants[0]?.info.role === "assistant" ? assistants[0].info.diffSummary : undefined).toBeUndefined()
+          expect(assistants[1]?.info.role === "assistant" ? assistants[1].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["first.txt", "second.txt"])
         },
       })
     } finally {
@@ -438,7 +448,7 @@ describe("prompt loop concurrency", () => {
     }
   })
 
-  itIfGit("updates the latest user diff summary cumulatively on resume", async () => {
+  itIfGit("records turn diff summaries on each assistant message during resume", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "fanfande-turn-diff-resume-"))
     let streamCalls = 0
 
@@ -508,17 +518,22 @@ describe("prompt loop concurrency", () => {
           })).rejects.toThrow("first call failed")
           await Prompt.resume({ sessionID: session.id })
 
+          const assistants: MessageTypes.WithParts[] = []
           const users: MessageTypes.WithParts[] = []
           for await (const item of Message.stream(session.id)) {
+            if (item.info.role === "assistant") assistants.push(item)
             if (item.info.role === "user") users.push(item)
           }
 
           expect(streamCalls).toBe(2)
           expect(users).toHaveLength(1)
-          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["first.txt", "second.txt"])
-          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary?.stats : undefined).toEqual({
-            files: 2,
-            additions: 2,
+          expect(assistants).toHaveLength(2)
+          expect(users[0]?.info.role === "user" ? users[0].info.diffSummary : undefined).toBeUndefined()
+          expect(assistants[0]?.info.role === "assistant" ? assistants[0].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["first.txt"])
+          expect(assistants[1]?.info.role === "assistant" ? assistants[1].info.diffSummary?.diffs.map((diff) => diff.file) : []).toEqual(["second.txt"])
+          expect(assistants[1]?.info.role === "assistant" ? assistants[1].info.diffSummary?.stats : undefined).toEqual({
+            files: 1,
+            additions: 1,
             deletions: 0,
           })
         },

@@ -8,7 +8,7 @@ import {
     type CompactFileDiff,
 } from "#session/diff/diff-summary.ts"
 
-export type DiffSummary = NonNullable<Message.User["diffSummary"]>
+export type DiffSummary = Message.MessageDiffSummary
 export interface DetailedDiffSummary extends Omit<DiffSummary, "diffs"> {
     diffs: Snapshot.FileDiff[]
 }

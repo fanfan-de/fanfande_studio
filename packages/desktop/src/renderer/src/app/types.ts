@@ -794,6 +794,7 @@ export interface AssistantTurn {
   messageID?: string
   kind: "assistant"
   timestamp: number
+  diffSummary?: SessionDiffSummary
   runtime: AssistantTurnRuntime
   state: string
   items: AssistantTraceItem[]

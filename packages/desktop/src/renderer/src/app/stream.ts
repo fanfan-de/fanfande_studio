@@ -90,6 +90,23 @@ function readMessageID(value: unknown) {
   return readString(message?.id)
 }
 
+function applyAssistantMessageMetadata(turn: AssistantTurn, messageValue: unknown): AssistantTurn {
+  const message = readRecord(messageValue)
+  if (!message) return turn
+
+  const diffSummary = readSessionDiffSummary(message.diffSummary)
+  const nextTurn: AssistantTurn = {
+    ...turn,
+    messageID: readString(message.id) || turn.messageID,
+  }
+  if (diffSummary) {
+    nextTurn.diffSummary = diffSummary
+  } else {
+    delete nextTurn.diffSummary
+  }
+  return nextTurn
+}
+
 function resolvePayloadMessageID(payload: Record<string, unknown>) {
   return readString(payload.messageID) || readMessageID(payload.message)
 }
@@ -1805,6 +1822,7 @@ function buildAssistantTurnFromHistory(message: LoadedSessionHistoryMessage) {
     messageID: message.info.id || undefined,
     kind: "assistant",
     timestamp: createdAt,
+    diffSummary: readSessionDiffSummary(message.info.diffSummary),
     runtime: createAssistantTurnRuntime({
       phase: runtimePhase,
       startedAt: createdAt,
@@ -2074,12 +2092,13 @@ export function finalizeStreamAssistantTurn(
 ): AssistantTurn {
   const items = clearStreamingItems(settleQueuedPrompt(turn.items, turn.id))
   const waitingQuestion = items.find((item) => item.kind === "question")
-  const nextMessageID = readMessageID(input?.message) || turn.messageID
+  const messageTurn = applyAssistantMessageMetadata(turn, input?.message)
+  const nextMessageID = messageTurn.messageID
 
   if (turn.runtime.phase === "failed") {
     return updateAssistantTurnLifecycle(
       {
-        ...turn,
+        ...messageTurn,
         messageID: nextMessageID,
         isStreaming: false,
       },
@@ -2094,7 +2113,7 @@ export function finalizeStreamAssistantTurn(
   if (waitingQuestion) {
     return updateAssistantTurnLifecycle(
       {
-        ...turn,
+        ...messageTurn,
         messageID: nextMessageID,
         isStreaming: false,
       },
@@ -2123,7 +2142,7 @@ export function finalizeStreamAssistantTurn(
 
     return updateAssistantTurnLifecycle(
       {
-        ...turn,
+        ...messageTurn,
         messageID: nextMessageID,
         isStreaming: false,
       },
@@ -2139,7 +2158,7 @@ export function finalizeStreamAssistantTurn(
   if (input?.status === "blocked") {
     return updateAssistantTurnLifecycle(
       {
-        ...turn,
+        ...messageTurn,
         messageID: nextMessageID,
         isStreaming: false,
       },
@@ -2156,7 +2175,7 @@ export function finalizeStreamAssistantTurn(
 
   return updateAssistantTurnLifecycle(
     {
-      ...turn,
+      ...messageTurn,
       messageID: nextMessageID,
       isStreaming: false,
     },
@@ -2581,6 +2600,7 @@ function applyRuntimeEventToTurn(
     const parts = Array.isArray(payload.parts) ? payload.parts : []
     const message = readString(payload.error) || "Unknown backend error"
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
+    const messageTurn = applyAssistantMessageMetadata(turn, payload.message)
     const nextItems = appendTraceItem(
       mergeTraceParts(clearStreamingItems(preparedItems), parts),
       createTraceItem({
@@ -2595,7 +2615,7 @@ function applyRuntimeEventToTurn(
 
     return updateAssistantTurnLifecycle(
       {
-        ...turn,
+        ...messageTurn,
         messageID,
         isStreaming: false,
       },
@@ -2612,7 +2632,7 @@ function applyRuntimeEventToTurn(
     const parts = Array.isArray(payload.parts) ? payload.parts : []
     const detail = readString(payload.detail) || readString(payload.reason) || "The turn was cancelled."
     const messageID = resolvePayloadMessageID(payload) || turn.messageID
-    const cancelledTurn = markAssistantTurnInterrupted(turn, detail)
+    const cancelledTurn = markAssistantTurnInterrupted(applyAssistantMessageMetadata(turn, payload.message), detail)
     const nextItems = upsertTraceItem(
       mergeTraceParts(cancelledTurn.items, parts),
       createTraceItem({

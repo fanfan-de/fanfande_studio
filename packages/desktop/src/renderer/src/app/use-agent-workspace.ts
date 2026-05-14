@@ -72,7 +72,7 @@ function hydrateTurnDiffSummary(
 ) {
   let didUpdate = false
   const nextTurns = turns.map((turn) => {
-    if (turn.kind !== "user" || turn.id !== turnID) return turn
+    if (turn.id !== turnID) return turn
     if (buildSessionDiffSummarySignature(turn.diffSummary) === buildSessionDiffSummarySignature(diffSummary)) return turn
 
     didUpdate = true

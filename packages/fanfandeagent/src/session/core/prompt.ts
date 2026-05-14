@@ -170,107 +170,45 @@ async function captureSnapshot(input: {
     })
 }
 
-function compactUserDiffSummary(detailed: SessionDiff.DetailedDiffSummary): Message.User["diffSummary"] | undefined {
-    if (detailed.diffs.length === 0) return undefined
-    return SessionDiff.buildDiffSummary(SessionDiff.summarizeFileDiffs(detailed.diffs))
-}
-
-function removeUserDiffSummary(message: Message.User): Message.User {
+function removeAssistantDiffSummary(message: Message.Assistant): Message.Assistant {
     const nextMessage = { ...message }
     delete nextMessage.diffSummary
     return nextMessage
 }
 
-const userDiffTargetsByTurn = new Map<string, {
-    message: Message.User
-    snapshot?: string
-}>()
-
-async function persistUserDiffSummary(input: {
-    message: Message.User
+async function persistAssistantTurnDiffSummary(input: {
+    message: Message.Assistant
     fromSnapshot?: string
     toSnapshot?: string
     turn?: Orchestrator.TurnContext
 }) {
-    if (!input.fromSnapshot) return input.message
+    if (!input.fromSnapshot || !input.toSnapshot) return input.message
 
-    const toSnapshot = input.toSnapshot ?? await captureSnapshot({
-        context: "post-turn",
-        sessionID: input.message.sessionID,
-        messageID: input.message.id,
-    })
-    if (!toSnapshot) return input.message
-
-    const summary = compactUserDiffSummary(
-        await SessionDiff.computeDetailedDiffBetweenSnapshots(input.fromSnapshot, toSnapshot, {
+    const detailed = await SessionDiff.computeDetailedDiffBetweenSnapshots(
+        input.fromSnapshot,
+        input.toSnapshot,
+        {
             includeContent: false,
-        }),
+            maxPatchBytes: MODEL_CALL_PATCH_MAX_PATCH_BYTES,
+        },
     )
+    const changes = toPatchFileChangeSummary(detailed.diffs)
+    const summary: Message.MessageDiffSummary | undefined = changes.length > 0
+        ? {
+            ...SessionDiff.buildDiffSummary(changes),
+            diffs: changes,
+        }
+        : undefined
     const nextMessage = summary
         ? {
             ...input.message,
             diffSummary: summary,
         }
-        : removeUserDiffSummary(input.message)
+        : removeAssistantDiffSummary(input.message)
 
     if (!summary && !input.message.diffSummary) return nextMessage
 
     await persistMessageRecord(nextMessage, input.turn)
-    return nextMessage
-}
-
-async function settleLatestUserDiffSummary(input: {
-    sessionID: string
-    toSnapshot?: string
-    turn?: Orchestrator.TurnContext
-}) {
-    const latestUser = SessionDiff.findLatestUserMessageWithSnapshot(input.sessionID)
-    if (!latestUser) return null
-
-    return persistUserDiffSummary({
-        message: latestUser.message,
-        fromSnapshot: latestUser.snapshot,
-        toSnapshot: input.toSnapshot,
-        turn: input.turn,
-    }).catch((error) => {
-        log.warn("failed to persist user diff summary", {
-            sessionID: input.sessionID,
-            userMessageID: latestUser.message.id,
-            error: error instanceof Error ? error.message : String(error),
-        })
-        return latestUser.message
-    })
-}
-
-async function settleTurnUserDiffSummary(input: {
-    sessionID: string
-    toSnapshot?: string
-    turn: Orchestrator.TurnContext
-}) {
-    const target = userDiffTargetsByTurn.get(input.turn.turnID)
-    if (!target) {
-        return settleLatestUserDiffSummary(input)
-    }
-
-    const nextMessage = await persistUserDiffSummary({
-        message: target.message,
-        fromSnapshot: target.snapshot,
-        toSnapshot: input.toSnapshot,
-        turn: input.turn,
-    }).catch((error) => {
-        log.warn("failed to persist turn user diff summary", {
-            sessionID: input.sessionID,
-            userMessageID: target.message.id,
-            turnID: input.turn.turnID,
-            error: error instanceof Error ? error.message : String(error),
-        })
-        return target.message
-    })
-
-    userDiffTargetsByTurn.set(input.turn.turnID, {
-        ...target,
-        message: nextMessage,
-    })
     return nextMessage
 }
 
@@ -554,6 +492,8 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
         : null
 
     let currentAssistant: Message.Assistant | undefined;
+    let turnDiffStartSnapshot: string | undefined;
+    let turnDiffEndSnapshot: string | undefined;
     let iteration = 0;
     try {
         while (true) {
@@ -733,6 +673,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                 })
                 return undefined
             })
+            turnDiffStartSnapshot ??= modelCallSnapshot
             throwIfAborted(abort)
             let processResult: Awaited<ReturnType<typeof processor.process>>;
             try {
@@ -758,7 +699,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     },
                 } as Message.Assistant["error"];
                 await persistMessageRecord(assistantMessage, turn);
-                await persistModelCallPatchPart({
+                const modelCallEndSnapshot = await persistModelCallPatchPart({
                     sessionID,
                     assistantMessageID: assistantMessage.id,
                     fromSnapshot: modelCallSnapshot,
@@ -771,12 +712,28 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                         iteration,
                         error: persistError instanceof Error ? persistError.message : String(persistError),
                     })
+                    return undefined
                 })
+                turnDiffEndSnapshot = modelCallEndSnapshot ?? turnDiffEndSnapshot
+                assistantMessage.diffSummary = (await persistAssistantTurnDiffSummary({
+                    message: assistantMessage,
+                    fromSnapshot: turnDiffStartSnapshot,
+                    toSnapshot: turnDiffEndSnapshot,
+                    turn,
+                }).catch((persistError) => {
+                    log.warn("failed to persist assistant turn diff after processor error", {
+                        sessionID,
+                        assistantMessageID: assistantMessage.id,
+                        iteration,
+                        error: persistError instanceof Error ? persistError.message : String(persistError),
+                    })
+                    return assistantMessage
+                })).diffSummary
                 throw error;
             }
 
             await persistMessageRecord(assistantMessage, turn);
-            await persistModelCallPatchPart({
+            const modelCallEndSnapshot = await persistModelCallPatchPart({
                 sessionID,
                 assistantMessageID: assistantMessage.id,
                 fromSnapshot: modelCallSnapshot,
@@ -789,7 +746,9 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
                     iteration,
                     error: error instanceof Error ? error.message : String(error),
                 })
+                return undefined
             })
+            turnDiffEndSnapshot = modelCallEndSnapshot ?? turnDiffEndSnapshot
 
             if (await SessionRunner.consumePendingSteer(sessionID, turn.turnID) > 0) {
                 log.info("continuing prompt loop after steer input", {
@@ -816,7 +775,7 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
             }
         }
 
-        const latest = currentAssistant
+        let latest = currentAssistant
             ? {
                 info: currentAssistant,
                 parts: db.findManyWithSchema("parts", Message.Part, {
@@ -828,6 +787,29 @@ async function runLoop(input: LoopRuntimeInput): Promise<RunLoopResult> {
 
         if (!latest) {
             throw new Error("No assistant message was created.");
+        }
+
+        if (latest.info.role === "assistant") {
+            const nextAssistant = await persistAssistantTurnDiffSummary({
+                message: latest.info,
+                fromSnapshot: turnDiffStartSnapshot,
+                toSnapshot: turnDiffEndSnapshot,
+                turn,
+            }).catch((error) => {
+                log.warn("failed to persist assistant turn diff summary", {
+                    sessionID,
+                    assistantMessageID: latest?.info.id,
+                    error: error instanceof Error ? error.message : String(error),
+                })
+                return latest?.info.role === "assistant" ? latest.info : undefined
+            })
+            if (nextAssistant) {
+                latest = {
+                    ...latest,
+                    info: nextAssistant,
+                }
+                currentAssistant = nextAssistant
+            }
         }
 
         const finishReason = latest.info.role === "assistant" ? latest.info.finishReason : undefined
@@ -950,10 +932,6 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
             ...userMessage.messageinfo,
             turnID: turn.turnID,
         }
-        userDiffTargetsByTurn.set(turn.turnID, {
-            message: userMessage.messageinfo,
-            snapshot: baselineSnapshot,
-        })
 
         turn.emit("turn.state.changed", {
             phase: "preparing",
@@ -989,11 +967,6 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
         throwIfAborted(runtime.abort)
 
         await sessionTitlePromise
-        throwIfAborted(runtime.abort)
-        await settleTurnUserDiffSummary({
-            sessionID: input.sessionID,
-            turn,
-        })
         throwIfAborted(runtime.abort)
 
         Session.updateTurn(turn.turnID, {
@@ -1034,13 +1007,6 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
         }
 
         if (turn) {
-            if (!isTurnAbort(runtime)) {
-                await settleTurnUserDiffSummary({
-                    sessionID: input.sessionID,
-                    turn,
-                })
-            }
-
             const status = runtime.abort.aborted ? "cancelled" : "failed"
             Session.updateTurn(turn.turnID, {
                 status,
@@ -1076,7 +1042,6 @@ async function runPromptOperation(input: PromptInput, runtime: SessionRunner.Pro
         throw error
     } finally {
         if (turn) {
-            userDiffTargetsByTurn.delete(turn.turnID)
             Orchestrator.finishTurn(turn)
         }
         Status.set(input.sessionID, { type: "idle" })
@@ -1093,13 +1058,6 @@ async function recordSteerUserMessage(input: PromptInput, turn: Orchestrator.Tur
         context: "steer",
         sessionID: input.sessionID,
     })
-    if (steerSnapshot) {
-        await settleTurnUserDiffSummary({
-            sessionID: input.sessionID,
-            toSnapshot: steerSnapshot,
-            turn,
-        })
-    }
     if (!turn.canAcceptSteer()) throw new Error("Prompt aborted")
 
     const agentName = resolveUserMessageAgentName(session, input.agent)
@@ -1121,13 +1079,6 @@ async function recordSteerUserMessage(input: PromptInput, turn: Orchestrator.Tur
         ...userMessage.messageinfo,
         turnID: turn.turnID,
     }
-    if (steerSnapshot) {
-        userDiffTargetsByTurn.set(turn.turnID, {
-            message: userMessage.messageinfo,
-            snapshot: steerSnapshot,
-        })
-    }
-
     turn.emit("message.recorded", {
         message: userMessage.messageinfo,
     })
@@ -1181,12 +1132,6 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
             model: latestUser?.message.model,
             resume: true,
         })
-        if (latestUser) {
-            userDiffTargetsByTurn.set(turn.turnID, {
-                message: latestUser.message,
-                snapshot: latestUser.snapshot,
-            })
-        }
         Session.createTurn({
             id: turn.turnID,
             sessionID: input.sessionID,
@@ -1210,12 +1155,6 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
             controller: runtime.controller,
             turn,
         });
-        throwIfAborted(runtime.abort)
-
-        await settleTurnUserDiffSummary({
-            sessionID: input.sessionID,
-            turn,
-        })
         throwIfAborted(runtime.abort)
 
         Session.updateTurn(turn.turnID, {
@@ -1245,13 +1184,6 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
             latestUser?.message.id,
         )
         if (turn) {
-            if (!isTurnAbort(runtime)) {
-                await settleTurnUserDiffSummary({
-                    sessionID: input.sessionID,
-                    turn,
-                })
-            }
-
             const status = runtime.abort.aborted ? "cancelled" : "failed"
             Session.updateTurn(turn.turnID, {
                 status,
@@ -1287,7 +1219,6 @@ async function runResumeOperation(input: ResumeInput, runtime: SessionRunner.Pro
         throw error
     } finally {
         if (turn) {
-            userDiffTargetsByTurn.delete(turn.turnID)
             Orchestrator.finishTurn(turn)
         }
         Status.set(input.sessionID, { type: "idle" })
@@ -1502,17 +1433,17 @@ async function persistModelCallPatchPart(input: {
     iteration: number
     turn?: Orchestrator.TurnContext
 }) {
-    if (!input.fromSnapshot) return
+    if (!input.fromSnapshot) return undefined
 
     const existingPatch = readModelCallPatchPart(input.assistantMessageID)
     const toSnapshot = await Snapshot.track()
-    if (!toSnapshot) return
+    if (!toSnapshot) return undefined
 
     if (input.fromSnapshot === toSnapshot) {
         if (existingPatch) {
             await removePartRecord(existingPatch.id, input.turn, existingPatch.messageID)
         }
-        return
+        return toSnapshot
     }
 
     const diffSummary = await SessionDiff.computeDetailedDiffBetweenSnapshots(
@@ -1528,7 +1459,7 @@ async function persistModelCallPatchPart(input: {
         if (existingPatch) {
             await removePartRecord(existingPatch.id, input.turn, existingPatch.messageID)
         }
-        return
+        return toSnapshot
     }
 
     const changes = toPatchFileChangeSummary(diffSummary.diffs)
@@ -1551,10 +1482,11 @@ async function persistModelCallPatchPart(input: {
         input.turn.emit("patch.generated", {
             part: patchPart,
         })
-        return
+        return toSnapshot
     }
 
     await Session.updatePart(patchPart)
+    return toSnapshot
 }
 
 // ---------------------------------------------------------------------------

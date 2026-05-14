@@ -182,6 +182,24 @@ export const PatchFileChangeSummary = FileChangeSummary.extend({
 })
 export type PatchFileChangeSummary = z.infer<typeof PatchFileChangeSummary>
 
+export const MessageDiffSummary = z
+    .object({
+        title: z.string().optional(),
+        body: z.string().optional(),
+        stats: z
+            .object({
+                additions: z.number(),
+                deletions: z.number(),
+                files: z.number(),
+            })
+            .optional(),
+        diffs: PatchFileChangeSummary.array(),
+    })
+    .meta({
+        ref: "MessageDiffSummary",
+    })
+export type MessageDiffSummary = z.infer<typeof MessageDiffSummary>
+
 export const PatchPart = PartBase.extend({
     type: z.literal("patch"),
     hash: z.string(),
@@ -609,20 +627,7 @@ export type OpenAIReasoningEffort = z.infer<typeof OpenAIReasoningEffort>
 export const User = Base.extend({
     role: z.literal("user"),
     created: z.number(),
-    diffSummary: z
-        .object({
-            title: z.string().optional(),
-            body: z.string().optional(),
-            stats: z
-                .object({
-                    additions: z.number(),
-                    deletions: z.number(),
-                    files: z.number(),
-                })
-                .optional(),
-            diffs: FileChangeSummary.array(),
-        })
-        .optional(),
+    diffSummary: MessageDiffSummary.optional(),
     agent: z.string(),
     model: z.object({
         providerID: z.string(),
@@ -644,6 +649,7 @@ export const Assistant = Base.extend({
     role: z.literal("assistant"),
     created: z.number(),
     completed: z.number().optional(),
+    diffSummary: MessageDiffSummary.optional(),
     error: z
         .discriminatedUnion("name", [
             AuthError.Schema,

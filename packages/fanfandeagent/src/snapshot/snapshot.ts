@@ -13,6 +13,25 @@ const log = Log.create({ service: "snapshot" })
 const hour = 60 * 60 * 1000
 const prune = "7.days"
 
+async function runGitArgs(args: string[], cwd = Instance.directory) {
+  const child = Bun.spawn(["git", ...args], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+
+  return {
+    exitCode,
+    stdout,
+    stderr,
+  }
+}
+
 export function init() {
   Scheduler.register({
     id: "snapshot.cleanup",
@@ -259,26 +278,42 @@ export async function diffFull(
   const includeContent = options.includeContent ?? true
 
   const show = async (hash: string, file: string) => {
-    const response =
-      await $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} show ${hash}:${file}`
-        .quiet()
-        .nothrow()
-    if (response.exitCode === 0) return response.text()
-    const stderr = response.stderr.toString()
+    const response = await runGitArgs([
+      "-c",
+      "core.autocrlf=false",
+      "--git-dir",
+      git,
+      "--work-tree",
+      Instance.worktree,
+      "show",
+      `${hash}:${file}`,
+    ])
+    if (response.exitCode === 0) return response.stdout
+    const stderr = response.stderr
     if (stderr.toLowerCase().includes("does not exist in")) return ""
     return `[DEBUG ERROR] git show ${hash}:${file} failed: ${stderr}`
   }
 
   const showPatch = async (file: string, isBinaryFile: boolean) => {
     if (isBinaryFile) return undefined
-    const response =
-      await $`git -c core.autocrlf=false --git-dir ${git} --work-tree ${Instance.worktree} diff --no-ext-diff --no-renames ${from} ${to} -- ${file}`
-        .quiet()
-        .cwd(Instance.directory)
-        .nothrow()
+    const response = await runGitArgs([
+      "-c",
+      "core.autocrlf=false",
+      "--git-dir",
+      git,
+      "--work-tree",
+      Instance.worktree,
+      "diff",
+      "--no-ext-diff",
+      "--no-renames",
+      from,
+      to,
+      "--",
+      file,
+    ])
 
     if (response.exitCode === 0) {
-      const patch = response.text().trim()
+      const patch = response.stdout.trim()
       if (options.maxPatchBytes !== undefined && Buffer.byteLength(patch, "utf8") > options.maxPatchBytes) {
         return undefined
       }
@@ -290,7 +325,7 @@ export async function diffFull(
       from,
       to,
       exitCode: response.exitCode,
-      stderr: response.stderr.toString(),
+      stderr: response.stderr,
     })
     return undefined
   }

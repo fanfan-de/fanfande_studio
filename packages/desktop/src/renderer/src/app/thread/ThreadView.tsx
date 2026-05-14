@@ -281,7 +281,7 @@ function UserTurnArticle({
   )
 }
 
-function normalizeUserTurnDiffSummary(diffSummary: UserTurn["diffSummary"]): AssistantTraceFileChange[] {
+function normalizeTurnDiffSummary(diffSummary: SessionDiffSummary | undefined): AssistantTraceFileChange[] {
   return diffSummary?.diffs
     .filter((change) => change.file.trim())
     .map((change) => ({
@@ -335,7 +335,7 @@ function collectAssistantPatchFileChanges(assistantTurn: AssistantTurn | null): 
 }
 
 function buildHydratedUserTurnDiffSummary(
-  diffSummary: UserTurn["diffSummary"],
+  diffSummary: SessionDiffSummary | undefined,
   fileChanges: AssistantTraceFileChange[],
 ): SessionDiffSummary | null {
   if (!diffSummary?.diffs.length) return null
@@ -371,7 +371,7 @@ function buildDiffSummarySignature(diffSummary: SessionDiffSummary | null) {
 }
 
 function summarizeUserTurnDiffStats(
-  diffSummary: UserTurn["diffSummary"],
+  diffSummary: SessionDiffSummary | undefined,
   fileChanges: AssistantTraceFileChange[],
 ) {
   const fallback = fileChanges.reduce(
@@ -395,7 +395,7 @@ function formatUserTurnDiffSummaryLabel(fileCount: number) {
   return `${fileCount} 个文件已更改`
 }
 
-function UserTurnDiffCard({
+function TurnDiffCard({
   onFileChangeSelect,
   activeSessionDiff,
   allowWorkspaceDiffFallback = false,
@@ -403,19 +403,21 @@ function UserTurnDiffCard({
   patchSourceFileChanges = [],
   onTurnDiffRestore,
   onTurnDiffReview,
-  turn,
+  diffSummary,
+  turnID,
 }: {
   activeSessionDiff?: SessionDiffSummary | null
   allowWorkspaceDiffFallback?: boolean
+  diffSummary?: SessionDiffSummary
   onFileChangeSelect?: (file: string) => void
   onTurnDiffSummaryHydrate?: (turnID: string, diffSummary: SessionDiffSummary) => void | Promise<void>
   patchSourceFileChanges?: AssistantTraceFileChange[]
   onTurnDiffRestore?: (files: string[]) => void | Promise<void>
   onTurnDiffReview?: (files: string[]) => void | Promise<void>
-  turn: UserTurn
+  turnID: string
 }) {
   const fileChangesFromTurnSources = hydrateUserTurnFileChangesFromPatchSources(
-    normalizeUserTurnDiffSummary(turn.diffSummary),
+    normalizeTurnDiffSummary(diffSummary),
     patchSourceFileChanges,
   )
   const fileChanges = allowWorkspaceDiffFallback
@@ -429,7 +431,7 @@ function UserTurnDiffCard({
   const [fullHeightFile, setFullHeightFile] = useState<string | null>(null)
   const [isRestoring, setIsRestoring] = useState(false)
   const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null)
-  const hydratedDiffSummary = buildHydratedUserTurnDiffSummary(turn.diffSummary, fileChanges)
+  const hydratedDiffSummary = buildHydratedUserTurnDiffSummary(diffSummary, fileChanges)
   const hydratedDiffSummarySignature = buildDiffSummarySignature(hydratedDiffSummary)
 
   useEffect(() => {
@@ -438,17 +440,17 @@ function UserTurnDiffCard({
     setFullHeightFile(null)
     setIsRestoring(false)
     setActionErrorMessage(null)
-  }, [fileChangeSignature, turn.id])
+  }, [fileChangeSignature, turnID])
 
   useEffect(() => {
     if (!hydratedDiffSummary) return
-    void onTurnDiffSummaryHydrate?.(turn.id, hydratedDiffSummary)
-  }, [hydratedDiffSummarySignature, onTurnDiffSummaryHydrate, turn.id])
+    void onTurnDiffSummaryHydrate?.(turnID, hydratedDiffSummary)
+  }, [hydratedDiffSummarySignature, onTurnDiffSummaryHydrate, turnID])
 
   if (fileChanges.length === 0) return null
 
-  const stats = summarizeUserTurnDiffStats(turn.diffSummary, fileChanges)
-  const listID = `user-turn-diff-list-${turn.id}`
+  const stats = summarizeUserTurnDiffStats(diffSummary, fileChanges)
+  const listID = `user-turn-diff-list-${turnID}`
   const summaryLabel = formatUserTurnDiffSummaryLabel(stats.files)
   const filePaths = fileChanges.map((change) => change.file)
 
@@ -542,7 +544,7 @@ function UserTurnDiffCard({
           {fileChanges.map((change, changeIndex) => {
             const hasPatch = Boolean(change.patch?.trim())
             const isExpanded = expandedFile === change.file
-            const previewID = `user-turn-diff-preview-${turn.id}-${changeIndex}`
+            const previewID = `user-turn-diff-preview-${turnID}-${changeIndex}`
             const rowContent = (
               <>
                 <span className="user-turn-diff-file-path">{change.file}</span>
@@ -557,7 +559,7 @@ function UserTurnDiffCard({
             )
 
             return (
-              <div key={`${turn.id}-${change.file}-${changeIndex}`} className="user-turn-diff-file-entry">
+              <div key={`${turnID}-${change.file}-${changeIndex}`} className="user-turn-diff-file-entry">
                 {hasPatch ? (
                   <button
                     type="button"
@@ -613,7 +615,7 @@ function UserTurnDiffCard({
 }
 
 function hasUserTurnDiffSummary(turn: UserTurn) {
-  return normalizeUserTurnDiffSummary(turn.diffSummary).length > 0
+  return normalizeTurnDiffSummary(turn.diffSummary).length > 0
 }
 
 function hasFollowingAssistantBeforeNextUser(turns: Turn[], startIndex: number) {
@@ -3232,8 +3234,9 @@ export function ThreadView({
                     turn={turn}
                     diffCard={
                       shouldRenderDiffOnStandaloneUserTurn(activeTurns, turnIndex, turn) ? (
-                        <UserTurnDiffCard
-                          turn={turn}
+                        <TurnDiffCard
+                          turnID={turn.id}
+                          diffSummary={turn.diffSummary}
                           activeSessionDiff={activeSessionDiff}
                           allowWorkspaceDiffFallback={turnIndex === activeTurns.length - 1}
                           onFileChangeSelect={onFileChangeSelect}
@@ -3266,7 +3269,8 @@ export function ThreadView({
                 lastResponseItems.length > 0 &&
                 Boolean(onOpenSideChat)
               const activeInlineSideChat = sideChatSession?.origin?.anchorMessageID === sideChatAnchorMessageID ? sideChatSession : null
-              const trailingUserDiffTurn = getAssistantTrailingUserDiffTurn(activeTurns, turnIndex, turn)
+              const hasAssistantDiffSummary = normalizeTurnDiffSummary(turn.diffSummary).length > 0
+              const trailingUserDiffTurn = hasAssistantDiffSummary ? null : getAssistantTrailingUserDiffTurn(activeTurns, turnIndex, turn)
               const shouldRenderResponseActions = Boolean(responseCopyText || canOpenSideChat)
               const isLatestAssistantMessage = isAssistantLatestRenderableTurn(activeTurns, turnIndex, turn)
 
@@ -3306,9 +3310,22 @@ export function ThreadView({
                         traceVisibility={assistantTraceVisibility}
                       />
                     )}
-                    {trailingUserDiffTurn ? (
-                      <UserTurnDiffCard
-                        turn={trailingUserDiffTurn}
+                    {hasAssistantDiffSummary ? (
+                      <TurnDiffCard
+                        turnID={turn.id}
+                        diffSummary={turn.diffSummary}
+                        activeSessionDiff={activeSessionDiff}
+                        allowWorkspaceDiffFallback={isLatestAssistantMessage}
+                        patchSourceFileChanges={collectAssistantPatchFileChanges(turn)}
+                        onFileChangeSelect={onFileChangeSelect}
+                        onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
+                        onTurnDiffRestore={onTurnDiffRestore}
+                        onTurnDiffReview={onTurnDiffReview}
+                      />
+                    ) : trailingUserDiffTurn ? (
+                      <TurnDiffCard
+                        turnID={trailingUserDiffTurn.id}
+                        diffSummary={trailingUserDiffTurn.diffSummary}
                         activeSessionDiff={activeSessionDiff}
                         allowWorkspaceDiffFallback={isLatestAssistantMessage}
                         patchSourceFileChanges={collectAssistantPatchFileChanges(turn)}
