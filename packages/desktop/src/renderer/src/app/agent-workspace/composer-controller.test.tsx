@@ -43,7 +43,7 @@ function createWorkspace(session: SessionSummary): WorkspaceGroup {
   }
 }
 
-function createStreamingAssistantTurn(id: string): AssistantTurn {
+function createStreamingAssistantTurn(id: string, toolStatus: "pending" | "running" = "running"): AssistantTurn {
   return {
     id,
     kind: "assistant",
@@ -61,7 +61,7 @@ function createStreamingAssistantTurn(id: string): AssistantTurn {
         timestamp: 1,
         label: "Tool",
         title: "read-file",
-        status: "running",
+        status: toolStatus,
       },
     ],
     isStreaming: true,
@@ -299,6 +299,92 @@ describe("composer controller", () => {
           sessionID: "session-1",
         }),
       )
+    } finally {
+      Object.defineProperty(window, "desktop", {
+        configurable: true,
+        value: previousDesktop,
+      })
+    }
+  })
+
+  it("interrupts a preparing tool input before sending new user input", async () => {
+    const previousDesktop = window.desktop
+    const sendTurn = vi.fn(async (input: { clientTurnID: string }) => ({
+      clientTurnID: input.clientTurnID,
+    }))
+    const interrupt = vi.fn(async (input: { backendSessionID: string; clientTurnID?: string }) => ({
+      ...input,
+      localRequestsAborted: 1,
+      backendCancelled: true,
+      activeCancelled: true,
+      queuedCancelled: 0,
+    }))
+
+    Object.defineProperty(window, "desktop", {
+      configurable: true,
+      value: {
+        createAgentSession: vi.fn(),
+        agentSession: {
+          sendTurn,
+          interrupt,
+        },
+      } as unknown as typeof window.desktop,
+    })
+
+    try {
+      const { result } = renderHook(() =>
+        useComposerHarness({
+          agentConnected: true,
+          initialAgentSessions: {
+            "session-1": "backend-session-1",
+          },
+          initialIsSendingByTabKey: {
+            "session:session-1": true,
+          },
+        }),
+      )
+
+      result.current.pendingStreamsRef.current["stream-active"] = {
+        assistantTurnID: "assistant-active",
+        backendSessionID: "backend-session-1",
+        backendTurnID: "turn-active",
+        sessionID: "session-1",
+      }
+      result.current.turnsRef.current["session-1"] = [createStreamingAssistantTurn("assistant-active", "pending")]
+
+      await act(async () => {
+        await result.current.controller.handleSend({
+          submissionMode: "steer",
+        })
+      })
+
+      expect(interrupt).toHaveBeenCalledWith({
+        backendSessionID: "backend-session-1",
+        clientTurnID: "stream-active",
+        reason: "user-interrupt",
+      })
+      expect(sendTurn).toHaveBeenCalledWith(expect.objectContaining({
+        backendSessionID: "backend-session-1",
+        text: "Existing prompt",
+      }))
+      expect(result.current.pendingStreamsRef.current["stream-active"]?.cancelRequested).toBe(true)
+      expect(result.current.turnsRef.current["session-1"]?.[0]).toMatchObject({
+        kind: "assistant",
+        runtime: {
+          phase: "cancelled",
+        },
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "tool",
+            status: "cancelled",
+          }),
+        ]),
+      })
+      expect(result.current.turnsRef.current["session-1"]?.[1]).toMatchObject({
+        kind: "user",
+        text: "Existing prompt",
+      })
+      expect((result.current.turnsRef.current["session-1"]?.[1] as { streamInsertion?: unknown }).streamInsertion).toBeUndefined()
     } finally {
       Object.defineProperty(window, "desktop", {
         configurable: true,

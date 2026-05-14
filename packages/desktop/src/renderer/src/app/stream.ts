@@ -54,10 +54,12 @@ function readSessionDiffSummary(value: unknown): SessionDiffSummary | undefined 
 
       const additions = readNumber(diff.additions)
       const deletions = readNumber(diff.deletions)
+      const patch = readString(diff.patch).trim()
       return {
         file,
         additions,
         deletions,
+        ...(patch ? { patch } : {}),
       }
     })
     .filter((item): item is SessionDiffSummary["diffs"][number] => item !== null)

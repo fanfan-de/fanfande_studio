@@ -12,7 +12,7 @@ import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBa
 import { getPendingStreamInsertionUserTurns } from "../stream-insertion"
 import type { MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
-import type { AssistantTraceVisibility, ComposerDraftState, ToolPermissionMode, UserTurn } from "../types"
+import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffSummary, ToolPermissionMode, UserTurn } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { useProjectComposer } from "../use-project-composer"
 import { isSideChatSession } from "../workspace"
@@ -214,6 +214,7 @@ export interface WorkbenchPaneSurfaceProps {
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
   onTurnDiffRestore: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
   onTurnDiffReview: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
+  onTurnDiffSummaryHydrate: (turnID: string, diffSummary: SessionDiffSummary, sessionID?: string | null) => void | Promise<void>
 }
 
 export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
@@ -266,6 +267,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onSetDraft,
   onTurnDiffRestore,
   onTurnDiffReview,
+  onTurnDiffSummaryHydrate,
 }: WorkbenchPaneSurfaceProps) {
   const threadColumnRef = useRef<HTMLDivElement | null>(null)
   const splitPreviewPosition = draggedTabKey && dropTargetPosition && dropTargetPosition !== "center" ? dropTargetPosition : null
@@ -436,6 +438,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
               <ThreadView
                 activeProjectID={pane.projectID}
                 activeSession={pane.activeSession}
+                activeSessionDiff={pane.activeSessionDiff}
                 assistantTraceVisibility={assistantTraceVisibility}
                 composerRefreshVersion={composerRefreshVersion}
                 isResolvingPermissionRequest={isResolvingPermissionRequest}
@@ -470,6 +473,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
                 onTurnDiffRestore={(files) => onTurnDiffRestore(files, pane.sessionID, pane.id)}
                 onTurnDiffReview={(files) => onTurnDiffReview(files, pane.sessionID, pane.id)}
+                onTurnDiffSummaryHydrate={(turnID, diffSummary) => onTurnDiffSummaryHydrate(turnID, diffSummary, pane.sessionID)}
                 onLocalFileLinkOpen={(target) =>
                   onLocalFileLinkOpen({
                     paneID: pane.id,

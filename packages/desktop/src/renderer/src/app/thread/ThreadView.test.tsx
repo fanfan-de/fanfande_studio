@@ -1545,7 +1545,19 @@ describe("ThreadView message actions", () => {
           deletions: 1,
         },
         diffs: [
-          { file: "src/App.tsx", additions: 3, deletions: 1 },
+          {
+            file: "src/App.tsx",
+            additions: 3,
+            deletions: 1,
+            patch: [
+              "diff --git a/src/App.tsx b/src/App.tsx",
+              "--- a/src/App.tsx",
+              "+++ b/src/App.tsx",
+              "@@ -1 +1 @@",
+              "-old app",
+              "+new app",
+            ].join("\n"),
+          },
           { file: "src/styles.css", additions: 2, deletions: 0 },
         ],
       },
@@ -1597,13 +1609,18 @@ describe("ThreadView message actions", () => {
 
     fireEvent.click(getByRole("button", { name: "审核" }))
     fireEvent.click(getByRole("button", { name: "展开文件变更" }))
-    fireEvent.click(getByRole("button", { name: /审核\s+src\/App\.tsx/i }))
+    fireEvent.click(getByRole("button", { name: /src\/App\.tsx/i }))
+    expect(getByRole("region", { name: "Diff preview for src/App.tsx" })).toBeInTheDocument()
+    expect(getByText("old app")).toBeInTheDocument()
+    expect(getByText("new app")).toBeInTheDocument()
+    expect(onFileChangeSelect).not.toHaveBeenCalled()
+    fireEvent.click(getByRole("button", { name: /审核\s+src\/styles\.css/i }))
     fireEvent.click(getByRole("button", { name: "收起文件变更" }))
     expect(queryByRole("button", { name: /审核\s+src\/App\.tsx/i })).toBeNull()
     fireEvent.click(getByRole("button", { name: "展开文件变更" }))
     fireEvent.click(getByRole("button", { name: /撤销/i }))
 
-    expect(onFileChangeSelect).toHaveBeenCalledWith("src/App.tsx")
+    expect(onFileChangeSelect).toHaveBeenCalledWith("src/styles.css")
     expect(onTurnDiffReview).toHaveBeenCalledWith(["src/App.tsx", "src/styles.css"])
     expect(confirmRestore).toHaveBeenCalledTimes(1)
     expect(onTurnDiffRestore).not.toHaveBeenCalled()
@@ -1614,6 +1631,224 @@ describe("ThreadView message actions", () => {
       expect(onTurnDiffRestore).toHaveBeenCalledWith(["src/App.tsx", "src/styles.css"])
     })
     confirmRestore.mockRestore()
+  })
+
+  it("hydrates turn file change rows from the assistant patch trace before expanding inline", () => {
+    const onFileChangeSelect = vi.fn()
+    renderThread(
+      [
+        {
+          ...userTurn("user-diff-summary-only", "Create a Tetris game"),
+          diffSummary: {
+            stats: {
+              files: 1,
+              additions: 167,
+              deletions: 0,
+            },
+            diffs: [{ file: "tetris.html", additions: 167, deletions: 0 }],
+          },
+        },
+        assistantTraceTurn(
+          "assistant-tetris",
+          [
+            {
+              id: "patch-tetris",
+              kind: "patch",
+              timestamp: 1,
+              label: "Patch",
+              title: "1 file change (+167 -0)",
+              fileChanges: [
+                {
+                  file: "tetris.html",
+                  additions: 167,
+                  deletions: 0,
+                  patch: [
+                    "diff --git a/tetris.html b/tetris.html",
+                    "--- a/tetris.html",
+                    "+++ b/tetris.html",
+                    "@@ -0,0 +1,2 @@",
+                    "+<canvas id=\"board\"></canvas>",
+                    "+<script>startGame()</script>",
+                  ].join("\n"),
+                },
+              ],
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+      ],
+      {
+        onFileChangeSelect,
+      },
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "展开文件变更" }))
+    fireEvent.click(screen.getByRole("button", { name: "展开 tetris.html 变更" }))
+
+    expect(screen.getByRole("region", { name: "Diff preview for tetris.html" })).toBeInTheDocument()
+    expect(screen.getByText("<canvas id=\"board\"></canvas>")).toBeInTheDocument()
+    expect(screen.getByText("<script>startGame()</script>")).toBeInTheDocument()
+    expect(onFileChangeSelect).not.toHaveBeenCalled()
+  })
+
+  it("keeps inline diffs scoped to each turn when the same file changes later", () => {
+    const buildDiffUserTurn = (id: string): UserTurn => ({
+      ...userTurn(id, "Update shared file"),
+      diffSummary: {
+        stats: {
+          files: 1,
+          additions: 1,
+          deletions: 1,
+        },
+        diffs: [{ file: "src/shared.ts", additions: 1, deletions: 1 }],
+      },
+    })
+    const buildPatchAssistantTurn = (id: string, oldValue: string, newValue: string): AssistantTurn =>
+      assistantTraceTurn(
+        id,
+        [
+          {
+            id: `${id}-patch`,
+            kind: "patch",
+            timestamp: 1,
+            label: "Patch",
+            title: "1 file change (+1 -1)",
+            fileChanges: [
+              {
+                file: "src/shared.ts",
+                additions: 1,
+                deletions: 1,
+                patch: [
+                  "diff --git a/src/shared.ts b/src/shared.ts",
+                  "--- a/src/shared.ts",
+                  "+++ b/src/shared.ts",
+                  "@@ -1 +1 @@",
+                  `-const value = "${oldValue}"`,
+                  `+const value = "${newValue}"`,
+                ].join("\n"),
+              },
+            ],
+            status: "completed",
+          },
+        ],
+        false,
+      )
+
+    renderThread([
+      buildDiffUserTurn("user-first-diff"),
+      buildPatchAssistantTurn("assistant-first-diff", "old", "first turn"),
+      buildDiffUserTurn("user-second-diff"),
+      buildPatchAssistantTurn("assistant-second-diff", "first turn", "second turn"),
+    ])
+
+    const diffListButtons = screen.getAllByRole("button", { name: "展开文件变更" })
+    fireEvent.click(diffListButtons[0]!)
+    fireEvent.click(screen.getByRole("button", { name: "展开 src/shared.ts 变更" }))
+
+    expect(screen.getByText('const value = "old"')).toBeInTheDocument()
+    expect(screen.getByText('const value = "first turn"')).toBeInTheDocument()
+    expect(screen.queryByText('const value = "second turn"')).not.toBeInTheDocument()
+
+    fireEvent.click(diffListButtons[1]!)
+    fireEvent.click(screen.getByRole("button", { name: "展开 src/shared.ts 变更" }))
+
+    expect(screen.getByText('const value = "second turn"')).toBeInTheDocument()
+  })
+
+  it("uses the active workspace diff only for the latest turn without a saved patch", () => {
+    const onTurnDiffSummaryHydrate = vi.fn()
+    const buildDiffUserTurn = (id: string): UserTurn => ({
+      ...userTurn(id, "Update shared file"),
+      diffSummary: {
+        stats: {
+          files: 1,
+          additions: 1,
+          deletions: 0,
+        },
+        diffs: [{ file: "src/shared.ts", additions: 1, deletions: 0 }],
+      },
+    })
+
+    renderThread(
+      [
+        buildDiffUserTurn("user-old-summary"),
+        assistantTraceTurn(
+          "assistant-old-summary",
+          [
+            {
+              id: "old-response",
+              kind: "text",
+              timestamp: 1,
+              label: "Assistant",
+              text: "Old turn finished.",
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+        buildDiffUserTurn("user-latest-summary"),
+        assistantTraceTurn(
+          "assistant-latest-summary",
+          [
+            {
+              id: "latest-response",
+              kind: "text",
+              timestamp: 2,
+              label: "Assistant",
+              text: "Latest turn finished.",
+              status: "completed",
+            },
+          ],
+          false,
+        ),
+      ],
+      {
+        activeSessionDiff: {
+          stats: {
+            files: 1,
+            additions: 1,
+            deletions: 0,
+          },
+          diffs: [
+            {
+              file: "src/shared.ts",
+              additions: 1,
+              deletions: 0,
+              patch: [
+                "diff --git a/src/shared.ts b/src/shared.ts",
+                "--- a/src/shared.ts",
+                "+++ b/src/shared.ts",
+                "@@ -0,0 +1 @@",
+                "+const value = \"latest workspace\"",
+              ].join("\n"),
+            },
+          ],
+        },
+        onTurnDiffSummaryHydrate,
+      },
+    )
+
+    const diffListButtons = screen.getAllByRole("button", { name: "展开文件变更" })
+    fireEvent.click(diffListButtons[0]!)
+    expect(screen.queryByRole("button", { name: "展开 src/shared.ts 变更" })).not.toBeInTheDocument()
+
+    fireEvent.click(diffListButtons[1]!)
+    fireEvent.click(screen.getByRole("button", { name: "展开 src/shared.ts 变更" }))
+
+    expect(screen.getByRole("region", { name: "Diff preview for src/shared.ts" })).toBeInTheDocument()
+    expect(screen.getByText('const value = "latest workspace"')).toBeInTheDocument()
+    expect(onTurnDiffSummaryHydrate).toHaveBeenCalledWith(
+      "user-latest-summary",
+      expect.objectContaining({
+        diffs: [
+          expect.objectContaining({
+            file: "src/shared.ts",
+            patch: expect.stringContaining('const value = "latest workspace"'),
+          }),
+        ],
+      }),
+    )
   })
 
   it("shows user turn restore progress and errors", async () => {

@@ -52,6 +52,66 @@ function createAssistantTurn(id: string, itemID: string, text: string, sourceID 
   }
 }
 
+function createCancelledAssistantTurn(id: string, messageID?: string): AssistantTurn {
+  return {
+    id,
+    messageID,
+    kind: "assistant",
+    timestamp: 2,
+    runtime: {
+      phase: "cancelled",
+      startedAt: 2,
+      updatedAt: 3,
+    },
+    state: "Backend stream cancelled",
+    isStreaming: false,
+    items: [
+      {
+        id: `${id}-cancelled`,
+        kind: "system",
+        label: "System",
+        title: "Turn cancelled",
+        detail: "Prompt cancellation requested.",
+        status: "completed",
+        sourceID: `${id}:cancelled`,
+        timestamp: 3,
+      },
+    ],
+  }
+}
+
+function createPendingToolAssistantTurn(id: string, messageID?: string): AssistantTurn {
+  return {
+    id,
+    messageID,
+    kind: "assistant",
+    timestamp: 4,
+    runtime: {
+      phase: "tool_running",
+      startedAt: 4,
+      updatedAt: 5,
+      toolName: "replace-text",
+    },
+    state: "Backend response in progress",
+    isStreaming: true,
+    items: [
+      {
+        id: `${id}-tool`,
+        kind: "tool",
+        label: "Tool",
+        title: "replace-text",
+        status: "pending",
+        sourceID: "late-tool-input-part",
+        partID: "late-tool-input-part",
+        messageID,
+        toolCallID: "late-tool-call",
+        toolInputText: "{\"path\":\"game.ts\"",
+        timestamp: 5,
+      },
+    ],
+  }
+}
+
 function createRuntimeEvent(type: string, payload: Record<string, unknown> = {}) {
   return {
     type,
@@ -324,6 +384,63 @@ describe("session stream controller helpers", () => {
           sourceID: "source-1",
         }),
       ],
+    })
+  })
+
+  it("keeps a cancelled assistant turn cancelled when late pending tool history is merged by message id", () => {
+    const originalTurn = createCancelledAssistantTurn("assistant-local", "message-tool")
+    const latePendingToolTurn = createPendingToolAssistantTurn("assistant-history", "message-tool")
+
+    const reconciled = reconcileConversationTurns([originalTurn, latePendingToolTurn])
+
+    expect(reconciled).toHaveLength(1)
+    expect(reconciled[0]).toMatchObject({
+      id: "assistant-local",
+      kind: "assistant",
+      runtime: {
+        phase: "cancelled",
+        toolName: undefined,
+      },
+      isStreaming: false,
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool",
+          title: "replace-text",
+          status: "cancelled",
+          isStreaming: false,
+        }),
+        expect.objectContaining({
+          kind: "system",
+          title: "Turn cancelled",
+        }),
+      ]),
+    })
+  })
+
+  it("keeps a local cancellation when history reloads a late unmatched pending tool turn", () => {
+    const previousTurn = createCancelledAssistantTurn("assistant-local")
+    const historyTurn = createPendingToolAssistantTurn("assistant-history", "message-tool")
+
+    const merged = mergeConversationTurnsFromHistory([previousTurn], [historyTurn])
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({
+      id: "assistant-local",
+      kind: "assistant",
+      messageID: "message-tool",
+      runtime: {
+        phase: "cancelled",
+        toolName: undefined,
+      },
+      isStreaming: false,
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          kind: "tool",
+          title: "replace-text",
+          status: "cancelled",
+          isStreaming: false,
+        }),
+      ]),
     })
   })
 

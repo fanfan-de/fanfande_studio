@@ -2418,6 +2418,10 @@ body.is-image-lightbox-open {
   border-top: 1px solid #f0f1f3;
 }
 
+.user-turn-diff-file-entry:has(.user-turn-diff-file-preview) + .user-turn-diff-file-entry {
+  border-top-color: #e6e9ee;
+}
+
 .user-turn-diff-file-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto 18px;
@@ -2467,6 +2471,19 @@ body.is-image-lightbox-open {
 .user-turn-diff-file-chevron svg {
   width: 13px;
   height: 13px;
+}
+
+.user-turn-diff-file-preview {
+  min-width: 0;
+  margin: 0 10px 10px;
+  border: 1px solid rgba(166, 186, 208, 0.24);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.user-turn-historical-diff.right-sidebar-diff-preview,
+.user-turn-historical-diff-empty.right-sidebar-diff-empty {
+  background: #fbfcfe;
 }
 
 .user-turn-diff-error {

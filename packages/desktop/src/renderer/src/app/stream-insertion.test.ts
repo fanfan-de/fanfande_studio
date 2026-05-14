@@ -7,13 +7,13 @@ import {
   resolveStreamInsertionItemIndex,
 } from "./stream-insertion"
 
-function assistantTurn(status: "running" | "completed"): AssistantTurn {
+function assistantTurn(status: "running" | "completed" | "cancelled"): AssistantTurn {
   return {
     id: "assistant-live",
     kind: "assistant",
     timestamp: 1,
     runtime: {
-      phase: status === "running" ? "tool_running" : "responding",
+      phase: status === "running" ? "tool_running" : status === "cancelled" ? "cancelled" : "responding",
       startedAt: 1,
       updatedAt: 1,
     },
@@ -105,6 +105,17 @@ describe("stream insertion presentation", () => {
   it("moves steer turns into the thread after the active tool at the insertion point completes", () => {
     const assistant = assistantTurn("completed")
     const turn = steerTurnAfterCurrentTool()
+    const turns: Turn[] = [assistant, turn]
+
+    expect(isStreamInsertionReady(turns, turn)).toBe(true)
+    expect(getPendingStreamInsertionUserTurns(turns)).toEqual([])
+    expect(getAssistantStreamInsertionUserTurns(turns, assistant)).toEqual([turn])
+    expect(resolveStreamInsertionItemIndex(assistant.items, turn, 0)).toBe(2)
+  })
+
+  it("moves steer turns into the thread after a tool boundary is cancelled", () => {
+    const assistant = assistantTurn("cancelled")
+    const turn = steerTurn()
     const turns: Turn[] = [assistant, turn]
 
     expect(isStreamInsertionReady(turns, turn)).toBe(true)

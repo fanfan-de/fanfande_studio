@@ -75,6 +75,18 @@ function collectAssistantTurnIDsForInterrupt(
   return [...turnIDs]
 }
 
+function hasPreparingToolTrace(turn: AssistantTurn): boolean {
+  return turn.items.some((item) => item.kind === "tool" && item.status === "pending")
+}
+
+function shouldInterruptPreparingToolInput(turns: Turn[], stream?: PendingAgentStream) {
+  return turns.some((turn) => {
+    if (turn.kind !== "assistant") return false
+    if (stream?.assistantTurnID && turn.id !== stream.assistantTurnID) return false
+    return hasPreparingToolTrace(turn)
+  })
+}
+
 interface CreateSessionResult {
   backendSessionID: string
   session: SessionSummary
@@ -278,7 +290,15 @@ export function useComposerController({
     const effectiveText = compiledSubmission.transportText || normalizedQuestionAnswerText
     const pendingPermissionRequests = targetSessionID ? pendingPermissionRequestsBySession[targetSessionID] ?? [] : []
     const isSending = Boolean(targetTabKey && isSendingByTabKey[targetTabKey])
-    const submissionMode = input?.submissionMode ?? (isSending && effectiveText ? "steer" : undefined)
+    const pendingStream = targetSessionID
+      ? Object.values(pendingStreamsRef.current).find((stream) => stream.sessionID === targetSessionID && !stream.cancelRequested)
+      : undefined
+    const shouldInterruptForNewInput =
+      Boolean(isSending && effectiveText && targetSessionID) &&
+      shouldInterruptPreparingToolInput(targetSessionID ? getConversationTurns(targetSessionID) : [], pendingStream)
+    const submissionMode = shouldInterruptForNewInput
+      ? undefined
+      : input?.submissionMode ?? (isSending && effectiveText ? "steer" : undefined)
     if (
       !targetTabKey ||
       (!effectiveText && attachments.length === 0) ||
@@ -293,6 +313,12 @@ export function useComposerController({
     if (targetSessionID) {
       const nextSelection = findSession(workspaces, targetSessionID)
       if (!nextSelection.workspace || !nextSelection.session) return
+      if (shouldInterruptForNewInput) {
+        await handleCancelSend({
+          sessionID: targetSessionID,
+          tabKey: targetTabKey,
+        })
+      }
       await sendPromptToSession({
         attachments,
         commentReferences: compiledSubmission.commentReferences,

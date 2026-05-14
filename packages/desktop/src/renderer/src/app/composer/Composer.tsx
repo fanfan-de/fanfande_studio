@@ -325,7 +325,6 @@ function buildComposerModelProviderGroups(
 function getComposerSendButtonDescription({
   attachmentError,
   canSend,
-  hasDraftText,
   hasPendingPermissionRequests,
   isCancelling,
   isInterruptible,
@@ -333,7 +332,6 @@ function getComposerSendButtonDescription({
 }: {
   attachmentError: string | null
   canSend: boolean
-  hasDraftText: boolean
   hasPendingPermissionRequests: boolean
   isCancelling?: boolean
   isInterruptible?: boolean
@@ -356,16 +354,10 @@ function getComposerSendButtonDescription({
   }
 
   if (isSending || isInterruptible) {
-    return hasDraftText
-      ? "Press Enter to submit guidance without interrupting. Use Stop task to cancel the current assistant turn."
-      : "Stop the current assistant turn. Press Shift+Enter for a newline."
+    return "Stop the current assistant turn. Press Shift+Enter for a newline."
   }
 
   return "Press Enter to send. Press Shift+Enter for a newline."
-}
-
-function hasComposerDraftText(draftState: ComposerDraftState) {
-  return draftState.plainText.trim().length > 0
 }
 
 function getComposerSelectionRect() {
@@ -1454,7 +1446,7 @@ export function Composer({
     if (action.type === "send") {
       if (!isEditorEventTarget(event.target)) return
       if (isCancelling) return
-      if ((isSending || isInterruptible) && !hasComposerDraftText(draftStateRef.current)) {
+      if (isSending || isInterruptible) {
         void onCancelSend?.()
         return
       }
@@ -1479,16 +1471,10 @@ export function Composer({
   }
 
   const unsupportedAttachmentPathSet = new Set(unsupportedAttachmentPaths)
-  const hasDraftText = hasComposerDraftText(normalizedDraftState)
   const hasRunningTask = isSending || isInterruptible
   const canInterrupt = isCancelling || hasRunningTask
-  const sendButtonActsAsStop = canInterrupt && !hasDraftText
-  const showInlineStopButton = canInterrupt && hasDraftText
+  const sendButtonActsAsStop = canInterrupt
   const stopButtonLabel = isCancelling ? "Cancelling task" : "Stop task"
-  const stopButtonDescription = isCancelling
-    ? "Cancellation has been requested."
-    : "Cancel the current assistant turn without sending the draft."
-  const stopButtonTitle = `${stopButtonLabel}. ${stopButtonDescription}`
   const stopButtonDisabled = isCancelling || !onCancelSend
   const sendButtonLabel = sendButtonActsAsStop
     ? stopButtonLabel
@@ -1498,7 +1484,6 @@ export function Composer({
   const sendButtonDescription = getComposerSendButtonDescription({
     attachmentError,
     canSend,
-    hasDraftText,
     hasPendingPermissionRequests,
     isCancelling,
     isInterruptible,
@@ -1773,21 +1758,6 @@ export function Composer({
         </div>
 
         <div className="composer-actions">
-          {showInlineStopButton ? (
-            <button
-              aria-description={stopButtonDescription}
-              aria-label={stopButtonLabel}
-              className="secondary-button is-icon-only"
-              disabled={stopButtonDisabled}
-              onClick={() => {
-                void onCancelSend?.()
-              }}
-              title={stopButtonTitle}
-              type="button"
-            >
-              <StopIcon />
-            </button>
-          ) : null}
           <button
             aria-description={sendButtonDescription}
             aria-keyshortcuts={sendShortcut}

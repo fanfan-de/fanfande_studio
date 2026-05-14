@@ -227,7 +227,28 @@ function preserveTraceItemIdentity(
 }
 
 function isTerminalTraceStatus(status: AssistantTraceItem["status"]) {
-  return status === "completed" || status === "error" || status === "denied"
+  return status === "completed" || status === "error" || status === "denied" || status === "cancelled"
+}
+
+function canIncomingTurnOverrideCancellation(turn: AssistantTurn) {
+  return turn.runtime.phase === "completed" || turn.runtime.phase === "failed"
+}
+
+function shouldPreserveCancelledTurn(current: AssistantTurn, incoming: AssistantTurn) {
+  return current.runtime.phase === "cancelled" && !canIncomingTurnOverrideCancellation(incoming)
+}
+
+function cancelInterruptedToolTraceItems(items: AssistantTraceItem[]) {
+  return items.map((item) =>
+    item.kind === "tool" && !isTerminalTraceStatus(item.status)
+      ? {
+          ...item,
+          status: "cancelled" as const,
+          detail: item.detail || "Prompt cancellation requested.",
+          isStreaming: false,
+        }
+      : item,
+  )
 }
 
 function getToolTraceIdentity(item: AssistantTraceItem) {
@@ -413,8 +434,19 @@ function assistantRuntimeAfterTraceMerge(current: AssistantTurn, incoming: Assis
 }
 
 function mergeAssistantTurnsByMessageID(current: AssistantTurn, incoming: AssistantTurn): AssistantTurn {
-  const items = mergeAssistantTraceItems(current.items, incoming.items)
-  const runtime = assistantRuntimeAfterTraceMerge(current, incoming, items)
+  const preserveCancellation = shouldPreserveCancelledTurn(current, incoming)
+  const mergedItems = mergeAssistantTraceItems(current.items, incoming.items)
+  const items = preserveCancellation ? cancelInterruptedToolTraceItems(mergedItems) : mergedItems
+  const mergedRuntime = assistantRuntimeAfterTraceMerge(current, incoming, items)
+  const runtime = preserveCancellation
+    ? {
+        ...mergedRuntime,
+        phase: "cancelled" as const,
+        toolName: undefined,
+        approvalRequestID: undefined,
+        errorMessage: undefined,
+      }
+    : mergedRuntime
   return {
     ...current,
     ...incoming,
@@ -422,13 +454,17 @@ function mergeAssistantTurnsByMessageID(current: AssistantTurn, incoming: Assist
     timestamp: current.timestamp,
     messageID: current.messageID ?? incoming.messageID,
     runtime,
-    state:
-      runtime.phase === "completed" && (current.runtime.phase === "waiting_approval" || incoming.runtime.phase === "waiting_approval")
+    state: preserveCancellation
+      ? current.state || "Backend stream cancelled"
+      : runtime.phase === "completed" &&
+        (current.runtime.phase === "waiting_approval" || incoming.runtime.phase === "waiting_approval")
         ? "Backend response received"
         : incoming.state || current.state,
-    isStreaming: runtime.phase === "tool_running" || runtime.phase === "waiting_approval"
-      ? incoming.isStreaming
-      : false,
+    isStreaming: preserveCancellation
+      ? false
+      : runtime.phase === "tool_running" || runtime.phase === "waiting_approval"
+        ? incoming.isStreaming
+        : false,
     items,
   }
 }
@@ -516,6 +552,14 @@ function findMatchingAssistantTurnIndex(
     return preferredIndex
   }
 
+  if (
+    preferredTurn &&
+    !usedIndices.has(preferredIndex) &&
+    shouldPreserveCancelledTurn(preferredTurn, nextTurn)
+  ) {
+    return preferredIndex
+  }
+
   return previousAssistantTurns.findIndex(
     (turn, index) => !usedIndices.has(index) && assistantTurnsAreCompatible(turn, nextTurn),
   )
@@ -546,11 +590,14 @@ function preserveAssistantTurnIdentity(previousTurns: Turn[], nextTurns: Turn[])
 
     usedIndices.add(matchIndex)
 
-    return {
+    const turnWithPreservedIdentity = {
       ...turn,
       id: previousTurn.id,
       items: preserveTraceItemIdentity(previousTurn.items, turn.items),
     }
+    return shouldPreserveCancelledTurn(previousTurn, turn)
+      ? mergeAssistantTurnsByMessageID(previousTurn, turnWithPreservedIdentity)
+      : turnWithPreservedIdentity
   })
 }
 

@@ -14,6 +14,7 @@ function isToolInsertionBoundaryReady(item: AssistantTraceItem) {
   return item.status === "completed" ||
     item.status === "error" ||
     item.status === "denied" ||
+    item.status === "cancelled" ||
     item.status === "waiting-approval"
 }
 

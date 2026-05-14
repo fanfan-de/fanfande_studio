@@ -28,11 +28,13 @@ function sanitizeUserTurnDiffSummary(value: unknown): SessionDiffSummary | undef
       const diff = item as Record<string, unknown>
       const file = readString(diff.file).trim()
       if (!file) return null
+      const patch = readString(diff.patch).trim()
 
       return {
         file,
         additions: readNumber(diff.additions),
         deletions: readNumber(diff.deletions),
+        ...(patch ? { patch } : {}),
       }
     })
     .filter((item): item is SessionDiffSummary["diffs"][number] => item !== null)

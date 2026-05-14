@@ -242,6 +242,7 @@ export function App() {
     handleSessionDelete,
     handleSessionSelect,
     handleSessionModelSelectionChange,
+    handleTurnDiffSummaryHydrate,
     handleSidebarAction,
     focusedPaneID,
     hoveredFolderID,
@@ -1289,6 +1290,7 @@ export function App() {
                 onToggleRightSidebar={handleRightSidebarToggle}
                 onTurnDiffRestore={handleTurnDiffRestore}
                 onTurnDiffReview={handleTurnDiffReview}
+                onTurnDiffSummaryHydrate={handleTurnDiffSummaryHydrate}
               />
             </>
           )}

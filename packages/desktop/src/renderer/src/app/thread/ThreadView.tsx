@@ -47,6 +47,7 @@ import type {
   OpenAIReasoningEffort,
   PermissionDecision,
   PermissionRequest,
+  SessionDiffSummary,
   SessionSummary,
   Turn,
   UserTurn
@@ -62,6 +63,7 @@ type ProposedPlanCardStatus = "idle" | "cancelled" | "confirming" | "confirmed"
 interface ThreadViewProps {
   activeProjectID?: string | null
   activeSession: SessionSummary | null
+  activeSessionDiff?: SessionDiffSummary | null
   activeTurns: Turn[]
   assistantTraceVisibility: AssistantTraceVisibility
   composerRefreshVersion?: number
@@ -71,6 +73,7 @@ interface ThreadViewProps {
   onFileChangeSelect?: (file: string) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenSideChat?: (anchorMessageID: string) => void | Promise<void>
+  onTurnDiffSummaryHydrate?: (turnID: string, diffSummary: SessionDiffSummary) => void | Promise<void>
   onTurnDiffRestore?: (files: string[]) => void | Promise<void>
   onTurnDiffReview?: (files: string[]) => void | Promise<void>
   pendingPermissionRequests: PermissionRequest[]
@@ -285,7 +288,86 @@ function normalizeUserTurnDiffSummary(diffSummary: UserTurn["diffSummary"]): Ass
       file: change.file,
       additions: change.additions,
       deletions: change.deletions,
+      ...(change.patch?.trim() ? { patch: change.patch } : {}),
     })) ?? []
+}
+
+function hydrateUserTurnFileChangesFromPatchSources(
+  fileChanges: AssistantTraceFileChange[],
+  patchSourceFileChanges: AssistantTraceFileChange[],
+) {
+  if (patchSourceFileChanges.length === 0) return fileChanges
+
+  const patchEntries = patchSourceFileChanges
+      .filter((change) => change.file.trim() && change.patch?.trim())
+      .map((change) => [change.file, change.patch ?? ""] as const)
+  if (patchEntries.length === 0) return fileChanges
+
+  const patchByFile = new Map<string, string>()
+  for (const [file, patch] of patchEntries) {
+    const existingPatch = patchByFile.get(file)
+    patchByFile.set(file, existingPatch ? `${existingPatch}\n${patch}` : patch)
+  }
+
+  return fileChanges.map((change) => {
+    if (change.patch?.trim()) return change
+
+    const patch = patchByFile.get(change.file)
+    return patch ? { ...change, patch } : change
+  })
+}
+
+function hydrateUserTurnFileChangesFromWorkspaceDiff(
+  fileChanges: AssistantTraceFileChange[],
+  activeSessionDiff?: SessionDiffSummary | null,
+) {
+  if (!activeSessionDiff?.diffs.length) return fileChanges
+
+  return hydrateUserTurnFileChangesFromPatchSources(fileChanges, activeSessionDiff.diffs)
+}
+
+function collectAssistantPatchFileChanges(assistantTurn: AssistantTurn | null): AssistantTraceFileChange[] {
+  if (!assistantTurn) return []
+
+  return assistantTurn.items.flatMap((item) =>
+    item.fileChanges?.filter((change) => change.file.trim() && change.patch?.trim()) ?? [],
+  )
+}
+
+function buildHydratedUserTurnDiffSummary(
+  diffSummary: UserTurn["diffSummary"],
+  fileChanges: AssistantTraceFileChange[],
+): SessionDiffSummary | null {
+  if (!diffSummary?.diffs.length) return null
+
+  const patchByFile = new Map(
+    fileChanges
+      .filter((change) => change.file.trim() && change.patch?.trim())
+      .map((change) => [change.file, change.patch ?? ""] as const),
+  )
+  if (patchByFile.size === 0) return null
+
+  let didHydrate = false
+  const diffs = diffSummary.diffs.map((diff) => {
+    if (diff.patch?.trim()) return diff
+
+    const patch = patchByFile.get(diff.file)
+    if (!patch) return diff
+
+    didHydrate = true
+    return {
+      ...diff,
+      patch,
+    }
+  })
+
+  return didHydrate ? { ...diffSummary, diffs } : null
+}
+
+function buildDiffSummarySignature(diffSummary: SessionDiffSummary | null) {
+  return diffSummary?.diffs
+    .map((diff) => `${diff.file}\u0000${diff.additions}\u0000${diff.deletions}\u0000${diff.patch ?? ""}`)
+    .join("\u0001") ?? ""
 }
 
 function summarizeUserTurnDiffStats(
@@ -315,28 +397,53 @@ function formatUserTurnDiffSummaryLabel(fileCount: number) {
 
 function UserTurnDiffCard({
   onFileChangeSelect,
+  activeSessionDiff,
+  allowWorkspaceDiffFallback = false,
+  onTurnDiffSummaryHydrate,
+  patchSourceFileChanges = [],
   onTurnDiffRestore,
   onTurnDiffReview,
   turn,
 }: {
+  activeSessionDiff?: SessionDiffSummary | null
+  allowWorkspaceDiffFallback?: boolean
   onFileChangeSelect?: (file: string) => void
+  onTurnDiffSummaryHydrate?: (turnID: string, diffSummary: SessionDiffSummary) => void | Promise<void>
+  patchSourceFileChanges?: AssistantTraceFileChange[]
   onTurnDiffRestore?: (files: string[]) => void | Promise<void>
   onTurnDiffReview?: (files: string[]) => void | Promise<void>
   turn: UserTurn
 }) {
-  const fileChanges = normalizeUserTurnDiffSummary(turn.diffSummary)
+  const fileChangesFromTurnSources = hydrateUserTurnFileChangesFromPatchSources(
+    normalizeUserTurnDiffSummary(turn.diffSummary),
+    patchSourceFileChanges,
+  )
+  const fileChanges = allowWorkspaceDiffFallback
+    ? hydrateUserTurnFileChangesFromWorkspaceDiff(fileChangesFromTurnSources, activeSessionDiff)
+    : fileChangesFromTurnSources
   const fileChangeSignature = fileChanges
-    .map((change) => `${change.file}\u0000${change.additions}\u0000${change.deletions}`)
+    .map((change) => `${change.file}\u0000${change.additions}\u0000${change.deletions}\u0000${change.patch ?? ""}`)
     .join("\u0001")
   const [isListExpanded, setIsListExpanded] = useState(false)
+  const [expandedFile, setExpandedFile] = useState<string | null>(null)
+  const [fullHeightFile, setFullHeightFile] = useState<string | null>(null)
   const [isRestoring, setIsRestoring] = useState(false)
   const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null)
+  const hydratedDiffSummary = buildHydratedUserTurnDiffSummary(turn.diffSummary, fileChanges)
+  const hydratedDiffSummarySignature = buildDiffSummarySignature(hydratedDiffSummary)
 
   useEffect(() => {
     setIsListExpanded(false)
+    setExpandedFile(null)
+    setFullHeightFile(null)
     setIsRestoring(false)
     setActionErrorMessage(null)
   }, [fileChangeSignature, turn.id])
+
+  useEffect(() => {
+    if (!hydratedDiffSummary) return
+    void onTurnDiffSummaryHydrate?.(turn.id, hydratedDiffSummary)
+  }, [hydratedDiffSummarySignature, onTurnDiffSummaryHydrate, turn.id])
 
   if (fileChanges.length === 0) return null
 
@@ -344,6 +451,15 @@ function UserTurnDiffCard({
   const listID = `user-turn-diff-list-${turn.id}`
   const summaryLabel = formatUserTurnDiffSummaryLabel(stats.files)
   const filePaths = fileChanges.map((change) => change.file)
+
+  const handleListToggle = () => {
+    const nextIsListExpanded = !isListExpanded
+    setIsListExpanded(nextIsListExpanded)
+    if (!nextIsListExpanded) {
+      setExpandedFile(null)
+      setFullHeightFile(null)
+    }
+  }
 
   const handleReviewClick = async () => {
     if (!onTurnDiffReview) return
@@ -382,7 +498,7 @@ function UserTurnDiffCard({
           className="user-turn-diff-card-summary"
           aria-expanded={isListExpanded}
           aria-controls={listID}
-          onClick={() => setIsListExpanded((current) => !current)}
+          onClick={handleListToggle}
         >
           <span className="user-turn-diff-card-title">{summaryLabel}</span>
           <span className="user-turn-diff-stats" aria-label={`${stats.additions} additions, ${stats.deletions} deletions`}>
@@ -415,7 +531,7 @@ function UserTurnDiffCard({
             aria-label={isListExpanded ? "收起文件变更" : "展开文件变更"}
             aria-expanded={isListExpanded}
             aria-controls={listID}
-            onClick={() => setIsListExpanded((current) => !current)}
+            onClick={handleListToggle}
           >
             {isListExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
           </button>
@@ -424,6 +540,9 @@ function UserTurnDiffCard({
       {isListExpanded ? (
         <div id={listID} className="user-turn-diff-file-list">
           {fileChanges.map((change, changeIndex) => {
+            const hasPatch = Boolean(change.patch?.trim())
+            const isExpanded = expandedFile === change.file
+            const previewID = `user-turn-diff-preview-${turn.id}-${changeIndex}`
             const rowContent = (
               <>
                 <span className="user-turn-diff-file-path">{change.file}</span>
@@ -432,14 +551,26 @@ function UserTurnDiffCard({
                   <span className="is-remove">-{change.deletions}</span>
                 </span>
                 <span className="user-turn-diff-file-chevron" aria-hidden="true">
-                  <ChevronDownIcon />
+                  {hasPatch ? (isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />) : <ChevronDownIcon />}
                 </span>
               </>
             )
 
             return (
               <div key={`${turn.id}-${change.file}-${changeIndex}`} className="user-turn-diff-file-entry">
-                {onFileChangeSelect ? (
+                {hasPatch ? (
+                  <button
+                    type="button"
+                    className="user-turn-diff-file-row"
+                    aria-label={`${isExpanded ? "收起" : "展开"} ${change.file} 变更`}
+                    aria-expanded={isExpanded}
+                    aria-controls={previewID}
+                    title={change.file}
+                    onClick={() => setExpandedFile((current) => current === change.file ? null : change.file)}
+                  >
+                    {rowContent}
+                  </button>
+                ) : onFileChangeSelect ? (
                   <button
                     type="button"
                     className="user-turn-diff-file-row"
@@ -454,6 +585,21 @@ function UserTurnDiffCard({
                     {rowContent}
                   </div>
                 )}
+                {hasPatch && isExpanded ? (
+                  <div id={previewID} className="user-turn-diff-file-preview">
+                    <DiffPreview
+                      className="trace-historical-diff user-turn-historical-diff"
+                      emptyClassName="trace-historical-diff-empty user-turn-historical-diff-empty"
+                      file={change.file}
+                      isFullHeight={fullHeightFile === change.file}
+                      onToggleFullHeight={() =>
+                        setFullHeightFile((current) => current === change.file ? null : change.file)
+                      }
+                      patch={change.patch}
+                      viewMode="unified"
+                    />
+                  </div>
+                ) : null}
               </div>
             )
           })}
@@ -2827,6 +2973,7 @@ function collectAnsweredQuestionIDs(turns: Turn[]) {
 export function ThreadView({
   activeProjectID = null,
   activeSession,
+  activeSessionDiff = null,
   activeTurns,
   assistantTraceVisibility,
   composerRefreshVersion = 0,
@@ -2836,6 +2983,7 @@ export function ThreadView({
   onFileChangeSelect,
   onLocalFileLinkOpen,
   onOpenSideChat,
+  onTurnDiffSummaryHydrate,
   onTurnDiffRestore,
   onTurnDiffReview,
   onAskUserQuestionAnswer,
@@ -3086,7 +3234,10 @@ export function ThreadView({
                       shouldRenderDiffOnStandaloneUserTurn(activeTurns, turnIndex, turn) ? (
                         <UserTurnDiffCard
                           turn={turn}
+                          activeSessionDiff={activeSessionDiff}
+                          allowWorkspaceDiffFallback={turnIndex === activeTurns.length - 1}
                           onFileChangeSelect={onFileChangeSelect}
+                          onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
                           onTurnDiffRestore={onTurnDiffRestore}
                           onTurnDiffReview={onTurnDiffReview}
                         />
@@ -3158,7 +3309,11 @@ export function ThreadView({
                     {trailingUserDiffTurn ? (
                       <UserTurnDiffCard
                         turn={trailingUserDiffTurn}
+                        activeSessionDiff={activeSessionDiff}
+                        allowWorkspaceDiffFallback={isLatestAssistantMessage}
+                        patchSourceFileChanges={collectAssistantPatchFileChanges(turn)}
                         onFileChangeSelect={onFileChangeSelect}
+                        onTurnDiffSummaryHydrate={onTurnDiffSummaryHydrate}
                         onTurnDiffRestore={onTurnDiffRestore}
                         onTurnDiffReview={onTurnDiffReview}
                       />

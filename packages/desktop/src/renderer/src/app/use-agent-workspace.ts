@@ -20,7 +20,8 @@ import { useWorkspaceLoadingController } from "./agent-workspace/workspace-loadi
 import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-store"
 import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
 import { initialSelection } from "./seed-data"
-import type { LeftSidebarView, RightSidebarView, SessionModelSelection, WorkspaceGroup } from "./types"
+import type { LeftSidebarView, RightSidebarView, SessionDiffSummary, SessionModelSelection, Turn, WorkspaceGroup } from "./types"
+import { persistUserTurns } from "./user-turn-presentation"
 import { updateSessionModelSelectionInWorkspaces } from "./workspace"
 import { createWorkbenchLayoutFromLegacyPanes } from "./workbench/core"
 
@@ -56,6 +57,32 @@ function createInitialWorkspaceState(shouldUseSeedData: boolean) {
     initialCreateSessionTab,
     initialWorkbenchLayout: createWorkbenchLayoutFromLegacyPanes(initialWorkbenchPane ? [initialWorkbenchPane] : []),
   }
+}
+
+function buildSessionDiffSummarySignature(diffSummary: SessionDiffSummary | undefined) {
+  return diffSummary?.diffs
+    .map((diff) => `${diff.file}\u0000${diff.additions}\u0000${diff.deletions}\u0000${diff.patch ?? ""}`)
+    .join("\u0001") ?? ""
+}
+
+function hydrateTurnDiffSummary(
+  turns: Turn[],
+  turnID: string,
+  diffSummary: SessionDiffSummary,
+) {
+  let didUpdate = false
+  const nextTurns = turns.map((turn) => {
+    if (turn.kind !== "user" || turn.id !== turnID) return turn
+    if (buildSessionDiffSummarySignature(turn.diffSummary) === buildSessionDiffSummarySignature(diffSummary)) return turn
+
+    didUpdate = true
+    return {
+      ...turn,
+      diffSummary,
+    }
+  })
+
+  return didUpdate ? nextTurns : turns
 }
 
 export function useAgentWorkspace({
@@ -631,6 +658,26 @@ export function useAgentWorkspace({
     setWorkspaces((current) => updateSessionModelSelectionInWorkspaces(current, sessionID, selection))
   }
 
+  function handleTurnDiffSummaryHydrate(
+    turnID: string,
+    diffSummary: SessionDiffSummary,
+    sessionID = activeSessionID,
+  ) {
+    if (!sessionID) return
+
+    setConversations((prev) => {
+      const currentTurns = prev[sessionID] ?? []
+      const nextTurns = hydrateTurnDiffSummary(currentTurns, turnID, diffSummary)
+      if (nextTurns === currentTurns) return prev
+
+      persistUserTurns(sessionID, nextTurns)
+      return {
+        ...prev,
+        [sessionID]: nextTurns,
+      }
+    })
+  }
+
   return {
     activeCreateSessionTabID,
     activePreviewState,
@@ -726,6 +773,7 @@ export function useAgentWorkspace({
     handleSessionSelect,
     handleSidebarAction,
     handleSessionModelSelectionChange,
+    handleTurnDiffSummaryHydrate,
     focusedPaneID,
     hoveredFolderID,
     isCreateSessionTabActive,
