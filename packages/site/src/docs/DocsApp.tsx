@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import type { MouseEvent } from "react"
 import { marked, Renderer } from "marked"
 import {
   docsArticles,
@@ -6,15 +7,27 @@ import {
   getDocsArticle,
   type DocsArticle,
 } from "./docsContent"
+import {
+  installerFallbackUrls,
+  navigateToLatestInstaller,
+  repositoryUrl,
+  type InstallerPlatform,
+} from "../releaseDownloads"
 
 const brandLogoBlack = "/brand-logo-black.svg"
-const repositoryUrl = "https://github.com/fanfan-de/fanfande_studio"
-const windowsInstallerFallbackUrl = `${repositoryUrl}/releases/latest/download/Fanfande-Studio-0.1.3-x64.exe`
 
 type DocsHeading = {
   id: string
   level: number
   text: string
+}
+
+async function downloadLatestInstaller(
+  event: MouseEvent<HTMLAnchorElement>,
+  platform: InstallerPlatform,
+) {
+  event.preventDefault()
+  await navigateToLatestInstaller(platform)
 }
 
 function getSlugFromUrl() {
@@ -122,9 +135,17 @@ function DocsHeader() {
         </a>
         <a
           className="button button-primary docs-download-button"
-          href={windowsInstallerFallbackUrl}
+          href={installerFallbackUrls.windows}
+          onClick={(event) => void downloadLatestInstaller(event, "windows")}
         >
           win下载
+        </a>
+        <a
+          className="button button-secondary docs-download-button"
+          href={installerFallbackUrls.mac}
+          onClick={(event) => void downloadLatestInstaller(event, "mac")}
+        >
+          mac下载
         </a>
       </nav>
     </header>

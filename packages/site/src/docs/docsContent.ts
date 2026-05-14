@@ -1,5 +1,5 @@
 import faq from "./content/faq.md?raw"
-import gettingStarted from "./content/getting-started.md?raw"
+import gettingStarted from "./content/下载安装.md?raw"
 import providers from "./content/providers.md?raw"
 import skills from "./content/skills.md?raw"
 

@@ -2,21 +2,14 @@ import { useEffect, useState } from "react"
 import type { MouseEvent } from "react"
 import { navigationItems, proofPoints } from "./content"
 import { GitActivitySection } from "./GitActivity"
+import {
+  installerFallbackUrls,
+  navigateToLatestInstaller,
+  repositoryUrl,
+  type InstallerPlatform,
+} from "./releaseDownloads"
 
 const brandLogoBlack = "/brand-logo-black.svg"
-const repositoryUrl = "https://github.com/fanfan-de/fanfande_studio"
-const latestReleaseApiUrl =
-  "https://api.github.com/repos/fanfan-de/fanfande_studio/releases/latest"
-const windowsInstallerFallbackUrl = `${repositoryUrl}/releases/latest/download/Fanfande-Studio-0.1.3-x64.exe`
-
-type GitHubReleaseAsset = {
-  browser_download_url?: unknown
-  name?: unknown
-}
-
-type GitHubRelease = {
-  assets?: unknown
-}
 
 function getGitHubRepoApiUrl(href: string) {
   const match = href.match(/^https:\/\/github\.com\/([^/]+)\/([^/#?]+)/)
@@ -26,66 +19,12 @@ function getGitHubRepoApiUrl(href: string) {
   return `https://api.github.com/repos/${match[1]}/${match[2]}`
 }
 
-function getWindowsInstallerUrl(release: GitHubRelease) {
-  if (!Array.isArray(release.assets)) return undefined
-
-  const installer = release.assets.find((asset): asset is GitHubReleaseAsset => {
-    if (!asset || typeof asset !== "object") return false
-
-    const { browser_download_url: downloadUrl, name } =
-      asset as GitHubReleaseAsset
-
-    if (typeof downloadUrl !== "string" || typeof name !== "string") {
-      return false
-    }
-
-    const normalizedName = name.toLowerCase()
-
-    return (
-      normalizedName.endsWith(".exe") &&
-      normalizedName.includes("fanfande-studio") &&
-      normalizedName.includes("x64")
-    )
-  })
-
-  return typeof installer?.browser_download_url === "string"
-    ? installer.browser_download_url
-    : undefined
-}
-
-async function resolveLatestWindowsInstallerUrl() {
-  const response = await fetch(latestReleaseApiUrl, {
-    cache: "no-store",
-    headers: {
-      Accept: "application/vnd.github+json",
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error(`GitHub release request failed: ${response.status}`)
-  }
-
-  const downloadUrl = getWindowsInstallerUrl(
-    (await response.json()) as GitHubRelease,
-  )
-
-  if (!downloadUrl) {
-    throw new Error("No Windows installer asset found in latest release")
-  }
-
-  return downloadUrl
-}
-
-async function downloadLatestWindowsInstaller(
+async function downloadLatestInstaller(
   event: MouseEvent<HTMLAnchorElement>,
+  platform: InstallerPlatform,
 ) {
   event.preventDefault()
-
-  try {
-    window.location.assign(await resolveLatestWindowsInstallerUrl())
-  } catch {
-    window.location.assign(windowsInstallerFallbackUrl)
-  }
+  await navigateToLatestInstaller(platform)
 }
 
 function formatStarCount(count: number) {
@@ -235,13 +174,20 @@ export function App() {
           <div className="hero-actions">
             <a
               className="button button-primary"
-              href={windowsInstallerFallbackUrl}
-              onClick={downloadLatestWindowsInstaller}
+              href={installerFallbackUrls.windows}
+              onClick={(event) => void downloadLatestInstaller(event, "windows")}
             >
               win下载
             </a>
+            <a
+              className="button button-secondary"
+              href={installerFallbackUrls.mac}
+              onClick={(event) => void downloadLatestInstaller(event, "mac")}
+            >
+              mac下载
+            </a>
             <p className="hero-platform-note">
-              当前为EA版本；mac，linux版本开发中
+              当前提供 Windows x64 与 macOS Apple Silicon；Linux 版本开发中
             </p>
           </div>
         </div>
