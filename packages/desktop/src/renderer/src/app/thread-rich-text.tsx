@@ -3,6 +3,7 @@ import {
   normalizeLooseLocalFileMarkdownLinks,
   normalizeMarkdownLinkTarget,
   openExternalThreadLink,
+  type MarkdownArtifactLinkTarget,
   type MarkdownLocalFileLinkTarget,
 } from "./thread-markdown"
 import type { UserTurnReference } from "./types"
@@ -17,6 +18,7 @@ type ThreadRichTextSegment =
       text: string
     }
   | {
+      artifactTarget?: MarkdownArtifactLinkTarget
       localFileTarget?: MarkdownLocalFileLinkTarget
       type: "link"
       text: string
@@ -31,6 +33,7 @@ type ThreadRichTextSegment =
 interface ThreadRichTextProps {
   as?: ThreadRichTextElement
   className?: string
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   references?: ThreadRichTextReference[]
   text: string
@@ -41,6 +44,7 @@ interface MarkdownLinkMatch {
   end: number
   label: string
   href: string
+  artifactTarget?: MarkdownArtifactLinkTarget
   localFileTarget?: MarkdownLocalFileLinkTarget
 }
 
@@ -240,6 +244,7 @@ function findNextMarkdownLink(text: string, startIndex: number): MarkdownLinkMat
       end: urlEnd + 1,
       label,
       href: linkTarget.href,
+      ...(linkTarget.kind === "artifact" ? { artifactTarget: linkTarget.target } : {}),
       ...(linkTarget.kind === "local-file" ? { localFileTarget: linkTarget.target } : {}),
     }
   }
@@ -301,6 +306,7 @@ function parseThreadRichTextWithoutReferences(text: string): ThreadRichTextSegme
       type: "link",
       text: markdownLink.label,
       href: markdownLink.href,
+      ...(markdownLink.artifactTarget ? { artifactTarget: markdownLink.artifactTarget } : {}),
       ...(markdownLink.localFileTarget ? { localFileTarget: markdownLink.localFileTarget } : {}),
     })
 
@@ -344,6 +350,7 @@ export function parseThreadRichText(text: string, references: ThreadRichTextRefe
 function renderSegment(
   segment: ThreadRichTextSegment,
   index: number,
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void,
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void,
 ): ReactNode {
   if (segment.type === "text") {
@@ -365,7 +372,27 @@ function renderSegment(
   }
 
   const href = segment.href
+  const artifactTarget = segment.artifactTarget
   const localFileTarget = segment.localFileTarget
+
+  if (artifactTarget) {
+    if (!onArtifactLinkOpen) return <Fragment key={`artifact-link-text-${index}`}>{segment.text}</Fragment>
+
+    return (
+      <a
+        key={`artifact-link-${index}-${href}`}
+        className="thread-inline-link"
+        href={href}
+        onClick={(event) => {
+          event.preventDefault()
+          onArtifactLinkOpen(artifactTarget)
+        }}
+        title={artifactTarget.href}
+      >
+        {segment.text}
+      </a>
+    )
+  }
 
   if (localFileTarget) {
     if (!onLocalFileLinkOpen) return <Fragment key={`local-link-text-${index}`}>{segment.text}</Fragment>
@@ -409,6 +436,7 @@ function renderSegment(
 export function ThreadRichText({
   as = "p",
   className,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
   references = [],
   text,
@@ -418,7 +446,7 @@ export function ThreadRichText({
 
   return (
     <Component className={className}>
-      {segments.map((segment, index) => renderSegment(segment, index, onLocalFileLinkOpen))}
+      {segments.map((segment, index) => renderSegment(segment, index, onArtifactLinkOpen, onLocalFileLinkOpen))}
     </Component>
   )
 }

@@ -74,6 +74,28 @@ describe("parseThreadRichText", () => {
     ])
   })
 
+  it("supports artifact markdown links", () => {
+    expect(parseThreadRichText("Open [Artifact](agent://artifact/report-1).")).toEqual([
+      {
+        type: "text",
+        text: "Open ",
+      },
+      {
+        type: "link",
+        text: "Artifact",
+        href: "agent://artifact/report-1",
+        artifactTarget: {
+          href: "agent://artifact/report-1",
+          id: "report-1",
+        },
+      },
+      {
+        type: "text",
+        text: ".",
+      },
+    ])
+  })
+
   it("promotes matching user references into inline tag segments", () => {
     expect(
       parseThreadRichText("Check @src/angry-birds.js and https://example.com/plan.", [
@@ -166,6 +188,25 @@ describe("ThreadRichText", () => {
     expect(onLocalFileLinkOpen).toHaveBeenCalledWith({
       lineRange: null,
       path: String.raw`C:\新建文件夹 (4)\index.html`,
+    })
+    expect(window.desktop?.openExternalUrl).not.toHaveBeenCalled()
+  })
+
+  it("routes artifact link clicks through the artifact callback", () => {
+    const onArtifactLinkOpen = vi.fn()
+    render(
+      <ThreadRichText
+        className="trace-item-text"
+        text="Open [Artifact](agent://artifact/report-1)."
+        onArtifactLinkOpen={onArtifactLinkOpen}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("link", { name: "Artifact" }))
+
+    expect(onArtifactLinkOpen).toHaveBeenCalledWith({
+      href: "agent://artifact/report-1",
+      id: "report-1",
     })
     expect(window.desktop?.openExternalUrl).not.toHaveBeenCalled()
   })

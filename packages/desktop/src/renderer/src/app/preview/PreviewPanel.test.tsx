@@ -2,14 +2,17 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type { ComponentProps } from "react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { WorkspacePreviewState } from "../types"
+import { DEFAULT_WORKSPACE_PREVIEW_STATE } from "../agent-workspace/review-preview-state"
 import { getPreviewFailure, PreviewPanel } from "./PreviewPanel"
 
 const originalUserAgent = window.navigator.userAgent
 
 const emptyPreviewState: WorkspacePreviewState = {
+  ...DEFAULT_WORKSPACE_PREVIEW_STATE,
   comments: [],
   committedUrl: null,
   draftUrl: "http://localhost:3000",
+  draftTarget: "http://localhost:3000",
   errorKind: null,
   errorMessage: null,
   mode: "browse",

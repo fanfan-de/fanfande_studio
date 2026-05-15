@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { ThreadMarkdown } from "./thread-markdown"
+import { normalizeMarkdownLinkTarget, ThreadMarkdown } from "./thread-markdown"
 
 describe("ThreadMarkdown", () => {
   beforeEach(() => {
@@ -72,6 +72,34 @@ describe("ThreadMarkdown", () => {
     expect(window.desktop?.openExternalUrl).toHaveBeenCalledWith({
       url: "https://example.com/docs",
     })
+  })
+
+  it("recognizes and opens artifact links through the artifact callback", () => {
+    const onArtifactLinkOpen = vi.fn()
+
+    expect(normalizeMarkdownLinkTarget("agent://artifact/report-1")).toMatchObject({
+      href: "agent://artifact/report-1",
+      kind: "artifact",
+      target: {
+        href: "agent://artifact/report-1",
+        id: "report-1",
+      },
+    })
+
+    render(
+      <ThreadMarkdown
+        text="[Artifact](agent://artifact/report-1)"
+        onArtifactLinkOpen={onArtifactLinkOpen}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("link", { name: "Artifact" }))
+
+    expect(onArtifactLinkOpen).toHaveBeenCalledWith({
+      href: "agent://artifact/report-1",
+      id: "report-1",
+    })
+    expect(window.desktop?.openExternalUrl).not.toHaveBeenCalled()
   })
 
   it("opens local absolute file links through the local file callback", () => {

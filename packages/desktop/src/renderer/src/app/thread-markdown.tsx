@@ -6,8 +6,14 @@ import type { WorkspaceFileLineRange } from "./types"
 
 interface ThreadMarkdownProps {
   className?: string
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   text: string
+}
+
+export interface MarkdownArtifactLinkTarget {
+  href: string
+  id: string
 }
 
 export interface MarkdownLocalFileLinkTarget {
@@ -19,6 +25,11 @@ export type MarkdownLinkTarget =
   | {
       href: string
       kind: "external"
+    }
+  | {
+      href: string
+      kind: "artifact"
+      target: MarkdownArtifactLinkTarget
     }
   | {
       href: string
@@ -145,7 +156,33 @@ function normalizeLocalFileLinkTarget(value: string): MarkdownLocalFileLinkTarge
   }
 }
 
+function normalizeArtifactLinkTarget(value: string): MarkdownArtifactLinkTarget | null {
+  try {
+    const parsed = new URL(value.trim())
+    if (parsed.protocol !== "agent:" || parsed.hostname !== "artifact") return null
+
+    const id = decodeUrlPathname(parsed.pathname.replace(/^\/+/, "")).trim()
+    if (!/^[A-Za-z0-9._-]+$/.test(id)) return null
+
+    return {
+      href: `agent://artifact/${encodeURIComponent(id)}`,
+      id,
+    }
+  } catch {
+    return null
+  }
+}
+
 export function normalizeMarkdownLinkTarget(value: string): MarkdownLinkTarget | null {
+  const artifactTarget = normalizeArtifactLinkTarget(value)
+  if (artifactTarget) {
+    return {
+      href: artifactTarget.href,
+      kind: "artifact",
+      target: artifactTarget,
+    }
+  }
+
   const externalUrl = normalizeExternalUrl(value)
   if (externalUrl) {
     return {
@@ -294,14 +331,34 @@ function handleExternalLinkClick(event: MouseEvent<HTMLAnchorElement>, href: str
 function MarkdownLink({
   children,
   href,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
 }: {
   children?: ReactNode
   href?: string
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
 }) {
   const linkTarget = href ? normalizeMarkdownLinkTarget(href) : null
   if (!linkTarget) return <>{children}</>
+
+  if (linkTarget.kind === "artifact") {
+    if (!onArtifactLinkOpen) return <>{children}</>
+
+    return (
+      <a
+        className="thread-inline-link"
+        href={linkTarget.href}
+        onClick={(event) => {
+          event.preventDefault()
+          onArtifactLinkOpen(linkTarget.target)
+        }}
+        title={linkTarget.href}
+      >
+        {children}
+      </a>
+    )
+  }
 
   if (linkTarget.kind === "local-file") {
     if (!onLocalFileLinkOpen) return <>{children}</>
@@ -372,14 +429,20 @@ const transformMarkdownUrl: UrlTransform = (url, key) => {
   return ""
 }
 
-export const ThreadMarkdown = memo(function ThreadMarkdown({ className, onLocalFileLinkOpen, text }: ThreadMarkdownProps) {
+export const ThreadMarkdown = memo(function ThreadMarkdown({ className, onArtifactLinkOpen, onLocalFileLinkOpen, text }: ThreadMarkdownProps) {
   const markdownText = useMemo(() => normalizeLooseLocalFileMarkdownLinks(text), [text])
   const components = useMemo<Components>(() => ({
-    a: (props) => <MarkdownLink {...props} onLocalFileLinkOpen={onLocalFileLinkOpen} />,
+    a: (props) => (
+      <MarkdownLink
+        {...props}
+        onArtifactLinkOpen={onArtifactLinkOpen}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+      />
+    ),
     code: MarkdownCode,
     img: MarkdownImage,
     table: MarkdownTable,
-  }), [onLocalFileLinkOpen])
+  }), [onArtifactLinkOpen, onLocalFileLinkOpen])
 
   return (
     <div className={className}>

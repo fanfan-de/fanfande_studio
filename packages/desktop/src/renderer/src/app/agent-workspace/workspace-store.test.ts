@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import type { PermissionRequest, WorkspacePreviewState } from "../types"
 import { createInitialDockviewLayout } from "../workbench/dockview-state"
-import { DEFAULT_SESSION_DIFF_STATE, DEFAULT_WORKSPACE_FILE_REVIEW_STATE } from "./review-preview-state"
+import { DEFAULT_SESSION_DIFF_STATE, DEFAULT_WORKSPACE_FILE_REVIEW_STATE, DEFAULT_WORKSPACE_PREVIEW_STATE } from "./review-preview-state"
 import { createWorkspaceStore } from "./workspace-store"
 
 function createTestStore(options?: {
@@ -126,9 +126,11 @@ describe("workspace store", () => {
   it("updates review, preview, and file comment state independently", () => {
     const store = createTestStore()
     const preview: WorkspacePreviewState = {
+      ...DEFAULT_WORKSPACE_PREVIEW_STATE,
       committedUrl: null,
       comments: [],
       draftUrl: "http://localhost:5173",
+      draftTarget: "http://localhost:5173",
       errorKind: null,
       errorMessage: null,
       mode: "browse",

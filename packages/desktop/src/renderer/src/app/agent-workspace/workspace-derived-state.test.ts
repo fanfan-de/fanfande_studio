@@ -6,7 +6,7 @@ import {
   WORKBENCH_DOCK_PANEL_COMPONENT,
   WORKBENCH_DOCK_TAB_COMPONENT,
 } from "../workbench/dockview-state"
-import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE } from "./review-preview-state"
+import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE, DEFAULT_WORKSPACE_PREVIEW_STATE } from "./review-preview-state"
 import {
   buildWorkspaceDerivedState,
   createCreateSessionWorkbenchTab,
@@ -190,7 +190,9 @@ describe("workspace derived state", () => {
       platform: "win32",
       previewByWorkspaceID: {
         [workspace.id]: {
+          ...DEFAULT_WORKSPACE_PREVIEW_STATE,
           draftUrl: "http://localhost:5173",
+          draftTarget: "http://localhost:5173",
           committedUrl: null,
           mode: "browse",
           reloadToken: 0,

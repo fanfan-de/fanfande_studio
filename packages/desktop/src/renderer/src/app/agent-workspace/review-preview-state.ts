@@ -24,7 +24,9 @@ export const DEFAULT_SESSION_RUNTIME_DEBUG_STATE: SessionRuntimeDebugState = {
 }
 
 export const DEFAULT_WORKSPACE_PREVIEW_STATE: WorkspacePreviewState = {
+  activeTargetInput: null,
   draftUrl: "http://localhost:3000",
+  draftTarget: "http://localhost:3000",
   committedUrl: null,
   mode: "browse",
   reloadToken: 0,
@@ -33,6 +35,8 @@ export const DEFAULT_WORKSPACE_PREVIEW_STATE: WorkspacePreviewState = {
   navigationHistory: [],
   navigationIndex: -1,
   comments: [],
+  resolvedTarget: null,
+  status: "idle",
 }
 
 export const DEFAULT_WORKSPACE_FILE_REVIEW_STATE: WorkspaceFileReviewState = {

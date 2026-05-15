@@ -30,6 +30,8 @@ import type {
   DesktopIpcInput,
   DesktopIpcOutput,
   DesktopLocalPreviewService,
+  DesktopReadPreviewTextResult,
+  DesktopResolvedPreviewTarget,
   DesktopPreloadApi,
   WorkbenchStateEvent,
   WorkbenchSharedState,
@@ -214,6 +216,10 @@ try {
       invokeDesktop("desktop:capture-preview-screenshot", input) as Promise<{ path: string }>,
     detectLocalPreviewServices: () =>
       invokeDesktop("desktop:detect-local-preview-services") as Promise<DesktopLocalPreviewService[]>,
+    resolvePreviewTarget: (input: DesktopIpcInput<"desktop:resolve-preview-target">) =>
+      invokeDesktop("desktop:resolve-preview-target", input) as Promise<DesktopResolvedPreviewTarget>,
+    readPreviewText: (input: DesktopIpcInput<"desktop:read-preview-text">) =>
+      invokeDesktop("desktop:read-preview-text", input) as Promise<DesktopReadPreviewTextResult>,
     gitGetCapabilities: (input: { projectID: string; directory: string }) =>
       invokeDesktop("desktop:git-get-capabilities", input) as Promise<GitCapabilities>,
     gitCommit: (input: { projectID: string; directory: string; message: string; stageAll?: boolean }) =>

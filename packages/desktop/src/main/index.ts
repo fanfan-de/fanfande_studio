@@ -3,6 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { registerIpcHandlers } from "./ipc"
 import { registerLocalImageProtocolHandler, registerLocalImageProtocolScheme } from "./local-image-protocol"
+import { registerLocalPreviewProtocolHandler, registerLocalPreviewProtocolScheme } from "./preview-targets"
 import { readLocaleConfigSnapshot } from "./locale-config"
 import { ensureManagedAgentRunning, stopManagedAgent } from "./managed-agent"
 import { createApplicationMenus, type ApplicationMenuOptions } from "./menu"
@@ -15,6 +16,7 @@ import { WorkbenchWindowManager } from "./workbench-window-manager"
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
 
 registerLocalImageProtocolScheme(protocol)
+registerLocalPreviewProtocolScheme(protocol)
 
 void app.whenReady().then(async () => {
   try {
@@ -49,6 +51,7 @@ void app.whenReady().then(async () => {
     workbenchWindowManager,
   })
   registerLocalImageProtocolHandler(protocol)
+  registerLocalPreviewProtocolHandler(protocol)
 
   try {
     await createWindow(mainDir, { workbenchWindowManager })

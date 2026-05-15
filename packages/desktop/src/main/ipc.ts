@@ -33,6 +33,7 @@ import type { ApplicationMenus } from "./menu"
 import { readLocaleConfigSnapshot, writeLocaleConfigSnapshot } from "./locale-config"
 import { detectLocalPreviewServices } from "./local-preview-services"
 import { openMonitorWindow } from "./monitor-window"
+import { readPreviewText, resolvePreviewTarget } from "./preview-targets"
 import { PtyProxyManager } from "./pty-proxy"
 import { safeWarn } from "./safe-console"
 import {
@@ -1074,6 +1075,8 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
   })
 
   handleDesktopIpc("desktop:detect-local-preview-services", async () => detectLocalPreviewServices())
+  handleDesktopIpc("desktop:resolve-preview-target", async (_event, input) => resolvePreviewTarget(input))
+  handleDesktopIpc("desktop:read-preview-text", async (_event, input) => readPreviewText(input))
 
   handleDesktopIpc("desktop:git-get-capabilities", async (_event, input: { projectID: string; directory: string }) =>
     getGitCapabilities(input),
@@ -2783,6 +2786,8 @@ export const internal = {
   disposeSessionStreamSubscriptionsForWebContents,
   getToolPermissionMode,
   isSessionStreamSubscriptionKeyForWebContents,
+  readPreviewText,
+  resolvePreviewTarget,
   saveComposerPastedImages,
   updateToolPermissionMode,
 }

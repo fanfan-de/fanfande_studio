@@ -446,6 +446,56 @@ export interface DesktopLocalPreviewService {
   url: string
 }
 
+export type DesktopPreviewTargetKind = "url" | "artifact" | "file"
+export type DesktopPreviewRenderer =
+  | "url-webview"
+  | "markdown-preview"
+  | "html-preview"
+  | "svg-preview"
+  | "json-viewer"
+  | "table-preview"
+  | "image-preview"
+  | "code-viewer"
+  | "system-open"
+
+export interface DesktopResolvePreviewTargetInput {
+  value: string
+  workspaceRoot?: string | null
+}
+
+export interface DesktopPreviewExternalOpenTarget {
+  kind: "url" | "path"
+  value: string
+}
+
+export interface DesktopResolvedPreviewTarget {
+  artifactID?: string
+  artifactType?: string
+  entry?: string
+  error?: string
+  externalOpenTarget?: DesktopPreviewExternalOpenTarget
+  input: string
+  kind: DesktopPreviewTargetKind
+  mime: string
+  normalizedInput: string
+  path?: string
+  renderer: DesktopPreviewRenderer
+  safePreviewUrl?: string
+  textReadable: boolean
+  title: string
+  workspaceRoot?: string
+}
+
+export interface DesktopReadPreviewTextInput {
+  path: string
+  workspaceRoot?: string | null
+}
+
+export interface DesktopReadPreviewTextResult {
+  content: string
+  path: string
+}
+
 export interface DesktopSessionMutationResult {
   session: AgentSessionSummary
   requestId?: string
@@ -724,6 +774,14 @@ export interface DesktopIpcContract {
   "desktop:detect-local-preview-services": {
     input: void
     output: DesktopLocalPreviewService[]
+  }
+  "desktop:resolve-preview-target": {
+    input: DesktopResolvePreviewTargetInput
+    output: DesktopResolvedPreviewTarget
+  }
+  "desktop:read-preview-text": {
+    input: DesktopReadPreviewTextInput
+    output: DesktopReadPreviewTextResult
   }
   "desktop:git-get-capabilities": {
     input: { projectID: string; directory: string }
@@ -1249,6 +1307,8 @@ export interface DesktopApiMethods {
   saveComposerPastedImages(input: DesktopIpcInput<"desktop:save-composer-pasted-images">): Promise<DesktopIpcOutput<"desktop:save-composer-pasted-images">>
   capturePreviewScreenshot(input: DesktopIpcInput<"desktop:capture-preview-screenshot">): Promise<DesktopIpcOutput<"desktop:capture-preview-screenshot">>
   detectLocalPreviewServices(): Promise<DesktopIpcOutput<"desktop:detect-local-preview-services">>
+  resolvePreviewTarget(input: DesktopIpcInput<"desktop:resolve-preview-target">): Promise<DesktopIpcOutput<"desktop:resolve-preview-target">>
+  readPreviewText(input: DesktopIpcInput<"desktop:read-preview-text">): Promise<DesktopIpcOutput<"desktop:read-preview-text">>
   gitGetCapabilities(input: DesktopIpcInput<"desktop:git-get-capabilities">): Promise<DesktopIpcOutput<"desktop:git-get-capabilities">>
   gitCommit(input: DesktopIpcInput<"desktop:git-commit">): Promise<DesktopIpcOutput<"desktop:git-commit">>
   gitPush(input: DesktopIpcInput<"desktop:git-push">): Promise<DesktopIpcOutput<"desktop:git-push">>

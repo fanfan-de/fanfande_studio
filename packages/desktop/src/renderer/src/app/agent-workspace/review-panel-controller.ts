@@ -1,4 +1,4 @@
-import { useDeferredValue, type MutableRefObject } from "react"
+import { useDeferredValue, useRef, type MutableRefObject } from "react"
 import {
   appendComposerTagToDraftState,
   createComposerCommentTagData,
@@ -19,7 +19,6 @@ import type {
   ComposerCommentReference,
   ComposerDraftState,
   PreviewComment,
-  PreviewErrorKind,
   PreviewMode,
   RightSidebarView,
   SessionDiffFile,
@@ -40,8 +39,6 @@ import {
 import type { WorkspaceStateUpdater } from "./workspace-store"
 
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
-
-const MAX_PREVIEW_NAVIGATION_HISTORY = 50
 
 function formatReverseApplyFailureMessage(result: {
   restored: Array<{ file: string }>
@@ -102,6 +99,7 @@ export function useReviewPanelController({
   workspaceFileSearchRequestRef,
 }: UseReviewPanelControllerOptions) {
   const deferredWorkspaceFileQuery = useDeferredValue(workspaceFileReviewState.query)
+  const previewResolveRequestRef = useRef(0)
 
   function getPreviewNavigationState(current: WorkspacePreviewState) {
     const history = Array.isArray(current.navigationHistory)
@@ -114,49 +112,6 @@ export function useReviewPanelController({
       : history.length - 1
 
     return { history, index }
-  }
-
-  function setPreviewError(
-    current: WorkspacePreviewState,
-    errorMessage: string | null,
-    errorKind: PreviewErrorKind | null,
-  ): WorkspacePreviewState {
-    return {
-      ...current,
-      errorKind,
-      errorMessage,
-    }
-  }
-
-  function commitPreviewUrl(current: WorkspacePreviewState, input: string): WorkspacePreviewState {
-    const { errorKind, errorMessage, normalizedUrl } = normalizePreviewUrlInput(input)
-    if (!normalizedUrl) {
-      return setPreviewError(current, errorMessage, errorKind)
-    }
-
-    if (current.committedUrl === normalizedUrl) {
-      return {
-        ...current,
-        draftUrl: normalizedUrl,
-        errorKind: null,
-        errorMessage: null,
-        reloadToken: current.reloadToken + 1,
-      }
-    }
-
-    const { history, index } = getPreviewNavigationState(current)
-    const activeHistory = index >= 0 ? history.slice(0, index + 1) : []
-    const nextHistory = [...activeHistory, normalizedUrl].slice(-MAX_PREVIEW_NAVIGATION_HISTORY)
-
-    return {
-      ...current,
-      draftUrl: normalizedUrl,
-      committedUrl: normalizedUrl,
-      errorKind: null,
-      errorMessage: null,
-      navigationHistory: nextHistory,
-      navigationIndex: nextHistory.length - 1,
-    }
   }
 
   function updatePreviewState(
@@ -180,6 +135,7 @@ export function useReviewPanelController({
       (current) => ({
         ...current,
         draftUrl: value,
+        draftTarget: value,
         errorKind: null,
         errorMessage: null,
       }),
@@ -187,29 +143,121 @@ export function useReviewPanelController({
     )
   }
 
-  function handlePreviewOpenUrl(url: string, workspaceID = selectedWorkspace?.id ?? null) {
+  async function handlePreviewOpenTarget(
+    value: string,
+    workspaceID = selectedWorkspace?.id ?? null,
+    workspaceRootOverride?: string | null,
+  ) {
     setRightSidebarView("preview")
-    updatePreviewState((current) => commitPreviewUrl(current, url), workspaceID)
+    const trimmedValue = value.trim()
+    const workspaceRoot = workspaceRootOverride ?? selectedWorkspace?.directory ?? activeSessionDirectory ?? null
+    const resolvePreviewTarget = window.desktop?.resolvePreviewTarget
+    const requestID = previewResolveRequestRef.current + 1
+    previewResolveRequestRef.current = requestID
+
+    if (!trimmedValue) {
+      updatePreviewState(
+        (current) => ({
+          ...current,
+          activeTargetInput: null,
+          draftTarget: value,
+          draftUrl: value,
+          errorKind: "empty-url",
+          errorMessage: "Enter a URL, Artifact link, or workspace file path to preview.",
+          resolvedTarget: null,
+          status: "error",
+        }),
+        workspaceID,
+      )
+      return
+    }
+
+    if (!resolvePreviewTarget) {
+      updatePreviewState(
+        (current) => ({
+          ...current,
+          activeTargetInput: trimmedValue,
+          draftTarget: trimmedValue,
+          draftUrl: trimmedValue,
+          errorKind: "unknown",
+          errorMessage: "Preview resolver is unavailable in this runtime.",
+          resolvedTarget: null,
+          status: "error",
+        }),
+        workspaceID,
+      )
+      return
+    }
+
+    updatePreviewState(
+      (current) => ({
+        ...current,
+        activeTargetInput: trimmedValue,
+        draftTarget: trimmedValue,
+        draftUrl: trimmedValue,
+        errorKind: null,
+        errorMessage: null,
+        status: "resolving",
+      }),
+      workspaceID,
+    )
+
+    try {
+      const resolvedTarget = await resolvePreviewTarget({
+        value: trimmedValue,
+        workspaceRoot,
+      })
+      if (previewResolveRequestRef.current !== requestID) return
+
+      updatePreviewState(
+        (current) => ({
+          ...current,
+          activeTargetInput: trimmedValue,
+          committedUrl: resolvedTarget.kind === "url" ? resolvedTarget.safePreviewUrl ?? resolvedTarget.normalizedInput : null,
+          draftTarget: resolvedTarget.normalizedInput || trimmedValue,
+          draftUrl: resolvedTarget.normalizedInput || trimmedValue,
+          errorKind: null,
+          errorMessage: null,
+          reloadToken: current.reloadToken + 1,
+          resolvedTarget,
+          status: "ready",
+        }),
+        workspaceID,
+      )
+    } catch (error) {
+      if (previewResolveRequestRef.current !== requestID) return
+      const message = error instanceof Error ? error.message : String(error)
+      updatePreviewState(
+        (current) => ({
+          ...current,
+          committedUrl: null,
+          errorKind: "unknown",
+          errorMessage: message,
+          resolvedTarget: null,
+          status: "error",
+        }),
+        workspaceID,
+      )
+    }
+  }
+
+  function handlePreviewOpenUrl(url: string, workspaceID = selectedWorkspace?.id ?? null) {
+    void handlePreviewOpenTarget(url, workspaceID)
   }
 
   function handlePreviewOpen(workspaceID = selectedWorkspace?.id ?? null) {
     setRightSidebarView("preview")
-    updatePreviewState((current) => commitPreviewUrl(current, current.draftUrl || current.committedUrl || ""), workspaceID)
+    const previewState = previewByWorkspaceID[resolvePreviewScopeID(workspaceID)] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    void handlePreviewOpenTarget(previewState.draftTarget || previewState.draftUrl || previewState.committedUrl || "", workspaceID)
   }
 
   function handlePreviewReload(workspaceID = selectedWorkspace?.id ?? null) {
     setRightSidebarView("preview")
-    updatePreviewState(
-      (current) => current.committedUrl
-          ? {
-              ...current,
-              errorKind: null,
-              errorMessage: null,
-              reloadToken: current.reloadToken + 1,
-            }
-        : current,
-      workspaceID,
-    )
+    const previewState = previewByWorkspaceID[resolvePreviewScopeID(workspaceID)] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    const target = previewState.activeTargetInput ?? previewState.resolvedTarget?.normalizedInput ?? previewState.draftTarget
+    if (target) {
+      void handlePreviewOpenTarget(target, workspaceID, previewState.resolvedTarget?.workspaceRoot ?? undefined)
+    }
   }
 
   function handlePreviewBack(workspaceID = selectedWorkspace?.id ?? null) {
@@ -373,10 +421,64 @@ export function useReviewPanelController({
 
   async function handlePreviewOpenExternal(workspaceID = selectedWorkspace?.id ?? null) {
     const openExternalUrl = window.desktop?.openExternalUrl
-    if (!openExternalUrl) return
+    const openPath = window.desktop?.openPath
 
     const scopeID = resolvePreviewScopeID(workspaceID)
     const previewState = previewByWorkspaceID[scopeID] ?? DEFAULT_WORKSPACE_PREVIEW_STATE
+    const externalTarget = previewState.resolvedTarget?.externalOpenTarget
+
+    if (externalTarget?.kind === "path" && openPath) {
+      try {
+        await openPath({ targetPath: externalTarget.value })
+        updatePreviewState(
+          (current) => ({
+            ...current,
+            errorKind: null,
+            errorMessage: null,
+          }),
+          workspaceID,
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        updatePreviewState(
+          (current) => ({
+            ...current,
+            errorKind: "unknown",
+            errorMessage: message,
+          }),
+          workspaceID,
+        )
+      }
+      return
+    }
+
+    if (!openExternalUrl) return
+
+    if (externalTarget?.kind === "url") {
+      try {
+        await openExternalUrl({ url: externalTarget.value })
+        updatePreviewState(
+          (current) => ({
+            ...current,
+            errorKind: null,
+            errorMessage: null,
+          }),
+          workspaceID,
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        updatePreviewState(
+          (current) => ({
+            ...current,
+            errorKind: "unknown",
+            errorMessage: message,
+          }),
+          workspaceID,
+        )
+      }
+      return
+    }
+
     const { errorKind, errorMessage, normalizedUrl } = normalizePreviewUrlInput(previewState.committedUrl ?? previewState.draftUrl)
 
     if (!normalizedUrl) {
@@ -727,6 +829,7 @@ export function useReviewPanelController({
     handlePreviewModeChange,
     handlePreviewOpen,
     handlePreviewOpenExternal,
+    handlePreviewOpenTarget,
     handlePreviewOpenUrl,
     handlePreviewReload,
     handleWorkspaceFileCommentCancel,

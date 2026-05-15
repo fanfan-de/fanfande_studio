@@ -1,0 +1,647 @@
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import type { DesktopLocalPreviewService } from "../../../../shared/desktop-ipc-contract"
+import { OpenExternalIcon, PreviewIcon, ResetIcon } from "../icons"
+import type { ResolvedPreviewTarget, WorkspacePreviewState } from "../types"
+import { getPreviewFailure } from "./PreviewPanel"
+
+const PREVIEW_QUICK_TARGETS = ["http://localhost:3000", "http://localhost:5173", "http://localhost:8080"] as const
+const TEXT_RENDERERS = new Set(["markdown-preview", "json-viewer", "table-preview", "code-viewer"])
+
+interface UnifiedPreviewPanelProps {
+  state: WorkspacePreviewState
+  workspaceRoot?: string | null
+  onDraftUrlChange: (value: string) => void
+  onOpen: () => void
+  onOpenExternal: () => void | Promise<void>
+  onOpenUrl: (url: string) => void
+  onReload: () => void
+}
+
+interface WebviewElement extends HTMLElement {
+  reload?: () => void
+}
+
+type WebviewFailLoadEvent = Event & {
+  errorCode?: number
+  errorDescription?: string
+  isMainFrame?: boolean
+}
+
+type FrameLoadError = ReturnType<typeof getPreviewFailure>
+
+type TextPreviewState =
+  | { status: "idle"; content: ""; error: null; path: null }
+  | { status: "loading"; content: ""; error: null; path: string }
+  | { status: "ready"; content: string; error: null; path: string }
+  | { status: "error"; content: ""; error: string; path: string }
+
+function getTargetPath(target: ResolvedPreviewTarget | null) {
+  return target?.entry ?? target?.path ?? null
+}
+
+function formatRendererLabel(target: ResolvedPreviewTarget) {
+  switch (target.renderer) {
+    case "url-webview":
+      return "URL"
+    case "markdown-preview":
+      return "Markdown"
+    case "html-preview":
+      return "HTML"
+    case "svg-preview":
+      return "SVG"
+    case "json-viewer":
+      return "JSON"
+    case "table-preview":
+      return "CSV"
+    case "image-preview":
+      return "Image"
+    case "code-viewer":
+      return "Code"
+    case "system-open":
+      return "System"
+  }
+}
+
+function parseCsvLine(line: string) {
+  const cells: string[] = []
+  let current = ""
+  let quoted = false
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index]
+    if (character === "\"") {
+      if (quoted && line[index + 1] === "\"") {
+        current += "\""
+        index += 1
+        continue
+      }
+      quoted = !quoted
+      continue
+    }
+    if (character === "," && !quoted) {
+      cells.push(current)
+      current = ""
+      continue
+    }
+    current += character
+  }
+
+  cells.push(current)
+  return cells
+}
+
+function parseCsvRows(content: string) {
+  return content
+    .split(/\r?\n/)
+    .filter((line, index, lines) => line.length > 0 || index < lines.length - 1)
+    .slice(0, 201)
+    .map(parseCsvLine)
+}
+
+function renderTextError(error: string) {
+  return (
+    <div className="preview-canvas-state preview-error-state unified-preview-message" role="alert">
+      <div className="preview-error-icon">!</div>
+      <h3>Preview text could not be read</h3>
+      <p>{error}</p>
+    </div>
+  )
+}
+
+function JsonPreview({ content }: { content: string }) {
+  let formatted = content
+  try {
+    formatted = JSON.stringify(JSON.parse(content), null, 2)
+  } catch {
+    // Invalid JSON still renders as read-only source.
+  }
+
+  return <pre className="unified-preview-code" data-language="json">{formatted}</pre>
+}
+
+function TablePreview({ content }: { content: string }) {
+  const rows = parseCsvRows(content)
+  const [header, ...bodyRows] = rows
+  if (!header) return <pre className="unified-preview-code" data-language="csv">{content}</pre>
+
+  return (
+    <div className="unified-preview-table-scroll" role="region" aria-label="CSV preview">
+      <table className="unified-preview-table">
+        <thead>
+          <tr>
+            {header.map((cell, index) => <th key={`head-${index}`}>{cell || "\u00a0"}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {bodyRows.map((row, rowIndex) => (
+            <tr key={`row-${rowIndex}`}>
+              {header.map((_, cellIndex) => (
+                <td key={`cell-${rowIndex}-${cellIndex}`}>{row[cellIndex] || "\u00a0"}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > 200 ? <p className="preview-helper-copy">Showing the first 200 rows.</p> : null}
+    </div>
+  )
+}
+
+function TextPreviewContent({
+  content,
+  renderer,
+}: {
+  content: string
+  renderer: ResolvedPreviewTarget["renderer"]
+}) {
+  if (renderer === "markdown-preview") {
+    return (
+      <div className="unified-preview-markdown thread-markdown">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+          {content}
+        </ReactMarkdown>
+      </div>
+    )
+  }
+  if (renderer === "json-viewer") return <JsonPreview content={content} />
+  if (renderer === "table-preview") return <TablePreview content={content} />
+  return <pre className="unified-preview-code">{content}</pre>
+}
+
+function PreviewMeta({ target }: { target: ResolvedPreviewTarget }) {
+  return (
+    <div className="unified-preview-meta" aria-label="Preview details">
+      <span>{formatRendererLabel(target)}</span>
+      <span>{target.kind}</span>
+      {target.mime ? <span>{target.mime.split(";")[0]}</span> : null}
+    </div>
+  )
+}
+
+function EmptyPreviewState({
+  localPreviewServices,
+  localServiceStatus,
+  onOpenUrl,
+  onScanLocalServices,
+}: {
+  localPreviewServices: DesktopLocalPreviewService[]
+  localServiceStatus: "idle" | "scanning" | "ready" | "error"
+  onOpenUrl: (url: string) => void
+  onScanLocalServices: () => void
+}) {
+  return (
+    <div className="preview-canvas-state preview-empty-state unified-preview-empty">
+      <PreviewIcon />
+      <h3>Open a preview target</h3>
+      <p>Enter a URL, <code>agent://artifact/id</code>, or a file path in the current workspace.</p>
+      <div className="unified-preview-quick-list" aria-label="Quick preview targets">
+        {PREVIEW_QUICK_TARGETS.map((url) => (
+          <button key={url} type="button" className="secondary-button" onClick={() => onOpenUrl(url)}>
+            {url}
+          </button>
+        ))}
+      </div>
+      <div className="unified-preview-services">
+        <button type="button" className="secondary-button" onClick={onScanLocalServices}>
+          {localServiceStatus === "scanning" ? "Scanning..." : "Detect local servers"}
+        </button>
+        {localPreviewServices.length > 0 ? (
+          <div className="unified-preview-service-list">
+            {localPreviewServices.map((service) => (
+              <button
+                key={service.url}
+                type="button"
+                className="unified-preview-service-row"
+                onClick={() => onOpenUrl(service.url)}
+              >
+                <span>{service.url}</span>
+                <span>{service.statusCode}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+export function UnifiedPreviewPanel({
+  state,
+  workspaceRoot,
+  onDraftUrlChange,
+  onOpen,
+  onOpenExternal,
+  onOpenUrl,
+  onReload,
+}: UnifiedPreviewPanelProps) {
+  const webviewRef = useRef<WebviewElement | null>(null)
+  const textRequestIDRef = useRef(0)
+  const localServiceRequestIDRef = useRef(0)
+  const localServiceAutoScanRef = useRef(false)
+  const previewGuestPreloadPath = window.desktop?.previewGuestPreloadPath
+  const canUseWebview = useMemo(
+    () =>
+      /Electron/i.test(globalThis.navigator?.userAgent ?? "") &&
+      typeof previewGuestPreloadPath === "string" &&
+      previewGuestPreloadPath.startsWith("file:"),
+    [previewGuestPreloadPath],
+  )
+  const [forceIframeFallback, setForceIframeFallback] = useState(false)
+  const [frameIsLoading, setFrameIsLoading] = useState(false)
+  const [frameLoadError, setFrameLoadError] = useState<FrameLoadError | null>(null)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [textPreview, setTextPreview] = useState<TextPreviewState>({
+    status: "idle",
+    content: "",
+    error: null,
+    path: null,
+  })
+  const [localPreviewServices, setLocalPreviewServices] = useState<DesktopLocalPreviewService[]>([])
+  const [localServiceStatus, setLocalServiceStatus] = useState<"idle" | "scanning" | "ready" | "error">("idle")
+  const target = state.resolvedTarget
+  const draftValue = state.draftTarget || state.draftUrl
+  const targetPath = getTargetPath(target)
+  const shouldRenderText = Boolean(target && TEXT_RENDERERS.has(target.renderer) && target.textReadable && targetPath)
+  const shouldUseWebview = target?.renderer === "url-webview" && canUseWebview && !forceIframeFallback
+  const canOpenExternal = Boolean(target?.externalOpenTarget || state.committedUrl || draftValue.trim())
+
+  async function scanLocalPreviewServices() {
+    const detectLocalPreviewServices = window.desktop?.detectLocalPreviewServices
+    const requestID = localServiceRequestIDRef.current + 1
+    localServiceRequestIDRef.current = requestID
+
+    if (!detectLocalPreviewServices) {
+      setLocalPreviewServices([])
+      setLocalServiceStatus("error")
+      return
+    }
+
+    setLocalServiceStatus("scanning")
+    try {
+      const services = await detectLocalPreviewServices()
+      if (localServiceRequestIDRef.current !== requestID) return
+      setLocalPreviewServices(services)
+      setLocalServiceStatus("ready")
+    } catch (error) {
+      if (localServiceRequestIDRef.current !== requestID) return
+      console.error("[preview] failed to detect local preview services:", error)
+      setLocalPreviewServices([])
+      setLocalServiceStatus("error")
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      textRequestIDRef.current += 1
+      localServiceRequestIDRef.current += 1
+    }
+  }, [])
+
+  useEffect(() => {
+    if (target || localServiceAutoScanRef.current) return
+    localServiceAutoScanRef.current = true
+    void scanLocalPreviewServices()
+  }, [target])
+
+  useEffect(() => {
+    setFrameLoadError(null)
+    setStatusMessage(null)
+    setForceIframeFallback(false)
+    setFrameIsLoading(Boolean(target?.safePreviewUrl && (target.renderer === "url-webview" || target.renderer === "html-preview" || target.renderer === "svg-preview")))
+  }, [state.reloadToken, target?.safePreviewUrl, target?.renderer])
+
+  useEffect(() => {
+    if (!shouldUseWebview || !target?.safePreviewUrl) return
+
+    const activeWebview = webviewRef.current
+    if (!activeWebview) return
+    const readyWebview: WebviewElement = activeWebview
+
+    function handleDomReady() {
+      setFrameIsLoading(false)
+      setFrameLoadError(null)
+      setStatusMessage(null)
+    }
+
+    function handleDidStartLoading() {
+      setFrameIsLoading(true)
+      setFrameLoadError(null)
+    }
+
+    function handleDidStopLoading() {
+      setFrameIsLoading(false)
+    }
+
+    function handleWillNavigate(rawEvent: Event) {
+      rawEvent.preventDefault?.()
+      setStatusMessage("Links are disabled inside preview.")
+    }
+
+    function handleDidFailLoad(rawEvent: Event) {
+      const event = rawEvent as WebviewFailLoadEvent
+      if (event.isMainFrame === false || event.errorCode === -3) return
+      setFrameIsLoading(false)
+      setFrameLoadError(getPreviewFailure(event.errorDescription, event.errorCode))
+    }
+
+    readyWebview.addEventListener("dom-ready", handleDomReady as EventListener)
+    readyWebview.addEventListener("did-start-loading", handleDidStartLoading as EventListener)
+    readyWebview.addEventListener("did-stop-loading", handleDidStopLoading as EventListener)
+    readyWebview.addEventListener("did-fail-load", handleDidFailLoad as EventListener)
+    readyWebview.addEventListener("will-navigate", handleWillNavigate as EventListener)
+    readyWebview.addEventListener("new-window", handleWillNavigate as EventListener)
+
+    return () => {
+      readyWebview.removeEventListener("dom-ready", handleDomReady as EventListener)
+      readyWebview.removeEventListener("did-start-loading", handleDidStartLoading as EventListener)
+      readyWebview.removeEventListener("did-stop-loading", handleDidStopLoading as EventListener)
+      readyWebview.removeEventListener("did-fail-load", handleDidFailLoad as EventListener)
+      readyWebview.removeEventListener("will-navigate", handleWillNavigate as EventListener)
+      readyWebview.removeEventListener("new-window", handleWillNavigate as EventListener)
+    }
+  }, [shouldUseWebview, state.reloadToken, target?.safePreviewUrl])
+
+  useEffect(() => {
+    if (!canUseWebview || !target?.safePreviewUrl || target.renderer !== "url-webview" || forceIframeFallback || !frameIsLoading) return
+
+    const timer = globalThis.setTimeout(() => {
+      setForceIframeFallback(true)
+      setFrameIsLoading(false)
+      setStatusMessage("The embedded webview did not initialize. Falling back to iframe mode.")
+    }, 2500)
+
+    return () => {
+      globalThis.clearTimeout(timer)
+    }
+  }, [canUseWebview, forceIframeFallback, frameIsLoading, state.reloadToken, target?.renderer, target?.safePreviewUrl])
+
+  useEffect(() => {
+    const readPreviewText = window.desktop?.readPreviewText
+    const readPath = getTargetPath(target)
+    const readWorkspaceRoot = target?.workspaceRoot ?? workspaceRoot ?? null
+
+    if (!target || !readPath || !target.textReadable || !TEXT_RENDERERS.has(target.renderer)) {
+      textRequestIDRef.current += 1
+      setTextPreview({
+        status: "idle",
+        content: "",
+        error: null,
+        path: null,
+      })
+      return
+    }
+
+    const requestID = textRequestIDRef.current + 1
+    textRequestIDRef.current = requestID
+    setTextPreview({
+      status: "loading",
+      content: "",
+      error: null,
+      path: readPath,
+    })
+
+    if (!readPreviewText) {
+      setTextPreview({
+        status: "error",
+        content: "",
+        error: "Preview text reader is unavailable in this runtime.",
+        path: readPath,
+      })
+      return
+    }
+
+    void readPreviewText({
+      path: readPath,
+      workspaceRoot: readWorkspaceRoot,
+    }).then((result) => {
+      if (textRequestIDRef.current !== requestID) return
+      setTextPreview({
+        status: "ready",
+        content: result.content,
+        error: null,
+        path: result.path,
+      })
+    }).catch((error) => {
+      if (textRequestIDRef.current !== requestID) return
+      setTextPreview({
+        status: "error",
+        content: "",
+        error: error instanceof Error ? error.message : String(error),
+        path: readPath,
+      })
+    })
+  }, [state.reloadToken, target, targetPath, workspaceRoot])
+
+  function renderErrorState(message: string, suggestions?: string[]) {
+    return (
+      <div className="preview-canvas-state preview-error-state unified-preview-message" role="alert">
+        <div className="preview-error-icon">!</div>
+        <h3>Preview unavailable</h3>
+        <p>{message}</p>
+        {suggestions?.length ? (
+          <ul className="unified-preview-suggestion-list">
+            {suggestions.map((suggestion) => <li key={suggestion}>{suggestion}</li>)}
+          </ul>
+        ) : null}
+      </div>
+    )
+  }
+
+  function renderFrame(target: ResolvedPreviewTarget) {
+    if (!target.safePreviewUrl) {
+      return renderErrorState("This preview target does not have a safe preview URL.")
+    }
+    if (frameLoadError) {
+      return renderErrorState(frameLoadError.message, frameLoadError.suggestions)
+    }
+
+    const frameTitle = `Preview of ${target.title}`
+    return (
+      <div className="preview-canvas unified-preview-frame-canvas">
+        {shouldUseWebview ? (
+          <webview
+            key={`${target.safePreviewUrl}:${state.reloadToken}:webview`}
+            ref={(node) => {
+              webviewRef.current = node as WebviewElement | null
+            }}
+            className="preview-frame preview-webview"
+            partition="persist:preview"
+            preload={previewGuestPreloadPath}
+            src={target.safePreviewUrl}
+          />
+        ) : (
+          <iframe
+            key={`${target.safePreviewUrl}:${state.reloadToken}:iframe`}
+            title={frameTitle}
+            className="preview-frame"
+            sandbox="allow-forms allow-popups allow-same-origin allow-scripts"
+            src={target.safePreviewUrl}
+            onError={() => {
+              setFrameIsLoading(false)
+              setFrameLoadError(getPreviewFailure())
+            }}
+            onLoad={() => {
+              setFrameIsLoading(false)
+              setFrameLoadError(null)
+            }}
+          />
+        )}
+        {frameIsLoading ? (
+          <div className="preview-loading-scrim" aria-live="polite">
+            Loading preview...
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  function renderImage(target: ResolvedPreviewTarget) {
+    if (!target.safePreviewUrl) {
+      return renderErrorState("This image does not have a safe preview URL.")
+    }
+    return (
+      <div className="unified-preview-image-stage">
+        <img className="unified-preview-image" src={target.safePreviewUrl} alt={target.title} />
+      </div>
+    )
+  }
+
+  function renderText(target: ResolvedPreviewTarget) {
+    if (!shouldRenderText) {
+      return renderErrorState("This preview target is not readable as text.")
+    }
+    if (textPreview.status === "loading") {
+      return (
+        <div className="preview-canvas-state unified-preview-message" aria-live="polite">
+          <h3>Reading preview</h3>
+          <p>Loading file content.</p>
+        </div>
+      )
+    }
+    if (textPreview.status === "error") return renderTextError(textPreview.error)
+    if (textPreview.status !== "ready") return null
+
+    return (
+      <div className="unified-preview-text-stage">
+        <TextPreviewContent content={textPreview.content} renderer={target.renderer} />
+      </div>
+    )
+  }
+
+  function renderSystemOpen(target: ResolvedPreviewTarget) {
+    return (
+      <div className="preview-canvas-state preview-empty-state unified-preview-message">
+        <h3>No inline renderer</h3>
+        <p>This file type can be opened with the system default application.</p>
+        <button type="button" className="primary-button" onClick={() => void onOpenExternal()}>
+          Open externally
+        </button>
+      </div>
+    )
+  }
+
+  function renderTargetBody(): ReactNode {
+    if (state.status === "resolving") {
+      return (
+        <div className="preview-canvas-state unified-preview-message" aria-live="polite">
+          <h3>Resolving preview</h3>
+          <p>Checking the target and selecting a renderer.</p>
+        </div>
+      )
+    }
+    if (state.status === "error" && state.errorMessage) {
+      return renderErrorState(state.errorMessage)
+    }
+    if (!target) {
+      return (
+        <EmptyPreviewState
+          localPreviewServices={localPreviewServices}
+          localServiceStatus={localServiceStatus}
+          onOpenUrl={onOpenUrl}
+          onScanLocalServices={() => void scanLocalPreviewServices()}
+        />
+      )
+    }
+
+    switch (target.renderer) {
+      case "url-webview":
+      case "html-preview":
+      case "svg-preview":
+        return renderFrame(target)
+      case "image-preview":
+        return renderImage(target)
+      case "markdown-preview":
+      case "json-viewer":
+      case "table-preview":
+      case "code-viewer":
+        return renderText(target)
+      case "system-open":
+        return renderSystemOpen(target)
+    }
+  }
+
+  return (
+    <section className="right-sidebar-section preview-panel-section unified-preview-panel">
+      <div className="preview-panel-main">
+        <div className="preview-panel-controls">
+          <form
+            className="preview-toolbar unified-preview-toolbar"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onOpen()
+            }}
+          >
+            <label className="preview-toolbar-address">
+              <input
+                className="preview-toolbar-input"
+                value={draftValue}
+                onChange={(event) => onDraftUrlChange(event.currentTarget.value)}
+                placeholder="URL, agent://artifact/id, or workspace file"
+                spellCheck={false}
+                aria-label="Preview target"
+              />
+            </label>
+            <button type="submit" className="secondary-button unified-preview-open-button">
+              Open
+            </button>
+            <button
+              type="button"
+              className="preview-toolbar-icon-button"
+              aria-label="Reload preview"
+              title="Reload preview"
+              onClick={() => onReload()}
+            >
+              <ResetIcon />
+            </button>
+            <button
+              type="button"
+              className="preview-toolbar-icon-button"
+              aria-label="Open externally"
+              title="Open externally"
+              disabled={!canOpenExternal}
+              onClick={() => void onOpenExternal()}
+            >
+              <OpenExternalIcon />
+            </button>
+          </form>
+          {target ? (
+            <div className="unified-preview-title-row">
+              <div className="unified-preview-title">
+                <strong title={target.title}>{target.title}</strong>
+                <span title={target.normalizedInput}>{target.normalizedInput}</span>
+              </div>
+              <PreviewMeta target={target} />
+            </div>
+          ) : null}
+          {statusMessage ? <p className="preview-helper-copy unified-preview-status-message">{statusMessage}</p> : null}
+        </div>
+
+        <div className="preview-panel-preview-stack unified-preview-stack">
+          {renderTargetBody()}
+        </div>
+      </div>
+    </section>
+  )
+}

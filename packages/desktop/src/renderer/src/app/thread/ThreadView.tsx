@@ -29,6 +29,7 @@ import {
   ThreadMarkdown,
   normalizeMarkdownLinkTarget,
   openExternalThreadLink,
+  type MarkdownArtifactLinkTarget,
   type MarkdownLocalFileLinkTarget,
 } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
@@ -88,6 +89,7 @@ interface ThreadViewProps {
   isResolvingPermissionRequest: boolean
   showSessionBanner?: boolean
   onFileChangeSelect?: (file: string) => void
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onOpenSideChat?: (anchorMessageID: string) => void | Promise<void>
   onTurnDiffSummaryHydrate?: (turnID: string, diffSummary: SessionDiffSummary) => void | Promise<void>
@@ -1041,6 +1043,7 @@ function AssistantTurnSections({
   onOpenImagePreview,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onProposedPlanConfirm,
   showFileChanges,
@@ -1055,6 +1058,7 @@ function AssistantTurnSections({
   onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect: ((file: string) => void) | undefined
+  onArtifactLinkOpen: ((target: MarkdownArtifactLinkTarget) => void) | undefined
   onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
   showFileChanges: boolean
@@ -1094,6 +1098,7 @@ function AssistantTurnSections({
                   onOpenImagePreview={onOpenImagePreview}
                   onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                   onFileChangeSelect={onFileChangeSelect}
+                  onArtifactLinkOpen={onArtifactLinkOpen}
                   onLocalFileLinkOpen={onLocalFileLinkOpen}
                   isLatestMessage={isLatestMessage}
                   onProposedPlanConfirm={onProposedPlanConfirm}
@@ -1122,6 +1127,7 @@ function AssistantTurnSectionsWithStreamInsertions({
   onOpenImagePreview,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onProposedPlanConfirm,
   showFileChanges,
@@ -1140,6 +1146,7 @@ function AssistantTurnSectionsWithStreamInsertions({
   onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect: ((file: string) => void) | undefined
+  onArtifactLinkOpen: ((target: MarkdownArtifactLinkTarget) => void) | undefined
   onLocalFileLinkOpen: ((target: MarkdownLocalFileLinkTarget) => void) | undefined
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
   showFileChanges: boolean
@@ -1157,6 +1164,7 @@ function AssistantTurnSectionsWithStreamInsertions({
         onOpenImagePreview={onOpenImagePreview}
         onAskUserQuestionAnswer={onAskUserQuestionAnswer}
         onFileChangeSelect={onFileChangeSelect}
+        onArtifactLinkOpen={onArtifactLinkOpen}
         onLocalFileLinkOpen={onLocalFileLinkOpen}
         onProposedPlanConfirm={onProposedPlanConfirm}
         showFileChanges={showFileChanges}
@@ -1182,6 +1190,7 @@ function AssistantTurnSectionsWithStreamInsertions({
         onOpenImagePreview={onOpenImagePreview}
         onAskUserQuestionAnswer={onAskUserQuestionAnswer}
         onFileChangeSelect={onFileChangeSelect}
+        onArtifactLinkOpen={onArtifactLinkOpen}
         onLocalFileLinkOpen={onLocalFileLinkOpen}
         onProposedPlanConfirm={onProposedPlanConfirm}
         showFileChanges={showFileChanges}
@@ -1568,6 +1577,7 @@ interface InlineSideChatThreadProps {
   onDraftStateChange: (value: ComposerDraftState) => void
   onHide: () => void
   onAskUserQuestionAnswer: QuestionAnswerHandler
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onPermissionRequestResponse: PermissionRequestResponseHandler
   onPickAttachments: (input: {
@@ -1625,6 +1635,7 @@ function InlineSideChatThread({
   onDraftStateChange,
   onHide,
   onAskUserQuestionAnswer,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onPermissionRequestResponse,
   onPickAttachments,
@@ -1880,6 +1891,7 @@ function InlineSideChatThread({
                 sessionID: session.id,
               })
             }
+            onArtifactLinkOpen={onArtifactLinkOpen}
             onLocalFileLinkOpen={onLocalFileLinkOpen}
             onPermissionRequestResponse={onPermissionRequestResponse}
           />
@@ -2080,6 +2092,7 @@ interface TraceItemViewProps {
   onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
   onFileChangeSelect?: (file: string) => void
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
   onProposedPlanConfirm?: ProposedPlanConfirmHandler
   shouldCollapseAfterTurnCompletion?: boolean
@@ -2100,6 +2113,7 @@ type TraceItemRendererProps = RequiredTraceItemRendererProps &
     | "assistantTurnPhase"
     | "item"
     | "onAskUserQuestionAnswer"
+    | "onArtifactLinkOpen"
     | "onFileChangeSelect"
     | "onLocalFileLinkOpen"
     | "onOpenImagePreview"
@@ -2151,32 +2165,46 @@ function TraceItemHeader({
 function TraceItemTextBody({
   isResponseItem,
   item,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
 }: {
   isResponseItem: boolean
   item: AssistantTraceItem
+  onArtifactLinkOpen?: (target: MarkdownArtifactLinkTarget) => void
   onLocalFileLinkOpen?: (target: MarkdownLocalFileLinkTarget) => void
 }) {
   return (
     <>
       {item.text ? (
         isResponseItem && !item.isStreaming ? (
-          <ThreadMarkdown className="trace-item-text thread-markdown" text={item.text} onLocalFileLinkOpen={onLocalFileLinkOpen} />
+          <ThreadMarkdown
+            className="trace-item-text thread-markdown"
+            text={item.text}
+            onArtifactLinkOpen={onArtifactLinkOpen}
+            onLocalFileLinkOpen={onLocalFileLinkOpen}
+          />
         ) : (
           <ThreadRichText
             className="trace-item-text"
             text={item.text}
+            onArtifactLinkOpen={isResponseItem ? onArtifactLinkOpen : undefined}
             onLocalFileLinkOpen={isResponseItem ? onLocalFileLinkOpen : undefined}
           />
         )
       ) : null}
       {item.detail ? (
         isResponseItem && !item.isStreaming ? (
-          <ThreadMarkdown className="trace-item-detail thread-markdown" text={item.detail} onLocalFileLinkOpen={onLocalFileLinkOpen} />
+          <ThreadMarkdown
+            className="trace-item-detail thread-markdown"
+            text={item.detail}
+            onArtifactLinkOpen={onArtifactLinkOpen}
+            onLocalFileLinkOpen={onLocalFileLinkOpen}
+          />
         ) : (
           <ThreadRichText
             className="trace-item-detail"
             text={item.detail}
+            onArtifactLinkOpen={isResponseItem ? onArtifactLinkOpen : undefined}
             onLocalFileLinkOpen={isResponseItem ? onLocalFileLinkOpen : undefined}
           />
         )
@@ -2231,6 +2259,7 @@ function GenericTraceItemView({
   isResponseItem,
   item,
   onFileChangeSelect,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
   showFileActions = false,
 }: TraceItemRendererProps & {
@@ -2241,7 +2270,12 @@ function GenericTraceItemView({
   return (
     <article className={className} data-kind={item.kind}>
       <TraceItemHeader item={item} />
-      <TraceItemTextBody item={item} isResponseItem={isResponseItem} onLocalFileLinkOpen={onLocalFileLinkOpen} />
+      <TraceItemTextBody
+        item={item}
+        isResponseItem={isResponseItem}
+        onArtifactLinkOpen={onArtifactLinkOpen}
+        onLocalFileLinkOpen={onLocalFileLinkOpen}
+      />
       <TraceItemFileActions
         filePaths={selectableFilePaths}
         itemID={item.id}
@@ -3037,6 +3071,7 @@ function TraceItemView({
   onOpenImagePreview,
   onAskUserQuestionAnswer,
   onFileChangeSelect,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onProposedPlanConfirm,
   shouldCollapseAfterTurnCompletion = false,
@@ -3080,6 +3115,7 @@ function TraceItemView({
       item={renderedItem}
       onAskUserQuestionAnswer={onAskUserQuestionAnswer}
       onFileChangeSelect={onFileChangeSelect}
+      onArtifactLinkOpen={onArtifactLinkOpen}
       onLocalFileLinkOpen={onLocalFileLinkOpen}
       onOpenImagePreview={onOpenImagePreview}
       onProposedPlanConfirm={onProposedPlanConfirm}
@@ -3273,6 +3309,7 @@ export function ThreadView({
   isResolvingPermissionRequest,
   showSessionBanner = true,
   onFileChangeSelect,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onOpenSideChat,
   onTurnDiffSummaryHydrate,
@@ -3483,6 +3520,10 @@ export function ThreadView({
         onLocalFileLinkOpen?.(linkTarget.target)
         return
       }
+      if (linkTarget.kind === "artifact") {
+        onArtifactLinkOpen?.(linkTarget.target)
+        return
+      }
 
       openExternalThreadLink(linkTarget.href)
     }
@@ -3493,7 +3534,7 @@ export function ThreadView({
       document.removeEventListener("pointerup", handleInlineThreadLinkActivation, { capture: true })
       document.removeEventListener("click", handleInlineThreadLinkActivation, { capture: true })
     }
-  }, [onLocalFileLinkOpen, threadColumnRef])
+  }, [onArtifactLinkOpen, onLocalFileLinkOpen, threadColumnRef])
 
   useLayoutEffect(() => {
     const threadColumn = threadColumnRef.current
@@ -3672,6 +3713,7 @@ export function ThreadView({
                         onOpenImagePreview={handleOpenImagePreview}
                         onAskUserQuestionAnswer={onAskUserQuestionAnswer}
                         onFileChangeSelect={onFileChangeSelect}
+                        onArtifactLinkOpen={onArtifactLinkOpen}
                         onLocalFileLinkOpen={onLocalFileLinkOpen}
                         onProposedPlanConfirm={onProposedPlanConfirm}
                         showFileChanges={!turn.isStreaming}
@@ -3737,6 +3779,7 @@ export function ThreadView({
                             onDraftStateChange={onSideChatDraftStateChange}
                             onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
                             onAskUserQuestionAnswer={onAskUserQuestionAnswer}
+                            onArtifactLinkOpen={onArtifactLinkOpen}
                             onLocalFileLinkOpen={onLocalFileLinkOpen}
                             onPermissionRequestResponse={onPermissionRequestResponse}
                             onPickAttachments={onSideChatPickAttachments}

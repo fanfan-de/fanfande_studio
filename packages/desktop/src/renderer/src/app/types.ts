@@ -10,6 +10,10 @@ import type {
   ToolPermissionMode,
 } from "../../../shared/permission"
 import type { ReasoningEffort as SharedReasoningEffort } from "@fanfande/shared"
+import type {
+  DesktopPreviewRenderer,
+  DesktopResolvedPreviewTarget,
+} from "../../../shared/desktop-ipc-contract"
 
 export type {
   PermissionDecision,
@@ -31,6 +35,9 @@ export type RightSidebarView = "changes" | "runtime" | "preview" | "files"
 export type AppMode = "Autopilot" | "Review"
 export type WindowAction = "minimize" | "toggle-maximize" | "close"
 export type PreviewMode = "browse" | "comment"
+export type PreviewLoadStatus = "idle" | "resolving" | "ready" | "error"
+export type PreviewRenderer = DesktopPreviewRenderer
+export type ResolvedPreviewTarget = DesktopResolvedPreviewTarget
 export type PreviewErrorKind =
   | "empty-url"
   | "invalid-url"
@@ -345,7 +352,9 @@ export interface PreviewComment {
 }
 
 export interface WorkspacePreviewState {
+  activeTargetInput: string | null
   draftUrl: string
+  draftTarget: string
   committedUrl: string | null
   mode: PreviewMode
   reloadToken: number
@@ -354,6 +363,8 @@ export interface WorkspacePreviewState {
   navigationHistory: string[]
   navigationIndex: number
   comments: PreviewComment[]
+  resolvedTarget: ResolvedPreviewTarget | null
+  status: PreviewLoadStatus
 }
 
 export interface WorkspaceFileSearchResult {

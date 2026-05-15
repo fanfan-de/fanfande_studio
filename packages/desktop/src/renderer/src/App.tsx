@@ -15,7 +15,7 @@ import {
 } from "./app/components"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
 import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
-import type { MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
+import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
 import type { RightSidebarView, SessionDiffFile, ToolPermissionMode, WorkspaceMode } from "./app/types"
 import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
@@ -40,6 +40,15 @@ interface LocalFileLinkOpenInput {
   sessionID: string | null
   target: MarkdownLocalFileLinkTarget
   workspaceDirectory: string | null
+  workspaceID: string | null
+}
+
+interface ArtifactLinkOpenInput {
+  paneID: string
+  sessionID: string | null
+  target: MarkdownArtifactLinkTarget
+  workspaceDirectory: string | null
+  workspaceID: string | null
 }
 
 function encodeFilePathSegment(value: string) {
@@ -504,6 +513,10 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
     void openSystemLocalPath(target.path)
   }
 
+  const handleArtifactLinkOpen = (_input: ArtifactLinkOpenInput) => {
+    // Artifact preview is hosted by the main window right sidebar in v1.
+  }
+
   const handlePopoutDiffNoop = async () => {
     // Diff review and restore are routed through the main window sidebars in v1.
   }
@@ -551,6 +564,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
           onFocusPane={handlePaneFocus}
           onInspectFileInSidebar={() => undefined}
           onLayoutChange={setDockviewLayout}
+          onArtifactLinkOpen={handleArtifactLinkOpen}
           onLocalFileLinkOpen={handleLocalFileLinkOpen}
           onMoveSessionPanel={handleMoveSessionPanel}
           onOpenCreateSessionTab={() => undefined}
@@ -676,6 +690,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handlePreviewModeChange,
     handlePreviewOpen,
     handlePreviewOpenExternal,
+    handlePreviewOpenTarget,
     handlePreviewOpenUrl,
     handlePreviewReload,
     handleWorkspaceFileCommentCancel,
@@ -1030,6 +1045,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     paneID,
     target,
     workspaceDirectory,
+    workspaceID,
   }: LocalFileLinkOpenInput) {
     if (isRightSidebarCollapsed) {
       handleRightSidebarToggle()
@@ -1041,6 +1057,11 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
       : null
 
     if (workspaceDirectory && workspaceRelativePath !== null) {
+      if (!target.lineRange) {
+        void handlePreviewOpenTarget(target.path, workspaceID, workspaceDirectory)
+        return
+      }
+
       void handleWorkspaceFileSelect(workspaceRelativePath, {
         linkedLineRange: target.lineRange ?? null,
         scopeDirectory: workspaceDirectory,
@@ -1049,6 +1070,19 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     }
 
     void openSystemLocalPath(target.path)
+  }
+
+  function handleArtifactLinkOpen({
+    paneID,
+    target,
+    workspaceDirectory,
+    workspaceID,
+  }: ArtifactLinkOpenInput) {
+    if (isRightSidebarCollapsed) {
+      handleRightSidebarToggle()
+    }
+    handlePaneFocus(paneID)
+    void handlePreviewOpenTarget(target.href, workspaceID, workspaceDirectory)
   }
 
   async function handleDetachSessionPanel(input: {
@@ -1541,6 +1575,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 onInspectFileInSidebar={handleInspectFileInSidebar}
                 onCommandsReady={handleWorkbenchDockviewCommandsReady}
                 onLayoutChange={setDockviewLayout}
+                onArtifactLinkOpen={handleArtifactLinkOpen}
                 onLocalFileLinkOpen={handleLocalFileLinkOpen}
                 onMoveSessionPanel={handleMoveSessionPanel}
                 onCreateSideChatTab={handleCreateSideChatTab}

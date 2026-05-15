@@ -10,7 +10,7 @@ import type {
   WorkspacePreviewState,
 } from "../types"
 import { useReviewPanelController } from "./review-panel-controller"
-import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE } from "./review-preview-state"
+import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE, DEFAULT_WORKSPACE_PREVIEW_STATE } from "./review-preview-state"
 
 function createWorkspace(): WorkspaceGroup {
   return {
@@ -36,7 +36,9 @@ describe("review panel controller", () => {
   it("inserts committed preview comments into the active composer draft", () => {
     const workspace = createWorkspace()
     const previewState: WorkspacePreviewState = {
+      ...DEFAULT_WORKSPACE_PREVIEW_STATE,
       draftUrl: "http://localhost:5173",
+      draftTarget: "http://localhost:5173",
       committedUrl: "http://localhost:5173",
       mode: "comment",
       reloadToken: 0,
@@ -104,8 +106,27 @@ describe("review panel controller", () => {
     expect(draftState?.plainText).not.toContain("Button is misaligned")
   })
 
-  it("tracks manual preview navigation history", () => {
+  it("resolves unified preview targets into preview state", async () => {
     const workspace = createWorkspace()
+    const previousDesktop = window.desktop
+    const resolvePreviewTarget = vi.fn().mockResolvedValue({
+      externalOpenTarget: {
+        kind: "url",
+        value: "http://localhost:3000/",
+      },
+      input: "localhost:3000",
+      kind: "url",
+      mime: "text/html",
+      normalizedInput: "http://localhost:3000/",
+      renderer: "url-webview",
+      safePreviewUrl: "http://localhost:3000/",
+      textReadable: false,
+      title: "localhost:3000",
+    })
+    window.desktop = {
+      ...(previousDesktop ?? {}),
+      resolvePreviewTarget,
+    } as Window["desktop"]
 
     const { result } = renderHook(() => {
       const [previewByWorkspaceID, setPreviewByWorkspaceIDState] = useState<Record<string, WorkspacePreviewState>>({})
@@ -143,49 +164,28 @@ describe("review panel controller", () => {
       return { controller, previewByWorkspaceID }
     })
 
-    act(() => {
-      result.current.controller.handlePreviewOpenUrl("localhost:3000")
-    })
-    expect(result.current.previewByWorkspaceID[workspace.id]).toMatchObject({
-      committedUrl: "http://localhost:3000/",
-      navigationHistory: ["http://localhost:3000/"],
-      navigationIndex: 0,
-    })
+    try {
+      await act(async () => {
+        await result.current.controller.handlePreviewOpenTarget("localhost:3000", workspace.id, workspace.directory)
+      })
 
-    act(() => {
-      result.current.controller.handlePreviewOpenUrl("localhost:5173")
-    })
-    expect(result.current.previewByWorkspaceID[workspace.id]).toMatchObject({
-      committedUrl: "http://localhost:5173/",
-      navigationHistory: ["http://localhost:3000/", "http://localhost:5173/"],
-      navigationIndex: 1,
-    })
-
-    act(() => {
-      result.current.controller.handlePreviewBack()
-    })
-    expect(result.current.previewByWorkspaceID[workspace.id]).toMatchObject({
-      committedUrl: "http://localhost:3000/",
-      navigationIndex: 0,
-    })
-
-    act(() => {
-      result.current.controller.handlePreviewForward()
-    })
-    const beforeReload = result.current.previewByWorkspaceID[workspace.id]
-    expect(beforeReload).toMatchObject({
-      committedUrl: "http://localhost:5173/",
-      navigationIndex: 1,
-    })
-
-    act(() => {
-      result.current.controller.handlePreviewOpenUrl("http://localhost:5173/")
-    })
-    expect(result.current.previewByWorkspaceID[workspace.id]).toMatchObject({
-      navigationHistory: ["http://localhost:3000/", "http://localhost:5173/"],
-      navigationIndex: 1,
-      reloadToken: beforeReload.reloadToken + 1,
-    })
+      expect(resolvePreviewTarget).toHaveBeenCalledWith({
+        value: "localhost:3000",
+        workspaceRoot: workspace.directory,
+      })
+      expect(result.current.previewByWorkspaceID[workspace.id]).toMatchObject({
+        activeTargetInput: "localhost:3000",
+        committedUrl: "http://localhost:3000/",
+        draftTarget: "http://localhost:3000/",
+        resolvedTarget: {
+          renderer: "url-webview",
+          title: "localhost:3000",
+        },
+        status: "ready",
+      })
+    } finally {
+      window.desktop = previousDesktop
+    }
   })
 
   it("clears linked file highlights when starting a file comment", () => {

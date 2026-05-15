@@ -9,7 +9,7 @@ import { ComposerTaskProgress } from "../composer/ComposerTaskProgress"
 import { ComposerUtilityBar } from "../ComposerUtilityBar"
 import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBadgeInfo } from "../session-workflow"
 import { getPendingStreamInsertionUserTurns } from "../stream-insertion"
-import type { MarkdownLocalFileLinkTarget } from "../thread-markdown"
+import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
 import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, SessionDiffSummary, ToolPermissionMode, UserTurn } from "../types"
 import type { useAgentWorkspace } from "../use-agent-workspace"
@@ -75,11 +75,19 @@ export interface WorkbenchPaneSurfaceProps {
   onCreateSessionSubmit: (createSessionTabID?: string | null, paneID?: string) => Promise<void>
   onCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
   onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
+  onArtifactLinkOpen?: (input: {
+    paneID: string
+    sessionID: string | null
+    target: MarkdownArtifactLinkTarget
+    workspaceDirectory: string | null
+    workspaceID: string | null
+  }) => void
   onLocalFileLinkOpen: (input: {
     paneID: string
     sessionID: string | null
     target: MarkdownLocalFileLinkTarget
     workspaceDirectory: string | null
+    workspaceID: string | null
   }) => void
   onCreateSideChatTab: AgentWorkspaceState["handleCreateSideChatTab"]
   onDeleteSideChatTab: AgentWorkspaceState["handleDeleteSideChatTab"]
@@ -120,6 +128,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   onCreateSessionSubmit,
   onCreateSessionWorkspaceChange,
   onInspectFileInSidebar,
+  onArtifactLinkOpen,
   onLocalFileLinkOpen,
   onCreateSideChatTab,
   onDeleteSideChatTab,
@@ -326,12 +335,22 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 onTurnDiffRestore={(files) => onTurnDiffRestore(files, pane.sessionID, pane.id)}
                 onTurnDiffReview={(files) => onTurnDiffReview(files, pane.sessionID, pane.id)}
                 onTurnDiffSummaryHydrate={(turnID, diffSummary) => onTurnDiffSummaryHydrate(turnID, diffSummary, pane.sessionID)}
+                onArtifactLinkOpen={(target) =>
+                  onArtifactLinkOpen?.({
+                    paneID: pane.id,
+                    sessionID: pane.sessionID,
+                    target,
+                    workspaceDirectory: pane.workspace?.directory ?? null,
+                    workspaceID: pane.workspace?.id ?? null,
+                  })
+                }
                 onLocalFileLinkOpen={(target) =>
                   onLocalFileLinkOpen({
                     paneID: pane.id,
                     sessionID: pane.sessionID,
                     target,
                     workspaceDirectory: pane.workspace?.directory ?? null,
+                    workspaceID: pane.workspace?.id ?? null,
                   })
                 }
                 onOpenSideChat={(anchorMessageID) =>

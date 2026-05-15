@@ -712,6 +712,73 @@ describe("App", () => {
         path: "C:\\Users\\codex\\preview-comment-screenshots\\marker.png",
       }),
       detectLocalPreviewServices: vi.fn().mockResolvedValue([]),
+      resolvePreviewTarget: vi.fn().mockImplementation(({ value, workspaceRoot }: { value: string; workspaceRoot?: string | null }) => {
+        if (value.toLowerCase().startsWith("agent://artifact/")) {
+          const artifactID = value.replace(/^agent:\/\/artifact\//i, "")
+          const artifactPath = `${workspaceRoot ?? "C:\\Projects\\Project 2"}\\artifacts\\${artifactID}\\artifact.md`
+          return Promise.resolve({
+            artifactID,
+            artifactType: "markdown",
+            entry: artifactPath,
+            externalOpenTarget: {
+              kind: "path",
+              value: artifactPath,
+            },
+            input: value,
+            kind: "artifact",
+            mime: "text/markdown; charset=utf-8",
+            normalizedInput: `agent://artifact/${artifactID}`,
+            path: artifactPath,
+            renderer: "markdown-preview",
+            textReadable: true,
+            title: artifactID,
+            workspaceRoot: workspaceRoot ?? undefined,
+          })
+        }
+
+        const normalizedUrl = value.match(/^https?:\/\//i)
+          ? new URL(value).toString()
+          : /^[\w.-]+(?::\d+)?(?:\/.*)?$/i.test(value)
+            ? new URL(`http://${value}`).toString()
+            : null
+        if (!normalizedUrl) {
+          return Promise.resolve({
+            entry: value,
+            externalOpenTarget: {
+              kind: "path",
+              value,
+            },
+            input: value,
+            kind: "file",
+            mime: "text/plain; charset=utf-8",
+            normalizedInput: value,
+            path: value,
+            renderer: "code-viewer",
+            textReadable: true,
+            title: value.split(/[\\/]/).pop() || value,
+            workspaceRoot: workspaceRoot ?? undefined,
+          })
+        }
+        return Promise.resolve({
+          externalOpenTarget: {
+            kind: "url",
+            value: normalizedUrl,
+          },
+          input: value,
+          kind: "url",
+          mime: "text/html",
+          normalizedInput: normalizedUrl,
+          renderer: "url-webview",
+          safePreviewUrl: normalizedUrl,
+          textReadable: false,
+          title: new URL(normalizedUrl).host,
+          workspaceRoot: workspaceRoot ?? undefined,
+        })
+      }),
+      readPreviewText: vi.fn().mockResolvedValue({
+        content: "",
+        path: "C:\\Projects\\Project 2\\app\\README.md",
+      }),
       gitGetCapabilities: vi.fn().mockResolvedValue({
         directory: "C:\\Projects\\Project 2",
         root: "C:\\Projects\\Project 2",
@@ -1584,123 +1651,23 @@ describe("App", () => {
     })
   })
 
-  it("opens a local preview and inserts saved comments as composer tags", async () => {
+  it("opens a local URL in the unified preview sidebar", async () => {
     render(<App />)
 
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
     fireEvent.click(within(inspector).getByRole("button", { name: "Preview" }))
 
-    const previewUrlInput = within(inspector).getByRole("textbox", { name: "Preview URL" })
-    fireEvent.change(previewUrlInput, {
+    const previewTargetInput = within(inspector).getByRole("textbox", { name: "Preview target" })
+    fireEvent.change(previewTargetInput, {
       target: { value: "localhost:3000" },
     })
-    fireEvent.submit(previewUrlInput.closest("form")!)
+    fireEvent.submit(previewTargetInput.closest("form")!)
 
-    expect(await within(inspector).findByTitle("Preview of http://localhost:3000/")).toBeInTheDocument()
+    expect(await within(inspector).findByTitle("Preview of localhost:3000")).toBeInTheDocument()
+    expect(within(inspector).getByText("localhost:3000")).toBeInTheDocument()
+    expect(within(inspector).queryByRole("button", { name: "Comment" })).not.toBeInTheDocument()
 
-    fireEvent.click(within(inspector).getByRole("button", { name: "Comment" }))
-
-    const overlay = within(inspector).getByTestId("preview-comment-overlay")
-    Object.defineProperty(overlay, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        bottom: 300,
-        height: 300,
-        left: 0,
-        right: 400,
-        top: 0,
-        width: 400,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }),
-    })
-
-    const iframe = within(inspector).getByTitle("Preview of http://localhost:3000/") as HTMLIFrameElement
-    Object.defineProperty(iframe, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        bottom: 300,
-        height: 300,
-        left: 0,
-        right: 400,
-        top: 0,
-        width: 400,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }),
-    })
-    const hoverElement = document.createElement("p")
-    hoverElement.textContent = "Hero copy"
-    Object.defineProperty(hoverElement, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        bottom: 54,
-        height: 24,
-        left: 20,
-        right: 220,
-        top: 30,
-        width: 200,
-        x: 20,
-        y: 30,
-        toJSON: () => ({}),
-      }),
-    })
-    const frameDocument = {
-      elementFromPoint: vi.fn(() => hoverElement),
-    }
-    Object.defineProperty(iframe, "contentDocument", {
-      configurable: true,
-      value: frameDocument,
-    })
-    fireEvent.mouseMove(overlay, { clientX: 40, clientY: 48 })
-
-    expect(within(inspector).getByText("p")).toBeInTheDocument()
-    expect(within(inspector).getByText("200x24")).toBeInTheDocument()
-    const hoverTooltip = inspector.querySelector(".preview-hover-tooltip") as HTMLElement | null
-    expect(hoverTooltip?.style.getPropertyValue("--preview-hover-tooltip-left")).toBe("52px")
-    expect(hoverTooltip?.style.getPropertyValue("--preview-hover-tooltip-top")).toBe("60px")
-
-    Object.defineProperty(iframe, "contentDocument", {
-      configurable: true,
-      get: () => {
-        throw new DOMException("Blocked cross-origin frame access", "SecurityError")
-      },
-    })
-    fireEvent.mouseMove(overlay, { clientX: 100, clientY: 90 })
-    expect(within(inspector).getByText("point")).toBeInTheDocument()
-    expect(within(inspector).getByText("25%, 30%")).toBeInTheDocument()
-
-    Object.defineProperty(iframe, "contentDocument", {
-      configurable: true,
-      value: frameDocument,
-    })
-
-    fireEvent.click(overlay, { clientX: 200, clientY: 150 })
-
-    fireEvent.change(within(inspector).getByRole("textbox", { name: "Preview comment" }), {
-      target: { value: "Tighten hero spacing" },
-    })
-    fireEvent.click(within(inspector).getByRole("button", { name: "Save" }))
-
-    await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).toContain("@preview:localhost:3000#1")
-    })
-    expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).not.toContain("Tighten hero spacing")
-    expect(window.desktop!.capturePreviewScreenshot).toHaveBeenCalledWith({
-      bounds: {
-        height: 300,
-        width: 400,
-        x: 0,
-        y: 0,
-      },
-      url: "http://localhost:3000/",
-    })
-    expect(within(inspector).queryByRole("button", { name: "Use in chat" })).not.toBeInTheDocument()
-    expect(within(inspector).queryByText("Review notes")).not.toBeInTheDocument()
-
-    fireEvent.click(within(inspector).getByRole("button", { name: "Open External" }))
+    fireEvent.click(within(inspector).getByRole("button", { name: "Open externally" }))
     await waitFor(() => {
       expect(window.desktop!.openExternalUrl).toHaveBeenCalledWith({
         url: "http://localhost:3000/",
@@ -1708,53 +1675,71 @@ describe("App", () => {
     })
   })
 
-  it("keeps saving preview comment tags when screenshot capture fails", async () => {
-    window.desktop!.capturePreviewScreenshot = vi.fn().mockRejectedValueOnce(new Error("capture failed"))
+  it("opens artifact links from assistant messages in the preview sidebar", async () => {
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-assistant-artifact-1",
+          sessionID: "session-frontend-review",
+          role: "assistant",
+          created: 2,
+          completed: 3,
+        },
+        parts: [
+          {
+            id: "artifact-text",
+            type: "text",
+            text: "Open [Artifact](agent://artifact/report-1).",
+          },
+        ],
+      },
+    ])
+    window.desktop!.resolvePreviewTarget = vi.fn().mockResolvedValue({
+      artifactID: "report-1",
+      artifactType: "markdown",
+      entry: `${FRONTEND_WORKSPACE_DIRECTORY}\\artifacts\\report-1\\report.md`,
+      externalOpenTarget: {
+        kind: "path",
+        value: `${FRONTEND_WORKSPACE_DIRECTORY}\\artifacts\\report-1\\report.md`,
+      },
+      input: "agent://artifact/report-1",
+      kind: "artifact",
+      mime: "text/markdown; charset=utf-8",
+      normalizedInput: "agent://artifact/report-1",
+      path: `${FRONTEND_WORKSPACE_DIRECTORY}\\artifacts\\report-1\\report.md`,
+      renderer: "markdown-preview",
+      textReadable: true,
+      title: "Report",
+      workspaceRoot: FRONTEND_WORKSPACE_DIRECTORY,
+    })
+    window.desktop!.readPreviewText = vi.fn().mockResolvedValue({
+      content: "# Report\n\nArtifact body.",
+      path: `${FRONTEND_WORKSPACE_DIRECTORY}\\artifacts\\report-1\\report.md`,
+    })
 
     render(<App />)
 
-    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
-    fireEvent.click(within(inspector).getByRole("button", { name: "Preview" }))
-
-    const previewUrlInput = within(inspector).getByRole("textbox", { name: "Preview URL" })
-    fireEvent.change(previewUrlInput, {
-      target: { value: "localhost:3000" },
-    })
-    fireEvent.submit(previewUrlInput.closest("form")!)
-
-    expect(await within(inspector).findByTitle("Preview of http://localhost:3000/")).toBeInTheDocument()
-    fireEvent.click(within(inspector).getByRole("button", { name: "Comment" }))
-
-    const overlay = within(inspector).getByTestId("preview-comment-overlay")
-    Object.defineProperty(overlay, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        bottom: 300,
-        height: 300,
-        left: 0,
-        right: 400,
-        top: 0,
-        width: 400,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }),
-    })
-    fireEvent.click(overlay, { clientX: 120, clientY: 150 })
-    fireEvent.change(within(inspector).getByRole("textbox", { name: "Preview comment" }), {
-      target: { value: "Screenshot capture should not block save" },
-    })
-    fireEvent.click(within(inspector).getByRole("button", { name: "Save" }))
-
     await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).toContain("@preview:localhost:3000#1")
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-frontend-review",
+      })
     })
-    expect(screen.getByRole("textbox", { name: "Task draft" }).textContent).not.toContain(
-      "Screenshot capture should not block save",
-    )
+    const artifactLink = await screen.findByRole("link", { name: "Artifact" })
+    fireEvent.click(artifactLink)
+
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    await waitFor(() => {
+      expect(window.desktop!.resolvePreviewTarget).toHaveBeenCalledWith({
+        value: "agent://artifact/report-1",
+        workspaceRoot: FRONTEND_WORKSPACE_DIRECTORY,
+      })
+    })
+    expect(await within(inspector).findByRole("heading", { name: "Report" })).toBeInTheDocument()
+    expect(within(inspector).getByText("Artifact body.")).toBeInTheDocument()
   })
 
-  it("keeps preview comment fallback active over Electron webviews", async () => {
+  it("uses Electron webview for URL previews when available", async () => {
     const userAgentSpy = vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue(
       "Mozilla/5.0 Electron/39.0.0",
     )
@@ -1765,39 +1750,16 @@ describe("App", () => {
     const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
     fireEvent.click(within(inspector).getByRole("button", { name: "Preview" }))
 
-    const previewUrlInput = within(inspector).getByRole("textbox", { name: "Preview URL" })
-    fireEvent.change(previewUrlInput, {
+    const previewTargetInput = within(inspector).getByRole("textbox", { name: "Preview target" })
+    fireEvent.change(previewTargetInput, {
       target: { value: "localhost:3000" },
     })
-    fireEvent.submit(previewUrlInput.closest("form")!)
+    fireEvent.submit(previewTargetInput.closest("form")!)
 
     await waitFor(() => {
       expect(document.querySelector("webview.preview-frame")).toBeInTheDocument()
     })
-    fireEvent.click(within(inspector).getByRole("button", { name: "Comment" }))
-
-    const overlay = within(inspector).getByTestId("preview-comment-overlay")
-    Object.defineProperty(overlay, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        bottom: 300,
-        height: 300,
-        left: 0,
-        right: 400,
-        top: 0,
-        width: 400,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }),
-    })
-
-    fireEvent.mouseMove(overlay, { clientX: 100, clientY: 90 })
-    expect(within(inspector).getByText("point")).toBeInTheDocument()
-    expect(within(inspector).getByText("25%, 30%")).toBeInTheDocument()
-
-    fireEvent.click(overlay, { clientX: 120, clientY: 120 })
-    expect(within(inspector).getByRole("textbox", { name: "Preview comment" })).toBeInTheDocument()
+    expect(within(inspector).queryByRole("button", { name: "Comment" })).not.toBeInTheDocument()
 
     userAgentSpy.mockRestore()
   })
@@ -1904,6 +1866,77 @@ describe("App", () => {
     expect(screen.getByTestId("workspace-file-line-2")).toHaveClass("is-linked")
     expect(screen.getByTestId("workspace-file-line-3")).toHaveClass("is-linked")
     expect(screen.queryByRole("textbox", { name: "File comment on lines 2-3" })).not.toBeInTheDocument()
+  })
+
+  it("opens previewable response local file links without line numbers in the preview sidebar", async () => {
+    const absolutePath = "C:/Projects/Atlas/frontend/src/focus-files.tsx"
+    window.desktop!.listFolderWorkspaces = vi.fn().mockResolvedValue(createWorkspaceFileReviewWorkspaces())
+    window.desktop!.agentSession!.loadHistory = vi.fn().mockResolvedValue([
+      {
+        info: {
+          id: "msg-user-preview-link-1",
+          sessionID: "session-frontend-review",
+          role: "user",
+          created: 100,
+        },
+        parts: [{ id: "part-user-preview-link-1", type: "text", text: "Open the previewable file link" }],
+      },
+      {
+        info: {
+          id: "msg-assistant-preview-link-1",
+          sessionID: "session-frontend-review",
+          role: "assistant",
+          created: 101,
+          completed: 102,
+        },
+        parts: [
+          {
+            id: "part-assistant-preview-link-1",
+            type: "text",
+            text: `[focus-files.tsx](${absolutePath})`,
+          },
+        ],
+      },
+    ])
+    window.desktop!.resolvePreviewTarget = vi.fn().mockResolvedValue({
+      entry: `${FRONTEND_WORKSPACE_DIRECTORY}\\src\\focus-files.tsx`,
+      externalOpenTarget: {
+        kind: "path",
+        value: `${FRONTEND_WORKSPACE_DIRECTORY}\\src\\focus-files.tsx`,
+      },
+      input: absolutePath,
+      kind: "file",
+      mime: "text/typescript; charset=utf-8",
+      normalizedInput: WORKSPACE_FILE_PATH,
+      path: `${FRONTEND_WORKSPACE_DIRECTORY}\\src\\focus-files.tsx`,
+      renderer: "code-viewer",
+      textReadable: true,
+      title: "focus-files.tsx",
+      workspaceRoot: FRONTEND_WORKSPACE_DIRECTORY,
+    })
+    window.desktop!.readPreviewText = vi.fn().mockResolvedValue({
+      content: WORKSPACE_FILE_CONTENT,
+      path: `${FRONTEND_WORKSPACE_DIRECTORY}\\src\\focus-files.tsx`,
+    })
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(window.desktop!.agentSession!.loadHistory).toHaveBeenCalledWith({
+        backendSessionID: "session-frontend-review",
+      })
+    })
+    fireEvent.click(await screen.findByRole("link", { name: "focus-files.tsx" }))
+
+    await waitFor(() => {
+      expect(window.desktop!.resolvePreviewTarget).toHaveBeenCalledWith({
+        value: absolutePath,
+        workspaceRoot: FRONTEND_WORKSPACE_DIRECTORY,
+      })
+    })
+    const inspector = screen.getByRole("complementary", { name: "Inspector sidebar" })
+    expect(await within(inspector).findByText(/export const focusValue = 1/)).toBeInTheDocument()
+    expect(within(inspector).queryByRole("textbox", { name: "Search workspace files" })).not.toBeInTheDocument()
   })
 
   it("opens response local file links through the system when the path is outside the pane workspace", async () => {

@@ -625,6 +625,8 @@ function resolveIframeHoverTarget(
   }
 }
 
+// Legacy URL review panel kept for migration reference and tests.
+// The active right-sidebar Preview tab is UnifiedPreviewPanel.
 export function PreviewPanel({
   state,
   onAddComment,

@@ -7,7 +7,7 @@ import {
   FileSearchIcon,
   PreviewIcon
 } from "../icons"
-import { PreviewPanel } from "../preview/PreviewPanel"
+import { UnifiedPreviewPanel } from "../preview/UnifiedPreviewPanel"
 import { buildRuntimeStatusDescription, formatRuntimeBusyStateLabel, formatRuntimeDuration, formatRuntimeLoadStateLabel, formatRuntimePhaseLabel, formatRuntimeTurnStatusLabel } from "../runtime-debug"
 import { ShellTopMenu, TopMenuViewButton } from "../shared-ui"
 import type {
@@ -538,17 +538,14 @@ export function RightSidebar({
           ) : null}
 
           {activeView === "preview" ? (
-            <PreviewPanel
+            <UnifiedPreviewPanel
               state={activePreviewState}
-              onAddComment={onPreviewAddComment}
-              onBack={onPreviewBack}
               onDraftUrlChange={onPreviewDraftUrlChange}
-              onForward={onPreviewForward}
-              onModeChange={onPreviewModeChange}
               onOpen={onPreviewOpen}
               onOpenExternal={onPreviewOpenExternal}
               onOpenUrl={onPreviewOpenUrl}
               onReload={onPreviewReload}
+              workspaceRoot={activeWorkspaceFileScopeDirectory ?? activeSessionDirectory}
             />
           ) : null}
 

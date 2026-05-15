@@ -22,7 +22,7 @@ import {
 } from "dockview-react"
 import { CloseIcon, PlusIcon } from "../icons"
 import { joinClassNames, SidebarToggleButton, SideChatBadge } from "../shared-ui"
-import type { MarkdownLocalFileLinkTarget } from "../thread-markdown"
+import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import type { ThreadScrollSnapshot } from "../thread/ThreadView"
 import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, SessionDiffSummary, ToolPermissionMode } from "../types"
 import { createID } from "../utils"
@@ -242,11 +242,19 @@ export interface WorkbenchShellProps {
   onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
   onCommandsReady: (commands: WorkbenchDockviewCommands | null) => void
   onLayoutChange: (layout: SerializedDockview | null) => void
+  onArtifactLinkOpen?: (input: {
+    paneID: string
+    sessionID: string | null
+    target: MarkdownArtifactLinkTarget
+    workspaceDirectory: string | null
+    workspaceID: string | null
+  }) => void
   onLocalFileLinkOpen: (input: {
     paneID: string
     sessionID: string | null
     target: MarkdownLocalFileLinkTarget
     workspaceDirectory: string | null
+    workspaceID: string | null
   }) => void
   onMoveSessionPanel?: (input: {
     panelID: string
@@ -724,6 +732,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         onCreateSessionSubmit={props.onCreateSessionSubmit}
         onCreateSessionWorkspaceChange={props.onCreateSessionWorkspaceChange}
         onInspectFileInSidebar={props.onInspectFileInSidebar}
+        onArtifactLinkOpen={props.onArtifactLinkOpen}
         onLocalFileLinkOpen={props.onLocalFileLinkOpen}
         onCreateSideChatTab={props.onCreateSideChatTab}
         onDeleteSideChatTab={props.onDeleteSideChatTab}
