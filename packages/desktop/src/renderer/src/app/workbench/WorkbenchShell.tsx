@@ -33,27 +33,6 @@ type AgentWorkspaceState = ReturnType<typeof useAgentWorkspace>
 type WorkbenchPaneStateByID = AgentWorkspaceState["workbenchPaneStateByID"]
 type WorkbenchPaneTab = AgentWorkspaceState["workbenchPaneStates"][number]["tabs"][number]
 
-const ACTIVE_TAB_CURVE_FILL_PATH = "M16 0L16 16L0 16C8.84 16 16 8.84 16 0Z"
-const ACTIVE_TAB_CURVE_STROKE_PATH = "M0 16C8.84 16 16 8.84 16 0"
-
-function PaneTabActiveCurve({ side }: { side: "start" | "end" }) {
-  return (
-    <span
-      className={
-        side === "start"
-          ? "session-tab-active-curve session-tab-active-curve-start"
-          : "session-tab-active-curve session-tab-active-curve-end"
-      }
-      aria-hidden="true"
-    >
-      <svg className="session-tab-active-curve-svg" viewBox="0 0 16 16" focusable="false">
-        <path className="session-tab-active-curve-fill" d={ACTIVE_TAB_CURVE_FILL_PATH} />
-        <path className="session-tab-active-curve-stroke" d={ACTIVE_TAB_CURVE_STROKE_PATH} />
-      </svg>
-    </span>
-  )
-}
-
 function buildPanelTitleMap(paneStateByID: WorkbenchPaneStateByID) {
   const titles: Record<string, string | undefined> = {}
   for (const pane of Object.values(paneStateByID)) {
@@ -490,12 +469,6 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     const createTabIndex = pane && paneTab?.kind === "create-session"
       ? pane.tabs.slice(0, pane.tabs.findIndex((tab) => tab.key === paneTab.key) + 1).filter((tab) => tab.kind === "create-session").length - 1
       : -1
-    const tabClassName = joinClassNames(
-      "dockview-workbench-tab",
-      "session-tab",
-      isActive ? "is-active" : null,
-      reference?.kind === "create-session" ? "is-create-tab" : null,
-    )
     const switchLabel =
       reference?.kind === "session"
         ? `Switch to session ${title}`
@@ -508,6 +481,10 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         : createTabIndex <= 0
           ? "Close create session tab"
           : `Close create session tab ${createTabIndex + 1}`
+    const tabClassName = joinClassNames(
+      "dockview-workbench-tab-content",
+      reference?.kind === "create-session" ? "is-create-tab" : null,
+    )
 
     const closePanel = () => {
       const paneID = pane?.id ?? tabProps.api.group.id
@@ -526,27 +503,21 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
     return (
       <div className={tabClassName}>
-        {isActive ? (
-          <>
-            <PaneTabActiveCurve side="start" />
-            <PaneTabActiveCurve side="end" />
-          </>
-        ) : null}
         <button
-          className="session-tab-trigger"
+          className="dockview-workbench-tab-trigger"
           aria-label={switchLabel}
           aria-pressed={isActive}
           title={switchLabel}
           type="button"
           onClick={selectPanel}
         >
-          <span className="session-tab-copy">
-            <span className="session-tab-title">{title}</span>
+          <span className="dockview-workbench-tab-copy">
+            <span className="dockview-workbench-tab-title">{title}</span>
             {paneTab?.kind === "session" && paneTab.sessionKind === "side-chat" ? <SideChatBadge compact /> : null}
           </span>
         </button>
         <button
-          className="session-tab-close"
+          className="dockview-workbench-tab-close"
           aria-label={closeLabel}
           draggable={false}
           title={closeLabel}
@@ -572,7 +543,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     }
 
     return (
-      <div className="dockview-workbench-header-actions pane-tab-bar-leading">
+      <div className="dockview-workbench-header-actions dockview-workbench-header-leading">
         <SidebarToggleButton
           isSidebarCollapsed={true}
           onToggleSidebar={props.onToggleLeftSidebar}
@@ -590,7 +561,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     const isLastPane = paneID === props.lastPaneID
 
     return (
-      <div className="dockview-workbench-header-actions pane-tab-bar-trailing">
+      <div className="dockview-workbench-header-actions dockview-workbench-header-trailing">
         <button
           className="canvas-region-top-menu-add-button dockview-workbench-add-tab-button"
           aria-label="Add session tab"

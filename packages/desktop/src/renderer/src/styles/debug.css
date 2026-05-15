@@ -6,8 +6,8 @@
   --debug-line-pane-divider: #1fbc7b;
 }
 
-.window-shell.debug-line-colors .pane-tab-bar {
-  border-bottom-color: var(--debug-line-pane-divider);
+.window-shell.debug-line-colors .dockview-theme-fanfande .dv-tabs-and-actions-container::after {
+  background: var(--debug-line-pane-divider);
 }
 
 /* Debug UI regions: matches the desktop UI structure doc mapping */
@@ -38,7 +38,7 @@
   background: var(--debug-region-left-sidebar);
 }
 
-.window-shell.debug-ui-regions .pane-tab-bar,
+.window-shell.debug-ui-regions .dockview-theme-fanfande .dv-tabs-and-actions-container,
 .window-shell.debug-ui-regions .canvas-region-top-menu {
   background: var(--debug-region-canvas-top-menu);
 }

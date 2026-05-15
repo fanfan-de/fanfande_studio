@@ -184,7 +184,7 @@
 
   .canvas-region-top-menu,
   .session-canvas-top-menu,
-  .pane-tab-bar,
+  .dockview-theme-fanfande .dv-tabs-and-actions-container,
   .terminal-tabs {
     padding-left: 10px;
     padding-right: 10px;

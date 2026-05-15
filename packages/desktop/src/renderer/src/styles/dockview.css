@@ -52,22 +52,20 @@
 }
 
 .dockview-theme-fanfande .dv-tabs-and-actions-container {
-  --pane-tab-bar-bg: var(--seg-pane-tab-bar-surface);
-  --pane-tab-border: var(--seg-border);
-  --pane-tab-curve: 8px;
-  --pane-tab-divider: var(--seg-divider);
-  --pane-tab-radius: 8px;
-  --pane-tab-active-bg: var(--seg-shell);
-  --pane-tab-inactive-bg: var(--seg-pane-tab-bar-surface);
-  --pane-tab-hover-bg: var(--brand-primary-hover);
-  --pane-tab-icon-color: var(--semantic-accent-icon);
-  --pane-tab-icon-hover-color: var(--semantic-accent-icon-hover);
-  --pane-tab-active-shadow: inset 0 1px 0 var(--pane-tab-border);
+  --dockview-tab-bar-bg: var(--seg-pane-tab-bar-surface);
+  --dockview-tab-border: var(--seg-border);
+  --dockview-tab-divider: var(--seg-divider);
+  --dockview-tab-radius: 6px;
+  --dockview-tab-active-bg: var(--seg-shell);
+  --dockview-tab-hover-bg: var(--mix-seg-panel-66-seg-panel-muted-34);
+  --dockview-tab-icon-color: var(--semantic-accent-icon);
+  --dockview-tab-icon-hover-color: var(--semantic-accent-icon-hover);
   position: relative;
-  min-height: 40px;
+  min-height: var(--dv-tabs-and-actions-container-height);
   padding: 0 12px;
-  background: var(--pane-tab-bar-bg);
+  background: var(--dockview-tab-bar-bg);
   border-bottom: 0;
+  color: var(--seg-text-2);
   -webkit-app-region: no-drag;
   user-select: none;
   isolation: isolate;
@@ -80,13 +78,13 @@
   right: 0;
   bottom: 0;
   height: 1px;
-  background: var(--pane-tab-border);
+  background: var(--dockview-tab-border);
   pointer-events: none;
   z-index: 1;
 }
 
 .dockview-theme-fanfande .dv-tabs-container {
-  align-items: flex-end;
+  align-items: stretch;
   overflow: auto hidden;
   scrollbar-width: none;
   -webkit-app-region: no-drag;
@@ -96,6 +94,10 @@
   display: none;
 }
 
+.dockview-theme-fanfande .dv-tabs-and-actions-container .dv-void-container {
+  min-height: 100%;
+}
+
 .dockview-theme-fanfande .dv-tabs-and-actions-container .dv-void-container.dv-draggable {
   cursor: default;
   -webkit-app-region: drag;
@@ -103,183 +105,134 @@
 
 .dockview-theme-fanfande .dv-tab {
   min-width: 0;
-  display: flex;
-  align-items: flex-end;
-  padding: 0;
-  font: inherit;
-  overflow: visible;
-  cursor: default;
-  -webkit-app-region: no-drag;
-}
-
-.dockview-theme-fanfande .dv-tabs-container.dv-horizontal .dv-tab::before {
-  display: none;
-}
-
-.dockview-theme-fanfande .dv-tab.dv-active-tab {
-  background: transparent;
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab,
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-trigger,
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-close,
-.dockview-theme-fanfande .dockview-workbench-header-actions,
-.dockview-theme-fanfande .dockview-workbench-header-actions button {
-  -webkit-app-region: no-drag;
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab {
-  position: relative;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  align-self: flex-end;
   max-width: min(240px, 30vw);
-  min-height: 34px;
-  margin-bottom: -1px;
-  margin-top: 6px;
-  padding: 0 8px 0 12px;
-  border: 0;
-  border-radius: var(--pane-tab-radius) var(--pane-tab-radius) 0 0;
-  background: var(--pane-tab-inactive-bg);
-  box-shadow: none;
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  margin: 0 0 -1px;
+  border-radius: var(--dockview-tab-radius) var(--dockview-tab-radius) 0 0;
+  background: transparent;
   color: var(--seg-text-2);
-  gap: 6px;
-  overflow: visible;
+  font: inherit;
+  overflow: hidden;
   cursor: default;
-  transform: none;
+  -webkit-app-region: no-drag;
   transition:
     background 140ms ease,
     color 140ms ease,
     box-shadow 140ms ease;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab::after {
-  content: "";
-  position: absolute;
-  top: 8px;
-  right: -1px;
-  bottom: 8px;
-  width: 1px;
-  background: var(--pane-tab-divider);
-  transition: opacity 140ms ease;
+.dockview-theme-fanfande .dv-tabs-container.dv-horizontal .dv-tab::before {
+  display: none;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab:hover,
-.dockview-theme-fanfande .dockview-workbench-tab:focus-within {
-  background: var(--pane-tab-hover-bg);
-  color: var(--seg-text-1);
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab:hover::after,
-.dockview-theme-fanfande .dockview-workbench-tab:focus-within::after,
-.dockview-theme-fanfande .dockview-workbench-tab.is-active::after {
-  opacity: 0;
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab.is-active {
-  background:
-    linear-gradient(var(--pane-tab-border), var(--pane-tab-border)) left top / 1px calc(100% - var(--pane-tab-curve)) no-repeat,
-    linear-gradient(var(--pane-tab-border), var(--pane-tab-border)) right top / 1px calc(100% - var(--pane-tab-curve)) no-repeat,
-    var(--pane-tab-active-bg);
-  color: var(--seg-text-1);
+.dockview-theme-fanfande .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab,
+.dockview-theme-fanfande .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-active-tab {
+  position: relative;
   z-index: 2;
-  box-shadow: var(--pane-tab-active-shadow);
+  background: var(--dockview-tab-active-bg);
+  color: var(--seg-text-1);
+  box-shadow:
+    inset 0 1px 0 var(--dockview-tab-border),
+    inset 1px 0 0 var(--dockview-tab-border),
+    inset -1px 0 0 var(--dockview-tab-border);
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab.is-active::before {
-  content: "";
-  position: absolute;
-  left: calc(var(--pane-tab-curve) - 1px);
-  right: calc(var(--pane-tab-curve) - 1px);
-  bottom: -1px;
-  height: 2px;
-  background: var(--pane-tab-active-bg);
+.dockview-theme-fanfande .dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab,
+.dockview-theme-fanfande .dv-groupview.dv-inactive-group > .dv-tabs-and-actions-container .dv-tabs-container > .dv-tab.dv-inactive-tab {
+  background: transparent;
+  color: var(--seg-text-2);
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-trigger {
+.dockview-theme-fanfande .dv-tabs-container > .dv-tab.dv-inactive-tab:hover,
+.dockview-theme-fanfande .dv-tabs-container > .dv-tab.dv-inactive-tab:focus-within {
+  background: var(--dockview-tab-hover-bg);
+  color: var(--seg-text-1);
+}
+
+.dockview-theme-fanfande .dv-tab:not(:first-child) {
+  box-shadow: inset 1px 0 0 var(--dockview-tab-divider);
+}
+
+.dockview-theme-fanfande .dv-tab.dv-active-tab,
+.dockview-theme-fanfande .dv-tab:hover,
+.dockview-theme-fanfande .dv-tab:focus-within {
+  box-shadow: none;
+}
+
+.dockview-theme-fanfande .dockview-workbench-tab-content,
+.dockview-theme-fanfande .dockview-workbench-tab-trigger,
+.dockview-theme-fanfande .dockview-workbench-tab-close,
+.dockview-theme-fanfande .dockview-workbench-header-actions,
+.dockview-theme-fanfande .dockview-workbench-header-actions button {
+  -webkit-app-region: no-drag;
+}
+
+.dockview-theme-fanfande .dockview-workbench-tab-content {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 12px;
+}
+
+.dockview-theme-fanfande .dockview-workbench-tab-trigger {
   min-width: 0;
   flex: 1 1 auto;
   display: flex;
   align-items: center;
-  white-space: nowrap;
-  min-height: 34px;
+  height: 100%;
   padding: 0 6px;
+  color: inherit;
   font-size: 13px;
   font-weight: 500;
-  color: inherit;
+  white-space: nowrap;
   cursor: default;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab.is-active .session-tab-trigger {
+.dockview-theme-fanfande .dv-tab.dv-active-tab .dockview-workbench-tab-trigger {
   font-weight: 600;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-close {
+.dockview-theme-fanfande .dockview-workbench-tab-copy {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dockview-theme-fanfande .dockview-workbench-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dockview-theme-fanfande .dockview-workbench-tab-close {
   flex: 0 0 auto;
   width: 18px;
   height: 18px;
   min-width: 18px;
   border-radius: 5px;
-  color: var(--pane-tab-icon-color);
+  color: var(--dockview-tab-icon-color);
   opacity: 0;
   pointer-events: none;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab:hover .session-tab-close,
-.dockview-theme-fanfande .dockview-workbench-tab:focus-within .session-tab-close,
-.dockview-theme-fanfande .dockview-workbench-tab.is-active .session-tab-close {
+.dockview-theme-fanfande .dv-tab:hover .dockview-workbench-tab-close,
+.dockview-theme-fanfande .dv-tab:focus-within .dockview-workbench-tab-close,
+.dockview-theme-fanfande .dv-tab.dv-active-tab .dockview-workbench-tab-close {
   opacity: 1;
   pointer-events: auto;
 }
 
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-close:hover,
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-close:focus-visible {
+.dockview-theme-fanfande .dockview-workbench-tab-close:hover,
+.dockview-theme-fanfande .dockview-workbench-tab-close:focus-visible {
   background: transparent;
   border-color: transparent;
-  color: var(--pane-tab-icon-hover-color);
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-active-curve {
-  position: absolute;
-  bottom: -1px;
-  width: calc(var(--pane-tab-curve) + 1px);
-  height: calc(var(--pane-tab-curve) + 1px);
-  pointer-events: none;
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-active-curve-svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-active-curve-start {
-  left: calc(var(--pane-tab-curve) * -1);
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-active-curve-end {
-  right: calc(var(--pane-tab-curve) * -1);
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-active-curve-end .session-tab-active-curve-svg {
-  transform: scaleX(-1);
-  transform-origin: center;
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-active-curve-fill {
-  fill: var(--pane-tab-active-bg);
-}
-
-.dockview-theme-fanfande .dockview-workbench-tab .session-tab-active-curve-stroke {
-  fill: none;
-  stroke: var(--pane-tab-border);
-  stroke-width: 1.25;
-  stroke-linecap: round;
-  shape-rendering: geometricPrecision;
-  vector-effect: non-scaling-stroke;
+  color: var(--dockview-tab-icon-hover-color);
 }
 
 .dockview-theme-fanfande .dockview-workbench-header-actions {
@@ -300,7 +253,7 @@
   border-radius: 6px;
   background: transparent;
   box-shadow: none;
-  color: var(--pane-tab-icon-color);
+  color: var(--dockview-tab-icon-color);
   flex: 0 0 auto;
 }
 
@@ -310,7 +263,7 @@
 .dockview-theme-fanfande .dockview-workbench-header-actions .canvas-region-top-menu-add-button:focus-visible {
   background: transparent;
   border-color: transparent;
-  color: var(--pane-tab-icon-hover-color);
+  color: var(--dockview-tab-icon-hover-color);
 }
 
 .dockview-theme-fanfande .dockview-workbench-header-actions .window-controls {

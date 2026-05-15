@@ -1104,7 +1104,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dockview-workbench-header-trailing")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "app" })).toBeInTheDocument()
@@ -1121,7 +1121,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toBeInTheDocument()
     const addSessionTabButton = screen.getByRole("button", { name: "Add session tab" })
     expect(addSessionTabButton.closest(".dockview-workbench-header-actions")).not.toBeNull()
-    expect(addSessionTabButton.closest(".pane-tab-bar-trailing")).not.toBeNull()
+    expect(addSessionTabButton.closest(".dockview-workbench-header-trailing")).not.toBeNull()
     expect(screen.queryByRole("button", { name: "Split pane" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(await screen.findByRole("button", { name: "Git" })).toBeInTheDocument()
@@ -6595,10 +6595,13 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chat 2" }))
 
     const chat2Tab = screen.getByRole("button", { name: "Switch to session Chat 2" })
-    const chat2TabContainer = chat2Tab.closest(".session-tab")
+    const chat2TabContent = chat2Tab.closest(".dockview-workbench-tab-content")
+    const chat2TabContainer = chat2Tab.closest(".dv-tab")
 
+    expect(chat2TabContent).not.toBeNull()
     expect(chat2TabContainer).not.toBeNull()
-    expect(chat2TabContainer).not.toHaveAttribute("draggable")
+    expect(chat2TabContent).not.toHaveAttribute("draggable")
+    expect(chat2TabContainer).toHaveAttribute("draggable", "true")
     expect(chat2Tab).not.toHaveAttribute("draggable")
 
     const panes = await moveDockviewPanelToNewGroup("session:session-chat-2", "right")
@@ -6614,10 +6617,13 @@ describe("App", () => {
     await screen.findByRole("combobox", { name: "Session project" })
 
     const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
-    const createTabContainer = createTab.closest(".session-tab")
+    const createTabContent = createTab.closest(".dockview-workbench-tab-content")
+    const createTabContainer = createTab.closest(".dv-tab")
 
+    expect(createTabContent).not.toBeNull()
     expect(createTabContainer).not.toBeNull()
-    expect(createTabContainer).not.toHaveAttribute("draggable")
+    expect(createTabContent).not.toHaveAttribute("draggable")
+    expect(createTabContainer).toHaveAttribute("draggable", "true")
     expect(createTab).not.toHaveAttribute("draggable")
 
     const panes = sortPanesWithCreateSessionLast(await moveDockviewPanelToNewGroup("create-session:", "right"))
@@ -6740,18 +6746,19 @@ describe("App", () => {
 
     expect(tabBar).not.toBeNull()
     expect(tab).not.toHaveAttribute("draggable")
-    expect(tab.closest(".session-tab")).not.toHaveAttribute("draggable")
+    expect(tab.closest(".dockview-workbench-tab-content")).not.toHaveAttribute("draggable")
   })
 
-  it("renders decorative curves on the active pane tab only", () => {
+  it("uses Dockview active tab state without decorative inner tab curves", () => {
     render(<App />)
 
     const tabBar = document.querySelector(".dv-tabs-and-actions-container") as HTMLElement
+    const activeTab = tabBar.querySelector(".dv-tab.dv-active-tab")
 
     expect(tabBar).not.toBeNull()
-    expect(tabBar.querySelectorAll(".session-tab.is-active .session-tab-active-curve")).toHaveLength(2)
-    expect(tabBar.querySelectorAll(".session-tab.is-active .session-tab-active-curve-svg")).toHaveLength(2)
-    expect(tabBar.querySelectorAll(".session-tab:not(.is-active) .session-tab-active-curve")).toHaveLength(0)
+    expect(activeTab).not.toBeNull()
+    expect(activeTab?.querySelector(".dockview-workbench-tab-content")).not.toBeNull()
+    expect(tabBar.querySelectorAll(".session-tab-active-curve")).toHaveLength(0)
   })
 
   it("falls back to the create session tab when the last session tab closes", async () => {
@@ -10881,7 +10888,7 @@ describe("App", () => {
     expect(within(rightSidebarTopMenu).getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(within(rightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dockview-workbench-header-trailing")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse right sidebar" }))
 
@@ -10891,10 +10898,10 @@ describe("App", () => {
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     expect(screen.queryByTestId("right-sidebar-resizer")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Minimize window" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Minimize window" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Minimize window" }).closest(".dockview-workbench-header-trailing")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Expand right sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".dockview-workbench-header-trailing")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Expand right sidebar" }))
 
@@ -10907,7 +10914,7 @@ describe("App", () => {
     expect(within(restoredRightSidebarTopMenu).getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(within(restoredRightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dockview-workbench-header-trailing")).not.toBeNull()
   })
 
   it("resizes the left sidebar when dragging the divider", async () => {
@@ -11293,22 +11300,19 @@ describe("App", () => {
     expect(styles).toMatch(/\.sidebar-toggle-button\.is-top-menu svg\s*\{[^}]*width:\s*var\(--section-toolbar-icon-size\);[^}]*height:\s*var\(--section-toolbar-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(/\.session-tab-close svg\s*\{[^}]*width:\s*var\(--section-toolbar-aux-icon-size\);[^}]*height:\s*var\(--section-toolbar-aux-icon-size\);[^}]*stroke-width:\s*2;/s)
     expect(styles).toMatch(
-      /\.pane-tab-bar\s*\{[^}]*--pane-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*--pane-tab-active-bg:\s*var\(--seg-shell\);[^}]*background:\s*var\(--pane-tab-bar-bg\);[^}]*-webkit-app-region:\s*no-drag;/s,
+      /\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container\s*\{[^}]*--dockview-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*--dockview-tab-active-bg:\s*var\(--seg-shell\);[^}]*background:\s*var\(--dockview-tab-bar-bg\);[^}]*-webkit-app-region:\s*no-drag;/s,
     )
-    expect(styles).toMatch(/--pane-tab-inactive-bg:\s*var\(--seg-pane-tab-bar-surface\);/s)
-    expect(styles).toMatch(/--pane-tab-hover-bg:\s*var\(--brand-primary-hover\);/s)
+    expect(styles).toMatch(/--dockview-tab-hover-bg:\s*var\(--mix-seg-panel-66-seg-panel-muted-34\);/s)
     expect(styles).toMatch(
-      /\.pane-tab-bar::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--pane-tab-border\);/s,
+      /\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container::after\s*\{[^}]*bottom:\s*0;[^}]*height:\s*1px;[^}]*background:\s*var\(--dockview-tab-border\);/s,
     )
     expect(styles).toMatch(/\.sidebar-resizer\s*\{[^}]*--sidebar-resizer-top-surface:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background-color:\s*transparent;[^}]*background-image:\s*linear-gradient\(var\(--sidebar-resizer-top-surface\),\s*var\(--sidebar-resizer-top-surface\)\);[^}]*background-position:\s*top;[^}]*background-size:\s*100%\s*var\(--section-toolbar-height\);[^}]*background-repeat:\s*no-repeat;/s)
     expect(styles).toMatch(/\.sidebar-resizer::after\s*\{[^}]*top:\s*calc\(var\(--section-toolbar-height\)\s*-\s*1px\);[^}]*height:\s*1px;[^}]*background:\s*var\(--seg-border\);/s)
-    expect(styles).toMatch(/\.pane-tab-bar-leading,\s*\.pane-tab-bar-trailing\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
-    expect(styles).toMatch(/\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
-    expect(styles).toMatch(/\.pane-tab-bar\.window-drag-region\s+\.pane-tab-bar-tabs\s*\{[^}]*-webkit-app-region:\s*drag;/s)
-    expect(styles).toMatch(/\.pane-tab-bar-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu,[\s\S]*?\.pane-tab-bar\s+\.canvas-region-top-menu-add-button\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tabs-container\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container\s+\.dv-void-container\.dv-draggable\s*\{[^}]*-webkit-app-region:\s*drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-content,[\s\S]*?\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions button\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s*\{[^}]*min-height:\s*40px;/s)
     expect(styles).toMatch(/\.right-sidebar-view-host\s*\{[^}]*overflow:\s*auto;[^}]*scrollbar-gutter:\s*stable;[^}]*padding-right:\s*2px;/s)
-    expect(styles).toMatch(/\.pane-tab-merge-preview\s*\{[^}]*background:\s*var\(--pane-tab-merge-bg\);/s)
     expect(styles).toMatch(/\.pane-drop-targets\s*\{[^}]*grid-template-columns:\s*144px minmax\(0,\s*1fr\) 144px;[^}]*grid-template-rows:\s*10px minmax\(0,\s*1fr\) 108px;[^}]*grid-template-areas:\s*[\s\S]*"\.\s+top\s+\."[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
     expect(styles).toMatch(/\.pane-drop-targets\.is-top-row\s*\{[^}]*grid-template-areas:\s*[\s\S]*"top top top"[\s\S]*"left center right"[\s\S]*"\.\s+bottom\s+\.";/s)
     expect(styles).toMatch(/\.pane-drop-target\s*\{[^}]*pointer-events:\s*auto;[^}]*background:\s*transparent;/s)
@@ -11338,14 +11342,13 @@ describe("App", () => {
     expect(styles).toMatch(/\.session-tab\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-close\s*\{[^}]*cursor:\s*default;/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*cursor:\s*default;/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-trigger\s*\{[^}]*cursor:\s*default;/s)
     expect(styles).toMatch(/\.session-tab-trigger,\s*\.session-tab-close,[\s\S]*?\.canvas-region-top-menu-add-button\s*\{[^}]*border-radius:\s*8px;/s)
     expect(styles).toMatch(
       /\.canvas-region-top-menu\s+\.session-tab-close:hover,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s,
     )
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu:hover,\s*\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu:focus-visible,\s*\.pane-tab-bar\s+\.canvas-region-top-menu-add-button:hover,\s*\.pane-tab-bar\s+\.canvas-region-top-menu-add-button:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--pane-tab-icon-hover-color\);/s,
+      /\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s+\.canvas-region-top-menu-add-button:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--dockview-tab-icon-hover-color\);/s,
     )
     expect(styles).toMatch(/\.right-sidebar-top-menu-tabs\s*\{[^}]*align-items:\s*center;[^}]*gap:\s*4px;/s)
     expect(styles).toMatch(
@@ -11371,35 +11374,18 @@ describe("App", () => {
     )
     expect(styles).toMatch(/--canvas-region-tab-inactive-bg:\s*var\(--mix-seg-shell-84-seg-panel-muted-16\);/s)
     expect(styles).toMatch(/--canvas-region-tab-hover:\s*var\(--mix-seg-panel-66-seg-panel-muted-34\);/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\s*\{[^}]*background:\s*var\(--pane-tab-inactive-bg\);[^}]*color:\s*var\(--seg-text-2\);[^}]*transform:\s*none;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tab\s*\{[^}]*margin:\s*0 0 -1px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/s)
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*min-height:\s*34px;[^}]*margin-top:\s*6px;[^}]*background:\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*left top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*linear-gradient\(var\(--pane-tab-border\),\s*var\(--pane-tab-border\)\)\s*right top \/ 1px calc\(100% - var\(--pane-tab-curve\)\)\s*no-repeat,\s*var\(--pane-tab-active-bg\);[^}]*border:\s*0;[^}]*transform:\s*none;/s,
-    )
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab\.is-active\s*\{[^}]*box-shadow:\s*var\(--pane-tab-active-shadow\);/s)
-    expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab\.is-active::before\s*\{[^}]*left:\s*calc\(var\(--pane-tab-curve\) - 1px\);[^}]*right:\s*calc\(var\(--pane-tab-curve\) - 1px\);[^}]*bottom:\s*-1px;[^}]*height:\s*2px;[^}]*background:\s*var\(--pane-tab-active-bg\);/s,
+      /\.dockview-theme-fanfande\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-active-tab,[\s\S]*?\.dv-tab\.dv-active-tab\s*\{[^}]*background:\s*var\(--dockview-tab-active-bg\);[^}]*box-shadow:[^}]*inset 0 1px 0 var\(--dockview-tab-border\)/s,
     )
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve\s*\{[^}]*bottom:\s*-1px;[^}]*width:\s*calc\(var\(--pane-tab-curve\) \+ 1px\);[^}]*height:\s*calc\(var\(--pane-tab-curve\) \+ 1px\);[^}]*pointer-events:\s*none;/s,
+      /\.dockview-theme-fanfande\s+\.dv-groupview\.dv-active-group > \.dv-tabs-and-actions-container \.dv-tabs-container > \.dv-tab\.dv-inactive-tab,[\s\S]*?\.dv-tab\.dv-inactive-tab\s*\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--seg-text-2\);/s,
     )
     expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve-svg\s*\{[^}]*display:\s*block;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*overflow:\s*visible;/s,
+      /\.dockview-theme-fanfande\s+\.dv-tabs-container > \.dv-tab\.dv-inactive-tab:hover,[\s\S]*?\.dv-tabs-container > \.dv-tab\.dv-inactive-tab:focus-within\s*\{[^}]*background:\s*var\(--dockview-tab-hover-bg\);/s,
     )
-    expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve-start\s*\{[^}]*left:\s*calc\(var\(--pane-tab-curve\) \* -1\);/s,
-    )
-    expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve-end\s*\{[^}]*right:\s*calc\(var\(--pane-tab-curve\) \* -1\);/s,
-    )
-    expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve-end\s+\.session-tab-active-curve-svg\s*\{[^}]*transform:\s*scaleX\(-1\);[^}]*transform-origin:\s*center;/s,
-    )
-    expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve-fill\s*\{[^}]*fill:\s*var\(--pane-tab-active-bg\);/s,
-    )
-    expect(styles).toMatch(
-      /\.pane-tab-bar\s+\.session-tab-active-curve-stroke\s*\{[^}]*fill:\s*none;[^}]*stroke:\s*var\(--pane-tab-border\);[^}]*stroke-width:\s*1\.25;[^}]*stroke-linecap:\s*round;[^}]*shape-rendering:\s*geometricPrecision;[^}]*vector-effect:\s*non-scaling-stroke;/s,
-    )
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-content\s*\{[^}]*height:\s*100%;[^}]*padding:\s*0 8px 0 12px;/s)
+    expect(styles).not.toMatch(/session-tab-active-curve/)
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.session-tab:hover\s*\{[^}]*background:\s*var\(--canvas-region-tab-hover\);[^}]*border-color:\s*transparent;/s)
     expect(styles).toMatch(
       /\.canvas-region-top-menu\s+\.session-tab\.is-active:hover,\s*\.canvas-region-top-menu\s+\.session-tab\.is-active:focus-within\s*\{[^}]*background:\s*var\(--canvas-region-tab-active-bg\);/s,
@@ -11471,18 +11457,18 @@ describe("App", () => {
     expect(styles).toMatch(/--seg-accent-icon:\s*var\(--semantic-accent-icon\);/s)
     expect(styles).toMatch(/--seg-accent-icon-hover:\s*var\(--semantic-accent-icon-hover\);/s)
     expect(styles).toMatch(/--seg-accent-icon-active:\s*var\(--semantic-accent-icon-active\);/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s*\{[^}]*--pane-tab-icon-color:\s*var\(--semantic-accent-icon\);[^}]*--pane-tab-icon-hover-color:\s*var\(--semantic-accent-icon-hover\);[^}]*--pane-tab-icon-active-color:\s*var\(--semantic-accent-icon-active\);/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu,\s*\.pane-tab-bar\s+\.canvas-region-top-menu-add-button\s*\{[^}]*color:\s*var\(--pane-tab-icon-color\);/s)
-    expect(styles).not.toMatch(/\.pane-tab-bar\s+\.sidebar-toggle-button\.is-top-menu\.is-active[\s\S]*?color:\s*var\(--pane-tab-icon-active-color\);/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab-close\s*\{[^}]*color:\s*var\(--pane-tab-icon-color\);/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s+\.session-tab-close:hover,\s*\.pane-tab-bar\s+\.session-tab-close:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--pane-tab-icon-hover-color\);/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container\s*\{[^}]*--dockview-tab-icon-color:\s*var\(--semantic-accent-icon\);[^}]*--dockview-tab-icon-hover-color:\s*var\(--semantic-accent-icon-hover\);/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s+\.sidebar-toggle-button\.is-top-menu,\s*\.dockview-theme-fanfande\s+\.dockview-workbench-header-actions\s+\.canvas-region-top-menu-add-button\s*\{[^}]*color:\s*var\(--dockview-tab-icon-color\);/s)
+    expect(styles).not.toMatch(/--dockview-tab-icon-active-color/)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-close\s*\{[^}]*color:\s*var\(--dockview-tab-icon-color\);/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dockview-workbench-tab-close:hover,\s*\.dockview-theme-fanfande\s+\.dockview-workbench-tab-close:focus-visible\s*\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--dockview-tab-icon-hover-color\);/s)
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu,[\s\S]*?\.canvas-region-top-menu-add-button,[\s\S]*?\{[^}]*color:\s*var\(--semantic-accent-icon\);/s)
     expect(styles).toMatch(/\.canvas-region-top-menu\s+\.sidebar-toggle-button\.is-top-menu:hover,[\s\S]*?\.canvas-region-top-menu-add-button:focus-visible,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*border-color:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-hover\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.terminal-panel-toggle-button\.is-active,[\s\S]*?\{[^}]*background:\s*transparent;[^}]*color:\s*var\(--semantic-accent-icon-active\);[^}]*transform:\s*none;/s)
     expect(styles).toMatch(/\.settings-page-close-button:hover,\s*\.settings-page-close-button:focus-visible\s*\{[^}]*color:\s*var\(--semantic-accent-icon-hover\);/s)
     expect(styles).toMatch(/\.session-canvas-top-menu\s+\.canvas-top-menu-editor-launch-button,\s*\.session-canvas-top-menu\s+\.canvas-top-menu-editor-menu-button,[\s\S]*?\{[^}]*color:\s*var\(--semantic-accent-icon\);/s)
     expect(styles).toMatch(/\.session-canvas-top-menu\s+\.canvas-top-menu-editor-menu-button\.is-active,[\s\S]*?\.session-canvas-top-menu\s+\.canvas-top-menu-editor-menu-button\.is-active:focus-visible\s*\{[^}]*color:\s*var\(--semantic-accent-icon-active\);[^}]*transform:\s*none;/s)
-    expect(styles).toMatch(/\.pane-tab-bar\s*\{[^}]*--pane-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background:\s*var\(--pane-tab-bar-bg\);/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-tabs-and-actions-container\s*\{[^}]*--dockview-tab-bar-bg:\s*var\(--seg-pane-tab-bar-surface\);[^}]*background:\s*var\(--dockview-tab-bar-bg\);/s)
     expect(styles).toMatch(/\.left-sidebar-top-menu\s*\{[^}]*background:\s*var\(--seg-left-sidebar-top-menu-surface\);/s)
     expect(styles).toMatch(/\.activity-rail\s*\{[^}]*padding:\s*0 0 14px;/s)
     expect(styles).toMatch(/\.activity-rail-top-menu\s*\{[^}]*min-height:\s*var\(--section-toolbar-height\);[^}]*background:\s*var\(--seg-left-sidebar-top-menu-surface\);/s)
