@@ -15,9 +15,10 @@ import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, Ses
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import { useProjectComposer } from "../use-project-composer"
 import { isSideChatSession } from "../workspace"
+import type { ThreadScrollSnapshot } from "../thread/ThreadView"
 
 type AgentWorkspaceState = ReturnType<typeof useAgentWorkspace>
-type WorkbenchPaneState = AgentWorkspaceState["workbenchPaneStates"][number]
+type WorkbenchPaneState = AgentWorkspaceState["workbenchPanelStateByID"][string]
 
 function ComposerPlanModeNotice({ workflow }: { workflow: SessionWorkflowBadgeInfo }) {
   return (
@@ -69,6 +70,8 @@ export interface WorkbenchPaneSurfaceProps {
   toolPermissionMode: ToolPermissionMode
   toolPermissionModeError: string | null
   workspaces: AgentWorkspaceState["workspaces"]
+  readThreadScrollSnapshot: (key: string) => ThreadScrollSnapshot | null
+  saveThreadScrollSnapshot: (key: string, snapshot: ThreadScrollSnapshot) => void
   onCreateSessionSubmit: (createSessionTabID?: string | null, paneID?: string) => Promise<void>
   onCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
   onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
@@ -112,6 +115,8 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
   toolPermissionMode,
   toolPermissionModeError,
   workspaces,
+  readThreadScrollSnapshot,
+  saveThreadScrollSnapshot,
   onCreateSessionSubmit,
   onCreateSessionWorkspaceChange,
   onInspectFileInSidebar,
@@ -301,7 +306,11 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                 sideChatSession={pane.activeSideChatSession}
                 sideChatSessionsByAnchorMessageID={pane.sideChatSessionsByAnchorMessageID}
                 sideChatTurns={pane.activeSideChatTurns}
+                scrollStateKey={pane.tabKey}
                 threadColumnRef={threadColumnRef}
+                isThreadVisible={pane.isActivePanel}
+                readScrollSnapshot={readThreadScrollSnapshot}
+                saveScrollSnapshot={saveThreadScrollSnapshot}
                 onSessionModelSelectionChange={onSessionModelSelectionChange}
                 onAskUserQuestionAnswer={(answer) =>
                   onAskUserQuestionAnswer({

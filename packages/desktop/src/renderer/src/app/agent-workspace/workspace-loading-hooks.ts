@@ -285,7 +285,9 @@ interface UseInitialFolderWorkspacesEffectOptions {
   createCreateSessionTab: (workspaceID: string | null) => CreateSessionTab
   createCreateSessionWorkbenchTab: (createSessionTabID: string) => WorkbenchTabReference
   createSessionWorkbenchTab: (sessionID: string) => WorkbenchTabReference
+  initialDockviewLayout?: SerializedDockview | null
   initialFolderWorkspacesLoadedRef: MutableRefObject<boolean>
+  initialSessionID?: string | null
   lastFocusedSessionIDRef: MutableRefObject<string | null>
   preserveLocalWorkspaceStateOnInitialLoadRef: MutableRefObject<boolean>
   setAgentSessions: (update: (current: Record<string, string>) => Record<string, string>) => void
@@ -304,7 +306,9 @@ export function useInitialFolderWorkspacesEffect({
   createCreateSessionTab,
   createCreateSessionWorkbenchTab,
   createSessionWorkbenchTab,
+  initialDockviewLayout,
   initialFolderWorkspacesLoadedRef,
+  initialSessionID,
   lastFocusedSessionIDRef,
   preserveLocalWorkspaceStateOnInitialLoadRef,
   setAgentSessions,
@@ -355,13 +359,57 @@ export function useInitialFolderWorkspacesEffect({
         }))
 
         if (!preserveLocalWorkspaceState) {
-          const restoredDockviewLayout = normalizeDockviewLayout(
-            readPersistedDockviewLayout(),
-            buildValidDockviewReferences(nextWorkspaces, []),
-            buildDockviewPanelTitles(nextWorkspaces, []),
-          )
+          const initialSessionSelection = initialSessionID
+            ? nextWorkspaces.reduce<{
+                sessionID: string
+                title: string
+                workspaceID: string
+              } | null>((match, workspace) => {
+                if (match) return match
+                const session = workspace.sessions.find((item) => item.id === initialSessionID)
+                return session
+                  ? {
+                      sessionID: session.id,
+                      title: session.title,
+                      workspaceID: workspace.id,
+                    }
+                  : null
+              }, null)
+            : null
+          const initialSurfaceLayout = initialDockviewLayout
+            ? normalizeDockviewLayout(
+                initialDockviewLayout,
+                buildValidDockviewReferences(nextWorkspaces, []),
+                buildDockviewPanelTitles(nextWorkspaces, []),
+              )
+            : null
+          const restoredDockviewLayout = initialSessionSelection || initialSurfaceLayout
+            ? null
+            : normalizeDockviewLayout(
+                readPersistedDockviewLayout(),
+                buildValidDockviewReferences(nextWorkspaces, []),
+                buildDockviewPanelTitles(nextWorkspaces, []),
+              )
 
-          if (restoredDockviewLayout) {
+          if (initialSurfaceLayout) {
+            const initialSurfaceReference = getActiveDockviewPanelReference(initialSurfaceLayout)
+            const initialSurfaceFolderID =
+              resolveWorkspaceIDForDockviewReference(initialSurfaceReference, nextWorkspaces, []) ??
+              nextWorkspaces[0]?.id ??
+              null
+            setSelectedFolderID(initialSurfaceFolderID)
+            setExpandedFolderIDs(initialSurfaceFolderID ? [initialSurfaceFolderID] : [])
+            setCreateSessionTabs([])
+            setDockviewLayout(initialSurfaceLayout)
+            lastFocusedSessionIDRef.current = initialSurfaceReference?.kind === "session" ? initialSurfaceReference.sessionID : null
+          } else if (initialSessionSelection) {
+            const initialReference = createSessionWorkbenchTab(initialSessionSelection.sessionID)
+            setSelectedFolderID(initialSessionSelection.workspaceID)
+            setExpandedFolderIDs([initialSessionSelection.workspaceID])
+            setCreateSessionTabs([])
+            setDockviewLayout(createInitialDockviewLayout(initialReference, initialSessionSelection.title))
+            lastFocusedSessionIDRef.current = initialSessionSelection.sessionID
+          } else if (restoredDockviewLayout) {
             const restoredReference = getActiveDockviewPanelReference(restoredDockviewLayout)
             const restoredFolderID =
               resolveWorkspaceIDForDockviewReference(restoredReference, nextWorkspaces, []) ??

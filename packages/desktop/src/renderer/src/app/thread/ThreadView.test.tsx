@@ -2,7 +2,7 @@ import { createRef, type ComponentProps } from "react"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY, type AssistantTraceItem, type AssistantTraceItemKind, type AssistantTurn, type SessionSummary, type Turn, type UserTurn } from "../types"
-import { ThreadView } from "./ThreadView"
+import { ThreadView, type ThreadScrollSnapshot } from "./ThreadView"
 
 const session: SessionSummary = {
   id: "session-1",
@@ -12,6 +12,12 @@ const session: SessionSummary = {
   updated: 1,
   focus: "",
   summary: "",
+}
+
+const sessionB: SessionSummary = {
+  ...session,
+  id: "session-2",
+  title: "Session 2",
 }
 
 function assistantTurn(id: string, text: string): AssistantTurn {
@@ -2070,5 +2076,184 @@ describe("ThreadView auto-scroll", () => {
     rerender(<ThreadView {...props} activeTurns={[assistantTurn("assistant-1", "Working...")]} />)
 
     expect(threadColumn.scrollTop).toBe(520)
+  })
+
+  it("restores independent scroll positions by tab key instead of forcing the bottom", () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {}
+    const readScrollSnapshot = vi.fn((key: string) => snapshots[key] ?? null)
+    const saveScrollSnapshot = vi.fn((key: string, snapshot: ThreadScrollSnapshot) => {
+      snapshots[key] = snapshot
+    })
+    const { rerender, props, threadColumn } = renderThread(
+      [assistantTurn("assistant-1", "Working")],
+      {
+        scrollStateKey: "session:session-1",
+        readScrollSnapshot,
+        saveScrollSnapshot,
+      },
+    )
+
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1000,
+      scrollTop: 420,
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={sessionB}
+        activeTurns={[assistantTurn("assistant-2", "Other session")]}
+        scrollStateKey="session:session-2"
+      />,
+    )
+
+    expect(snapshots["session:session-1"]?.scrollTop).toBe(420)
+    expect(threadColumn.scrollTop).toBe(1000)
+
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1600,
+      scrollTop: 900,
+    })
+    Object.defineProperty(threadColumn, "scrollHeight", {
+      configurable: true,
+      value: 1000,
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={session}
+        activeTurns={[assistantTurn("assistant-1", "Working")]}
+        scrollStateKey="session:session-1"
+      />,
+    )
+
+    expect(snapshots["session:session-2"]?.scrollTop).toBe(900)
+    expect(threadColumn.scrollTop).toBe(420)
+  })
+
+  it("restores against a saved turn anchor when message heights shift", () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {
+      "session:session-1": {
+        scrollTop: 10,
+        scrollHeight: 1000,
+        clientHeight: 400,
+        pinnedToBottom: false,
+        updatedAt: 1,
+        anchor: {
+          turnID: "assistant-1",
+          offsetWithinViewport: 20,
+        },
+      },
+    }
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function getRect(this: HTMLElement) {
+      const element = this
+      if (element.classList.contains("thread-column")) {
+        return { x: 0, y: 0, width: 400, height: 400, top: 0, right: 400, bottom: 400, left: 0, toJSON: () => ({}) }
+      }
+      if (element.dataset.turnId === "assistant-1") {
+        return { x: 0, y: 120, width: 400, height: 100, top: 120, right: 400, bottom: 220, left: 0, toJSON: () => ({}) }
+      }
+      return { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0, toJSON: () => ({}) }
+    })
+
+    try {
+      const { rerender, props, threadColumn } = renderThread(
+        [assistantTurn("assistant-2", "Other session")],
+        {
+          activeSession: sessionB,
+          scrollStateKey: "session:session-2",
+          readScrollSnapshot: (key) => snapshots[key] ?? null,
+          saveScrollSnapshot: vi.fn(),
+        },
+      )
+
+      setScrollMetrics(threadColumn, {
+        clientHeight: 400,
+        scrollHeight: 1000,
+        scrollTop: 50,
+      })
+
+      rerender(
+        <ThreadView
+          {...props}
+          activeSession={session}
+          activeTurns={[assistantTurn("assistant-1", "Working")]}
+          scrollStateKey="session:session-1"
+        />,
+      )
+
+      expect(threadColumn.scrollTop).toBe(150)
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
+})
+
+describe("ThreadView turn motion", () => {
+  it("marks initial history turns as stable", () => {
+    const { container } = renderThread([
+      userTurn("user-1", "Prompt"),
+      assistantTraceTurn("assistant-1", [
+        {
+          id: "assistant-1-text",
+          kind: "text",
+          timestamp: 1,
+          label: "Assistant",
+          text: "Done",
+          status: "completed",
+        },
+      ], false),
+    ], { scrollStateKey: "session:session-1" })
+
+    expect(container.querySelector('[data-turn-id="user-1"]')?.getAttribute("data-turn-motion")).toBe("history")
+    expect(container.querySelector('[data-turn-id="assistant-1"]')?.getAttribute("data-turn-motion")).toBe("history")
+  })
+
+  it("marks newly appended visible turns as new or live", () => {
+    const { container, rerender, props } = renderThread([userTurn("user-1", "Prompt")], {
+      scrollStateKey: "session:session-1",
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeTurns={[
+          userTurn("user-1", "Prompt"),
+          userTurn("user-2", "Follow up"),
+          assistantTurn("assistant-1", "Streaming"),
+        ]}
+      />,
+    )
+
+    expect(container.querySelector('[data-turn-id="user-2"]')?.getAttribute("data-turn-motion")).toBe("new")
+    expect(container.querySelector('[data-turn-id="assistant-1"]')?.getAttribute("data-turn-motion")).toBe("live")
+  })
+
+  it("does not replay motion when switching back to an already rendered tab", () => {
+    const { container, rerender, props } = renderThread([userTurn("user-1", "Prompt")], {
+      scrollStateKey: "session:session-1",
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={sessionB}
+        activeTurns={[userTurn("user-2", "Other")]}
+        scrollStateKey="session:session-2"
+      />,
+    )
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={session}
+        activeTurns={[userTurn("user-1", "Prompt")]}
+        scrollStateKey="session:session-1"
+      />,
+    )
+
+    expect(container.querySelector('[data-turn-id="user-1"]')?.getAttribute("data-turn-motion")).toBe("history")
   })
 })

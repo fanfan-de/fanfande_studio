@@ -15,8 +15,8 @@ import {
   resolveCreateSessionWorkspaceID,
 } from "./workspace-derived-state"
 
-function createWorkbenchPane(tabs: WorkbenchTabReference[], id: string) {
-  return { id, tabs }
+function createWorkbenchPane(tabs: WorkbenchTabReference[], id: string, activeTabIndex = 0) {
+  return { activeTabIndex, id, tabs }
 }
 
 function createDockviewLayoutFromPanes(panes: Array<ReturnType<typeof createWorkbenchPane>>): SerializedDockview | null {
@@ -41,7 +41,7 @@ function createDockviewLayoutFromPanes(panes: Array<ReturnType<typeof createWork
       data: {
         id: pane.id,
         views: panelIDs,
-        activeView: panelIDs[0],
+        activeView: panelIDs[pane.activeTabIndex] ?? panelIDs[0],
       },
       size: 1000,
     }
@@ -89,6 +89,37 @@ function createWorkspace(id: string, sessions: SessionSummary[], exists = true):
     },
     sessions,
   }
+}
+
+function buildDerivedState(overrides: Partial<Parameters<typeof buildWorkspaceDerivedState>[0]> = {}) {
+  return buildWorkspaceDerivedState({
+    activeSideChatSessionIDByParentSessionID: {},
+    cancellingSessionIDs: {},
+    composerAttachmentsByTabKey: {},
+    composerDraftStateByTabKey: {},
+    contextUsageBySession: {},
+    conversations: {},
+    createSessionTabs: [],
+    isCreatingSessionByTabKey: {},
+    isInitialWorkspaceLoadPending: false,
+    isSendingByTabKey: {},
+    pendingPermissionRequestsBySession: {},
+    platform: "win32",
+    previewByWorkspaceID: {},
+    selectedDiffFileBySession: {},
+    selectedFolderID: null,
+    sessionDiffBySession: {},
+    sessionDiffStateBySession: {},
+    sessionDirectoryBySession: {},
+    sessionRuntimeDebugBySession: {},
+    sessionRuntimeDebugStateBySession: {},
+    seedWorkspaceIDs: new Set(),
+    dockviewLayout: null,
+    workspaceFileCommentsByTarget: {},
+    workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
+    workspaces: [],
+    ...overrides,
+  })
 }
 
 describe("workspace derived state", () => {
@@ -208,6 +239,85 @@ describe("workspace derived state", () => {
       "side-chat-2",
       "side-chat-1",
     ])
+  })
+
+  it("keeps panel states bound to their own session or create-session reference", () => {
+    const sessionA = createSession("session-a", "Session A")
+    const sessionB = createSession("session-b", "Session B")
+    const workspace = createWorkspace("workspace-1", [sessionA, sessionB])
+    const createSessionTab = {
+      id: "create-1",
+      initialWorkflowMode: "planning" as const,
+      workspaceID: workspace.id,
+      title: "",
+    }
+    const sessionATab = createSessionWorkbenchTab(sessionA.id)
+    const sessionBTab = createSessionWorkbenchTab(sessionB.id)
+    const createTab = createCreateSessionWorkbenchTab(createSessionTab.id)
+    const panelAID = getWorkbenchDockPanelId(sessionATab)
+    const panelBID = getWorkbenchDockPanelId(sessionBTab)
+    const createPanelID = getWorkbenchDockPanelId(createTab)
+    const createTabKey = getWorkbenchTabKey(createTab)
+    const stateSlices = {
+      composerAttachmentsByTabKey: {
+        [panelBID]: [{ name: "b.txt", path: "C:/work/workspace-1/b.txt" }],
+      },
+      composerDraftStateByTabKey: {
+        [panelAID]: { lexicalJSON: "{}", plainText: "draft A" },
+        [panelBID]: { lexicalJSON: "{}", plainText: "draft B" },
+        [createTabKey]: { lexicalJSON: "{}", plainText: "draft create" },
+      },
+      conversations: {
+        [sessionA.id]: [{ id: "turn-a", kind: "user" as const, text: "from A", timestamp: 1 }],
+        [sessionB.id]: [{ id: "turn-b", kind: "user" as const, text: "from B", timestamp: 2 }],
+      },
+      createSessionTabs: [createSessionTab],
+      isCreatingSessionByTabKey: {
+        [createTabKey]: true,
+      },
+      selectedFolderID: workspace.id,
+      workspaces: [workspace],
+    }
+    const tabs = [sessionATab, sessionBTab, createTab]
+
+    const derivedWithAActive = buildDerivedState({
+      ...stateSlices,
+      dockviewLayout: createDockviewLayoutFromPanes([createWorkbenchPane(tabs, "pane-1", 0)]),
+    })
+
+    expect(derivedWithAActive.workbenchPaneStateByID["pane-1"]?.sessionID).toBe(sessionA.id)
+    expect(derivedWithAActive.workbenchPanelStateByID[panelAID]).toMatchObject({
+      activeTabKey: panelAID,
+      sessionID: sessionA.id,
+    })
+    expect(derivedWithAActive.workbenchPanelStateByID[panelAID]?.activeTurns[0]?.id).toBe("turn-a")
+    expect(derivedWithAActive.workbenchPanelStateByID[panelAID]?.draftState.plainText).toBe("draft A")
+    expect(derivedWithAActive.workbenchPanelStateByID[panelBID]).toMatchObject({
+      activeTabKey: panelBID,
+      sessionID: sessionB.id,
+    })
+    expect(derivedWithAActive.workbenchPanelStateByID[panelBID]?.activeTurns[0]?.id).toBe("turn-b")
+    expect(derivedWithAActive.workbenchPanelStateByID[panelBID]?.composerAttachments).toEqual([
+      { name: "b.txt", path: "C:/work/workspace-1/b.txt" },
+    ])
+    expect(derivedWithAActive.workbenchPanelStateByID[createPanelID]).toMatchObject({
+      activeTabKey: createTabKey,
+      createSessionInitialWorkflowMode: "planning",
+      createSessionTabID: createSessionTab.id,
+      createSessionWorkspaceID: workspace.id,
+      isCreatingSession: true,
+      sessionID: null,
+    })
+    expect(derivedWithAActive.workbenchPanelStateByID[createPanelID]?.draftState.plainText).toBe("draft create")
+
+    const derivedWithBActive = buildDerivedState({
+      ...stateSlices,
+      dockviewLayout: createDockviewLayoutFromPanes([createWorkbenchPane(tabs, "pane-1", 1)]),
+    })
+
+    expect(derivedWithBActive.workbenchPaneStateByID["pane-1"]?.sessionID).toBe(sessionB.id)
+    expect(derivedWithBActive.workbenchPanelStateByID[panelAID]?.sessionID).toBe(sessionA.id)
+    expect(derivedWithBActive.workbenchPanelStateByID[panelBID]?.sessionID).toBe(sessionB.id)
   })
 
   it("derives running sessions from sending tabs and streaming assistant turns", () => {

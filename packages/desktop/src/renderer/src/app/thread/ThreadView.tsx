@@ -61,6 +61,21 @@ import { isSideChatSession } from "../workspace"
 
 type ProposedPlanConfirmHandler = (input: { planMarkdown: string }) => void | Promise<void>
 type ProposedPlanCardStatus = "idle" | "cancelled" | "confirming" | "confirmed"
+export type ThreadTurnMotion = "history" | "new" | "live"
+
+export interface ThreadScrollAnchor {
+  turnID: string
+  offsetWithinViewport: number
+}
+
+export interface ThreadScrollSnapshot {
+  scrollTop: number
+  scrollHeight: number
+  clientHeight: number
+  pinnedToBottom: boolean
+  updatedAt: number
+  anchor?: ThreadScrollAnchor
+}
 
 interface ThreadViewProps {
   activeProjectID?: string | null
@@ -93,7 +108,11 @@ interface ThreadViewProps {
   sideChatSession?: SessionSummary | null
   sideChatSessionsByAnchorMessageID?: Record<string, SessionSummary[]>
   sideChatTurns?: Turn[]
+  scrollStateKey?: string | null
   threadColumnRef: RefObject<HTMLDivElement | null>
+  isThreadVisible?: boolean
+  readScrollSnapshot?: (key: string) => ThreadScrollSnapshot | null
+  saveScrollSnapshot?: (key: string, snapshot: ThreadScrollSnapshot) => void
   onAskUserQuestionAnswer: QuestionAnswerHandler
   onSideChatDraftStateChange?: (value: ComposerDraftState) => void
   onSideChatPickAttachments?: (input: {
@@ -188,6 +207,83 @@ function isThreadColumnPinnedToBottom(threadColumn: HTMLDivElement) {
   return threadColumn.scrollHeight - threadColumn.scrollTop - threadColumn.clientHeight <= THREAD_BOTTOM_LOCK_THRESHOLD_PX
 }
 
+function getThreadScrollMaxTop(threadColumn: HTMLDivElement) {
+  return Math.max(0, threadColumn.scrollHeight - threadColumn.clientHeight)
+}
+
+function scrollThreadColumnToBottom(threadColumn: HTMLDivElement) {
+  threadColumn.scrollTop = threadColumn.scrollHeight
+}
+
+function clampThreadScrollTop(threadColumn: HTMLDivElement, scrollTop: number) {
+  return Math.min(Math.max(0, scrollTop), getThreadScrollMaxTop(threadColumn))
+}
+
+function findThreadTurnElement(threadColumn: HTMLDivElement, turnID: string) {
+  const turns = threadColumn.querySelectorAll<HTMLElement>("[data-turn-id]")
+  for (const turn of turns) {
+    if (turn.dataset.turnId === turnID) return turn
+  }
+
+  return null
+}
+
+function readThreadScrollAnchor(threadColumn: HTMLDivElement): ThreadScrollAnchor | undefined {
+  const containerRect = threadColumn.getBoundingClientRect()
+  const turns = threadColumn.querySelectorAll<HTMLElement>("[data-turn-id]")
+
+  for (const turn of turns) {
+    const turnID = turn.dataset.turnId
+    if (!turnID) continue
+
+    const rect = turn.getBoundingClientRect()
+    if (rect.bottom < containerRect.top || rect.top > containerRect.bottom) continue
+
+    return {
+      turnID,
+      offsetWithinViewport: rect.top - containerRect.top,
+    }
+  }
+
+  return undefined
+}
+
+function readThreadScrollSnapshot(threadColumn: HTMLDivElement): ThreadScrollSnapshot {
+  const anchor = readThreadScrollAnchor(threadColumn)
+  return {
+    scrollTop: threadColumn.scrollTop,
+    scrollHeight: threadColumn.scrollHeight,
+    clientHeight: threadColumn.clientHeight,
+    pinnedToBottom: isThreadColumnPinnedToBottom(threadColumn),
+    updatedAt: Date.now(),
+    ...(anchor ? { anchor } : {}),
+  }
+}
+
+function restoreThreadScrollSnapshot(threadColumn: HTMLDivElement, snapshot: ThreadScrollSnapshot | null) {
+  if (!snapshot) {
+    scrollThreadColumnToBottom(threadColumn)
+    return true
+  }
+
+  if (snapshot.pinnedToBottom) {
+    scrollThreadColumnToBottom(threadColumn)
+    return true
+  }
+
+  const anchorElement = snapshot.anchor ? findThreadTurnElement(threadColumn, snapshot.anchor.turnID) : null
+  if (anchorElement && snapshot.anchor) {
+    const containerRect = threadColumn.getBoundingClientRect()
+    const anchorRect = anchorElement.getBoundingClientRect()
+    const nextScrollTop = threadColumn.scrollTop + anchorRect.top - containerRect.top - snapshot.anchor.offsetWithinViewport
+    threadColumn.scrollTop = clampThreadScrollTop(threadColumn, nextScrollTop)
+    return isThreadColumnPinnedToBottom(threadColumn)
+  }
+
+  threadColumn.scrollTop = clampThreadScrollTop(threadColumn, snapshot.scrollTop)
+  return isThreadColumnPinnedToBottom(threadColumn)
+}
+
 function getUserTurnBodyText(turn: UserTurn) {
   const displayText = turn.displayText?.trim() || ""
   const references = turn.references ?? []
@@ -248,19 +344,21 @@ function UserTurnArticle({
   className,
   copied,
   diffCard,
+  motion,
   onCopy,
   turn,
 }: {
   className?: string
   copied: boolean
   diffCard?: ReactNode
+  motion: ThreadTurnMotion
   onCopy: (turnID: string, text: string) => void | Promise<void>
   turn: UserTurn
 }) {
   const userCopyText = getUserTurnBodyText(turn).trim()
 
   return (
-    <article className={joinClassNames("turn user-turn", className)}>
+    <article className={joinClassNames("turn user-turn", className)} data-turn-id={turn.id} data-turn-motion={motion}>
       <div className="turn-meta">
         <span>You</span>
         <time>{formatTime(turn.timestamp)}</time>
@@ -1019,6 +1117,7 @@ function AssistantTurnSectionsWithStreamInsertions({
   isQuestionAnswerDisabled = false,
   isLatestMessage,
   items,
+  getTurnMotion,
   onCopyUserMessage,
   onOpenImagePreview,
   onAskUserQuestionAnswer,
@@ -1036,6 +1135,7 @@ function AssistantTurnSectionsWithStreamInsertions({
   isQuestionAnswerDisabled?: boolean
   isLatestMessage: boolean
   items: AssistantTraceItem[]
+  getTurnMotion: (turnID: string, isLive?: boolean) => ThreadTurnMotion
   onCopyUserMessage: (turnID: string, text: string) => void | Promise<void>
   onOpenImagePreview?: (payload: ImagePreviewPayload) => void
   onAskUserQuestionAnswer?: QuestionAnswerHandler
@@ -1100,6 +1200,7 @@ function AssistantTurnSectionsWithStreamInsertions({
         key={turn.id}
         className="assistant-stream-insertion-user-turn"
         copied={copiedUserTurnID === turn.id}
+        motion={getTurnMotion(turn.id)}
         onCopy={onCopyUserMessage}
         turn={turn}
       />,
@@ -1461,6 +1562,9 @@ interface InlineSideChatThreadProps {
   session: SessionSummary
   sideChatSessions: SessionSummary[]
   turns: Turn[]
+  isThreadVisible?: boolean
+  readScrollSnapshot?: (key: string) => ThreadScrollSnapshot | null
+  saveScrollSnapshot?: (key: string, snapshot: ThreadScrollSnapshot) => void
   onDraftStateChange: (value: ComposerDraftState) => void
   onHide: () => void
   onAskUserQuestionAnswer: QuestionAnswerHandler
@@ -1515,6 +1619,9 @@ function InlineSideChatThread({
   session,
   sideChatSessions,
   turns,
+  isThreadVisible = true,
+  readScrollSnapshot,
+  saveScrollSnapshot,
   onDraftStateChange,
   onHide,
   onAskUserQuestionAnswer,
@@ -1762,7 +1869,11 @@ function InlineSideChatThread({
             permissionRequestActionRequestID={permissionRequestActionRequestID}
             showSessionBanner={false}
             sideChatCountsByAnchorMessageID={{}}
+            scrollStateKey={`side-chat:${session.origin?.parentSessionID ?? "unknown"}:${session.id}`}
             threadColumnRef={threadColumnRef}
+            isThreadVisible={isThreadVisible}
+            readScrollSnapshot={readScrollSnapshot}
+            saveScrollSnapshot={saveScrollSnapshot}
             onAskUserQuestionAnswer={(answer) =>
               onAskUserQuestionAnswer({
                 ...answer,
@@ -3082,6 +3193,7 @@ interface PermissionRequestInlinePromptProps {
   pendingPermissionRequests: PermissionRequest[]
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
+  motion: ThreadTurnMotion
   onPermissionRequestResponse: PermissionRequestResponseHandler
 }
 
@@ -3091,6 +3203,7 @@ function PermissionRequestInlinePrompt({
   pendingPermissionRequests,
   permissionRequestActionError,
   permissionRequestActionRequestID,
+  motion,
   onPermissionRequestResponse,
 }: PermissionRequestInlinePromptProps) {
   if (!activeSession || isResolvingPermissionRequest || pendingPermissionRequests.length === 0) return null
@@ -3099,7 +3212,11 @@ function PermissionRequestInlinePrompt({
   const remainingCount = pendingPermissionRequests.length - 1
 
   return (
-    <article className="turn assistant-turn permission-request-turn">
+    <article
+      className="turn assistant-turn permission-request-turn"
+      data-turn-id={`permission-request:${request.id}`}
+      data-turn-motion={motion}
+    >
       <section className="permission-request-inline" role="region" aria-labelledby="permission-request-title">
         <header className="permission-request-inline-header">
           <div>
@@ -3177,7 +3294,11 @@ export function ThreadView({
   sideChatSession = null,
   sideChatSessionsByAnchorMessageID = {},
   sideChatTurns = [],
+  scrollStateKey,
   threadColumnRef,
+  isThreadVisible = true,
+  readScrollSnapshot,
+  saveScrollSnapshot,
   onSideChatDraftStateChange,
   onSideChatPickAttachments,
   onSideChatPasteImageAttachments,
@@ -3199,6 +3320,9 @@ export function ThreadView({
   const copiedResponseTimeoutRef = useRef<number | null>(null)
   const copiedUserTimeoutRef = useRef<number | null>(null)
   const isPinnedToBottomRef = useRef(true)
+  const scrollSaveFrameRef = useRef<number | null>(null)
+  const currentScrollStateKeyRef = useRef<string | null>(null)
+  const renderedTurnIDsByScrollKeyRef = useRef<Record<string, Set<string>>>({})
   const lastInlineLinkActivationRef = useRef<{
     href: string
     time: number
@@ -3206,6 +3330,39 @@ export function ThreadView({
     y: number
   } | null>(null)
   const activeSessionID = activeSession?.id ?? null
+  const effectiveScrollStateKey = scrollStateKey ?? activeSessionID ?? "thread:no-session"
+  const visibleTurnIDs = useMemo(() => {
+    const ids = activeTurns.map((turn) => turn.id)
+    const pendingRequestID = pendingPermissionRequests[0]?.id
+    return pendingRequestID ? [...ids, `permission-request:${pendingRequestID}`] : ids
+  }, [activeTurns, pendingPermissionRequests])
+  const visibleTurnIDsKey = visibleTurnIDs.join("\u0000")
+
+  function persistThreadScrollSnapshot(key = effectiveScrollStateKey) {
+    if (!saveScrollSnapshot || !key) return
+
+    const threadColumn = threadColumnRef.current
+    if (!threadColumn) return
+
+    saveScrollSnapshot(key, readThreadScrollSnapshot(threadColumn))
+  }
+
+  function scheduleThreadScrollSnapshotSave(key = effectiveScrollStateKey) {
+    if (scrollSaveFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollSaveFrameRef.current)
+    }
+
+    scrollSaveFrameRef.current = window.requestAnimationFrame(() => {
+      scrollSaveFrameRef.current = null
+      persistThreadScrollSnapshot(key)
+    })
+  }
+
+  function readThreadTurnMotion(turnID: string, isLive = false): ThreadTurnMotion {
+    const renderedTurnIDs = renderedTurnIDsByScrollKeyRef.current[effectiveScrollStateKey]
+    if (!renderedTurnIDs || renderedTurnIDs.has(turnID) || !isThreadVisible) return "history"
+    return isLive ? "live" : "new"
+  }
 
   useEffect(() => {
     return () => {
@@ -3214,6 +3371,9 @@ export function ThreadView({
       }
       if (copiedUserTimeoutRef.current !== null) {
         window.clearTimeout(copiedUserTimeoutRef.current)
+      }
+      if (scrollSaveFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollSaveFrameRef.current)
       }
     }
   }, [])
@@ -3336,31 +3496,55 @@ export function ThreadView({
   }, [onLocalFileLinkOpen, threadColumnRef])
 
   useLayoutEffect(() => {
-    isPinnedToBottomRef.current = true
-
     const threadColumn = threadColumnRef.current
     if (!threadColumn) return
 
-    threadColumn.scrollTop = threadColumn.scrollHeight
-  }, [activeSessionID, threadColumnRef])
+    const previousScrollStateKey = currentScrollStateKeyRef.current
+    if (previousScrollStateKey && previousScrollStateKey !== effectiveScrollStateKey) {
+      persistThreadScrollSnapshot(previousScrollStateKey)
+    }
+
+    currentScrollStateKeyRef.current = effectiveScrollStateKey
+    const restoredPinnedToBottom = restoreThreadScrollSnapshot(
+      threadColumn,
+      readScrollSnapshot?.(effectiveScrollStateKey) ?? null,
+    )
+    isPinnedToBottomRef.current = restoredPinnedToBottom
+
+    persistThreadScrollSnapshot(effectiveScrollStateKey)
+  }, [effectiveScrollStateKey, readScrollSnapshot, threadColumnRef])
 
   useLayoutEffect(() => {
     const threadColumn = threadColumnRef.current
     if (!threadColumn || !isPinnedToBottomRef.current) return
 
-    threadColumn.scrollTop = threadColumn.scrollHeight
-  }, [activeTurns, pendingPermissionRequests.length, permissionRequestActionRequestID, threadColumnRef])
+    scrollThreadColumnToBottom(threadColumn)
+    persistThreadScrollSnapshot(effectiveScrollStateKey)
+  }, [activeTurns, effectiveScrollStateKey, pendingPermissionRequests.length, permissionRequestActionRequestID, threadColumnRef])
+
+  useLayoutEffect(() => {
+    const renderedTurnIDs = renderedTurnIDsByScrollKeyRef.current[effectiveScrollStateKey] ?? new Set<string>()
+    for (const turnID of visibleTurnIDs) {
+      renderedTurnIDs.add(turnID)
+    }
+    renderedTurnIDsByScrollKeyRef.current[effectiveScrollStateKey] = renderedTurnIDs
+  }, [effectiveScrollStateKey, visibleTurnIDsKey])
 
   function handleThreadScroll() {
     const threadColumn = threadColumnRef.current
     if (!threadColumn) return
 
     isPinnedToBottomRef.current = isThreadColumnPinnedToBottom(threadColumn)
+    scheduleThreadScrollSnapshotSave()
   }
 
   return (
     <section className="thread-shell">
-      <div ref={threadColumnRef} className="thread-column" onScroll={handleThreadScroll}>
+      <div
+        ref={threadColumnRef}
+        className="thread-column"
+        onScroll={handleThreadScroll}
+      >
         {!activeSession ? (
           <article className="turn assistant-turn">
             <div className="assistant-shell">
@@ -3407,6 +3591,7 @@ export function ThreadView({
                   <UserTurnArticle
                     key={turn.id}
                     copied={copiedUserTurnID === turn.id}
+                    motion={readThreadTurnMotion(turn.id)}
                     onCopy={handleCopyUserMessage}
                     turn={turn}
                     diffCard={
@@ -3452,7 +3637,12 @@ export function ThreadView({
               const isLatestAssistantMessage = isAssistantLatestRenderableTurn(activeTurns, turnIndex, turn)
 
               return (
-                <article key={turn.id} className="turn assistant-turn">
+                <article
+                  key={turn.id}
+                  className="turn assistant-turn"
+                  data-turn-id={turn.id}
+                  data-turn-motion={readThreadTurnMotion(turn.id, turn.isStreaming)}
+                >
                   <div className={turn.isStreaming ? "assistant-shell is-sectioned is-streaming" : "assistant-shell is-sectioned"}>
                     {ephemeralHint ? (
                       <>
@@ -3462,6 +3652,7 @@ export function ThreadView({
                             key={insertedTurn.id}
                             className="assistant-stream-insertion-user-turn"
                             copied={copiedUserTurnID === insertedTurn.id}
+                            motion={readThreadTurnMotion(insertedTurn.id)}
                             onCopy={handleCopyUserMessage}
                             turn={insertedTurn}
                           />
@@ -3476,6 +3667,7 @@ export function ThreadView({
                         insertedUserTurns={insertedUserTurns}
                         isLatestMessage={isLatestAssistantMessage}
                         items={traceItems}
+                        getTurnMotion={readThreadTurnMotion}
                         onCopyUserMessage={handleCopyUserMessage}
                         onOpenImagePreview={handleOpenImagePreview}
                         onAskUserQuestionAnswer={onAskUserQuestionAnswer}
@@ -3539,6 +3731,9 @@ export function ThreadView({
                             session={activeInlineSideChat}
                             sideChatSessions={sideChatSessionsByAnchorMessageID[sideChatAnchorMessageID] ?? [activeInlineSideChat]}
                             turns={sideChatTurns}
+                            isThreadVisible={isThreadVisible}
+                            readScrollSnapshot={readScrollSnapshot}
+                            saveScrollSnapshot={saveScrollSnapshot}
                             onDraftStateChange={onSideChatDraftStateChange}
                             onHide={() => void onOpenSideChat?.(sideChatAnchorMessageID)}
                             onAskUserQuestionAnswer={onAskUserQuestionAnswer}
@@ -3612,6 +3807,9 @@ export function ThreadView({
               pendingPermissionRequests={pendingPermissionRequests}
               permissionRequestActionError={permissionRequestActionError}
               permissionRequestActionRequestID={permissionRequestActionRequestID}
+              motion={readThreadTurnMotion(
+                pendingPermissionRequests[0]?.id ? `permission-request:${pendingPermissionRequests[0].id}` : "permission-request",
+              )}
               onPermissionRequestResponse={onPermissionRequestResponse}
             />
           </>

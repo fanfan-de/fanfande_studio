@@ -56,6 +56,11 @@ import {
   resolveWorkspaceIDForDockviewReference,
 } from "./dockview-workspace"
 import {
+  clearSessionDataLoadCacheForSession,
+  type SessionDataLoadCache,
+  type SessionDataLoadOptions,
+} from "./session-data-load-cache"
+import {
   ensureExpandedFolderID,
   removeExpandedFolderID,
   type WorkspaceStateUpdater,
@@ -127,14 +132,15 @@ interface UseSessionLifecycleControllerOptions {
   isCreatingProject: boolean
   isCreatingSessionByTabKey: Record<string, boolean>
   lastFocusedSessionIDRef: MutableRefObject<string | null>
-  loadPendingPermissionRequestsForSession: (sessionID: string, backendSessionID?: string) => Promise<void>
+  ensurePendingPermissionRequestsLoaded: (sessionID: string, backendSessionID?: string, options?: SessionDataLoadOptions) => Promise<void>
+  ensureSessionHistoryLoaded: (sessionID: string, backendSessionID?: string, options?: SessionDataLoadOptions) => Promise<void>
   openCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string, workspaceScope?: WorkspaceGroup[]) => void
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
   permissionRequestsRequestRef: MutableRefObject<Record<string, number>>
   preserveLocalWorkspaceStateOnInitialLoadRef: MutableRefObject<boolean>
-  reloadSessionHistoryForSession: (sessionID: string, backendSessionID?: string) => Promise<void>
   runtimeDebugRequestRef: MutableRefObject<Record<string, number>>
   sessionDiffRequestRef: MutableRefObject<Record<string, number>>
+  sessionDataLoadCacheRef: MutableRefObject<SessionDataLoadCache>
   sessionEventRouterRef: MutableRefObject<{
     cleanupUISession(sessionID: string): void
   }>
@@ -165,6 +171,7 @@ interface UseSessionLifecycleControllerOptions {
   clearRuntimeDebugRefreshTimer: (sessionID: string) => void
   clearSessionDiffRefreshTimer: (sessionID: string) => void
   handleCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
+  historyRequestRef: MutableRefObject<Record<string, number>>
   selectedFolderID: string | null
   selectedWorkspace: WorkspaceGroup | null
   skipNextHistoryLoadRef: MutableRefObject<Record<string, boolean>>
@@ -192,19 +199,21 @@ export function useSessionLifecycleController({
   focusedPane,
   focusedPaneID,
   handleCreateSessionWorkspaceChange,
+  historyRequestRef,
   initialFolderWorkspacesLoadedRef,
   isCreateSessionTabActive,
   isCreatingProject,
   isCreatingSessionByTabKey,
   lastFocusedSessionIDRef,
-  loadPendingPermissionRequestsForSession,
+  ensurePendingPermissionRequestsLoaded,
+  ensureSessionHistoryLoaded,
   openCreateSessionTab,
   pendingStreamsRef,
   permissionRequestsRequestRef,
   preserveLocalWorkspaceStateOnInitialLoadRef,
-  reloadSessionHistoryForSession,
   runtimeDebugRequestRef,
   sessionDiffRequestRef,
+  sessionDataLoadCacheRef,
   sessionEventRouterRef,
   setActiveSideChatSessionIDByParentSessionID,
   setAgentSessions,
@@ -350,8 +359,10 @@ export function useSessionLifecycleController({
 
     for (const sessionID of sessionIDs) {
       delete conversationVersionRef.current[sessionID]
+      delete historyRequestRef.current[sessionID]
       delete permissionRequestsRequestRef.current[sessionID]
       delete sessionDiffRequestRef.current[sessionID]
+      clearSessionDataLoadCacheForSession(sessionDataLoadCacheRef.current, sessionID)
       clearSessionDiffRefreshTimer(sessionID)
       delete runtimeDebugRequestRef.current[sessionID]
       clearRuntimeDebugRefreshTimer(sessionID)
@@ -685,8 +696,8 @@ export function useSessionLifecycleController({
     }))
 
     await Promise.allSettled([
-      reloadSessionHistoryForSession(sessionID),
-      loadPendingPermissionRequestsForSession(sessionID),
+      ensureSessionHistoryLoaded(sessionID, undefined, { mode: "silent", reason: "side-chat" }),
+      ensurePendingPermissionRequestsLoaded(sessionID, undefined, { mode: "silent", reason: "side-chat" }),
     ])
   }
 
@@ -744,8 +755,8 @@ export function useSessionLifecycleController({
         }))
 
         await Promise.allSettled([
-          reloadSessionHistoryForSession(nextActiveSideChat.id),
-          loadPendingPermissionRequestsForSession(nextActiveSideChat.id),
+          ensureSessionHistoryLoaded(nextActiveSideChat.id, undefined, { mode: "silent", reason: "side-chat" }),
+          ensurePendingPermissionRequestsLoaded(nextActiveSideChat.id, undefined, { mode: "silent", reason: "side-chat" }),
         ])
       }
     } catch (error) {

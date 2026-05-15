@@ -1,8 +1,20 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react"
 import {
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
+  type IDockviewPanel,
   type IDockviewHeaderActionsProps,
   type IDockviewPanelHeaderProps,
   type IDockviewPanelProps,
@@ -11,7 +23,9 @@ import {
 import { CloseIcon, PlusIcon } from "../icons"
 import { joinClassNames, SidebarToggleButton, SideChatBadge } from "../shared-ui"
 import type { MarkdownLocalFileLinkTarget } from "../thread-markdown"
+import type { ThreadScrollSnapshot } from "../thread/ThreadView"
 import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, SessionDiffSummary, ToolPermissionMode } from "../types"
+import { createID } from "../utils"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import {
   getActiveDockviewPanelID,
@@ -30,8 +44,20 @@ import {
 import { WorkbenchPaneSurface } from "./WorkbenchPaneSurface"
 
 type AgentWorkspaceState = ReturnType<typeof useAgentWorkspace>
+type WorkbenchPanelStateByID = AgentWorkspaceState["workbenchPanelStateByID"]
 type WorkbenchPaneStateByID = AgentWorkspaceState["workbenchPaneStateByID"]
 type WorkbenchPaneTab = AgentWorkspaceState["workbenchPaneStates"][number]["tabs"][number]
+type DetachedSessionPanelBounds = { x: number; y: number; width: number; height: number }
+type WorkbenchDropPlacement = "within" | "left" | "right" | "top" | "bottom"
+type WorkbenchPanelDragPayload = {
+  dragID: string
+  panelID: string
+  sourceSurfaceID: string
+}
+
+const MIN_POPOUT_WIDTH = 720
+const MIN_POPOUT_HEIGHT = 520
+const WORKBENCH_PANEL_DRAG_MIME = "application/x-fanfande-workbench-panel"
 
 function buildPanelTitleMap(paneStateByID: WorkbenchPaneStateByID) {
   const titles: Record<string, string | undefined> = {}
@@ -56,6 +82,31 @@ export function findPaneStateForDockviewPanel(
   ) ?? null
 }
 
+export function resolvePanelStateForDockviewPanel(
+  panelStateByID: WorkbenchPanelStateByID,
+  paneStateByID: WorkbenchPaneStateByID,
+  groupID: string,
+  panelID?: string,
+  reference?: WorkbenchDockPanelReference | null,
+) {
+  const resolvedPanelID = reference ? getWorkbenchDockPanelId(reference) : panelID
+  if (!resolvedPanelID) return null
+
+  const panelState = panelStateByID[resolvedPanelID]
+  if (!panelState) return null
+
+  const isFocused = Boolean(paneStateByID[groupID]?.isFocused)
+  if (panelState.id === groupID && panelState.isFocused === isFocused) {
+    return panelState
+  }
+
+  return {
+    ...panelState,
+    id: groupID,
+    isFocused,
+  }
+}
+
 function clearDockviewLayout(dockviewApi: DockviewApi) {
   try {
     dockviewApi.clear()
@@ -68,6 +119,87 @@ function publishTestDockviewApi(dockviewApi: DockviewApi | null) {
   if (import.meta.env.MODE !== "test") return
   const testWindow = window as Window & { __fanfandeWorkbenchDockviewApi?: DockviewApi | null }
   testWindow.__fanfandeWorkbenchDockviewApi = dockviewApi
+}
+
+function isPointOutsideElement(element: HTMLElement, clientX: number, clientY: number) {
+  const rect = element.getBoundingClientRect()
+  return clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom
+}
+
+function readWorkbenchPanelDrag(event: DragEvent): WorkbenchPanelDragPayload | null {
+  const rawValue = event.dataTransfer?.getData(WORKBENCH_PANEL_DRAG_MIME)
+  if (!rawValue) return null
+
+  try {
+    const parsed = JSON.parse(rawValue) as {
+      dragID?: string
+      panelID?: string
+      sourceSurfaceID?: string
+    }
+    return parsed.dragID && parsed.panelID && parsed.sourceSurfaceID
+      ? {
+          dragID: parsed.dragID,
+          panelID: parsed.panelID,
+          sourceSurfaceID: parsed.sourceSurfaceID,
+        }
+      : null
+  } catch {
+    return null
+  }
+}
+
+function hasWorkbenchPanelDragType(event: DragEvent) {
+  const types = Array.from(event.dataTransfer?.types ?? [])
+  return types.includes(WORKBENCH_PANEL_DRAG_MIME) || types.includes("text/plain")
+}
+
+function getDropPlacement(rect: DOMRect, clientX: number, clientY: number): WorkbenchDropPlacement {
+  const leftRatio = (clientX - rect.left) / Math.max(rect.width, 1)
+  const topRatio = (clientY - rect.top) / Math.max(rect.height, 1)
+  const rightRatio = 1 - leftRatio
+  const bottomRatio = 1 - topRatio
+  const edgeThreshold = 0.22
+  const nearestEdge = Math.min(leftRatio, rightRatio, topRatio, bottomRatio)
+  if (nearestEdge > edgeThreshold) return "within"
+  if (nearestEdge === leftRatio) return "left"
+  if (nearestEdge === rightRatio) return "right"
+  if (nearestEdge === topRatio) return "top"
+  return "bottom"
+}
+
+function getDropTarget(input: {
+  clientX: number
+  clientY: number
+  root: HTMLElement
+}) {
+  const paneElement = document.elementFromPoint(input.clientX, input.clientY)?.closest<HTMLElement>("[data-pane-id]")
+  if (paneElement && input.root.contains(paneElement)) {
+    return {
+      placement: getDropPlacement(paneElement.getBoundingClientRect(), input.clientX, input.clientY),
+      targetGroupID: paneElement.dataset.paneId ?? null,
+    }
+  }
+
+  return {
+    placement: "within" as const,
+    targetGroupID: null,
+  }
+}
+
+function getDetachedSessionPanelBounds(panel: IDockviewPanel, event?: DragEvent): DetachedSessionPanelBounds {
+  const rect = panel.group.element.getBoundingClientRect()
+  const width = Math.max(Math.round(rect.width), MIN_POPOUT_WIDTH)
+  const height = Math.max(Math.round(rect.height), MIN_POPOUT_HEIGHT)
+  const hasScreenPoint = event && Number.isFinite(event.screenX) && Number.isFinite(event.screenY)
+  const x = hasScreenPoint ? Math.round(event.screenX - width / 2) : Math.round(window.screenX + rect.left)
+  const y = hasScreenPoint ? Math.round(event.screenY - 24) : Math.round(window.screenY + rect.top)
+
+  return {
+    height,
+    x,
+    y,
+    width,
+  }
 }
 
 export interface WorkbenchShellProps {
@@ -83,17 +215,29 @@ export interface WorkbenchShellProps {
   lastPaneID: string | null
   dockviewLayout: SerializedDockview | null
   windowControls?: ReactNode
+  surfaceID: string
+  panelStateByID: WorkbenchPanelStateByID
   paneStateByID: WorkbenchPaneStateByID
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
   toolPermissionMode: ToolPermissionMode
   toolPermissionModeError: string | null
   workspaces: AgentWorkspaceState["workspaces"]
-  onCloseCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
+  readThreadScrollSnapshot: (key: string) => ThreadScrollSnapshot | null
+  saveThreadScrollSnapshot: (key: string, snapshot: ThreadScrollSnapshot) => void
+  onCloseCreateSessionTab: (createSessionTabID: string, paneID?: string, options?: { force?: boolean }) => void
   onCloseSessionTab: (sessionID: string, paneID?: string) => void
   onCreateSessionSubmit: (createSessionTabID?: string | null, paneID?: string) => Promise<void>
   onCreateSessionWorkspaceChange: (workspaceID: string, createSessionTabID?: string | null) => void
   onActiveDockviewChange: (input: WorkbenchDockviewActiveChange) => void
+  onDetachSessionPanel?: (input: {
+    bounds: DetachedSessionPanelBounds
+    groupID: string
+    panelID: string
+    reference: Extract<WorkbenchDockPanelReference, { kind: "session" }>
+    title: string
+  }) => boolean | Promise<boolean>
+  onDockBack?: (panelID?: string) => void
   onFocusPane: (paneID: string) => void
   onInspectFileInSidebar: (file: string | null, sessionID: string | null, paneID: string) => void
   onCommandsReady: (commands: WorkbenchDockviewCommands | null) => void
@@ -104,6 +248,13 @@ export interface WorkbenchShellProps {
     target: MarkdownLocalFileLinkTarget
     workspaceDirectory: string | null
   }) => void
+  onMoveSessionPanel?: (input: {
+    panelID: string
+    placement: WorkbenchDropPlacement
+    sourceSurfaceID: string
+    targetGroupID?: string | null
+    targetSurfaceID: string
+  }) => boolean | Promise<boolean>
   onCreateSideChatTab: AgentWorkspaceState["handleCreateSideChatTab"]
   onDeleteSideChatTab: AgentWorkspaceState["handleDeleteSideChatTab"]
   onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
@@ -128,6 +279,7 @@ export interface WorkbenchShellProps {
   onTurnDiffRestore: (diffs: SessionDiffFile[], sessionID: string | null, paneID: string) => void | Promise<void>
   onTurnDiffReview: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>
   onTurnDiffSummaryHydrate: (turnID: string, diffSummary: SessionDiffSummary, sessionID?: string | null) => void | Promise<void>
+  isDetachedWindow?: boolean
 }
 
 const WorkbenchShellContext = createContext<WorkbenchShellProps | null>(null)
@@ -142,13 +294,16 @@ function useWorkbenchShellContext() {
 
 export function WorkbenchShell(props: WorkbenchShellProps) {
   const [api, setApi] = useState<DockviewApi | null>(null)
+  const workbenchElementRef = useRef<HTMLDivElement | null>(null)
   const latestPropsRef = useRef(props)
+  const latestDragPayloadRef = useRef<WorkbenchPanelDragPayload | null>(null)
   const isApplyingLayoutRef = useRef(false)
+  const pendingDetachOperationCountRef = useRef(0)
   const lastAppliedSerializedSignatureRef = useRef<string | null>(null)
   const lastEmittedSerializedSignatureRef = useRef(getSerializedDockviewSignature(props.dockviewLayout))
   const lastEmittedActiveSignatureRef = useRef<string | null>(null)
   const panelTitles = useMemo(() => buildPanelTitleMap(props.paneStateByID), [props.paneStateByID])
-  const hasMultiplePanes = getDockviewGroupsInOrder(props.dockviewLayout).length > 1
+  const hasMultiplePanes = getDockviewGroupsInOrder(props.dockviewLayout).filter((group) => group.location === "grid").length > 1
   latestPropsRef.current = props
 
   const emitActiveDockviewChange = useCallback((layout: SerializedDockview | null) => {
@@ -210,8 +365,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     }
   }, [])
 
-  const emitDockviewSnapshot = useCallback((dockviewApi: DockviewApi) => {
-    if (isApplyingLayoutRef.current) return readDockviewSnapshot(dockviewApi)
+  const emitDockviewSnapshot = useCallback((dockviewApi: DockviewApi, options?: { force?: boolean }) => {
+    if (!options?.force && isApplyingLayoutRef.current) return readDockviewSnapshot(dockviewApi)
+    if (!options?.force && pendingDetachOperationCountRef.current > 0) return readDockviewSnapshot(dockviewApi)
 
     const serialized = readDockviewSnapshot(dockviewApi)
     const serializedSignature = getSerializedDockviewSignature(serialized)
@@ -223,6 +379,41 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     emitActiveDockviewChange(serialized)
     return serialized
   }, [emitActiveDockviewChange, readDockviewSnapshot])
+
+  const detachSessionPanel = useCallback(async (dockviewApi: DockviewApi, panel: IDockviewPanel, event?: DragEvent) => {
+    const reference = getWorkbenchDockPanelReference(panel.id)
+    if (reference?.kind !== "session") return false
+
+    const pane = findPaneStateForDockviewPanel(latestPropsRef.current.paneStateByID, panel.group.id, panel.id)
+    const title = pane?.tabs.find((tab) => tab.key === panel.id)?.title ?? panel.title ?? "Session"
+    const detach = latestPropsRef.current.onDetachSessionPanel
+    if (!detach) return false
+
+    let didCloseDetachedPanel = false
+    pendingDetachOperationCountRef.current += 1
+    try {
+      const didDetach = await detach({
+        bounds: getDetachedSessionPanelBounds(panel, event),
+        groupID: panel.group.id,
+        panelID: panel.id,
+        reference,
+        title,
+      })
+      if (!didDetach) return false
+
+      panel.api.close()
+      didCloseDetachedPanel = true
+      return true
+    } catch (error) {
+      console.warn("[desktop] Failed to detach session panel.", error)
+      return false
+    } finally {
+      pendingDetachOperationCountRef.current = Math.max(0, pendingDetachOperationCountRef.current - 1)
+      if (didCloseDetachedPanel) {
+        emitDockviewSnapshot(dockviewApi, { force: true })
+      }
+    }
+  }, [emitDockviewSnapshot])
 
   const handleReady = useCallback((event: DockviewReadyEvent) => {
     setApi(event.api)
@@ -265,6 +456,57 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       }
     }
   }, [api, emitDockviewSnapshot])
+
+  useEffect(() => {
+    if (!api) return
+
+    const disposable = api.onWillDragPanel((event) => {
+      const dragWindow = event.nativeEvent.view
+      if (dragWindow && dragWindow !== window) return
+
+      const panel = event.panel
+      const reference = getWorkbenchDockPanelReference(panel.id)
+      const dragID = createID("workbench-panel-drag")
+      if (reference?.kind === "session") {
+        const payload = {
+          dragID,
+          panelID: panel.id,
+          sourceSurfaceID: latestPropsRef.current.surfaceID,
+        }
+        latestDragPayloadRef.current = payload
+        try {
+          event.nativeEvent.dataTransfer?.setData(WORKBENCH_PANEL_DRAG_MIME, JSON.stringify(payload))
+          event.nativeEvent.dataTransfer?.setData("text/plain", panel.title ?? "Session")
+        } catch {
+          // Drag metadata is best-effort; the IPC drag token is the fallback for Electron windows.
+        }
+        void window.desktop?.beginWorkbenchPanelDrag?.(payload)
+      }
+      const handleDragEnd = (dragEndEvent: DragEvent) => {
+        window.setTimeout(() => {
+          void window.desktop?.endWorkbenchPanelDrag?.({ dragID })
+          if (latestDragPayloadRef.current?.dragID === dragID) {
+            latestDragPayloadRef.current = null
+          }
+        }, 500)
+        const root = workbenchElementRef.current
+        if (!root || panel.api.location.type !== "grid") return
+        const isOutsideViewport =
+          dragEndEvent.clientX <= 0 ||
+          dragEndEvent.clientY <= 0 ||
+          dragEndEvent.clientX >= window.innerWidth ||
+          dragEndEvent.clientY >= window.innerHeight
+        if (!isOutsideViewport && !isPointOutsideElement(root, dragEndEvent.clientX, dragEndEvent.clientY)) return
+        if (latestPropsRef.current.isDetachedWindow && api.totalPanels <= 1) return
+
+        void detachSessionPanel(api, panel, dragEndEvent)
+      }
+
+      window.addEventListener("dragend", handleDragEnd, { capture: true, once: true })
+    })
+
+    return () => disposable.dispose()
+  }, [api, detachSessionPanel])
 
   useEffect(() => {
     if (!api) {
@@ -339,10 +581,18 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       emitSnapshot()
       return true
     }
+    const popoutPanel: WorkbenchDockviewCommands["popoutPanel"] = (reference) => {
+      const id = getWorkbenchDockPanelId(reference)
+      const panel = api.getPanel(id)
+      if (!panel) return false
+      void detachSessionPanel(api, panel)
+      return true
+    }
     const commands: WorkbenchDockviewCommands = {
       openPanel,
       focusPanel,
       closePanel,
+      popoutPanel,
       replacePanel: (currentReference, nextReference, options) => {
         const currentID = getWorkbenchDockPanelId(currentReference)
         const nextID = getWorkbenchDockPanelId(nextReference)
@@ -394,12 +644,57 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
     latestPropsRef.current.onCommandsReady(commands)
     return () => latestPropsRef.current.onCommandsReady(null)
-  }, [api, emitDockviewSnapshot, readDockviewSnapshot])
+  }, [api, detachSessionPanel, emitDockviewSnapshot, readDockviewSnapshot])
+
+  const handleWorkbenchDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
+    const dragPayload = readWorkbenchPanelDrag(event.nativeEvent)
+    if (dragPayload?.sourceSurfaceID === latestPropsRef.current.surfaceID) return
+    if (!dragPayload && !hasWorkbenchPanelDragType(event.nativeEvent)) return
+    if (!latestPropsRef.current.onMoveSessionPanel) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "move"
+  }, [])
+
+  const handleWorkbenchDrop = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
+    const dragPayload = readWorkbenchPanelDrag(event.nativeEvent) ?? latestDragPayloadRef.current
+    if (dragPayload?.sourceSurfaceID === latestPropsRef.current.surfaceID) return
+    if (!dragPayload && !hasWorkbenchPanelDragType(event.nativeEvent)) return
+    const movePanel = latestPropsRef.current.onMoveSessionPanel
+    const root = workbenchElementRef.current
+    if (!movePanel || !root) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    const target = getDropTarget({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      root,
+    })
+    void (async () => {
+      const resolvedPayload = dragPayload ?? await window.desktop?.getWorkbenchPanelDrag?.({ dragID: undefined })
+      if (!resolvedPayload || resolvedPayload.sourceSurfaceID === latestPropsRef.current.surfaceID) return
+      await movePanel({
+        panelID: resolvedPayload.panelID,
+        placement: target.placement,
+        sourceSurfaceID: resolvedPayload.sourceSurfaceID,
+        targetGroupID: target.targetGroupID,
+        targetSurfaceID: latestPropsRef.current.surfaceID,
+      })
+      await window.desktop?.endWorkbenchPanelDrag?.({ dragID: resolvedPayload.dragID })
+    })()
+  }, [])
 
   const PanelComponent = useCallback((panelProps: IDockviewPanelProps<WorkbenchDockPanelReference>) => {
     const props = useWorkbenchShellContext()
     const groupID = panelProps.api.group.id
-    const pane = findPaneStateForDockviewPanel(props.paneStateByID, groupID, panelProps.api.id)
+    const reference = panelProps.params ?? getWorkbenchDockPanelReference(panelProps.api.id)
+    const pane = resolvePanelStateForDockviewPanel(
+      props.panelStateByID,
+      props.paneStateByID,
+      groupID,
+      panelProps.api.id,
+      reference,
+    )
     if (!pane) {
       return (
         <div
@@ -424,6 +719,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         toolPermissionMode={props.toolPermissionMode}
         toolPermissionModeError={props.toolPermissionModeError}
         workspaces={props.workspaces}
+        readThreadScrollSnapshot={props.readThreadScrollSnapshot}
+        saveThreadScrollSnapshot={props.saveThreadScrollSnapshot}
         onCreateSessionSubmit={props.onCreateSessionSubmit}
         onCreateSessionWorkspaceChange={props.onCreateSessionWorkspaceChange}
         onInspectFileInSidebar={props.onInspectFileInSidebar}
@@ -487,6 +784,11 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     )
 
     const closePanel = () => {
+      if (props.isDetachedWindow) {
+        props.onDockBack?.(tabProps.api.id)
+        return
+      }
+
       const paneID = pane?.id ?? tabProps.api.group.id
       if (reference?.kind === "session") {
         props.onCloseSessionTab(reference.sessionID, paneID)
@@ -500,9 +802,13 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     const selectPanel = () => {
       tabProps.api.setActive()
     }
+    const preserveInactiveSessionDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || isActive || reference?.kind !== "session" || props.isDetachedWindow) return
+      event.stopPropagation()
+    }
 
     return (
-      <div className={tabClassName}>
+      <div className={tabClassName} onPointerDownCapture={preserveInactiveSessionDrag}>
         <button
           className="dockview-workbench-tab-trigger"
           aria-label={switchLabel}
@@ -538,6 +844,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     const props = useWorkbenchShellContext()
     const pane = findPaneStateForDockviewPanel(props.paneStateByID, headerProps.group.id, headerProps.activePanel?.id)
     const paneID = pane?.id ?? headerProps.group.id
+    if (props.isDetachedWindow) return null
+    if (pane?.location === "popout") return null
     if (paneID !== props.firstPaneID || props.isActivityRailVisible || !props.isSidebarCollapsed) {
       return null
     }
@@ -558,6 +866,23 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     const props = useWorkbenchShellContext()
     const pane = findPaneStateForDockviewPanel(props.paneStateByID, headerProps.group.id, headerProps.activePanel?.id)
     const paneID = pane?.id ?? headerProps.group.id
+    if (props.isDetachedWindow) {
+      return (
+        <div className="dockview-workbench-header-actions dockview-workbench-header-trailing">
+          <button
+            className="canvas-region-top-menu-add-button dockview-workbench-dock-back-button"
+            aria-label="Dock session back to main window"
+            title="Dock session back to main window"
+            type="button"
+            onClick={() => props.onDockBack?.(headerProps.activePanel?.id)}
+          >
+            Dock back
+          </button>
+          {props.windowControls}
+        </div>
+      )
+    }
+    if (pane?.location === "popout") return null
     const isLastPane = paneID === props.lastPaneID
 
     return (
@@ -606,11 +931,14 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   return (
     <WorkbenchShellContext.Provider value={props}>
       <div
+        ref={workbenchElementRef}
         className={joinClassNames(
           "workbench-panes",
           "dockview-workbench-panes",
           hasMultiplePanes ? "has-multiple" : null,
         )}
+        onDragOverCapture={handleWorkbenchDragOver}
+        onDropCapture={handleWorkbenchDrop}
       >
         <DockviewReact
           className="dockview-theme-fanfande"

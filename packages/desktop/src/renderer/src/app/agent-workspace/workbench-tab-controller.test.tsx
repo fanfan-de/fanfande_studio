@@ -96,6 +96,7 @@ function useWorkbenchHarness() {
       focusPanel: vi.fn(() => false),
       getSnapshot: vi.fn(() => null),
       openPanel: vi.fn(() => true),
+      popoutPanel: vi.fn(() => true),
       replacePanel: vi.fn(() => true),
       splitPanel: vi.fn(() => true),
     }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { AssistantTurn, Turn, UserTurn } from "../types"
 import {
+  conversationTurnsAreEquivalent,
   isCompletedStreamEvent,
   isHighFrequencyDeltaStreamEvent,
   isLlmCompletedStreamEvent,
@@ -385,6 +386,16 @@ describe("session stream controller helpers", () => {
         }),
       ],
     })
+  })
+
+  it("treats equal conversation turns as equivalent for no-op history refreshes", () => {
+    const turns: Turn[] = [
+      createUserTurn("user-1", "hello"),
+      createAssistantTurn("assistant-1", "item-1", "Done", "source-1", "message-1"),
+    ]
+
+    expect(conversationTurnsAreEquivalent(turns, turns.map((turn) => ({ ...turn })))).toBe(true)
+    expect(conversationTurnsAreEquivalent(turns, [...turns, createUserTurn("user-2", "again")])).toBe(false)
   })
 
   it("keeps a cancelled assistant turn cancelled when late pending tool history is merged by message id", () => {

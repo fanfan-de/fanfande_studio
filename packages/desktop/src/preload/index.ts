@@ -31,6 +31,9 @@ import type {
   DesktopIpcOutput,
   DesktopLocalPreviewService,
   DesktopPreloadApi,
+  WorkbenchStateEvent,
+  WorkbenchSharedState,
+  WorkbenchWindowContext,
   ExternalEditorSummary,
   GitActionResult,
   GitBranchSummary,
@@ -74,6 +77,7 @@ import type {
 import {
   DESKTOP_AGENT_SESSION_EVENT_CHANNEL,
   DESKTOP_PTY_EVENT_CHANNEL,
+  DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL,
   DESKTOP_WINDOW_STATE_EVENT_CHANNEL,
   DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL,
 } from "../shared/desktop-ipc-contract"
@@ -127,6 +131,26 @@ try {
       invokeDesktop("desktop:get-window-state") as Promise<{
         isMaximized: boolean
       }>,
+    getWorkbenchWindowContext: () =>
+      invokeDesktop("desktop:get-workbench-window-context") as Promise<WorkbenchWindowContext>,
+    publishWorkbenchSnapshot: (input: DesktopIpcInput<"desktop:workbench-publish-state-snapshot">) =>
+      invokeDesktop("desktop:workbench-publish-state-snapshot", input) as Promise<WorkbenchSharedState>,
+    detachSessionPanel: (input: DesktopIpcInput<"desktop:workbench-detach-session-panel">) =>
+      invokeDesktop("desktop:workbench-detach-session-panel", input) as Promise<DesktopIpcOutput<"desktop:workbench-detach-session-panel">>,
+    markWorkbenchWindowReady: (input: DesktopIpcInput<"desktop:workbench-window-ready">) =>
+      invokeDesktop("desktop:workbench-window-ready", input) as Promise<void>,
+    markWorkbenchPanelMounted: (input: DesktopIpcInput<"desktop:workbench-panel-mounted">) =>
+      invokeDesktop("desktop:workbench-panel-mounted", input) as Promise<WorkbenchSharedState>,
+    dockSessionPanel: (input: DesktopIpcInput<"desktop:workbench-dock-session-panel">) =>
+      invokeDesktop("desktop:workbench-dock-session-panel", input) as Promise<WorkbenchSharedState>,
+    moveWorkbenchPanel: (input: DesktopIpcInput<"desktop:workbench-move-session-panel">) =>
+      invokeDesktop("desktop:workbench-move-session-panel", input) as Promise<DesktopIpcOutput<"desktop:workbench-move-session-panel">>,
+    beginWorkbenchPanelDrag: (input: DesktopIpcInput<"desktop:workbench-begin-panel-drag">) =>
+      invokeDesktop("desktop:workbench-begin-panel-drag", input) as Promise<DesktopIpcOutput<"desktop:workbench-begin-panel-drag">>,
+    endWorkbenchPanelDrag: (input: DesktopIpcInput<"desktop:workbench-end-panel-drag">) =>
+      invokeDesktop("desktop:workbench-end-panel-drag", input) as Promise<DesktopIpcOutput<"desktop:workbench-end-panel-drag">>,
+    getWorkbenchPanelDrag: (input: DesktopIpcInput<"desktop:workbench-get-panel-drag">) =>
+      invokeDesktop("desktop:workbench-get-panel-drag", input) as Promise<DesktopIpcOutput<"desktop:workbench-get-panel-drag">>,
     getAppearanceConfig: () =>
       invokeDesktop("desktop:get-appearance-config") as Promise<AppearanceConfigSnapshot>,
     saveAppearanceConfig: (input: { document: AppearanceConfigDocument }) =>
@@ -749,6 +773,17 @@ try {
 
       return () => {
         ipcRenderer.removeListener(DESKTOP_WINDOW_STATE_EVENT_CHANNEL, wrappedListener)
+      }
+    },
+    onWorkbenchStateChange: (listener: (event: WorkbenchStateEvent) => void) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, workbenchEvent: WorkbenchStateEvent) => {
+        listener(workbenchEvent)
+      }
+
+      ipcRenderer.on(DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL, wrappedListener)
+
+      return () => {
+        ipcRenderer.removeListener(DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL, wrappedListener)
       }
     },
   } satisfies DesktopPreloadApi)

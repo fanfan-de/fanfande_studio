@@ -38,9 +38,14 @@ import {
   loadSessionRuntimeDebugForSession as loadSessionRuntimeDebugForSessionService,
   scheduleRuntimeDebugRefresh as scheduleRuntimeDebugRefreshService,
   scheduleSessionDiffRefreshForSession as scheduleSessionDiffRefreshForSessionService,
-  useActiveSessionReviewEffects,
+  useOpenSessionReviewPreloadEffects,
   useReviewRefreshCleanupEffect,
 } from "./review-diff-runtime-hooks"
+import type {
+  SessionDataLoadOptions,
+  SessionDataLoadCache,
+} from "./session-data-load-cache"
+import { ensureSessionDataLoad } from "./session-data-load-cache"
 import { useAgentSessionStreamEffects } from "./session-stream-hooks"
 import { refreshWorkspaceFromDirectory as refreshWorkspaceFromDirectoryService } from "./workspace-loading-hooks"
 import type { WorkspaceStateUpdater } from "./workspace-store"
@@ -605,6 +610,13 @@ export function mergeConversationTurnsFromHistory(previousTurns: Turn[], nextTur
   return preserveAssistantTurnIdentity(previousTurns, mergeUserTurnPresentationState(previousTurns, nextTurns))
 }
 
+export function conversationTurnsAreEquivalent(leftTurns: Turn[], rightTurns: Turn[]) {
+  if (leftTurns === rightTurns) return true
+  if (leftTurns.length !== rightTurns.length) return false
+
+  return leftTurns.every((leftTurn, index) => JSON.stringify(leftTurn) === JSON.stringify(rightTurns[index]))
+}
+
 function readSessionContextUsageFromMessageInfo(value: unknown): SessionContextUsage | null {
   const message = readStreamRecord(value)
   if (!message || readStreamString(message.role) !== "assistant") return null
@@ -734,7 +746,6 @@ export function resolveStreamMessageID(event: { data: unknown }) {
 type StateSetter<T> = (update: WorkspaceStateUpdater<T>) => void
 
 interface UseSessionStreamControllerOptions {
-  activeSessionID: string | null
   agentConnected: boolean
   agentDefaultDirectory: string
   agentSessionStoreRef: MutableRefObject<{
@@ -745,7 +756,7 @@ interface UseSessionStreamControllerOptions {
   contextUsageBySession: Record<string, SessionContextUsage>
   conversationVersionRef: MutableRefObject<Record<string, number>>
   conversations: Record<string, Turn[]>
-  historyRequestRef: MutableRefObject<number>
+  historyRequestRef: MutableRefObject<Record<string, number>>
   isRuntimeDebugEnabled: boolean
   openCanvasSessionIDs: string[]
   onSessionCanvasActivity: (sessionID: string) => void
@@ -758,6 +769,7 @@ interface UseSessionStreamControllerOptions {
   sessionDiffRefreshTimerRef: MutableRefObject<Record<string, number>>
   sessionDiffRequestRef: MutableRefObject<Record<string, number>>
   sessionDirectoryBySession: Record<string, string>
+  sessionDataLoadCacheRef: MutableRefObject<SessionDataLoadCache>
   sessionEventRouterRef: MutableRefObject<AgentSessionEventRouter>
   sessionRuntimeDebugBySession: Record<string, SessionRuntimeDebugSnapshot>
   setAgentSessions: StateSetter<Record<string, string>>
@@ -779,7 +791,6 @@ interface UseSessionStreamControllerOptions {
 }
 
 export function useSessionStreamController({
-  activeSessionID,
   agentConnected,
   agentDefaultDirectory,
   agentSessionStoreRef,
@@ -800,6 +811,7 @@ export function useSessionStreamController({
   sessionDiffRefreshTimerRef,
   sessionDiffRequestRef,
   sessionDirectoryBySession,
+  sessionDataLoadCacheRef,
   sessionEventRouterRef,
   sessionRuntimeDebugBySession,
   setAgentSessions,
@@ -1095,8 +1107,11 @@ export function useSessionStreamController({
   function replaceConversationTurnsFromHistory(sessionID: string, nextTurns: Turn[]) {
     bumpConversationVersion(sessionID)
     setConversations((prev) => {
-      const previousTurns = prev[sessionID]?.length ? prev[sessionID] : readPersistedUserTurns(sessionID)
+      const currentTurns = prev[sessionID] ?? []
+      const previousTurns = currentTurns.length ? currentTurns : readPersistedUserTurns(sessionID)
       const mergedTurns = reconcileConversationTurns(mergeConversationTurnsFromHistory(previousTurns, nextTurns))
+      if (conversationTurnsAreEquivalent(currentTurns, mergedTurns)) return prev
+
       persistUserTurns(sessionID, mergedTurns)
       return {
         ...prev,
@@ -1226,7 +1241,7 @@ export function useSessionStreamController({
         void reloadSessionHistoryForSession(target.sessionID).catch((error) => {
           console.error("[desktop] stream history refresh failed:", error)
         })
-        void loadSessionDiffForSession(target.sessionID).catch((error) => {
+        void loadSessionDiffForSession(target.sessionID, undefined, { force: true, mode: "silent", reason: "stream" }).catch((error) => {
           console.error("[desktop] stream diff refresh failed:", error)
         })
         void loadPendingPermissionRequestsForSession(target.sessionID).catch((error) => {
@@ -1324,7 +1339,7 @@ export function useSessionStreamController({
         void reloadSessionHistoryForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
           console.error("[desktop] session stream history refresh failed:", error)
         })
-        void loadSessionDiffForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
+        void loadSessionDiffForSession(uiSessionID, streamEvent.sessionID, { force: true, mode: "silent", reason: "stream" }).catch((error) => {
           console.error("[desktop] session stream diff refresh failed:", error)
         })
         void loadPendingPermissionRequestsForSession(uiSessionID, streamEvent.sessionID).catch((error) => {
@@ -1362,30 +1377,98 @@ export function useSessionStreamController({
     })
   }
 
-  async function reloadSessionHistoryForSession(sessionID: string, backendSessionID = resolveBackendSessionID(sessionID)) {
+  async function ensureSessionHistoryLoaded(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+    options: SessionDataLoadOptions = { mode: "silent", reason: "open" },
+  ) {
     const agentSession = getAgentSessionBridge()
     if (!agentSession) return
 
-    const messages = await agentSession.loadHistory({ backendSessionID })
-    const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
-    startTransition(() => {
-      replaceConversationTurnsFromHistory(sessionID, buildTurnsFromHistory(messages))
-      syncSessionContextUsageFromHistory(sessionID, nextContextUsage)
+    await ensureSessionDataLoad(sessionDataLoadCacheRef.current, "history", sessionID, backendSessionID, options, async () => {
+      const requestID = (historyRequestRef.current[sessionID] ?? 0) + 1
+      historyRequestRef.current[sessionID] = requestID
+      const baselineVersion = conversationVersionRef.current[sessionID] ?? 0
+      const messages = await agentSession.loadHistory({ backendSessionID })
+      if (historyRequestRef.current[sessionID] !== requestID) return
+      if (!options.force && (conversationVersionRef.current[sessionID] ?? 0) !== baselineVersion) return
+      const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
+      startTransition(() => {
+        replaceConversationTurnsFromHistory(sessionID, buildTurnsFromHistory(messages))
+        syncSessionContextUsageFromHistory(sessionID, nextContextUsage)
+      })
+    })
+  }
+
+  async function reloadSessionHistoryForSession(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+    options: SessionDataLoadOptions = {},
+  ) {
+    await ensureSessionHistoryLoaded(sessionID, backendSessionID, {
+      force: true,
+      mode: "silent",
+      reason: "manual",
+      ...options,
+    })
+  }
+
+  async function ensureSessionDiffLoaded(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+    options: SessionDataLoadOptions = { mode: "silent", reason: "open" },
+  ) {
+    await ensureSessionDataLoad(sessionDataLoadCacheRef.current, "diff", sessionID, backendSessionID, options, async () => {
+      await loadSessionDiffForSessionService({
+        backendSessionID,
+        sessionDiffBySession,
+        sessionDiffRefreshTimerRef,
+        sessionDiffRequestRef,
+        sessionID,
+        setSessionDiffBySession,
+        setSessionDiffStateBySession,
+        options,
+      })
     })
   }
 
   async function loadSessionDiffForSession(
     sessionID: string,
     backendSessionID = resolveBackendSessionID(sessionID),
+    options: SessionDataLoadOptions = {},
   ) {
-    await loadSessionDiffForSessionService({
-      backendSessionID,
-      sessionDiffBySession,
-      sessionDiffRefreshTimerRef,
-      sessionDiffRequestRef,
-      sessionID,
-      setSessionDiffBySession,
-      setSessionDiffStateBySession,
+    await ensureSessionDiffLoaded(sessionID, backendSessionID, {
+      force: true,
+      mode: "visible",
+      reason: "manual",
+      ...options,
+    })
+  }
+
+  async function ensureSessionRuntimeDebugLoaded(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+    options?: {
+      limit?: number
+      turns?: number
+    } & SessionDataLoadOptions,
+  ) {
+    if (!isRuntimeDebugEnabled) {
+      clearRuntimeDebugRefreshTimer(sessionID)
+      return
+    }
+
+    await ensureSessionDataLoad(sessionDataLoadCacheRef.current, "runtime", sessionID, backendSessionID, options ?? { mode: "silent", reason: "open" }, async () => {
+      await loadSessionRuntimeDebugForSessionService({
+        backendSessionID,
+        runtimeDebugRefreshTimerRef,
+        runtimeDebugRequestRef,
+        sessionID,
+        sessionRuntimeDebugBySession,
+        setSessionRuntimeDebugBySession,
+        setSessionRuntimeDebugStateBySession,
+        options,
+      })
     })
   }
 
@@ -1395,22 +1478,13 @@ export function useSessionStreamController({
     options?: {
       limit?: number
       turns?: number
-    },
+    } & SessionDataLoadOptions,
   ) {
-    if (!isRuntimeDebugEnabled) {
-      clearRuntimeDebugRefreshTimer(sessionID)
-      return
-    }
-
-    await loadSessionRuntimeDebugForSessionService({
-      backendSessionID,
-      runtimeDebugRefreshTimerRef,
-      runtimeDebugRequestRef,
-      sessionID,
-      sessionRuntimeDebugBySession,
-      setSessionRuntimeDebugBySession,
-      setSessionRuntimeDebugStateBySession,
-      options,
+    await ensureSessionRuntimeDebugLoaded(sessionID, backendSessionID, {
+      force: true,
+      mode: "visible",
+      reason: "manual",
+      ...options,
     })
   }
 
@@ -1433,15 +1507,32 @@ export function useSessionStreamController({
     })
   }
 
+  async function ensurePendingPermissionRequestsLoaded(
+    sessionID: string,
+    backendSessionID = resolveBackendSessionID(sessionID),
+    options: SessionDataLoadOptions = { mode: "silent", reason: "open" },
+  ) {
+    await ensureSessionDataLoad(sessionDataLoadCacheRef.current, "permissions", sessionID, backendSessionID, options, async () => {
+      await loadPendingPermissionRequestsForSessionService({
+        backendSessionID,
+        permissionRequestsRequestRef,
+        sessionID,
+        setPendingPermissionRequestsBySession,
+        options,
+      })
+    })
+  }
+
   async function loadPendingPermissionRequestsForSession(
     sessionID: string,
     backendSessionID = resolveBackendSessionID(sessionID),
+    options: SessionDataLoadOptions = {},
   ) {
-    await loadPendingPermissionRequestsForSessionService({
-      backendSessionID,
-      permissionRequestsRequestRef,
-      sessionID,
-      setPendingPermissionRequestsBySession,
+    await ensurePendingPermissionRequestsLoaded(sessionID, backendSessionID, {
+      force: true,
+      mode: "silent",
+      reason: "manual",
+      ...options,
     })
   }
 
@@ -1460,48 +1551,32 @@ export function useSessionStreamController({
     onSessionEvent: handleAgentSessionBridgeEventEffect,
   })
 
+  const openCanvasSessionKey = openCanvasSessionIDs.join("\u0000")
   useEffect(() => {
-    const agentSession = getAgentSessionBridge()
-    if (!canLoadSessionHistory || !activeSessionID || !agentSession) return
+    if (!canLoadSessionHistory) return
 
-    if (skipNextHistoryLoadRef.current[activeSessionID]) {
-      delete skipNextHistoryLoadRef.current[activeSessionID]
-      return
-    }
+    for (const sessionID of openCanvasSessionIDs) {
+      if (skipNextHistoryLoadRef.current[sessionID]) {
+        delete skipNextHistoryLoadRef.current[sessionID]
+        continue
+      }
 
-    let cancelled = false
-    const sessionID = activeSessionID
-    const backendSessionID = resolveBackendSessionID(sessionID)
-    const requestID = ++historyRequestRef.current
-    const baselineVersion = conversationVersionRef.current[sessionID] ?? 0
-
-    agentSession.loadHistory({ backendSessionID })
-      .then((messages) => {
-        if (cancelled || historyRequestRef.current !== requestID) return
-        if ((conversationVersionRef.current[sessionID] ?? 0) !== baselineVersion) return
-        const nextContextUsage = readLatestSessionContextUsageFromHistory(messages)
-
-        startTransition(() => {
-          replaceConversationTurnsFromHistory(sessionID, buildTurnsFromHistory(messages))
-          updateSessionContextUsage(sessionID, nextContextUsage)
-        })
+      void ensureSessionHistoryLoaded(sessionID, resolveBackendSessionID(sessionID), {
+        mode: "silent",
+        reason: "open",
+      }).catch((error) => {
+        console.error("[desktop] open session history preload failed:", error)
       })
-      .catch((error) => {
-        console.error("[desktop] agentSession.loadHistory failed:", error)
-      })
-
-    return () => {
-      cancelled = true
     }
-  }, [activeSessionID, canLoadSessionHistory])
+  }, [openCanvasSessionKey, canLoadSessionHistory, agentSessions])
 
-  useActiveSessionReviewEffects({
-    activeSessionID,
+  useOpenSessionReviewPreloadEffects({
+    openSessionIDs: openCanvasSessionIDs,
     agentSessions,
     canLoadSessionHistory,
-    loadPendingPermissionRequestsForSession,
-    loadSessionDiffForSession,
-    loadSessionRuntimeDebugForSession,
+    ensurePendingPermissionRequestsLoaded,
+    ensureSessionDiffLoaded,
+    ensureSessionRuntimeDebugLoaded,
     isRuntimeDebugEnabled,
   })
 
@@ -1517,6 +1592,8 @@ export function useSessionStreamController({
     clearRuntimeDebugRefreshTimer,
     clearSessionDiffRefreshTimer,
     loadPendingPermissionRequestsForSession,
+    ensurePendingPermissionRequestsLoaded,
+    ensureSessionHistoryLoaded,
     loadSessionDiffForSession,
     loadSessionRuntimeDebugForSession,
     refreshWorkspaceForSession,

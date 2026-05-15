@@ -26,7 +26,9 @@ interface UseWorkspaceLoadingControllerOptions {
   createCreateSessionWorkbenchTab: (createSessionTabID: string) => WorkbenchTabReference
   createSessionWorkbenchTab: (sessionID: string) => WorkbenchTabReference
   gitRefreshSuppressedUntilRef: MutableRefObject<Record<string, number>>
+  initialDockviewLayout?: SerializedDockview | null
   initialFolderWorkspacesLoadedRef: MutableRefObject<boolean>
+  initialSessionID?: string | null
   isInitialWorkspaceLoadPending: boolean
   lastFocusedSessionIDRef: MutableRefObject<string | null>
   platform: string
@@ -57,7 +59,9 @@ export function useWorkspaceLoadingController({
   createCreateSessionWorkbenchTab,
   createSessionWorkbenchTab,
   gitRefreshSuppressedUntilRef,
+  initialDockviewLayout,
   initialFolderWorkspacesLoadedRef,
+  initialSessionID,
   isInitialWorkspaceLoadPending,
   lastFocusedSessionIDRef,
   platform,
@@ -109,7 +113,9 @@ export function useWorkspaceLoadingController({
     createCreateSessionTab,
     createCreateSessionWorkbenchTab,
     createSessionWorkbenchTab,
+    initialDockviewLayout,
     initialFolderWorkspacesLoadedRef,
+    initialSessionID,
     lastFocusedSessionIDRef,
     preserveLocalWorkspaceStateOnInitialLoadRef,
     setAgentSessions,

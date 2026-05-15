@@ -104,7 +104,7 @@
   background-color: transparent;
   background-image: linear-gradient(var(--sidebar-resizer-top-surface), var(--sidebar-resizer-top-surface));
   background-position: top;
-  background-size: 1px var(--section-toolbar-height);
+  background-size: 100% var(--section-toolbar-height);
   background-repeat: no-repeat;
 }
 

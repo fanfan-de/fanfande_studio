@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import type { SerializedDockview } from "dockview-react"
 import {
   ActivityRail,
   BuiltinToolsPage,
@@ -23,9 +24,12 @@ import { useSettingsPage } from "./app/use-settings-page"
 import type { BuiltinToolKindKey } from "./app/tools/BuiltinToolsPage"
 import { isSideChatSession } from "./app/workspace"
 import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
+import { createInitialDockviewLayout } from "./app/workbench/dockview-state"
 import { WorkspaceModeCanvasPlaceholder, WorkspaceModeRightPlaceholder } from "./app/workspace-mode/WorkspaceModePlaceholder"
+import type { WorkbenchSharedState, WorkbenchWindowContext } from "../../shared/desktop-ipc-contract"
 
 const WORKBENCH_TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v3:workbench"
+type AgentWorkspaceState = ReturnType<typeof useAgentWorkspace>
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
@@ -89,9 +93,493 @@ async function openSystemLocalPath(targetPath: string) {
   }
 }
 
+const FALLBACK_WORKBENCH_STATE: WorkbenchSharedState = {
+  version: 0,
+  windows: [
+    {
+      id: "main",
+      kind: "main",
+      ownedPanelIDs: [],
+      surfaceID: "main",
+    },
+  ],
+  surfaces: [
+    {
+      surfaceID: "main",
+      kind: "main",
+      windowID: "main",
+      ownedPanelIDs: [],
+      layout: null,
+    },
+  ],
+  ownership: [],
+  panels: {},
+}
 
+const FALLBACK_WORKBENCH_CONTEXT: WorkbenchWindowContext = {
+  windowID: "main",
+  kind: "main",
+  surfaceID: "main",
+  ownedPanelIDs: [],
+  reference: null,
+  state: FALLBACK_WORKBENCH_STATE,
+}
+
+function hasExplicitWorkbenchWindowID() {
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).has("workbenchWindowID")
+}
+
+function getWorkbenchSurfaceID(context: WorkbenchWindowContext) {
+  return context.surfaceID ?? (context.kind === "main" ? "main" : context.windowID)
+}
+
+function getContextSurfaceLayout(context: WorkbenchWindowContext) {
+  const surfaceID = getWorkbenchSurfaceID(context)
+  return (context.state.surfaces?.find((surface) => surface.surfaceID === surfaceID)?.layout ?? null) as SerializedDockview | null
+}
+
+function getContextPanelTitle(context: WorkbenchWindowContext, panelID: string | null | undefined) {
+  if (!panelID) return undefined
+  return (
+    context.state.ownership.find((ownership) => ownership.panelID === panelID)?.title ??
+    context.state.panels[panelID]?.title
+  )
+}
+
+function createFallbackPopoutLayout(context: WorkbenchWindowContext) {
+  const sessionID = context.reference?.sessionID
+  if (!sessionID) return null
+  return createInitialDockviewLayout(
+    {
+      kind: "session",
+      sessionID,
+    },
+    getContextPanelTitle(context, context.panelID) ?? "Session",
+  )
+}
+
+function buildWorkbenchPanelSnapshots(
+  workbenchPaneStates: AgentWorkspaceState["workbenchPaneStates"],
+  workspaces: AgentWorkspaceState["workspaces"],
+) {
+  return Object.fromEntries(
+    workbenchPaneStates.flatMap((pane) =>
+      pane.tabs.flatMap((tab) =>
+        tab.kind === "session"
+          ? [[
+              tab.key,
+              {
+                panelID: tab.key,
+                reference: {
+                  kind: "session" as const,
+                  sessionID: tab.sessionID,
+                },
+                title: tab.title,
+                pane,
+                workspaces,
+              },
+            ]]
+          : [],
+      ),
+    ),
+  )
+}
+
+function getSurfaceOwnedSessionPanelIDs(workbenchPaneStates: AgentWorkspaceState["workbenchPaneStates"]) {
+  return workbenchPaneStates.flatMap((pane) =>
+    pane.tabs.flatMap((tab) => tab.kind === "session" ? [tab.key] : []),
+  )
+}
+
+function useToolPermissionModeState() {
+  const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
+  const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
+  const [isSavingToolPermissionMode, setIsSavingToolPermissionMode] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadToolPermissionMode() {
+      try {
+        const result = await window.desktop?.getToolPermissionMode?.()
+        if (cancelled || !result) return
+        setToolPermissionMode(result.mode)
+        setToolPermissionModeError(null)
+      } catch (error) {
+        if (cancelled) return
+        setToolPermissionModeError(getErrorMessage(error))
+      }
+    }
+
+    void loadToolPermissionMode()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleToolPermissionModeChange(mode: ToolPermissionMode) {
+    if (mode === toolPermissionMode || isSavingToolPermissionMode) return
+    const previousMode = toolPermissionMode
+
+    setToolPermissionMode(mode)
+    setToolPermissionModeError(null)
+    setIsSavingToolPermissionMode(true)
+
+    try {
+      const result = await window.desktop?.updateToolPermissionMode?.({ mode })
+      setToolPermissionMode(result?.mode ?? mode)
+    } catch (error) {
+      setToolPermissionMode(previousMode)
+      setToolPermissionModeError(getErrorMessage(error))
+    } finally {
+      setIsSavingToolPermissionMode(false)
+    }
+  }
+
+  return {
+    handleToolPermissionModeChange,
+    isSavingToolPermissionMode,
+    toolPermissionMode,
+    toolPermissionModeError,
+  }
+}
 
 export function App() {
+  const [workbenchContext, setWorkbenchContext] = useState<WorkbenchWindowContext | null>(() =>
+    hasExplicitWorkbenchWindowID() ? null : FALLBACK_WORKBENCH_CONTEXT,
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadWorkbenchContext() {
+      const getContext = window.desktop?.getWorkbenchWindowContext
+      if (!getContext) {
+        setWorkbenchContext(FALLBACK_WORKBENCH_CONTEXT)
+        return
+      }
+
+      try {
+        const context = await getContext()
+        if (!cancelled) {
+          setWorkbenchContext(context)
+        }
+      } catch (error) {
+        console.error("[desktop] Failed to load workbench window context:", error)
+        if (!cancelled) {
+          setWorkbenchContext(FALLBACK_WORKBENCH_CONTEXT)
+        }
+      }
+    }
+
+    void loadWorkbenchContext()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = window.desktop?.onWorkbenchStateChange?.((event) => {
+      setWorkbenchContext((current) => {
+        if (!current) return current
+        const windowSummary = event.state.windows.find((item) => item.id === current.windowID)
+        const surfaceID = windowSummary?.surfaceID ?? current.surfaceID ?? (current.kind === "main" ? "main" : undefined)
+        const surface = event.state.surfaces?.find((item) => item.surfaceID === surfaceID)
+        const ownedPanelIDs = surface?.ownedPanelIDs ?? windowSummary?.ownedPanelIDs ?? current.ownedPanelIDs
+        const panelID = current.panelID && ownedPanelIDs.includes(current.panelID)
+          ? current.panelID
+          : ownedPanelIDs[0] ?? current.panelID
+        const ownership = panelID
+          ? event.state.ownership.find((item) => item.panelID === panelID) ?? null
+          : null
+
+        return {
+          ...current,
+          ownedPanelIDs,
+          panelID,
+          reference: ownership?.reference ?? current.reference ?? null,
+          state: event.state,
+          surfaceID,
+        }
+      })
+    })
+
+    return unsubscribe
+  }, [])
+
+  if (!workbenchContext) {
+    return <div className="app-loading-screen" />
+  }
+
+  if (workbenchContext.kind === "session-popout") {
+    return <SessionPopoutApp workbenchContext={workbenchContext} />
+  }
+
+  return <MainApp workbenchContext={workbenchContext} />
+}
+
+function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContext }) {
+  const targetSessionID = workbenchContext.reference?.sessionID ?? null
+  const surfaceID = getWorkbenchSurfaceID(workbenchContext)
+  const initialDockviewLayout = getContextSurfaceLayout(workbenchContext) ?? createFallbackPopoutLayout(workbenchContext)
+  const {
+    agentConnected,
+    agentDefaultDirectory,
+    appShellRef,
+    appShellStyle,
+    assistantTraceVisibility,
+    handleWindowAction,
+    isAgentDebugTraceEnabled,
+    isWindowMaximized,
+    platform,
+  } = useDesktopShell()
+  const {
+    composerRefreshVersion,
+    handleApproveProposedPlan,
+    handleCancelSend,
+    handleCanvasSessionTabClose,
+    handleCreateSessionSubmit,
+    handleCreateSideChatTab,
+    handleDeleteSideChatTab,
+    handleCreateSessionWorkspaceChange,
+    handleOpenSideChat,
+    handleDockviewActiveChange,
+    handleMovePanelIntoSurface,
+    handleMovePanelOutOfSurface,
+    handlePaneFocus,
+    handlePermissionRequestResponse,
+    handleAskUserQuestionAnswer,
+    handlePickComposerAttachments,
+    handlePasteComposerImageAttachments,
+    handleRemoveComposerAttachment,
+    handleSend,
+    handlePlanModeToggle,
+    handleSessionModelSelectionChange,
+    handleSelectSideChatTab,
+    handleTurnDiffSummaryHydrate,
+    isResolvingPermissionRequest,
+    permissionRequestActionError,
+    permissionRequestActionRequestID,
+    readThreadScrollSnapshot,
+    setDraftForTab,
+    saveThreadScrollSnapshot,
+    handleWorkbenchDockviewCommandsReady,
+    setDockviewLayout,
+    dockviewLayout,
+    workbenchPanelStateByID,
+    workbenchPaneStateByID,
+    workbenchPaneStates,
+    workspaces,
+  } = useAgentWorkspace({
+    agentConnected,
+    agentDefaultDirectory,
+    disableDockviewPersistence: true,
+    initialDockviewLayout,
+    initialSessionID: targetSessionID,
+    isRuntimeDebugEnabled: isAgentDebugTraceEnabled,
+    platform,
+  })
+  const {
+    handleToolPermissionModeChange,
+    isSavingToolPermissionMode,
+    toolPermissionMode,
+    toolPermissionModeError,
+  } = useToolPermissionModeState()
+  const didMarkMountedRef = useRef(false)
+  const gridWorkbenchPaneStates = workbenchPaneStates.filter((pane) => pane.location === "grid")
+  const firstPaneID = gridWorkbenchPaneStates[0]?.id ?? null
+  const lastPaneID = gridWorkbenchPaneStates[gridWorkbenchPaneStates.length - 1]?.id ?? null
+  const windowControls = useMemo(
+    () => <WindowChrome controlsRef={null} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
+    [handleWindowAction, isWindowMaximized],
+  )
+
+  async function handleDetachSessionPanel(input: {
+    bounds: { height: number; width: number; x: number; y: number }
+    groupID: string
+    panelID: string
+    reference: { kind: "session"; sessionID: string }
+    title: string
+  }) {
+    const detachSessionPanel = window.desktop?.detachSessionPanel
+    if (!detachSessionPanel) return false
+
+    const result = await detachSessionPanel({
+      bounds: input.bounds,
+      lastMainGroupID: input.groupID,
+      panelID: input.panelID,
+      sessionID: input.reference.sessionID,
+      sourceSurfaceID: surfaceID,
+      title: input.title,
+    })
+    return result.ok
+  }
+
+  async function handleMoveSessionPanel(input: {
+    panelID: string
+    placement: "within" | "left" | "right" | "top" | "bottom"
+    sourceSurfaceID: string
+    targetGroupID?: string | null
+    targetSurfaceID: string
+  }) {
+    const result = await window.desktop?.moveWorkbenchPanel?.(input)
+    return Boolean(result?.ok)
+  }
+
+  useEffect(() => {
+    void window.desktop?.markWorkbenchWindowReady?.({ windowID: workbenchContext.windowID })
+  }, [workbenchContext.windowID])
+
+  useEffect(() => {
+    const panelID = workbenchContext.panelID
+    if (!panelID || didMarkMountedRef.current) return
+    const hasPanel = workbenchPaneStates.some((pane) => pane.tabs.some((tab) => tab.key === panelID))
+    if (!hasPanel) return
+    didMarkMountedRef.current = true
+    void window.desktop?.markWorkbenchPanelMounted?.({
+      panelID,
+      windowID: workbenchContext.windowID,
+    }).catch((error) => {
+      didMarkMountedRef.current = false
+      console.error("[desktop] Failed to mark session popout mounted:", error)
+    })
+  }, [didMarkMountedRef, workbenchContext.panelID, workbenchContext.windowID, workbenchPaneStates])
+
+  const handleDockBack = (preferredPanelID?: string) => {
+    const panelID = preferredPanelID ?? workbenchContext.panelID
+    if (!panelID) return
+    void window.desktop?.moveWorkbenchPanel?.({
+      panelID,
+      sourceSurfaceID: surfaceID,
+      targetSurfaceID: "main",
+    })
+  }
+
+  useEffect(() => {
+    const publishWorkbenchSnapshot = window.desktop?.publishWorkbenchSnapshot
+    if (!publishWorkbenchSnapshot) return
+    void publishWorkbenchSnapshot({
+      version: 0,
+      windows: [],
+      surfaces: [
+        {
+          surfaceID,
+          kind: "session-popout",
+          windowID: workbenchContext.windowID,
+          ownedPanelIDs: getSurfaceOwnedSessionPanelIDs(workbenchPaneStates),
+          layout: dockviewLayout,
+        },
+      ],
+      ownership: [],
+      panels: buildWorkbenchPanelSnapshots(workbenchPaneStates, workspaces),
+    }).catch((error) => {
+      console.error("[desktop] Failed to publish workbench popout snapshot:", error)
+    })
+  }, [dockviewLayout, surfaceID, workbenchContext.windowID, workbenchPaneStates, workspaces])
+
+  useEffect(() => {
+    const unsubscribe = window.desktop?.onWorkbenchStateChange?.((event) => {
+      const move = event.move
+      if (!move) return
+      if (move.targetSurfaceID === surfaceID) {
+        handleMovePanelIntoSurface({
+          panelID: move.panelID,
+          placement: move.placement,
+          targetGroupID: move.targetGroupID,
+          title: move.title,
+        })
+      }
+      if (move.sourceSurfaceID === surfaceID) {
+        handleMovePanelOutOfSurface(move.panelID)
+      }
+    })
+
+    return unsubscribe
+  }, [handleMovePanelIntoSurface, handleMovePanelOutOfSurface, surfaceID])
+
+  const handleLocalFileLinkOpen = ({ target }: LocalFileLinkOpenInput) => {
+    void openSystemLocalPath(target.path)
+  }
+
+  const handlePopoutDiffNoop = async () => {
+    // Diff review and restore are routed through the main window sidebars in v1.
+  }
+
+  return (
+    <div className="session-popout-shell">
+      <main ref={appShellRef} className="session-popout-app" style={appShellStyle}>
+        <WorkbenchShell
+          assistantTraceVisibility={assistantTraceVisibility}
+          composerRefreshVersion={composerRefreshVersion}
+          dockviewLayout={dockviewLayout}
+          firstPaneID={firstPaneID}
+          isActivityRailVisible={false}
+          isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+          isDetachedWindow
+          isResolvingPermissionRequest={isResolvingPermissionRequest}
+          isRightSidebarCollapsed
+          isSavingToolPermissionMode={isSavingToolPermissionMode}
+          isSidebarCollapsed
+          lastPaneID={lastPaneID}
+          windowControls={windowControls}
+          panelStateByID={workbenchPanelStateByID}
+          paneStateByID={workbenchPaneStateByID}
+          readThreadScrollSnapshot={readThreadScrollSnapshot}
+          saveThreadScrollSnapshot={saveThreadScrollSnapshot}
+          permissionRequestActionError={permissionRequestActionError}
+          permissionRequestActionRequestID={permissionRequestActionRequestID}
+          toolPermissionMode={toolPermissionMode}
+          toolPermissionModeError={toolPermissionModeError}
+          workspaces={workspaces}
+          surfaceID={surfaceID}
+          onActiveDockviewChange={handleDockviewActiveChange}
+          onApproveProposedPlan={handleApproveProposedPlan}
+          onAskUserQuestionAnswer={handleAskUserQuestionAnswer}
+          onCancelSend={handleCancelSend}
+          onCloseCreateSessionTab={handleDockBack}
+          onCloseSessionTab={handleCanvasSessionTabClose}
+          onCommandsReady={handleWorkbenchDockviewCommandsReady}
+          onCreateSessionSubmit={handleCreateSessionSubmit}
+          onCreateSessionWorkspaceChange={handleCreateSessionWorkspaceChange}
+          onCreateSideChatTab={handleCreateSideChatTab}
+          onDeleteSideChatTab={handleDeleteSideChatTab}
+          onDetachSessionPanel={handleDetachSessionPanel}
+          onDockBack={handleDockBack}
+          onFocusPane={handlePaneFocus}
+          onInspectFileInSidebar={() => undefined}
+          onLayoutChange={setDockviewLayout}
+          onLocalFileLinkOpen={handleLocalFileLinkOpen}
+          onMoveSessionPanel={handleMoveSessionPanel}
+          onOpenCreateSessionTab={() => undefined}
+          onOpenSideChat={handleOpenSideChat}
+          onPasteComposerImageAttachments={handlePasteComposerImageAttachments}
+          onPermissionRequestResponse={handlePermissionRequestResponse}
+          onPickComposerAttachments={handlePickComposerAttachments}
+          onPlanModeToggle={handlePlanModeToggle}
+          onRemoveComposerAttachment={handleRemoveComposerAttachment}
+          onSelectCreateSessionTab={() => undefined}
+          onSelectSessionTab={() => undefined}
+          onSelectSideChatTab={handleSelectSideChatTab}
+          onSend={handleSend}
+          onSessionModelSelectionChange={handleSessionModelSelectionChange}
+          onSetDraft={setDraftForTab}
+          onToggleLeftSidebar={() => undefined}
+          onToggleRightSidebar={() => undefined}
+          onToolPermissionModeChange={handleToolPermissionModeChange}
+          onTurnDiffRestore={handlePopoutDiffNoop}
+          onTurnDiffReview={handlePopoutDiffNoop}
+          onTurnDiffSummaryHydrate={handleTurnDiffSummaryHydrate}
+        />
+      </main>
+    </div>
+  )
+}
+
+function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContext }) {
+  const surfaceID = getWorkbenchSurfaceID(workbenchContext)
   const {
     agentConnected,
     agentDefaultDirectory,
@@ -174,6 +662,8 @@ export function App() {
     handleOpenSideChat,
     handleOpenCreateSessionTab,
     handleDockviewActiveChange,
+    handleMovePanelIntoSurface,
+    handleMovePanelOutOfSurface,
     handlePaneFocus,
     handlePermissionRequestResponse,
     handleAskUserQuestionAnswer,
@@ -219,6 +709,7 @@ export function App() {
     permissionRequestActionRequestID,
     pinnedWorkspaceIDs,
     projectRowRefs,
+    readThreadScrollSnapshot,
     refreshComposerMcp,
     refreshComposerModels,
     refreshComposerSkills,
@@ -228,11 +719,13 @@ export function App() {
     selectedFolderID,
     sessionCanvasUnreadBySession,
     setDraftForTab,
+    saveThreadScrollSnapshot,
     handleWorkbenchDockviewCommandsReady,
     setHoveredFolderID,
     setDockviewLayout,
     visibleCanvasSessionIDs,
     dockviewLayout,
+    workbenchPanelStateByID,
     workbenchPaneStateByID,
     workbenchPaneStates,
     workspaces,
@@ -452,8 +945,9 @@ export function App() {
   const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
   const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
   const [isSavingToolPermissionMode, setIsSavingToolPermissionMode] = useState(false)
-  const firstPaneID = workbenchPaneStates[0]?.id ?? null
-  const lastPaneID = workbenchPaneStates[workbenchPaneStates.length - 1]?.id ?? null
+  const gridWorkbenchPaneStates = workbenchPaneStates.filter((pane) => pane.location === "grid")
+  const firstPaneID = gridWorkbenchPaneStates[0]?.id ?? null
+  const lastPaneID = gridWorkbenchPaneStates[gridWorkbenchPaneStates.length - 1]?.id ?? null
   const focusedWorkbenchPane = focusedPaneID ? workbenchPaneStateByID[focusedPaneID] ?? null : null
   const terminalSession = focusedWorkbenchPane?.activeSession ?? null
   const terminalSessionID = terminalSession && !isSideChatSession(terminalSession) ? terminalSession.id : null
@@ -556,6 +1050,98 @@ export function App() {
 
     void openSystemLocalPath(target.path)
   }
+
+  async function handleDetachSessionPanel(input: {
+    bounds: { height: number; width: number; x: number; y: number }
+    groupID: string
+    panelID: string
+    reference: { kind: "session"; sessionID: string }
+    title: string
+  }) {
+    const detachSessionPanel = window.desktop?.detachSessionPanel
+    if (!detachSessionPanel) return false
+
+    const result = await detachSessionPanel({
+      bounds: input.bounds,
+      lastMainGroupID: input.groupID,
+      panelID: input.panelID,
+      sessionID: input.reference.sessionID,
+      sourceSurfaceID: surfaceID,
+      title: input.title,
+    })
+    return result.ok
+  }
+
+  async function handleMoveSessionPanel(input: {
+    panelID: string
+    placement: "within" | "left" | "right" | "top" | "bottom"
+    sourceSurfaceID: string
+    targetGroupID?: string | null
+    targetSurfaceID: string
+  }) {
+    const result = await window.desktop?.moveWorkbenchPanel?.(input)
+    return Boolean(result?.ok)
+  }
+
+  useEffect(() => {
+    if (workbenchContext.kind !== "main") return
+    const publishWorkbenchSnapshot = window.desktop?.publishWorkbenchSnapshot
+    if (!publishWorkbenchSnapshot) return
+
+    void publishWorkbenchSnapshot({
+      version: 0,
+      windows: [],
+      surfaces: [
+        {
+          surfaceID,
+          kind: "main",
+          windowID: workbenchContext.windowID,
+          ownedPanelIDs: getSurfaceOwnedSessionPanelIDs(workbenchPaneStates),
+          layout: dockviewLayout,
+        },
+      ],
+      ownership: [],
+      panels: buildWorkbenchPanelSnapshots(workbenchPaneStates, workspaces),
+    }).catch((error) => {
+      console.error("[desktop] Failed to publish workbench snapshot:", error)
+    })
+  }, [dockviewLayout, surfaceID, workbenchContext.kind, workbenchContext.windowID, workbenchPaneStates, workspaces])
+
+  useEffect(() => {
+    if (workbenchContext.kind !== "main") return
+    const unsubscribe = window.desktop?.onWorkbenchStateChange?.((event) => {
+      const move = event.move
+      if (move) {
+        if (move.targetSurfaceID === surfaceID) {
+          handleMovePanelIntoSurface({
+            panelID: move.panelID,
+            placement: move.placement,
+            targetGroupID: move.targetGroupID,
+            title: move.title,
+          })
+        }
+        if (move.sourceSurfaceID === surfaceID) {
+          handleMovePanelOutOfSurface(move.panelID)
+        }
+        return
+      }
+      if (event.reason !== "dock" && event.reason !== "restored") return
+      const ownership = event.panelID
+        ? event.state.ownership.find((item) => item.panelID === event.panelID)
+        : null
+      if (!ownership || ownership.ownerWindowID !== workbenchContext.windowID) return
+      handleCanvasSessionTabSelect(ownership.reference.sessionID, ownership.lastMainGroupID ?? undefined)
+    })
+
+    return unsubscribe
+  }, [
+    handleCanvasSessionTabSelect,
+    handleMovePanelIntoSurface,
+    handleMovePanelOutOfSurface,
+    surfaceID,
+    workbenchContext.kind,
+    workbenchContext.windowID,
+  ])
 
   function handleInspectorViewChange(view: RightSidebarView) {
     if (view === "runtime" && !isAgentDebugTraceEnabled) return
@@ -935,22 +1521,28 @@ export function App() {
                 lastPaneID={lastPaneID}
                 dockviewLayout={dockviewLayout}
                 windowControls={isRightSidebarCollapsed ? workbenchWindowControls : null}
+                panelStateByID={workbenchPanelStateByID}
                 paneStateByID={workbenchPaneStateByID}
+                readThreadScrollSnapshot={readThreadScrollSnapshot}
+                saveThreadScrollSnapshot={saveThreadScrollSnapshot}
                 permissionRequestActionError={permissionRequestActionError}
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
                 toolPermissionMode={toolPermissionMode}
                 toolPermissionModeError={toolPermissionModeError}
                 workspaces={workspaces}
+                surfaceID={surfaceID}
                 onCloseCreateSessionTab={handleCloseCreateSessionTab}
                 onCloseSessionTab={handleCanvasSessionTabClose}
                 onCreateSessionSubmit={handleCreateSessionSubmit}
                 onCreateSessionWorkspaceChange={handleCreateSessionWorkspaceChange}
                 onActiveDockviewChange={handleDockviewActiveChange}
+                onDetachSessionPanel={handleDetachSessionPanel}
                 onFocusPane={handlePaneFocus}
                 onInspectFileInSidebar={handleInspectFileInSidebar}
                 onCommandsReady={handleWorkbenchDockviewCommandsReady}
                 onLayoutChange={setDockviewLayout}
                 onLocalFileLinkOpen={handleLocalFileLinkOpen}
+                onMoveSessionPanel={handleMoveSessionPanel}
                 onCreateSideChatTab={handleCreateSideChatTab}
                 onDeleteSideChatTab={handleDeleteSideChatTab}
                 onOpenCreateSessionTab={handleOpenCreateSessionTab}

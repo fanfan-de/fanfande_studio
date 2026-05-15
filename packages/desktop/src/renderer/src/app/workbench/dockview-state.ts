@@ -8,6 +8,7 @@ export const WORKBENCH_DOCKVIEW_STORAGE_KEY = "desktop.workbench.dockviewLayout.
 
 export type WorkbenchDockPanelReference = WorkbenchTabReference
 export type WorkbenchDockDirection = "left" | "right" | "top" | "bottom"
+export type WorkbenchDockviewGroupLocation = "grid" | "floating" | "popout"
 
 export interface WorkbenchDockviewCommands {
   openPanel: (
@@ -20,6 +21,7 @@ export interface WorkbenchDockviewCommands {
   ) => boolean
   focusPanel: (reference: WorkbenchDockPanelReference) => boolean
   closePanel: (reference: WorkbenchDockPanelReference) => boolean
+  popoutPanel: (reference: WorkbenchDockPanelReference) => boolean
   replacePanel: (
     currentReference: WorkbenchDockPanelReference,
     nextReference: WorkbenchDockPanelReference,
@@ -54,6 +56,7 @@ interface SerializedDockviewGroupState {
 
 export interface WorkbenchDockviewGroupSnapshot {
   id: string
+  location: WorkbenchDockviewGroupLocation
   panelIDs: string[]
   views: WorkbenchDockPanelReference[]
   activePanelID: string | null
@@ -195,29 +198,33 @@ export function getDockviewGroupsInOrder(layout: SerializedDockview | null): Wor
   const sourceLayout = layout
   const groups: WorkbenchDockviewGroupSnapshot[] = []
 
+  function appendGroup(group: SerializedDockviewGroupState, location: WorkbenchDockviewGroupLocation) {
+    if (!isSerializedGroupState(group)) return
+
+    groups.push({
+      id: group.id,
+      location,
+      panelIDs: [...group.views],
+      views: group.views.flatMap((panelID) => {
+        const reference = getWorkbenchDockPanelReference(
+          panelID,
+          sourceLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
+        )
+        return reference ? [reference] : []
+      }),
+      activePanelID: group.activeView ?? null,
+      activeView: group.activeView
+        ? getWorkbenchDockPanelReference(
+            group.activeView,
+            sourceLayout.panels[group.activeView] as SerializedDockviewPanelState | undefined,
+          )
+        : null,
+    })
+  }
+
   function visit(node: SerializedGridObject<SerializedDockviewGroupState>) {
     if (node.type === "leaf") {
-      const group = node.data
-      if (isSerializedGroupState(group)) {
-        groups.push({
-          id: group.id,
-          panelIDs: [...group.views],
-          views: group.views.flatMap((panelID) => {
-            const reference = getWorkbenchDockPanelReference(
-              panelID,
-              sourceLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
-            )
-            return reference ? [reference] : []
-          }),
-          activePanelID: group.activeView ?? null,
-          activeView: group.activeView
-            ? getWorkbenchDockPanelReference(
-                group.activeView,
-                sourceLayout.panels[group.activeView] as SerializedDockviewPanelState | undefined,
-              )
-            : null,
-        })
-      }
+      appendGroup(node.data as SerializedDockviewGroupState, "grid")
       return
     }
 
@@ -228,6 +235,12 @@ export function getDockviewGroupsInOrder(layout: SerializedDockview | null): Wor
   }
 
   visit(layout.grid.root as SerializedGridObject<SerializedDockviewGroupState>)
+  for (const floatingGroup of layout.floatingGroups ?? []) {
+    appendGroup(floatingGroup.data as SerializedDockviewGroupState, "floating")
+  }
+  for (const popoutGroup of layout.popoutGroups ?? []) {
+    appendGroup(popoutGroup.data as SerializedDockviewGroupState, "popout")
+  }
   return groups
 }
 
@@ -331,23 +344,29 @@ export function sanitizeDockviewLayout(layout: SerializedDockview | null | unkno
 
   if (validPanelIDs.size === 0) return null
 
+  function sanitizeGroup(group: SerializedDockviewGroupState): SerializedDockviewGroupState | null {
+    if (!isSerializedGroupState(group)) return null
+
+    const views = group.views.filter((panelID) => validPanelIDs.has(panelID))
+    if (views.length === 0) return null
+
+    return {
+      ...group,
+      views,
+      activeView: group.activeView && views.includes(group.activeView) ? group.activeView : views[0],
+    }
+  }
+
   function sanitizeNode(
     node: SerializedGridObject<SerializedDockviewGroupState>,
   ): SerializedGridObject<SerializedDockviewGroupState> | null {
     if (node.type === "leaf") {
-      const group = node.data
-      if (!isSerializedGroupState(group)) return null
-
-      const views = group.views.filter((panelID) => validPanelIDs.has(panelID))
-      if (views.length === 0) return null
+      const group = sanitizeGroup(node.data as SerializedDockviewGroupState)
+      if (!group) return null
 
       return {
         ...node,
-        data: {
-          ...group,
-          views,
-          activeView: group.activeView && views.includes(group.activeView) ? group.activeView : views[0],
-        },
+        data: group,
       }
     }
 
@@ -370,15 +389,41 @@ export function sanitizeDockviewLayout(layout: SerializedDockview | null | unkno
   }
 
   const nextRoot = sanitizeNode(sourceLayout.grid.root as SerializedGridObject<SerializedDockviewGroupState>)
-  if (!nextRoot) return null
+  const floatingGroups = (sourceLayout.floatingGroups ?? [])
+    .map((group) => {
+      const data = sanitizeGroup(group.data as SerializedDockviewGroupState)
+      return data ? { ...group, data } : null
+    })
+    .filter((group): group is NonNullable<typeof group> => group !== null)
+  const popoutGroups = (sourceLayout.popoutGroups ?? [])
+    .map((group) => {
+      const data = sanitizeGroup(group.data as SerializedDockviewGroupState)
+      return data ? { ...group, data } : null
+    })
+    .filter((group): group is NonNullable<typeof group> => group !== null)
 
-  sourceLayout.grid.root = nextRoot.type === "branch"
-    ? nextRoot
+  sourceLayout.grid.root = nextRoot
+    ? nextRoot.type === "branch"
+      ? nextRoot
+      : {
+          type: "branch",
+          data: [nextRoot],
+        }
     : {
         type: "branch",
-        data: [nextRoot],
+        data: [],
       }
   sourceLayout.panels = sanitizedPanels
+  if (floatingGroups.length > 0) {
+    sourceLayout.floatingGroups = floatingGroups
+  } else {
+    delete sourceLayout.floatingGroups
+  }
+  if (popoutGroups.length > 0) {
+    sourceLayout.popoutGroups = popoutGroups
+  } else {
+    delete sourceLayout.popoutGroups
+  }
   const groups = getDockviewGroupsInOrder(sourceLayout)
   sourceLayout.activeGroup = sourceLayout.activeGroup && groups.some((group) => group.id === sourceLayout.activeGroup)
     ? sourceLayout.activeGroup
@@ -401,36 +446,42 @@ export function normalizeDockviewLayout(
   const nextLayout = cloneSerializedDockview(sanitizedLayout)
   const nextPanels: SerializedDockview["panels"] = {}
 
+  function normalizeGroup(group: SerializedDockviewGroupState): SerializedDockviewGroupState | null {
+    if (!isSerializedGroupState(group)) return null
+
+    const views = group.views.filter((panelID) => validPanelIDs.has(panelID) && Boolean(nextLayout.panels[panelID]))
+    if (views.length === 0) return null
+    const activeView = group.activeView && views.includes(group.activeView) ? group.activeView : views[0]
+
+    for (const panelID of views) {
+      const reference = getWorkbenchDockPanelReference(
+        panelID,
+        nextLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
+      )
+      if (!reference) continue
+      nextPanels[panelID] = {
+        ...(nextLayout.panels[panelID] as SerializedDockviewPanelState),
+        ...createPanelState(reference, resolvePanelTitle(panelID)),
+      }
+    }
+
+    return {
+      ...group,
+      views,
+      activeView,
+    }
+  }
+
   function normalizeNode(
     node: SerializedGridObject<SerializedDockviewGroupState>,
   ): SerializedGridObject<SerializedDockviewGroupState> | null {
     if (node.type === "leaf") {
-      const group = node.data
-      if (!isSerializedGroupState(group)) return null
-
-      const views = group.views.filter((panelID) => validPanelIDs.has(panelID) && Boolean(nextLayout.panels[panelID]))
-      if (views.length === 0) return null
-      const activeView = group.activeView && views.includes(group.activeView) ? group.activeView : views[0]
-
-      for (const panelID of views) {
-        const reference = getWorkbenchDockPanelReference(
-          panelID,
-          nextLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
-        )
-        if (!reference) continue
-        nextPanels[panelID] = {
-          ...(nextLayout.panels[panelID] as SerializedDockviewPanelState),
-          ...createPanelState(reference, resolvePanelTitle(panelID)),
-        }
-      }
+      const group = normalizeGroup(node.data as SerializedDockviewGroupState)
+      if (!group) return null
 
       return {
         ...node,
-        data: {
-          ...group,
-          views,
-          activeView,
-        },
+        data: group,
       }
     }
 
@@ -453,15 +504,41 @@ export function normalizeDockviewLayout(
   }
 
   const nextRoot = normalizeNode(nextLayout.grid.root as SerializedGridObject<SerializedDockviewGroupState>)
-  if (!nextRoot) return null
+  const floatingGroups = (nextLayout.floatingGroups ?? [])
+    .map((group) => {
+      const data = normalizeGroup(group.data as SerializedDockviewGroupState)
+      return data ? { ...group, data } : null
+    })
+    .filter((group): group is NonNullable<typeof group> => group !== null)
+  const popoutGroups = (nextLayout.popoutGroups ?? [])
+    .map((group) => {
+      const data = normalizeGroup(group.data as SerializedDockviewGroupState)
+      return data ? { ...group, data } : null
+    })
+    .filter((group): group is NonNullable<typeof group> => group !== null)
 
-  nextLayout.grid.root = nextRoot.type === "branch"
-    ? nextRoot
+  nextLayout.grid.root = nextRoot
+    ? nextRoot.type === "branch"
+      ? nextRoot
+      : {
+          type: "branch",
+          data: [nextRoot],
+        }
     : {
         type: "branch",
-        data: [nextRoot],
+        data: [],
       }
   nextLayout.panels = nextPanels
+  if (floatingGroups.length > 0) {
+    nextLayout.floatingGroups = floatingGroups
+  } else {
+    delete nextLayout.floatingGroups
+  }
+  if (popoutGroups.length > 0) {
+    nextLayout.popoutGroups = popoutGroups
+  } else {
+    delete nextLayout.popoutGroups
+  }
   const groups = getDockviewGroupsInOrder(nextLayout)
   nextLayout.activeGroup = nextLayout.activeGroup && groups.some((group) => group.id === nextLayout.activeGroup)
     ? nextLayout.activeGroup
@@ -474,20 +551,65 @@ function createPersistableDockviewLayout(layout: SerializedDockview | null) {
   const sanitizedLayout = sanitizeDockviewLayout(layout)
   if (!sanitizedLayout) return null
 
-  const sessionReferences = getOpenSessionIDs(sanitizedLayout).map((sessionID): WorkbenchDockPanelReference => ({
-    kind: "session",
-    sessionID,
-  }))
-  if (sessionReferences.length === 0) return null
+  const seenPanelIDs = new Set<string>()
+  const leafNodes: Array<SerializedGridObject<SerializedDockviewGroupState> & { data: SerializedDockviewGroupState; type: "leaf" }> = []
+  const nextPanels: SerializedDockview["panels"] = {}
 
-  const panelTitles = new Map<string, string | undefined>()
-  for (const reference of sessionReferences) {
-    const panelID = getWorkbenchDockPanelId(reference)
-    const title = (sanitizedLayout.panels[panelID] as SerializedDockviewPanelState | undefined)?.title
-    panelTitles.set(panelID, title)
+  for (const group of getDockviewGroupsInOrder(sanitizedLayout)) {
+    const sessionPanelIDs = group.panelIDs.filter((panelID) => {
+      if (seenPanelIDs.has(panelID)) return false
+      const reference = getWorkbenchDockPanelReference(
+        panelID,
+        sanitizedLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
+      )
+      return reference?.kind === "session"
+    })
+    if (sessionPanelIDs.length === 0) continue
+
+    for (const panelID of sessionPanelIDs) {
+      const reference = getWorkbenchDockPanelReference(
+        panelID,
+        sanitizedLayout.panels[panelID] as SerializedDockviewPanelState | undefined,
+      )
+      if (!reference) continue
+      seenPanelIDs.add(panelID)
+      const title = (sanitizedLayout.panels[panelID] as SerializedDockviewPanelState | undefined)?.title
+      nextPanels[panelID] = createPanelState(reference, title)
+    }
+
+    const activePanelID = group.activePanelID && sessionPanelIDs.includes(group.activePanelID)
+      ? group.activePanelID
+      : sessionPanelIDs[0]
+    leafNodes.push({
+      type: "leaf",
+      data: {
+        id: group.id,
+        views: sessionPanelIDs,
+        activeView: activePanelID,
+      },
+      size: DEFAULT_DOCKVIEW_SIZE,
+    })
   }
 
-  return normalizeDockviewLayout(sanitizedLayout, sessionReferences, panelTitles)
+  if (leafNodes.length === 0) return null
+
+  const activeGroup = sanitizedLayout.activeGroup && leafNodes.some((node) => node.data.id === sanitizedLayout.activeGroup)
+    ? sanitizedLayout.activeGroup
+    : leafNodes[0]?.data.id
+
+  return {
+    grid: {
+      root: {
+        type: "branch",
+        data: leafNodes,
+      },
+      height: sanitizedLayout.grid.height || DEFAULT_DOCKVIEW_HEIGHT,
+      width: sanitizedLayout.grid.width || DEFAULT_DOCKVIEW_WIDTH,
+      orientation: sanitizedLayout.grid.orientation ?? Orientation.HORIZONTAL,
+    },
+    panels: nextPanels,
+    activeGroup,
+  }
 }
 
 export function readPersistedDockviewLayout() {

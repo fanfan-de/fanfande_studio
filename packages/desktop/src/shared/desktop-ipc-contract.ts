@@ -76,6 +76,7 @@ export const DESKTOP_AGENT_SESSION_EVENT_CHANNEL = "desktop:agent-session-event"
 export const DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL = "desktop:workspace-file-change"
 export const DESKTOP_PTY_EVENT_CHANNEL = "desktop:pty-event"
 export const DESKTOP_WINDOW_STATE_EVENT_CHANNEL = "desktop:window-state-changed"
+export const DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL = "desktop:workbench-state-changed"
 
 export type {
   AgentArchivedSessionDeleteResult,
@@ -268,6 +269,146 @@ export interface DesktopWindowState {
   isMaximized: boolean
 }
 
+export type WorkbenchWindowKind = "main" | "session-popout"
+export type WorkbenchSurfaceKind = "main" | "session-popout"
+export type WorkbenchPanelPlacement = "within" | "left" | "right" | "top" | "bottom"
+
+export interface WorkbenchPanelReference {
+  kind: "session"
+  sessionID: string
+}
+
+export interface WorkbenchWindowSummary {
+  id: string
+  kind: WorkbenchWindowKind
+  ownedPanelIDs: string[]
+  surfaceID?: string
+}
+
+export interface WorkbenchSurfaceSummary {
+  surfaceID: string
+  kind: WorkbenchSurfaceKind
+  windowID: string
+  ownedPanelIDs: string[]
+  layout?: unknown
+}
+
+export interface WorkbenchPanelOwnership {
+  panelID: string
+  ownerWindowID: string
+  ownerSurfaceID?: string
+  reference: WorkbenchPanelReference
+  lastMainGroupID?: string | null
+  title?: string
+}
+
+export interface WorkbenchPaneRenderSnapshot {
+  panelID: string
+  reference: WorkbenchPanelReference
+  title?: string
+  pane: unknown
+  workspaces?: unknown
+}
+
+export interface WorkbenchSharedState {
+  version: number
+  windows: WorkbenchWindowSummary[]
+  surfaces?: WorkbenchSurfaceSummary[]
+  ownership: WorkbenchPanelOwnership[]
+  panels: Record<string, WorkbenchPaneRenderSnapshot>
+}
+
+export interface WorkbenchWindowContext {
+  windowID: string
+  kind: WorkbenchWindowKind
+  surfaceID?: string
+  ownedPanelIDs: string[]
+  panelID?: string
+  reference?: WorkbenchPanelReference | null
+  state: WorkbenchSharedState
+}
+
+export interface WorkbenchWindowBounds {
+  height: number
+  width: number
+  x?: number
+  y?: number
+}
+
+export interface WorkbenchDetachSessionPanelInput {
+  bounds?: WorkbenchWindowBounds
+  lastMainGroupID?: string | null
+  panelID: string
+  sessionID: string
+  sourceSurfaceID?: string | null
+  title?: string
+}
+
+export interface WorkbenchDetachSessionPanelResult {
+  ok: boolean
+  panelID: string
+  reason?: string
+  windowID: string
+  state: WorkbenchSharedState
+}
+
+export interface WorkbenchWindowReadyInput {
+  windowID: string
+}
+
+export interface WorkbenchPanelMountedInput {
+  panelID: string
+  windowID: string
+}
+
+export interface WorkbenchDockSessionPanelInput {
+  panelID: string
+  reason?: "button" | "close" | "crash" | "timeout"
+  targetGroupID?: string | null
+  windowID?: string
+}
+
+export interface WorkbenchMoveSessionPanelInput {
+  panelID: string
+  placement?: WorkbenchPanelPlacement
+  sourceSurfaceID?: string | null
+  targetGroupID?: string | null
+  targetSurfaceID: string
+}
+
+export interface WorkbenchMoveSessionPanelResult {
+  ok: boolean
+  reason?: string
+  state: WorkbenchSharedState
+}
+
+export interface WorkbenchPanelDragInput {
+  dragID: string
+  panelID: string
+  sourceSurfaceID: string
+}
+
+export interface WorkbenchPanelDragState extends WorkbenchPanelDragInput {
+  startedAt: number
+}
+
+export interface WorkbenchPanelMoveEvent {
+  panelID: string
+  placement: WorkbenchPanelPlacement
+  reference: WorkbenchPanelReference
+  sourceSurfaceID: string
+  targetGroupID?: string | null
+  targetSurfaceID: string
+  title?: string
+}
+
+export interface WorkbenchStateEvent {
+  reason: "snapshot" | "detached" | "dock" | "restored" | "move"
+  panelID?: string
+  move?: WorkbenchPanelMoveEvent
+  state: WorkbenchSharedState
+}
+
 export interface DesktopAgentHealth {
   ok: boolean
   baseURL: string
@@ -424,6 +565,46 @@ export interface DesktopIpcContract {
   "desktop:get-window-state": {
     input: void
     output: DesktopWindowState
+  }
+  "desktop:get-workbench-window-context": {
+    input: void
+    output: WorkbenchWindowContext
+  }
+  "desktop:workbench-publish-state-snapshot": {
+    input: WorkbenchSharedState
+    output: WorkbenchSharedState
+  }
+  "desktop:workbench-detach-session-panel": {
+    input: WorkbenchDetachSessionPanelInput
+    output: WorkbenchDetachSessionPanelResult
+  }
+  "desktop:workbench-window-ready": {
+    input: WorkbenchWindowReadyInput
+    output: void
+  }
+  "desktop:workbench-panel-mounted": {
+    input: WorkbenchPanelMountedInput
+    output: WorkbenchSharedState
+  }
+  "desktop:workbench-dock-session-panel": {
+    input: WorkbenchDockSessionPanelInput
+    output: WorkbenchSharedState
+  }
+  "desktop:workbench-move-session-panel": {
+    input: WorkbenchMoveSessionPanelInput
+    output: WorkbenchMoveSessionPanelResult
+  }
+  "desktop:workbench-begin-panel-drag": {
+    input: WorkbenchPanelDragInput
+    output: WorkbenchPanelDragState
+  }
+  "desktop:workbench-end-panel-drag": {
+    input: { dragID: string }
+    output: void
+  }
+  "desktop:workbench-get-panel-drag": {
+    input: { dragID?: string }
+    output: WorkbenchPanelDragState | null
   }
   "desktop:get-appearance-config": {
     input: void
@@ -995,6 +1176,7 @@ export interface DesktopIpcEventPayloads {
   [DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL]: WorkspaceFileChangeIPCEvent
   [DESKTOP_PTY_EVENT_CHANNEL]: PtyTransportIPCEvent
   [DESKTOP_WINDOW_STATE_EVENT_CHANNEL]: DesktopWindowState
+  [DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL]: WorkbenchStateEvent
 }
 
 export type DesktopIpcChannel = keyof DesktopIpcContract
@@ -1031,6 +1213,16 @@ export interface DesktopApiMethods {
   ): Promise<DesktopIpcOutput<"desktop:set-automatic-updates-enabled">>
   checkForAppUpdates(): Promise<DesktopIpcOutput<"desktop:check-for-app-updates">>
   getWindowState(): Promise<DesktopIpcOutput<"desktop:get-window-state">>
+  getWorkbenchWindowContext(): Promise<DesktopIpcOutput<"desktop:get-workbench-window-context">>
+  publishWorkbenchSnapshot(input: DesktopIpcInput<"desktop:workbench-publish-state-snapshot">): Promise<DesktopIpcOutput<"desktop:workbench-publish-state-snapshot">>
+  detachSessionPanel(input: DesktopIpcInput<"desktop:workbench-detach-session-panel">): Promise<DesktopIpcOutput<"desktop:workbench-detach-session-panel">>
+  markWorkbenchWindowReady(input: DesktopIpcInput<"desktop:workbench-window-ready">): Promise<DesktopIpcOutput<"desktop:workbench-window-ready">>
+  markWorkbenchPanelMounted(input: DesktopIpcInput<"desktop:workbench-panel-mounted">): Promise<DesktopIpcOutput<"desktop:workbench-panel-mounted">>
+  dockSessionPanel(input: DesktopIpcInput<"desktop:workbench-dock-session-panel">): Promise<DesktopIpcOutput<"desktop:workbench-dock-session-panel">>
+  moveWorkbenchPanel(input: DesktopIpcInput<"desktop:workbench-move-session-panel">): Promise<DesktopIpcOutput<"desktop:workbench-move-session-panel">>
+  beginWorkbenchPanelDrag(input: DesktopIpcInput<"desktop:workbench-begin-panel-drag">): Promise<DesktopIpcOutput<"desktop:workbench-begin-panel-drag">>
+  endWorkbenchPanelDrag(input: DesktopIpcInput<"desktop:workbench-end-panel-drag">): Promise<DesktopIpcOutput<"desktop:workbench-end-panel-drag">>
+  getWorkbenchPanelDrag(input: DesktopIpcInput<"desktop:workbench-get-panel-drag">): Promise<DesktopIpcOutput<"desktop:workbench-get-panel-drag">>
   getAppearanceConfig(): Promise<DesktopIpcOutput<"desktop:get-appearance-config">>
   saveAppearanceConfig(input: DesktopIpcInput<"desktop:save-appearance-config">): Promise<DesktopIpcOutput<"desktop:save-appearance-config">>
   getLocaleConfig(): Promise<DesktopIpcOutput<"desktop:get-locale-config">>
@@ -1164,6 +1356,7 @@ export interface DesktopApiMethods {
   onWorkspaceFileChange(listener: (event: DesktopIpcEventPayload<typeof DESKTOP_WORKSPACE_FILE_CHANGE_EVENT_CHANNEL>) => void): () => void
   onPtyEvent(listener: (event: DesktopIpcEventPayload<typeof DESKTOP_PTY_EVENT_CHANNEL>) => void): () => void
   onWindowStateChange(listener: (state: DesktopIpcEventPayload<typeof DESKTOP_WINDOW_STATE_EVENT_CHANNEL>) => void): () => void
+  onWorkbenchStateChange(listener: (event: DesktopIpcEventPayload<typeof DESKTOP_WORKBENCH_STATE_EVENT_CHANNEL>) => void): () => void
 }
 
 export type DesktopPreloadApi = DesktopApiBase & DesktopApiMethods

@@ -72,8 +72,10 @@
   gap: 6px;
   min-width: 0;
   max-width: 100%;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 180px;
+}
+
+.turn[data-turn-motion="new"],
+.turn[data-turn-motion="live"] {
   animation: rise-in 260ms ease;
 }
 

@@ -6,9 +6,11 @@ import { registerLocalImageProtocolHandler, registerLocalImageProtocolScheme } f
 import { readLocaleConfigSnapshot } from "./locale-config"
 import { ensureManagedAgentRunning, stopManagedAgent } from "./managed-agent"
 import { createApplicationMenus, type ApplicationMenuOptions } from "./menu"
+import { stopRendererHttpServer } from "./renderer-http-server"
 import { safeError } from "./safe-console"
 import { checkForAppUpdates, initializeAutoUpdater } from "./updater"
-import { createWindow } from "./window"
+import { createWindow, resolvePopoutWindowOptions, resolveRendererEntryUrl } from "./window"
+import { WorkbenchWindowManager } from "./workbench-window-manager"
 
 const mainDir = path.dirname(fileURLToPath(import.meta.url))
 
@@ -32,6 +34,11 @@ void app.whenReady().then(async () => {
   })
   const menus = createApplicationMenus(localeSnapshot?.document.locale ?? "zh-CN", menuOptions)
   Menu.setApplicationMenu(menus.applicationMenu)
+  const rendererEntryUrl = await resolveRendererEntryUrl(mainDir)
+  const workbenchWindowManager = new WorkbenchWindowManager({
+    rendererEntryUrl,
+    createPopoutWindowOptions: () => resolvePopoutWindowOptions(mainDir),
+  })
   registerIpcHandlers(menus, {
     onLocaleChanged: (locale) => {
       const nextMenus = createApplicationMenus(locale, menuOptions)
@@ -39,22 +46,32 @@ void app.whenReady().then(async () => {
       menus.popupMenus = nextMenus.popupMenus
       Menu.setApplicationMenu(menus.applicationMenu)
     },
+    workbenchWindowManager,
   })
   registerLocalImageProtocolHandler(protocol)
 
-  createWindow(mainDir)
+  try {
+    await createWindow(mainDir, { workbenchWindowManager })
+  } catch (error) {
+    safeError("[desktop] failed to create window", error)
+  }
   initializeAutoUpdater()
   setTimeout(() => {
     void checkForAppUpdates()
   }, 3000)
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow(mainDir)
+    if (BrowserWindow.getAllWindows().length === 0) {
+      void createWindow(mainDir, { workbenchWindowManager }).catch((error) => {
+        safeError("[desktop] failed to create window", error)
+      })
+    }
   })
 })
 
 app.on("before-quit", () => {
   void stopManagedAgent()
+  void stopRendererHttpServer()
 })
 
 app.on("window-all-closed", () => {

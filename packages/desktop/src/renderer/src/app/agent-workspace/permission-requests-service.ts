@@ -9,7 +9,24 @@ import type {
   Turn,
 } from "../types"
 import { createID } from "../utils"
+import type { SessionDataLoadOptions } from "./session-data-load-cache"
 import type { WorkspaceStateUpdater } from "./workspace-store"
+
+function buildPermissionRequestsSignature(requests: PermissionRequest[]) {
+  return requests
+    .map((request) => [
+      request.id,
+      request.status,
+      request.sessionID,
+      request.messageID,
+      request.toolCallID,
+      request.prompt.title,
+      request.prompt.summary,
+      request.prompt.risk,
+    ].join("\u0000"))
+    .sort()
+    .join("\u0001")
+}
 
 interface LoadPendingPermissionRequestsInput {
   backendSessionID: string
@@ -18,6 +35,7 @@ interface LoadPendingPermissionRequestsInput {
   setPendingPermissionRequestsBySession: (
     update: WorkspaceStateUpdater<Record<string, PermissionRequest[]>>,
   ) => void
+  options?: SessionDataLoadOptions
 }
 
 export async function loadPendingPermissionRequestsForSession({
@@ -36,10 +54,18 @@ export async function loadPendingPermissionRequestsForSession({
     const nextRequests = await agentSession.loadPermissionRequests({ backendSessionID })
     if (permissionRequestsRequestRef.current[sessionID] !== requestID) return
 
-    setPendingPermissionRequestsBySession((prev) => ({
-      ...prev,
-      [sessionID]: nextRequests.filter((request) => request.status === "pending"),
-    }))
+    const nextPendingRequests = nextRequests.filter((request) => request.status === "pending")
+    setPendingPermissionRequestsBySession((prev) => {
+      const currentRequests = prev[sessionID] ?? []
+      if (buildPermissionRequestsSignature(currentRequests) === buildPermissionRequestsSignature(nextPendingRequests)) {
+        return prev
+      }
+
+      return {
+        ...prev,
+        [sessionID]: nextPendingRequests,
+      }
+    })
   } catch (error) {
     if (permissionRequestsRequestRef.current[sessionID] !== requestID) return
     console.error("[desktop] agentSession.loadPermissionRequests failed:", error)
@@ -54,14 +80,14 @@ interface RespondPermissionRequestInput {
     decision: PermissionDecision
     note?: string
   }
-  loadPendingPermissionRequestsForSession: (sessionID: string, backendSessionID: string) => Promise<void>
-  loadSessionDiffForSession: (sessionID: string, backendSessionID: string) => Promise<void>
-  loadSessionRuntimeDebugForSession: (sessionID: string, backendSessionID: string) => Promise<void>
+  loadPendingPermissionRequestsForSession: (sessionID: string, backendSessionID: string, options?: SessionDataLoadOptions) => Promise<void>
+  loadSessionDiffForSession: (sessionID: string, backendSessionID: string, options?: SessionDataLoadOptions) => Promise<void>
+  loadSessionRuntimeDebugForSession: (sessionID: string, backendSessionID: string, options?: SessionDataLoadOptions) => Promise<void>
   pendingStreamsRef: MutableRefObject<Record<string, PendingAgentStream>>
   permissionRequestActionRequestID: string | null
   permissionRequestsRequestRef: MutableRefObject<Record<string, number>>
   refreshWorkspaceForSession: (sessionID: string) => void
-  reloadSessionHistoryForSession: (sessionID: string, backendSessionID: string) => Promise<void>
+  reloadSessionHistoryForSession: (sessionID: string, backendSessionID: string, options?: SessionDataLoadOptions) => Promise<void>
   setPendingPermissionRequestsBySession: (
     update: WorkspaceStateUpdater<Record<string, PermissionRequest[]>>,
   ) => void
@@ -116,16 +142,32 @@ export async function respondPermissionRequest({
     })
     requestResolved = true
 
-    await reloadSessionHistoryForSession(input.sessionID, input.request.sessionID).catch((error) => {
+    await reloadSessionHistoryForSession(input.sessionID, input.request.sessionID, {
+      force: true,
+      mode: "silent",
+      reason: "permission",
+    }).catch((error) => {
       console.error("[desktop] permission history refresh failed:", error)
     })
-    await loadSessionDiffForSession(input.sessionID, input.request.sessionID).catch((error) => {
+    await loadSessionDiffForSession(input.sessionID, input.request.sessionID, {
+      force: true,
+      mode: "silent",
+      reason: "permission",
+    }).catch((error) => {
       console.error("[desktop] permission diff refresh failed:", error)
     })
-    await loadSessionRuntimeDebugForSession(input.sessionID, input.request.sessionID).catch((error) => {
+    await loadSessionRuntimeDebugForSession(input.sessionID, input.request.sessionID, {
+      force: true,
+      mode: "silent",
+      reason: "permission",
+    }).catch((error) => {
       console.error("[desktop] permission runtime refresh failed:", error)
     })
-    await loadPendingPermissionRequestsForSession(input.sessionID, input.request.sessionID).catch((error) => {
+    await loadPendingPermissionRequestsForSession(input.sessionID, input.request.sessionID, {
+      force: true,
+      mode: "silent",
+      reason: "permission",
+    }).catch((error) => {
       console.error("[desktop] permission request refresh failed:", error)
     })
     refreshWorkspaceForSession(input.sessionID)

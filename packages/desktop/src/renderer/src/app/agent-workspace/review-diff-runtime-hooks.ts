@@ -7,10 +7,58 @@ import type {
   WorkspaceFileReviewState,
 } from "../types"
 import { DEFAULT_SESSION_DIFF_STATE, DEFAULT_SESSION_RUNTIME_DEBUG_STATE, DEFAULT_WORKSPACE_FILE_REVIEW_STATE, resolveWorkspaceFileReviewStatus } from "./review-preview-state"
+import type { SessionDataLoadOptions } from "./session-data-load-cache"
 import { normalizeWorkspacePath } from "./workspace-loading-hooks"
 import type { WorkspaceStateUpdater } from "./workspace-store"
 
 const WORKSPACE_DIFF_REFRESH_DEBOUNCE_MS = 500
+
+export function buildSessionDiffSummarySignature(diff: SessionDiffSummary | null | undefined) {
+  if (!diff) return ""
+  return JSON.stringify({
+    body: diff.body ?? "",
+    diffs: diff.diffs.map((item) => ({
+      additions: item.additions,
+      deletions: item.deletions,
+      file: item.file,
+      patch: item.patch ?? "",
+    })),
+    stats: diff.stats ?? null,
+    title: diff.title ?? "",
+  })
+}
+
+export function sessionDiffSummariesAreEquivalent(
+  left: SessionDiffSummary | null | undefined,
+  right: SessionDiffSummary | null | undefined,
+) {
+  return buildSessionDiffSummarySignature(left) === buildSessionDiffSummarySignature(right)
+}
+
+export function buildSessionRuntimeDebugSignature(snapshot: SessionRuntimeDebugSnapshot | null | undefined) {
+  if (!snapshot) return ""
+  return JSON.stringify({
+    activeTurnID: snapshot.activeTurnID,
+    diagnostics: snapshot.diagnostics,
+    latestTurn: snapshot.latestTurn,
+    running: {
+      reason: snapshot.running.reason,
+      sessionID: snapshot.running.sessionID,
+      startedAt: snapshot.running.startedAt,
+    },
+    session: snapshot.session,
+    status: snapshot.status,
+    tasks: snapshot.tasks ?? null,
+    turns: snapshot.turns,
+  })
+}
+
+export function sessionRuntimeDebugSnapshotsAreEquivalent(
+  left: SessionRuntimeDebugSnapshot | null | undefined,
+  right: SessionRuntimeDebugSnapshot | null | undefined,
+) {
+  return buildSessionRuntimeDebugSignature(left) === buildSessionRuntimeDebugSignature(right)
+}
 
 interface SessionDiffRequestStateInput {
   hasExistingSummary: boolean
@@ -53,14 +101,14 @@ export function scheduleSessionDiffRefreshForSession({
   sessionDiffRefreshTimerRef,
   sessionID,
 }: {
-  loadSessionDiffForSession: (sessionID: string) => Promise<void>
+  loadSessionDiffForSession: (sessionID: string, backendSessionID?: string, options?: SessionDataLoadOptions) => Promise<void>
   sessionDiffRefreshTimerRef: MutableRefObject<Record<string, number>>
   sessionID: string
 }) {
   clearSessionDiffRefreshTimer(sessionID, sessionDiffRefreshTimerRef)
   sessionDiffRefreshTimerRef.current[sessionID] = window.setTimeout(() => {
     delete sessionDiffRefreshTimerRef.current[sessionID]
-    void loadSessionDiffForSession(sessionID).catch((error) => {
+    void loadSessionDiffForSession(sessionID, undefined, { force: true, mode: "silent", reason: "stream" }).catch((error) => {
       console.error("[desktop] workspace diff refresh failed:", error)
     })
   }, WORKSPACE_DIFF_REFRESH_DEBOUNCE_MS)
@@ -78,6 +126,7 @@ interface LoadSessionDiffInput {
   setSessionDiffStateBySession: (
     update: WorkspaceStateUpdater<Record<string, SessionDiffState>>,
   ) => void
+  options?: SessionDataLoadOptions
 }
 
 export async function loadSessionDiffForSession({
@@ -88,6 +137,7 @@ export async function loadSessionDiffForSession({
   sessionID,
   setSessionDiffBySession,
   setSessionDiffStateBySession,
+  options,
 }: LoadSessionDiffInput) {
   const getSessionDiff = window.desktop?.getSessionDiff
   if (!getSessionDiff) return
@@ -96,29 +146,60 @@ export async function loadSessionDiffForSession({
   const requestID = (sessionDiffRequestRef.current[sessionID] ?? 0) + 1
   sessionDiffRequestRef.current[sessionID] = requestID
   const hasExistingSummary = Boolean(sessionDiffBySession[sessionID])
-  setSessionDiffRequestState({
-    hasExistingSummary,
-    sessionID,
-    setSessionDiffStateBySession,
-  })
+  const isSilent = options?.mode === "silent"
+  if (!isSilent) {
+    setSessionDiffRequestState({
+      hasExistingSummary,
+      sessionID,
+      setSessionDiffStateBySession,
+    })
+  }
 
   try {
     const nextDiff = await getSessionDiff({ sessionID: backendSessionID })
     if (sessionDiffRequestRef.current[sessionID] !== requestID) return
+    let didChangeDiff = false
 
-    setSessionDiffBySession((prev) => ({
-      ...prev,
-      [sessionID]: nextDiff,
-    }))
-    setSessionDiffStateBySession((prev) => ({
-      ...prev,
-      [sessionID]: {
+    setSessionDiffBySession((prev) => {
+      didChangeDiff = !sessionDiffSummariesAreEquivalent(prev[sessionID], nextDiff)
+      return didChangeDiff
+        ? {
+            ...prev,
+            [sessionID]: nextDiff,
+          }
+        : prev
+    })
+    setSessionDiffStateBySession((prev) => {
+      const current = prev[sessionID] ?? DEFAULT_SESSION_DIFF_STATE
+      const nextState: SessionDiffState = {
         status: nextDiff.diffs.length > 0 ? "ready" : "empty",
         errorMessage: null,
-        updatedAt: Date.now(),
+        updatedAt: didChangeDiff ? Date.now() : current.updatedAt,
         isStale: false,
-      },
-    }))
+      }
+      if (
+        isSilent &&
+        !didChangeDiff &&
+        current.status === nextState.status &&
+        current.errorMessage === nextState.errorMessage &&
+        current.updatedAt === nextState.updatedAt &&
+        current.isStale === nextState.isStale
+      ) {
+        return prev
+      }
+      if (
+        current.status === nextState.status &&
+        current.errorMessage === nextState.errorMessage &&
+        current.updatedAt === nextState.updatedAt &&
+        current.isStale === nextState.isStale
+      ) {
+        return prev
+      }
+      return {
+        ...prev,
+        [sessionID]: nextState,
+      }
+    })
   } catch (error) {
     if (sessionDiffRequestRef.current[sessionID] !== requestID) return
     const message = error instanceof Error ? error.message : String(error)
@@ -189,7 +270,7 @@ interface LoadSessionRuntimeDebugInput {
   options?: {
     limit?: number
     turns?: number
-  }
+  } & SessionDataLoadOptions
 }
 
 export async function loadSessionRuntimeDebugForSession({
@@ -210,11 +291,14 @@ export async function loadSessionRuntimeDebugForSession({
   const requestID = (runtimeDebugRequestRef.current[sessionID] ?? 0) + 1
   runtimeDebugRequestRef.current[sessionID] = requestID
   const hasExistingSnapshot = Boolean(sessionRuntimeDebugBySession[sessionID])
-  setSessionRuntimeDebugRequestState({
-    hasExistingSnapshot,
-    sessionID,
-    setSessionRuntimeDebugStateBySession,
-  })
+  const isSilent = options?.mode === "silent"
+  if (!isSilent) {
+    setSessionRuntimeDebugRequestState({
+      hasExistingSnapshot,
+      sessionID,
+      setSessionRuntimeDebugStateBySession,
+    })
+  }
 
   try {
     const nextRuntimeDebug = await getSessionRuntimeDebug({
@@ -223,20 +307,48 @@ export async function loadSessionRuntimeDebugForSession({
       turns: options?.turns,
     })
     if (runtimeDebugRequestRef.current[sessionID] !== requestID) return
+    let didChangeRuntimeDebug = false
 
-    setSessionRuntimeDebugBySession((prev) => ({
-      ...prev,
-      [sessionID]: nextRuntimeDebug,
-    }))
-    setSessionRuntimeDebugStateBySession((prev) => ({
-      ...prev,
-      [sessionID]: {
+    setSessionRuntimeDebugBySession((prev) => {
+      didChangeRuntimeDebug = !sessionRuntimeDebugSnapshotsAreEquivalent(prev[sessionID], nextRuntimeDebug)
+      return didChangeRuntimeDebug
+        ? {
+            ...prev,
+            [sessionID]: nextRuntimeDebug,
+          }
+        : prev
+    })
+    setSessionRuntimeDebugStateBySession((prev) => {
+      const current = prev[sessionID] ?? DEFAULT_SESSION_RUNTIME_DEBUG_STATE
+      const nextState: SessionRuntimeDebugState = {
         status: "ready",
         errorMessage: null,
-        updatedAt: Date.now(),
+        updatedAt: didChangeRuntimeDebug ? Date.now() : current.updatedAt,
         isStale: false,
-      },
-    }))
+      }
+      if (
+        isSilent &&
+        !didChangeRuntimeDebug &&
+        current.status === nextState.status &&
+        current.errorMessage === nextState.errorMessage &&
+        current.updatedAt === nextState.updatedAt &&
+        current.isStale === nextState.isStale
+      ) {
+        return prev
+      }
+      if (
+        current.status === nextState.status &&
+        current.errorMessage === nextState.errorMessage &&
+        current.updatedAt === nextState.updatedAt &&
+        current.isStale === nextState.isStale
+      ) {
+        return prev
+      }
+      return {
+        ...prev,
+        [sessionID]: nextState,
+      }
+    })
   } catch (error) {
     if (runtimeDebugRequestRef.current[sessionID] !== requestID) return
     const message = error instanceof Error ? error.message : String(error)
@@ -265,7 +377,7 @@ export function scheduleRuntimeDebugRefresh({
 }: {
   backendSessionID: string
   delayMs?: number
-  loadSessionRuntimeDebugForSession: (sessionID: string, backendSessionID: string) => Promise<void>
+  loadSessionRuntimeDebugForSession: (sessionID: string, backendSessionID: string, options?: SessionDataLoadOptions) => Promise<void>
   runtimeDebugRefreshTimerRef: MutableRefObject<Record<string, number>>
   sessionID: string
 }) {
@@ -274,46 +386,48 @@ export function scheduleRuntimeDebugRefresh({
   clearRuntimeDebugRefreshTimer(sessionID, runtimeDebugRefreshTimerRef)
   runtimeDebugRefreshTimerRef.current[sessionID] = window.setTimeout(() => {
     delete runtimeDebugRefreshTimerRef.current[sessionID]
-    void loadSessionRuntimeDebugForSession(sessionID, backendSessionID).catch((error) => {
+    void loadSessionRuntimeDebugForSession(sessionID, backendSessionID, { force: true, mode: "silent", reason: "stream" }).catch((error) => {
       console.error("[desktop] session runtime debug refresh failed:", error)
     })
   }, delayMs)
 }
 
-export function useActiveSessionReviewEffects({
-  activeSessionID,
+export function useOpenSessionReviewPreloadEffects({
+  openSessionIDs,
   agentSessions,
   canLoadSessionHistory,
-  loadPendingPermissionRequestsForSession,
-  loadSessionDiffForSession,
-  loadSessionRuntimeDebugForSession,
+  ensurePendingPermissionRequestsLoaded,
+  ensureSessionDiffLoaded,
+  ensureSessionRuntimeDebugLoaded,
   isRuntimeDebugEnabled,
 }: {
-  activeSessionID: string | null
+  openSessionIDs: string[]
   agentSessions: Record<string, string>
   canLoadSessionHistory: boolean
-  loadPendingPermissionRequestsForSession: (sessionID: string) => Promise<void>
-  loadSessionDiffForSession: (sessionID: string) => Promise<void>
-  loadSessionRuntimeDebugForSession: (sessionID: string) => Promise<void>
+  ensurePendingPermissionRequestsLoaded: (sessionID: string) => Promise<void>
+  ensureSessionDiffLoaded: (sessionID: string) => Promise<void>
+  ensureSessionRuntimeDebugLoaded: (sessionID: string) => Promise<void>
   isRuntimeDebugEnabled: boolean
 }) {
-  useEffect(() => {
-    if (!canLoadSessionHistory || !activeSessionID) return
-
-    void loadSessionDiffForSession(activeSessionID)
-  }, [activeSessionID, canLoadSessionHistory, agentSessions])
+  const openSessionKey = openSessionIDs.join("\u0000")
 
   useEffect(() => {
-    if (!canLoadSessionHistory || !activeSessionID || !isRuntimeDebugEnabled) return
+    if (!canLoadSessionHistory) return
 
-    void loadSessionRuntimeDebugForSession(activeSessionID)
-  }, [activeSessionID, canLoadSessionHistory, agentSessions, isRuntimeDebugEnabled])
-
-  useEffect(() => {
-    if (!canLoadSessionHistory || !activeSessionID) return
-
-    void loadPendingPermissionRequestsForSession(activeSessionID)
-  }, [activeSessionID, canLoadSessionHistory, agentSessions])
+    for (const sessionID of openSessionIDs) {
+      void ensureSessionDiffLoaded(sessionID).catch((error) => {
+        console.error("[desktop] open session diff preload failed:", error)
+      })
+      void ensurePendingPermissionRequestsLoaded(sessionID).catch((error) => {
+        console.error("[desktop] open session permission preload failed:", error)
+      })
+      if (isRuntimeDebugEnabled) {
+        void ensureSessionRuntimeDebugLoaded(sessionID).catch((error) => {
+          console.error("[desktop] open session runtime preload failed:", error)
+        })
+      }
+    }
+  }, [openSessionKey, canLoadSessionHistory, agentSessions, isRuntimeDebugEnabled])
 }
 
 export function useReviewRefreshCleanupEffect({

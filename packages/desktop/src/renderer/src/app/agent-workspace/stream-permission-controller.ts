@@ -5,6 +5,7 @@ import type {
   PendingAgentStream,
   PermissionRequest
 } from "../types"
+import { createSessionDataLoadCache } from "./session-data-load-cache"
 import { useWorkspaceStoreSelector, type WorkspaceStoreApi } from "./workspace-store"
 
 interface StreamPermissionControllerOptions {
@@ -14,7 +15,8 @@ interface StreamPermissionControllerOptions {
 
 export function useStreamPermissionController({ initialSessionID, store }: StreamPermissionControllerOptions) {
   const pendingStreamsRef = useRef<Record<string, PendingAgentStream>>({})
-  const historyRequestRef = useRef(0)
+  const historyRequestRef = useRef<Record<string, number>>({})
+  const sessionDataLoadCacheRef = useRef(createSessionDataLoadCache())
   const permissionRequestsRequestRef = useRef<Record<string, number>>({})
   const conversationVersionRef = useRef<Record<string, number>>({})
   const skipNextHistoryLoadRef = useRef<Record<string, boolean>>({})
@@ -82,6 +84,7 @@ export function useStreamPermissionController({ initialSessionID, store }: Strea
     permissionRequestActionRequestID,
     permissionRequestsRequestRef,
     sessionDirectoryBySession,
+    sessionDataLoadCacheRef,
     sessionEventRouterRef,
     setAgentSessions,
     setCancellingSessionIDs,

@@ -102,6 +102,7 @@ import { isWindowMaximized, maximizeFramelessWindow, restoreFramelessWindow, sen
 import { getWorkspaceGitDiff, restoreWorkspaceDiffFile, reverseApplyWorkspaceDiffPatches } from "./workspace-diff"
 import { readWorkspaceFile, searchWorkspaceFiles } from "./workspace-files"
 import { WorkspaceWatchManager } from "./workspace-watch"
+import type { WorkbenchWindowManager } from "./workbench-window-manager"
 
 const AGENT_SESSION_EVENT_CHANNEL = DESKTOP_AGENT_SESSION_EVENT_CHANNEL
 
@@ -407,6 +408,7 @@ function isAbortError(error: unknown) {
 
 export interface IpcHandlerOptions {
   onLocaleChanged?: (locale: AppLocale) => void
+  workbenchWindowManager?: WorkbenchWindowManager
 }
 
 export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandlerOptions = {}) {
@@ -669,6 +671,76 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     return {
       isMaximized: win ? isWindowMaximized(win) : false,
     }
+  })
+
+  handleDesktopIpc("desktop:get-workbench-window-context", (event) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.getWindowContext(event.sender)
+  })
+
+  handleDesktopIpc("desktop:workbench-publish-state-snapshot", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.publishStateSnapshot(input)
+  })
+
+  handleDesktopIpc("desktop:workbench-detach-session-panel", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.detachSessionPanel(input)
+  })
+
+  handleDesktopIpc("desktop:workbench-window-ready", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.markWindowReady(input)
+  })
+
+  handleDesktopIpc("desktop:workbench-panel-mounted", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.markPanelMounted(input)
+  })
+
+  handleDesktopIpc("desktop:workbench-dock-session-panel", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.dockSessionPanel(input)
+  })
+
+  handleDesktopIpc("desktop:workbench-move-session-panel", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.moveSessionPanel(input)
+  })
+
+  handleDesktopIpc("desktop:workbench-begin-panel-drag", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.beginPanelDrag(input)
+  })
+
+  handleDesktopIpc("desktop:workbench-end-panel-drag", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.endPanelDrag(input)
+  })
+
+  handleDesktopIpc("desktop:workbench-get-panel-drag", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.getPanelDrag(input)
   })
 
   handleDesktopIpc("desktop:get-appearance-config", async () => readAppearanceConfigSnapshot())

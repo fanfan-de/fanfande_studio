@@ -1,0 +1,353 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import type { SerializedDockview } from "dockview-react"
+import { DEFAULT_ASSISTANT_TRACE_VISIBILITY } from "../types"
+import { WorkbenchShell, type WorkbenchShellProps } from "./WorkbenchShell"
+
+const dockviewMock = vi.hoisted(() => {
+  const layoutListeners = new Set<() => void>()
+  const willDragPanelListeners = new Set<(event: any) => void>()
+  const groupElement = document.createElement("div")
+  let snapshot: SerializedDockview | null = null
+
+  Object.defineProperty(groupElement, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      bottom: 480,
+      height: 420,
+      left: 40,
+      right: 760,
+      top: 60,
+      width: 720,
+      x: 40,
+      y: 60,
+    }),
+  })
+
+  const panel = {
+    group: {
+      element: groupElement,
+      id: "group-1",
+    },
+    id: "session:session-1",
+    title: "Session 1",
+    api: {
+      close: vi.fn(() => {
+        snapshot = {
+          activeGroup: "group-1",
+          grid: {
+            height: 800,
+            orientation: "HORIZONTAL",
+            root: {
+              data: [],
+              type: "branch",
+            },
+            width: 1200,
+          },
+          panels: {},
+        } as unknown as SerializedDockview
+        for (const listener of layoutListeners) {
+          listener()
+        }
+      }),
+      location: {
+        type: "grid",
+      },
+    },
+  }
+
+  const api = {
+    clear: vi.fn(),
+    fromJSON: vi.fn(),
+    getPanel: vi.fn(() => null),
+    onDidActiveGroupChange: vi.fn(() => ({ dispose: vi.fn() })),
+    onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
+    onDidLayoutChange: vi.fn((listener: () => void) => {
+      layoutListeners.add(listener)
+      return {
+        dispose: () => layoutListeners.delete(listener),
+      }
+    }),
+    onWillDragPanel: vi.fn((listener: (event: any) => void) => {
+      willDragPanelListeners.add(listener)
+      return {
+        dispose: () => willDragPanelListeners.delete(listener),
+      }
+    }),
+    toJSON: vi.fn(() => snapshot),
+    totalPanels: 1,
+  }
+  const headerPanelApi = {
+    close: vi.fn(),
+    group: {
+      id: "group-1",
+    },
+    id: "session:session-1",
+    isActive: false,
+    onDidActiveChange: vi.fn(() => ({ dispose: vi.fn() })),
+    setActive: vi.fn(),
+    title: "Session 1",
+  }
+  const tabPointerDown = vi.fn()
+
+  return {
+    api,
+    headerPanelApi,
+    panel,
+    reset: () => {
+      layoutListeners.clear()
+      willDragPanelListeners.clear()
+      snapshot = {
+        activeGroup: "group-1",
+        grid: {
+          height: 800,
+          orientation: "HORIZONTAL",
+          root: {
+            data: [
+              {
+                data: {
+                  activeView: "session:session-1",
+                  id: "group-1",
+                  views: ["session:session-1"],
+                },
+                size: 1000,
+                type: "leaf",
+              },
+            ],
+            type: "branch",
+          },
+          width: 1200,
+        },
+        panels: {
+          "session:session-1": {
+            contentComponent: "workbench-panel",
+            id: "session:session-1",
+            params: {
+              kind: "session",
+              sessionID: "session-1",
+            },
+            tabComponent: "workbench-tab",
+            title: "Session 1",
+          },
+        },
+      } as unknown as SerializedDockview
+      panel.api.close.mockClear()
+      api.clear.mockClear()
+      api.fromJSON.mockClear()
+      api.getPanel.mockClear()
+      api.onDidActiveGroupChange.mockClear()
+      api.onDidActivePanelChange.mockClear()
+      api.onDidLayoutChange.mockClear()
+      api.onWillDragPanel.mockClear()
+      api.toJSON.mockClear()
+      headerPanelApi.close.mockClear()
+      headerPanelApi.isActive = false
+      headerPanelApi.onDidActiveChange.mockClear()
+      headerPanelApi.setActive.mockClear()
+      tabPointerDown.mockClear()
+    },
+    tabPointerDown,
+    willDragPanelListeners,
+  }
+})
+
+vi.mock("dockview-react", async () => {
+  const React = await vi.importActual<typeof import("react")>("react")
+
+  return {
+    DockviewReact: (props: {
+      defaultTabComponent?: React.FunctionComponent<any>
+      onReady?: (event: { api: typeof dockviewMock.api }) => void
+    }) => {
+      React.useEffect(() => {
+        props.onReady?.({ api: dockviewMock.api })
+      }, [props])
+
+      const TabComponent = props.defaultTabComponent
+
+      return React.createElement(
+        "div",
+        {
+          "data-testid": "dockview",
+          onPointerDown: dockviewMock.tabPointerDown,
+        },
+        TabComponent
+          ? React.createElement(TabComponent, {
+              api: dockviewMock.headerPanelApi,
+              containerApi: dockviewMock.api,
+              params: {
+                kind: "session",
+                sessionID: "session-1",
+              },
+              tabLocation: "header",
+            })
+          : null,
+      )
+    },
+    Orientation: {
+      HORIZONTAL: "HORIZONTAL",
+      VERTICAL: "VERTICAL",
+    },
+  }
+})
+
+function createDragEvent(type: string, init: Partial<DragEvent>) {
+  const event = new Event(type) as DragEvent
+
+  for (const [key, value] of Object.entries(init)) {
+    Object.defineProperty(event, key, {
+      configurable: true,
+      value,
+    })
+  }
+
+  return event
+}
+
+function createProps(overrides: Partial<WorkbenchShellProps> = {}): WorkbenchShellProps {
+  return {
+    assistantTraceVisibility: DEFAULT_ASSISTANT_TRACE_VISIBILITY,
+    composerRefreshVersion: 0,
+    dockviewLayout: null,
+    firstPaneID: "group-1",
+    isActivityRailVisible: false,
+    isAgentDebugTraceEnabled: false,
+    isDetachedWindow: false,
+    isResolvingPermissionRequest: false,
+    isRightSidebarCollapsed: true,
+    isSavingToolPermissionMode: false,
+    isSidebarCollapsed: true,
+    lastPaneID: "group-1",
+    panelStateByID: {
+      "session:session-1": {
+        id: "group-1",
+        tabs: [
+          {
+            key: "session:session-1",
+            kind: "session",
+            sessionID: "session-1",
+            sessionKind: "workspace",
+            title: "Session 1",
+          },
+        ],
+      },
+    } as unknown as WorkbenchShellProps["panelStateByID"],
+    paneStateByID: {
+      "group-1": {
+        id: "group-1",
+        tabs: [
+          {
+            key: "session:session-1",
+            kind: "session",
+            sessionID: "session-1",
+            sessionKind: "workspace",
+            title: "Session 1",
+          },
+        ],
+      },
+    } as unknown as WorkbenchShellProps["paneStateByID"],
+    permissionRequestActionError: null,
+    permissionRequestActionRequestID: null,
+    toolPermissionMode: "default",
+    toolPermissionModeError: null,
+    windowControls: null,
+    workspaces: [],
+    readThreadScrollSnapshot: vi.fn(() => null),
+    saveThreadScrollSnapshot: vi.fn(),
+    surfaceID: "main",
+    onActiveDockviewChange: vi.fn(),
+    onApproveProposedPlan: vi.fn(),
+    onAskUserQuestionAnswer: vi.fn(),
+    onCancelSend: vi.fn(),
+    onCloseCreateSessionTab: vi.fn(),
+    onCloseSessionTab: vi.fn(),
+    onCommandsReady: vi.fn(),
+    onCreateSessionSubmit: vi.fn(async () => undefined),
+    onCreateSessionWorkspaceChange: vi.fn(),
+    onCreateSideChatTab: vi.fn(),
+    onDeleteSideChatTab: vi.fn(),
+    onDetachSessionPanel: vi.fn(async () => true),
+    onDockBack: vi.fn(),
+    onFocusPane: vi.fn(),
+    onInspectFileInSidebar: vi.fn(),
+    onLayoutChange: vi.fn(),
+    onLocalFileLinkOpen: vi.fn(),
+    onOpenCreateSessionTab: vi.fn(),
+    onOpenSideChat: vi.fn(),
+    onPasteComposerImageAttachments: vi.fn(),
+    onPermissionRequestResponse: vi.fn(),
+    onPickComposerAttachments: vi.fn(),
+    onPlanModeToggle: vi.fn(),
+    onRemoveComposerAttachment: vi.fn(),
+    onSelectCreateSessionTab: vi.fn(),
+    onSelectSessionTab: vi.fn(),
+    onSelectSideChatTab: vi.fn(),
+    onSend: vi.fn(),
+    onSessionModelSelectionChange: vi.fn(),
+    onSetDraft: vi.fn(),
+    onToggleLeftSidebar: vi.fn(),
+    onToggleRightSidebar: vi.fn(),
+    onToolPermissionModeChange: vi.fn(),
+    onTurnDiffRestore: vi.fn(),
+    onTurnDiffReview: vi.fn(),
+    onTurnDiffSummaryHydrate: vi.fn(),
+    ...overrides,
+  }
+}
+
+describe("WorkbenchShell detach", () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("emits the closed panel layout after a successful drag detach", async () => {
+    dockviewMock.reset()
+    const onLayoutChange = vi.fn()
+
+    render(<WorkbenchShell {...createProps({ onLayoutChange })} />)
+
+    await waitFor(() => {
+      expect(dockviewMock.willDragPanelListeners.size).toBe(1)
+    })
+
+    const dragStartEvent = createDragEvent("dragstart", {})
+    const dragEndEvent = createDragEvent("dragend", {
+      clientX: -1,
+      clientY: 120,
+      screenX: 1300,
+      screenY: 200,
+    })
+
+    for (const listener of dockviewMock.willDragPanelListeners) {
+      listener({
+        nativeEvent: dragStartEvent,
+        panel: dockviewMock.panel,
+      })
+    }
+    window.dispatchEvent(dragEndEvent)
+
+    await waitFor(() => {
+      expect(dockviewMock.panel.api.close).toHaveBeenCalledTimes(1)
+      expect(onLayoutChange).toHaveBeenCalledWith(expect.objectContaining({
+        panels: {},
+      }))
+    })
+  })
+
+  it("leaves inactive session tab pointerdown available for native drag", async () => {
+    dockviewMock.reset()
+
+    render(<WorkbenchShell {...createProps()} />)
+
+    const tabTrigger = await screen.findByRole("button", { name: "Switch to session Session 1" })
+
+    fireEvent.pointerDown(tabTrigger, { button: 0 })
+
+    expect(dockviewMock.tabPointerDown).not.toHaveBeenCalled()
+    expect(dockviewMock.headerPanelApi.setActive).not.toHaveBeenCalled()
+
+    fireEvent.click(tabTrigger)
+
+    expect(dockviewMock.headerPanelApi.setActive).toHaveBeenCalledTimes(1)
+  })
+})

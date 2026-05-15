@@ -9,6 +9,7 @@ import {
   getActivePanelForGroup,
   getDockviewPanelIDs,
   getFocusedDockviewGroupID,
+  getWorkbenchDockPanelReference,
   getWorkbenchDockPanelId,
   normalizeDockviewLayout,
   type WorkbenchDockviewCommands,
@@ -198,8 +199,8 @@ export function useWorkbenchTabController({
     openCreateSessionTab(preferredWorkspaceID, paneID)
   }
 
-  function handleCloseCreateSessionTab(createSessionTabID: string) {
-    if (getDockviewPanelIDs(dockviewLayout).length <= 1) return
+  function handleCloseCreateSessionTab(createSessionTabID: string, _paneID?: string, options?: { force?: boolean }) {
+    if (!options?.force && getDockviewPanelIDs(dockviewLayout).length <= 1) return
 
     setCreateSessionTabs((current) => current.filter((tab) => tab.id !== createSessionTabID))
     workbenchDockviewCommandsRef.current?.closePanel(createCreateSessionWorkbenchTab(createSessionTabID))
@@ -286,6 +287,33 @@ export function useWorkbenchTabController({
     })
     setSelectedFolderID(nextWorkspaceID)
     setExpandedFolderIDs((current) => ensureExpandedFolderID(current, nextWorkspaceID))
+  }
+
+  function handleMovePanelIntoSurface(input: {
+    panelID: string
+    placement?: "within" | "left" | "right" | "top" | "bottom"
+    targetGroupID?: string | null
+    title?: string
+  }) {
+    const reference = getWorkbenchDockPanelReference(input.panelID)
+    if (reference?.kind !== "session") return false
+
+    const title = input.title ?? resolvePanelTitle(reference)
+    if (input.placement && input.placement !== "within") {
+      return Boolean(workbenchDockviewCommandsRef.current?.splitPanel(reference, {
+        direction: input.placement,
+        targetGroupID: input.targetGroupID ?? resolveTargetGroupID(),
+        title,
+      }))
+    }
+
+    return openOrFocusPanel(reference, input.targetGroupID ?? resolveTargetGroupID())
+  }
+
+  function handleMovePanelOutOfSurface(panelID: string) {
+    const reference = getWorkbenchDockPanelReference(panelID)
+    if (reference?.kind !== "session") return false
+    return Boolean(workbenchDockviewCommandsRef.current?.closePanel(reference))
   }
 
   useEffect(() => {
@@ -379,6 +407,8 @@ export function useWorkbenchTabController({
     handleOpenCreateSessionTab,
     handleDockviewActiveChange,
     handlePaneFocus,
+    handleMovePanelIntoSurface,
+    handleMovePanelOutOfSurface,
     handlePaneSplit,
     handlePaneTabDrop,
     handleSplitResize,

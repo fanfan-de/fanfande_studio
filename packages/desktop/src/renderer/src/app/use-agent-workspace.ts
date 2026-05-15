@@ -20,6 +20,7 @@ import { useWorkspaceSessionStore } from "./agent-workspace/workspace-session-st
 import { createWorkspaceStore, seedWorkspaceIDs, type WorkspaceStoreApi } from "./agent-workspace/workspace-store"
 import { initialSelection } from "./seed-data"
 import type { LeftSidebarView, RightSidebarView, SessionDiffSummary, SessionModelSelection, Turn, WorkspaceGroup } from "./types"
+import type { ThreadScrollSnapshot } from "./thread/ThreadView"
 import { persistUserTurns } from "./user-turn-presentation"
 import { updateSessionModelSelectionInWorkspaces } from "./workspace"
 import {
@@ -31,6 +32,9 @@ import {
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
   agentDefaultDirectory: string
+  disableDockviewPersistence?: boolean
+  initialDockviewLayout?: ReturnType<typeof createInitialDockviewLayout> | null
+  initialSessionID?: string | null
   isRuntimeDebugEnabled: boolean
   platform: string
 }
@@ -87,14 +91,42 @@ function hydrateTurnDiffSummary(
   return didUpdate ? nextTurns : turns
 }
 
+function isThreadScrollKeyStale(key: string, validSessionIDs: Set<string>) {
+  if (key.startsWith("session:")) {
+    return !validSessionIDs.has(key.slice("session:".length))
+  }
+
+  if (key.startsWith("side-chat:")) {
+    const [, parentSessionID, sideChatSessionID] = key.split(":")
+    return !parentSessionID || !sideChatSessionID || !validSessionIDs.has(parentSessionID) || !validSessionIDs.has(sideChatSessionID)
+  }
+
+  return false
+}
+
+function deleteThreadScrollSnapshotsForSession(
+  snapshots: Record<string, ThreadScrollSnapshot>,
+  sessionID: string,
+) {
+  for (const key of Object.keys(snapshots)) {
+    if (key === `session:${sessionID}` || key.startsWith(`side-chat:${sessionID}:`) || key.endsWith(`:${sessionID}`)) {
+      delete snapshots[key]
+    }
+  }
+}
+
 export function useAgentWorkspace({
   agentConnected,
   agentDefaultDirectory,
+  disableDockviewPersistence = false,
+  initialDockviewLayout = null,
+  initialSessionID = null,
   isRuntimeDebugEnabled,
   platform,
 }: UseAgentWorkspaceOptions) {
   const workbenchDockviewCommandsRef = useRef<WorkbenchDockviewCommands | null>(null)
   const dockviewPersistenceTimerRef = useRef<number | null>(null)
+  const threadScrollSnapshotsRef = useRef<Record<string, ThreadScrollSnapshot>>({})
   const workspaceStoreRef = useRef<WorkspaceStoreApi | null>(null)
   if (!workspaceStoreRef.current) {
     const hasFolderWorkspaceLoader = Boolean(window.desktop?.listFolderWorkspaces)
@@ -104,13 +136,22 @@ export function useAgentWorkspace({
       hasFolderWorkspaceLoader,
       initialComposerTabKey: initialWorkspaceState.initialComposerTabKey,
       initialCreateSessionTab: initialWorkspaceState.initialCreateSessionTab,
-      initialDockviewLayout: initialWorkspaceState.initialDockviewLayout,
+      initialDockviewLayout: initialDockviewLayout ?? initialWorkspaceState.initialDockviewLayout,
     })
   }
   const workspaceStore = workspaceStoreRef.current
   const { dockviewLayout, setDockviewLayout } = useWorkbenchState({ store: workspaceStore })
   const handleWorkbenchDockviewCommandsReady = useCallback((commands: WorkbenchDockviewCommands | null) => {
     workbenchDockviewCommandsRef.current = commands
+  }, [])
+  const readThreadScrollSnapshot = useCallback((key: string) => {
+    return threadScrollSnapshotsRef.current[key] ?? null
+  }, [])
+  const saveThreadScrollSnapshot = useCallback((key: string, snapshot: ThreadScrollSnapshot) => {
+    threadScrollSnapshotsRef.current[key] = snapshot
+  }, [])
+  const clearThreadScrollSnapshotsForSession = useCallback((sessionID: string) => {
+    deleteThreadScrollSnapshotsForSession(threadScrollSnapshotsRef.current, sessionID)
   }, [])
   const {
     activeSideChatSessionIDByParentSessionID,
@@ -199,6 +240,7 @@ export function useAgentWorkspace({
     permissionRequestActionError,
     permissionRequestActionRequestID,
     permissionRequestsRequestRef,
+    sessionDataLoadCacheRef,
     sessionDirectoryBySession,
     sessionEventRouterRef,
     setAgentSessions,
@@ -263,6 +305,7 @@ export function useAgentWorkspace({
     selectedProjectID,
     selectedWorkspace,
     visibleCanvasSessionIDs,
+    workbenchPanelStateByID,
     workbenchPaneStateByID,
     workbenchPaneStates,
   } = buildWorkspaceDerivedState({
@@ -300,7 +343,7 @@ export function useAgentWorkspace({
       window.clearTimeout(dockviewPersistenceTimerRef.current)
       dockviewPersistenceTimerRef.current = null
     }
-    if (isInitialWorkspaceLoadPending) return
+    if (isInitialWorkspaceLoadPending || disableDockviewPersistence) return
 
     dockviewPersistenceTimerRef.current = window.setTimeout(() => {
       dockviewPersistenceTimerRef.current = null
@@ -313,7 +356,7 @@ export function useAgentWorkspace({
         dockviewPersistenceTimerRef.current = null
       }
     }
-  }, [dockviewLayout, isInitialWorkspaceLoadPending])
+  }, [disableDockviewPersistence, dockviewLayout, isInitialWorkspaceLoadPending])
 
   useEffect(() => {
     const visibleSessionIDs = new Set(visibleCanvasSessionIDs)
@@ -338,6 +381,18 @@ export function useAgentWorkspace({
     })
   }, [setSessionCanvasUnreadBySession, visibleCanvasSessionKey, workspaces])
 
+  useEffect(() => {
+    const validSessionIDs = new Set(
+      workspaces.flatMap((workspace) => workspace.sessions.map((session) => session.id)),
+    )
+
+    for (const key of Object.keys(threadScrollSnapshotsRef.current)) {
+      if (isThreadScrollKeyStale(key, validSessionIDs)) {
+        delete threadScrollSnapshotsRef.current[key]
+      }
+    }
+  }, [workspaces])
+
   function markSessionCanvasUnread(sessionID: string) {
     if (visibleCanvasSessionIDs.includes(sessionID)) return
     if (!workspaces.some((workspace) => workspace.sessions.some((session) => session.id === sessionID))) return
@@ -353,7 +408,6 @@ export function useAgentWorkspace({
   }
 
   const streamController = useSessionStreamController({
-    activeSessionID,
     agentConnected,
     agentDefaultDirectory,
     agentSessionStoreRef,
@@ -375,6 +429,7 @@ export function useAgentWorkspace({
     sessionDiffRefreshTimerRef,
     sessionDiffRequestRef,
     sessionDirectoryBySession,
+    sessionDataLoadCacheRef,
     sessionEventRouterRef,
     sessionRuntimeDebugBySession,
     setAgentSessions,
@@ -398,6 +453,8 @@ export function useAgentWorkspace({
     appendConversationTurns,
     clearRuntimeDebugRefreshTimer,
     clearSessionDiffRefreshTimer,
+    ensurePendingPermissionRequestsLoaded,
+    ensureSessionHistoryLoaded,
     loadPendingPermissionRequestsForSession,
     loadSessionDiffForSession,
     loadSessionRuntimeDebugForSession,
@@ -417,6 +474,8 @@ export function useAgentWorkspace({
     createSessionWorkbenchTab,
     gitRefreshSuppressedUntilRef,
     initialFolderWorkspacesLoadedRef,
+    initialDockviewLayout,
+    initialSessionID,
     isInitialWorkspaceLoadPending,
     lastFocusedSessionIDRef,
     platform,
@@ -450,6 +509,8 @@ export function useAgentWorkspace({
     handleCreateSessionWorkspaceChange,
     handleOpenCreateSessionTab,
     handleDockviewActiveChange,
+    handleMovePanelIntoSurface,
+    handleMovePanelOutOfSurface,
     handlePaneFocus,
     handlePaneSplit,
     handlePaneTabDrop,
@@ -511,19 +572,21 @@ export function useAgentWorkspace({
     focusedPane,
     focusedPaneID,
     handleCreateSessionWorkspaceChange,
+    historyRequestRef,
     initialFolderWorkspacesLoadedRef,
     isCreateSessionTabActive,
     isCreatingProject,
     isCreatingSessionByTabKey,
     lastFocusedSessionIDRef,
-    loadPendingPermissionRequestsForSession,
+    ensurePendingPermissionRequestsLoaded,
+    ensureSessionHistoryLoaded,
     openCreateSessionTab,
     pendingStreamsRef,
     permissionRequestsRequestRef,
     preserveLocalWorkspaceStateOnInitialLoadRef,
-    reloadSessionHistoryForSession,
     runtimeDebugRequestRef,
     sessionDiffRequestRef,
+    sessionDataLoadCacheRef,
     sessionEventRouterRef,
     setActiveSideChatSessionIDByParentSessionID,
     setAgentSessions,
@@ -714,6 +777,11 @@ export function useAgentWorkspace({
     })
   }
 
+  function handleCanvasSessionTabCloseWithScrollCleanup(sessionID: string, paneID?: string) {
+    clearThreadScrollSnapshotsForSession(sessionID)
+    handleCanvasSessionTabClose(sessionID)
+  }
+
   return {
     activeCreateSessionTabID,
     activePreviewState,
@@ -753,7 +821,7 @@ export function useAgentWorkspace({
     deletingSessionID,
     draftState,
     expandedFolderIDs,
-    handleCanvasSessionTabClose,
+    handleCanvasSessionTabClose: handleCanvasSessionTabCloseWithScrollCleanup,
     handleCanvasSessionTabSelect,
     handleCancelSend,
     handleCreateSessionTabSelect,
@@ -767,6 +835,8 @@ export function useAgentWorkspace({
     handleOpenSideChat,
     handleOpenSideChatInTab,
     handleOpenCreateSessionTab,
+    handleMovePanelIntoSurface,
+    handleMovePanelOutOfSurface,
     handlePaneFocus,
     handleDockviewActiveChange,
     handleSplitResize,
@@ -816,6 +886,8 @@ export function useAgentWorkspace({
     handleSidebarAction,
     handleSessionModelSelectionChange,
     handleTurnDiffSummaryHydrate,
+    readThreadScrollSnapshot,
+    saveThreadScrollSnapshot,
     focusedPaneID,
     hoveredFolderID,
     isCreateSessionTabActive,
@@ -847,6 +919,7 @@ export function useAgentWorkspace({
     setDockviewLayout,
     visibleCanvasSessionIDs,
     dockviewLayout,
+    workbenchPanelStateByID,
     workbenchPaneStateByID,
     workbenchPaneStates,
     workspaces,

@@ -48,6 +48,36 @@ function addCreatePanel(layout: SerializedDockview) {
   return createPanelID
 }
 
+function addPopoutPanel(layout: SerializedDockview, reference: WorkbenchTabReference, title: string) {
+  const panelID = getWorkbenchDockPanelId(reference)
+  layout.panels[panelID] = {
+    id: panelID,
+    contentComponent: WORKBENCH_DOCK_PANEL_COMPONENT,
+    tabComponent: WORKBENCH_DOCK_TAB_COMPONENT,
+    title,
+    params: reference,
+  }
+  layout.popoutGroups = [
+    ...(layout.popoutGroups ?? []),
+    {
+      data: {
+        id: "popout-group-1",
+        views: [panelID],
+        activeView: panelID,
+      },
+      position: {
+        height: 720,
+        left: 1600,
+        top: 120,
+        width: 960,
+      },
+      url: "/dockview-popout.html",
+    },
+  ]
+
+  return panelID
+}
+
 describe("dockview state helpers", () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -145,5 +175,47 @@ describe("dockview state helpers", () => {
     expect(persisted.panels[createPanelID]).toBeUndefined()
     expect(persisted.panels["session:session-1"]).toBeTruthy()
     expect(getOpenSessionIDs(readPersistedDockviewLayout())).toEqual(["session-1"])
+  })
+
+  it("reads popout groups with their location", () => {
+    const layout = createInitialDockviewLayout(sessionReference, "Session 1")
+    const popoutReference: WorkbenchTabReference = {
+      kind: "session",
+      sessionID: "session-popout",
+    }
+    addPopoutPanel(layout, popoutReference, "Popout")
+
+    expect(getDockviewGroupsInOrder(layout)).toEqual([
+      expect.objectContaining({
+        id: expect.any(String),
+        location: "grid",
+        views: [sessionReference],
+      }),
+      expect.objectContaining({
+        id: "popout-group-1",
+        location: "popout",
+        views: [popoutReference],
+      }),
+    ])
+    expect(getVisibleSessionIDs(layout)).toEqual(["session-1", "session-popout"])
+  })
+
+  it("persists popout sessions back into the main grid", () => {
+    const layout = createInitialDockviewLayout(sessionReference, "Session 1")
+    const popoutReference: WorkbenchTabReference = {
+      kind: "session",
+      sessionID: "session-popout",
+    }
+    const popoutPanelID = addPopoutPanel(layout, popoutReference, "Popout")
+
+    writePersistedDockviewLayout(layout)
+
+    const rawValue = window.localStorage.getItem(WORKBENCH_DOCKVIEW_STORAGE_KEY)
+    expect(rawValue).toBeTruthy()
+    const persisted = JSON.parse(rawValue ?? "{}") as SerializedDockview
+    expect(persisted.popoutGroups).toBeUndefined()
+    expect(persisted.panels[popoutPanelID]?.title).toBe("Popout")
+    expect(getDockviewGroupsInOrder(persisted).map((group) => group.location)).toEqual(["grid", "grid"])
+    expect(getOpenSessionIDs(readPersistedDockviewLayout())).toEqual(["session-1", "session-popout"])
   })
 })

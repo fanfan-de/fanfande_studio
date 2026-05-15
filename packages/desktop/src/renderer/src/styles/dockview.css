@@ -194,7 +194,7 @@
 }
 
 .dockview-theme-fanfande .dv-tab.dv-active-tab .dockview-workbench-tab-trigger {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dockview-theme-fanfande .dockview-workbench-tab-copy {
@@ -266,6 +266,13 @@
   box-shadow: none;
   color: var(--dockview-tab-icon-color);
   flex: 0 0 auto;
+}
+
+.dockview-theme-fanfande .dockview-workbench-header-actions .dockview-workbench-dock-back-button {
+  width: auto;
+  min-width: 92px;
+  padding: 0 12px;
+  white-space: nowrap;
 }
 
 .dockview-theme-fanfande .dockview-workbench-header-actions .sidebar-toggle-button.is-top-menu:hover,

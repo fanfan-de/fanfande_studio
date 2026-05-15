@@ -1,10 +1,12 @@
 import { BrowserWindow, app } from "electron"
 import fs from "node:fs"
 import path from "node:path"
+import { ensureRendererHttpServer } from "./renderer-http-server"
 import { safeError } from "./safe-console"
 import { clearManualMaximize, sendWindowState } from "./window-state"
+import type { WorkbenchWindowManager } from "./workbench-window-manager"
 
-function resolvePreloadPath(mainDir: string) {
+export function resolvePreloadPath(mainDir: string) {
   const rootDir = app.getAppPath()
   const candidatePaths = [
     path.join(mainDir, "../preload/index.mjs"),
@@ -27,7 +29,7 @@ function resolvePreloadPath(mainDir: string) {
   return candidatePaths[0]
 }
 
-function resolveWindowIconPath(mainDir: string) {
+export function resolveWindowIconPath(mainDir: string) {
   const rootDir = app.getAppPath()
   const iconFileName = process.platform === "win32" ? "icon.ico" : "icon.png"
   const candidatePaths = [
@@ -40,7 +42,38 @@ function resolveWindowIconPath(mainDir: string) {
   return candidatePaths.find((candidate) => fs.existsSync(candidate))
 }
 
-export function createWindow(mainDir: string) {
+export function resolvePopoutWindowOptions(mainDir: string) {
+  return {
+    width: 1120,
+    height: 760,
+    minWidth: 720,
+    minHeight: 520,
+    frame: false,
+    roundedCorners: false,
+    autoHideMenuBar: true,
+    backgroundColor: "#eff3f7",
+    icon: resolveWindowIconPath(mainDir),
+    webPreferences: {
+      preload: resolvePreloadPath(mainDir),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      webviewTag: true,
+    },
+  }
+}
+
+export async function resolveRendererEntryUrl(mainDir: string) {
+  if (process.env.ELECTRON_RENDERER_URL) {
+    return process.env.ELECTRON_RENDERER_URL
+  }
+
+  const rendererBaseUrl = await ensureRendererHttpServer(mainDir)
+  return `${rendererBaseUrl}/index.html`
+}
+
+export async function createWindow(mainDir: string, options: { workbenchWindowManager?: WorkbenchWindowManager } = {}) {
+  const rendererEntryUrl = await resolveRendererEntryUrl(mainDir)
   const win = new BrowserWindow({
     width: 1440,
     height: 960,
@@ -60,6 +93,7 @@ export function createWindow(mainDir: string) {
       webviewTag: true,
     },
   })
+  options.workbenchWindowManager?.registerMainWindow(win)
 
   win.once("ready-to-show", () => {
     sendWindowState(win)
@@ -82,11 +116,9 @@ export function createWindow(mainDir: string) {
     sendWindowState(win)
   })
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void win.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void win.loadFile(path.join(mainDir, "../renderer/index.html"))
-  }
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
+
+  void win.loadURL(rendererEntryUrl)
 
   return win
 }
