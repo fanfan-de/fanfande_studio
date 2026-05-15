@@ -208,13 +208,6 @@ export type WorkbenchTabReference =
       createSessionTabID: string
     }
 
-export interface WorkbenchPane {
-  id: string
-  size: number
-  tabs: WorkbenchTabReference[]
-  activeTabKey: string | null
-}
-
 export interface WorkspaceGroup {
   id: string
   name: string

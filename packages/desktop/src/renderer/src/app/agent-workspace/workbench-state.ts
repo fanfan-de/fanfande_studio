@@ -5,11 +5,11 @@ interface WorkbenchStateOptions {
 }
 
 export function useWorkbenchState({ store }: WorkbenchStateOptions) {
-  const workbenchLayout = useWorkspaceStoreSelector(store, (state) => state.workbench.workbenchLayout)
-  const setWorkbenchLayout = useWorkspaceStoreSelector(store, (state) => state.workbenchActions.setWorkbenchLayout)
+  const dockviewLayout = useWorkspaceStoreSelector(store, (state) => state.workbench.dockviewLayout)
+  const setDockviewLayout = useWorkspaceStoreSelector(store, (state) => state.workbenchActions.setDockviewLayout)
 
   return {
-    setWorkbenchLayout,
-    workbenchLayout,
+    dockviewLayout,
+    setDockviewLayout,
   }
 }

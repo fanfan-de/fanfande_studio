@@ -1,4 +1,5 @@
 ﻿import { act, createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import type { DockviewApi } from "dockview-react"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -26,6 +27,12 @@ function readBundledStyles() {
 }
 
 const styles = readBundledStyles()
+
+declare global {
+  interface Window {
+    __fanfandeWorkbenchDockviewApi?: DockviewApi | null
+  }
+}
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -125,44 +132,100 @@ function getCreateSessionProjectSelect() {
   return screen.getByRole("combobox", { name: "Session project" })
 }
 
+async function getWorkbenchDockviewApi() {
+  await waitFor(() => {
+    expect(window.__fanfandeWorkbenchDockviewApi).toBeTruthy()
+  })
+
+  return window.__fanfandeWorkbenchDockviewApi!
+}
+
+async function findDockviewPanel(panelIDPrefix: string) {
+  const api = await getWorkbenchDockviewApi()
+  await waitFor(() => {
+    expect(api.panels.some((panel) => panel.id.startsWith(panelIDPrefix))).toBe(true)
+  })
+
+  const panel = api.panels.find((item) => item.id.startsWith(panelIDPrefix))
+  if (!panel) {
+    throw new Error(`Dockview panel not found for prefix ${panelIDPrefix}.`)
+  }
+
+  return { api, panel }
+}
+
+function getPaneID(pane: HTMLElement) {
+  const paneID = pane.dataset.paneId
+  if (!paneID) {
+    throw new Error("Workbench pane is missing a data-pane-id attribute.")
+  }
+
+  return paneID
+}
+
+function sortPanesWithCreateSessionLast(panes: HTMLElement[]) {
+  const createPane = panes.find((pane) => within(pane).queryByRole("combobox", { name: "Session project" }))
+  if (!createPane) return panes
+
+  return [
+    ...panes.filter((pane) => pane !== createPane),
+    createPane,
+  ]
+}
+
+function getPaneCanvasTitle(pane: HTMLElement) {
+  return pane.querySelector(".session-canvas-top-menu .label")?.textContent?.trim() ?? ""
+}
+
+async function getWorkbenchPanes(count: number) {
+  await waitFor(() => {
+    expect(document.querySelectorAll(".workbench-pane")).toHaveLength(count)
+  })
+
+  return Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+}
+
+async function moveDockviewPanelToNewGroup(panelIDPrefix: string, position: "right" | "bottom" = "right") {
+  const { panel } = await findDockviewPanel(panelIDPrefix)
+  act(() => {
+    panel.api.moveTo({ group: panel.api.group, position } as Parameters<typeof panel.api.moveTo>[0])
+    panel.api.setActive()
+  })
+
+  return getWorkbenchPanes(2)
+}
+
+async function moveDockviewPanelToPane(
+  panelIDPrefix: string,
+  targetPane: HTMLElement,
+  position: "center" | "right" | "bottom" = "center",
+) {
+  const { api, panel } = await findDockviewPanel(panelIDPrefix)
+  const group = api.getGroup(getPaneID(targetPane))
+  if (!group) {
+    throw new Error(`Dockview group not found for pane ${getPaneID(targetPane)}.`)
+  }
+
+  act(() => {
+    panel.api.moveTo({ group, position } as Parameters<typeof panel.api.moveTo>[0])
+    panel.api.setActive()
+  })
+}
+
 async function createSiblingPaneFromCreateTab() {
   fireEvent.click(screen.getByRole("button", { name: "Create session" }))
   await screen.findByRole("combobox", { name: "Session project" })
 
-  const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
-  const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
-
-  fireEvent.dragStart(createTab)
-  fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-right"))
-  fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-right"))
-  fireEvent.drop(within(sourcePane).getByTestId("pane-drop-right"))
-  fireEvent.dragEnd(createTab)
-
-  await waitFor(() => {
-    expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
-  })
-
-  return Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+  const panes = await moveDockviewPanelToNewGroup("create-session:", "right")
+  return sortPanesWithCreateSessionLast(panes)
 }
 
 async function createStackedPaneFromCreateTab() {
   fireEvent.click(screen.getByRole("button", { name: "Create session" }))
   await screen.findByRole("combobox", { name: "Session project" })
 
-  const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
-  const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
-
-  fireEvent.dragStart(createTab)
-  fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-bottom"))
-  fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-bottom"))
-  fireEvent.drop(within(sourcePane).getByTestId("pane-drop-bottom"))
-  fireEvent.dragEnd(createTab)
-
-  await waitFor(() => {
-    expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
-  })
-
-  return Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+  const panes = await moveDockviewPanelToNewGroup("create-session:", "bottom")
+  return sortPanesWithCreateSessionLast(panes)
 }
 
 type PermissionRequestPromptOverrides = Omit<Partial<PermissionRequestPrompt>, "prompt" | "resolution"> & {
@@ -1032,7 +1095,7 @@ describe("App", () => {
     expect(minimizeWindowButton).toBeInTheDocument()
     expect(minimizeWindowButton.closest(".window-controls")).not.toBeNull()
     expect(minimizeWindowButton.closest(".right-sidebar-top-menu")).toBe(rightSidebarTopMenu)
-    expect(container.querySelector(".pane-tab-bar.window-drag-region")).not.toBeNull()
+    expect(container.querySelector(".dockview-theme-fanfande .dv-tabs-and-actions-container")).not.toBeNull()
     expect(container.querySelector(".session-canvas-top-menu.window-drag-region")).toBeNull()
     expect(leftSidebarTopMenu).toHaveClass("shell-top-menu")
     expect(topMenu).toHaveClass("shell-top-menu")
@@ -1040,7 +1103,7 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "File" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Create session" })).toBeInTheDocument()
@@ -1057,11 +1120,10 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Chat 1" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toBeInTheDocument()
     const addSessionTabButton = screen.getByRole("button", { name: "Add session tab" })
-    expect(addSessionTabButton).toHaveTextContent("+")
-    expect(addSessionTabButton.closest(".pane-tab-bar-tabs")).not.toBeNull()
-    expect(addSessionTabButton.closest(".pane-tab-bar-tabs")?.lastElementChild).toBe(addSessionTabButton)
+    expect(addSessionTabButton.closest(".dockview-workbench-header-actions")).not.toBeNull()
+    expect(addSessionTabButton.closest(".pane-tab-bar-trailing")).not.toBeNull()
     expect(screen.queryByRole("button", { name: "Split pane" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Switch to session Chat 1" }).closest(".pane-tab-bar")).toHaveClass("window-drag-region")
+    expect(screen.getByRole("button", { name: "Switch to session Chat 1" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(await screen.findByRole("button", { name: "Git" })).toBeInTheDocument()
     expect(within(leftSidebarTopMenu).getByRole("group", { name: "Workspace mode" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true")
@@ -6532,7 +6594,6 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Chat 2" }))
 
-    const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
     const chat2Tab = screen.getByRole("button", { name: "Switch to session Chat 2" })
     const chat2TabContainer = chat2Tab.closest(".session-tab")
 
@@ -6540,19 +6601,10 @@ describe("App", () => {
     expect(chat2TabContainer).not.toHaveAttribute("draggable")
     expect(chat2Tab).not.toHaveAttribute("draggable")
 
-    fireEvent.dragStart(chat2Tab)
-    fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-right"))
-    fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-right"))
-    fireEvent.drop(within(sourcePane).getByTestId("pane-drop-right"))
-    fireEvent.dragEnd(chat2Tab)
+    const panes = await moveDockviewPanelToNewGroup("session:session-chat-2", "right")
 
-    await waitFor(() => {
-      expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
-    })
-
-    const panes = Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
-    expect(within(panes[0]).getByRole("button", { name: "Switch to session Chat 1" })).toBeInTheDocument()
-    expect(within(panes[1]).getByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
+    expect(panes.map(getPaneCanvasTitle)).toEqual(expect.arrayContaining(["Chat 1", "Chat 2"]))
+    expect(screen.getByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
   })
 
   it("drags a create-session tab out of the focused pane to create a sibling pane", async () => {
@@ -6561,7 +6613,6 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
     await screen.findByRole("combobox", { name: "Session project" })
 
-    const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
     const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
     const createTabContainer = createTab.closest(".session-tab")
 
@@ -6569,168 +6620,53 @@ describe("App", () => {
     expect(createTabContainer).not.toHaveAttribute("draggable")
     expect(createTab).not.toHaveAttribute("draggable")
 
-    fireEvent.dragStart(createTab)
-    fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-right"))
-    fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-right"))
-    fireEvent.drop(within(sourcePane).getByTestId("pane-drop-right"))
-    fireEvent.dragEnd(createTab)
-
-    await waitFor(() => {
-      expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
-    })
-
-    const panes = Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
-    expect(within(panes[1]).getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+    const panes = sortPanesWithCreateSessionLast(await moveDockviewPanelToNewGroup("create-session:", "right"))
+    expect(within(panes[1]).getByRole("combobox", { name: "Session project" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
   })
 
-  it("shows a layout preview instead of visible split hints while dragging over a pane edge", async () => {
+  it("lets Dockview own split previews instead of rendering legacy pane split hints", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
     await screen.findByRole("combobox", { name: "Session project" })
 
     const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
-    const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
-
-    fireEvent.dragStart(createTab)
-    fireEvent.dragEnter(within(sourcePane).getByTestId("pane-drop-right"))
-    fireEvent.dragOver(within(sourcePane).getByTestId("pane-drop-right"))
-
-    const liveRegion = sourcePane.querySelector(".workbench-pane-live-region.pane-drop-preview-current") as HTMLElement | null
-    const incomingPreview = sourcePane.querySelector(".workbench-pane-incoming-preview.pane-drop-preview-incoming") as HTMLElement | null
-
-    expect(sourcePane.querySelector(".pane-drop-preview.is-right")).not.toBeNull()
-    expect(liveRegion).not.toBeNull()
-    expect(liveRegion?.style.left).toBe("12px")
-    expect(liveRegion?.style.width).toBe("calc(50% - 18px)")
-    expect(incomingPreview).not.toBeNull()
-    expect(incomingPreview?.style.left).toBe("calc(50% + 6px)")
+    expect(sourcePane.querySelector('[data-testid^="pane-drop-"]')).toBeNull()
+    expect(sourcePane.querySelector(".pane-drop-preview")).toBeNull()
+    expect(document.querySelector(".dockview-theme-fanfande")).not.toBeNull()
   })
 
-  it("shows a merge preview block in the target pane tab bar when dragging into pane center", async () => {
+  it("merges a tab into a sibling Dockview group and activates it there", async () => {
     render(<App />)
 
     const panes = await createSiblingPaneFromCreateTab()
-    const sourceTab = within(panes[0]).getByRole("button", { name: "Switch to session Chat 1" })
+    await moveDockviewPanelToPane("session:session-chat-1", panes[1], "center")
 
-    fireEvent.dragStart(sourceTab)
-    fireEvent.dragEnter(within(panes[1]).getByTestId("pane-drop-center"))
-    fireEvent.dragOver(within(panes[1]).getByTestId("pane-drop-center"))
-
-    const mergePreview = panes[1].querySelector(".pane-tab-merge-preview")
-    const addButton = within(panes[1]).getByRole("button", { name: "Add session tab" })
-
-    expect(mergePreview).not.toBeNull()
-    expect(panes[1].querySelector(".pane-drop-preview")).toBeNull()
-    expect(mergePreview?.nextElementSibling).toBe(addButton)
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toHaveAttribute("aria-pressed", "true")
+    })
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toBeInTheDocument()
   })
 
-  it("drops a create-session tab into a sibling pane via pointer drag", async () => {
+  it("splits a create-session panel into a sibling Dockview group", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
     await screen.findByRole("combobox", { name: "Session project" })
 
-    const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
-    const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
-
-    Object.defineProperty(sourcePane, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        x: 0,
-        y: 0,
-        left: 0,
-        top: 0,
-        right: 400,
-        bottom: 300,
-        width: 400,
-        height: 300,
-        toJSON: () => ({}),
-      }),
-    })
-
-    fireEvent.pointerDown(createTab, {
-      button: 0,
-      clientX: 120,
-      clientY: 24,
-      pointerId: 1,
-    })
-    fireEvent.pointerMove(window, {
-      clientX: 360,
-      clientY: 150,
-      pointerId: 1,
-    })
-    fireEvent.pointerUp(window, {
-      clientX: 360,
-      clientY: 150,
-      pointerId: 1,
-    })
-
-    await waitFor(() => {
-      expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
-    })
+    await moveDockviewPanelToNewGroup("create-session:", "right")
+    expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
   })
 
-  it("treats the workbench top edge as the top split target for top-row panes during pointer drag", async () => {
+  it("creates a vertical Dockview split from a create-session panel", async () => {
     render(<App />)
 
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
     await screen.findByRole("combobox", { name: "Session project" })
 
-    const workbench = document.querySelector(".workbench-panes") as HTMLElement
-    const sourcePane = document.querySelector(".workbench-pane") as HTMLElement
-    const createTab = screen.getByRole("button", { name: "Switch to create session tab" })
-
-    Object.defineProperty(workbench, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        x: 0,
-        y: 0,
-        left: 0,
-        top: 0,
-        right: 400,
-        bottom: 320,
-        width: 400,
-        height: 320,
-        toJSON: () => ({}),
-      }),
-    })
-
-    Object.defineProperty(sourcePane, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        x: 0,
-        y: 32,
-        left: 0,
-        top: 32,
-        right: 400,
-        bottom: 320,
-        width: 400,
-        height: 288,
-        toJSON: () => ({}),
-      }),
-    })
-
-    fireEvent.pointerDown(createTab, {
-      button: 0,
-      clientX: 120,
-      clientY: 56,
-      pointerId: 1,
-    })
-    fireEvent.pointerMove(window, {
-      clientX: 200,
-      clientY: 8,
-      pointerId: 1,
-    })
-    fireEvent.pointerUp(window, {
-      clientX: 200,
-      clientY: 8,
-      pointerId: 1,
-    })
-
-    await waitFor(() => {
-      expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
-    })
+    await moveDockviewPanelToNewGroup("create-session:", "bottom")
+    expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
   })
 
   it("drops a tab into another pane and activates it there", async () => {
@@ -6738,53 +6674,51 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Chat 2" }))
     let panes = await createSiblingPaneFromCreateTab()
-    const chat2Tab = within(panes[0]).getByRole("button", { name: "Switch to session Chat 2" })
 
-    fireEvent.dragStart(chat2Tab)
-    fireEvent.dragEnter(within(panes[1]).getByTestId("pane-drop-center"))
-    fireEvent.dragOver(within(panes[1]).getByTestId("pane-drop-center"))
-    fireEvent.drop(within(panes[1]).getByTestId("pane-drop-center"))
-    fireEvent.dragEnd(chat2Tab)
+    await moveDockviewPanelToPane("session:session-chat-2", panes[1], "center")
 
     await waitFor(() => {
       panes = Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
-      expect(within(panes[1]).getByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
+      expect(screen.getByRole("button", { name: "Switch to session Chat 2" })).toHaveAttribute("aria-pressed", "true")
     })
 
-    expect(within(panes[1]).getByRole("button", { name: "Switch to create session tab" })).toBeInTheDocument()
-    expect(within(panes[0]).queryByRole("button", { name: "Switch to session Chat 2" })).toBeNull()
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toBeInTheDocument()
+    expect(panes.map(getPaneCanvasTitle)).toContain("Chat 1")
   })
 
   it("restores a single workbench pane without leaving the canvas shifted left", async () => {
     render(<App />)
 
-    const panes = await createSiblingPaneFromCreateTab()
+    await createSiblingPaneFromCreateTab()
 
     expect(document.querySelectorAll(".workbench-pane")).toHaveLength(2)
-    expect(document.querySelector(".workbench-panes")).toHaveClass("has-multiple")
-    expect(document.querySelectorAll(".pane-tab-bar .window-controls")).toHaveLength(0)
+    await waitFor(() => {
+      expect(document.querySelector(".workbench-panes")).toHaveClass("has-multiple")
+    })
+    expect(document.querySelectorAll(".dockview-theme-fanfande .window-controls")).toHaveLength(0)
     expect(document.querySelectorAll(".right-sidebar-top-menu .window-controls")).toHaveLength(1)
 
-    fireEvent.click(within(panes[1]).getByRole("button", { name: "Close create session tab" }))
+    fireEvent.click(screen.getByRole("button", { name: "Close create session tab" }))
 
     await waitFor(() => {
       expect(document.querySelectorAll(".workbench-pane")).toHaveLength(1)
     })
 
     expect(document.querySelector(".workbench-panes")).not.toHaveClass("has-multiple")
-    expect(document.querySelector(".pane-tab-bar")).not.toHaveClass("has-window-controls-clearance")
-    expect(document.querySelectorAll(".pane-tab-bar .window-controls")).toHaveLength(0)
+    expect(document.querySelector(".dv-tabs-and-actions-container")).not.toHaveClass("has-window-controls-clearance")
+    expect(document.querySelectorAll(".dockview-theme-fanfande .window-controls")).toHaveLength(0)
     expect(document.querySelectorAll(".right-sidebar-top-menu .window-controls")).toHaveLength(1)
   })
 
-  it("limits session canvas tab drag regions to the top row of panes", async () => {
+  it("uses Dockview tab bars for stacked panes without legacy pane tab bars", async () => {
     render(<App />)
 
     const panes = await createStackedPaneFromCreateTab()
     expect(panes).toHaveLength(2)
 
-    expect(panes[0].querySelector(".pane-tab-bar")).toHaveClass("window-drag-region")
-    expect(panes[1].querySelector(".pane-tab-bar")).not.toHaveClass("window-drag-region")
+    expect(panes[0].closest(".dockview-theme-fanfande")).not.toBeNull()
+    expect(panes[1].closest(".dockview-theme-fanfande")).not.toBeNull()
+    expect(document.querySelector(".pane-tab-bar")).toBeNull()
   })
 
   it("keeps the right sidebar toggle in the top-right pane when panes are stacked", async () => {
@@ -6793,30 +6727,28 @@ describe("App", () => {
     const panes = await createStackedPaneFromCreateTab()
     expect(panes).toHaveLength(2)
 
-    expect(within(panes[0]).getByRole("button", { name: "Collapse right sidebar" })).toBeInTheDocument()
-    expect(within(panes[1]).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
+    const toggle = screen.getByRole("button", { name: "Collapse right sidebar" })
+    expect(toggle.closest(".dockview-workbench-header-actions")).not.toBeNull()
+    expect(screen.getAllByRole("button", { name: "Collapse right sidebar" })).toHaveLength(1)
   })
 
-  it("temporarily disables the top-row pane drag region while dragging a tab", () => {
+  it("keeps Dockview tab draggability outside the custom tab button", () => {
     render(<App />)
 
     const tab = screen.getByRole("button", { name: "Switch to session Chat 1" })
-    const tabBar = tab.closest(".pane-tab-bar")
+    const tabBar = tab.closest(".dv-tabs-and-actions-container")
 
-    expect(tabBar).toHaveClass("window-drag-region")
-
-    fireEvent.dragStart(tab)
-    expect(tabBar).not.toHaveClass("window-drag-region")
-
-    fireEvent.dragEnd(tab)
-    expect(tabBar).toHaveClass("window-drag-region")
+    expect(tabBar).not.toBeNull()
+    expect(tab).not.toHaveAttribute("draggable")
+    expect(tab.closest(".session-tab")).not.toHaveAttribute("draggable")
   })
 
   it("renders decorative curves on the active pane tab only", () => {
     render(<App />)
 
-    const tabBar = screen.getByRole("navigation", { name: "Pane tabs" })
+    const tabBar = document.querySelector(".dv-tabs-and-actions-container") as HTMLElement
 
+    expect(tabBar).not.toBeNull()
     expect(tabBar.querySelectorAll(".session-tab.is-active .session-tab-active-curve")).toHaveLength(2)
     expect(tabBar.querySelectorAll(".session-tab.is-active .session-tab-active-curve-svg")).toHaveLength(2)
     expect(tabBar.querySelectorAll(".session-tab:not(.is-active) .session-tab-active-curve")).toHaveLength(0)
@@ -6837,29 +6769,41 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create session" }))
     await screen.findByRole("combobox", { name: "Session project" })
 
-    fireEvent.click(screen.getByRole("button", { name: "Switch to session Chat 1" }))
+    const { panel } = await findDockviewPanel("session:session-chat-1")
+    act(() => {
+      panel.api.setActive()
+    })
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toHaveAttribute("aria-pressed", "true")
+    })
 
-    const pane = document.querySelector(".workbench-pane") as HTMLElement
-    const paneTabBar = within(pane).getByRole("navigation", { name: "Pane tabs" })
+    const paneTabBar = document.querySelector(".dv-tabs-and-actions-container") as HTMLElement
 
+    expect(paneTabBar).not.toBeNull()
     fireEvent.click(within(paneTabBar).getByRole("button", { name: "Add session tab" }))
 
-    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
+    })
     expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
   })
 
   it("focuses the existing create session tab in another pane when the folder row action is clicked", async () => {
     render(<App />)
 
-    const panes = await createSiblingPaneFromCreateTab()
+    await createSiblingPaneFromCreateTab()
 
-    fireEvent.click(within(panes[0]).getByRole("button", { name: "Switch to session Chat 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Switch to session Chat 1" }))
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Switch to session Chat 1" })).toHaveAttribute("aria-pressed", "true")
+    })
     fireEvent.click(screen.getByRole("button", { name: "Create session for src" }))
 
     const updatedPanes = Array.from(document.querySelectorAll(".workbench-pane")) as HTMLElement[]
+    const createPane = updatedPanes.find((pane) => within(pane).queryByRole("combobox", { name: "Session project" }))
 
-    expect(within(updatedPanes[1]).getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
-    expect(within(updatedPanes[0]).queryByRole("button", { name: "Switch to create session tab" })).toBeNull()
+    expect(createPane).not.toBeUndefined()
+    expect(screen.getByRole("button", { name: "Switch to create session tab" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.queryByRole("button", { name: "Switch to create session tab 2" })).toBeNull()
     expect(getCreateSessionProjectSelect()).toHaveValue("C:\\Projects\\Project 1\\src")
   })
@@ -7904,7 +7848,7 @@ describe("App", () => {
 
     expect(appShell!.getAttribute("style")).toContain("--sidebar-display-width: 0px")
     expect(screen.getByRole("button", { name: "Expand left sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Expand left sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Expand left sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Expand left sidebar" }))
     expect(screen.getByRole("button", { name: "Collapse left sidebar" })).toBeInTheDocument()
@@ -10936,7 +10880,7 @@ describe("App", () => {
     expect(screen.getByTestId("right-sidebar-resizer")).toBeInTheDocument()
     expect(within(rightSidebarTopMenu).getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(within(rightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse right sidebar" }))
@@ -10946,10 +10890,10 @@ describe("App", () => {
     expect(appShell!.getAttribute("style")).toContain("--window-controls-canvas-clearance: 0px")
     expect(screen.queryByRole("complementary", { name: "Inspector sidebar" })).not.toBeInTheDocument()
     expect(screen.queryByTestId("right-sidebar-resizer")).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Minimize window" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Minimize window" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Minimize window" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Expand right sidebar" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Expand right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
 
     fireEvent.click(screen.getByRole("button", { name: "Expand right sidebar" }))
@@ -10962,7 +10906,7 @@ describe("App", () => {
     const restoredRightSidebarTopMenu = screen.getByLabelText("Right sidebar top menu")
     expect(within(restoredRightSidebarTopMenu).getByRole("button", { name: "Minimize window" })).toBeInTheDocument()
     expect(within(restoredRightSidebarTopMenu).queryByRole("button", { name: "Collapse right sidebar" })).toBeNull()
-    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar")).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".dv-tabs-and-actions-container")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Collapse right sidebar" }).closest(".pane-tab-bar-trailing")).not.toBeNull()
   })
 
@@ -11206,64 +11150,16 @@ describe("App", () => {
     })
   })
 
-  it("resizes neighboring workbench panes when dragging their divider", async () => {
+  it("delegates neighboring workbench pane resizing to Dockview", async () => {
     render(<App />)
 
     const panes = await createSiblingPaneFromCreateTab()
     expect(panes).toHaveLength(2)
 
-    Object.defineProperty(panes[0], "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        x: 0,
-        y: 0,
-        left: 0,
-        top: 0,
-        right: 400,
-        bottom: 800,
-        width: 400,
-        height: 800,
-        toJSON: () => ({}),
-      }),
-    })
-    Object.defineProperty(panes[1], "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        x: 414,
-        y: 0,
-        left: 414,
-        top: 0,
-        right: 814,
-        bottom: 800,
-        width: 400,
-        height: 800,
-        toJSON: () => ({}),
-      }),
-    })
-
-    fireEvent.pointerDown(screen.getByTestId("workbench-pane-resizer-0"), {
-      button: 0,
-      clientX: 400,
-    })
-
-    await waitFor(() => {
-      expect(document.body).toHaveClass("is-resizing-workbench-pane")
-    })
-
-    fireEvent.pointerMove(window, {
-      clientX: 500,
-    })
-
-    await waitFor(() => {
-      expect(Number.parseFloat(panes[0].style.flexGrow)).toBeGreaterThan(0.5)
-      expect(Number.parseFloat(panes[1].style.flexGrow)).toBeLessThan(0.5)
-    })
-
-    fireEvent.pointerUp(window)
-
-    await waitFor(() => {
-      expect(document.body).not.toHaveClass("is-resizing-workbench-pane")
-    })
+    const api = await getWorkbenchDockviewApi()
+    expect(document.querySelector(".dv-sash")).not.toBeNull()
+    expect(screen.queryByTestId("workbench-pane-resizer-0")).toBeNull()
+    expect(api.toJSON().grid.root.type).toBe("branch")
   })
 
   it("shows expand/collapse icon only while hovering a folder row", () => {
@@ -11367,6 +11263,10 @@ describe("App", () => {
     expect(styles).toMatch(/\.canvas\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto auto;[^}]*gap:\s*14px;/s)
     expect(styles).toMatch(/\.canvas-top-stack\s*\{[^}]*display:\s*grid;[^}]*gap:\s*6px;/s)
     expect(styles).toMatch(/\.workbench-pane\s*\{[^}]*flex:\s*1 1 0;[^}]*position:\s*relative;[^}]*overflow:\s*hidden;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.workbench-pane\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*min-height:\s*0;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.dv-content-container,[\s\S]*?\.dockview-theme-fanfande\s+\.workbench-pane-live-region\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.workbench-pane\s+button,[\s\S]*?\.dockview-theme-fanfande\s+\.workbench-pane\s+\[contenteditable="true"\]\s*\{[^}]*-webkit-app-region:\s*no-drag;/s)
+    expect(styles).toMatch(/\.dockview-theme-fanfande\s+\.workbench-pane-live-region\.is-dockview-managed\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto auto;/s)
     expect(styles).toMatch(/@property --pane-drop-preview-sheen-x\s*\{[^}]*syntax:\s*"&lt;percentage&gt;"|@property --pane-drop-preview-sheen-x\s*\{[^}]*syntax:\s*"<percentage>";/s)
     expect(styles).toMatch(/@property --pane-drop-preview-sheen-y\s*\{[^}]*initial-value:\s*50%;/s)
     expect(styles).toMatch(/\.workbench-pane-stage\s*\{[^}]*--pane-drop-preview-motion-duration:\s*220ms;[^}]*--pane-drop-preview-fade-duration:\s*180ms;[^}]*--pane-drop-preview-motion-curve:\s*cubic-bezier\(0\.22,\s*1,\s*0\.36,\s*1\);[^}]*--pane-drop-preview-sheen-x:\s*50%;[^}]*--pane-drop-preview-sheen-y:\s*50%;/s)

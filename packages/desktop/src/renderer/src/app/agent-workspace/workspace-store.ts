@@ -1,4 +1,5 @@
 import { type SetStateAction } from "react"
+import type { SerializedDockview } from "dockview-react"
 import { useStore } from "zustand"
 import { createStore, type StoreApi } from "zustand/vanilla"
 import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
@@ -21,7 +22,6 @@ import type {
   WorkspacePreviewState,
 } from "../types"
 import { sortWorkspaceGroups } from "../workspace"
-import type { WorkbenchLayoutState } from "../workbench/core"
 import {
   DEFAULT_WORKSPACE_FILE_REVIEW_STATE
 } from "./review-preview-state"
@@ -69,7 +69,7 @@ function writePinnedWorkspaceIDs(workspaceIDs: string[]) {
 }
 
 export interface WorkbenchSliceState {
-  workbenchLayout: WorkbenchLayoutState
+  dockviewLayout: SerializedDockview | null
 }
 
 export interface SessionsSliceState {
@@ -120,7 +120,7 @@ export interface ReviewSliceState {
 }
 
 export interface WorkbenchSliceActions {
-  setWorkbenchLayout: (update: WorkspaceStateUpdater<WorkbenchLayoutState>) => void
+  setDockviewLayout: (update: WorkspaceStateUpdater<SerializedDockview | null>) => void
 }
 
 export interface SessionsSliceActions {
@@ -211,7 +211,7 @@ interface CreateWorkspaceStoreOptions {
   hasFolderWorkspaceLoader: boolean
   initialCreateSessionTab: CreateSessionTab | null
   initialComposerTabKey: string | null
-  initialWorkbenchLayout: WorkbenchLayoutState
+  initialDockviewLayout: SerializedDockview | null
 }
 
 function resolveStateUpdate<T>(current: T, update: WorkspaceStateUpdater<T>): T {
@@ -222,7 +222,7 @@ export function createWorkspaceStore({
   hasFolderWorkspaceLoader,
   initialComposerTabKey,
   initialCreateSessionTab,
-  initialWorkbenchLayout,
+  initialDockviewLayout,
 }: CreateWorkspaceStoreOptions) {
   const shouldUseSeedData = !hasFolderWorkspaceLoader
   const initialWorkspace = shouldUseSeedData ? initialSelection.workspace : null
@@ -230,7 +230,7 @@ export function createWorkspaceStore({
 
   return createStore<WorkspaceStore>((set) => ({
     workbench: {
-      workbenchLayout: initialWorkbenchLayout,
+      dockviewLayout: initialDockviewLayout,
     },
     sessions: {
       activeSideChatSessionIDByParentSessionID: {},
@@ -282,11 +282,11 @@ export function createWorkspaceStore({
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
     },
     workbenchActions: {
-      setWorkbenchLayout: (update) =>
+      setDockviewLayout: (update) =>
         set((state) => ({
           workbench: {
             ...state.workbench,
-            workbenchLayout: resolveStateUpdate(state.workbench.workbenchLayout, update),
+            dockviewLayout: resolveStateUpdate(state.workbench.dockviewLayout, update),
           },
         })),
     },
@@ -591,5 +591,5 @@ export const workspaceStoreSelectors = {
       isCreatingSession: tabKey ? Boolean(state.composer.isCreatingSessionByTabKey[tabKey]) : false,
       isSending: tabKey ? Boolean(state.composer.isSendingByTabKey[tabKey]) : false,
     }),
-  workbenchLayout: (state: WorkspaceStore) => state.workbench.workbenchLayout,
+  dockviewLayout: (state: WorkspaceStore) => state.workbench.dockviewLayout,
 }

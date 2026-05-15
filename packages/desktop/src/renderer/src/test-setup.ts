@@ -43,6 +43,35 @@ function ensureStorage(name: "localStorage" | "sessionStorage") {
 ensureStorage("localStorage")
 ensureStorage("sessionStorage")
 
+class MockResizeObserver implements ResizeObserver {
+  private readonly callback: ResizeObserverCallback
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback
+  }
+
+  observe(target: Element) {
+    const rect = target.getBoundingClientRect()
+    this.callback([
+      {
+        borderBoxSize: [],
+        contentBoxSize: [],
+        contentRect: rect,
+        devicePixelContentBoxSize: [],
+        target,
+      },
+    ], this)
+  }
+
+  unobserve() {}
+
+  disconnect() {}
+}
+
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = MockResizeObserver
+}
+
 class MockTerminal {
   rows = 24
   cols = 80

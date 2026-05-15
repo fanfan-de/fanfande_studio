@@ -1,4 +1,5 @@
 import type { MouseEvent, MutableRefObject } from "react"
+import type { SerializedDockview } from "dockview-react"
 import { getAgentSessionBridge } from "../agent-session/client"
 import {
   ensureAgentSessions,
@@ -23,16 +24,10 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import {
-  createWorkbenchLayoutWithTab,
-  filterLayoutTabs,
-  getGroupIdForTabId,
-  getGroupNode,
-  getReferenceForTabId,
-  getTabIdForReference,
-  replaceTabReferenceInGroup,
-  upsertTabReferenceInGroup,
-  type WorkbenchLayoutState,
-} from "../workbench/core"
+  getActiveDockviewPanelReference,
+  normalizeDockviewLayout,
+  type WorkbenchDockviewCommands,
+} from "../workbench/dockview-state"
 import {
   findSession,
   findWorkspaceByID,
@@ -53,9 +48,13 @@ import {
   findLatestSideChatForAnchor,
   getWorkbenchTabKey,
   resolveCreateSessionWorkspaceID,
-  resolveWorkbenchGroupID,
 } from "./workspace-derived-state"
 import { collectSessionDirectoryMap } from "./workspace-loading-hooks"
+import {
+  buildDockviewPanelTitles,
+  buildValidDockviewReferences,
+  resolveWorkspaceIDForDockviewReference,
+} from "./dockview-workspace"
 import {
   ensureExpandedFolderID,
   removeExpandedFolderID,
@@ -117,10 +116,12 @@ interface UseSessionLifecycleControllerOptions {
   createSessionTabs: CreateSessionTab[]
   createSessionWorkspaceID: string | null
   deletingSessionID: string | null
+  dockviewLayout: SerializedDockview | null
   expandedFolderIDs: string[]
   focusExistingCreateSessionTabAcrossPanes: (preferredWorkspaceID?: string | null) => boolean
   focusSession: (workspaceID: string, sessionID: string, paneID?: string) => void
-  focusedPane: ReturnType<typeof getGroupNode>
+  focusedPane: { id: string } | null
+  focusedPaneID: string | null
   initialFolderWorkspacesLoadedRef: MutableRefObject<boolean>
   isCreateSessionTabActive: boolean
   isCreatingProject: boolean
@@ -159,7 +160,7 @@ interface UseSessionLifecycleControllerOptions {
   setSessionDirectoryBySession: StateSetter<Record<string, string>>
   setSessionRuntimeDebugBySession: StateSetter<Record<string, SessionRuntimeDebugSnapshot>>
   setSessionRuntimeDebugStateBySession: StateSetter<Record<string, SessionRuntimeDebugState>>
-  setWorkbenchLayout: StateSetter<WorkbenchLayoutState>
+  setDockviewLayout: StateSetter<SerializedDockview | null>
   setWorkspaces: StateSetter<WorkspaceGroup[]>
   clearRuntimeDebugRefreshTimer: (sessionID: string) => void
   clearSessionDiffRefreshTimer: (sessionID: string) => void
@@ -168,8 +169,7 @@ interface UseSessionLifecycleControllerOptions {
   selectedWorkspace: WorkspaceGroup | null
   skipNextHistoryLoadRef: MutableRefObject<Record<string, boolean>>
   subscribedSessionStreamsRef: MutableRefObject<Record<string, string>>
-  workbenchLayout: WorkbenchLayoutState
-  workbenchPanes: Array<{ id: string }>
+  workbenchDockviewCommandsRef: MutableRefObject<WorkbenchDockviewCommands | null>
   workspaces: WorkspaceGroup[]
   conversationVersionRef: MutableRefObject<Record<string, number>>
 }
@@ -185,10 +185,12 @@ export function useSessionLifecycleController({
   createSessionTabs,
   createSessionWorkspaceID,
   deletingSessionID,
+  dockviewLayout,
   expandedFolderIDs,
   focusExistingCreateSessionTabAcrossPanes,
   focusSession,
   focusedPane,
+  focusedPaneID,
   handleCreateSessionWorkspaceChange,
   initialFolderWorkspacesLoadedRef,
   isCreateSessionTabActive,
@@ -226,7 +228,7 @@ export function useSessionLifecycleController({
   setSessionDirectoryBySession,
   setSessionRuntimeDebugBySession,
   setSessionRuntimeDebugStateBySession,
-  setWorkbenchLayout,
+  setDockviewLayout,
   setWorkspaces,
   clearRuntimeDebugRefreshTimer,
   clearSessionDiffRefreshTimer,
@@ -234,8 +236,7 @@ export function useSessionLifecycleController({
   selectedWorkspace,
   skipNextHistoryLoadRef,
   subscribedSessionStreamsRef,
-  workbenchLayout,
-  workbenchPanes,
+  workbenchDockviewCommandsRef,
   workspaces,
 }: UseSessionLifecycleControllerOptions) {
   function cleanupSessionState(sessionIDs: Set<string>) {
@@ -421,19 +422,11 @@ export function useSessionLifecycleController({
 
       if (options?.closeCreateTab && options.createSessionTabID) {
         setCreateSessionTabs((current) => current.filter((tab) => tab.id !== options.createSessionTabID))
-        setWorkbenchLayout((current) => {
-          const targetPaneID =
-            options.paneID ??
-            getGroupIdForTabId(current, getTabIdForReference(createCreateSessionWorkbenchTab(options.createSessionTabID!))) ??
-            resolveWorkbenchGroupID(current, focusedPane?.id ?? null)
-          if (!targetPaneID) return current
-          return replaceTabReferenceInGroup(
-            current,
-            targetPaneID,
-            getTabIdForReference(createCreateSessionWorkbenchTab(options.createSessionTabID!)),
-            createSessionWorkbenchTab(created.session.id),
-          )
-        })
+        workbenchDockviewCommandsRef.current?.replacePanel(
+          createCreateSessionWorkbenchTab(options.createSessionTabID),
+          createSessionWorkbenchTab(created.session.id),
+          { title: nextSession.title },
+        )
       } else if (options?.createSessionTabID) {
         setCreateSessionTabs((current) =>
           current.map((tab) =>
@@ -446,23 +439,16 @@ export function useSessionLifecycleController({
               : tab,
           ),
         )
-        setWorkbenchLayout((current) => {
-          const targetPaneID =
-            options.paneID ??
-            getGroupIdForTabId(current, getTabIdForReference(createCreateSessionWorkbenchTab(options.createSessionTabID!))) ??
-            resolveWorkbenchGroupID(current, focusedPane?.id ?? null)
-          if (!targetPaneID) return current
-          return replaceTabReferenceInGroup(
-            current,
-            targetPaneID,
-            getTabIdForReference(createCreateSessionWorkbenchTab(options.createSessionTabID!)),
-            createSessionWorkbenchTab(created.session.id),
-          )
-        })
-      } else if (options?.paneID) {
-        setWorkbenchLayout((current) =>
-          upsertTabReferenceInGroup(current, resolveWorkbenchGroupID(current, options.paneID), createSessionWorkbenchTab(created.session.id)),
+        workbenchDockviewCommandsRef.current?.replacePanel(
+          createCreateSessionWorkbenchTab(options.createSessionTabID),
+          createSessionWorkbenchTab(created.session.id),
+          { title: nextSession.title },
         )
+      } else if (options?.paneID) {
+        workbenchDockviewCommandsRef.current?.openPanel(createSessionWorkbenchTab(created.session.id), {
+          targetGroupID: options.paneID,
+          title: nextSession.title,
+        })
       }
 
       focusSession(workspace.id, created.session.id, options?.paneID ?? undefined)
@@ -486,7 +472,7 @@ export function useSessionLifecycleController({
     }
   }
 
-  async function handleCreateSessionSubmit(createSessionTabID = activeCreateSessionTabID, paneID = focusedPane?.id ?? null) {
+  async function handleCreateSessionSubmit(createSessionTabID = activeCreateSessionTabID, paneID = focusedPaneID ?? focusedPane?.id ?? null) {
     if (!createSessionTabID) return
     const currentCreateSessionTab = createSessionTabs.find((tab) => tab.id === createSessionTabID)
     if (!currentCreateSessionTab) return
@@ -591,27 +577,13 @@ export function useSessionLifecycleController({
   }
 
   function handleSessionSelect(workspaceID: string, sessionID: string) {
-    const existingPaneID = getGroupIdForTabId(workbenchLayout, getTabIdForReference(createSessionWorkbenchTab(sessionID)))
-    if (existingPaneID) {
-      focusSession(workspaceID, sessionID, existingPaneID)
-      return
-    }
-
-    const targetPaneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null
-    if (!targetPaneID) {
-      setWorkbenchLayout(createWorkbenchLayoutWithTab(createSessionWorkbenchTab(sessionID)))
-      setSelectedFolderID(workspaceID)
-      setExpandedFolderIDs((current) => ensureExpandedFolderID(current, workspaceID))
-      return
-    }
-
-    focusSession(workspaceID, sessionID, targetPaneID)
+    focusSession(workspaceID, sessionID, focusedPaneID ?? focusedPane?.id ?? undefined)
   }
 
-  function handleOpenSideChatInTab(sessionID: string, paneID = focusedPane?.id ?? workbenchPanes[0]?.id ?? null) {
+  function handleOpenSideChatInTab(sessionID: string, paneID: string | null = focusedPaneID ?? focusedPane?.id ?? null) {
     const selection = findSession(workspaces, sessionID)
     if (!selection.workspace || !selection.session) return
-    focusSession(selection.workspace.id, selection.session.id, paneID)
+    focusSession(selection.workspace.id, selection.session.id, paneID ?? undefined)
   }
 
   function closeActiveSideChat(parentSessionID: string) {
@@ -863,20 +835,23 @@ export function useSessionLifecycleController({
             workspaceID: nextWorkspaceID,
           }
     })
-    const nextWorkbenchLayout = filterLayoutTabs(
-      workbenchLayout,
-      (reference) => reference.kind !== "session" || !removedSessionIDs.has(reference.sessionID),
+    for (const sessionID of removedSessionIDs) {
+      workbenchDockviewCommandsRef.current?.closePanel(createSessionWorkbenchTab(sessionID))
+    }
+    const nextDockviewLayout = normalizeDockviewLayout(
+      workbenchDockviewCommandsRef.current?.getSnapshot() ?? dockviewLayout,
+      buildValidDockviewReferences(nextWorkspaces, nextCreateSessionTabs),
+      buildDockviewPanelTitles(nextWorkspaces, nextCreateSessionTabs),
     )
-    const nextFocusedPaneID = nextWorkbenchLayout.focusedGroupId
-    const nextFocusedPane = getGroupNode(nextWorkbenchLayout, nextFocusedPaneID)
-    const nextFocusedTab = nextFocusedPane?.activeTabId ? getReferenceForTabId(nextWorkbenchLayout, nextFocusedPane.activeTabId) : null
-    const nextFocusedWorkspaceID =
-      nextFocusedTab?.kind === "session"
-        ? findSession(nextWorkspaces, nextFocusedTab.sessionID).workspace?.id ?? null
-        : nextCreateSessionTabs.find((tab) => tab.id === nextFocusedTab?.createSessionTabID)?.workspaceID ?? null
+    const nextFocusedTab = getActiveDockviewPanelReference(nextDockviewLayout)
+    const nextFocusedWorkspaceID = resolveWorkspaceIDForDockviewReference(
+      nextFocusedTab,
+      nextWorkspaces,
+      nextCreateSessionTabs,
+    )
 
     setWorkspaces(nextWorkspaces)
-    setWorkbenchLayout(nextWorkbenchLayout)
+    setDockviewLayout(nextDockviewLayout)
     cleanupSessionState(removedSessionIDs)
     setCreateSessionTabs(nextCreateSessionTabs)
     setHoveredFolderID((current) => (current === workspace.id ? null : current))
@@ -911,19 +886,23 @@ export function useSessionLifecycleController({
             workspaceID: nextWorkspaceID,
           }
     })
-    const nextWorkbenchLayout = filterLayoutTabs(
-      workbenchLayout,
-      (reference) => reference.kind !== "session" || !archivedSessionIDs.has(reference.sessionID),
+    for (const sessionID of archivedSessionIDs) {
+      workbenchDockviewCommandsRef.current?.closePanel(createSessionWorkbenchTab(sessionID))
+    }
+    const nextDockviewLayout = normalizeDockviewLayout(
+      workbenchDockviewCommandsRef.current?.getSnapshot() ?? dockviewLayout,
+      buildValidDockviewReferences(nextWorkspaces, nextCreateSessionTabs),
+      buildDockviewPanelTitles(nextWorkspaces, nextCreateSessionTabs),
     )
-    const nextFocusedPane = getGroupNode(nextWorkbenchLayout, nextWorkbenchLayout.focusedGroupId)
-    const nextFocusedTab = nextFocusedPane?.activeTabId ? getReferenceForTabId(nextWorkbenchLayout, nextFocusedPane.activeTabId) : null
-    const nextFocusedWorkspaceID =
-      nextFocusedTab?.kind === "session"
-        ? findSession(nextWorkspaces, nextFocusedTab.sessionID).workspace?.id ?? null
-        : nextCreateSessionTabs.find((tab) => tab.id === nextFocusedTab?.createSessionTabID)?.workspaceID ?? null
+    const nextFocusedTab = getActiveDockviewPanelReference(nextDockviewLayout)
+    const nextFocusedWorkspaceID = resolveWorkspaceIDForDockviewReference(
+      nextFocusedTab,
+      nextWorkspaces,
+      nextCreateSessionTabs,
+    )
 
     setWorkspaces(nextWorkspaces)
-    setWorkbenchLayout(nextWorkbenchLayout)
+    setDockviewLayout(nextDockviewLayout)
     setCreateSessionTabs(nextCreateSessionTabs)
     setConversations((prev) => {
       let next = prev

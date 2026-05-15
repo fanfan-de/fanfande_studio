@@ -1,4 +1,5 @@
 import { createEmptyComposerDraftState } from "../composer/draft-state"
+import type { SerializedDockview } from "dockview-react"
 import type {
   ComposerAttachment,
   ComposerDraftState,
@@ -11,7 +12,6 @@ import type {
   SessionRuntimeDebugState,
   SessionSummary,
   Turn,
-  WorkbenchPane,
   WorkbenchTabReference,
   WorkspaceFileComment,
   WorkspaceFileReviewState,
@@ -20,14 +20,13 @@ import type {
 } from "../types"
 import { createID } from "../utils"
 import {
-  getFirstGroupId,
-  getGroupIdForTabId,
-  getGroupIdsInOrder,
-  getGroupNode,
-  getReferenceForTabId,
-  getTabIdForReference,
-  type WorkbenchLayoutState,
-} from "../workbench/core"
+  getActiveDockviewPanelReference,
+  getActivePanelForGroup,
+  getDockviewGroupsInOrder,
+  getFocusedDockviewGroupID,
+  getOpenSessionIDs,
+  getVisibleSessionIDs,
+} from "../workbench/dockview-state"
 import { findSession, findWorkspaceByID, isSideChatSession, isWorkspaceAvailable } from "../workspace"
 import {
   DEFAULT_SESSION_DIFF_STATE,
@@ -154,58 +153,6 @@ export function getWorkbenchTabReferenceFromKey(tabKey: string): WorkbenchTabRef
   return null
 }
 
-export function buildLegacyWorkbenchPanesFromLayout(layout: WorkbenchLayoutState): WorkbenchPane[] {
-  return getGroupIdsInOrder(layout).map((groupID) => {
-    const group = getGroupNode(layout, groupID)
-    const tabs = group?.tabs.flatMap((tabID) => {
-      const reference = getReferenceForTabId(layout, tabID)
-      return reference ? [reference] : []
-    }) ?? []
-    const activeReference = group?.activeTabId ? getReferenceForTabId(layout, group.activeTabId) : null
-
-    return {
-      id: groupID,
-      size: 1,
-      tabs,
-      activeTabKey: activeReference ? getWorkbenchTabKey(activeReference) : null,
-    }
-  })
-}
-
-export function createWorkbenchPane(tabs: WorkbenchTabReference[], paneID = createID("pane"), size = 1): WorkbenchPane {
-  const nextTabs = tabs.length > 0 ? tabs : []
-  return {
-    id: paneID,
-    size,
-    tabs: nextTabs,
-    activeTabKey: nextTabs[0] ? getWorkbenchTabKey(nextTabs[0]) : null,
-  }
-}
-
-export function getPaneActiveTab(pane: WorkbenchPane | null | undefined) {
-  if (!pane) return null
-  return pane.tabs.find((tab) => getWorkbenchTabKey(tab) === pane.activeTabKey) ?? pane.tabs[0] ?? null
-}
-
-export function getPaneByID(panes: WorkbenchPane[], paneID: string | null) {
-  if (!paneID) return null
-  return panes.find((pane) => pane.id === paneID) ?? null
-}
-
-export function getPaneByTabKey(panes: WorkbenchPane[], tabKey: string) {
-  return panes.find((pane) => pane.tabs.some((tab) => getWorkbenchTabKey(tab) === tabKey)) ?? null
-}
-
-export function resolveWorkbenchGroupID(layout: WorkbenchLayoutState, preferredGroupID?: string | null) {
-  if (preferredGroupID && getGroupNode(layout, preferredGroupID)) return preferredGroupID
-  return getFirstGroupId(layout)
-}
-
-export function getWorkbenchGroupIDForTabKey(layout: WorkbenchLayoutState, tabKey: string) {
-  const reference = getWorkbenchTabReferenceFromKey(tabKey)
-  return reference ? getGroupIdForTabId(layout, getTabIdForReference(reference)) : null
-}
-
 export function createCreateSessionTab(workspaceID: string | null): CreateSessionTab {
   return {
     id: createID("create-session-tab"),
@@ -302,7 +249,7 @@ interface BuildWorkspaceDerivedStateInput {
   sessionRuntimeDebugBySession: Record<string, SessionRuntimeDebugSnapshot>
   sessionRuntimeDebugStateBySession: Record<string, SessionRuntimeDebugState>
   seedWorkspaceIDs: Set<string>
-  workbenchLayout: WorkbenchLayoutState
+  dockviewLayout: SerializedDockview | null
   workspaceFileCommentsByTarget: Record<string, WorkspaceFileComment[]>
   workspaceFileReviewState: WorkspaceFileReviewState
   workspaces: WorkspaceGroup[]
@@ -330,29 +277,22 @@ export function buildWorkspaceDerivedState({
   sessionRuntimeDebugBySession,
   sessionRuntimeDebugStateBySession,
   seedWorkspaceIDs,
-  workbenchLayout,
+  dockviewLayout,
   workspaceFileCommentsByTarget,
   workspaceFileReviewState,
   workspaces,
 }: BuildWorkspaceDerivedStateInput) {
-  const orderedWorkbenchGroupIDs = getGroupIdsInOrder(workbenchLayout)
-  const focusedPaneID = workbenchLayout.focusedGroupId ?? orderedWorkbenchGroupIDs[0] ?? null
-  const focusedPane = getGroupNode(workbenchLayout, focusedPaneID)
-  const activeTab = focusedPane?.activeTabId ? getReferenceForTabId(workbenchLayout, focusedPane.activeTabId) : null
+  const orderedDockviewGroups = getDockviewGroupsInOrder(dockviewLayout)
+  const focusedPaneID = getFocusedDockviewGroupID(dockviewLayout)
+  const focusedPane = focusedPaneID
+    ? orderedDockviewGroups.find((group) => group.id === focusedPaneID) ?? null
+    : null
+  const activeTab = getActiveDockviewPanelReference(dockviewLayout, focusedPaneID)
   const activeTabKey = activeTab ? getWorkbenchTabKey(activeTab) : null
   const activeSessionID = activeTab?.kind === "session" ? activeTab.sessionID : null
   const activeCreateSessionTabID = activeTab?.kind === "create-session" ? activeTab.createSessionTabID : null
-  const openCanvasSessionIDs = getUniqueSessionIDs(
-    Object.values(workbenchLayout.docs).flatMap((doc) => (doc.type === "session" ? [doc.sessionID] : [])),
-  )
-  const visibleCanvasSessionIDs = getUniqueSessionIDs(
-    orderedWorkbenchGroupIDs.flatMap((groupID) => {
-      const group = getGroupNode(workbenchLayout, groupID)
-      const reference = group?.activeTabId ? getReferenceForTabId(workbenchLayout, group.activeTabId) : null
-      return reference?.kind === "session" ? [reference.sessionID] : []
-    }),
-  )
-  const workbenchPanes = buildLegacyWorkbenchPanesFromLayout(workbenchLayout)
+  const openCanvasSessionIDs = getOpenSessionIDs(dockviewLayout)
+  const visibleCanvasSessionIDs = getVisibleSessionIDs(dockviewLayout)
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
   const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
   const focusedPaneCreateSessionTab =
@@ -467,16 +407,15 @@ export function buildWorkspaceDerivedState({
   const isCreatingSession = activeTabKey ? Boolean(isCreatingSessionByTabKey[activeTabKey]) : false
   const runningSessionIDs = getRunningSessionIDs(conversations, isSendingByTabKey)
   const canvasSessionTabs = focusedPane
-    ? focusedPane.tabs.flatMap((tabID) => {
-        const reference = getReferenceForTabId(workbenchLayout, tabID)
-        if (!reference || reference.kind !== "session") return []
+    ? focusedPane.views.flatMap((reference) => {
+        if (reference.kind !== "session") return []
         const { session } = findSession(workspaces, reference.sessionID)
         return session ? [session] : []
       })
     : []
 
-  const workbenchPaneStates = workbenchPanes.map((pane) => {
-    const currentActiveTab = getPaneActiveTab(pane)
+  const workbenchPaneStates = orderedDockviewGroups.map((pane) => {
+    const currentActiveTab = getActivePanelForGroup(dockviewLayout, pane.id)
     const currentActiveTabKey = currentActiveTab ? getWorkbenchTabKey(currentActiveTab) : null
     const currentActiveSessionID = currentActiveTab?.kind === "session" ? currentActiveTab.sessionID : null
     const currentActiveCreateSessionTab =
@@ -530,7 +469,7 @@ export function buildWorkspaceDerivedState({
         }
     > = []
 
-    for (const tab of pane.tabs) {
+    for (const tab of pane.views) {
       if (tab.kind === "session") {
         const { session } = findSession(workspaces, tab.sessionID)
         if (!session) continue
@@ -623,7 +562,7 @@ export function buildWorkspaceDerivedState({
         isInitialWorkspaceLoadPending && currentWorkspace && seedWorkspaceIDs.has(currentWorkspace.id)
           ? null
           : currentWorkspace?.project.id ?? null,
-      size: pane.size,
+      size: 1,
       sessionID: currentSession?.id ?? null,
       sideChatCountsByAnchorMessageID: collectSideChatCountsFromSessionsByAnchorMessageID(paneSideChatSessionsByAnchorMessageID),
       sideChatSessionsByAnchorMessageID: paneSideChatSessionsByAnchorMessageID,
@@ -686,7 +625,6 @@ export function buildWorkspaceDerivedState({
     selectedProjectID,
     selectedWorkspace,
     visibleCanvasSessionIDs,
-    workbenchPanes,
     workbenchPaneStateByID,
     workbenchPaneStates,
   }

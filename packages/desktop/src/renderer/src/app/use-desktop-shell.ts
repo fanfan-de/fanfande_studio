@@ -150,7 +150,7 @@ export function useDesktopShell() {
   const appShellRef = useRef<HTMLElement | null>(null)
   const [windowControlsElement, setWindowControlsElement] = useState<HTMLDivElement | null>(null)
   const windowControlsRef = useCallback((node: HTMLDivElement | null) => {
-    setWindowControlsElement(node)
+    setWindowControlsElement((current) => (current === node ? current : node))
   }, [])
   const [platform, setPlatform] = useState("Desktop")
   const [isWindowMaximized, setIsWindowMaximized] = useState(false)
@@ -829,7 +829,7 @@ export function useDesktopShell() {
     setAppearanceOverrides({})
   }
 
-  function handleWindowAction(action: WindowAction) {
+  const handleWindowAction = useCallback((action: WindowAction) => {
     if (!window.desktop?.windowAction) {
       console.warn("[desktop] windowAction is unavailable. preload may not be loaded.")
       return
@@ -838,7 +838,7 @@ export function useDesktopShell() {
     void window.desktop.windowAction(action).catch((error) => {
       console.error("[desktop] windowAction failed:", error)
     })
-  }
+  }, [])
 
   const appShellStyle = {
     "--window-controls-clearance": `${windowControlsClearance}px`,

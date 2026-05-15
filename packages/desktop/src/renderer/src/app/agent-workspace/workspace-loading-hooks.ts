@@ -1,4 +1,5 @@
 import { useEffect, type MutableRefObject } from "react"
+import type { SerializedDockview } from "dockview-react"
 import {
   ensureAgentSessions,
   ensureConversationSessions,
@@ -14,10 +15,11 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import {
-  createWorkbenchLayoutWithTab,
-  normalizeLayoutState,
-  type WorkbenchLayoutState,
-} from "../workbench/core"
+  createInitialDockviewLayout,
+  getActiveDockviewPanelReference,
+  normalizeDockviewLayout,
+  readPersistedDockviewLayout,
+} from "../workbench/dockview-state"
 import {
   findFirstSession,
   isWorkspaceAvailable,
@@ -27,6 +29,11 @@ import {
   upsertWorkspaceGroup,
 } from "../workspace"
 import { DEFAULT_SESSION_DIFF_STATE } from "./review-preview-state"
+import {
+  buildDockviewPanelTitles,
+  buildValidDockviewReferences,
+  resolveWorkspaceIDForDockviewReference,
+} from "./dockview-workspace"
 import { seedWorkspaceIDs, type WorkspaceStateUpdater } from "./workspace-store"
 
 const GIT_REFRESH_SUPPRESSION_MS = 1000
@@ -289,7 +296,7 @@ interface UseInitialFolderWorkspacesEffectOptions {
   setIsInitialWorkspaceLoadPending: (update: boolean) => void
   setSelectedFolderID: (update: string | null) => void
   setSessionDirectoryBySession: (update: (current: Record<string, string>) => Record<string, string>) => void
-  setWorkbenchLayout: (update: WorkbenchLayoutState) => void
+  setDockviewLayout: (update: SerializedDockview | null) => void
   setWorkspaces: (update: (current: WorkspaceGroup[]) => WorkspaceGroup[]) => void
 }
 
@@ -308,7 +315,7 @@ export function useInitialFolderWorkspacesEffect({
   setIsInitialWorkspaceLoadPending,
   setSelectedFolderID,
   setSessionDirectoryBySession,
-  setWorkbenchLayout,
+  setDockviewLayout,
   setWorkspaces,
 }: UseInitialFolderWorkspacesEffectOptions) {
   useEffect(() => {
@@ -348,26 +355,39 @@ export function useInitialFolderWorkspacesEffect({
         }))
 
         if (!preserveLocalWorkspaceState) {
-          const nextSelection = findFirstSession(nextWorkspaces)
-          const nextFolderID = nextSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null
-          const nextCreateSessionTab = nextSelection.session === null ? createCreateSessionTab(nextFolderID) : null
-          const nextInitialTab =
-            nextSelection.session !== null
-              ? createSessionWorkbenchTab(nextSelection.session.id)
-              : nextCreateSessionTab
-                ? createCreateSessionWorkbenchTab(nextCreateSessionTab.id)
-                : null
-          setSelectedFolderID(nextFolderID)
-          setExpandedFolderIDs(nextFolderID ? [nextFolderID] : [])
-          setCreateSessionTabs(nextCreateSessionTab ? [nextCreateSessionTab] : [])
-          setWorkbenchLayout(nextInitialTab ? createWorkbenchLayoutWithTab(nextInitialTab) : normalizeLayoutState({
-            rootId: null,
-            nodes: {},
-            tabs: {},
-            docs: {},
-            focusedGroupId: null,
-          }))
-          lastFocusedSessionIDRef.current = nextSelection.session?.id ?? null
+          const restoredDockviewLayout = normalizeDockviewLayout(
+            readPersistedDockviewLayout(),
+            buildValidDockviewReferences(nextWorkspaces, []),
+            buildDockviewPanelTitles(nextWorkspaces, []),
+          )
+
+          if (restoredDockviewLayout) {
+            const restoredReference = getActiveDockviewPanelReference(restoredDockviewLayout)
+            const restoredFolderID =
+              resolveWorkspaceIDForDockviewReference(restoredReference, nextWorkspaces, []) ??
+              nextWorkspaces[0]?.id ??
+              null
+            setSelectedFolderID(restoredFolderID)
+            setExpandedFolderIDs(restoredFolderID ? [restoredFolderID] : [])
+            setCreateSessionTabs([])
+            setDockviewLayout(restoredDockviewLayout)
+            lastFocusedSessionIDRef.current = restoredReference?.kind === "session" ? restoredReference.sessionID : null
+          } else {
+            const nextSelection = findFirstSession(nextWorkspaces)
+            const nextFolderID = nextSelection.workspace?.id ?? nextWorkspaces[0]?.id ?? null
+            const nextCreateSessionTab = nextSelection.session === null ? createCreateSessionTab(nextFolderID) : null
+            const nextInitialTab =
+              nextSelection.session !== null
+                ? createSessionWorkbenchTab(nextSelection.session.id)
+                : nextCreateSessionTab
+                  ? createCreateSessionWorkbenchTab(nextCreateSessionTab.id)
+                  : null
+            setSelectedFolderID(nextFolderID)
+            setExpandedFolderIDs(nextFolderID ? [nextFolderID] : [])
+            setCreateSessionTabs(nextCreateSessionTab ? [nextCreateSessionTab] : [])
+            setDockviewLayout(nextInitialTab ? createInitialDockviewLayout(nextInitialTab) : null)
+            lastFocusedSessionIDRef.current = nextSelection.session?.id ?? null
+          }
         }
 
         setCanLoadSessionHistory(true)

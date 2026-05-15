@@ -1,4 +1,5 @@
 import { useEffectEvent, type MutableRefObject } from "react"
+import type { SerializedDockview } from "dockview-react"
 import type {
   CreateSessionTab,
   SessionDiffState,
@@ -7,7 +8,6 @@ import type {
   WorkspaceFileChangeIPCEvent,
   WorkspaceGroup,
 } from "../types"
-import type { WorkbenchLayoutState } from "../workbench/core"
 import {
   handleWorkspaceFileChange,
   useInitialFolderWorkspacesEffect,
@@ -42,7 +42,7 @@ interface UseWorkspaceLoadingControllerOptions {
   setSelectedFolderID: StateSetter<string | null>
   setSessionDiffStateBySession: StateSetter<Record<string, SessionDiffState>>
   setSessionDirectoryBySession: StateSetter<Record<string, string>>
-  setWorkbenchLayout: StateSetter<WorkbenchLayoutState>
+  setDockviewLayout: StateSetter<SerializedDockview | null>
   setWorkspaces: StateSetter<WorkspaceGroup[]>
   watchedWorkspaceDirectoriesKeyRef: MutableRefObject<string>
   workspaceReloadSuppressedUntilRef: MutableRefObject<Record<string, number>>
@@ -73,7 +73,7 @@ export function useWorkspaceLoadingController({
   setSelectedFolderID,
   setSessionDiffStateBySession,
   setSessionDirectoryBySession,
-  setWorkbenchLayout,
+  setDockviewLayout,
   setWorkspaces,
   watchedWorkspaceDirectoriesKeyRef,
   workspaceReloadSuppressedUntilRef,
@@ -120,7 +120,7 @@ export function useWorkspaceLoadingController({
     setIsInitialWorkspaceLoadPending,
     setSelectedFolderID,
     setSessionDirectoryBySession,
-    setWorkbenchLayout,
+    setDockviewLayout,
     setWorkspaces,
   })
 }

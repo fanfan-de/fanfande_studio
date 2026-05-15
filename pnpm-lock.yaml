@@ -50,6 +50,9 @@ importers:
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
+      dockview-react:
+        specifier: ^6.2.2
+        version: 6.2.2(react@19.2.5)
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
@@ -2070,6 +2073,17 @@ packages:
     engines: {node: '>=8'}
     os: [darwin]
     hasBin: true
+
+  dockview-core@6.2.2:
+    resolution: {integrity: sha512-n/ZfgbLB0k9u8dyWlHg1G/GAfWkFowd+0PtfVyo6O/SCkAbBZgQA+VxA3gZc1BuBmZNIHWocbbX43WsGjDUJrA==}
+
+  dockview-react@6.2.2:
+    resolution: {integrity: sha512-PFhk+CfXj3lBR+M4wRrYXfHV+wvk4nXJlWSCP8pZF0hw8VX18ZyK9M1/MzAiF5gMOcediwGWA8uqV0NYMw5RtA==}
+
+  dockview@6.2.2:
+    resolution: {integrity: sha512-Ydc1/gINOsnkumzkKOHqlViS6Z4nbq6zuozOYz7mRWOLr1nw49MGul8SHUD2fxXfwk2oABd8zGNdA2J+x+sKpQ==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
@@ -6130,6 +6144,19 @@ snapshots:
       smart-buffer: 4.2.0
       verror: 1.10.1
     optional: true
+
+  dockview-core@6.2.2: {}
+
+  dockview-react@6.2.2(react@19.2.5):
+    dependencies:
+      dockview: 6.2.2(react@19.2.5)
+    transitivePeerDependencies:
+      - react
+
+  dockview@6.2.2(react@19.2.5):
+    dependencies:
+      dockview-core: 6.2.2
+      react: 19.2.5
 
   dom-accessibility-api@0.5.16: {}
 

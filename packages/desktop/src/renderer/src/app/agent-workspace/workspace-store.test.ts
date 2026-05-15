@@ -1,59 +1,36 @@
 import { describe, expect, it } from "vitest"
 import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import type { PermissionRequest, WorkspacePreviewState } from "../types"
-import type { WorkbenchLayoutState } from "../workbench/core"
+import { createInitialDockviewLayout } from "../workbench/dockview-state"
 import { DEFAULT_SESSION_DIFF_STATE, DEFAULT_WORKSPACE_FILE_REVIEW_STATE } from "./review-preview-state"
 import { createWorkspaceStore } from "./workspace-store"
 
-function createEmptyWorkbenchLayout(): WorkbenchLayoutState {
-  return {
-    rootId: null,
-    nodes: {},
-    tabs: {},
-    docs: {},
-    focusedGroupId: null,
-  }
-}
-
 function createTestStore(options?: {
   initialComposerTabKey?: string | null
-  initialWorkbenchLayout?: WorkbenchLayoutState
+  initialDockviewLayout?: ReturnType<typeof createInitialDockviewLayout> | null
 }) {
   return createWorkspaceStore({
     hasFolderWorkspaceLoader: false,
     initialComposerTabKey: options?.initialComposerTabKey ?? null,
     initialCreateSessionTab: null,
-    initialWorkbenchLayout: options?.initialWorkbenchLayout ?? createEmptyWorkbenchLayout(),
+    initialDockviewLayout: options?.initialDockviewLayout ?? null,
   })
 }
 
 describe("workspace store", () => {
-  it("updates workbench layout through value and functional actions", () => {
+  it("updates dockview layout through value and functional actions", () => {
     const store = createTestStore()
-    const nextLayout: WorkbenchLayoutState = {
-      rootId: "group-1",
-      nodes: {
-        "group-1": {
-          id: "group-1",
-          kind: "group",
-          tabs: [],
-          activeTabId: null,
-        },
-      },
-      tabs: {},
-      docs: {},
-      focusedGroupId: "group-1",
-    }
+    const nextLayout = createInitialDockviewLayout({ kind: "session", sessionID: "session-1" })
 
-    store.getState().workbenchActions.setWorkbenchLayout(nextLayout)
-    expect(store.getState().workbench.workbenchLayout.rootId).toBe("group-1")
+    store.getState().workbenchActions.setDockviewLayout(nextLayout)
+    expect(store.getState().workbench.dockviewLayout?.activeGroup).toBe(nextLayout.activeGroup)
 
-    store.getState().workbenchActions.setWorkbenchLayout((current) => ({
+    store.getState().workbenchActions.setDockviewLayout((current) => current && ({
       ...current,
-      focusedGroupId: null,
+      activeGroup: undefined,
     }))
 
-    expect(store.getState().workbench.workbenchLayout.focusedGroupId).toBeNull()
+    expect(store.getState().workbench.dockviewLayout?.activeGroup).toBeUndefined()
   })
 
   it("keeps composer draft, attachment, and sending state isolated by tab", () => {
@@ -107,7 +84,7 @@ describe("workspace store", () => {
       hasFolderWorkspaceLoader: true,
       initialComposerTabKey: null,
       initialCreateSessionTab: null,
-      initialWorkbenchLayout: createEmptyWorkbenchLayout(),
+      initialDockviewLayout: null,
     })
 
     expect(store.getState().sessions.workspaces).toEqual([])

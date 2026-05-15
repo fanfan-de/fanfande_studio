@@ -1,7 +1,6 @@
 export { CanvasRegionTopMenu } from "./canvas/CanvasRegionTopMenu"
 export { CanvasRegionUtilityMenu } from "./canvas/CanvasRegionUtilityMenu"
 export { CreateSessionCanvas, GlobalSkillsCanvas } from "./canvas/CreateSessionCanvas"
-export { PaneTabBar } from "./canvas/PaneTabBar"
 export { SessionCanvasTopMenu } from "./canvas/SessionCanvasTopMenu"
 export { WindowChrome } from "./chrome/WindowChrome"
 export { Composer } from "./composer/Composer"

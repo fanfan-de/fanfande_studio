@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useComposerController } from "./agent-workspace/composer-controller"
 import { useComposerDraftState } from "./agent-workspace/composer-draft-state"
 import { useReviewPanelController } from "./agent-workspace/review-panel-controller"
@@ -13,7 +13,6 @@ import {
   createCreateSessionTab,
   createCreateSessionWorkbenchTab,
   createSessionWorkbenchTab,
-  createWorkbenchPane,
   getWorkbenchTabKey,
 } from "./agent-workspace/workspace-derived-state"
 import { useWorkspaceLoadingController } from "./agent-workspace/workspace-loading-controller"
@@ -23,7 +22,11 @@ import { initialSelection } from "./seed-data"
 import type { LeftSidebarView, RightSidebarView, SessionDiffSummary, SessionModelSelection, Turn, WorkspaceGroup } from "./types"
 import { persistUserTurns } from "./user-turn-presentation"
 import { updateSessionModelSelectionInWorkspaces } from "./workspace"
-import { createWorkbenchLayoutFromLegacyPanes } from "./workbench/core"
+import {
+  createInitialDockviewLayout,
+  writePersistedDockviewLayout,
+  type WorkbenchDockviewCommands,
+} from "./workbench/dockview-state"
 
 interface UseAgentWorkspaceOptions {
   agentConnected: boolean
@@ -37,7 +40,7 @@ function createInitialWorkspaceState(shouldUseSeedData: boolean) {
     return {
       initialComposerTabKey: null,
       initialCreateSessionTab: null,
-      initialWorkbenchLayout: createWorkbenchLayoutFromLegacyPanes([]),
+      initialDockviewLayout: null,
     }
   }
 
@@ -50,12 +53,11 @@ function createInitialWorkspaceState(shouldUseSeedData: boolean) {
       : initialCreateSessionTab
         ? createCreateSessionWorkbenchTab(initialCreateSessionTab.id)
         : null
-  const initialWorkbenchPane = initialWorkbenchTab ? createWorkbenchPane([initialWorkbenchTab]) : null
 
   return {
     initialComposerTabKey: initialWorkbenchTab ? getWorkbenchTabKey(initialWorkbenchTab) : null,
     initialCreateSessionTab,
-    initialWorkbenchLayout: createWorkbenchLayoutFromLegacyPanes(initialWorkbenchPane ? [initialWorkbenchPane] : []),
+    initialDockviewLayout: initialWorkbenchTab ? createInitialDockviewLayout(initialWorkbenchTab) : null,
   }
 }
 
@@ -91,6 +93,8 @@ export function useAgentWorkspace({
   isRuntimeDebugEnabled,
   platform,
 }: UseAgentWorkspaceOptions) {
+  const workbenchDockviewCommandsRef = useRef<WorkbenchDockviewCommands | null>(null)
+  const dockviewPersistenceTimerRef = useRef<number | null>(null)
   const workspaceStoreRef = useRef<WorkspaceStoreApi | null>(null)
   if (!workspaceStoreRef.current) {
     const hasFolderWorkspaceLoader = Boolean(window.desktop?.listFolderWorkspaces)
@@ -100,11 +104,14 @@ export function useAgentWorkspace({
       hasFolderWorkspaceLoader,
       initialComposerTabKey: initialWorkspaceState.initialComposerTabKey,
       initialCreateSessionTab: initialWorkspaceState.initialCreateSessionTab,
-      initialWorkbenchLayout: initialWorkspaceState.initialWorkbenchLayout,
+      initialDockviewLayout: initialWorkspaceState.initialDockviewLayout,
     })
   }
   const workspaceStore = workspaceStoreRef.current
-  const { workbenchLayout, setWorkbenchLayout } = useWorkbenchState({ store: workspaceStore })
+  const { dockviewLayout, setDockviewLayout } = useWorkbenchState({ store: workspaceStore })
+  const handleWorkbenchDockviewCommandsReady = useCallback((commands: WorkbenchDockviewCommands | null) => {
+    workbenchDockviewCommandsRef.current = commands
+  }, [])
   const {
     activeSideChatSessionIDByParentSessionID,
     canLoadSessionHistory,
@@ -256,7 +263,6 @@ export function useAgentWorkspace({
     selectedProjectID,
     selectedWorkspace,
     visibleCanvasSessionIDs,
-    workbenchPanes,
     workbenchPaneStateByID,
     workbenchPaneStates,
   } = buildWorkspaceDerivedState({
@@ -281,13 +287,33 @@ export function useAgentWorkspace({
     sessionRuntimeDebugBySession,
     sessionRuntimeDebugStateBySession,
     seedWorkspaceIDs,
-    workbenchLayout,
+    dockviewLayout,
     workspaceFileCommentsByTarget,
     workspaceFileReviewState,
     workspaces,
   })
 
   const visibleCanvasSessionKey = visibleCanvasSessionIDs.join("\0")
+
+  useEffect(() => {
+    if (dockviewPersistenceTimerRef.current !== null) {
+      window.clearTimeout(dockviewPersistenceTimerRef.current)
+      dockviewPersistenceTimerRef.current = null
+    }
+    if (isInitialWorkspaceLoadPending) return
+
+    dockviewPersistenceTimerRef.current = window.setTimeout(() => {
+      dockviewPersistenceTimerRef.current = null
+      writePersistedDockviewLayout(dockviewLayout)
+    }, 200)
+
+    return () => {
+      if (dockviewPersistenceTimerRef.current !== null) {
+        window.clearTimeout(dockviewPersistenceTimerRef.current)
+        dockviewPersistenceTimerRef.current = null
+      }
+    }
+  }, [dockviewLayout, isInitialWorkspaceLoadPending])
 
   useEffect(() => {
     const visibleSessionIDs = new Set(visibleCanvasSessionIDs)
@@ -406,7 +432,7 @@ export function useAgentWorkspace({
     setSelectedFolderID,
     setSessionDiffStateBySession,
     setSessionDirectoryBySession,
-    setWorkbenchLayout,
+    setDockviewLayout,
     setWorkspaces,
     watchedWorkspaceDirectoriesKeyRef,
     workspaceReloadSuppressedUntilRef,
@@ -423,6 +449,7 @@ export function useAgentWorkspace({
     handleCreateSessionTitleChange,
     handleCreateSessionWorkspaceChange,
     handleOpenCreateSessionTab,
+    handleDockviewActiveChange,
     handlePaneFocus,
     handlePaneSplit,
     handlePaneTabDrop,
@@ -434,6 +461,7 @@ export function useAgentWorkspace({
     activeSessionID,
     activeWorkspace,
     createSessionTabs,
+    dockviewLayout,
     focusedPane,
     focusedPaneID,
     isCreateSessionTabActive,
@@ -441,11 +469,10 @@ export function useAgentWorkspace({
     projectRowRefs,
     selectedFolderID,
     setCreateSessionTabs,
+    setDockviewLayout,
     setExpandedFolderIDs,
     setSelectedFolderID,
-    setWorkbenchLayout,
-    workbenchLayout,
-    workbenchPanes,
+    workbenchDockviewCommandsRef,
     workspaces,
   })
 
@@ -477,10 +504,12 @@ export function useAgentWorkspace({
     createSessionTabs,
     createSessionWorkspaceID,
     deletingSessionID,
+    dockviewLayout,
     expandedFolderIDs,
     focusExistingCreateSessionTabAcrossPanes,
     focusSession,
     focusedPane,
+    focusedPaneID,
     handleCreateSessionWorkspaceChange,
     initialFolderWorkspacesLoadedRef,
     isCreateSessionTabActive,
@@ -518,7 +547,7 @@ export function useAgentWorkspace({
     setSessionDirectoryBySession,
     setSessionRuntimeDebugBySession,
     setSessionRuntimeDebugStateBySession,
-    setWorkbenchLayout,
+    setDockviewLayout,
     setWorkspaces,
     clearRuntimeDebugRefreshTimer,
     clearSessionDiffRefreshTimer,
@@ -526,8 +555,7 @@ export function useAgentWorkspace({
     selectedWorkspace,
     skipNextHistoryLoadRef,
     subscribedSessionStreamsRef,
-    workbenchLayout,
-    workbenchPanes,
+    workbenchDockviewCommandsRef,
     workspaces,
   })
 
@@ -740,6 +768,7 @@ export function useAgentWorkspace({
     handleOpenSideChatInTab,
     handleOpenCreateSessionTab,
     handlePaneFocus,
+    handleDockviewActiveChange,
     handleSplitResize,
     handlePaneTabDrop,
     handlePaneSplit,
@@ -814,9 +843,10 @@ export function useAgentWorkspace({
     setDraft,
     setDraftForTab,
     setHoveredFolderID,
+    handleWorkbenchDockviewCommandsReady,
+    setDockviewLayout,
     visibleCanvasSessionIDs,
-    workbenchLayout,
-    workbenchPanes,
+    dockviewLayout,
     workbenchPaneStateByID,
     workbenchPaneStates,
     workspaces,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   ActivityRail,
   BuiltinToolsPage,
@@ -21,47 +21,11 @@ import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useSettingsPage } from "./app/use-settings-page"
 import type { BuiltinToolKindKey } from "./app/tools/BuiltinToolsPage"
-import { clamp } from "./app/utils"
 import { isSideChatSession } from "./app/workspace"
-import { getSplitNode, type WorkbenchSplitAxis } from "./app/workbench/core"
 import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
 import { WorkspaceModeCanvasPlaceholder, WorkspaceModeRightPlaceholder } from "./app/workspace-mode/WorkspaceModePlaceholder"
 
-const MIN_WORKBENCH_PANE_WIDTH = 320
-const MIN_WORKBENCH_PANE_HEIGHT = 240
-const WORKBENCH_PANE_DROP_TOP_THRESHOLD = 10
-const WORKBENCH_PANE_DROP_BOTTOM_THRESHOLD = 108
-const WORKBENCH_PANE_DROP_SIDE_THRESHOLD = 144
 const WORKBENCH_TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v3:workbench"
-
-type PaneDropPosition = "center" | "left" | "right" | "top" | "bottom"
-
-interface DraggedPaneTab {
-  sourcePaneID: string
-  tabKey: string
-}
-
-interface PaneDropTarget {
-  paneID: string
-  position: PaneDropPosition
-}
-
-interface ActivePaneResize {
-  axis: WorkbenchSplitAxis
-  combinedSize: number
-  containerOrigin: number
-  didCommit: boolean
-  frameID: number | null
-  latestLeftSize: number
-  latestRightSize: number
-  leftElement: HTMLElement
-  leftIndex: number
-  originalLeftFlexGrow: string
-  originalRightFlexGrow: string
-  rightElement: HTMLElement
-  splitID: string
-  totalSize: number
-}
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
@@ -209,9 +173,8 @@ export function App() {
     handleLeftSidebarViewChange,
     handleOpenSideChat,
     handleOpenCreateSessionTab,
+    handleDockviewActiveChange,
     handlePaneFocus,
-    handleSplitResize: handleWorkbenchPaneResize,
-    handlePaneTabDrop: handleWorkbenchTabDrop,
     handlePermissionRequestResponse,
     handleAskUserQuestionAnswer,
     handlePickComposerAttachments,
@@ -265,9 +228,11 @@ export function App() {
     selectedFolderID,
     sessionCanvasUnreadBySession,
     setDraftForTab,
+    handleWorkbenchDockviewCommandsReady,
     setHoveredFolderID,
+    setDockviewLayout,
     visibleCanvasSessionIDs,
-    workbenchLayout,
+    dockviewLayout,
     workbenchPaneStateByID,
     workbenchPaneStates,
     workspaces,
@@ -482,13 +447,6 @@ export function App() {
   })
 
   const isCreatingSession = workbenchPaneStates.some((pane) => pane.isCreatingSession)
-  const paneRefs = useRef<Record<string, HTMLElement | null>>({})
-  const workbenchPanesRef = useRef<HTMLDivElement | null>(null)
-  const draggedPaneTabRef = useRef<DraggedPaneTab | null>(null)
-  const [draggedPaneTab, setDraggedPaneTab] = useState<DraggedPaneTab | null>(null)
-  const [paneDropTarget, setPaneDropTarget] = useState<PaneDropTarget | null>(null)
-  const activePaneResizeCleanupRef = useRef<(() => void) | null>(null)
-  const handleWorkbenchPaneResizeRef = useRef(handleWorkbenchPaneResize)
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code")
   const [activeBuiltinToolKind, setActiveBuiltinToolKind] = useState<BuiltinToolKindKey | null>(null)
   const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
@@ -501,7 +459,6 @@ export function App() {
   const terminalSessionID = terminalSession && !isSideChatSession(terminalSession) ? terminalSession.id : null
   const activeRightSidebarView: RightSidebarView =
     rightSidebarView === "runtime" && !isAgentDebugTraceEnabled ? "changes" : rightSidebarView
-  handleWorkbenchPaneResizeRef.current = handleWorkbenchPaneResize
 
   useEffect(() => {
     let cancelled = false
@@ -605,295 +562,6 @@ export function App() {
     handleRightSidebarViewChange(view)
   }
 
-  useEffect(() => {
-    if (!draggedPaneTab && !paneDropTarget) return
-
-    const hasSourcePane = workbenchPaneStates.some((pane) => pane.id === draggedPaneTab?.sourcePaneID)
-    const hasTargetPane = workbenchPaneStates.some((pane) => pane.id === paneDropTarget?.paneID)
-    if (draggedPaneTab && !hasSourcePane) {
-      draggedPaneTabRef.current = null
-      setDraggedPaneTab(null)
-    }
-    if (paneDropTarget && !hasTargetPane) {
-      setPaneDropTarget(null)
-    }
-  }, [draggedPaneTab, paneDropTarget, workbenchPaneStates])
-
-  useEffect(() => {
-    return () => {
-      activePaneResizeCleanupRef.current?.()
-    }
-  }, [])
-
-  function startWorkbenchPaneResize(resizeState: ActivePaneResize) {
-    activePaneResizeCleanupRef.current?.()
-    let isStopped = false
-    function applyPreview(leftSize: number, rightSize: number) {
-      resizeState.leftElement.style.flexGrow = String(leftSize)
-      resizeState.rightElement.style.flexGrow = String(rightSize)
-    }
-
-    function restorePreview() {
-      resizeState.leftElement.style.flexGrow = resizeState.originalLeftFlexGrow
-      resizeState.rightElement.style.flexGrow = resizeState.originalRightFlexGrow
-    }
-
-    function clearPreviewFrame() {
-      if (resizeState.frameID === null) return
-      window.cancelAnimationFrame(resizeState.frameID)
-      resizeState.frameID = null
-    }
-
-    function queuePreview(leftSize: number, rightSize: number) {
-      resizeState.latestLeftSize = leftSize
-      resizeState.latestRightSize = rightSize
-      if (resizeState.frameID !== null) return
-
-      resizeState.frameID = window.requestAnimationFrame(() => {
-        resizeState.frameID = null
-        applyPreview(resizeState.latestLeftSize, resizeState.latestRightSize)
-      })
-    }
-
-    function handlePointerMove(event: globalThis.PointerEvent) {
-      if (event.pointerType === "mouse" && event.buttons === 0) {
-        stopPaneResize()
-        return
-      }
-
-      const pointerPosition = resizeState.axis === "horizontal" ? event.clientX : event.clientY
-      const minPaneSize = resizeState.axis === "horizontal" ? MIN_WORKBENCH_PANE_WIDTH : MIN_WORKBENCH_PANE_HEIGHT
-      const nextLeftSizePx = clamp(
-        pointerPosition - resizeState.containerOrigin,
-        minPaneSize,
-        resizeState.combinedSize - minPaneSize,
-      )
-      const nextLeftSize = resizeState.totalSize * (nextLeftSizePx / resizeState.combinedSize)
-      const nextRightSize = resizeState.totalSize - nextLeftSize
-
-      queuePreview(nextLeftSize, nextRightSize)
-    }
-
-    function stopPaneResize() {
-      if (isStopped) return
-      isStopped = true
-      clearPreviewFrame()
-      applyPreview(resizeState.latestLeftSize, resizeState.latestRightSize)
-      resizeState.didCommit = true
-      handleWorkbenchPaneResizeRef.current(
-        resizeState.splitID,
-        resizeState.leftIndex,
-        resizeState.latestLeftSize,
-        resizeState.latestRightSize,
-      )
-      cleanupPaneResize()
-    }
-
-    function cancelPaneResize() {
-      if (isStopped) return
-      isStopped = true
-      clearPreviewFrame()
-      restorePreview()
-      cleanupPaneResize()
-    }
-
-    function cleanupPaneResize() {
-      document.body.classList.remove("is-resizing-workbench-pane")
-      window.removeEventListener("pointermove", handlePointerMove)
-      window.removeEventListener("pointerup", stopPaneResize)
-      window.removeEventListener("pointercancel", cancelPaneResize)
-      if (activePaneResizeCleanupRef.current === cancelPaneResize) {
-        activePaneResizeCleanupRef.current = null
-      }
-    }
-
-    document.body.classList.add("is-resizing-workbench-pane")
-    window.addEventListener("pointermove", handlePointerMove)
-    window.addEventListener("pointerup", stopPaneResize)
-    window.addEventListener("pointercancel", cancelPaneResize)
-    activePaneResizeCleanupRef.current = cancelPaneResize
-  }
-
-  function handleRegisterPane(paneID: string, node: HTMLElement | null) {
-    if (node) {
-      paneRefs.current[paneID] = node
-      return
-    }
-
-    delete paneRefs.current[paneID]
-  }
-
-  function handlePaneTabDragStart(sourcePaneID: string, tabKey: string) {
-    const nextDraggedPaneTab = {
-      sourcePaneID,
-      tabKey,
-    }
-    draggedPaneTabRef.current = nextDraggedPaneTab
-    setDraggedPaneTab(nextDraggedPaneTab)
-    setPaneDropTarget(null)
-  }
-
-  function handlePaneTabDragEnd() {
-    draggedPaneTabRef.current = null
-    setDraggedPaneTab(null)
-    setPaneDropTarget(null)
-  }
-
-  function handlePaneDropTargetChange(paneID: string, position: PaneDropPosition | null) {
-    if (!draggedPaneTab) return
-    setPaneDropTarget(position ? { paneID, position } : null)
-  }
-
-  function handlePaneTabDrop(paneID: string, position: PaneDropPosition) {
-    const draggedTab = draggedPaneTabRef.current
-    if (!draggedTab) return
-
-    handleWorkbenchTabDrop({
-      position,
-      sourcePaneID: draggedTab.sourcePaneID,
-      tabKey: draggedTab.tabKey,
-      targetPaneID: paneID,
-    })
-    draggedPaneTabRef.current = null
-    setDraggedPaneTab(null)
-    setPaneDropTarget(null)
-  }
-
-  function getPaneDropTargetFromPoint(clientX: number, clientY: number): PaneDropTarget | null {
-    const paneRects = Object.entries(paneRefs.current).flatMap(([paneID, paneElement]) => {
-      if (!paneElement) return []
-
-      return [{
-        paneElement,
-        paneID,
-        rect: paneElement.getBoundingClientRect(),
-      }]
-    })
-
-    const workbenchRect = workbenchPanesRef.current?.getBoundingClientRect()
-    if (workbenchRect) {
-      const topRowPanes = paneRects.filter(({ paneElement }) => paneElement.dataset.isTopRow === "true")
-      const topBandBottom = workbenchRect.top + WORKBENCH_PANE_DROP_TOP_THRESHOLD
-      if (
-        topRowPanes.length > 0 &&
-        clientX >= workbenchRect.left &&
-        clientX <= workbenchRect.right &&
-        clientY >= workbenchRect.top &&
-        clientY <= topBandBottom
-      ) {
-        const topPane = topRowPanes
-          .map(({ paneID, rect }) => ({
-            distance:
-              clientX < rect.left
-                ? rect.left - clientX
-                : clientX > rect.right
-                  ? clientX - rect.right
-                  : 0,
-            paneID,
-          }))
-          .sort((left, right) => left.distance - right.distance)[0]
-        if (topPane) {
-          return { paneID: topPane.paneID, position: "top" }
-        }
-      }
-    }
-
-    for (const { paneID, rect } of paneRects) {
-      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
-        continue
-      }
-
-      const width = Math.max(rect.width, 1)
-      const height = Math.max(rect.height, 1)
-      const offsetX = clientX - rect.left
-      const offsetY = clientY - rect.top
-      const topThreshold = Math.min(WORKBENCH_PANE_DROP_TOP_THRESHOLD, height / 2)
-      const bottomThreshold = Math.min(WORKBENCH_PANE_DROP_BOTTOM_THRESHOLD, height / 2)
-      const sideThreshold = Math.min(WORKBENCH_PANE_DROP_SIDE_THRESHOLD, width / 2)
-      const position: PaneDropPosition =
-        offsetY <= topThreshold
-          ? "top"
-          : offsetY >= height - bottomThreshold
-            ? "bottom"
-            : offsetX <= sideThreshold
-              ? "left"
-              : offsetX >= width - sideThreshold
-                ? "right"
-                : "center"
-
-      return { paneID, position }
-    }
-
-    return null
-  }
-
-  function handlePaneTabPointerDragMove(clientX: number, clientY: number) {
-    setPaneDropTarget(getPaneDropTargetFromPoint(clientX, clientY))
-  }
-
-  function handlePaneTabPointerDrop(clientX: number, clientY: number) {
-    const dropTarget = getPaneDropTargetFromPoint(clientX, clientY)
-    const draggedTab = draggedPaneTabRef.current
-    if (!draggedTab || !dropTarget) {
-      draggedPaneTabRef.current = null
-      setDraggedPaneTab(null)
-      setPaneDropTarget(null)
-      return
-    }
-
-    handleWorkbenchTabDrop({
-      position: dropTarget.position,
-      sourcePaneID: draggedTab.sourcePaneID,
-      tabKey: draggedTab.tabKey,
-      targetPaneID: dropTarget.paneID,
-    })
-    draggedPaneTabRef.current = null
-    setDraggedPaneTab(null)
-    setPaneDropTarget(null)
-  }
-
-  function handleWorkbenchPaneResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>, splitID: string, leftIndex: number) {
-    if (event.button !== 0) return
-
-    const split = getSplitNode(workbenchLayout, splitID)
-    if (!split) return
-
-    const leftNodeID = split.children[leftIndex]
-    const rightNodeID = split.children[leftIndex + 1]
-    if (!leftNodeID || !rightNodeID) return
-
-    const leftPaneElement = paneRefs.current[leftNodeID]
-    const rightPaneElement = paneRefs.current[rightNodeID]
-    if (!leftPaneElement || !rightPaneElement) return
-
-    const leftRect = leftPaneElement.getBoundingClientRect()
-    const rightRect = rightPaneElement.getBoundingClientRect()
-    const axis = split.axis
-    const combinedSize = axis === "horizontal" ? leftRect.width + rightRect.width : leftRect.height + rightRect.height
-    const minPaneSize = axis === "horizontal" ? MIN_WORKBENCH_PANE_WIDTH : MIN_WORKBENCH_PANE_HEIGHT
-    if (combinedSize <= minPaneSize * 2) return
-
-    event.preventDefault()
-    const initialLeftSize = split.sizes[leftIndex] ?? 0
-    const initialRightSize = split.sizes[leftIndex + 1] ?? 0
-    startWorkbenchPaneResize({
-      axis,
-      combinedSize,
-      containerOrigin: axis === "horizontal" ? leftRect.left : leftRect.top,
-      didCommit: false,
-      frameID: null,
-      latestLeftSize: initialLeftSize,
-      latestRightSize: initialRightSize,
-      leftElement: leftPaneElement,
-      leftIndex,
-      originalLeftFlexGrow: leftPaneElement.style.flexGrow,
-      originalRightFlexGrow: rightPaneElement.style.flexGrow,
-      rightElement: rightPaneElement,
-      splitID,
-      totalSize: initialLeftSize + initialRightSize,
-    })
-  }
-
   const windowShellClassName = [
     "window-shell",
     isDebugLineColorsEnabled ? "debug-line-colors" : "",
@@ -911,8 +579,13 @@ export function App() {
   const isFullSurfaceView = isPluginsView
   const placeholderWorkspaceMode: Exclude<WorkspaceMode, "code"> | null =
     leftSidebarView === "workspace" && workspaceMode !== "code" ? workspaceMode : null
-  const windowControls = (
-    <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />
+  const windowControls = useMemo(
+    () => <WindowChrome controlsRef={windowControlsRef} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
+    [handleWindowAction, isWindowMaximized, windowControlsRef],
+  )
+  const workbenchWindowControls = useMemo(
+    () => <WindowChrome controlsRef={null} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
+    [handleWindowAction, isWindowMaximized],
   )
   const appShellClassName = isOpen ? "app-shell is-settings-open" : "app-shell"
   const effectiveAppShellStyle = isShellSidebarManagedView
@@ -1251,7 +924,6 @@ export function App() {
             <>
               <WorkbenchShell
                 composerRefreshVersion={composerRefreshVersion}
-                draggedTabKey={draggedPaneTab?.tabKey ?? null}
                 firstPaneID={firstPaneID}
                 assistantTraceVisibility={assistantTraceVisibility}
                 isActivityRailVisible={isActivityRailVisible}
@@ -1261,11 +933,8 @@ export function App() {
                 isRightSidebarCollapsed={isRightSidebarCollapsed}
                 isSidebarCollapsed={isSidebarCollapsed}
                 lastPaneID={lastPaneID}
-                layout={workbenchLayout}
-                paneDropTarget={paneDropTarget}
-                paneRefs={paneRefs}
-                workbenchPanesRef={workbenchPanesRef}
-                windowControls={isRightSidebarCollapsed ? windowControls : null}
+                dockviewLayout={dockviewLayout}
+                windowControls={isRightSidebarCollapsed ? workbenchWindowControls : null}
                 paneStateByID={workbenchPaneStateByID}
                 permissionRequestActionError={permissionRequestActionError}
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
@@ -1276,27 +945,22 @@ export function App() {
                 onCloseSessionTab={handleCanvasSessionTabClose}
                 onCreateSessionSubmit={handleCreateSessionSubmit}
                 onCreateSessionWorkspaceChange={handleCreateSessionWorkspaceChange}
+                onActiveDockviewChange={handleDockviewActiveChange}
                 onFocusPane={handlePaneFocus}
                 onInspectFileInSidebar={handleInspectFileInSidebar}
+                onCommandsReady={handleWorkbenchDockviewCommandsReady}
+                onLayoutChange={setDockviewLayout}
                 onLocalFileLinkOpen={handleLocalFileLinkOpen}
                 onCreateSideChatTab={handleCreateSideChatTab}
                 onDeleteSideChatTab={handleDeleteSideChatTab}
                 onOpenCreateSessionTab={handleOpenCreateSessionTab}
                 onOpenSideChat={handleOpenSideChat}
-                onPaneDropTargetChange={handlePaneDropTargetChange}
-                onPaneResizerPointerDown={handleWorkbenchPaneResizerPointerDown}
-                onPaneTabDragEnd={handlePaneTabDragEnd}
-                onPaneTabDragStart={handlePaneTabDragStart}
-                onPaneTabPointerDragMove={handlePaneTabPointerDragMove}
-                onPaneTabPointerDrop={handlePaneTabPointerDrop}
-                onPaneTabDrop={handlePaneTabDrop}
                 onPermissionRequestResponse={handlePermissionRequestResponse}
                 onApproveProposedPlan={handleApproveProposedPlan}
                 onToolPermissionModeChange={handleToolPermissionModeChange}
                 onAskUserQuestionAnswer={handleAskUserQuestionAnswer}
                 onPickComposerAttachments={handlePickComposerAttachments}
                 onPasteComposerImageAttachments={handlePasteComposerImageAttachments}
-                onRegisterPane={handleRegisterPane}
                 onRemoveComposerAttachment={handleRemoveComposerAttachment}
                 onSelectCreateSessionTab={handleCreateSessionTabSelect}
                 onSelectSideChatTab={handleSelectSideChatTab}

@@ -1,15 +1,66 @@
 import { describe, expect, it } from "vitest"
-import type { SessionSummary, WorkspaceGroup } from "../types"
-import { createWorkbenchLayoutFromLegacyPanes } from "../workbench/core"
+import { Orientation, type SerializedDockview } from "dockview-react"
+import type { SessionSummary, WorkbenchTabReference, WorkspaceGroup } from "../types"
+import {
+  getWorkbenchDockPanelId,
+  WORKBENCH_DOCK_PANEL_COMPONENT,
+  WORKBENCH_DOCK_TAB_COMPONENT,
+} from "../workbench/dockview-state"
 import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE } from "./review-preview-state"
 import {
   buildWorkspaceDerivedState,
   createCreateSessionWorkbenchTab,
   createSessionWorkbenchTab,
-  createWorkbenchPane,
   getWorkbenchTabKey,
   resolveCreateSessionWorkspaceID,
 } from "./workspace-derived-state"
+
+function createWorkbenchPane(tabs: WorkbenchTabReference[], id: string) {
+  return { id, tabs }
+}
+
+function createDockviewLayoutFromPanes(panes: Array<ReturnType<typeof createWorkbenchPane>>): SerializedDockview | null {
+  if (panes.length === 0) return null
+
+  const panels: SerializedDockview["panels"] = {}
+  const rootChildren = panes.map((pane) => {
+    const panelIDs = pane.tabs.map((tab) => {
+      const panelID = getWorkbenchDockPanelId(tab)
+      panels[panelID] = {
+        id: panelID,
+        contentComponent: WORKBENCH_DOCK_PANEL_COMPONENT,
+        tabComponent: WORKBENCH_DOCK_TAB_COMPONENT,
+        title: panelID,
+        params: tab,
+      }
+      return panelID
+    })
+
+    return {
+      type: "leaf" as const,
+      data: {
+        id: pane.id,
+        views: panelIDs,
+        activeView: panelIDs[0],
+      },
+      size: 1000,
+    }
+  })
+
+  return {
+    grid: {
+      root: {
+        type: "branch",
+        data: rootChildren,
+      },
+      height: 800,
+      width: 1200,
+      orientation: Orientation.HORIZONTAL,
+    },
+    panels,
+    activeGroup: panes[0]?.id,
+  }
+}
 
 function createSession(id: string, title = id): SessionSummary {
   return {
@@ -81,7 +132,7 @@ describe("workspace derived state", () => {
       workspaceID: workspace.id,
       title: "",
     }
-    const layout = createWorkbenchLayoutFromLegacyPanes([
+    const layout = createDockviewLayoutFromPanes([
       createWorkbenchPane([
         createSessionWorkbenchTab(parentSession.id),
         createCreateSessionWorkbenchTab(createSessionTab.id),
@@ -127,7 +178,7 @@ describe("workspace derived state", () => {
       sessionRuntimeDebugBySession: {},
       sessionRuntimeDebugStateBySession: {},
       seedWorkspaceIDs: new Set(),
-      workbenchLayout: layout,
+      dockviewLayout: layout,
       workspaceFileCommentsByTarget: {},
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
       workspaces: [workspace],
@@ -222,7 +273,7 @@ describe("workspace derived state", () => {
       sessionRuntimeDebugBySession: {},
       sessionRuntimeDebugStateBySession: {},
       seedWorkspaceIDs: new Set(),
-      workbenchLayout: createWorkbenchLayoutFromLegacyPanes([]),
+      dockviewLayout: null,
       workspaceFileCommentsByTarget: {},
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
       workspaces: [workspace],
@@ -239,7 +290,7 @@ describe("workspace derived state", () => {
       workspaceID: workspace.id,
       title: "",
     }
-    const layout = createWorkbenchLayoutFromLegacyPanes([
+    const layout = createDockviewLayoutFromPanes([
       createWorkbenchPane([createCreateSessionWorkbenchTab(createSessionTab.id)], "pane-1"),
     ])
 
@@ -265,7 +316,7 @@ describe("workspace derived state", () => {
       sessionRuntimeDebugBySession: {},
       sessionRuntimeDebugStateBySession: {},
       seedWorkspaceIDs: new Set(),
-      workbenchLayout: layout,
+      dockviewLayout: layout,
       workspaceFileCommentsByTarget: {},
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
       workspaces: [workspace],
@@ -279,7 +330,7 @@ describe("workspace derived state", () => {
     const sessionB = createSession("session-b", "B")
     const sessionC = createSession("session-c", "C")
     const workspace = createWorkspace("workspace-1", [sessionA, sessionB, sessionC])
-    const layout = createWorkbenchLayoutFromLegacyPanes([
+    const layout = createDockviewLayoutFromPanes([
       createWorkbenchPane([
         createSessionWorkbenchTab(sessionA.id),
         createSessionWorkbenchTab(sessionB.id),
@@ -311,7 +362,7 @@ describe("workspace derived state", () => {
       sessionRuntimeDebugBySession: {},
       sessionRuntimeDebugStateBySession: {},
       seedWorkspaceIDs: new Set(),
-      workbenchLayout: layout,
+      dockviewLayout: layout,
       workspaceFileCommentsByTarget: {},
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
       workspaces: [workspace],
