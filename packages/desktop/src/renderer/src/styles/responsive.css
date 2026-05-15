@@ -190,6 +190,10 @@
     padding-right: 10px;
   }
 
+  .dockview-theme-fanfande .dv-tabs-and-actions-container {
+    padding-left: 0;
+  }
+
   .canvas-region-top-menu-trailing.is-right-sidebar-expanded,
   .canvas-region-top-menu-trailing.is-right-sidebar-collapsed {
     margin-right: 0;

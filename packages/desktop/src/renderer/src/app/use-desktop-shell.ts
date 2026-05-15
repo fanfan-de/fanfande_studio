@@ -846,10 +846,10 @@ export function useDesktopShell() {
     "--window-controls-right-sidebar-clearance": "0px",
     "--activity-rail-display-width": isActivityRailVisible ? "54px" : "0px",
     "--sidebar-display-width": isSidebarCollapsed ? "0px" : `${sidebarWidth}px`,
-    "--sidebar-resizer-width": isSidebarCollapsed ? "0px" : "10px",
+    "--sidebar-resizer-width": isSidebarCollapsed ? "0px" : "1px",
     "--sidebar-width": `${sidebarWidth}px`,
     "--right-sidebar-display-width": isRightSidebarCollapsed ? "0px" : `${rightSidebarWidth}px`,
-    "--right-sidebar-resizer-width": isRightSidebarCollapsed ? "0px" : "10px",
+    "--right-sidebar-resizer-width": isRightSidebarCollapsed ? "0px" : "1px",
     "--right-sidebar-width": `${rightSidebarWidth}px`,
   } as CSSProperties
 

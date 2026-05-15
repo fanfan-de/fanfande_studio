@@ -95,13 +95,16 @@
   --sidebar-resizer-top-surface: var(--seg-pane-tab-bar-surface);
   grid-column: 3;
   position: relative;
+  z-index: 4;
+  width: 11px;
+  justify-self: center;
   min-height: 0;
   cursor: col-resize;
   touch-action: none;
   background-color: transparent;
   background-image: linear-gradient(var(--sidebar-resizer-top-surface), var(--sidebar-resizer-top-surface));
   background-position: top;
-  background-size: 100% var(--section-toolbar-height);
+  background-size: 1px var(--section-toolbar-height);
   background-repeat: no-repeat;
 }
 
@@ -114,9 +117,10 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 0;
+  left: 50%;
   width: 1px;
   background: #d4dde8;
+  transform: translateX(-50%);
   transition:
     background 160ms ease,
     box-shadow 160ms ease;
@@ -125,17 +129,18 @@
 .sidebar-resizer::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 50%;
   top: calc(var(--section-toolbar-height) - 1px);
+  width: 1px;
   height: 1px;
   background: var(--seg-border);
+  transform: translateX(-50%);
   pointer-events: none;
 }
 
 .sidebar-resizer.is-right::before {
-  left: auto;
-  right: 0;
+  left: 50%;
+  right: auto;
 }
 
 .sidebar-resizer:hover::before,
