@@ -1,4 +1,4 @@
-import { memo, useRef } from "react"
+import { memo, Profiler, useMemo, useRef } from "react"
 import {
   Composer,
   CreateSessionCanvas,
@@ -26,6 +26,7 @@ import type {
   WorkspaceGroup,
 } from "../types"
 import { useProjectComposer } from "../use-project-composer"
+import { createRendererProfilerOnRender } from "../perf-profiler"
 import { isSideChatSession } from "../workspace"
 import type { ThreadScrollSnapshot } from "../thread/ThreadView"
 import type { WorkbenchPaneState } from "../agent-workspace/workspace-derived-state"
@@ -158,7 +159,44 @@ export interface WorkbenchPaneSurfaceProps {
   onTurnDiffSummaryHydrate: (turnID: string, diffSummary: SessionDiffSummary, sessionID?: string | null) => void | Promise<void>
 }
 
-export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
+function InactiveWorkbenchPaneSurface({
+  isTopRow,
+  pane,
+}: Pick<WorkbenchPaneSurfaceProps, "isTopRow" | "pane">) {
+  return (
+    <section
+      className={pane.isFocused ? "workbench-pane is-focused" : "workbench-pane"}
+      data-is-top-row={isTopRow ? "true" : "false"}
+      data-pane-id={pane.id}
+    >
+      <div className="workbench-pane-stage">
+        <div className="workbench-pane-live-region is-dockview-managed" />
+      </div>
+    </section>
+  )
+}
+
+export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface(props: WorkbenchPaneSurfaceProps) {
+  const lastActivePropsRef = useRef<WorkbenchPaneSurfaceProps | null>(null)
+
+  if (props.pane.isActivePanel || import.meta.env.MODE === "test") {
+    lastActivePropsRef.current = props
+    return <ActiveWorkbenchPaneSurface {...props} />
+  }
+
+  const cachedProps = lastActivePropsRef.current
+  if (cachedProps) {
+    return <ActiveWorkbenchPaneSurface {...cachedProps} />
+  }
+
+  if (!props.pane.isActivePanel) {
+    return <InactiveWorkbenchPaneSurface isTopRow={props.isTopRow} pane={props.pane} />
+  }
+
+  return <ActiveWorkbenchPaneSurface {...props} />
+})
+
+const ActiveWorkbenchPaneSurface = memo(function ActiveWorkbenchPaneSurface({
   assistantTraceVisibility,
   composerRefreshVersion,
   isResolvingPermissionRequest,
@@ -222,6 +260,43 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
           },
         })
       : null
+  const composerProfiler = useMemo(
+    () => createRendererProfilerOnRender("Composer commit", () => ({
+      paneID: pane.id,
+      sessionID: pane.sessionID,
+      tabKey: pane.tabKey,
+      isCreateSession: Boolean(pane.createSessionTabID),
+    })),
+    [pane.createSessionTabID, pane.id, pane.sessionID, pane.tabKey],
+  )
+  const topMenuProfiler = useMemo(
+    () => createRendererProfilerOnRender("SessionCanvasTopMenu commit", () => ({
+      paneID: pane.id,
+      sessionID: pane.sessionID,
+      tabKey: pane.tabKey,
+      pendingPermissionRequestCount: pane.pendingPermissionRequests.length,
+    })),
+    [pane.id, pane.pendingPermissionRequests.length, pane.sessionID, pane.tabKey],
+  )
+  const createSessionCanvasProfiler = useMemo(
+    () => createRendererProfilerOnRender("CreateSessionCanvas commit", () => ({
+      paneID: pane.id,
+      createSessionTabID: pane.createSessionTabID,
+      selectedWorkspaceID: pane.createSessionWorkspaceID,
+    })),
+    [pane.createSessionTabID, pane.createSessionWorkspaceID, pane.id],
+  )
+  const threadViewProfiler = useMemo(
+    () => createRendererProfilerOnRender("ThreadView commit", () => ({
+      paneID: pane.id,
+      sessionID: pane.sessionID,
+      tabKey: pane.tabKey,
+      turnCount: pane.activeTurns.length,
+      sideChatTurnCount: pane.activeSideChatTurns.length,
+      isThreadVisible: pane.isActivePanel,
+    })),
+    [pane.activeSideChatTurns.length, pane.activeTurns.length, pane.id, pane.isActivePanel, pane.sessionID, pane.tabKey],
+  )
 
   return (
     <section
@@ -231,104 +306,110 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
     >
       <div className="workbench-pane-stage">
         <div className="workbench-pane-live-region is-dockview-managed">
-          <SessionCanvasTopMenu
-            activeSession={pane.activeSession}
-            gitProjectID={pane.projectID}
-            gitDirectory={pane.workspace?.directory ?? null}
-            showGitControls={showGitControls}
-            isSavingToolPermissionMode={isSavingToolPermissionMode}
-            mcpOptions={composer.mcpOptions}
-            pendingPermissionRequests={pane.pendingPermissionRequests}
-            selectedMcpServerIDs={composer.selectedMcpServerIDs}
-            selectedMcpServerLabel={composer.selectedMcpLabel}
-            onMcpServerToggle={composer.handleMcpToggle}
-            toolPermissionMode={toolPermissionMode}
-            toolPermissionModeError={toolPermissionModeError}
-            onToolPermissionModeChange={onToolPermissionModeChange}
-            skillOptions={composer.skillOptions}
-            selectedSkillIDs={composer.selectedSkillIDs}
-            selectedSkillLabel={composer.selectedSkillLabel}
-            onSkillToggle={composer.handleSkillToggle}
-          />
+          <Profiler id="WorkbenchPaneSurface.SessionCanvasTopMenu" onRender={topMenuProfiler}>
+            <SessionCanvasTopMenu
+              activeSession={pane.activeSession}
+              gitProjectID={pane.projectID}
+              gitDirectory={pane.workspace?.directory ?? null}
+              showGitControls={showGitControls}
+              isSavingToolPermissionMode={isSavingToolPermissionMode}
+              mcpOptions={composer.mcpOptions}
+              pendingPermissionRequests={pane.pendingPermissionRequests}
+              selectedMcpServerIDs={composer.selectedMcpServerIDs}
+              selectedMcpServerLabel={composer.selectedMcpLabel}
+              onMcpServerToggle={composer.handleMcpToggle}
+              toolPermissionMode={toolPermissionMode}
+              toolPermissionModeError={toolPermissionModeError}
+              onToolPermissionModeChange={onToolPermissionModeChange}
+              skillOptions={composer.skillOptions}
+              selectedSkillIDs={composer.selectedSkillIDs}
+              selectedSkillLabel={composer.selectedSkillLabel}
+              onSkillToggle={composer.handleSkillToggle}
+            />
+          </Profiler>
           {pane.createSessionTabID ? (
             <>
-              <CreateSessionCanvas
-                isCreatingSession={pane.isCreatingSession}
-                selectedWorkspaceID={pane.createSessionWorkspaceID}
-                workspaces={workspaces}
-                onWorkspaceChange={(workspaceID) => onCreateSessionWorkspaceChange(workspaceID, pane.createSessionTabID)}
-              />
+              <Profiler id="WorkbenchPaneSurface.CreateSessionCanvas" onRender={createSessionCanvasProfiler}>
+                <CreateSessionCanvas
+                  isCreatingSession={pane.isCreatingSession}
+                  selectedWorkspaceID={pane.createSessionWorkspaceID}
+                  workspaces={workspaces}
+                  onWorkspaceChange={(workspaceID) => onCreateSessionWorkspaceChange(workspaceID, pane.createSessionTabID)}
+                />
+              </Profiler>
               <div className="composer-stack">
                 <ComposerTaskProgress tasks={pane.activeSessionRuntimeDebug?.tasks ?? null} />
-                <Composer
-                  attachments={pane.composerAttachments}
-                  attachmentButtonTitle={composer.attachmentButtonTitle}
-                  attachmentDisabledReason={composer.attachmentDisabledReason}
-                  attachmentError={composer.attachmentError}
-                  canSend={Boolean(pane.createSessionWorkspaceID)}
-                  canPasteImageAttachments={composer.attachmentCapabilities.image && composer.attachmentDisabledReason === null}
-                  draftState={pane.draftState}
-                  hasPendingPermissionRequests={false}
-                  isCancelling={pane.isCancelling}
-                  isInterruptible={pane.isInterruptible || pane.isCreatingSession}
-                  isSending={pane.isSending || pane.isCreatingSession}
-                  mcpOptions={composer.mcpOptions}
-                  modelOptions={composer.modelOptions}
-                  onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
-                  onMcpToggle={composer.handleMcpToggle}
-                  reasoningEffortOptions={composer.reasoningEffortOptions}
-                  selectedMcpServerIDs={composer.selectedMcpServerIDs}
-                  selectedModel={composer.selectedModel}
-                  selectedModelLabel={composer.selectedModelLabel}
-                  selectedReasoningEffort={composer.selectedReasoningEffort}
-                  selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
-                  selectedSkillIDs={composer.selectedSkillIDs}
-                  showModelSelector
-                  showProjectTagCommands
-                  skillOptions={composer.skillOptions}
-                  unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-                  workspaceDirectory={pane.workspace?.directory ?? null}
-                  onModelChange={composer.handleModelChange}
-                  onReasoningEffortChange={composer.handleReasoningEffortChange}
-                  onPickAttachments={() =>
-                    onPickComposerAttachments({
-                      allowImage: composer.attachmentCapabilities.image,
-                      allowPdf: composer.attachmentCapabilities.pdf,
-                      disabledReason: composer.attachmentDisabledReason,
-                      tabKey: pane.tabKey,
-                    })
-                  }
-                  onPasteImageAttachments={(images) =>
-                    onPasteComposerImageAttachments({
-                      allowImage: composer.attachmentCapabilities.image,
-                      disabledReason: composer.attachmentDisabledReason,
-                      images,
-                      tabKey: pane.tabKey,
-                    })
-                  }
-                  onPlanModeToggle={
-                    pane.createSessionTabID
-                      ? () => void onPlanModeToggle({ createSessionTabID: pane.createSessionTabID })
-                      : readOnlySideChat
-                      ? undefined
-                      : () => void onPlanModeToggle({ sessionID: pane.sessionID })
-                  }
-                  onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
-                  onCancelSend={() => void onCancelSend({ tabKey: pane.tabKey })}
-                  onSend={(draftStateOverride) =>
-                    void onSend({
-                      attachmentError: composer.attachmentError,
-                      createSessionTabID: pane.createSessionTabID,
-                      draftStateOverride,
-                      paneID: pane.id,
-                      selectedReasoningEffort: composer.selectedReasoningEffort,
-                      selectedModel: composer.selectedModel,
-                      selectedSkillIDs: composer.selectedSkillIDs,
-                      tabKey: pane.tabKey,
-                      waitForPendingModelSelection: composer.awaitPendingModelSelection,
-                    })
-                  }
-                />
+                <Profiler id="WorkbenchPaneSurface.CreateSessionComposer" onRender={composerProfiler}>
+                  <Composer
+                    attachments={pane.composerAttachments}
+                    attachmentButtonTitle={composer.attachmentButtonTitle}
+                    attachmentDisabledReason={composer.attachmentDisabledReason}
+                    attachmentError={composer.attachmentError}
+                    canSend={Boolean(pane.createSessionWorkspaceID)}
+                    canPasteImageAttachments={composer.attachmentCapabilities.image && composer.attachmentDisabledReason === null}
+                    draftState={pane.draftState}
+                    hasPendingPermissionRequests={false}
+                    isCancelling={pane.isCancelling}
+                    isInterruptible={pane.isInterruptible || pane.isCreatingSession}
+                    isSending={pane.isSending || pane.isCreatingSession}
+                    mcpOptions={composer.mcpOptions}
+                    modelOptions={composer.modelOptions}
+                    onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                    onMcpToggle={composer.handleMcpToggle}
+                    reasoningEffortOptions={composer.reasoningEffortOptions}
+                    selectedMcpServerIDs={composer.selectedMcpServerIDs}
+                    selectedModel={composer.selectedModel}
+                    selectedModelLabel={composer.selectedModelLabel}
+                    selectedReasoningEffort={composer.selectedReasoningEffort}
+                    selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
+                    selectedSkillIDs={composer.selectedSkillIDs}
+                    showModelSelector
+                    showProjectTagCommands
+                    skillOptions={composer.skillOptions}
+                    unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
+                    workspaceDirectory={pane.workspace?.directory ?? null}
+                    onModelChange={composer.handleModelChange}
+                    onReasoningEffortChange={composer.handleReasoningEffortChange}
+                    onPickAttachments={() =>
+                      onPickComposerAttachments({
+                        allowImage: composer.attachmentCapabilities.image,
+                        allowPdf: composer.attachmentCapabilities.pdf,
+                        disabledReason: composer.attachmentDisabledReason,
+                        tabKey: pane.tabKey,
+                      })
+                    }
+                    onPasteImageAttachments={(images) =>
+                      onPasteComposerImageAttachments({
+                        allowImage: composer.attachmentCapabilities.image,
+                        disabledReason: composer.attachmentDisabledReason,
+                        images,
+                        tabKey: pane.tabKey,
+                      })
+                    }
+                    onPlanModeToggle={
+                      pane.createSessionTabID
+                        ? () => void onPlanModeToggle({ createSessionTabID: pane.createSessionTabID })
+                        : readOnlySideChat
+                        ? undefined
+                        : () => void onPlanModeToggle({ sessionID: pane.sessionID })
+                    }
+                    onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
+                    onCancelSend={() => void onCancelSend({ tabKey: pane.tabKey })}
+                    onSend={(draftStateOverride) =>
+                      void onSend({
+                        attachmentError: composer.attachmentError,
+                        createSessionTabID: pane.createSessionTabID,
+                        draftStateOverride,
+                        paneID: pane.id,
+                        selectedReasoningEffort: composer.selectedReasoningEffort,
+                        selectedModel: composer.selectedModel,
+                        selectedSkillIDs: composer.selectedSkillIDs,
+                        tabKey: pane.tabKey,
+                        waitForPendingModelSelection: composer.awaitPendingModelSelection,
+                      })
+                    }
+                  />
+                </Profiler>
                 {createSessionWorkflowBadge ? <ComposerPlanModeNotice workflow={createSessionWorkflowBadge} /> : null}
                 <ComposerUtilityBar
                   contextWindow={composer.contextWindow}
@@ -341,211 +422,215 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
             </>
           ) : (
             <>
-              <ThreadView
-                activeProjectID={pane.projectID}
-                activeSession={pane.activeSession}
-                activeSessionDiff={pane.activeSessionDiff}
-                assistantTraceVisibility={assistantTraceVisibility}
-                composerRefreshVersion={composerRefreshVersion}
-                isResolvingPermissionRequest={isResolvingPermissionRequest}
-                isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-                pendingPermissionRequests={pane.pendingPermissionRequests}
-                permissionRequestActionError={permissionRequestActionError}
-                permissionRequestActionRequestID={permissionRequestActionRequestID}
-                activeTurns={pane.activeTurns}
-                sideChatAttachments={pane.activeSideChatAttachments}
-                sideChatCountsByAnchorMessageID={pane.sideChatCountsByAnchorMessageID}
-                sideChatDraftState={pane.activeSideChatDraftState}
-                sideChatIsCancelling={pane.activeSideChatIsCancelling}
-                sideChatIsInterruptible={pane.activeSideChatIsInterruptible}
-                sideChatIsSending={pane.activeSideChatIsSending}
-                sideChatPendingPermissionRequests={pane.activeSideChatPendingPermissionRequests}
-                sideChatPermissionRequestActionError={permissionRequestActionError}
-                sideChatPermissionRequestActionRequestID={permissionRequestActionRequestID}
-                sideChatSession={pane.activeSideChatSession}
-                sideChatSessionsByAnchorMessageID={pane.sideChatSessionsByAnchorMessageID}
-                sideChatTurns={pane.activeSideChatTurns}
-                scrollStateKey={pane.tabKey}
-                threadColumnRef={threadColumnRef}
-                isThreadVisible={pane.isActivePanel}
-                readScrollSnapshot={readThreadScrollSnapshot}
-                saveScrollSnapshot={saveThreadScrollSnapshot}
-                onSessionModelSelectionChange={onSessionModelSelectionChange}
-                onAskUserQuestionAnswer={(answer) =>
-                  onAskUserQuestionAnswer({
-                    freeformText: answer.freeformText,
-                    questionID: answer.questionID,
-                    selectedOptions: answer.selectedOptions,
-                    sessionID: pane.sessionID,
-                    tabKey: pane.tabKey,
-                    text: answer.text,
-                  })
-                }
-                onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
-                onTurnDiffRestore={(files) => onTurnDiffRestore(files, pane.sessionID, pane.id)}
-                onTurnDiffReview={(files) => onTurnDiffReview(files, pane.sessionID, pane.id)}
-                onTurnDiffSummaryHydrate={(turnID, diffSummary) => onTurnDiffSummaryHydrate(turnID, diffSummary, pane.sessionID)}
-                onArtifactLinkOpen={(target) =>
-                  onArtifactLinkOpen?.({
-                    paneID: pane.id,
-                    sessionID: pane.sessionID,
-                    target,
-                    workspaceDirectory: pane.workspace?.directory ?? null,
-                    workspaceID: pane.workspace?.id ?? null,
-                  })
-                }
-                onLocalFileLinkOpen={(target) =>
-                  onLocalFileLinkOpen({
-                    paneID: pane.id,
-                    sessionID: pane.sessionID,
-                    target,
-                    workspaceDirectory: pane.workspace?.directory ?? null,
-                    workspaceID: pane.workspace?.id ?? null,
-                  })
-                }
-                onOpenSideChat={(anchorMessageID) =>
-                  void onOpenSideChat(anchorMessageID, {
-                    paneID: pane.id,
-                    parentSessionID: pane.sessionID,
-                  })
-                }
-                onSideChatCreate={(anchorMessageID) =>
-                  void onCreateSideChatTab(anchorMessageID, {
-                    paneID: pane.id,
-                    parentSessionID: pane.sessionID,
-                  })
-                }
-                onSideChatDelete={(sessionID) => void onDeleteSideChatTab(sessionID)}
-                onSideChatSelect={(sessionID) => void onSelectSideChatTab(sessionID)}
-                onSideChatDraftStateChange={(value) => {
-                  if (pane.activeSideChatTabKey) {
-                    onSetDraft(pane.activeSideChatTabKey, value)
-                  }
-                }}
-                onSideChatPickAttachments={({ allowImage, allowPdf, disabledReason }) =>
-                  onPickComposerAttachments({
-                    allowImage,
-                    allowPdf,
-                    disabledReason,
-                    tabKey: pane.activeSideChatTabKey,
-                  })
-                }
-                onSideChatPasteImageAttachments={({ allowImage, disabledReason, images }) =>
-                  onPasteComposerImageAttachments({
-                    allowImage,
-                    disabledReason,
-                    images,
-                    tabKey: pane.activeSideChatTabKey,
-                  })
-                }
-                onSideChatRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.activeSideChatTabKey)}
-                onSideChatCancelSend={() => void onCancelSend({
-                  sessionID: pane.activeSideChatSession?.id,
-                  tabKey: pane.activeSideChatTabKey,
-                })}
-                onSideChatSend={(input) =>
-                  void onSend({
-                    attachmentError: input.attachmentError,
-                    draftStateOverride: input.draftStateOverride,
-                    paneID: pane.id,
-                    preserveComposerState: Boolean(input.questionAnswer),
-                    questionAnswer: input.questionAnswer,
-                    selectedReasoningEffort: input.selectedReasoningEffort,
-                    selectedModel: input.selectedModel,
-                    selectedSkillIDs: input.selectedSkillIDs,
-                    sessionID: pane.activeSideChatSession?.id,
-                    submissionMode: input.submissionMode,
-                    tabKey: pane.activeSideChatTabKey,
-                    waitForPendingModelSelection: input.waitForPendingModelSelection,
-                  })
-                }
-                onProposedPlanConfirm={(input) =>
-                  onApproveProposedPlan({
-                    planMarkdown: input.planMarkdown,
-                    selectedReasoningEffort: composer.selectedReasoningEffort,
-                    selectedModel: composer.selectedModel,
-                    selectedSkillIDs: composer.selectedSkillIDs,
-                    sessionID: pane.sessionID,
-                    tabKey: pane.tabKey,
-                    waitForPendingModelSelection: composer.awaitPendingModelSelection,
-                  })
-                }
-                onPermissionRequestResponse={onPermissionRequestResponse}
-              />
-              <div className="composer-stack">
-                <ComposerTaskProgress tasks={pane.activeSessionRuntimeDebug?.tasks ?? null} />
-                <ComposerPendingSteerDrawer turns={pendingSteerTurns} />
-                <Composer
-                  attachments={pane.composerAttachments}
-                  attachmentButtonTitle={composer.attachmentButtonTitle}
-                  attachmentDisabledReason={composer.attachmentDisabledReason}
-                  attachmentError={composer.attachmentError}
-                  canSend={Boolean(pane.activeSession)}
-                  canPasteImageAttachments={composer.attachmentCapabilities.image && composer.attachmentDisabledReason === null}
-                  draftState={pane.draftState}
-                  hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
-                  isCancelling={pane.isCancelling}
-                  isInterruptible={pane.isInterruptible}
-                  isSending={pane.isSending}
-                  mcpOptions={composer.mcpOptions}
-                  modelOptions={composer.modelOptions}
-                  onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
-                  onMcpToggle={readOnlySideChat ? undefined : composer.handleMcpToggle}
-                  reasoningEffortOptions={composer.reasoningEffortOptions}
-                  selectedMcpServerIDs={composer.selectedMcpServerIDs}
-                  selectedModel={composer.selectedModel}
-                  selectedModelLabel={composer.selectedModelLabel}
-                  selectedReasoningEffort={composer.selectedReasoningEffort}
-                  selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
-                  selectedSkillIDs={composer.selectedSkillIDs}
-                  showModelSelector={!readOnlySideChat}
-                  showProjectTagCommands={!readOnlySideChat}
-                  skillOptions={composer.skillOptions}
-                  unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
-                  workspaceDirectory={pane.workspace?.directory ?? null}
-                  onModelChange={composer.handleModelChange}
-                  onReasoningEffortChange={composer.handleReasoningEffortChange}
-                  onPickAttachments={() =>
-                    onPickComposerAttachments({
-                      allowImage: composer.attachmentCapabilities.image,
-                      allowPdf: composer.attachmentCapabilities.pdf,
-                      disabledReason: composer.attachmentDisabledReason,
+              <Profiler id="WorkbenchPaneSurface.ThreadView" onRender={threadViewProfiler}>
+                <ThreadView
+                  activeProjectID={pane.projectID}
+                  activeSession={pane.activeSession}
+                  activeSessionDiff={pane.activeSessionDiff}
+                  assistantTraceVisibility={assistantTraceVisibility}
+                  composerRefreshVersion={composerRefreshVersion}
+                  isResolvingPermissionRequest={isResolvingPermissionRequest}
+                  isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+                  pendingPermissionRequests={pane.pendingPermissionRequests}
+                  permissionRequestActionError={permissionRequestActionError}
+                  permissionRequestActionRequestID={permissionRequestActionRequestID}
+                  activeTurns={pane.activeTurns}
+                  sideChatAttachments={pane.activeSideChatAttachments}
+                  sideChatCountsByAnchorMessageID={pane.sideChatCountsByAnchorMessageID}
+                  sideChatDraftState={pane.activeSideChatDraftState}
+                  sideChatIsCancelling={pane.activeSideChatIsCancelling}
+                  sideChatIsInterruptible={pane.activeSideChatIsInterruptible}
+                  sideChatIsSending={pane.activeSideChatIsSending}
+                  sideChatPendingPermissionRequests={pane.activeSideChatPendingPermissionRequests}
+                  sideChatPermissionRequestActionError={permissionRequestActionError}
+                  sideChatPermissionRequestActionRequestID={permissionRequestActionRequestID}
+                  sideChatSession={pane.activeSideChatSession}
+                  sideChatSessionsByAnchorMessageID={pane.sideChatSessionsByAnchorMessageID}
+                  sideChatTurns={pane.activeSideChatTurns}
+                  scrollStateKey={pane.tabKey}
+                  threadColumnRef={threadColumnRef}
+                  isThreadVisible={pane.isActivePanel}
+                  readScrollSnapshot={readThreadScrollSnapshot}
+                  saveScrollSnapshot={saveThreadScrollSnapshot}
+                  onSessionModelSelectionChange={onSessionModelSelectionChange}
+                  onAskUserQuestionAnswer={(answer) =>
+                    onAskUserQuestionAnswer({
+                      freeformText: answer.freeformText,
+                      questionID: answer.questionID,
+                      selectedOptions: answer.selectedOptions,
+                      sessionID: pane.sessionID,
                       tabKey: pane.tabKey,
+                      text: answer.text,
                     })
                   }
-                  onPasteImageAttachments={(images) =>
-                    onPasteComposerImageAttachments({
-                      allowImage: composer.attachmentCapabilities.image,
-                      disabledReason: composer.attachmentDisabledReason,
-                      images,
-                      tabKey: pane.tabKey,
-                    })
-                  }
-                  onPlanModeToggle={
-                    readOnlySideChat
-                      ? undefined
-                      : () => void onPlanModeToggle({ sessionID: pane.sessionID })
-                  }
-                  onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
-                  onCancelSend={() => void onCancelSend({
-                    sessionID: pane.sessionID,
-                    tabKey: pane.tabKey,
-                  })}
-                  onSend={(draftStateOverride) =>
-                    void onSend({
-                      attachmentError: composer.attachmentError,
-                      draftStateOverride,
+                  onFileChangeSelect={(file) => onInspectFileInSidebar(file, pane.sessionID, pane.id)}
+                  onTurnDiffRestore={(files) => onTurnDiffRestore(files, pane.sessionID, pane.id)}
+                  onTurnDiffReview={(files) => onTurnDiffReview(files, pane.sessionID, pane.id)}
+                  onTurnDiffSummaryHydrate={(turnID, diffSummary) => onTurnDiffSummaryHydrate(turnID, diffSummary, pane.sessionID)}
+                  onArtifactLinkOpen={(target) =>
+                    onArtifactLinkOpen?.({
                       paneID: pane.id,
+                      sessionID: pane.sessionID,
+                      target,
+                      workspaceDirectory: pane.workspace?.directory ?? null,
+                      workspaceID: pane.workspace?.id ?? null,
+                    })
+                  }
+                  onLocalFileLinkOpen={(target) =>
+                    onLocalFileLinkOpen({
+                      paneID: pane.id,
+                      sessionID: pane.sessionID,
+                      target,
+                      workspaceDirectory: pane.workspace?.directory ?? null,
+                      workspaceID: pane.workspace?.id ?? null,
+                    })
+                  }
+                  onOpenSideChat={(anchorMessageID) =>
+                    void onOpenSideChat(anchorMessageID, {
+                      paneID: pane.id,
+                      parentSessionID: pane.sessionID,
+                    })
+                  }
+                  onSideChatCreate={(anchorMessageID) =>
+                    void onCreateSideChatTab(anchorMessageID, {
+                      paneID: pane.id,
+                      parentSessionID: pane.sessionID,
+                    })
+                  }
+                  onSideChatDelete={(sessionID) => void onDeleteSideChatTab(sessionID)}
+                  onSideChatSelect={(sessionID) => void onSelectSideChatTab(sessionID)}
+                  onSideChatDraftStateChange={(value) => {
+                    if (pane.activeSideChatTabKey) {
+                      onSetDraft(pane.activeSideChatTabKey, value)
+                    }
+                  }}
+                  onSideChatPickAttachments={({ allowImage, allowPdf, disabledReason }) =>
+                    onPickComposerAttachments({
+                      allowImage,
+                      allowPdf,
+                      disabledReason,
+                      tabKey: pane.activeSideChatTabKey,
+                    })
+                  }
+                  onSideChatPasteImageAttachments={({ allowImage, disabledReason, images }) =>
+                    onPasteComposerImageAttachments({
+                      allowImage,
+                      disabledReason,
+                      images,
+                      tabKey: pane.activeSideChatTabKey,
+                    })
+                  }
+                  onSideChatRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.activeSideChatTabKey)}
+                  onSideChatCancelSend={() => void onCancelSend({
+                    sessionID: pane.activeSideChatSession?.id,
+                    tabKey: pane.activeSideChatTabKey,
+                  })}
+                  onSideChatSend={(input) =>
+                    void onSend({
+                      attachmentError: input.attachmentError,
+                      draftStateOverride: input.draftStateOverride,
+                      paneID: pane.id,
+                      preserveComposerState: Boolean(input.questionAnswer),
+                      questionAnswer: input.questionAnswer,
+                      selectedReasoningEffort: input.selectedReasoningEffort,
+                      selectedModel: input.selectedModel,
+                      selectedSkillIDs: input.selectedSkillIDs,
+                      sessionID: pane.activeSideChatSession?.id,
+                      submissionMode: input.submissionMode,
+                      tabKey: pane.activeSideChatTabKey,
+                      waitForPendingModelSelection: input.waitForPendingModelSelection,
+                    })
+                  }
+                  onProposedPlanConfirm={(input) =>
+                    onApproveProposedPlan({
+                      planMarkdown: input.planMarkdown,
                       selectedReasoningEffort: composer.selectedReasoningEffort,
                       selectedModel: composer.selectedModel,
                       selectedSkillIDs: composer.selectedSkillIDs,
                       sessionID: pane.sessionID,
-                      submissionMode: pane.isSending || pane.isInterruptible ? "steer" : undefined,
                       tabKey: pane.tabKey,
                       waitForPendingModelSelection: composer.awaitPendingModelSelection,
                     })
                   }
+                  onPermissionRequestResponse={onPermissionRequestResponse}
                 />
+              </Profiler>
+              <div className="composer-stack">
+                <ComposerTaskProgress tasks={pane.activeSessionRuntimeDebug?.tasks ?? null} />
+                <ComposerPendingSteerDrawer turns={pendingSteerTurns} />
+                <Profiler id="WorkbenchPaneSurface.Composer" onRender={composerProfiler}>
+                  <Composer
+                    attachments={pane.composerAttachments}
+                    attachmentButtonTitle={composer.attachmentButtonTitle}
+                    attachmentDisabledReason={composer.attachmentDisabledReason}
+                    attachmentError={composer.attachmentError}
+                    canSend={Boolean(pane.activeSession)}
+                    canPasteImageAttachments={composer.attachmentCapabilities.image && composer.attachmentDisabledReason === null}
+                    draftState={pane.draftState}
+                    hasPendingPermissionRequests={pane.pendingPermissionRequests.length > 0 || isResolvingPermissionRequest}
+                    isCancelling={pane.isCancelling}
+                    isInterruptible={pane.isInterruptible}
+                    isSending={pane.isSending}
+                    mcpOptions={composer.mcpOptions}
+                    modelOptions={composer.modelOptions}
+                    onDraftStateChange={(value) => pane.tabKey && onSetDraft(pane.tabKey, value)}
+                    onMcpToggle={readOnlySideChat ? undefined : composer.handleMcpToggle}
+                    reasoningEffortOptions={composer.reasoningEffortOptions}
+                    selectedMcpServerIDs={composer.selectedMcpServerIDs}
+                    selectedModel={composer.selectedModel}
+                    selectedModelLabel={composer.selectedModelLabel}
+                    selectedReasoningEffort={composer.selectedReasoningEffort}
+                    selectedReasoningEffortLabel={composer.selectedReasoningEffortLabel}
+                    selectedSkillIDs={composer.selectedSkillIDs}
+                    showModelSelector={!readOnlySideChat}
+                    showProjectTagCommands={!readOnlySideChat}
+                    skillOptions={composer.skillOptions}
+                    unsupportedAttachmentPaths={composer.unsupportedAttachmentPaths}
+                    workspaceDirectory={pane.workspace?.directory ?? null}
+                    onModelChange={composer.handleModelChange}
+                    onReasoningEffortChange={composer.handleReasoningEffortChange}
+                    onPickAttachments={() =>
+                      onPickComposerAttachments({
+                        allowImage: composer.attachmentCapabilities.image,
+                        allowPdf: composer.attachmentCapabilities.pdf,
+                        disabledReason: composer.attachmentDisabledReason,
+                        tabKey: pane.tabKey,
+                      })
+                    }
+                    onPasteImageAttachments={(images) =>
+                      onPasteComposerImageAttachments({
+                        allowImage: composer.attachmentCapabilities.image,
+                        disabledReason: composer.attachmentDisabledReason,
+                        images,
+                        tabKey: pane.tabKey,
+                      })
+                    }
+                    onPlanModeToggle={
+                      readOnlySideChat
+                        ? undefined
+                        : () => void onPlanModeToggle({ sessionID: pane.sessionID })
+                    }
+                    onRemoveAttachment={(path) => onRemoveComposerAttachment(path, pane.tabKey)}
+                    onCancelSend={() => void onCancelSend({
+                      sessionID: pane.sessionID,
+                      tabKey: pane.tabKey,
+                    })}
+                    onSend={(draftStateOverride) =>
+                      void onSend({
+                        attachmentError: composer.attachmentError,
+                        draftStateOverride,
+                        paneID: pane.id,
+                        selectedReasoningEffort: composer.selectedReasoningEffort,
+                        selectedModel: composer.selectedModel,
+                        selectedSkillIDs: composer.selectedSkillIDs,
+                        sessionID: pane.sessionID,
+                        submissionMode: pane.isSending || pane.isInterruptible ? "steer" : undefined,
+                        tabKey: pane.tabKey,
+                        waitForPendingModelSelection: composer.awaitPendingModelSelection,
+                      })
+                    }
+                  />
+                </Profiler>
                 {composerWorkflowBadge ? <ComposerPlanModeNotice workflow={composerWorkflowBadge} /> : null}
                 <ComposerUtilityBar
                   contextWindow={composer.contextWindow}

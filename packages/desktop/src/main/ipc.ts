@@ -723,6 +723,13 @@ export function registerIpcHandlers(menus: ApplicationMenus, options: IpcHandler
     return options.workbenchWindowManager.moveSessionPanel(input)
   })
 
+  handleDesktopIpc("desktop:workbench-focus-session-panel", (_event, input) => {
+    if (!options.workbenchWindowManager) {
+      throw new Error("Workbench window manager is unavailable.")
+    }
+    return options.workbenchWindowManager.focusSessionPanel(input)
+  })
+
   handleDesktopIpc("desktop:workbench-begin-panel-drag", (_event, input) => {
     if (!options.workbenchWindowManager) {
       throw new Error("Workbench window manager is unavailable.")

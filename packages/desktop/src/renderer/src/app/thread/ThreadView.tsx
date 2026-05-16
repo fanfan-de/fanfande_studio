@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
+import { memo, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject, type WheelEvent as ReactWheelEvent } from "react"
 import { createPortal } from "react-dom"
 import { getAgentSessionBridge } from "../agent-session/client"
 import { Composer } from "../composer/Composer"
@@ -33,6 +33,7 @@ import {
   type MarkdownLocalFileLinkTarget,
 } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
+import { logRendererPerf } from "../perf-profiler"
 import type {
   AssistantTraceDebugEntry,
   AssistantTraceFileChange,
@@ -286,6 +287,12 @@ function restoreThreadScrollSnapshot(threadColumn: HTMLDivElement, snapshot: Thr
 
   threadColumn.scrollTop = clampThreadScrollTop(threadColumn, snapshot.scrollTop)
   return isThreadColumnPinnedToBottom(threadColumn)
+}
+
+function getRestorableThreadScrollSnapshot(snapshot: ThreadScrollSnapshot | null) {
+  if (!snapshot) return null
+  if (!snapshot.pinnedToBottom && snapshot.scrollTop <= THREAD_TOP_RESET_THRESHOLD_PX) return null
+  return snapshot
 }
 
 function getUserTurnBodyText(turn: UserTurn) {
@@ -3300,7 +3307,127 @@ function collectAnsweredQuestionIDs(turns: Turn[]) {
   return answeredQuestionIDs
 }
 
-export function ThreadView({
+function InactiveThreadView({ threadColumnRef }: Pick<ThreadViewProps, "threadColumnRef">) {
+  return (
+    <section className="thread-shell" aria-hidden="true">
+      <div ref={threadColumnRef} className="thread-column" />
+    </section>
+  )
+}
+
+function areArraysShallowEqual<T>(left: readonly T[] | undefined, right: readonly T[] | undefined) {
+  if (left === right) return true
+  if (!left || !right || left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false
+  }
+  return true
+}
+
+function areRecordValuesEqual<T>(
+  left: Record<string, T> | undefined,
+  right: Record<string, T> | undefined,
+  areValuesEqual: (leftValue: T, rightValue: T) => boolean,
+) {
+  if (left === right) return true
+  if (!left || !right) return false
+
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(right, key)) return false
+    if (!areValuesEqual(left[key], right[key])) return false
+  }
+  return true
+}
+
+function areSessionSummariesEqual(left: SessionSummary | null | undefined, right: SessionSummary | null | undefined) {
+  if (left === right) return true
+  if (!left || !right) return false
+
+  return (
+    left.id === right.id &&
+    left.title === right.title &&
+    left.modelSelection === right.modelSelection &&
+    left.workflow === right.workflow &&
+    left.origin === right.origin
+  )
+}
+
+function getThreadViewPropsChangeReason(left: ThreadViewProps, right: ThreadViewProps) {
+  if (left.activeProjectID !== right.activeProjectID) return "activeProjectID"
+  if (!areSessionSummariesEqual(left.activeSession, right.activeSession)) return "activeSession"
+  if (buildDiffSummarySignature(left.activeSessionDiff ?? null) !== buildDiffSummarySignature(right.activeSessionDiff ?? null)) {
+    return "activeSessionDiff"
+  }
+  if (!areArraysShallowEqual(left.activeTurns, right.activeTurns)) return "activeTurns"
+  if (left.assistantTraceVisibility !== right.assistantTraceVisibility) return "assistantTraceVisibility"
+  if (left.composerRefreshVersion !== right.composerRefreshVersion) return "composerRefreshVersion"
+  if (left.isAgentDebugTraceEnabled !== right.isAgentDebugTraceEnabled) return "isAgentDebugTraceEnabled"
+  if (left.isResolvingPermissionRequest !== right.isResolvingPermissionRequest) return "isResolvingPermissionRequest"
+  if (left.showSessionBanner !== right.showSessionBanner) return "showSessionBanner"
+  if (!areArraysShallowEqual(left.pendingPermissionRequests, right.pendingPermissionRequests)) return "pendingPermissionRequests"
+  if (left.permissionRequestActionError !== right.permissionRequestActionError) return "permissionRequestActionError"
+  if (left.permissionRequestActionRequestID !== right.permissionRequestActionRequestID) return "permissionRequestActionRequestID"
+  if (!areArraysShallowEqual(left.sideChatAttachments, right.sideChatAttachments)) return "sideChatAttachments"
+  if (!areRecordValuesEqual(left.sideChatCountsByAnchorMessageID, right.sideChatCountsByAnchorMessageID, Object.is)) {
+    return "sideChatCountsByAnchorMessageID"
+  }
+  if (left.sideChatDraftState !== right.sideChatDraftState) return "sideChatDraftState"
+  if (left.sideChatIsCancelling !== right.sideChatIsCancelling) return "sideChatIsCancelling"
+  if (left.sideChatIsInterruptible !== right.sideChatIsInterruptible) return "sideChatIsInterruptible"
+  if (left.sideChatIsSending !== right.sideChatIsSending) return "sideChatIsSending"
+  if (!areArraysShallowEqual(left.sideChatPendingPermissionRequests, right.sideChatPendingPermissionRequests)) {
+    return "sideChatPendingPermissionRequests"
+  }
+  if (left.sideChatPermissionRequestActionError !== right.sideChatPermissionRequestActionError) {
+    return "sideChatPermissionRequestActionError"
+  }
+  if (left.sideChatPermissionRequestActionRequestID !== right.sideChatPermissionRequestActionRequestID) {
+    return "sideChatPermissionRequestActionRequestID"
+  }
+  if (!areSessionSummariesEqual(left.sideChatSession, right.sideChatSession)) return "sideChatSession"
+  if (!areRecordValuesEqual(
+    left.sideChatSessionsByAnchorMessageID,
+    right.sideChatSessionsByAnchorMessageID,
+    areArraysShallowEqual,
+  )) {
+    return "sideChatSessionsByAnchorMessageID"
+  }
+  if (!areArraysShallowEqual(left.sideChatTurns, right.sideChatTurns)) return "sideChatTurns"
+  if (left.scrollStateKey !== right.scrollStateKey) return "scrollStateKey"
+  if (left.threadColumnRef !== right.threadColumnRef) return "threadColumnRef"
+  if (left.isThreadVisible !== right.isThreadVisible) return "isThreadVisible"
+  if (left.readScrollSnapshot !== right.readScrollSnapshot) return "readScrollSnapshot"
+  if (left.saveScrollSnapshot !== right.saveScrollSnapshot) return "saveScrollSnapshot"
+  return null
+}
+
+function areThreadViewPropsEqual(left: ThreadViewProps, right: ThreadViewProps) {
+  const reason = getThreadViewPropsChangeReason(left, right)
+  if (!reason) return true
+
+  logRendererPerf("ThreadView memo miss", {
+    reason,
+    previousSessionID: left.activeSession?.id ?? null,
+    nextSessionID: right.activeSession?.id ?? null,
+    previousTurnCount: left.activeTurns.length,
+    nextTurnCount: right.activeTurns.length,
+  })
+  return false
+}
+
+export const ThreadView = memo(function ThreadView(props: ThreadViewProps) {
+  if (props.isThreadVisible === false) {
+    return <InactiveThreadView threadColumnRef={props.threadColumnRef} />
+  }
+
+  return <VisibleThreadView {...props} />
+}, areThreadViewPropsEqual)
+
+function VisibleThreadView({
   activeProjectID = null,
   activeSession,
   activeSessionDiff = null,
@@ -3360,6 +3487,7 @@ export function ThreadView({
   const copiedUserTimeoutRef = useRef<number | null>(null)
   const isPinnedToBottomRef = useRef(true)
   const latestScrollSnapshotRef = useRef<ThreadScrollSnapshot | null>(null)
+  const latestScrollSnapshotKeyRef = useRef<string | null>(null)
   const scrollSaveFrameRef = useRef<number | null>(null)
   const scrollRestoreFrameRef = useRef<number | null>(null)
   const lastUserScrollIntentAtRef = useRef(0)
@@ -3380,9 +3508,10 @@ export function ThreadView({
   }, [activeTurns, pendingPermissionRequests])
   const visibleTurnIDsKey = visibleTurnIDs.join("\u0000")
 
-  function captureThreadScrollSnapshot(threadColumn: HTMLDivElement) {
+  function captureThreadScrollSnapshot(threadColumn: HTMLDivElement, key = effectiveScrollStateKey) {
     const snapshot = readThreadScrollSnapshot(threadColumn)
     latestScrollSnapshotRef.current = snapshot
+    latestScrollSnapshotKeyRef.current = key
     return snapshot
   }
 
@@ -3390,10 +3519,18 @@ export function ThreadView({
     const threadColumn = threadColumnRef.current
     if (!threadColumn) return
 
-    const snapshot = captureThreadScrollSnapshot(threadColumn)
+    const snapshot = captureThreadScrollSnapshot(threadColumn, key)
     if (!saveScrollSnapshot || !key) return
 
     saveScrollSnapshot(key, snapshot)
+  }
+
+  function persistLatestThreadScrollSnapshot(key = effectiveScrollStateKey) {
+    if (!saveScrollSnapshot || !key || !latestScrollSnapshotRef.current) return false
+    if (latestScrollSnapshotKeyRef.current !== key) return false
+
+    saveScrollSnapshot(key, latestScrollSnapshotRef.current)
+    return true
   }
 
   function restoreAndPersistThreadScrollSnapshot(
@@ -3414,7 +3551,8 @@ export function ThreadView({
     const scheduledAt = Date.now()
     scrollRestoreFrameRef.current = window.requestAnimationFrame(() => {
       scrollRestoreFrameRef.current = null
-      if (lastUserScrollIntentAtRef.current > scheduledAt) return
+      if (lastUserScrollIntentAtRef.current >= scheduledAt) return
+      if (currentScrollStateKeyRef.current !== key) return
 
       const threadColumn = threadColumnRef.current
       if (!threadColumn) return
@@ -3584,15 +3722,17 @@ export function ThreadView({
 
     const previousScrollStateKey = currentScrollStateKeyRef.current
     if (previousScrollStateKey && previousScrollStateKey !== effectiveScrollStateKey) {
-      persistThreadScrollSnapshot(previousScrollStateKey)
+      if (!persistLatestThreadScrollSnapshot(previousScrollStateKey)) {
+        persistThreadScrollSnapshot(previousScrollStateKey)
+      }
     }
 
     currentScrollStateKeyRef.current = effectiveScrollStateKey
-    const snapshot = readScrollSnapshot?.(effectiveScrollStateKey) ?? null
+    const snapshot = null
     restoreAndPersistThreadScrollSnapshot(threadColumn, snapshot, effectiveScrollStateKey)
 
     scheduleThreadScrollRestore(snapshot, effectiveScrollStateKey)
-  }, [effectiveScrollStateKey, readScrollSnapshot, threadColumnRef])
+  }, [effectiveScrollStateKey, threadColumnRef])
 
   useLayoutEffect(() => {
     const threadColumn = threadColumnRef.current
@@ -3605,7 +3745,9 @@ export function ThreadView({
       return
     }
 
-    const snapshot = latestScrollSnapshotRef.current ?? readScrollSnapshot?.(effectiveScrollStateKey) ?? null
+    const snapshot =
+      getRestorableThreadScrollSnapshot(latestScrollSnapshotRef.current) ??
+      getRestorableThreadScrollSnapshot(readScrollSnapshot?.(effectiveScrollStateKey) ?? null)
     if (!snapshot || snapshot.pinnedToBottom) return
 
     restoreAndPersistThreadScrollSnapshot(threadColumn, snapshot, effectiveScrollStateKey)

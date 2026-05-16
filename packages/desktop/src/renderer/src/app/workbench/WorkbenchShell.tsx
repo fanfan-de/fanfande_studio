@@ -1,5 +1,6 @@
 import {
   createContext,
+  Profiler,
   useCallback,
   useContext,
   useEffect,
@@ -27,12 +28,16 @@ import type { ThreadScrollSnapshot } from "../thread/ThreadView"
 import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, SessionDiffSummary, ToolPermissionMode } from "../types"
 import { createID } from "../utils"
 import {
+  buildWorkbenchHeaderState,
   buildWorkbenchPaneState,
-  buildWorkbenchPanelState,
+  buildWorkbenchPanelRenderState,
   buildWorkbenchPanelTitleMap,
+  buildWorkbenchTabHeaderState,
   buildWorkspaceDerivedStateInputFromStore,
   getWorkbenchGridPaneIDs,
+  workbenchHeaderStatesAreEqual,
   workbenchPaneStatesAreEqual,
+  workbenchTabHeaderStatesAreEqual,
   type WorkbenchPaneTab,
 } from "../agent-workspace/workspace-derived-state"
 import {
@@ -55,6 +60,7 @@ import {
   type WorkbenchDockPanelReference,
 } from "./dockview-state"
 import { WorkbenchPaneSurface, type WorkbenchPaneSurfaceProps } from "./WorkbenchPaneSurface"
+import { createRendererProfilerOnRender, measureRendererPerf } from "../perf-profiler"
 
 type DetachedSessionPanelBounds = { x: number; y: number; width: number; height: number }
 type WorkbenchDropPlacement = "within" | "left" | "right" | "top" | "bottom"
@@ -77,30 +83,51 @@ function useWorkbenchPanelState(
 ) {
   return useWorkspaceStoreSelector(
     store,
-    (state) => buildWorkbenchPanelState(
-      buildWorkspaceDerivedStateInputFromStore(state, platform, seedWorkspaceIDs),
-      groupID,
-      panelID,
-      reference,
-    ),
+    (state) => measureRendererPerf("WorkbenchPanel.buildRenderState", () => buildWorkbenchPanelRenderState(
+        buildWorkspaceDerivedStateInputFromStore(state, platform, seedWorkspaceIDs),
+        groupID,
+        panelID,
+        reference,
+      ), () => ({
+        groupID,
+        panelID: panelID ?? null,
+        referenceKind: reference?.kind ?? null,
+      })),
     workbenchPaneStatesAreEqual,
   )
 }
 
-function useWorkbenchPaneState(
+function useWorkbenchTabHeaderState(
   store: WorkspaceStoreApi,
-  platform: string,
+  groupID: string,
+  panelID: string,
+) {
+  return useWorkspaceStoreSelector(
+    store,
+    (state) => buildWorkbenchTabHeaderState({
+      createSessionTabs: state.sessions.createSessionTabs,
+      dockviewActiveState: state.workbench.dockviewActiveState,
+      dockviewLayout: state.workbench.dockviewLayout,
+      workspaces: state.sessions.workspaces,
+    }, groupID, panelID),
+    workbenchTabHeaderStatesAreEqual,
+  )
+}
+
+function useWorkbenchHeaderState(
+  store: WorkspaceStoreApi,
   groupID: string,
   panelID?: string,
 ) {
   return useWorkspaceStoreSelector(
     store,
-    (state) => buildWorkbenchPaneState(
-      buildWorkspaceDerivedStateInputFromStore(state, platform, seedWorkspaceIDs),
-      groupID,
-      panelID,
-    ),
-    workbenchPaneStatesAreEqual,
+    (state) => buildWorkbenchHeaderState({
+      createSessionTabs: state.sessions.createSessionTabs,
+      dockviewActiveState: state.workbench.dockviewActiveState,
+      dockviewLayout: state.workbench.dockviewLayout,
+      workspaces: state.sessions.workspaces,
+    }, groupID, panelID),
+    workbenchHeaderStatesAreEqual,
   )
 }
 
@@ -792,6 +819,17 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       reference,
     )
     const workspaces = useWorkspaceStoreSelector(props.store, (state) => state.sessions.workspaces)
+    const paneProfiler = useMemo(
+      () => createRendererProfilerOnRender("WorkbenchPaneSurface commit", () => ({
+        groupID,
+        panelID: panelProps.api.id,
+        paneID: pane?.id ?? null,
+        sessionID: pane?.sessionID ?? null,
+        tabKey: pane?.tabKey ?? null,
+        isActivePanel: pane?.isActivePanel ?? null,
+      })),
+      [groupID, pane?.id, pane?.isActivePanel, pane?.sessionID, pane?.tabKey, panelProps.api.id],
+    )
     if (!pane) {
       return (
         <div
@@ -803,46 +841,48 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     }
 
     return (
-      <WorkbenchPaneSurface
-        assistantTraceVisibility={props.assistantTraceVisibility}
-        composerRefreshVersion={props.composerRefreshVersion}
-        isResolvingPermissionRequest={props.isResolvingPermissionRequest}
-        isAgentDebugTraceEnabled={props.isAgentDebugTraceEnabled}
-        isSavingToolPermissionMode={props.isSavingToolPermissionMode}
-        isTopRow={false}
-        pane={pane}
-        permissionRequestActionError={props.permissionRequestActionError}
-        permissionRequestActionRequestID={props.permissionRequestActionRequestID}
-        toolPermissionMode={props.toolPermissionMode}
-        toolPermissionModeError={props.toolPermissionModeError}
-        workspaces={workspaces}
-        readThreadScrollSnapshot={props.readThreadScrollSnapshot}
-        saveThreadScrollSnapshot={props.saveThreadScrollSnapshot}
-        onCreateSessionSubmit={props.onCreateSessionSubmit}
-        onCreateSessionWorkspaceChange={props.onCreateSessionWorkspaceChange}
-        onInspectFileInSidebar={props.onInspectFileInSidebar}
-        onArtifactLinkOpen={props.onArtifactLinkOpen}
-        onLocalFileLinkOpen={props.onLocalFileLinkOpen}
-        onCreateSideChatTab={props.onCreateSideChatTab}
-        onDeleteSideChatTab={props.onDeleteSideChatTab}
-        onOpenSideChat={props.onOpenSideChat}
-        onAskUserQuestionAnswer={props.onAskUserQuestionAnswer}
-        onApproveProposedPlan={props.onApproveProposedPlan}
-        onPermissionRequestResponse={props.onPermissionRequestResponse}
-        onToolPermissionModeChange={props.onToolPermissionModeChange}
-        onPickComposerAttachments={props.onPickComposerAttachments}
-        onPasteComposerImageAttachments={props.onPasteComposerImageAttachments}
-        onRemoveComposerAttachment={props.onRemoveComposerAttachment}
-        onSelectSideChatTab={props.onSelectSideChatTab}
-        onCancelSend={props.onCancelSend}
-        onPlanModeToggle={props.onPlanModeToggle}
-        onSend={props.onSend}
-        onSessionModelSelectionChange={props.onSessionModelSelectionChange}
-        onSetDraft={props.onSetDraft}
-        onTurnDiffRestore={props.onTurnDiffRestore}
-        onTurnDiffReview={props.onTurnDiffReview}
-        onTurnDiffSummaryHydrate={props.onTurnDiffSummaryHydrate}
-      />
+      <Profiler id="WorkbenchShell.PanelSurface" onRender={paneProfiler}>
+        <WorkbenchPaneSurface
+          assistantTraceVisibility={props.assistantTraceVisibility}
+          composerRefreshVersion={props.composerRefreshVersion}
+          isResolvingPermissionRequest={props.isResolvingPermissionRequest}
+          isAgentDebugTraceEnabled={props.isAgentDebugTraceEnabled}
+          isSavingToolPermissionMode={props.isSavingToolPermissionMode}
+          isTopRow={false}
+          pane={pane}
+          permissionRequestActionError={props.permissionRequestActionError}
+          permissionRequestActionRequestID={props.permissionRequestActionRequestID}
+          toolPermissionMode={props.toolPermissionMode}
+          toolPermissionModeError={props.toolPermissionModeError}
+          workspaces={workspaces}
+          readThreadScrollSnapshot={props.readThreadScrollSnapshot}
+          saveThreadScrollSnapshot={props.saveThreadScrollSnapshot}
+          onCreateSessionSubmit={props.onCreateSessionSubmit}
+          onCreateSessionWorkspaceChange={props.onCreateSessionWorkspaceChange}
+          onInspectFileInSidebar={props.onInspectFileInSidebar}
+          onArtifactLinkOpen={props.onArtifactLinkOpen}
+          onLocalFileLinkOpen={props.onLocalFileLinkOpen}
+          onCreateSideChatTab={props.onCreateSideChatTab}
+          onDeleteSideChatTab={props.onDeleteSideChatTab}
+          onOpenSideChat={props.onOpenSideChat}
+          onAskUserQuestionAnswer={props.onAskUserQuestionAnswer}
+          onApproveProposedPlan={props.onApproveProposedPlan}
+          onPermissionRequestResponse={props.onPermissionRequestResponse}
+          onToolPermissionModeChange={props.onToolPermissionModeChange}
+          onPickComposerAttachments={props.onPickComposerAttachments}
+          onPasteComposerImageAttachments={props.onPasteComposerImageAttachments}
+          onRemoveComposerAttachment={props.onRemoveComposerAttachment}
+          onSelectSideChatTab={props.onSelectSideChatTab}
+          onCancelSend={props.onCancelSend}
+          onPlanModeToggle={props.onPlanModeToggle}
+          onSend={props.onSend}
+          onSessionModelSelectionChange={props.onSessionModelSelectionChange}
+          onSetDraft={props.onSetDraft}
+          onTurnDiffRestore={props.onTurnDiffRestore}
+          onTurnDiffReview={props.onTurnDiffReview}
+          onTurnDiffSummaryHydrate={props.onTurnDiffSummaryHydrate}
+        />
+      </Profiler>
     )
   }, [])
 
@@ -858,13 +898,11 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     }, [tabProps.api])
 
     const reference = tabProps.params ?? getWorkbenchDockPanelReference(tabProps.api.id)
-    const pane = useWorkbenchPaneState(props.store, props.platform, tabProps.api.group.id, tabProps.api.id)
-    const paneTab = pane?.tabs.find((tab) => tab.key === tabProps.api.id) as WorkbenchPaneTab | undefined
-    const isTabActive = pane?.activeTabKey === tabProps.api.id || isActive
+    const tabState = useWorkbenchTabHeaderState(props.store, tabProps.api.group.id, tabProps.api.id)
+    const paneTab = tabState?.tab as WorkbenchPaneTab | undefined
+    const isTabActive = tabState?.activeTabKey === tabProps.api.id || isActive
     const title = paneTab?.title ?? tabProps.api.title ?? "Session"
-    const createTabIndex = pane && paneTab?.kind === "create-session"
-      ? pane.tabs.slice(0, pane.tabs.findIndex((tab) => tab.key === paneTab.key) + 1).filter((tab) => tab.kind === "create-session").length - 1
-      : -1
+    const createTabIndex = tabState?.createSessionTabIndex ?? -1
     const switchLabel =
       reference?.kind === "session"
         ? `Switch to session ${title}`
@@ -888,7 +926,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         return
       }
 
-      const paneID = pane?.id ?? tabProps.api.group.id
+      const paneID = tabState?.id ?? tabProps.api.group.id
       if (reference?.kind === "session") {
         props.onCloseSessionTab(reference.sessionID, paneID)
         return
@@ -941,7 +979,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
   const LeftHeaderActions = useCallback((headerProps: IDockviewHeaderActionsProps) => {
     const props = useWorkbenchShellContext()
-    const pane = useWorkbenchPaneState(props.store, props.platform, headerProps.group.id, headerProps.activePanel?.id)
+    const pane = useWorkbenchHeaderState(props.store, headerProps.group.id, headerProps.activePanel?.id)
     const gridPaneIDs = useWorkbenchGridPaneIDs(props.store)
     const firstPaneID = gridPaneIDs[0] ?? null
     const paneID = pane?.id ?? headerProps.group.id
@@ -965,7 +1003,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
   const RightHeaderActions = useCallback((headerProps: IDockviewHeaderActionsProps) => {
     const props = useWorkbenchShellContext()
-    const pane = useWorkbenchPaneState(props.store, props.platform, headerProps.group.id, headerProps.activePanel?.id)
+    const pane = useWorkbenchHeaderState(props.store, headerProps.group.id, headerProps.activePanel?.id)
     const gridPaneIDs = useWorkbenchGridPaneIDs(props.store)
     const lastPaneID = gridPaneIDs[gridPaneIDs.length - 1] ?? null
     const paneID = pane?.id ?? headerProps.group.id
@@ -1004,7 +1042,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
               panel?.api.setActive()
               return
             }
-            props.onOpenCreateSessionTab(pane?.workspace?.id ?? null, paneID)
+            props.onOpenCreateSessionTab(pane?.workspaceID ?? null, paneID)
           }}
         >
           <PlusIcon />
@@ -1030,6 +1068,13 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   const tabComponents = useMemo(() => ({
     [WORKBENCH_DOCK_TAB_COMPONENT]: TabComponent,
   }), [TabComponent])
+  const dockviewProfiler = useMemo(
+    () => createRendererProfilerOnRender("Dockview commit", () => ({
+      surfaceID: props.surfaceID,
+      gridPaneCount: gridPaneIDs.length,
+    })),
+    [gridPaneIDs.length, props.surfaceID],
+  )
 
   return (
     <WorkbenchShellContext.Provider value={props}>
@@ -1043,21 +1088,23 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         onDragOverCapture={handleWorkbenchDragOver}
         onDropCapture={handleWorkbenchDrop}
       >
-        <DockviewReact
-          className="dockview-theme-fanfande"
-          components={components}
-          defaultTabComponent={TabComponent}
-          disableFloatingGroups
-          getTabContextMenuItems={() => []}
-          hideBorders
-          leftHeaderActionsComponent={LeftHeaderActions}
-          noPanelsOverlay="emptyGroup"
-          rightHeaderActionsComponent={RightHeaderActions}
-          singleTabMode="default"
-          tabComponents={tabComponents}
-          tabGroupAccent="off"
-          onReady={handleReady}
-        />
+        <Profiler id="WorkbenchShell.Dockview" onRender={dockviewProfiler}>
+          <DockviewReact
+            className="dockview-theme-fanfande"
+            components={components}
+            defaultTabComponent={TabComponent}
+            disableFloatingGroups
+            getTabContextMenuItems={() => []}
+            hideBorders
+            leftHeaderActionsComponent={LeftHeaderActions}
+            noPanelsOverlay="emptyGroup"
+            rightHeaderActionsComponent={RightHeaderActions}
+            singleTabMode="default"
+            tabComponents={tabComponents}
+            tabGroupAccent="off"
+            onReady={handleReady}
+          />
+        </Profiler>
       </div>
     </WorkbenchShellContext.Provider>
   )

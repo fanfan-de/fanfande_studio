@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { Profiler, useEffect, useMemo, useRef, useState } from "react"
 import type { SerializedDockview } from "dockview-react"
 import {
   ActivityRail,
@@ -15,7 +15,6 @@ import {
 } from "./app/components"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
 import {
-  seedWorkspaceIDs,
   useWorkspaceStoreSelector,
 } from "./app/agent-workspace/workspace-store"
 import { WorkspaceStoreProvider } from "./app/agent-workspace/workspace-store-context"
@@ -26,15 +25,17 @@ import { useAgentWorkspace } from "./app/use-agent-workspace"
 import { useDesktopShell } from "./app/use-desktop-shell"
 import { useGlobalSkills } from "./app/use-global-skills"
 import { useSettingsPage } from "./app/use-settings-page"
+import { createRendererProfilerOnRender } from "./app/perf-profiler"
 import type { BuiltinToolKindKey } from "./app/tools/BuiltinToolsPage"
-import { isSideChatSession } from "./app/workspace"
+import { findSession, isSideChatSession } from "./app/workspace"
 import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
-import { createInitialDockviewLayout } from "./app/workbench/dockview-state"
 import {
-  buildWorkbenchPaneStates,
+  createInitialDockviewLayout,
+  getActivePanelForGroupFromState,
+  getFocusedDockviewGroupIDFromState,
+} from "./app/workbench/dockview-state"
+import {
   buildWorkbenchPublishSnapshot,
-  buildWorkspaceDerivedStateInputFromStore,
-  workbenchPaneStateArraysAreEqual,
   workbenchPublishSnapshotsAreEqual,
 } from "./app/agent-workspace/workspace-derived-state"
 import { WorkspaceModeCanvasPlaceholder, WorkspaceModeRightPlaceholder } from "./app/workspace-mode/WorkspaceModePlaceholder"
@@ -177,6 +178,10 @@ function getContextPanelTitle(context: WorkbenchWindowContext, panelID: string |
     context.state.ownership.find((ownership) => ownership.panelID === panelID)?.title ??
     context.state.panels[panelID]?.title
   )
+}
+
+function getWorkbenchPanelOwnershipSurfaceID(ownership: WorkbenchSharedState["ownership"][number]) {
+  return ownership.ownerSurfaceID ?? ownership.ownerWindowID
 }
 
 function createFallbackPopoutLayout(context: WorkbenchWindowContext) {
@@ -356,6 +361,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
     handleApproveProposedPlan,
     handleCancelSend,
     handleCanvasSessionTabClose,
+    handleCanvasSessionTabSelect,
     handleCreateSessionSubmit,
     handleCreateSideChatTab,
     handleDeleteSideChatTab,
@@ -393,12 +399,9 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
     initialSessionID: targetSessionID,
     isRuntimeDebugEnabled: isAgentDebugTraceEnabled,
     platform,
+    surfaceID,
+    workbenchState: workbenchContext.state,
   })
-  const workbenchPaneStates = useWorkspaceStoreSelector(
-    workspaceStore,
-    (state) => buildWorkbenchPaneStates(buildWorkspaceDerivedStateInputFromStore(state, platform, seedWorkspaceIDs)),
-    workbenchPaneStateArraysAreEqual,
-  )
   const workbenchPublishSnapshot = useWorkspaceStoreSelector(
     workspaceStore,
     (state) => buildWorkbenchPublishSnapshot({
@@ -460,7 +463,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
   useEffect(() => {
     const panelID = workbenchContext.panelID
     if (!panelID || didMarkMountedRef.current) return
-    const hasPanel = workbenchPaneStates.some((pane) => pane.tabs.some((tab) => tab.key === panelID))
+    const hasPanel = workbenchPublishSnapshot.ownedPanelIDs.includes(panelID)
     if (!hasPanel) return
     didMarkMountedRef.current = true
     void window.desktop?.markWorkbenchPanelMounted?.({
@@ -470,7 +473,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
       didMarkMountedRef.current = false
       console.error("[desktop] Failed to mark session popout mounted:", error)
     })
-  }, [didMarkMountedRef, workbenchContext.panelID, workbenchContext.windowID, workbenchPaneStates])
+  }, [didMarkMountedRef, workbenchContext.panelID, workbenchContext.windowID, workbenchPublishSnapshot.ownedPanelIDs])
 
   const handleDockBack = (preferredPanelID?: string) => {
     const panelID = preferredPanelID ?? workbenchContext.panelID
@@ -514,6 +517,14 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
 
   useEffect(() => {
     const unsubscribe = window.desktop?.onWorkbenchStateChange?.((event) => {
+      if (event.reason === "focus" && event.panelID) {
+        const ownership = event.state.ownership.find((item) => item.panelID === event.panelID)
+        if (ownership && getWorkbenchPanelOwnershipSurfaceID(ownership) === surfaceID) {
+          handleCanvasSessionTabSelect(ownership.reference.sessionID)
+        }
+        return
+      }
+
       const move = event.move
       if (!move) return
       if (move.targetSurfaceID === surfaceID) {
@@ -530,7 +541,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
     })
 
     return unsubscribe
-  }, [handleMovePanelIntoSurface, handleMovePanelOutOfSurface, surfaceID])
+  }, [handleCanvasSessionTabSelect, handleMovePanelIntoSurface, handleMovePanelOutOfSurface, surfaceID])
 
   const handleLocalFileLinkOpen = ({ target }: LocalFileLinkOpenInput) => {
     void openSystemLocalPath(target.path)
@@ -595,7 +606,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
           onPlanModeToggle={handlePlanModeToggle}
           onRemoveComposerAttachment={handleRemoveComposerAttachment}
           onSelectCreateSessionTab={() => undefined}
-          onSelectSessionTab={() => undefined}
+          onSelectSessionTab={handleCanvasSessionTabSelect}
           onSelectSideChatTab={handleSelectSideChatTab}
           onSend={handleSend}
           onSessionModelSelectionChange={handleSessionModelSelectionChange}
@@ -736,7 +747,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     handleSessionModelSelectionChange,
     handleTurnDiffSummaryHydrate,
     handleSidebarAction,
-    focusedPaneID,
     hoveredFolderID,
     isCreatingProject,
     isResolvingPermissionRequest,
@@ -768,12 +778,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     agentDefaultDirectory,
     isRuntimeDebugEnabled: isAgentDebugTraceEnabled,
     platform,
+    surfaceID,
+    workbenchState: workbenchContext.state,
   })
-  const workbenchPaneStates = useWorkspaceStoreSelector(
-    workspaceStore,
-    (state) => buildWorkbenchPaneStates(buildWorkspaceDerivedStateInputFromStore(state, platform, seedWorkspaceIDs)),
-    workbenchPaneStateArraysAreEqual,
-  )
   const workbenchPublishSnapshot = useWorkspaceStoreSelector(
     workspaceStore,
     (state) => buildWorkbenchPublishSnapshot({
@@ -987,20 +994,41 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     onProviderModelsUpdated: refreshComposerModels,
   })
 
-  const isCreatingSession = workbenchPaneStates.some((pane) => pane.isCreatingSession)
+  const isCreatingSession = useWorkspaceStoreSelector(
+    workspaceStore,
+    (state) => Object.values(state.composer.isCreatingSessionByTabKey).some(Boolean),
+  )
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("code")
   const [activeBuiltinToolKind, setActiveBuiltinToolKind] = useState<BuiltinToolKindKey | null>(null)
   const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
   const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
   const [isSavingToolPermissionMode, setIsSavingToolPermissionMode] = useState(false)
   const lastPublishedWorkbenchSnapshotSignatureRef = useRef<string | null>(null)
-  const focusedWorkbenchPane = focusedPaneID
-    ? workbenchPaneStates.find((pane) => pane.id === focusedPaneID) ?? null
-    : null
-  const terminalSession = focusedWorkbenchPane?.activeSession ?? null
-  const terminalSessionID = terminalSession && !isSideChatSession(terminalSession) ? terminalSession.id : null
+  const terminalSessionID = useWorkspaceStoreSelector(workspaceStore, (state) => {
+    const focusedPaneID = getFocusedDockviewGroupIDFromState(
+      state.workbench.dockviewLayout,
+      state.workbench.dockviewActiveState,
+    )
+    const reference = getActivePanelForGroupFromState(
+      state.workbench.dockviewLayout,
+      state.workbench.dockviewActiveState,
+      focusedPaneID,
+    )
+    if (reference?.kind !== "session") return null
+
+    const { session } = findSession(state.sessions.workspaces, reference.sessionID)
+    return session && !isSideChatSession(session) ? session.id : null
+  })
   const activeRightSidebarView: RightSidebarView =
     rightSidebarView === "runtime" && !isAgentDebugTraceEnabled ? "changes" : rightSidebarView
+  const rightSidebarProfiler = useMemo(
+    () => createRendererProfilerOnRender("RightSidebar commit", () => ({
+      activeView: activeRightSidebarView,
+      activeSessionID: activeSession?.id ?? null,
+      isRuntimeViewVisible: isAgentDebugTraceEnabled,
+    })),
+    [activeRightSidebarView, activeSession?.id, isAgentDebugTraceEnabled],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -1185,6 +1213,14 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   useEffect(() => {
     if (workbenchContext.kind !== "main") return
     const unsubscribe = window.desktop?.onWorkbenchStateChange?.((event) => {
+      if (event.reason === "focus" && event.panelID) {
+        const ownership = event.state.ownership.find((item) => item.panelID === event.panelID)
+        if (ownership && getWorkbenchPanelOwnershipSurfaceID(ownership) === surfaceID) {
+          handleCanvasSessionTabSelect(ownership.reference.sessionID, ownership.lastMainGroupID ?? undefined)
+        }
+        return
+      }
+
       const move = event.move
       if (move) {
         if (move.targetSurfaceID === surfaceID) {
@@ -1660,124 +1696,128 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
             {placeholderWorkspaceMode ? (
               <WorkspaceModeRightPlaceholder mode={placeholderWorkspaceMode} windowControls={windowControls} />
             ) : (
-              <RightSidebar
-                activeWorkspaceFileScopeDirectory={activeWorkspaceFileScopeDirectory}
-                activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
-                activeWorkspaceFileState={activeWorkspaceFileState}
-                activeSessionDirectory={activeSessionDirectory}
-                activePreviewState={activePreviewState}
-                activeSession={activeSession}
-                activeSessionDiff={activeSessionDiff}
-                activeSessionDiffState={activeSessionDiffState}
-                activeSessionRuntimeDebug={activeSessionRuntimeDebug}
-                activeSessionRuntimeDebugState={activeSessionRuntimeDebugState}
-                canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
-                selectedDiffFile={activeSessionSelectedDiffFile}
-                activeView={activeRightSidebarView}
-                isRuntimeViewVisible={isAgentDebugTraceEnabled}
-                onDiffFileSelect={handleActiveSessionDiffFileSelect}
-                onDiffFileRestore={handleActiveSessionDiffFileRestore}
-                onPreviewActiveInteractionChange={handlePreviewActiveInteractionChange}
-                onPreviewCommitInteraction={handlePreviewCommitInteraction}
-                onPreviewBack={handlePreviewBack}
-                onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
-                onPreviewForward={handlePreviewForward}
-                onPreviewOpen={handlePreviewOpen}
-                onPreviewOpenExternal={handlePreviewOpenExternal}
-                onPreviewOpenUrl={handlePreviewOpenUrl}
-                onPreviewReload={handlePreviewReload}
-                onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
-                onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
-                onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
-                onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
-                onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
-                onWorkspaceFileSelect={handleWorkspaceFileSelect}
-                onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
-                onViewChange={handleInspectorViewChange}
-                renderTerminalArea={(togglePortalTarget) => (
-                  <TerminalAreaHost
-                    brandTheme={brandTheme}
-                    colorMode={colorMode}
-                    currentSessionID={terminalSessionID}
-                    storageKey={WORKBENCH_TERMINAL_STORAGE_KEY}
-                    togglePortalTarget={togglePortalTarget}
-                  />
-                )}
-                windowControls={windowControls}
-              />
+              <Profiler id="MainApp.RightSidebar" onRender={rightSidebarProfiler}>
+                <RightSidebar
+                  activeWorkspaceFileScopeDirectory={activeWorkspaceFileScopeDirectory}
+                  activeWorkspaceFileScopeName={activeWorkspaceFileScopeName}
+                  activeWorkspaceFileState={activeWorkspaceFileState}
+                  activeSessionDirectory={activeSessionDirectory}
+                  activePreviewState={activePreviewState}
+                  activeSession={activeSession}
+                  activeSessionDiff={activeSessionDiff}
+                  activeSessionDiffState={activeSessionDiffState}
+                  activeSessionRuntimeDebug={activeSessionRuntimeDebug}
+                  activeSessionRuntimeDebugState={activeSessionRuntimeDebugState}
+                  canInsertWorkspaceFileCommentsIntoDraft={canInsertWorkspaceFileCommentsIntoDraft}
+                  selectedDiffFile={activeSessionSelectedDiffFile}
+                  activeView={activeRightSidebarView}
+                  isRuntimeViewVisible={isAgentDebugTraceEnabled}
+                  onDiffFileSelect={handleActiveSessionDiffFileSelect}
+                  onDiffFileRestore={handleActiveSessionDiffFileRestore}
+                  onPreviewActiveInteractionChange={handlePreviewActiveInteractionChange}
+                  onPreviewCommitInteraction={handlePreviewCommitInteraction}
+                  onPreviewBack={handlePreviewBack}
+                  onPreviewDraftUrlChange={handlePreviewDraftUrlChange}
+                  onPreviewForward={handlePreviewForward}
+                  onPreviewOpen={handlePreviewOpen}
+                  onPreviewOpenExternal={handlePreviewOpenExternal}
+                  onPreviewOpenUrl={handlePreviewOpenUrl}
+                  onPreviewReload={handlePreviewReload}
+                  onWorkspaceFileCommentCancel={handleWorkspaceFileCommentCancel}
+                  onWorkspaceFileCommentChange={handleWorkspaceFileCommentChange}
+                  onWorkspaceFileCommentConfirm={handleWorkspaceFileCommentConfirm}
+                  onWorkspaceFileCommentStart={handleWorkspaceFileCommentStart}
+                  onWorkspaceFileQueryChange={handleWorkspaceFileQueryChange}
+                  onWorkspaceFileSelect={handleWorkspaceFileSelect}
+                  onRuntimeRefresh={handleActiveSessionRuntimeDebugRefresh}
+                  onViewChange={handleInspectorViewChange}
+                  renderTerminalArea={(togglePortalTarget) => (
+                    <TerminalAreaHost
+                      brandTheme={brandTheme}
+                      colorMode={colorMode}
+                      currentSessionID={terminalSessionID}
+                      storageKey={WORKBENCH_TERMINAL_STORAGE_KEY}
+                      togglePortalTarget={togglePortalTarget}
+                    />
+                  )}
+                  windowControls={windowControls}
+                />
+              </Profiler>
             )}
           </>
         ) : null}
 
-        <SettingsPage
-          activeMcpServerID={activeMcpServerID}
-          activeMcpServerDiagnostic={activeMcpServerDiagnostic}
-          archivedSessions={archivedSessions}
-          archivedSessionsError={archivedSessionsError}
-          catalog={catalog}
-          deletingArchivedSessionID={deletingArchivedSessionID}
-          deletingMcpServerID={deletingMcpServerID}
-          deletingProviderID={deletingProviderID}
-          appearanceConfigError={appearanceConfigError}
-          appearanceConfigPath={appearanceConfigPath}
-          appearanceConfigPreview={appearanceConfigPreview}
-          appearanceOverrides={appearanceOverrides}
-          appearanceTokenValues={appearanceTokenValues}
-          assistantTraceVisibility={assistantTraceVisibility}
-          brandTheme={brandTheme}
-          colorMode={colorMode}
-          isActivityRailVisible={isActivityRailVisible}
-          isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
-          isDebugLineColorsEnabled={isDebugLineColorsEnabled}
-          isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
-          isLoading={isLoading}
-          isLoadingArchivedSessions={isLoadingArchivedSessions}
-          isOpen={isOpen}
-          isRefreshingProviderCatalog={isRefreshingProviderCatalog}
-          loadError={loadError}
-          mcpServerDraft={mcpServerDraft}
-          mcpServers={mcpServers}
-          message={message}
-          models={models}
-          providerDrafts={providerDrafts}
-          restoringArchivedSessionID={restoringArchivedSessionID}
-          savingMcpServerID={savingMcpServerID}
-          savingProviderID={savingProviderID}
-          testingProviderID={testingProviderID}
-          selectionDraft={selectionDraft}
-          onBrandThemeChange={handleBrandThemeChange}
-          onColorModeChange={handleColorModeChange}
-          onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
-          onAppearancePaletteReset={handleAppearancePaletteReset}
-          onAppearanceTokenChange={handleAppearanceTokenChange}
-          onAppearanceTokenReset={handleAppearanceTokenReset}
-          onAssistantTraceVisibilityChange={handleAssistantTraceVisibilityChange}
-          onAgentDebugTraceChange={handleAgentDebugTraceChange}
-          onDebugLineColorsChange={handleDebugLineColorsChange}
-          onDebugUiRegionsChange={handleDebugUiRegionsChange}
-          onClose={closeSettings}
-          onDismissMessage={dismissMessage}
-          onDeleteArchivedSession={deleteArchivedSession}
-          onDeleteMcpServer={deleteMcpServer}
-          onDeleteProvider={deleteProvider}
-          onDeleteProviderAuthSession={deleteProviderAuthSession}
-          onMcpServerDraftChange={setMcpServerDraftValue}
-          onMcpToolPolicyChange={setMcpToolPolicy}
-          onMcpServerSelect={selectMcpServer}
-          onProviderAuthMethodChange={setProviderAuthMethod}
-          onProviderDraftChange={setProviderDraftValue}
-          onRefreshProviderCatalog={refreshProviderCatalog}
-          onLoadArchivedSessions={loadArchivedSessions}
-          onRestoreArchivedSession={restoreArchivedSession}
-          onSaveMcpServer={saveMcpServer}
-          onSaveProviderApiKey={saveProviderApiKey}
-          onSaveProvider={saveProvider}
-          onSelectionChange={setSelectionDraftValue}
-          onTestProviderConnection={testProviderConnection}
-          onStartProviderAuthFlow={startProviderAuthFlow}
-          onStartNewMcpServer={startNewMcpServer}
-          onCancelProviderAuthFlow={cancelProviderAuthFlow}
-        />
+        {isOpen ? (
+          <SettingsPage
+            activeMcpServerID={activeMcpServerID}
+            activeMcpServerDiagnostic={activeMcpServerDiagnostic}
+            archivedSessions={archivedSessions}
+            archivedSessionsError={archivedSessionsError}
+            catalog={catalog}
+            deletingArchivedSessionID={deletingArchivedSessionID}
+            deletingMcpServerID={deletingMcpServerID}
+            deletingProviderID={deletingProviderID}
+            appearanceConfigError={appearanceConfigError}
+            appearanceConfigPath={appearanceConfigPath}
+            appearanceConfigPreview={appearanceConfigPreview}
+            appearanceOverrides={appearanceOverrides}
+            appearanceTokenValues={appearanceTokenValues}
+            assistantTraceVisibility={assistantTraceVisibility}
+            brandTheme={brandTheme}
+            colorMode={colorMode}
+            isActivityRailVisible={isActivityRailVisible}
+            isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
+            isDebugLineColorsEnabled={isDebugLineColorsEnabled}
+            isDebugUiRegionsEnabled={isDebugUiRegionsEnabled}
+            isLoading={isLoading}
+            isLoadingArchivedSessions={isLoadingArchivedSessions}
+            isOpen={isOpen}
+            isRefreshingProviderCatalog={isRefreshingProviderCatalog}
+            loadError={loadError}
+            mcpServerDraft={mcpServerDraft}
+            mcpServers={mcpServers}
+            message={message}
+            models={models}
+            providerDrafts={providerDrafts}
+            restoringArchivedSessionID={restoringArchivedSessionID}
+            savingMcpServerID={savingMcpServerID}
+            savingProviderID={savingProviderID}
+            testingProviderID={testingProviderID}
+            selectionDraft={selectionDraft}
+            onBrandThemeChange={handleBrandThemeChange}
+            onColorModeChange={handleColorModeChange}
+            onActivityRailVisibilityChange={handleActivityRailVisibilityChange}
+            onAppearancePaletteReset={handleAppearancePaletteReset}
+            onAppearanceTokenChange={handleAppearanceTokenChange}
+            onAppearanceTokenReset={handleAppearanceTokenReset}
+            onAssistantTraceVisibilityChange={handleAssistantTraceVisibilityChange}
+            onAgentDebugTraceChange={handleAgentDebugTraceChange}
+            onDebugLineColorsChange={handleDebugLineColorsChange}
+            onDebugUiRegionsChange={handleDebugUiRegionsChange}
+            onClose={closeSettings}
+            onDismissMessage={dismissMessage}
+            onDeleteArchivedSession={deleteArchivedSession}
+            onDeleteMcpServer={deleteMcpServer}
+            onDeleteProvider={deleteProvider}
+            onDeleteProviderAuthSession={deleteProviderAuthSession}
+            onMcpServerDraftChange={setMcpServerDraftValue}
+            onMcpToolPolicyChange={setMcpToolPolicy}
+            onMcpServerSelect={selectMcpServer}
+            onProviderAuthMethodChange={setProviderAuthMethod}
+            onProviderDraftChange={setProviderDraftValue}
+            onRefreshProviderCatalog={refreshProviderCatalog}
+            onLoadArchivedSessions={loadArchivedSessions}
+            onRestoreArchivedSession={restoreArchivedSession}
+            onSaveMcpServer={saveMcpServer}
+            onSaveProviderApiKey={saveProviderApiKey}
+            onSaveProvider={saveProvider}
+            onSelectionChange={setSelectionDraftValue}
+            onTestProviderConnection={testProviderConnection}
+            onStartProviderAuthFlow={startProviderAuthFlow}
+            onStartNewMcpServer={startNewMcpServer}
+            onCancelProviderAuthFlow={cancelProviderAuthFlow}
+          />
+        ) : null}
         </main>
       </div>
     </WorkspaceStoreProvider>

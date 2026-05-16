@@ -380,6 +380,18 @@ export interface WorkbenchMoveSessionPanelResult {
   state: WorkbenchSharedState
 }
 
+export interface WorkbenchFocusSessionPanelInput {
+  panelID: string
+}
+
+export interface WorkbenchFocusSessionPanelResult {
+  ok: boolean
+  panelID: string
+  reason?: string
+  state: WorkbenchSharedState
+  windowID?: string
+}
+
 export interface WorkbenchPanelDragInput {
   dragID: string
   panelID: string
@@ -401,7 +413,7 @@ export interface WorkbenchPanelMoveEvent {
 }
 
 export interface WorkbenchStateEvent {
-  reason: "snapshot" | "detached" | "dock" | "restored" | "move"
+  reason: "snapshot" | "detached" | "dock" | "restored" | "move" | "focus"
   panelID?: string
   move?: WorkbenchPanelMoveEvent
   state: WorkbenchSharedState
@@ -641,6 +653,10 @@ export interface DesktopIpcContract {
   "desktop:workbench-move-session-panel": {
     input: WorkbenchMoveSessionPanelInput
     output: WorkbenchMoveSessionPanelResult
+  }
+  "desktop:workbench-focus-session-panel": {
+    input: WorkbenchFocusSessionPanelInput
+    output: WorkbenchFocusSessionPanelResult
   }
   "desktop:workbench-begin-panel-drag": {
     input: WorkbenchPanelDragInput
@@ -1276,6 +1292,7 @@ export interface DesktopApiMethods {
   markWorkbenchPanelMounted(input: DesktopIpcInput<"desktop:workbench-panel-mounted">): Promise<DesktopIpcOutput<"desktop:workbench-panel-mounted">>
   dockSessionPanel(input: DesktopIpcInput<"desktop:workbench-dock-session-panel">): Promise<DesktopIpcOutput<"desktop:workbench-dock-session-panel">>
   moveWorkbenchPanel(input: DesktopIpcInput<"desktop:workbench-move-session-panel">): Promise<DesktopIpcOutput<"desktop:workbench-move-session-panel">>
+  focusWorkbenchPanel(input: DesktopIpcInput<"desktop:workbench-focus-session-panel">): Promise<DesktopIpcOutput<"desktop:workbench-focus-session-panel">>
   beginWorkbenchPanelDrag(input: DesktopIpcInput<"desktop:workbench-begin-panel-drag">): Promise<DesktopIpcOutput<"desktop:workbench-begin-panel-drag">>
   endWorkbenchPanelDrag(input: DesktopIpcInput<"desktop:workbench-end-panel-drag">): Promise<DesktopIpcOutput<"desktop:workbench-end-panel-drag">>
   getWorkbenchPanelDrag(input: DesktopIpcInput<"desktop:workbench-get-panel-drag">): Promise<DesktopIpcOutput<"desktop:workbench-get-panel-drag">>

@@ -147,6 +147,8 @@ try {
       invokeDesktop("desktop:workbench-dock-session-panel", input) as Promise<WorkbenchSharedState>,
     moveWorkbenchPanel: (input: DesktopIpcInput<"desktop:workbench-move-session-panel">) =>
       invokeDesktop("desktop:workbench-move-session-panel", input) as Promise<DesktopIpcOutput<"desktop:workbench-move-session-panel">>,
+    focusWorkbenchPanel: (input: DesktopIpcInput<"desktop:workbench-focus-session-panel">) =>
+      invokeDesktop("desktop:workbench-focus-session-panel", input) as Promise<DesktopIpcOutput<"desktop:workbench-focus-session-panel">>,
     beginWorkbenchPanelDrag: (input: DesktopIpcInput<"desktop:workbench-begin-panel-drag">) =>
       invokeDesktop("desktop:workbench-begin-panel-drag", input) as Promise<DesktopIpcOutput<"desktop:workbench-begin-panel-drag">>,
     endWorkbenchPanelDrag: (input: DesktopIpcInput<"desktop:workbench-end-panel-drag">) =>

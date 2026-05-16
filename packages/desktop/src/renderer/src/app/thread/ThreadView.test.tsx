@@ -2187,7 +2187,7 @@ describe("ThreadView auto-scroll", () => {
     }
   })
 
-  it("restores independent scroll positions by tab key instead of forcing the bottom", () => {
+  it("defaults session tab switches to the latest content", () => {
     const snapshots: Record<string, ThreadScrollSnapshot> = {}
     const readScrollSnapshot = vi.fn((key: string) => snapshots[key] ?? null)
     const saveScrollSnapshot = vi.fn((key: string, snapshot: ThreadScrollSnapshot) => {
@@ -2207,6 +2207,8 @@ describe("ThreadView auto-scroll", () => {
       scrollHeight: 1000,
       scrollTop: 420,
     })
+    fireEvent.pointerDown(threadColumn)
+    fireEvent.scroll(threadColumn)
 
     rerender(
       <ThreadView
@@ -2217,7 +2219,6 @@ describe("ThreadView auto-scroll", () => {
       />,
     )
 
-    expect(snapshots["session:session-1"]?.scrollTop).toBe(420)
     expect(threadColumn.scrollTop).toBe(1000)
 
     setScrollMetrics(threadColumn, {
@@ -2225,6 +2226,8 @@ describe("ThreadView auto-scroll", () => {
       scrollHeight: 1600,
       scrollTop: 900,
     })
+    fireEvent.pointerDown(threadColumn)
+    fireEvent.scroll(threadColumn)
     Object.defineProperty(threadColumn, "scrollHeight", {
       configurable: true,
       value: 1000,
@@ -2240,10 +2243,46 @@ describe("ThreadView auto-scroll", () => {
     )
 
     expect(snapshots["session:session-2"]?.scrollTop).toBe(900)
-    expect(threadColumn.scrollTop).toBe(420)
+    expect(threadColumn.scrollTop).toBe(1000)
   })
 
-  it("restores against a saved turn anchor when message heights shift", () => {
+  it("defaults to the latest content when a saved tab snapshot is at the top", () => {
+    const snapshots: Record<string, ThreadScrollSnapshot> = {
+      "session:session-2": {
+        scrollTop: 0,
+        scrollHeight: 1200,
+        clientHeight: 400,
+        pinnedToBottom: false,
+        updatedAt: 1,
+      },
+    }
+    const { rerender, props, threadColumn } = renderThread(
+      [assistantTurn("assistant-1", "Working")],
+      {
+        scrollStateKey: "session:session-1",
+        readScrollSnapshot: (key) => snapshots[key] ?? null,
+        saveScrollSnapshot: vi.fn(),
+      },
+    )
+    setScrollMetrics(threadColumn, {
+      clientHeight: 400,
+      scrollHeight: 1200,
+      scrollTop: 0,
+    })
+
+    rerender(
+      <ThreadView
+        {...props}
+        activeSession={sessionB}
+        activeTurns={[assistantTurn("assistant-2", "Other session")]}
+        scrollStateKey="session:session-2"
+      />,
+    )
+
+    expect(threadColumn.scrollTop).toBe(1200)
+  })
+
+  it("ignores saved history anchors when switching session tabs", () => {
     const snapshots: Record<string, ThreadScrollSnapshot> = {
       "session:session-1": {
         scrollTop: 10,
@@ -2294,7 +2333,7 @@ describe("ThreadView auto-scroll", () => {
         />,
       )
 
-      expect(threadColumn.scrollTop).toBe(150)
+      expect(threadColumn.scrollTop).toBe(1000)
     } finally {
       rectSpy.mockRestore()
     }

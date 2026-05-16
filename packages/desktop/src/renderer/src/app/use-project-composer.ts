@@ -194,6 +194,35 @@ function resolveComposerReasoningEffortLabel(
 }
 
 const projectComposerModelItemsCache = new Map<string, ProviderModel[]>()
+const shouldUseComposerResourceCache = import.meta.env.MODE !== "test"
+
+interface ComposerModelsPayload {
+  effectiveModel?: ProviderModel | null
+  items: ProviderModel[]
+  selection?: {
+    model?: string
+    small_model?: string
+  }
+}
+
+interface ComposerSkillsPayload {
+  selectedSkillIDs: string[]
+  skills: SkillInfo[]
+}
+
+interface ComposerMcpPayload {
+  selectedMcpServerIDs: string[]
+  servers: McpServerSummary[]
+}
+
+const projectComposerModelsPayloadCache = new Map<string, ComposerModelsPayload>()
+const sessionComposerModelsPayloadCache = new Map<string, ComposerModelsPayload>()
+const projectComposerSkillsPayloadCache = new Map<string, ComposerSkillsPayload>()
+const projectComposerMcpPayloadCache = new Map<string, ComposerMcpPayload>()
+
+function getComposerResourceCacheKey(scopeID: string, refreshToken: number) {
+  return `${refreshToken}\u0000${scopeID}`
+}
 
 export interface UseProjectComposerOptions {
   attachmentPaths: string[]
@@ -241,16 +270,27 @@ export function useProjectComposer({
   currentModelScopeRef.current = { projectID, sessionID }
 
   useLayoutEffect(() => {
+    const projectCacheKey = projectID ? getComposerResourceCacheKey(projectID, refreshToken) : null
+    const sessionCacheKey = sessionID ? getComposerResourceCacheKey(sessionID, refreshToken) : null
+    const cachedPayload = shouldUseComposerResourceCache
+      ? (sessionCacheKey ? sessionComposerModelsPayloadCache.get(sessionCacheKey) : null) ??
+        (projectCacheKey ? projectComposerModelsPayloadCache.get(projectCacheKey) : null)
+      : null
+
     modelsRequestRef.current += 1
     modelSelectionRequestRef.current += 1
     pendingModelSelectionRef.current = null
 
-    setModels(projectID ? projectComposerModelItemsCache.get(projectID) ?? [] : [])
-    setDefaultModel(null)
-    setSelectedModel(sessionID ? sessionSelectionModel : null)
-    setSmallModel(sessionID ? sessionSelectionSmallModel : null)
-    setIsLoadingModels(Boolean(projectID && (window.desktop?.getProjectModels || (sessionID && window.desktop?.getSessionModels))))
-  }, [projectID, sessionID])
+    setModels(cachedPayload?.items ?? (projectID ? projectComposerModelItemsCache.get(projectID) ?? [] : []))
+    setDefaultModel(cachedPayload?.effectiveModel ?? null)
+    setSelectedModel(sessionID ? sessionSelectionModel : cachedPayload?.selection?.model ?? null)
+    setSmallModel(sessionID ? sessionSelectionSmallModel : cachedPayload?.selection?.small_model ?? null)
+    setIsLoadingModels(Boolean(
+      !cachedPayload &&
+      projectID &&
+      (window.desktop?.getProjectModels || (sessionID && window.desktop?.getSessionModels)),
+    ))
+  }, [projectID, refreshToken, sessionID])
 
   useEffect(() => {
     if (!sessionID) return
@@ -266,6 +306,26 @@ export function useProjectComposer({
       setDefaultModel(null)
       setSelectedModel(null)
       setSmallModel(null)
+      setIsLoadingModels(false)
+      return
+    }
+
+    const projectCacheKey = getComposerResourceCacheKey(projectID, refreshToken)
+    const sessionCacheKey = sessionID ? getComposerResourceCacheKey(sessionID, refreshToken) : null
+    const cachedPayload = shouldUseComposerResourceCache
+      ? (sessionCacheKey ? sessionComposerModelsPayloadCache.get(sessionCacheKey) : null) ??
+        projectComposerModelsPayloadCache.get(projectCacheKey)
+      : null
+    if (cachedPayload) {
+      setModels(cachedPayload.items)
+      setDefaultModel(cachedPayload.effectiveModel ?? null)
+      if (sessionID) {
+        setSelectedModel(sessionSelectionModel)
+        setSmallModel(sessionSelectionSmallModel)
+      } else {
+        setSelectedModel(cachedPayload.selection?.model ?? null)
+        setSmallModel(cachedPayload.selection?.small_model ?? null)
+      }
       setIsLoadingModels(false)
       return
     }
@@ -292,6 +352,16 @@ export function useProjectComposer({
         if (currentModelScopeRef.current.projectID !== requestProjectID) return
         if (currentModelScopeRef.current.sessionID !== requestSessionID) return
         projectComposerModelItemsCache.set(requestProjectID, payload.items)
+        if (shouldUseComposerResourceCache) {
+          const payloadCacheKey = getComposerResourceCacheKey(
+            isSessionModelRequest && requestSessionID ? requestSessionID : requestProjectID,
+            refreshToken,
+          )
+          const cache = isSessionModelRequest && requestSessionID
+            ? sessionComposerModelsPayloadCache
+            : projectComposerModelsPayloadCache
+          cache.set(payloadCacheKey, payload)
+        }
         setModels(payload.items)
         setDefaultModel(payload.effectiveModel ?? null)
         if (isSessionModelRequest || !requestSessionID || !getSessionModels) {
@@ -330,6 +400,15 @@ export function useProjectComposer({
       return
     }
 
+    const cacheKey = getComposerResourceCacheKey(projectID, refreshToken)
+    const cachedPayload = shouldUseComposerResourceCache ? projectComposerSkillsPayloadCache.get(cacheKey) : null
+    if (cachedPayload) {
+      setSkills(cachedPayload.skills)
+      setSelectedSkillIDs(cachedPayload.selectedSkillIDs)
+      setIsLoadingSkills(false)
+      return
+    }
+
     const requestID = ++skillsRequestRef.current
     setIsLoadingSkills(true)
 
@@ -337,8 +416,15 @@ export function useProjectComposer({
       .then(([nextSkills, selection]) => {
         if (skillsRequestRef.current !== requestID) return
         const availableSkillIDs = new Set(nextSkills.map((skill) => skill.id))
+        const nextSelectedSkillIDs = selection.skillIDs.filter((skillID) => availableSkillIDs.has(skillID))
+        if (shouldUseComposerResourceCache) {
+          projectComposerSkillsPayloadCache.set(cacheKey, {
+            skills: nextSkills,
+            selectedSkillIDs: nextSelectedSkillIDs,
+          })
+        }
         setSkills(nextSkills)
-        setSelectedSkillIDs(selection.skillIDs.filter((skillID) => availableSkillIDs.has(skillID)))
+        setSelectedSkillIDs(nextSelectedSkillIDs)
       })
       .catch((error) => {
         if (skillsRequestRef.current !== requestID) return
@@ -363,6 +449,15 @@ export function useProjectComposer({
       return
     }
 
+    const cacheKey = getComposerResourceCacheKey(projectID, refreshToken)
+    const cachedPayload = shouldUseComposerResourceCache ? projectComposerMcpPayloadCache.get(cacheKey) : null
+    if (cachedPayload) {
+      setMcpServers(cachedPayload.servers)
+      setSelectedMcpServerIDs(cachedPayload.selectedMcpServerIDs)
+      setIsLoadingMcp(false)
+      return
+    }
+
     const requestID = ++mcpRequestRef.current
     setIsLoadingMcp(true)
 
@@ -370,8 +465,15 @@ export function useProjectComposer({
       .then(([servers, selection]) => {
         if (mcpRequestRef.current !== requestID) return
         const availableServerIDs = new Set(servers.map((server) => server.id))
+        const nextSelectedMcpServerIDs = selection.serverIDs.filter((serverID) => availableServerIDs.has(serverID))
+        if (shouldUseComposerResourceCache) {
+          projectComposerMcpPayloadCache.set(cacheKey, {
+            servers,
+            selectedMcpServerIDs: nextSelectedMcpServerIDs,
+          })
+        }
         setMcpServers(servers)
-        setSelectedMcpServerIDs(selection.serverIDs.filter((serverID) => availableServerIDs.has(serverID)))
+        setSelectedMcpServerIDs(nextSelectedMcpServerIDs)
       })
       .catch((error) => {
         if (mcpRequestRef.current !== requestID) return
@@ -520,7 +622,14 @@ export function useProjectComposer({
       if (skillSelectionRequestRef.current !== requestID) return
 
       const availableSkillIDs = new Set(skills.map((skill) => skill.id))
-      setSelectedSkillIDs(result.skillIDs.filter((skillID) => availableSkillIDs.has(skillID)))
+      const nextSelectedSkillIDs = result.skillIDs.filter((skillID) => availableSkillIDs.has(skillID))
+      if (shouldUseComposerResourceCache) {
+        projectComposerSkillsPayloadCache.set(getComposerResourceCacheKey(projectID, refreshToken), {
+          skills,
+          selectedSkillIDs: nextSelectedSkillIDs,
+        })
+      }
+      setSelectedSkillIDs(nextSelectedSkillIDs)
     } catch (error) {
       if (skillSelectionRequestRef.current !== requestID) return
       console.error("[desktop] updateProjectComposerSkillSelection failed:", error)
@@ -548,7 +657,14 @@ export function useProjectComposer({
       if (mcpSelectionRequestRef.current !== requestID) return
 
       const availableServerIDs = new Set(mcpServers.map((server) => server.id))
-      setSelectedMcpServerIDs(result.serverIDs.filter((serverID) => availableServerIDs.has(serverID)))
+      const nextSelectedMcpServerIDs = result.serverIDs.filter((serverID) => availableServerIDs.has(serverID))
+      if (shouldUseComposerResourceCache) {
+        projectComposerMcpPayloadCache.set(getComposerResourceCacheKey(projectID, refreshToken), {
+          servers: mcpServers,
+          selectedMcpServerIDs: nextSelectedMcpServerIDs,
+        })
+      }
+      setSelectedMcpServerIDs(nextSelectedMcpServerIDs)
     } catch (error) {
       if (mcpSelectionRequestRef.current !== requestID) return
       console.error("[desktop] updateProjectComposerMcpSelection failed:", error)

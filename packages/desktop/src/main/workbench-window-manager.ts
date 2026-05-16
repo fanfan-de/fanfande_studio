@@ -3,6 +3,8 @@ import type {
   WorkbenchDetachSessionPanelInput,
   WorkbenchDetachSessionPanelResult,
   WorkbenchDockSessionPanelInput,
+  WorkbenchFocusSessionPanelInput,
+  WorkbenchFocusSessionPanelResult,
   WorkbenchMoveSessionPanelInput,
   WorkbenchMoveSessionPanelResult,
   WorkbenchPanelMountedInput,
@@ -410,6 +412,52 @@ export class WorkbenchWindowManager {
     return {
       ok: true,
       state: this.getSharedState(),
+    }
+  }
+
+  focusSessionPanel(input: WorkbenchFocusSessionPanelInput): WorkbenchFocusSessionPanelResult {
+    const state = this.getSharedState()
+    const ownership = this.ownership.get(input.panelID)
+    if (!ownership) {
+      return {
+        ok: false,
+        panelID: input.panelID,
+        reason: "missing-panel",
+        state,
+      }
+    }
+
+    const windowRecord = this.windows.get(ownership.ownerWindowID)
+    if (!windowRecord || windowRecord.browserWindow.isDestroyed()) {
+      return {
+        ok: false,
+        panelID: input.panelID,
+        reason: "missing-window",
+        state,
+        windowID: ownership.ownerWindowID,
+      }
+    }
+
+    if (windowRecord.browserWindow.isMinimized()) {
+      windowRecord.browserWindow.restore()
+    }
+    if (!windowRecord.browserWindow.isVisible()) {
+      windowRecord.browserWindow.show()
+    }
+    windowRecord.browserWindow.focus()
+
+    const nextState = this.getSharedState()
+    this.broadcast({
+      reason: "focus",
+      panelID: input.panelID,
+      state: nextState,
+    })
+
+    return {
+      ok: true,
+      panelID: input.panelID,
+      state: nextState,
+      windowID: windowRecord.id,
     }
   }
 

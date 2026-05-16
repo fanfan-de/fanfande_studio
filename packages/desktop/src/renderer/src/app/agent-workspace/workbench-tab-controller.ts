@@ -1,6 +1,7 @@
 import { useEffect, type MutableRefObject } from "react"
 import type { SerializedDockview } from "dockview-react"
 import type { CreateSessionTab, WorkspaceGroup } from "../types"
+import type { WorkbenchSharedState } from "../../../../shared/desktop-ipc-contract"
 import {
   createInitialDockviewLayout,
   createDockviewActiveStateWithFocusedGroup,
@@ -55,7 +56,9 @@ interface UseWorkbenchTabControllerOptions {
   setDockviewLayout: StateSetter<SerializedDockview | null>
   setExpandedFolderIDs: StateSetter<string[]>
   setSelectedFolderID: StateSetter<string | null>
+  surfaceID: string
   workbenchDockviewCommandsRef: MutableRefObject<WorkbenchDockviewCommands | null>
+  workbenchState: WorkbenchSharedState | null
   workspaces: WorkspaceGroup[]
 }
 
@@ -77,7 +80,9 @@ export function useWorkbenchTabController({
   setDockviewLayout,
   setExpandedFolderIDs,
   setSelectedFolderID,
+  surfaceID,
   workbenchDockviewCommandsRef,
+  workbenchState,
   workspaces,
 }: UseWorkbenchTabControllerOptions) {
   function resolveTargetGroupID(preferredPaneID?: string | null) {
@@ -113,6 +118,28 @@ export function useWorkbenchTabController({
     })
   }
 
+  function getRemotePanelOwnership(reference: WorkbenchDockPanelReference) {
+    if (reference.kind !== "session") return null
+
+    const panelID = getWorkbenchDockPanelId(reference)
+    const ownership = workbenchState?.ownership.find((item) => item.panelID === panelID) ?? null
+    const ownerSurfaceID = ownership?.ownerSurfaceID ?? ownership?.ownerWindowID ?? null
+    if (!ownership || !ownerSurfaceID || ownerSurfaceID === surfaceID) return null
+    return ownership
+  }
+
+  function openLocalPanel(reference: WorkbenchDockPanelReference, paneID: string | null | undefined, title: string) {
+    const targetGroupID = resolveTargetGroupID(paneID)
+    const didOpen = Boolean(workbenchDockviewCommandsRef.current?.openPanel(reference, {
+      targetGroupID,
+      title,
+    }))
+    if (didOpen) {
+      setActiveDockviewReference(reference, targetGroupID)
+    }
+    return didOpen
+  }
+
   function openOrFocusPanel(reference: WorkbenchDockPanelReference, paneID?: string | null) {
     const commands = workbenchDockviewCommandsRef.current
     const title = resolvePanelTitle(reference)
@@ -121,15 +148,21 @@ export function useWorkbenchTabController({
       return true
     }
 
-    const targetGroupID = resolveTargetGroupID(paneID)
-    const didOpen = Boolean(commands?.openPanel(reference, {
-      targetGroupID,
-      title,
-    }))
-    if (didOpen) {
-      setActiveDockviewReference(reference, targetGroupID)
+    const remoteOwnership = getRemotePanelOwnership(reference)
+    const focusRemotePanel = window.desktop?.focusWorkbenchPanel
+    if (remoteOwnership && focusRemotePanel) {
+      const panelID = getWorkbenchDockPanelId(reference)
+      void focusRemotePanel({ panelID }).then((result) => {
+        if (result.ok) return
+        openLocalPanel(reference, paneID, title)
+      }).catch((error) => {
+        console.error("[desktop] Failed to focus remote workbench panel:", error)
+        openLocalPanel(reference, paneID, title)
+      })
+      return true
     }
-    return didOpen
+
+    return openLocalPanel(reference, paneID, title)
   }
 
   function setFocusedPaneID(nextPaneID: string | null) {

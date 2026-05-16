@@ -31,7 +31,7 @@ import {
   type WorkbenchDockviewActiveState,
   type WorkbenchDockviewGroupLocation,
 } from "../workbench/dockview-state"
-import { findSession, findWorkspaceByID, isSideChatSession, isWorkspaceAvailable } from "../workspace"
+import { findWorkspaceByID, isSideChatSession, isWorkspaceAvailable } from "../workspace"
 import type { WorkbenchPaneRenderSnapshot } from "../../../../shared/desktop-ipc-contract"
 import {
   DEFAULT_SESSION_DIFF_STATE,
@@ -48,6 +48,8 @@ const EMPTY_PERMISSION_REQUESTS: PermissionRequest[] = []
 const EMPTY_SIDE_CHAT_COUNTS_BY_ANCHOR_MESSAGE_ID: Record<string, number> = {}
 const EMPTY_SIDE_CHAT_SESSIONS_BY_ANCHOR_MESSAGE_ID: Record<string, SessionSummary[]> = {}
 const EMPTY_TURNS: Turn[] = []
+const sideChatSessionsByParentCache = new WeakMap<WorkspaceGroup[], Map<string, Record<string, SessionSummary[]>>>()
+const runningSessionIDsCache = new WeakMap<Record<string, Turn[]>, WeakMap<Record<string, boolean>, string[]>>()
 
 function getSideChatCreatedAt(session: SessionSummary) {
   return session.created ?? session.updated
@@ -64,6 +66,10 @@ function compareSideChatSessions(left: SessionSummary, right: SessionSummary) {
 }
 
 export function collectSideChatSessionsByAnchorMessageID(workspaces: WorkspaceGroup[], parentSessionID: string) {
+  const cachedByParentSessionID = sideChatSessionsByParentCache.get(workspaces)
+  const cached = cachedByParentSessionID?.get(parentSessionID)
+  if (cached) return cached
+
   const sessionsByAnchorMessageID: Record<string, SessionSummary[]> = {}
 
   for (const workspace of workspaces) {
@@ -78,6 +84,12 @@ export function collectSideChatSessionsByAnchorMessageID(workspaces: WorkspaceGr
   for (const [anchorMessageID, sessions] of Object.entries(sessionsByAnchorMessageID)) {
     sessionsByAnchorMessageID[anchorMessageID] = [...sessions].sort(compareSideChatSessions)
   }
+
+  const nextCachedByParentSessionID = cachedByParentSessionID ?? new Map<string, Record<string, SessionSummary[]>>()
+  if (!cachedByParentSessionID) {
+    sideChatSessionsByParentCache.set(workspaces, nextCachedByParentSessionID)
+  }
+  nextCachedByParentSessionID.set(parentSessionID, sessionsByAnchorMessageID)
 
   return sessionsByAnchorMessageID
 }
@@ -191,6 +203,50 @@ export function resolveCreateSessionWorkspaceID(
   return workspaces.find((workspace) => isWorkspaceAvailable(workspace))?.id ?? workspaces[0]?.id ?? null
 }
 
+interface WorkspaceLookupIndex {
+  sessionSelectionByID: Map<string, { workspace: WorkspaceGroup; session: SessionSummary }>
+  workspaceByID: Map<string, WorkspaceGroup>
+}
+
+const workspaceLookupIndexCache = new WeakMap<WorkspaceGroup[], WorkspaceLookupIndex>()
+
+function getWorkspaceLookupIndex(workspaces: WorkspaceGroup[]) {
+  const cached = workspaceLookupIndexCache.get(workspaces)
+  if (cached) return cached
+
+  const sessionSelectionByID = new Map<string, { workspace: WorkspaceGroup; session: SessionSummary }>()
+  const workspaceByID = new Map<string, WorkspaceGroup>()
+  for (const workspace of workspaces) {
+    workspaceByID.set(workspace.id, workspace)
+    for (const session of workspace.sessions) {
+      sessionSelectionByID.set(session.id, { workspace, session })
+    }
+  }
+
+  const index = { sessionSelectionByID, workspaceByID }
+  workspaceLookupIndexCache.set(workspaces, index)
+  return index
+}
+
+function findIndexedSession(workspaces: WorkspaceGroup[], sessionID: string | null | undefined) {
+  if (!sessionID) {
+    return {
+      workspace: null,
+      session: null,
+    }
+  }
+
+  return getWorkspaceLookupIndex(workspaces).sessionSelectionByID.get(sessionID) ?? {
+    workspace: null,
+    session: null,
+  }
+}
+
+function findIndexedWorkspaceByID(workspaces: WorkspaceGroup[], workspaceID: string | null | undefined) {
+  if (!workspaceID) return null
+  return getWorkspaceLookupIndex(workspaces).workspaceByID.get(workspaceID) ?? null
+}
+
 function getSessionIDFromTabKey(tabKey: string) {
   return tabKey.startsWith("session:") ? tabKey.slice("session:".length) : null
 }
@@ -199,6 +255,10 @@ function getRunningSessionIDs(
   conversations: Record<string, Turn[]>,
   isSendingByTabKey: Record<string, boolean>,
 ) {
+  const cachedBySendingState = runningSessionIDsCache.get(conversations)
+  const cached = cachedBySendingState?.get(isSendingByTabKey)
+  if (cached) return cached
+
   const sessionIDs = new Set<string>()
 
   for (const [tabKey, isSending] of Object.entries(isSendingByTabKey)) {
@@ -212,7 +272,13 @@ function getRunningSessionIDs(
     }
   }
 
-  return Array.from(sessionIDs)
+  const nextSessionIDs = Array.from(sessionIDs)
+  const nextCachedBySendingState = cachedBySendingState ?? new WeakMap<Record<string, boolean>, string[]>()
+  if (!cachedBySendingState) {
+    runningSessionIDsCache.set(conversations, nextCachedBySendingState)
+  }
+  nextCachedBySendingState.set(isSendingByTabKey, nextSessionIDs)
+  return nextSessionIDs
 }
 
 function hasStreamingAssistantTurn(turns: Turn[]) {
@@ -303,7 +369,7 @@ export function buildWorkbenchPaneTabs(
 
   for (const tab of tabs) {
     if (tab.kind === "session") {
-      const { session } = findSession(input.workspaces, tab.sessionID)
+      const { session } = findIndexedSession(input.workspaces, tab.sessionID)
       if (!session) continue
       paneTabs.push({
         key: getWorkbenchTabKey(tab),
@@ -317,7 +383,7 @@ export function buildWorkbenchPaneTabs(
     }
 
     const createTab = input.createSessionTabs.find((item) => item.id === tab.createSessionTabID)
-    const workspace = findWorkspaceByID(input.workspaces, createTab?.workspaceID ?? null)
+    const workspace = findIndexedWorkspaceByID(input.workspaces, createTab?.workspaceID ?? null)
     paneTabs.push({
       key: getWorkbenchTabKey(tab),
       kind: tab.kind,
@@ -329,10 +395,123 @@ export function buildWorkbenchPaneTabs(
   return paneTabs
 }
 
+function workbenchPaneTabIsEqual(left: WorkbenchPaneTab | null, right: WorkbenchPaneTab | null) {
+  if (Object.is(left, right)) return true
+  if (!left || !right || left.kind !== right.kind || left.key !== right.key || left.title !== right.title) {
+    return false
+  }
+  if (left.kind === "session" && right.kind === "session") {
+    return left.sessionID === right.sessionID && left.sessionKind === right.sessionKind && left.workflow === right.workflow
+  }
+  return left.kind === "create-session" && right.kind === "create-session" && left.createSessionTabID === right.createSessionTabID
+}
+
+export interface WorkbenchTabHeaderState {
+  activeTabKey: string | null
+  createSessionTabIndex: number
+  id: string
+  tab: WorkbenchPaneTab | null
+}
+
+export function buildWorkbenchTabHeaderState(
+  input: Pick<BuildWorkspaceDerivedStateInput, "createSessionTabs" | "dockviewActiveState" | "dockviewLayout" | "workspaces">,
+  groupID: string,
+  panelID: string,
+) {
+  const groups = getDockviewGroupsInOrder(input.dockviewLayout)
+  const group =
+    groups.find((candidate) => candidate.id === groupID) ??
+    groups.find((candidate) => candidate.panelIDs.includes(panelID))
+  if (!group) return null
+
+  const normalizedDockviewActiveState = normalizeDockviewActiveState(input.dockviewLayout, input.dockviewActiveState)
+  const currentActiveTab = getActivePanelForGroupFromState(input.dockviewLayout, normalizedDockviewActiveState, group.id)
+  const activeTabKey = currentActiveTab ? getWorkbenchTabKey(currentActiveTab) : null
+  const tabs = buildWorkbenchPaneTabs(input, group.views)
+  const tab = tabs.find((candidate) => candidate.key === panelID) ?? null
+  const createSessionTabIndex = tab?.kind === "create-session"
+    ? tabs.slice(0, tabs.findIndex((candidate) => candidate.key === tab.key) + 1).filter((candidate) => candidate.kind === "create-session").length - 1
+    : -1
+
+  return {
+    activeTabKey,
+    createSessionTabIndex,
+    id: group.id,
+    tab,
+  }
+}
+
+export function workbenchTabHeaderStatesAreEqual(
+  left: WorkbenchTabHeaderState | null,
+  right: WorkbenchTabHeaderState | null,
+) {
+  if (Object.is(left, right)) return true
+  if (!left || !right) return false
+  return (
+    left.activeTabKey === right.activeTabKey &&
+    left.createSessionTabIndex === right.createSessionTabIndex &&
+    left.id === right.id &&
+    workbenchPaneTabIsEqual(left.tab, right.tab)
+  )
+}
+
+export interface WorkbenchHeaderState {
+  id: string
+  location: WorkbenchDockviewGroupLocation
+  tabs: WorkbenchPaneTab[]
+  workspaceID: string | null
+}
+
+export function buildWorkbenchHeaderState(
+  input: Pick<BuildWorkspaceDerivedStateInput, "createSessionTabs" | "dockviewActiveState" | "dockviewLayout" | "workspaces">,
+  groupID: string,
+  panelID?: string,
+) {
+  const groups = getDockviewGroupsInOrder(input.dockviewLayout)
+  const group =
+    groups.find((candidate) => candidate.id === groupID) ??
+    groups.find((candidate) =>
+      panelID ? candidate.panelIDs.includes(panelID) : false,
+    )
+  if (!group) return null
+
+  const normalizedDockviewActiveState = normalizeDockviewActiveState(input.dockviewLayout, input.dockviewActiveState)
+  const currentActiveTab = getActivePanelForGroupFromState(input.dockviewLayout, normalizedDockviewActiveState, group.id)
+  const activeCreateSessionTab =
+    currentActiveTab?.kind === "create-session"
+      ? input.createSessionTabs.find((tab) => tab.id === currentActiveTab.createSessionTabID) ?? null
+      : null
+  const activeSessionSelection = currentActiveTab?.kind === "session"
+    ? findIndexedSession(input.workspaces, currentActiveTab.sessionID)
+    : { workspace: null, session: null }
+
+  return {
+    id: group.id,
+    location: group.location,
+    tabs: buildWorkbenchPaneTabs(input, group.views),
+    workspaceID: activeSessionSelection.workspace?.id ?? activeCreateSessionTab?.workspaceID ?? null,
+  }
+}
+
+export function workbenchHeaderStatesAreEqual(
+  left: WorkbenchHeaderState | null,
+  right: WorkbenchHeaderState | null,
+) {
+  if (Object.is(left, right)) return true
+  if (!left || !right) return false
+  return (
+    left.id === right.id &&
+    left.location === right.location &&
+    left.workspaceID === right.workspaceID &&
+    workbenchPaneTabsAreEqual(left.tabs, right.tabs)
+  )
+}
+
 export function buildWorkbenchSurfaceState(
   input: BuildWorkspaceDerivedStateInput,
   surface: WorkbenchSurfaceStateInput,
 ) {
+  const shouldBuildVisibleThreadState = surface.isActivePanel
   const currentActiveTab = surface.reference
   const currentActiveTabKey = currentActiveTab ? getWorkbenchTabKey(currentActiveTab) : null
   const currentActiveSessionID = currentActiveTab?.kind === "session" ? currentActiveTab.sessionID : null
@@ -340,22 +519,22 @@ export function buildWorkbenchSurfaceState(
     currentActiveTab?.kind === "create-session"
       ? input.createSessionTabs.find((tab) => tab.id === currentActiveTab.createSessionTabID) ?? null
       : null
-  const currentSessionSelection = findSession(input.workspaces, currentActiveSessionID)
+  const currentSessionSelection = findIndexedSession(input.workspaces, currentActiveSessionID)
   const currentWorkspace =
     currentSessionSelection.workspace ??
-    findWorkspaceByID(input.workspaces, currentActiveCreateSessionTab?.workspaceID ?? null) ??
+    findIndexedWorkspaceByID(input.workspaces, currentActiveCreateSessionTab?.workspaceID ?? null) ??
     null
   const currentSession = currentSessionSelection.session
   const currentSessionIsSideChat = isSideChatSession(currentSession)
   const paneSideChatSessionsByAnchorMessageID =
-    currentSession && !currentSessionIsSideChat
+    shouldBuildVisibleThreadState && currentSession && !currentSessionIsSideChat
       ? collectSideChatSessionsByAnchorMessageID(input.workspaces, currentSession.id)
       : EMPTY_SIDE_CHAT_SESSIONS_BY_ANCHOR_MESSAGE_ID
   const paneActiveSideChatSessionID =
-    currentSession && !currentSessionIsSideChat
+    shouldBuildVisibleThreadState && currentSession && !currentSessionIsSideChat
       ? input.activeSideChatSessionIDByParentSessionID[currentSession.id] ?? null
       : null
-  const paneActiveSideChatSelection = findSession(input.workspaces, paneActiveSideChatSessionID)
+  const paneActiveSideChatSelection = findIndexedSession(input.workspaces, paneActiveSideChatSessionID)
   const paneActiveSideChatSession =
     currentSession &&
     !currentSessionIsSideChat &&
@@ -368,14 +547,16 @@ export function buildWorkbenchSurfaceState(
   const paneActiveSideChatIsCancelling = paneActiveSideChatSession
     ? Boolean(input.cancellingSessionIDs[paneActiveSideChatSession.id])
     : false
-  const paneActiveSideChatIsInterruptible = isSessionInterruptible({
-    cancellingSessionIDs: input.cancellingSessionIDs,
-    conversations: input.conversations,
-    isSendingByTabKey: input.isSendingByTabKey,
-    sessionID: paneActiveSideChatSession?.id,
-    sessionRuntimeDebugBySession: input.sessionRuntimeDebugBySession,
-    tabKey: paneActiveSideChatTabKey,
-  })
+  const paneActiveSideChatIsInterruptible =
+    shouldBuildVisibleThreadState &&
+    isSessionInterruptible({
+      cancellingSessionIDs: input.cancellingSessionIDs,
+      conversations: input.conversations,
+      isSendingByTabKey: input.isSendingByTabKey,
+      sessionID: paneActiveSideChatSession?.id,
+      sessionRuntimeDebugBySession: input.sessionRuntimeDebugBySession,
+      tabKey: paneActiveSideChatTabKey,
+    })
 
   return {
     id: surface.id,
@@ -436,14 +617,16 @@ export function buildWorkbenchSurfaceState(
         : false,
     isSending: currentActiveTabKey ? Boolean(input.isSendingByTabKey[currentActiveTabKey]) : false,
     isCancelling: currentSession ? Boolean(input.cancellingSessionIDs[currentSession.id]) : false,
-    isInterruptible: isSessionInterruptible({
-      cancellingSessionIDs: input.cancellingSessionIDs,
-      conversations: input.conversations,
-      isSendingByTabKey: input.isSendingByTabKey,
-      sessionID: currentSession?.id,
-      sessionRuntimeDebugBySession: input.sessionRuntimeDebugBySession,
-      tabKey: currentActiveTabKey,
-    }),
+    isInterruptible:
+      shouldBuildVisibleThreadState &&
+      isSessionInterruptible({
+        cancellingSessionIDs: input.cancellingSessionIDs,
+        conversations: input.conversations,
+        isSendingByTabKey: input.isSendingByTabKey,
+        sessionID: currentSession?.id,
+        sessionRuntimeDebugBySession: input.sessionRuntimeDebugBySession,
+        tabKey: currentActiveTabKey,
+      }),
     pendingPermissionRequests: currentActiveSessionID ? input.pendingPermissionRequestsBySession[currentActiveSessionID] ?? EMPTY_PERMISSION_REQUESTS : EMPTY_PERMISSION_REQUESTS,
     projectID:
       input.isInitialWorkspaceLoadPending && currentWorkspace && input.seedWorkspaceIDs.has(currentWorkspace.id)
@@ -462,6 +645,55 @@ export function buildWorkbenchSurfaceState(
 }
 
 export type WorkbenchPaneState = ReturnType<typeof buildWorkbenchSurfaceState>
+
+function createInactiveWorkbenchSurfaceState(surface: Pick<WorkbenchSurfaceStateInput, "id" | "isActivePanel" | "isFocused" | "location">): WorkbenchPaneState {
+  return {
+    id: surface.id,
+    location: surface.location,
+    isActivePanel: surface.isActivePanel,
+    isFocused: surface.isFocused,
+    activeTabKey: null,
+    activeSession: null,
+    activeSessionContextUsage: null,
+    activeSessionDiff: null,
+    activeSessionDiffState: DEFAULT_SESSION_DIFF_STATE,
+    activeSessionRuntimeDebug: null,
+    activeSessionRuntimeDebugState: DEFAULT_SESSION_RUNTIME_DEBUG_STATE,
+    activeSideChatAttachments: EMPTY_COMPOSER_ATTACHMENTS,
+    activeSideChatDraftState: EMPTY_COMPOSER_DRAFT_STATE,
+    activeSideChatIsSending: false,
+    activeSideChatIsCancelling: false,
+    activeSideChatIsInterruptible: false,
+    activeSideChatPendingPermissionRequests: EMPTY_PERMISSION_REQUESTS,
+    activeSideChatSession: null,
+    activeSideChatTabKey: null,
+    activeSideChatTurns: EMPTY_TURNS,
+    activeSessionDirectory: null,
+    activeSessionSelectedDiffFile: null,
+    activeTurns: EMPTY_TURNS,
+    composerAttachments: EMPTY_COMPOSER_ATTACHMENTS,
+    composerProjectID: null,
+    contextLabel: "Session",
+    contextTitle: "Session",
+    createSessionTabID: null,
+    createSessionInitialWorkflowMode: "execution",
+    createSessionWorkspaceID: null,
+    draftState: EMPTY_COMPOSER_DRAFT_STATE,
+    isCreatingSession: false,
+    isSending: false,
+    isCancelling: false,
+    isInterruptible: false,
+    pendingPermissionRequests: EMPTY_PERMISSION_REQUESTS,
+    projectID: null,
+    size: 1,
+    sessionID: null,
+    sideChatCountsByAnchorMessageID: EMPTY_SIDE_CHAT_COUNTS_BY_ANCHOR_MESSAGE_ID,
+    sideChatSessionsByAnchorMessageID: EMPTY_SIDE_CHAT_SESSIONS_BY_ANCHOR_MESSAGE_ID,
+    tabKey: null,
+    tabs: [],
+    workspace: null,
+  }
+}
 
 function shallowEqualRecords<T>(
   left: Record<string, T>,
@@ -488,16 +720,7 @@ function areStringArraysEqual(left: string[], right: string[]) {
 function workbenchPaneTabsAreEqual(left: WorkbenchPaneTab[], right: WorkbenchPaneTab[]) {
   if (Object.is(left, right)) return true
   if (left.length !== right.length) return false
-  return left.every((leftTab, index) => {
-    const rightTab = right[index]
-    if (!rightTab || leftTab.kind !== rightTab.kind || leftTab.key !== rightTab.key || leftTab.title !== rightTab.title) {
-      return false
-    }
-    if (leftTab.kind === "session" && rightTab.kind === "session") {
-      return leftTab.sessionID === rightTab.sessionID && leftTab.sessionKind === rightTab.sessionKind && leftTab.workflow === rightTab.workflow
-    }
-    return leftTab.kind === "create-session" && rightTab.kind === "create-session" && leftTab.createSessionTabID === rightTab.createSessionTabID
-  })
+  return left.every((leftTab, index) => workbenchPaneTabIsEqual(leftTab, right[index] ?? null))
 }
 
 export function workbenchPaneStatesAreEqual(left: WorkbenchPaneState | null, right: WorkbenchPaneState | null) {
@@ -618,6 +841,51 @@ export function buildWorkbenchPanelState(
     id: group.id,
     location: group.location,
     isActivePanel: Boolean(activeReference && getWorkbenchTabKey(activeReference) === getWorkbenchTabKey(resolvedReference)),
+    isFocused: group.id === focusedPaneID,
+    reference: resolvedReference,
+    tabs: buildWorkbenchPaneTabs(input, group.views),
+  })
+}
+
+export function buildWorkbenchPanelRenderState(
+  input: BuildWorkspaceDerivedStateInput,
+  groupID: string,
+  panelID: string | undefined,
+  reference: WorkbenchTabReference | null | undefined,
+) {
+  const orderedDockviewGroups = getDockviewGroupsInOrder(input.dockviewLayout)
+  const group =
+    orderedDockviewGroups.find((candidate) => candidate.id === groupID) ??
+    orderedDockviewGroups.find((candidate) =>
+      panelID ? candidate.views.some((view) => getWorkbenchDockPanelId(view) === panelID) : false,
+    )
+  if (!group) return null
+
+  const normalizedDockviewActiveState = normalizeDockviewActiveState(input.dockviewLayout, input.dockviewActiveState)
+  const focusedPaneID = getFocusedDockviewGroupIDFromState(input.dockviewLayout, normalizedDockviewActiveState)
+  const activeReference = getActivePanelForGroupFromState(input.dockviewLayout, normalizedDockviewActiveState, group.id)
+  const resolvedReference =
+    reference ??
+    (panelID ? group.views.find((view) => getWorkbenchDockPanelId(view) === panelID) ?? null : null)
+  if (!resolvedReference) return null
+
+  const resolvedPanelID = getWorkbenchTabKey(resolvedReference)
+  const activePanelID =
+    activeReference ? getWorkbenchTabKey(activeReference) : group.activePanelID ?? (group.panelIDs.length === 1 ? group.panelIDs[0] ?? null : null)
+  const isActivePanel = activePanelID ? activePanelID === resolvedPanelID : true
+  if (!isActivePanel) {
+    return createInactiveWorkbenchSurfaceState({
+      id: group.id,
+      location: group.location,
+      isActivePanel: false,
+      isFocused: group.id === focusedPaneID,
+    })
+  }
+
+  return buildWorkbenchSurfaceState(input, {
+    id: group.id,
+    location: group.location,
+    isActivePanel,
     isFocused: group.id === focusedPaneID,
     reference: resolvedReference,
     tabs: buildWorkbenchPaneTabs(input, group.views),
@@ -786,7 +1054,7 @@ export function buildWorkspaceDerivedState({
   const activeCreateSessionTabID = activeTab?.kind === "create-session" ? activeTab.createSessionTabID : null
   const openCanvasSessionIDs = getOpenSessionIDs(dockviewLayout)
   const visibleCanvasSessionIDs = getVisibleSessionIDsFromState(dockviewLayout, normalizedDockviewActiveState)
-  const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
+  const { workspace: activeWorkspace, session: activeSession } = findIndexedSession(workspaces, activeSessionID)
   const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
   const focusedPaneCreateSessionTab =
     activeTab?.kind === "create-session"
@@ -794,17 +1062,17 @@ export function buildWorkspaceDerivedState({
       : null
   const activeTabWorkspaceID =
     activeTab?.kind === "session"
-      ? findSession(workspaces, activeTab.sessionID).workspace?.id ?? null
+      ? findIndexedSession(workspaces, activeTab.sessionID).workspace?.id ?? null
       : createSessionTabs.find((item) => item.id === activeTab?.createSessionTabID)?.workspaceID ?? null
   const selectedWorkspace =
-    findWorkspaceByID(workspaces, selectedFolderID) ??
-    findWorkspaceByID(workspaces, activeTabWorkspaceID) ??
+    findIndexedWorkspaceByID(workspaces, selectedFolderID) ??
+    findIndexedWorkspaceByID(workspaces, activeTabWorkspaceID) ??
     activeWorkspace ??
     workspaces[0] ??
     null
   const focusedPaneWorkspace =
     activeWorkspace ??
-    findWorkspaceByID(workspaces, focusedPaneCreateSessionTab?.workspaceID ?? null) ??
+    findIndexedWorkspaceByID(workspaces, focusedPaneCreateSessionTab?.workspaceID ?? null) ??
     null
   const activePreviewScopeID = resolvePreviewScopeID(selectedWorkspace?.id ?? null)
   const activeWorkspaceFileScopeDirectory = focusedPaneWorkspace?.directory ?? selectedWorkspace?.directory ?? null
@@ -848,7 +1116,7 @@ export function buildWorkspaceDerivedState({
     activeSession && !activeSessionIsSideChat
       ? activeSideChatSessionIDByParentSessionID[activeSession.id] ?? null
       : null
-  const activeSideChatSelection = findSession(workspaces, activeSideChatSessionID)
+  const activeSideChatSelection = findIndexedSession(workspaces, activeSideChatSessionID)
   const activeSideChatSession =
     activeSession &&
     !activeSessionIsSideChat &&
@@ -902,7 +1170,7 @@ export function buildWorkspaceDerivedState({
   const canvasSessionTabs = focusedPane
     ? focusedPane.views.flatMap((reference) => {
         if (reference.kind !== "session") return []
-        const { session } = findSession(workspaces, reference.sessionID)
+        const { session } = findIndexedSession(workspaces, reference.sessionID)
         return session ? [session] : []
       })
     : []

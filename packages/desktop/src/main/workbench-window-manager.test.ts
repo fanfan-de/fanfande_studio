@@ -24,10 +24,13 @@ const electronMock = vi.hoisted(() => {
   }
 
   class FakeBrowserWindow extends EventEmitter {
+    focused = false
     loadedUrl: string | null = null
     shown = false
+    visible = true
     private readonly webContentsRef: FakeWebContents
     private destroyed = false
+    private minimized = false
 
     constructor() {
       super()
@@ -51,10 +54,23 @@ const electronMock = vi.hoisted(() => {
 
     show() {
       this.shown = true
+      this.visible = true
     }
 
     focus() {
-      // no-op
+      this.focused = true
+    }
+
+    isMinimized() {
+      return this.minimized
+    }
+
+    isVisible() {
+      return this.visible
+    }
+
+    restore() {
+      this.minimized = false
     }
 
     close() {
@@ -229,6 +245,74 @@ describe("WorkbenchWindowManager", () => {
     }))
     expect(moveResult.state.surfaces?.find((surface) => surface.surfaceID === "main")?.ownedPanelIDs).toContain("session:session-1")
     expect(popoutWindow.isDestroyed()).toBe(true)
+  })
+
+  it("focuses an existing popout panel without moving ownership", async () => {
+    electronMock.createdWindows.length = 0
+    const mainWindow = new electronMock.BrowserWindow()
+    const manager = new WorkbenchWindowManager({
+      rendererEntryUrl: "http://127.0.0.1:5173/index.html",
+      createPopoutWindowOptions: () => ({
+        width: 1000,
+        height: 700,
+      }),
+    })
+    manager.registerMainWindow(mainWindow as any)
+
+    manager.publishStateSnapshot({
+      version: 0,
+      windows: [],
+      surfaces: [
+        {
+          surfaceID: "main",
+          kind: "main",
+          windowID: "main",
+          ownedPanelIDs: ["session:session-1"],
+        },
+      ],
+      ownership: [],
+      panels: {
+        "session:session-1": {
+          panelID: "session:session-1",
+          reference: { kind: "session", sessionID: "session-1" },
+          title: "Session 1",
+        },
+      },
+    })
+
+    const pendingDetach = manager.detachSessionPanel({
+      panelID: "session:session-1",
+      sessionID: "session-1",
+      title: "Session 1",
+      lastMainGroupID: "group-1",
+    })
+    const popoutWindow = electronMock.createdWindows[1]
+    const popoutContext = manager.getWindowContext(popoutWindow.webContents as any)
+    manager.markPanelMounted({
+      panelID: "session:session-1",
+      windowID: popoutContext.windowID,
+    })
+    await pendingDetach
+
+    mainWindow.webContents.sent.length = 0
+    popoutWindow.webContents.sent.length = 0
+    popoutWindow.focused = false
+
+    const result = manager.focusSessionPanel({
+      panelID: "session:session-1",
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.windowID).toBe(popoutContext.windowID)
+    expect(popoutWindow.focused).toBe(true)
+    expect(result.state.ownership[0]).toEqual(expect.objectContaining({
+      ownerSurfaceID: popoutContext.surfaceID,
+      ownerWindowID: popoutContext.windowID,
+    }))
+    expect(popoutWindow.webContents.sent.at(-1)?.payload).toEqual(expect.objectContaining({
+      panelID: "session:session-1",
+      reason: "focus",
+    }))
   })
 
   it("keeps a popout window alive when moving one of multiple panels out", async () => {

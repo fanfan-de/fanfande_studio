@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react"
 import { useMemo, useRef, useState } from "react"
 import { describe, expect, it, vi } from "vitest"
 import type { SerializedDockview } from "dockview-react"
+import type { WorkbenchSharedState } from "../../../../shared/desktop-ipc-contract"
 import type { CreateSessionTab, SessionSummary, WorkspaceGroup } from "../types"
 import {
   createDockviewActiveStateFromLayout,
@@ -70,7 +71,7 @@ function createHarnessDockviewLayout(sessionID: string, createSessionTabID: stri
   return layout
 }
 
-function useWorkbenchHarness() {
+function useWorkbenchHarness(options: { surfaceID?: string; workbenchState?: WorkbenchSharedState | null } = {}) {
   const session = useMemo(() => createSession("session-1"), [])
   const secondarySession = useMemo(() => createSession("session-2"), [])
   const workspace = useMemo(() => createWorkspace("workspace-1", [session]), [session])
@@ -154,7 +155,9 @@ function useWorkbenchHarness() {
     setDockviewLayout,
     setExpandedFolderIDs,
     setSelectedFolderID,
+    surfaceID: options.surfaceID ?? "main",
     workbenchDockviewCommandsRef: commandsRef,
+    workbenchState: options.workbenchState ?? null,
     workspaces,
   })
 
@@ -220,6 +223,78 @@ describe("workbench tab controller", () => {
     )
     expect(result.current.selectedFolderID).toBe("workspace-2")
     expect(result.current.expandedFolderIDs).toContain("workspace-2")
+  })
+
+  it("focuses a remotely owned session instead of opening a duplicate panel", () => {
+    const remoteState: WorkbenchSharedState = {
+      version: 1,
+      windows: [
+        {
+          id: "main",
+          kind: "main",
+          ownedPanelIDs: ["session:session-1"],
+          surfaceID: "main",
+        },
+        {
+          id: "popout-1",
+          kind: "session-popout",
+          ownedPanelIDs: ["session:session-2"],
+          surfaceID: "popout-1",
+        },
+      ],
+      surfaces: [
+        {
+          surfaceID: "main",
+          kind: "main",
+          windowID: "main",
+          ownedPanelIDs: ["session:session-1"],
+        },
+        {
+          surfaceID: "popout-1",
+          kind: "session-popout",
+          windowID: "popout-1",
+          ownedPanelIDs: ["session:session-2"],
+        },
+      ],
+      ownership: [
+        {
+          panelID: "session:session-2",
+          ownerSurfaceID: "popout-1",
+          ownerWindowID: "popout-1",
+          reference: { kind: "session", sessionID: "session-2" },
+        },
+      ],
+      panels: {},
+    }
+    const previousDesktop = window.desktop
+    const focusWorkbenchPanel = vi.fn().mockResolvedValue({
+      ok: true,
+      panelID: "session:session-2",
+      state: remoteState,
+      windowID: "popout-1",
+    })
+    window.desktop = {
+      ...(previousDesktop ?? {}),
+      focusWorkbenchPanel,
+    } as typeof window.desktop
+
+    try {
+      const { result } = renderHook(() => useWorkbenchHarness({ workbenchState: remoteState }))
+
+      act(() => {
+        result.current.handleCanvasSessionTabSelect("session-2")
+      })
+
+      expect(focusWorkbenchPanel).toHaveBeenCalledWith({ panelID: "session:session-2" })
+      expect(result.current.commands.openPanel).not.toHaveBeenCalledWith(
+        createSessionWorkbenchTab("session-2"),
+        expect.anything(),
+      )
+      expect(result.current.selectedFolderID).toBe("workspace-2")
+      expect(result.current.expandedFolderIDs).toContain("workspace-2")
+    } finally {
+      window.desktop = previousDesktop
+    }
   })
 
   it("syncs business focus from Dockview active changes", () => {
