@@ -3,17 +3,20 @@ import type { SerializedDockview } from "dockview-react"
 import type { CreateSessionTab, WorkspaceGroup } from "../types"
 import {
   createInitialDockviewLayout,
+  createDockviewActiveStateWithFocusedGroup,
   findDockviewGroupForPanel,
-  getActiveDockviewPanelID,
-  getActiveDockviewPanelReference,
-  getActivePanelForGroup,
+  getActiveDockviewPanelIDFromState,
+  getActiveDockviewPanelReferenceFromState,
+  getActivePanelForGroupFromState,
   getDockviewPanelIDs,
-  getFocusedDockviewGroupID,
+  getFocusedDockviewGroupIDFromState,
   getWorkbenchDockPanelReference,
   getWorkbenchDockPanelId,
+  normalizeDockviewActiveState,
   normalizeDockviewLayout,
   type WorkbenchDockviewCommands,
   type WorkbenchDockviewActiveChange,
+  type WorkbenchDockviewActiveState,
   type WorkbenchDockPanelReference,
 } from "../workbench/dockview-state"
 import { findSession } from "../workspace"
@@ -39,6 +42,7 @@ interface UseWorkbenchTabControllerOptions {
   activeSessionID: string | null
   activeWorkspace: WorkspaceGroup | null
   createSessionTabs: CreateSessionTab[]
+  dockviewActiveState: WorkbenchDockviewActiveState
   dockviewLayout: SerializedDockview | null
   focusedPane: { id: string } | null
   focusedPaneID: string | null
@@ -47,6 +51,7 @@ interface UseWorkbenchTabControllerOptions {
   projectRowRefs: MutableRefObject<Record<string, HTMLButtonElement | null>>
   selectedFolderID: string | null
   setCreateSessionTabs: StateSetter<CreateSessionTab[]>
+  setDockviewActiveState: StateSetter<WorkbenchDockviewActiveState>
   setDockviewLayout: StateSetter<SerializedDockview | null>
   setExpandedFolderIDs: StateSetter<string[]>
   setSelectedFolderID: StateSetter<string | null>
@@ -59,6 +64,7 @@ export function useWorkbenchTabController({
   activeCreateSessionTabID,
   activeWorkspace,
   createSessionTabs,
+  dockviewActiveState,
   dockviewLayout,
   focusedPane,
   focusedPaneID,
@@ -67,6 +73,7 @@ export function useWorkbenchTabController({
   projectRowRefs,
   selectedFolderID,
   setCreateSessionTabs,
+  setDockviewActiveState,
   setDockviewLayout,
   setExpandedFolderIDs,
   setSelectedFolderID,
@@ -74,7 +81,7 @@ export function useWorkbenchTabController({
   workspaces,
 }: UseWorkbenchTabControllerOptions) {
   function resolveTargetGroupID(preferredPaneID?: string | null) {
-    return preferredPaneID ?? focusedPaneID ?? focusedPane?.id ?? getFocusedDockviewGroupID(dockviewLayout)
+    return preferredPaneID ?? focusedPaneID ?? focusedPane?.id ?? getFocusedDockviewGroupIDFromState(dockviewLayout, dockviewActiveState)
   }
 
   function resolvePanelTitle(reference: WorkbenchDockPanelReference) {
@@ -88,19 +95,49 @@ export function useWorkbenchTabController({
     )
   }
 
+  function setActiveDockviewReference(reference: WorkbenchDockPanelReference, preferredPaneID?: string | null) {
+    const panelID = getWorkbenchDockPanelId(reference)
+    const groupID =
+      findDockviewGroupForPanel(dockviewLayout, panelID)?.id ??
+      preferredPaneID ??
+      resolveTargetGroupID()
+    if (!groupID) return
+
+    const activeState = normalizeDockviewActiveState(dockviewLayout, dockviewActiveState)
+    setDockviewActiveState({
+      activeGroupID: groupID,
+      activePanelIDByGroupID: {
+        ...activeState.activePanelIDByGroupID,
+        [groupID]: panelID,
+      },
+    })
+  }
+
   function openOrFocusPanel(reference: WorkbenchDockPanelReference, paneID?: string | null) {
     const commands = workbenchDockviewCommandsRef.current
     const title = resolvePanelTitle(reference)
-    if (commands?.focusPanel(reference)) return true
+    if (commands?.focusPanel(reference)) {
+      setActiveDockviewReference(reference, paneID)
+      return true
+    }
 
-    return Boolean(commands?.openPanel(reference, {
-      targetGroupID: resolveTargetGroupID(paneID),
+    const targetGroupID = resolveTargetGroupID(paneID)
+    const didOpen = Boolean(commands?.openPanel(reference, {
+      targetGroupID,
       title,
     }))
+    if (didOpen) {
+      setActiveDockviewReference(reference, targetGroupID)
+    }
+    return didOpen
   }
 
   function setFocusedPaneID(nextPaneID: string | null) {
-    const activeReference = getActiveDockviewPanelReference(dockviewLayout, nextPaneID ?? undefined)
+    const activeReference = getActiveDockviewPanelReferenceFromState(
+      dockviewLayout,
+      dockviewActiveState,
+      nextPaneID ?? undefined,
+    )
     if (activeReference) {
       workbenchDockviewCommandsRef.current?.focusPanel(activeReference)
     }
@@ -143,10 +180,13 @@ export function useWorkbenchTabController({
     const reference = createCreateSessionWorkbenchTab(nextCreateSessionTab.id)
 
     setCreateSessionTabs((current) => [...current, nextCreateSessionTab])
-    workbenchDockviewCommandsRef.current?.openPanel(reference, {
+    const didOpen = workbenchDockviewCommandsRef.current?.openPanel(reference, {
       targetGroupID: paneID,
       title: getCreateSessionTitle(nextCreateSessionTab, workspaceScope),
     })
+    if (didOpen) {
+      setActiveDockviewReference(reference, paneID)
+    }
 
     setSelectedFolderID(nextWorkspaceID)
     setExpandedFolderIDs((current) => ensureExpandedFolderID(current, nextWorkspaceID))
@@ -156,7 +196,7 @@ export function useWorkbenchTabController({
     preferredWorkspaceID?: string | null,
     paneID: string | null = resolveTargetGroupID(),
   ) {
-    const activeReference = getActivePanelForGroup(dockviewLayout, paneID ?? null)
+    const activeReference = getActivePanelForGroupFromState(dockviewLayout, dockviewActiveState, paneID ?? null)
     const nextCreateSessionTabID =
       (activeReference?.kind === "create-session" ? activeReference.createSessionTabID : null) ??
       createSessionTabs[createSessionTabs.length - 1]?.id ??
@@ -239,7 +279,10 @@ export function useWorkbenchTabController({
   }
 
   function handleDockviewActiveChange(input: WorkbenchDockviewActiveChange) {
-    const nextActiveTab = input.reference ?? getActiveDockviewPanelReference(input.layout ?? dockviewLayout, input.groupID ?? undefined)
+    setDockviewActiveState(input.activeState)
+    const nextActiveTab =
+      input.reference ??
+      getActiveDockviewPanelReferenceFromState(dockviewLayout, input.activeState, input.groupID ?? undefined)
     const nextWorkspaceID = resolveWorkspaceIDForDockviewReference(nextActiveTab, workspaces, createSessionTabs)
 
     if (nextActiveTab?.kind === "session") {
@@ -251,11 +294,12 @@ export function useWorkbenchTabController({
   }
 
   function handlePaneFocus(paneID: string) {
+    const activeState = createDockviewActiveStateWithFocusedGroup(dockviewLayout, dockviewActiveState, paneID)
     handleDockviewActiveChange({
+      activeState,
       groupID: paneID,
-      layout: dockviewLayout,
-      panelID: getActiveDockviewPanelID(dockviewLayout, paneID),
-      reference: getActiveDockviewPanelReference(dockviewLayout, paneID),
+      panelID: getActiveDockviewPanelIDFromState(dockviewLayout, activeState, paneID),
+      reference: getActiveDockviewPanelReferenceFromState(dockviewLayout, activeState, paneID),
     })
   }
 

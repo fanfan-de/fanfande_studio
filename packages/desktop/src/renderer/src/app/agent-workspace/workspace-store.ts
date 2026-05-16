@@ -21,6 +21,12 @@ import type {
   WorkspaceGroup,
   WorkspacePreviewState,
 } from "../types"
+import {
+  createDockviewActiveStateFromLayout,
+  dockviewActiveStatesAreEqual,
+  normalizeDockviewActiveState,
+  type WorkbenchDockviewActiveState,
+} from "../workbench/dockview-state"
 import { sortWorkspaceGroups } from "../workspace"
 import {
   DEFAULT_WORKSPACE_FILE_REVIEW_STATE
@@ -69,6 +75,7 @@ function writePinnedWorkspaceIDs(workspaceIDs: string[]) {
 }
 
 export interface WorkbenchSliceState {
+  dockviewActiveState: WorkbenchDockviewActiveState
   dockviewLayout: SerializedDockview | null
 }
 
@@ -120,6 +127,7 @@ export interface ReviewSliceState {
 }
 
 export interface WorkbenchSliceActions {
+  setDockviewActiveState: (update: WorkspaceStateUpdater<WorkbenchDockviewActiveState>) => void
   setDockviewLayout: (update: WorkspaceStateUpdater<SerializedDockview | null>) => void
 }
 
@@ -218,6 +226,12 @@ function resolveStateUpdate<T>(current: T, update: WorkspaceStateUpdater<T>): T 
   return typeof update === "function" ? (update as (value: T) => T)(current) : update
 }
 
+function stringArraysAreEqual(left: string[], right: string[]) {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+  return left.every((item, index) => item === right[index])
+}
+
 export function createWorkspaceStore({
   hasFolderWorkspaceLoader,
   initialComposerTabKey,
@@ -227,9 +241,11 @@ export function createWorkspaceStore({
   const shouldUseSeedData = !hasFolderWorkspaceLoader
   const initialWorkspace = shouldUseSeedData ? initialSelection.workspace : null
   const initialPinnedWorkspaceIDs = readPinnedWorkspaceIDs()
+  const initialDockviewActiveState = createDockviewActiveStateFromLayout(initialDockviewLayout)
 
   return createStore<WorkspaceStore>((set) => ({
     workbench: {
+      dockviewActiveState: initialDockviewActiveState,
       dockviewLayout: initialDockviewLayout,
     },
     sessions: {
@@ -282,13 +298,34 @@ export function createWorkspaceStore({
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
     },
     workbenchActions: {
+      setDockviewActiveState: (update) =>
+        set((state) => {
+          const dockviewActiveState = resolveStateUpdate(state.workbench.dockviewActiveState, update)
+          if (dockviewActiveStatesAreEqual(state.workbench.dockviewActiveState, dockviewActiveState)) {
+            return state
+          }
+          return {
+            workbench: {
+              ...state.workbench,
+              dockviewActiveState,
+            },
+          }
+        }),
       setDockviewLayout: (update) =>
-        set((state) => ({
-          workbench: {
-            ...state.workbench,
-            dockviewLayout: resolveStateUpdate(state.workbench.dockviewLayout, update),
-          },
-        })),
+        set((state) => {
+          const dockviewLayout = resolveStateUpdate(state.workbench.dockviewLayout, update)
+          const dockviewActiveState = normalizeDockviewActiveState(
+            dockviewLayout,
+            state.workbench.dockviewActiveState,
+          )
+          return {
+            workbench: {
+              ...state.workbench,
+              dockviewActiveState,
+              dockviewLayout,
+            },
+          }
+        }),
     },
     sessionsActions: {
       setActiveSideChatSessionIDByParentSessionID: (update) =>
@@ -323,12 +360,18 @@ export function createWorkspaceStore({
           },
         })),
       setExpandedFolderIDs: (update) =>
-        set((state) => ({
-          sessions: {
-            ...state.sessions,
-            expandedFolderIDs: resolveStateUpdate(state.sessions.expandedFolderIDs, update),
-          },
-        })),
+        set((state) => {
+          const expandedFolderIDs = resolveStateUpdate(state.sessions.expandedFolderIDs, update)
+          if (stringArraysAreEqual(state.sessions.expandedFolderIDs, expandedFolderIDs)) {
+            return state
+          }
+          return {
+            sessions: {
+              ...state.sessions,
+              expandedFolderIDs,
+            },
+          }
+        }),
       setHoveredFolderID: (update) =>
         set((state) => ({
           sessions: {
@@ -378,12 +421,18 @@ export function createWorkspaceStore({
           },
         })),
       setSelectedFolderID: (update) =>
-        set((state) => ({
-          sessions: {
-            ...state.sessions,
-            selectedFolderID: resolveStateUpdate(state.sessions.selectedFolderID, update),
-          },
-        })),
+        set((state) => {
+          const selectedFolderID = resolveStateUpdate(state.sessions.selectedFolderID, update)
+          if (state.sessions.selectedFolderID === selectedFolderID) {
+            return state
+          }
+          return {
+            sessions: {
+              ...state.sessions,
+              selectedFolderID,
+            },
+          }
+        }),
       setSessionCanvasUnreadBySession: (update) =>
         set((state) => ({
           sessions: {

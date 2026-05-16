@@ -37,6 +37,7 @@ interface SessionCanvasTopMenuProps {
   activeSession: SessionSummary | null
   gitProjectID: string | null
   gitDirectory: string | null
+  showGitControls?: boolean
   isSavingToolPermissionMode: boolean
   mcpOptions: ComposerMcpOption[]
   pendingPermissionRequests: PermissionRequest[]
@@ -370,6 +371,7 @@ export function SessionCanvasTopMenu({
   activeSession,
   gitProjectID,
   gitDirectory,
+  showGitControls = true,
   isSavingToolPermissionMode,
   mcpOptions,
   selectedMcpServerIDs,
@@ -426,7 +428,7 @@ export function SessionCanvasTopMenu({
                 selectedSkillLabel={selectedSkillLabel}
                 onSkillToggle={onSkillToggle}
               />
-              <GitQuickMenuButton projectID={gitProjectID} directory={gitDirectory} />
+              {showGitControls ? <GitQuickMenuButton projectID={gitProjectID} directory={gitDirectory} /> : null}
             </>
           ) : null}
         </>

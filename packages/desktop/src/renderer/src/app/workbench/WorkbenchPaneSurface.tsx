@@ -161,6 +161,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
     sessionID: pane.sessionID,
   })
   const readOnlySideChat = isSideChatSession(pane.activeSession)
+  const showGitControls = pane.isActivePanel && !readOnlySideChat
   const pendingSteerTurns = getPendingStreamInsertionUserTurns(pane.activeTurns)
   const composerWorkflowBadge = !readOnlySideChat ? getSessionWorkflowBadge(pane.activeSession?.workflow) : null
   const createSessionWorkflowBadge =
@@ -186,6 +187,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
             activeSession={pane.activeSession}
             gitProjectID={pane.projectID}
             gitDirectory={pane.workspace?.directory ?? null}
+            showGitControls={showGitControls}
             isSavingToolPermissionMode={isSavingToolPermissionMode}
             mcpOptions={composer.mcpOptions}
             pendingPermissionRequests={pane.pendingPermissionRequests}
@@ -284,7 +286,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   contextWindow={composer.contextWindow}
                   gitDirectory={pane.workspace?.directory ?? null}
                   gitProjectID={pane.projectID}
-                  showGitControls
+                  showGitControls={pane.isActivePanel}
                   usage={null}
                 />
               </div>
@@ -501,7 +503,7 @@ export const WorkbenchPaneSurface = memo(function WorkbenchPaneSurface({
                   contextWindow={composer.contextWindow}
                   gitDirectory={pane.workspace?.directory ?? null}
                   gitProjectID={pane.projectID}
-                  showGitControls={!readOnlySideChat}
+                  showGitControls={showGitControls}
                   usage={pane.activeSessionContextUsage}
                 />
               </div>

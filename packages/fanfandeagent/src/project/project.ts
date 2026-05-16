@@ -373,7 +373,14 @@ async function readStoredGitProjectID(gitCommonDir?: string) {
 
 async function writeStoredGitProjectID(gitCommonDir: string | undefined, projectID: string) {
   if (!gitCommonDir || !isGeneratedProjectID(projectID)) return
-  await Bun.file(path.join(gitCommonDir, "opencode")).write(projectID).catch(() => undefined)
+  const markerPath = path.join(gitCommonDir, "opencode")
+  const cachedID = await Bun.file(markerPath)
+    .text()
+    .then((value) => value.trim())
+    .catch(() => undefined)
+  if (cachedID === projectID) return
+
+  await Bun.file(markerPath).write(projectID).catch(() => undefined)
 }
 
 async function resolveProjectIdentity(directory: string): Promise<ResolvedProjectIdentity> {

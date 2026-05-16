@@ -20,13 +20,15 @@ import type {
 } from "../types"
 import { createID } from "../utils"
 import {
-  getActiveDockviewPanelReference,
-  getActivePanelForGroup,
+  getActiveDockviewPanelReferenceFromState,
+  getActivePanelForGroupFromState,
   getDockviewGroupsInOrder,
-  getFocusedDockviewGroupID,
+  getFocusedDockviewGroupIDFromState,
   getOpenSessionIDs,
-  getVisibleSessionIDs,
+  getVisibleSessionIDsFromState,
   getWorkbenchDockPanelId,
+  normalizeDockviewActiveState,
+  type WorkbenchDockviewActiveState,
   type WorkbenchDockviewGroupLocation,
 } from "../workbench/dockview-state"
 import { findSession, findWorkspaceByID, isSideChatSession, isWorkspaceAvailable } from "../workspace"
@@ -267,6 +269,7 @@ interface BuildWorkspaceDerivedStateInput {
   sessionRuntimeDebugBySession: Record<string, SessionRuntimeDebugSnapshot>
   sessionRuntimeDebugStateBySession: Record<string, SessionRuntimeDebugState>
   seedWorkspaceIDs: Set<string>
+  dockviewActiveState: WorkbenchDockviewActiveState
   dockviewLayout: SerializedDockview | null
   workspaceFileCommentsByTarget: Record<string, WorkspaceFileComment[]>
   workspaceFileReviewState: WorkspaceFileReviewState
@@ -295,22 +298,24 @@ export function buildWorkspaceDerivedState({
   sessionRuntimeDebugBySession,
   sessionRuntimeDebugStateBySession,
   seedWorkspaceIDs,
+  dockviewActiveState,
   dockviewLayout,
   workspaceFileCommentsByTarget,
   workspaceFileReviewState,
   workspaces,
 }: BuildWorkspaceDerivedStateInput) {
   const orderedDockviewGroups = getDockviewGroupsInOrder(dockviewLayout)
-  const focusedPaneID = getFocusedDockviewGroupID(dockviewLayout)
+  const normalizedDockviewActiveState = normalizeDockviewActiveState(dockviewLayout, dockviewActiveState)
+  const focusedPaneID = getFocusedDockviewGroupIDFromState(dockviewLayout, normalizedDockviewActiveState)
   const focusedPane = focusedPaneID
     ? orderedDockviewGroups.find((group) => group.id === focusedPaneID) ?? null
     : null
-  const activeTab = getActiveDockviewPanelReference(dockviewLayout, focusedPaneID)
+  const activeTab = getActiveDockviewPanelReferenceFromState(dockviewLayout, normalizedDockviewActiveState, focusedPaneID)
   const activeTabKey = activeTab ? getWorkbenchTabKey(activeTab) : null
   const activeSessionID = activeTab?.kind === "session" ? activeTab.sessionID : null
   const activeCreateSessionTabID = activeTab?.kind === "create-session" ? activeTab.createSessionTabID : null
   const openCanvasSessionIDs = getOpenSessionIDs(dockviewLayout)
-  const visibleCanvasSessionIDs = getVisibleSessionIDs(dockviewLayout)
+  const visibleCanvasSessionIDs = getVisibleSessionIDsFromState(dockviewLayout, normalizedDockviewActiveState)
   const { workspace: activeWorkspace, session: activeSession } = findSession(workspaces, activeSessionID)
   const activeCreateSessionTab = createSessionTabs.find((tab) => tab.id === activeCreateSessionTabID) ?? null
   const focusedPaneCreateSessionTab =
@@ -590,7 +595,7 @@ export function buildWorkspaceDerivedState({
   }
 
   const workbenchPaneStates = orderedDockviewGroups.map((pane) => {
-    const currentActiveTab = getActivePanelForGroup(dockviewLayout, pane.id)
+    const currentActiveTab = getActivePanelForGroupFromState(dockviewLayout, normalizedDockviewActiveState, pane.id)
     return buildWorkbenchSurfaceState({
       id: pane.id,
       location: pane.location,
@@ -602,7 +607,7 @@ export function buildWorkspaceDerivedState({
   })
   const workbenchPanelStates = orderedDockviewGroups.flatMap((pane) => {
     const paneTabs = buildWorkbenchPaneTabs(pane.views)
-    const currentActiveTab = getActivePanelForGroup(dockviewLayout, pane.id)
+    const currentActiveTab = getActivePanelForGroupFromState(dockviewLayout, normalizedDockviewActiveState, pane.id)
     return pane.views.map((reference) => [
       getWorkbenchDockPanelId(reference),
       buildWorkbenchSurfaceState({

@@ -1,5 +1,9 @@
 export const navigationItems = [
   {
+    href: "/resume.html",
+    label: "简历",
+  },
+  {
     href: "/docs/",
     label: "文档",
   },

@@ -5,6 +5,8 @@ import { DEFAULT_ASSISTANT_TRACE_VISIBILITY } from "../types"
 import { WorkbenchShell, type WorkbenchShellProps } from "./WorkbenchShell"
 
 const dockviewMock = vi.hoisted(() => {
+  const activeGroupListeners = new Set<(group: any) => void>()
+  const activePanelListeners = new Set<(panel: any) => void>()
   const layoutListeners = new Set<() => void>()
   const willDragPanelListeners = new Set<(event: any) => void>()
   const groupElement = document.createElement("div")
@@ -24,11 +26,13 @@ const dockviewMock = vi.hoisted(() => {
     }),
   })
 
+  const group = {
+    activePanel: null as any,
+    element: groupElement,
+    id: "group-1",
+  }
   const panel = {
-    group: {
-      element: groupElement,
-      id: "group-1",
-    },
+    group,
     id: "session:session-1",
     title: "Session 1",
     api: {
@@ -55,13 +59,33 @@ const dockviewMock = vi.hoisted(() => {
       },
     },
   }
+  const secondaryPanel = {
+    group,
+    id: "session:session-2",
+    title: "Session 2",
+    api: panel.api,
+  }
+  group.activePanel = panel
 
   const api = {
+    activeGroup: group as any,
+    activePanel: panel as any,
     clear: vi.fn(),
     fromJSON: vi.fn(),
     getPanel: vi.fn(() => null),
-    onDidActiveGroupChange: vi.fn(() => ({ dispose: vi.fn() })),
-    onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
+    groups: [group] as any[],
+    onDidActiveGroupChange: vi.fn((listener: (group: any) => void) => {
+      activeGroupListeners.add(listener)
+      return {
+        dispose: () => activeGroupListeners.delete(listener),
+      }
+    }),
+    onDidActivePanelChange: vi.fn((listener: (panel: any) => void) => {
+      activePanelListeners.add(listener)
+      return {
+        dispose: () => activePanelListeners.delete(listener),
+      }
+    }),
     onDidLayoutChange: vi.fn((listener: () => void) => {
       layoutListeners.add(listener)
       return {
@@ -91,12 +115,27 @@ const dockviewMock = vi.hoisted(() => {
   const tabPointerDown = vi.fn()
 
   return {
+    activePanelListeners,
+    activateSecondaryPanel: () => {
+      group.activePanel = secondaryPanel
+      api.activeGroup = group as any
+      api.activePanel = secondaryPanel as any
+      for (const listener of activePanelListeners) {
+        listener(secondaryPanel)
+      }
+    },
     api,
+    group,
     headerPanelApi,
     panel,
     reset: () => {
+      activeGroupListeners.clear()
+      activePanelListeners.clear()
       layoutListeners.clear()
       willDragPanelListeners.clear()
+      group.activePanel = panel
+      api.activeGroup = group as any
+      api.activePanel = panel as any
       snapshot = {
         activeGroup: "group-1",
         grid: {
@@ -298,6 +337,41 @@ function createProps(overrides: Partial<WorkbenchShellProps> = {}): WorkbenchShe
 describe("WorkbenchShell detach", () => {
   afterEach(() => {
     vi.clearAllMocks()
+  })
+
+  it("emits active panel changes without serializing the Dockview layout", async () => {
+    dockviewMock.reset()
+    const onActiveDockviewChange = vi.fn()
+    const onLayoutChange = vi.fn()
+
+    render(<WorkbenchShell {...createProps({ onActiveDockviewChange, onLayoutChange })} />)
+
+    await waitFor(() => {
+      expect(dockviewMock.activePanelListeners.size).toBe(1)
+    })
+
+    onActiveDockviewChange.mockClear()
+    onLayoutChange.mockClear()
+    dockviewMock.api.toJSON.mockClear()
+
+    dockviewMock.activateSecondaryPanel()
+
+    expect(onActiveDockviewChange).toHaveBeenCalledWith({
+      activeState: {
+        activeGroupID: "group-1",
+        activePanelIDByGroupID: {
+          "group-1": "session:session-2",
+        },
+      },
+      groupID: "group-1",
+      panelID: "session:session-2",
+      reference: {
+        kind: "session",
+        sessionID: "session-2",
+      },
+    })
+    expect(onLayoutChange).not.toHaveBeenCalled()
+    expect(dockviewMock.api.toJSON).not.toHaveBeenCalled()
   })
 
   it("emits the closed panel layout after a successful drag detach", async () => {

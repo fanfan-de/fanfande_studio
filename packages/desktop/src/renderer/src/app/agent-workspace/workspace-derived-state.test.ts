@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { Orientation, type SerializedDockview } from "dockview-react"
 import type { SessionSummary, WorkbenchTabReference, WorkspaceGroup } from "../types"
 import {
+  createDockviewActiveStateFromLayout,
   getWorkbenchDockPanelId,
   WORKBENCH_DOCK_PANEL_COMPONENT,
   WORKBENCH_DOCK_TAB_COMPONENT,
@@ -114,6 +115,7 @@ function buildDerivedState(overrides: Partial<Parameters<typeof buildWorkspaceDe
     sessionRuntimeDebugBySession: {},
     sessionRuntimeDebugStateBySession: {},
     seedWorkspaceIDs: new Set(),
+    dockviewActiveState: createDockviewActiveStateFromLayout(null),
     dockviewLayout: null,
     workspaceFileCommentsByTarget: {},
     workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
@@ -211,6 +213,7 @@ describe("workspace derived state", () => {
       sessionRuntimeDebugBySession: {},
       sessionRuntimeDebugStateBySession: {},
       seedWorkspaceIDs: new Set(),
+      dockviewActiveState: createDockviewActiveStateFromLayout(layout),
       dockviewLayout: layout,
       workspaceFileCommentsByTarget: {},
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
@@ -385,6 +388,7 @@ describe("workspace derived state", () => {
       sessionRuntimeDebugBySession: {},
       sessionRuntimeDebugStateBySession: {},
       seedWorkspaceIDs: new Set(),
+      dockviewActiveState: createDockviewActiveStateFromLayout(null),
       dockviewLayout: null,
       workspaceFileCommentsByTarget: {},
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
@@ -428,6 +432,7 @@ describe("workspace derived state", () => {
       sessionRuntimeDebugBySession: {},
       sessionRuntimeDebugStateBySession: {},
       seedWorkspaceIDs: new Set(),
+      dockviewActiveState: createDockviewActiveStateFromLayout(layout),
       dockviewLayout: layout,
       workspaceFileCommentsByTarget: {},
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
@@ -474,6 +479,7 @@ describe("workspace derived state", () => {
       sessionRuntimeDebugBySession: {},
       sessionRuntimeDebugStateBySession: {},
       seedWorkspaceIDs: new Set(),
+      dockviewActiveState: createDockviewActiveStateFromLayout(layout),
       dockviewLayout: layout,
       workspaceFileCommentsByTarget: {},
       workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
@@ -482,6 +488,71 @@ describe("workspace derived state", () => {
 
     expect(derived.openCanvasSessionIDs).toEqual([sessionA.id, sessionB.id, sessionC.id])
     expect(derived.visibleCanvasSessionIDs).toEqual([sessionA.id, sessionC.id])
+  })
+
+  it("uses dockview active state for focused and visible sessions without changing open sessions", () => {
+    const sessionA = createSession("session-a", "A")
+    const sessionB = createSession("session-b", "B")
+    const sessionC = createSession("session-c", "C")
+    const workspace = createWorkspace("workspace-1", [sessionA, sessionB, sessionC])
+    const sessionATab = createSessionWorkbenchTab(sessionA.id)
+    const sessionBTab = createSessionWorkbenchTab(sessionB.id)
+    const sessionCTab = createSessionWorkbenchTab(sessionC.id)
+    const panelAID = getWorkbenchDockPanelId(sessionATab)
+    const panelBID = getWorkbenchDockPanelId(sessionBTab)
+    const panelCID = getWorkbenchDockPanelId(sessionCTab)
+    const layout = createDockviewLayoutFromPanes([
+      createWorkbenchPane([sessionATab, sessionBTab], "pane-1", 0),
+      createWorkbenchPane([sessionCTab], "pane-2", 0),
+    ])
+
+    const derived = buildDerivedState({
+      dockviewActiveState: {
+        activeGroupID: "pane-2",
+        activePanelIDByGroupID: {
+          "pane-1": panelBID,
+          "pane-2": panelCID,
+        },
+      },
+      dockviewLayout: layout,
+      selectedFolderID: workspace.id,
+      workspaces: [workspace],
+    })
+
+    expect(derived.activeSessionID).toBe(sessionC.id)
+    expect(derived.openCanvasSessionIDs).toEqual([sessionA.id, sessionB.id, sessionC.id])
+    expect(derived.visibleCanvasSessionIDs).toEqual([sessionB.id, sessionC.id])
+    expect(derived.workbenchPanelStateByID[panelAID]?.isActivePanel).toBe(false)
+    expect(derived.workbenchPanelStateByID[panelBID]?.isActivePanel).toBe(true)
+    expect(derived.workbenchPanelStateByID[panelCID]?.isActivePanel).toBe(true)
+  })
+
+  it("falls back to layout active views when dockview active state is stale", () => {
+    const sessionA = createSession("session-a", "A")
+    const sessionB = createSession("session-b", "B")
+    const workspace = createWorkspace("workspace-1", [sessionA, sessionB])
+    const sessionATab = createSessionWorkbenchTab(sessionA.id)
+    const sessionBTab = createSessionWorkbenchTab(sessionB.id)
+    const layout = createDockviewLayoutFromPanes([
+      createWorkbenchPane([sessionATab, sessionBTab], "pane-1", 1),
+    ])
+
+    const derived = buildDerivedState({
+      dockviewActiveState: {
+        activeGroupID: "missing-pane",
+        activePanelIDByGroupID: {
+          "pane-1": "missing-panel",
+          "missing-pane": "session:missing",
+        },
+      },
+      dockviewLayout: layout,
+      selectedFolderID: workspace.id,
+      workspaces: [workspace],
+    })
+
+    expect(derived.focusedPaneID).toBe("pane-1")
+    expect(derived.activeSessionID).toBe(sessionB.id)
+    expect(derived.visibleCanvasSessionIDs).toEqual([sessionB.id])
   })
 
   it("resolves create-session workspace using preferred, selected, active, then available fallback order", () => {

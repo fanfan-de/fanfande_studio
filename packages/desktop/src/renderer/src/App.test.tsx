@@ -3681,9 +3681,11 @@ describe("App", () => {
     await screen.findByRole("button", { name: "Atlas review" })
 
     const gitGetCapabilities = window.desktop!.gitGetCapabilities as ReturnType<typeof vi.fn>
+    const gitListBranches = window.desktop!.gitListBranches as ReturnType<typeof vi.fn>
     const openFolderWorkspace = window.desktop!.openFolderWorkspace as ReturnType<typeof vi.fn>
     const getSessionDiff = window.desktop!.getSessionDiff as ReturnType<typeof vi.fn>
     gitGetCapabilities.mockClear()
+    gitListBranches.mockClear()
     openFolderWorkspace.mockClear()
     getSessionDiff.mockClear()
 
@@ -3699,6 +3701,7 @@ describe("App", () => {
     })
     expect(openFolderWorkspace).not.toHaveBeenCalled()
     expect(getSessionDiff).not.toHaveBeenCalled()
+    expect(gitListBranches).not.toHaveBeenCalled()
   })
 
   it("reopens the workspace when watcher events indicate repository structure changed", async () => {

@@ -63,9 +63,14 @@ export interface WorkbenchDockviewGroupSnapshot {
   activeView: WorkbenchDockPanelReference | null
 }
 
+export interface WorkbenchDockviewActiveState {
+  activeGroupID: string | null
+  activePanelIDByGroupID: Record<string, string | null>
+}
+
 export interface WorkbenchDockviewActiveChange {
+  activeState: WorkbenchDockviewActiveState
   groupID: string | null
-  layout: SerializedDockview | null
   panelID: string | null
   reference: WorkbenchDockPanelReference | null
 }
@@ -244,6 +249,145 @@ export function getDockviewGroupsInOrder(layout: SerializedDockview | null): Wor
   return groups
 }
 
+function getLayoutActiveGroupID(
+  layout: SerializedDockview | null | undefined,
+  groups: WorkbenchDockviewGroupSnapshot[],
+): string | null {
+  if (layout?.activeGroup && groups.some((group) => group.id === layout.activeGroup)) {
+    return layout.activeGroup
+  }
+  return groups[0]?.id ?? null
+}
+
+function getValidActivePanelIDForGroup(
+  group: WorkbenchDockviewGroupSnapshot,
+  activeState: WorkbenchDockviewActiveState | null | undefined,
+): string | null {
+  const activePanelID = activeState?.activePanelIDByGroupID[group.id]
+  if (activePanelID && group.panelIDs.includes(activePanelID)) {
+    return activePanelID
+  }
+  if (group.activePanelID && group.panelIDs.includes(group.activePanelID)) {
+    return group.activePanelID
+  }
+  return group.panelIDs[0] ?? null
+}
+
+export function createDockviewActiveStateFromLayout(
+  layout: SerializedDockview | null | undefined,
+): WorkbenchDockviewActiveState {
+  return normalizeDockviewActiveState(layout, null)
+}
+
+export function dockviewActiveStatesAreEqual(
+  left: WorkbenchDockviewActiveState | null | undefined,
+  right: WorkbenchDockviewActiveState | null | undefined,
+): boolean {
+  const leftGroupID = left?.activeGroupID ?? null
+  const rightGroupID = right?.activeGroupID ?? null
+  if (leftGroupID !== rightGroupID) {
+    return false
+  }
+
+  const leftMap = left?.activePanelIDByGroupID ?? {}
+  const rightMap = right?.activePanelIDByGroupID ?? {}
+  const keys = new Set([...Object.keys(leftMap), ...Object.keys(rightMap)])
+  for (const key of keys) {
+    if ((leftMap[key] ?? null) !== (rightMap[key] ?? null)) {
+      return false
+    }
+  }
+  return true
+}
+
+export function normalizeDockviewActiveState(
+  layout: SerializedDockview | null | undefined,
+  activeState: WorkbenchDockviewActiveState | null | undefined,
+): WorkbenchDockviewActiveState {
+  const groups = getDockviewGroupsInOrder(layout ?? null)
+  if (!groups.length) {
+    return {
+      activeGroupID: null,
+      activePanelIDByGroupID: {},
+    }
+  }
+
+  const activePanelIDByGroupID: Record<string, string | null> = {}
+  for (const group of groups) {
+    activePanelIDByGroupID[group.id] = getValidActivePanelIDForGroup(group, activeState)
+  }
+
+  const requestedActiveGroupID = activeState?.activeGroupID ?? null
+  const activeGroupID =
+    requestedActiveGroupID && groups.some((group) => group.id === requestedActiveGroupID)
+      ? requestedActiveGroupID
+      : getLayoutActiveGroupID(layout, groups)
+
+  return {
+    activeGroupID,
+    activePanelIDByGroupID,
+  }
+}
+
+export function createDockviewActiveStateWithFocusedGroup(
+  layout: SerializedDockview | null | undefined,
+  activeState: WorkbenchDockviewActiveState | null | undefined,
+  groupID: string | null | undefined,
+): WorkbenchDockviewActiveState {
+  const normalizedActiveState = normalizeDockviewActiveState(layout, activeState)
+  if (!groupID || !(groupID in normalizedActiveState.activePanelIDByGroupID)) {
+    return normalizedActiveState
+  }
+  if (normalizedActiveState.activeGroupID === groupID) {
+    return normalizedActiveState
+  }
+  return {
+    ...normalizedActiveState,
+    activeGroupID: groupID,
+  }
+}
+
+export function getFocusedDockviewGroupIDFromState(
+  layout: SerializedDockview | null | undefined,
+  activeState: WorkbenchDockviewActiveState | null | undefined,
+): string | null {
+  return normalizeDockviewActiveState(layout, activeState).activeGroupID
+}
+
+export function getActiveDockviewPanelIDFromState(
+  layout: SerializedDockview | null | undefined,
+  activeState: WorkbenchDockviewActiveState | null | undefined,
+  groupID?: string | null,
+): string | null {
+  const normalizedActiveState = normalizeDockviewActiveState(layout, activeState)
+  const resolvedGroupID = groupID ?? normalizedActiveState.activeGroupID
+  return resolvedGroupID
+    ? normalizedActiveState.activePanelIDByGroupID[resolvedGroupID] ?? null
+    : null
+}
+
+export function getActivePanelForGroupFromState(
+  layout: SerializedDockview | null | undefined,
+  activeState: WorkbenchDockviewActiveState | null | undefined,
+  groupID: string | null | undefined,
+): WorkbenchDockPanelReference | null {
+  if (!groupID) {
+    return null
+  }
+  const panelID = getActiveDockviewPanelIDFromState(layout, activeState, groupID)
+  return panelID ? getWorkbenchDockPanelReference(panelID) : null
+}
+
+export function getActiveDockviewPanelReferenceFromState(
+  layout: SerializedDockview | null | undefined,
+  activeState: WorkbenchDockviewActiveState | null | undefined,
+  groupID?: string | null,
+): WorkbenchDockPanelReference | null {
+  const normalizedActiveState = normalizeDockviewActiveState(layout, activeState)
+  const resolvedGroupID = groupID ?? normalizedActiveState.activeGroupID
+  return getActivePanelForGroupFromState(layout, normalizedActiveState, resolvedGroupID)
+}
+
 export function findDockviewGroupForPanel(layout: SerializedDockview | null, panelID: string) {
   return getDockviewGroupsInOrder(layout).find((group) => group.panelIDs.includes(panelID)) ?? null
 }
@@ -302,6 +446,23 @@ export function getVisibleSessionIDs(layout: SerializedDockview | null) {
 
   for (const group of getDockviewGroupsInOrder(layout)) {
     const reference = getActivePanelForGroup(layout, group.id)
+    if (reference?.kind !== "session" || seen.has(reference.sessionID)) continue
+    seen.add(reference.sessionID)
+    sessionIDs.push(reference.sessionID)
+  }
+
+  return sessionIDs
+}
+
+export function getVisibleSessionIDsFromState(
+  layout: SerializedDockview | null | undefined,
+  activeState: WorkbenchDockviewActiveState | null | undefined,
+) {
+  const sessionIDs: string[] = []
+  const seen = new Set<string>()
+
+  for (const group of getDockviewGroupsInOrder(layout ?? null)) {
+    const reference = getActivePanelForGroupFromState(layout, activeState, group.id)
     if (reference?.kind !== "session" || seen.has(reference.sessionID)) continue
     seen.add(reference.sessionID)
     sessionIDs.push(reference.sessionID)

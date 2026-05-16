@@ -140,7 +140,9 @@ export function useAgentWorkspace({
     })
   }
   const workspaceStore = workspaceStoreRef.current
-  const { dockviewLayout, setDockviewLayout } = useWorkbenchState({ store: workspaceStore })
+  const { dockviewActiveState, dockviewLayout, setDockviewActiveState, setDockviewLayout } = useWorkbenchState({
+    store: workspaceStore,
+  })
   const handleWorkbenchDockviewCommandsReady = useCallback((commands: WorkbenchDockviewCommands | null) => {
     workbenchDockviewCommandsRef.current = commands
   }, [])
@@ -330,6 +332,7 @@ export function useAgentWorkspace({
     sessionRuntimeDebugBySession,
     sessionRuntimeDebugStateBySession,
     seedWorkspaceIDs,
+    dockviewActiveState,
     dockviewLayout,
     workspaceFileCommentsByTarget,
     workspaceFileReviewState,
@@ -522,6 +525,7 @@ export function useAgentWorkspace({
     activeSessionID,
     activeWorkspace,
     createSessionTabs,
+    dockviewActiveState,
     dockviewLayout,
     focusedPane,
     focusedPaneID,
@@ -530,6 +534,7 @@ export function useAgentWorkspace({
     projectRowRefs,
     selectedFolderID,
     setCreateSessionTabs,
+    setDockviewActiveState,
     setDockviewLayout,
     setExpandedFolderIDs,
     setSelectedFolderID,
@@ -919,6 +924,7 @@ export function useAgentWorkspace({
     setHoveredFolderID,
     handleWorkbenchDockviewCommandsReady,
     setDockviewLayout,
+    dockviewActiveState,
     visibleCanvasSessionIDs,
     dockviewLayout,
     workbenchPanelStateByID,

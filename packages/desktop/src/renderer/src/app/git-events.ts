@@ -2,6 +2,7 @@ export const GIT_STATE_CHANGED_EVENT = "desktop:git-state-changed"
 
 export interface GitStateChangedDetail {
   directory: string
+  branchesChanged?: boolean
 }
 
 function normalizePath(value: string | null) {

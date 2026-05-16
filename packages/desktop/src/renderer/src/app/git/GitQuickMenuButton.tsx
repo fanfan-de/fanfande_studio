@@ -313,6 +313,7 @@ export function GitQuickMenuButton({ projectID, directory }: { projectID: string
       })
       notifyGitStateChanged({
         directory,
+        branchesChanged: true,
       })
     } catch (error) {
       setStatus({

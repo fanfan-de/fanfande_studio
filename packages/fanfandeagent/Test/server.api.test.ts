@@ -1,7 +1,7 @@
  import { describe, expect, test } from "bun:test"
 import "./sqlite.cleanup.ts"
 import { $ } from "bun"
-import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, realpath, rm, stat, symlink, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createServerApp } from "#server/server.ts"
@@ -1517,6 +1517,46 @@ describe("server api", () => {
     expect(sessionsBody.success).toBe(true)
     expect(Array.isArray(sessionsBody.data)).toBe(true)
     expect(sessionsBody.data?.every((session) => session.projectID === createBody.data?.id)).toBe(true)
+  })
+
+  test("POST /api/projects should not rewrite a stable git project marker", async () => {
+    const app = createServerApp()
+    const directory = await createTempDirectory("fanfande-stable-project-marker-")
+
+    try {
+      await createGitRepo(directory, "stable-project-marker")
+
+      const firstResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const firstBody = (await firstResponse.json()) as ProjectResponseEnvelope
+
+      expect(firstResponse.status).toBe(201)
+      expect(firstBody.success).toBe(true)
+      expect(firstBody.data?.id).toMatch(/^prj_/)
+
+      const markerPath = join(directory, ".git", "opencode")
+      await utimes(markerPath, new Date("2001-01-01T00:00:00.000Z"), new Date("2001-01-01T00:00:00.000Z"))
+      const markerBefore = await stat(markerPath)
+
+      const secondResponse = await app.request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory }),
+      })
+      const secondBody = (await secondResponse.json()) as ProjectResponseEnvelope
+      const markerAfter = await stat(markerPath)
+
+      expect(secondResponse.status).toBe(201)
+      expect(secondBody.success).toBe(true)
+      expect(secondBody.data?.id).toBe(firstBody.data?.id)
+      expect((await readFile(markerPath, "utf8")).trim()).toBe(firstBody.data?.id)
+      expect(markerAfter.mtimeMs).toBe(markerBefore.mtimeMs)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   test("global and project provider routes should stay isolated", async () => {

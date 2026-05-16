@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { SerializedDockview } from "dockview-react"
 import type { CreateSessionTab, SessionSummary, WorkspaceGroup } from "../types"
 import {
+  createDockviewActiveStateFromLayout,
   createInitialDockviewLayout,
   getWorkbenchDockPanelId,
   WORKBENCH_DOCK_PANEL_COMPONENT,
@@ -87,6 +88,9 @@ function useWorkbenchHarness() {
   const [dockviewLayout, setDockviewLayout] = useState<SerializedDockview | null>(() =>
     createHarnessDockviewLayout(session.id, "create-1"),
   )
+  const [dockviewActiveState, setDockviewActiveState] = useState(() =>
+    createDockviewActiveStateFromLayout(dockviewLayout),
+  )
   const lastFocusedSessionIDRef = useRef<string | null>(null)
   const projectRowRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const commandsRef = useRef<WorkbenchDockviewCommands | null>(null)
@@ -124,6 +128,7 @@ function useWorkbenchHarness() {
     sessionRuntimeDebugBySession: {},
     sessionRuntimeDebugStateBySession: {},
     seedWorkspaceIDs: new Set(),
+    dockviewActiveState,
     dockviewLayout,
     workspaceFileCommentsByTarget: {},
     workspaceFileReviewState: DEFAULT_WORKSPACE_FILE_REVIEW_STATE,
@@ -136,6 +141,7 @@ function useWorkbenchHarness() {
     activeSessionID: derived.activeSessionID,
     activeWorkspace: derived.activeWorkspace,
     createSessionTabs,
+    dockviewActiveState,
     dockviewLayout,
     focusedPane: derived.focusedPane,
     focusedPaneID: derived.focusedPaneID,
@@ -144,6 +150,7 @@ function useWorkbenchHarness() {
     projectRowRefs,
     selectedFolderID,
     setCreateSessionTabs,
+    setDockviewActiveState,
     setDockviewLayout,
     setExpandedFolderIDs,
     setSelectedFolderID,
@@ -155,6 +162,7 @@ function useWorkbenchHarness() {
     ...controller,
     commands: commandsRef.current,
     createSessionTabs,
+    dockviewActiveState,
     dockviewLayout,
     expandedFolderIDs,
     lastFocusedSessionID: lastFocusedSessionIDRef.current,
@@ -198,13 +206,34 @@ describe("workbench tab controller", () => {
     )
   })
 
+  it("selects a session through Dockview focus or open commands", () => {
+    const { result } = renderHook(() => useWorkbenchHarness())
+
+    act(() => {
+      result.current.handleCanvasSessionTabSelect("session-2")
+    })
+
+    expect(result.current.commands.focusPanel).toHaveBeenCalledWith(createSessionWorkbenchTab("session-2"))
+    expect(result.current.commands.openPanel).toHaveBeenCalledWith(
+      createSessionWorkbenchTab("session-2"),
+      expect.objectContaining({ title: "session-2" }),
+    )
+    expect(result.current.selectedFolderID).toBe("workspace-2")
+    expect(result.current.expandedFolderIDs).toContain("workspace-2")
+  })
+
   it("syncs business focus from Dockview active changes", () => {
     const { result } = renderHook(() => useWorkbenchHarness())
 
     act(() => {
       result.current.handleDockviewActiveChange({
+        activeState: {
+          activeGroupID: "group-2",
+          activePanelIDByGroupID: {
+            "group-2": "session:session-2",
+          },
+        },
         groupID: "group-2",
-        layout: result.current.dockviewLayout,
         panelID: "session:session-2",
         reference: createSessionWorkbenchTab("session-2"),
       })
@@ -213,5 +242,6 @@ describe("workbench tab controller", () => {
     expect(result.current.selectedFolderID).toBe("workspace-2")
     expect(result.current.expandedFolderIDs).toContain("workspace-2")
     expect(result.current.lastFocusedSessionID).toBe("session-2")
+    expect(result.current.dockviewActiveState.activeGroupID).toBe("group-2")
   })
 })

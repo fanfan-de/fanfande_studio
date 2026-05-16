@@ -153,10 +153,12 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
     void refreshCapabilities()
   }, [projectID, directory])
 
-  const handleGitStateChanged = useEffectEvent((detail: { directory: string }) => {
+  const handleGitStateChanged = useEffectEvent((detail: { directory: string; branchesChanged?: boolean }) => {
     if (!isMatchingGitStateChangedDetail(detail, directory)) return
     void refreshCapabilities()
-    void refreshBranches()
+    if (detail.branchesChanged || isPanelOpen) {
+      void refreshBranches()
+    }
   })
 
   useEffect(() => subscribeToGitStateChanged(handleGitStateChanged), [handleGitStateChanged])
@@ -230,6 +232,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
       })
       notifyGitStateChanged({
         directory: result.directory,
+        branchesChanged: true,
       })
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error))
@@ -274,6 +277,7 @@ export function GitBranchSwitcher({ projectID, directory }: GitBranchSwitcherPro
       })
       notifyGitStateChanged({
         directory: result.directory,
+        branchesChanged: true,
       })
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error))

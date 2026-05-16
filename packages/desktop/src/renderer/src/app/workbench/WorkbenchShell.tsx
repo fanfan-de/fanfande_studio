@@ -28,10 +28,8 @@ import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, Ses
 import { createID } from "../utils"
 import type { useAgentWorkspace } from "../use-agent-workspace"
 import {
-  getActiveDockviewPanelID,
-  getActiveDockviewPanelReference,
+  createDockviewActiveStateFromLayout,
   getDockviewGroupsInOrder,
-  getFocusedDockviewGroupID,
   getSerializedDockviewSignature,
   getWorkbenchDockPanelId,
   getWorkbenchDockPanelReference,
@@ -39,6 +37,7 @@ import {
   WORKBENCH_DOCK_TAB_COMPONENT,
   type WorkbenchDockviewCommands,
   type WorkbenchDockviewActiveChange,
+  type WorkbenchDockviewActiveState,
   type WorkbenchDockPanelReference,
 } from "./dockview-state"
 import { WorkbenchPaneSurface } from "./WorkbenchPaneSurface"
@@ -121,6 +120,27 @@ function publishTestDockviewApi(dockviewApi: DockviewApi | null) {
   testWindow.__fanfandeWorkbenchDockviewApi = dockviewApi
 }
 
+function readDockviewActiveState(dockviewApi: DockviewApi): WorkbenchDockviewActiveState {
+  const activePanelIDByGroupID: Record<string, string | null> = {}
+  for (const group of dockviewApi.groups) {
+    activePanelIDByGroupID[group.id] = group.activePanel?.id ?? null
+  }
+
+  return {
+    activeGroupID: dockviewApi.activeGroup?.id ?? dockviewApi.activePanel?.group.id ?? null,
+    activePanelIDByGroupID,
+  }
+}
+
+function getDockviewActiveSignature(activeState: WorkbenchDockviewActiveState) {
+  return [
+    activeState.activeGroupID ?? "",
+    ...Object.entries(activeState.activePanelIDByGroupID)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([groupID, panelID]) => `${groupID}:${panelID ?? ""}`),
+  ].join("\u0000")
+}
+
 function isPointOutsideElement(element: HTMLElement, clientX: number, clientY: number) {
   const rect = element.getBoundingClientRect()
   return clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom
@@ -200,6 +220,11 @@ function getDetachedSessionPanelBounds(panel: IDockviewPanel, event?: DragEvent)
     y,
     width,
   }
+}
+
+function activateDockviewPanel(panel: IDockviewPanel) {
+  panel.api.setActive()
+  panel.group.focus()
 }
 
 export interface WorkbenchShellProps {
@@ -314,25 +339,41 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   const hasMultiplePanes = getDockviewGroupsInOrder(props.dockviewLayout).filter((group) => group.location === "grid").length > 1
   latestPropsRef.current = props
 
-  const emitActiveDockviewChange = useCallback((layout: SerializedDockview | null) => {
-    const groupID = getFocusedDockviewGroupID(layout)
-    const panelID = getActiveDockviewPanelID(layout, groupID)
-    const reference = getActiveDockviewPanelReference(layout, groupID)
-    const activeSignature = [
-      groupID ?? "",
-      panelID ?? "",
-      reference ? getWorkbenchDockPanelId(reference) : "",
-    ].join("\u0000")
+  const emitActiveDockviewChangeFromState = useCallback((activeState: WorkbenchDockviewActiveState) => {
+    const groupID = activeState.activeGroupID
+    const panelID = groupID ? activeState.activePanelIDByGroupID[groupID] ?? null : null
+    const reference = panelID ? getWorkbenchDockPanelReference(panelID) : null
+    const activeSignature = getDockviewActiveSignature(activeState)
     if (activeSignature === lastEmittedActiveSignatureRef.current) return
 
     lastEmittedActiveSignatureRef.current = activeSignature
     latestPropsRef.current.onActiveDockviewChange({
-      layout,
+      activeState,
       groupID,
       panelID,
       reference,
     })
   }, [])
+
+  const emitActiveDockviewChange = useCallback((dockviewApi: DockviewApi) => {
+    emitActiveDockviewChangeFromState(readDockviewActiveState(dockviewApi))
+  }, [emitActiveDockviewChangeFromState])
+
+  const emitActiveDockviewPanel = useCallback((dockviewApi: DockviewApi, panel: IDockviewPanel) => {
+    const groupID = panel.group.id
+    const activeState = readDockviewActiveState(dockviewApi)
+    emitActiveDockviewChangeFromState({
+      activeGroupID: groupID,
+      activePanelIDByGroupID: {
+        ...activeState.activePanelIDByGroupID,
+        [groupID]: panel.id,
+      },
+    })
+  }, [emitActiveDockviewChangeFromState])
+
+  const emitActiveDockviewChangeFromLayout = useCallback((layout: SerializedDockview | null) => {
+    emitActiveDockviewChangeFromState(createDockviewActiveStateFromLayout(layout))
+  }, [emitActiveDockviewChangeFromState])
 
   const syncDockviewFromLayout = useCallback((dockviewApi: DockviewApi, serialized: SerializedDockview | null) => {
     const serializedSignature = getSerializedDockviewSignature(serialized)
@@ -350,18 +391,18 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       const appliedSignature = getSerializedDockviewSignature(appliedLayout)
       lastAppliedSerializedSignatureRef.current = appliedSignature
       lastEmittedSerializedSignatureRef.current = appliedSignature
-      emitActiveDockviewChange(appliedLayout)
+      emitActiveDockviewChangeFromLayout(appliedLayout)
     } catch (error) {
       console.warn("[desktop] Failed to apply Dockview workbench layout; using an empty layout.", error)
       clearDockviewLayout(dockviewApi)
       const emptySignature = getSerializedDockviewSignature(null)
       lastAppliedSerializedSignatureRef.current = emptySignature
       lastEmittedSerializedSignatureRef.current = emptySignature
-      emitActiveDockviewChange(null)
+      emitActiveDockviewChangeFromLayout(null)
     } finally {
       isApplyingLayoutRef.current = false
     }
-  }, [emitActiveDockviewChange])
+  }, [emitActiveDockviewChangeFromLayout])
 
   const readDockviewSnapshot = useCallback((dockviewApi: DockviewApi): SerializedDockview | null => {
     try {
@@ -384,9 +425,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       lastEmittedSerializedSignatureRef.current = serializedSignature
       latestPropsRef.current.onLayoutChange(serialized)
     }
-    emitActiveDockviewChange(serialized)
+    emitActiveDockviewChangeFromLayout(serialized)
     return serialized
-  }, [emitActiveDockviewChange, readDockviewSnapshot])
+  }, [emitActiveDockviewChangeFromLayout, readDockviewSnapshot])
 
   const detachSessionPanel = useCallback(async (dockviewApi: DockviewApi, panel: IDockviewPanel, event?: DragEvent) => {
     const reference = getWorkbenchDockPanelReference(panel.id)
@@ -454,8 +495,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
     const disposables = [
       api.onDidLayoutChange(() => emitDockviewSnapshot(api)),
-      api.onDidActivePanelChange(() => emitDockviewSnapshot(api)),
-      api.onDidActiveGroupChange(() => emitDockviewSnapshot(api)),
+      api.onDidActivePanelChange(() => emitActiveDockviewChange(api)),
+      api.onDidActiveGroupChange(() => emitActiveDockviewChange(api)),
     ]
 
     return () => {
@@ -463,7 +504,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         disposable.dispose()
       }
     }
-  }, [api, emitDockviewSnapshot])
+  }, [api, emitActiveDockviewChange, emitDockviewSnapshot])
 
   useEffect(() => {
     if (!api) return
@@ -525,6 +566,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     const emitSnapshot = () => {
       return emitDockviewSnapshot(api)
     }
+    const emitPanelActive = (panel: IDockviewPanel) => {
+      emitActiveDockviewPanel(api, panel)
+    }
     const addPanel = (
       reference: WorkbenchDockPanelReference,
       options?: { targetGroupID?: string | null; title?: string; activate?: boolean; direction?: "left" | "right" | "above" | "below" | "within" },
@@ -547,7 +591,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         position,
       })
       if (options?.activate !== false) {
-        panel.api.setActive()
+        activateDockviewPanel(panel)
       }
       return panel
     }
@@ -555,30 +599,39 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       const id = getWorkbenchDockPanelId(reference)
       const existing = api.getPanel(id)
       if (existing) {
+        let didUpdateTitle = false
         if (options?.title && existing.title !== options.title) {
           existing.api.setTitle(options.title)
+          didUpdateTitle = true
         }
         if (options?.activate !== false) {
-          existing.api.setActive()
+          activateDockviewPanel(existing)
         }
-        emitSnapshot()
+        if (didUpdateTitle) {
+          emitSnapshot()
+        } else if (options?.activate !== false) {
+          emitPanelActive(existing)
+        }
         return true
       }
 
-      addPanel(reference, {
+      const panel = addPanel(reference, {
         activate: options?.activate,
         targetGroupID: options?.targetGroupID,
         title: options?.title,
       })
       emitSnapshot()
+      if (options?.activate !== false) {
+        emitPanelActive(panel)
+      }
       return true
     }
     const focusPanel: WorkbenchDockviewCommands["focusPanel"] = (reference) => {
       const id = getWorkbenchDockPanelId(reference)
       const panel = api.getPanel(id)
       if (!panel) return false
-      panel.api.setActive()
-      emitSnapshot()
+      activateDockviewPanel(panel)
+      emitPanelActive(panel)
       return true
     }
     const closePanel: WorkbenchDockviewCommands["closePanel"] = (reference) => {
@@ -607,21 +660,23 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         const currentPanel = api.getPanel(currentID)
         const existingNextPanel = api.getPanel(nextID)
         if (existingNextPanel) {
-          existingNextPanel.api.setActive()
+          activateDockviewPanel(existingNextPanel)
           currentPanel?.api.close()
           emitSnapshot()
+          emitPanelActive(existingNextPanel)
           return true
         }
         if (!currentPanel) {
           return openPanel(nextReference, { title: options?.title })
         }
 
-        addPanel(nextReference, {
+        const panel = addPanel(nextReference, {
           targetGroupID: currentPanel.group.id,
           title: options?.title,
         })
         currentPanel.api.close()
         emitSnapshot()
+        emitPanelActive(panel)
         return true
       },
       splitPanel: (reference, options) => {
@@ -635,16 +690,18 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
             group: targetGroup as any,
             position: options.direction === "top" ? "top" : options.direction === "bottom" ? "bottom" : options.direction,
           })
-          existing.api.setActive()
+          activateDockviewPanel(existing)
           emitSnapshot()
+          emitPanelActive(existing)
           return true
         }
-        addPanel(reference, {
+        const panel = addPanel(reference, {
           direction,
           targetGroupID,
           title: options.title,
         })
         emitSnapshot()
+        emitPanelActive(panel)
         return true
       },
       getSnapshot: () => readDockviewSnapshot(api),
@@ -652,7 +709,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
     latestPropsRef.current.onCommandsReady(commands)
     return () => latestPropsRef.current.onCommandsReady(null)
-  }, [api, detachSessionPanel, emitDockviewSnapshot, readDockviewSnapshot])
+  }, [api, detachSessionPanel, emitActiveDockviewPanel, emitDockviewSnapshot, readDockviewSnapshot])
 
   const handleWorkbenchDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
     const dragPayload = readWorkbenchPanelDrag(event.nativeEvent)
@@ -769,8 +826,10 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     }, [tabProps.api])
 
     const reference = tabProps.params ?? getWorkbenchDockPanelReference(tabProps.api.id)
+    const panelState = props.panelStateByID[tabProps.api.id]
     const pane = findPaneStateForDockviewPanel(props.paneStateByID, tabProps.api.group.id, tabProps.api.id)
     const paneTab = pane?.tabs.find((tab) => tab.key === tabProps.api.id) as WorkbenchPaneTab | undefined
+    const isTabActive = panelState?.isActivePanel ?? isActive
     const title = paneTab?.title ?? tabProps.api.title ?? "Session"
     const createTabIndex = pane && paneTab?.kind === "create-session"
       ? pane.tabs.slice(0, pane.tabs.findIndex((tab) => tab.key === paneTab.key) + 1).filter((tab) => tab.kind === "create-session").length - 1
@@ -812,7 +871,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       tabProps.api.setActive()
     }
     const preserveInactiveSessionDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0 || isActive || reference?.kind !== "session" || props.isDetachedWindow) return
+      if (event.button !== 0 || isTabActive || reference?.kind !== "session" || props.isDetachedWindow) return
       event.stopPropagation()
     }
 
@@ -821,7 +880,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         <button
           className="dockview-workbench-tab-trigger"
           aria-label={switchLabel}
-          aria-pressed={isActive}
+          aria-pressed={isTabActive}
           title={switchLabel}
           type="button"
           onClick={selectPanel}
