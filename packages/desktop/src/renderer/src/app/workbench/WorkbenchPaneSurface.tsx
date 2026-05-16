@@ -11,14 +11,24 @@ import { getSessionWorkflowBadge, type SessionWorkflowBadge as SessionWorkflowBa
 import { getPendingStreamInsertionUserTurns } from "../stream-insertion"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "../thread-markdown"
 import { ThreadRichText } from "../thread-rich-text"
-import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, SessionDiffSummary, ToolPermissionMode, UserTurn } from "../types"
-import type { useAgentWorkspace } from "../use-agent-workspace"
+import type {
+  AssistantTraceVisibility,
+  ComposerDraftState,
+  ComposerPastedImageAttachment,
+  PermissionDecision,
+  PermissionRequest,
+  ReasoningEffort,
+  SessionDiffFile,
+  SessionDiffSummary,
+  SessionModelSelection,
+  ToolPermissionMode,
+  UserTurn,
+  WorkspaceGroup,
+} from "../types"
 import { useProjectComposer } from "../use-project-composer"
 import { isSideChatSession } from "../workspace"
 import type { ThreadScrollSnapshot } from "../thread/ThreadView"
-
-type AgentWorkspaceState = ReturnType<typeof useAgentWorkspace>
-type WorkbenchPaneState = AgentWorkspaceState["workbenchPanelStateByID"][string]
+import type { WorkbenchPaneState } from "../agent-workspace/workspace-derived-state"
 
 function ComposerPlanModeNotice({ workflow }: { workflow: SessionWorkflowBadgeInfo }) {
   return (
@@ -69,7 +79,7 @@ export interface WorkbenchPaneSurfaceProps {
   permissionRequestActionRequestID: string | null
   toolPermissionMode: ToolPermissionMode
   toolPermissionModeError: string | null
-  workspaces: AgentWorkspaceState["workspaces"]
+  workspaces: WorkspaceGroup[]
   readThreadScrollSnapshot: (key: string) => ThreadScrollSnapshot | null
   saveThreadScrollSnapshot: (key: string, snapshot: ThreadScrollSnapshot) => void
   onCreateSessionSubmit: (createSessionTabID?: string | null, paneID?: string) => Promise<void>
@@ -89,21 +99,59 @@ export interface WorkbenchPaneSurfaceProps {
     workspaceDirectory: string | null
     workspaceID: string | null
   }) => void
-  onCreateSideChatTab: AgentWorkspaceState["handleCreateSideChatTab"]
-  onDeleteSideChatTab: AgentWorkspaceState["handleDeleteSideChatTab"]
-  onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
-  onAskUserQuestionAnswer: AgentWorkspaceState["handleAskUserQuestionAnswer"]
-  onApproveProposedPlan: AgentWorkspaceState["handleApproveProposedPlan"]
-  onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
+  onCreateSideChatTab: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null }) => Promise<void>
+  onDeleteSideChatTab: (sessionID: string) => Promise<void>
+  onOpenSideChat: (anchorMessageID: string, options?: { paneID?: string | null; parentSessionID?: string | null }) => Promise<void>
+  onAskUserQuestionAnswer: (input: {
+    freeformText?: string
+    questionID?: string
+    selectedOptions?: string[]
+    sessionID?: string | null
+    tabKey?: string | null
+    text: string
+  }) => Promise<void>
+  onApproveProposedPlan: (input: {
+    planMarkdown: string
+    selectedReasoningEffort?: ReasoningEffort | null
+    selectedModel?: string | null
+    selectedSkillIDs?: string[]
+    sessionID?: string | null
+    tabKey?: string | null
+    waitForPendingModelSelection?: (() => Promise<void>) | null
+  }) => Promise<void>
+  onPermissionRequestResponse: (input: {
+    sessionID: string
+    request: PermissionRequest
+    decision: PermissionDecision
+    note?: string
+  }) => Promise<void>
   onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
-  onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
-  onPasteComposerImageAttachments: AgentWorkspaceState["handlePasteComposerImageAttachments"]
+  onPickComposerAttachments: (input: { allowImage: boolean; allowPdf: boolean; disabledReason: string | null; tabKey?: string | null }) => Promise<void>
+  onPasteComposerImageAttachments: (input: { allowImage: boolean; disabledReason?: string | null; images: ComposerPastedImageAttachment[]; tabKey?: string | null }) => Promise<void>
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
-  onSelectSideChatTab: AgentWorkspaceState["handleSelectSideChatTab"]
-  onCancelSend: AgentWorkspaceState["handleCancelSend"]
-  onPlanModeToggle: AgentWorkspaceState["handlePlanModeToggle"]
-  onSend: AgentWorkspaceState["handleSend"]
-  onSessionModelSelectionChange: AgentWorkspaceState["handleSessionModelSelectionChange"]
+  onSelectSideChatTab: (sessionID: string) => void
+  onCancelSend: (input?: { sessionID?: string | null; tabKey?: string | null }) => Promise<void>
+  onPlanModeToggle: (input: { createSessionTabID?: string | null; sessionID?: string | null }) => Promise<void>
+  onSend: (input?: {
+    attachmentError?: string | null
+    createSessionTabID?: string | null
+    draftStateOverride?: ComposerDraftState
+    paneID?: string | null
+    preserveComposerState?: boolean
+    questionAnswer?: {
+      questionID: string
+      selectedOptions?: string[]
+      freeformText?: string
+    }
+    selectedReasoningEffort?: ReasoningEffort | null
+    selectedModel?: string | null
+    selectedSkillIDs?: string[]
+    sessionID?: string | null
+    submissionMode?: "steer"
+    tabKey?: string | null
+    waitForPendingModelSelection?: (() => Promise<void>) | null
+  }) => Promise<void>
+  onSessionModelSelectionChange: (sessionID: string, selection: SessionModelSelection | undefined) => void
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
   onTurnDiffRestore: (diffs: SessionDiffFile[], sessionID: string | null, paneID: string) => void | Promise<void>
   onTurnDiffReview: (files: string[], sessionID: string | null, paneID: string) => void | Promise<void>

@@ -307,9 +307,6 @@ export function useAgentWorkspace({
     selectedProjectID,
     selectedWorkspace,
     visibleCanvasSessionIDs,
-    workbenchPanelStateByID,
-    workbenchPaneStateByID,
-    workbenchPaneStates,
   } = buildWorkspaceDerivedState({
     activeSideChatSessionIDByParentSessionID,
     composerAttachmentsByTabKey,
@@ -323,6 +320,7 @@ export function useAgentWorkspace({
     cancellingSessionIDs,
     pendingPermissionRequestsBySession,
     platform,
+    includeWorkbenchSurfaces: false,
     previewByWorkspaceID,
     selectedDiffFileBySession,
     selectedFolderID,
@@ -927,9 +925,7 @@ export function useAgentWorkspace({
     dockviewActiveState,
     visibleCanvasSessionIDs,
     dockviewLayout,
-    workbenchPanelStateByID,
-    workbenchPaneStateByID,
-    workbenchPaneStates,
+    workspaceStore,
     workspaces,
   }
 }

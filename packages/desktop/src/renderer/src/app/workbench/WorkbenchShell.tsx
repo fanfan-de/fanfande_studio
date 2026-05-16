@@ -26,10 +26,24 @@ import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "..
 import type { ThreadScrollSnapshot } from "../thread/ThreadView"
 import type { AssistantTraceVisibility, ComposerDraftState, SessionDiffFile, SessionDiffSummary, ToolPermissionMode } from "../types"
 import { createID } from "../utils"
-import type { useAgentWorkspace } from "../use-agent-workspace"
+import {
+  buildWorkbenchPaneState,
+  buildWorkbenchPanelState,
+  buildWorkbenchPanelTitleMap,
+  buildWorkspaceDerivedStateInputFromStore,
+  getWorkbenchGridPaneIDs,
+  workbenchPaneStatesAreEqual,
+  type WorkbenchPaneTab,
+} from "../agent-workspace/workspace-derived-state"
+import {
+  seedWorkspaceIDs,
+  shallowEqualArrays,
+  shallowEqualObjects,
+  useWorkspaceStoreSelector,
+  type WorkspaceStoreApi,
+} from "../agent-workspace/workspace-store"
 import {
   createDockviewActiveStateFromLayout,
-  getDockviewGroupsInOrder,
   getSerializedDockviewSignature,
   getWorkbenchDockPanelId,
   getWorkbenchDockPanelReference,
@@ -40,12 +54,8 @@ import {
   type WorkbenchDockviewActiveState,
   type WorkbenchDockPanelReference,
 } from "./dockview-state"
-import { WorkbenchPaneSurface } from "./WorkbenchPaneSurface"
+import { WorkbenchPaneSurface, type WorkbenchPaneSurfaceProps } from "./WorkbenchPaneSurface"
 
-type AgentWorkspaceState = ReturnType<typeof useAgentWorkspace>
-type WorkbenchPanelStateByID = AgentWorkspaceState["workbenchPanelStateByID"]
-type WorkbenchPaneStateByID = AgentWorkspaceState["workbenchPaneStateByID"]
-type WorkbenchPaneTab = AgentWorkspaceState["workbenchPaneStates"][number]["tabs"][number]
 type DetachedSessionPanelBounds = { x: number; y: number; width: number; height: number }
 type WorkbenchDropPlacement = "within" | "left" | "right" | "top" | "bottom"
 type WorkbenchPanelDragPayload = {
@@ -58,52 +68,73 @@ const MIN_POPOUT_WIDTH = 720
 const MIN_POPOUT_HEIGHT = 520
 const WORKBENCH_PANEL_DRAG_MIME = "application/x-fanfande-workbench-panel"
 
-function buildPanelTitleMap(paneStateByID: WorkbenchPaneStateByID) {
-  const titles: Record<string, string | undefined> = {}
-  for (const pane of Object.values(paneStateByID)) {
-    for (const tab of pane.tabs) {
-      titles[tab.key] = tab.title
-    }
-  }
-  return titles
-}
-
-export function findPaneStateForDockviewPanel(
-  paneStateByID: WorkbenchPaneStateByID,
-  groupID: string,
-  panelID?: string,
-) {
-  const pane = paneStateByID[groupID]
-  if (pane || !panelID) return pane ?? null
-
-  return Object.values(paneStateByID).find((candidate) =>
-    candidate.tabs.some((tab) => tab.key === panelID),
-  ) ?? null
-}
-
-export function resolvePanelStateForDockviewPanel(
-  panelStateByID: WorkbenchPanelStateByID,
-  paneStateByID: WorkbenchPaneStateByID,
+function useWorkbenchPanelState(
+  store: WorkspaceStoreApi,
+  platform: string,
   groupID: string,
   panelID?: string,
   reference?: WorkbenchDockPanelReference | null,
 ) {
-  const resolvedPanelID = reference ? getWorkbenchDockPanelId(reference) : panelID
-  if (!resolvedPanelID) return null
+  return useWorkspaceStoreSelector(
+    store,
+    (state) => buildWorkbenchPanelState(
+      buildWorkspaceDerivedStateInputFromStore(state, platform, seedWorkspaceIDs),
+      groupID,
+      panelID,
+      reference,
+    ),
+    workbenchPaneStatesAreEqual,
+  )
+}
 
-  const panelState = panelStateByID[resolvedPanelID]
-  if (!panelState) return null
+function useWorkbenchPaneState(
+  store: WorkspaceStoreApi,
+  platform: string,
+  groupID: string,
+  panelID?: string,
+) {
+  return useWorkspaceStoreSelector(
+    store,
+    (state) => buildWorkbenchPaneState(
+      buildWorkspaceDerivedStateInputFromStore(state, platform, seedWorkspaceIDs),
+      groupID,
+      panelID,
+    ),
+    workbenchPaneStatesAreEqual,
+  )
+}
 
-  const isFocused = Boolean(paneStateByID[groupID]?.isFocused)
-  if (panelState.id === groupID && panelState.isFocused === isFocused) {
-    return panelState
-  }
+function useWorkbenchPanelTitleMap(store: WorkspaceStoreApi) {
+  return useWorkspaceStoreSelector(
+    store,
+    (state) => buildWorkbenchPanelTitleMap({
+      createSessionTabs: state.sessions.createSessionTabs,
+      dockviewLayout: state.workbench.dockviewLayout,
+      workspaces: state.sessions.workspaces,
+    }),
+    shallowEqualObjects,
+  )
+}
 
-  return {
-    ...panelState,
-    id: groupID,
-    isFocused,
-  }
+function useWorkbenchGridPaneIDs(store: WorkspaceStoreApi) {
+  return useWorkspaceStoreSelector(
+    store,
+    (state) => getWorkbenchGridPaneIDs(state.workbench.dockviewLayout),
+    shallowEqualArrays,
+  )
+}
+
+function readWorkbenchPaneStateForPanel(
+  store: WorkspaceStoreApi,
+  platform: string,
+  groupID: string,
+  panelID?: string,
+) {
+  return buildWorkbenchPaneState(
+    buildWorkspaceDerivedStateInputFromStore(store.getState(), platform, seedWorkspaceIDs),
+    groupID,
+    panelID,
+  )
 }
 
 function clearDockviewLayout(dockviewApi: DockviewApi) {
@@ -230,24 +261,20 @@ function activateDockviewPanel(panel: IDockviewPanel) {
 export interface WorkbenchShellProps {
   assistantTraceVisibility: AssistantTraceVisibility
   composerRefreshVersion: number
-  firstPaneID: string | null
   isActivityRailVisible: boolean
   isAgentDebugTraceEnabled: boolean
   isResolvingPermissionRequest: boolean
   isSavingToolPermissionMode: boolean
   isRightSidebarCollapsed: boolean
   isSidebarCollapsed: boolean
-  lastPaneID: string | null
-  dockviewLayout: SerializedDockview | null
+  platform: string
+  store: WorkspaceStoreApi
   windowControls?: ReactNode
   surfaceID: string
-  panelStateByID: WorkbenchPanelStateByID
-  paneStateByID: WorkbenchPaneStateByID
   permissionRequestActionError: string | null
   permissionRequestActionRequestID: string | null
   toolPermissionMode: ToolPermissionMode
   toolPermissionModeError: string | null
-  workspaces: AgentWorkspaceState["workspaces"]
   readThreadScrollSnapshot: (key: string) => ThreadScrollSnapshot | null
   saveThreadScrollSnapshot: (key: string, snapshot: ThreadScrollSnapshot) => void
   onCloseCreateSessionTab: (createSessionTabID: string, paneID?: string, options?: { force?: boolean }) => void
@@ -288,24 +315,24 @@ export interface WorkbenchShellProps {
     targetGroupID?: string | null
     targetSurfaceID: string
   }) => boolean | Promise<boolean>
-  onCreateSideChatTab: AgentWorkspaceState["handleCreateSideChatTab"]
-  onDeleteSideChatTab: AgentWorkspaceState["handleDeleteSideChatTab"]
+  onCreateSideChatTab: WorkbenchPaneSurfaceProps["onCreateSideChatTab"]
+  onDeleteSideChatTab: WorkbenchPaneSurfaceProps["onDeleteSideChatTab"]
   onOpenCreateSessionTab: (preferredWorkspaceID?: string | null, paneID?: string) => void
-  onOpenSideChat: AgentWorkspaceState["handleOpenSideChat"]
-  onAskUserQuestionAnswer: AgentWorkspaceState["handleAskUserQuestionAnswer"]
-  onApproveProposedPlan: AgentWorkspaceState["handleApproveProposedPlan"]
-  onPermissionRequestResponse: AgentWorkspaceState["handlePermissionRequestResponse"]
+  onOpenSideChat: WorkbenchPaneSurfaceProps["onOpenSideChat"]
+  onAskUserQuestionAnswer: WorkbenchPaneSurfaceProps["onAskUserQuestionAnswer"]
+  onApproveProposedPlan: WorkbenchPaneSurfaceProps["onApproveProposedPlan"]
+  onPermissionRequestResponse: WorkbenchPaneSurfaceProps["onPermissionRequestResponse"]
   onToolPermissionModeChange: (mode: ToolPermissionMode) => void | Promise<void>
-  onPickComposerAttachments: AgentWorkspaceState["handlePickComposerAttachments"]
-  onPasteComposerImageAttachments: AgentWorkspaceState["handlePasteComposerImageAttachments"]
+  onPickComposerAttachments: WorkbenchPaneSurfaceProps["onPickComposerAttachments"]
+  onPasteComposerImageAttachments: WorkbenchPaneSurfaceProps["onPasteComposerImageAttachments"]
   onRemoveComposerAttachment: (path: string, tabKey?: string | null) => void
   onSelectCreateSessionTab: (createSessionTabID: string, paneID?: string) => void
-  onSelectSideChatTab: AgentWorkspaceState["handleSelectSideChatTab"]
+  onSelectSideChatTab: WorkbenchPaneSurfaceProps["onSelectSideChatTab"]
   onSelectSessionTab: (sessionID: string, paneID?: string) => void
-  onCancelSend: AgentWorkspaceState["handleCancelSend"]
-  onPlanModeToggle: AgentWorkspaceState["handlePlanModeToggle"]
-  onSend: AgentWorkspaceState["handleSend"]
-  onSessionModelSelectionChange: AgentWorkspaceState["handleSessionModelSelectionChange"]
+  onCancelSend: WorkbenchPaneSurfaceProps["onCancelSend"]
+  onPlanModeToggle: WorkbenchPaneSurfaceProps["onPlanModeToggle"]
+  onSend: WorkbenchPaneSurfaceProps["onSend"]
+  onSessionModelSelectionChange: WorkbenchPaneSurfaceProps["onSessionModelSelectionChange"]
   onSetDraft: (tabKey: string, value: ComposerDraftState) => void
   onToggleLeftSidebar: () => void
   onToggleRightSidebar: () => void
@@ -327,16 +354,18 @@ function useWorkbenchShellContext() {
 
 export function WorkbenchShell(props: WorkbenchShellProps) {
   const [api, setApi] = useState<DockviewApi | null>(null)
+  const dockviewLayout = useWorkspaceStoreSelector(props.store, (state) => state.workbench.dockviewLayout)
+  const panelTitles = useWorkbenchPanelTitleMap(props.store)
+  const gridPaneIDs = useWorkbenchGridPaneIDs(props.store)
   const workbenchElementRef = useRef<HTMLDivElement | null>(null)
   const latestPropsRef = useRef(props)
   const latestDragPayloadRef = useRef<WorkbenchPanelDragPayload | null>(null)
   const isApplyingLayoutRef = useRef(false)
   const pendingDetachOperationCountRef = useRef(0)
   const lastAppliedSerializedSignatureRef = useRef<string | null>(null)
-  const lastEmittedSerializedSignatureRef = useRef(getSerializedDockviewSignature(props.dockviewLayout))
+  const lastEmittedSerializedSignatureRef = useRef(getSerializedDockviewSignature(dockviewLayout))
   const lastEmittedActiveSignatureRef = useRef<string | null>(null)
-  const panelTitles = useMemo(() => buildPanelTitleMap(props.paneStateByID), [props.paneStateByID])
-  const hasMultiplePanes = getDockviewGroupsInOrder(props.dockviewLayout).filter((group) => group.location === "grid").length > 1
+  const hasMultiplePanes = gridPaneIDs.length > 1
   latestPropsRef.current = props
 
   const emitActiveDockviewChangeFromState = useCallback((activeState: WorkbenchDockviewActiveState) => {
@@ -433,9 +462,10 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     const reference = getWorkbenchDockPanelReference(panel.id)
     if (reference?.kind !== "session") return false
 
-    const pane = findPaneStateForDockviewPanel(latestPropsRef.current.paneStateByID, panel.group.id, panel.id)
+    const currentProps = latestPropsRef.current
+    const pane = readWorkbenchPaneStateForPanel(currentProps.store, currentProps.platform, panel.group.id, panel.id)
     const title = pane?.tabs.find((tab) => tab.key === panel.id)?.title ?? panel.title ?? "Session"
-    const detach = latestPropsRef.current.onDetachSessionPanel
+    const detach = currentProps.onDetachSessionPanel
     if (!detach) return false
 
     let didCloseDetachedPanel = false
@@ -467,7 +497,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
   const handleReady = useCallback((event: DockviewReadyEvent) => {
     setApi(event.api)
     publishTestDockviewApi(event.api)
-    syncDockviewFromLayout(event.api, latestPropsRef.current.dockviewLayout)
+    const currentProps = latestPropsRef.current
+    syncDockviewFromLayout(event.api, currentProps.store.getState().workbench.dockviewLayout)
   }, [syncDockviewFromLayout])
 
   useEffect(() => {
@@ -476,8 +507,8 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
   useEffect(() => {
     if (!api) return
-    syncDockviewFromLayout(api, props.dockviewLayout)
-  }, [api, props.dockviewLayout, syncDockviewFromLayout])
+    syncDockviewFromLayout(api, dockviewLayout)
+  }, [api, dockviewLayout, syncDockviewFromLayout])
 
   useEffect(() => {
     if (!api) return
@@ -753,13 +784,14 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     const props = useWorkbenchShellContext()
     const groupID = panelProps.api.group.id
     const reference = panelProps.params ?? getWorkbenchDockPanelReference(panelProps.api.id)
-    const pane = resolvePanelStateForDockviewPanel(
-      props.panelStateByID,
-      props.paneStateByID,
+    const pane = useWorkbenchPanelState(
+      props.store,
+      props.platform,
       groupID,
       panelProps.api.id,
       reference,
     )
+    const workspaces = useWorkspaceStoreSelector(props.store, (state) => state.sessions.workspaces)
     if (!pane) {
       return (
         <div
@@ -783,7 +815,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
         permissionRequestActionRequestID={props.permissionRequestActionRequestID}
         toolPermissionMode={props.toolPermissionMode}
         toolPermissionModeError={props.toolPermissionModeError}
-        workspaces={props.workspaces}
+        workspaces={workspaces}
         readThreadScrollSnapshot={props.readThreadScrollSnapshot}
         saveThreadScrollSnapshot={props.saveThreadScrollSnapshot}
         onCreateSessionSubmit={props.onCreateSessionSubmit}
@@ -826,10 +858,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
     }, [tabProps.api])
 
     const reference = tabProps.params ?? getWorkbenchDockPanelReference(tabProps.api.id)
-    const panelState = props.panelStateByID[tabProps.api.id]
-    const pane = findPaneStateForDockviewPanel(props.paneStateByID, tabProps.api.group.id, tabProps.api.id)
+    const pane = useWorkbenchPaneState(props.store, props.platform, tabProps.api.group.id, tabProps.api.id)
     const paneTab = pane?.tabs.find((tab) => tab.key === tabProps.api.id) as WorkbenchPaneTab | undefined
-    const isTabActive = panelState?.isActivePanel ?? isActive
+    const isTabActive = pane?.activeTabKey === tabProps.api.id || isActive
     const title = paneTab?.title ?? tabProps.api.title ?? "Session"
     const createTabIndex = pane && paneTab?.kind === "create-session"
       ? pane.tabs.slice(0, pane.tabs.findIndex((tab) => tab.key === paneTab.key) + 1).filter((tab) => tab.kind === "create-session").length - 1
@@ -910,11 +941,13 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
   const LeftHeaderActions = useCallback((headerProps: IDockviewHeaderActionsProps) => {
     const props = useWorkbenchShellContext()
-    const pane = findPaneStateForDockviewPanel(props.paneStateByID, headerProps.group.id, headerProps.activePanel?.id)
+    const pane = useWorkbenchPaneState(props.store, props.platform, headerProps.group.id, headerProps.activePanel?.id)
+    const gridPaneIDs = useWorkbenchGridPaneIDs(props.store)
+    const firstPaneID = gridPaneIDs[0] ?? null
     const paneID = pane?.id ?? headerProps.group.id
     if (props.isDetachedWindow) return null
     if (pane?.location === "popout") return null
-    if (paneID !== props.firstPaneID || props.isActivityRailVisible || !props.isSidebarCollapsed) {
+    if (paneID !== firstPaneID || props.isActivityRailVisible || !props.isSidebarCollapsed) {
       return null
     }
 
@@ -932,7 +965,9 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
 
   const RightHeaderActions = useCallback((headerProps: IDockviewHeaderActionsProps) => {
     const props = useWorkbenchShellContext()
-    const pane = findPaneStateForDockviewPanel(props.paneStateByID, headerProps.group.id, headerProps.activePanel?.id)
+    const pane = useWorkbenchPaneState(props.store, props.platform, headerProps.group.id, headerProps.activePanel?.id)
+    const gridPaneIDs = useWorkbenchGridPaneIDs(props.store)
+    const lastPaneID = gridPaneIDs[gridPaneIDs.length - 1] ?? null
     const paneID = pane?.id ?? headerProps.group.id
     if (props.isDetachedWindow) {
       return (
@@ -951,7 +986,7 @@ export function WorkbenchShell(props: WorkbenchShellProps) {
       )
     }
     if (pane?.location === "popout") return null
-    const isLastPane = paneID === props.lastPaneID
+    const isLastPane = paneID === lastPaneID
 
     return (
       <div className="dockview-workbench-header-actions dockview-workbench-header-trailing">

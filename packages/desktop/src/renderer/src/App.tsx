@@ -14,6 +14,11 @@ import {
   WindowChrome,
 } from "./app/components"
 import { TerminalAreaHost } from "./app/terminal/TerminalAreaHost"
+import {
+  seedWorkspaceIDs,
+  useWorkspaceStoreSelector,
+} from "./app/agent-workspace/workspace-store"
+import { WorkspaceStoreProvider } from "./app/agent-workspace/workspace-store-context"
 import { resolveWorkspaceRelativePath } from "./app/agent-workspace/workspace-loading-hooks"
 import type { MarkdownArtifactLinkTarget, MarkdownLocalFileLinkTarget } from "./app/thread-markdown"
 import type { RightSidebarView, SessionDiffFile, ToolPermissionMode, WorkspaceMode } from "./app/types"
@@ -25,11 +30,17 @@ import type { BuiltinToolKindKey } from "./app/tools/BuiltinToolsPage"
 import { isSideChatSession } from "./app/workspace"
 import { WorkbenchShell } from "./app/workbench/WorkbenchShell"
 import { createInitialDockviewLayout } from "./app/workbench/dockview-state"
+import {
+  buildWorkbenchPaneStates,
+  buildWorkbenchPublishSnapshot,
+  buildWorkspaceDerivedStateInputFromStore,
+  workbenchPaneStateArraysAreEqual,
+  workbenchPublishSnapshotsAreEqual,
+} from "./app/agent-workspace/workspace-derived-state"
 import { WorkspaceModeCanvasPlaceholder, WorkspaceModeRightPlaceholder } from "./app/workspace-mode/WorkspaceModePlaceholder"
 import type { WorkbenchSharedState, WorkbenchWindowContext } from "../../shared/desktop-ipc-contract"
 
 const WORKBENCH_TERMINAL_STORAGE_KEY = "desktop.terminal.workspace.v3:workbench"
-type AgentWorkspaceState = ReturnType<typeof useAgentWorkspace>
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
@@ -180,37 +191,9 @@ function createFallbackPopoutLayout(context: WorkbenchWindowContext) {
   )
 }
 
-function buildWorkbenchPanelSnapshots(
-  workbenchPaneStates: AgentWorkspaceState["workbenchPaneStates"],
-  workspaces: AgentWorkspaceState["workspaces"],
-) {
-  return Object.fromEntries(
-    workbenchPaneStates.flatMap((pane) =>
-      pane.tabs.flatMap((tab) =>
-        tab.kind === "session"
-          ? [[
-              tab.key,
-              {
-                panelID: tab.key,
-                reference: {
-                  kind: "session" as const,
-                  sessionID: tab.sessionID,
-                },
-                title: tab.title,
-                pane,
-                workspaces,
-              },
-            ]]
-          : [],
-      ),
-    ),
-  )
-}
-
-function getSurfaceOwnedSessionPanelIDs(workbenchPaneStates: AgentWorkspaceState["workbenchPaneStates"]) {
-  return workbenchPaneStates.flatMap((pane) =>
-    pane.tabs.flatMap((tab) => tab.kind === "session" ? [tab.key] : []),
-  )
+function getWorkbenchPublishSignature(snapshot: WorkbenchSharedState) {
+  const { version: _version, ...content } = snapshot
+  return JSON.stringify(content)
 }
 
 function useToolPermissionModeState() {
@@ -401,10 +384,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
     handleWorkbenchDockviewCommandsReady,
     setDockviewLayout,
     dockviewLayout,
-    workbenchPanelStateByID,
-    workbenchPaneStateByID,
-    workbenchPaneStates,
-    workspaces,
+    workspaceStore,
   } = useAgentWorkspace({
     agentConnected,
     agentDefaultDirectory,
@@ -414,6 +394,20 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
     isRuntimeDebugEnabled: isAgentDebugTraceEnabled,
     platform,
   })
+  const workbenchPaneStates = useWorkspaceStoreSelector(
+    workspaceStore,
+    (state) => buildWorkbenchPaneStates(buildWorkspaceDerivedStateInputFromStore(state, platform, seedWorkspaceIDs)),
+    workbenchPaneStateArraysAreEqual,
+  )
+  const workbenchPublishSnapshot = useWorkspaceStoreSelector(
+    workspaceStore,
+    (state) => buildWorkbenchPublishSnapshot({
+      createSessionTabs: state.sessions.createSessionTabs,
+      dockviewLayout: state.workbench.dockviewLayout,
+      workspaces: state.sessions.workspaces,
+    }),
+    workbenchPublishSnapshotsAreEqual,
+  )
   const {
     handleToolPermissionModeChange,
     isSavingToolPermissionMode,
@@ -421,9 +415,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
     toolPermissionModeError,
   } = useToolPermissionModeState()
   const didMarkMountedRef = useRef(false)
-  const gridWorkbenchPaneStates = workbenchPaneStates.filter((pane) => pane.location === "grid")
-  const firstPaneID = gridWorkbenchPaneStates[0]?.id ?? null
-  const lastPaneID = gridWorkbenchPaneStates[gridWorkbenchPaneStates.length - 1]?.id ?? null
+  const lastPublishedWorkbenchSnapshotSignatureRef = useRef<string | null>(null)
   const windowControls = useMemo(
     () => <WindowChrome controlsRef={null} isWindowMaximized={isWindowMaximized} onWindowAction={handleWindowAction} />,
     [handleWindowAction, isWindowMaximized],
@@ -493,7 +485,7 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
   useEffect(() => {
     const publishWorkbenchSnapshot = window.desktop?.publishWorkbenchSnapshot
     if (!publishWorkbenchSnapshot) return
-    void publishWorkbenchSnapshot({
+    const snapshot: WorkbenchSharedState = {
       version: 0,
       windows: [],
       surfaces: [
@@ -501,16 +493,24 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
           surfaceID,
           kind: "session-popout",
           windowID: workbenchContext.windowID,
-          ownedPanelIDs: getSurfaceOwnedSessionPanelIDs(workbenchPaneStates),
+          ownedPanelIDs: workbenchPublishSnapshot.ownedPanelIDs,
           layout: dockviewLayout,
         },
       ],
       ownership: [],
-      panels: buildWorkbenchPanelSnapshots(workbenchPaneStates, workspaces),
-    }).catch((error) => {
+      panels: workbenchPublishSnapshot.panels,
+    }
+    const signature = getWorkbenchPublishSignature(snapshot)
+    if (signature === lastPublishedWorkbenchSnapshotSignatureRef.current) return
+    lastPublishedWorkbenchSnapshotSignatureRef.current = signature
+
+    void publishWorkbenchSnapshot(snapshot).catch((error) => {
+      if (lastPublishedWorkbenchSnapshotSignatureRef.current === signature) {
+        lastPublishedWorkbenchSnapshotSignatureRef.current = null
+      }
       console.error("[desktop] Failed to publish workbench popout snapshot:", error)
     })
-  }, [dockviewLayout, surfaceID, workbenchContext.windowID, workbenchPaneStates, workspaces])
+  }, [dockviewLayout, surfaceID, workbenchContext.windowID, workbenchPublishSnapshot])
 
   useEffect(() => {
     const unsubscribe = window.desktop?.onWorkbenchStateChange?.((event) => {
@@ -545,13 +545,12 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
   }
 
   return (
-    <div className="session-popout-shell">
-      <main ref={appShellRef} className="session-popout-app" style={appShellStyle}>
-        <WorkbenchShell
+    <WorkspaceStoreProvider store={workspaceStore}>
+      <div className="session-popout-shell">
+        <main ref={appShellRef} className="session-popout-app" style={appShellStyle}>
+          <WorkbenchShell
           assistantTraceVisibility={assistantTraceVisibility}
           composerRefreshVersion={composerRefreshVersion}
-          dockviewLayout={dockviewLayout}
-          firstPaneID={firstPaneID}
           isActivityRailVisible={false}
           isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
           isDetachedWindow
@@ -559,17 +558,15 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
           isRightSidebarCollapsed
           isSavingToolPermissionMode={isSavingToolPermissionMode}
           isSidebarCollapsed
-          lastPaneID={lastPaneID}
+          platform={platform}
+          store={workspaceStore}
           windowControls={windowControls}
-          panelStateByID={workbenchPanelStateByID}
-          paneStateByID={workbenchPaneStateByID}
           readThreadScrollSnapshot={readThreadScrollSnapshot}
           saveThreadScrollSnapshot={saveThreadScrollSnapshot}
           permissionRequestActionError={permissionRequestActionError}
           permissionRequestActionRequestID={permissionRequestActionRequestID}
           toolPermissionMode={toolPermissionMode}
           toolPermissionModeError={toolPermissionModeError}
-          workspaces={workspaces}
           surfaceID={surfaceID}
           onActiveDockviewChange={handleDockviewActiveChange}
           onApproveProposedPlan={handleApproveProposedPlan}
@@ -609,9 +606,10 @@ function SessionPopoutApp({ workbenchContext }: { workbenchContext: WorkbenchWin
           onTurnDiffRestore={handlePopoutDiffNoop}
           onTurnDiffReview={handlePopoutDiffNoop}
           onTurnDiffSummaryHydrate={handleTurnDiffSummaryHydrate}
-        />
-      </main>
-    </div>
+          />
+        </main>
+      </div>
+    </WorkspaceStoreProvider>
   )
 }
 
@@ -763,9 +761,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     setDockviewLayout,
     visibleCanvasSessionIDs,
     dockviewLayout,
-    workbenchPanelStateByID,
-    workbenchPaneStateByID,
-    workbenchPaneStates,
+    workspaceStore,
     workspaces,
   } = useAgentWorkspace({
     agentConnected,
@@ -773,6 +769,20 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     isRuntimeDebugEnabled: isAgentDebugTraceEnabled,
     platform,
   })
+  const workbenchPaneStates = useWorkspaceStoreSelector(
+    workspaceStore,
+    (state) => buildWorkbenchPaneStates(buildWorkspaceDerivedStateInputFromStore(state, platform, seedWorkspaceIDs)),
+    workbenchPaneStateArraysAreEqual,
+  )
+  const workbenchPublishSnapshot = useWorkspaceStoreSelector(
+    workspaceStore,
+    (state) => buildWorkbenchPublishSnapshot({
+      createSessionTabs: state.sessions.createSessionTabs,
+      dockviewLayout: state.workbench.dockviewLayout,
+      workspaces: state.sessions.workspaces,
+    }),
+    workbenchPublishSnapshotsAreEqual,
+  )
 
   const {
     creatingGlobalSkillName,
@@ -983,10 +993,10 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
   const [toolPermissionMode, setToolPermissionMode] = useState<ToolPermissionMode>("default")
   const [toolPermissionModeError, setToolPermissionModeError] = useState<string | null>(null)
   const [isSavingToolPermissionMode, setIsSavingToolPermissionMode] = useState(false)
-  const gridWorkbenchPaneStates = workbenchPaneStates.filter((pane) => pane.location === "grid")
-  const firstPaneID = gridWorkbenchPaneStates[0]?.id ?? null
-  const lastPaneID = gridWorkbenchPaneStates[gridWorkbenchPaneStates.length - 1]?.id ?? null
-  const focusedWorkbenchPane = focusedPaneID ? workbenchPaneStateByID[focusedPaneID] ?? null : null
+  const lastPublishedWorkbenchSnapshotSignatureRef = useRef<string | null>(null)
+  const focusedWorkbenchPane = focusedPaneID
+    ? workbenchPaneStates.find((pane) => pane.id === focusedPaneID) ?? null
+    : null
   const terminalSession = focusedWorkbenchPane?.activeSession ?? null
   const terminalSessionID = terminalSession && !isSideChatSession(terminalSession) ? terminalSession.id : null
   const activeRightSidebarView: RightSidebarView =
@@ -1145,7 +1155,7 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     const publishWorkbenchSnapshot = window.desktop?.publishWorkbenchSnapshot
     if (!publishWorkbenchSnapshot) return
 
-    void publishWorkbenchSnapshot({
+    const snapshot: WorkbenchSharedState = {
       version: 0,
       windows: [],
       surfaces: [
@@ -1153,16 +1163,24 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
           surfaceID,
           kind: "main",
           windowID: workbenchContext.windowID,
-          ownedPanelIDs: getSurfaceOwnedSessionPanelIDs(workbenchPaneStates),
+          ownedPanelIDs: workbenchPublishSnapshot.ownedPanelIDs,
           layout: dockviewLayout,
         },
       ],
       ownership: [],
-      panels: buildWorkbenchPanelSnapshots(workbenchPaneStates, workspaces),
-    }).catch((error) => {
+      panels: workbenchPublishSnapshot.panels,
+    }
+    const signature = getWorkbenchPublishSignature(snapshot)
+    if (signature === lastPublishedWorkbenchSnapshotSignatureRef.current) return
+    lastPublishedWorkbenchSnapshotSignatureRef.current = signature
+
+    void publishWorkbenchSnapshot(snapshot).catch((error) => {
+      if (lastPublishedWorkbenchSnapshotSignatureRef.current === signature) {
+        lastPublishedWorkbenchSnapshotSignatureRef.current = null
+      }
       console.error("[desktop] Failed to publish workbench snapshot:", error)
     })
-  }, [dockviewLayout, surfaceID, workbenchContext.kind, workbenchContext.windowID, workbenchPaneStates, workspaces])
+  }, [dockviewLayout, surfaceID, workbenchContext.kind, workbenchContext.windowID, workbenchPublishSnapshot])
 
   useEffect(() => {
     if (workbenchContext.kind !== "main") return
@@ -1240,8 +1258,9 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
     : appShellStyle
 
   return (
-    <div className={windowShellClassName}>
-      <main ref={appShellRef} className={appShellClassName} style={effectiveAppShellStyle}>
+    <WorkspaceStoreProvider store={workspaceStore}>
+      <div className={windowShellClassName}>
+        <main ref={appShellRef} className={appShellClassName} style={effectiveAppShellStyle}>
         {isActivityRailVisible ? (
           <ActivityRail
             activeView={leftSidebarView}
@@ -1567,7 +1586,6 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
             <>
               <WorkbenchShell
                 composerRefreshVersion={composerRefreshVersion}
-                firstPaneID={firstPaneID}
                 assistantTraceVisibility={assistantTraceVisibility}
                 isActivityRailVisible={isActivityRailVisible}
                 isAgentDebugTraceEnabled={isAgentDebugTraceEnabled}
@@ -1575,18 +1593,15 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
                 isSavingToolPermissionMode={isSavingToolPermissionMode}
                 isRightSidebarCollapsed={isRightSidebarCollapsed}
                 isSidebarCollapsed={isSidebarCollapsed}
-                lastPaneID={lastPaneID}
-                dockviewLayout={dockviewLayout}
+                platform={platform}
+                store={workspaceStore}
                 windowControls={isRightSidebarCollapsed ? workbenchWindowControls : null}
-                panelStateByID={workbenchPanelStateByID}
-                paneStateByID={workbenchPaneStateByID}
                 readThreadScrollSnapshot={readThreadScrollSnapshot}
                 saveThreadScrollSnapshot={saveThreadScrollSnapshot}
                 permissionRequestActionError={permissionRequestActionError}
                 permissionRequestActionRequestID={permissionRequestActionRequestID}
                 toolPermissionMode={toolPermissionMode}
                 toolPermissionModeError={toolPermissionModeError}
-                workspaces={workspaces}
                 surfaceID={surfaceID}
                 onCloseCreateSessionTab={handleCloseCreateSessionTab}
                 onCloseSessionTab={handleCanvasSessionTabClose}
@@ -1763,7 +1778,8 @@ function MainApp({ workbenchContext }: { workbenchContext: WorkbenchWindowContex
           onStartNewMcpServer={startNewMcpServer}
           onCancelProviderAuthFlow={cancelProviderAuthFlow}
         />
-      </main>
-    </div>
+        </main>
+      </div>
+    </WorkspaceStoreProvider>
   )
 }

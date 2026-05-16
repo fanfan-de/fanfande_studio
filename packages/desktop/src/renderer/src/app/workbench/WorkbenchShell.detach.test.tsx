@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { SerializedDockview } from "dockview-react"
+import { createWorkspaceStore } from "../agent-workspace/workspace-store"
 import { DEFAULT_ASSISTANT_TRACE_VISIBILITY } from "../types"
 import { WorkbenchShell, type WorkbenchShellProps } from "./WorkbenchShell"
 
@@ -247,8 +248,6 @@ function createProps(overrides: Partial<WorkbenchShellProps> = {}): WorkbenchShe
   return {
     assistantTraceVisibility: DEFAULT_ASSISTANT_TRACE_VISIBILITY,
     composerRefreshVersion: 0,
-    dockviewLayout: null,
-    firstPaneID: "group-1",
     isActivityRailVisible: false,
     isAgentDebugTraceEnabled: false,
     isDetachedWindow: false,
@@ -256,41 +255,18 @@ function createProps(overrides: Partial<WorkbenchShellProps> = {}): WorkbenchShe
     isRightSidebarCollapsed: true,
     isSavingToolPermissionMode: false,
     isSidebarCollapsed: true,
-    lastPaneID: "group-1",
-    panelStateByID: {
-      "session:session-1": {
-        id: "group-1",
-        tabs: [
-          {
-            key: "session:session-1",
-            kind: "session",
-            sessionID: "session-1",
-            sessionKind: "workspace",
-            title: "Session 1",
-          },
-        ],
-      },
-    } as unknown as WorkbenchShellProps["panelStateByID"],
-    paneStateByID: {
-      "group-1": {
-        id: "group-1",
-        tabs: [
-          {
-            key: "session:session-1",
-            kind: "session",
-            sessionID: "session-1",
-            sessionKind: "workspace",
-            title: "Session 1",
-          },
-        ],
-      },
-    } as unknown as WorkbenchShellProps["paneStateByID"],
+    platform: "win32",
     permissionRequestActionError: null,
     permissionRequestActionRequestID: null,
+    store: createWorkspaceStore({
+      hasFolderWorkspaceLoader: true,
+      initialComposerTabKey: null,
+      initialCreateSessionTab: null,
+      initialDockviewLayout: null,
+    }),
     toolPermissionMode: "default",
     toolPermissionModeError: null,
     windowControls: null,
-    workspaces: [],
     readThreadScrollSnapshot: vi.fn(() => null),
     saveThreadScrollSnapshot: vi.fn(),
     surfaceID: "main",

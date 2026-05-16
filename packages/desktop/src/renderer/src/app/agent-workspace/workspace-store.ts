@@ -1,6 +1,5 @@
-import { type SetStateAction } from "react"
+import { type SetStateAction, useRef, useSyncExternalStore } from "react"
 import type { SerializedDockview } from "dockview-react"
-import { useStore } from "zustand"
 import { createStore, type StoreApi } from "zustand/vanilla"
 import { createComposerDraftStateFromPlainText } from "../composer/draft-state"
 import { initialConversations, initialSelection, seedWorkspaces } from "../seed-data"
@@ -619,8 +618,52 @@ export function createWorkspaceStore({
 export function useWorkspaceStoreSelector<T>(
   store: WorkspaceStoreApi,
   selector: (state: WorkspaceStore) => T,
+  equalityFn?: (left: T, right: T) => boolean,
 ) {
-  return useStore(store, selector)
+  const storeRef = useRef(store)
+  const latestSelectorRef = useRef(selector)
+  const latestEqualityRef = useRef(equalityFn ?? Object.is)
+  const latestSelectionRef = useRef<T | null>(null)
+  const hasSelectionRef = useRef(false)
+
+  if (storeRef.current !== store) {
+    storeRef.current = store
+    latestSelectionRef.current = null
+    hasSelectionRef.current = false
+  }
+
+  latestSelectorRef.current = selector
+  latestEqualityRef.current = equalityFn ?? Object.is
+
+  const getSnapshot = () => {
+    const nextSelection = latestSelectorRef.current(storeRef.current.getState())
+    if (
+      hasSelectionRef.current &&
+      latestEqualityRef.current(latestSelectionRef.current as T, nextSelection)
+    ) {
+      return latestSelectionRef.current as T
+    }
+
+    hasSelectionRef.current = true
+    latestSelectionRef.current = nextSelection
+    return nextSelection
+  }
+
+  return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot)
+}
+
+export function shallowEqualObjects<T extends Record<string, unknown>>(left: T, right: T) {
+  if (Object.is(left, right)) return true
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  if (leftKeys.length !== rightKeys.length) return false
+  return leftKeys.every((key) => Object.is(left[key], right[key]))
+}
+
+export function shallowEqualArrays<T>(left: readonly T[], right: readonly T[]) {
+  if (Object.is(left, right)) return true
+  if (left.length !== right.length) return false
+  return left.every((item, index) => Object.is(item, right[index]))
 }
 
 export const workspaceStoreSelectors = {

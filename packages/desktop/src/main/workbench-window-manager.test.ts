@@ -105,7 +105,6 @@ describe("WorkbenchWindowManager", () => {
           panelID: "session:session-1",
           reference: { kind: "session" as const, sessionID: "session-1" },
           title: "Session 1",
-          pane: {},
         },
       },
     }
@@ -198,7 +197,6 @@ describe("WorkbenchWindowManager", () => {
           panelID: "session:session-1",
           reference: { kind: "session", sessionID: "session-1" },
           title: "Session 1",
-          pane: {},
         },
       },
     })
@@ -261,13 +259,11 @@ describe("WorkbenchWindowManager", () => {
           panelID: "session:session-1",
           reference: { kind: "session", sessionID: "session-1" },
           title: "Session 1",
-          pane: {},
         },
         "session:session-2": {
           panelID: "session:session-2",
           reference: { kind: "session", sessionID: "session-2" },
           title: "Session 2",
-          pane: {},
         },
       },
     })

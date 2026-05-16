@@ -1222,6 +1222,88 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Clear draft" })).not.toBeInTheDocument()
   })
 
+  it("does not publish workbench snapshots for streaming turn updates", async () => {
+    let streamListener: DesktopAgentSessionEventListener | undefined
+    const publishWorkbenchSnapshot = vi.fn().mockImplementation(async (input) => input)
+
+    window.desktop!.publishWorkbenchSnapshot = publishWorkbenchSnapshot
+    window.desktop!.getAgentHealth = vi.fn().mockResolvedValue({
+      ok: true,
+      baseURL: "http://127.0.0.1:4096",
+    })
+    window.desktop!.agentSession!.onEvent = vi.fn((listener) => {
+      streamListener = listener
+      return vi.fn()
+    })
+    window.desktop!.agentSession!.sendTurn = vi.fn().mockImplementation(
+      async (input: {
+        clientTurnID: string
+        backendSessionID: string
+      }) => {
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
+          event: "started",
+          data: { sessionID: input.backendSessionID },
+        }))
+        streamListener?.(createRequestStreamEvent({
+          backendSessionID: input.backendSessionID,
+          clientTurnID: input.clientTurnID,
+          event: "delta",
+          data: { kind: "text", delta: "Snapshot stream update." },
+        }))
+
+        return {
+          clientTurnID: input.clientTurnID,
+        }
+      },
+    )
+
+    render(<App />)
+
+    await screen.findByRole("button", { name: "Switch to session Chat 1" })
+    await waitFor(() => {
+      expect(window.desktop!.getAgentHealth).toHaveBeenCalledTimes(1)
+      expect(window.desktop!.agentSession!.onEvent).toHaveBeenCalledTimes(1)
+      expect(publishWorkbenchSnapshot).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      const latestSnapshot = publishWorkbenchSnapshot.mock.calls.at(-1)?.[0]
+      expect(latestSnapshot.surfaces[0]?.layout?.panels?.["session:session-chat-1"]).toBeTruthy()
+    })
+
+    const initialSnapshot = publishWorkbenchSnapshot.mock.calls.at(-1)?.[0]
+    expect(initialSnapshot.panels["session:session-chat-1"]).toEqual({
+      panelID: "session:session-chat-1",
+      reference: {
+        kind: "session",
+        sessionID: "session-chat-1",
+      },
+      title: "Chat 1",
+    })
+    expect(initialSnapshot.panels["session:session-chat-1"]).not.toHaveProperty("pane")
+    expect(initialSnapshot.panels["session:session-chat-1"]).not.toHaveProperty("workspaces")
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    publishWorkbenchSnapshot.mockClear()
+
+    setComposerDraftValue(screen.getByRole("textbox", { name: "Task draft" }), "Stream without republishing")
+    await act(async () => {
+      fireEvent.click(getComposerSendButton())
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByText("Snapshot stream update.")).toBeInTheDocument()
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(publishWorkbenchSnapshot).not.toHaveBeenCalled()
+  })
+
   it("reverts the global tool permission mode and shows the save error when saving fails", async () => {
     window.desktop!.updateToolPermissionMode = vi.fn().mockRejectedValue(new Error("Could not save mode"))
 

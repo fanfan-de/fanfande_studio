@@ -9,11 +9,13 @@ import {
 } from "../workbench/dockview-state"
 import { DEFAULT_WORKSPACE_FILE_REVIEW_STATE, DEFAULT_WORKSPACE_PREVIEW_STATE } from "./review-preview-state"
 import {
+  buildWorkbenchPublishSnapshot,
   buildWorkspaceDerivedState,
   createCreateSessionWorkbenchTab,
   createSessionWorkbenchTab,
   getWorkbenchTabKey,
   resolveCreateSessionWorkspaceID,
+  workbenchPublishSnapshotsAreEqual,
 } from "./workspace-derived-state"
 
 function createWorkbenchPane(tabs: WorkbenchTabReference[], id: string, activeTabIndex = 0) {
@@ -323,6 +325,68 @@ describe("workspace derived state", () => {
     expect(derivedWithBActive.workbenchPaneStateByID["pane-1"]?.sessionID).toBe(sessionB.id)
     expect(derivedWithBActive.workbenchPanelStateByID[panelAID]?.sessionID).toBe(sessionA.id)
     expect(derivedWithBActive.workbenchPanelStateByID[panelBID]?.sessionID).toBe(sessionB.id)
+  })
+
+  it("builds lightweight workbench publish snapshots without runtime state", () => {
+    const sessionA = createSession("session-a", "Session A")
+    const sessionB = createSession("session-b", "Session B")
+    const workspace = createWorkspace("workspace-1", [sessionA, sessionB])
+    const createSessionTab = {
+      id: "create-1",
+      initialWorkflowMode: "planning" as const,
+      workspaceID: workspace.id,
+      title: "",
+    }
+    const sessionATab = createSessionWorkbenchTab(sessionA.id)
+    const sessionBTab = createSessionWorkbenchTab(sessionB.id)
+    const createTab = createCreateSessionWorkbenchTab(createSessionTab.id)
+    const panelAID = getWorkbenchDockPanelId(sessionATab)
+    const panelBID = getWorkbenchDockPanelId(sessionBTab)
+    const createPanelID = getWorkbenchDockPanelId(createTab)
+    const layout = createDockviewLayoutFromPanes([createWorkbenchPane([sessionATab, createTab, sessionBTab], "pane-1")])
+
+    const publishSnapshot = buildWorkbenchPublishSnapshot({
+      createSessionTabs: [createSessionTab],
+      dockviewLayout: layout,
+      workspaces: [workspace],
+    })
+
+    expect(publishSnapshot.ownedPanelIDs).toEqual([panelAID, panelBID])
+    expect(publishSnapshot.panels[panelAID]).toEqual({
+      panelID: panelAID,
+      reference: {
+        kind: "session",
+        sessionID: sessionA.id,
+      },
+      title: "Session A",
+    })
+    expect(publishSnapshot.panels[panelAID]).not.toHaveProperty("pane")
+    expect(publishSnapshot.panels[panelAID]).not.toHaveProperty("workspaces")
+    expect(publishSnapshot.panels).not.toHaveProperty(createPanelID)
+
+    const derivedWithTurns = buildDerivedState({
+      conversations: {
+        [sessionA.id]: [{ id: "turn-a", kind: "user", text: "from A", timestamp: 1 }],
+      },
+      createSessionTabs: [createSessionTab],
+      dockviewLayout: layout,
+      workspaces: [workspace],
+    })
+    expect(derivedWithTurns.workbenchPanelStateByID[panelAID]?.activeTurns).toHaveLength(1)
+
+    const publishSnapshotAfterTurns = buildWorkbenchPublishSnapshot({
+      createSessionTabs: [createSessionTab],
+      dockviewLayout: layout,
+      workspaces: [workspace],
+    })
+    expect(workbenchPublishSnapshotsAreEqual(publishSnapshot, publishSnapshotAfterTurns)).toBe(true)
+
+    const renamedSnapshot = buildWorkbenchPublishSnapshot({
+      createSessionTabs: [createSessionTab],
+      dockviewLayout: layout,
+      workspaces: [createWorkspace("workspace-1", [{ ...sessionA, title: "Renamed A" }, sessionB])],
+    })
+    expect(workbenchPublishSnapshotsAreEqual(publishSnapshot, renamedSnapshot)).toBe(false)
   })
 
   it("derives running sessions from sending tabs and streaming assistant turns", () => {

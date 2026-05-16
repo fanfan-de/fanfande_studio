@@ -306,8 +306,6 @@ export interface WorkbenchPaneRenderSnapshot {
   panelID: string
   reference: WorkbenchPanelReference
   title?: string
-  pane: unknown
-  workspaces?: unknown
 }
 
 export interface WorkbenchSharedState {
