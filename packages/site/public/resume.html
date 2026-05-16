@@ -433,7 +433,6 @@ svg {
 
 .experience-section,
 .project-section,
-.projects-extra,
 .product-showcase-section {
   padding: clamp(60px, 7vw, 96px) 0;
 }
@@ -533,7 +532,6 @@ svg {
 }
 
 .timeline-item h3,
-.compact-project h3,
 .project-card h3 {
   margin: 0;
   color: var(--text);
@@ -545,7 +543,6 @@ svg {
 }
 
 .timeline-item > p,
-.compact-project p,
 .project-card p {
   margin: 6px 0 0;
   color: var(--muted);
@@ -570,8 +567,7 @@ svg {
 }
 
 .project-card,
-.architecture-panel,
-.compact-project {
+.architecture-panel {
   background: var(--surface);
   border: 1px solid transparent;
   border-radius: var(--radius);
@@ -579,8 +575,7 @@ svg {
   transition: all 280ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.project-card:hover,
-.compact-project:hover {
+.project-card:hover {
   border-color: var(--line);
   box-shadow: var(--shadow);
   transform: translateY(-2px);
@@ -756,16 +751,6 @@ svg {
   color: var(--accent);
   stroke-width: 2.1;
 }
-
-/* 早期项目 */
-
-.project-list {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-.compact-project { padding: 26px; }
 
 /* ===== 项目 ===== */
 
@@ -1220,7 +1205,6 @@ svg {
   .hero { padding-top: 36px; }
   .timeline-item { grid-template-columns: 1fr; gap: 8px; }
   .timeline-item > p { grid-column: 1; }
-  .project-list { grid-template-columns: 1fr; }
   .showcase-features { grid-template-columns: 1fr; }
   .screenshot-gallery { grid-template-columns: 1fr; }
   .architecture-panel {
@@ -1271,7 +1255,6 @@ svg {
         <nav class="sidebar-nav" aria-label="页面导航">
           <a href="#experience">个人经历</a>
           <a href="#showcase">项目</a>
-          <a href="#projects">早期项目</a>
           <a href="#contact">联系</a>
         </nav>
 
@@ -1576,36 +1559,13 @@ svg {
         </div>
       </section>
 
-      <section class="section-shell projects-extra" id="projects" aria-labelledby="projects-extra-title">
-        <div class="section-heading reveal">
-          <span class="section-number">03</span>
-          <h2 id="projects-extra-title">早期交互与游戏项目</h2>
-          <p>证明能把想法做成可运行 Demo，也能在团队协作中承担实现工作。</p>
-        </div>
-
-        <div class="project-list">
-          <article class="compact-project reveal">
-            <h3>Iron Heart</h3>
-            <p>节奏解谜独立游戏，团队作品，主要负责程序实现与部分关卡设计实现。</p>
-          </article>
-          <article class="compact-project reveal">
-            <h3>Echo of Heart</h3>
-            <p>针对社交焦虑议题的 VR 游戏，个人独立开发。</p>
-          </article>
-          <article class="compact-project reveal">
-            <h3>进击的球球</h3>
-            <p>抖音弹幕互动游戏，个人独立开发，涉及实时互动和反馈逻辑。</p>
-          </article>
-        </div>
-      </section>
-
       <section class="contact-section" id="contact" aria-labelledby="contact-title">
         <div class="section-shell contact-inner">
           <div class="contact-copy reveal">
-            <span class="section-number">04</span>
+            <span class="section-number">03</span>
             <h2 id="contact-title">联系我</h2>
             <p>
-              如果你正在寻找具备交互系统、工具开发和 AI Agent 实践能力的候选人，欢迎联系。
+              如果有工作的机会，欢迎联系。
             </p>
           </div>
           <div class="contact-methods reveal">
