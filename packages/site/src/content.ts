@@ -1,9 +1,5 @@
 export const navigationItems = [
   {
-    href: "/resume.html",
-    label: "简历",
-  },
-  {
     href: "/docs/",
     label: "文档",
   },
@@ -11,6 +7,10 @@ export const navigationItems = [
     href: "https://github.com/fanfan-de/fanfande_studio",
     label: "GitHub",
     external: true,
+  },
+  {
+    href: "/resume.html",
+    label: "关于我",
   },
 ]
 
