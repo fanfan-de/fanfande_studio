@@ -168,6 +168,7 @@ type QuestionAnswerHandler = (input: {
 }) => void | Promise<void>
 
 const THREAD_BOTTOM_LOCK_THRESHOLD_PX = 32
+const THREAD_BOTTOM_RESTORE_FRAME_COUNT = 12
 const THREAD_USER_SCROLL_INTENT_WINDOW_MS = 800
 const THREAD_TOP_RESET_THRESHOLD_PX = 2
 const IMAGE_LIGHTBOX_BODY_CLASS = "is-image-lightbox-open"
@@ -281,7 +282,17 @@ function restoreThreadScrollSnapshot(threadColumn: HTMLDivElement, snapshot: Thr
     const containerRect = threadColumn.getBoundingClientRect()
     const anchorRect = anchorElement.getBoundingClientRect()
     const nextScrollTop = threadColumn.scrollTop + anchorRect.top - containerRect.top - snapshot.anchor.offsetWithinViewport
+    const fallbackScrollTop = clampThreadScrollTop(threadColumn, snapshot.scrollTop)
     threadColumn.scrollTop = clampThreadScrollTop(threadColumn, nextScrollTop)
+
+    if (
+      isThreadColumnPinnedToBottom(threadColumn) &&
+      !snapshot.pinnedToBottom &&
+      fallbackScrollTop < getThreadScrollMaxTop(threadColumn) - THREAD_BOTTOM_LOCK_THRESHOLD_PX
+    ) {
+      threadColumn.scrollTop = fallbackScrollTop
+    }
+
     return isThreadColumnPinnedToBottom(threadColumn)
   }
 
@@ -3491,7 +3502,9 @@ function VisibleThreadView({
   const scrollSaveFrameRef = useRef<number | null>(null)
   const scrollRestoreFrameRef = useRef<number | null>(null)
   const lastUserScrollIntentAtRef = useRef(0)
+  const userScrollIntentVersionRef = useRef(0)
   const currentScrollStateKeyRef = useRef<string | null>(null)
+  const defaultBottomScrollKeysRef = useRef<Set<string>>(new Set())
   const renderedTurnIDsByScrollKeyRef = useRef<Record<string, Set<string>>>({})
   const lastInlineLinkActivationRef = useRef<{
     href: string
@@ -3548,17 +3561,28 @@ function VisibleThreadView({
       window.cancelAnimationFrame(scrollRestoreFrameRef.current)
     }
 
-    const scheduledAt = Date.now()
-    scrollRestoreFrameRef.current = window.requestAnimationFrame(() => {
-      scrollRestoreFrameRef.current = null
-      if (lastUserScrollIntentAtRef.current >= scheduledAt) return
-      if (currentScrollStateKeyRef.current !== key) return
+    const scheduledIntentVersion = userScrollIntentVersionRef.current
+    const shouldMaintainBottom = !snapshot || snapshot.pinnedToBottom
+    const restoreFrameCount = shouldMaintainBottom ? THREAD_BOTTOM_RESTORE_FRAME_COUNT : 1
 
-      const threadColumn = threadColumnRef.current
-      if (!threadColumn) return
+    const restoreOnNextFrame = (remainingFrames: number) => {
+      scrollRestoreFrameRef.current = window.requestAnimationFrame(() => {
+        scrollRestoreFrameRef.current = null
+        if (userScrollIntentVersionRef.current !== scheduledIntentVersion) return
+        if (currentScrollStateKeyRef.current !== key) return
 
-      restoreAndPersistThreadScrollSnapshot(threadColumn, snapshot, key)
-    })
+        const threadColumn = threadColumnRef.current
+        if (!threadColumn) return
+
+        restoreAndPersistThreadScrollSnapshot(threadColumn, snapshot, key)
+
+        if (remainingFrames > 1) {
+          restoreOnNextFrame(remainingFrames - 1)
+        }
+      })
+    }
+
+    restoreOnNextFrame(restoreFrameCount)
   }
 
   function scheduleThreadScrollSnapshotSave(key = effectiveScrollStateKey) {
@@ -3728,17 +3752,22 @@ function VisibleThreadView({
     }
 
     currentScrollStateKeyRef.current = effectiveScrollStateKey
-    const snapshot = null
+    const snapshot = getRestorableThreadScrollSnapshot(readScrollSnapshot?.(effectiveScrollStateKey) ?? null)
+    if (snapshot) {
+      defaultBottomScrollKeysRef.current.delete(effectiveScrollStateKey)
+    } else {
+      defaultBottomScrollKeysRef.current.add(effectiveScrollStateKey)
+    }
     restoreAndPersistThreadScrollSnapshot(threadColumn, snapshot, effectiveScrollStateKey)
 
     scheduleThreadScrollRestore(snapshot, effectiveScrollStateKey)
-  }, [effectiveScrollStateKey, threadColumnRef])
+  }, [effectiveScrollStateKey, readScrollSnapshot, threadColumnRef])
 
   useLayoutEffect(() => {
     const threadColumn = threadColumnRef.current
     if (!threadColumn) return
 
-    if (isPinnedToBottomRef.current) {
+    if (defaultBottomScrollKeysRef.current.has(effectiveScrollStateKey) || isPinnedToBottomRef.current) {
       scrollThreadColumnToBottom(threadColumn)
       persistThreadScrollSnapshot(effectiveScrollStateKey)
       scheduleThreadScrollRestore(null, effectiveScrollStateKey)
@@ -3771,6 +3800,8 @@ function VisibleThreadView({
 
   function handleThreadScrollIntent() {
     lastUserScrollIntentAtRef.current = Date.now()
+    userScrollIntentVersionRef.current += 1
+    defaultBottomScrollKeysRef.current.delete(effectiveScrollStateKey)
   }
 
   function shouldRestoreUnexpectedTopReset(threadColumn: HTMLDivElement, snapshot: ThreadScrollSnapshot | null) {
@@ -3794,6 +3825,9 @@ function VisibleThreadView({
 
     const snapshot = captureThreadScrollSnapshot(threadColumn)
     isPinnedToBottomRef.current = snapshot.pinnedToBottom
+    if (!snapshot.pinnedToBottom) {
+      defaultBottomScrollKeysRef.current.delete(effectiveScrollStateKey)
+    }
     scheduleThreadScrollSnapshotSave()
   }
 
